@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+FULL=0
+OUTPUT="AppStore/ReleaseEvidence.generated.md"
+LOG_DIR="build/ReleaseEvidenceLogs"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  Scripts/collect-release-evidence.sh [--full] [--output PATH]
+
+Runs the release checks that can be executed locally and writes a Markdown
+evidence report. Logs are written under build/ReleaseEvidenceLogs.
+
+--full also runs Scripts/preflight-app-store-local.sh, which builds both apps.
+Live App Store Connect and positive BlitzReels entitlement checks run only when
+their credentials/tokens are present in the environment.
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --full)
+      FULL=1
+      shift
+      ;;
+    --output)
+      OUTPUT="$2"
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "error: unknown argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+mkdir -p "$LOG_DIR" "$(dirname "$OUTPUT")"
+rm -f "$LOG_DIR"/*.log 2>/dev/null || true
+
+RUN_ID="$(date -u +"%Y%m%dT%H%M%SZ")"
+
+append() {
+  printf '%s\n' "$*" >>"$OUTPUT"
+}
+
+start_report() {
+  cat >"$OUTPUT" <<EOF
+# BlitzRecorder Generated Release Evidence
+
+Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+This report captures command results for the current workspace. Keep this next
+to \`AppStore/ReleaseEvidence.md\` when preparing the final App Store submission.
+
+## Release Identity
+
+- Version/build: \`0.1.0 / 1\`
+- macOS bundle ID: \`dev.blitzreels.blitzrecorder\`
+- iOS companion bundle ID: \`dev.blitzreels.blitzrecorder.camera\`
+- Subscription product ID: \`dev.blitzreels.blitzrecorder.pro.monthly\`
+- Subscription price: \`\$4.99 per month\`
+- Free quota: \`3 free exports\`
+
+## Command Evidence
+EOF
+}
+
+status_label() {
+  case "$1" in
+    0) printf 'passed' ;;
+    99) printf 'pending' ;;
+    *) printf 'failed' ;;
+  esac
+}
+
+run_evidence() {
+  local slug="$1"
+  local label="$2"
+  shift 2
+
+  local log="$LOG_DIR/${RUN_ID}-${slug}.log"
+  local status=0
+  "$@" >"$log" 2>&1 || status=$?
+
+  append ""
+  append "### $label"
+  append ""
+  append "- Status: $(status_label "$status")"
+  append "- Log: \`$log\`"
+  append "- Command: \`$*\`"
+
+  if [[ "$status" -ne 0 && "$status" -ne 99 ]]; then
+    append ""
+    append "Last log lines:"
+    append ""
+    append '```text'
+    tail -80 "$log" >>"$OUTPUT"
+    append '```'
+  fi
+
+  return "$status"
+}
+
+pending_evidence() {
+  local slug="$1"
+  local label="$2"
+  local reason="$3"
+  local log="$LOG_DIR/${RUN_ID}-${slug}.log"
+  printf 'pending: %s\n' "$reason" >"$log"
+
+  append ""
+  append "### $label"
+  append ""
+  append "- Status: pending"
+  append "- Reason: $reason"
+  append "- Log: \`$log\`"
+}
+
+has_asc_credentials() {
+  [[ -n "${ASC_KEY_ID:-}" && -n "${ASC_ISSUER_ID:-}" && ( -n "${ASC_PRIVATE_KEY_PATH:-}" || -n "${ASC_PRIVATE_KEY:-}" ) ]]
+}
+
+has_archives() {
+  [[ -d "build/AppStoreArchives/BlitzRecorder-macOS.xcarchive" && -d "build/AppStoreArchives/BlitzRecorderCamera-iOS.xcarchive" ]]
+}
+
+positive_entitlement_check() {
+  BLITZRECORDER_ENTITLEMENT_EXPECTED_ACTIVE=true Scripts/validate-entitlement-endpoint.sh
+}
+
+negative_entitlement_check() {
+  BLITZRECORDER_ENTITLEMENT_TOKEN="$BLITZRECORDER_INACTIVE_ENTITLEMENT_TOKEN" \
+    BLITZRECORDER_ENTITLEMENT_EXPECTED_ACTIVE=false \
+    Scripts/validate-entitlement-endpoint.sh
+}
+
+start_report
+
+failures=0
+
+run_evidence "launch-readiness" "Launch Readiness" Scripts/validate-launch-readiness.sh || failures=$((failures + 1))
+run_evidence "app-store-connect-fixtures" "App Store Connect Verifier Fixtures" Scripts/test-app-store-connect-readiness.py || failures=$((failures + 1))
+run_evidence "app-store-connect-bootstrap-fixtures" "App Store Connect Bootstrap Fixtures" Scripts/test-app-store-connect-bootstrap.py || failures=$((failures + 1))
+run_evidence "app-store-connect-dry-run" "App Store Connect Dry Run" Scripts/app-store-connect-readiness.py --dry-run || failures=$((failures + 1))
+run_evidence "storekit-local" "StoreKit Local Configuration" Scripts/validate-storekit-local.sh || failures=$((failures + 1))
+run_evidence "submission-artifacts" "Submission Artifacts" Scripts/validate-submission-artifacts.sh || failures=$((failures + 1))
+run_evidence "entitlement-unauthenticated" "Unauthenticated BlitzReels Entitlement Check" Scripts/validate-entitlement-endpoint.sh || failures=$((failures + 1))
+
+if [[ "$FULL" == "1" ]]; then
+  run_evidence "local-preflight" "Local Build/Test Preflight" Scripts/preflight-app-store-local.sh || failures=$((failures + 1))
+else
+  pending_evidence "local-preflight" "Local Build/Test Preflight" "not run; pass --full to build and test both apps"
+fi
+
+if [[ -n "${BLITZRECORDER_ENTITLEMENT_TOKEN:-}" ]]; then
+  run_evidence "entitlement-token" "Positive BlitzReels Entitlement Token Check" positive_entitlement_check || failures=$((failures + 1))
+else
+  pending_evidence "entitlement-token" "Positive BlitzReels Entitlement Token Check" "BLITZRECORDER_ENTITLEMENT_TOKEN is not set"
+fi
+
+if [[ -n "${BLITZRECORDER_INACTIVE_ENTITLEMENT_TOKEN:-}" ]]; then
+  run_evidence "entitlement-inactive-token" "Negative BlitzReels Entitlement Token Check" negative_entitlement_check || failures=$((failures + 1))
+else
+  pending_evidence "entitlement-inactive-token" "Negative BlitzReels Entitlement Token Check" "BLITZRECORDER_INACTIVE_ENTITLEMENT_TOKEN is not set"
+fi
+
+if has_asc_credentials; then
+  run_evidence "app-store-connect-live" "Live App Store Connect Verification" Scripts/app-store-connect-readiness.py || failures=$((failures + 1))
+else
+  pending_evidence "app-store-connect-live" "Live App Store Connect Verification" "ASC_KEY_ID, ASC_ISSUER_ID, and ASC_PRIVATE_KEY_PATH/ASC_PRIVATE_KEY are not all set"
+fi
+
+if has_archives && has_asc_credentials; then
+  run_evidence "submission-artifacts-strict" "Strict Submission Artifact Validation" Scripts/validate-submission-artifacts.sh --strict || failures=$((failures + 1))
+elif has_archives; then
+  pending_evidence "submission-artifacts-strict" "Strict Submission Artifact Validation" "archives exist, but App Store Connect credentials are missing"
+else
+  pending_evidence "submission-artifacts-strict" "Strict Submission Artifact Validation" "signed App Store archives are not present under build/AppStoreArchives"
+fi
+
+append ""
+append "## Remaining Manual Evidence"
+append ""
+append "- Complete \`AppStore/AppStoreConnectManualSetup.md\` in App Store Connect."
+append "- Complete \`AppStore/AppStoreQuestionnaires.md\` for age rating, export compliance, content rights, IDFA, Kids Category, and paid-content answers."
+append "- Fill \`AppStore/DeviceQAChecklist.md\` after physical Mac/iPhone/iPad QA."
+append "- Record legal/privacy approval for terms, privacy policy, and privacy nutrition labels."
+append "- Keep \`AppStore/ReleaseEvidence.md\` updated with account-side records, signed archive paths, QA evidence, and final submission decision."
+
+append ""
+append "## Result"
+append ""
+if [[ "$failures" -eq 0 ]]; then
+  append "- Local evidence collection completed without command failures."
+  if [[ "$OUTPUT" == "AppStore/ReleaseEvidence.generated.md" ]]; then
+    python3 Scripts/update-release-evidence.py
+  fi
+  echo "Release evidence written to $OUTPUT"
+else
+  append "- Evidence collection completed with $failures failed command(s)."
+  echo "Release evidence written to $OUTPUT with $failures failed command(s)." >&2
+  exit 1
+fi

@@ -1,0 +1,79 @@
+{
+  "generatedAt": "2026-05-22T17:55:26Z",
+  "sourceFiles": [
+    "AppStore/AppStoreQuestionnaires.md"
+  ],
+  "appliesTo": {
+    "macOSBundleId": "dev.blitzreels.blitzrecorder",
+    "iOSBundleId": "dev.blitzreels.blitzrecorder.camera"
+  },
+  "ageRating": {
+    "recommendedTarget": "4+",
+    "frequencyAnswers": {
+      "cartoonOrFantasyViolence": "None",
+      "realisticViolence": "None",
+      "prolongedGraphicOrSadisticRealisticViolence": "None",
+      "profanityOrCrudeHumor": "None",
+      "matureOrSuggestiveThemes": "None",
+      "horrorOrFearThemes": "None",
+      "medicalOrTreatmentInformation": "None",
+      "alcoholTobaccoDrugUseOrReferences": "None",
+      "simulatedGambling": "None",
+      "sexualContentOrNudity": "None"
+    },
+    "booleanAnswers": {
+      "contests": false,
+      "gambling": false,
+      "unrestrictedWebAccess": false,
+      "userGeneratedContentService": false
+    },
+    "note": "Users create local recordings, but the apps do not host, publish, browse, moderate, or share UGC through a developer service."
+  },
+  "exportCompliance": {
+    "intendedResult": "no non-exempt encryption",
+    "itsAppUsesNonExemptEncryption": false,
+    "usesProprietaryEncryption": false,
+    "usesCustomCryptographicProtocol": false,
+    "usesVPNOrSecurityProductFunctionality": false,
+    "usesCryptoWalletFunctionality": false,
+    "sha256Use": "file-transfer integrity checks only",
+    "networking": "Apple system networking and HTTPS for fixed BlitzRecorder/BlitzReels URLs; local network transport for companion pairing, preview, controls, and transfer."
+  },
+  "contentRights": {
+    "shipsThirdPartyMediaCatalogs": false,
+    "shipsTemplatesMusicStockFootageOrEditorialContent": false,
+    "usersResponsibleForRecordedContentRights": true,
+    "termsSource": "Web/blitzrecorder/terms.html"
+  },
+  "advertisingIdentifier": {
+    "usesIDFA": false,
+    "tracking": false,
+    "thirdPartyAdvertising": false
+  },
+  "kidsCategory": {
+    "madeForKids": false,
+    "rationale": "Creator/productivity recording tool with subscription purchase flow in the Mac app."
+  },
+  "signInRequirement": {
+    "appStoreSubscriptionRequiresBlitzReelsSignIn": false,
+    "blitzReelsSignInOptional": true,
+    "iosCompanionRequiresAccount": false,
+    "iosCompanionPairing": "local network"
+  },
+  "paidContentAndSubscriptions": {
+    "macAppHasAutoRenewableSubscription": true,
+    "subscriptionName": "BlitzRecorder Pro Monthly",
+    "productId": "dev.blitzreels.blitzrecorder.pro.monthly",
+    "price": "$4.99 per month",
+    "freeBehavior": "3 free exports",
+    "iosCompanionHasInAppPurchases": false,
+    "iosCompanionHasPaywall": false
+  },
+  "reviewTriggers": [
+    "Analytics, crash reporting, ads, attribution, or tracking SDKs are added.",
+    "Cloud upload, sharing, hosting, collaboration, comments, public profiles, or publishing are added.",
+    "End-user templates, music, stock footage, or other bundled third-party media are added.",
+    "Custom encryption, encrypted messaging, VPN/security, DRM, crypto wallet, or password-management functionality is added.",
+    "BlitzReels entitlement responses start returning email, billing IDs, workspace IDs, subscription IDs, or receipt data."
+  ]
+}

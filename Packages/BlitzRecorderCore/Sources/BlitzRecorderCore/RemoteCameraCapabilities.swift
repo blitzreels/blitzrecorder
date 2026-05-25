@@ -1,0 +1,284 @@
+import Foundation
+
+public enum RemoteCameraLens: String, Codable, CaseIterable, Sendable {
+    case ultraWide
+    case wide
+    case telephoto
+    case frontWide
+
+    public var displayName: String {
+        switch self {
+        case .ultraWide: return "Ultra Wide"
+        case .wide: return "Wide"
+        case .telephoto: return "Telephoto"
+        case .frontWide: return "Front"
+        }
+    }
+}
+
+public enum RemoteCameraFocusMode: String, Codable, CaseIterable, Sendable {
+    case continuousAuto
+    case locked
+    case manual
+
+    public var displayName: String {
+        switch self {
+        case .continuousAuto: return "Auto"
+        case .locked: return "Locked"
+        case .manual: return "Manual"
+        }
+    }
+}
+
+public enum RemoteCameraExposureMode: String, Codable, CaseIterable, Sendable {
+    case continuousAuto
+    case locked
+    case manual
+
+    public var displayName: String {
+        switch self {
+        case .continuousAuto: return "Auto"
+        case .locked: return "Locked"
+        case .manual: return "Manual"
+        }
+    }
+}
+
+public enum RemoteCameraWhiteBalanceMode: String, Codable, CaseIterable, Sendable {
+    case continuousAuto
+    case locked
+    case manual
+
+    public var displayName: String {
+        switch self {
+        case .continuousAuto: return "Auto"
+        case .locked: return "Locked"
+        case .manual: return "Manual"
+        }
+    }
+}
+
+public enum RemoteCameraStabilizationMode: String, Codable, CaseIterable, Sendable {
+    case off
+    case standard
+    case cinematic
+    case auto
+
+    public var displayName: String {
+        switch self {
+        case .off: return "Off"
+        case .standard: return "Standard"
+        case .cinematic: return "Cinematic"
+        case .auto: return "Auto"
+        }
+    }
+}
+
+public enum RemoteCameraCaptureProfileID: String, Codable, CaseIterable, Sendable {
+    case automatic
+    case highEfficiency
+    case proRes422
+
+    public var displayName: String {
+        switch self {
+        case .automatic: return "Auto"
+        case .highEfficiency: return "HEVC"
+        case .proRes422: return "ProRes"
+        }
+    }
+}
+
+public struct RemoteCameraCaptureProfile: Codable, Equatable, Sendable, Identifiable {
+    public var id: RemoteCameraCaptureProfileID
+    public var displayName: String
+    public var isAvailable: Bool
+    public var unavailableReason: String?
+    public var codecLabel: String?
+    public var supportedFormatIDs: [String]
+
+    public init(
+        id: RemoteCameraCaptureProfileID,
+        displayName: String = "",
+        isAvailable: Bool = true,
+        unavailableReason: String? = nil,
+        codecLabel: String? = nil,
+        supportedFormatIDs: [String] = []
+    ) {
+        self.id = id
+        self.displayName = displayName.isEmpty ? id.displayName : displayName
+        self.isAvailable = isAvailable
+        self.unavailableReason = unavailableReason
+        self.codecLabel = codecLabel
+        self.supportedFormatIDs = supportedFormatIDs
+    }
+}
+
+public struct RemoteCameraFormat: Codable, Equatable, Sendable, Identifiable {
+    public var id: String
+    public var width: Int
+    public var height: Int
+    public var frameRates: [Int]
+    public var supportsStabilization: Bool
+    public var supportsHDR: Bool
+
+    public init(
+        id: String,
+        width: Int,
+        height: Int,
+        frameRates: [Int],
+        supportsStabilization: Bool,
+        supportsHDR: Bool
+    ) {
+        self.id = id
+        self.width = width
+        self.height = height
+        self.frameRates = frameRates
+        self.supportsStabilization = supportsStabilization
+        self.supportsHDR = supportsHDR
+    }
+}
+
+public struct RemoteCameraCapabilities: Codable, Equatable, Sendable {
+    public var deviceName: String
+    public var deviceModelIdentifier: String?
+    public var supportedLenses: [RemoteCameraLens]
+    public var supportedFormats: [RemoteCameraFormat]
+    public var supportedCaptureProfiles: [RemoteCameraCaptureProfile]
+    public var supportsTorch: Bool
+    public var minimumZoomFactor: Double
+    public var maximumZoomFactor: Double
+    public var supportsManualFocus: Bool
+    public var supportsFocusLock: Bool
+    public var supportsManualExposure: Bool
+    public var supportsExposureLock: Bool
+    public var supportsWhiteBalanceLock: Bool
+    public var supportsManualWhiteBalance: Bool
+    public var supportedStabilizationModes: [RemoteCameraStabilizationMode]
+    public var supportedRotationDegrees: [Int]
+    public var minimumExposureBias: Double
+    public var maximumExposureBias: Double
+    public var minimumISO: Double?
+    public var maximumISO: Double?
+    public var minimumShutterDurationSeconds: Double?
+    public var maximumShutterDurationSeconds: Double?
+
+    public init(
+        deviceName: String,
+        deviceModelIdentifier: String? = nil,
+        supportedLenses: [RemoteCameraLens],
+        supportedFormats: [RemoteCameraFormat],
+        supportedCaptureProfiles: [RemoteCameraCaptureProfile] = [
+            RemoteCameraCaptureProfile(id: .automatic)
+        ],
+        supportsTorch: Bool,
+        minimumZoomFactor: Double = 1,
+        maximumZoomFactor: Double = 1,
+        supportsManualFocus: Bool,
+        supportsFocusLock: Bool,
+        supportsManualExposure: Bool,
+        supportsExposureLock: Bool,
+        supportsWhiteBalanceLock: Bool,
+        supportsManualWhiteBalance: Bool,
+        supportedStabilizationModes: [RemoteCameraStabilizationMode],
+        supportedRotationDegrees: [Int] = [0, 90, 180, 270],
+        minimumExposureBias: Double,
+        maximumExposureBias: Double,
+        minimumISO: Double? = nil,
+        maximumISO: Double? = nil,
+        minimumShutterDurationSeconds: Double? = nil,
+        maximumShutterDurationSeconds: Double? = nil
+    ) {
+        self.deviceName = deviceName
+        self.deviceModelIdentifier = deviceModelIdentifier
+        self.supportedLenses = supportedLenses
+        self.supportedFormats = supportedFormats
+        self.supportedCaptureProfiles = supportedCaptureProfiles
+        self.supportsTorch = supportsTorch
+        self.minimumZoomFactor = minimumZoomFactor
+        self.maximumZoomFactor = maximumZoomFactor
+        self.supportsManualFocus = supportsManualFocus
+        self.supportsFocusLock = supportsFocusLock
+        self.supportsManualExposure = supportsManualExposure
+        self.supportsExposureLock = supportsExposureLock
+        self.supportsWhiteBalanceLock = supportsWhiteBalanceLock
+        self.supportsManualWhiteBalance = supportsManualWhiteBalance
+        self.supportedStabilizationModes = supportedStabilizationModes
+        self.supportedRotationDegrees = supportedRotationDegrees
+        self.minimumExposureBias = minimumExposureBias
+        self.maximumExposureBias = maximumExposureBias
+        self.minimumISO = minimumISO
+        self.maximumISO = maximumISO
+        self.minimumShutterDurationSeconds = minimumShutterDurationSeconds
+        self.maximumShutterDurationSeconds = maximumShutterDurationSeconds
+    }
+}
+
+extension RemoteCameraCapabilities {
+    private enum CodingKeys: String, CodingKey {
+        case deviceName
+        case deviceModelIdentifier
+        case supportedLenses
+        case supportedFormats
+        case supportedCaptureProfiles
+        case supportsTorch
+        case minimumZoomFactor
+        case maximumZoomFactor
+        case supportsManualFocus
+        case supportsFocusLock
+        case supportsManualExposure
+        case supportsExposureLock
+        case supportsWhiteBalanceLock
+        case supportsManualWhiteBalance
+        case supportedStabilizationModes
+        case supportedRotationDegrees
+        case minimumExposureBias
+        case maximumExposureBias
+        case minimumISO
+        case maximumISO
+        case minimumShutterDurationSeconds
+        case maximumShutterDurationSeconds
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            deviceName: try container.decode(String.self, forKey: .deviceName),
+            deviceModelIdentifier: try container.decodeIfPresent(String.self, forKey: .deviceModelIdentifier),
+            supportedLenses: try container.decode([RemoteCameraLens].self, forKey: .supportedLenses),
+            supportedFormats: try container.decode([RemoteCameraFormat].self, forKey: .supportedFormats),
+            supportedCaptureProfiles: try container.decodeIfPresent(
+                [RemoteCameraCaptureProfile].self,
+                forKey: .supportedCaptureProfiles
+            ) ?? [RemoteCameraCaptureProfile(id: .automatic)],
+            supportsTorch: try container.decode(Bool.self, forKey: .supportsTorch),
+            minimumZoomFactor: try container.decodeIfPresent(Double.self, forKey: .minimumZoomFactor) ?? 1,
+            maximumZoomFactor: try container.decodeIfPresent(Double.self, forKey: .maximumZoomFactor) ?? 1,
+            supportsManualFocus: try container.decode(Bool.self, forKey: .supportsManualFocus),
+            supportsFocusLock: try container.decode(Bool.self, forKey: .supportsFocusLock),
+            supportsManualExposure: try container.decode(Bool.self, forKey: .supportsManualExposure),
+            supportsExposureLock: try container.decode(Bool.self, forKey: .supportsExposureLock),
+            supportsWhiteBalanceLock: try container.decode(Bool.self, forKey: .supportsWhiteBalanceLock),
+            supportsManualWhiteBalance: try container.decode(Bool.self, forKey: .supportsManualWhiteBalance),
+            supportedStabilizationModes: try container.decode(
+                [RemoteCameraStabilizationMode].self,
+                forKey: .supportedStabilizationModes
+            ),
+            supportedRotationDegrees: try container.decodeIfPresent(
+                [Int].self,
+                forKey: .supportedRotationDegrees
+            ) ?? [0, 90, 180, 270],
+            minimumExposureBias: try container.decode(Double.self, forKey: .minimumExposureBias),
+            maximumExposureBias: try container.decode(Double.self, forKey: .maximumExposureBias),
+            minimumISO: try container.decodeIfPresent(Double.self, forKey: .minimumISO),
+            maximumISO: try container.decodeIfPresent(Double.self, forKey: .maximumISO),
+            minimumShutterDurationSeconds: try container.decodeIfPresent(
+                Double.self,
+                forKey: .minimumShutterDurationSeconds
+            ),
+            maximumShutterDurationSeconds: try container.decodeIfPresent(
+                Double.self,
+                forKey: .maximumShutterDurationSeconds
+            )
+        )
+    }
+}

@@ -1,0 +1,55 @@
+{
+  "identifier" : "BLITZRECORDER_STOREKIT",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "BLITZRECORDER_PRO",
+      "localizations" : [
+        {
+          "locale" : "en_US",
+          "name" : "BlitzRecorder Pro"
+        }
+      ],
+      "name" : "BlitzRecorder Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "4.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "BLITZRECORDER_PRO_MONTHLY",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Unlimited exports in BlitzRecorder.",
+              "displayName" : "BlitzRecorder Pro",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "dev.blitzreels.blitzrecorder.pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "BlitzRecorder Pro Monthly",
+          "subscriptionGroupID" : "BLITZRECORDER_PRO",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 2,
+    "minor" : 0
+  }
+}

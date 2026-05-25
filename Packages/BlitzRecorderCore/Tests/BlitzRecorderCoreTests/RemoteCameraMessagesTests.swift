@@ -1,0 +1,313 @@
+import XCTest
+@testable import BlitzRecorderCore
+
+final class RemoteCameraMessagesTests: XCTestCase {
+    private let macIdentity = RemoteCameraMacIdentity(
+        publicKeyData: Data([1, 2, 3, 4]),
+        publicKeyFingerprint: "fingerprint"
+    )
+    private let pairingProof = RemoteCameraPairingProof(
+        challengeNonce: Data([9, 8, 7, 6]),
+        signatureData: Data([5, 4, 3, 2])
+    )
+
+    func testCommandRoundTrip() throws {
+        let command = RemoteCameraCommand.applySettings(RemoteCameraSettings(
+            lens: .telephoto,
+            formatID: "4k-30",
+            frameRate: 60,
+            captureProfileID: .proRes422,
+            zoomFactor: 2.5,
+            focusMode: .manual,
+            focusPosition: 0.65,
+            exposureMode: .manual,
+            exposureBias: -0.3,
+            iso: 320,
+            shutterDurationSeconds: 1.0 / 120.0,
+            whiteBalanceMode: .manual,
+            whiteBalanceTemperature: 4_800,
+            whiteBalanceTint: 12,
+            stabilizationMode: .cinematic,
+            rotationDegrees: 180,
+            torchEnabled: true
+        ))
+
+        let data = try JSONEncoder().encode(command)
+        let decoded = try JSONDecoder().decode(RemoteCameraCommand.self, from: data)
+
+        XCTAssertEqual(decoded, command)
+    }
+
+    func testPairCommandRoundTrip() throws {
+        let command = RemoteCameraCommand.pair(
+            shortCode: "123456",
+            macIdentity: macIdentity,
+            proof: pairingProof
+        )
+
+        let data = try JSONEncoder().encode(command)
+        let decoded = try JSONDecoder().decode(RemoteCameraCommand.self, from: data)
+
+        XCTAssertEqual(decoded, command)
+    }
+
+    func testHelloCommandRoundTripIncludesMacIdentity() throws {
+        let command = RemoteCameraCommand.hello(protocolVersion: 1, macIdentity: macIdentity)
+
+        let data = try JSONEncoder().encode(command)
+        let decoded = try JSONDecoder().decode(RemoteCameraCommand.self, from: data)
+
+        XCTAssertEqual(decoded, command)
+    }
+
+    func testRequestTransferCommandRoundTrip() throws {
+        let command = RemoteCameraCommand.requestTransfer(takeID: UUID(), resumeOffset: 1_048_576)
+
+        let data = try JSONEncoder().encode(command)
+        let decoded = try JSONDecoder().decode(RemoteCameraCommand.self, from: data)
+
+        XCTAssertEqual(decoded, command)
+    }
+
+    func testTransferAckCommandRoundTrip() throws {
+        let command = RemoteCameraCommand.transferAck(takeID: UUID(), receivedByteCount: 524_288)
+
+        let data = try JSONEncoder().encode(command)
+        let decoded = try JSONDecoder().decode(RemoteCameraCommand.self, from: data)
+
+        XCTAssertEqual(decoded, command)
+    }
+
+    func testPairingChallengeEventRoundTrip() throws {
+        let challenge = RemoteCameraPairingChallenge(
+            deviceID: UUID(),
+            deviceName: "Alice iPhone",
+            shortCode: "123456",
+            challengeNonce: Data([1, 3, 5, 7]),
+            requiresShortCode: true
+        )
+        let event = RemoteCameraEvent.pairingChallenge(challenge)
+
+        let data = try JSONEncoder().encode(event)
+        let decoded = try JSONDecoder().decode(RemoteCameraEvent.self, from: data)
+
+        XCTAssertEqual(decoded, event)
+    }
+
+    func testTransferChunkEventRoundTrip() throws {
+        let takeID = UUID()
+        let event = RemoteCameraEvent.transferChunk(
+            takeID: takeID,
+            offset: 262_144,
+            data: Data([0, 1, 2, 253, 254, 255]),
+            isFinal: true
+        )
+
+        let data = try JSONEncoder().encode(event)
+        let decoded = try JSONDecoder().decode(RemoteCameraEvent.self, from: data)
+
+        XCTAssertEqual(decoded, event)
+    }
+
+    func testTransferReadyEventRoundTripIncludesManifest() throws {
+        let takeID = UUID()
+        let manifest = RemoteCameraTransferManifest(
+            takeID: takeID,
+            recordingID: takeID,
+            fileName: "camera.mov",
+            byteCount: 4_194_304,
+            durationSeconds: 12,
+            settings: RemoteCameraSettings(
+                lens: .wide,
+                formatID: "1080p-30",
+                frameRate: 30,
+                captureProfileID: .highEfficiency
+            ),
+            format: RemoteCameraFormat(
+                id: "1080p-30",
+                width: 1920,
+                height: 1080,
+                frameRates: [30],
+                supportsStabilization: true,
+                supportsHDR: false
+            ),
+            captureProfileID: .highEfficiency,
+            captureCodecLabel: "HEVC",
+            captureFormatLabel: "1920x1080 @ 30 fps",
+            deviceStartTime: 100,
+            deviceStopTime: 200,
+            hostStartTime: 90,
+            hostStopTime: 210
+        )
+        let event = RemoteCameraEvent.transferReady(
+            takeID: takeID,
+            fileName: "camera.mov",
+            byteCount: 4_194_304,
+            manifest: manifest
+        )
+
+        let data = try JSONEncoder().encode(event)
+        let decoded = try JSONDecoder().decode(RemoteCameraEvent.self, from: data)
+
+        XCTAssertEqual(decoded, event)
+    }
+
+    func testRemoteCameraSettingsDecodesLegacyPayloadWithAutomaticProfile() throws {
+        let data = """
+        {
+          "lens": "wide",
+          "formatID": "1920x1080",
+          "frameRate": 30,
+          "zoomFactor": 1.2,
+          "focusMode": "continuousAuto",
+          "focusPosition": 0.5,
+          "exposureMode": "continuousAuto",
+          "exposureBias": 0,
+          "whiteBalanceMode": "continuousAuto",
+          "whiteBalanceTemperature": 5500,
+          "whiteBalanceTint": 0,
+          "stabilizationMode": "auto",
+          "torchEnabled": false
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(RemoteCameraSettings.self, from: data)
+
+        XCTAssertEqual(decoded.captureProfileID, .automatic)
+        XCTAssertEqual(decoded.formatID, "1920x1080")
+        XCTAssertEqual(decoded.rotationDegrees, RemoteCameraSettings.defaultRotationDegrees)
+    }
+
+    func testRemoteCameraSettingsNormalizesRotationDegrees() {
+        XCTAssertEqual(RemoteCameraSettings().rotationDegrees, 180)
+        XCTAssertEqual(RemoteCameraSettings(rotationDegrees: 91).rotationDegrees, 90)
+        XCTAssertEqual(RemoteCameraSettings(rotationDegrees: -90).rotationDegrees, 270)
+        XCTAssertEqual(RemoteCameraSettings(rotationDegrees: 360).rotationDegrees, 0)
+    }
+
+    func testRemoteCameraCapabilitiesDecodesLegacyPayloadWithAutomaticProfile() throws {
+        let data = """
+        {
+          "deviceName": "Alice iPhone",
+          "supportedLenses": ["wide"],
+          "supportedFormats": [],
+          "supportsTorch": false,
+          "supportsManualFocus": false,
+          "supportsFocusLock": false,
+          "supportsManualExposure": false,
+          "supportsExposureLock": false,
+          "supportsWhiteBalanceLock": false,
+          "supportsManualWhiteBalance": false,
+          "supportedStabilizationModes": ["off"],
+          "minimumExposureBias": -2,
+          "maximumExposureBias": 2
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(RemoteCameraCapabilities.self, from: data)
+
+        XCTAssertEqual(decoded.supportedCaptureProfiles, [RemoteCameraCaptureProfile(id: .automatic)])
+        XCTAssertNil(decoded.deviceModelIdentifier)
+    }
+
+    func testRemoteCameraCapabilitiesRoundTripIncludesDeviceModelIdentifier() throws {
+        let capabilities = RemoteCameraCapabilities(
+            deviceName: "Alice iPhone",
+            deviceModelIdentifier: "iPhone15,3",
+            supportedLenses: [.wide],
+            supportedFormats: [],
+            supportsTorch: true,
+            supportsManualFocus: false,
+            supportsFocusLock: false,
+            supportsManualExposure: false,
+            supportsExposureLock: false,
+            supportsWhiteBalanceLock: false,
+            supportsManualWhiteBalance: false,
+            supportedStabilizationModes: [.off],
+            minimumExposureBias: -2,
+            maximumExposureBias: 2
+        )
+
+        let data = try JSONEncoder().encode(capabilities)
+        let decoded = try JSONDecoder().decode(RemoteCameraCapabilities.self, from: data)
+
+        XCTAssertEqual(decoded, capabilities)
+        XCTAssertEqual(decoded.deviceModelIdentifier, "iPhone15,3")
+    }
+
+    func testTransferCompleteEventRoundTrip() throws {
+        let event = RemoteCameraEvent.transferComplete(
+            takeID: UUID(),
+            byteCount: 4_194_304,
+            sha256: "0123456789abcdef"
+        )
+
+        let data = try JSONEncoder().encode(event)
+        let decoded = try JSONDecoder().decode(RemoteCameraEvent.self, from: data)
+
+        XCTAssertEqual(decoded, event)
+    }
+
+    func testMonitorFrameEventRoundTrip() throws {
+        let event = RemoteCameraEvent.monitorFrame(
+            jpegData: Data([0xff, 0xd8, 0xff, 0xd9]),
+            width: 640,
+            height: 360
+        )
+
+        let data = try JSONEncoder().encode(event)
+        let decoded = try JSONDecoder().decode(RemoteCameraEvent.self, from: data)
+
+        XCTAssertEqual(decoded, event)
+    }
+
+    func testMonitorVideoFrameEventRoundTrip() throws {
+        let frame = RemoteCameraMonitorVideoFrame(
+            codec: .h264,
+            data: Data([0, 0, 0, 4, 0x65, 0x88, 0x84, 0x21]),
+            width: 640,
+            height: 360,
+            presentationTimeSeconds: 12.25,
+            isKeyFrame: true,
+            sequenceNumber: 42,
+            h264SPS: Data([0x67, 0x42]),
+            h264PPS: Data([0x68, 0xce])
+        )
+        let event = RemoteCameraEvent.monitorVideoFrame(frame)
+
+        let data = try JSONEncoder().encode(event)
+        let decoded = try JSONDecoder().decode(RemoteCameraEvent.self, from: data)
+
+        XCTAssertEqual(decoded, event)
+    }
+
+    func testTelemetryRoundTripIncludesTransferProgress() throws {
+        let takeID = UUID()
+        let telemetry = RemoteCameraTelemetry(
+            phase: .transferring,
+            elapsedSeconds: 3,
+            batteryLevel: 0.8,
+            thermalState: "Nominal",
+            storageFreeBytes: 1_000_000,
+            activeSettings: RemoteCameraSettings(),
+            transferProgress: RemoteCameraTransferProgress(
+                takeID: takeID,
+                transferredByteCount: 50,
+                expectedByteCount: 100
+            ),
+            previewHealth: RemoteCameraPreviewHealth(
+                framesSent: 25,
+                framesDropped: 1,
+                lastFrameAgeSeconds: 0.2
+            )
+        )
+
+        let data = try JSONEncoder().encode(telemetry)
+        let decoded = try JSONDecoder().decode(RemoteCameraTelemetry.self, from: data)
+
+        XCTAssertEqual(decoded, telemetry)
+        XCTAssertEqual(decoded.transferProgress?.fraction, 0.5)
+        XCTAssertEqual(decoded.previewHealth?.droppedFrameRatio ?? -1, 1.0 / 26.0, accuracy: 0.0001)
+        XCTAssertEqual(decoded.previewHealth?.isHealthy, true)
+    }
+}

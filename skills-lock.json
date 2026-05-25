@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "app-icon": {
+      "source": "code-with-beto/skills",
+      "sourceType": "github",
+      "skillPath": "plugins/cwb-app-icon/skills/app-icon/SKILL.md",
+      "computedHash": "dc551a26318622c831286711961a4cab90e134bf3378083d9cfe1e52bb466524"
+    },
+    "ship": {
+      "source": "code-with-beto/skills",
+      "sourceType": "github",
+      "skillPath": "plugins/cwb-ship/skills/ship/SKILL.md",
+      "computedHash": "2ef592da8f8e0e72bb3f4925120d77d7b689eec5dece5cff832f6899a22d84fc"
+    }
+  }
+}

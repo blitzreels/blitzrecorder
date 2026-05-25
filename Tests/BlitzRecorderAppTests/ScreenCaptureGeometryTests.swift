@@ -1,0 +1,31 @@
+import CoreGraphics
+@testable import BlitzRecorderApp
+import XCTest
+
+final class ScreenCaptureGeometryTests: XCTestCase {
+    func testSceneLayoutDoesNotOverrideScreenSourceAspectRatio() {
+        var settings = RecordingSettings()
+        settings.layout = .vertical
+        settings.selectedScenePreset = .stackedHalves
+        settings.sceneLayout.screenFrame = CGRect(x: 0, y: 0, width: 1, height: 1)
+
+        let aspectRatio = ScreenCaptureGeometry.screenSourceAspectRatio(
+            for: settings,
+            fallback: 16.0 / 9.0
+        )
+
+        XCTAssertEqual(aspectRatio, 16.0 / 9.0, accuracy: 0.0001)
+    }
+
+    func testExplicitScreenCropControlsScreenSourceAspectRatio() {
+        var settings = RecordingSettings()
+        settings.screenCrop = CGRect(x: 0.1, y: 0.2, width: 0.5, height: 0.25)
+
+        let aspectRatio = ScreenCaptureGeometry.screenSourceAspectRatio(
+            for: settings,
+            fallback: 16.0 / 9.0
+        )
+
+        XCTAssertEqual(aspectRatio, 2.0, accuracy: 0.0001)
+    }
+}

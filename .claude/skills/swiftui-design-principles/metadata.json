@@ -1,0 +1,10 @@
+{
+  "version": "1.1.0",
+  "author": "arjitj2",
+  "date": "February 2026",
+  "abstract": "Design principles for building polished, native-feeling SwiftUI apps and WidgetKit widgets. Derived from comparing production-quality iOS apps against poorly-built ones. Covers spacing systems, typography hierarchy, semantic colors, component sizing, WidgetKit patterns, and a pre-ship checklist.",
+  "references": [
+    "https://developer.apple.com/documentation/swiftui",
+    "https://developer.apple.com/documentation/widgetkit"
+  ]
+}

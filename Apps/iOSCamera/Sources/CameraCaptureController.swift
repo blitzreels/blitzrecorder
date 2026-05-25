@@ -1,0 +1,1353 @@
+import BlitzRecorderCore
+import AVFoundation
+import CoreImage
+import Observation
+import Darwin
+import UIKit
+import VideoToolbox
+
+@Observable
+@MainActor
+final class CameraCaptureController {
+    let session = AVCaptureSession()
+
+    var isPreviewRunning = false
+    var isRecording = false
+    var statusMessage = "Camera not started"
+    var capabilities: RemoteCameraCapabilities?
+
+    private var activeDevice: AVCaptureDevice?
+    private var activeLens: RemoteCameraLens = .wide
+    private let movieOutput = AVCaptureMovieFileOutput()
+    private let previewOutput = AVCaptureVideoDataOutput()
+    private let sessionQueue = DispatchQueue(label: "blitzrecorder.camera-capture-session", qos: .userInitiated)
+    private let previewQueue = DispatchQueue(label: "blitzrecorder.camera-monitor-preview")
+    private let previewDelegate = CameraMonitorPreviewDelegate()
+    private var recordingDelegate: MovieRecordingDelegate?
+    private var activeRecordingURL: URL?
+    private var activeCaptureProfileID: RemoteCameraCaptureProfileID = .automatic
+    private var activeCaptureCodecLabel: String?
+    private var activeCaptureFormatLabel: String?
+    var onMonitorFrame: (@Sendable (Data, Int, Int) -> Void)?
+    var onMonitorVideoFrame: (@Sendable (RemoteCameraMonitorVideoFrame) -> Void)?
+    var onMonitorFrameDropped: (@Sendable () -> Void)?
+    var onRecordingFinishedUnexpectedly: (@Sendable (Result<CameraRecordingResult, Error>) -> Void)?
+
+    func configure() async {
+        guard await requestAccess(for: .video) else {
+            statusMessage = "Camera permission required"
+            return
+        }
+        await configureSession(lens: activeLens)
+    }
+
+    private func requestAccess(for mediaType: AVMediaType) async -> Bool {
+        switch AVCaptureDevice.authorizationStatus(for: mediaType) {
+        case .authorized:
+            return true
+        case .notDetermined:
+            return await AVCaptureDevice.requestAccess(for: mediaType)
+        case .denied, .restricted:
+            return false
+        @unknown default:
+            return false
+        }
+    }
+
+    func setLens(_ lens: RemoteCameraLens) async {
+        guard supportedLenses().contains(lens) else {
+            statusMessage = "\(lens.displayName) unavailable"
+            return
+        }
+        await configureSession(lens: lens)
+        setZoomFactor(1)
+    }
+
+    @discardableResult
+    func setZoomFactor(_ zoomFactor: CGFloat) -> CGFloat {
+        guard let activeDevice else { return zoomFactor }
+        do {
+            try activeDevice.lockForConfiguration()
+            defer { activeDevice.unlockForConfiguration() }
+            let clamped = min(max(zoomFactor, activeDevice.minAvailableVideoZoomFactor), activeDevice.maxAvailableVideoZoomFactor)
+            activeDevice.videoZoomFactor = clamped
+            return activeDevice.videoZoomFactor
+        } catch {
+            statusMessage = "Zoom unavailable"
+            return activeDevice.videoZoomFactor
+        }
+    }
+
+    @discardableResult
+    func setTorchEnabled(_ isEnabled: Bool) -> Bool {
+        guard let activeDevice else {
+            return false
+        }
+        guard activeDevice.hasTorch, activeDevice.isTorchAvailable else {
+            if isEnabled {
+                statusMessage = "Torch unavailable"
+            }
+            return false
+        }
+
+        do {
+            try activeDevice.lockForConfiguration()
+            defer { activeDevice.unlockForConfiguration() }
+            if isEnabled {
+                try activeDevice.setTorchModeOn(level: AVCaptureDevice.maxAvailableTorchLevel)
+            } else {
+                activeDevice.torchMode = .off
+            }
+            return activeDevice.torchMode == .on
+        } catch {
+            statusMessage = "Torch unavailable"
+            return activeDevice.torchMode == .on
+        }
+    }
+
+    @discardableResult
+    func apply(settings: RemoteCameraSettings) async -> RemoteCameraSettings {
+        if settings.lens != activeLens {
+            await setLens(settings.lens)
+        }
+
+        var normalizedSettings = normalizedRemoteSettings(settings)
+        applyFormat(normalizedSettings)
+        normalizedSettings = normalizedRemoteSettings(normalizedSettings)
+        normalizedSettings.captureProfileID = applyCaptureCodec(normalizedSettings)
+        normalizedSettings.zoomFactor = Double(setZoomFactor(CGFloat(normalizedSettings.zoomFactor)))
+        applyFocus(normalizedSettings)
+        applyExposure(normalizedSettings)
+        applyWhiteBalance(normalizedSettings)
+        applyStabilization(normalizedSettings.stabilizationMode)
+        applyRotation(degrees: normalizedSettings.rotationDegrees)
+        normalizedSettings.torchEnabled = setTorchEnabled(normalizedSettings.torchEnabled)
+        if let activeDevice {
+            capabilities = makeCapabilities(activeDevice: activeDevice)
+        }
+        return normalizedSettings
+    }
+
+    func startRecording(takeID: UUID) throws -> URL {
+        guard session.isRunning else {
+            throw CameraCaptureError.sessionNotRunning
+        }
+        guard !movieOutput.isRecording else {
+            throw CameraCaptureError.alreadyRecording
+        }
+
+        let url = try recordingURL(takeID: takeID)
+        if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
+        }
+
+        let delegate = MovieRecordingDelegate()
+        delegate.unexpectedCompletion = { [weak self] url, error in
+            Task { @MainActor in
+                await self?.handleUnexpectedRecordingFinish(url: url, error: error)
+            }
+        }
+        recordingDelegate = delegate
+        activeRecordingURL = url
+        isRecording = true
+        statusMessage = "Recording"
+        movieOutput.startRecording(to: url, recordingDelegate: delegate)
+        return url
+    }
+
+    func stopRecording() async throws -> CameraRecordingResult {
+        guard movieOutput.isRecording else {
+            guard let activeRecordingURL else {
+                throw CameraCaptureError.notRecording
+            }
+            return try await CameraRecordingResult(url: activeRecordingURL)
+        }
+        guard let delegate = recordingDelegate else {
+            throw CameraCaptureError.notRecording
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            delegate.completion = { [weak self] result in
+                Task { @MainActor in
+                    guard let self else {
+                        continuation.resume(throwing: CameraCaptureError.notRecording)
+                        return
+                    }
+                    let finishedURL = self.activeRecordingURL ?? delegate.outputFileURL
+                    self.isRecording = false
+                    self.recordingDelegate = nil
+                    self.activeRecordingURL = nil
+                    switch result {
+                    case .success(let url):
+                        do {
+                            continuation.resume(returning: try await CameraRecordingResult(url: url))
+                        } catch {
+                            continuation.resume(throwing: error)
+                        }
+                    case .failure(let error):
+                        if let url = finishedURL,
+                           Self.hasRecoverableMedia(at: url) {
+                            do {
+                                continuation.resume(returning: try await CameraRecordingResult(
+                                    url: url,
+                                    stopReason: error.localizedDescription
+                                ))
+                            } catch {
+                                continuation.resume(throwing: error)
+                            }
+                        } else {
+                            continuation.resume(throwing: error)
+                        }
+                    }
+                }
+            }
+            movieOutput.stopRecording()
+            statusMessage = "Stopping recording"
+        }
+    }
+
+    private func handleUnexpectedRecordingFinish(url: URL, error: Error?) async {
+        isRecording = false
+        recordingDelegate = nil
+        activeRecordingURL = url
+        let result: Result<CameraRecordingResult, Error>
+        if Self.hasRecoverableMedia(at: url) {
+            do {
+                result = .success(try await CameraRecordingResult(
+                    url: url,
+                    stopReason: error?.localizedDescription
+                ))
+            } catch {
+                result = .failure(error)
+            }
+        } else if let error {
+            result = .failure(error)
+        } else {
+            result = .failure(CameraCaptureError.notRecording)
+        }
+        onRecordingFinishedUnexpectedly?(result)
+    }
+
+    private struct SessionConfigurationResult {
+        var device: AVCaptureDevice?
+        var statusMessage: String
+        var isRunning: Bool
+    }
+
+    private func configureSession(lens: RemoteCameraLens) async {
+        let result = await withCheckedContinuation { continuation in
+            sessionQueue.async { [weak self] in
+                guard let self else {
+                    continuation.resume(returning: SessionConfigurationResult(
+                        device: nil,
+                        statusMessage: "Camera unavailable",
+                        isRunning: false
+                    ))
+                    return
+                }
+
+                self.session.beginConfiguration()
+                self.session.sessionPreset = .hd1920x1080
+
+                for input in self.session.inputs {
+                    self.session.removeInput(input)
+                }
+
+                let device = self.device(for: lens)
+                    ?? self.device(for: .wide)
+                    ?? AVCaptureDevice.default(for: .video)
+                guard let device else {
+                    self.session.commitConfiguration()
+                    continuation.resume(returning: SessionConfigurationResult(
+                        device: nil,
+                        statusMessage: "No camera available",
+                        isRunning: false
+                    ))
+                    return
+                }
+
+                do {
+                    let input = try AVCaptureDeviceInput(device: device)
+                    if self.session.canAddInput(input) {
+                        self.session.addInput(input)
+                    }
+                    if self.session.canSetSessionPreset(.inputPriority) {
+                        self.session.sessionPreset = .inputPriority
+                    }
+                    if !self.session.outputs.contains(self.movieOutput), self.session.canAddOutput(self.movieOutput) {
+                        self.session.addOutput(self.movieOutput)
+                    }
+                    self.configurePreviewOutputIfNeeded()
+                    self.session.commitConfiguration()
+
+                    if !self.session.isRunning {
+                        self.session.startRunning()
+                    }
+
+                    continuation.resume(returning: SessionConfigurationResult(
+                        device: device,
+                        statusMessage: "\(lens.displayName) ready",
+                        isRunning: self.session.isRunning
+                    ))
+                } catch {
+                    self.session.commitConfiguration()
+                    continuation.resume(returning: SessionConfigurationResult(
+                        device: nil,
+                        statusMessage: "Camera failed: \(error.localizedDescription)",
+                        isRunning: self.session.isRunning
+                    ))
+                }
+            }
+        }
+
+        activeDevice = result.device
+        if result.device != nil {
+            activeLens = lens
+        }
+        if let device = result.device {
+            capabilities = makeCapabilities(activeDevice: device)
+        }
+        statusMessage = result.statusMessage
+        isPreviewRunning = result.isRunning
+    }
+
+    private func device(for lens: RemoteCameraLens) -> AVCaptureDevice? {
+        switch lens {
+        case .ultraWide:
+            return AVCaptureDevice.default(.builtInUltraWideCamera, for: .video, position: .back)
+        case .wide:
+            return AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
+        case .telephoto:
+            return AVCaptureDevice.default(.builtInTelephotoCamera, for: .video, position: .back)
+        case .frontWide:
+            return AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
+        }
+    }
+
+    private func supportedLenses() -> [RemoteCameraLens] {
+        RemoteCameraLens.allCases.filter { device(for: $0) != nil }
+    }
+
+    private func makeCapabilities(activeDevice: AVCaptureDevice) -> RemoteCameraCapabilities {
+        return RemoteCameraCapabilities(
+            deviceName: UIDevice.current.name,
+            deviceModelIdentifier: Self.deviceModelIdentifier(),
+            supportedLenses: supportedLenses(),
+            supportedFormats: remoteFormats(for: activeDevice),
+            supportedCaptureProfiles: RemoteCameraCaptureProfileResolver.supportedProfiles(
+                for: activeDevice,
+                movieOutput: movieOutput
+            ),
+            supportsTorch: activeDevice.hasTorch && activeDevice.isTorchAvailable,
+            minimumZoomFactor: Double(activeDevice.minAvailableVideoZoomFactor),
+            maximumZoomFactor: Double(activeDevice.maxAvailableVideoZoomFactor),
+            supportsManualFocus: activeDevice.isLockingFocusWithCustomLensPositionSupported,
+            supportsFocusLock: activeDevice.isFocusModeSupported(.locked),
+            supportsManualExposure: activeDevice.isExposureModeSupported(.custom),
+            supportsExposureLock: activeDevice.isExposureModeSupported(.locked),
+            supportsWhiteBalanceLock: activeDevice.isWhiteBalanceModeSupported(.locked),
+            supportsManualWhiteBalance: activeDevice.isWhiteBalanceModeSupported(.locked),
+            supportedStabilizationModes: supportedStabilizationModes(),
+            supportedRotationDegrees: supportedRotationDegrees(),
+            minimumExposureBias: Double(activeDevice.minExposureTargetBias),
+            maximumExposureBias: Double(activeDevice.maxExposureTargetBias),
+            minimumISO: Double(activeDevice.activeFormat.minISO),
+            maximumISO: Double(activeDevice.activeFormat.maxISO),
+            minimumShutterDurationSeconds: CMTimeGetSeconds(activeDevice.activeFormat.minExposureDuration),
+            maximumShutterDurationSeconds: CMTimeGetSeconds(activeDevice.activeFormat.maxExposureDuration)
+        )
+    }
+
+    private static func deviceModelIdentifier() -> String? {
+        var size: size_t = 0
+        guard sysctlbyname("hw.machine", nil, &size, nil, 0) == 0, size > 0 else {
+            return nil
+        }
+        var machine = [CChar](repeating: 0, count: size)
+        guard sysctlbyname("hw.machine", &machine, &size, nil, 0) == 0 else {
+            return nil
+        }
+        return String(cString: machine)
+    }
+
+    private func remoteFormats(for device: AVCaptureDevice) -> [RemoteCameraFormat] {
+        Array(
+            Dictionary(grouping: device.formats, by: { format in
+                let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+                return "\(dimensions.width)x\(dimensions.height)"
+            })
+            .compactMap { key, formats -> RemoteCameraFormat? in
+                guard let first = formats.first else { return nil }
+                let dimensions = CMVideoFormatDescriptionGetDimensions(first.formatDescription)
+                let frameRates = supportedRemoteFrameRates(for: formats)
+                guard !frameRates.isEmpty else { return nil }
+                return RemoteCameraFormat(
+                    id: key,
+                    width: Int(dimensions.width),
+                    height: Int(dimensions.height),
+                    frameRates: frameRates,
+                    supportsStabilization: true,
+                    supportsHDR: formats.contains { $0.isVideoHDRSupported }
+                )
+            }
+            .sorted { lhs, rhs in
+                if lhs.width * lhs.height == rhs.width * rhs.height {
+                    return lhs.id < rhs.id
+                }
+                return lhs.width * lhs.height > rhs.width * rhs.height
+            }
+            .prefix(8)
+        )
+    }
+
+    private func supportedRemoteFrameRates(for formats: [AVCaptureDevice.Format]) -> [Int] {
+        Array(Set(formats.flatMap { format in
+            format.videoSupportedFrameRateRanges.flatMap { range in
+                [24, 30, 60].filter { range.minFrameRate <= Double($0) && range.maxFrameRate >= Double($0) }
+            }
+        })).sorted()
+    }
+
+    private func normalizedRemoteSettings(_ settings: RemoteCameraSettings) -> RemoteCameraSettings {
+        var normalizedSettings = settings
+        let lenses = supportedLenses()
+        if !lenses.contains(normalizedSettings.lens) {
+            normalizedSettings.lens = lenses.contains(activeLens) ? activeLens : (lenses.first ?? .wide)
+        }
+        if let activeDevice {
+            let profiles = RemoteCameraCaptureProfileResolver.supportedProfiles(
+                for: activeDevice,
+                movieOutput: movieOutput
+            )
+            if !profiles.contains(where: { $0.id == normalizedSettings.captureProfileID && $0.isAvailable }) {
+                normalizedSettings.captureProfileID = .automatic
+            }
+
+            let formats = remoteFormats(for: activeDevice)
+            let profileFormats = RemoteCameraCaptureProfileResolver.formats(
+                formats,
+                supportedBy: normalizedSettings.captureProfileID,
+                profiles: profiles
+            )
+            let selectableFormats = profileFormats.isEmpty ? formats : profileFormats
+            let format = selectableFormats.first { format in
+                format.id == normalizedSettings.formatID
+            } ?? selectableFormats.first { format in
+                format.frameRates.contains(normalizedSettings.frameRate)
+            } ?? selectableFormats.first ?? formats.first
+            normalizedSettings.formatID = format?.id
+            if let format, !format.frameRates.contains(normalizedSettings.frameRate) {
+                normalizedSettings.frameRate = format.frameRates.contains(30) ? 30 : (format.frameRates.first ?? 30)
+            } else if format == nil, normalizedSettings.frameRate > 30 {
+                normalizedSettings.frameRate = 30
+            }
+            normalizedSettings.zoomFactor = min(
+                Double(activeDevice.maxAvailableVideoZoomFactor),
+                max(Double(activeDevice.minAvailableVideoZoomFactor), normalizedSettings.zoomFactor)
+            )
+            if normalizedSettings.exposureMode == .continuousAuto {
+                normalizedSettings.exposureBias = 0
+            } else if activeDevice.minExposureTargetBias < activeDevice.maxExposureTargetBias {
+                normalizedSettings.exposureBias = min(
+                    Double(activeDevice.maxExposureTargetBias),
+                    max(Double(activeDevice.minExposureTargetBias), normalizedSettings.exposureBias)
+                )
+            }
+            if !activeDevice.hasTorch || !activeDevice.isTorchAvailable {
+                normalizedSettings.torchEnabled = false
+            }
+            let rotationOptions = supportedRotationDegrees()
+            if !rotationOptions.contains(normalizedSettings.rotationDegrees) {
+                normalizedSettings.rotationDegrees = rotationOptions.first ?? 0
+            }
+            if normalizedSettings.focusMode == .locked,
+               !activeDevice.isFocusModeSupported(.locked) {
+                normalizedSettings.focusMode = .continuousAuto
+            }
+            if normalizedSettings.focusMode == .manual,
+               !activeDevice.isLockingFocusWithCustomLensPositionSupported {
+                normalizedSettings.focusMode = .continuousAuto
+            }
+            if normalizedSettings.exposureMode == .locked,
+               !activeDevice.isExposureModeSupported(.locked) {
+                normalizedSettings.exposureMode = .continuousAuto
+            }
+            if normalizedSettings.exposureMode == .manual,
+               !activeDevice.isExposureModeSupported(.custom) {
+                normalizedSettings.exposureMode = .continuousAuto
+                normalizedSettings.iso = nil
+                normalizedSettings.shutterDurationSeconds = nil
+            }
+            if normalizedSettings.whiteBalanceMode == .locked,
+               !activeDevice.isWhiteBalanceModeSupported(.locked) {
+                normalizedSettings.whiteBalanceMode = .continuousAuto
+            }
+            if normalizedSettings.whiteBalanceMode == .manual,
+               !activeDevice.isWhiteBalanceModeSupported(.locked) {
+                normalizedSettings.whiteBalanceMode = .continuousAuto
+            }
+        }
+        normalizedSettings.rotationDegrees = RemoteCameraSettings.normalizedRotationDegrees(normalizedSettings.rotationDegrees)
+        normalizedSettings.focusPosition = min(1, max(0, normalizedSettings.focusPosition))
+        return normalizedSettings
+    }
+
+    private func applyFormat(_ settings: RemoteCameraSettings) {
+        guard let activeDevice,
+              let formatID = settings.formatID,
+              let format = RemoteCameraCaptureProfileResolver.captureFormat(
+                for: settings.captureProfileID,
+                formatID: formatID,
+                frameRate: settings.frameRate,
+                device: activeDevice
+              ) else {
+            return
+        }
+
+        do {
+            try activeDevice.lockForConfiguration()
+            activeDevice.activeFormat = format
+            let frameDuration = CMTime(value: 1, timescale: CMTimeScale(max(1, settings.frameRate)))
+            activeDevice.activeVideoMinFrameDuration = frameDuration
+            activeDevice.activeVideoMaxFrameDuration = frameDuration
+            activeDevice.unlockForConfiguration()
+            activeCaptureFormatLabel = "\(formatID) @ \(settings.frameRate) fps"
+        } catch {
+            statusMessage = "Format unavailable"
+        }
+    }
+
+    private func applyCaptureCodec(_ settings: RemoteCameraSettings) -> RemoteCameraCaptureProfileID {
+        guard let connection = movieOutput.connection(with: .video) else {
+            activeCaptureProfileID = .automatic
+            activeCaptureCodecLabel = nil
+            return .automatic
+        }
+
+        let resolved = RemoteCameraCaptureProfileResolver.resolveCodec(
+            requestedProfileID: settings.captureProfileID,
+            movieOutput: movieOutput
+        )
+        activeCaptureProfileID = resolved.profileID
+        activeCaptureCodecLabel = resolved.codecLabel
+        if let codec = resolved.codec {
+            movieOutput.setOutputSettings([AVVideoCodecKey: codec.rawValue], for: connection)
+        }
+        return resolved.profileID
+    }
+
+    private func applyFocus(_ settings: RemoteCameraSettings) {
+        guard let activeDevice else { return }
+        do {
+            try activeDevice.lockForConfiguration()
+            switch settings.focusMode {
+            case .continuousAuto:
+                if activeDevice.isFocusModeSupported(.continuousAutoFocus) {
+                    activeDevice.focusMode = .continuousAutoFocus
+                }
+            case .locked:
+                if activeDevice.isFocusModeSupported(.locked) {
+                    activeDevice.focusMode = .locked
+                }
+            case .manual:
+                if activeDevice.isLockingFocusWithCustomLensPositionSupported {
+                    activeDevice.setFocusModeLocked(
+                        lensPosition: Float(min(1, max(0, settings.focusPosition))),
+                        completionHandler: nil
+                    )
+                }
+            }
+            activeDevice.unlockForConfiguration()
+        } catch {
+            statusMessage = "Focus unavailable"
+        }
+    }
+
+    private func applyExposure(_ settings: RemoteCameraSettings) {
+        guard let activeDevice else { return }
+        do {
+            try activeDevice.lockForConfiguration()
+
+            switch settings.exposureMode {
+            case .continuousAuto:
+                if activeDevice.isExposureModeSupported(.continuousAutoExposure) {
+                    activeDevice.exposureMode = .continuousAutoExposure
+                }
+                activeDevice.setExposureTargetBias(0, completionHandler: nil)
+            case .locked:
+                applyExposureTargetBias(settings.exposureBias, to: activeDevice)
+                if activeDevice.isExposureModeSupported(.locked) {
+                    activeDevice.exposureMode = .locked
+                }
+            case .manual:
+                applyExposureTargetBias(settings.exposureBias, to: activeDevice)
+                if activeDevice.isExposureModeSupported(.custom) {
+                    let iso = Float(min(
+                        max(settings.iso ?? Double(activeDevice.iso), Double(activeDevice.activeFormat.minISO)),
+                        Double(activeDevice.activeFormat.maxISO)
+                    ))
+                    let defaultDuration = CMTimeGetSeconds(activeDevice.exposureDuration)
+                    let minDuration = CMTimeGetSeconds(activeDevice.activeFormat.minExposureDuration)
+                    let maxDuration = CMTimeGetSeconds(activeDevice.activeFormat.maxExposureDuration)
+                    let seconds = min(max(settings.shutterDurationSeconds ?? defaultDuration, minDuration), maxDuration)
+                    activeDevice.setExposureModeCustom(
+                        duration: CMTime(seconds: seconds, preferredTimescale: 1_000_000_000),
+                        iso: iso,
+                        completionHandler: nil
+                    )
+                }
+            }
+            activeDevice.unlockForConfiguration()
+        } catch {
+            statusMessage = "Exposure unavailable"
+        }
+    }
+
+    private func applyExposureTargetBias(_ exposureBias: Double, to device: AVCaptureDevice) {
+        guard device.minExposureTargetBias < device.maxExposureTargetBias else { return }
+        let bias = Float(min(
+            Double(device.maxExposureTargetBias),
+            max(Double(device.minExposureTargetBias), exposureBias)
+        ))
+        device.setExposureTargetBias(bias, completionHandler: nil)
+    }
+
+    private func applyWhiteBalance(_ settings: RemoteCameraSettings) {
+        guard let activeDevice else { return }
+        do {
+            try activeDevice.lockForConfiguration()
+            switch settings.whiteBalanceMode {
+            case .continuousAuto:
+                if activeDevice.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) {
+                    activeDevice.whiteBalanceMode = .continuousAutoWhiteBalance
+                }
+            case .locked:
+                if activeDevice.isWhiteBalanceModeSupported(.locked) {
+                    activeDevice.whiteBalanceMode = .locked
+                }
+            case .manual:
+                if activeDevice.isWhiteBalanceModeSupported(.locked) {
+                    let values = AVCaptureDevice.WhiteBalanceTemperatureAndTintValues(
+                        temperature: Float(settings.whiteBalanceTemperature),
+                        tint: Float(settings.whiteBalanceTint)
+                    )
+                    let gains = clampedWhiteBalanceGains(activeDevice.deviceWhiteBalanceGains(for: values), for: activeDevice)
+                    activeDevice.setWhiteBalanceModeLocked(with: gains, completionHandler: nil)
+                }
+            }
+            activeDevice.unlockForConfiguration()
+        } catch {
+            statusMessage = "White balance unavailable"
+        }
+    }
+
+    private func applyStabilization(_ mode: RemoteCameraStabilizationMode) {
+        let avMode: AVCaptureVideoStabilizationMode = switch mode {
+        case .off: .off
+        case .standard: .standard
+        case .cinematic: .cinematic
+        case .auto: .auto
+        }
+        for connection in [movieOutput.connection(with: .video), previewOutput.connection(with: .video)].compactMap({ $0 }) {
+            guard connection.isVideoStabilizationSupported else { continue }
+            connection.preferredVideoStabilizationMode = avMode
+        }
+    }
+
+    private func applyRotation(degrees: Int) {
+        let rotation = CGFloat(RemoteCameraSettings.normalizedRotationDegrees(degrees))
+        for connection in [movieOutput.connection(with: .video), previewOutput.connection(with: .video)].compactMap({ $0 }) {
+            if connection.isVideoRotationAngleSupported(rotation) {
+                connection.videoRotationAngle = rotation
+            } else if connection.isVideoOrientationSupported,
+                      let orientation = videoOrientation(for: Int(rotation)) {
+                connection.videoOrientation = orientation
+            }
+        }
+    }
+
+    private func supportedStabilizationModes() -> [RemoteCameraStabilizationMode] {
+        let connection = movieOutput.connection(with: .video) ?? previewOutput.connection(with: .video)
+        guard connection?.isVideoStabilizationSupported == true else {
+            return [.off]
+        }
+        return [.off, .standard, .cinematic, .auto]
+    }
+
+    private func supportedRotationDegrees() -> [Int] {
+        let connection = movieOutput.connection(with: .video) ?? previewOutput.connection(with: .video)
+        let supported = [0, 90, 180, 270].filter { degrees in
+            connection?.isVideoRotationAngleSupported(CGFloat(degrees)) == true
+        }
+        if supported.count > 1 {
+            return supported
+        }
+        return connection?.isVideoOrientationSupported == true ? [0, 90, 180, 270] : (supported.isEmpty ? [0] : supported)
+    }
+
+    private func videoOrientation(for degrees: Int) -> AVCaptureVideoOrientation? {
+        switch RemoteCameraSettings.normalizedRotationDegrees(degrees) {
+        case 0:
+            return .portrait
+        case 90:
+            return .landscapeRight
+        case 180:
+            return .portraitUpsideDown
+        case 270:
+            return .landscapeLeft
+        default:
+            return nil
+        }
+    }
+
+    private func clampedWhiteBalanceGains(
+        _ gains: AVCaptureDevice.WhiteBalanceGains,
+        for device: AVCaptureDevice
+    ) -> AVCaptureDevice.WhiteBalanceGains {
+        let maximumGain = device.maxWhiteBalanceGain
+        return AVCaptureDevice.WhiteBalanceGains(
+            redGain: min(max(gains.redGain, 1), maximumGain),
+            greenGain: min(max(gains.greenGain, 1), maximumGain),
+            blueGain: min(max(gains.blueGain, 1), maximumGain)
+        )
+    }
+
+    private func configurePreviewOutputIfNeeded() {
+        previewOutput.alwaysDiscardsLateVideoFrames = true
+        previewOutput.videoSettings = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+        ]
+        previewDelegate.onFrame = { [weak self] data, width, height in
+            Task { @MainActor in
+                self?.publishMonitorFrame(data: data, width: width, height: height)
+            }
+        }
+        previewDelegate.onVideoFrame = { [weak self] frame in
+            Task { @MainActor in
+                self?.publishMonitorVideoFrame(frame)
+            }
+        }
+        previewDelegate.onDroppedFrame = { [weak self] in
+            Task { @MainActor in
+                self?.onMonitorFrameDropped?()
+            }
+        }
+        if !session.outputs.contains(previewOutput), session.canAddOutput(previewOutput) {
+            session.addOutput(previewOutput)
+        }
+        previewOutput.setSampleBufferDelegate(previewDelegate, queue: previewQueue)
+    }
+
+    private func publishMonitorFrame(data: Data, width: Int, height: Int) {
+        onMonitorFrame?(data, width, height)
+    }
+
+    private func publishMonitorVideoFrame(_ frame: RemoteCameraMonitorVideoFrame) {
+        onMonitorVideoFrame?(frame)
+    }
+
+    private static func hasRecoverableMedia(at url: URL) -> Bool {
+        guard FileManager.default.fileExists(atPath: url.path),
+              let byteCount = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value else {
+            return false
+        }
+        return byteCount > 0
+    }
+
+    func existingRecordingURL(takeID: UUID) -> URL? {
+        guard let url = try? recordingURL(takeID: takeID),
+              FileManager.default.fileExists(atPath: url.path) else {
+            return nil
+        }
+        return url
+    }
+
+    func pendingRecordingURLs() -> [URL] {
+        guard let directory = try? recordingsDirectory(),
+              let urls = try? FileManager.default.contentsOfDirectory(
+                  at: directory,
+                  includingPropertiesForKeys: [.creationDateKey, .fileSizeKey],
+                  options: [.skipsHiddenFiles]
+              ) else {
+            return []
+        }
+        return urls
+            .filter { $0.pathExtension.lowercased() == "mov" }
+            .sorted { lhs, rhs in
+                let lhsDate = (try? lhs.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+                let rhsDate = (try? rhs.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+                return lhsDate > rhsDate
+            }
+    }
+
+    func removeRecording(at url: URL) {
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    var captureProfileID: RemoteCameraCaptureProfileID {
+        activeCaptureProfileID
+    }
+
+    var captureCodecLabel: String? {
+        activeCaptureCodecLabel
+    }
+
+    var captureFormatLabel: String? {
+        activeCaptureFormatLabel
+    }
+
+    private func recordingURL(takeID: UUID) throws -> URL {
+        try recordingsDirectory().appendingPathComponent("\(takeID.uuidString)-camera.mov")
+    }
+
+    private func recordingsDirectory() throws -> URL {
+        let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("RemoteCameraRecordings", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
+    fileprivate static func formatID(for format: AVCaptureDevice.Format) -> String {
+        let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+        return "\(dimensions.width)x\(dimensions.height)"
+    }
+}
+
+private final class CameraMonitorPreviewDelegate: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+    private let context = CIContext()
+    private lazy var videoEncoder = CameraMonitorPreviewVideoEncoder()
+    private var lastEncodedFrameDate = Date.distantPast
+    private let minimumFrameInterval: TimeInterval = 1.0 / 15.0
+    var onFrame: (@Sendable (Data, Int, Int) -> Void)?
+    var onVideoFrame: (@Sendable (RemoteCameraMonitorVideoFrame) -> Void)?
+    var onDroppedFrame: (@Sendable () -> Void)?
+
+    func captureOutput(
+        _ output: AVCaptureOutput,
+        didOutput sampleBuffer: CMSampleBuffer,
+        from connection: AVCaptureConnection
+    ) {
+        let now = Date()
+        guard now.timeIntervalSince(lastEncodedFrameDate) >= minimumFrameInterval else {
+            return
+        }
+        lastEncodedFrameDate = now
+
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+            return
+        }
+
+        videoEncoder.onFrame = onVideoFrame
+        if videoEncoder.encode(sampleBuffer: sampleBuffer, pixelBuffer: pixelBuffer) {
+            return
+        }
+
+        let image = CIImage(cvPixelBuffer: pixelBuffer)
+        let targetWidth = 640
+        let scale = CGFloat(targetWidth) / max(image.extent.width, 1)
+        let targetHeight = max(1, Int(image.extent.height * scale))
+        let scaledImage = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        let outputRect = CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight)
+        guard let cgImage = context.createCGImage(scaledImage, from: outputRect),
+              let data = UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.58) else {
+            return
+        }
+
+        onFrame?(data, targetWidth, targetHeight)
+    }
+
+    func captureOutput(
+        _ output: AVCaptureOutput,
+        didDrop sampleBuffer: CMSampleBuffer,
+        from connection: AVCaptureConnection
+    ) {
+        onDroppedFrame?()
+    }
+}
+
+private final class CameraMonitorPreviewVideoEncoder: @unchecked Sendable {
+    private let context = CIContext(options: [.cacheIntermediates: false])
+    private let colorSpace = CGColorSpaceCreateDeviceRGB()
+    private var compressionSession: VTCompressionSession?
+    private var pixelBufferPool: CVPixelBufferPool?
+    private var encodedWidth = 0
+    private var encodedHeight = 0
+    private var sequenceNumber: Int64 = 0
+    private var didFail = false
+
+    var onFrame: (@Sendable (RemoteCameraMonitorVideoFrame) -> Void)?
+
+    func encode(sampleBuffer: CMSampleBuffer, pixelBuffer sourcePixelBuffer: CVPixelBuffer) -> Bool {
+        guard !didFail else { return false }
+
+        let sourceWidth = CVPixelBufferGetWidth(sourcePixelBuffer)
+        let sourceHeight = CVPixelBufferGetHeight(sourcePixelBuffer)
+        guard sourceWidth > 0, sourceHeight > 0 else { return false }
+
+        let targetWidth = 640
+        let scaledHeight = Int((Double(sourceHeight) * Double(targetWidth) / Double(sourceWidth)).rounded())
+        let targetHeight = max(2, scaledHeight + (scaledHeight % 2))
+
+        guard configureIfNeeded(width: targetWidth, height: targetHeight),
+              let outputPixelBuffer = makeOutputPixelBuffer(width: targetWidth, height: targetHeight) else {
+            didFail = true
+            return false
+        }
+
+        let image = CIImage(cvPixelBuffer: sourcePixelBuffer)
+        let scale = CGFloat(targetWidth) / max(image.extent.width, 1)
+        let scaledImage = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        context.render(
+            scaledImage,
+            to: outputPixelBuffer,
+            bounds: CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight),
+            colorSpace: colorSpace
+        )
+
+        let sourcePTS = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        let pts = sourcePTS.isValid ? sourcePTS : CMTime(seconds: CACurrentMediaTime(), preferredTimescale: 1_000_000)
+        var flags: VTEncodeInfoFlags = []
+        let status = VTCompressionSessionEncodeFrame(
+            compressionSession!,
+            imageBuffer: outputPixelBuffer,
+            presentationTimeStamp: pts,
+            duration: CMTime(value: 1, timescale: 15),
+            frameProperties: nil,
+            sourceFrameRefcon: nil,
+            infoFlagsOut: &flags
+        )
+        if status != noErr {
+            didFail = true
+            return false
+        }
+        return true
+    }
+
+    private func configureIfNeeded(width: Int, height: Int) -> Bool {
+        guard compressionSession == nil || width != encodedWidth || height != encodedHeight else {
+            return true
+        }
+
+        compressionSession.map { VTCompressionSessionInvalidate($0) }
+        compressionSession = nil
+        pixelBufferPool = nil
+        encodedWidth = width
+        encodedHeight = height
+
+        let encoderSpec = [
+            kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder as String: true,
+            kVTVideoEncoderSpecification_EnableLowLatencyRateControl as String: true
+        ] as CFDictionary
+        let sourceAttributes = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferWidthKey as String: width,
+            kCVPixelBufferHeightKey as String: height,
+            kCVPixelBufferIOSurfacePropertiesKey as String: [:]
+        ] as CFDictionary
+
+        var session: VTCompressionSession?
+        let status = VTCompressionSessionCreate(
+            allocator: kCFAllocatorDefault,
+            width: Int32(width),
+            height: Int32(height),
+            codecType: kCMVideoCodecType_H264,
+            encoderSpecification: encoderSpec,
+            imageBufferAttributes: sourceAttributes,
+            compressedDataAllocator: nil,
+            outputCallback: Self.compressionOutputCallback,
+            refcon: Unmanaged.passUnretained(self).toOpaque(),
+            compressionSessionOut: &session
+        )
+        guard status == noErr, let session else {
+            return false
+        }
+
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_RealTime, value: kCFBooleanTrue)
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AllowFrameReordering, value: kCFBooleanFalse)
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ExpectedFrameRate, value: 15 as CFNumber)
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate, value: 800_000 as CFNumber)
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameInterval, value: 30 as CFNumber)
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ProfileLevel, value: kVTProfileLevel_H264_Baseline_AutoLevel)
+        VTCompressionSessionPrepareToEncodeFrames(session)
+        compressionSession = session
+
+        let poolAttributes = [
+            kCVPixelBufferPoolMinimumBufferCountKey as String: 3
+        ] as CFDictionary
+        CVPixelBufferPoolCreate(kCFAllocatorDefault, poolAttributes, sourceAttributes, &pixelBufferPool)
+        return pixelBufferPool != nil
+    }
+
+    private func makeOutputPixelBuffer(width: Int, height: Int) -> CVPixelBuffer? {
+        var pixelBuffer: CVPixelBuffer?
+        if let pixelBufferPool {
+            CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pixelBufferPool, &pixelBuffer)
+            if pixelBuffer != nil {
+                return pixelBuffer
+            }
+        }
+        let attributes = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferWidthKey as String: width,
+            kCVPixelBufferHeightKey as String: height,
+            kCVPixelBufferIOSurfacePropertiesKey as String: [:]
+        ] as CFDictionary
+        CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA, attributes, &pixelBuffer)
+        return pixelBuffer
+    }
+
+    private static let compressionOutputCallback: VTCompressionOutputCallback = { refcon, _, status, _, sampleBuffer in
+        guard status == noErr,
+              let refcon,
+              let sampleBuffer else {
+            return
+        }
+        let encoder = Unmanaged<CameraMonitorPreviewVideoEncoder>.fromOpaque(refcon).takeUnretainedValue()
+        encoder.handleEncodedSampleBuffer(sampleBuffer)
+    }
+
+    private func handleEncodedSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
+        guard let dataBuffer = CMSampleBufferGetDataBuffer(sampleBuffer),
+              let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer) else {
+            return
+        }
+
+        let byteCount = CMBlockBufferGetDataLength(dataBuffer)
+        guard byteCount > 0 else { return }
+
+        var data = Data(count: byteCount)
+        let copyStatus = data.withUnsafeMutableBytes { rawBuffer in
+            CMBlockBufferCopyDataBytes(
+                dataBuffer,
+                atOffset: 0,
+                dataLength: byteCount,
+                destination: rawBuffer.baseAddress!
+            )
+        }
+        guard copyStatus == noErr else { return }
+
+        let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
+        let isKeyFrame: Bool
+        if let attachments,
+           CFArrayGetCount(attachments) > 0,
+           let attachment = unsafeBitCast(CFArrayGetValueAtIndex(attachments, 0), to: CFDictionary?.self) {
+            isKeyFrame = !CFDictionaryContainsKey(
+                attachment,
+                Unmanaged.passUnretained(kCMSampleAttachmentKey_NotSync).toOpaque()
+            )
+        } else {
+            isKeyFrame = true
+        }
+
+        var sps: Data?
+        var pps: Data?
+        if isKeyFrame {
+            sps = h264ParameterSetData(from: formatDescription, index: 0)
+            pps = h264ParameterSetData(from: formatDescription, index: 1)
+        }
+
+        sequenceNumber += 1
+        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        let frame = RemoteCameraMonitorVideoFrame(
+            codec: .h264,
+            data: data,
+            width: encodedWidth,
+            height: encodedHeight,
+            presentationTimeSeconds: pts.isValid ? CMTimeGetSeconds(pts) : CACurrentMediaTime(),
+            isKeyFrame: isKeyFrame,
+            sequenceNumber: sequenceNumber,
+            h264SPS: sps,
+            h264PPS: pps
+        )
+        onFrame?(frame)
+    }
+
+    private func h264ParameterSetData(from formatDescription: CMFormatDescription, index: Int) -> Data? {
+        var parameterSetPointer: UnsafePointer<UInt8>?
+        var parameterSetSize = 0
+        var parameterSetCount = 0
+        var nalUnitHeaderLength: Int32 = 0
+        let status = CMVideoFormatDescriptionGetH264ParameterSetAtIndex(
+            formatDescription,
+            parameterSetIndex: index,
+            parameterSetPointerOut: &parameterSetPointer,
+            parameterSetSizeOut: &parameterSetSize,
+            parameterSetCountOut: &parameterSetCount,
+            nalUnitHeaderLengthOut: &nalUnitHeaderLength
+        )
+        guard status == noErr, let parameterSetPointer, parameterSetSize > 0 else {
+            return nil
+        }
+        return Data(bytes: parameterSetPointer, count: parameterSetSize)
+    }
+}
+
+private enum RemoteCameraCaptureProfileResolver {
+    static func supportedProfiles(
+        for device: AVCaptureDevice,
+        movieOutput: AVCaptureMovieFileOutput
+    ) -> [RemoteCameraCaptureProfile] {
+        let formats = remoteFormats(for: device)
+        let availableCodecs = movieOutput.availableVideoCodecTypes
+        let proResFormatIDs = proResRemoteFormats(for: device).map(\.id)
+        let hasProResFormat = !proResFormatIDs.isEmpty
+        let hasProResCodec = canUseProRes422(device: device, movieOutput: movieOutput)
+        let hasProResStorage = hasMinimumProResStorageHeadroom()
+        let proResReason: String? = if !hasProResFormat {
+            "This iPhone camera does not expose a ProRes 422 capture format."
+        } else if !hasProResCodec {
+            "ProRes 422 is not available for the current camera configuration."
+        } else if !hasProResStorage {
+            "Free at least 10% iPhone storage for ProRes."
+        } else {
+            nil
+        }
+
+        return [
+            RemoteCameraCaptureProfile(
+                id: .automatic,
+                displayName: "Auto",
+                codecLabel: preferredAutomaticCodec(from: availableCodecs).map(Self.codecLabel)
+            ),
+            RemoteCameraCaptureProfile(
+                id: .highEfficiency,
+                displayName: "HEVC",
+                isAvailable: availableCodecs.contains(.hevc),
+                unavailableReason: availableCodecs.contains(.hevc) ? nil : "HEVC recording is not available.",
+                codecLabel: "HEVC",
+                supportedFormatIDs: formats.map(\.id)
+            ),
+            RemoteCameraCaptureProfile(
+                id: .proRes422,
+                displayName: "ProRes",
+                isAvailable: proResReason == nil,
+                unavailableReason: proResReason,
+                codecLabel: "ProRes 422",
+                supportedFormatIDs: proResFormatIDs
+            )
+        ]
+    }
+
+    static func formats(
+        _ formats: [RemoteCameraFormat],
+        supportedBy profileID: RemoteCameraCaptureProfileID,
+        profiles: [RemoteCameraCaptureProfile]
+    ) -> [RemoteCameraFormat] {
+        guard let profile = profiles.first(where: { $0.id == profileID }),
+              !profile.supportedFormatIDs.isEmpty else {
+            return formats
+        }
+        let supportedIDs = Set(profile.supportedFormatIDs)
+        return formats.filter { supportedIDs.contains($0.id) }
+    }
+
+    static func captureFormat(
+        for profileID: RemoteCameraCaptureProfileID,
+        formatID: String,
+        frameRate: Int,
+        device: AVCaptureDevice
+    ) -> AVCaptureDevice.Format? {
+        let candidates = profileID == .proRes422 ? proResCaptureFormats(for: device) : device.formats
+        return candidates.first { format in
+            Self.formatID(for: format) == formatID
+                && format.videoSupportedFrameRateRanges.contains { range in
+                    range.minFrameRate <= Double(frameRate)
+                        && range.maxFrameRate >= Double(frameRate)
+                }
+        }
+    }
+
+    static func resolveCodec(
+        requestedProfileID: RemoteCameraCaptureProfileID,
+        movieOutput: AVCaptureMovieFileOutput
+    ) -> (profileID: RemoteCameraCaptureProfileID, codec: AVVideoCodecType?, codecLabel: String?) {
+        let availableCodecs = movieOutput.availableVideoCodecTypes
+        switch requestedProfileID {
+        case .automatic:
+            let codec = preferredAutomaticCodec(from: availableCodecs)
+            return (.automatic, codec, codec.map(codecLabel))
+        case .highEfficiency:
+            guard availableCodecs.contains(.hevc) else {
+                let codec = availableCodecs.first
+                return (.automatic, codec, codec.map(codecLabel))
+            }
+            return (.highEfficiency, .hevc, "HEVC")
+        case .proRes422:
+            guard availableCodecs.contains(.proRes422) else {
+                let codec = availableCodecs.first
+                return (.automatic, codec, codec.map(codecLabel))
+            }
+            return (.proRes422, .proRes422, "ProRes 422")
+        }
+    }
+
+    private static func remoteFormats(for device: AVCaptureDevice) -> [RemoteCameraFormat] {
+        Array(
+            Dictionary(grouping: device.formats, by: Self.formatID(for:))
+                .compactMap { key, formats -> RemoteCameraFormat? in
+                    guard let first = formats.first else { return nil }
+                    let dimensions = CMVideoFormatDescriptionGetDimensions(first.formatDescription)
+                    let frameRates = supportedRemoteFrameRates(for: formats)
+                    guard !frameRates.isEmpty else { return nil }
+                    return RemoteCameraFormat(
+                        id: key,
+                        width: Int(dimensions.width),
+                        height: Int(dimensions.height),
+                        frameRates: frameRates,
+                        supportsStabilization: true,
+                        supportsHDR: formats.contains { $0.isVideoHDRSupported }
+                    )
+                }
+                .sorted { lhs, rhs in
+                    if lhs.width * lhs.height == rhs.width * rhs.height {
+                        return lhs.id < rhs.id
+                    }
+                    return lhs.width * lhs.height > rhs.width * rhs.height
+                }
+                .prefix(8)
+        )
+    }
+
+    private static func proResRemoteFormats(for device: AVCaptureDevice) -> [RemoteCameraFormat] {
+        remoteFormats(for: device).filter { remoteFormat in
+            device.formats.contains { format in
+                Self.formatID(for: format) == remoteFormat.id
+                    && isProResSourceFormat(format)
+                    && format.videoSupportedFrameRateRanges.contains { range in
+                        remoteFormat.frameRates.contains { frameRate in
+                            range.minFrameRate <= Double(frameRate)
+                                && range.maxFrameRate >= Double(frameRate)
+                        }
+                    }
+            }
+        }
+    }
+
+    private static func proResCaptureFormats(for device: AVCaptureDevice) -> [AVCaptureDevice.Format] {
+        device.formats.filter(isProResSourceFormat)
+    }
+
+    private static func isProResSourceFormat(_ format: AVCaptureDevice.Format) -> Bool {
+        format.formatDescription.mediaSubType.rawValue == kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange
+    }
+
+    private static func supportedRemoteFrameRates(for formats: [AVCaptureDevice.Format]) -> [Int] {
+        Array(Set(formats.flatMap { format in
+            format.videoSupportedFrameRateRanges.flatMap { range in
+                [24, 30, 60].filter { range.minFrameRate <= Double($0) && range.maxFrameRate >= Double($0) }
+            }
+        })).sorted()
+    }
+
+    private static func canUseProRes422(
+        device: AVCaptureDevice,
+        movieOutput: AVCaptureMovieFileOutput
+    ) -> Bool {
+        guard let candidate = proResCaptureFormats(for: device).first else { return false }
+        let originalFormat = device.activeFormat
+        let originalMinDuration = device.activeVideoMinFrameDuration
+        let originalMaxDuration = device.activeVideoMaxFrameDuration
+        var isSupported = false
+        do {
+            try device.lockForConfiguration()
+            defer { device.unlockForConfiguration() }
+            device.activeFormat = candidate
+            isSupported = movieOutput.availableVideoCodecTypes.contains(.proRes422)
+            device.activeFormat = originalFormat
+            device.activeVideoMinFrameDuration = originalMinDuration
+            device.activeVideoMaxFrameDuration = originalMaxDuration
+        } catch {
+            return false
+        }
+        return isSupported
+    }
+
+    private static func hasMinimumProResStorageHeadroom() -> Bool {
+        guard let attributes = try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory()),
+              let freeSize = attributes[.systemFreeSize] as? NSNumber,
+              let totalSize = attributes[.systemSize] as? NSNumber,
+              totalSize.doubleValue > 0 else {
+            return true
+        }
+        return freeSize.doubleValue / totalSize.doubleValue >= 0.10
+    }
+
+    private static func codecLabel(_ codec: AVVideoCodecType) -> String {
+        switch codec {
+        case .h264: return "H.264"
+        case .hevc: return "HEVC"
+        case .proRes422: return "ProRes 422"
+        case .proRes4444: return "ProRes 4444"
+        default: return codec.rawValue
+        }
+    }
+
+    private static func preferredAutomaticCodec(from codecs: [AVVideoCodecType]) -> AVVideoCodecType? {
+        if codecs.contains(.hevc) {
+            return .hevc
+        }
+        return codecs.first
+    }
+
+    private static func formatID(for format: AVCaptureDevice.Format) -> String {
+        let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+        return "\(dimensions.width)x\(dimensions.height)"
+    }
+}
+
+private enum CameraCaptureError: LocalizedError {
+    case sessionNotRunning
+    case alreadyRecording
+    case notRecording
+
+    var errorDescription: String? {
+        switch self {
+        case .sessionNotRunning:
+            "Camera session is not running."
+        case .alreadyRecording:
+            "Camera is already recording."
+        case .notRecording:
+            "Camera is not recording."
+        }
+    }
+}
+
+private final class MovieRecordingDelegate: NSObject, AVCaptureFileOutputRecordingDelegate {
+    var completion: (@Sendable (Result<URL, Error>) -> Void)?
+    var unexpectedCompletion: (@Sendable (URL, Error?) -> Void)?
+    var outputFileURL: URL?
+
+    func fileOutput(
+        _ output: AVCaptureFileOutput,
+        didFinishRecordingTo outputFileURL: URL,
+        from connections: [AVCaptureConnection],
+        error: Error?
+    ) {
+        self.outputFileURL = outputFileURL
+        guard let completion else {
+            unexpectedCompletion?(outputFileURL, error)
+            return
+        }
+        if let error {
+            completion(.failure(error))
+        } else {
+            completion(.success(outputFileURL))
+        }
+    }
+}
+
+struct CameraRecordingResult: Sendable {
+    let url: URL
+    let byteCount: Int64
+    let durationSeconds: Double
+    let stopReason: String?
+
+    init(url: URL, stopReason: String? = nil) async throws {
+        self.url = url
+        self.stopReason = stopReason
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        byteCount = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+        let asset = AVURLAsset(url: url)
+        durationSeconds = CMTimeGetSeconds(try await asset.load(.duration))
+    }
+}

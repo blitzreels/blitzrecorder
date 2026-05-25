@@ -1,0 +1,484 @@
+import AppKit
+import Foundation
+import Observation
+import Security
+import StoreKit
+
+enum AppLinks {
+    static let landingPage = URL(string: "https://www.blitzreels.com/blitzrecorder")!
+    static let support = URL(string: "https://www.blitzreels.com/blitzrecorder/support")!
+    static let privacy = URL(string: "https://www.blitzreels.com/blitzrecorder/privacy")!
+    static let terms = URL(string: "https://www.blitzreels.com/blitzrecorder/terms")!
+}
+
+enum ProductConfiguration {
+    static let monthlyProductID = "dev.blitzreels.blitzrecorder.pro.monthly"
+    static let blitzReelsSignInURL = URL(string: "https://www.blitzreels.com/blitzrecorder/sign-in")!
+    static let blitzReelsEntitlementURL = URL(string: "https://www.blitzreels.com/api/blitzrecorder/entitlement")!
+    static let freeExportLimit = 3
+    static let blitzReelsEntitlementCacheDuration: TimeInterval = 7 * 24 * 60 * 60
+}
+
+struct BlitzReelsEntitlementResponse: Decodable {
+    let active: Bool
+    let planName: String?
+}
+
+struct BlitzReelsEntitlementHTTPError: Error {
+    let statusCode: Int
+}
+
+protocol BlitzReelsEntitlementChecking {
+    func entitlement(for token: String) async throws -> BlitzReelsEntitlementResponse
+}
+
+struct URLSessionBlitzReelsEntitlementChecker: BlitzReelsEntitlementChecking {
+    func entitlement(for token: String) async throws -> BlitzReelsEntitlementResponse {
+        var request = URLRequest(url: ProductConfiguration.blitzReelsEntitlementURL)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw BlitzReelsEntitlementHTTPError(statusCode: httpResponse.statusCode)
+        }
+        return try JSONDecoder().decode(BlitzReelsEntitlementResponse.self, from: data)
+    }
+}
+
+protocol BlitzReelsTokenStore {
+    func loadToken() -> String?
+    @discardableResult
+    func saveToken(_ token: String) -> Bool
+    func deleteToken()
+}
+
+struct UserDefaultsBlitzReelsTokenStore: BlitzReelsTokenStore {
+    let defaults: UserDefaults
+    let key: String
+
+    func loadToken() -> String? {
+        defaults.string(forKey: key)
+    }
+
+    func saveToken(_ token: String) -> Bool {
+        defaults.set(token, forKey: key)
+        return defaults.string(forKey: key) == token
+    }
+
+    func deleteToken() {
+        defaults.removeObject(forKey: key)
+    }
+}
+
+struct KeychainBlitzReelsTokenStore: BlitzReelsTokenStore {
+    private let service = "dev.blitzreels.blitzrecorder"
+    private let account = "blitzreels-access-token"
+
+    func loadToken() -> String? {
+        var query = baseQuery()
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess,
+              let data = result as? Data,
+              let token = String(data: data, encoding: .utf8),
+              !token.isEmpty else {
+            return nil
+        }
+        return token
+    }
+
+    func saveToken(_ token: String) -> Bool {
+        let data = Data(token.utf8)
+        let updateStatus = SecItemUpdate(
+            baseQuery() as CFDictionary,
+            [kSecValueData as String: data] as CFDictionary
+        )
+        if updateStatus == errSecSuccess {
+            return true
+        }
+        guard updateStatus == errSecItemNotFound else {
+            return false
+        }
+
+        var item = baseQuery()
+        item[kSecValueData as String] = data
+        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
+    }
+
+    func deleteToken() {
+        SecItemDelete(baseQuery() as CFDictionary)
+    }
+
+    private func baseQuery() -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+    }
+}
+
+struct RedundantBlitzReelsTokenStore: BlitzReelsTokenStore {
+    let primary: BlitzReelsTokenStore
+    let fallback: BlitzReelsTokenStore
+
+    func loadToken() -> String? {
+        if let token = primary.loadToken(), !token.isEmpty {
+            return token
+        }
+        return fallback.loadToken()
+    }
+
+    func saveToken(_ token: String) -> Bool {
+        let primarySaved = primary.saveToken(token)
+        let fallbackSaved = fallback.saveToken(token)
+        return primarySaved || fallbackSaved
+    }
+
+    func deleteToken() {
+        primary.deleteToken()
+        fallback.deleteToken()
+    }
+}
+
+@Observable
+@MainActor
+final class AccessController {
+    private enum Key {
+        static let usedFreeExports = "access.usedFreeExports"
+        static let blitzReelsAccessToken = "access.blitzReelsAccessToken"
+        static let blitzReelsPlanName = "access.blitzReelsPlanName"
+        static let blitzReelsVerifiedAt = "access.blitzReelsVerifiedAt"
+    }
+
+    private let defaults: UserDefaults
+    private let blitzReelsTokenStore: BlitzReelsTokenStore
+    private let blitzReelsEntitlementChecker: BlitzReelsEntitlementChecking
+    private let dateProvider: () -> Date
+    private var transactionUpdatesTask: Task<Void, Never>?
+
+    var monthlyProduct: Product?
+    var usedFreeExports: Int
+    var hasAppStoreSubscription = false
+    var hasBlitzReelsEntitlement = false
+    var blitzReelsPlanName: String?
+    var isLoadingProducts = false
+    var isPurchasing = false
+    var accessMessage = ""
+
+    init(
+        defaults: UserDefaults? = nil,
+        dateProvider: @escaping () -> Date = Date.init,
+        blitzReelsTokenStore: BlitzReelsTokenStore? = nil,
+        blitzReelsEntitlementChecker: BlitzReelsEntitlementChecking = URLSessionBlitzReelsEntitlementChecker()
+    ) {
+        let resolvedDefaults = defaults ?? .standard
+        self.defaults = resolvedDefaults
+        self.blitzReelsTokenStore = blitzReelsTokenStore
+            ?? (defaults == nil
+                ? RedundantBlitzReelsTokenStore(
+                    primary: KeychainBlitzReelsTokenStore(),
+                    fallback: UserDefaultsBlitzReelsTokenStore(
+                        defaults: resolvedDefaults,
+                        key: Key.blitzReelsAccessToken
+                    )
+                )
+                : UserDefaultsBlitzReelsTokenStore(defaults: resolvedDefaults, key: Key.blitzReelsAccessToken))
+        self.blitzReelsEntitlementChecker = blitzReelsEntitlementChecker
+        self.dateProvider = dateProvider
+        usedFreeExports = max(0, resolvedDefaults.integer(forKey: Key.usedFreeExports))
+        migrateLegacyBlitzReelsTokenIfNeeded()
+        restoreCachedBlitzReelsEntitlement()
+    }
+
+    var isPro: Bool {
+        hasAppStoreSubscription || hasBlitzReelsEntitlement
+    }
+
+    var freeExportsRemaining: Int {
+        max(0, ProductConfiguration.freeExportLimit - usedFreeExports)
+    }
+
+    var canRenderExport: Bool {
+        isPro || freeExportsRemaining > 0
+    }
+
+    var hasBlitzReelsAccountConnection: Bool {
+        blitzReelsTokenStore.loadToken()?.isEmpty == false
+    }
+
+    var monthlyPriceLabel: String {
+        monthlyProduct?.displayPrice ?? "$4.99"
+    }
+
+    var accessLabel: String {
+        if hasAppStoreSubscription {
+            return "Pro via App Store"
+        }
+        if hasBlitzReelsEntitlement {
+            return blitzReelsPlanName.map { "Included with \($0)" } ?? "Included with BlitzReels"
+        }
+        return "\(freeExportsRemaining) free exports left"
+    }
+
+    func configure() {
+        transactionUpdatesTask?.cancel()
+        transactionUpdatesTask = Task { [weak self] in
+            for await update in Transaction.updates {
+                await self?.handle(transactionResult: update)
+            }
+        }
+
+        Task {
+            await refreshProducts()
+            await refreshEntitlements()
+            await refreshBlitzReelsEntitlement()
+        }
+    }
+
+    func recordSuccessfulExportIfNeeded() {
+        guard !isPro else { return }
+        guard freeExportsRemaining > 0 else { return }
+        usedFreeExports += 1
+        defaults.set(usedFreeExports, forKey: Key.usedFreeExports)
+    }
+
+    func purchaseMonthly() async {
+        isPurchasing = true
+        defer { isPurchasing = false }
+
+        do {
+            let product: Product
+            if let monthlyProduct {
+                product = monthlyProduct
+            } else {
+                await refreshProducts()
+                guard let loadedProduct = monthlyProduct else {
+                    accessMessage = "Subscription is not available yet."
+                    return
+                }
+                product = loadedProduct
+            }
+
+            let result = try await product.purchase()
+            switch result {
+            case .success(let verification):
+                let transaction = try checkVerified(verification)
+                hasAppStoreSubscription = transaction.productID == ProductConfiguration.monthlyProductID
+                    && transaction.revocationDate == nil
+                await transaction.finish()
+                accessMessage = hasAppStoreSubscription ? "BlitzRecorder Pro is active." : ""
+            case .userCancelled:
+                accessMessage = "Purchase cancelled."
+            case .pending:
+                accessMessage = "Purchase pending approval."
+            @unknown default:
+                accessMessage = "Purchase did not complete."
+            }
+        } catch {
+            accessMessage = "Purchase failed: \(error.localizedDescription)"
+        }
+    }
+
+    func restorePurchases() async {
+        do {
+            try await AppStore.sync()
+            await refreshEntitlements()
+            accessMessage = isPro ? "Purchases restored." : "No active App Store subscription found."
+        } catch {
+            accessMessage = "Restore failed: \(error.localizedDescription)"
+        }
+    }
+
+    func openSubscriptionManagement() {
+        let subscriptionsURL = URL(string: "macappstore://showSubscriptions")!
+        if !NSWorkspace.shared.open(subscriptionsURL),
+           let fallbackURL = URL(string: "https://apps.apple.com/account/subscriptions") {
+            NSWorkspace.shared.open(fallbackURL)
+        }
+    }
+
+    func beginBlitzReelsSignIn() {
+        var components = URLComponents(url: ProductConfiguration.blitzReelsSignInURL, resolvingAgainstBaseURL: false)
+        components?.queryItems = [
+            URLQueryItem(name: "return_to", value: "blitzrecorder://auth/blitzreels")
+        ]
+        NSWorkspace.shared.open(components?.url ?? ProductConfiguration.blitzReelsSignInURL)
+    }
+
+    func disconnectBlitzReels() {
+        blitzReelsTokenStore.deleteToken()
+        defaults.removeObject(forKey: Key.blitzReelsAccessToken)
+        clearBlitzReelsEntitlement()
+        accessMessage = "BlitzReels access disconnected."
+    }
+
+    func handleBlitzReelsCallback(url: URL) {
+        guard url.scheme == "blitzrecorder",
+              url.host == "auth",
+              url.path == "/blitzreels",
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return
+        }
+
+        if let error = components.queryItems?.first(where: { $0.name == "error" })?.value {
+            accessMessage = "BlitzReels sign-in failed: \(error)"
+            return
+        }
+
+        guard let token = components.queryItems?.first(where: { $0.name == "token" })?.value,
+              !token.isEmpty else {
+            accessMessage = "BlitzReels sign-in did not return an access token."
+            return
+        }
+
+        guard blitzReelsTokenStore.saveToken(token) else {
+            accessMessage = "BlitzReels sign-in could not be saved securely."
+            return
+        }
+        Task { await refreshBlitzReelsEntitlement() }
+    }
+
+    func refreshBlitzReelsEntitlement() async {
+        guard let token = blitzReelsTokenStore.loadToken(), !token.isEmpty else {
+            clearBlitzReelsEntitlement()
+            return
+        }
+
+        do {
+            let entitlement = try await blitzReelsEntitlementChecker.entitlement(for: token)
+            hasBlitzReelsEntitlement = entitlement.active
+            blitzReelsPlanName = entitlement.active ? entitlement.planName : nil
+            if let planName = blitzReelsPlanName {
+                defaults.set(planName, forKey: Key.blitzReelsPlanName)
+                defaults.set(dateProvider(), forKey: Key.blitzReelsVerifiedAt)
+                accessMessage = "Included with \(planName)."
+            } else {
+                clearBlitzReelsEntitlement()
+                accessMessage = "No active BlitzReels subscription found."
+            }
+        } catch let error as BlitzReelsEntitlementHTTPError where error.statusCode == 401 || error.statusCode == 403 {
+            blitzReelsTokenStore.deleteToken()
+            defaults.removeObject(forKey: Key.blitzReelsAccessToken)
+            clearBlitzReelsEntitlement()
+            accessMessage = "BlitzReels sign-in expired."
+        } catch {
+            handleBlitzReelsVerificationUnavailable(error)
+        }
+    }
+
+    private func refreshProducts() async {
+        isLoadingProducts = true
+        defer { isLoadingProducts = false }
+
+        do {
+            monthlyProduct = try await Product.products(for: [ProductConfiguration.monthlyProductID]).first
+        } catch {
+            accessMessage = "Subscription products failed to load: \(error.localizedDescription)"
+        }
+    }
+
+    private func refreshEntitlements() async {
+        var hasSubscription = false
+        for await entitlement in Transaction.currentEntitlements {
+            do {
+                let transaction = try checkVerified(entitlement)
+                if transaction.productID == ProductConfiguration.monthlyProductID,
+                   transaction.revocationDate == nil {
+                    hasSubscription = true
+                }
+            } catch {
+                continue
+            }
+        }
+        hasAppStoreSubscription = hasSubscription
+    }
+
+    private func handle(transactionResult: VerificationResult<Transaction>) async {
+        do {
+            let transaction = try checkVerified(transactionResult)
+            if transaction.productID == ProductConfiguration.monthlyProductID {
+                await refreshEntitlements()
+            }
+            await transaction.finish()
+        } catch {
+            accessMessage = "Transaction verification failed."
+        }
+    }
+
+    private func restoreCachedBlitzReelsEntitlement() {
+        guard blitzReelsTokenStore.loadToken()?.isEmpty == false,
+              let planName = defaults.string(forKey: Key.blitzReelsPlanName),
+              hasFreshBlitzReelsVerification else {
+            clearBlitzReelsEntitlement()
+            return
+        }
+
+        blitzReelsPlanName = planName
+        hasBlitzReelsEntitlement = true
+    }
+
+    private var hasFreshBlitzReelsVerification: Bool {
+        guard let verifiedAt = defaults.object(forKey: Key.blitzReelsVerifiedAt) as? Date else {
+            return false
+        }
+        return dateProvider().timeIntervalSince(verifiedAt) <= ProductConfiguration.blitzReelsEntitlementCacheDuration
+    }
+
+    private func handleBlitzReelsVerificationUnavailable(_ error: Error? = nil) {
+        if hasFreshBlitzReelsVerification, defaults.string(forKey: Key.blitzReelsPlanName) != nil {
+            restoreCachedBlitzReelsEntitlement()
+            accessMessage = "Using recently verified BlitzReels access."
+        } else {
+            clearBlitzReelsEntitlement()
+            if let error {
+                accessMessage = "BlitzReels access check failed: \(error.localizedDescription)"
+            } else {
+                accessMessage = "BlitzReels access could not be verified."
+            }
+        }
+    }
+
+    private func migrateLegacyBlitzReelsTokenIfNeeded() {
+        guard blitzReelsTokenStore.loadToken()?.isEmpty != false,
+              let token = defaults.string(forKey: Key.blitzReelsAccessToken),
+              !token.isEmpty else {
+            return
+        }
+
+        if blitzReelsTokenStore.saveToken(token),
+           blitzReelsTokenStore.loadToken()?.isEmpty == false {
+            defaults.removeObject(forKey: Key.blitzReelsAccessToken)
+        }
+    }
+
+    private func clearBlitzReelsEntitlement() {
+        hasBlitzReelsEntitlement = false
+        blitzReelsPlanName = nil
+        defaults.removeObject(forKey: Key.blitzReelsPlanName)
+        defaults.removeObject(forKey: Key.blitzReelsVerifiedAt)
+    }
+
+    private func checkVerified<T>(_ result: VerificationResult<T>) throws -> T {
+        switch result {
+        case .verified(let value):
+            return value
+        case .unverified:
+            throw AccessError.failedVerification
+        }
+    }
+}
+
+enum AccessError: LocalizedError {
+    case failedVerification
+
+    var errorDescription: String? {
+        "The App Store transaction could not be verified."
+    }
+}
