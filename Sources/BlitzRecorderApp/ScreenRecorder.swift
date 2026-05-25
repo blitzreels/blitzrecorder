@@ -14,7 +14,12 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     private var currentSourceRect = CGRect.zero
     private var streamError: Error?
 
-    func start(url: URL, settings: RecordingSettings, filter pickedFilter: SCContentFilter?) async throws {
+    func start(
+        url: URL,
+        settings: RecordingSettings,
+        filter pickedFilter: SCContentFilter?,
+        timelineStartTime: CMTime? = nil
+    ) async throws {
         self.settings = settings
         currentZoom = 1.0
         streamError = nil
@@ -52,7 +57,8 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
             height: dimensions.height,
             bitrate: settings.screenBitrate,
             fps: settings.framesPerSecond,
-            outputFormat: settings.outputVideoFormat
+            outputFormat: settings.outputVideoFormat,
+            timelineStartTime: timelineStartTime
         )
 
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)

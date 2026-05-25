@@ -8,6 +8,7 @@ final class VideoFileWriter: @unchecked Sendable {
     private let writer: AVAssetWriter
     private let input: AVAssetWriterInput
     private let queue = DispatchQueue(label: "recorder.video-writer")
+    private let timelineStartTime: CMTime?
 
     private var firstPresentationTime: CMTime?
     private var lastPresentationTime: CMTime?
@@ -18,8 +19,17 @@ final class VideoFileWriter: @unchecked Sendable {
     private var wroteSample = false
     private var writeError: Error?
 
-    init(url: URL, width: Int, height: Int, bitrate: Int, fps: Int, outputFormat: OutputVideoFormat) throws {
+    init(
+        url: URL,
+        width: Int,
+        height: Int,
+        bitrate: Int,
+        fps: Int,
+        outputFormat: OutputVideoFormat,
+        timelineStartTime: CMTime? = nil
+    ) throws {
         self.url = url
+        self.timelineStartTime = timelineStartTime
         try? FileManager.default.removeItem(at: url)
 
         writer = try AVAssetWriter(outputURL: url, fileType: outputFormat.avFileType)
@@ -60,7 +70,7 @@ final class VideoFileWriter: @unchecked Sendable {
             self.lastPresentationTime = presentationTime
 
             if self.firstPresentationTime == nil {
-                self.firstPresentationTime = presentationTime
+                self.firstPresentationTime = self.timelineStartTime ?? presentationTime
                 guard self.writer.startWriting() else {
                     self.failWriting(self.writer.error ?? RecorderError.writerNotReady)
                     return

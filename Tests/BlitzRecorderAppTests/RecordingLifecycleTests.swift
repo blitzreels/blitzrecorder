@@ -252,6 +252,35 @@ final class RecordingLifecycleTests: XCTestCase {
     }
 
     @MainActor
+    func testCaptureSourceRunPassesSharedTimelineStartToSources() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .microphone]
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        let timelineStart = CMTime(value: 42, timescale: 1_000)
+        let screenRecorder = SpyScreenCaptureRecorder(stopCompletion: .empty(take.screenURL))
+        let microphoneRecorder = SpyMicrophoneCaptureRecorder()
+        let run = CaptureSourceRun(
+            take: take,
+            settings: settings,
+            pickedScreenFilter: nil,
+            timelineStartTime: timelineStart,
+            screenRecorder: screenRecorder,
+            cameraRecorder: FailingCameraCaptureRecorder(error: RecorderError.noCamera),
+            audioRecorder: microphoneRecorder,
+            systemAudioRecorder: NoopSystemAudioCaptureRecorder()
+        )
+
+        try await run.start()
+        _ = await run.stop()
+
+        XCTAssertEqual(screenRecorder.capturedTimelineStartTime, timelineStart)
+        XCTAssertEqual(microphoneRecorder.capturedTimelineStartTime, timelineStart)
+    }
+
+    @MainActor
     func testCaptureSourceRunStopPreservesVideoCompletionWhenAudioStopFails() async throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
@@ -378,6 +407,37 @@ final class RecordingLifecycleTests: XCTestCase {
         let asset = AVURLAsset(url: outputURL)
         let videoTracks = try await asset.loadTracks(withMediaType: .video)
         XCTAssertEqual(videoTracks.count, 1)
+    }
+
+    func testMergerExportsWithTimelineBackgroundChanges() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen]
+        settings.framesPerSecond = 30
+        settings.outputResolution = .p720
+        settings.canvasBackgroundStyle = .black
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try FileManager.default.createDirectory(at: take.scratchDirectory, withIntermediateDirectories: true)
+        try writeTestMovie(
+            url: take.screenURL,
+            codec: .h264,
+            color: (blue: 255, green: 0, red: 0, alpha: 255)
+        )
+
+        var changedSettings = settings
+        changedSettings.canvasBackgroundStyle = .aurora
+        let outputURL = try await Merger.exportFinalVideo(
+            take: take,
+            settings: settings,
+            sceneEvents: [
+                RecordingSceneEvent(time: 0, scene: RecordingScene(settings: settings)),
+                RecordingSceneEvent(time: 0.2, scene: RecordingScene(settings: changedSettings))
+            ]
+        )
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outputURL.path))
     }
 
     func testMergerMutesRemoteCameraEmbeddedAudio() async throws {
@@ -815,7 +875,7 @@ final class RecordingLifecycleTests: XCTestCase {
 }
 
 private final class NoopScreenCaptureRecorder: ScreenCaptureRecording {
-    func start(url: URL, settings: RecordingSettings, filter pickedFilter: SCContentFilter?) async throws {}
+    func start(url: URL, settings: RecordingSettings, filter pickedFilter: SCContentFilter?, timelineStartTime: CMTime?) async throws {}
     func pause() {}
     func resume() {}
     func stop() async throws -> MediaWriterCompletion { .empty() }
@@ -824,14 +884,16 @@ private final class NoopScreenCaptureRecorder: ScreenCaptureRecording {
 private final class SpyScreenCaptureRecorder: ScreenCaptureRecording {
     private(set) var startCount = 0
     private(set) var stopCount = 0
+    private(set) var capturedTimelineStartTime: CMTime?
     let stopCompletion: MediaWriterCompletion
 
     init(stopCompletion: MediaWriterCompletion) {
         self.stopCompletion = stopCompletion
     }
 
-    func start(url: URL, settings: RecordingSettings, filter pickedFilter: SCContentFilter?) async throws {
+    func start(url: URL, settings: RecordingSettings, filter pickedFilter: SCContentFilter?, timelineStartTime: CMTime?) async throws {
         startCount += 1
+        capturedTimelineStartTime = timelineStartTime
     }
 
     func pause() {}
@@ -851,7 +913,7 @@ private final class FailingCameraCaptureRecorder: CameraCaptureRecording {
         self.error = error
     }
 
-    func start(url: URL, settings: RecordingSettings) async throws {
+    func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) async throws {
         startCount += 1
         throw error
     }
@@ -863,9 +925,11 @@ private final class FailingCameraCaptureRecorder: CameraCaptureRecording {
 
 private final class SpyMicrophoneCaptureRecorder: MicrophoneCaptureRecording {
     private(set) var startCount = 0
+    private(set) var capturedTimelineStartTime: CMTime?
 
-    func start(url: URL, settings: RecordingSettings) throws {
+    func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) throws {
         startCount += 1
+        capturedTimelineStartTime = timelineStartTime
     }
 
     func pause() {}
@@ -881,7 +945,7 @@ private final class FailingStartMicrophoneCaptureRecorder: MicrophoneCaptureReco
         self.error = error
     }
 
-    func start(url: URL, settings: RecordingSettings) throws {
+    func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) throws {
         throw error
     }
 
@@ -902,7 +966,7 @@ private final class FailingStopMicrophoneCaptureRecorder: MicrophoneCaptureRecor
         self.error = error
     }
 
-    func start(url: URL, settings: RecordingSettings) throws {}
+    func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) throws {}
     func pause() {}
     func resume() {}
 
@@ -913,7 +977,7 @@ private final class FailingStopMicrophoneCaptureRecorder: MicrophoneCaptureRecor
 }
 
 private final class NoopSystemAudioCaptureRecorder: SystemAudioCaptureRecording {
-    func start(url: URL, settings: RecordingSettings) async throws {}
+    func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) async throws {}
     func pause() {}
     func resume() {}
     func stop() async throws -> MediaWriterCompletion { .empty() }

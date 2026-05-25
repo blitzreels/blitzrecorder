@@ -9,12 +9,12 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     var levelHandler: ((Float) -> Void)?
     private var lastLevelTime = DispatchTime(uptimeNanoseconds: 0)
 
-    func start(url: URL, settings: RecordingSettings) throws {
+    func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime? = nil) throws {
         guard let device = selectedMicrophone(settings: settings) else {
             throw RecorderError.microphoneUnavailable
         }
 
-        writer = try AudioSampleFileWriter(url: url)
+        writer = try AudioSampleFileWriter(url: url, timelineStartTime: timelineStartTime)
 
         session.beginConfiguration()
         session.inputs.forEach { session.removeInput($0) }

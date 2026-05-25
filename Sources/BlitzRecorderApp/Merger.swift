@@ -81,7 +81,13 @@ enum Merger {
         )
         videoComposition.renderSize = renderSize
         videoComposition.frameDuration = CMTime(value: 1, timescale: CMTimeScale(settings.framesPerSecond))
-        applyCanvasBackground(to: videoComposition, renderSize: renderSize, settings: settings)
+        applyCanvasBackground(
+            to: videoComposition,
+            renderSize: renderSize,
+            settings: settings,
+            sceneEvents: sceneEvents,
+            duration: duration
+        )
 
         let presetName = settings.removesCameraBackgroundAfterRecording
             ? AVAssetExportPresetHighestQuality
@@ -217,29 +223,87 @@ enum Merger {
     private static func applyCanvasBackground(
         to videoComposition: AVMutableVideoComposition,
         renderSize: CGSize,
-        settings: RecordingSettings
+        settings: RecordingSettings,
+        sceneEvents: [RecordingSceneEvent],
+        duration: CMTime
     ) {
         let frame = CGRect(origin: .zero, size: renderSize)
         let parentLayer = CALayer()
         parentLayer.frame = frame
 
-        let backgroundLayer = CAGradientLayer()
-        backgroundLayer.frame = frame
-        backgroundLayer.colors = settings.canvasBackgroundStyle.previewColors
-        backgroundLayer.locations = settings.canvasBackgroundStyle.previewLocations
-        backgroundLayer.startPoint = CGPoint(x: 0.08, y: 0.02)
-        backgroundLayer.endPoint = CGPoint(x: 0.92, y: 1)
-        backgroundLayer.backgroundColor = settings.canvasBackgroundStyle.solidCGColor
-
         let videoLayer = CALayer()
         videoLayer.frame = frame
 
-        parentLayer.addSublayer(backgroundLayer)
+        let fallbackScene = RecordingScene(settings: settings)
+        let segments = sceneSegments(sceneEvents: sceneEvents, fallbackScene: fallbackScene, duration: duration)
+        addCanvasBackgroundLayers(to: parentLayer, frame: frame, segments: segments, duration: duration)
         parentLayer.addSublayer(videoLayer)
         videoComposition.animationTool = AVVideoCompositionCoreAnimationTool(
             postProcessingAsVideoLayer: videoLayer,
             in: parentLayer
         )
+    }
+
+    private static func addCanvasBackgroundLayers(
+        to parentLayer: CALayer,
+        frame: CGRect,
+        segments: [(timeRange: CMTimeRange, scene: RecordingScene)],
+        duration: CMTime
+    ) {
+        guard !segments.isEmpty else { return }
+        let durationSeconds = max(0, duration.seconds)
+        if segments.count == 1 || durationSeconds <= 0 {
+            parentLayer.addSublayer(canvasBackgroundLayer(style: segments[0].scene.canvasBackgroundStyle, frame: frame))
+            return
+        }
+
+        for segment in segments {
+            let layer = canvasBackgroundLayer(style: segment.scene.canvasBackgroundStyle, frame: frame)
+            layer.opacity = CMTimeCompare(segment.timeRange.start, .zero) == 0 ? 1 : 0
+            let start = max(0, min(1, segment.timeRange.start.seconds / durationSeconds))
+            let end = max(start, min(1, CMTimeGetSeconds(CMTimeRangeGetEnd(segment.timeRange)) / durationSeconds))
+            let animation = CAKeyframeAnimation(keyPath: "opacity")
+            animation.beginTime = AVCoreAnimationBeginTimeAtZero
+            animation.duration = durationSeconds
+            animation.keyTimes = opacityKeyTimes(start: start, end: end)
+            animation.values = opacityValues(start: start, end: end)
+            animation.calculationMode = .discrete
+            animation.isRemovedOnCompletion = false
+            animation.fillMode = .both
+            layer.add(animation, forKey: "scene-opacity")
+            parentLayer.addSublayer(layer)
+        }
+    }
+
+    private static func canvasBackgroundLayer(style: CanvasBackgroundStyle, frame: CGRect) -> CAGradientLayer {
+        let layer = CAGradientLayer()
+        layer.frame = frame
+        layer.colors = style.previewColors
+        layer.locations = style.previewLocations
+        layer.startPoint = style.gradientStartPoint
+        layer.endPoint = style.gradientEndPoint
+        layer.backgroundColor = style.solidCGColor
+        return layer
+    }
+
+    private static func opacityKeyTimes(start: Double, end: Double) -> [NSNumber] {
+        if start <= 0 {
+            return [NSNumber(value: 0), NSNumber(value: end), NSNumber(value: 1)]
+        }
+        if end >= 1 {
+            return [NSNumber(value: 0), NSNumber(value: start), NSNumber(value: 1)]
+        }
+        return [NSNumber(value: 0), NSNumber(value: start), NSNumber(value: end), NSNumber(value: 1)]
+    }
+
+    private static func opacityValues(start: Double, end: Double) -> [Float] {
+        if start <= 0 {
+            return [1, 0, 0]
+        }
+        if end >= 1 {
+            return [0, 1, 1]
+        }
+        return [0, 1, 0, 0]
     }
 
     private static func addAudioIfPresent(

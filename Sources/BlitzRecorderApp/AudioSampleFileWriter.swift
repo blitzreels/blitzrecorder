@@ -7,6 +7,7 @@ final class AudioSampleFileWriter: @unchecked Sendable {
     private let writer: AVAssetWriter
     private let input: AVAssetWriterInput
     private let queue = DispatchQueue(label: "blitzrecorder.audio-writer")
+    private let timelineStartTime: CMTime?
 
     private var firstPresentationTime: CMTime?
     private var lastPresentationTime: CMTime?
@@ -17,8 +18,9 @@ final class AudioSampleFileWriter: @unchecked Sendable {
     private var wroteSample = false
     private var writeError: Error?
 
-    init(url: URL) throws {
+    init(url: URL, timelineStartTime: CMTime? = nil) throws {
         self.url = url
+        self.timelineStartTime = timelineStartTime
         try? FileManager.default.removeItem(at: url)
 
         writer = try AVAssetWriter(outputURL: url, fileType: .m4a)
@@ -48,7 +50,7 @@ final class AudioSampleFileWriter: @unchecked Sendable {
             self.lastPresentationTime = presentationTime
 
             if self.firstPresentationTime == nil {
-                self.firstPresentationTime = presentationTime
+                self.firstPresentationTime = self.timelineStartTime ?? presentationTime
                 guard self.writer.startWriting() else {
                     self.failWriting(self.writer.error ?? RecorderError.writerNotReady)
                     return

@@ -31,10 +31,10 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         return layer
     }
 
-    func start(url: URL, settings: RecordingSettings) async throws {
+    func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime? = nil) async throws {
         try queue.sync {
             try configureSession(settings: settings)
-            pendingRecording = PendingRecording(url: url, settings: settings)
+            pendingRecording = PendingRecording(url: url, settings: settings, timelineStartTime: timelineStartTime)
             writer = nil
             startSessionIfNeededOnQueue()
         }
@@ -254,7 +254,8 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             height: height,
             bitrate: recording.settings.cameraBitrate,
             fps: recording.settings.framesPerSecond,
-            outputFormat: recording.settings.outputVideoFormat
+            outputFormat: recording.settings.outputVideoFormat,
+            timelineStartTime: recording.timelineStartTime
         )
     }
 
@@ -295,4 +296,5 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
 private struct PendingRecording {
     let url: URL
     let settings: RecordingSettings
+    let timelineStartTime: CMTime?
 }

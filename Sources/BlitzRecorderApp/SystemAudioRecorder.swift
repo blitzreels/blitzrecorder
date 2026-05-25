@@ -10,9 +10,9 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     private var lastLevelTime = DispatchTime(uptimeNanoseconds: 0)
     private var streamError: Error?
 
-    func start(url: URL, settings: RecordingSettings) async throws {
+    func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime? = nil) async throws {
         streamError = nil
-        writer = try AudioSampleFileWriter(url: url)
+        writer = try AudioSampleFileWriter(url: url, timelineStartTime: timelineStartTime)
 
         let content = try await SCShareableContent.current
         guard let display = ScreenCaptureGeometry.display(from: content.displays, settings: settings) else {

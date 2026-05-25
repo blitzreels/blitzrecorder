@@ -674,8 +674,8 @@ final class PreviewStageView: NSView {
         CATransaction.setDisableActions(true)
         canvasBackgroundLayer.colors = canvasBackgroundStyle.previewColors
         canvasBackgroundLayer.locations = canvasBackgroundStyle.previewLocations
-        canvasBackgroundLayer.startPoint = CGPoint(x: 0.08, y: 0.02)
-        canvasBackgroundLayer.endPoint = CGPoint(x: 0.92, y: 1)
+        canvasBackgroundLayer.startPoint = canvasBackgroundStyle.gradientStartPoint
+        canvasBackgroundLayer.endPoint = canvasBackgroundStyle.gradientEndPoint
         canvasBackgroundLayer.backgroundColor = canvasBackgroundStyle.solidCGColor
         CATransaction.commit()
     }

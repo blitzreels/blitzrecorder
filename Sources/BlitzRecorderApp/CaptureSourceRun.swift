@@ -1,29 +1,30 @@
 import Foundation
+import CoreMedia
 import ScreenCaptureKit
 
 protocol ScreenCaptureRecording: AnyObject {
-    func start(url: URL, settings: RecordingSettings, filter pickedFilter: SCContentFilter?) async throws
+    func start(url: URL, settings: RecordingSettings, filter pickedFilter: SCContentFilter?, timelineStartTime: CMTime?) async throws
     func pause()
     func resume()
     func stop() async throws -> MediaWriterCompletion
 }
 
 protocol CameraCaptureRecording: AnyObject {
-    func start(url: URL, settings: RecordingSettings) async throws
+    func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) async throws
     func pause()
     func resume()
     func stop() async throws -> MediaWriterCompletion
 }
 
 protocol MicrophoneCaptureRecording: AnyObject {
-    func start(url: URL, settings: RecordingSettings) throws
+    func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) throws
     func pause()
     func resume()
     func stop() async throws -> MediaWriterCompletion
 }
 
 protocol SystemAudioCaptureRecording: AnyObject {
-    func start(url: URL, settings: RecordingSettings) async throws
+    func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) async throws
     func pause()
     func resume()
     func stop() async throws -> MediaWriterCompletion
@@ -61,6 +62,7 @@ final class CaptureSourceRun {
 
     private let settings: RecordingSettings
     private let pickedScreenFilter: SCContentFilter?
+    private let timelineStartTime: CMTime?
     private let screenRecorder: ScreenCaptureRecording
     private let cameraRecorder: CameraCaptureRecording
     private let audioRecorder: MicrophoneCaptureRecording
@@ -71,6 +73,7 @@ final class CaptureSourceRun {
         take: RecordingTake,
         settings: RecordingSettings,
         pickedScreenFilter: SCContentFilter?,
+        timelineStartTime: CMTime? = nil,
         screenRecorder: ScreenCaptureRecording,
         cameraRecorder: CameraCaptureRecording,
         audioRecorder: MicrophoneCaptureRecording,
@@ -79,6 +82,7 @@ final class CaptureSourceRun {
         self.take = take
         self.settings = settings
         self.pickedScreenFilter = pickedScreenFilter
+        self.timelineStartTime = timelineStartTime
         self.screenRecorder = screenRecorder
         self.cameraRecorder = cameraRecorder
         self.audioRecorder = audioRecorder
@@ -89,19 +93,28 @@ final class CaptureSourceRun {
         do {
             if settings.enabledSources.contains(.screen) {
                 activeSources.insert(.screen)
-                try await screenRecorder.start(url: take.screenURL, settings: settings, filter: pickedScreenFilter)
+                try await screenRecorder.start(
+                    url: take.screenURL,
+                    settings: settings,
+                    filter: pickedScreenFilter,
+                    timelineStartTime: timelineStartTime
+                )
             }
             if settings.enabledSources.contains(.camera) {
                 activeSources.insert(.camera)
-                try await cameraRecorder.start(url: take.cameraURL, settings: settings)
+                try await cameraRecorder.start(url: take.cameraURL, settings: settings, timelineStartTime: timelineStartTime)
             }
             if settings.enabledSources.contains(.microphone) {
                 activeSources.insert(.microphone)
-                try audioRecorder.start(url: take.audioURL, settings: settings)
+                try audioRecorder.start(url: take.audioURL, settings: settings, timelineStartTime: timelineStartTime)
             }
             if settings.enabledSources.contains(.systemAudio) {
                 activeSources.insert(.systemAudio)
-                try await systemAudioRecorder.start(url: take.systemAudioURL, settings: settings)
+                try await systemAudioRecorder.start(
+                    url: take.systemAudioURL,
+                    settings: settings,
+                    timelineStartTime: timelineStartTime
+                )
             }
         } catch {
             _ = await stop()

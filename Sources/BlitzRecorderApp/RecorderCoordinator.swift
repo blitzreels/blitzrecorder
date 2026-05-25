@@ -936,6 +936,7 @@ final class RecorderCoordinator {
                     take: take,
                     settings: localCaptureSettings(usesRemoteCamera: usesRemoteCamera),
                     pickedScreenFilter: pickedScreenFilter,
+                    timelineStartTime: CMClockGetTime(CMClockGetHostTimeClock()),
                     screenRecorder: screenRecorder,
                     cameraRecorder: cameraRecorder,
                     audioRecorder: audioRecorder,

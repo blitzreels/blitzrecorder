@@ -3,6 +3,14 @@ import CoreImage
 import QuartzCore
 
 extension CanvasBackgroundStyle {
+    var gradientStartPoint: CGPoint {
+        CGPoint(x: 0.08, y: 0.02)
+    }
+
+    var gradientEndPoint: CGPoint {
+        CGPoint(x: 0.92, y: 1)
+    }
+
     var previewColors: [CGColor] {
         gradientStops.map { $0.cgColor }
     }
@@ -20,50 +28,50 @@ extension CanvasBackgroundStyle {
     }
 
     func ciImage(in rect: CGRect) -> CIImage {
-        let stops = gradientStops
-        guard stops.count >= 2 else {
+        guard rect.width > 0, rect.height > 0 else {
             return CIImage(color: CIColor(cgColor: solidCGColor)).cropped(to: rect)
         }
 
-        var image = linearGradient(
-            rect: rect,
-            start: CGPoint(x: rect.minX, y: rect.minY),
-            end: CGPoint(x: rect.maxX, y: rect.maxY),
-            startColor: CIColor(cgColor: stops[0].cgColor),
-            endColor: CIColor(cgColor: stops[1].cgColor)
-        )
-
-        guard stops.count > 2 else { return image }
-
-        for (index, stop) in stops.dropFirst(2).enumerated() {
-            let opacity = max(0.14, 0.46 - CGFloat(index) * 0.08)
-            let start = index.isMultiple(of: 2)
-                ? CGPoint(x: rect.minX, y: rect.maxY)
-                : CGPoint(x: rect.maxX, y: rect.minY)
-            let end = index.isMultiple(of: 2)
-                ? CGPoint(x: rect.maxX, y: rect.minY)
-                : CGPoint(x: rect.minX, y: rect.maxY)
-            let accent = linearGradient(
-                rect: rect,
-                start: start,
-                end: end,
-                startColor: CIColor(cgColor: stop.withAlphaComponent(opacity).cgColor),
-                endColor: CIColor(red: 0, green: 0, blue: 0, alpha: 0)
-            )
-            image = accent.composited(over: image)
+        let width = max(1, Int(rect.width.rounded(.up)))
+        let height = max(1, Int(rect.height.rounded(.up)))
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return CIImage(color: CIColor(cgColor: solidCGColor)).cropped(to: rect)
         }
 
-        if let glowColor = stops.last {
-            let glow = radialGradient(
-                rect: rect,
-                center: CGPoint(x: rect.minX + rect.width * 0.28, y: rect.minY + rect.height * 0.78),
-                radius: max(rect.width, rect.height) * 0.84,
-                color: CIColor(cgColor: glowColor.withAlphaComponent(0.28).cgColor)
+        context.setFillColor(solidCGColor)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+
+        if let gradient = CGGradient(
+            colorsSpace: colorSpace,
+            colors: previewColors as CFArray,
+            locations: previewLocations.map { CGFloat(truncating: $0) }
+        ) {
+            let start = CGPoint(
+                x: CGFloat(width) * gradientStartPoint.x,
+                y: CGFloat(height) * gradientStartPoint.y
             )
-            image = glow.composited(over: image)
+            let end = CGPoint(
+                x: CGFloat(width) * gradientEndPoint.x,
+                y: CGFloat(height) * gradientEndPoint.y
+            )
+            context.drawLinearGradient(gradient, start: start, end: end, options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
         }
 
-        return image.cropped(to: rect)
+        guard let cgImage = context.makeImage() else {
+            return CIImage(color: CIColor(cgColor: solidCGColor)).cropped(to: rect)
+        }
+        return CIImage(cgImage: cgImage)
+            .transformed(by: CGAffineTransform(translationX: rect.minX, y: rect.minY))
+            .cropped(to: rect)
     }
 
     private var gradientStops: [NSColor] {
@@ -116,34 +124,5 @@ extension CanvasBackgroundStyle {
                 NSColor(calibratedRed: 0.98, green: 0.99, blue: 1.0, alpha: 1)
             ]
         }
-    }
-
-    private func linearGradient(
-        rect: CGRect,
-        start: CGPoint,
-        end: CGPoint,
-        startColor: CIColor,
-        endColor: CIColor
-    ) -> CIImage {
-        guard let filter = CIFilter(name: "CILinearGradient") else {
-            return CIImage(color: startColor).cropped(to: rect)
-        }
-        filter.setValue(CIVector(cgPoint: start), forKey: "inputPoint0")
-        filter.setValue(CIVector(cgPoint: end), forKey: "inputPoint1")
-        filter.setValue(startColor, forKey: "inputColor0")
-        filter.setValue(endColor, forKey: "inputColor1")
-        return filter.outputImage?.cropped(to: rect) ?? CIImage(color: startColor).cropped(to: rect)
-    }
-
-    private func radialGradient(rect: CGRect, center: CGPoint, radius: CGFloat, color: CIColor) -> CIImage {
-        guard let filter = CIFilter(name: "CIRadialGradient") else {
-            return CIImage(color: color).cropped(to: rect)
-        }
-        filter.setValue(CIVector(cgPoint: center), forKey: "inputCenter")
-        filter.setValue(max(1, radius * 0.06), forKey: "inputRadius0")
-        filter.setValue(max(1, radius), forKey: "inputRadius1")
-        filter.setValue(color, forKey: "inputColor0")
-        filter.setValue(CIColor(red: 0, green: 0, blue: 0, alpha: 0), forKey: "inputColor1")
-        return filter.outputImage?.cropped(to: rect) ?? CIImage(color: color).cropped(to: rect)
     }
 }
