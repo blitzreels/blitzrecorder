@@ -1,0 +1,124 @@
+name: macOS DMG
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "codex/**"
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      notarize:
+        description: Notarize and staple when signing/notary secrets are configured
+        required: true
+        type: choice
+        default: "0"
+        options:
+          - "0"
+          - "1"
+
+jobs:
+  dmg:
+    name: Build DMG
+    runs-on: macos-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 26 When Available
+        run: |
+          set -euo pipefail
+          if [[ -d /Applications/Xcode_26.5.app ]]; then
+            sudo xcode-select -s /Applications/Xcode_26.5.app
+          elif [[ -d /Applications/Xcode_26.0.app ]]; then
+            sudo xcode-select -s /Applications/Xcode_26.0.app
+          fi
+          xcodebuild -version
+
+      - name: Install Developer ID Certificate
+        env:
+          DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$DEVELOPER_ID_CERTIFICATE_BASE64" || -z "$DEVELOPER_ID_CERTIFICATE_PASSWORD" || -z "$KEYCHAIN_PASSWORD" ]]; then
+            echo "Developer ID certificate secrets are not configured; building an ad-hoc signed DMG."
+            exit 0
+          fi
+
+          CERTIFICATE_PATH="$RUNNER_TEMP/developer_id_application.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/developer-id-signing.keychain-db"
+
+          echo -n "$DEVELOPER_ID_CERTIFICATE_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$DEVELOPER_ID_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security find-identity -v -p codesigning
+
+      - name: Build DMG
+        env:
+          NOTARIZE: ${{ github.event_name == 'workflow_dispatch' && inputs.notarize || '0' }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          ENTITLEMENTS_PATH: ${{ github.workspace }}/BlitzRecorder.local.entitlements
+        run: |
+          set -euo pipefail
+          chmod +x Scripts/package-dmg.sh
+          Scripts/package-dmg.sh
+
+      - name: Verify DMG
+        run: |
+          set -euo pipefail
+          DMG_PATH="$(find build/Distributions -maxdepth 1 -name 'BlitzRecorder-*.dmg' -print -quit)"
+          test -n "$DMG_PATH"
+          hdiutil verify "$DMG_PATH"
+
+          MOUNT_OUTPUT="$(hdiutil attach "$DMG_PATH" -nobrowse -readonly)"
+          echo "$MOUNT_OUTPUT"
+          MOUNT_POINT="$(printf '%s\n' "$MOUNT_OUTPUT" | awk -F '\t' '/\/Volumes\// { print $NF; exit }')"
+          test -n "$MOUNT_POINT"
+          trap 'hdiutil detach "$MOUNT_POINT" >/dev/null || true' EXIT
+
+          test -x "$MOUNT_POINT/BlitzRecorder.app/Contents/MacOS/BlitzRecorder"
+          plutil -extract LSMinimumSystemVersion raw "$MOUNT_POINT/BlitzRecorder.app/Contents/Info.plist"
+          vtool -show-build "$MOUNT_POINT/BlitzRecorder.app/Contents/MacOS/BlitzRecorder"
+          codesign --verify --deep --strict --verbose=2 "$MOUNT_POINT/BlitzRecorder.app"
+
+      - name: Upload DMG Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: blitzrecorder-macos-dmg
+          path: build/Distributions/BlitzRecorder-*.dmg
+          if-no-files-found: error
+
+      - name: Publish Tagged Release
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          DMG_PATH="$(find build/Distributions -maxdepth 1 -name 'BlitzRecorder-*.dmg' -print -quit)"
+          test -n "$DMG_PATH"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$DMG_PATH" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$DMG_PATH" \
+              --title "$GITHUB_REF_NAME" \
+              --generate-notes
+          fi
+
+      - name: Clean Up Keychain
+        if: ${{ always() }}
+        run: |
+          security delete-keychain "$RUNNER_TEMP/developer-id-signing.keychain-db" 2>/dev/null || true

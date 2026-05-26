@@ -30,10 +30,10 @@ else
   rm -rf "$ICONSET"
 fi
 
-SIGN_IDENTITY="$(
+SIGN_IDENTITY="${SIGN_IDENTITY:-$(
   security find-identity -v -p codesigning 2>/dev/null \
-    | awk -F '"' '/3rd Party Mac Developer Application/ { print $2; found=1; exit } /Apple Distribution/ && !dist { dist=$2 } /Developer ID Application/ && !devID { devID=$2 } /Apple Development/ && !dev { dev=$2 } END { if (!found && dist) print dist; else if (!found && devID) print devID; else if (!found && dev) print dev }'
-)"
+    | awk -F '"' '/Developer ID Application/ { print $2; found=1; exit } /Apple Distribution/ && !dist { dist=$2 } /3rd Party Mac Developer Application/ && !third { third=$2 } /Apple Development/ && !dev { dev=$2 } END { if (!found && dist) print dist; else if (!found && third) print third; else if (!found && dev) print dev }'
+)}"
 
 ENTITLEMENTS="${ENTITLEMENTS_PATH:-$ROOT/BlitzRecorder.entitlements}"
 

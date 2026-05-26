@@ -51,3 +51,22 @@ Scripts/archive-app-store.sh
 ```
 
 Set `UPLOAD=1` from the workflow dispatch UI only when the app records, subscription, screenshots, privacy labels, and reviewer notes are ready.
+
+## macOS DMG CI
+
+`.github/workflows/macos-dmg.yml` builds a downloadable DMG for quick testing on every pull request, every push to `main` or `codex/**`, every `v*` tag, and manual `workflow_dispatch` runs.
+
+The normal artifact lane does not need Apple credentials. It packages the app and uploads `build/Distributions/BlitzRecorder-*.dmg` as the `blitzrecorder-macos-dmg` workflow artifact. When the workflow runs for a `v*` tag, it also attaches the DMG to the matching GitHub Release.
+
+For a signed and notarized manual DMG, configure these additional GitHub Actions secrets, then run the workflow manually with `notarize=1`:
+
+| Secret | Purpose |
+| --- | --- |
+| `DEVELOPER_ID_CERTIFICATE_BASE64` | Base64-encoded Developer ID Application `.p12`. |
+| `DEVELOPER_ID_CERTIFICATE_PASSWORD` | Password for the Developer ID `.p12`. |
+| `KEYCHAIN_PASSWORD` | Temporary CI keychain password. |
+| `ASC_KEY_ID` | App Store Connect API key ID for notarization. |
+| `ASC_ISSUER_ID` | App Store Connect issuer ID. |
+| `ASC_PRIVATE_KEY` | Full `.p8` private key contents. |
+
+The DMG lane verifies the image, mounts it, checks the app bundle exists, checks the Mach-O build metadata, and verifies the code signature. A non-notarized Developer ID build can still fail Gatekeeper on other Macs; use manual `notarize=1` for a DMG meant to be sent outside the team.
