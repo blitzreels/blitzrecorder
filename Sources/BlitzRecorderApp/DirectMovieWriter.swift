@@ -30,7 +30,7 @@ final class DirectMovieWriter: @unchecked Sendable {
 
         let dimensions = ScreenCaptureGeometry.outputDimensions(for: settings)
         let compression: [String: Any] = [
-            AVVideoAverageBitRateKey: settings.screenBitrate + settings.cameraBitrate,
+            AVVideoAverageBitRateKey: settings.finalVideoBitrate,
             AVVideoExpectedSourceFrameRateKey: settings.framesPerSecond,
             AVVideoAllowFrameReorderingKey: false,
             AVVideoProfileLevelKey: kVTProfileLevel_HEVC_Main_AutoLevel as String
@@ -55,6 +55,7 @@ final class DirectMovieWriter: @unchecked Sendable {
                 kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
                 kCVPixelBufferWidthKey as String: dimensions.width,
                 kCVPixelBufferHeightKey as String: dimensions.height,
+                kCVPixelBufferMetalCompatibilityKey as String: true,
                 kCVPixelBufferIOSurfacePropertiesKey as String: [:]
             ]
         )
@@ -105,6 +106,7 @@ final class DirectMovieWriter: @unchecked Sendable {
         queue.async {
             guard !self.finished,
                   !self.paused,
+                  self.wroteVideo,
                   CMSampleBufferDataIsReady(sampleBuffer),
                   let input = self.audioInputs[source],
                   input.isReadyForMoreMediaData else {

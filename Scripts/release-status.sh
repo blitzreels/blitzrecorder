@@ -40,7 +40,7 @@ print_pending_items() {
 == External Pending Items ==
 - Create/confirm macOS App Store Connect app record: dev.blitzreels.blitzrecorder
 - Create/confirm iOS App Store Connect app record: dev.blitzreels.blitzrecorder.camera
-- Create/confirm subscription: dev.blitzreels.blitzrecorder.pro.monthly at $4.99/month
+- Create/confirm subscriptions: dev.blitzreels.blitzrecorder.pro.monthly at $7.99/month and dev.blitzreels.blitzrecorder.pro.annual at $49.99/year
 - Complete AppStore/AppStoreConnectManualSetup.md while configuring App Store Connect
 - Complete AppStore/AppStoreQuestionnaires.md while answering App Store Connect questionnaires
 - Keep AppStore/ReleaseEvidence.generated.md and AppStore/ReleaseEvidence.md refreshed with Scripts/collect-release-evidence.sh --full before submission

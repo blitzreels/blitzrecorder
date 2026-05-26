@@ -75,9 +75,11 @@
   </array>
   <key>NSCameraUsageDescription</key>
   <string>BlitzRecorder Camera uses your iPhone camera as a remote camera source for BlitzRecorder on Mac.</string>
-  <key>NSLocalNetworkUsageDescription</key>
-  <string>BlitzRecorder Camera uses your local network to pair with your Mac, show monitor preview, receive camera controls, and transfer recordings.</string>
-  <key>UIApplicationSceneManifest</key>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>BlitzRecorder Camera uses your local network to pair with your Mac, show monitor preview, receive camera controls, and transfer recordings.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>BlitzRecorder Camera can record iPhone microphone audio into the source camera file for recovery and source-file workflows.</string>
+	<key>UIApplicationSceneManifest</key>
   <dict>
     <key>UIApplicationSupportsMultipleScenes</key>
     <false/>

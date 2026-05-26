@@ -4,6 +4,21 @@ import BlitzRecorderCore
 import XCTest
 
 final class RecordingSettingsStoreTests: XCTestCase {
+    func testSocialExportBitratesStayLightweight() {
+        var settings = RecordingSettings()
+
+        settings.outputResolution = .p1080
+        settings.framesPerSecond = 30
+        XCTAssertEqual(settings.finalVideoBitrate, 8_000_000)
+
+        settings.framesPerSecond = 60
+        XCTAssertEqual(settings.finalVideoBitrate, 12_000_000)
+
+        settings.outputResolution = .p2160
+        XCTAssertEqual(settings.finalVideoBitrate, 35_000_000)
+        XCTAssertLessThan(settings.finalVideoBitrate, settings.screenBitrate + settings.cameraBitrate)
+    }
+
     func testLoadKeepsCustomSceneFramesWhenPresetKeyIsStale() {
         let defaults = temporaryDefaults()
         defaults.set(CaptureLayout.vertical.rawValue, forKey: "recording.layout")
@@ -32,6 +47,21 @@ final class RecordingSettingsStoreTests: XCTestCase {
 
         XCTAssertEqual(settings.selectedScenePreset, .stackedHalves)
         XCTAssertRect(settings.sceneLayout.screenFrame, equals: presetLayout.screenFrame)
+    }
+
+    func testLoadKeepsAdjustedScreenSplitPreset() {
+        let defaults = temporaryDefaults()
+        let splitLayout = SceneLayout.screenSplitLayout(screenHeight: 0.62)
+        defaults.set(CaptureLayout.vertical.rawValue, forKey: "recording.layout")
+        defaults.set(ScenePreset.screenTop50.rawValue, forKey: "scene.selectedScenePreset")
+        defaults.set(rectString(splitLayout.screenFrame), forKey: "scene.screenFrame")
+        defaults.set(rectString(splitLayout.cameraFrame), forKey: "scene.cameraFrame")
+
+        let settings = RecordingSettingsStore.load(defaults: defaults)
+
+        XCTAssertEqual(settings.selectedScenePreset, .screenTop50)
+        XCTAssertRect(settings.sceneLayout.screenFrame, equals: splitLayout.screenFrame)
+        XCTAssertRect(settings.sceneLayout.cameraFrame, equals: splitLayout.cameraFrame)
     }
 
     func testLoadKeepsLegacyStackedPresetAsEqualHalves() {

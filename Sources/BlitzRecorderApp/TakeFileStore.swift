@@ -131,7 +131,11 @@ struct TakeFileStore {
             audioURL: scratchDirectory.appendingPathComponent("audio.m4a"),
             systemAudioURL: scratchDirectory.appendingPathComponent("system-audio.m4a"),
             transcriptURL: scratchDirectory.appendingPathComponent("transcript.txt"),
-            finalVideoURL: finalVideoURL(slug: nil, settings: settings, outputFormat: settings.outputVideoFormat),
+            finalVideoURL: finalVideoURL(
+                slug: Self.defaultSlug(for: scratchDirectory),
+                settings: settings,
+                outputFormat: settings.outputVideoFormat
+            ),
             outputVideoFormat: settings.outputVideoFormat,
             titleSlug: nil
         )
@@ -182,14 +186,25 @@ struct TakeFileStore {
     }
 
     func datedSlug(for take: RecordingTake, slug: String) -> String {
+        datedSlug(for: take, slug: Optional(slug))
+    }
+
+    func datedSlug(for take: RecordingTake, slug: String?) -> String {
         let takeName = take.scratchDirectory.lastPathComponent
         let prefix = String(takeName.prefix(19))
+        guard let slug, !slug.isEmpty else {
+            return defaultSlug(for: take)
+        }
         let slugPrefix = String(slug.prefix(19))
         guard Self.isTakeDatePrefix(prefix),
               !Self.isTakeDatePrefix(slugPrefix) else {
             return slug
         }
         return "\(prefix)-\(slug)"
+    }
+
+    func defaultSlug(for take: RecordingTake) -> String {
+        Self.defaultSlug(for: take.scratchDirectory)
     }
 
     func uniqueFileURL(_ url: URL) -> URL {
@@ -222,6 +237,10 @@ struct TakeFileStore {
         ].map { role, url in
             SourceTakeManifest.SourceFile(role: role, path: url.path)
         }
+    }
+
+    private static func defaultSlug(for scratchDirectory: URL) -> String {
+        scratchDirectory.lastPathComponent
     }
 
     private static func isTakeDatePrefix(_ value: String) -> Bool {

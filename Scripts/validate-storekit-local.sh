@@ -43,8 +43,11 @@ require_tool jq
 require_tool rg
 
 expected_product_id="dev.blitzreels.blitzrecorder.pro.monthly"
-expected_price="4.99"
+expected_annual_product_id="dev.blitzreels.blitzrecorder.pro.annual"
+expected_price="7.99"
+expected_annual_price="49.99"
 expected_period="P1M"
+expected_annual_period="P1Y"
 expected_description="Unlimited exports in BlitzRecorder."
 
 require_file "AppStore/BlitzRecorder.storekit"
@@ -62,33 +65,48 @@ if [[ -f "AppStore/BlitzRecorder.storekit" ]] && command -v jq >/dev/null 2>&1; 
   require_jq_value \
     "AppStore/BlitzRecorder.storekit" \
     '.subscriptionGroups[0].subscriptions | length' \
-    "1" \
+    "2" \
     "StoreKit subscription count"
   require_jq_value \
     "AppStore/BlitzRecorder.storekit" \
-    '.subscriptionGroups[0].subscriptions[0].productID' \
+    ".subscriptionGroups[0].subscriptions[] | select(.productID == \"$expected_product_id\") | .productID" \
     "$expected_product_id" \
-    "StoreKit product ID"
+    "StoreKit monthly product ID"
   require_jq_value \
     "AppStore/BlitzRecorder.storekit" \
-    '.subscriptionGroups[0].subscriptions[0].displayPrice' \
+    ".subscriptionGroups[0].subscriptions[] | select(.productID == \"$expected_product_id\") | .displayPrice" \
     "$expected_price" \
-    "StoreKit display price"
+    "StoreKit monthly display price"
   require_jq_value \
     "AppStore/BlitzRecorder.storekit" \
-    '.subscriptionGroups[0].subscriptions[0].recurringSubscriptionPeriod' \
+    ".subscriptionGroups[0].subscriptions[] | select(.productID == \"$expected_product_id\") | .recurringSubscriptionPeriod" \
     "$expected_period" \
-    "StoreKit subscription period"
+    "StoreKit monthly subscription period"
   require_jq_value \
     "AppStore/BlitzRecorder.storekit" \
-    '.subscriptionGroups[0].subscriptions[0].localizations[] | select(.locale == "en_US") | .displayName' \
+    ".subscriptionGroups[0].subscriptions[] | select(.productID == \"$expected_annual_product_id\") | .productID" \
+    "$expected_annual_product_id" \
+    "StoreKit annual product ID"
+  require_jq_value \
+    "AppStore/BlitzRecorder.storekit" \
+    ".subscriptionGroups[0].subscriptions[] | select(.productID == \"$expected_annual_product_id\") | .displayPrice" \
+    "$expected_annual_price" \
+    "StoreKit annual display price"
+  require_jq_value \
+    "AppStore/BlitzRecorder.storekit" \
+    ".subscriptionGroups[0].subscriptions[] | select(.productID == \"$expected_annual_product_id\") | .recurringSubscriptionPeriod" \
+    "$expected_annual_period" \
+    "StoreKit annual subscription period"
+  require_jq_value \
+    "AppStore/BlitzRecorder.storekit" \
+    ".subscriptionGroups[0].subscriptions[] | select(.productID == \"$expected_product_id\") | .localizations[] | select(.locale == \"en_US\") | .displayName" \
     "BlitzRecorder Pro" \
-    "StoreKit en-US display name"
+    "StoreKit monthly en-US display name"
   require_jq_value \
     "AppStore/BlitzRecorder.storekit" \
-    '.subscriptionGroups[0].subscriptions[0].localizations[] | select(.locale == "en_US") | .description' \
+    ".subscriptionGroups[0].subscriptions[] | select(.productID == \"$expected_product_id\") | .localizations[] | select(.locale == \"en_US\") | .description" \
     "$expected_description" \
-    "StoreKit en-US description"
+    "StoreKit monthly en-US description"
 fi
 
 require_contains "project.yml" "storeKitConfiguration: AppStore/BlitzRecorder.storekit"
@@ -96,17 +114,20 @@ require_contains "BlitzRecorder.xcodeproj/xcshareddata/xcschemes/BlitzRecorder.x
 
 require_contains "Sources/BlitzRecorderApp/AccessController.swift" "import StoreKit"
 require_contains "Sources/BlitzRecorderApp/AccessController.swift" "static let monthlyProductID = \"$expected_product_id\""
-require_contains "Sources/BlitzRecorderApp/AccessController.swift" "Product.products(for: [ProductConfiguration.monthlyProductID])"
+require_contains "Sources/BlitzRecorderApp/AccessController.swift" "static let annualProductID = \"$expected_annual_product_id\""
+require_contains "Sources/BlitzRecorderApp/AccessController.swift" "Product.products(for: ProductConfiguration.appStoreProductIDs)"
 require_contains "Sources/BlitzRecorderApp/AccessController.swift" "try await product.purchase()"
 require_contains "Sources/BlitzRecorderApp/AccessController.swift" "try await AppStore.sync()"
 require_contains "Sources/BlitzRecorderApp/AccessController.swift" "Transaction.currentEntitlements"
 require_contains "Sources/BlitzRecorderApp/AccessController.swift" "macappstore://showSubscriptions"
 
-require_contains "Sources/BlitzRecorderApp/UI/TopBar.swift" "Subscribe \\(access.monthlyPriceLabel) / month"
-require_contains "Sources/BlitzRecorderApp/UI/TopBar.swift" "Task { await access.purchaseMonthly() }"
-require_contains "Sources/BlitzRecorderApp/UI/TopBar.swift" "Task { await access.restorePurchases() }"
-require_contains "Sources/BlitzRecorderApp/UI/TopBar.swift" "Manage Subscription"
-require_contains "Sources/BlitzRecorderApp/UI/TopBar.swift" "The App Store subscription renews monthly until cancelled in Apple account settings."
+require_contains "Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift" "Subscribe \\(access.annualPriceLabel) / year"
+require_contains "Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift" "Task { await access.purchaseAnnual() }"
+require_contains "Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift" "Subscribe \\(access.monthlyPriceLabel) / month"
+require_contains "Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift" "Task { await access.purchaseMonthly() }"
+require_contains "Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift" "Task { await access.restorePurchases() }"
+require_contains "Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift" "Manage Subscription"
+require_contains "Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift" "App Store subscriptions renew until cancelled in Apple account settings."
 
 if [[ "$failures" -gt 0 ]]; then
   echo "StoreKit local validation failed with $failures issue(s)." >&2

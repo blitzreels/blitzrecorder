@@ -107,9 +107,11 @@ Recommended answer:
 
 Recommended answer:
 
-- Mac app has an auto-renewable subscription: `BlitzRecorder Pro Monthly`
-- Product ID: `dev.blitzreels.blitzrecorder.pro.monthly`
-- Price: `$4.99 per month`
+- Mac app has auto-renewable subscriptions: `BlitzRecorder Pro Monthly` and `BlitzRecorder Pro Annual`
+- Monthly product ID: `dev.blitzreels.blitzrecorder.pro.monthly`
+- Monthly price: `$7.99 per month`
+- Annual product ID: `dev.blitzreels.blitzrecorder.pro.annual`
+- Annual price: `$49.99 per year`
 - Free behavior: `3 free exports`
 - iOS companion has no in-app purchases and no paywall.
 

@@ -1,8 +1,11 @@
 import AppKit
 import CoreImage
 import QuartzCore
+import SwiftUI
 
-extension CanvasBackgroundStyle {
+struct CanvasAppearance {
+    let style: CanvasBackgroundStyle
+
     var gradientStartPoint: CGPoint {
         CGPoint(x: 0.08, y: 0.02)
     }
@@ -11,11 +14,11 @@ extension CanvasBackgroundStyle {
         CGPoint(x: 0.92, y: 1)
     }
 
-    var previewColors: [CGColor] {
+    var layerColors: [CGColor] {
         gradientStops.map { $0.cgColor }
     }
 
-    var previewLocations: [NSNumber] {
+    var layerLocations: [NSNumber] {
         let count = gradientStops.count
         guard count > 1 else { return [0] }
         return (0..<count).map { index in
@@ -25,6 +28,27 @@ extension CanvasBackgroundStyle {
 
     var solidCGColor: CGColor {
         gradientStops.last?.cgColor ?? NSColor.black.cgColor
+    }
+
+    var swatchColors: [Color] {
+        gradientStops.map { color in
+            Color(nsColor: color)
+        }
+    }
+
+    func apply(to layer: CAGradientLayer) {
+        layer.colors = layerColors
+        layer.locations = layerLocations
+        layer.startPoint = gradientStartPoint
+        layer.endPoint = gradientEndPoint
+        layer.backgroundColor = solidCGColor
+    }
+
+    func gradientLayer(frame: CGRect) -> CAGradientLayer {
+        let layer = CAGradientLayer()
+        layer.frame = frame
+        apply(to: layer)
+        return layer
     }
 
     func ciImage(in rect: CGRect) -> CIImage {
@@ -52,8 +76,8 @@ extension CanvasBackgroundStyle {
 
         if let gradient = CGGradient(
             colorsSpace: colorSpace,
-            colors: previewColors as CFArray,
-            locations: previewLocations.map { CGFloat(truncating: $0) }
+            colors: layerColors as CFArray,
+            locations: layerLocations.map { CGFloat(truncating: $0) }
         ) {
             let start = CGPoint(
                 x: CGFloat(width) * gradientStartPoint.x,
@@ -75,7 +99,7 @@ extension CanvasBackgroundStyle {
     }
 
     private var gradientStops: [NSColor] {
-        switch self {
+        switch style {
         case .black:
             return [
                 NSColor(calibratedWhite: 0.0, alpha: 1),
@@ -124,5 +148,35 @@ extension CanvasBackgroundStyle {
                 NSColor(calibratedRed: 0.98, green: 0.99, blue: 1.0, alpha: 1)
             ]
         }
+    }
+}
+
+extension CanvasBackgroundStyle {
+    var appearance: CanvasAppearance {
+        CanvasAppearance(style: self)
+    }
+
+    var gradientStartPoint: CGPoint {
+        appearance.gradientStartPoint
+    }
+
+    var gradientEndPoint: CGPoint {
+        appearance.gradientEndPoint
+    }
+
+    var previewColors: [CGColor] {
+        appearance.layerColors
+    }
+
+    var previewLocations: [NSNumber] {
+        appearance.layerLocations
+    }
+
+    var solidCGColor: CGColor {
+        appearance.solidCGColor
+    }
+
+    func ciImage(in rect: CGRect) -> CIImage {
+        appearance.ciImage(in: rect)
     }
 }

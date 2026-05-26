@@ -30,7 +30,12 @@ enum SceneSlotGeometry {
             return CGRect(x: 0, y: 0, width: 1, height: 1)
         }
 
-        return SceneLayerResizing.clamped(layout.screenFrame.standardized)
+        let canvas = CGRect(x: 0, y: 0, width: 1, height: 1)
+        let visibleScreenFrame = layout.screenFrame.standardized.intersection(canvas)
+        guard !visibleScreenFrame.isNull, !visibleScreenFrame.isEmpty else {
+            return SceneLayerResizing.clamped(layout.screenFrame.standardized)
+        }
+        return visibleScreenFrame
     }
 
     static func canvasFrame(in rect: CGRect, captureLayout: CaptureLayout) -> CGRect {

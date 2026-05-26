@@ -301,15 +301,25 @@ struct PermissionsPage: View {
         .padding(.horizontal, 28)
         .padding(.top, 28)
         .foregroundStyle(.white)
+        .onAppear {
+            vm.refreshPermissionStatus()
+        }
     }
 
     private func handleTap(_ row: PermissionStatusRow) {
-        guard !row.isGranted else { return }
         switch row.source {
         case .screen, .systemAudio:
-            vm.applyScreenRecordingPermission()
+            if row.isActive {
+                vm.applyScreenRecordingPermission()
+            } else {
+                vm.refreshPermissionStatus(message: "\(row.title) is not enabled in the current setup.")
+            }
         case .camera, .microphone:
-            vm.requestSourcePermissions()
+            if row.isActive {
+                vm.requestSourcePermissions()
+            } else {
+                vm.refreshPermissionStatus(message: "\(row.title) is not enabled in the current setup.")
+            }
         case nil:
             vm.requestAccessibilityPermission()
         }
@@ -325,7 +335,7 @@ struct PermissionStatusRowView: View {
             HStack(spacing: 12) {
                 Image(systemName: row.symbol)
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(row.isGranted ? Color(red: 0.09, green: 1.0, blue: 0.65) : .white.opacity(0.5))
+                    .foregroundStyle(tint)
                     .frame(width: 22)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -340,16 +350,75 @@ struct PermissionStatusRowView: View {
 
                 Spacer(minLength: 0)
 
-                Image(systemName: row.isGranted ? "checkmark.circle.fill" : "xmark.circle.fill")
+                Image(systemName: statusSymbol)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(row.isGranted ? Color(red: 0.09, green: 1.0, blue: 0.65) : .white.opacity(0.3))
+                    .foregroundStyle(tint)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .contentShape(.rect)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .background(rowBackground)
+        .contentShape(Rectangle())
         .pointingHandCursor()
+        .help(helpText)
+    }
+
+    private var tint: Color {
+        switch row.level {
+        case .granted:
+            return Color(red: 0.09, green: 1.0, blue: 0.65)
+        case .warning:
+            return Color(red: 1.0, green: 0.66, blue: 0.16)
+        case .blocked:
+            return Color(red: 1.0, green: 0.24, blue: 0.22)
+        case .inactive:
+            return .white.opacity(0.34)
+        }
+    }
+
+    private var rowBackground: some View {
+        Rectangle()
+            .fill(backgroundColor)
+    }
+
+    private var backgroundColor: Color {
+        switch row.level {
+        case .granted, .inactive:
+            return .clear
+        case .warning:
+            return Color(red: 1.0, green: 0.66, blue: 0.16).opacity(0.08)
+        case .blocked:
+            return Color(red: 1.0, green: 0.24, blue: 0.22).opacity(0.10)
+        }
+    }
+
+    private var statusSymbol: String {
+        switch row.level {
+        case .granted:
+            return "checkmark.circle.fill"
+        case .warning:
+            return "exclamationmark.triangle.fill"
+        case .blocked:
+            return "xmark.octagon.fill"
+        case .inactive:
+            return "minus.circle.fill"
+        }
+    }
+
+    private var helpText: String {
+        switch row.level {
+        case .granted:
+            return "\(row.title) access is active. Click to recheck."
+        case .warning:
+            return "\(row.title) needs confirmation. Click to request access."
+        case .blocked:
+            return "\(row.title) is blocked. Click to open the permission flow."
+        case .inactive:
+            return "\(row.title) is not enabled in the current setup."
+        }
     }
 }
 

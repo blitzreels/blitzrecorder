@@ -281,7 +281,6 @@ def ensure_subscription(
                     "familySharable": False,
                     "reviewNote": "Unlocks unlimited exports and renders in BlitzRecorder after 3 free exports.",
                     "groupLevel": 1,
-                    "availableInAllTerritories": True,
                 },
                 "relationships": {
                     "group": {

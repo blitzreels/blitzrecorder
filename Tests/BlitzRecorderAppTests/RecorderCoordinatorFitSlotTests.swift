@@ -97,6 +97,74 @@ final class RecorderCoordinatorFitSlotTests: XCTestCase {
         XCTAssertNil(persisted.screenCrop)
     }
 
+    func testChangingScreenSplitHeightClearsStaleScreenCropAndRestartsScreenCapture() {
+        let defaults = temporaryDefaults()
+        var settings = RecordingSettings()
+        settings.layout = .vertical
+        settings.enabledSources = [.screen, .camera]
+        settings.selectedScenePreset = .screenTop50
+        settings.screenCrop = CGRect(x: 0.1, y: 0.2, width: 0.5, height: 0.25)
+        settings.sceneLayout = SceneLayout.screenSplitLayout(screenHeight: 0.5)
+        RecordingSettingsStore.save(settings, defaults: defaults)
+
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults),
+            defaults: defaults
+        )
+        var configurationChangeCount = 0
+        coordinator.onScreenCaptureConfigurationChanged = {
+            configurationChangeCount += 1
+        }
+
+        coordinator.setScreenSplitHeight(0.64)
+
+        XCTAssertEqual(coordinator.settings.selectedScenePreset, .screenTop50)
+        XCTAssertRect(
+            coordinator.settings.sceneLayout.screenFrame,
+            equals: CGRect(x: 0, y: 0.36, width: 1, height: 0.64)
+        )
+        XCTAssertRect(
+            coordinator.settings.sceneLayout.cameraFrame,
+            equals: CGRect(x: 0, y: 0, width: 1, height: 0.36)
+        )
+        XCTAssertNil(coordinator.settings.screenCrop)
+        XCTAssertEqual(configurationChangeCount, 1)
+        XCTAssertNil(RecordingSettingsStore.load(defaults: defaults).screenCrop)
+    }
+
+    func testDraggingScreenFrameClearsStaleScreenCropAndRestartsScreenCapture() {
+        let defaults = temporaryDefaults()
+        var settings = RecordingSettings()
+        settings.layout = .vertical
+        settings.enabledSources = [.screen, .camera]
+        settings.selectedScenePreset = .screenTop50
+        settings.screenCrop = CGRect(x: 0.1, y: 0.2, width: 0.5, height: 0.25)
+        settings.sceneLayout = SceneLayout.screenSplitLayout(screenHeight: 0.5)
+        RecordingSettingsStore.save(settings, defaults: defaults)
+
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults),
+            defaults: defaults
+        )
+        var configurationChangeCount = 0
+        coordinator.onScreenCaptureConfigurationChanged = {
+            configurationChangeCount += 1
+        }
+
+        var layout = coordinator.settings.sceneLayout
+        layout.screenFrame = CGRect(x: 0, y: 0.42, width: 1, height: 0.58)
+        coordinator.setSceneLayout(layout)
+
+        XCTAssertNil(coordinator.settings.selectedScenePreset)
+        XCTAssertRect(
+            coordinator.settings.sceneLayout.screenFrame,
+            equals: CGRect(x: 0, y: 0.42, width: 1, height: 0.58)
+        )
+        XCTAssertNil(coordinator.settings.screenCrop)
+        XCTAssertEqual(configurationChangeCount, 1)
+        XCTAssertNil(RecordingSettingsStore.load(defaults: defaults).screenCrop)
+    }
+
     func testChangingScreenSourceRestartsScreenCaptureConfiguration() {
         let defaults = temporaryDefaults()
         var settings = RecordingSettings()
@@ -166,6 +234,132 @@ final class RecorderCoordinatorFitSlotTests: XCTestCase {
         )
     }
 
+    func testWebcamFullscreenPresetHidesScreenSourceAndEnablesCamera() {
+        let defaults = temporaryDefaults()
+        var settings = RecordingSettings()
+        settings.layout = .vertical
+        settings.enabledSources = [.screen, .microphone]
+        settings.hiddenSources = [.camera]
+        settings.screenCrop = CGRect(x: 0.1, y: 0.2, width: 0.4, height: 0.3)
+        RecordingSettingsStore.save(settings, defaults: defaults)
+
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults),
+            defaults: defaults
+        )
+        var screenConfigurationChangeCount = 0
+        var cameraConfigurationChangeCount = 0
+        coordinator.onScreenCaptureConfigurationChanged = {
+            screenConfigurationChangeCount += 1
+        }
+        coordinator.onCameraConfigurationChanged = {
+            cameraConfigurationChangeCount += 1
+        }
+
+        coordinator.applyScenePreset(.webcamFullscreen)
+
+        XCTAssertTrue(coordinator.settings.enabledSources.contains(.camera))
+        XCTAssertTrue(coordinator.settings.enabledSources.contains(.screen))
+        XCTAssertFalse(coordinator.settings.hiddenSources.contains(.camera))
+        XCTAssertTrue(coordinator.settings.hiddenSources.contains(.screen))
+        XCTAssertNil(coordinator.settings.screenCrop)
+        XCTAssertEqual(screenConfigurationChangeCount, 1)
+        XCTAssertEqual(cameraConfigurationChangeCount, 1)
+
+        let persisted = RecordingSettingsStore.load(defaults: defaults)
+        XCTAssertTrue(persisted.enabledSources.contains(.camera))
+        XCTAssertTrue(persisted.enabledSources.contains(.screen))
+        XCTAssertTrue(persisted.hiddenSources.contains(.screen))
+    }
+
+    func testScreenFullscreenPresetHidesCameraSourceAndEnablesScreen() {
+        let defaults = temporaryDefaults()
+        var settings = RecordingSettings()
+        settings.layout = .vertical
+        settings.enabledSources = [.camera, .microphone]
+        settings.hiddenSources = [.screen]
+        settings.screenCrop = CGRect(x: 0.1, y: 0.2, width: 0.4, height: 0.3)
+        RecordingSettingsStore.save(settings, defaults: defaults)
+
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults),
+            defaults: defaults
+        )
+        var screenConfigurationChangeCount = 0
+        var cameraConfigurationChangeCount = 0
+        coordinator.onScreenCaptureConfigurationChanged = {
+            screenConfigurationChangeCount += 1
+        }
+        coordinator.onCameraConfigurationChanged = {
+            cameraConfigurationChangeCount += 1
+        }
+
+        coordinator.applyScenePreset(.screenFullscreen)
+
+        XCTAssertTrue(coordinator.settings.enabledSources.contains(.screen))
+        XCTAssertTrue(coordinator.settings.enabledSources.contains(.camera))
+        XCTAssertFalse(coordinator.settings.hiddenSources.contains(.screen))
+        XCTAssertTrue(coordinator.settings.hiddenSources.contains(.camera))
+        XCTAssertNil(coordinator.settings.screenCrop)
+        XCTAssertEqual(screenConfigurationChangeCount, 1)
+        XCTAssertEqual(cameraConfigurationChangeCount, 0)
+
+        let persisted = RecordingSettingsStore.load(defaults: defaults)
+        XCTAssertTrue(persisted.enabledSources.contains(.screen))
+        XCTAssertTrue(persisted.enabledSources.contains(.camera))
+        XCTAssertTrue(persisted.hiddenSources.contains(.camera))
+    }
+
+    func testMixedScenePresetEnablesBothVideoSources() {
+        let defaults = temporaryDefaults()
+        var settings = RecordingSettings()
+        settings.layout = .vertical
+        settings.enabledSources = [.screen, .microphone]
+        settings.hiddenSources = [.camera]
+        RecordingSettingsStore.save(settings, defaults: defaults)
+
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults),
+            defaults: defaults
+        )
+        var cameraConfigurationChangeCount = 0
+        coordinator.onCameraConfigurationChanged = {
+            cameraConfigurationChangeCount += 1
+        }
+
+        coordinator.applyScenePreset(.stackedHalves)
+
+        XCTAssertTrue(coordinator.settings.enabledSources.contains(.screen))
+        XCTAssertTrue(coordinator.settings.enabledSources.contains(.camera))
+        XCTAssertFalse(coordinator.settings.hiddenSources.contains(.screen))
+        XCTAssertFalse(coordinator.settings.hiddenSources.contains(.camera))
+        XCTAssertEqual(cameraConfigurationChangeCount, 1)
+
+        let persisted = RecordingSettingsStore.load(defaults: defaults)
+        XCTAssertTrue(persisted.enabledSources.contains(.screen))
+        XCTAssertTrue(persisted.enabledSources.contains(.camera))
+        XCTAssertFalse(persisted.hiddenSources.contains(.camera))
+    }
+
+    func testScenePresetsNormalizeVideoSourcesForEverySupportedLayout() {
+        for layout in CaptureLayout.allCases {
+            for preset in ScenePreset.allCases where preset.supports(layout) {
+                assertScenePresetSourceState(
+                    preset: preset,
+                    layout: layout,
+                    initialEnabledSources: [.screen, .microphone],
+                    initialHiddenSources: [.camera]
+                )
+                assertScenePresetSourceState(
+                    preset: preset,
+                    layout: layout,
+                    initialEnabledSources: [.camera, .microphone],
+                    initialHiddenSources: [.screen]
+                )
+            }
+        }
+    }
+
     func testEnablingTransparentWebcamCutoutFitsScreenRecordingToCanvas() {
         let defaults = temporaryDefaults()
         var settings = RecordingSettings()
@@ -198,6 +392,47 @@ final class RecorderCoordinatorFitSlotTests: XCTestCase {
         XCTAssertRect(coordinator.settings.sceneLayout.screenFrame, equals: expectedFrame)
         XCTAssertRect(coordinator.settings.sceneLayout.cameraFrame, equals: settings.sceneLayout.cameraFrame)
         XCTAssertEqual(configurationChangeCount, 1)
+    }
+
+    private func assertScenePresetSourceState(
+        preset: ScenePreset,
+        layout: CaptureLayout,
+        initialEnabledSources: Set<CaptureSource>,
+        initialHiddenSources: Set<CaptureSource>,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let defaults = temporaryDefaults()
+        var settings = RecordingSettings()
+        settings.layout = layout
+        settings.enabledSources = initialEnabledSources
+        settings.hiddenSources = initialHiddenSources
+        RecordingSettingsStore.save(settings, defaults: defaults)
+
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults),
+            defaults: defaults
+        )
+
+        coordinator.applyScenePreset(preset)
+
+        switch preset {
+        case .webcamFullscreen:
+            XCTAssertTrue(coordinator.settings.enabledSources.contains(.screen), file: file, line: line)
+            XCTAssertTrue(coordinator.settings.enabledSources.contains(.camera), file: file, line: line)
+            XCTAssertTrue(coordinator.settings.hiddenSources.contains(.screen), file: file, line: line)
+            XCTAssertFalse(coordinator.settings.hiddenSources.contains(.camera), file: file, line: line)
+        case .screenFullscreen:
+            XCTAssertTrue(coordinator.settings.enabledSources.contains(.screen), file: file, line: line)
+            XCTAssertTrue(coordinator.settings.enabledSources.contains(.camera), file: file, line: line)
+            XCTAssertFalse(coordinator.settings.hiddenSources.contains(.screen), file: file, line: line)
+            XCTAssertTrue(coordinator.settings.hiddenSources.contains(.camera), file: file, line: line)
+        case .stackedHalves, .screenTop50, .screenTop70, .screenFocus, .cameraInset, .cameraFocus:
+            XCTAssertTrue(coordinator.settings.enabledSources.contains(.screen), file: file, line: line)
+            XCTAssertTrue(coordinator.settings.enabledSources.contains(.camera), file: file, line: line)
+            XCTAssertFalse(coordinator.settings.hiddenSources.contains(.screen), file: file, line: line)
+            XCTAssertFalse(coordinator.settings.hiddenSources.contains(.camera), file: file, line: line)
+        }
     }
 
     private func temporaryDefaults() -> UserDefaults {

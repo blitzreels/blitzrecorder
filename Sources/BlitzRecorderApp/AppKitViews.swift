@@ -35,8 +35,8 @@ final class PreviewStageView: NSView {
     private var trackingArea: NSTrackingArea?
     private var cameraCropDraftAmount: CGPoint?
     private var cameraCropDraftPosition: CGPoint?
+    private var screenCropDraft: CGRect?
     private let resizeHandleOutset: CGFloat = 14
-    private let minimumCropScale: CGFloat = 0.25
     override var mouseDownCanMoveWindow: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
@@ -46,20 +46,61 @@ final class PreviewStageView: NSView {
             invalidateResizeCursorRects()
         }
     }
+    var allowsLayerInteraction: Bool = true {
+        didSet {
+            guard oldValue != allowsLayerInteraction else { return }
+            if !allowsLayerInteraction {
+                dragMode = nil
+                NSCursor.arrow.set()
+            }
+            updateSelectionOverlay()
+            invalidateResizeCursorRects()
+        }
+    }
+    var allowsCameraCropInteraction: Bool = true {
+        didSet {
+            guard oldValue != allowsCameraCropInteraction else { return }
+            if !allowsCameraCropInteraction {
+                dragMode = nil
+                isCameraCropEditingEnabled = false
+                cameraCropDraftAmount = nil
+                cameraCropDraftPosition = nil
+                NSCursor.arrow.set()
+            }
+            updateSelectionOverlay()
+            invalidateResizeCursorRects()
+        }
+    }
     var onLayerFrameChanged: ((SceneLayerKind, CGRect) -> Void)?
     var onSceneLayoutChanged: ((SceneLayout) -> Void)?
     var onLayerSelected: ((SceneLayerKind) -> Void)?
     var onCameraCropChanged: ((CGPoint, CGPoint) -> Void)?
+    var onScreenCropChanged: ((CGRect?) -> Void)?
     var renderedCanvasAspectRatio: CGFloat {
         guard canvasFrame.height > 0 else { return 0 }
         return canvasFrame.width / canvasFrame.height
     }
     var renderedCanvasFrameForTesting: CGRect { canvasFrame }
+    var renderedScreenFrameForTesting: CGRect { screenPreview.frame }
+    var renderedCameraFrameForTesting: CGRect { cameraPreview.frame }
     var renderedSelectionFrameForTesting: CGRect? { selectionOverlay.selectionFrame }
 
     var isCameraCropEditingEnabled: Bool = false {
         didSet {
             syncPreviewCrop()
+            if !canvasFrame.isEmpty {
+                applySceneFrames()
+            }
+            updateSelectionOverlay()
+            invalidateResizeCursorRects()
+        }
+    }
+
+    var isScreenCropEditingEnabled: Bool = false {
+        didSet {
+            if !canvasFrame.isEmpty {
+                applySceneFrames()
+            }
             updateSelectionOverlay()
             invalidateResizeCursorRects()
         }
@@ -80,6 +121,15 @@ final class PreviewStageView: NSView {
                 needsLayout = true
                 needsDisplay = true
             }
+        }
+    }
+
+    var screenCrop: CGRect? {
+        didSet {
+            if !isScreenCropEditingEnabled {
+                screenCropDraft = screenCrop
+            }
+            updateSelectionOverlay()
         }
     }
 
@@ -225,7 +275,19 @@ final class PreviewStageView: NSView {
         super.resetCursorRects()
         guard !canvasFrame.isEmpty else { return }
 
-        if isCameraCropEditingEnabled, enabledSources.contains(.camera) {
+        if isScreenCropEditingEnabled, enabledSources.contains(.screen) {
+            let frame = screenCropFrame()
+            let moveRect = frame.insetBy(dx: 12, dy: 12)
+            if moveRect.width > 0, moveRect.height > 0 {
+                addCursorRect(moveRect, cursor: .openHand)
+            }
+            for (anchor, rect) in resizeTargets(for: frame) {
+                addCursorRect(rect, cursor: anchor.cursor)
+            }
+            return
+        }
+
+        if allowsCameraCropInteraction, isCameraCropEditingEnabled, enabledSources.contains(.camera) {
             let frame = frame(for: .camera)
             let moveRect = frame.insetBy(dx: 12, dy: 12)
             if moveRect.width > 0, moveRect.height > 0 {
@@ -236,6 +298,8 @@ final class PreviewStageView: NSView {
             }
             return
         }
+
+        guard allowsLayerInteraction else { return }
 
         for layer in SceneLayoutProjection.frontToBackOrder(for: sceneLayout) where enabledSources.contains(layer.source) {
             let frame = interactiveFrame(for: layer)
@@ -302,7 +366,26 @@ final class PreviewStageView: NSView {
     override func mouseDown(with event: NSEvent) {
         let location = convert(event.locationInWindow, from: nil)
 
-        if isCameraCropEditingEnabled,
+        if isScreenCropEditingEnabled,
+           enabledSources.contains(.screen),
+           let mode = screenCropDragMode(at: location) {
+            selectedLayer = .screen
+            onLayerSelected?(.screen)
+            dragMode = DragMode(
+                kind: mode,
+                layer: .screen,
+                startPoint: location,
+                startFrame: screenCropFrame(),
+                startCropAmount: cameraCropAmount,
+                startCropPosition: cameraCropPosition
+            )
+            cursor(for: mode).set()
+            needsDisplay = true
+            return
+        }
+
+        if allowsCameraCropInteraction,
+           isCameraCropEditingEnabled,
            enabledSources.contains(.camera),
            let mode = cameraCropDragMode(at: location) {
             selectedLayer = .camera
@@ -317,6 +400,11 @@ final class PreviewStageView: NSView {
             )
             cursor(for: mode).set()
             needsDisplay = true
+            return
+        }
+
+        guard allowsLayerInteraction else {
+            dragMode = nil
             return
         }
 
@@ -376,6 +464,24 @@ final class PreviewStageView: NSView {
     override func mouseDragged(with event: NSEvent) {
         guard let dragMode else { return }
 
+        switch dragMode.kind {
+        case .screenCropMove, .screenCropResize:
+            guard isScreenCropEditingEnabled else {
+                self.dragMode = nil
+                return
+            }
+        case .cropMove, .cropResize:
+            guard allowsCameraCropInteraction else {
+                self.dragMode = nil
+                return
+            }
+        case .move, .resize:
+            guard allowsLayerInteraction else {
+                self.dragMode = nil
+                return
+            }
+        }
+
         let location = convert(event.locationInWindow, from: nil)
         let delta = CGPoint(
             x: (location.x - dragMode.startPoint.x) / max(1, canvasFrame.width),
@@ -403,6 +509,14 @@ final class PreviewStageView: NSView {
         case .cropResize(let anchor):
             anchor.cursor.set()
             updateCameraCrop(resizingFrom: dragMode, anchor: anchor, to: location)
+            return
+        case .screenCropMove:
+            NSCursor.closedHand.set()
+            updateScreenCrop(movingFrom: dragMode, to: location)
+            return
+        case .screenCropResize(let anchor):
+            anchor.cursor.set()
+            updateScreenCrop(resizingFrom: dragMode, anchor: anchor, to: location)
             return
         }
 
@@ -434,7 +548,8 @@ final class PreviewStageView: NSView {
     }
 
     private func resizeHit(at point: CGPoint) -> (SceneLayerKind, ResizeAnchor)? {
-        guard !isCameraCropEditingEnabled else { return nil }
+        guard allowsLayerInteraction else { return nil }
+        guard !isCameraCropEditingEnabled, !isScreenCropEditingEnabled else { return nil }
         guard enabledSources.contains(selectedLayer.source),
               let anchor = resizeAnchor(at: point, in: interactiveFrame(for: selectedLayer)) else {
             return nil
@@ -443,11 +558,18 @@ final class PreviewStageView: NSView {
     }
 
     private func cursor(at point: CGPoint) -> NSCursor {
-        if isCameraCropEditingEnabled,
+        if isScreenCropEditingEnabled,
+           enabledSources.contains(.screen),
+           let mode = screenCropDragMode(at: point) {
+            return cursor(for: mode)
+        }
+        if allowsCameraCropInteraction,
+           isCameraCropEditingEnabled,
            enabledSources.contains(.camera),
            let mode = cameraCropDragMode(at: point) {
             return cursor(for: mode)
         }
+        guard allowsLayerInteraction else { return .arrow }
         if let (_, anchor) = resizeHit(at: point) {
             return anchor.cursor
         }
@@ -462,7 +584,9 @@ final class PreviewStageView: NSView {
         switch mode {
         case .cropMove:
             return .openHand
-        case .cropResize(let anchor), .resize(let anchor):
+        case .screenCropMove:
+            return .openHand
+        case .screenCropResize(let anchor), .cropResize(let anchor), .resize(let anchor):
             return anchor.cursor
         case .move:
             return .openHand
@@ -482,14 +606,14 @@ final class PreviewStageView: NSView {
             selectionOverlay.frame = bounds
 
             if hasScreen {
-                screenPreview.frame = denormalized(sceneLayout.screenFrame, in: canvasFrame)
+                screenPreview.frame = isScreenCropEditingEnabled ? screenCropSourceFrame() : projectedFrame(for: .screen, in: canvasFrame)
                 applyCanvasMask(to: screenPreview)
                 applySourceShape(to: screenPreview)
             } else {
                 screenPreview.layer?.mask = nil
             }
             if hasCamera {
-                cameraPreview.frame = denormalized(sceneLayout.cameraFrame, in: canvasFrame)
+                cameraPreview.frame = isCameraCropEditingEnabled ? cameraCropSourceFrame() : projectedFrame(for: .camera, in: canvasFrame)
                 applyCanvasMask(to: cameraPreview)
                 applySourceShape(to: cameraPreview)
             } else {
@@ -507,12 +631,12 @@ final class PreviewStageView: NSView {
             switch layer {
             case .screen:
                 sceneLayout.screenFrame = frame
-                screenPreview.frame = denormalized(frame, in: canvasFrame)
+                screenPreview.frame = projectedFrame(for: .screen, in: canvasFrame)
                 applyCanvasMask(to: screenPreview)
                 applySourceShape(to: screenPreview)
             case .camera:
                 sceneLayout.cameraFrame = frame
-                cameraPreview.frame = denormalized(frame, in: canvasFrame)
+                cameraPreview.frame = projectedFrame(for: .camera, in: canvasFrame)
                 applyCanvasMask(to: cameraPreview)
                 applySourceShape(to: cameraPreview)
             }
@@ -540,11 +664,26 @@ final class PreviewStageView: NSView {
         CATransaction.setDisableActions(true)
         mask.frame = view.bounds
         if view === cameraPreview {
+            if isCameraCropEditingEnabled {
+                if layer.mask !== nil {
+                    layer.mask = nil
+                }
+                CATransaction.commit()
+                return
+            }
             let visibleRect = canvasInViewCoords.intersection(view.bounds)
-            let radius = sourceCornerRadius(for: visibleRect)
-            mask.path = CGPath(roundedRect: visibleRect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+            let radius = sourceMaskCornerRadius(for: view, visibleRect: visibleRect)
+            mask.path = sourceMaskPath(for: visibleRect, radius: radius)
+        } else if isScreenCropEditingEnabled {
+            if layer.mask !== nil {
+                layer.mask = nil
+            }
+            CATransaction.commit()
+            return
         } else {
-            mask.path = CGPath(rect: canvasInViewCoords, transform: nil)
+            let visibleRect = canvasInViewCoords.intersection(view.bounds)
+            let radius = sourceMaskCornerRadius(for: view, visibleRect: visibleRect)
+            mask.path = sourceMaskPath(for: visibleRect, radius: radius)
         }
         if layer.mask !== mask {
             layer.mask = mask
@@ -556,15 +695,41 @@ final class PreviewStageView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         if view === cameraPreview {
-            view.layer?.cornerRadius = sourceCornerRadius(for: view.bounds)
+            let isFullscreen = isFullscreenCameraPreview
+            let paddedRadius = SceneLayoutProjection.sourceCornerRadius(for: view.bounds, canvasPadding: canvasPadding)
+            let radius = paddedRadius > 0 || (!isFullscreen && !isFullWidthCameraPreview)
+                ? (paddedRadius > 0 ? paddedRadius : sourceCornerRadius(for: view.bounds))
+                : 0
+            view.layer?.cornerRadius = radius
             view.layer?.cornerCurve = .continuous
-            view.layer?.borderWidth = 1
+            view.layer?.borderWidth = radius > 0 ? 1 : 0
             view.layer?.borderColor = NSColor.white.withAlphaComponent(0.16).cgColor
         } else {
-            view.layer?.cornerRadius = 0
-            view.layer?.borderWidth = 0
+            let radius = SceneLayoutProjection.sourceCornerRadius(for: view.bounds, canvasPadding: canvasPadding)
+            view.layer?.cornerRadius = radius
+            view.layer?.cornerCurve = .continuous
+            view.layer?.borderWidth = radius > 0 ? 1 : 0
+            view.layer?.borderColor = NSColor.white.withAlphaComponent(0.14).cgColor
         }
         CATransaction.commit()
+    }
+
+    private func sourceMaskPath(for rect: CGRect, radius: CGFloat) -> CGPath {
+        guard radius > 0 else {
+            return CGPath(rect: rect, transform: nil)
+        }
+        return CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+    }
+
+    private func sourceMaskCornerRadius(for view: NSView, visibleRect: CGRect) -> CGFloat {
+        let paddedRadius = SceneLayoutProjection.sourceCornerRadius(for: visibleRect, canvasPadding: canvasPadding)
+        guard paddedRadius <= 0,
+              view === cameraPreview,
+              !isFullscreenCameraPreview,
+              !isFullWidthCameraPreview else {
+            return paddedRadius
+        }
+        return sourceCornerRadius(for: visibleRect)
     }
 
     private func sourceCornerRadius(for rect: CGRect) -> CGFloat {
@@ -573,14 +738,10 @@ final class PreviewStageView: NSView {
     }
 
     private func updateOutlineOverlay() {
-        let hasScreen = enabledSources.contains(.screen)
-        let hasCamera = enabledSources.contains(.camera)
+        let geometry = renderGeometry(in: canvasFrame)
         outlineOverlay.frame = bounds
         outlineOverlay.canvasFrame = canvasFrame
-        var frames: [NSRect] = []
-        if hasScreen { frames.append(screenPreview.frame) }
-        if hasCamera { frames.append(cameraPreview.frame) }
-        outlineOverlay.sourceFrames = frames
+        outlineOverlay.sourceFrames = geometry.activeLayerOrder.map { frame(for: $0) }
     }
 
     private func frame(for layer: SceneLayerKind) -> NSRect {
@@ -600,12 +761,31 @@ final class PreviewStageView: NSView {
         normalized(interactiveFrame(for: layer), in: canvasFrame)
     }
 
-    private func denormalized(_ frame: CGRect, in canvas: NSRect) -> NSRect {
-        SceneLayoutProjection.padded(
-            SceneLayoutProjection.denormalized(frame, in: canvas, origin: .lowerLeft),
-            in: canvas,
-            padding: canvasPadding
+    private func projectedFrame(for layer: SceneLayerKind, in canvas: NSRect) -> NSRect {
+        renderGeometry(in: canvas).targetRect(for: layer)
+    }
+
+    private func renderGeometry(in canvas: NSRect) -> SceneRenderGeometry {
+        SceneRenderGeometry(
+            canvas: canvas,
+            scene: RecordingScene(
+                enabledSources: enabledSources,
+                sceneLayout: sceneLayout,
+                cameraCropAmount: cameraCropAmount,
+                cameraCropPosition: cameraCropPosition,
+                canvasBackgroundStyle: canvasBackgroundStyle,
+                canvasPadding: canvasPadding
+            ),
+            origin: .lowerLeft
         )
+    }
+
+    private var isFullscreenCameraPreview: Bool {
+        renderGeometry(in: canvasFrame).isFullCanvasFrame(for: .camera)
+    }
+
+    private var isFullWidthCameraPreview: Bool {
+        renderGeometry(in: canvasFrame).isFullCanvasWidth(for: .camera)
     }
 
     private func normalized(_ frame: NSRect, in canvas: NSRect) -> CGRect {
@@ -639,7 +819,7 @@ final class PreviewStageView: NSView {
     private func resizeAspectRatio(for layer: SceneLayerKind) -> CGFloat? {
         switch layer {
         case .screen:
-            return screenSourceAspectRatio / captureLayout.aspectRatio
+            return nil
         case .camera:
             return nil
         }
@@ -672,11 +852,7 @@ final class PreviewStageView: NSView {
     private func applyCanvasBackgroundStyle() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        canvasBackgroundLayer.colors = canvasBackgroundStyle.previewColors
-        canvasBackgroundLayer.locations = canvasBackgroundStyle.previewLocations
-        canvasBackgroundLayer.startPoint = canvasBackgroundStyle.gradientStartPoint
-        canvasBackgroundLayer.endPoint = canvasBackgroundStyle.gradientEndPoint
-        canvasBackgroundLayer.backgroundColor = canvasBackgroundStyle.solidCGColor
+        canvasBackgroundStyle.appearance.apply(to: canvasBackgroundLayer)
         CATransaction.commit()
     }
 
@@ -700,15 +876,38 @@ final class PreviewStageView: NSView {
     }
 
     private func updateSelectionOverlay() {
-        selectionOverlay.isCropMode = isCameraCropEditingEnabled && selectedLayer == .camera
+        if isScreenCropEditingEnabled {
+            selectionOverlay.isCropMode = true
+            selectionOverlay.cropLabel = "Capture crop"
+            guard enabledSources.contains(.screen), !canvasFrame.isEmpty else {
+                selectionOverlay.selectionFrame = nil
+                selectionOverlay.sourceFrame = nil
+                return
+            }
+            selectionOverlay.frame = bounds
+            selectionOverlay.sourceFrame = screenCropSourceFrame()
+            selectionOverlay.selectionFrame = screenCropFrame()
+            return
+        }
+
+        let isCropMode = allowsCameraCropInteraction && isCameraCropEditingEnabled && selectedLayer == .camera
+        guard allowsLayerInteraction || isCropMode else {
+            selectionOverlay.isCropMode = false
+            selectionOverlay.cropLabel = nil
+            selectionOverlay.selectionFrame = nil
+            selectionOverlay.sourceFrame = nil
+            return
+        }
+        selectionOverlay.isCropMode = isCropMode
+        selectionOverlay.cropLabel = isCropMode ? "Camera crop" : nil
         guard enabledSources.contains(selectedLayer.source), !canvasFrame.isEmpty else {
             selectionOverlay.selectionFrame = nil
             selectionOverlay.sourceFrame = nil
             return
         }
         selectionOverlay.frame = bounds
-        if isCameraCropEditingEnabled && selectedLayer == .camera {
-            selectionOverlay.sourceFrame = frame(for: .camera)
+        if isCropMode {
+            selectionOverlay.sourceFrame = cameraCropSourceFrame()
             selectionOverlay.selectionFrame = cameraCropFrame()
         } else {
             selectionOverlay.sourceFrame = nil
@@ -717,12 +916,24 @@ final class PreviewStageView: NSView {
     }
 
     private func cameraCropDragMode(at point: CGPoint) -> DragMode.Kind? {
+        guard allowsCameraCropInteraction else { return nil }
         let cropFrame = cameraCropFrame()
         if let anchor = resizeAnchor(at: point, in: cropFrame) {
             return .cropResize(anchor)
         }
         if cropFrame.contains(point) {
             return .cropMove
+        }
+        return nil
+    }
+
+    private func screenCropDragMode(at point: CGPoint) -> DragMode.Kind? {
+        let cropFrame = screenCropFrame()
+        if let anchor = resizeAnchor(at: point, in: cropFrame) {
+            return .screenCropResize(anchor)
+        }
+        if cropFrame.contains(point) {
+            return .screenCropMove
         }
         return nil
     }
@@ -735,8 +946,8 @@ final class PreviewStageView: NSView {
     }
 
     private func updateCameraCrop(movingFrom dragMode: DragMode, to location: CGPoint) {
-        let cameraFrame = frame(for: .camera)
-        guard cameraFrame.width > 0, cameraFrame.height > 0 else { return }
+        let cropGeometry = cameraCropGeometry()
+        guard cropGeometry.sourceFrame.width > 0, cropGeometry.sourceFrame.height > 0 else { return }
         let startCrop = cameraCropFrame(
             amount: dragMode.startCropAmount,
             position: dragMode.startCropPosition
@@ -745,21 +956,12 @@ final class PreviewStageView: NSView {
             x: location.x - dragMode.startPoint.x,
             y: location.y - dragMode.startPoint.y
         )
-        let moved = clampedCameraCropFrame(
-            CGRect(
-                x: startCrop.minX + delta.x,
-                y: startCrop.minY + delta.y,
-                width: startCrop.width,
-                height: startCrop.height
-            ),
-            in: cameraFrame
-        )
-        applyCameraCropFrame(moved, in: cameraFrame)
+        applyCameraCropControl(for: cropGeometry.movedCropFrame(startCrop, delta: delta), using: cropGeometry)
     }
 
     private func updateCameraCrop(resizingFrom dragMode: DragMode, anchor: ResizeAnchor, to location: CGPoint) {
-        let cameraFrame = frame(for: .camera)
-        guard cameraFrame.width > 0, cameraFrame.height > 0 else { return }
+        let cropGeometry = cameraCropGeometry()
+        guard cropGeometry.sourceFrame.width > 0, cropGeometry.sourceFrame.height > 0 else { return }
         let startCrop = cameraCropFrame(
             amount: dragMode.startCropAmount,
             position: dragMode.startCropPosition
@@ -768,94 +970,46 @@ final class PreviewStageView: NSView {
             x: location.x - dragMode.startPoint.x,
             y: location.y - dragMode.startPoint.y
         )
-        applyCameraCropFrame(resizedCameraCropFrame(startCrop, delta: delta, anchor: anchor, in: cameraFrame), in: cameraFrame)
+        applyCameraCropControl(
+            for: cropGeometry.resizedCropFrame(startCrop, delta: delta, anchor: anchor),
+            using: cropGeometry
+        )
     }
 
-    private func resizedCameraCropFrame(
-        _ crop: CGRect,
-        delta: CGPoint,
-        anchor: ResizeAnchor,
-        in cameraFrame: CGRect
-    ) -> CGRect {
-        var minX = crop.minX
-        var maxX = crop.maxX
-        var minY = crop.minY
-        var maxY = crop.maxY
-
-        if anchor.resizesLeftEdge { minX += delta.x }
-        if anchor.resizesRightEdge { maxX += delta.x }
-        if anchor.resizesBottomEdge { minY += delta.y }
-        if anchor.resizesTopEdge { maxY += delta.y }
-
-        let currentWidth = max(0.0001, crop.width)
-        let currentHeight = max(0.0001, crop.height)
-        let widthScale = max(0.0001, maxX - minX) / currentWidth
-        let heightScale = max(0.0001, maxY - minY) / currentHeight
-        let scale: CGFloat
-        if anchor.resizesHorizontalEdgeOnly {
-            scale = widthScale
-        } else if anchor.resizesVerticalEdgeOnly {
-            scale = heightScale
-        } else {
-            scale = abs(widthScale - 1) >= abs(heightScale - 1) ? widthScale : heightScale
-        }
-
-        let cropAspectRatio = max(0.01, cameraFrame.width / cameraFrame.height)
-        let minWidth = cameraFrame.width * minimumCropScale
-        let minHeight = cameraFrame.height * minimumCropScale
-        var width = min(cameraFrame.width, max(minWidth, crop.width * scale))
-        var height = width / cropAspectRatio
-        if height > cameraFrame.height {
-            height = cameraFrame.height
-            width = height * cropAspectRatio
-        }
-        if height < minHeight {
-            height = minHeight
-            width = height * cropAspectRatio
-        }
-
-        let x: CGFloat
-        if anchor.resizesLeftEdge {
-            x = crop.maxX - width
-        } else if anchor.resizesRightEdge {
-            x = crop.minX
-        } else {
-            x = crop.midX - width / 2
-        }
-
-        let y: CGFloat
-        if anchor.resizesBottomEdge {
-            y = crop.maxY - height
-        } else if anchor.resizesTopEdge {
-            y = crop.minY
-        } else {
-            y = crop.midY - height / 2
-        }
-
-        return clampedCameraCropFrame(CGRect(x: x, y: y, width: width, height: height), in: cameraFrame)
+    private func applyCameraCropControl(for crop: CGRect, using cropGeometry: CameraCropGeometry) {
+        guard let control = cropGeometry.control(for: crop) else { return }
+        updateCameraCropDraft(amount: control.amount, position: control.position)
     }
 
-    private func applyCameraCropFrame(_ crop: CGRect, in cameraFrame: CGRect) {
-        let scale = min(
-            crop.width / max(1, cameraFrame.width),
-            crop.height / max(1, cameraFrame.height)
-        )
-        let amount = CGPoint(
-            x: clampedCropAmount(1 - scale),
-            y: clampedCropAmount(1 - scale)
-        )
-        let position = CGPoint(
-            x: clampedCropPosition((crop.midX - cameraFrame.midX) / max(0.0001, (cameraFrame.width - crop.width) / 2)),
-            y: clampedCropPosition((crop.midY - cameraFrame.midY) / max(0.0001, (cameraFrame.height - crop.height) / 2))
-        )
-        updateCameraCropDraft(amount: amount, position: position)
+    private func updateScreenCrop(movingFrom dragMode: DragMode, to location: CGPoint) {
+        let sourceFrame = screenCropSourceFrame()
+        guard sourceFrame.width > 0, sourceFrame.height > 0 else { return }
+        let delta = CGPoint(x: location.x - dragMode.startPoint.x, y: location.y - dragMode.startPoint.y)
+        let moved = dragMode.startFrame.offsetBy(dx: delta.x, dy: delta.y)
+        updateScreenCropDraft(screenCropFrame: clampedScreenCropFrame(moved, in: sourceFrame))
+    }
+
+    private func updateScreenCrop(resizingFrom dragMode: DragMode, anchor: ResizeAnchor, to location: CGPoint) {
+        let sourceFrame = screenCropSourceFrame()
+        guard sourceFrame.width > 0, sourceFrame.height > 0 else { return }
+        let delta = CGPoint(x: location.x - dragMode.startPoint.x, y: location.y - dragMode.startPoint.y)
+        let resized = resizedScreenCropFrame(dragMode.startFrame, delta: delta, anchor: anchor, in: sourceFrame)
+        updateScreenCropDraft(screenCropFrame: resized)
     }
 
     func beginCameraCropEditing() {
+        guard allowsCameraCropInteraction else { return }
         cameraCropDraftAmount = cameraCropAmount
         cameraCropDraftPosition = cameraCropPosition
         selectedLayer = .camera
         isCameraCropEditingEnabled = true
+    }
+
+    func beginScreenCropEditing(crop: CGRect?) {
+        screenCropDraft = crop ?? CGRect(x: 0, y: 0, width: 1, height: 1)
+        selectedLayer = .screen
+        isCameraCropEditingEnabled = false
+        isScreenCropEditingEnabled = true
     }
 
     func commitCameraCropEditing() {
@@ -874,6 +1028,27 @@ final class PreviewStageView: NSView {
         cameraCropDraftAmount = nil
         cameraCropDraftPosition = nil
         isCameraCropEditingEnabled = false
+    }
+
+    func commitScreenCropEditing() {
+        guard isScreenCropEditingEnabled else { return }
+        let draft = clampedNormalizedScreenCrop(screenCropDraft ?? CGRect(x: 0, y: 0, width: 1, height: 1))
+        isScreenCropEditingEnabled = false
+        screenCropDraft = nil
+        screenCrop = draft
+        onScreenCropChanged?(draft)
+    }
+
+    func cancelScreenCropEditing() {
+        screenCropDraft = screenCrop
+        isScreenCropEditingEnabled = false
+    }
+
+    func resetScreenCropDraft() {
+        guard isScreenCropEditingEnabled else { return }
+        screenCropDraft = CGRect(x: 0, y: 0, width: 1, height: 1)
+        updateSelectionOverlay()
+        invalidateResizeCursorRects()
     }
 
     func updateCameraCropDraft(amount: CGPoint? = nil, position: CGPoint? = nil) {
@@ -905,39 +1080,85 @@ final class PreviewStageView: NSView {
     }
 
     private func cameraCropFrame(amount: CGPoint, position: CGPoint) -> CGRect {
-        let cameraFrame = frame(for: .camera)
-        guard cameraFrame.width > 0, cameraFrame.height > 0 else { return cameraFrame }
-        let scale = max(
-            minimumCropScale,
-            min(1, min(1 - clampedCropAmount(amount.x), 1 - clampedCropAmount(amount.y)))
+        cameraCropGeometry().cropFrame(amount: amount, position: position)
+    }
+
+    private func cameraCropSourceFrame() -> CGRect {
+        cameraCropGeometry().sourceFrame
+    }
+
+    private func cameraCropGeometry() -> CameraCropGeometry {
+        CameraCropGeometry(
+            renderGeometry: renderGeometry(in: canvasFrame),
+            sourceAspectRatio: cameraPreview.currentSourceAspectRatio
         )
+    }
+
+    private func screenCropSourceFrame() -> CGRect {
+        let target = projectedFrame(for: .screen, in: canvasFrame)
+        guard screenSourceAspectRatio > 0, target.width > 0, target.height > 0 else { return target }
+        let targetAspect = target.width / target.height
+        if targetAspect > screenSourceAspectRatio {
+            let width = target.height * screenSourceAspectRatio
+            return CGRect(x: target.midX - width / 2, y: target.minY, width: width, height: target.height)
+        }
+        let height = target.width / screenSourceAspectRatio
+        return CGRect(x: target.minX, y: target.midY - height / 2, width: target.width, height: height)
+    }
+
+    private func screenCropFrame() -> CGRect {
+        let sourceFrame = screenCropSourceFrame()
+        let crop = clampedNormalizedScreenCrop(screenCropDraft ?? screenCrop ?? CGRect(x: 0, y: 0, width: 1, height: 1))
         return CGRect(
-            x: cameraFrame.midX - cameraFrame.width * scale / 2
-                + clampedCropPosition(position.x) * cameraFrame.width * (1 - scale) / 2,
-            y: cameraFrame.midY - cameraFrame.height * scale / 2
-                + clampedCropPosition(position.y) * cameraFrame.height * (1 - scale) / 2,
-            width: cameraFrame.width * scale,
-            height: cameraFrame.height * scale
+            x: sourceFrame.minX + crop.minX * sourceFrame.width,
+            y: sourceFrame.minY + (1 - crop.maxY) * sourceFrame.height,
+            width: crop.width * sourceFrame.width,
+            height: crop.height * sourceFrame.height
         )
     }
 
-    private func clampedCameraCropFrame(_ crop: CGRect, in cameraFrame: CGRect) -> CGRect {
-        let width = min(cameraFrame.width, max(1, crop.width))
-        let height = min(cameraFrame.height, max(1, crop.height))
-        return CGRect(
-            x: min(max(cameraFrame.minX, crop.minX), cameraFrame.maxX - width),
-            y: min(max(cameraFrame.minY, crop.minY), cameraFrame.maxY - height),
-            width: width,
-            height: height
-        )
+    private func updateScreenCropDraft(screenCropFrame: CGRect) {
+        let sourceFrame = screenCropSourceFrame()
+        guard sourceFrame.width > 0, sourceFrame.height > 0 else { return }
+        screenCropDraft = clampedNormalizedScreenCrop(CGRect(
+            x: (screenCropFrame.minX - sourceFrame.minX) / sourceFrame.width,
+            y: 1 - ((screenCropFrame.maxY - sourceFrame.minY) / sourceFrame.height),
+            width: screenCropFrame.width / sourceFrame.width,
+            height: screenCropFrame.height / sourceFrame.height
+        ))
+        updateSelectionOverlay()
+        invalidateResizeCursorRects()
     }
 
-    private func clampedCropAmount(_ amount: CGFloat) -> CGFloat {
-        min(0.75, max(0, amount))
+    private func clampedScreenCropFrame(_ frame: CGRect, in sourceFrame: CGRect) -> CGRect {
+        let minimumWidth = min(sourceFrame.width, max(12, sourceFrame.width * 0.05))
+        let minimumHeight = min(sourceFrame.height, max(12, sourceFrame.height * 0.05))
+        let width = min(sourceFrame.width, max(minimumWidth, frame.width))
+        let height = min(sourceFrame.height, max(minimumHeight, frame.height))
+        let x = min(sourceFrame.maxX - width, max(sourceFrame.minX, frame.minX))
+        let y = min(sourceFrame.maxY - height, max(sourceFrame.minY, frame.minY))
+        return CGRect(x: x, y: y, width: width, height: height)
     }
 
-    private func clampedCropPosition(_ position: CGFloat) -> CGFloat {
-        min(1, max(-1, position))
+    private func resizedScreenCropFrame(_ frame: CGRect, delta: CGPoint, anchor: ResizeAnchor, in sourceFrame: CGRect) -> CGRect {
+        var minX = frame.minX
+        var maxX = frame.maxX
+        var minY = frame.minY
+        var maxY = frame.maxY
+        if anchor.resizesLeftEdge { minX += delta.x }
+        if anchor.resizesRightEdge { maxX += delta.x }
+        if anchor.resizesBottomEdge { minY += delta.y }
+        if anchor.resizesTopEdge { maxY += delta.y }
+        return clampedScreenCropFrame(CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY), in: sourceFrame)
+    }
+
+    private func clampedNormalizedScreenCrop(_ crop: CGRect) -> CGRect {
+        let crop = crop.standardized
+        let x = min(1, max(0, crop.minX))
+        let y = min(1, max(0, crop.minY))
+        let maxX = min(1, max(x, crop.maxX))
+        let maxY = min(1, max(y, crop.maxY))
+        return CGRect(x: x, y: y, width: maxX - x, height: maxY - y)
     }
 }
 
@@ -977,12 +1198,14 @@ private struct DragMode {
         case resize(ResizeAnchor)
         case cropMove
         case cropResize(ResizeAnchor)
+        case screenCropMove
+        case screenCropResize(ResizeAnchor)
 
         var isResize: Bool {
             switch self {
             case .resize:
                 return true
-            case .move, .cropMove, .cropResize:
+            case .move, .cropMove, .cropResize, .screenCropMove, .screenCropResize:
                 return false
             }
         }
@@ -1080,6 +1303,9 @@ private final class SceneSelectionOverlayView: NSView {
     var isCropMode = false {
         didSet { needsDisplay = true }
     }
+    var cropLabel: String? {
+        didSet { needsDisplay = true }
+    }
 
     override var isOpaque: Bool { false }
 
@@ -1095,7 +1321,7 @@ private final class SceneSelectionOverlayView: NSView {
             drawCropShade(sourceFrame: sourceFrame, cropFrame: frame)
         }
 
-        let strokeColor = isCropMode ? NSColor.systemYellow : Brand.primary
+        let strokeColor = Brand.primary
         strokeColor.setStroke()
         let outerPath = NSBezierPath(rect: frame.insetBy(dx: 0.5, dy: 0.5))
         outerPath.lineWidth = isCropMode ? 2 : 1.5
@@ -1103,6 +1329,9 @@ private final class SceneSelectionOverlayView: NSView {
 
         if isCropMode {
             drawCropGrid(in: frame)
+            if let cropLabel {
+                drawCropLabel(cropLabel, near: frame)
+            }
         }
 
         strokeColor.setFill()
@@ -1119,14 +1348,14 @@ private final class SceneSelectionOverlayView: NSView {
     }
 
     private func drawCropShade(sourceFrame: NSRect, cropFrame: NSRect) {
-        NSColor.black.withAlphaComponent(0.42).setFill()
+        NSColor.black.withAlphaComponent(0.46).setFill()
         let shade = NSBezierPath(rect: sourceFrame)
         shade.append(NSBezierPath(rect: cropFrame).reversed)
         shade.fill()
     }
 
     private func drawCropGrid(in frame: NSRect) {
-        NSColor.white.withAlphaComponent(0.42).setStroke()
+        NSColor.white.withAlphaComponent(0.32).setStroke()
         let grid = NSBezierPath()
         grid.lineWidth = 1
         for fraction in [1.0 / 3.0, 2.0 / 3.0] {
@@ -1139,6 +1368,23 @@ private final class SceneSelectionOverlayView: NSView {
             grid.line(to: NSPoint(x: frame.maxX, y: y))
         }
         grid.stroke()
+    }
+
+    private func drawCropLabel(_ label: String, near frame: NSRect) {
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 12, weight: .bold),
+            .foregroundColor: NSColor.black
+        ]
+        let size = label.size(withAttributes: attributes)
+        let rect = CGRect(
+            x: frame.minX + 10,
+            y: min(bounds.maxY - size.height - 10, frame.maxY + 8),
+            width: size.width + 18,
+            height: size.height + 9
+        )
+        Brand.primary.setFill()
+        NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).fill()
+        label.draw(at: CGPoint(x: rect.minX + 9, y: rect.minY + 4.5), withAttributes: attributes)
     }
 
     private func resizeHandles(for frame: NSRect) -> [ResizeAnchor: NSRect] {
@@ -1359,6 +1605,7 @@ private final class SafeZoneOverlayView: NSView {
 final class ScreenPreviewView: NSView {
     private let placeholderLayer = CALayer()
     private let imageLayer = CALayer()
+    private var sampleBufferLayer: AVSampleBufferDisplayLayer?
     private let label = NSTextField(labelWithString: "SCREEN PREVIEW")
 
     init() {
@@ -1423,17 +1670,54 @@ final class ScreenPreviewView: NSView {
         placeholderLayer.frame = bounds
         placeholderLayer.cornerRadius = min(10, min(bounds.width, bounds.height) / 8)
         imageLayer.frame = bounds
+        sampleBufferLayer?.frame = bounds
         CATransaction.commit()
     }
 
     func setImage(_ image: CGImage) {
+        sampleBufferLayer?.removeFromSuperlayer()
+        sampleBufferLayer = nil
         placeholderLayer.isHidden = true
         imageLayer.contents = image
         label.isHidden = true
     }
 
+    func enqueuePreviewSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
+        imageLayer.contents = nil
+        if sampleBufferLayer == nil {
+            let layer = AVSampleBufferDisplayLayer()
+            layer.videoGravity = .resizeAspectFill
+            layer.actions = noResizeActions
+            layer.backgroundColor = NSColor.black.cgColor
+            sampleBufferLayer = layer
+            self.layer?.insertSublayer(layer, above: placeholderLayer)
+            syncLayerFrames()
+        }
+        guard let sampleBufferLayer else { return }
+        if #available(macOS 15.0, *) {
+            let renderer = sampleBufferLayer.sampleBufferRenderer
+            if renderer.status == .failed {
+                renderer.flush()
+            }
+            if renderer.isReadyForMoreMediaData {
+                renderer.enqueue(sampleBuffer)
+            }
+        } else {
+            if sampleBufferLayer.status == .failed {
+                sampleBufferLayer.flush()
+            }
+            if sampleBufferLayer.isReadyForMoreMediaData {
+                sampleBufferLayer.enqueue(sampleBuffer)
+            }
+        }
+        placeholderLayer.isHidden = true
+        label.isHidden = true
+    }
+
     func setMessage(_ message: String) {
         placeholderLayer.isHidden = false
+        sampleBufferLayer?.removeFromSuperlayer()
+        sampleBufferLayer = nil
         imageLayer.contents = nil
         label.isHidden = false
         label.stringValue = message
@@ -1456,6 +1740,7 @@ final class CameraPreviewView: NSView {
         didSet { syncPreviewLayerFrame() }
     }
     var hasPreviewContent: Bool { previewLayer != nil || sampleBufferLayer != nil || imageLayer.contents != nil }
+    var currentSourceAspectRatio: CGFloat { sourceAspectRatio }
 
     init() {
         super.init(frame: .zero)
@@ -1503,12 +1788,12 @@ final class CameraPreviewView: NSView {
     }
 
     private func syncPreviewLayerFrame() {
-        let contentFrame = SourceCropGeometry.sourceFrame(
-            sourceAspectRatio: sourceAspectRatio,
-            bounds: bounds,
+        let contentFrame = VideoRenderPlacement(
+            kind: .camera,
+            targetRect: bounds,
             sourceCropAmount: sourceCropAmount,
             sourceCropPosition: sourceCropPosition
-        )
+        ).sourceFrame(sourceAspectRatio: sourceAspectRatio)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         previewLayer?.frame = contentFrame
@@ -1595,5 +1880,18 @@ final class CameraPreviewView: NSView {
                 return CGFloat(dimensions.width) / CGFloat(dimensions.height)
             }
             .first
+    }
+}
+
+private extension CGRect {
+    var isFullCanvasFrame: Bool {
+        isAlmostEqual(to: CGRect(x: 0, y: 0, width: 1, height: 1))
+    }
+
+    func isAlmostEqual(to other: CGRect, tolerance: CGFloat = 0.0001) -> Bool {
+        abs(minX - other.minX) <= tolerance
+            && abs(minY - other.minY) <= tolerance
+            && abs(width - other.width) <= tolerance
+            && abs(height - other.height) <= tolerance
     }
 }

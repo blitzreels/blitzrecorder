@@ -26,17 +26,19 @@ enum Merger {
         guard !videoSources.isEmpty else {
             throw RecorderError.exportUnavailable
         }
+        let exportPlan = try FinalExportPlanning.plan(
+            settings: settings,
+            sceneEvents: sceneEvents,
+            sources: videoSources.map(\.planningInput)
+        )
 
         let composition = AVMutableComposition()
-        let duration = videoSources
-            .map(\.duration)
-            .reduce(videoSources[0].duration) { CMTimeMinimum($0, $1) }
-
-        let renderDimensions = ScreenCaptureGeometry.outputDimensions(for: settings)
-        let renderSize = CGSize(width: renderDimensions.width, height: renderDimensions.height)
+        let duration = exportPlan.duration
+        let renderSize = exportPlan.renderSize
 
         var compositedSources: [CompositedVideoSource] = []
         for source in videoSources {
+            guard let insertion = exportPlan.insertion(for: source.kind) else { continue }
             guard let compositionTrack = composition.addMutableTrack(
                 withMediaType: .video,
                 preferredTrackID: kCMPersistentTrackID_Invalid
@@ -45,12 +47,16 @@ enum Merger {
             }
 
             try compositionTrack.insertTimeRange(
-                CMTimeRange(start: .zero, duration: duration),
+                CMTimeRange(start: insertion.sourceStart, duration: insertion.duration),
                 of: source.track,
-                at: .zero
+                at: insertion.compositionStart
             )
 
-            compositedSources.append(CompositedVideoSource(source: source, compositionTrack: compositionTrack))
+            compositedSources.append(CompositedVideoSource(
+                source: source,
+                compositionTrack: compositionTrack,
+                timeRange: CMTimeRange(start: insertion.compositionStart, duration: insertion.duration)
+            ))
         }
 
         var audioMixParameters: [AVMutableAudioMixInputParameters] = []
@@ -89,49 +95,91 @@ enum Merger {
             duration: duration
         )
 
-        let presetName = settings.removesCameraBackgroundAfterRecording
-            ? AVAssetExportPresetHighestQuality
-            : AVAssetExportPresetHEVCHighestQuality
-        guard let exporter = AVAssetExportSession(asset: composition, presetName: presetName) else {
-            throw RecorderError.exportUnavailable
-        }
         let outputFileType = take.outputVideoFormat.avFileType
-        guard exporter.supportedFileTypes.contains(outputFileType) else {
-            throw RecorderError.exportUnavailable
-        }
-
-        exporter.outputURL = temporaryOutputURL
-        exporter.outputFileType = outputFileType
-        exporter.videoComposition = videoComposition
+        let audioMix: AVMutableAudioMix?
         if !audioMixParameters.isEmpty {
-            let audioMix = AVMutableAudioMix()
-            audioMix.inputParameters = audioMixParameters
-            exporter.audioMix = audioMix
-        }
-        exporter.shouldOptimizeForNetworkUse = true
-
-        let progressTask = Task { @MainActor in
-            progressHandler?(0)
-            while !Task.isCancelled {
-                progressHandler?(Double(exporter.progress))
-                try? await Task.sleep(for: .milliseconds(120))
-            }
+            let mix = AVMutableAudioMix()
+            mix.inputParameters = audioMixParameters
+            audioMix = mix
+        } else {
+            audioMix = nil
         }
 
         do {
-            try await exporter.export(to: temporaryOutputURL, as: outputFileType)
-            progressTask.cancel()
-            await progressTask.value
+            await progressHandler?(0)
+            if exportPlan.engine == .assetExportSession {
+                try await exportWithAssetExportSession(
+                    composition: composition,
+                    videoComposition: videoComposition,
+                    audioMix: audioMix,
+                    outputURL: temporaryOutputURL,
+                    outputFileType: outputFileType,
+                    settings: settings,
+                    progressHandler: progressHandler
+                )
+            } else {
+                try await OptimizedCompositionExporter.export(
+                    composition: composition,
+                    videoComposition: videoComposition,
+                    audioMix: audioMix,
+                    outputURL: temporaryOutputURL,
+                    outputFileType: outputFileType,
+                    renderSize: renderSize,
+                    settings: settings,
+                    duration: duration,
+                    progressHandler: progressHandler
+                )
+            }
             await progressHandler?(1)
         } catch {
-            progressTask.cancel()
-            await progressTask.value
             try? fileManager.removeItem(at: temporaryOutputURL)
             throw error
         }
 
         try fileManager.moveItem(at: temporaryOutputURL, to: outputURL)
         return outputURL
+    }
+
+    private static func exportWithAssetExportSession(
+        composition: AVComposition,
+        videoComposition: AVVideoComposition,
+        audioMix: AVAudioMix?,
+        outputURL: URL,
+        outputFileType: AVFileType,
+        settings: RecordingSettings,
+        progressHandler: (@MainActor (Double) -> Void)?
+    ) async throws {
+        let presetName = settings.removesCameraBackgroundAfterRecording
+            ? AVAssetExportPresetHighestQuality
+            : AVAssetExportPresetHEVCHighestQuality
+        guard let exporter = AVAssetExportSession(asset: composition, presetName: presetName) else {
+            throw RecorderError.exportUnavailable
+        }
+        guard exporter.supportedFileTypes.contains(outputFileType) else {
+            throw RecorderError.exportUnavailable
+        }
+
+        exporter.outputURL = outputURL
+        exporter.outputFileType = outputFileType
+        exporter.videoComposition = videoComposition
+        exporter.audioMix = audioMix
+        exporter.shouldOptimizeForNetworkUse = true
+
+        let progressTask = Task { @MainActor in
+            while !Task.isCancelled {
+                progressHandler?(Double(exporter.progress))
+                try? await Task.sleep(for: .milliseconds(120))
+            }
+        }
+        do {
+            try await exporter.export(to: outputURL, as: outputFileType)
+            progressTask.cancel()
+            await progressTask.value
+        } catch {
+            progressTask.cancel()
+            await progressTask.value
+            throw error
+        }
     }
 
     private static func uniqueFileURL(_ url: URL) -> URL {
@@ -155,8 +203,9 @@ enum Merger {
 
     private static func availableVideoSources(for take: RecordingTake, settings: RecordingSettings) async throws -> [VideoSource] {
         var sources: [VideoSource] = []
-        let screenAsset = await readableVideoAsset(kind: "screen", url: take.screenURL)
-        let cameraAsset = await readableVideoAsset(kind: "camera", url: take.cameraURL)
+        let capturedSources = settings.enabledSources
+        let screenAsset = capturedSources.contains(.screen) ? await readableVideoAsset(kind: "screen", url: take.screenURL) : nil
+        let cameraAsset = capturedSources.contains(.camera) ? await readableVideoAsset(kind: "camera", url: take.cameraURL) : nil
         let hasScreen = screenAsset != nil
         let hasCamera = cameraAsset != nil
         let dimensions = ScreenCaptureGeometry.outputDimensions(for: settings)
@@ -189,7 +238,8 @@ enum Merger {
                     duration: cameraAsset.duration,
                     targetRect: targetRect,
                     sourceCropAmount: settings.cameraCropAmount,
-                    sourceCropPosition: settings.cameraCropPosition
+                    sourceCropPosition: settings.cameraCropPosition,
+                    timelineOffset: hasScreen ? remoteCameraTimelineOffset(for: take.cameraURL) : .zero
                 ))
             }
         }
@@ -215,6 +265,55 @@ enum Merger {
         }
     }
 
+    private static func remoteCameraTimelineOffset(for cameraURL: URL) -> CMTime {
+        guard let manifest = remoteCameraManifest(for: cameraURL),
+              let timelineStartTime = manifest.hostTimelineStartTime,
+              let cameraStartTime = manifest.estimatedHostStartTime ?? manifest.hostStartTime else {
+            return .zero
+        }
+        let deltaNanoseconds: Int64
+        if cameraStartTime >= timelineStartTime {
+            deltaNanoseconds = Int64(min(cameraStartTime - timelineStartTime, UInt64(Int64.max)))
+        } else {
+            deltaNanoseconds = -Int64(min(timelineStartTime - cameraStartTime, UInt64(Int64.max)))
+        }
+        return CMTimeConvertScale(
+            CMTime(value: deltaNanoseconds, timescale: 1_000_000_000),
+            timescale: 600,
+            method: .roundHalfAwayFromZero
+        )
+    }
+
+    private static func remoteCameraManifest(for cameraURL: URL) -> RemoteCameraTransferManifest? {
+        let decoder = JSONDecoder()
+        for url in remoteCameraManifestCandidates(for: cameraURL) {
+            guard let data = try? Data(contentsOf: url),
+                  let manifest = try? decoder.decode(RemoteCameraTransferManifest.self, from: data) else {
+                continue
+            }
+            return manifest
+        }
+        return nil
+    }
+
+    private static func remoteCameraManifestCandidates(for cameraURL: URL) -> [URL] {
+        let expected = cameraURL
+            .deletingPathExtension()
+            .appendingPathExtension("remote-camera-manifest.json")
+        var candidates = [expected]
+        let directory = cameraURL.deletingLastPathComponent()
+        if let urls = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ) {
+            candidates.append(contentsOf: urls.filter {
+                $0.lastPathComponent.hasSuffix(".remote-camera-manifest.json")
+                    && $0 != expected
+            })
+        }
+        return candidates
+    }
+
     private static func paddedFullCanvasTargetRect(renderSize: CGSize, settings: RecordingSettings) -> CGRect {
         let canvas = CGRect(origin: .zero, size: renderSize)
         return SceneLayoutProjection.padded(canvas, in: canvas, padding: settings.canvasPadding)
@@ -235,8 +334,13 @@ enum Merger {
         videoLayer.frame = frame
 
         let fallbackScene = RecordingScene(settings: settings)
-        let segments = sceneSegments(sceneEvents: sceneEvents, fallbackScene: fallbackScene, duration: duration)
+        let segments = RecordingSceneTimeline.segments(
+            sceneEvents: sceneEvents,
+            fallbackScene: fallbackScene,
+            duration: duration
+        )
         addCanvasBackgroundLayers(to: parentLayer, frame: frame, segments: segments, duration: duration)
+        applyRoundedSourceMask(to: videoLayer, frame: frame, segments: segments, duration: duration)
         parentLayer.addSublayer(videoLayer)
         videoComposition.animationTool = AVVideoCompositionCoreAnimationTool(
             postProcessingAsVideoLayer: videoLayer,
@@ -247,7 +351,7 @@ enum Merger {
     private static func addCanvasBackgroundLayers(
         to parentLayer: CALayer,
         frame: CGRect,
-        segments: [(timeRange: CMTimeRange, scene: RecordingScene)],
+        segments: [RecordingSceneSegment],
         duration: CMTime
     ) {
         guard !segments.isEmpty else { return }
@@ -275,15 +379,78 @@ enum Merger {
         }
     }
 
+    private static func applyRoundedSourceMask(
+        to videoLayer: CALayer,
+        frame: CGRect,
+        segments: [RecordingSceneSegment],
+        duration: CMTime
+    ) {
+        guard !segments.isEmpty else { return }
+        var hasRoundedSegment = false
+        let maskPaths = segments.map { segment in
+            if let path = roundedSourceMaskPath(for: segment.scene, frame: frame) {
+                hasRoundedSegment = true
+                return path
+            }
+            return CGPath(rect: frame, transform: nil)
+        }
+        guard hasRoundedSegment else { return }
+
+        let maskLayer = CAShapeLayer()
+        maskLayer.frame = frame
+        maskLayer.fillColor = CGColor(gray: 1, alpha: 1)
+        maskLayer.path = maskPaths[0]
+
+        let durationSeconds = max(0, duration.seconds)
+        if segments.count > 1, durationSeconds > 0 {
+            let animation = CAKeyframeAnimation(keyPath: "path")
+            animation.beginTime = AVCoreAnimationBeginTimeAtZero
+            animation.duration = durationSeconds
+            animation.keyTimes = pathKeyTimes(for: segments, durationSeconds: durationSeconds)
+            animation.values = pathValues(maskPaths, for: segments)
+            animation.calculationMode = .discrete
+            animation.isRemovedOnCompletion = false
+            animation.fillMode = .both
+            maskLayer.add(animation, forKey: "scene-path")
+        }
+
+        videoLayer.mask = maskLayer
+    }
+
+    private static func roundedSourceMaskPath(for scene: RecordingScene, frame: CGRect) -> CGPath? {
+        SceneRenderGeometry(canvas: frame, scene: scene, origin: .upperLeft).sourceMaskPath()
+    }
+
+    private static func pathKeyTimes(
+        for segments: [RecordingSceneSegment],
+        durationSeconds: Double
+    ) -> [NSNumber] {
+        var keyTimes = [NSNumber(value: 0)]
+        for segment in segments {
+            let start = max(0, min(1, segment.timeRange.start.seconds / durationSeconds))
+            let end = max(start, min(1, CMTimeGetSeconds(CMTimeRangeGetEnd(segment.timeRange)) / durationSeconds))
+            keyTimes.append(NSNumber(value: start))
+            keyTimes.append(NSNumber(value: end))
+        }
+        keyTimes.append(NSNumber(value: 1))
+        return keyTimes
+    }
+
+    private static func pathValues(
+        _ paths: [CGPath],
+        for segments: [RecordingSceneSegment]
+    ) -> [CGPath] {
+        var values = [paths[0]]
+        for (index, _) in segments.enumerated() {
+            values.append(paths[index])
+            values.append(paths[index])
+        }
+        values.append(paths.last ?? paths[0])
+        return values
+    }
+
     private static func canvasBackgroundLayer(style: CanvasBackgroundStyle, frame: CGRect) -> CAGradientLayer {
-        let layer = CAGradientLayer()
-        layer.frame = frame
-        layer.colors = style.previewColors
-        layer.locations = style.previewLocations
-        layer.startPoint = style.gradientStartPoint
-        layer.endPoint = style.gradientEndPoint
-        layer.backgroundColor = style.solidCGColor
-        return layer
+        style.appearance.gradientLayer(frame: frame)
     }
 
     private static func opacityKeyTimes(start: Double, end: Double) -> [NSNumber] {
@@ -354,36 +521,12 @@ enum Merger {
         settings: RecordingSettings,
         renderSize: CGSize
     ) -> CGRect {
-        let canvas = CGRect(origin: .zero, size: renderSize)
-        return SceneLayoutProjection.padded(
-            SceneLayoutProjection.denormalized(
-                SceneLayoutProjection.normalizedFrame(for: kind, in: settings.sceneLayout),
-                in: canvas,
-                origin: .upperLeft
-            ),
-            in: canvas,
-            padding: settings.canvasPadding
+        SceneRenderGeometry(
+            canvas: CGRect(origin: .zero, size: renderSize),
+            scene: RecordingScene(settings: settings),
+            origin: .upperLeft
         )
-    }
-
-    private static func targetRect(
-        for kind: SceneLayerKind,
-        scene: RecordingScene,
-        availableKinds: Set<SceneLayerKind>,
-        renderSize: CGSize
-    ) -> CGRect {
-        let canvas = CGRect(origin: .zero, size: renderSize)
-        let visibleAvailableKinds = Set(
-            SceneLayerKind.allCases.filter { availableKinds.contains($0) && scene.enabledSources.contains($0.source) }
-        )
-        let normalizedFrame = visibleAvailableKinds == [kind]
-            ? SceneLayoutProjection.fullFrame
-            : SceneLayoutProjection.normalizedFrame(for: kind, in: scene.sceneLayout)
-        return SceneLayoutProjection.padded(
-            SceneLayoutProjection.denormalized(normalizedFrame, in: canvas, origin: .upperLeft),
-            in: canvas,
-            padding: scene.canvasPadding
-        )
+        .targetRect(for: kind)
     }
 
     private static func videoCompositionInstructions(
@@ -394,18 +537,21 @@ enum Merger {
         sceneEvents: [RecordingSceneEvent]
     ) -> [AVMutableVideoCompositionInstruction] {
         let fallbackScene = RecordingScene(settings: settings)
-        let availableKinds = Set(sources.map(\.kind))
-        return sceneSegments(sceneEvents: sceneEvents, fallbackScene: fallbackScene, duration: duration).map { segment in
+        return RecordingSceneTimeline.segments(
+            sceneEvents: sceneEvents,
+            fallbackScene: fallbackScene,
+            duration: duration,
+            sourceTimeRanges: sources.map(\.timeRange)
+        ).map { segment in
             let instruction = AVMutableVideoCompositionInstruction()
             instruction.timeRange = segment.timeRange
             instruction.layerInstructions = layerInstructions(
                 sources: sources,
                 scene: segment.scene,
-                availableKinds: availableKinds,
                 renderSize: renderSize,
                 at: segment.timeRange.start
             ).reversed()
-            instruction.backgroundColor = CGColor(gray: 0, alpha: 0)
+            instruction.backgroundColor = segment.scene.canvasBackgroundStyle.appearance.solidCGColor
             return instruction
         }
     }
@@ -413,29 +559,35 @@ enum Merger {
     private static func layerInstructions(
         sources: [CompositedVideoSource],
         scene: RecordingScene,
-        availableKinds: Set<SceneLayerKind>,
         renderSize: CGSize,
         at time: CMTime
     ) -> [AVMutableVideoCompositionLayerInstruction] {
-        scene.sceneLayout.layerOrder.compactMap { kind in
-            guard scene.enabledSources.contains(kind.source),
-                  let source = sources.first(where: { $0.kind == kind }) else {
+        let geometry = SceneRenderGeometry(
+            canvas: CGRect(origin: .zero, size: renderSize),
+            scene: scene,
+            origin: .upperLeft
+        )
+        return geometry.activeLayerOrder.compactMap { kind -> AVMutableVideoCompositionLayerInstruction? in
+            guard let source = sources.first(where: { $0.kind == kind && $0.isActive(at: time) }) else {
                 return nil
             }
-            let placement = VideoRenderPlacement(
-                kind: kind,
-                targetRect: targetRect(for: kind, scene: scene, availableKinds: availableKinds, renderSize: renderSize),
-                sourceCropAmount: kind == .camera ? scene.cameraCropAmount : .zero,
-                sourceCropPosition: kind == .camera ? scene.cameraCropPosition : .zero
-            )
+            let placement = geometry.videoPlacement(for: kind)
             let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: source.compositionTrack)
-            if let cropRectangle = placement.cropRectangle(naturalSize: source.naturalSize) {
-                layer.setCropRectangle(cropRectangle, at: time)
+            let cropRectangle = placement.pixelAlignedOrientedCropRectangle(
+                naturalSize: source.naturalSize,
+                preferredTransform: source.preferredTransform
+            )
+            if let sourceCropRectangle = placement.pixelAlignedSourceCropRectangle(
+                naturalSize: source.naturalSize,
+                preferredTransform: source.preferredTransform
+            ) {
+                layer.setCropRectangle(sourceCropRectangle, at: time)
             }
             layer.setTransform(
                 placement.transform(
                     naturalSize: source.naturalSize,
-                    preferredTransform: source.preferredTransform
+                    preferredTransform: source.preferredTransform,
+                    cropRectangle: cropRectangle
                 ),
                 at: time
             )
@@ -443,43 +595,6 @@ enum Merger {
         }
     }
 
-    private static func sceneSegments(
-        sceneEvents: [RecordingSceneEvent],
-        fallbackScene: RecordingScene,
-        duration: CMTime
-    ) -> [(timeRange: CMTimeRange, scene: RecordingScene)] {
-        let durationSeconds = max(0, duration.seconds)
-        var events = sceneEvents
-            .filter { $0.time.isFinite }
-            .sorted { $0.time < $1.time }
-
-        if events.first?.time ?? .infinity > 0 {
-            events.insert(RecordingSceneEvent(time: 0, scene: fallbackScene), at: 0)
-        }
-        if events.isEmpty {
-            events = [RecordingSceneEvent(time: 0, scene: fallbackScene)]
-        }
-
-        var segments: [(CMTimeRange, RecordingScene)] = []
-        for index in events.indices {
-            let startSeconds = min(max(0, events[index].time), durationSeconds)
-            let endSeconds: TimeInterval
-            if index < events.index(before: events.endIndex) {
-                endSeconds = min(max(startSeconds, events[events.index(after: index)].time), durationSeconds)
-            } else {
-                endSeconds = durationSeconds
-            }
-            guard endSeconds > startSeconds else { continue }
-            let start = CMTime(seconds: startSeconds, preferredTimescale: 600)
-            let end = CMTime(seconds: endSeconds, preferredTimescale: 600)
-            segments.append((CMTimeRange(start: start, duration: CMTimeSubtract(end, start)), events[index].scene))
-        }
-
-        if segments.isEmpty {
-            return [(CMTimeRange(start: .zero, duration: duration), fallbackScene)]
-        }
-        return segments
-    }
 }
 
 private struct ReadableVideoAsset {
@@ -496,6 +611,11 @@ private struct VideoSource {
     let naturalSize: CGSize
     let preferredTransform: CGAffineTransform
     let placement: VideoRenderPlacement
+    let timelineOffset: CMTime
+
+    var planningInput: FinalExportSourceInput {
+        FinalExportSourceInput(kind: kind, duration: duration, timelineOffset: timelineOffset)
+    }
 
     init(
         kind: SceneLayerKind,
@@ -504,12 +624,14 @@ private struct VideoSource {
         duration: CMTime,
         targetRect: CGRect,
         sourceCropAmount: CGPoint = .zero,
-        sourceCropPosition: CGPoint = .zero
+        sourceCropPosition: CGPoint = .zero,
+        timelineOffset: CMTime = .zero
     ) async throws {
         self.kind = kind
         self.asset = asset
         self.track = track
         self.duration = duration
+        self.timelineOffset = timelineOffset
         self.naturalSize = try await track.load(.naturalSize)
         self.preferredTransform = try await track.load(.preferredTransform)
         self.placement = VideoRenderPlacement(
@@ -526,11 +648,18 @@ private struct CompositedVideoSource {
     let compositionTrack: AVCompositionTrack
     let naturalSize: CGSize
     let preferredTransform: CGAffineTransform
+    let timeRange: CMTimeRange
 
-    init(source: VideoSource, compositionTrack: AVCompositionTrack) {
+    init(source: VideoSource, compositionTrack: AVCompositionTrack, timeRange: CMTimeRange) {
         kind = source.kind
         self.compositionTrack = compositionTrack
         naturalSize = source.naturalSize
         preferredTransform = source.preferredTransform
+        self.timeRange = timeRange
+    }
+
+    func isActive(at time: CMTime) -> Bool {
+        CMTimeCompare(time, timeRange.start) >= 0
+            && CMTimeCompare(time, CMTimeRangeGetEnd(timeRange)) < 0
     }
 }

@@ -4,11 +4,11 @@ import Foundation
 
 final class AudioSampleFileWriter: @unchecked Sendable {
     private let url: URL
-    private let writer: AVAssetWriter
-    private let input: AVAssetWriterInput
     private let queue = DispatchQueue(label: "blitzrecorder.audio-writer")
     private let timelineStartTime: CMTime?
 
+    private var writer: AVAssetWriter?
+    private var input: AVAssetWriterInput?
     private var firstPresentationTime: CMTime?
     private var lastPresentationTime: CMTime?
     private var pauseStartedAt: CMTime?
@@ -17,28 +17,12 @@ final class AudioSampleFileWriter: @unchecked Sendable {
     private var finished = false
     private var wroteSample = false
     private var writeError: Error?
+    private static let maximumTrustedTimelineOffsetSeconds: Double = 30
 
     init(url: URL, timelineStartTime: CMTime? = nil) throws {
         self.url = url
         self.timelineStartTime = timelineStartTime
         try? FileManager.default.removeItem(at: url)
-
-        writer = try AVAssetWriter(outputURL: url, fileType: .m4a)
-        input = AVAssetWriterInput(
-            mediaType: .audio,
-            outputSettings: [
-                AVFormatIDKey: kAudioFormatMPEG4AAC,
-                AVSampleRateKey: 48_000,
-                AVNumberOfChannelsKey: 2,
-                AVEncoderBitRateKey: 192_000
-            ]
-        )
-        input.expectsMediaDataInRealTime = true
-
-        guard writer.canAdd(input) else {
-            throw RecorderError.writerNotReady
-        }
-        writer.add(input)
     }
 
     func append(_ sampleBuffer: CMSampleBuffer) {
@@ -50,25 +34,30 @@ final class AudioSampleFileWriter: @unchecked Sendable {
             self.lastPresentationTime = presentationTime
 
             if self.firstPresentationTime == nil {
-                self.firstPresentationTime = self.timelineStartTime ?? presentationTime
-                guard self.writer.startWriting() else {
-                    self.failWriting(self.writer.error ?? RecorderError.writerNotReady)
+                self.firstPresentationTime = Self.recordingBaseline(
+                    timelineStartTime: self.timelineStartTime,
+                    firstSampleTime: presentationTime
+                )
+                do {
+                    try self.prepareWriter(for: sampleBuffer)
+                } catch {
+                    self.failWriting(error)
                     return
                 }
-                self.writer.startSession(atSourceTime: .zero)
             }
 
             guard !self.paused,
-                  self.input.isReadyForMoreMediaData,
+                  let input = self.input,
+                  input.isReadyForMoreMediaData,
                   let adjusted = self.copy(sampleBuffer, relativeTo: presentationTime) else {
                 return
             }
 
-            if self.input.append(adjusted) {
+            if input.append(adjusted) {
                 self.wroteSample = true
             } else {
                 self.failWriting(
-                    self.writer.error ?? RecorderError.mediaWriteFailed("Audio writer rejected a sample.")
+                    self.writer?.error ?? RecorderError.mediaWriteFailed("Audio writer rejected a sample.")
                 )
             }
         }
@@ -110,14 +99,18 @@ final class AudioSampleFileWriter: @unchecked Sendable {
                 }
                 self.finished = true
                 guard self.wroteSample else {
-                    self.writer.cancelWriting()
+                    self.writer?.cancelWriting()
                     try? FileManager.default.removeItem(at: self.url)
                     continuation.resume(returning: .empty(self.url))
                     return
                 }
-                self.input.markAsFinished()
-                self.writer.finishWriting {
-                    if let error = self.writer.error {
+                guard let writer = self.writer, let input = self.input else {
+                    continuation.resume(returning: .empty(self.url))
+                    return
+                }
+                input.markAsFinished()
+                writer.finishWriting {
+                    if let error = writer.error {
                         try? FileManager.default.removeItem(at: self.url)
                         continuation.resume(throwing: error)
                     } else {
@@ -128,10 +121,45 @@ final class AudioSampleFileWriter: @unchecked Sendable {
         }
     }
 
+    private func prepareWriter(for sampleBuffer: CMSampleBuffer) throws {
+        guard writer == nil, input == nil else { return }
+
+        let writer = try AVAssetWriter(outputURL: url, fileType: .m4a)
+        let outputSettings = Self.outputSettings(for: sampleBuffer)
+        let input = AVAssetWriterInput(mediaType: .audio, outputSettings: outputSettings)
+        input.expectsMediaDataInRealTime = true
+
+        guard writer.canAdd(input) else {
+            throw RecorderError.writerNotReady
+        }
+        writer.add(input)
+        guard writer.startWriting() else {
+            throw writer.error ?? RecorderError.writerNotReady
+        }
+        writer.startSession(atSourceTime: .zero)
+        self.writer = writer
+        self.input = input
+    }
+
+    private static func outputSettings(for sampleBuffer: CMSampleBuffer) -> [String: Any] {
+        let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer)
+        let streamDescription = formatDescription.flatMap {
+            CMAudioFormatDescriptionGetStreamBasicDescription($0)?.pointee
+        }
+        let sampleRate = streamDescription?.mSampleRate ?? 48_000
+        let channelCount = max(1, min(2, Int(streamDescription?.mChannelsPerFrame ?? 2)))
+        return [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: sampleRate,
+            AVNumberOfChannelsKey: channelCount,
+            AVEncoderBitRateKey: channelCount == 1 ? 96_000 : 192_000
+        ]
+    }
+
     private func failWriting(_ error: Error) {
         writeError = error
         finished = true
-        writer.cancelWriting()
+        writer?.cancelWriting()
         try? FileManager.default.removeItem(at: url)
     }
 
@@ -139,6 +167,9 @@ final class AudioSampleFileWriter: @unchecked Sendable {
         guard let firstPresentationTime else { return nil }
 
         let elapsed = CMTimeSubtract(presentationTime, firstPresentationTime)
+        guard CMTimeCompare(elapsed, .zero) >= 0 else {
+            return nil
+        }
         var outputTime = CMTimeSubtract(elapsed, pauseOffset)
         if CMTimeCompare(outputTime, .zero) < 0 {
             outputTime = .zero
@@ -199,5 +230,25 @@ final class AudioSampleFileWriter: @unchecked Sendable {
 
         guard status == noErr else { return nil }
         return adjusted
+    }
+
+    private static func recordingBaseline(timelineStartTime: CMTime?, firstSampleTime: CMTime) -> CMTime {
+        guard let timelineStartTime,
+              timelineStartTime.isValid,
+              firstSampleTime.isValid else {
+            return firstSampleTime
+        }
+
+        let offset = CMTimeSubtract(firstSampleTime, timelineStartTime).seconds
+        guard offset.isFinite,
+              abs(offset) <= maximumTrustedTimelineOffsetSeconds else {
+            NSLog(
+                "Audio writer ignoring mismatched timeline start offset %.3fs; using first sample time.",
+                offset
+            )
+            return firstSampleTime
+        }
+
+        return timelineStartTime
     }
 }

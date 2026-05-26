@@ -1,5 +1,23 @@
 import Foundation
 
+struct SavedRecordingOutput: Equatable {
+    let url: URL
+    let sourceDirectory: URL?
+    let warning: String?
+
+    var userMessage: String {
+        let savedMessage: String
+        if let sourceDirectory {
+            savedMessage = "Saved: \(url.path). Source take: \(sourceDirectory.path)"
+        } else {
+            savedMessage = "Saved: \(url.path)"
+        }
+
+        guard let warning, !warning.isEmpty else { return savedMessage }
+        return "\(warning). \(savedMessage)"
+    }
+}
+
 enum TakeFinalizationOutcome {
     case saved(URL, sourceDirectory: URL?)
     case recoveryFiles(RecordingTake, reason: String)
@@ -15,6 +33,11 @@ enum TakeFinalizationOutcome {
             return "\(reason), recovery files: \(take.scratchDirectory.path)"
         }
     }
+
+    func savedOutput(warning: String? = nil) -> SavedRecordingOutput? {
+        guard case .saved(let url, let sourceDirectory) = self else { return nil }
+        return SavedRecordingOutput(url: url, sourceDirectory: sourceDirectory, warning: warning)
+    }
 }
 
 @MainActor
@@ -25,15 +48,18 @@ final class TakeFinalizer {
     private let speechTranscriber: SpeechTranscriber
     private let titleGenerator: TitleGenerator
     private let fileStore: TakeFileStore
+    private let finalVideoExporter: FinalVideoExporting
 
     init(
         speechTranscriber: SpeechTranscriber,
         titleGenerator: TitleGenerator,
-        fileStore: TakeFileStore = TakeFileStore()
+        fileStore: TakeFileStore = TakeFileStore(),
+        finalVideoExporter: FinalVideoExporting = MergerFinalVideoExporter()
     ) {
         self.speechTranscriber = speechTranscriber
         self.titleGenerator = titleGenerator
         self.fileStore = fileStore
+        self.finalVideoExporter = finalVideoExporter
     }
 
     func finalize(
@@ -44,8 +70,14 @@ final class TakeFinalizer {
     ) async -> TakeFinalizationOutcome {
         let renamedTake = await renameFromTranscriptIfPossible(take: take, settings: settings)
         let processedTake = await removeCameraBackgroundIfNeeded(from: renamedTake, settings: settings)
+        let plan = TakeFinalizationPlan(
+            take: processedTake,
+            settings: settings,
+            captureSummary: captureSummary
+        )
 
-        if shouldSaveTransparentCameraOnly(take: processedTake, settings: settings) {
+        switch plan.action {
+        case .saveTransparentCameraOnly:
             do {
                 let url = try saveTransparentCameraOnly(take: processedTake, settings: settings)
                 onRenderProgress?(1)
@@ -53,18 +85,28 @@ final class TakeFinalizer {
             } catch {
                 return .recoveryFiles(processedTake, reason: "Transparent webcam save failed: \(error.recorderFailureDescription)")
             }
-        }
-
-        guard captureSummary.hasVideoMedia else {
+        case .recoverNoVideo(let reason):
             onRenderProgress?(0)
-            return .recoveryFiles(processedTake, reason: "No video frames captured")
+            return .recoveryFiles(processedTake, reason: reason)
+        case .exportFinalVideo:
+            return await exportFinalVideo(
+                take: processedTake,
+                settings: settings,
+                sceneEvents: sceneEvents
+            )
         }
+    }
 
+    private func exportFinalVideo(
+        take: RecordingTake,
+        settings: RecordingSettings,
+        sceneEvents: [RecordingSceneEvent]
+    ) async -> TakeFinalizationOutcome {
         do {
             onMessage?("Exporting final video...")
             onRenderProgress?(0)
-            let url = try await Merger.exportFinalVideo(
-                take: processedTake,
+            let url = try await finalVideoExporter.exportFinalVideo(
+                take: take,
                 settings: settings,
                 sceneEvents: sceneEvents,
                 progressHandler: { [weak self] progress in
@@ -72,10 +114,10 @@ final class TakeFinalizer {
                 }
             )
             onRenderProgress?(1)
-            return try savedOutcome(url: url, take: processedTake, settings: settings)
+            return try savedOutcome(url: url, take: take, settings: settings)
         } catch {
             onMessage?("Final video export skipped: \(error.recorderFailureDescription)")
-            return .recoveryFiles(processedTake, reason: "Export failed: \(error.recorderFailureDescription)")
+            return .recoveryFiles(take, reason: "Export failed: \(error.recorderFailureDescription)")
         }
     }
 
@@ -104,7 +146,7 @@ final class TakeFinalizer {
             let transcript = try await speechTranscriber.transcribe(audioURL: take.audioURL)
             let slug = await titleGenerator.titleSlug(for: transcript)
             let renamedTake = try rename(take: take, slug: slug, transcript: transcript, settings: settings)
-            onMessage?("Renamed: \(slug)")
+            onMessage?("Renamed: \(renamedTake.titleSlug ?? fileStore.defaultSlug(for: renamedTake))")
             return renamedTake
         } catch {
             onMessage?("Rename skipped: \(error.recorderFailureDescription)")
@@ -142,27 +184,13 @@ final class TakeFinalizer {
         }
     }
 
-    private func shouldSaveTransparentCameraOnly(take: RecordingTake, settings: RecordingSettings) -> Bool {
-        settings.removesCameraBackgroundAfterRecording
-            && settings.enabledSources.contains(.camera)
-            && !settings.enabledSources.contains(.screen)
-            && !hasEnabledAudioSource(settings)
-            && FileManager.default.fileExists(atPath: take.cameraURL.path)
-            && take.cameraURL.pathExtension.lowercased() == "mov"
-    }
-
-    private func hasEnabledAudioSource(_ settings: RecordingSettings) -> Bool {
-        settings.enabledSources.contains(.microphone)
-            || settings.enabledSources.contains(.systemAudio)
-    }
-
     private func saveTransparentCameraOnly(take: RecordingTake, settings: RecordingSettings) throws -> URL {
         onMessage?("Saving transparent webcam video...")
         try FileManager.default.createDirectory(
             at: settings.outputDirectory,
             withIntermediateDirectories: true
         )
-        let baseName = take.titleSlug ?? "recording"
+        let baseName = take.titleSlug ?? fileStore.defaultSlug(for: take)
         let outputURL = fileStore.uniqueFileURL(
             settings.outputDirectory.appendingPathComponent("\(baseName)-transparent-webcam.mov")
         )
@@ -170,15 +198,18 @@ final class TakeFinalizer {
         return outputURL
     }
 
-    private func rename(take: RecordingTake, slug: String, transcript: String, settings: RecordingSettings) throws -> RecordingTake {
+    private func rename(take: RecordingTake, slug: String?, transcript: String, settings: RecordingSettings) throws -> RecordingTake {
         let datedSlug = fileStore.datedSlug(for: take, slug: slug)
         let fileManager = FileManager.default
         let parentDirectory = take.scratchDirectory.deletingLastPathComponent()
-        let renamedDirectory = uniqueDirectory(
-            parentDirectory.appendingPathComponent(datedSlug, isDirectory: true)
-        )
-
-        try fileManager.moveItem(at: take.scratchDirectory, to: renamedDirectory)
+        let requestedDirectory = parentDirectory.appendingPathComponent(datedSlug, isDirectory: true)
+        let renamedDirectory: URL
+        if requestedDirectory.path == take.scratchDirectory.path {
+            renamedDirectory = take.scratchDirectory
+        } else {
+            renamedDirectory = uniqueDirectory(requestedDirectory)
+            try fileManager.moveItem(at: take.scratchDirectory, to: renamedDirectory)
+        }
 
         let currentScreenURL = renamedDirectory.appendingPathComponent(take.screenURL.lastPathComponent)
         let currentCameraURL = renamedDirectory.appendingPathComponent(take.cameraURL.lastPathComponent)
@@ -190,9 +221,16 @@ final class TakeFinalizer {
         let renamedAudioURL = renamedDirectory.appendingPathComponent("\(datedSlug)-audio.m4a")
         let renamedSystemAudioURL = renamedDirectory.appendingPathComponent("\(datedSlug)-system-audio.m4a")
         let renamedTranscriptURL = renamedDirectory.appendingPathComponent("\(datedSlug)-transcript.txt")
+        let currentRemoteCameraManifestURL = currentCameraURL
+            .deletingPathExtension()
+            .appendingPathExtension("remote-camera-manifest.json")
+        let renamedRemoteCameraManifestURL = renamedCameraURL
+            .deletingPathExtension()
+            .appendingPathExtension("remote-camera-manifest.json")
 
         try moveIfPresent(from: currentScreenURL, to: renamedScreenURL)
         try moveIfPresent(from: currentCameraURL, to: renamedCameraURL)
+        try moveIfPresent(from: currentRemoteCameraManifestURL, to: renamedRemoteCameraManifestURL)
         try moveIfPresent(from: currentAudioURL, to: renamedAudioURL)
         try moveIfPresent(from: currentSystemAudioURL, to: renamedSystemAudioURL)
         try transcript.write(to: renamedTranscriptURL, atomically: true, encoding: .utf8)

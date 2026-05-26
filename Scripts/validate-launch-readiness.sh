@@ -202,24 +202,32 @@ require_file "Scripts/generate-app-store-questionnaire-answers.py"
 require_file "Scripts/generate-app-store-privacy-labels.py"
 
 expected_product_id="dev.blitzreels.blitzrecorder.pro.monthly"
-expected_price="4.99"
+expected_annual_product_id="dev.blitzreels.blitzrecorder.pro.annual"
+expected_price="7.99"
+expected_annual_price="49.99"
 expected_subscription_description="Unlimited exports in BlitzRecorder."
 expected_marketing_version="0.1.0"
 expected_build_number="1"
 bonjour_service="_blitzrecorder-camera._tcp"
 
 if command -v jq >/dev/null 2>&1; then
-  storekit_product_id="$(jq -r '.subscriptionGroups[].subscriptions[].productID' AppStore/BlitzRecorder.storekit)"
-  storekit_price="$(jq -r '.subscriptionGroups[].subscriptions[].displayPrice' AppStore/BlitzRecorder.storekit)"
-  storekit_description="$(jq -r '.subscriptionGroups[].subscriptions[].localizations[] | select(.locale == "en_US") | .description' AppStore/BlitzRecorder.storekit)"
+  storekit_product_id="$(jq -r ".subscriptionGroups[].subscriptions[] | select(.productID == \"$expected_product_id\") | .productID" AppStore/BlitzRecorder.storekit)"
+  storekit_annual_product_id="$(jq -r ".subscriptionGroups[].subscriptions[] | select(.productID == \"$expected_annual_product_id\") | .productID" AppStore/BlitzRecorder.storekit)"
+  storekit_price="$(jq -r ".subscriptionGroups[].subscriptions[] | select(.productID == \"$expected_product_id\") | .displayPrice" AppStore/BlitzRecorder.storekit)"
+  storekit_annual_price="$(jq -r ".subscriptionGroups[].subscriptions[] | select(.productID == \"$expected_annual_product_id\") | .displayPrice" AppStore/BlitzRecorder.storekit)"
+  storekit_description="$(jq -r ".subscriptionGroups[].subscriptions[] | select(.productID == \"$expected_product_id\") | .localizations[] | select(.locale == \"en_US\") | .description" AppStore/BlitzRecorder.storekit)"
   [[ "$storekit_product_id" == "$expected_product_id" ]] || fail "StoreKit product ID is $storekit_product_id, expected $expected_product_id"
+  [[ "$storekit_annual_product_id" == "$expected_annual_product_id" ]] || fail "StoreKit annual product ID is $storekit_annual_product_id, expected $expected_annual_product_id"
   [[ "$storekit_price" == "$expected_price" ]] || fail "StoreKit price is $storekit_price, expected $expected_price"
+  [[ "$storekit_annual_price" == "$expected_annual_price" ]] || fail "StoreKit annual price is $storekit_annual_price, expected $expected_annual_price"
   [[ "$storekit_description" == "$expected_subscription_description" ]] || fail "StoreKit description is $storekit_description, expected $expected_subscription_description"
 
   fields_mac_bundle_id="$(jq -r '.apps.macOS.bundleId' AppStore/AppStoreConnectFields.generated.json)"
   fields_ios_bundle_id="$(jq -r '.apps.iOS.bundleId' AppStore/AppStoreConnectFields.generated.json)"
   fields_product_id="$(jq -r '.subscription.productId' AppStore/AppStoreConnectFields.generated.json)"
+  fields_annual_product_id="$(jq -r '.subscription.annualProductId' AppStore/AppStoreConnectFields.generated.json)"
   fields_price="$(jq -r '.subscription.priceUSD' AppStore/AppStoreConnectFields.generated.json)"
+  fields_annual_price="$(jq -r '.subscription.annualPriceUSD' AppStore/AppStoreConnectFields.generated.json)"
   fields_ios_companion_only="$(jq -r '.apps.iOS.companionOnly' AppStore/AppStoreConnectFields.generated.json)"
   fields_ios_initiates_purchases="$(jq -r '.apps.iOS.initiatesPurchases' AppStore/AppStoreConnectFields.generated.json)"
   questionnaire_age_rating="$(jq -r '.ageRating.recommendedTarget' AppStore/AppStoreQuestionnaireAnswers.generated.json)"
@@ -228,6 +236,7 @@ if command -v jq >/dev/null 2>&1; then
   questionnaire_kids="$(jq -r '.kidsCategory.madeForKids' AppStore/AppStoreQuestionnaireAnswers.generated.json)"
   questionnaire_encryption="$(jq -r '.exportCompliance.itsAppUsesNonExemptEncryption' AppStore/AppStoreQuestionnaireAnswers.generated.json)"
   questionnaire_product_id="$(jq -r '.paidContentAndSubscriptions.productId' AppStore/AppStoreQuestionnaireAnswers.generated.json)"
+  questionnaire_annual_product_id="$(jq -r '.paidContentAndSubscriptions.annualProductId' AppStore/AppStoreQuestionnaireAnswers.generated.json)"
   privacy_mac_tracking="$(jq -r '.apps.macOS.dataUsedToTrackYou' AppStore/PrivacyNutritionLabels.generated.json)"
   privacy_mac_linked="$(jq -r '.apps.macOS.dataLinkedToYou' AppStore/PrivacyNutritionLabels.generated.json)"
   privacy_ios_collected="$(jq -r '.apps.iOS.dataCollected' AppStore/PrivacyNutritionLabels.generated.json)"
@@ -236,7 +245,9 @@ if command -v jq >/dev/null 2>&1; then
   [[ "$fields_mac_bundle_id" == "dev.blitzreels.blitzrecorder" ]] || fail "App Store Connect fields macOS bundle ID is $fields_mac_bundle_id"
   [[ "$fields_ios_bundle_id" == "dev.blitzreels.blitzrecorder.camera" ]] || fail "App Store Connect fields iOS bundle ID is $fields_ios_bundle_id"
   [[ "$fields_product_id" == "$expected_product_id" ]] || fail "App Store Connect fields product ID is $fields_product_id, expected $expected_product_id"
+  [[ "$fields_annual_product_id" == "$expected_annual_product_id" ]] || fail "App Store Connect fields annual product ID is $fields_annual_product_id, expected $expected_annual_product_id"
   [[ "$fields_price" == "$expected_price" ]] || fail "App Store Connect fields price is $fields_price, expected $expected_price"
+  [[ "$fields_annual_price" == "$expected_annual_price" ]] || fail "App Store Connect fields annual price is $fields_annual_price, expected $expected_annual_price"
   [[ "$fields_ios_companion_only" == "true" ]] || fail "App Store Connect fields iOS companionOnly is $fields_ios_companion_only"
   [[ "$fields_ios_initiates_purchases" == "false" ]] || fail "App Store Connect fields iOS initiatesPurchases is $fields_ios_initiates_purchases"
   [[ "$questionnaire_age_rating" == "4+" ]] || fail "Questionnaire age rating is $questionnaire_age_rating"
@@ -245,6 +256,7 @@ if command -v jq >/dev/null 2>&1; then
   [[ "$questionnaire_kids" == "false" ]] || fail "Questionnaire madeForKids is $questionnaire_kids"
   [[ "$questionnaire_encryption" == "false" ]] || fail "Questionnaire ITSAppUsesNonExemptEncryption is $questionnaire_encryption"
   [[ "$questionnaire_product_id" == "$expected_product_id" ]] || fail "Questionnaire product ID is $questionnaire_product_id, expected $expected_product_id"
+  [[ "$questionnaire_annual_product_id" == "$expected_annual_product_id" ]] || fail "Questionnaire annual product ID is $questionnaire_annual_product_id, expected $expected_annual_product_id"
   [[ "$privacy_mac_tracking" == "false" ]] || fail "Privacy labels macOS dataUsedToTrackYou is $privacy_mac_tracking"
   [[ "$privacy_mac_linked" == "true" ]] || fail "Privacy labels macOS dataLinkedToYou is $privacy_mac_linked"
   [[ "$privacy_ios_collected" == "false" ]] || fail "Privacy labels iOS dataCollected is $privacy_ios_collected"
@@ -255,9 +267,10 @@ else
 fi
 
 require_contains "Sources/BlitzRecorderApp/AccessController.swift" "static let monthlyProductID = \"$expected_product_id\""
+require_contains "Sources/BlitzRecorderApp/AccessController.swift" "static let annualProductID = \"$expected_annual_product_id\""
 require_contains "Sources/BlitzRecorderApp/AccessController.swift" "static let freeExportLimit = 3"
 require_contains "Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift" "BlitzRecorder Pro unlocks unlimited exports on Mac."
-require_contains "Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift" "renews monthly until cancelled in Apple account settings."
+require_contains "Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift" "App Store subscriptions renew until cancelled in Apple account settings."
 require_contains "Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift" "Eligible active BlitzReels subscribers can sign in for included Pro access."
 require_contains "Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift" "BlitzReels Sign In"
 require_contains "Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift" "Restore"
@@ -265,15 +278,21 @@ require_contains "Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift" "Term
 require_contains "Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift" "Privacy"
 require_contains "Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift" "Support"
 require_contains "AppStore/Metadata.md" "$expected_product_id"
-require_contains "AppStore/Metadata.md" '$4.99 per month'
+require_contains "AppStore/Metadata.md" "$expected_annual_product_id"
+require_contains "AppStore/Metadata.md" '$7.99 per month'
+require_contains "AppStore/Metadata.md" '$49.99 per year'
 require_contains "AppStore/Metadata-macOS.md" "dev.blitzreels.blitzrecorder"
 require_contains "AppStore/Metadata-macOS.md" "$expected_product_id"
-require_contains "AppStore/Metadata-macOS.md" '$4.99 per month'
+require_contains "AppStore/Metadata-macOS.md" "$expected_annual_product_id"
+require_contains "AppStore/Metadata-macOS.md" '$7.99 per month'
+require_contains "AppStore/Metadata-macOS.md" '$49.99 per year'
 require_contains "AppStore/Metadata-macOS.md" "3 free exports"
 require_contains "AppStore/Metadata-macOS.md" "macOS Keychain"
 require_contains "AppStore/Metadata-iOS.md" "dev.blitzreels.blitzrecorder.camera"
 require_contains "AppStore/Metadata-iOS.md" "$expected_product_id"
-require_contains "AppStore/Metadata-iOS.md" '$4.99 per month'
+require_contains "AppStore/Metadata-iOS.md" "$expected_annual_product_id"
+require_contains "AppStore/Metadata-iOS.md" '$7.99 per month'
+require_contains "AppStore/Metadata-iOS.md" '$49.99 per year'
 require_contains "AppStore/Metadata-iOS.md" "does not function as a standalone recorder"
 require_contains "AppStore/Screenshots.md" "2880 x 1800"
 require_contains "AppStore/Screenshots.md" "1260 x 2736"
@@ -286,7 +305,9 @@ require_contains "AppStore/BlitzReelsEntitlementContract.md" '"planName": "Blitz
 require_contains "AppStore/BlitzReelsEntitlementContract.md" "BLITZRECORDER_ENTITLEMENT_EXPECTED_ACTIVE=true"
 require_contains "AppStore/BlitzReelsEntitlementContract.md" "BLITZRECORDER_ENTITLEMENT_EXPECTED_ACTIVE=false"
 require_contains "AppStore/SubmissionChecklist.md" "$expected_product_id"
-require_contains "AppStore/SubmissionChecklist.md" '$4.99 per month'
+require_contains "AppStore/SubmissionChecklist.md" "$expected_annual_product_id"
+require_contains "AppStore/SubmissionChecklist.md" '$7.99 per month'
+require_contains "AppStore/SubmissionChecklist.md" '$49.99 per year'
 require_contains "AppStore/SubmissionChecklist.md" "Scripts/capture-app-store-screenshots.sh --all"
 require_contains "AppStore/SubmissionChecklist.md" "Scripts/app-store-connect-bootstrap.py --apply"
 require_contains "AppStore/SubmissionChecklist.md" "Scripts/app-store-connect-readiness.py"
@@ -346,11 +367,13 @@ require_contains "Scripts/test-app-store-connect-bootstrap.py" "SUBSCRIPTION_DIS
 require_contains "Scripts/test-app-store-connect-bootstrap.py" "SUBSCRIPTION_DESCRIPTION"
 require_contains "Scripts/test-app-store-connect-bootstrap.py" "App Store Connect bootstrap fixture tests passed."
 require_contains "Sources/BlitzRecorderApp/UI/MainView.swift" "BLITZRECORDER_SCREENSHOT_VARIANT"
-require_contains "Sources/BlitzRecorderApp/UI/MainView.swift" 'Subscribe $4.99 / month'
+require_contains "Sources/BlitzRecorderApp/UI/MainView.swift" 'Subscribe $49.99 / year'
 require_contains "AppStore/ReviewNotes.md" "dev.blitzreels.blitzrecorder"
 require_contains "AppStore/ReviewNotes.md" "dev.blitzreels.blitzrecorder.camera"
 require_contains "AppStore/ReviewNotes.md" "$expected_product_id"
-require_contains "AppStore/ReviewNotes.md" '$4.99 per month'
+require_contains "AppStore/ReviewNotes.md" "$expected_annual_product_id"
+require_contains "AppStore/ReviewNotes.md" '$7.99 per month'
+require_contains "AppStore/ReviewNotes.md" '$49.99 per year'
 require_contains "AppStore/ReviewNotes.md" "redirects to BlitzReels login"
 require_contains "AppStore/ReviewNotes.md" "3 free exports"
 require_contains "AppStore/ReviewNotes.md" "does not request microphone access"
@@ -365,7 +388,9 @@ require_contains "AppStore/Metadata.md" "AppStore/AppStoreQuestionnaires.md"
 require_contains "AppStore/Metadata.md" "AppStore/AppStoreQuestionnaireAnswers.generated.json"
 require_contains "AppStore/Metadata.md" "AppStore/AppStoreConnectFields.generated.json"
 require_contains "AppStore/AppStoreConnectFields.generated.json" "$expected_product_id"
-require_contains "AppStore/AppStoreConnectFields.generated.json" '"priceUSD": "4.99"'
+require_contains "AppStore/AppStoreConnectFields.generated.json" "$expected_annual_product_id"
+require_contains "AppStore/AppStoreConnectFields.generated.json" '"priceUSD": "7.99"'
+require_contains "AppStore/AppStoreConnectFields.generated.json" '"annualPriceUSD": "49.99"'
 require_contains "AppStore/AppStoreConnectFields.generated.json" '"companionOnly": true'
 require_contains "AppStore/AppStoreConnectFields.generated.json" '"initiatesPurchases": false'
 require_contains "AppStore/AppStoreConnectFields.generated.json" "AppStore/ScreenshotAssets/iPhone-6.9"
@@ -376,6 +401,7 @@ require_contains "AppStore/AppStoreQuestionnaireAnswers.generated.json" '"tracki
 require_contains "AppStore/AppStoreQuestionnaireAnswers.generated.json" '"madeForKids": false'
 require_contains "AppStore/AppStoreQuestionnaireAnswers.generated.json" '"itsAppUsesNonExemptEncryption": false'
 require_contains "AppStore/AppStoreQuestionnaireAnswers.generated.json" "$expected_product_id"
+require_contains "AppStore/AppStoreQuestionnaireAnswers.generated.json" "$expected_annual_product_id"
 require_contains "AppStore/PrivacyNutritionLabels.generated.json" '"dataUsedToTrackYou": false'
 require_contains "AppStore/PrivacyNutritionLabels.generated.json" '"dataLinkedToYou": true'
 require_contains "AppStore/PrivacyNutritionLabels.generated.json" '"dataCollected": false'
@@ -405,7 +431,7 @@ require_contains "AppStore/PrivacyNutritionLabels.md" "Data Collected: No"
 require_contains "AppStore/PrivacyNutritionLabels.md" "Microphone: not requested"
 require_contains "AppStore/PrivacyNutritionLabels.md" "NSPrivacyAccessedAPICategoryDiskSpace"
 require_contains "AppStore/ReleaseEvidence.md" "dev.blitzreels.blitzrecorder.pro.monthly"
-require_contains "AppStore/ReleaseEvidence.md" '$4.99 per month'
+require_contains "AppStore/ReleaseEvidence.md" "3 free exports"
 require_contains "AppStore/ReleaseEvidence.md" "3 free exports"
 require_contains "AppStore/ReleaseEvidence.md" "Scripts/validate-submission-artifacts.sh --strict"
 require_contains "AppStore/ReleaseEvidence.md" "Scripts/collect-release-evidence.sh --full"
@@ -421,7 +447,9 @@ require_contains "AppStore/AppStoreConnectManualSetup.md" "dev.blitzreels.blitzr
 require_contains "AppStore/AppStoreConnectManualSetup.md" "BLITZRECORDER-MAC"
 require_contains "AppStore/AppStoreConnectManualSetup.md" "BLITZRECORDER-CAMERA-IOS"
 require_contains "AppStore/AppStoreConnectManualSetup.md" "$expected_product_id"
-require_contains "AppStore/AppStoreConnectManualSetup.md" '$4.99 per month'
+require_contains "AppStore/AppStoreConnectManualSetup.md" "$expected_annual_product_id"
+require_contains "AppStore/AppStoreConnectManualSetup.md" '$7.99 per month'
+require_contains "AppStore/AppStoreConnectManualSetup.md" '$49.99 per year'
 require_contains "AppStore/AppStoreConnectManualSetup.md" "3 free exports"
 require_contains "AppStore/AppStoreConnectManualSetup.md" "AppStore/Metadata-macOS.md"
 require_contains "AppStore/AppStoreConnectManualSetup.md" "AppStore/Metadata-iOS.md"
@@ -442,10 +470,12 @@ require_contains "AppStore/AppStoreQuestionnaires.md" 'Tracking: `No`'
 require_contains "AppStore/AppStoreQuestionnaires.md" 'Made for Kids: `No`'
 require_contains "AppStore/AppStoreQuestionnaires.md" "iOS companion has no in-app purchases and no paywall."
 require_contains "AppStore/AppStoreQuestionnaires.md" "Users are responsible for rights"
-require_contains "Web/blitzrecorder/index.html" '$4.99 per month'
+require_contains "Web/blitzrecorder/index.html" '$7.99 per month'
+require_contains "Web/blitzrecorder/index.html" '$49.99 per year'
 require_contains "Web/blitzrecorder/index.html" "3 free exports"
 require_contains "Web/blitzrecorder/index.html" "eligible BlitzReels subscribers"
-require_contains "Web/blitzrecorder/terms.html" '$4.99 per month'
+require_contains "Web/blitzrecorder/terms.html" '$7.99 per month'
+require_contains "Web/blitzrecorder/terms.html" '$49.99 per year'
 require_contains "Web/blitzrecorder/terms.html" "Eligible active BlitzReels subscribers"
 require_contains "Web/blitzrecorder/terms.html" "support@blitzreels.com"
 require_contains "Web/blitzrecorder/privacy.html" "macOS Keychain"

@@ -85,7 +85,7 @@ final class SceneSlotGeometryTests: XCTestCase {
         XCTAssertRect(slot, equals: CGRect(x: 0, y: 0.5, width: 1, height: 0.5))
     }
 
-    func testTargetWindowSlotTracksEveryPresetSceneScreenFrame() {
+    func testTargetWindowSlotTracksVisiblePresetSceneScreenFrame() {
         for captureLayout in CaptureLayout.allCases {
             for preset in ScenePreset.allCases where preset.supports(captureLayout) {
                 XCTContext.runActivity(named: "\(captureLayout.rawValue) \(preset.rawValue)") { _ in
@@ -97,7 +97,7 @@ final class SceneSlotGeometryTests: XCTestCase {
 
                     XCTAssertRect(
                         slot,
-                        equals: SceneLayerResizing.clamped(layout.screenFrame.standardized)
+                        equals: layout.screenFrame.standardized.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
                     )
                 }
             }

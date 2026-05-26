@@ -78,7 +78,7 @@ enum SceneLayoutProjection {
         )
     }
 
-    private static func normalizedFrame(
+    static func normalizedFrame(
         for kind: SceneLayerKind,
         sceneLayout: SceneLayout,
         enabledSources: Set<CaptureSource>,
@@ -130,6 +130,33 @@ enum SceneLayoutProjection {
         let dx = min(inset, max(0, (rect.width - 1) / 2))
         let dy = min(inset, max(0, (rect.height - 1) / 2))
         return rect.insetBy(dx: dx, dy: dy)
+    }
+
+    static func sourceCornerRadius(for rect: CGRect, canvasPadding: CGFloat) -> CGFloat {
+        guard canvasPadding > 0.001, rect.width > 0, rect.height > 0 else { return 0 }
+        return min(32, max(8, min(rect.width, rect.height) * 0.04))
+    }
+
+    static func projectedFrame(
+        for kind: SceneLayerKind,
+        in canvas: CGRect,
+        sceneLayout: SceneLayout,
+        enabledSources: Set<CaptureSource>,
+        canvasPadding: CGFloat,
+        origin: SceneCanvasOrigin,
+        fillsCanvasWhenOnlyVideoSource: Bool
+    ) -> CGRect {
+        let normalizedFrame = normalizedFrame(
+            for: kind,
+            sceneLayout: sceneLayout,
+            enabledSources: enabledSources,
+            fillsCanvasWhenOnlyVideoSource: fillsCanvasWhenOnlyVideoSource
+        )
+        return padded(
+            denormalized(normalizedFrame, in: canvas, origin: origin),
+            in: canvas,
+            padding: canvasPadding
+        )
     }
 
     private static func otherVideoSources(for kind: SceneLayerKind) -> Set<CaptureSource> {

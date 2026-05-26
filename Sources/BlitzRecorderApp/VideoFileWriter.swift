@@ -18,6 +18,7 @@ final class VideoFileWriter: @unchecked Sendable {
     private var finished = false
     private var wroteSample = false
     private var writeError: Error?
+    private static let maximumTrustedTimelineOffsetSeconds: Double = 30
 
     init(
         url: URL,
@@ -70,7 +71,10 @@ final class VideoFileWriter: @unchecked Sendable {
             self.lastPresentationTime = presentationTime
 
             if self.firstPresentationTime == nil {
-                self.firstPresentationTime = self.timelineStartTime ?? presentationTime
+                self.firstPresentationTime = Self.recordingBaseline(
+                    timelineStartTime: self.timelineStartTime,
+                    firstSampleTime: presentationTime
+                )
                 guard self.writer.startWriting() else {
                     self.failWriting(self.writer.error ?? RecorderError.writerNotReady)
                     return
@@ -162,6 +166,9 @@ final class VideoFileWriter: @unchecked Sendable {
         guard let firstPresentationTime else { return nil }
 
         let elapsed = CMTimeSubtract(presentationTime, firstPresentationTime)
+        guard CMTimeCompare(elapsed, .zero) >= 0 else {
+            return nil
+        }
         var outputTime = CMTimeSubtract(elapsed, pauseOffset)
         if CMTimeCompare(outputTime, .zero) < 0 {
             outputTime = .zero
@@ -224,5 +231,25 @@ final class VideoFileWriter: @unchecked Sendable {
             return nil
         }
         return adjusted
+    }
+
+    private static func recordingBaseline(timelineStartTime: CMTime?, firstSampleTime: CMTime) -> CMTime {
+        guard let timelineStartTime,
+              timelineStartTime.isValid,
+              firstSampleTime.isValid else {
+            return firstSampleTime
+        }
+
+        let offset = CMTimeSubtract(firstSampleTime, timelineStartTime).seconds
+        guard offset.isFinite,
+              abs(offset) <= maximumTrustedTimelineOffsetSeconds else {
+            NSLog(
+                "Video writer ignoring mismatched timeline start offset %.3fs; using first sample time.",
+                offset
+            )
+            return firstSampleTime
+        }
+
+        return timelineStartTime
     }
 }

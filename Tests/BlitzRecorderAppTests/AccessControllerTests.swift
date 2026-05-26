@@ -4,6 +4,19 @@ import XCTest
 
 @MainActor
 final class AccessControllerTests: XCTestCase {
+    func testAppStoreProductIDsIncludeMonthlyAndAnnualSubscriptions() {
+        XCTAssertEqual(
+            ProductConfiguration.appStoreProductIDs,
+            [
+                "dev.blitzreels.blitzrecorder.pro.monthly",
+                "dev.blitzreels.blitzrecorder.pro.annual"
+            ]
+        )
+        XCTAssertTrue(ProductConfiguration.isAppStoreProductID("dev.blitzreels.blitzrecorder.pro.monthly"))
+        XCTAssertTrue(ProductConfiguration.isAppStoreProductID("dev.blitzreels.blitzrecorder.pro.annual"))
+        XCTAssertFalse(ProductConfiguration.isAppStoreProductID("direct.license"))
+    }
+
     func testFreeExportsAreAvailableUntilLimit() {
         let defaults = UserDefaults(suiteName: suiteName())!
         let access = AccessController(defaults: defaults)
@@ -237,6 +250,50 @@ final class AccessControllerTests: XCTestCase {
         XCTAssertEqual(access.accessMessage, "Using recently verified BlitzReels access.")
         XCTAssertEqual(access.accessLabel, "Included with BlitzReels Pro")
         XCTAssertEqual(tokenStore.loadToken(), "cached-token")
+    }
+
+    func testAutomaticBlitzReelsRefreshKeepsFreshCachedAccess() async {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let defaults = UserDefaults(suiteName: suiteName())!
+        defaults.set("BlitzReels Pro", forKey: "access.blitzReelsPlanName")
+        defaults.set(now, forKey: "access.blitzReelsVerifiedAt")
+        let tokenStore = InMemoryBlitzReelsTokenStore(token: "cached-token")
+        let checker = StubBlitzReelsEntitlementChecker(result: .failure(BlitzReelsEntitlementHTTPError(statusCode: 401)))
+        let access = AccessController(
+            defaults: defaults,
+            dateProvider: { now },
+            blitzReelsTokenStore: tokenStore,
+            blitzReelsEntitlementChecker: checker
+        )
+
+        await access.refreshBlitzReelsEntitlementIfNeeded()
+
+        XCTAssertTrue(access.hasBlitzReelsEntitlement)
+        XCTAssertTrue(access.isPro)
+        XCTAssertEqual(access.accessLabel, "Included with BlitzReels Pro")
+        XCTAssertEqual(tokenStore.loadToken(), "cached-token")
+        XCTAssertEqual(checker.requestedTokens, [])
+    }
+
+    func testAutomaticBlitzReelsRefreshChecksExpiredCache() async {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let defaults = UserDefaults(suiteName: suiteName())!
+        defaults.set("Old Plan", forKey: "access.blitzReelsPlanName")
+        defaults.set(now.addingTimeInterval(-ProductConfiguration.blitzReelsEntitlementCacheDuration - 1), forKey: "access.blitzReelsVerifiedAt")
+        let tokenStore = InMemoryBlitzReelsTokenStore(token: "expired-cache-token")
+        let checker = StubBlitzReelsEntitlementChecker(result: .success(.init(active: true, planName: "BlitzReels Pro")))
+        let access = AccessController(
+            defaults: defaults,
+            dateProvider: { now },
+            blitzReelsTokenStore: tokenStore,
+            blitzReelsEntitlementChecker: checker
+        )
+
+        await access.refreshBlitzReelsEntitlementIfNeeded()
+
+        XCTAssertTrue(access.hasBlitzReelsEntitlement)
+        XCTAssertEqual(access.accessLabel, "Included with BlitzReels Pro")
+        XCTAssertEqual(checker.requestedTokens, ["expired-cache-token"])
     }
 
     private func suiteName() -> String {

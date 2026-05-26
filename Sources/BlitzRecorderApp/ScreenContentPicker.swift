@@ -23,7 +23,7 @@ final class ScreenContentPicker: NSObject, @preconcurrency SCContentSharingPicke
             picker.maximumStreamCount = 1
             picker.isActive = true
             picker.add(self)
-            picker.present(using: .display)
+            picker.present()
         }
     }
 

@@ -13,10 +13,16 @@ enum AppLinks {
 
 enum ProductConfiguration {
     static let monthlyProductID = "dev.blitzreels.blitzrecorder.pro.monthly"
+    static let annualProductID = "dev.blitzreels.blitzrecorder.pro.annual"
+    static let appStoreProductIDs = [monthlyProductID, annualProductID]
     static let blitzReelsSignInURL = URL(string: "https://www.blitzreels.com/blitzrecorder/sign-in")!
     static let blitzReelsEntitlementURL = URL(string: "https://www.blitzreels.com/api/blitzrecorder/entitlement")!
     static let freeExportLimit = 3
     static let blitzReelsEntitlementCacheDuration: TimeInterval = 7 * 24 * 60 * 60
+
+    static func isAppStoreProductID(_ productID: String) -> Bool {
+        appStoreProductIDs.contains(productID)
+    }
 }
 
 struct BlitzReelsEntitlementResponse: Decodable {
@@ -164,6 +170,7 @@ final class AccessController {
     private var transactionUpdatesTask: Task<Void, Never>?
 
     var monthlyProduct: Product?
+    var annualProduct: Product?
     var usedFreeExports: Int
     var hasAppStoreSubscription = false
     var hasBlitzReelsEntitlement = false
@@ -214,7 +221,11 @@ final class AccessController {
     }
 
     var monthlyPriceLabel: String {
-        monthlyProduct?.displayPrice ?? "$4.99"
+        monthlyProduct?.displayPrice ?? "$7.99"
+    }
+
+    var annualPriceLabel: String {
+        annualProduct?.displayPrice ?? "$49.99"
     }
 
     var accessLabel: String {
@@ -238,7 +249,7 @@ final class AccessController {
         Task {
             await refreshProducts()
             await refreshEntitlements()
-            await refreshBlitzReelsEntitlement()
+            await refreshBlitzReelsEntitlementIfNeeded()
         }
     }
 
@@ -250,16 +261,27 @@ final class AccessController {
     }
 
     func purchaseMonthly() async {
+        await purchase(product: monthlyProduct, fallbackProductID: ProductConfiguration.monthlyProductID)
+    }
+
+    func purchaseAnnual() async {
+        await purchase(product: annualProduct, fallbackProductID: ProductConfiguration.annualProductID)
+    }
+
+    private func purchase(product existingProduct: Product?, fallbackProductID: String) async {
         isPurchasing = true
         defer { isPurchasing = false }
 
         do {
             let product: Product
-            if let monthlyProduct {
-                product = monthlyProduct
+            if let existingProduct {
+                product = existingProduct
             } else {
                 await refreshProducts()
-                guard let loadedProduct = monthlyProduct else {
+                let loadedProduct = fallbackProductID == ProductConfiguration.monthlyProductID
+                    ? monthlyProduct
+                    : annualProduct
+                guard let loadedProduct else {
                     accessMessage = "Subscription is not available yet."
                     return
                 }
@@ -270,7 +292,7 @@ final class AccessController {
             switch result {
             case .success(let verification):
                 let transaction = try checkVerified(verification)
-                hasAppStoreSubscription = transaction.productID == ProductConfiguration.monthlyProductID
+                hasAppStoreSubscription = ProductConfiguration.isAppStoreProductID(transaction.productID)
                     && transaction.revocationDate == nil
                 await transaction.finish()
                 accessMessage = hasAppStoreSubscription ? "BlitzRecorder Pro is active." : ""
@@ -373,12 +395,25 @@ final class AccessController {
         }
     }
 
+    func refreshBlitzReelsEntitlementIfNeeded() async {
+        guard hasBlitzReelsAccountConnection else {
+            clearBlitzReelsEntitlement()
+            return
+        }
+        guard !hasBlitzReelsEntitlement || !hasFreshBlitzReelsVerification else {
+            return
+        }
+        await refreshBlitzReelsEntitlement()
+    }
+
     private func refreshProducts() async {
         isLoadingProducts = true
         defer { isLoadingProducts = false }
 
         do {
-            monthlyProduct = try await Product.products(for: [ProductConfiguration.monthlyProductID]).first
+            let products = try await Product.products(for: ProductConfiguration.appStoreProductIDs)
+            monthlyProduct = products.first { $0.id == ProductConfiguration.monthlyProductID }
+            annualProduct = products.first { $0.id == ProductConfiguration.annualProductID }
         } catch {
             accessMessage = "Subscription products failed to load: \(error.localizedDescription)"
         }
@@ -389,7 +424,7 @@ final class AccessController {
         for await entitlement in Transaction.currentEntitlements {
             do {
                 let transaction = try checkVerified(entitlement)
-                if transaction.productID == ProductConfiguration.monthlyProductID,
+                if ProductConfiguration.isAppStoreProductID(transaction.productID),
                    transaction.revocationDate == nil {
                     hasSubscription = true
                 }
@@ -403,7 +438,7 @@ final class AccessController {
     private func handle(transactionResult: VerificationResult<Transaction>) async {
         do {
             let transaction = try checkVerified(transactionResult)
-            if transaction.productID == ProductConfiguration.monthlyProductID {
+            if ProductConfiguration.isAppStoreProductID(transaction.productID) {
                 await refreshEntitlements()
             }
             await transaction.finish()

@@ -3,7 +3,7 @@ import CoreGraphics
 import XCTest
 
 final class SceneLayerResizingTests: XCTestCase {
-    func testScreenHeightResizePreservesAspectRatio() {
+    func testAspectLockedHeightResizePreservesAspectRatio() {
         let frame = CGRect(x: 0.1, y: 0.2, width: 0.4, height: 0.3)
 
         let resized = SceneLayerResizing.resized(

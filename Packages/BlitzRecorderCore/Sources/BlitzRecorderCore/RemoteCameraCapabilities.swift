@@ -161,6 +161,10 @@ public struct RemoteCameraCapabilities: Codable, Equatable, Sendable {
     public var maximumISO: Double?
     public var minimumShutterDurationSeconds: Double?
     public var maximumShutterDurationSeconds: Double?
+    public var supportsCinematicVideo: Bool
+    public var minimumCinematicAperture: Double?
+    public var maximumCinematicAperture: Double?
+    public var defaultCinematicAperture: Double?
 
     public init(
         deviceName: String,
@@ -186,7 +190,11 @@ public struct RemoteCameraCapabilities: Codable, Equatable, Sendable {
         minimumISO: Double? = nil,
         maximumISO: Double? = nil,
         minimumShutterDurationSeconds: Double? = nil,
-        maximumShutterDurationSeconds: Double? = nil
+        maximumShutterDurationSeconds: Double? = nil,
+        supportsCinematicVideo: Bool = false,
+        minimumCinematicAperture: Double? = nil,
+        maximumCinematicAperture: Double? = nil,
+        defaultCinematicAperture: Double? = nil
     ) {
         self.deviceName = deviceName
         self.deviceModelIdentifier = deviceModelIdentifier
@@ -210,6 +218,10 @@ public struct RemoteCameraCapabilities: Codable, Equatable, Sendable {
         self.maximumISO = maximumISO
         self.minimumShutterDurationSeconds = minimumShutterDurationSeconds
         self.maximumShutterDurationSeconds = maximumShutterDurationSeconds
+        self.supportsCinematicVideo = supportsCinematicVideo
+        self.minimumCinematicAperture = minimumCinematicAperture
+        self.maximumCinematicAperture = maximumCinematicAperture
+        self.defaultCinematicAperture = defaultCinematicAperture
     }
 }
 
@@ -237,6 +249,10 @@ extension RemoteCameraCapabilities {
         case maximumISO
         case minimumShutterDurationSeconds
         case maximumShutterDurationSeconds
+        case supportsCinematicVideo
+        case minimumCinematicAperture
+        case maximumCinematicAperture
+        case defaultCinematicAperture
     }
 
     public init(from decoder: Decoder) throws {
@@ -278,6 +294,22 @@ extension RemoteCameraCapabilities {
             maximumShutterDurationSeconds: try container.decodeIfPresent(
                 Double.self,
                 forKey: .maximumShutterDurationSeconds
+            ),
+            supportsCinematicVideo: try container.decodeIfPresent(
+                Bool.self,
+                forKey: .supportsCinematicVideo
+            ) ?? false,
+            minimumCinematicAperture: try container.decodeIfPresent(
+                Double.self,
+                forKey: .minimumCinematicAperture
+            ),
+            maximumCinematicAperture: try container.decodeIfPresent(
+                Double.self,
+                forKey: .maximumCinematicAperture
+            ),
+            defaultCinematicAperture: try container.decodeIfPresent(
+                Double.self,
+                forKey: .defaultCinematicAperture
             )
         )
     }

@@ -6,40 +6,19 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     private let queue = DispatchQueue(label: "blitzrecorder.system-audio")
     private var stream: SCStream?
     private var writer: AudioSampleFileWriter?
-    var levelHandler: ((Float) -> Void)?
-    private var lastLevelTime = DispatchTime(uptimeNanoseconds: 0)
+    private let levelPublisher = AudioLevelPublisher()
+    var levelHandler: ((Float) -> Void)? {
+        get { levelPublisher.levelHandler }
+        set { levelPublisher.levelHandler = newValue }
+    }
     private var streamError: Error?
 
     func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime? = nil) async throws {
         streamError = nil
         writer = try AudioSampleFileWriter(url: url, timelineStartTime: timelineStartTime)
 
-        let content = try await SCShareableContent.current
-        guard let display = ScreenCaptureGeometry.display(from: content.displays, settings: settings) else {
-            throw RecorderError.noDisplay
-        }
-
-        let ownProcess = getpid()
-        let excludedApplications = content.applications.filter { $0.processID == ownProcess }
-        let filter = SCContentFilter(
-            display: display,
-            excludingApplications: excludedApplications,
-            exceptingWindows: []
-        )
-
-        let configuration = SCStreamConfiguration()
-        configuration.width = 2
-        configuration.height = 2
-        configuration.minimumFrameInterval = CMTime(value: 1, timescale: 1)
-        configuration.pixelFormat = kCVPixelFormatType_32BGRA
-        configuration.queueDepth = 2
-        configuration.showsCursor = false
-        configuration.capturesAudio = true
-        configuration.excludesCurrentProcessAudio = true
-        configuration.sampleRate = 48_000
-        configuration.channelCount = 2
-        configuration.streamName = "BlitzRecorder System Audio"
-
+        let filter = try await SystemAudioStreamConfiguration.contentFilter(settings: settings)
+        let configuration = SystemAudioStreamConfiguration.configuration(streamName: "BlitzRecorder System Audio")
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
         try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
         try await stream.startCapture()
@@ -55,19 +34,18 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     func stop() async throws -> MediaWriterCompletion {
+        let writerToFinish = writer
+        writer = nil
         if let stream {
             try? await stream.stopCapture()
         }
         stream = nil
-        let completion = try await writer?.finish() ?? .empty()
-        writer = nil
+        let completion = try await writerToFinish?.finish() ?? .empty()
         if let streamError {
             self.streamError = nil
             throw RecorderError.captureStreamStopped(streamError.localizedDescription)
         }
-        Task { @MainActor [levelHandler] in
-            levelHandler?(0)
-        }
+        levelPublisher.reset()
         return completion
     }
 
@@ -75,21 +53,8 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         guard type == .audio, sampleBuffer.isValid else {
             return
         }
-        publishLevel(from: sampleBuffer)
+        levelPublisher.publish(from: sampleBuffer)
         writer?.append(sampleBuffer)
-    }
-
-    private func publishLevel(from sampleBuffer: CMSampleBuffer) {
-        let now = DispatchTime.now()
-        guard now.uptimeNanoseconds - lastLevelTime.uptimeNanoseconds > 33_000_000,
-              let level = AudioLevelMeter.level(from: sampleBuffer) else {
-            return
-        }
-        lastLevelTime = now
-
-        Task { @MainActor [levelHandler] in
-            levelHandler?(level)
-        }
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {

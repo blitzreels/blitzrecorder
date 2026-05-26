@@ -9,6 +9,32 @@ struct RemoteCameraPendingImport: Codable, Equatable {
     var expectedByteCount: Int64?
 }
 
+enum RemoteCameraTakeIDResolver {
+    static func takeID(
+        activeTakeID: UUID?,
+        pendingTransferDestinationURLs: [UUID: URL],
+        pendingImports: [RemoteCameraPendingImport],
+        take: RecordingTake
+    ) -> UUID? {
+        if let activeTakeID {
+            return activeTakeID
+        }
+
+        let cameraPath = take.cameraURL.standardizedFileURL.path
+        if let pendingTransfer = pendingTransferDestinationURLs.first(where: {
+            $0.value.standardizedFileURL.path == cameraPath
+        }) {
+            return pendingTransfer.key
+        }
+
+        let scratchPath = take.scratchDirectory.standardizedFileURL.path
+        return pendingImports.first(where: {
+            $0.destinationURL.standardizedFileURL.path == cameraPath
+                || $0.scratchDirectory.standardizedFileURL.path == scratchPath
+        })?.takeID
+    }
+}
+
 struct RemoteCameraPendingImportStore {
     func all(settings: RecordingSettings) -> [RemoteCameraPendingImport] {
         guard let data = try? Data(contentsOf: indexURL(settings: settings)) else {

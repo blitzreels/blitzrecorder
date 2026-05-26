@@ -175,7 +175,7 @@ struct CameraCompanionView: View {
                 Button {
                     store.retryConnection()
                 } label: {
-                    Label("Retry", systemImage: "arrow.clockwise")
+                    Label("Try again", systemImage: "arrow.clockwise")
                         .frame(maxWidth: .infinity)
                 }
                 .companionButtonStyle(prominent: true)
@@ -183,7 +183,7 @@ struct CameraCompanionView: View {
                 Button {
                     showsDiagnostics = true
                 } label: {
-                    Label("Investigate", systemImage: "stethoscope")
+                    Label("Details", systemImage: "info.circle")
                         .frame(maxWidth: .infinity)
                 }
                 .companionButtonStyle()
@@ -372,9 +372,9 @@ struct CameraCompanionView: View {
         case .pairing:
             return "Mac found. Enter the code on the Mac"
         case .degraded:
-            return "Network connection waiting"
+            return "Wi-Fi is weak. Try again"
         case .unavailable:
-            return "Pairing unavailable"
+            return "Can’t find the Mac"
         case .disconnected:
             return "Mac disconnected. Try again from BlitzRecorder"
         case .connected:
@@ -683,7 +683,7 @@ private struct ConnectionDiagnosticsView: View {
                     diagnostic("Message", store.statusMessage)
                     diagnostic("Listening port", store.listeningPortLabel)
                     diagnostic("Pairing code", store.pairingCode)
-                    diagnostic("Preview", store.camera.isPreviewRunning ? "Running" : "Not running")
+                    diagnostic("Video", store.camera.isPreviewRunning ? "On" : "Off")
                     diagnostic("Pending imports", "\(store.pendingRecordingCount)")
                     diagnostic("Storage free", store.freeStorageLabel)
                     diagnostic("Thermal", store.thermalStateLabel)
@@ -693,7 +693,7 @@ private struct ConnectionDiagnosticsView: View {
                     Label("Allow Local Network access for BlitzRecorder Camera in iOS Settings.", systemImage: "network")
                     Label("Keep the Mac and iPhone on the same Wi-Fi or trusted network.", systemImage: "wifi")
                     Label("Open BlitzRecorder on the Mac, then select this iPhone again.", systemImage: "macbook.and.iphone")
-                    Label("If Bonjour is blocked, use the shown port while pairing from the Mac.", systemImage: "number")
+                    Label("If the Mac cannot find the iPhone, type this port on the Mac.", systemImage: "number")
                 }
 
                 Section {
@@ -701,7 +701,7 @@ private struct ConnectionDiagnosticsView: View {
                         store.retryConnection()
                         dismiss()
                     } label: {
-                        Label("Retry Discovery", systemImage: "arrow.clockwise")
+                        Label("Try again", systemImage: "arrow.clockwise")
                     }
                 }
             }

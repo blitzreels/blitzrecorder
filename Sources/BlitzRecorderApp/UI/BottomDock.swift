@@ -1,3 +1,5 @@
+import AVFoundation
+import Foundation
 import SwiftUI
 
 struct BottomDock: View {
@@ -11,7 +13,11 @@ struct BottomDock: View {
                 } else if !vm.canStartRecording {
                     ReadinessIssueView(vm: vm)
                 } else if let savedURL = vm.lastExportedURL {
-                    ExportCompletedView(url: savedURL)
+                    ExportCompletedView(
+                        url: savedURL,
+                        sourceTakeURL: vm.lastExportedSourceTakeURL,
+                        warning: vm.lastExportWarning
+                    )
                 } else if let message = vm.idleStatusMessage {
                     Text(message)
                         .font(.system(size: 11, weight: .medium))
@@ -21,10 +27,7 @@ struct BottomDock: View {
                         .frame(width: 300)
                 }
 
-                HStack(spacing: 12) {
-                    PauseButton(vm: vm)
-                    RecordButton(vm: vm)
-                }
+                RecordingActionRow(vm: vm)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -33,36 +36,247 @@ struct BottomDock: View {
     }
 }
 
+private struct RecordingActionRow: View {
+    @Bindable var vm: RecorderViewModel
+
+    var body: some View {
+        HStack(spacing: 10) {
+            switch vm.state {
+            case .idle:
+                RecordingSettingsShortcut(vm: vm)
+                RecordButton(vm: vm)
+            case .recording, .paused:
+                PauseButton(vm: vm)
+                RecordButton(vm: vm)
+            case .starting, .finishing:
+                RecordButton(vm: vm)
+            }
+        }
+    }
+}
+
+private struct RecordingSettingsShortcut: View {
+    @Bindable var vm: RecorderViewModel
+
+    var body: some View {
+        Button {
+            vm.appTab = .recording
+        } label: {
+            HStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(.white.opacity(0.08))
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.72))
+                }
+                .frame(width: 26, height: 26)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Export")
+                        .font(.system(size: 9, weight: .heavy))
+                        .foregroundStyle(.white.opacity(0.44))
+                    Text(settingsSummary)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.82))
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 44)
+            .frame(width: 142)
+        }
+        .buttonStyle(.glass)
+        .pointingHandCursor()
+        .help("Open export settings")
+    }
+
+    private var settingsSummary: String {
+        "\(vm.settings.outputResolution.displayName) · \(vm.settings.framesPerSecond) FPS"
+    }
+}
+
 private struct ExportCompletedView: View {
+    let url: URL
+    let sourceTakeURL: URL?
+    let warning: String?
+    @State private var metadata = RecordingFileMetadata.empty
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color(red: 0.09, green: 1.0, blue: 0.65))
+                    .frame(width: 16)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Recording saved")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color(red: 0.09, green: 1.0, blue: 0.65).opacity(0.9))
+                    Text(url.lastPathComponent)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.78))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(savedDetail)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(folderPath)
+                }
+
+                Spacer(minLength: 8)
+
+                HStack(spacing: 6) {
+                    OpenFileButton(title: "Open", systemImage: "play.fill", url: url)
+                    FinderButton(title: "Reveal", systemImage: "folder", url: url)
+                }
+            }
+
+            if let warning {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.yellow.opacity(0.92))
+                        .frame(width: 16)
+                    Text(warning)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.68))
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .help(warning)
+                }
+            }
+
+            if let sourceTakeURL {
+                HStack(spacing: 8) {
+                    Image(systemName: "archivebox.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.62))
+                        .frame(width: 16)
+                    Text("Sources saved: \(sourceTakeURL.lastPathComponent)")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.62))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(sourceTakeURL.path)
+
+                    Spacer(minLength: 8)
+
+                    FinderButton(title: "Sources", systemImage: "tray.full", url: sourceTakeURL)
+                }
+            }
+        }
+        .frame(width: 360)
+        .task(id: url) {
+            metadata = .empty
+            metadata = await RecordingFileMetadata.load(for: url)
+        }
+    }
+
+    private var folderPath: String {
+        url.deletingLastPathComponent().path
+    }
+
+    private var folderLabel: String {
+        (folderPath as NSString).abbreviatingWithTildeInPath
+    }
+
+    private var savedDetail: String {
+        let parts = [folderLabel] + metadata.labels
+        return "Saved to \(parts.joined(separator: " · "))"
+    }
+}
+
+private struct RecordingFileMetadata {
+    let sizeLabel: String?
+    let durationLabel: String?
+
+    static let empty = RecordingFileMetadata(sizeLabel: nil, durationLabel: nil)
+
+    var labels: [String] {
+        [sizeLabel, durationLabel].compactMap { $0 }
+    }
+
+    static func load(for url: URL) async -> RecordingFileMetadata {
+        async let sizeLabel = fileSizeLabel(for: url)
+        async let durationLabel = durationLabel(for: url)
+        return await RecordingFileMetadata(sizeLabel: sizeLabel, durationLabel: durationLabel)
+    }
+
+    private static func fileSizeLabel(for url: URL) -> String? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let byteCount = attributes[.size] as? NSNumber else {
+            return nil
+        }
+        return ByteCountFormatter.string(fromByteCount: byteCount.int64Value, countStyle: .file)
+    }
+
+    private static func durationLabel(for url: URL) async -> String? {
+        let asset = AVURLAsset(url: url)
+        guard let duration = try? await asset.load(.duration),
+              duration.isValid,
+              duration.seconds.isFinite,
+              duration.seconds > 0 else {
+            return nil
+        }
+        return formattedDuration(seconds: duration.seconds)
+    }
+
+    private static func formattedDuration(seconds: Double) -> String {
+        let totalSeconds = Int(seconds.rounded())
+        let hours = totalSeconds / 3600
+        let minutes = (totalSeconds % 3600) / 60
+        let seconds = totalSeconds % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        }
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+private struct OpenFileButton: View {
+    let title: String
+    let systemImage: String
     let url: URL
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(Color(red: 0.09, green: 1.0, blue: 0.65))
-
-            Text(url.lastPathComponent)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.74))
-                .lineLimit(1)
-                .truncationMode(.middle)
-
-            Spacer(minLength: 8)
-
-            Button {
-                NSWorkspace.shared.activateFileViewerSelecting([url])
-            } label: {
-                Label("Show in Finder", systemImage: "folder")
-                    .font(.system(size: 10, weight: .bold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-            }
-            .buttonStyle(.glass)
-            .controlSize(.small)
-            .pointingHandCursor()
+        Button {
+            NSWorkspace.shared.open(url)
+        } label: {
+            Label(title, systemImage: systemImage)
+                .font(.system(size: 10, weight: .bold))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
         }
-        .frame(width: 300)
+        .buttonStyle(.glass)
+        .controlSize(.small)
+        .pointingHandCursor()
+        .help("Open \(url.lastPathComponent)")
+    }
+}
+
+private struct FinderButton: View {
+    let title: String
+    let systemImage: String
+    let url: URL
+
+    var body: some View {
+        Button {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        } label: {
+            Label(title, systemImage: systemImage)
+                .font(.system(size: 10, weight: .bold))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+        }
+        .buttonStyle(.glass)
+        .controlSize(.small)
+        .pointingHandCursor()
+        .help(url.path)
     }
 }
 
@@ -114,7 +328,7 @@ private struct SessionProgressView: View {
         case .recording, .paused:
             RecordingElapsedView(state: vm.state, elapsed: vm.formattedElapsed)
         case .starting:
-            RenderingProgressView(title: vm.sessionProgressTitle, detail: nil, progress: 0, percent: "0%")
+            StartingRecordingView(title: vm.sessionProgressTitle, detail: vm.sessionProgressDetail)
         case .finishing:
             RenderingProgressView(
                 title: vm.sessionProgressTitle,
@@ -125,6 +339,43 @@ private struct SessionProgressView: View {
         case .idle:
             EmptyView()
         }
+    }
+}
+
+private struct StartingRecordingView: View {
+    let title: String
+    let detail: String?
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(Color(red: 0.27, green: 0.7, blue: 1).opacity(0.16))
+                Image(systemName: "hourglass")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.5, green: 0.82, blue: 1))
+            }
+            .frame(width: 28, height: 28)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.78))
+                    .lineLimit(1)
+                Text(detail ?? "Not recording yet. Hang on while capture gets ready.")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.58))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            ProgressView()
+                .controlSize(.small)
+                .frame(width: 18, height: 18)
+        }
+        .frame(width: 360)
     }
 }
 
@@ -167,6 +418,8 @@ private struct RenderingProgressView: View {
                 Text(title)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.72))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 Spacer(minLength: 12)
                 Text(percent)
                     .font(.system(size: 13, weight: .medium, design: .monospaced))
@@ -178,15 +431,15 @@ private struct RenderingProgressView: View {
                 Text(detail)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.white.opacity(0.56))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             ProgressView(value: progress)
                 .progressViewStyle(.linear)
                 .tint(.white.opacity(0.85))
         }
-        .frame(width: 224)
+        .frame(width: 360)
     }
 }
 
@@ -248,7 +501,7 @@ private struct RecordButton: View {
         switch vm.state {
         case .idle: return "record.circle"
         case .recording, .paused: return "stop.fill"
-        case .starting: return "ellipsis"
+        case .starting: return "hourglass"
         case .finishing: return "ellipsis"
         }
     }
@@ -257,7 +510,7 @@ private struct RecordButton: View {
         switch vm.state {
         case .idle: return "Start Recording"
         case .recording, .paused: return "Stop"
-        case .starting: return "Starting..."
+        case .starting: return "Please Wait"
         case .finishing: return "Saving…"
         }
     }

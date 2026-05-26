@@ -14,11 +14,18 @@ public struct RemoteCameraTimeline: Codable, Equatable, Sendable {
     public var takeID: UUID
     public var hostStartTime: UInt64?
     public var hostStopTime: UInt64?
+    public var hostTimelineStartTime: UInt64?
 
-    public init(takeID: UUID, hostStartTime: UInt64? = nil, hostStopTime: UInt64? = nil) {
+    public init(
+        takeID: UUID,
+        hostStartTime: UInt64? = nil,
+        hostStopTime: UInt64? = nil,
+        hostTimelineStartTime: UInt64? = nil
+    ) {
         self.takeID = takeID
         self.hostStartTime = hostStartTime
         self.hostStopTime = hostStopTime
+        self.hostTimelineStartTime = hostTimelineStartTime
     }
 }
 
@@ -42,6 +49,8 @@ public struct RemoteCameraSettings: Codable, Equatable, Sendable {
     public var stabilizationMode: RemoteCameraStabilizationMode
     public var rotationDegrees: Int
     public var torchEnabled: Bool
+    public var cinematicVideoEnabled: Bool
+    public var cinematicAperture: Double?
 
     public init(
         lens: RemoteCameraLens = .wide,
@@ -60,7 +69,9 @@ public struct RemoteCameraSettings: Codable, Equatable, Sendable {
         whiteBalanceTint: Double = 0,
         stabilizationMode: RemoteCameraStabilizationMode = .auto,
         rotationDegrees: Int = RemoteCameraSettings.defaultRotationDegrees,
-        torchEnabled: Bool = false
+        torchEnabled: Bool = false,
+        cinematicVideoEnabled: Bool = false,
+        cinematicAperture: Double? = nil
     ) {
         self.lens = lens
         self.formatID = formatID
@@ -79,6 +90,8 @@ public struct RemoteCameraSettings: Codable, Equatable, Sendable {
         self.stabilizationMode = stabilizationMode
         self.rotationDegrees = Self.normalizedRotationDegrees(rotationDegrees)
         self.torchEnabled = torchEnabled
+        self.cinematicVideoEnabled = cinematicVideoEnabled
+        self.cinematicAperture = cinematicAperture
     }
 
     public static func normalizedRotationDegrees(_ degrees: Int) -> Int {
@@ -106,6 +119,8 @@ extension RemoteCameraSettings {
         case stabilizationMode
         case rotationDegrees
         case torchEnabled
+        case cinematicVideoEnabled
+        case cinematicAperture
     }
 
     public init(from decoder: Decoder) throws {
@@ -140,7 +155,12 @@ extension RemoteCameraSettings {
             ) ?? .auto,
             rotationDegrees: try container.decodeIfPresent(Int.self, forKey: .rotationDegrees)
                 ?? Self.defaultRotationDegrees,
-            torchEnabled: try container.decodeIfPresent(Bool.self, forKey: .torchEnabled) ?? false
+            torchEnabled: try container.decodeIfPresent(Bool.self, forKey: .torchEnabled) ?? false,
+            cinematicVideoEnabled: try container.decodeIfPresent(
+                Bool.self,
+                forKey: .cinematicVideoEnabled
+            ) ?? false,
+            cinematicAperture: try container.decodeIfPresent(Double.self, forKey: .cinematicAperture)
         )
     }
 }

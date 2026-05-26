@@ -31,7 +31,11 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         if let pickedFilter {
             filter = pickedFilter
             currentDisplay = nil
-            dimensions = ScreenCaptureGeometry.screenCaptureDimensions(for: settings, pickedFilter: pickedFilter)
+            let screenSourceGeometry = ScreenCaptureGeometry.screenSourceGeometry(for: settings, pickedFilter: pickedFilter)
+            dimensions = ScreenCaptureGeometry.screenCaptureDimensions(
+                for: settings,
+                sourceAspectRatio: screenSourceGeometry.aspectRatio()
+            )
             configuration = streamConfigurationForPickedContent(settings: settings, filter: pickedFilter)
         } else {
             let content = try await SCShareableContent.current
@@ -132,8 +136,12 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     private func streamConfiguration(for display: SCDisplay, settings: RecordingSettings, zoom: CGFloat) -> SCStreamConfiguration {
-        let dimensions = ScreenCaptureGeometry.screenCaptureDimensions(for: settings, display: display)
-        var sourceRect = ScreenCaptureGeometry.sourceRect(for: display, settings: settings)
+        let screenSourceGeometry = ScreenCaptureGeometry.screenSourceGeometry(for: settings, display: display)
+        let dimensions = ScreenCaptureGeometry.screenCaptureDimensions(
+            for: settings,
+            sourceAspectRatio: screenSourceGeometry.aspectRatio()
+        )
+        var sourceRect = screenSourceGeometry.sourceRect(in: CGRect(x: 0, y: 0, width: display.width, height: display.height))
         if zoom > 1 {
             let width = sourceRect.width / zoom
             let height = sourceRect.height / zoom
@@ -165,7 +173,11 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     private func streamConfigurationForPickedContent(settings: RecordingSettings, filter: SCContentFilter) -> SCStreamConfiguration {
-        let dimensions = ScreenCaptureGeometry.screenCaptureDimensions(for: settings, pickedFilter: filter)
+        let screenSourceGeometry = ScreenCaptureGeometry.screenSourceGeometry(for: settings, pickedFilter: filter)
+        let dimensions = ScreenCaptureGeometry.screenCaptureDimensions(
+            for: settings,
+            sourceAspectRatio: screenSourceGeometry.aspectRatio()
+        )
         let configuration = SCStreamConfiguration()
         configuration.width = dimensions.width
         configuration.height = dimensions.height

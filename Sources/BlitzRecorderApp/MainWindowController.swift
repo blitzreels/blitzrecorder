@@ -21,6 +21,7 @@ final class MainWindowController: NSWindowController {
     private var cameraDeviceObservers: [NSObjectProtocol] = []
     private var isStartingCameraPreview = false
     private var cameraPreviewDeviceID: String?
+    private var preservedHiddenScreenPreviewSelectionRevision: Int?
 
     init(coordinator: RecorderCoordinator) {
         self.coordinator = coordinator
@@ -58,15 +59,27 @@ final class MainWindowController: NSWindowController {
         coordinator.onCameraConfigurationChanged = { [weak self] in
             self?.refreshCameraPicker()
         }
+        coordinator.onLocalCameraPreviewSampleBuffer = { [weak self] sampleBuffer, width, height in
+            guard let self,
+                  self.coordinator.settings.visibleSources.contains(.camera),
+                  !self.coordinator.isRemoteCameraSelected else { return }
+            self.previewStage.cameraPreview.isHidden = false
+            self.previewStage.cameraPreview.enqueuePreviewSampleBuffer(sampleBuffer, width: width, height: height)
+            self.cameraPreviewDeviceID = self.coordinator.settings.selectedCameraID
+        }
         coordinator.onRemoteCameraPreviewFrame = { [weak self] image in
-            guard let self, self.coordinator.isRemoteCameraSelected else { return }
+            guard let self,
+                  self.coordinator.settings.visibleSources.contains(.camera),
+                  self.coordinator.isRemoteCameraSelected else { return }
             self.previewStage.cameraPreview.isHidden = false
             self.previewStage.cameraPreview.setPreviewImage(image)
             self.viewModel.applyRemoteCameraPreviewImage(image)
             self.cameraPreviewDeviceID = self.coordinator.settings.selectedCameraID
         }
         coordinator.onRemoteCameraPreviewSampleBuffer = { [weak self] sampleBuffer, width, height in
-            guard let self, self.coordinator.isRemoteCameraSelected else { return }
+            guard let self,
+                  self.coordinator.settings.visibleSources.contains(.camera),
+                  self.coordinator.isRemoteCameraSelected else { return }
             self.previewStage.cameraPreview.isHidden = false
             self.previewStage.cameraPreview.enqueuePreviewSampleBuffer(sampleBuffer, width: width, height: height)
             self.viewModel.applyRemoteCameraPreviewSampleBuffer(sampleBuffer, width: width, height: height)
@@ -77,7 +90,7 @@ final class MainWindowController: NSWindowController {
         }
 
         previewStage.captureLayout = coordinator.settings.layout
-        previewStage.enabledSources = coordinator.settings.enabledSources
+        previewStage.enabledSources = coordinator.settings.visibleSources
         previewStage.sceneLayout = coordinator.settings.sceneLayout
         previewStage.screenSourceAspectRatio = coordinator.currentScreenSourceAspectRatio()
         previewStage.showsRuleOfThirdsOverlay = coordinator.settings.showsRuleOfThirdsOverlay
@@ -152,6 +165,10 @@ final class MainWindowController: NSWindowController {
         } else if message.hasPrefix("Stop failed:") || message.hasPrefix("Final video export failed:") {
             showRecordingFailureAlert(message)
         }
+    }
+
+    func applySavedRecordingOutput(_ output: SavedRecordingOutput) {
+        viewModel.applySavedRecordingOutput(output)
     }
 
     private func showStartFailureAlert(_ message: String) {
@@ -239,9 +256,26 @@ final class MainWindowController: NSWindowController {
     func restartScreenPreview() {
         viewModel.syncSettings()
         guard coordinator.state == .idle else { return }
-        Task {
-            await coordinator.stopScreenPreview()
+        switch ScreenPreviewLifecycle.action(
+            settings: coordinator.settings,
+            previewIsRunning: coordinator.isScreenPreviewRunning,
+            preservedSelectionRevision: preservedHiddenScreenPreviewSelectionRevision,
+            currentSelectionRevision: coordinator.screenContentSelectionRevision
+        ) {
+        case .preserveHidden:
+            preservedHiddenScreenPreviewSelectionRevision = coordinator.isScreenPreviewRunning
+                ? coordinator.screenContentSelectionRevision
+                : nil
             startScreenPreview()
+        case .reusePreserved:
+            preservedHiddenScreenPreviewSelectionRevision = nil
+            refreshPermissionGate()
+        case .restart:
+            preservedHiddenScreenPreviewSelectionRevision = nil
+            Task {
+                await coordinator.stopScreenPreview()
+                startScreenPreview()
+            }
         }
     }
 
@@ -297,6 +331,12 @@ final class MainWindowController: NSWindowController {
     }
 
     private func startScreenPreview() {
+        if coordinator.settings.hiddenSources.contains(.screen) {
+            previewStage.screenPreview.setMessage("Screen source hidden")
+            refreshPermissionGate()
+            return
+        }
+
         guard coordinator.settings.enabledSources.contains(.screen) else {
             Task { await coordinator.stopScreenPreview() }
             previewStage.screenPreview.setMessage("Screen source off")
@@ -316,7 +356,7 @@ final class MainWindowController: NSWindowController {
             do {
                 try await coordinator.startScreenPreview { [weak self] frame in
                     self?.previewStage.screenSourceAspectRatio = frame.sourceAspectRatio
-                    self?.previewStage.screenPreview.setImage(frame.image)
+                    self?.previewStage.screenPreview.enqueuePreviewSampleBuffer(frame.sampleBuffer)
                 }
                 refreshPermissionGate()
             } catch {
@@ -328,9 +368,21 @@ final class MainWindowController: NSWindowController {
     }
 
     private func startCameraPreview() {
-        guard coordinator.settings.enabledSources.contains(.camera) else {
+        if coordinator.settings.hiddenSources.contains(.camera) {
+            Task { await coordinator.stopCameraPreview() }
+            previewStage.cameraPreview.setMessage("Camera source hidden")
             previewStage.cameraPreview.isHidden = true
             cameraPreviewDeviceID = nil
+            isStartingCameraPreview = false
+            return
+        }
+
+        guard coordinator.settings.enabledSources.contains(.camera) else {
+            Task { await coordinator.stopCameraPreview() }
+            previewStage.cameraPreview.setMessage("Camera source off")
+            previewStage.cameraPreview.isHidden = true
+            cameraPreviewDeviceID = nil
+            isStartingCameraPreview = false
             return
         }
 
@@ -339,7 +391,7 @@ final class MainWindowController: NSWindowController {
             previewStage.cameraPreview.isHidden = false
             cameraPreviewDeviceID = selectedID
             let name = coordinator.selectedRemoteCameraName() ?? "Remote iPhone"
-            let status = coordinator.selectedRemoteCameraStatus() ?? "Waiting for monitor preview"
+            let status = coordinator.selectedRemoteCameraStatus() ?? "Waiting for iPhone video"
             switch coordinator.selectedRemoteCameraConnectionState() {
             case .connected:
                 if previewStage.cameraPreview.hasPreviewContent {
@@ -370,10 +422,22 @@ final class MainWindowController: NSWindowController {
                 if coordinator.settings.removesCameraBackgroundAfterRecording {
                     previewStage.cameraPreview.setMessage("Starting cutout")
                     try await coordinator.startCameraCutoutPreview { [weak self] image in
-                        self?.previewStage.cameraPreview.setPreviewImage(image)
+                        guard let self,
+                              self.coordinator.settings.visibleSources.contains(.camera) else {
+                            return
+                        }
+                        self.previewStage.cameraPreview.setPreviewImage(image)
                     }
                 } else {
                     let layer = try await coordinator.cameraPreviewLayer()
+                    guard coordinator.settings.visibleSources.contains(.camera) else {
+                        await coordinator.stopCameraPreview()
+                        previewStage.cameraPreview.setMessage("Camera source off")
+                        previewStage.cameraPreview.isHidden = true
+                        cameraPreviewDeviceID = nil
+                        isStartingCameraPreview = false
+                        return
+                    }
                     previewStage.cameraPreview.setPreviewLayer(layer)
                 }
                 isStartingCameraPreview = false
@@ -390,7 +454,7 @@ final class MainWindowController: NSWindowController {
     }
 
     private func showRecordingCameraPreview() {
-        guard coordinator.settings.enabledSources.contains(.camera) else {
+        guard coordinator.settings.visibleSources.contains(.camera) else {
             return
         }
         if coordinator.isRemoteCameraSelected {
@@ -416,6 +480,7 @@ final class MainWindowController: NSWindowController {
     private func refreshCameraPicker() {
         Task {
             await viewModel.refreshSources()
+            viewModel.refreshRemoteCameraState()
             startCameraPreview()
             refreshPermissionGate()
         }

@@ -54,13 +54,25 @@ struct BlitzReelsCreatorPage: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("BlitzRecorder Pro unlocks unlimited exports on Mac.")
-                Text("The App Store subscription renews monthly until cancelled in Apple account settings.")
+                Text("App Store subscriptions renew until cancelled in Apple account settings.")
             }
             .font(.system(size: 10, weight: .medium))
             .foregroundStyle(.white.opacity(0.56))
             .fixedSize(horizontal: false, vertical: true)
 
             if !access.isPro {
+                Button {
+                    Task { await access.purchaseAnnual() }
+                } label: {
+                    Label("Subscribe \(access.annualPriceLabel) / year", systemImage: "creditcard.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                }
+                .buttonStyle(.glassProminent)
+                .disabled(access.isPurchasing)
+
                 Button {
                     Task { await access.purchaseMonthly() }
                 } label: {

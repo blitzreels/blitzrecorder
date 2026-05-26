@@ -61,14 +61,18 @@ struct MainView: View {
                         if ScreenshotVariant.isScreenshotModeEnabled {
                             ScreenshotPreviewCanvas(variant: screenshotVariant)
                         }
+
+                        if vm.isScreenCropModeEnabled {
+                            ScreenCropFloatingToolbar(vm: vm)
+                                .padding(.top, 18)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                     BottomDock(vm: vm)
                         .padding(.top, 16)
                 }
-
-                RightSidebar(vm: vm)
             }
             .padding(.horizontal, 22)
             .padding(.bottom, 18)
@@ -77,16 +81,167 @@ struct MainView: View {
 
 }
 
+private struct ScreenCropFloatingToolbar: View {
+    @Bindable var vm: RecorderViewModel
+
+    private let accent = Color(red: 0.09, green: 1.0, blue: 0.65)
+
+    var body: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "crop")
+                    .font(.system(size: 11, weight: .semibold))
+                Text("Crop")
+                    .font(.system(size: 11, weight: .bold))
+            }
+            .foregroundStyle(accent)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(accent.opacity(0.14), in: .capsule)
+
+            Divider()
+                .frame(height: 18)
+                .background(.white.opacity(0.14))
+
+            Button {
+                vm.applyScreenCropMode()
+            } label: {
+                Text("Apply")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.black.opacity(0.88))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(accent, in: .rect(cornerRadius: 7))
+            }
+            .buttonStyle(.plain)
+            .pointingHandCursor()
+
+            Button {
+                vm.resetScreenCropMode()
+            } label: {
+                Image(systemName: "arrow.counterclockwise")
+                    .font(.system(size: 11, weight: .bold))
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.glass)
+            .controlSize(.small)
+            .pointingHandCursor()
+
+            Button {
+                vm.cancelScreenCropMode()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.glass)
+            .controlSize(.small)
+            .pointingHandCursor()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .foregroundStyle(.white)
+        .background(.black.opacity(0.70), in: .rect(cornerRadius: 12))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(.white.opacity(0.12), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.32), radius: 16, y: 8)
+    }
+}
+
 private struct RemoteCameraPage: View {
     @Bindable var vm: RecorderViewModel
 
     var body: some View {
+        if vm.isRemoteCameraSelected {
+            connectedLayout
+        } else {
+            disconnectedLayout
+        }
+    }
+
+    private var disconnectedLayout: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("iPhone")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(.white)
+                Text("Select an iPhone camera source on Capture to use mirroring controls.")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.55))
+            }
+
+            VStack(alignment: .leading, spacing: 16) {
+                Text("PAIRING")
+                    .font(.system(size: 10, weight: .heavy))
+                    .tracking(0.7)
+                    .foregroundStyle(.white.opacity(0.52))
+
+                if vm.remoteCameraDeviceSummaries.isEmpty {
+                    HStack(spacing: 12) {
+                        Image(systemName: "iphone.gen3")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.45))
+                            .frame(width: 22)
+                        Text("Open BlitzRecorder Camera on your iPhone to pair.")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.56))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
+                    .background(Color.white.opacity(0.055), in: .rect(cornerRadius: 10))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    }
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(vm.remoteCameraDeviceSummaries) { device in
+                            remoteCameraDeviceRow(device)
+                        }
+                    }
+                }
+
+                Button {
+                    vm.appTab = .recorder
+                } label: {
+                    Label("Open Capture", systemImage: "record.circle")
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                }
+                .buttonStyle(.glass)
+                .pointingHandCursor()
+            }
+            .padding(20)
+            .frame(width: 520, alignment: .leading)
+            .glassEffect(.regular, in: .rect(cornerRadius: 16))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.horizontal, 28)
+        .padding(.top, 28)
+        .foregroundStyle(.white)
+    }
+
+    private var connectedLayout: some View {
         VStack(alignment: .leading, spacing: 16) {
-            pageHeader
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(vm.selectedRemoteCameraDeviceDescription)
+                        .font(.system(size: 20, weight: .semibold))
+                    Text("The iPhone records the sharp video. The Mac shows a quick preview.")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 0)
+            }
 
             HSplitView {
                 previewColumn
-
                 settingsColumn
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -95,41 +250,11 @@ private struct RemoteCameraPage: View {
         .padding(.vertical, 20)
     }
 
-    private var pageHeader: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Image(systemName: "iphone.gen3")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 24, height: 24)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(vm.isRemoteCameraSelected ? vm.selectedRemoteCameraDeviceDescription : "iPhone Camera")
-                    .font(.system(size: 20, weight: .semibold))
-                Text("Full-quality footage records on the iPhone. The Mac view is only a review feed.")
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer(minLength: 0)
-
-            RecordingOutputPicker(vm: vm)
-
-            Toggle(isOn: Binding(
-                get: { vm.settings.enabledSources.contains(.camera) },
-                set: { vm.setSourceVisible(.camera, visible: $0) }
-            )) {
-                Text("Record this iPhone")
-                    .font(.system(size: 12, weight: .regular))
-            }
-            .toggleStyle(.switch)
-            .controlSize(.mini)
-            .disabled(vm.state != .idle)
-        }
-    }
-
     private var previewColumn: some View {
         VStack(alignment: .leading, spacing: 16) {
             remotePreview
+
+            previewLegend
 
             remoteStatusDetails
         }
@@ -154,14 +279,14 @@ private struct RemoteCameraPage: View {
     @ViewBuilder
     private var remotePreview: some View {
         GeometryReader { proxy in
-            let canvasSize = fittedCanvasSize(in: proxy.size)
+            let previewSize = fittedRemotePreviewSize(in: proxy.size)
 
             ZStack(alignment: .topLeading) {
                 Rectangle()
                     .fill(.black)
 
                 CameraPreviewRepresentable(view: vm.remoteCameraPreviewSurface)
-                    .frame(width: canvasSize.width, height: canvasSize.height)
+                    .frame(width: previewSize.width, height: previewSize.height)
                     .clipped()
 
                 if !vm.hasRemoteCameraPreviewImage {
@@ -178,73 +303,24 @@ private struct RemoteCameraPage: View {
                             .lineLimit(2)
                     }
                     .frame(maxWidth: 320)
-                    .frame(width: canvasSize.width, height: canvasSize.height)
+                    .frame(width: previewSize.width, height: previewSize.height)
                     .background(.black.opacity(0.82))
                 }
 
-                previewChrome
             }
-            .frame(width: canvasSize.width, height: canvasSize.height)
+            .frame(width: previewSize.width, height: previewSize.height)
             .border(Color(nsColor: .separatorColor).opacity(0.3), width: 1)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var previewChrome: some View {
-        ZStack(alignment: .bottomLeading) {
-            VStack {
-                HStack {
-                    Text(vm.settings.layout.shortLabel)
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .monospacedDigit()
-                        .foregroundStyle(.white.opacity(0.76))
-                        .shadow(color: .black.opacity(0.65), radius: 4, x: 0, y: 1)
-                    Spacer(minLength: 0)
-                }
-                .padding(.top, 10)
-                .padding(.horizontal, 12)
-
-                Spacer(minLength: 0)
-            }
-
-            VStack(spacing: 0) {
-                Spacer(minLength: 0)
-                LinearGradient(
-                    colors: [
-                        .clear,
-                        .black.opacity(0.42)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(height: 96)
-            }
-
-            HStack(spacing: 9) {
-                Image(systemName: "iphone.gen3.radiowaves.left.and.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.white.opacity(0.86))
-                    .frame(width: 18, height: 18)
-
-                Rectangle()
-                    .fill(.white.opacity(0.22))
-                    .frame(width: 1, height: 16)
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Review feed")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.9))
-                    Text("Records on iPhone")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.58))
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 10)
-        }
-        .allowsHitTesting(false)
+    private var previewLegend: some View {
+        Label("Source records on iPhone", systemImage: "iphone.gen3.radiowaves.left.and.right")
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .allowsHitTesting(false)
     }
 
     private var pairingSection: some View {
@@ -343,10 +419,10 @@ private struct RemoteCameraPage: View {
 
     private var remoteStatusDetails: some View {
         VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("Monitor")
+            sectionHeader("iPhone")
             statusRow("Device", value: vm.selectedRemoteCameraDeviceDescription)
             statusRow("Status", value: vm.selectedRemoteCameraStatus ?? (vm.isRemoteCameraSelected ? "Waiting" : "No iPhone selected"))
-            statusRow("Preview", value: vm.selectedRemoteCameraReviewStatus)
+            statusRow("Video", value: vm.selectedRemoteCameraReviewStatus)
             statusRow("Controls", value: vm.selectedRemoteCameraCapabilities == nil ? "Waiting" : "Ready")
         }
         .frame(maxWidth: 460, alignment: .leading)
@@ -373,17 +449,17 @@ private struct RemoteCameraPage: View {
     }
 
     private var previewEmptyTitle: String {
-        vm.isRemoteCameraSelected ? "Waiting for iPhone preview" : "No iPhone selected"
+        vm.isRemoteCameraSelected ? "Waiting for iPhone video" : "No iPhone selected"
     }
 
     private var previewEmptyDetail: String {
         vm.isRemoteCameraSelected
-            ? "Keep the iPhone app open. Recording is local on iPhone; this is only a review feed."
+            ? "Keep the iPhone app open. The good video records on the iPhone."
             : "Choose a nearby iPhone from Pairing."
     }
 
-    private func fittedCanvasSize(in availableSize: CGSize) -> CGSize {
-        let aspectRatio = max(0.1, vm.settings.layout.aspectRatio)
+    private func fittedRemotePreviewSize(in availableSize: CGSize) -> CGSize {
+        let aspectRatio = max(0.1, vm.remoteCameraPreviewAspectRatio)
         let availableWidth = max(1, availableSize.width)
         let availableHeight = max(1, availableSize.height)
         let widthFittedToHeight = availableHeight * aspectRatio
@@ -495,11 +571,11 @@ private extension MainView {
                     Text("BlitzRecorder Pro unlocks unlimited exports on Mac.")
                         .font(.system(size: 11))
                         .foregroundStyle(.white.opacity(0.62))
-                    Text("The App Store subscription renews monthly until cancelled in Apple account settings.")
+                    Text("App Store subscriptions renew until cancelled in Apple account settings.")
                         .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(0.54))
 
-                    Label("Subscribe $4.99 / month", systemImage: "creditcard.fill")
+                    Label("Subscribe $49.99 / year", systemImage: "creditcard.fill")
                         .font(.system(size: 12, weight: .bold))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 10)

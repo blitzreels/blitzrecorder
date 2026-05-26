@@ -153,13 +153,13 @@ struct RemoteCameraPhoneCard: View {
                !previewHealth.isHealthy {
                 if let lastFrameAgeSeconds = previewHealth.lastFrameAgeSeconds,
                    lastFrameAgeSeconds >= 2 {
-                    return "Preview feed stale"
+                    return "Waiting for live view"
                 }
-                return "Preview dropping frames"
+                return "iPhone connected"
             }
             return vm.selectedRemoteCameraStatus ?? "\(telemetry.phase.rawValue) - \(Int(telemetry.elapsedSeconds))s"
         }
-        return vm.selectedRemoteCameraStatus ?? "Waiting for monitor preview"
+        return vm.selectedRemoteCameraStatus ?? "Waiting for iPhone video"
     }
 
     private var statusColor: Color {

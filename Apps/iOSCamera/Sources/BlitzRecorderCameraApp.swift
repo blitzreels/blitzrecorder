@@ -11,13 +11,13 @@ struct BlitzRecorderCameraApp: App {
         WindowGroup {
             CameraCompanionView(store: store, selectedTab: $selectedTab)
                 .onAppear {
-                    store.setKeepsDeviceAwake(true)
+                    store.setSceneActive(true)
                 }
                 .onDisappear {
-                    store.setKeepsDeviceAwake(false)
+                    store.setSceneActive(false)
                 }
                 .onChange(of: scenePhase) { _, phase in
-                    store.setKeepsDeviceAwake(phase == .active)
+                    store.setSceneActive(phase == .active)
                 }
                 .task {
                     await store.start()

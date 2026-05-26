@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-22T17:55:26Z",
+  "generatedAt": "2026-05-25T19:27:26Z",
   "sourceFiles": [
     "AppStore/AppStoreQuestionnaires.md"
   ],
@@ -62,9 +62,13 @@
   },
   "paidContentAndSubscriptions": {
     "macAppHasAutoRenewableSubscription": true,
-    "subscriptionName": "BlitzRecorder Pro Monthly",
+    "subscriptionName": "BlitzRecorder Pro",
+    "monthlySubscriptionName": "BlitzRecorder Pro Monthly",
     "productId": "dev.blitzreels.blitzrecorder.pro.monthly",
-    "price": "$4.99 per month",
+    "price": "$7.99 per month",
+    "annualSubscriptionName": "BlitzRecorder Pro Annual",
+    "annualProductId": "dev.blitzreels.blitzrecorder.pro.annual",
+    "annualPrice": "$49.99 per year",
     "freeBehavior": "3 free exports",
     "iosCompanionHasInAppPurchases": false,
     "iosCompanionHasPaywall": false

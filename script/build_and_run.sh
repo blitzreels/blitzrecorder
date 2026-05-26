@@ -21,7 +21,7 @@ stop_app() {
 build_app() {
   ENTITLEMENTS_PATH="$ROOT_DIR/BlitzRecorder.local.entitlements" "$ROOT_DIR/Scripts/package-app.sh" >/dev/null
   rm -rf "$INSTALLED_APP"
-  cp -R "$BUILT_APP" "$INSTALLED_APP"
+  /usr/bin/ditto "$BUILT_APP" "$INSTALLED_APP"
 }
 
 open_app() {

@@ -28,7 +28,7 @@ enum RecorderError: LocalizedError {
         case .noCamera:
             "No camera was available."
         case .writerNotReady:
-            "The video writer was not ready."
+            "Video setup needs a moment. Try again."
         case .mediaWriteFailed(let reason):
             "Media writing failed: \(reason)"
         case .captureStreamStopped(let reason):
@@ -52,7 +52,7 @@ enum RecorderError: LocalizedError {
         case .backgroundRemovalUnavailable:
             "Webcam background removal could not process the camera recording."
         case .remoteCameraPreviewUnavailable:
-            "Remote iPhone monitor preview is not connected yet."
+            "Waiting for iPhone video."
         case .remoteCameraRecordingUnavailable:
             "Remote iPhone recording sync is not implemented yet."
         case .remoteCameraNotConnected:

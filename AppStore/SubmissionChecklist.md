@@ -9,8 +9,10 @@ Last updated: 2026-05-22
 - Bundle IDs:
   - macOS: `dev.blitzreels.blitzrecorder`
   - iOS companion: `dev.blitzreels.blitzrecorder.camera`
-- Subscription product ID: `dev.blitzreels.blitzrecorder.pro.monthly`
-- Price: $4.99 per month
+- Monthly subscription product ID: `dev.blitzreels.blitzrecorder.pro.monthly`
+- Monthly price: $7.99 per month
+- Annual subscription product ID: `dev.blitzreels.blitzrecorder.pro.annual`
+- Annual price: $49.99 per year
 - Trial behavior: 3 free exports, then Pro required for additional exports
 - BlitzReels access: active eligible BlitzReels subscribers can unlock Pro by signing in
 
@@ -34,9 +36,11 @@ Use `AppStore/AppStoreConnectFields.generated.json` as the exact machine-readabl
 
 - Create the macOS app record for `dev.blitzreels.blitzrecorder`.
 - Create the iOS companion app record for `dev.blitzreels.blitzrecorder.camera`.
-- Create auto-renewable subscription:
-  - Product ID: `dev.blitzreels.blitzrecorder.pro.monthly`
-  - Display price: $4.99/month
+- Create auto-renewable subscriptions:
+  - Monthly product ID: `dev.blitzreels.blitzrecorder.pro.monthly`
+  - Monthly display price: $7.99/month
+  - Annual product ID: `dev.blitzreels.blitzrecorder.pro.annual`
+  - Annual display price: $49.99/year
   - Subscription group: BlitzRecorder Pro
   - Benefit: unlimited exports/renders in BlitzRecorder
 - Add privacy policy URL to both app records.
@@ -50,7 +54,7 @@ Use `AppStore/AppStoreConnectFields.generated.json` as the exact machine-readabl
 
 Use `AppStore/ReviewNotes.md` as the source for App Store Connect review notes. Before submission, add a BlitzReels reviewer account with an active eligible subscription if App Review should test the included-access path.
 
-Local StoreKit testing is configured in `AppStore/BlitzRecorder.storekit` and wired into the `BlitzRecorder` run scheme. Keep the local product ID, App Store Connect product ID, and `ProductConfiguration.monthlyProductID` identical. Run `Scripts/validate-storekit-local.sh` before sandbox purchase QA to verify the StoreKit config, scheme wiring, purchase/restore code paths, and Plan popover controls are still aligned.
+Local StoreKit testing is configured in `AppStore/BlitzRecorder.storekit` and wired into the `BlitzRecorder` run scheme. Keep the local product IDs, App Store Connect product IDs, and `ProductConfiguration` StoreKit IDs identical. Run `Scripts/validate-storekit-local.sh` before sandbox purchase QA to verify the StoreKit config, scheme wiring, purchase/restore code paths, and Plan popover controls are still aligned.
 
 BlitzReels included-access verification is defined in `AppStore/BlitzReelsEntitlementContract.md`. Before review, the production endpoint must pass:
 
@@ -71,7 +75,7 @@ ASC_PRIVATE_KEY_PATH=/path/to/AuthKey_KEY_ID.p8 \
 Scripts/app-store-connect-readiness.py
 ```
 
-The live check verifies both app records, App Store version `0.1.0`, app info localization, version localization copied from `AppStore/AppStoreConnectFields.generated.json`, uploaded build `1` in `VALID` processing state for both targets, the subscription group/product, en-US subscription names/descriptions, and the USA `$4.99` subscription price.
+The live check verifies both app records, App Store version `0.1.0`, app info localization, version localization copied from `AppStore/AppStoreConnectFields.generated.json`, uploaded build `1` in `VALID` processing state for both targets, the subscription group/products, en-US subscription names/descriptions, and the USA `$7.99` monthly and `$49.99` annual subscription prices.
 
 To reduce manual setup, create the API-manageable resources first. This registers missing bundle IDs and, once the Mac app record exists, creates the `BlitzRecorder Pro` subscription group, monthly subscription product, and en-US localizations. It does not create app records or pricing; those remain App Store Connect account-owner steps.
 
@@ -256,7 +260,7 @@ Use `AppStore/DeviceQAChecklist.md` for full physical-device signoff, including 
 - Production BlitzReels entitlement endpoint is deployed and unauthenticated requests return HTTP 401. A signed-in eligible BlitzReels subscriber token still needs one real production positive check returning `{ "active": true, "planName": "..." }`.
 - App Store subscription must be created in App Store Connect before StoreKit can load the real product.
 - App Store Connect API-manageable setup can be started with `Scripts/app-store-connect-bootstrap.py --apply`, but app records and subscription pricing still require App Store Connect account-owner completion.
-- App Store Connect live record verification requires `Scripts/app-store-connect-readiness.py` with API credentials after the macOS app, iOS companion app, version records, localized metadata, uploaded builds, subscription group, subscription, and $4.99 USA price are created.
+- App Store Connect live record verification requires `Scripts/app-store-connect-readiness.py` with API credentials after the macOS app, iOS companion app, version records, localized metadata, uploaded builds, subscription group, subscriptions, and $7.99 monthly / $49.99 annual USA prices are created.
 - Current App Store screenshot PNGs exist and pass dimension checks in `AppStore/ScreenshotAssets/`; review final content manually against the real release workflow before upload.
 - Final signed App Store archives still need to be created in `build/AppStoreArchives/` with `TEAM_ID=... ALLOW_PROVISIONING_UPDATES=1 Scripts/archive-app-store.sh`.
 - Direct Developer ID distribution requires notarization; the current packaged app is signed but not notarized.

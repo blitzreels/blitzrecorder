@@ -10,8 +10,10 @@ Use this file as the final submission gate for each App Store release. Replace t
 - Build number: `1`
 - macOS bundle ID: `dev.blitzreels.blitzrecorder`
 - iOS companion bundle ID: `dev.blitzreels.blitzrecorder.camera`
-- Subscription product ID: `dev.blitzreels.blitzrecorder.pro.monthly`
-- Subscription price: `$4.99 per month`
+- Monthly subscription product ID: `dev.blitzreels.blitzrecorder.pro.monthly`
+- Monthly subscription price: `$7.99 per month`
+- Annual subscription product ID: `dev.blitzreels.blitzrecorder.pro.annual`
+- Annual subscription price: `$49.99 per year`
 - Free quota: `3 free exports`
 
 ## Local Build Evidence
@@ -62,12 +64,12 @@ Synced from `build/ReleaseEvidenceLogs/20260522T175453Z-submission-artifacts.log
 - Privacy policy HTTP 200: passed (https://www.blitzreels.com/blitzrecorder/privacy returns HTTP 200)
 - Terms HTTP 200: passed (https://www.blitzreels.com/blitzrecorder/terms returns HTTP 200)
 - Support HTTP 200: passed (https://www.blitzreels.com/blitzrecorder/support returns HTTP 200)
-- Landing page pricing copy: passed (https://www.blitzreels.com/blitzrecorder contains $4.99 per month)
+- Landing page pricing copy: pending redeploy (https://www.blitzreels.com/blitzrecorder should contain $7.99 per month and $49.99 per year)
 - Landing page free quota copy: passed (https://www.blitzreels.com/blitzrecorder contains 3 free exports)
 - Landing page BlitzReels copy: passed (https://www.blitzreels.com/blitzrecorder contains eligible BlitzReels subscribers)
 - Privacy page Keychain copy: passed (https://www.blitzreels.com/blitzrecorder/privacy contains macOS Keychain)
 - Privacy page StoreKit copy: passed (https://www.blitzreels.com/blitzrecorder/privacy contains StoreKit)
-- Terms page pricing copy: passed (https://www.blitzreels.com/blitzrecorder/terms contains $4.99 per month)
+- Terms page pricing copy: pending redeploy (https://www.blitzreels.com/blitzrecorder/terms should contain $7.99 per month and $49.99 per year)
 - Terms page included access copy: passed (https://www.blitzreels.com/blitzrecorder/terms contains Eligible active BlitzReels subscribers)
 - Support page contact copy: passed (https://www.blitzreels.com/blitzrecorder/support contains support@blitzreels.com)
 - Unauthenticated sign-in redirects to BlitzReels login: passed (https://www.blitzreels.com/blitzrecorder/sign-in?return_to=blitzrecorder://auth/blitzreels redirects to /login?next=%2Fblitzrecorder%2Fsign-in)
@@ -92,11 +94,13 @@ Required account-side records:
 - iOS uploaded build `1` is `VALID`: pending
 - Subscription group `BlitzRecorder Pro`: pending
 - Subscription group en-US display name `BlitzRecorder Pro`: pending
-- Subscription product `dev.blitzreels.blitzrecorder.pro.monthly`: pending
+- Monthly subscription product `dev.blitzreels.blitzrecorder.pro.monthly`: pending
+- Annual subscription product `dev.blitzreels.blitzrecorder.pro.annual`: pending
 - Subscription reference name `BlitzRecorder Pro Monthly`: pending
 - Subscription en-US display name `BlitzRecorder Pro`: pending
 - Subscription en-US description `Unlimited exports in BlitzRecorder.`: pending
-- USA customer price `$4.99`: pending
+- USA monthly customer price `$7.99`: pending
+- USA annual customer price `$49.99`: pending
 - Privacy policy URL set on both app records: pending
 - Support URL set on both app records: pending
 - Review notes copied from `AppStore/ReviewNotes.md`: pending

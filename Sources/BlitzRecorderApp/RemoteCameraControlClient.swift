@@ -32,28 +32,31 @@ final class RemoteCameraControlClient {
         isConnected = false
 
         let connection = JSONFrameConnection(endpoint: service.endpoint)
-        connection.onStateChanged = { [weak self] state in
+        connection.onStateChanged = { [weak self, weak connection] state in
             Task { @MainActor in
-                self?.handleState(state, service: service)
+                guard let self, let connection, self.connection === connection else { return }
+                self.handleState(state, service: service)
             }
         }
-        connection.onFrameReceived = { [weak self] data in
+        connection.onFrameReceived = { [weak self, weak connection] data in
             Task { @MainActor in
-                self?.handleFrame(data)
+                guard let self, let connection, self.connection === connection else { return }
+                self.handleFrame(data)
             }
         }
-        connection.onFailed = { [weak self] message in
+        connection.onFailed = { [weak self, weak connection] message in
             Task { @MainActor in
-                self?.isConnected = false
-                self?.connection = nil
-                self?.onStateChanged?(.disconnected)
-                self?.onMessage?("Remote iPhone command channel failed: \(message)")
-                self?.onChanged?()
+                guard let self, let connection, self.connection === connection else { return }
+                self.isConnected = false
+                self.connection = nil
+                self.onStateChanged?(.disconnected)
+                self.onMessage?("Remote iPhone command channel failed: \(message)")
+                self.onChanged?()
             }
         }
-        connection.start()
         self.connection = connection
         connectionAttemptCount += 1
+        connection.start()
         onMessage?("Connecting to \(service.name) Remote iPhone Camera...")
         onStateChanged?(.pairing)
         onChanged?()

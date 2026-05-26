@@ -85,6 +85,76 @@ final class VideoRenderPlacementTests: XCTestCase {
         )
     }
 
+    func testCompositionCropRectangleAlignsFourByThreeCameraToEvenPixels() {
+        let placement = VideoRenderPlacement(
+            kind: .camera,
+            targetRect: CGRect(x: 0, y: 0, width: 2160, height: 3840)
+        )
+
+        XCTAssertEqual(
+            placement.cropRectangle(naturalSize: CGSize(width: 4032, height: 3024)),
+            CGRect(x: 1165.5, y: 0, width: 1701, height: 3024)
+        )
+        XCTAssertEqual(
+            placement.pixelAlignedCropRectangle(naturalSize: CGSize(width: 4032, height: 3024)),
+            CGRect(x: 1164, y: 0, width: 1704, height: 3024)
+        )
+    }
+
+    func testRotatedSourceCropUsesDisplayOrientedCoordinatesForPlacement() {
+        let placement = VideoRenderPlacement(
+            kind: .camera,
+            targetRect: CGRect(x: 0, y: 0, width: 1080, height: 1920)
+        )
+        let naturalSize = CGSize(width: 1920, height: 1080)
+        let preferredTransform = CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: 1080, ty: 0)
+        let orientedCrop = placement.pixelAlignedOrientedCropRectangle(
+            naturalSize: naturalSize,
+            preferredTransform: preferredTransform
+        )
+        let sourceCrop = placement.pixelAlignedSourceCropRectangle(
+            naturalSize: naturalSize,
+            preferredTransform: preferredTransform
+        )
+        let transform = placement.transform(
+            naturalSize: naturalSize,
+            preferredTransform: preferredTransform,
+            cropRectangle: orientedCrop
+        )
+
+        XCTAssertEqual(orientedCrop, CGRect(x: 0, y: 0, width: 1080, height: 1920))
+        XCTAssertEqual(sourceCrop, CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        XCTAssertRect(
+            CGRect(origin: .zero, size: naturalSize).applying(transform),
+            equals: CGRect(x: 0, y: 0, width: 1080, height: 1920)
+        )
+    }
+
+    func testPixelAlignedCropAspectFillsTargetInsteadOfLeavingEdgePadding() {
+        let target = CGRect(x: 14.4, y: 654.4, width: 691.2, height: 611.2)
+        let placement = VideoRenderPlacement(
+            kind: .camera,
+            targetRect: target,
+            sourceCropAmount: CGPoint(x: 0.2904946280883587, y: 0.2904946280883587),
+            sourceCropPosition: CGPoint(x: -0.0035897796860702453, y: 0.4854035047305225)
+        )
+        let sourceSize = CGSize(width: 160, height: 90)
+        let crop = placement.pixelAlignedCropRectangle(naturalSize: sourceSize)
+        let transform = placement.transform(
+            naturalSize: sourceSize,
+            preferredTransform: .identity,
+            cropRectangle: crop
+        )
+        let transformedCrop = try! XCTUnwrap(crop).applying(transform)
+
+        XCTAssertLessThanOrEqual(transformedCrop.minX, target.minX + 0.0001)
+        XCTAssertLessThanOrEqual(transformedCrop.minY, target.minY + 0.0001)
+        XCTAssertGreaterThanOrEqual(transformedCrop.maxX, target.maxX - 0.0001)
+        XCTAssertGreaterThanOrEqual(transformedCrop.maxY, target.maxY - 0.0001)
+        XCTAssertEqual(transformedCrop.midX, target.midX, accuracy: 0.0001)
+        XCTAssertEqual(transformedCrop.midY, target.midY, accuracy: 0.0001)
+    }
+
     func testCameraCropAmountCropsHorizontalCropWindow() {
         let placement = VideoRenderPlacement(
             kind: .camera,

@@ -17,6 +17,8 @@ public struct RemoteCameraTransferManifest: Codable, Equatable, Sendable {
     public var deviceStopTime: UInt64?
     public var hostStartTime: UInt64?
     public var hostStopTime: UInt64?
+    public var hostTimelineStartTime: UInt64?
+    public var estimatedHostStartTime: UInt64?
     public var stopReason: String?
 
     public init(
@@ -36,6 +38,8 @@ public struct RemoteCameraTransferManifest: Codable, Equatable, Sendable {
         deviceStopTime: UInt64? = nil,
         hostStartTime: UInt64? = nil,
         hostStopTime: UInt64? = nil,
+        hostTimelineStartTime: UInt64? = nil,
+        estimatedHostStartTime: UInt64? = nil,
         stopReason: String? = nil
     ) {
         self.takeID = takeID
@@ -54,6 +58,8 @@ public struct RemoteCameraTransferManifest: Codable, Equatable, Sendable {
         self.deviceStopTime = deviceStopTime
         self.hostStartTime = hostStartTime
         self.hostStopTime = hostStopTime
+        self.hostTimelineStartTime = hostTimelineStartTime
+        self.estimatedHostStartTime = estimatedHostStartTime
         self.stopReason = stopReason
     }
 }
@@ -76,6 +82,8 @@ extension RemoteCameraTransferManifest {
         case deviceStopTime
         case hostStartTime
         case hostStopTime
+        case hostTimelineStartTime
+        case estimatedHostStartTime
         case stopReason
     }
 
@@ -102,6 +110,8 @@ extension RemoteCameraTransferManifest {
             deviceStopTime: try container.decodeIfPresent(UInt64.self, forKey: .deviceStopTime),
             hostStartTime: try container.decodeIfPresent(UInt64.self, forKey: .hostStartTime),
             hostStopTime: try container.decodeIfPresent(UInt64.self, forKey: .hostStopTime),
+            hostTimelineStartTime: try container.decodeIfPresent(UInt64.self, forKey: .hostTimelineStartTime),
+            estimatedHostStartTime: try container.decodeIfPresent(UInt64.self, forKey: .estimatedHostStartTime),
             stopReason: try container.decodeIfPresent(String.self, forKey: .stopReason)
         )
     }

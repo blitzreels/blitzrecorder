@@ -1,11 +1,12 @@
-import CoreImage
 import CoreGraphics
 import CoreMedia
 import Foundation
 import ScreenCaptureKit
 
 struct ScreenPreviewFrame {
-    let image: CGImage
+    let sampleBuffer: CMSampleBuffer
+    let width: Int
+    let height: Int
     let sourceAspectRatio: CGFloat
 }
 
@@ -13,11 +14,14 @@ final class ScreenPreviewer: NSObject, SCStreamOutput, SCStreamDelegate, @unchec
     typealias FrameHandler = @MainActor (ScreenPreviewFrame) -> Void
 
     private let queue = DispatchQueue(label: "recorder.screen-preview")
-    private let ciContext = CIContext()
     private var stream: SCStream?
     private var frameHandler: FrameHandler?
     private var sourceAspectRatio = SceneLayout.defaultScreenAspectRatio
     private var lastFrameTime = DispatchTime(uptimeNanoseconds: 0)
+
+    var isRunning: Bool {
+        stream != nil
+    }
 
     func start(settings: RecordingSettings, filter pickedFilter: SCContentFilter?, frameHandler: @escaping FrameHandler) async throws {
         try await stop()
@@ -28,7 +32,8 @@ final class ScreenPreviewer: NSObject, SCStreamOutput, SCStreamDelegate, @unchec
 
         if let pickedFilter {
             filter = pickedFilter
-            sourceAspectRatio = ScreenCaptureGeometry.pickedContentAspectRatio(for: pickedFilter)
+            let screenSourceGeometry = ScreenCaptureGeometry.screenSourceGeometry(for: settings, pickedFilter: pickedFilter)
+            sourceAspectRatio = screenSourceGeometry.aspectRatio()
             let dimensions = ScreenCaptureGeometry.previewDimensions(for: pickedFilter)
             configuration.width = dimensions.width
             configuration.height = dimensions.height
@@ -46,17 +51,16 @@ final class ScreenPreviewer: NSObject, SCStreamOutput, SCStreamDelegate, @unchec
                 exceptingWindows: []
             )
 
-            sourceAspectRatio = ScreenCaptureGeometry.screenSourceAspectRatio(
-                for: settings,
-                fallback: CGFloat(display.width) / CGFloat(display.height)
-            )
+            let screenSourceGeometry = ScreenCaptureGeometry.screenSourceGeometry(for: settings, display: display)
+            sourceAspectRatio = screenSourceGeometry.aspectRatio()
             let dimensions = ScreenCaptureGeometry.previewDimensions(for: display, settings: settings)
             configuration.width = dimensions.width
             configuration.height = dimensions.height
-            configuration.sourceRect = ScreenCaptureGeometry.sourceRect(for: display, settings: settings)
+            configuration.sourceRect = screenSourceGeometry.sourceRect(in: CGRect(x: 0, y: 0, width: display.width, height: display.height))
         }
 
-        configuration.minimumFrameInterval = CMTime(value: 1, timescale: 30)
+        let previewFrameRate = min(max(settings.framesPerSecond, 15), 60)
+        configuration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(previewFrameRate))
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         configuration.queueDepth = 4
         configuration.showsCursor = settings.includeCursor
@@ -86,19 +90,22 @@ final class ScreenPreviewer: NSObject, SCStreamOutput, SCStreamDelegate, @unchec
         }
 
         let now = DispatchTime.now()
-        guard now.uptimeNanoseconds - lastFrameTime.uptimeNanoseconds > 33_000_000 else {
+        let minimumFrameInterval = 1_000_000_000 / UInt64(60)
+        guard now.uptimeNanoseconds - lastFrameTime.uptimeNanoseconds > minimumFrameInterval else {
             return
         }
         lastFrameTime = now
 
-        let image = CIImage(cvPixelBuffer: imageBuffer)
-        guard let cgImage = ciContext.createCGImage(image, from: image.extent) else {
-            return
-        }
-
         let sourceAspectRatio = sourceAspectRatio
+        let width = CVPixelBufferGetWidth(imageBuffer)
+        let height = CVPixelBufferGetHeight(imageBuffer)
         Task { @MainActor [weak self] in
-            self?.frameHandler?(ScreenPreviewFrame(image: cgImage, sourceAspectRatio: sourceAspectRatio))
+            self?.frameHandler?(ScreenPreviewFrame(
+                sampleBuffer: sampleBuffer,
+                width: width,
+                height: height,
+                sourceAspectRatio: sourceAspectRatio
+            ))
         }
     }
 

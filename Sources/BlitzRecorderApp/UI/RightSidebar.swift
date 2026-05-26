@@ -74,13 +74,13 @@ struct RightSidebar: View {
     }
 }
 
-private struct CameraCropControls: View {
+struct CameraCropControls: View {
     @Bindable var vm: RecorderViewModel
 
     private let mint = Color(red: 0.09, green: 1.0, blue: 0.65)
 
     private var disabled: Bool {
-        !vm.isSourceConfigured(.camera)
+        !vm.isSourceConfigured(.camera) || !vm.canEditCameraCrop
     }
 
     var body: some View {
@@ -202,7 +202,7 @@ private struct CameraCropControls: View {
     }
 }
 
-private struct OverlayToggleRow: View {
+struct OverlayToggleRow: View {
     let symbol: String
     let title: String
     @Binding var isOn: Bool
@@ -230,7 +230,7 @@ private struct OverlayToggleRow: View {
     }
 }
 
-private struct SafeZonePickerRow: View {
+struct SafeZonePickerRow: View {
     @Binding var selected: SocialVideoSafeZone
     let disabled: Bool
 

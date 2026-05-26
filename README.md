@@ -20,6 +20,34 @@ Native macOS screencast recorder focused on low-overhead separate HEVC streams:
 - automatic transcription after stop, followed by file/folder renaming
 - optional local small-LLM title generation through Ollama (`qwen2.5:0.5b`, `llama3.2:1b`, or `gemma3:1b`) with a fallback slugger
 
+## Product & Pricing Model
+
+BlitzRecorder is a separate app from BlitzReels. Treat it as the paid recording product in the BlitzReels family:
+
+- **BlitzRecorder for macOS**: standalone recording app and the only app that sells Pro access.
+- **BlitzRecorder Camera for iPhone**: free companion camera app, with no paywall and no in-app purchases.
+- **BlitzReels**: separate product; eligible active BlitzReels subscribers can unlock BlitzRecorder Pro as an included benefit.
+
+Recommended pricing:
+
+- Free: 3 finished exports.
+- Pro monthly: `$7.99/month`.
+- Pro annual: `$49.99/year`.
+- BlitzReels bundle: included for eligible active BlitzReels subscribers.
+
+The iPhone app should stay free because it is a companion input device for the Mac recorder, not a standalone paid camera product. Keeping purchase and restore flows only in the Mac app avoids confusing App Store users and avoids bad reviews from people who install the iPhone app expecting it to work without BlitzRecorder for Mac.
+
+Licenses are bound to the App Store channel for launch. Do not add LemonSqueezy, Paddle, Stripe license keys, custom device activation limits, or a separate BlitzRecorder account system to the App Store build. A direct-download Mac app could add that later as a separate distribution channel, but it is intentionally out of scope for the App Store version.
+
+## Auth & Entitlement Model
+
+Do not require a BlitzRecorder account for normal App Store customers. The Mac app should support two Pro entitlement paths:
+
+1. **App Store subscription**: the Mac app sells, restores, and verifies BlitzRecorder Pro monthly and annual subscriptions through StoreKit. StoreKit entitlement state unlocks unlimited Mac exports. The iPhone companion does not sell or restore the subscription.
+2. **BlitzReels included access**: the Mac app opens BlitzReels sign-in only when the user wants to unlock included access from an existing BlitzReels subscription. BlitzReels redirects back to `blitzrecorder://auth/blitzreels?token=<access-token>`. The Mac app stores that token in the macOS Keychain and calls the BlitzReels entitlement endpoint. A response of `{ "active": true, "planName": "..." }` unlocks Pro.
+
+The iPhone companion should not need its own auth. It pairs locally with the Mac app, records the high-quality camera master locally on the iPhone, transfers it back to the Mac, and lets the Mac enforce export entitlement. If the Mac is free, the user can still test the full workflow within the free export allowance. If the Mac is Pro through StoreKit or BlitzReels, exports remain unlimited.
+
 ## Build
 
 ```bash

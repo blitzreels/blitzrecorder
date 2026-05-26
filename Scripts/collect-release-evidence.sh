@@ -68,7 +68,7 @@ to \`AppStore/ReleaseEvidence.md\` when preparing the final App Store submission
 - macOS bundle ID: \`dev.blitzreels.blitzrecorder\`
 - iOS companion bundle ID: \`dev.blitzreels.blitzrecorder.camera\`
 - Subscription product ID: \`dev.blitzreels.blitzrecorder.pro.monthly\`
-- Subscription price: \`\$4.99 per month\`
+- Subscription prices: \`\$7.99 per month\` and \`\$49.99 per year\`
 - Free quota: \`3 free exports\`
 
 ## Command Evidence

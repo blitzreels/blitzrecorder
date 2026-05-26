@@ -58,7 +58,7 @@ Scripts/app-store-connect-bootstrap.py --apply
 Important review context:
 
 - The Mac app includes `3 free exports`.
-- BlitzRecorder Pro is an auto-renewable App Store subscription at `$4.99 per month`.
+- BlitzRecorder Pro is sold through auto-renewable App Store subscriptions at `$7.99 per month` and `$49.99 per year`.
 - Eligible active BlitzReels subscribers can unlock included Pro access by signing in from the Plan popover.
 - The iOS app is a companion app and should be reviewed with the Mac app when possible.
 
@@ -93,12 +93,14 @@ Create the subscription under the macOS app record.
 
 - Subscription group reference name: `BlitzRecorder Pro`
 - Subscription group display name: `BlitzRecorder Pro`
-- Subscription product reference name: `BlitzRecorder Pro Monthly`
-- Subscription product ID: `dev.blitzreels.blitzrecorder.pro.monthly`
+- Monthly subscription product reference name: `BlitzRecorder Pro Monthly`
+- Monthly subscription product ID: `dev.blitzreels.blitzrecorder.pro.monthly`
+- Annual subscription product reference name: `BlitzRecorder Pro Annual`
+- Annual subscription product ID: `dev.blitzreels.blitzrecorder.pro.annual`
 - Type: Auto-renewable subscription
-- Duration: 1 month
-- Price: `$4.99 per month`
-- USA customer price: `$4.99`
+- Durations: 1 month and 1 year
+- Prices: `$7.99 per month` and `$49.99 per year`
+- USA customer prices: `$7.99` and `$49.99`
 - Display name: `BlitzRecorder Pro`
 - Description: `Unlimited exports in BlitzRecorder.`
 

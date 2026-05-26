@@ -2,6 +2,31 @@ import CoreGraphics
 import ScreenCaptureKit
 
 enum ScreenCaptureGeometry {
+    static func screenSourceGeometry(for settings: RecordingSettings) -> ScreenSourceGeometry {
+        ScreenSourceGeometry(settings: settings)
+    }
+
+    static func screenSourceGeometry(for settings: RecordingSettings, display: SCDisplay) -> ScreenSourceGeometry {
+        ScreenSourceGeometry(
+            usesPickedContent: false,
+            selectedDisplayID: String(display.displayID),
+            normalizedCrop: settings.screenCrop,
+            sourceAspectRatio: screenSourceAspectRatio(
+                for: settings,
+                fallback: aspectRatio(width: display.width, height: display.height)
+            )
+        )
+    }
+
+    static func screenSourceGeometry(for settings: RecordingSettings, pickedFilter: SCContentFilter) -> ScreenSourceGeometry {
+        ScreenSourceGeometry(
+            usesPickedContent: true,
+            selectedDisplayID: settings.selectedDisplayID,
+            normalizedCrop: nil,
+            sourceAspectRatio: pickedContentAspectRatio(for: pickedFilter)
+        )
+    }
+
     static func display(from displays: [SCDisplay], settings: RecordingSettings) -> SCDisplay? {
         if let selectedDisplayID = settings.selectedDisplayID,
            let numericID = UInt32(selectedDisplayID),
@@ -78,10 +103,7 @@ enum ScreenCaptureGeometry {
 
     static func previewDimensions(for display: SCDisplay, settings: RecordingSettings) -> (width: Int, height: Int) {
         dimensions(
-            forAspectRatio: screenSourceAspectRatio(
-                for: settings,
-                fallback: aspectRatio(width: display.width, height: display.height)
-            ),
+            forAspectRatio: screenSourceGeometry(for: settings, display: display).aspectRatio(),
             longEdge: 1280
         )
     }
@@ -92,10 +114,7 @@ enum ScreenCaptureGeometry {
 
     static func sourceRect(for display: SCDisplay, settings: RecordingSettings) -> CGRect {
         let fullRect = CGRect(x: 0, y: 0, width: display.width, height: display.height)
-        if let screenCrop = settings.screenCrop {
-            return rect(from: screenCrop, in: fullRect)
-        }
-        return fullRect
+        return screenSourceGeometry(for: settings, display: display).sourceRect(in: fullRect)
     }
 
     static func sourceRect(for display: SCDisplay, layout: CaptureLayout) -> CGRect {
@@ -135,20 +154,6 @@ enum ScreenCaptureGeometry {
     private static func aspectRatio(width: Int, height: Int) -> CGFloat {
         guard height > 0 else { return SceneLayout.defaultScreenAspectRatio }
         return CGFloat(width) / CGFloat(height)
-    }
-
-    private static func rect(from normalized: CGRect, in rect: CGRect) -> CGRect {
-        let crop = normalized.standardized
-        let x = min(1, max(0, crop.minX))
-        let y = min(1, max(0, crop.minY))
-        let maxX = min(1, max(x, crop.maxX))
-        let maxY = min(1, max(y, crop.maxY))
-        return CGRect(
-            x: rect.minX + x * rect.width,
-            y: rect.minY + y * rect.height,
-            width: max(2, (maxX - x) * rect.width),
-            height: max(2, (maxY - y) * rect.height)
-        )
     }
 
     private static func evenDimension(_ value: Int) -> Int {

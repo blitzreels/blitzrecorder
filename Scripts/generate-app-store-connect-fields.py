@@ -21,11 +21,14 @@ REVIEW_NOTES_PATH = ROOT / "AppStore" / "ReviewNotes.md"
 MAC_BUNDLE_ID = "dev.blitzreels.blitzrecorder"
 IOS_BUNDLE_ID = "dev.blitzreels.blitzrecorder.camera"
 SUBSCRIPTION_PRODUCT_ID = "dev.blitzreels.blitzrecorder.pro.monthly"
+ANNUAL_SUBSCRIPTION_PRODUCT_ID = "dev.blitzreels.blitzrecorder.pro.annual"
 SUBSCRIPTION_GROUP_NAME = "BlitzRecorder Pro"
 SUBSCRIPTION_REFERENCE_NAME = "BlitzRecorder Pro Monthly"
+ANNUAL_SUBSCRIPTION_REFERENCE_NAME = "BlitzRecorder Pro Annual"
 SUBSCRIPTION_PERIOD = "ONE_MONTH"
 STOREKIT_SUBSCRIPTION_PERIOD = "P1M"
-PRICE_USD = "4.99"
+PRICE_USD = "7.99"
+ANNUAL_PRICE_USD = "49.99"
 
 LANDING_URL = "https://www.blitzreels.com/blitzrecorder"
 SUPPORT_URL = "https://www.blitzreels.com/blitzrecorder/support"
@@ -114,8 +117,10 @@ def validate_fields(payload: dict[str, Any]) -> None:
         (mac_app["bundleId"], MAC_BUNDLE_ID, "macOS bundle ID"),
         (ios_app["bundleId"], IOS_BUNDLE_ID, "iOS bundle ID"),
         (subscription["productId"], SUBSCRIPTION_PRODUCT_ID, "subscription product ID"),
+        (subscription["annualProductId"], ANNUAL_SUBSCRIPTION_PRODUCT_ID, "annual subscription product ID"),
         (subscription["duration"], SUBSCRIPTION_PERIOD, "subscription duration"),
         (subscription["priceUSD"], PRICE_USD, "subscription price"),
+        (subscription["annualPriceUSD"], ANNUAL_PRICE_USD, "annual subscription price"),
     ]
     failures = [f"{label}: got {actual}, expected {expected}" for actual, expected, label in expected if actual != expected]
 
@@ -186,10 +191,15 @@ def build_payload() -> dict[str, Any]:
             "groupDisplayName": SUBSCRIPTION_GROUP_NAME,
             "referenceName": SUBSCRIPTION_REFERENCE_NAME,
             "productId": SUBSCRIPTION_PRODUCT_ID,
+            "annualReferenceName": ANNUAL_SUBSCRIPTION_REFERENCE_NAME,
+            "annualProductId": ANNUAL_SUBSCRIPTION_PRODUCT_ID,
             "type": "autoRenewable",
             "duration": SUBSCRIPTION_PERIOD,
             "storeKitSubscriptionPeriod": STOREKIT_SUBSCRIPTION_PERIOD,
             "priceUSD": PRICE_USD,
+            "annualDuration": "ONE_YEAR",
+            "annualStoreKitSubscriptionPeriod": "P1Y",
+            "annualPriceUSD": ANNUAL_PRICE_USD,
             "displayName": SUBSCRIPTION_GROUP_NAME,
             "description": "Unlimited exports in BlitzRecorder.",
             "benefit": "Unlimited BlitzRecorder exports/renders while active.",

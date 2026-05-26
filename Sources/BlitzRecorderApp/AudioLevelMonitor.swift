@@ -6,20 +6,22 @@ import ScreenCaptureKit
 final class MicrophoneLevelMonitor: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
     private let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "blitzrecorder.microphone-monitor")
-    private var lastLevelTime = DispatchTime(uptimeNanoseconds: 0)
-    var levelHandler: ((Float) -> Void)?
+    private let levelPublisher = AudioLevelPublisher()
+    var levelHandler: ((Float) -> Void)? {
+        get { levelPublisher.levelHandler }
+        set { levelPublisher.levelHandler = newValue }
+    }
 
     func start(settings: RecordingSettings) throws {
         guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
             throw RecorderError.microphoneUnavailable
         }
-        guard let device = selectedMicrophone(settings: settings) else {
+        guard let device = MicrophoneDeviceSelection.selectedMicrophone(settings: settings) else {
             throw RecorderError.microphoneUnavailable
         }
 
         session.beginConfiguration()
-        session.inputs.forEach { session.removeInput($0) }
-        session.outputs.forEach { session.removeOutput($0) }
+        AudioCaptureSessionCleanup.detachAudioOutputsAndRemoveAll(from: session)
 
         let input = try AVCaptureDeviceInput(device: device)
         if session.canAddInput(input) {
@@ -42,9 +44,10 @@ final class MicrophoneLevelMonitor: NSObject, AVCaptureAudioDataOutputSampleBuff
 
     func stop() {
         session.stopRunning()
-        Task { @MainActor [levelHandler] in
-            levelHandler?(0)
-        }
+        session.beginConfiguration()
+        AudioCaptureSessionCleanup.detachAudioOutputsAndRemoveAll(from: session)
+        session.commitConfiguration()
+        levelPublisher.reset()
     }
 
     func captureOutput(
@@ -52,66 +55,24 @@ final class MicrophoneLevelMonitor: NSObject, AVCaptureAudioDataOutputSampleBuff
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
-        publishLevel(from: sampleBuffer)
-    }
-
-    private func publishLevel(from sampleBuffer: CMSampleBuffer) {
-        let now = DispatchTime.now()
-        guard now.uptimeNanoseconds - lastLevelTime.uptimeNanoseconds > 33_000_000,
-              let level = AudioLevelMeter.level(from: sampleBuffer) else {
-            return
-        }
-        lastLevelTime = now
-
-        Task { @MainActor [levelHandler] in
-            levelHandler?(level)
-        }
-    }
-
-    private func selectedMicrophone(settings: RecordingSettings) -> AVCaptureDevice? {
-        if let selectedMicrophoneID = settings.selectedMicrophoneID,
-           let device = AVCaptureDevice(uniqueID: selectedMicrophoneID) {
-            return device
-        }
-        return AVCaptureDevice.default(for: .audio)
+        levelPublisher.publish(from: sampleBuffer)
     }
 }
 
 final class SystemAudioLevelMonitor: NSObject, SCStreamOutput, SCStreamDelegate {
     private let queue = DispatchQueue(label: "blitzrecorder.system-audio-monitor")
     private var stream: SCStream?
-    private var lastLevelTime = DispatchTime(uptimeNanoseconds: 0)
-    var levelHandler: ((Float) -> Void)?
+    private let levelPublisher = AudioLevelPublisher()
+    var levelHandler: ((Float) -> Void)? {
+        get { levelPublisher.levelHandler }
+        set { levelPublisher.levelHandler = newValue }
+    }
 
     func start(settings: RecordingSettings) async throws {
         try await stop()
 
-        let content = try await SCShareableContent.current
-        guard let display = ScreenCaptureGeometry.display(from: content.displays, settings: settings) else {
-            throw RecorderError.noDisplay
-        }
-
-        let ownProcess = getpid()
-        let excludedApplications = content.applications.filter { $0.processID == ownProcess }
-        let filter = SCContentFilter(
-            display: display,
-            excludingApplications: excludedApplications,
-            exceptingWindows: []
-        )
-
-        let configuration = SCStreamConfiguration()
-        configuration.width = 2
-        configuration.height = 2
-        configuration.minimumFrameInterval = CMTime(value: 1, timescale: 1)
-        configuration.pixelFormat = kCVPixelFormatType_32BGRA
-        configuration.queueDepth = 2
-        configuration.showsCursor = false
-        configuration.capturesAudio = true
-        configuration.excludesCurrentProcessAudio = true
-        configuration.sampleRate = 48_000
-        configuration.channelCount = 2
-        configuration.streamName = "BlitzRecorder System Audio Monitor"
-
+        let filter = try await SystemAudioStreamConfiguration.contentFilter(settings: settings)
+        let configuration = SystemAudioStreamConfiguration.configuration(streamName: "BlitzRecorder System Audio Monitor")
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
         try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
         try await stream.startCapture()
@@ -123,29 +84,14 @@ final class SystemAudioLevelMonitor: NSObject, SCStreamOutput, SCStreamDelegate 
             try? await stream.stopCapture()
         }
         stream = nil
-        Task { @MainActor [levelHandler] in
-            levelHandler?(0)
-        }
+        levelPublisher.reset()
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .audio, sampleBuffer.isValid else {
             return
         }
-        publishLevel(from: sampleBuffer)
-    }
-
-    private func publishLevel(from sampleBuffer: CMSampleBuffer) {
-        let now = DispatchTime.now()
-        guard now.uptimeNanoseconds - lastLevelTime.uptimeNanoseconds > 33_000_000,
-              let level = AudioLevelMeter.level(from: sampleBuffer) else {
-            return
-        }
-        lastLevelTime = now
-
-        Task { @MainActor [levelHandler] in
-            levelHandler?(level)
-        }
+        levelPublisher.publish(from: sampleBuffer)
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {

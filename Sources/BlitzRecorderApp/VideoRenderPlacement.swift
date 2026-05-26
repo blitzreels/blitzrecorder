@@ -21,15 +21,27 @@ struct VideoRenderPlacement {
     }
 
     func transform(naturalSize: CGSize, preferredTransform: CGAffineTransform) -> CGAffineTransform {
+        transform(
+            naturalSize: naturalSize,
+            preferredTransform: preferredTransform,
+            cropRectangle: nil
+        )
+    }
+
+    func transform(
+        naturalSize: CGSize,
+        preferredTransform: CGAffineTransform,
+        cropRectangle: CGRect?
+    ) -> CGAffineTransform {
         let orientedRect = CGRect(origin: .zero, size: naturalSize).applying(preferredTransform)
         let orientedSize = VideoRenderPlacement.orientedSize(size: naturalSize, transform: preferredTransform)
-        let cropRect = cropRectangle(naturalSize: orientedSize)
-        let scale = cropRect.map { min(targetRect.width / $0.width, targetRect.height / $0.height) }
+        let cropRect = cropRectangle ?? self.cropRectangle(naturalSize: orientedSize)
+        let scale = cropRect.map { max(targetRect.width / $0.width, targetRect.height / $0.height) }
             ?? scale(for: orientedSize)
         let scaledSize = CGSize(width: orientedSize.width * scale, height: orientedSize.height * scale)
-        let x = cropRect.map { targetRect.minX - $0.minX * scale }
+        let x = cropRect.map { targetRect.midX - $0.midX * scale }
             ?? (targetRect.midX - scaledSize.width / 2)
-        let y = cropRect.map { targetRect.minY - $0.minY * scale }
+        let y = cropRect.map { targetRect.midY - $0.midY * scale }
             ?? (targetRect.midY - scaledSize.height / 2)
 
         return preferredTransform
@@ -53,6 +65,70 @@ struct VideoRenderPlacement {
             sourceCropAmount: sourceCropAmount,
             sourceCropPosition: sourceCropPosition
         )
+    }
+
+    func sourceFrame(sourceAspectRatio: CGFloat) -> CGRect {
+        SourceCropGeometry.sourceFrame(
+            sourceAspectRatio: sourceAspectRatio,
+            bounds: targetRect,
+            sourceCropAmount: sourceCropAmount,
+            sourceCropPosition: sourceCropPosition
+        )
+    }
+
+    func sourceCropRectangle(sourceExtent: CGRect) -> CGRect {
+        SourceCropGeometry.cropRectangle(
+            source: sourceExtent,
+            target: targetRect,
+            sourceCropAmount: sourceCropAmount,
+            sourceCropPosition: sourceCropPosition
+        )
+    }
+
+    func pixelAlignedCropRectangle(naturalSize: CGSize) -> CGRect? {
+        guard let cropRectangle = cropRectangle(naturalSize: naturalSize) else {
+            return nil
+        }
+        return VideoRenderPlacement.pixelAligned(cropRectangle, within: CGRect(origin: .zero, size: naturalSize))
+    }
+
+    func pixelAlignedOrientedCropRectangle(naturalSize: CGSize, preferredTransform: CGAffineTransform) -> CGRect? {
+        let orientedSize = VideoRenderPlacement.orientedSize(size: naturalSize, transform: preferredTransform)
+        guard let cropRectangle = cropRectangle(naturalSize: orientedSize) else {
+            return nil
+        }
+        return VideoRenderPlacement.pixelAligned(cropRectangle, within: CGRect(origin: .zero, size: orientedSize))
+    }
+
+    func pixelAlignedSourceCropRectangle(naturalSize: CGSize, preferredTransform: CGAffineTransform) -> CGRect? {
+        guard let orientedCrop = pixelAlignedOrientedCropRectangle(
+            naturalSize: naturalSize,
+            preferredTransform: preferredTransform
+        ) else {
+            return nil
+        }
+
+        let orientedRect = CGRect(origin: .zero, size: naturalSize).applying(preferredTransform)
+        let orientationTransform = preferredTransform.concatenating(
+            CGAffineTransform(translationX: -orientedRect.minX, y: -orientedRect.minY)
+        )
+        let sourceCrop = orientedCrop.applying(orientationTransform.inverted())
+        return VideoRenderPlacement.pixelAligned(
+            sourceCrop,
+            within: CGRect(origin: .zero, size: naturalSize)
+        )
+    }
+
+    private static func pixelAligned(_ rect: CGRect, within bounds: CGRect) -> CGRect {
+        let alignment: CGFloat = 2
+        let minX = max(bounds.minX, floor(rect.minX / alignment) * alignment)
+        let minY = max(bounds.minY, floor(rect.minY / alignment) * alignment)
+        let maxX = min(bounds.maxX, ceil(rect.maxX / alignment) * alignment)
+        let maxY = min(bounds.maxY, ceil(rect.maxY / alignment) * alignment)
+        guard maxX > minX, maxY > minY else {
+            return bounds
+        }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
     private func scale(for orientedSize: CGSize) -> CGFloat {

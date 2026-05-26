@@ -44,14 +44,15 @@ final class SpeechTranscriber {
 }
 
 struct TitleGenerator {
-    func titleSlug(for transcript: String) async -> String {
+    func titleSlug(for transcript: String) async -> String? {
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            return "untitled-recording"
+        guard Self.hasUsableTitleSignal(trimmed) else {
+            return nil
         }
 
         for model in ["qwen2.5:0.5b", "llama3.2:1b", "gemma3:1b"] {
-            if let slug = try? await ollamaSlug(model: model, transcript: trimmed), !slug.isEmpty {
+            if let slug = try? await ollamaSlug(model: model, transcript: trimmed),
+               Self.hasUsableTitleSignal(slug) {
                 return slug
             }
         }
@@ -98,7 +99,7 @@ struct TitleGenerator {
         return sanitize(generated)
     }
 
-    private func fallbackSlug(from transcript: String) -> String {
+    private func fallbackSlug(from transcript: String) -> String? {
         let stopWords: Set<String> = [
             "about", "after", "again", "also", "and", "because", "but", "for", "from",
             "have", "into", "just", "like", "that", "the", "this", "with", "you", "your"
@@ -108,6 +109,9 @@ struct TitleGenerator {
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { $0.count > 2 && !stopWords.contains($0) }
 
+        guard words.count >= 3 else {
+            return nil
+        }
         return sanitize(words.prefix(7).joined(separator: "-"))
     }
 
@@ -119,9 +123,23 @@ struct TitleGenerator {
 
         let slug = parts.joined(separator: "-")
         if slug.isEmpty {
-            return "untitled-recording"
+            return ""
         }
         return String(slug.prefix(72)).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+    }
+
+    private static func hasUsableTitleSignal(_ value: String) -> Bool {
+        let fillerWords: Set<String> = [
+            "ah", "er", "hm", "hmm", "okay", "test", "testing", "thank", "thanks", "uh", "um", "yeah", "yes", "you"
+        ]
+        let words = value
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+        let meaningfulWords = words.filter { word in
+            word.count > 2 && !fillerWords.contains(word)
+        }
+        return meaningfulWords.count >= 3
     }
 }
 

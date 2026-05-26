@@ -29,7 +29,9 @@ final class RemoteCameraMessagesTests: XCTestCase {
             whiteBalanceTint: 12,
             stabilizationMode: .cinematic,
             rotationDegrees: 180,
-            torchEnabled: true
+            torchEnabled: true,
+            cinematicVideoEnabled: true,
+            cinematicAperture: 2.8
         ))
 
         let data = try JSONEncoder().encode(command)
@@ -137,7 +139,9 @@ final class RemoteCameraMessagesTests: XCTestCase {
             deviceStartTime: 100,
             deviceStopTime: 200,
             hostStartTime: 90,
-            hostStopTime: 210
+            hostStopTime: 210,
+            hostTimelineStartTime: 80,
+            estimatedHostStartTime: 95
         )
         let event = RemoteCameraEvent.transferReady(
             takeID: takeID,
@@ -176,6 +180,8 @@ final class RemoteCameraMessagesTests: XCTestCase {
         XCTAssertEqual(decoded.captureProfileID, .automatic)
         XCTAssertEqual(decoded.formatID, "1920x1080")
         XCTAssertEqual(decoded.rotationDegrees, RemoteCameraSettings.defaultRotationDegrees)
+        XCTAssertEqual(decoded.cinematicVideoEnabled, false)
+        XCTAssertNil(decoded.cinematicAperture)
     }
 
     func testRemoteCameraSettingsNormalizesRotationDegrees() {
@@ -183,6 +189,74 @@ final class RemoteCameraMessagesTests: XCTestCase {
         XCTAssertEqual(RemoteCameraSettings(rotationDegrees: 91).rotationDegrees, 90)
         XCTAssertEqual(RemoteCameraSettings(rotationDegrees: -90).rotationDegrees, 270)
         XCTAssertEqual(RemoteCameraSettings(rotationDegrees: 360).rotationDegrees, 0)
+    }
+
+    func testRemoteCameraSettingsResolverClampsToCapabilities() {
+        let capabilities = makeResolverCapabilities()
+        let resolved = RemoteCameraSettingsResolver.normalized(
+            RemoteCameraSettings(
+                lens: .telephoto,
+                formatID: "4k",
+                frameRate: 60,
+                captureProfileID: .proRes422,
+                zoomFactor: 3,
+                focusMode: .manual,
+                focusPosition: 2,
+                exposureMode: .manual,
+                exposureBias: 9,
+                iso: 2_000,
+                shutterDurationSeconds: 10,
+                whiteBalanceMode: .manual,
+                whiteBalanceTemperature: 7_000,
+                whiteBalanceTint: 4,
+                stabilizationMode: .cinematic,
+                rotationDegrees: 91,
+                torchEnabled: true,
+                cinematicVideoEnabled: true,
+                cinematicAperture: 20
+            ),
+            capabilities: capabilities,
+            preferredFrameRate: 30
+        )
+
+        XCTAssertEqual(resolved.lens, .wide)
+        XCTAssertEqual(resolved.formatID, "1080p")
+        XCTAssertEqual(resolved.frameRate, 30)
+        XCTAssertEqual(resolved.captureProfileID, .automatic)
+        XCTAssertEqual(resolved.zoomFactor, 1)
+        XCTAssertEqual(resolved.torchEnabled, false)
+        XCTAssertEqual(resolved.focusPosition, 1)
+        XCTAssertEqual(resolved.exposureMode, .continuousAuto)
+        XCTAssertEqual(resolved.whiteBalanceMode, .continuousAuto)
+        XCTAssertEqual(resolved.stabilizationMode, .off)
+        XCTAssertEqual(resolved.rotationDegrees, 180)
+        XCTAssertEqual(resolved.cinematicVideoEnabled, false)
+        XCTAssertNil(resolved.cinematicAperture)
+    }
+
+    func testRemoteCameraSettingsResolverFiltersProfileFormatsAndAspectRatio() {
+        let formats = [
+            RemoteCameraFormat(id: "1080p", width: 1920, height: 1080, frameRates: [30], supportsStabilization: false, supportsHDR: false),
+            RemoteCameraFormat(id: "4k", width: 3840, height: 2160, frameRates: [30], supportsStabilization: false, supportsHDR: false)
+        ]
+        let profiles = [
+            RemoteCameraCaptureProfile(id: .automatic),
+            RemoteCameraCaptureProfile(id: .highEfficiency, supportedFormatIDs: ["4k"])
+        ]
+
+        let filtered = RemoteCameraSettingsResolver.formats(formats, supportedBy: .highEfficiency, profiles: profiles)
+
+        XCTAssertEqual(filtered.map(\.id), ["4k"])
+        XCTAssertEqual(
+            RemoteCameraSettingsResolver.aspectRatio(width: 1920, height: 1080, rotationDegrees: 180),
+            9.0 / 16.0,
+            accuracy: 0.0001
+        )
+        XCTAssertEqual(
+            RemoteCameraSettingsResolver.aspectRatio(width: 1920, height: 1080, rotationDegrees: 90),
+            16.0 / 9.0,
+            accuracy: 0.0001
+        )
     }
 
     func testRemoteCameraCapabilitiesDecodesLegacyPayloadWithAutomaticProfile() throws {
@@ -208,6 +282,40 @@ final class RemoteCameraMessagesTests: XCTestCase {
 
         XCTAssertEqual(decoded.supportedCaptureProfiles, [RemoteCameraCaptureProfile(id: .automatic)])
         XCTAssertNil(decoded.deviceModelIdentifier)
+        XCTAssertEqual(decoded.supportsCinematicVideo, false)
+        XCTAssertNil(decoded.minimumCinematicAperture)
+    }
+
+    private func makeResolverCapabilities() -> RemoteCameraCapabilities {
+        RemoteCameraCapabilities(
+            deviceName: "Alice iPhone",
+            supportedLenses: [.wide],
+            supportedFormats: [
+                RemoteCameraFormat(
+                    id: "1080p",
+                    width: 1920,
+                    height: 1080,
+                    frameRates: [24, 30],
+                    supportsStabilization: false,
+                    supportsHDR: false
+                )
+            ],
+            supportedCaptureProfiles: [
+                RemoteCameraCaptureProfile(id: .automatic),
+                RemoteCameraCaptureProfile(id: .proRes422, isAvailable: false)
+            ],
+            supportsTorch: false,
+            supportsManualFocus: false,
+            supportsFocusLock: false,
+            supportsManualExposure: false,
+            supportsExposureLock: false,
+            supportsWhiteBalanceLock: false,
+            supportsManualWhiteBalance: false,
+            supportedStabilizationModes: [.off],
+            supportedRotationDegrees: [0, 180],
+            minimumExposureBias: -2,
+            maximumExposureBias: 2
+        )
     }
 
     func testRemoteCameraCapabilitiesRoundTripIncludesDeviceModelIdentifier() throws {
@@ -225,7 +333,11 @@ final class RemoteCameraMessagesTests: XCTestCase {
             supportsManualWhiteBalance: false,
             supportedStabilizationModes: [.off],
             minimumExposureBias: -2,
-            maximumExposureBias: 2
+            maximumExposureBias: 2,
+            supportsCinematicVideo: true,
+            minimumCinematicAperture: 1.4,
+            maximumCinematicAperture: 16,
+            defaultCinematicAperture: 2.8
         )
 
         let data = try JSONEncoder().encode(capabilities)
@@ -233,6 +345,8 @@ final class RemoteCameraMessagesTests: XCTestCase {
 
         XCTAssertEqual(decoded, capabilities)
         XCTAssertEqual(decoded.deviceModelIdentifier, "iPhone15,3")
+        XCTAssertEqual(decoded.supportsCinematicVideo, true)
+        XCTAssertEqual(decoded.defaultCinematicAperture, 2.8)
     }
 
     func testTransferCompleteEventRoundTrip() throws {

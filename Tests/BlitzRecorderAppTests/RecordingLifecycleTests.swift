@@ -1,6 +1,7 @@
 import AVFoundation
 import AudioToolbox
 import BlitzRecorderCore
+import CoreGraphics
 import CoreVideo
 import Foundation
 import ScreenCaptureKit
@@ -40,6 +41,7 @@ final class RecordingLifecycleTests: XCTestCase {
         XCTAssertEqual(take.screenURL.lastPathComponent, "screen.mov")
         XCTAssertEqual(take.cameraURL.lastPathComponent, "camera.mov")
         XCTAssertTrue(FileManager.default.fileExists(atPath: take.sourceManifestURL.path))
+        XCTAssertEqual(take.finalVideoURL.lastPathComponent, "\(String(take.scratchDirectory.lastPathComponent.prefix(19)))-final.mov")
 
         store.cleanupIntermediateFiles(for: take, settings: settings)
 
@@ -103,6 +105,16 @@ final class RecordingLifecycleTests: XCTestCase {
             store.datedSlug(for: take, slug: "2023-11-14-22-13-20-better-video-title"),
             "2023-11-14-22-13-20-better-video-title"
         )
+        XCTAssertEqual(
+            store.datedSlug(for: take, slug: nil),
+            datePrefix
+        )
+    }
+
+    func testTitleGeneratorReturnsNilForLowSignalTranscript() async {
+        let slug = await TitleGenerator().titleSlug(for: "Um. Yeah. Thank you.")
+
+        XCTAssertNil(slug)
     }
 
     func testOutputDirectoryPreflightRequiresWritableExportFolder() throws {
@@ -273,11 +285,75 @@ final class RecordingLifecycleTests: XCTestCase {
             systemAudioRecorder: NoopSystemAudioCaptureRecorder()
         )
 
-        try await run.start()
+        let start = try await run.start()
         _ = await run.stop()
 
+        XCTAssertEqual(start.timelineStartTime, timelineStart)
         XCTAssertEqual(screenRecorder.capturedTimelineStartTime, timelineStart)
         XCTAssertEqual(microphoneRecorder.capturedTimelineStartTime, timelineStart)
+    }
+
+    @MainActor
+    func testCaptureSourceRunCanStartScreenSourceAfterRecordingStarts() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.microphone]
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        let timelineStart = CMTime(value: 42, timescale: 1_000)
+        let screenRecorder = SpyScreenCaptureRecorder(stopCompletion: .wrote(take.screenURL))
+        let microphoneRecorder = SpyMicrophoneCaptureRecorder()
+        let run = CaptureSourceRun(
+            take: take,
+            settings: settings,
+            pickedScreenFilter: nil,
+            timelineStartTime: timelineStart,
+            screenRecorder: screenRecorder,
+            cameraRecorder: FailingCameraCaptureRecorder(error: RecorderError.noCamera),
+            audioRecorder: microphoneRecorder,
+            systemAudioRecorder: NoopSystemAudioCaptureRecorder()
+        )
+
+        try await run.start()
+        var updatedSettings = settings
+        updatedSettings.enabledSources = [.screen, .microphone]
+        try await run.startEnabledSources(settings: updatedSettings, pickedScreenFilter: nil)
+        let summary = await run.stop()
+
+        XCTAssertEqual(microphoneRecorder.startCount, 1)
+        XCTAssertEqual(screenRecorder.startCount, 1)
+        XCTAssertEqual(screenRecorder.capturedTimelineStartTime, timelineStart)
+        XCTAssertEqual(summary.completions[.screen], .wrote(take.screenURL))
+    }
+
+    @MainActor
+    func testCaptureSourceRunPausesScreenSourceAddedWhilePaused() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.microphone]
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        let screenRecorder = SpyScreenCaptureRecorder(stopCompletion: .empty(take.screenURL))
+        let run = CaptureSourceRun(
+            take: take,
+            settings: settings,
+            pickedScreenFilter: nil,
+            screenRecorder: screenRecorder,
+            cameraRecorder: FailingCameraCaptureRecorder(error: RecorderError.noCamera),
+            audioRecorder: SpyMicrophoneCaptureRecorder(),
+            systemAudioRecorder: NoopSystemAudioCaptureRecorder()
+        )
+
+        try await run.start()
+        run.pause()
+        var updatedSettings = settings
+        updatedSettings.enabledSources = [.screen, .microphone]
+        try await run.startEnabledSources(settings: updatedSettings, pickedScreenFilter: nil)
+
+        XCTAssertEqual(screenRecorder.pauseCount, 1)
+        _ = await run.stop()
     }
 
     @MainActor
@@ -307,6 +383,10 @@ final class RecordingLifecycleTests: XCTestCase {
         XCTAssertEqual(summary.completions[.screen], .wrote(take.screenURL))
         XCTAssertEqual(summary.stopFailures[.microphone], RecorderError.microphoneUnavailable.localizedDescription)
         XCTAssertTrue(summary.stopFailureWarning?.contains("Microphone") == true)
+        XCTAssertEqual(
+            summary.savedRecordingStopWarning,
+            "Microphone audio could not be finalized. Saved video is intact, but that audio track may be missing."
+        )
         XCTAssertEqual(screenRecorder.stopCount, 1)
         XCTAssertEqual(microphoneRecorder.stopCount, 1)
     }
@@ -342,6 +422,81 @@ final class RecordingLifecycleTests: XCTestCase {
 
         XCTAssertTrue(completion.wroteMedia)
         XCTAssertTrue(FileManager.default.fileExists(atPath: take.finalVideoURL.path))
+    }
+
+    func testVideoFileWriterFallsBackWhenTimelineUsesDifferentClock() async throws {
+        let directory = temporaryDirectory()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("video.mov")
+        let writer = try VideoFileWriter(
+            url: url,
+            width: 64,
+            height: 64,
+            bitrate: 1_000_000,
+            fps: 30,
+            outputFormat: .mov,
+            timelineStartTime: CMTime(seconds: 100_000, preferredTimescale: 1_000_000_000)
+        )
+
+        for frame in 0..<12 {
+            let sampleBuffer = try makeVideoSampleBuffer(
+                presentationTime: CMTime(value: CMTimeValue(frame), timescale: 30)
+            )
+            writer.append(sampleBuffer)
+        }
+
+        let completion = try await writer.finish()
+
+        XCTAssertTrue(completion.wroteMedia)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    func testAudioSampleFileWriterFallsBackWhenTimelineUsesDifferentClock() async throws {
+        let directory = temporaryDirectory()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("audio.m4a")
+        let writer = try AudioSampleFileWriter(
+            url: url,
+            timelineStartTime: CMTime(seconds: 100_000, preferredTimescale: 1_000_000_000)
+        )
+
+        for packet in 0..<12 {
+            let sampleBuffer = try makeSilentAudioSampleBuffer(
+                presentationTime: CMTime(value: CMTimeValue(packet * 480), timescale: 48_000),
+                frames: 480
+            )
+            writer.append(sampleBuffer)
+        }
+
+        let completion = try await writer.finish()
+
+        XCTAssertTrue(completion.wroteMedia)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    func testAudioSampleFileWriterUsesFirstSampleFormat() async throws {
+        let directory = temporaryDirectory()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("audio.m4a")
+        let writer = try AudioSampleFileWriter(url: url)
+
+        for packet in 0..<12 {
+            let sampleBuffer = try makeSilentAudioSampleBuffer(
+                presentationTime: CMTime(value: CMTimeValue(packet * 441), timescale: 44_100),
+                frames: 441,
+                sampleRate: 44_100
+            )
+            writer.append(sampleBuffer)
+        }
+
+        let completion = try await writer.finish()
+        let asset = AVURLAsset(url: try XCTUnwrap(completion.url))
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        let formatDescriptions = try await XCTUnwrap(audioTracks.first).load(.formatDescriptions)
+        let audioDescription = try XCTUnwrap(try XCTUnwrap(formatDescriptions.first).audioStreamBasicDescription)
+
+        XCTAssertTrue(completion.wroteMedia)
+        XCTAssertEqual(audioDescription.mSampleRate, 44_100, accuracy: 1)
     }
 
     func testMergerExportsWithTransparentCameraIntermediate() async throws {
@@ -407,6 +562,414 @@ final class RecordingLifecycleTests: XCTestCase {
         let asset = AVURLAsset(url: outputURL)
         let videoTracks = try await asset.loadTracks(withMediaType: .video)
         XCTAssertEqual(videoTracks.count, 1)
+    }
+
+    func testMergerExportsRemoteCameraWithSubframePositiveTimelineOffset() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .camera]
+        settings.framesPerSecond = 30
+        settings.outputResolution = .p720
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try FileManager.default.createDirectory(at: take.scratchDirectory, withIntermediateDirectories: true)
+
+        try writeTestMovie(
+            url: take.screenURL,
+            codec: .h264,
+            color: (blue: 255, green: 0, red: 0, alpha: 255)
+        )
+        try writeTestMovie(
+            url: take.cameraURL,
+            codec: .h264,
+            color: (blue: 0, green: 0, red: 255, alpha: 255)
+        )
+        try writeRemoteCameraManifest(
+            for: take.cameraURL,
+            hostTimelineStartTime: 1_000_000_000,
+            estimatedHostStartTime: 1_219_230_583
+        )
+
+        let outputURL = try await Merger.exportFinalVideo(take: take, settings: settings)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outputURL.path))
+    }
+
+    func testMergerIgnoresHiddenCameraFileWhenExportingScreenOnly() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .camera]
+        settings.hiddenSources = [.camera]
+        settings.framesPerSecond = 30
+        settings.outputResolution = .p720
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try FileManager.default.createDirectory(at: take.scratchDirectory, withIntermediateDirectories: true)
+
+        try writeTestMovie(
+            url: take.screenURL,
+            codec: .h264,
+            color: (blue: 255, green: 0, red: 0, alpha: 255)
+        )
+        try writeTestMovie(
+            url: take.cameraURL,
+            codec: .h264,
+            color: (blue: 0, green: 0, red: 255, alpha: 255),
+            frameCount: 3
+        )
+
+        let outputURL = try await Merger.exportFinalVideo(take: take, settings: settings)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outputURL.path))
+
+        let asset = AVURLAsset(url: outputURL)
+        let duration = try await asset.load(.duration)
+        XCTAssertGreaterThan(duration.seconds, 0.35)
+    }
+
+    func testMergerCanRevealInitiallyHiddenScreenAfterSceneSwitch() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .camera]
+        settings.hiddenSources = [.screen]
+        settings.sceneLayout = SceneLayout.presetLayout(.webcamFullscreen, for: .vertical)
+        settings.canvasBackgroundStyle = .black
+        settings.framesPerSecond = 30
+        settings.outputResolution = .p720
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try FileManager.default.createDirectory(at: take.scratchDirectory, withIntermediateDirectories: true)
+
+        try writeTestMovie(
+            url: take.screenURL,
+            codec: .h264,
+            color: (blue: 255, green: 0, red: 0, alpha: 255)
+        )
+        try writeTestMovie(
+            url: take.cameraURL,
+            codec: .h264,
+            color: (blue: 0, green: 0, red: 255, alpha: 255)
+        )
+
+        var stackedSettings = settings
+        stackedSettings.hiddenSources = []
+        stackedSettings.sceneLayout = SceneLayout.presetLayout(.stackedHalves, for: .vertical)
+
+        let outputURL = try await Merger.exportFinalVideo(
+            take: take,
+            settings: settings,
+            sceneEvents: [
+                RecordingSceneEvent(time: 0, scene: RecordingScene(settings: settings)),
+                RecordingSceneEvent(time: 0.2, scene: RecordingScene(settings: stackedSettings))
+            ]
+        )
+
+        let sampledColors = try await samplePixelColors(
+            in: outputURL,
+            normalizedPoints: [
+                CGPoint(x: 0.5, y: 0.1),
+                CGPoint(x: 0.5, y: 0.2),
+                CGPoint(x: 0.5, y: 0.3),
+                CGPoint(x: 0.5, y: 0.8)
+            ],
+            at: CMTime(seconds: 0.3, preferredTimescale: 600)
+        )
+        XCTAssertTrue(
+            sampledColors.contains { color in
+                color.blue > 140 && color.blue > color.red * 2 && color.blue > color.green * 2
+            },
+            "Expected the initially hidden screen track to render after switching to stacked layout."
+        )
+    }
+
+    func testMergerRendersScreenTop50AfterWebcamFullscreenSceneSwitch() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .camera]
+        settings.hiddenSources = [.screen]
+        settings.sceneLayout = SceneLayout.presetLayout(.webcamFullscreen, for: .vertical)
+        settings.framesPerSecond = 30
+        settings.outputResolution = .p720
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try FileManager.default.createDirectory(at: take.scratchDirectory, withIntermediateDirectories: true)
+
+        try writeTestMovie(
+            url: take.screenURL,
+            codec: .h264,
+            color: (blue: 255, green: 0, red: 0, alpha: 255)
+        )
+        try writeTestMovie(
+            url: take.cameraURL,
+            codec: .h264,
+            color: (blue: 0, green: 0, red: 255, alpha: 255)
+        )
+
+        var splitSettings = settings
+        splitSettings.hiddenSources = []
+        splitSettings.sceneLayout = SceneLayout.presetLayout(.screenTop50, for: .vertical)
+
+        let outputURL = try await Merger.exportFinalVideo(
+            take: take,
+            settings: settings,
+            sceneEvents: [
+                RecordingSceneEvent(time: 0, scene: RecordingScene(settings: settings)),
+                RecordingSceneEvent(time: 0.2, scene: RecordingScene(settings: splitSettings))
+            ]
+        )
+
+        let sampledColors = try await samplePixelColors(
+            in: outputURL,
+            normalizedPoints: [
+                CGPoint(x: 0.5, y: 0.25),
+                CGPoint(x: 0.5, y: 0.75)
+            ],
+            at: CMTime(seconds: 0.3, preferredTimescale: 600)
+        )
+        let bottomScreen = sampledColors[0]
+        let topCamera = sampledColors[1]
+
+        XCTAssertGreaterThan(bottomScreen.blue, 140)
+        XCTAssertGreaterThan(topCamera.red, 140)
+    }
+
+    func testMergerPreservesCanvasPaddingAndBackgroundInFinalExport() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen]
+        settings.sceneLayout = SceneLayout.presetLayout(.screenFullscreen, for: .vertical)
+        settings.canvasPadding = 0.12
+        settings.canvasBackgroundStyle = .ocean
+        settings.framesPerSecond = 30
+        settings.outputResolution = .p720
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try FileManager.default.createDirectory(at: take.scratchDirectory, withIntermediateDirectories: true)
+        try writeTestMovie(
+            url: take.screenURL,
+            codec: .h264,
+            color: (blue: 0, green: 0, red: 255, alpha: 255)
+        )
+
+        let outputURL = try await Merger.exportFinalVideo(take: take, settings: settings)
+        let sampledColors = try await samplePixelColors(
+            in: outputURL,
+            normalizedPoints: [
+                CGPoint(x: 0.02, y: 0.5),
+                CGPoint(x: 0.5, y: 0.5)
+            ],
+            at: CMTime(seconds: 0.1, preferredTimescale: 600)
+        )
+
+        let paddedEdge = sampledColors[0]
+        let screenCenter = sampledColors[1]
+        XCTAssertGreaterThan(paddedEdge.green + paddedEdge.blue, 40)
+        XCTAssertLessThan(paddedEdge.red, 80)
+        XCTAssertGreaterThan(screenCenter.red, 140)
+    }
+
+    func testMergerFillsPaddedStackedCameraSlotToRightEdge() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .camera]
+        settings.sceneLayout = SceneLayout.presetLayout(.screenTop50, for: .vertical)
+        settings.canvasPadding = 0.08
+        settings.canvasBackgroundStyle = .ocean
+        settings.framesPerSecond = 30
+        settings.outputResolution = .p720
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try FileManager.default.createDirectory(at: take.scratchDirectory, withIntermediateDirectories: true)
+        try writeTestMovie(
+            url: take.screenURL,
+            codec: .h264,
+            color: (blue: 255, green: 0, red: 0, alpha: 255)
+        )
+        try writeTestMovie(
+            url: take.cameraURL,
+            codec: .h264,
+            color: (blue: 0, green: 0, red: 255, alpha: 255)
+        )
+
+        let outputURL = try await Merger.exportFinalVideo(take: take, settings: settings)
+        let dimensions = settings.outputResolution.dimensions(for: settings.layout)
+        let renderSize = CGSize(width: dimensions.width, height: dimensions.height)
+        let cameraRect = SceneLayoutProjection.projectedFrame(
+            for: .camera,
+            in: CGRect(origin: .zero, size: renderSize),
+            sceneLayout: settings.sceneLayout,
+            enabledSources: settings.enabledSources,
+            canvasPadding: settings.canvasPadding,
+            origin: .upperLeft,
+            fillsCanvasWhenOnlyVideoSource: true
+        )
+        let sampledColors = try await samplePixelColors(
+            in: outputURL,
+            normalizedPoints: [
+                CGPoint(
+                    x: cameraRect.midX / renderSize.width,
+                    y: cameraRect.midY / renderSize.height
+                ),
+                CGPoint(
+                    x: (cameraRect.minX + 6) / renderSize.width,
+                    y: cameraRect.midY / renderSize.height
+                ),
+                CGPoint(
+                    x: (cameraRect.maxX - 24) / renderSize.width,
+                    y: cameraRect.midY / renderSize.height
+                ),
+                CGPoint(
+                    x: min(0.99, (cameraRect.maxX + 12) / renderSize.width),
+                    y: cameraRect.midY / renderSize.height
+                )
+            ],
+            at: CMTime(seconds: 0.1, preferredTimescale: 600)
+        )
+
+        let insideRightEdge = sampledColors[2]
+        let outsidePadding = sampledColors[3]
+        XCTAssertGreaterThan(insideRightEdge.red, 140, "insideRightEdge=\(insideRightEdge)")
+        XCTAssertLessThan(insideRightEdge.green + insideRightEdge.blue, 120, "insideRightEdge=\(insideRightEdge)")
+        XCTAssertLessThan(outsidePadding.red, 120)
+        XCTAssertGreaterThan(outsidePadding.green + outsidePadding.blue, 40)
+    }
+
+    func testMergerCameraCropSamplesSelectedSourceAreaInPaddedStackedSlot() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .camera]
+        settings.sceneLayout = SceneLayout.presetLayout(.screenTop50, for: .vertical)
+        settings.canvasPadding = 0.02
+        settings.canvasBackgroundStyle = .silver
+        settings.cameraCropAmount = CGPoint(x: 0.2904946280883587, y: 0.2904946280883587)
+        settings.cameraCropPosition = CGPoint(x: -0.0035897796860702453, y: 0.4854035047305225)
+        settings.framesPerSecond = 30
+        settings.outputResolution = .p720
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try FileManager.default.createDirectory(at: take.scratchDirectory, withIntermediateDirectories: true)
+        try writeTestMovie(
+            url: take.screenURL,
+            codec: .h264,
+            color: (blue: 255, green: 0, red: 0, alpha: 255)
+        )
+        try writeCoordinateGradientMovie(
+            url: take.cameraURL,
+            width: 160,
+            height: 90
+        )
+
+        let outputURL = try await Merger.exportFinalVideo(take: take, settings: settings)
+        let dimensions = settings.outputResolution.dimensions(for: settings.layout)
+        let renderSize = CGSize(width: dimensions.width, height: dimensions.height)
+        let cameraRect = SceneLayoutProjection.projectedFrame(
+            for: .camera,
+            in: CGRect(origin: .zero, size: renderSize),
+            sceneLayout: settings.sceneLayout,
+            enabledSources: settings.enabledSources,
+            canvasPadding: settings.canvasPadding,
+            origin: .upperLeft,
+            fillsCanvasWhenOnlyVideoSource: true
+        )
+        let sampledColor = try await samplePixelColors(
+            in: outputURL,
+            normalizedPoints: [
+                CGPoint(
+                    x: cameraRect.midX / renderSize.width,
+                    y: cameraRect.midY / renderSize.height
+                )
+            ],
+            at: CMTime(seconds: 0.1, preferredTimescale: 600)
+        )[0]
+        let expectedCrop = SourceCropGeometry.cropRectangle(
+            source: CGRect(x: 0, y: 0, width: 160, height: 90),
+            target: cameraRect,
+            sourceCropAmount: settings.cameraCropAmount,
+            sourceCropPosition: settings.cameraCropPosition
+        )
+        let expectedColor = try await samplePixelColors(
+            in: take.cameraURL,
+            normalizedPoints: [
+                CGPoint(
+                    x: expectedCrop.midX / 160,
+                    y: expectedCrop.midY / 90
+                )
+            ],
+            at: CMTime(seconds: 0.1, preferredTimescale: 600)
+        )[0]
+
+        XCTAssertEqual(sampledColor.red, expectedColor.red, accuracy: 18)
+        XCTAssertEqual(sampledColor.green, expectedColor.green, accuracy: 18)
+    }
+
+    func testMergerRoundsPaddedSourceCornersInFinalExport() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen]
+        settings.sceneLayout = SceneLayout.presetLayout(.screenFullscreen, for: .vertical)
+        settings.canvasPadding = 0.12
+        settings.canvasBackgroundStyle = .ocean
+        settings.framesPerSecond = 30
+        settings.outputResolution = .p720
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try FileManager.default.createDirectory(at: take.scratchDirectory, withIntermediateDirectories: true)
+        try writeTestMovie(
+            url: take.screenURL,
+            codec: .h264,
+            color: (blue: 0, green: 0, red: 255, alpha: 255)
+        )
+
+        let outputURL = try await Merger.exportFinalVideo(take: take, settings: settings)
+        let dimensions = settings.outputResolution.dimensions(for: settings.layout)
+        let inset = CGFloat(min(dimensions.width, dimensions.height)) * settings.canvasPadding
+        let sampledColors = try await samplePixelColors(
+            in: outputURL,
+            normalizedPoints: [
+                CGPoint(x: (inset + 3) / CGFloat(dimensions.width), y: (inset + 3) / CGFloat(dimensions.height)),
+                CGPoint(x: 0.5, y: 0.5)
+            ],
+            at: CMTime(seconds: 0.1, preferredTimescale: 600)
+        )
+
+        let roundedCorner = sampledColors[0]
+        let screenCenter = sampledColors[1]
+        XCTAssertLessThan(roundedCorner.red, 140)
+        XCTAssertGreaterThan(roundedCorner.green + roundedCorner.blue, 120)
+        XCTAssertGreaterThan(screenCenter.red, 140)
+    }
+
+    func testMergerExportsCameraOnlyRemoteCameraWithoutTimelineGap() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.camera]
+        settings.selectedCameraID = RemoteCameraProviderID.make(for: "iphone-15-pro")
+        settings.framesPerSecond = 30
+        settings.outputResolution = .p720
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try FileManager.default.createDirectory(at: take.scratchDirectory, withIntermediateDirectories: true)
+
+        try writeTestMovie(
+            url: take.cameraURL,
+            codec: .h264,
+            color: (blue: 0, green: 0, red: 255, alpha: 255)
+        )
+        try writeRemoteCameraManifest(
+            for: take.cameraURL,
+            hostTimelineStartTime: 1_000_000_000,
+            estimatedHostStartTime: 1_200_000_000
+        )
+
+        let outputURL = try await Merger.exportFinalVideo(take: take, settings: settings)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outputURL.path))
     }
 
     func testMergerExportsWithTimelineBackgroundChanges() async throws {
@@ -663,7 +1226,8 @@ final class RecordingLifecycleTests: XCTestCase {
         url: URL,
         codec: AVVideoCodecType,
         color: (blue: UInt8, green: UInt8, red: UInt8, alpha: UInt8),
-        includeAudio: Bool = false
+        includeAudio: Bool = false,
+        frameCount: Int = 12
     ) throws {
         try? FileManager.default.removeItem(at: url)
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
@@ -709,7 +1273,7 @@ final class RecordingLifecycleTests: XCTestCase {
         guard let pool = adaptor.pixelBufferPool else {
             throw RecorderError.writerNotReady
         }
-        for frame in 0..<12 {
+        for frame in 0..<frameCount {
             var pixelBuffer: CVPixelBuffer?
             CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pixelBuffer)
             guard let pixelBuffer else {
@@ -744,6 +1308,104 @@ final class RecordingLifecycleTests: XCTestCase {
         }
     }
 
+    private func writeCoordinateGradientMovie(
+        url: URL,
+        width: Int,
+        height: Int,
+        frameCount: Int = 12
+    ) throws {
+        try? FileManager.default.removeItem(at: url)
+        let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+        let input = AVAssetWriterInput(
+            mediaType: .video,
+            outputSettings: [
+                AVVideoCodecKey: AVVideoCodecType.h264,
+                AVVideoWidthKey: width,
+                AVVideoHeightKey: height
+            ]
+        )
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(
+            assetWriterInput: input,
+            sourcePixelBufferAttributes: [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey as String: width,
+                kCVPixelBufferHeightKey as String: height,
+                kCVPixelBufferIOSurfacePropertiesKey as String: [:]
+            ]
+        )
+        XCTAssertTrue(writer.canAdd(input))
+        writer.add(input)
+        XCTAssertTrue(writer.startWriting())
+        writer.startSession(atSourceTime: .zero)
+
+        guard let pool = adaptor.pixelBufferPool else {
+            throw RecorderError.writerNotReady
+        }
+        for frame in 0..<frameCount {
+            var pixelBuffer: CVPixelBuffer?
+            CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pixelBuffer)
+            guard let pixelBuffer else {
+                throw RecorderError.writerNotReady
+            }
+            fillCoordinateGradient(pixelBuffer)
+            while !input.isReadyForMoreMediaData {
+                usleep(1_000)
+            }
+            XCTAssertTrue(adaptor.append(pixelBuffer, withPresentationTime: CMTime(value: CMTimeValue(frame), timescale: 30)))
+        }
+
+        input.markAsFinished()
+        let expectation = expectation(description: "gradient movie writer finished")
+        writer.finishWriting {
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 5)
+        if let error = writer.error {
+            throw error
+        }
+    }
+
+    private func samplePixelColors(
+        in url: URL,
+        normalizedPoints: [CGPoint],
+        at time: CMTime
+    ) async throws -> [(red: Int, green: Int, blue: Int, alpha: Int)] {
+        let asset = AVURLAsset(url: url)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.requestedTimeToleranceBefore = CMTime(value: 1, timescale: 30)
+        generator.requestedTimeToleranceAfter = CMTime(value: 1, timescale: 30)
+
+        let image = try await generator.image(at: time).image
+        let width = image.width
+        let height = image.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        guard let context = CGContext(
+            data: &pixels,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            throw RecorderError.exportUnavailable
+        }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        return normalizedPoints.map { point in
+            let x = min(width - 1, max(0, Int((point.x * CGFloat(width)).rounded(.down))))
+            let y = min(height - 1, max(0, Int((point.y * CGFloat(height)).rounded(.down))))
+            let index = (y * width + x) * 4
+            return (
+                red: Int(pixels[index]),
+                green: Int(pixels[index + 1]),
+                blue: Int(pixels[index + 2]),
+                alpha: Int(pixels[index + 3])
+            )
+        }
+    }
+
     private func fill(
         _ pixelBuffer: CVPixelBuffer,
         color: (blue: UInt8, green: UInt8, red: UInt8, alpha: UInt8)
@@ -766,12 +1428,81 @@ final class RecordingLifecycleTests: XCTestCase {
         }
     }
 
+    private func fillCoordinateGradient(_ pixelBuffer: CVPixelBuffer) {
+        CVPixelBufferLockBaseAddress(pixelBuffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
+        guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else { return }
+        let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
+        let height = CVPixelBufferGetHeight(pixelBuffer)
+        let width = CVPixelBufferGetWidth(pixelBuffer)
+        let buffer = baseAddress.assumingMemoryBound(to: UInt8.self)
+
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = y * bytesPerRow + x * 4
+                buffer[offset] = 0
+                buffer[offset + 1] = UInt8((CGFloat(y) / CGFloat(max(1, height - 1)) * 255).rounded())
+                buffer[offset + 2] = UInt8((CGFloat(x) / CGFloat(max(1, width - 1)) * 255).rounded())
+                buffer[offset + 3] = 255
+            }
+        }
+    }
+
+    private func makeVideoSampleBuffer(presentationTime: CMTime) throws -> CMSampleBuffer {
+        var pixelBuffer: CVPixelBuffer?
+        let pixelBufferStatus = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            64,
+            64,
+            kCVPixelFormatType_32BGRA,
+            [
+                kCVPixelBufferCGImageCompatibilityKey: true,
+                kCVPixelBufferCGBitmapContextCompatibilityKey: true
+            ] as CFDictionary,
+            &pixelBuffer
+        )
+        guard pixelBufferStatus == kCVReturnSuccess, let pixelBuffer else {
+            throw RecorderError.writerNotReady
+        }
+
+        fill(pixelBuffer, color: (blue: 255, green: 0, red: 0, alpha: 255))
+
+        var formatDescription: CMVideoFormatDescription?
+        let formatStatus = CMVideoFormatDescriptionCreateForImageBuffer(
+            allocator: kCFAllocatorDefault,
+            imageBuffer: pixelBuffer,
+            formatDescriptionOut: &formatDescription
+        )
+        guard formatStatus == noErr, let formatDescription else {
+            throw RecorderError.writerNotReady
+        }
+
+        var timing = CMSampleTimingInfo(
+            duration: CMTime(value: 1, timescale: 30),
+            presentationTimeStamp: presentationTime,
+            decodeTimeStamp: .invalid
+        )
+        var sampleBuffer: CMSampleBuffer?
+        let sampleStatus = CMSampleBufferCreateReadyWithImageBuffer(
+            allocator: kCFAllocatorDefault,
+            imageBuffer: pixelBuffer,
+            formatDescription: formatDescription,
+            sampleTiming: &timing,
+            sampleBufferOut: &sampleBuffer
+        )
+        guard sampleStatus == noErr, let sampleBuffer else {
+            throw RecorderError.writerNotReady
+        }
+        return sampleBuffer
+    }
+
     private func makeSilentAudioSampleBuffer(
         presentationTime: CMTime,
-        frames: CMItemCount
+        frames: CMItemCount,
+        sampleRate: Double = 48_000
     ) throws -> CMSampleBuffer {
         var description = AudioStreamBasicDescription(
-            mSampleRate: 48_000,
+            mSampleRate: sampleRate,
             mFormatID: kAudioFormatLinearPCM,
             mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked,
             mBytesPerPacket: 4,
@@ -814,7 +1545,7 @@ final class RecordingLifecycleTests: XCTestCase {
         }
 
         var timing = CMSampleTimingInfo(
-            duration: CMTime(value: 1, timescale: 48_000),
+            duration: CMTime(value: 1, timescale: CMTimeScale(sampleRate)),
             presentationTimeStamp: presentationTime,
             decodeTimeStamp: .invalid
         )
@@ -872,6 +1603,28 @@ final class RecordingLifecycleTests: XCTestCase {
             throw error
         }
     }
+
+    private func writeRemoteCameraManifest(
+        for cameraURL: URL,
+        hostTimelineStartTime: UInt64,
+        estimatedHostStartTime: UInt64
+    ) throws {
+        let manifest = RemoteCameraTransferManifest(
+            takeID: UUID(),
+            recordingID: UUID(),
+            fileName: cameraURL.lastPathComponent,
+            byteCount: 0,
+            durationSeconds: 0.4,
+            hostTimelineStartTime: hostTimelineStartTime,
+            estimatedHostStartTime: estimatedHostStartTime
+        )
+        let encoder = JSONEncoder()
+        let data = try encoder.encode(manifest)
+        try data.write(
+            to: cameraURL.deletingPathExtension().appendingPathExtension("remote-camera-manifest.json"),
+            options: .atomic
+        )
+    }
 }
 
 private final class NoopScreenCaptureRecorder: ScreenCaptureRecording {
@@ -884,6 +1637,8 @@ private final class NoopScreenCaptureRecorder: ScreenCaptureRecording {
 private final class SpyScreenCaptureRecorder: ScreenCaptureRecording {
     private(set) var startCount = 0
     private(set) var stopCount = 0
+    private(set) var pauseCount = 0
+    private(set) var resumeCount = 0
     private(set) var capturedTimelineStartTime: CMTime?
     let stopCompletion: MediaWriterCompletion
 
@@ -896,8 +1651,13 @@ private final class SpyScreenCaptureRecorder: ScreenCaptureRecording {
         capturedTimelineStartTime = timelineStartTime
     }
 
-    func pause() {}
-    func resume() {}
+    func pause() {
+        pauseCount += 1
+    }
+
+    func resume() {
+        resumeCount += 1
+    }
 
     func stop() async throws -> MediaWriterCompletion {
         stopCount += 1

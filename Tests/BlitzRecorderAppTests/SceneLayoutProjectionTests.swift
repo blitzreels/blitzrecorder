@@ -64,6 +64,57 @@ final class SceneLayoutProjectionTests: XCTestCase {
         XCTAssertEqual(padded, CGRect(x: 10, y: 10, width: 80, height: 180))
     }
 
+    func testProjectedFrameAppliesSingleVideoSourcePaddingFromFullCanvas() {
+        var layout = SceneLayout()
+        layout.cameraFrame = CGRect(x: 0.2, y: 0.2, width: 0.4, height: 0.4)
+        let canvas = CGRect(x: 0, y: 0, width: 100, height: 200)
+
+        let frame = SceneLayoutProjection.projectedFrame(
+            for: .camera,
+            in: canvas,
+            sceneLayout: layout,
+            enabledSources: [.camera],
+            canvasPadding: 0.1,
+            origin: .lowerLeft,
+            fillsCanvasWhenOnlyVideoSource: true
+        )
+
+        XCTAssertEqual(frame, CGRect(x: 10, y: 10, width: 80, height: 180))
+    }
+
+    func testSceneRenderGeometryUsesRecordingSceneVisibility() {
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen, .camera]
+        settings.canvasPadding = 0.1
+        settings.sceneLayout.cameraFrame = CGRect(x: 0.2, y: 0.2, width: 0.4, height: 0.4)
+        let scene = RecordingScene(settings: settings)
+        let canvas = CGRect(x: 0, y: 0, width: 100, height: 200)
+
+        let frame = SceneRenderGeometry(
+            canvas: canvas,
+            scene: scene,
+            origin: .upperLeft
+        ).targetRect(for: .camera)
+
+        XCTAssertRect(frame, equals: CGRect(x: 30, y: 90, width: 20, height: 60))
+    }
+
+    func testSceneRenderGeometryOwnsActiveLayerOrderAndSourceMask() {
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen, .camera]
+        settings.canvasPadding = 0.1
+        settings.hiddenSources = [.screen]
+        settings.sceneLayout.layerOrder = [.screen, .camera]
+        let geometry = SceneRenderGeometry(
+            canvas: CGRect(x: 0, y: 0, width: 100, height: 100),
+            scene: RecordingScene(settings: settings),
+            origin: .upperLeft
+        )
+
+        XCTAssertEqual(geometry.activeLayerOrder, [.camera])
+        XCTAssertNotNil(geometry.sourceMaskPath())
+    }
+
 }
 
 private func XCTAssertRect(

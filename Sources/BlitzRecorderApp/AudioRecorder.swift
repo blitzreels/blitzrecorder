@@ -2,23 +2,25 @@ import AVFoundation
 import CoreMedia
 import Foundation
 
-final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
+final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
     private let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "blitzrecorder.microphone")
     private var writer: AudioSampleFileWriter?
-    var levelHandler: ((Float) -> Void)?
-    private var lastLevelTime = DispatchTime(uptimeNanoseconds: 0)
+    private let levelPublisher = AudioLevelPublisher()
+    var levelHandler: ((Float) -> Void)? {
+        get { levelPublisher.levelHandler }
+        set { levelPublisher.levelHandler = newValue }
+    }
 
     func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime? = nil) throws {
-        guard let device = selectedMicrophone(settings: settings) else {
+        guard let device = MicrophoneDeviceSelection.selectedMicrophone(settings: settings) else {
             throw RecorderError.microphoneUnavailable
         }
 
         writer = try AudioSampleFileWriter(url: url, timelineStartTime: timelineStartTime)
 
         session.beginConfiguration()
-        session.inputs.forEach { session.removeInput($0) }
-        session.outputs.forEach { session.removeOutput($0) }
+        AudioCaptureSessionCleanup.detachAudioOutputsAndRemoveAll(from: session)
 
         let input = try AVCaptureDeviceInput(device: device)
         guard session.canAddInput(input) else {
@@ -50,12 +52,19 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     }
 
     func stop() async throws -> MediaWriterCompletion {
-        session.stopRunning()
-        let completion = try await writer?.finish() ?? .empty()
-        writer = nil
-        Task { @MainActor [levelHandler] in
-            levelHandler?(0)
+        let writerToFinish = await withCheckedContinuation { continuation in
+            queue.async {
+                self.session.beginConfiguration()
+                AudioCaptureSessionCleanup.detachAudioOutputsAndRemoveAll(from: self.session)
+                self.session.commitConfiguration()
+                let writer = self.writer
+                self.writer = nil
+                continuation.resume(returning: writer)
+            }
         }
+        session.stopRunning()
+        let completion = try await writerToFinish?.finish() ?? .empty()
+        levelPublisher.reset()
         return completion
     }
 
@@ -64,28 +73,7 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
-        publishLevel(from: sampleBuffer)
+        levelPublisher.publish(from: sampleBuffer)
         writer?.append(sampleBuffer)
-    }
-
-    private func publishLevel(from sampleBuffer: CMSampleBuffer) {
-        let now = DispatchTime.now()
-        guard now.uptimeNanoseconds - lastLevelTime.uptimeNanoseconds > 33_000_000,
-              let level = AudioLevelMeter.level(from: sampleBuffer) else {
-            return
-        }
-        lastLevelTime = now
-
-        Task { @MainActor [levelHandler] in
-            levelHandler?(level)
-        }
-    }
-
-    private func selectedMicrophone(settings: RecordingSettings) -> AVCaptureDevice? {
-        if let selectedMicrophoneID = settings.selectedMicrophoneID,
-           let device = AVCaptureDevice(uniqueID: selectedMicrophoneID) {
-            return device
-        }
-        return AVCaptureDevice.default(for: .audio)
     }
 }

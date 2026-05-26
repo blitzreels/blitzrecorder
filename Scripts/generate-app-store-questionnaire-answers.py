@@ -15,6 +15,7 @@ SOURCE_PATH = ROOT / "AppStore" / "AppStoreQuestionnaires.md"
 OUTPUT_PATH = ROOT / "AppStore" / "AppStoreQuestionnaireAnswers.generated.json"
 
 SUBSCRIPTION_PRODUCT_ID = "dev.blitzreels.blitzrecorder.pro.monthly"
+ANNUAL_SUBSCRIPTION_PRODUCT_ID = "dev.blitzreels.blitzrecorder.pro.annual"
 
 REQUIRED_SOURCE_SNIPPETS = [
     "Recommended rating target: `4+`",
@@ -27,6 +28,7 @@ REQUIRED_SOURCE_SNIPPETS = [
     "Users are responsible for rights",
     "iOS companion has no in-app purchases and no paywall.",
     SUBSCRIPTION_PRODUCT_ID,
+    ANNUAL_SUBSCRIPTION_PRODUCT_ID,
 ]
 
 
@@ -99,9 +101,13 @@ def build_payload() -> dict[str, Any]:
         },
         "paidContentAndSubscriptions": {
             "macAppHasAutoRenewableSubscription": True,
-            "subscriptionName": "BlitzRecorder Pro Monthly",
+            "subscriptionName": "BlitzRecorder Pro",
+            "monthlySubscriptionName": "BlitzRecorder Pro Monthly",
             "productId": SUBSCRIPTION_PRODUCT_ID,
-            "price": "$4.99 per month",
+            "price": "$7.99 per month",
+            "annualSubscriptionName": "BlitzRecorder Pro Annual",
+            "annualProductId": ANNUAL_SUBSCRIPTION_PRODUCT_ID,
+            "annualPrice": "$49.99 per year",
             "freeBehavior": "3 free exports",
             "iosCompanionHasInAppPurchases": False,
             "iosCompanionHasPaywall": False,

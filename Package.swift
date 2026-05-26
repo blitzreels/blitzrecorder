@@ -31,6 +31,7 @@ let package = Package(
                 .linkedFramework("CoreMedia"),
                 .linkedFramework("CoreGraphics"),
                 .linkedFramework("CoreImage"),
+                .linkedFramework("Metal"),
                 .linkedFramework("ScreenCaptureKit"),
                 .linkedFramework("Speech"),
                 .linkedFramework("Security"),

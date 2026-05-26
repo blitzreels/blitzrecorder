@@ -42,7 +42,7 @@ Use 16:10 screenshots. Accepted sizes include:
 Recommended set:
 
 1. Main recording canvas with screen and camera layers visible.
-2. Plan popover showing 3 free exports, $4.99/month Pro, Restore, Terms, Privacy, and Support.
+2. Plan popover showing 3 free exports, $7.99/month or $49.99/year Pro, Restore, Terms, Privacy, and Support.
 3. Remote iPhone camera controls showing connected companion capabilities.
 4. Export/render completed state with a finished take.
 5. Scene layout controls showing picture-in-picture or stacked layout.

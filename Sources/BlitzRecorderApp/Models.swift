@@ -199,6 +199,40 @@ enum OutputVideoFormat: String, CaseIterable {
     }
 }
 
+enum SocialVideoEncoding {
+    static func videoBitrate(resolution: OutputResolution, fps: Int) -> Int {
+        let highFrameRate = fps > 30
+        switch resolution {
+        case .p720:
+            return highFrameRate ? 7_500_000 : 5_000_000
+        case .p1080:
+            return highFrameRate ? 12_000_000 : 8_000_000
+        case .p1440:
+            return highFrameRate ? 20_000_000 : 14_000_000
+        case .p2160:
+            return highFrameRate ? 35_000_000 : 24_000_000
+        }
+    }
+
+    static func screenIntermediateBitrate(resolution: OutputResolution, layout: CaptureLayout, fps: Int) -> Int {
+        let layoutMultiplier = layout == .vertical ? 0.9 : 1.0
+        return Int(Double(videoBitrate(resolution: resolution, fps: fps)) * layoutMultiplier)
+    }
+
+    static func cameraIntermediateBitrate(resolution: OutputResolution, fps: Int) -> Int {
+        switch resolution {
+        case .p720:
+            return fps > 30 ? 5_000_000 : 4_000_000
+        case .p1080:
+            return fps > 30 ? 8_000_000 : 6_000_000
+        case .p1440:
+            return fps > 30 ? 12_000_000 : 9_000_000
+        case .p2160:
+            return fps > 30 ? 18_000_000 : 14_000_000
+        }
+    }
+}
+
 enum CaptureSource: String, CaseIterable {
     case screen = "Screen"
     case camera = "Camera"
@@ -213,21 +247,40 @@ enum SceneLayerKind: String, CaseIterable {
 
 enum ScenePreset: String, CaseIterable {
     case stackedHalves = "Stacked"
+    case screenTop50 = "Screen 50%"
+    case screenTop70 = "Screen 70%"
     case screenFocus = "Screen Focus"
     case cameraInset = "Camera Inset"
     case cameraFocus = "Camera Focus"
+    case screenFullscreen = "Screen Fullscreen"
     case webcamFullscreen = "Webcam Fullscreen"
+
+    static var allCases: [ScenePreset] {
+        [
+            .screenTop50,
+            .cameraInset,
+            .cameraFocus,
+            .screenFullscreen,
+            .webcamFullscreen
+        ]
+    }
 
     var detail: String {
         switch self {
         case .stackedHalves:
             return "Screen top"
+        case .screenTop50:
+            return "Screen 50%"
+        case .screenTop70:
+            return "Legacy split"
         case .screenFocus:
             return "Screen crop"
         case .cameraInset:
             return "Cam corner"
         case .cameraFocus:
             return "Speaker main"
+        case .screenFullscreen:
+            return "Screen 100%"
         case .webcamFullscreen:
             return "Webcam 100%"
         }
@@ -308,17 +361,21 @@ struct SceneLayout: Equatable {
         switch preset {
         case .stackedHalves:
             var sceneLayout = SceneLayout()
-            sceneLayout.screenFrame = CGRect(x: 0, y: 0.5, width: 1, height: 0.5)
-            sceneLayout.cameraFrame = CGRect(x: 0, y: 0, width: 1, height: 0.5)
+            let screenHeight = fullWidthSourceHeight(
+                sourceAspectRatio: screenAspectRatio,
+                canvasAspectRatio: canvasAR
+            )
+            sceneLayout.screenFrame = CGRect(x: 0, y: 1 - screenHeight, width: 1, height: screenHeight)
+            sceneLayout.cameraFrame = CGRect(x: 0, y: 0, width: 1, height: 1 - screenHeight)
             return sceneLayout
+        case .screenTop50:
+            return screenSplitLayout(screenHeight: defaultScreenSplitHeight, screenAspectRatio: screenAspectRatio)
+        case .screenTop70:
+            return screenSplitLayout(screenHeight: 0.7, screenAspectRatio: screenAspectRatio)
         case .screenFocus:
             var sceneLayout = SceneLayout()
             sceneLayout.screenFrame = canvasFillingFrame(sourceAspectRatio: screenAspectRatio, canvasAspectRatio: canvasAR)
-            sceneLayout.cameraFrame = fittedSourceFrame(
-                sourceAspectRatio: cameraAspectRatio,
-                canvasAspectRatio: canvasAR,
-                in: CGRect(x: 0.08, y: 0.045, width: 0.84, height: 0.24)
-            )
+            sceneLayout.cameraFrame = CGRect(x: 0.455, y: 0.045, width: 0.5, height: 0.25)
             return sceneLayout
         case .cameraInset:
             var sceneLayout = SceneLayout()
@@ -339,13 +396,16 @@ struct SceneLayout: Equatable {
             sceneLayout.cameraFrame = canvasFillingFrame(sourceAspectRatio: cameraAspectRatio, canvasAspectRatio: canvasAR)
             sceneLayout.layerOrder = [.camera, .screen]
             return sceneLayout
+        case .screenFullscreen:
+            var sceneLayout = SceneLayout()
+            sceneLayout.screenFrame = CGRect(x: 0, y: 0, width: 1, height: 1)
+            sceneLayout.cameraFrame = canvasFillingFrame(sourceAspectRatio: cameraAspectRatio, canvasAspectRatio: canvasAR)
+            sceneLayout.layerOrder = [.camera, .screen]
+            return sceneLayout
         case .webcamFullscreen:
             var sceneLayout = SceneLayout()
             sceneLayout.screenFrame = canvasFillingFrame(sourceAspectRatio: screenAspectRatio, canvasAspectRatio: canvasAR)
-            sceneLayout.cameraFrame = fittedSourceFrame(
-                sourceAspectRatio: cameraAspectRatio,
-                canvasAspectRatio: canvasAR
-            )
+            sceneLayout.cameraFrame = CGRect(x: 0, y: 0, width: 1, height: 1)
             sceneLayout.layerOrder = [.screen, .camera]
             return sceneLayout
         }
@@ -363,6 +423,18 @@ struct SceneLayout: Equatable {
             sceneLayout.screenFrame = CGRect(x: 0, y: 0.5, width: 1, height: 0.5)
             sceneLayout.cameraFrame = CGRect(x: 0, y: 0, width: 1, height: 0.5)
             return sceneLayout
+        case .screenTop50:
+            return horizontalPresetLayout(
+                .stackedHalves,
+                screenAspectRatio: screenAspectRatio,
+                cameraAspectRatio: cameraAspectRatio
+            )
+        case .screenTop70:
+            return horizontalPresetLayout(
+                .stackedHalves,
+                screenAspectRatio: screenAspectRatio,
+                cameraAspectRatio: cameraAspectRatio
+            )
         case .screenFocus:
             var sceneLayout = SceneLayout()
             sceneLayout.screenFrame = canvasFillingFrame(sourceAspectRatio: screenAspectRatio, canvasAspectRatio: canvasAR)
@@ -391,6 +463,12 @@ struct SceneLayout: Equatable {
             sceneLayout.cameraFrame = canvasFillingFrame(sourceAspectRatio: cameraAspectRatio, canvasAspectRatio: canvasAR)
             sceneLayout.layerOrder = [.camera, .screen]
             return sceneLayout
+        case .screenFullscreen:
+            var sceneLayout = SceneLayout()
+            sceneLayout.screenFrame = CGRect(x: 0, y: 0, width: 1, height: 1)
+            sceneLayout.cameraFrame = canvasFillingFrame(sourceAspectRatio: cameraAspectRatio, canvasAspectRatio: canvasAR)
+            sceneLayout.layerOrder = [.camera, .screen]
+            return sceneLayout
         case .webcamFullscreen:
             var sceneLayout = SceneLayout()
             sceneLayout.screenFrame = canvasFillingFrame(sourceAspectRatio: screenAspectRatio, canvasAspectRatio: canvasAR)
@@ -405,6 +483,30 @@ struct SceneLayout: Equatable {
 
     static let cameraAspectRatio: CGFloat = 16.0 / 9.0
     static let defaultScreenAspectRatio: CGFloat = 16.0 / 9.0
+    static let defaultScreenSplitHeight: CGFloat = 0.5
+    static let minimumScreenSplitHeight: CGFloat = 0.3
+    static let maximumScreenSplitHeight: CGFloat = 0.75
+
+    static func screenSplitLayout(
+        screenHeight: CGFloat,
+        screenAspectRatio: CGFloat = defaultScreenAspectRatio
+    ) -> SceneLayout {
+        let screenHeight = clampedScreenSplitHeight(screenHeight)
+
+        var sceneLayout = SceneLayout()
+        sceneLayout.screenFrame = CGRect(
+            x: 0,
+            y: 1 - screenHeight,
+            width: 1,
+            height: screenHeight
+        )
+        sceneLayout.cameraFrame = CGRect(x: 0, y: 0, width: 1, height: 1 - screenHeight)
+        return sceneLayout
+    }
+
+    static func clampedScreenSplitHeight(_ height: CGFloat) -> CGFloat {
+        min(maximumScreenSplitHeight, max(minimumScreenSplitHeight, height))
+    }
 
     /// Canvas-normalized frame for a source that fills the canvas at its native aspect ratio,
     /// extending past the canvas in whichever dimension can't fit. Centered.
@@ -452,6 +554,11 @@ struct SceneLayout: Equatable {
         )
     }
 
+    private static func fullWidthSourceHeight(sourceAspectRatio: CGFloat, canvasAspectRatio: CGFloat) -> CGFloat {
+        guard sourceAspectRatio > 0, canvasAspectRatio > 0 else { return 0.5 }
+        return min(0.65, max(0.2, canvasAspectRatio / sourceAspectRatio))
+    }
+
     func frame(for kind: SceneLayerKind) -> CGRect {
         switch kind {
         case .screen:
@@ -460,23 +567,117 @@ struct SceneLayout: Equatable {
             return cameraFrame
         }
     }
+
+    var screenSplitHeight: CGFloat? {
+        let screen = screenFrame.standardized
+        let camera = cameraFrame.standardized
+        guard almostEqual(camera.minX, 0),
+              almostEqual(camera.minY, 0),
+              almostEqual(camera.width, 1),
+              almostEqual(screen.maxY, 1),
+              almostEqual(screen.minY, camera.maxY),
+              screen.height >= SceneLayout.minimumScreenSplitHeight,
+              screen.height <= SceneLayout.maximumScreenSplitHeight else {
+            return nil
+        }
+        return screen.height
+    }
+
+    private func almostEqual(_ lhs: CGFloat, _ rhs: CGFloat) -> Bool {
+        abs(lhs - rhs) < 0.0001
+    }
 }
 
 struct RecordingScene: Equatable {
     var enabledSources: Set<CaptureSource>
     var sceneLayout: SceneLayout
+    var screenSourceGeometry: ScreenSourceGeometry
     var cameraCropAmount: CGPoint
     var cameraCropPosition: CGPoint
     var canvasBackgroundStyle: CanvasBackgroundStyle
     var canvasPadding: CGFloat
 
     init(settings: RecordingSettings) {
-        enabledSources = settings.enabledSources
-        sceneLayout = settings.sceneLayout
-        cameraCropAmount = settings.cameraCropAmount
-        cameraCropPosition = settings.cameraCropPosition
-        canvasBackgroundStyle = settings.canvasBackgroundStyle
-        canvasPadding = settings.canvasPadding
+        self.init(
+            enabledSources: settings.visibleSources,
+            sceneLayout: settings.sceneLayout,
+            screenSourceGeometry: ScreenSourceGeometry(settings: settings),
+            cameraCropAmount: settings.cameraCropAmount,
+            cameraCropPosition: settings.cameraCropPosition,
+            canvasBackgroundStyle: settings.canvasBackgroundStyle,
+            canvasPadding: settings.canvasPadding
+        )
+    }
+
+    init(
+        enabledSources: Set<CaptureSource>,
+        sceneLayout: SceneLayout,
+        screenSourceGeometry: ScreenSourceGeometry = ScreenSourceGeometry(),
+        cameraCropAmount: CGPoint = .zero,
+        cameraCropPosition: CGPoint = .zero,
+        canvasBackgroundStyle: CanvasBackgroundStyle = .black,
+        canvasPadding: CGFloat = 0
+    ) {
+        self.enabledSources = enabledSources
+        self.sceneLayout = sceneLayout
+        self.screenSourceGeometry = screenSourceGeometry
+        self.cameraCropAmount = cameraCropAmount
+        self.cameraCropPosition = cameraCropPosition
+        self.canvasBackgroundStyle = canvasBackgroundStyle
+        self.canvasPadding = canvasPadding
+    }
+}
+
+struct ScreenSourceGeometry: Equatable {
+    var usesPickedContent: Bool
+    var selectedDisplayID: String?
+    var normalizedCrop: CGRect?
+    var sourceAspectRatio: CGFloat?
+
+    init(
+        usesPickedContent: Bool = false,
+        selectedDisplayID: String? = nil,
+        normalizedCrop: CGRect? = nil,
+        sourceAspectRatio: CGFloat? = nil
+    ) {
+        self.usesPickedContent = usesPickedContent
+        self.selectedDisplayID = selectedDisplayID
+        self.normalizedCrop = normalizedCrop
+        self.sourceAspectRatio = sourceAspectRatio
+    }
+
+    init(settings: RecordingSettings, sourceAspectRatio: CGFloat? = nil) {
+        self.init(
+            usesPickedContent: settings.usesPickedScreenContent,
+            selectedDisplayID: settings.selectedDisplayID,
+            normalizedCrop: settings.screenCrop,
+            sourceAspectRatio: sourceAspectRatio
+        )
+    }
+
+    func aspectRatio(fallback: CGFloat = SceneLayout.defaultScreenAspectRatio) -> CGFloat {
+        if let sourceAspectRatio, sourceAspectRatio > 0 {
+            return sourceAspectRatio
+        }
+        if let normalizedCrop, normalizedCrop.width > 0, normalizedCrop.height > 0 {
+            return normalizedCrop.width / normalizedCrop.height
+        }
+        return fallback
+    }
+
+    func sourceRect(in rect: CGRect) -> CGRect {
+        guard let normalizedCrop else { return rect }
+        let crop = normalizedCrop.standardized
+        let x = min(1, max(0, crop.minX))
+        let y = min(1, max(0, crop.minY))
+        let maxX = min(1, max(x, crop.maxX))
+        let maxY = min(1, max(y, crop.maxY))
+        return CGRect(
+            x: rect.minX + x * rect.width,
+            y: rect.minY + y * rect.height,
+            width: max(2, (maxX - x) * rect.width),
+            height: max(2, (maxY - y) * rect.height)
+        )
     }
 }
 
@@ -489,7 +690,7 @@ extension ScenePreset {
     static func defaultPreset(for layout: CaptureLayout) -> ScenePreset {
         switch layout {
         case .vertical:
-            return .stackedHalves
+            return .screenTop50
         case .horizontal:
             return .cameraInset
         }
@@ -499,19 +700,27 @@ extension ScenePreset {
         switch self {
         case .stackedHalves:
             return [.vertical]
+        case .screenTop50:
+            return [.vertical]
+        case .screenTop70:
+            return [.vertical]
         case .cameraInset:
             return [.horizontal]
         case .screenFocus:
             return [.vertical, .horizontal]
         case .cameraFocus:
             return [.horizontal]
-        case .webcamFullscreen:
+        case .screenFullscreen, .webcamFullscreen:
             return [.vertical, .horizontal]
         }
     }
 
     func supports(_ layout: CaptureLayout) -> Bool {
         supportedLayouts.contains(layout)
+    }
+
+    var enablesScreenSource: Bool {
+        true
     }
 }
 
@@ -550,12 +759,29 @@ struct RecordingSettings {
         .appendingPathComponent("BlitzRecorder", isDirectory: true)
 
     var screenBitrate: Int {
-        let baseline = layout == .vertical ? 16_000_000 : 20_000_000
-        return Int(Double(baseline) * outputResolution.bitrateScale(for: layout))
+        SocialVideoEncoding.screenIntermediateBitrate(
+            resolution: outputResolution,
+            layout: layout,
+            fps: framesPerSecond
+        )
     }
 
     var cameraBitrate: Int {
-        16_000_000
+        SocialVideoEncoding.cameraIntermediateBitrate(
+            resolution: outputResolution,
+            fps: framesPerSecond
+        )
+    }
+
+    var finalVideoBitrate: Int {
+        SocialVideoEncoding.videoBitrate(
+            resolution: outputResolution,
+            fps: framesPerSecond
+        )
+    }
+
+    var visibleSources: Set<CaptureSource> {
+        enabledSources.subtracting(hiddenSources)
     }
 }
 

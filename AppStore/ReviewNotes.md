@@ -7,9 +7,9 @@ Use this as the source for App Store Connect review notes for the macOS app and 
 App name: BlitzRecorder
 Bundle ID: `dev.blitzreels.blitzrecorder`
 
-BlitzRecorder is a Mac recording studio. It records the Mac screen, camera, microphone, and system audio, then exports the finished take. New users can complete 3 free exports. After the free exports are used, additional exports require BlitzRecorder Pro through the App Store subscription product `dev.blitzreels.blitzrecorder.pro.monthly`.
+BlitzRecorder is a Mac recording studio. It records the Mac screen, camera, microphone, and system audio, then exports the finished take. New users can complete 3 free exports. After the free exports are used, additional exports require BlitzRecorder Pro through the App Store subscription products `dev.blitzreels.blitzrecorder.pro.monthly` or `dev.blitzreels.blitzrecorder.pro.annual`.
 
-The subscription should be configured as BlitzRecorder Pro at $4.99 per month in the BlitzRecorder Pro subscription group.
+Subscriptions should be configured as BlitzRecorder Pro at $7.99 per month and $49.99 per year in the BlitzRecorder Pro subscription group.
 
 Review path:
 

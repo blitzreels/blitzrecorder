@@ -96,7 +96,6 @@ enum RecordingSettingsStore {
         }
         if let rawSources = defaults.stringArray(forKey: Key.hiddenSources) {
             settings.hiddenSources = Set(rawSources.compactMap(CaptureSource.init(rawValue:)))
-                .subtracting(settings.enabledSources)
         }
 
         settings.selectedDisplayID = defaults.string(forKey: Key.selectedDisplayID)
@@ -127,10 +126,24 @@ enum RecordingSettingsStore {
            let preset = ScenePreset(rawValue: rawPreset),
            preset.supports(settings.layout) {
             let presetLayout = SceneLayout.presetLayout(preset, for: settings.layout)
+            let savedFramesMakeScreenSplit: Bool
+            if preset == .screenTop50,
+               settings.layout == .vertical,
+               let savedScreenFrame,
+               let savedCameraFrame {
+                savedFramesMakeScreenSplit = SceneLayout(
+                    screenFrame: savedScreenFrame,
+                    cameraFrame: savedCameraFrame
+                ).screenSplitHeight != nil
+            } else {
+                savedFramesMakeScreenSplit = false
+            }
             let savedScreenFrameMatchesPreset = savedScreenFrame.map { rectAlmostEquals($0, presetLayout.screenFrame) } ?? true
             let savedCameraFrameMatchesPreset = savedCameraFrame.map { rectAlmostEquals($0, presetLayout.cameraFrame) } ?? true
             let savedFramesMatchPreset = savedScreenFrameMatchesPreset && savedCameraFrameMatchesPreset
-            if savedFramesMatchPreset || legacyFramesMatchPreset(
+            if savedFramesMakeScreenSplit {
+                settings.selectedScenePreset = preset
+            } else if savedFramesMatchPreset || legacyFramesMatchPreset(
                 preset,
                 layout: settings.layout,
                 screenFrame: savedScreenFrame,
@@ -292,15 +305,22 @@ enum RecordingSettingsStore {
         screenFrame: CGRect?,
         cameraFrame: CGRect?
     ) -> Bool {
-        guard preset == .stackedHalves,
-              layout == .vertical,
+        guard layout == .vertical,
               let screenFrame,
               let cameraFrame else {
             return false
         }
 
-        return rectAlmostEquals(screenFrame, CGRect(x: 0, y: 0.5, width: 1, height: 0.5))
+        if preset == .stackedHalves {
+            return rectAlmostEquals(screenFrame, CGRect(x: 0, y: 0.5, width: 1, height: 0.5))
             && rectAlmostEquals(cameraFrame, CGRect(x: 0, y: 0, width: 1, height: 0.5))
+        }
+
+        if preset == .webcamFullscreen {
+            return rectAlmostEquals(cameraFrame, CGRect(x: 0, y: 0.341796875, width: 1, height: 0.31640625))
+        }
+
+        return false
     }
 
     private static func clampedGain(_ gain: Double) -> Double {

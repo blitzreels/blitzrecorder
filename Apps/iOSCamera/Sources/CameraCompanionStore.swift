@@ -18,14 +18,57 @@ struct CameraPendingRecording: Identifiable, Equatable {
     let byteCountLabel: String
 }
 
+struct CameraCompanionEnergyPolicy: Equatable {
+    var isSceneActive: Bool
+    var isPairedWithMac: Bool
+    var isCameraRecording: Bool
+    var recordingPhase: RemoteCameraRecordingPhase
+
+    var keepsDeviceAwake: Bool {
+        isSceneActive && needsHighEnergyMode
+    }
+
+    var shouldSuspendCameraSession: Bool {
+        !isPairedWithMac && !isCameraRecording && !recordingPhase.needsCameraSession
+    }
+
+    private var needsHighEnergyMode: Bool {
+        isPairedWithMac || isCameraRecording || recordingPhase.usesActiveDeviceResources
+    }
+}
+
+private extension RemoteCameraRecordingPhase {
+    var usesActiveDeviceResources: Bool {
+        switch self {
+        case .preparing, .recording, .stopping, .transferring:
+            return true
+        case .idle, .pendingImport, .failed:
+            return false
+        }
+    }
+
+    var needsCameraSession: Bool {
+        switch self {
+        case .preparing, .recording, .stopping:
+            return true
+        case .idle, .transferring, .pendingImport, .failed:
+            return false
+        }
+    }
+}
+
 @Observable
 @MainActor
 final class CameraCompanionStore {
     let camera = CameraCaptureController()
 
-    var connectionState: RemoteCameraConnectionState = .discovering
+    var connectionState: RemoteCameraConnectionState = .discovering {
+        didSet { refreshEnergyPolicy() }
+    }
     var pairedMacName: String?
-    var recordingPhase: RemoteCameraRecordingPhase = .idle
+    var recordingPhase: RemoteCameraRecordingPhase = .idle {
+        didSet { refreshEnergyPolicy() }
+    }
     var activeSettings = RemoteCameraSettings()
     var statusMessage = "Waiting for Mac pairing"
     var elapsedSeconds: Int = 0
@@ -49,7 +92,7 @@ final class CameraCompanionStore {
         isPairedWithMac
     }
     var isLiveCameraPreviewEnabled: Bool {
-        !isScreenshotMode && isPairedWithMac
+        !isScreenshotMode && isPairedWithMac && camera.isPreviewRunning
     }
     var canRetryConnection: Bool {
         switch connectionState {
@@ -62,11 +105,11 @@ final class CameraCompanionStore {
     var connectionIssueTitle: String {
         switch connectionState {
         case .unavailable:
-            return "Discovery is unavailable"
+            return "Can’t find the Mac"
         case .degraded:
-            return "Network is waiting"
+            return "Wi-Fi is weak"
         case .disconnected:
-            return "Mac disconnected"
+            return "Mac is disconnected"
         case .discovering:
             return "Waiting for Mac"
         case .pairing:
@@ -78,9 +121,9 @@ final class CameraCompanionStore {
     var connectionIssueRecovery: String {
         switch connectionState {
         case .unavailable:
-            return "Retry discovery, keep both devices on the same Wi-Fi, and make sure Local Network access is allowed."
+            return "Put both devices on the same Wi-Fi. Then tap Try again."
         case .degraded:
-            return "Retry after Wi-Fi stabilizes, or connect the Mac using the port shown here."
+            return "Move closer to Wi-Fi, then tap Try again."
         case .disconnected:
             return "Open BlitzRecorder on the Mac and select this iPhone again."
         case .discovering:
@@ -114,9 +157,11 @@ final class CameraCompanionStore {
     private var lastRecordingResult: CameraRecordingResult?
     private var activeHostStartTime: UInt64?
     private var activeHostStopTime: UInt64?
+    private var activeHostTimelineStartTime: UInt64?
     private var activeDeviceStartTime: UInt64?
     private var activeDeviceStopTime: UInt64?
     private var activeStopReason: String?
+    private var activeRecordingFailureReason: String?
     private var activeTransferProgress: RemoteCameraTransferProgress?
     private var previewFramesSent: Int64 = 0
     private var previewFramesDropped: Int64 = 0
@@ -130,8 +175,12 @@ final class CameraCompanionStore {
     private var pairingState: RemoteCameraPairingState = .waitingForHello
     private var recordingStateMachine = RemoteCameraRecordingStateMachine()
     private var activeTransferTask: Task<Void, Never>?
+    private var startRecordingTask: Task<Void, Never>?
+    private var queuedStopTimeline: RemoteCameraTimeline?
+    private var settingsApplyTask: Task<Void, Never>?
     private var transferAckContinuations: [UUID: CheckedContinuation<Int64, Error>] = [:]
     private var discoveryRetryTask: Task<Void, Never>?
+    private var isSceneActive = true
 
     private enum Key {
         static let deviceID = "remoteCamera.deviceID"
@@ -150,7 +199,7 @@ final class CameraCompanionStore {
         case .discovering: return "Discoverable"
         case .pairing: return "Pairing"
         case .connected: return pairedMacName.map { "Connected to \($0)" } ?? "Connected"
-        case .degraded: return "Connection degraded"
+        case .degraded: return "Connection is weak"
         case .disconnected: return "Disconnected"
         case .unavailable: return "Unavailable"
         }
@@ -168,10 +217,8 @@ final class CameraCompanionStore {
             return
         }
 
-        setKeepsDeviceAwake(true)
         UIDevice.current.isBatteryMonitoringEnabled = true
         refreshDeviceState()
-        await camera.configure()
         camera.onMonitorFrame = { [weak self] data, width, height in
             Task { @MainActor in
                 guard self?.isPairedWithMac == true else { return }
@@ -194,21 +241,17 @@ final class CameraCompanionStore {
                 self?.handleUnexpectedRecordingFinish(result)
             }
         }
-        if let capabilities = camera.capabilities {
-            availableLenses = capabilities.supportedLenses.isEmpty ? [.wide] : capabilities.supportedLenses
-            if !availableLenses.contains(activeSettings.lens), let firstLens = availableLenses.first {
-                activeSettings.lens = firstLens
-            }
-        }
         refreshPendingRecordings()
         startAdvertising()
-        if camera.isPreviewRunning {
-            statusMessage = pendingRecordingCount > 0
-                ? "\(pendingRecordingCount) pending recording\(pendingRecordingCount == 1 ? "" : "s") ready for Mac import"
-                : "Waiting for Mac pairing"
-        } else {
-            statusMessage = camera.statusMessage
-        }
+        statusMessage = pendingRecordingCount > 0
+            ? "\(pendingRecordingCount) pending recording\(pendingRecordingCount == 1 ? "" : "s") ready for Mac import"
+            : "Waiting for Mac pairing"
+        refreshEnergyPolicy()
+    }
+
+    func setSceneActive(_ active: Bool) {
+        isSceneActive = active
+        refreshEnergyPolicy()
     }
 
     func setKeepsDeviceAwake(_ enabled: Bool) {
@@ -219,6 +262,35 @@ final class CameraCompanionStore {
             keepAwakeTimer?.invalidate()
             keepAwakeTimer = nil
         }
+    }
+
+    private func refreshEnergyPolicy() {
+        let policy = CameraCompanionEnergyPolicy(
+            isSceneActive: isSceneActive,
+            isPairedWithMac: isPairedWithMac,
+            isCameraRecording: camera.isRecording,
+            recordingPhase: recordingPhase
+        )
+        setKeepsDeviceAwake(policy.keepsDeviceAwake)
+        if policy.shouldSuspendCameraSession {
+            Task { @MainActor in
+                await suspendCameraSessionIfIdle()
+            }
+        }
+    }
+
+    private var shouldSuspendCameraSession: Bool {
+        CameraCompanionEnergyPolicy(
+            isSceneActive: isSceneActive,
+            isPairedWithMac: isPairedWithMac,
+            isCameraRecording: camera.isRecording,
+            recordingPhase: recordingPhase
+        ).shouldSuspendCameraSession
+    }
+
+    private func suspendCameraSessionIfIdle() async {
+        guard shouldSuspendCameraSession else { return }
+        await camera.stopSessionIfIdle()
     }
 
     private func startKeepAwakeHeartbeat() {
@@ -270,18 +342,14 @@ final class CameraCompanionStore {
         activeSettings.lens = lens
         activeSettings.zoomFactor = 1
         Task {
+            guard await ensureCameraActiveForMac() else { return }
             await camera.setLens(lens)
-            activeSettings.zoomFactor = Double(camera.setZoomFactor(1))
+            activeSettings.zoomFactor = Double(await camera.setZoomFactor(1))
             if let capabilities = camera.capabilities {
                 availableLenses = capabilities.supportedLenses.isEmpty ? availableLenses : capabilities.supportedLenses
             }
             sendTelemetry()
         }
-    }
-
-    func setZoom(_ zoomFactor: Double) {
-        activeSettings.zoomFactor = Double(camera.setZoomFactor(CGFloat(zoomFactor)))
-        sendTelemetry()
     }
 
     func retryPendingImport(_ recording: CameraPendingRecording) {
@@ -476,14 +544,18 @@ final class CameraCompanionStore {
                     self.connectionState = .degraded
                     self.statusMessage = "Mac connection waiting: \(error.localizedDescription)"
                 case .failed(let error):
-                    self.connectionState = .disconnected
-                    self.statusMessage = "Mac disconnected: \(error.localizedDescription)"
+                    self.markMacDisconnected(
+                        status: "Mac disconnected: \(error.localizedDescription)",
+                        connection: framedConnection
+                    )
                 case .cancelled:
                     self.cancelActiveTransfer(reason: "Mac disconnected.")
-                    self.connectionState = .disconnected
-                    self.statusMessage = self.recordingPhase == .recording
+                    self.markMacDisconnected(
+                        status: self.recordingPhase == .recording
                         ? "Mac disconnected. Recording continues on iPhone."
-                        : "Mac disconnected"
+                        : "Mac disconnected",
+                        connection: framedConnection
+                    )
                 default:
                     break
                 }
@@ -505,11 +577,25 @@ final class CameraCompanionStore {
             Task { @MainActor in
                 guard let self else { return }
                 self.cancelActiveTransfer(reason: "Control channel closed.")
-                self.connectionState = self.recordingPhase == .recording ? .degraded : .disconnected
-                self.statusMessage = "Control channel closed: \(message)"
+                self.markMacDisconnected(status: "Control channel closed: \(message)")
             }
         }
         framedConnection.start()
+    }
+
+    private func markMacDisconnected(status: String, connection: JSONFrameConnection? = nil) {
+        if let connection {
+            guard controlConnection === connection else { return }
+            controlConnection = nil
+        } else {
+            controlConnection = nil
+        }
+        isPairedWithMac = false
+        pairedMacName = nil
+        pairingState = .waitingForHello
+        connectionState = recordingPhase == .recording ? .degraded : .disconnected
+        statusMessage = status
+        refreshEnergyPolicy()
     }
 
     private func handle(_ command: RemoteCameraCommand) {
@@ -574,32 +660,56 @@ final class CameraCompanionStore {
             sendCapabilities()
         case .applySettings(let settings):
             guard isCommandAllowed() else { return }
-            Task {
+            let previousSettingsApplyTask = settingsApplyTask
+            settingsApplyTask = Task {
+                await previousSettingsApplyTask?.value
                 await applyRemoteSettings(settings)
                 sendTelemetry()
             }
         case .prepare(let timeline):
             guard isCommandAllowed() else { return }
+            guard canPrepareRecording(takeID: timeline.takeID) else {
+                failCommand(
+                    takeID: timeline.takeID,
+                    reason: "Cannot prepare iPhone take while \(recordingPhase.rawValue)."
+                )
+                return
+            }
             recordingStateMachine.prepare(timeline)
             activeTakeID = timeline.takeID
             activeRecordingURL = nil
             lastRecordingResult = nil
             activeHostStartTime = timeline.hostStartTime
             activeHostStopTime = nil
+            activeHostTimelineStartTime = timeline.hostTimelineStartTime
             activeDeviceStartTime = nil
             activeDeviceStopTime = nil
             activeStopReason = nil
+            activeRecordingFailureReason = nil
             activeTransferProgress = nil
             transferProgressLabel = "Idle"
             recordingPhase = .preparing
             statusMessage = "Prepared for Mac take"
-            send(.prepared(takeID: timeline.takeID, deviceStartTime: DispatchTime.now().uptimeNanoseconds))
-            sendTelemetry()
+            prepareRecording(timeline: timeline)
         case .start(let timeline):
             guard isCommandAllowed() else { return }
+            guard canStartRecording(takeID: timeline.takeID) else {
+                failCommand(
+                    takeID: timeline.takeID,
+                    reason: "Cannot start iPhone take \(timeline.takeID.uuidString) while \(recordingPhase.rawValue)."
+                )
+                return
+            }
             startRecording(timeline: timeline)
         case .stop(let timeline):
             guard isCommandAllowed() else { return }
+            guard canStopRecording(takeID: timeline.takeID) else {
+                failCommand(
+                    takeID: timeline.takeID,
+                    reason: stopRejectedReason(takeID: timeline.takeID)
+                )
+                return
+            }
             stopRecording(timeline: timeline)
         case .requestTransfer(let takeID, let resumeOffset):
             guard isCommandAllowed() else { return }
@@ -608,13 +718,7 @@ final class CameraCompanionStore {
             resolveTransferAck(takeID: takeID, receivedByteCount: receivedByteCount)
         case .cancel:
             cancelActiveTransfer(reason: "Mac cancelled remote camera command")
-            activeTakeID = nil
-            activeRecordingURL = nil
-            lastRecordingResult = nil
-            activeStopReason = nil
-            recordingStateMachine.cancel()
-            statusMessage = "Mac cancelled remote camera command"
-            sendTelemetry()
+            cancelActiveRecording(reason: "Mac cancelled remote camera command")
         }
     }
 
@@ -629,14 +733,19 @@ final class CameraCompanionStore {
         discoveryRetryTask = nil
         connectionState = .connected
         pairedMacName = "BlitzRecorder Mac"
-        statusMessage = status
+        statusMessage = "Preparing iPhone camera"
         send(.paired(RemoteCameraPairingTrust(
             deviceID: deviceID,
             deviceName: UIDevice.current.name,
             publicKeyFingerprint: macIdentity.publicKeyFingerprint
         )))
-        sendCapabilities()
-        sendTelemetry()
+        Task {
+            if await ensureCameraActiveForMac() {
+                statusMessage = status
+                sendCapabilities()
+            }
+            sendTelemetry()
+        }
     }
 
     private func isCommandAllowed() -> Bool {
@@ -648,7 +757,60 @@ final class CameraCompanionStore {
         return true
     }
 
+    private func canPrepareRecording(takeID: UUID) -> Bool {
+        switch recordingPhase {
+        case .idle, .failed:
+            return activeTakeID == nil || activeTakeID == takeID || recordingPhase == .failed
+        case .preparing, .recording, .stopping, .transferring, .pendingImport:
+            return false
+        }
+    }
+
+    private func canStartRecording(takeID: UUID) -> Bool {
+        recordingPhase == .preparing && activeTakeID == takeID && startRecordingTask == nil
+    }
+
+    private func canStopRecording(takeID: UUID) -> Bool {
+        activeTakeID == takeID
+            && (recordingPhase == .recording || recordingPhase == .stopping || startRecordingTask != nil)
+    }
+
+    private func stopRejectedReason(takeID: UUID) -> String {
+        if activeTakeID == takeID, recordingPhase == .failed {
+            let reason = activeRecordingFailureReason ?? "No usable camera recording was saved."
+            return "iPhone recording failed before stop: \(reason)"
+        }
+        return "Cannot stop iPhone take \(takeID.uuidString) while \(recordingPhase.rawValue)."
+    }
+
+    private func failCommand(takeID: UUID?, reason: String) {
+        statusMessage = reason
+        send(.failed(takeID: takeID, reason: reason))
+        sendTelemetry()
+    }
+
+    private func prepareRecording(timeline: RemoteCameraTimeline) {
+        Task {
+            await settingsApplyTask?.value
+            guard await ensureCameraActiveForMac() else {
+                failCommand(takeID: timeline.takeID, reason: "Camera unavailable.")
+                return
+            }
+            await camera.waitForCaptureReadiness()
+            guard recordingPhase == .preparing, activeTakeID == timeline.takeID else {
+                return
+            }
+            send(.prepared(takeID: timeline.takeID, deviceStartTime: DispatchTime.now().uptimeNanoseconds))
+            sendTelemetry()
+        }
+    }
+
     private func applyRemoteSettings(_ settings: RemoteCameraSettings) async {
+        guard await ensureCameraActiveForMac() else {
+            send(.failed(takeID: nil, reason: "Camera unavailable."))
+            sendTelemetry()
+            return
+        }
         activeSettings = await camera.apply(settings: settings)
         if let capabilities = camera.capabilities {
             availableLenses = capabilities.supportedLenses.isEmpty ? availableLenses : capabilities.supportedLenses
@@ -662,7 +824,37 @@ final class CameraCompanionStore {
         if let capabilities = camera.capabilities {
             send(.capabilities(capabilities))
         } else {
-            send(.failed(takeID: nil, reason: "Camera capabilities unavailable"))
+            Task {
+                if await ensureCameraActiveForMac(), let capabilities = camera.capabilities {
+                    send(.capabilities(capabilities))
+                } else {
+                    send(.failed(takeID: nil, reason: "Camera capabilities unavailable"))
+                }
+            }
+        }
+    }
+
+    @discardableResult
+    private func ensureCameraActiveForMac() async -> Bool {
+        if camera.isPreviewRunning, camera.capabilities != nil {
+            refreshAvailableLenses()
+            return true
+        }
+        statusMessage = "Preparing iPhone camera"
+        await camera.configure()
+        refreshAvailableLenses()
+        if camera.isPreviewRunning, camera.capabilities != nil {
+            return true
+        }
+        statusMessage = camera.statusMessage
+        return false
+    }
+
+    private func refreshAvailableLenses() {
+        guard let capabilities = camera.capabilities else { return }
+        availableLenses = capabilities.supportedLenses.isEmpty ? [.wide] : capabilities.supportedLenses
+        if !availableLenses.contains(activeSettings.lens), let firstLens = availableLenses.first {
+            activeSettings.lens = firstLens
         }
     }
 
@@ -734,33 +926,85 @@ final class CameraCompanionStore {
     private func startRecording(timeline: RemoteCameraTimeline) {
         activeTakeID = timeline.takeID
         activeHostStartTime = timeline.hostStartTime ?? activeHostStartTime
+        activeHostTimelineStartTime = timeline.hostTimelineStartTime ?? activeHostTimelineStartTime
 
-        do {
-            activeRecordingURL = try camera.startRecording(takeID: timeline.takeID)
-            activeStopReason = nil
-            recordingStateMachine.start(
-                timeline,
-                recordingURL: activeRecordingURL,
-                deviceStartTime: DispatchTime.now().uptimeNanoseconds
-            )
-            recordingPhase = .recording
-            elapsedSeconds = 0
-            statusMessage = "Recording for BlitzRecorder"
-            startTimer()
-            let deviceStartTime = recordingStateMachine.deviceStartTime ?? DispatchTime.now().uptimeNanoseconds
-            activeDeviceStartTime = deviceStartTime
-            send(.started(takeID: timeline.takeID, deviceStartTime: deviceStartTime))
-        } catch {
-            recordingPhase = .failed
-            statusMessage = "Recording failed: \(error.localizedDescription)"
-            send(.failed(takeID: timeline.takeID, reason: error.localizedDescription))
+        startRecordingTask = Task {
+            do {
+                guard await ensureCameraActiveForMac() else {
+                    throw CameraCompanionRecordingError.cameraUnavailable
+                }
+                await camera.waitForCaptureReadiness(timeoutSeconds: 0.5)
+                guard !Task.isCancelled,
+                      activeTakeID == timeline.takeID,
+                      recordingPhase == .preparing || recordingPhase == .stopping else {
+                    startRecordingTask = nil
+                    return
+                }
+
+                let recordingURL = try await camera.startRecording(takeID: timeline.takeID)
+                guard !Task.isCancelled,
+                      activeTakeID == timeline.takeID else {
+                    _ = try? await camera.stopRecording()
+                    camera.removeRecording(at: recordingURL)
+                    startRecordingTask = nil
+                    clearActiveRecordingState()
+                    recordingStateMachine.cancel()
+                    recordingPhase = .idle
+                    statusMessage = "Mac cancelled remote camera command"
+                    sendTelemetry()
+                    return
+                }
+
+                activeRecordingURL = recordingURL
+                activeStopReason = nil
+                recordingStateMachine.start(
+                    timeline,
+                    recordingURL: activeRecordingURL,
+                    deviceStartTime: DispatchTime.now().uptimeNanoseconds
+                )
+                recordingPhase = .recording
+                elapsedSeconds = 0
+                statusMessage = "Recording for BlitzRecorder"
+                startTimer()
+                let deviceStartTime = recordingStateMachine.deviceStartTime ?? DispatchTime.now().uptimeNanoseconds
+                activeDeviceStartTime = deviceStartTime
+                send(.started(takeID: timeline.takeID, deviceStartTime: deviceStartTime))
+                startRecordingTask = nil
+                if let stopTimeline = queuedStopTimeline,
+                   stopTimeline.takeID == timeline.takeID {
+                    queuedStopTimeline = nil
+                    stopRecording(timeline: stopTimeline)
+                    return
+                }
+            } catch {
+                startRecordingTask = nil
+                queuedStopTimeline = nil
+                activeRecordingFailureReason = error.localizedDescription
+                recordingPhase = .failed
+                statusMessage = "Recording failed: \(error.localizedDescription)"
+                send(.failed(takeID: timeline.takeID, reason: error.localizedDescription))
+            }
+            sendTelemetry()
         }
-        sendTelemetry()
     }
 
     private func stopRecording(timeline: RemoteCameraTimeline) {
+        guard recordingPhase != .stopping else {
+            sendTelemetry()
+            return
+        }
+        if startRecordingTask != nil, !camera.isRecording {
+            queuedStopTimeline = timeline
+            activeTakeID = timeline.takeID
+            activeHostStopTime = timeline.hostStopTime
+            recordingStateMachine.stop(timeline)
+            recordingPhase = .stopping
+            statusMessage = "Stopping iPhone recording"
+            sendTelemetry()
+            return
+        }
         guard camera.isRecording else {
-            finishRecording(error: nil)
+            finishRecording(error: CameraCompanionRecordingError.notRecording)
             return
         }
 
@@ -778,6 +1022,60 @@ final class CameraCompanionStore {
             }
         }
         sendTelemetry()
+    }
+
+    private func cancelActiveRecording(reason: String) {
+        startRecordingTask?.cancel()
+        queuedStopTimeline = nil
+        let startTask = startRecordingTask
+        let cancelledTakeID = activeTakeID
+
+        guard startTask != nil || camera.isRecording else {
+            clearActiveRecordingState()
+            recordingStateMachine.cancel()
+            recordingPhase = .idle
+            statusMessage = reason
+            sendTelemetry()
+            return
+        }
+
+        recordingPhase = .stopping
+        statusMessage = reason
+        stopTimer()
+        sendTelemetry()
+
+        Task {
+            if let startTask {
+                await startTask.value
+            } else if camera.isRecording {
+                if let result = try? await camera.stopRecording() {
+                    camera.removeRecording(at: result.url)
+                }
+            }
+
+            guard cancelledTakeID == nil || activeTakeID == nil || activeTakeID == cancelledTakeID else {
+                return
+            }
+            startRecordingTask = nil
+            clearActiveRecordingState()
+            recordingStateMachine.cancel()
+            recordingPhase = .idle
+            statusMessage = reason
+            sendTelemetry()
+        }
+    }
+
+    private func clearActiveRecordingState() {
+        activeTakeID = nil
+        activeRecordingURL = nil
+        lastRecordingResult = nil
+        activeStopReason = nil
+        activeHostStartTime = nil
+        activeHostStopTime = nil
+        activeHostTimelineStartTime = nil
+        activeDeviceStartTime = nil
+        activeDeviceStopTime = nil
+        activeRecordingFailureReason = nil
     }
 
     private func finishRecording(result: CameraRecordingResult) {
@@ -809,6 +1107,7 @@ final class CameraCompanionStore {
         }
 
         if let error {
+            activeRecordingFailureReason = error.localizedDescription
             recordingPhase = .failed
             statusMessage = "Recording failed: \(error.localizedDescription)"
             send(.failed(takeID: takeID, reason: error.localizedDescription))
@@ -836,8 +1135,16 @@ final class CameraCompanionStore {
         guard let recordingURL,
               let byteCount = (try? FileManager.default.attributesOfItem(atPath: recordingURL.path)[.size] as? NSNumber)?.int64Value else {
             recordingPhase = .failed
-            statusMessage = "Recording file is not ready for transfer"
-            send(.failed(takeID: takeID, reason: "Recording file is not ready for transfer."))
+            statusMessage = "Recording is still saving"
+            send(.failed(takeID: takeID, reason: "Recording is still saving."))
+            return
+        }
+        guard byteCount > 0 else {
+            let reason = "iPhone recording saved an empty file. Check iPhone storage, camera permission, and recording settings."
+            activeRecordingFailureReason = reason
+            recordingPhase = .failed
+            statusMessage = reason
+            send(.failed(takeID: takeID, reason: reason))
             return
         }
 
@@ -981,6 +1288,7 @@ final class CameraCompanionStore {
         activeTransferTask = nil
         transferAckContinuations.removeValue(forKey: takeID)?.resume(throwing: error)
         recordingStateMachine.fail(error.localizedDescription)
+        activeRecordingFailureReason = error.localizedDescription
         recordingPhase = .failed
         statusMessage = "Transfer failed: \(error.localizedDescription)"
         send(.failed(takeID: takeID, reason: error.localizedDescription))
@@ -1107,6 +1415,7 @@ final class CameraCompanionStore {
             deviceStopTime: activeDeviceStopTime,
             hostStartTime: activeHostStartTime,
             hostStopTime: activeHostStopTime,
+            hostTimelineStartTime: activeHostTimelineStartTime,
             stopReason: activeStopReason
         )
     }
@@ -1364,6 +1673,20 @@ private enum CameraCompanionTransferError: LocalizedError {
             return "Mac acknowledged \(received) bytes, expected at least \(expected)."
         case .cancelled(let reason):
             return reason
+        }
+    }
+}
+
+private enum CameraCompanionRecordingError: LocalizedError {
+    case cameraUnavailable
+    case notRecording
+
+    var errorDescription: String? {
+        switch self {
+        case .cameraUnavailable:
+            return "Camera unavailable."
+        case .notRecording:
+            return "Camera is not recording."
         }
     }
 }

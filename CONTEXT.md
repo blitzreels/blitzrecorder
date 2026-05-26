@@ -10,6 +10,7 @@
 - **Camera Transport**: The connection path used between the Mac app and a Remote iPhone Camera.
 - **Local Network Camera Transport**: A Camera Transport over the user's local network.
 - **Wired Camera Transport**: A Camera Transport over a direct cable connection when available.
+- **Remote Camera Transfer**: The stop-time and recovery workflow that imports the Master Camera Recording from a Remote iPhone Camera into the Take, including transfer readiness, resumable chunks, acknowledgements, checksum validation, manifest writing, and pending import recovery.
 - **Master Camera Recording**: The authoritative camera media for a take.
 - **Monitor Preview**: A live, lower-latency camera view used for framing and confidence while recording.
 - **Permission Gate**: The pre-recording check that decides whether the enabled capture sources can start recording.
@@ -22,6 +23,7 @@
 - **Preview Stage**: The live canvas showing the selected screen source and camera inset before recording.
 - **Scene Layout**: The normalized Preview Stage description for video source frames and back-to-front layer order. It is the source of truth for live composition and final export placement.
 - **Recording Scene**: The live-composition state derived from Scene Layout plus video source visibility, camera crop, canvas background, and canvas padding. It can change during a live-composited Take without changing the Take Timeline, capture devices, output format, or output dimensions.
+- **Scene Render Geometry**: The pixel-space projection of a Recording Scene into a concrete output canvas, including per-source target rectangles, camera crop placement, padding, and padding-derived corner masks. Monitor Preview, live composition, and final export should share this geometry instead of recomputing it independently.
 - **Picked Screen Content**: A screen, window, or app selected through Apple's `SCContentSharingPicker`. This is session-scoped user consent and should bypass the broad Screen Recording gate for the screen source only.
 
 ## macOS TCC Notes

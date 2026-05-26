@@ -24,7 +24,7 @@ Pair your iPhone with the Mac app over your local network using a 6-digit code. 
 
 The iPhone records the master camera file locally for quality, then transfers it back to the paired Mac so BlitzRecorder can include it in the final export.
 
-BlitzRecorder Camera requires BlitzRecorder for Mac. BlitzRecorder for Mac includes 3 free exports. BlitzRecorder Pro unlocks unlimited exports for $4.99 per month through the App Store, and eligible active BlitzReels subscribers can unlock included access in the Mac app.
+BlitzRecorder Camera requires BlitzRecorder for Mac. BlitzRecorder for Mac includes 3 free exports. BlitzRecorder Pro unlocks unlimited exports for $7.99 per month or $49.99 per year through the App Store, and eligible active BlitzReels subscribers can unlock included access in the Mac app.
 
 Key features:
 
@@ -61,7 +61,7 @@ BlitzRecorder Camera is a companion app for BlitzRecorder on Mac. It does not fu
 
 To test it, install BlitzRecorder on a Mac and BlitzRecorder Camera on an iPhone or iPad connected to the same local network. Open the iPhone app, note the 6-digit pairing code, then choose the iPhone camera source in the Mac app and enter the code. After pairing, the Mac app shows monitor preview, sends camera controls, starts and stops a local iPhone camera recording, and imports the finished camera file back to the Mac take.
 
-The subscription is purchased and managed in the Mac app. The App Store subscription product ID is `dev.blitzreels.blitzrecorder.pro.monthly`, configured as BlitzRecorder Pro at $4.99 per month. The iPhone app does not include a paywall.
+Subscriptions are purchased and managed in the Mac app. The App Store subscription product IDs are `dev.blitzreels.blitzrecorder.pro.monthly` and `dev.blitzreels.blitzrecorder.pro.annual`, configured as BlitzRecorder Pro at $7.99 per month and $49.99 per year. The iPhone app does not include a paywall.
 
 ## Privacy Summary
 

@@ -24,7 +24,7 @@ Capture your Mac screen, microphone, system audio, and camera into a take that i
 
 The Mac app stays in charge of the take. The iPhone records the master camera file locally, then transfers it back to the Mac so the final export uses the high-quality iPhone recording instead of the monitor preview.
 
-BlitzRecorder includes 3 free exports. BlitzRecorder Pro unlocks unlimited exports for $4.99 per month through the App Store. Eligible active BlitzReels subscribers can sign in to unlock included BlitzRecorder Pro access.
+BlitzRecorder includes 3 free exports. BlitzRecorder Pro unlocks unlimited exports for $7.99 per month or $49.99 per year through the App Store. Eligible active BlitzReels subscribers can sign in to unlock included BlitzRecorder Pro access.
 
 Key features:
 
@@ -60,18 +60,20 @@ https://www.blitzreels.com/blitzrecorder/privacy
 
 BlitzRecorder includes 3 free exports. After the free exports are used, additional exports require either the App Store auto-renewable subscription or an eligible BlitzReels entitlement.
 
-The App Store subscription product ID is `dev.blitzreels.blitzrecorder.pro.monthly` and should be configured as BlitzRecorder Pro at $4.99 per month.
+The App Store subscription product IDs are `dev.blitzreels.blitzrecorder.pro.monthly` and `dev.blitzreels.blitzrecorder.pro.annual`, configured as BlitzRecorder Pro at $7.99 per month and $49.99 per year.
 
 Eligible BlitzReels users unlock included access by opening the Plan popover and choosing BlitzReels sign-in. The app opens `https://www.blitzreels.com/blitzrecorder/sign-in?return_to=blitzrecorder://auth/blitzreels`, receives a callback token, and verifies access at `https://www.blitzreels.com/api/blitzrecorder/entitlement`.
 
 The iPhone companion app is named BlitzRecorder Camera. It is a separate App Store app that pairs with the Mac app over the local network, shows a 6-digit pairing code, streams monitor preview, accepts camera controls, records the master camera file locally, and transfers the file back to the Mac take.
 
-## Subscription
+## Subscriptions
 
-- Reference name: BlitzRecorder Pro Monthly
-- Product ID: `dev.blitzreels.blitzrecorder.pro.monthly`
-- Type: Auto-renewable subscription
-- Price: $4.99/month
+- Subscription group: BlitzRecorder Pro
+- Monthly product ID: `dev.blitzreels.blitzrecorder.pro.monthly`
+- Monthly price: $7.99/month
+- Annual product ID: `dev.blitzreels.blitzrecorder.pro.annual`
+- Annual price: $49.99/year
+- Type: Auto-renewable subscriptions
 - Benefit: Unlimited BlitzRecorder exports while active
 - Free behavior: 3 exports without subscription
 

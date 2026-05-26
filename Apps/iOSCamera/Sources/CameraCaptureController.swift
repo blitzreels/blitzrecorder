@@ -18,16 +18,20 @@ final class CameraCaptureController {
 
     private var activeDevice: AVCaptureDevice?
     private var activeLens: RemoteCameraLens = .wide
+    private var activePrefersCinematicDevice = false
     private let movieOutput = AVCaptureMovieFileOutput()
     private let previewOutput = AVCaptureVideoDataOutput()
     private let sessionQueue = DispatchQueue(label: "blitzrecorder.camera-capture-session", qos: .userInitiated)
     private let previewQueue = DispatchQueue(label: "blitzrecorder.camera-monitor-preview")
     private let previewDelegate = CameraMonitorPreviewDelegate()
+    private var activeVideoInput: AVCaptureDeviceInput?
     private var recordingDelegate: MovieRecordingDelegate?
     private var activeRecordingURL: URL?
     private var activeCaptureProfileID: RemoteCameraCaptureProfileID = .automatic
     private var activeCaptureCodecLabel: String?
     private var activeCaptureFormatLabel: String?
+    private var activeCinematicVideoEnabled = false
+    private var activeCinematicAperture: Double?
     var onMonitorFrame: (@Sendable (Data, Int, Int) -> Void)?
     var onMonitorVideoFrame: (@Sendable (RemoteCameraMonitorVideoFrame) -> Void)?
     var onMonitorFrameDropped: (@Sendable () -> Void)?
@@ -38,7 +42,21 @@ final class CameraCaptureController {
             statusMessage = "Camera permission required"
             return
         }
+        _ = await requestAccess(for: .audio)
         await configureSession(lens: activeLens)
+    }
+
+    func stopSessionIfIdle() async {
+        guard !isRecording else { return }
+        let isRunning = await runOnSessionQueue { [session] in
+            guard session.isRunning else { return false }
+            session.stopRunning()
+            return session.isRunning
+        }
+        isPreviewRunning = isRunning
+        if !isRunning {
+            statusMessage = "Camera paused"
+        }
     }
 
     private func requestAccess(for mediaType: AVMediaType) async -> Bool {
@@ -60,26 +78,34 @@ final class CameraCaptureController {
             return
         }
         await configureSession(lens: lens)
-        setZoomFactor(1)
+        await setZoomFactor(1)
     }
 
     @discardableResult
-    func setZoomFactor(_ zoomFactor: CGFloat) -> CGFloat {
+    func setZoomFactor(_ zoomFactor: CGFloat) async -> CGFloat {
         guard let activeDevice else { return zoomFactor }
-        do {
-            try activeDevice.lockForConfiguration()
-            defer { activeDevice.unlockForConfiguration() }
-            let clamped = min(max(zoomFactor, activeDevice.minAvailableVideoZoomFactor), activeDevice.maxAvailableVideoZoomFactor)
-            activeDevice.videoZoomFactor = clamped
-            return activeDevice.videoZoomFactor
-        } catch {
-            statusMessage = "Zoom unavailable"
-            return activeDevice.videoZoomFactor
+        let result = await runOnSessionQueue {
+            do {
+                try activeDevice.lockForConfiguration()
+                defer { activeDevice.unlockForConfiguration() }
+                let clamped = min(max(zoomFactor, activeDevice.minAvailableVideoZoomFactor), activeDevice.maxAvailableVideoZoomFactor)
+                guard abs(activeDevice.videoZoomFactor - clamped) > 0.0001 else {
+                    return (activeDevice.videoZoomFactor, true)
+                }
+                activeDevice.videoZoomFactor = clamped
+                return (activeDevice.videoZoomFactor, true)
+            } catch {
+                return (activeDevice.videoZoomFactor, false)
+            }
         }
+        if !result.1 {
+            statusMessage = "Zoom unavailable"
+        }
+        return result.0
     }
 
     @discardableResult
-    func setTorchEnabled(_ isEnabled: Bool) -> Bool {
+    func setTorchEnabled(_ isEnabled: Bool) async -> Bool {
         guard let activeDevice else {
             return false
         }
@@ -90,52 +116,79 @@ final class CameraCaptureController {
             return false
         }
 
-        do {
-            try activeDevice.lockForConfiguration()
-            defer { activeDevice.unlockForConfiguration() }
-            if isEnabled {
-                try activeDevice.setTorchModeOn(level: AVCaptureDevice.maxAvailableTorchLevel)
-            } else {
-                activeDevice.torchMode = .off
+        let result = await runOnSessionQueue {
+            do {
+                try activeDevice.lockForConfiguration()
+                defer { activeDevice.unlockForConfiguration() }
+                if isEnabled {
+                    try activeDevice.setTorchModeOn(level: AVCaptureDevice.maxAvailableTorchLevel)
+                } else {
+                    activeDevice.torchMode = .off
+                }
+                return (activeDevice.torchMode == .on, true)
+            } catch {
+                return (activeDevice.torchMode == .on, false)
             }
-            return activeDevice.torchMode == .on
-        } catch {
-            statusMessage = "Torch unavailable"
-            return activeDevice.torchMode == .on
         }
+        if !result.1 {
+            statusMessage = "Torch unavailable"
+        }
+        return result.0
     }
 
     @discardableResult
     func apply(settings: RemoteCameraSettings) async -> RemoteCameraSettings {
-        if settings.lens != activeLens {
-            await setLens(settings.lens)
+        let isCurrentlyRecording = isRecording
+        var requestedSettings = settings
+        if !isCurrentlyRecording,
+           requestedSettings.cinematicVideoEnabled,
+           let cinematicLens = preferredCinematicLens() {
+            requestedSettings.lens = cinematicLens
+        }
+        if !isCurrentlyRecording,
+           requestedSettings.cinematicVideoEnabled,
+           (requestedSettings.lens != activeLens || !activePrefersCinematicDevice) {
+            await configureSession(lens: requestedSettings.lens, prefersCinematicDevice: true)
+            await setZoomFactor(1)
+        } else if !isCurrentlyRecording,
+                  (requestedSettings.lens != activeLens || activePrefersCinematicDevice) {
+            await setLens(requestedSettings.lens)
         }
 
-        var normalizedSettings = normalizedRemoteSettings(settings)
-        applyFormat(normalizedSettings)
-        normalizedSettings = normalizedRemoteSettings(normalizedSettings)
-        normalizedSettings.captureProfileID = applyCaptureCodec(normalizedSettings)
-        normalizedSettings.zoomFactor = Double(setZoomFactor(CGFloat(normalizedSettings.zoomFactor)))
-        applyFocus(normalizedSettings)
-        applyExposure(normalizedSettings)
-        applyWhiteBalance(normalizedSettings)
-        applyStabilization(normalizedSettings.stabilizationMode)
-        applyRotation(degrees: normalizedSettings.rotationDegrees)
-        normalizedSettings.torchEnabled = setTorchEnabled(normalizedSettings.torchEnabled)
+        var normalizedSettings = normalizedRemoteSettings(requestedSettings)
+        if isCurrentlyRecording {
+            normalizedSettings = preserveActiveCaptureSettings(in: normalizedSettings)
+        } else if canApplyOnlyCinematicAperture(normalizedSettings) {
+            normalizedSettings = await applyCinematicSettings(normalizedSettings)
+            if let activeDevice {
+                capabilities = makeCapabilities(activeDevice: activeDevice)
+            }
+            return normalizedSettings
+        } else {
+            await applyFormat(normalizedSettings)
+            normalizedSettings = normalizedRemoteSettings(normalizedSettings)
+            normalizedSettings.captureProfileID = await applyCaptureCodec(normalizedSettings)
+            normalizedSettings = await applyCinematicSettings(normalizedSettings)
+        }
+        normalizedSettings.zoomFactor = Double(await setZoomFactor(1))
+        if normalizedSettings.cinematicVideoEnabled {
+            normalizedSettings.focusMode = .continuousAuto
+        } else {
+            await applyFocus(normalizedSettings)
+        }
+        await applyExposure(normalizedSettings)
+        await applyWhiteBalance(normalizedSettings)
+        await applyStabilization(normalizedSettings.stabilizationMode)
+        await applyRotation(degrees: normalizedSettings.rotationDegrees)
+        _ = await setTorchEnabled(false)
+        normalizedSettings.torchEnabled = false
         if let activeDevice {
             capabilities = makeCapabilities(activeDevice: activeDevice)
         }
         return normalizedSettings
     }
 
-    func startRecording(takeID: UUID) throws -> URL {
-        guard session.isRunning else {
-            throw CameraCaptureError.sessionNotRunning
-        }
-        guard !movieOutput.isRecording else {
-            throw CameraCaptureError.alreadyRecording
-        }
-
+    func startRecording(takeID: UUID) async throws -> URL {
         let url = try recordingURL(takeID: takeID)
         if FileManager.default.fileExists(atPath: url.path) {
             try FileManager.default.removeItem(at: url)
@@ -149,14 +202,56 @@ final class CameraCaptureController {
         }
         recordingDelegate = delegate
         activeRecordingURL = url
-        isRecording = true
-        statusMessage = "Recording"
-        movieOutput.startRecording(to: url, recordingDelegate: delegate)
+        let session = session
+        let movieOutput = movieOutput
+        do {
+            try await runThrowingOnSessionQueue {
+                guard session.isRunning else {
+                    throw CameraCaptureError.sessionNotRunning
+                }
+                guard !movieOutput.isRecording else {
+                    throw CameraCaptureError.alreadyRecording
+                }
+                movieOutput.startRecording(to: url, recordingDelegate: delegate)
+            }
+            isRecording = true
+            statusMessage = "Recording"
+        } catch {
+            recordingDelegate = nil
+            activeRecordingURL = nil
+            throw error
+        }
         return url
     }
 
+    func waitForCaptureReadiness(timeoutSeconds: TimeInterval = 1.2) async {
+        guard activeDevice != nil else { return }
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        var stableSamples = 0
+
+        while Date() < deadline {
+            let isAdjusting = await runOnSessionQueue { [activeDevice] in
+                guard let activeDevice else { return false }
+                return activeDevice.isAdjustingExposure || activeDevice.isAdjustingWhiteBalance
+            }
+            if isAdjusting {
+                stableSamples = 0
+            } else {
+                stableSamples += 1
+                if stableSamples >= 2 {
+                    return
+                }
+            }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+    }
+
     func stopRecording() async throws -> CameraRecordingResult {
-        guard movieOutput.isRecording else {
+        let movieOutput = movieOutput
+        let outputIsRecording = await runOnSessionQueue {
+            movieOutput.isRecording
+        }
+        guard outputIsRecording else {
             guard let activeRecordingURL else {
                 throw CameraCaptureError.notRecording
             }
@@ -201,7 +296,9 @@ final class CameraCaptureController {
                     }
                 }
             }
-            movieOutput.stopRecording()
+            sessionQueue.async {
+                movieOutput.stopRecording()
+            }
             statusMessage = "Stopping recording"
         }
     }
@@ -234,7 +331,27 @@ final class CameraCaptureController {
         var isRunning: Bool
     }
 
-    private func configureSession(lens: RemoteCameraLens) async {
+    private func runOnSessionQueue<T>(_ body: @escaping () -> T) async -> T {
+        await withCheckedContinuation { continuation in
+            sessionQueue.async {
+                continuation.resume(returning: body())
+            }
+        }
+    }
+
+    private func runThrowingOnSessionQueue<T>(_ body: @escaping () throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            sessionQueue.async {
+                do {
+                    continuation.resume(returning: try body())
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    private func configureSession(lens: RemoteCameraLens, prefersCinematicDevice: Bool = false) async {
         let result = await withCheckedContinuation { continuation in
             sessionQueue.async { [weak self] in
                 guard let self else {
@@ -249,11 +366,20 @@ final class CameraCaptureController {
                 self.session.beginConfiguration()
                 self.session.sessionPreset = .hd1920x1080
 
+                self.activeVideoInput = nil
+                self.activeCinematicVideoEnabled = false
+                self.activeCinematicAperture = nil
                 for input in self.session.inputs {
                     self.session.removeInput(input)
                 }
 
-                let device = self.device(for: lens)
+                let preferredDevice: AVCaptureDevice?
+                if prefersCinematicDevice {
+                    preferredDevice = self.cinematicDevice(for: lens) ?? self.device(for: lens)
+                } else {
+                    preferredDevice = self.device(for: lens)
+                }
+                let device = preferredDevice
                     ?? self.device(for: .wide)
                     ?? AVCaptureDevice.default(for: .video)
                 guard let device else {
@@ -270,12 +396,20 @@ final class CameraCaptureController {
                     let input = try AVCaptureDeviceInput(device: device)
                     if self.session.canAddInput(input) {
                         self.session.addInput(input)
+                        self.activeVideoInput = input
                     }
+                    self.addAudioInputIfAuthorized()
                     if self.session.canSetSessionPreset(.inputPriority) {
                         self.session.sessionPreset = .inputPriority
                     }
                     if !self.session.outputs.contains(self.movieOutput), self.session.canAddOutput(self.movieOutput) {
                         self.session.addOutput(self.movieOutput)
+                    }
+                    if prefersCinematicDevice {
+                        self.lockConstituentDeviceSwitchingIfAvailable(for: device)
+                        self.lockRecordingConstituentDeviceSwitchingIfAvailable(for: device)
+                    } else {
+                        self.movieOutput.isPrimaryConstituentDeviceSwitchingBehaviorForRecordingEnabled = false
                     }
                     self.configurePreviewOutputIfNeeded()
                     self.session.commitConfiguration()
@@ -303,12 +437,51 @@ final class CameraCaptureController {
         activeDevice = result.device
         if result.device != nil {
             activeLens = lens
+            activePrefersCinematicDevice = prefersCinematicDevice
         }
         if let device = result.device {
             capabilities = makeCapabilities(activeDevice: device)
         }
         statusMessage = result.statusMessage
         isPreviewRunning = result.isRunning
+    }
+
+    private func addAudioInputIfAuthorized() {
+        guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized,
+              let device = AVCaptureDevice.default(for: .audio) else {
+            return
+        }
+        do {
+            let input = try AVCaptureDeviceInput(device: device)
+            if session.canAddInput(input) {
+                session.addInput(input)
+            }
+        } catch {
+        }
+    }
+
+    private func lockConstituentDeviceSwitchingIfAvailable(for device: AVCaptureDevice) {
+        guard device.activePrimaryConstituentDeviceSwitchingBehavior != .unsupported else {
+            return
+        }
+        do {
+            try device.lockForConfiguration()
+            defer { device.unlockForConfiguration() }
+            device.setPrimaryConstituentDeviceSwitchingBehavior(.locked, restrictedSwitchingBehaviorConditions: [])
+        } catch {
+        }
+    }
+
+    private func lockRecordingConstituentDeviceSwitchingIfAvailable(for device: AVCaptureDevice) {
+        guard device.activePrimaryConstituentDeviceSwitchingBehavior != .unsupported else {
+            movieOutput.isPrimaryConstituentDeviceSwitchingBehaviorForRecordingEnabled = false
+            return
+        }
+        movieOutput.isPrimaryConstituentDeviceSwitchingBehaviorForRecordingEnabled = true
+        movieOutput.setPrimaryConstituentDeviceSwitchingBehaviorForRecording(
+            .locked,
+            restrictedSwitchingBehaviorConditions: []
+        )
     }
 
     private func device(for lens: RemoteCameraLens) -> AVCaptureDevice? {
@@ -324,11 +497,26 @@ final class CameraCaptureController {
         }
     }
 
+    private func cinematicDevice(for lens: RemoteCameraLens) -> AVCaptureDevice? {
+        switch lens {
+        case .wide:
+            return AVCaptureDevice.default(.builtInDualWideCamera, for: .video, position: .back)
+                ?? AVCaptureDevice.default(.builtInTripleCamera, for: .video, position: .back)
+                ?? device(for: .wide)
+        case .frontWide:
+            return AVCaptureDevice.default(.builtInTrueDepthCamera, for: .video, position: .front)
+                ?? device(for: .frontWide)
+        case .ultraWide, .telephoto:
+            return nil
+        }
+    }
+
     private func supportedLenses() -> [RemoteCameraLens] {
         RemoteCameraLens.allCases.filter { device(for: $0) != nil }
     }
 
     private func makeCapabilities(activeDevice: AVCaptureDevice) -> RemoteCameraCapabilities {
+        let cinematic = cinematicCapabilities()
         return RemoteCameraCapabilities(
             deviceName: UIDevice.current.name,
             deviceModelIdentifier: Self.deviceModelIdentifier(),
@@ -338,9 +526,9 @@ final class CameraCaptureController {
                 for: activeDevice,
                 movieOutput: movieOutput
             ),
-            supportsTorch: activeDevice.hasTorch && activeDevice.isTorchAvailable,
-            minimumZoomFactor: Double(activeDevice.minAvailableVideoZoomFactor),
-            maximumZoomFactor: Double(activeDevice.maxAvailableVideoZoomFactor),
+            supportsTorch: false,
+            minimumZoomFactor: 1,
+            maximumZoomFactor: 1,
             supportsManualFocus: activeDevice.isLockingFocusWithCustomLensPositionSupported,
             supportsFocusLock: activeDevice.isFocusModeSupported(.locked),
             supportsManualExposure: activeDevice.isExposureModeSupported(.custom),
@@ -354,8 +542,67 @@ final class CameraCaptureController {
             minimumISO: Double(activeDevice.activeFormat.minISO),
             maximumISO: Double(activeDevice.activeFormat.maxISO),
             minimumShutterDurationSeconds: CMTimeGetSeconds(activeDevice.activeFormat.minExposureDuration),
-            maximumShutterDurationSeconds: CMTimeGetSeconds(activeDevice.activeFormat.maxExposureDuration)
+            maximumShutterDurationSeconds: CMTimeGetSeconds(activeDevice.activeFormat.maxExposureDuration),
+            supportsCinematicVideo: cinematic.supportsCinematicVideo,
+            minimumCinematicAperture: cinematic.minimumAperture,
+            maximumCinematicAperture: cinematic.maximumAperture,
+            defaultCinematicAperture: cinematic.defaultAperture
         )
+    }
+
+    private func cinematicCapabilities() -> (
+        supportsCinematicVideo: Bool,
+        minimumAperture: Double?,
+        maximumAperture: Double?,
+        defaultAperture: Double?
+    ) {
+        if let activeVideoInput {
+            let activeCapabilities = cinematicCapabilities(for: activeVideoInput.device)
+            if activeCapabilities.supportsCinematicVideo {
+                return activeCapabilities
+            }
+        }
+        guard let cinematicLens = preferredCinematicLens(),
+              let cinematicDevice = cinematicDevice(for: cinematicLens) ?? device(for: cinematicLens) else {
+            return (false, nil, nil, nil)
+        }
+        return cinematicCapabilities(for: cinematicDevice)
+    }
+
+    private func cinematicCapabilities(for device: AVCaptureDevice) -> (
+        supportsCinematicVideo: Bool,
+        minimumAperture: Double?,
+        maximumAperture: Double?,
+        defaultAperture: Double?
+    ) {
+        if #available(iOS 26.0, *) {
+            let format = device.activeFormat.isCinematicVideoCaptureSupported
+                ? device.activeFormat
+                : device.formats.first { $0.isCinematicVideoCaptureSupported }
+            guard let format else {
+                return (false, nil, nil, nil)
+            }
+            let minimumAperture = Double(format.minSimulatedAperture)
+            return (
+                true,
+                minimumAperture > 0 ? minimumAperture : nil,
+                minimumAperture > 0 ? Double(format.maxSimulatedAperture) : nil,
+                minimumAperture > 0 ? Double(format.defaultSimulatedAperture) : nil
+            )
+        }
+        return (false, nil, nil, nil)
+    }
+
+    private func preferredCinematicLens() -> RemoteCameraLens? {
+        let lenses = supportedLenses()
+        let preferredOrder: [RemoteCameraLens] = [.wide, .telephoto, .ultraWide, .frontWide]
+        return preferredOrder.first { lens in
+            guard lenses.contains(lens),
+                  let device = cinematicDevice(for: lens) ?? device(for: lens) else {
+                return false
+            }
+            return cinematicCapabilities(for: device).supportsCinematicVideo
+        }
     }
 
     private static func deviceModelIdentifier() -> String? {
@@ -386,15 +633,17 @@ final class CameraCaptureController {
                     width: Int(dimensions.width),
                     height: Int(dimensions.height),
                     frameRates: frameRates,
-                    supportsStabilization: true,
+                    supportsStabilization: formats.contains(where: Self.formatSupportsStabilization),
                     supportsHDR: formats.contains { $0.isVideoHDRSupported }
                 )
             }
             .sorted { lhs, rhs in
-                if lhs.width * lhs.height == rhs.width * rhs.height {
+                let lhsArea = lhs.width * lhs.height
+                let rhsArea = rhs.width * rhs.height
+                if lhsArea == rhsArea {
                     return lhs.id < rhs.id
                 }
-                return lhs.width * lhs.height > rhs.width * rhs.height
+                return lhsArea > rhsArea
             }
             .prefix(8)
         )
@@ -429,7 +678,38 @@ final class CameraCaptureController {
                 supportedBy: normalizedSettings.captureProfileID,
                 profiles: profiles
             )
-            let selectableFormats = profileFormats.isEmpty ? formats : profileFormats
+            var selectableFormats = profileFormats.isEmpty ? formats : profileFormats
+            let cinematic = cinematicCapabilities(for: activeDevice)
+            let preferredFormatID = normalizedSettings.formatID
+                ?? selectableFormats.first?.id
+                ?? formats.first?.id
+            if normalizedSettings.cinematicVideoEnabled,
+               cinematic.supportsCinematicVideo,
+               let preferredFormatID,
+               let cinematicFormat = RemoteCameraCaptureProfileResolver.captureFormat(
+                for: normalizedSettings.captureProfileID,
+                formatID: preferredFormatID,
+                frameRate: normalizedSettings.frameRate,
+                device: activeDevice,
+                requiresCinematic: true
+               ) ?? RemoteCameraCaptureProfileResolver.captureFormat(
+                for: .automatic,
+                formatID: preferredFormatID,
+                frameRate: normalizedSettings.frameRate,
+                device: activeDevice,
+                requiresCinematic: true
+               ) ?? RemoteCameraCaptureProfileResolver.preferredCinematicCaptureFormat(
+                for: activeDevice,
+                preferredFrameRate: normalizedSettings.frameRate
+               ) {
+                normalizedSettings.captureProfileID = .automatic
+                selectableFormats = formats
+                normalizedSettings.formatID = Self.formatID(for: cinematicFormat)
+                let frameRates = supportedRemoteFrameRates(for: [cinematicFormat])
+                if !frameRates.contains(normalizedSettings.frameRate) {
+                    normalizedSettings.frameRate = frameRates.contains(30) ? 30 : (frameRates.first ?? 30)
+                }
+            }
             let format = selectableFormats.first { format in
                 format.id == normalizedSettings.formatID
             } ?? selectableFormats.first { format in
@@ -441,10 +721,8 @@ final class CameraCaptureController {
             } else if format == nil, normalizedSettings.frameRate > 30 {
                 normalizedSettings.frameRate = 30
             }
-            normalizedSettings.zoomFactor = min(
-                Double(activeDevice.maxAvailableVideoZoomFactor),
-                max(Double(activeDevice.minAvailableVideoZoomFactor), normalizedSettings.zoomFactor)
-            )
+            normalizedSettings.zoomFactor = 1
+            normalizedSettings.torchEnabled = false
             if normalizedSettings.exposureMode == .continuousAuto {
                 normalizedSettings.exposureBias = 0
             } else if activeDevice.minExposureTargetBias < activeDevice.maxExposureTargetBias {
@@ -453,8 +731,25 @@ final class CameraCaptureController {
                     max(Double(activeDevice.minExposureTargetBias), normalizedSettings.exposureBias)
                 )
             }
-            if !activeDevice.hasTorch || !activeDevice.isTorchAvailable {
-                normalizedSettings.torchEnabled = false
+            if !cinematic.supportsCinematicVideo {
+                normalizedSettings.cinematicVideoEnabled = false
+                normalizedSettings.cinematicAperture = nil
+            } else if normalizedSettings.cinematicVideoEnabled {
+                normalizedSettings.focusMode = .continuousAuto
+                if let minimumAperture = cinematic.minimumAperture,
+                   let maximumAperture = cinematic.maximumAperture {
+                    let proposedAperture = normalizedSettings.cinematicAperture
+                        ?? cinematic.defaultAperture
+                        ?? minimumAperture
+                    normalizedSettings.cinematicAperture = min(
+                        maximumAperture,
+                        max(minimumAperture, proposedAperture)
+                    )
+                } else {
+                    normalizedSettings.cinematicAperture = nil
+                }
+            } else {
+                normalizedSettings.cinematicAperture = nil
             }
             let rotationOptions = supportedRotationDegrees()
             if !rotationOptions.contains(normalizedSettings.rotationDegrees) {
@@ -486,124 +781,292 @@ final class CameraCaptureController {
                !activeDevice.isWhiteBalanceModeSupported(.locked) {
                 normalizedSettings.whiteBalanceMode = .continuousAuto
             }
+            let stabilizationModes = supportedStabilizationModes(for: activeDevice.activeFormat)
+            if !stabilizationModes.contains(normalizedSettings.stabilizationMode) {
+                normalizedSettings.stabilizationMode = stabilizationModes.first ?? .off
+            }
         }
         normalizedSettings.rotationDegrees = RemoteCameraSettings.normalizedRotationDegrees(normalizedSettings.rotationDegrees)
         normalizedSettings.focusPosition = min(1, max(0, normalizedSettings.focusPosition))
         return normalizedSettings
     }
 
-    private func applyFormat(_ settings: RemoteCameraSettings) {
+    private func preserveActiveCaptureSettings(in settings: RemoteCameraSettings) -> RemoteCameraSettings {
+        var preservedSettings = settings
+        preservedSettings.lens = activeLens
+        preservedSettings.captureProfileID = activeCaptureProfileID
+        preservedSettings.cinematicVideoEnabled = activeCinematicVideoEnabled
+        preservedSettings.cinematicAperture = activeCinematicAperture
+        if let activeDevice {
+            preservedSettings.formatID = Self.formatID(for: activeDevice.activeFormat)
+            let frameRate = activeFrameRate(for: activeDevice)
+            if frameRate > 0 {
+                preservedSettings.frameRate = frameRate
+            }
+        }
+        return preservedSettings
+    }
+
+    private func applyCinematicSettings(_ settings: RemoteCameraSettings) async -> RemoteCameraSettings {
+        var appliedSettings = settings
+        guard let activeVideoInput else {
+            appliedSettings.cinematicVideoEnabled = false
+            appliedSettings.cinematicAperture = nil
+            return appliedSettings
+        }
+        guard #available(iOS 26.0, *),
+              activeVideoInput.isCinematicVideoCaptureSupported else {
+            appliedSettings.cinematicVideoEnabled = false
+            appliedSettings.cinematicAperture = nil
+            activeCinematicVideoEnabled = false
+            activeCinematicAperture = nil
+            return appliedSettings
+        }
+
+        let cinematic = cinematicCapabilities()
+        let requestedAperture = appliedSettings.cinematicAperture
+            ?? cinematic.defaultAperture
+            ?? cinematic.minimumAperture
+        if let requestedAperture,
+           let minimumAperture = cinematic.minimumAperture,
+           let maximumAperture = cinematic.maximumAperture {
+            appliedSettings.cinematicAperture = min(maximumAperture, max(minimumAperture, requestedAperture))
+        }
+
+        let session = session
+        let enabled = appliedSettings.cinematicVideoEnabled
+        let aperture = appliedSettings.cinematicAperture
+        if enabled == activeCinematicVideoEnabled,
+           cinematicAperturesMatch(aperture, activeCinematicAperture) {
+            return appliedSettings
+        }
+
+        let onlyApertureChanged = enabled
+            && activeCinematicVideoEnabled
+            && aperture != nil
+        await runOnSessionQueue {
+            if onlyApertureChanged,
+               let aperture {
+                session.beginConfiguration()
+                defer { session.commitConfiguration() }
+                activeVideoInput.isCinematicVideoCaptureEnabled = false
+                activeVideoInput.simulatedAperture = Float(aperture)
+                activeVideoInput.isCinematicVideoCaptureEnabled = true
+                return
+            }
+
+            session.beginConfiguration()
+            defer { session.commitConfiguration() }
+
+            activeVideoInput.isCinematicVideoCaptureEnabled = enabled
+            if enabled,
+               let aperture {
+                activeVideoInput.simulatedAperture = Float(aperture)
+            }
+        }
+
+        activeCinematicVideoEnabled = enabled
+        activeCinematicAperture = enabled ? aperture : nil
+        appliedSettings.cinematicVideoEnabled = enabled
+        appliedSettings.cinematicAperture = enabled ? aperture : nil
+        return appliedSettings
+    }
+
+    private func canApplyOnlyCinematicAperture(_ settings: RemoteCameraSettings) -> Bool {
+        guard settings.cinematicVideoEnabled,
+              activeCinematicVideoEnabled,
+              !cinematicAperturesMatch(settings.cinematicAperture, activeCinematicAperture),
+              activeVideoInput?.isCinematicVideoCaptureEnabled == true else {
+            return false
+        }
+        return true
+    }
+
+    private func cinematicAperturesMatch(_ lhs: Double?, _ rhs: Double?) -> Bool {
+        switch (lhs, rhs) {
+        case (.none, .none):
+            return true
+        case let (.some(lhs), .some(rhs)):
+            return abs(lhs - rhs) < 0.001
+        default:
+            return false
+        }
+    }
+
+    private func activeFrameRate(for device: AVCaptureDevice) -> Int {
+        let seconds = CMTimeGetSeconds(device.activeVideoMinFrameDuration)
+        guard seconds.isFinite, seconds > 0 else { return 0 }
+        return max(1, Int((1 / seconds).rounded()))
+    }
+
+    private func applyFormat(_ settings: RemoteCameraSettings) async {
         guard let activeDevice,
               let formatID = settings.formatID,
-              let format = RemoteCameraCaptureProfileResolver.captureFormat(
-                for: settings.captureProfileID,
-                formatID: formatID,
-                frameRate: settings.frameRate,
-                device: activeDevice
-              ) else {
+              let format = captureFormat(for: settings, device: activeDevice) else {
             return
         }
 
-        do {
-            try activeDevice.lockForConfiguration()
-            activeDevice.activeFormat = format
-            let frameDuration = CMTime(value: 1, timescale: CMTimeScale(max(1, settings.frameRate)))
-            activeDevice.activeVideoMinFrameDuration = frameDuration
-            activeDevice.activeVideoMaxFrameDuration = frameDuration
-            activeDevice.unlockForConfiguration()
+        if activeFormatMatches(format, on: activeDevice, frameRate: settings.frameRate) {
             activeCaptureFormatLabel = "\(formatID) @ \(settings.frameRate) fps"
-        } catch {
+            return
+        }
+
+        let session = session
+        let applied = await runOnSessionQueue { () -> Bool in
+            do {
+                session.beginConfiguration()
+                defer { session.commitConfiguration() }
+                try activeDevice.lockForConfiguration()
+                defer { activeDevice.unlockForConfiguration() }
+                activeDevice.activeFormat = format
+                let frameDuration = CMTime(value: 1, timescale: CMTimeScale(max(1, settings.frameRate)))
+                activeDevice.activeVideoMinFrameDuration = frameDuration
+                activeDevice.activeVideoMaxFrameDuration = frameDuration
+                return true
+            } catch {
+                return false
+            }
+        }
+        if applied {
+            activeCaptureFormatLabel = "\(formatID) @ \(settings.frameRate) fps"
+        } else {
             statusMessage = "Format unavailable"
         }
     }
 
-    private func applyCaptureCodec(_ settings: RemoteCameraSettings) -> RemoteCameraCaptureProfileID {
-        guard let connection = movieOutput.connection(with: .video) else {
-            activeCaptureProfileID = .automatic
-            activeCaptureCodecLabel = nil
-            return .automatic
-        }
-
-        let resolved = RemoteCameraCaptureProfileResolver.resolveCodec(
-            requestedProfileID: settings.captureProfileID,
-            movieOutput: movieOutput
+    private func captureFormat(for settings: RemoteCameraSettings, device: AVCaptureDevice) -> AVCaptureDevice.Format? {
+        guard let formatID = settings.formatID else { return nil }
+        return RemoteCameraCaptureProfileResolver.captureFormat(
+            for: settings.captureProfileID,
+            formatID: formatID,
+            frameRate: settings.frameRate,
+            device: device,
+            requiresCinematic: settings.cinematicVideoEnabled
         )
-        activeCaptureProfileID = resolved.profileID
-        activeCaptureCodecLabel = resolved.codecLabel
-        if let codec = resolved.codec {
-            movieOutput.setOutputSettings([AVVideoCodecKey: codec.rawValue], for: connection)
-        }
-        return resolved.profileID
     }
 
-    private func applyFocus(_ settings: RemoteCameraSettings) {
-        guard let activeDevice else { return }
-        do {
-            try activeDevice.lockForConfiguration()
-            switch settings.focusMode {
-            case .continuousAuto:
-                if activeDevice.isFocusModeSupported(.continuousAutoFocus) {
-                    activeDevice.focusMode = .continuousAutoFocus
-                }
-            case .locked:
-                if activeDevice.isFocusModeSupported(.locked) {
-                    activeDevice.focusMode = .locked
-                }
-            case .manual:
-                if activeDevice.isLockingFocusWithCustomLensPositionSupported {
-                    activeDevice.setFocusModeLocked(
-                        lensPosition: Float(min(1, max(0, settings.focusPosition))),
-                        completionHandler: nil
-                    )
-                }
+    private func activeFormatMatches(
+        _ format: AVCaptureDevice.Format,
+        on device: AVCaptureDevice,
+        frameRate: Int
+    ) -> Bool {
+        captureFormatsMatch(device.activeFormat, format) && activeFrameRate(for: device) == frameRate
+    }
+
+    private func captureFormatsMatch(_ lhs: AVCaptureDevice.Format, _ rhs: AVCaptureDevice.Format) -> Bool {
+        guard CMFormatDescriptionEqual(lhs.formatDescription, otherFormatDescription: rhs.formatDescription) else {
+            return false
+        }
+        if #available(iOS 26.0, *) {
+            return lhs.isCinematicVideoCaptureSupported == rhs.isCinematicVideoCaptureSupported
+                && abs(lhs.minSimulatedAperture - rhs.minSimulatedAperture) < 0.001
+                && abs(lhs.maxSimulatedAperture - rhs.maxSimulatedAperture) < 0.001
+                && abs(lhs.defaultSimulatedAperture - rhs.defaultSimulatedAperture) < 0.001
+        }
+        return true
+    }
+
+    private func applyCaptureCodec(_ settings: RemoteCameraSettings) async -> RemoteCameraCaptureProfileID {
+        let movieOutput = movieOutput
+        let result = await runOnSessionQueue { () -> (RemoteCameraCaptureProfileID, String?) in
+            guard let connection = movieOutput.connection(with: .video) else {
+                return (.automatic, nil)
             }
-            activeDevice.unlockForConfiguration()
-        } catch {
+
+            let resolved = RemoteCameraCaptureProfileResolver.resolveCodec(
+                requestedProfileID: settings.captureProfileID,
+                movieOutput: movieOutput
+            )
+            if let codec = resolved.codec {
+                movieOutput.setOutputSettings([AVVideoCodecKey: codec.rawValue], for: connection)
+            }
+            return (resolved.profileID, resolved.codecLabel)
+        }
+        activeCaptureProfileID = result.0
+        activeCaptureCodecLabel = result.1
+        return result.0
+    }
+
+    private func applyFocus(_ settings: RemoteCameraSettings) async {
+        guard let activeDevice else { return }
+        let applied = await runOnSessionQueue { () -> Bool in
+            do {
+                try activeDevice.lockForConfiguration()
+                defer { activeDevice.unlockForConfiguration() }
+                switch settings.focusMode {
+                case .continuousAuto:
+                    if activeDevice.isFocusModeSupported(.continuousAutoFocus) {
+                        activeDevice.focusMode = .continuousAutoFocus
+                    }
+                case .locked:
+                    if activeDevice.isFocusModeSupported(.locked) {
+                        activeDevice.focusMode = .locked
+                    }
+                case .manual:
+                    if activeDevice.isLockingFocusWithCustomLensPositionSupported {
+                        activeDevice.setFocusModeLocked(
+                            lensPosition: Float(min(1, max(0, settings.focusPosition))),
+                            completionHandler: nil
+                        )
+                    }
+                }
+                return true
+            } catch {
+                return false
+            }
+        }
+        if !applied {
             statusMessage = "Focus unavailable"
         }
     }
 
-    private func applyExposure(_ settings: RemoteCameraSettings) {
+    private func applyExposure(_ settings: RemoteCameraSettings) async {
         guard let activeDevice else { return }
-        do {
-            try activeDevice.lockForConfiguration()
+        let applied = await runOnSessionQueue { () -> Bool in
+            do {
+                try activeDevice.lockForConfiguration()
+                defer { activeDevice.unlockForConfiguration() }
 
-            switch settings.exposureMode {
-            case .continuousAuto:
-                if activeDevice.isExposureModeSupported(.continuousAutoExposure) {
-                    activeDevice.exposureMode = .continuousAutoExposure
+                switch settings.exposureMode {
+                case .continuousAuto:
+                    if activeDevice.isExposureModeSupported(.continuousAutoExposure) {
+                        activeDevice.exposureMode = .continuousAutoExposure
+                    }
+                    Self.applyExposureTargetBias(settings.exposureBias, to: activeDevice)
+                case .locked:
+                    Self.applyExposureTargetBias(settings.exposureBias, to: activeDevice)
+                    if activeDevice.isExposureModeSupported(.locked) {
+                        activeDevice.exposureMode = .locked
+                    }
+                case .manual:
+                    Self.applyExposureTargetBias(settings.exposureBias, to: activeDevice)
+                    if activeDevice.isExposureModeSupported(.custom) {
+                        let iso = Float(min(
+                            max(settings.iso ?? Double(activeDevice.iso), Double(activeDevice.activeFormat.minISO)),
+                            Double(activeDevice.activeFormat.maxISO)
+                        ))
+                        let defaultDuration = CMTimeGetSeconds(activeDevice.exposureDuration)
+                        let minDuration = CMTimeGetSeconds(activeDevice.activeFormat.minExposureDuration)
+                        let maxDuration = CMTimeGetSeconds(activeDevice.activeFormat.maxExposureDuration)
+                        let seconds = min(max(settings.shutterDurationSeconds ?? defaultDuration, minDuration), maxDuration)
+                        activeDevice.setExposureModeCustom(
+                            duration: CMTime(seconds: seconds, preferredTimescale: 1_000_000_000),
+                            iso: iso,
+                            completionHandler: nil
+                        )
+                    }
                 }
-                activeDevice.setExposureTargetBias(0, completionHandler: nil)
-            case .locked:
-                applyExposureTargetBias(settings.exposureBias, to: activeDevice)
-                if activeDevice.isExposureModeSupported(.locked) {
-                    activeDevice.exposureMode = .locked
-                }
-            case .manual:
-                applyExposureTargetBias(settings.exposureBias, to: activeDevice)
-                if activeDevice.isExposureModeSupported(.custom) {
-                    let iso = Float(min(
-                        max(settings.iso ?? Double(activeDevice.iso), Double(activeDevice.activeFormat.minISO)),
-                        Double(activeDevice.activeFormat.maxISO)
-                    ))
-                    let defaultDuration = CMTimeGetSeconds(activeDevice.exposureDuration)
-                    let minDuration = CMTimeGetSeconds(activeDevice.activeFormat.minExposureDuration)
-                    let maxDuration = CMTimeGetSeconds(activeDevice.activeFormat.maxExposureDuration)
-                    let seconds = min(max(settings.shutterDurationSeconds ?? defaultDuration, minDuration), maxDuration)
-                    activeDevice.setExposureModeCustom(
-                        duration: CMTime(seconds: seconds, preferredTimescale: 1_000_000_000),
-                        iso: iso,
-                        completionHandler: nil
-                    )
-                }
+                return true
+            } catch {
+                return false
             }
-            activeDevice.unlockForConfiguration()
-        } catch {
+        }
+        if !applied {
             statusMessage = "Exposure unavailable"
         }
     }
 
-    private func applyExposureTargetBias(_ exposureBias: Double, to device: AVCaptureDevice) {
+    private static func applyExposureTargetBias(_ exposureBias: Double, to device: AVCaptureDevice) {
         guard device.minExposureTargetBias < device.maxExposureTargetBias else { return }
         let bias = Float(min(
             Double(device.maxExposureTargetBias),
@@ -612,67 +1075,108 @@ final class CameraCaptureController {
         device.setExposureTargetBias(bias, completionHandler: nil)
     }
 
-    private func applyWhiteBalance(_ settings: RemoteCameraSettings) {
+    private func applyWhiteBalance(_ settings: RemoteCameraSettings) async {
         guard let activeDevice else { return }
-        do {
-            try activeDevice.lockForConfiguration()
-            switch settings.whiteBalanceMode {
-            case .continuousAuto:
-                if activeDevice.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) {
-                    activeDevice.whiteBalanceMode = .continuousAutoWhiteBalance
+        let applied = await runOnSessionQueue { () -> Bool in
+            do {
+                try activeDevice.lockForConfiguration()
+                defer { activeDevice.unlockForConfiguration() }
+                switch settings.whiteBalanceMode {
+                case .continuousAuto:
+                    if activeDevice.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) {
+                        activeDevice.whiteBalanceMode = .continuousAutoWhiteBalance
+                    }
+                case .locked:
+                    if activeDevice.isWhiteBalanceModeSupported(.locked) {
+                        activeDevice.whiteBalanceMode = .locked
+                    }
+                case .manual:
+                    if activeDevice.isWhiteBalanceModeSupported(.locked) {
+                        let values = AVCaptureDevice.WhiteBalanceTemperatureAndTintValues(
+                            temperature: Float(settings.whiteBalanceTemperature),
+                            tint: Float(settings.whiteBalanceTint)
+                        )
+                        let gains = Self.clampedWhiteBalanceGains(
+                            activeDevice.deviceWhiteBalanceGains(for: values),
+                            for: activeDevice
+                        )
+                        activeDevice.setWhiteBalanceModeLocked(with: gains, completionHandler: nil)
+                    }
                 }
-            case .locked:
-                if activeDevice.isWhiteBalanceModeSupported(.locked) {
-                    activeDevice.whiteBalanceMode = .locked
-                }
-            case .manual:
-                if activeDevice.isWhiteBalanceModeSupported(.locked) {
-                    let values = AVCaptureDevice.WhiteBalanceTemperatureAndTintValues(
-                        temperature: Float(settings.whiteBalanceTemperature),
-                        tint: Float(settings.whiteBalanceTint)
-                    )
-                    let gains = clampedWhiteBalanceGains(activeDevice.deviceWhiteBalanceGains(for: values), for: activeDevice)
-                    activeDevice.setWhiteBalanceModeLocked(with: gains, completionHandler: nil)
-                }
+                return true
+            } catch {
+                return false
             }
-            activeDevice.unlockForConfiguration()
-        } catch {
+        }
+        if !applied {
             statusMessage = "White balance unavailable"
         }
     }
 
-    private func applyStabilization(_ mode: RemoteCameraStabilizationMode) {
+    private func applyStabilization(_ mode: RemoteCameraStabilizationMode) async {
         let avMode: AVCaptureVideoStabilizationMode = switch mode {
         case .off: .off
         case .standard: .standard
         case .cinematic: .cinematic
         case .auto: .auto
         }
-        for connection in [movieOutput.connection(with: .video), previewOutput.connection(with: .video)].compactMap({ $0 }) {
-            guard connection.isVideoStabilizationSupported else { continue }
-            connection.preferredVideoStabilizationMode = avMode
+        let movieOutput = movieOutput
+        let previewOutput = previewOutput
+        await runOnSessionQueue {
+            if let connection = movieOutput.connection(with: .video),
+               connection.isVideoStabilizationSupported {
+                connection.preferredVideoStabilizationMode = avMode
+            }
+            if let connection = previewOutput.connection(with: .video),
+               connection.isVideoStabilizationSupported {
+                connection.preferredVideoStabilizationMode = .off
+            }
         }
     }
 
-    private func applyRotation(degrees: Int) {
+    private func applyRotation(degrees: Int) async {
         let rotation = CGFloat(RemoteCameraSettings.normalizedRotationDegrees(degrees))
-        for connection in [movieOutput.connection(with: .video), previewOutput.connection(with: .video)].compactMap({ $0 }) {
-            if connection.isVideoRotationAngleSupported(rotation) {
-                connection.videoRotationAngle = rotation
-            } else if connection.isVideoOrientationSupported,
-                      let orientation = videoOrientation(for: Int(rotation)) {
-                connection.videoOrientation = orientation
+        let movieOutput = movieOutput
+        let previewOutput = previewOutput
+        await runOnSessionQueue {
+            for connection in [movieOutput.connection(with: .video), previewOutput.connection(with: .video)].compactMap({ $0 }) {
+                if connection.isVideoRotationAngleSupported(rotation) {
+                    connection.videoRotationAngle = rotation
+                } else if connection.isVideoOrientationSupported,
+                          let orientation = Self.videoOrientation(for: Int(rotation)) {
+                    connection.videoOrientation = orientation
+                }
             }
         }
     }
 
     private func supportedStabilizationModes() -> [RemoteCameraStabilizationMode] {
-        let connection = movieOutput.connection(with: .video) ?? previewOutput.connection(with: .video)
-        guard connection?.isVideoStabilizationSupported == true else {
-            return [.off]
-        }
-        return [.off, .standard, .cinematic, .auto]
+        guard let activeDevice else { return [.off] }
+        return supportedStabilizationModes(for: activeDevice.activeFormat)
     }
+
+    private func supportedStabilizationModes(for format: AVCaptureDevice.Format) -> [RemoteCameraStabilizationMode] {
+        var modes: [RemoteCameraStabilizationMode] = [.off]
+        for (remoteMode, avMode) in Self.stabilizationModeMap where remoteMode != .off {
+            if format.isVideoStabilizationModeSupported(avMode) {
+                modes.append(remoteMode)
+            }
+        }
+        return modes
+    }
+
+    private static func formatSupportsStabilization(_ format: AVCaptureDevice.Format) -> Bool {
+        stabilizationModeMap.contains { remoteMode, avMode in
+            remoteMode != .off && format.isVideoStabilizationModeSupported(avMode)
+        }
+    }
+
+    private static let stabilizationModeMap: [(RemoteCameraStabilizationMode, AVCaptureVideoStabilizationMode)] = [
+        (.off, .off),
+        (.standard, .standard),
+        (.cinematic, .cinematic),
+        (.auto, .auto)
+    ]
 
     private func supportedRotationDegrees() -> [Int] {
         let connection = movieOutput.connection(with: .video) ?? previewOutput.connection(with: .video)
@@ -685,7 +1189,7 @@ final class CameraCaptureController {
         return connection?.isVideoOrientationSupported == true ? [0, 90, 180, 270] : (supported.isEmpty ? [0] : supported)
     }
 
-    private func videoOrientation(for degrees: Int) -> AVCaptureVideoOrientation? {
+    private static func videoOrientation(for degrees: Int) -> AVCaptureVideoOrientation? {
         switch RemoteCameraSettings.normalizedRotationDegrees(degrees) {
         case 0:
             return .portrait
@@ -700,7 +1204,7 @@ final class CameraCaptureController {
         }
     }
 
-    private func clampedWhiteBalanceGains(
+    private static func clampedWhiteBalanceGains(
         _ gains: AVCaptureDevice.WhiteBalanceGains,
         for device: AVCaptureDevice
     ) -> AVCaptureDevice.WhiteBalanceGains {
@@ -1091,7 +1595,7 @@ private enum RemoteCameraCaptureProfileResolver {
         let availableCodecs = movieOutput.availableVideoCodecTypes
         let proResFormatIDs = proResRemoteFormats(for: device).map(\.id)
         let hasProResFormat = !proResFormatIDs.isEmpty
-        let hasProResCodec = canUseProRes422(device: device, movieOutput: movieOutput)
+        let hasProResCodec = availableCodecs.contains(.proRes422)
         let hasProResStorage = hasMinimumProResStorageHeadroom()
         let proResReason: String? = if !hasProResFormat {
             "This iPhone camera does not expose a ProRes 422 capture format."
@@ -1145,16 +1649,35 @@ private enum RemoteCameraCaptureProfileResolver {
         for profileID: RemoteCameraCaptureProfileID,
         formatID: String,
         frameRate: Int,
-        device: AVCaptureDevice
+        device: AVCaptureDevice,
+        requiresCinematic: Bool = false
     ) -> AVCaptureDevice.Format? {
         let candidates = profileID == .proRes422 ? proResCaptureFormats(for: device) : device.formats
         return candidates.first { format in
             Self.formatID(for: format) == formatID
+                && (!requiresCinematic || Self.formatSupportsCinematicVideoCapture(format))
                 && format.videoSupportedFrameRateRanges.contains { range in
                     range.minFrameRate <= Double(frameRate)
                         && range.maxFrameRate >= Double(frameRate)
                 }
         }
+    }
+
+    static func preferredCinematicCaptureFormat(
+        for device: AVCaptureDevice,
+        preferredFrameRate: Int
+    ) -> AVCaptureDevice.Format? {
+        let candidates = device.formats.filter(Self.formatSupportsCinematicVideoCapture)
+        return candidates.first { format in
+            format.videoSupportedFrameRateRanges.contains { range in
+                range.minFrameRate <= Double(preferredFrameRate)
+                    && range.maxFrameRate >= Double(preferredFrameRate)
+            }
+        } ?? candidates.first { format in
+            format.videoSupportedFrameRateRanges.contains { range in
+                range.minFrameRate <= 30 && range.maxFrameRate >= 30
+            }
+        } ?? candidates.first
     }
 
     static func resolveCodec(
@@ -1194,15 +1717,17 @@ private enum RemoteCameraCaptureProfileResolver {
                         width: Int(dimensions.width),
                         height: Int(dimensions.height),
                         frameRates: frameRates,
-                        supportsStabilization: true,
+                        supportsStabilization: formats.contains(where: Self.formatSupportsStabilization),
                         supportsHDR: formats.contains { $0.isVideoHDRSupported }
                     )
                 }
                 .sorted { lhs, rhs in
-                    if lhs.width * lhs.height == rhs.width * rhs.height {
+                    let lhsArea = lhs.width * lhs.height
+                    let rhsArea = rhs.width * rhs.height
+                    if lhsArea == rhsArea {
                         return lhs.id < rhs.id
                     }
-                    return lhs.width * lhs.height > rhs.width * rhs.height
+                    return lhsArea > rhsArea
                 }
                 .prefix(8)
         )
@@ -1239,27 +1764,19 @@ private enum RemoteCameraCaptureProfileResolver {
         })).sorted()
     }
 
-    private static func canUseProRes422(
-        device: AVCaptureDevice,
-        movieOutput: AVCaptureMovieFileOutput
-    ) -> Bool {
-        guard let candidate = proResCaptureFormats(for: device).first else { return false }
-        let originalFormat = device.activeFormat
-        let originalMinDuration = device.activeVideoMinFrameDuration
-        let originalMaxDuration = device.activeVideoMaxFrameDuration
-        var isSupported = false
-        do {
-            try device.lockForConfiguration()
-            defer { device.unlockForConfiguration() }
-            device.activeFormat = candidate
-            isSupported = movieOutput.availableVideoCodecTypes.contains(.proRes422)
-            device.activeFormat = originalFormat
-            device.activeVideoMinFrameDuration = originalMinDuration
-            device.activeVideoMaxFrameDuration = originalMaxDuration
-        } catch {
-            return false
+    private static func formatSupportsStabilization(_ format: AVCaptureDevice.Format) -> Bool {
+        [
+            AVCaptureVideoStabilizationMode.standard,
+            .cinematic,
+            .auto
+        ].contains { format.isVideoStabilizationModeSupported($0) }
+    }
+
+    private static func formatSupportsCinematicVideoCapture(_ format: AVCaptureDevice.Format) -> Bool {
+        if #available(iOS 26.0, *) {
+            return format.isCinematicVideoCaptureSupported
         }
-        return isSupported
+        return false
     }
 
     private static func hasMinimumProResStorageHeadroom() -> Bool {

@@ -31,13 +31,15 @@ from typing import Any
 MAC_BUNDLE_ID = "dev.blitzreels.blitzrecorder"
 IOS_BUNDLE_ID = "dev.blitzreels.blitzrecorder.camera"
 SUBSCRIPTION_PRODUCT_ID = "dev.blitzreels.blitzrecorder.pro.monthly"
+ANNUAL_SUBSCRIPTION_PRODUCT_ID = "dev.blitzreels.blitzrecorder.pro.annual"
 SUBSCRIPTION_GROUP_NAME = "BlitzRecorder Pro"
 SUBSCRIPTION_REFERENCE_NAME = "BlitzRecorder Pro Monthly"
 SUBSCRIPTION_DISPLAY_NAME = "BlitzRecorder Pro"
 SUBSCRIPTION_DESCRIPTION = "Unlimited exports in BlitzRecorder."
 SUBSCRIPTION_LOCALE = "en-US"
 SUBSCRIPTION_PERIOD = "ONE_MONTH"
-EXPECTED_PRICE_USD = "4.99"
+EXPECTED_PRICE_USD = "7.99"
+EXPECTED_ANNUAL_PRICE_USD = "49.99"
 EXPECTED_STOREKIT_PERIOD = "P1M"
 EXPECTED_MARKETING_VERSION = "0.1.0"
 EXPECTED_BUILD_NUMBER = "1"
@@ -702,9 +704,10 @@ def check_local_files(root: Path) -> int:
         ("project.yml", f'MARKETING_VERSION: "{EXPECTED_MARKETING_VERSION}"'),
         ("project.yml", f'CURRENT_PROJECT_VERSION: "{EXPECTED_BUILD_NUMBER}"'),
         ("Sources/BlitzRecorderApp/AccessController.swift", f'static let monthlyProductID = "{SUBSCRIPTION_PRODUCT_ID}"'),
+        ("Sources/BlitzRecorderApp/AccessController.swift", f'static let annualProductID = "{ANNUAL_SUBSCRIPTION_PRODUCT_ID}"'),
         ("Sources/BlitzRecorderApp/AccessController.swift", "static let freeExportLimit = 3"),
         ("Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift", "BlitzRecorder Pro unlocks unlimited exports on Mac."),
-        ("Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift", "renews monthly until cancelled in Apple account settings."),
+        ("Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift", "App Store subscriptions renew until cancelled in Apple account settings."),
         ("Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift", "Eligible active BlitzReels subscribers can sign in for included Pro access."),
         ("Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift", "BlitzReels Sign In"),
         ("Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift", "Restore"),
@@ -712,7 +715,9 @@ def check_local_files(root: Path) -> int:
         ("Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift", "Privacy"),
         ("Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift", "Support"),
         ("AppStore/SubmissionChecklist.md", SUBSCRIPTION_PRODUCT_ID),
-        ("AppStore/SubmissionChecklist.md", "$4.99 per month"),
+        ("AppStore/SubmissionChecklist.md", ANNUAL_SUBSCRIPTION_PRODUCT_ID),
+        ("AppStore/SubmissionChecklist.md", "$7.99 per month"),
+        ("AppStore/SubmissionChecklist.md", "$49.99 per year"),
         ("AppStore/SubmissionChecklist.md", "AppStore/ReviewNotes.md"),
         ("AppStore/SubmissionChecklist.md", "AppStore/DeviceQAChecklist.md"),
         ("AppStore/SubmissionChecklist.md", "AppStore/PrivacyNutritionLabels.md"),
@@ -727,6 +732,7 @@ def check_local_files(root: Path) -> int:
         ("AppStore/SubmissionChecklist.md", "BLITZRECORDER_ENTITLEMENT_EXPECTED_ACTIVE=true"),
         ("AppStore/SubmissionChecklist.md", "BLITZRECORDER_ENTITLEMENT_EXPECTED_ACTIVE=false"),
         ("AppStore/Metadata.md", SUBSCRIPTION_PRODUCT_ID),
+        ("AppStore/Metadata.md", ANNUAL_SUBSCRIPTION_PRODUCT_ID),
         ("AppStore/Metadata.md", "AppStore/DeviceQAChecklist.md"),
         ("AppStore/Metadata.md", "AppStore/PrivacyNutritionLabels.md"),
         ("AppStore/Metadata.md", "AppStore/PrivacyNutritionLabels.generated.json"),
@@ -738,7 +744,9 @@ def check_local_files(root: Path) -> int:
         ("AppStore/AppStoreConnectFields.generated.json", MAC_BUNDLE_ID),
         ("AppStore/AppStoreConnectFields.generated.json", IOS_BUNDLE_ID),
         ("AppStore/AppStoreConnectFields.generated.json", SUBSCRIPTION_PRODUCT_ID),
-        ("AppStore/AppStoreConnectFields.generated.json", '"priceUSD": "4.99"'),
+        ("AppStore/AppStoreConnectFields.generated.json", ANNUAL_SUBSCRIPTION_PRODUCT_ID),
+        ("AppStore/AppStoreConnectFields.generated.json", '"priceUSD": "7.99"'),
+        ("AppStore/AppStoreConnectFields.generated.json", '"annualPriceUSD": "49.99"'),
         ("AppStore/AppStoreConnectFields.generated.json", '"duration": "ONE_MONTH"'),
         ("AppStore/AppStoreConnectFields.generated.json", '"storeKitSubscriptionPeriod": "P1M"'),
         ("AppStore/AppStoreConnectFields.generated.json", '"companionOnly": true'),
@@ -750,6 +758,7 @@ def check_local_files(root: Path) -> int:
         ("AppStore/AppStoreQuestionnaireAnswers.generated.json", '"madeForKids": false'),
         ("AppStore/AppStoreQuestionnaireAnswers.generated.json", '"itsAppUsesNonExemptEncryption": false'),
         ("AppStore/AppStoreQuestionnaireAnswers.generated.json", SUBSCRIPTION_PRODUCT_ID),
+        ("AppStore/AppStoreQuestionnaireAnswers.generated.json", ANNUAL_SUBSCRIPTION_PRODUCT_ID),
         ("AppStore/PrivacyNutritionLabels.generated.json", '"dataUsedToTrackYou": false'),
         ("AppStore/PrivacyNutritionLabels.generated.json", '"dataLinkedToYou": true'),
         ("AppStore/PrivacyNutritionLabels.generated.json", '"dataCollected": false'),
@@ -757,14 +766,20 @@ def check_local_files(root: Path) -> int:
         ("AppStore/PrivacyNutritionLabels.generated.json", "Not requested and must not be listed for the iOS companion."),
         ("AppStore/Metadata-macOS.md", MAC_BUNDLE_ID),
         ("AppStore/Metadata-macOS.md", SUBSCRIPTION_PRODUCT_ID),
-        ("AppStore/Metadata-macOS.md", "$4.99 per month"),
+        ("AppStore/Metadata-macOS.md", ANNUAL_SUBSCRIPTION_PRODUCT_ID),
+        ("AppStore/Metadata-macOS.md", "$7.99 per month"),
+        ("AppStore/Metadata-macOS.md", "$49.99 per year"),
         ("AppStore/Metadata-iOS.md", IOS_BUNDLE_ID),
         ("AppStore/Metadata-iOS.md", SUBSCRIPTION_PRODUCT_ID),
-        ("AppStore/Metadata-iOS.md", "$4.99 per month"),
+        ("AppStore/Metadata-iOS.md", ANNUAL_SUBSCRIPTION_PRODUCT_ID),
+        ("AppStore/Metadata-iOS.md", "$7.99 per month"),
+        ("AppStore/Metadata-iOS.md", "$49.99 per year"),
         ("AppStore/ReviewNotes.md", MAC_BUNDLE_ID),
         ("AppStore/ReviewNotes.md", IOS_BUNDLE_ID),
         ("AppStore/ReviewNotes.md", SUBSCRIPTION_PRODUCT_ID),
-        ("AppStore/ReviewNotes.md", "$4.99 per month"),
+        ("AppStore/ReviewNotes.md", ANNUAL_SUBSCRIPTION_PRODUCT_ID),
+        ("AppStore/ReviewNotes.md", "$7.99 per month"),
+        ("AppStore/ReviewNotes.md", "$49.99 per year"),
         ("AppStore/ReviewNotes.md", "redirects to BlitzReels login"),
         ("AppStore/DeviceQAChecklist.md", "Mac App Subscription And Export Gate"),
         ("AppStore/DeviceQAChecklist.md", "BlitzReels Included Access"),
@@ -779,7 +794,6 @@ def check_local_files(root: Path) -> int:
         ("AppStore/PrivacyNutritionLabels.md", "Data Collected: No"),
         ("AppStore/PrivacyNutritionLabels.md", "Microphone: not requested"),
         ("AppStore/ReleaseEvidence.md", SUBSCRIPTION_PRODUCT_ID),
-        ("AppStore/ReleaseEvidence.md", "$4.99 per month"),
         ("AppStore/ReleaseEvidence.md", "3 free exports"),
         ("AppStore/ReleaseEvidence.md", "Scripts/validate-submission-artifacts.sh --strict"),
         ("AppStore/ReleaseEvidence.md", "Scripts/collect-release-evidence.sh --full"),
@@ -793,7 +807,9 @@ def check_local_files(root: Path) -> int:
         ("AppStore/AppStoreConnectManualSetup.md", "BLITZRECORDER-MAC"),
         ("AppStore/AppStoreConnectManualSetup.md", "BLITZRECORDER-CAMERA-IOS"),
         ("AppStore/AppStoreConnectManualSetup.md", SUBSCRIPTION_PRODUCT_ID),
-        ("AppStore/AppStoreConnectManualSetup.md", "$4.99 per month"),
+        ("AppStore/AppStoreConnectManualSetup.md", ANNUAL_SUBSCRIPTION_PRODUCT_ID),
+        ("AppStore/AppStoreConnectManualSetup.md", "$7.99 per month"),
+        ("AppStore/AppStoreConnectManualSetup.md", "$49.99 per year"),
         ("AppStore/AppStoreConnectManualSetup.md", "3 free exports"),
         ("AppStore/AppStoreConnectManualSetup.md", "AppStore/Metadata-macOS.md"),
         ("AppStore/AppStoreConnectManualSetup.md", "AppStore/Metadata-iOS.md"),
@@ -814,10 +830,12 @@ def check_local_files(root: Path) -> int:
         ("AppStore/AppStoreQuestionnaires.md", "Made for Kids: `No`"),
         ("AppStore/AppStoreQuestionnaires.md", "iOS companion has no in-app purchases and no paywall."),
         ("AppStore/AppStoreQuestionnaires.md", "Users are responsible for rights"),
-        ("Web/blitzrecorder/index.html", "$4.99 per month"),
+        ("Web/blitzrecorder/index.html", "$7.99 per month"),
+        ("Web/blitzrecorder/index.html", "$49.99 per year"),
         ("Web/blitzrecorder/index.html", "3 free exports"),
         ("Web/blitzrecorder/index.html", "eligible BlitzReels subscribers"),
-        ("Web/blitzrecorder/terms.html", "$4.99 per month"),
+        ("Web/blitzrecorder/terms.html", "$7.99 per month"),
+        ("Web/blitzrecorder/terms.html", "$49.99 per year"),
         ("Web/blitzrecorder/terms.html", "Eligible active BlitzReels subscribers"),
         ("Web/blitzrecorder/terms.html", "support@blitzreels.com"),
         ("Web/blitzrecorder/privacy.html", "macOS Keychain"),
@@ -884,7 +902,7 @@ def check_local_files(root: Path) -> int:
         ("Scripts/update-release-evidence.py", "Privacy page Keychain copy"),
         ("Scripts/update-release-evidence.py", "Terms page included access copy"),
         ("Sources/BlitzRecorderApp/UI/MainView.swift", "BLITZRECORDER_SCREENSHOT_VARIANT"),
-        ("Sources/BlitzRecorderApp/UI/MainView.swift", "Subscribe $4.99 / month"),
+        ("Sources/BlitzRecorderApp/UI/MainView.swift", "Subscribe $49.99 / year"),
         ("Scripts/collect-release-evidence.sh", "Scripts/validate-launch-readiness.sh"),
         ("Scripts/collect-release-evidence.sh", "Scripts/preflight-app-store-local.sh"),
         ("Scripts/collect-release-evidence.sh", "Scripts/validate-entitlement-endpoint.sh"),
@@ -931,8 +949,10 @@ def check_local_files(root: Path) -> int:
     print(f"Expected iOS bundle ID: {IOS_BUNDLE_ID}")
     print(f"Expected subscription group: {SUBSCRIPTION_GROUP_NAME}")
     print(f"Expected subscription product: {SUBSCRIPTION_PRODUCT_ID}")
+    print(f"Expected annual subscription product: {ANNUAL_SUBSCRIPTION_PRODUCT_ID}")
     print(f"Expected subscription period: {SUBSCRIPTION_PERIOD}")
     print(f"Expected USA price: {EXPECTED_PRICE_USD}")
+    print(f"Expected annual USA price: {EXPECTED_ANNUAL_PRICE_USD}")
     print(f"Expected app version/build: {EXPECTED_MARKETING_VERSION} / {EXPECTED_BUILD_NUMBER}")
     return 1 if failures else 0
 
