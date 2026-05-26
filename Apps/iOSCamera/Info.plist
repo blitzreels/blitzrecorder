@@ -67,7 +67,6 @@
   <key>UIRequiredDeviceCapabilities</key>
   <array>
     <string>arm64</string>
-    <string>camera</string>
   </array>
   <key>NSBonjourServices</key>
   <array>
