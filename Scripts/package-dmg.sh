@@ -17,7 +17,7 @@ CONFIGURATION="$CONFIG" "$ROOT/Scripts/package-app.sh" >/dev/null
 
 rm -rf "$STAGE_DIR"
 mkdir -p "$STAGE_DIR" "$DIST_DIR"
-cp -R "$ROOT/build/BlitzRecorder.app" "$STAGE_DIR/"
+ditto "$ROOT/build/BlitzRecorder.app" "$STAGE_DIR/BlitzRecorder.app"
 
 rm -f "$DMG_PATH"
 hdiutil create \
@@ -26,6 +26,18 @@ hdiutil create \
   -ov \
   -format UDZO \
   "$DMG_PATH" >/dev/null
+
+DMG_SIGN_IDENTITY="${DMG_SIGN_IDENTITY:-$(
+  security find-identity -v -p codesigning 2>/dev/null \
+    | awk -F '"' '/Developer ID Application/ { print $2; exit }'
+)}"
+
+if [[ -n "$DMG_SIGN_IDENTITY" ]]; then
+  codesign --force --timestamp --sign "$DMG_SIGN_IDENTITY" "$DMG_PATH" >/dev/null
+elif [[ "${NOTARIZE:-0}" == "1" ]]; then
+  echo "NOTARIZE=1 requires a Developer ID Application identity for DMG signing." >&2
+  exit 2
+fi
 
 if [[ "${NOTARIZE:-0}" == "1" ]]; then
   if [[ -n "${NOTARY_PROFILE:-}" ]]; then

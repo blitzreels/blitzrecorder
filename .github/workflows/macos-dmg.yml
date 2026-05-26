@@ -74,26 +74,8 @@ jobs:
           ENTITLEMENTS_PATH: ${{ github.workspace }}/BlitzRecorder.local.entitlements
         run: |
           set -euo pipefail
-          chmod +x Scripts/package-dmg.sh
-          Scripts/package-dmg.sh
-
-      - name: Verify DMG
-        run: |
-          set -euo pipefail
-          DMG_PATH="$(find build/Distributions -maxdepth 1 -name 'BlitzRecorder-*.dmg' -print -quit)"
-          test -n "$DMG_PATH"
-          hdiutil verify "$DMG_PATH"
-
-          MOUNT_OUTPUT="$(hdiutil attach "$DMG_PATH" -nobrowse -readonly)"
-          echo "$MOUNT_OUTPUT"
-          MOUNT_POINT="$(printf '%s\n' "$MOUNT_OUTPUT" | awk -F '\t' '/\/Volumes\// { print $NF; exit }')"
-          test -n "$MOUNT_POINT"
-          trap 'hdiutil detach "$MOUNT_POINT" >/dev/null || true' EXIT
-
-          test -x "$MOUNT_POINT/BlitzRecorder.app/Contents/MacOS/BlitzRecorder"
-          plutil -extract LSMinimumSystemVersion raw "$MOUNT_POINT/BlitzRecorder.app/Contents/Info.plist"
-          vtool -show-build "$MOUNT_POINT/BlitzRecorder.app/Contents/MacOS/BlitzRecorder"
-          codesign --verify --deep --strict --verbose=2 "$MOUNT_POINT/BlitzRecorder.app"
+          chmod +x Scripts/ci-macos-dmg.sh
+          Scripts/ci-macos-dmg.sh
 
       - name: Upload DMG Artifact
         uses: actions/upload-artifact@v4

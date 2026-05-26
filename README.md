@@ -92,6 +92,25 @@ xcodebuild -project BlitzRecorder.xcodeproj -scheme BlitzRecorderCamera -configu
 
 The iOS target depends on the shared `BlitzRecorderCore` and `BlitzRecorderTransport` package products. Build the iOS scheme through Xcode so package modules and the app share one derived data workspace.
 
+## CI / CD
+
+GitHub Actions has four lanes:
+
+- `.github/workflows/ci.yml`: pull request and push checks. Runs Swift tests, App Store Connect dry-run checks, an unsigned macOS Debug build, and an unsigned iOS simulator Debug build. No Apple credentials required.
+- `.github/workflows/macos-dmg.yml`: builds a downloadable macOS DMG on pull requests, pushes, `v*` tags, and manual runs. Tag builds attach the DMG to the GitHub Release. Manual runs can set `notarize=1` to Developer ID sign, notarize, staple, and Gatekeeper-assess the DMG.
+- `.github/workflows/ios-testflight.yml`: manual iOS companion lane. It runs an unsigned simulator build, archives `BlitzRecorderCamera`, exports an App Store package, and can upload to App Store Connect/TestFlight with `upload=1`.
+- `.github/workflows/app-store-release.yml`: manual combined release lane for macOS, iOS, or both App Store targets.
+
+Reusable local scripts:
+
+```bash
+ENTITLEMENTS_PATH="$PWD/BlitzRecorder.local.entitlements" Scripts/ci-macos-dmg.sh
+UPLOAD=0 TEAM_ID="$APPLE_TEAM_ID" ASC_KEY_ID="$ASC_KEY_ID" ASC_ISSUER_ID="$ASC_ISSUER_ID" ASC_PRIVATE_KEY="$ASC_PRIVATE_KEY" Scripts/ci-ios-testflight.sh
+TARGET=all EXPORT=1 UPLOAD=0 TEAM_ID="$APPLE_TEAM_ID" Scripts/archive-app-store.sh
+```
+
+Credential and secret setup is documented in `AppStore/CI.md`.
+
 ## macOS Screen Recording Context
 
 Screen Recording is deliberately harder than Camera/Microphone on macOS. Camera and mic can be authorized with normal prompts. Broad screen capture cannot reliably be granted from an app prompt; local logs showed:

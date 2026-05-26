@@ -56,7 +56,7 @@ Set `UPLOAD=1` from the workflow dispatch UI only when the app records, subscrip
 
 `.github/workflows/macos-dmg.yml` builds a downloadable DMG for quick testing on every pull request, every push to `main` or `codex/**`, every `v*` tag, and manual `workflow_dispatch` runs.
 
-The normal artifact lane does not need Apple credentials. It packages the app and uploads `build/Distributions/BlitzRecorder-*.dmg` as the `blitzrecorder-macos-dmg` workflow artifact. When the workflow runs for a `v*` tag, it also attaches the DMG to the matching GitHub Release.
+The normal artifact lane does not need Apple credentials. It calls `Scripts/ci-macos-dmg.sh`, packages the app through `Scripts/package-dmg.sh`, and uploads `build/Distributions/BlitzRecorder-*.dmg` as the `blitzrecorder-macos-dmg` workflow artifact. When the workflow runs for a `v*` tag, it also attaches the DMG to the matching GitHub Release.
 
 For a signed and notarized manual DMG, configure these additional GitHub Actions secrets, then run the workflow manually with `notarize=1`:
 
@@ -69,4 +69,49 @@ For a signed and notarized manual DMG, configure these additional GitHub Actions
 | `ASC_ISSUER_ID` | App Store Connect issuer ID. |
 | `ASC_PRIVATE_KEY` | Full `.p8` private key contents. |
 
-The DMG lane verifies the image, mounts it, checks the app bundle exists, checks the Mach-O build metadata, and verifies the code signature. A non-notarized Developer ID build can still fail Gatekeeper on other Macs; use manual `notarize=1` for a DMG meant to be sent outside the team.
+The DMG lane stages the app with `ditto`, signs the DMG when a Developer ID Application identity is available, verifies the image, verifies the DMG signature when present, mounts it, checks `LSMinimumSystemVersion`, checks Mach-O minimum macOS metadata, and verifies the app code signature. Manual `notarize=1` also runs `spctl -a -t open`, staples the DMG, and validates the staple.
+
+Run the same lane locally with:
+
+```bash
+ENTITLEMENTS_PATH="$PWD/BlitzRecorder.local.entitlements" Scripts/ci-macos-dmg.sh
+```
+
+Use `NOTARIZE=1` only on a machine or CI runner with Developer ID and notary credentials configured.
+
+## iOS TestFlight CI
+
+`.github/workflows/ios-testflight.yml` is a manual `workflow_dispatch` lane for the free iPhone companion app. It installs the Apple Distribution certificate and optional iOS provisioning profile, runs App Store Connect local checks, runs an unsigned iOS simulator build, archives `BlitzRecorderCamera`, exports the iOS App Store package, and optionally uploads to App Store Connect/TestFlight.
+
+It uses the same App Store signing secrets as the general release lane:
+
+| Secret | Purpose |
+| --- | --- |
+| `APPLE_TEAM_ID` | Apple Developer Team ID. |
+| `ASC_KEY_ID` | App Store Connect API key ID. |
+| `ASC_ISSUER_ID` | App Store Connect issuer ID. |
+| `ASC_PRIVATE_KEY` | Full `.p8` private key contents. |
+| `APPLE_DISTRIBUTION_CERTIFICATE_BASE64` | Base64-encoded Apple Distribution `.p12`. |
+| `APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD` | Password for the `.p12`. |
+| `KEYCHAIN_PASSWORD` | Temporary CI keychain password. |
+| `IOS_APP_STORE_PROVISION_PROFILE_BASE64` | Optional base64 iOS App Store `.mobileprovision`. |
+
+Manual dispatch input:
+
+| Input | Purpose |
+| --- | --- |
+| `upload=0` | Archive and export only. Use this for verification. |
+| `upload=1` | Export with App Store Connect upload destination so the build appears in TestFlight. |
+
+Run the same lane locally with:
+
+```bash
+TEAM_ID="$APPLE_TEAM_ID" \
+ASC_KEY_ID="$ASC_KEY_ID" \
+ASC_ISSUER_ID="$ASC_ISSUER_ID" \
+ASC_PRIVATE_KEY="$ASC_PRIVATE_KEY" \
+UPLOAD=0 \
+Scripts/ci-ios-testflight.sh
+```
+
+Use `UPLOAD=1` only when the TestFlight metadata, export compliance, privacy answers, and tester notes are ready.
