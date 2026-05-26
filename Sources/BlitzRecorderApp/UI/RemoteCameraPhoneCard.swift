@@ -19,7 +19,7 @@ struct RemoteCameraPhoneCard: View {
         }
         .padding(.horizontal, compact ? 10 : 12)
         .padding(.vertical, compact ? 10 : 12)
-        .glassEffect(.regular, in: .rect(cornerRadius: 14))
+        .blitzGlassSurface(cornerRadius: 14)
     }
 
     private var phoneFrame: some View {

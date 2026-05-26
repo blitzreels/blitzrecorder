@@ -95,7 +95,7 @@ struct RemoteCameraControlsPane: View {
                 Label("Auto", systemImage: "wand.and.sparkles")
                     .font(.system(size: 11, weight: .medium))
             }
-            .buttonStyle(.glass)
+            .blitzGlassButton()
             .controlSize(.small)
             .disabled(!allowsFormatChanges || vm.selectedRemoteCameraCapabilities == nil)
             .pointingHandCursor()
@@ -369,7 +369,7 @@ struct RemoteCameraControlsPane: View {
                 Label("Reset brightness", systemImage: "sun.max")
                     .font(.system(size: 11, weight: .medium))
             }
-            .buttonStyle(.glass)
+            .blitzGlassButton()
             .controlSize(.small)
             .disabled(vm.selectedRemoteCameraCapabilities == nil)
             .pointingHandCursor()
@@ -580,7 +580,7 @@ struct RemoteCameraControlsPane: View {
                 Label("Auto image", systemImage: "sun.max")
                     .font(.system(size: 11, weight: .medium))
             }
-            .buttonStyle(.glass)
+            .blitzGlassButton()
             .controlSize(.small)
             .disabled(vm.selectedRemoteCameraCapabilities == nil)
             .pointingHandCursor()

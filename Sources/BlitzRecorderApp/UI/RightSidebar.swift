@@ -7,7 +7,7 @@ struct RightSidebar: View {
         scenePane
             .frame(width: 240)
             .foregroundStyle(.white)
-            .glassEffect(.regular, in: .rect(cornerRadius: 22))
+            .blitzGlassSurface(cornerRadius: 22)
     }
 
     private var scenePane: some View {
@@ -101,7 +101,7 @@ struct CameraCropControls: View {
                         .font(.system(size: 10, weight: .bold))
                         .frame(width: 22, height: 22)
                 }
-                .buttonStyle(.glass)
+                .blitzGlassButton()
                 .controlSize(.small)
                 .disabled(!vm.isCameraCropModeEnabled && positionIsCentered)
                 .pointingHandCursor()
@@ -114,7 +114,7 @@ struct CameraCropControls: View {
                         .font(.system(size: 10, weight: .bold))
                         .frame(width: 22, height: 22)
                 }
-                .buttonStyle(.glass)
+                .blitzGlassButton()
                 .controlSize(.small)
                 .disabled(!vm.isCameraCropModeEnabled && isCentered)
                 .pointingHandCursor()
@@ -175,7 +175,7 @@ struct CameraCropControls: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
                 }
-                .buttonStyle(.glass)
+                .blitzGlassButton()
                 .controlSize(.small)
                 .pointingHandCursor()
                 .help("Edit camera crop on the live canvas")
@@ -266,7 +266,7 @@ struct SafeZonePickerRow: View {
                 .padding(.vertical, 6)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.glass)
+            .blitzGlassButton()
             .controlSize(.small)
             .disabled(disabled)
             .pointingHandCursor()
@@ -341,7 +341,7 @@ private struct SafeZonePopover: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
         }
-        .buttonStyle(.glass)
+        .blitzGlassButton()
         .tint(isSelected ? mint.opacity(0.22) : .clear)
         .pointingHandCursor()
     }

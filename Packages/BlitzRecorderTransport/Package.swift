@@ -5,7 +5,7 @@ let package = Package(
     name: "BlitzRecorderTransport",
     platforms: [
         .iOS("26.0"),
-        .macOS("26.0")
+        .macOS("15.0")
     ],
     products: [
         .library(name: "BlitzRecorderTransport", targets: ["BlitzRecorderTransport"])

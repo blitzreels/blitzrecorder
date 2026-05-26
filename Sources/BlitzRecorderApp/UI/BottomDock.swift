@@ -6,7 +6,7 @@ struct BottomDock: View {
     @Bindable var vm: RecorderViewModel
 
     var body: some View {
-        GlassEffectContainer(spacing: 12) {
+        BlitzGlassContainer(spacing: 12) {
             VStack(spacing: 12) {
                 if vm.state != .idle {
                     SessionProgressView(vm: vm)
@@ -32,7 +32,7 @@ struct BottomDock: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
-        .glassEffect(.regular, in: .rect(cornerRadius: 26))
+        .blitzGlassSurface(cornerRadius: 26)
     }
 }
 
@@ -87,7 +87,7 @@ private struct RecordingSettingsShortcut: View {
             .frame(height: 44)
             .frame(width: 142)
         }
-        .buttonStyle(.glass)
+        .blitzGlassButton()
         .pointingHandCursor()
         .help("Open export settings")
     }
@@ -252,7 +252,7 @@ private struct OpenFileButton: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
         }
-        .buttonStyle(.glass)
+        .blitzGlassButton()
         .controlSize(.small)
         .pointingHandCursor()
         .help("Open \(url.lastPathComponent)")
@@ -273,7 +273,7 @@ private struct FinderButton: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
         }
-        .buttonStyle(.glass)
+        .blitzGlassButton()
         .controlSize(.small)
         .pointingHandCursor()
         .help(url.path)
@@ -305,7 +305,7 @@ private struct ReadinessIssueView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
             }
-            .buttonStyle(.glass)
+            .blitzGlassButton()
             .controlSize(.small)
             .pointingHandCursor()
         }
@@ -454,7 +454,7 @@ private struct PauseButton: View {
                 .font(.system(size: 16, weight: .bold))
                 .frame(width: 44, height: 44)
         }
-        .buttonStyle(.glass)
+        .blitzGlassButton()
         .disabled(!isEnabled)
         .pointingHandCursor()
         .help(helpText)
@@ -490,7 +490,7 @@ private struct RecordButton: View {
             .padding(.vertical, 12)
             .frame(minWidth: 168)
         }
-        .buttonStyle(.glassProminent)
+        .blitzProminentGlassButton()
         .tint(tint)
         .disabled(!enabled)
         .pointingHandCursor()

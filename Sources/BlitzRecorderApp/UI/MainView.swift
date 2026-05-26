@@ -123,7 +123,7 @@ private struct ScreenCropFloatingToolbar: View {
                     .font(.system(size: 11, weight: .bold))
                     .frame(width: 28, height: 28)
             }
-            .buttonStyle(.glass)
+            .blitzGlassButton()
             .controlSize(.small)
             .pointingHandCursor()
 
@@ -134,7 +134,7 @@ private struct ScreenCropFloatingToolbar: View {
                     .font(.system(size: 11, weight: .bold))
                     .frame(width: 28, height: 28)
             }
-            .buttonStyle(.glass)
+            .blitzGlassButton()
             .controlSize(.small)
             .pointingHandCursor()
         }
@@ -213,12 +213,12 @@ private struct RemoteCameraPage: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
                 }
-                .buttonStyle(.glass)
+                .blitzGlassButton()
                 .pointingHandCursor()
             }
             .padding(20)
             .frame(width: 520, alignment: .leading)
-            .glassEffect(.regular, in: .rect(cornerRadius: 16))
+            .blitzGlassSurface(cornerRadius: 16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.horizontal, 28)

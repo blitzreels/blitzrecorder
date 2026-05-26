@@ -27,7 +27,7 @@ struct TopBar: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
         }
-        .buttonStyle(.glass)
+        .blitzGlassButton()
         .pointingHandCursor()
         .help("Open plan and access")
     }
@@ -57,7 +57,7 @@ struct RecordingOutputPicker: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .glassEffect(.regular, in: .rect(cornerRadius: 15))
+        .blitzGlassSurface(cornerRadius: 15)
         .help("Recording output aspect ratio")
     }
 
@@ -118,7 +118,7 @@ private struct RecordingStatusBadge: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .glassEffect(.regular, in: .capsule)
+        .blitzGlassCapsule()
     }
 
     private var statusLabel: String {

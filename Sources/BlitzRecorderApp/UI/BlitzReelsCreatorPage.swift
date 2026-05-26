@@ -70,7 +70,7 @@ struct BlitzReelsCreatorPage: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
                 }
-                .buttonStyle(.glassProminent)
+                .blitzProminentGlassButton()
                 .disabled(access.isPurchasing)
 
                 Button {
@@ -82,7 +82,7 @@ struct BlitzReelsCreatorPage: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
                 }
-                .buttonStyle(.glassProminent)
+                .blitzProminentGlassButton()
                 .disabled(access.isPurchasing)
             }
 
@@ -95,7 +95,7 @@ struct BlitzReelsCreatorPage: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
             }
-            .buttonStyle(.glass)
+            .blitzGlassButton()
 
             if access.hasAppStoreSubscription {
                 Button {
@@ -107,12 +107,12 @@ struct BlitzReelsCreatorPage: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
                 }
-                .buttonStyle(.glass)
+                .blitzGlassButton()
             }
         }
         .padding(20)
         .frame(width: 520, alignment: .leading)
-        .glassEffect(.regular, in: .rect(cornerRadius: 16))
+        .blitzGlassSurface(cornerRadius: 16)
     }
 
     private var creatorCard: some View {
@@ -144,7 +144,7 @@ struct BlitzReelsCreatorPage: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
                 }
-                .buttonStyle(.glass)
+                .blitzGlassButton()
 
                 Button {
                     access.disconnectBlitzReels()
@@ -155,7 +155,7 @@ struct BlitzReelsCreatorPage: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
                 }
-                .buttonStyle(.glass)
+                .blitzGlassButton()
             } else {
                 Button {
                     access.beginBlitzReelsSignIn()
@@ -166,12 +166,12 @@ struct BlitzReelsCreatorPage: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
                 }
-                .buttonStyle(.glassProminent)
+                .blitzProminentGlassButton()
             }
         }
         .padding(20)
         .frame(width: 520, alignment: .leading)
-        .glassEffect(.regular, in: .rect(cornerRadius: 16))
+        .blitzGlassSurface(cornerRadius: 16)
     }
 
     private func infoRow(

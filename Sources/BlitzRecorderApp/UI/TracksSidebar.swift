@@ -26,7 +26,7 @@ struct SourcesSidebar: View {
         }
         .scrollIndicators(.hidden)
         .frame(width: 340)
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .blitzGlassSurface(cornerRadius: 22)
     }
 
     private var sceneSection: some View {
@@ -272,7 +272,7 @@ struct SourcesSidebar: View {
                         .frame(width: 22, height: 22)
                 }
                 .menuStyle(.button)
-                .buttonStyle(.glass)
+                .blitzGlassButton()
                 .controlSize(.small)
                 .disabled(vm.state != .idle)
                 .pointingHandCursor()
@@ -319,7 +319,7 @@ private struct CanvasAppearanceControls: View {
                             .font(.system(size: 9, weight: .bold))
                             .frame(width: 20, height: 20)
                     }
-                    .buttonStyle(.glass)
+                    .blitzGlassButton()
                     .controlSize(.small)
                     .disabled(vm.settings.canvasPadding < 0.001)
                     .pointingHandCursor()
@@ -388,7 +388,7 @@ private struct CanvasAppearanceControls: View {
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .buttonStyle(.glass)
+        .blitzGlassButton()
         .controlSize(.small)
         .tint(isSelected ? Color(red: 0.09, green: 1.0, blue: 0.65).opacity(0.18) : .clear)
         .pointingHandCursor()
@@ -510,7 +510,7 @@ private struct WebcamSourceMenu: View {
             .contentShape(.rect(cornerRadius: 7))
         }
         .menuStyle(.button)
-        .buttonStyle(.glass)
+        .blitzGlassButton()
         .controlSize(.small)
         .disabled(vm.state != .idle)
         .pointingHandCursor()
@@ -1071,7 +1071,7 @@ private struct ScreenSourceInspector: View {
                         .font(.system(size: 9, weight: .bold))
                         .frame(width: 22, height: 22)
                 }
-                .buttonStyle(.glass)
+                .blitzGlassButton()
                 .controlSize(.small)
                 .disabled(!enabled || vm.state != .idle)
                 .pointingHandCursor()
@@ -1260,7 +1260,7 @@ private struct ScreenSourceInspector: View {
                 .font(.system(size: 10, weight: .bold))
                 .frame(width: 24, height: 24)
         }
-        .buttonStyle(.glass)
+        .blitzGlassButton()
         .controlSize(.small)
         .disabled(!enabled || disabled)
         .pointingHandCursor()
@@ -1456,7 +1456,7 @@ private struct InspectorActionRow: View {
                     .font(.system(size: 10, weight: .bold))
                     .frame(width: 24, height: 24)
             }
-            .buttonStyle(.glass)
+            .blitzGlassButton()
             .controlSize(.small)
             .pointingHandCursor()
         }
@@ -1530,7 +1530,7 @@ private struct MicrophoneSourceMenu: View {
             .contentShape(.rect(cornerRadius: 7))
         }
         .menuStyle(.button)
-        .buttonStyle(.glass)
+        .blitzGlassButton()
         .controlSize(.small)
         .disabled(vm.state != .idle)
         .pointingHandCursor()

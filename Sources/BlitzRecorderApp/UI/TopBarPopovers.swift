@@ -19,12 +19,12 @@ struct RecordingSettingsPage: View {
             }
             .padding(20)
             .frame(width: 520, alignment: .leading)
-            .glassEffect(.regular, in: .rect(cornerRadius: 16))
+            .blitzGlassSurface(cornerRadius: 16)
 
             RecordingStorageSettings(vm: vm)
                 .padding(20)
                 .frame(width: 520, alignment: .leading)
-                .glassEffect(.regular, in: .rect(cornerRadius: 16))
+                .blitzGlassSurface(cornerRadius: 16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.horizontal, 28)
@@ -70,7 +70,7 @@ private struct RecordingStorageSettings: View {
                             .padding(.horizontal, 10)
                             .frame(height: 32)
                     }
-                    .buttonStyle(.glass)
+                    .blitzGlassButton()
                     .disabled(vm.state != .idle)
                     .pointingHandCursor()
                 }
@@ -295,7 +295,7 @@ struct PermissionsPage: View {
             }
             .padding(.vertical, 4)
             .frame(width: 520, alignment: .leading)
-            .glassEffect(.regular, in: .rect(cornerRadius: 16))
+            .blitzGlassSurface(cornerRadius: 16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.horizontal, 28)

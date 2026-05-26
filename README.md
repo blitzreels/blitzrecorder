@@ -130,7 +130,7 @@ Each take writes source files to a temporary per-recording scratch folder first,
 
 BlitzRecorder is built on the most modern Apple stack available in 2026, intentionally:
 
-- **SwiftUI** for all new UI (sidebars, dock, top bar, inspector). Targets macOS 26 (Tahoe) so Liquid Glass APIs (`.glassEffect`, `GlassEffectContainer`, `.buttonStyle(.glass)` / `.glassProminent`) are first-class. SF Symbols 6, `@Observable` view models, `NavigationSplitView`/`Inspector`.
+- **SwiftUI** for all new UI (sidebars, dock, top bar, inspector). Targets macOS 15 (Sequoia) with a BlitzRecorder styling seam that uses Liquid Glass on macOS 26+ and regular SwiftUI material/button fallbacks on older supported macOS versions. SF Symbols 6, `@Observable` view models, `NavigationSplitView`/`Inspector`.
 - **AppKit** kept for what SwiftUI can't yet do cleanly: `NSWindow` + `NSStatusItem`, the preview stage (drag-resize, `CALayer` masks, `AVCaptureVideoPreviewLayer` hosting, custom `NSBezierPath` drawing). Wrapped into SwiftUI via `NSViewRepresentable` (`Bridges.swift`) and `NSHostingView` (`MainWindowController`).
 - **No Catalyst, no Tauri, no Electron** — direct access to ScreenCaptureKit / AVFoundation / SCContentSharingPicker / VideoToolbox is the whole point of this app, and Apple's TCC is brittle enough already without adding a wrapper layer.
 
