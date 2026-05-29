@@ -2,6 +2,7 @@
 .swiftpm/
 build/
 DerivedData/
+.agents/
 .DS_Store
 __pycache__/
 *.pyc
@@ -15,3 +16,5 @@ xcuserdata/
 *.provisionprofile
 .env
 .env.*
+AppStore/ReleaseEvidence.md
+AppStore/ReleaseEvidence.generated.md

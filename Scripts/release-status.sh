@@ -43,7 +43,7 @@ print_pending_items() {
 - Create/confirm subscriptions: dev.blitzreels.blitzrecorder.pro.monthly at $7.99/month and dev.blitzreels.blitzrecorder.pro.annual at $49.99/year
 - Complete AppStore/AppStoreConnectManualSetup.md while configuring App Store Connect
 - Complete AppStore/AppStoreQuestionnaires.md while answering App Store Connect questionnaires
-- Keep AppStore/ReleaseEvidence.generated.md and AppStore/ReleaseEvidence.md refreshed with Scripts/collect-release-evidence.sh --full before submission
+- Generate local evidence with Scripts/collect-release-evidence.sh --full before submission
 - Prepare the App Store review handoff folder with Scripts/prepare-app-store-review-package.sh
 - Run live App Store Connect verification with ASC credentials
 - Confirm App Store Connect app info and version localizations match AppStore/AppStoreConnectFields.generated.json
@@ -55,7 +55,7 @@ print_pending_items() {
 - Verify a positive production BlitzReels entitlement token
 - Complete physical Mac/iPhone/iPad QA using AppStore/DeviceQAChecklist.md
 - Complete legal review of privacy policy, terms, and privacy nutrition labels
-- Fill remaining external sections in AppStore/ReleaseEvidence.md before submitting for review
+- Keep account-side records, signed archive paths, QA evidence, and the final submission decision with the private release handoff
 PENDING
 }
 

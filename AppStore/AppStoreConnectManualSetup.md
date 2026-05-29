@@ -190,14 +190,18 @@ Scripts/validate-submission-artifacts.sh --strict
 
 The live App Store Connect check verifies registered bundle IDs, app records, App Store version `0.1.0`, app info localization, version localization copied from `AppStore/AppStoreConnectFields.generated.json`, uploaded build `1` in `VALID` processing state for both apps, the subscription group/product, en-US subscription names/descriptions, and USA subscription price. Strict validation checks the signed `.xcarchive` bundles, export option plists, local macOS `.pkg`, local iOS `.ipa`, public URLs, screenshots, and live App Store Connect records. Regenerate export options with the real `TEAM_ID`; dry-run placeholder `ABCDE12345` is intentionally rejected by the strict gate.
 
-## Final Evidence
+## Final Handoff
 
-Before submitting for review, fill:
+Before submitting for review, run:
 
-- `AppStore/ReleaseEvidence.md`
-- `AppStore/DeviceQAChecklist.md`
+```bash
+Scripts/release-status.sh --full
+Scripts/collect-release-evidence.sh --full
+```
 
-Do not submit until the release evidence records:
+Generated release evidence is written under `build/`. Keep account-side records, signed archive paths, QA evidence, and the final submission decision with the private release handoff.
+
+Do not submit until:
 
 - Live App Store Connect verification passed.
 - Signed macOS and iOS archives exist and pass strict validation.

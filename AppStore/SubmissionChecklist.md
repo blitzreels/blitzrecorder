@@ -77,7 +77,7 @@ Scripts/app-store-connect-readiness.py
 
 The live check verifies both app records, App Store version `0.1.0`, app info localization, version localization copied from `AppStore/AppStoreConnectFields.generated.json`, uploaded build `1` in `VALID` processing state for both targets, the subscription group/products, en-US subscription names/descriptions, and the USA `$7.99` monthly and `$49.99` annual subscription prices.
 
-To reduce manual setup, create the API-manageable resources first. This registers missing bundle IDs and, once the Mac app record exists, creates the `BlitzRecorder Pro` subscription group, monthly subscription product, and en-US localizations. It does not create app records or pricing; those remain App Store Connect account-owner steps.
+To reduce manual setup, create the API-manageable resources first. This registers missing bundle IDs and, once the Mac app record exists, creates the `BlitzRecorder Pro` subscription group, monthly and annual subscription products, and en-US localizations. It does not create app records or pricing; those remain App Store Connect account-owner steps.
 
 ```bash
 Scripts/app-store-connect-bootstrap.py
@@ -140,7 +140,6 @@ Confirm final labels with counsel and App Store Connect before submission. Curre
   - Mac: `Sources/BlitzRecorderApp/PrivacyInfo.xcprivacy`
   - iPhone companion: `Apps/iOSCamera/Resources/PrivacyInfo.xcprivacy`
 - Required-reason API declarations cover current `UserDefaults`, file metadata, and iPhone disk-space checks. Keychain use does not require a privacy manifest reason.
-- iPhone companion app icons are bundled as explicit PNG resources from `Apps/iOSCamera/Resources/Icons/` and declared in `Apps/iOSCamera/Info.plist`.
 - Use `AppStore/PrivacyNutritionLabels.md` as the App Store Connect privacy-label worksheet.
 - Use `AppStore/PrivacyNutritionLabels.generated.json` as the exact machine-readable privacy-label export.
 
@@ -157,7 +156,6 @@ Use the platform-specific App Store Connect copy:
 - Device QA: `AppStore/DeviceQAChecklist.md`
 - Privacy labels: `AppStore/PrivacyNutritionLabels.md`
 - Machine-readable privacy labels: `AppStore/PrivacyNutritionLabels.generated.json`
-- Release evidence: `AppStore/ReleaseEvidence.md`
 - App Store Connect setup: `AppStore/AppStoreConnectManualSetup.md`
 - App Store questionnaires: `AppStore/AppStoreQuestionnaires.md`
 - Machine-readable questionnaire answers: `AppStore/AppStoreQuestionnaireAnswers.generated.json`
@@ -174,6 +172,13 @@ Run the launch artifact consistency check before each submission build:
 
 ```bash
 Scripts/validate-launch-readiness.sh
+```
+
+For a submission go/no-go view, run the release status summary and keep generated evidence local under `build/`:
+
+```bash
+Scripts/release-status.sh --full
+Scripts/collect-release-evidence.sh --full
 ```
 
 Run the local StoreKit configuration check before sandbox subscription QA:
@@ -239,8 +244,6 @@ Run before uploading:
 ```bash
 xcodebuild -project BlitzRecorder.xcodeproj -target BlitzRecorderCamera -configuration Release -sdk iphoneos build
 ```
-
-This project bundles iOS app icons as explicit PNG files instead of compiling the AppIcon asset catalog. The source asset catalog remains at `Apps/iOSCamera/Resources/Assets.xcassets`, but this local machine currently has an Xcode 26.5 SDK with iOS simulator runtimes up to 26.4; invoking `actool` fails with a simulator runtime mismatch even for `iphoneos`. Install the matching iOS 26.5 simulator runtime before moving back to asset-catalog icon compilation.
 
 Verify on a physical iPhone:
 

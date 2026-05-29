@@ -5,8 +5,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 FULL=0
-OUTPUT="AppStore/ReleaseEvidence.generated.md"
-LOG_DIR="build/ReleaseEvidenceLogs"
+OUTPUT="build/release-evidence.md"
+LOG_DIR="build/release-evidence-logs"
 
 usage() {
   cat <<'USAGE'
@@ -14,7 +14,7 @@ Usage:
   Scripts/collect-release-evidence.sh [--full] [--output PATH]
 
 Runs the release checks that can be executed locally and writes a Markdown
-evidence report. Logs are written under build/ReleaseEvidenceLogs.
+evidence report. Logs are written under build/release-evidence-logs.
 
 --full also runs Scripts/preflight-app-store-local.sh, which builds both apps.
 Live App Store Connect and positive BlitzReels entitlement checks run only when
@@ -59,8 +59,8 @@ start_report() {
 
 Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
 
-This report captures command results for the current workspace. Keep this next
-to \`AppStore/ReleaseEvidence.md\` when preparing the final App Store submission.
+This report captures command results for the current workspace. It is generated
+under \`build/\` so release evidence stays local unless explicitly packaged.
 
 ## Release Identity
 
@@ -195,16 +195,13 @@ append "- Complete \`AppStore/AppStoreConnectManualSetup.md\` in App Store Conne
 append "- Complete \`AppStore/AppStoreQuestionnaires.md\` for age rating, export compliance, content rights, IDFA, Kids Category, and paid-content answers."
 append "- Fill \`AppStore/DeviceQAChecklist.md\` after physical Mac/iPhone/iPad QA."
 append "- Record legal/privacy approval for terms, privacy policy, and privacy nutrition labels."
-append "- Keep \`AppStore/ReleaseEvidence.md\` updated with account-side records, signed archive paths, QA evidence, and final submission decision."
+append "- Keep account-side records, signed archive paths, QA evidence, and the final submission decision with the private release handoff."
 
 append ""
 append "## Result"
 append ""
 if [[ "$failures" -eq 0 ]]; then
   append "- Local evidence collection completed without command failures."
-  if [[ "$OUTPUT" == "AppStore/ReleaseEvidence.generated.md" ]]; then
-    python3 Scripts/update-release-evidence.py
-  fi
   echo "Release evidence written to $OUTPUT"
 else
   append "- Evidence collection completed with $failures failed command(s)."

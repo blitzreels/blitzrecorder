@@ -10,7 +10,7 @@ BlitzRecorder is a small native Apple monorepo with a macOS recorder app, an iOS
 - `Packages/BlitzRecorderTransport`: Bonjour discovery, advertising, framing, and JSON message utilities
 - `project.yml`: XcodeGen project specification
 - `Scripts/`: local validation, packaging, App Store, and CI helper scripts
-- `AppStore/`: metadata, privacy labels, review notes, release evidence, and submission checklists
+- `AppStore/`: metadata, privacy labels, review notes, and submission checklists
 
 ## Core Concepts
 
@@ -20,8 +20,6 @@ BlitzRecorder is a small native Apple monorepo with a macOS recorder app, an iOS
 - **Scene layout**: the normalized source placement used by preview and final export.
 - **Remote iPhone Camera**: an iPhone companion device that records the camera master locally while the Mac coordinates the take.
 - **Monitor preview**: a live lower-latency iPhone preview used for framing, not as final camera media.
-
-More domain language lives in [../CONTEXT.md](../CONTEXT.md).
 
 ## Apple-Native Stack
 
@@ -34,8 +32,6 @@ The macOS app uses SwiftUI for most product UI and AppKit where macOS still requ
 The Mac remains the take coordinator and timeline authority. The iPhone owns camera capture, records the master camera file locally, streams monitor preview, accepts Mac camera controls, and transfers completed media back to the Mac.
 
 The v1 transport is local network based with Bonjour discovery. The protocol is isolated in shared packages so wired or alternate transports can reuse the same product behavior later.
-
-See [../PRD-remote-iphone-camera.md](../PRD-remote-iphone-camera.md) for the detailed product requirements.
 
 ## AI and Transcription
 

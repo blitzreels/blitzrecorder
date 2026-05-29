@@ -10,7 +10,6 @@ Use these platform-specific files when filling App Store Connect:
 - Device QA checklist: `AppStore/DeviceQAChecklist.md`
 - Privacy nutrition labels: `AppStore/PrivacyNutritionLabels.md`
 - Privacy nutrition label export: `AppStore/PrivacyNutritionLabels.generated.json`
-- Release evidence: `AppStore/ReleaseEvidence.md`
 - App Store Connect setup: `AppStore/AppStoreConnectManualSetup.md`
 - App Store questionnaires: `AppStore/AppStoreQuestionnaires.md`
 - App Store questionnaire answer export: `AppStore/AppStoreQuestionnaireAnswers.generated.json`

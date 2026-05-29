@@ -17,7 +17,5 @@ This folder keeps product, development, release, and platform-behavior notes out
 
 ## Related Project Files
 
-- [../CONTEXT.md](../CONTEXT.md): domain language and current platform notes
-- [../PRD-remote-iphone-camera.md](../PRD-remote-iphone-camera.md): remote iPhone camera product requirements
 - [../AppStore/Metadata.md](../AppStore/Metadata.md): App Store metadata index
 - [../AppStore/CI.md](../AppStore/CI.md): App Store and CI secret setup

@@ -16,8 +16,8 @@ Usage:
   Scripts/prepare-app-store-review-package.sh [--skip-validation]
 
 Creates a local App Store review handoff folder under build/AppStoreReviewPackage
-with metadata, screenshots, legal source pages, setup worksheets, and release
-evidence. This does not create App Store Connect records or signed archives.
+with metadata, screenshots, legal source pages, setup worksheets, and QA
+checklists. This does not create App Store Connect records or signed archives.
 
 Environment overrides:
   PACKAGE_ROOT=build/AppStoreReviewPackage
@@ -154,8 +154,6 @@ copy_file "AppStore/AppStoreQuestionnaires.md" "Metadata/AppStoreQuestionnaires.
 copy_file "AppStore/AppStoreQuestionnaireAnswers.generated.json" "Metadata/AppStoreQuestionnaireAnswers.generated.json"
 copy_file "AppStore/AppStoreConnectManualSetup.md" "Metadata/AppStoreConnectManualSetup.md"
 
-copy_file "AppStore/ReleaseEvidence.md" "Evidence/ReleaseEvidence.md"
-copy_file "AppStore/ReleaseEvidence.generated.md" "Evidence/ReleaseEvidence.generated.md"
 copy_file "AppStore/DeviceQAChecklist.md" "Evidence/DeviceQAChecklist.md"
 copy_file "AppStore/Screenshots.md" "Evidence/Screenshots.md"
 copy_file "AppStore/BlitzReelsEntitlementContract.md" "Evidence/BlitzReelsEntitlementContract.md"
@@ -171,9 +169,6 @@ while IFS= read -r screenshot; do
   copy_file "$screenshot" "Screenshots/$relative"
 done < <(find AppStore/ScreenshotAssets -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) | sort)
 
-write_manifest
-python3 Scripts/update-release-evidence.py >/dev/null
-copy_file "AppStore/ReleaseEvidence.md" "Evidence/ReleaseEvidence.md"
 write_manifest
 
 echo "App Store review package prepared at $PACKAGE_DIR"
