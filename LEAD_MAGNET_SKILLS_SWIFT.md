@@ -44,8 +44,8 @@ L'agent lit la `description`. Si la tâche match (tu touches à une SwiftUI View
 
 Deux portées :
 
-- **Project-scoped** (`.claude/skills/`, `.codex/skills/`) : actif uniquement dans ce repo, versionné avec le code.
-- **Global** (`~/.claude/skills/`, `~/.codex/skills/`) : actif partout, suit ton user, pas versionné.
+- **Project-scoped** (`.agents/skills/`) : actif uniquement dans ce repo, versionné avec le code.
+- **Global** (`~/.agents/skills/`) : actif partout, suit ton user, pas versionné.
 
 Sur les projets Swift, je préfère project-scoped. Comme ça l'équipe ou le futur-moi récupère les skills en clonant le repo.
 
@@ -82,11 +82,10 @@ git clone --depth 1 https://github.com/arjitj2/swiftui-design-principles.git arj
 
 # Dans ton repo
 cd /chemin/vers/ton/projet
-mkdir -p .claude/skills .codex/skills
+mkdir -p .agents/skills
 
 # Pour chaque skill que tu veux, copie le dossier dans les deux emplacements
-cp -R /tmp/skill-repos/twostraws-swiftui/swiftui-pro .claude/skills/
-cp -R /tmp/skill-repos/twostraws-swiftui/swiftui-pro .codex/skills/
+cp -R /tmp/skill-repos/twostraws-swiftui/swiftui-pro .agents/skills/
 # (etc. pour les autres)
 ```
 
@@ -263,7 +262,7 @@ Quand je veux tester sur `/Applications/BlitzRecorder.app` (parce que TCC sur ma
 
 ### 1. Installer global "pour avoir partout" puis polluer tous tes projets
 
-J'ai commencé par installer tout en global. Résultat : sur un projet React, mes agents chargeaient quand même les skills SwiftUI dans le contexte. Pas grave en théorie, mais ça remplit le context window pour rien. Mieux : project-scoped sur chaque repo, et tu commit `.claude/skills/` et `.codex/skills/` avec le code.
+J'ai commencé par installer tout en global. Résultat : sur un projet React, mes agents chargeaient quand même les skills SwiftUI dans le contexte. Pas grave en théorie, mais ça remplit le context window pour rien. Mieux : project-scoped sur chaque repo, et tu commit `.agents/skills/` avec le code.
 
 ### 2. Skills qui se contredisent
 
@@ -283,7 +282,7 @@ Un skill est juste du markdown. Ouvre `SKILL.md`, lis le frontmatter et le corps
 
 ### 6. `.gitignore` qui mange tes skills
 
-Vérifie que `.claude/` et `.codex/` ne sont pas ignorés. Sur certains templates Next.js ou Vercel, `.claude/` est dans `.gitignore` par défaut "pour la sécu". Pour les skills, tu veux qu'ils soient versionnés.
+Vérifie que `.agents/` n'est pas ignoré. Sur certains templates, les dossiers de configuration d'agents peuvent être dans `.gitignore` par défaut "pour la sécu". Pour les skills, tu veux qu'ils soient versionnés.
 
 ### 7. Confondre "skills" et "MCP servers"
 
@@ -297,7 +296,7 @@ Tu remarques que ton agent fait la même erreur 5 fois sur ton projet ? Skill-if
 
 ### Template minimal
 
-`mon-projet/.claude/skills/mon-skill/SKILL.md` :
+`mon-projet/.agents/skills/mon-skill/SKILL.md` :
 
 ```markdown
 ---

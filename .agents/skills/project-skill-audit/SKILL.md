@@ -36,7 +36,6 @@ Recommend updates before new skills when an existing project skill is already cl
 4. Scan existing project-local skills before suggesting anything new.
    Check these locations relative to the current repo root:
    - `.agents/skills`
-   - `.codex/skills`
    - `skills`
    Read both `SKILL.md` and `agents/openai.yaml` when present.
 
@@ -129,7 +128,6 @@ Recommend updates before new skills when an existing project skill is already cl
 - Project-local skill surface:
   - `./.agents/skills/*/SKILL.md`
   - `./.agents/skills/*/agents/openai.yaml`
-  - `./.codex/skills/*/SKILL.md`
   - `./skills/*/SKILL.md`
 
 - Project conventions:
@@ -179,4 +177,4 @@ Return a compact audit with:
 
 ## Follow-up
 
-If the user asks to actually create or update one of the recommended skills, switch to [$skill-creator](/Users/dimillian/.codex/skills/.system/skill-creator/SKILL.md) and implement the chosen skill rather than continuing the audit.
+If the user asks to actually create or update one of the recommended skills, use the local skill-creation workflow and implement the chosen skill rather than continuing the audit.

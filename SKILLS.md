@@ -1,10 +1,12 @@
 # Agent Skills — BlitzRecorder
 
 Project-scoped install only. Skill folders live at:
-- `.claude/skills/<name>/` (Claude Code)
-- `.codex/skills/<name>/` (Codex)
+- `.agents/skills/<name>/`
 
-Nothing was written to `~/.claude/` or `~/.codex/`.
+The lock file lives at `.agents/skills-lock.json`.
+
+Nothing was written to agent-specific global folders such as `~/.claude/`,
+`~/.codex/`, or `~/.agents/`.
 
 ---
 
@@ -16,7 +18,8 @@ Nothing was written to `~/.claude/` or `~/.codex/`.
 | https://github.com/twostraws/swift-agent-skills | Master index (no skills inside) | 0 |
 | https://github.com/Dimillian/Skills | Multi-skill collection | 16 |
 | https://github.com/arjitj2/swiftui-design-principles | Single skill (root-level) | 1 |
-| **Total installed** | | **18** |
+| https://github.com/code-with-beto/skills | Multi-skill collection | 2 |
+| **Total installed** | | **20** |
 
 > `twostraws/swift-agent-skills` is a curated README pointing to other authors' skills — there are no `SKILL.md` files inside the repo itself, so nothing is installed from it. Use it as a discovery hub.
 
@@ -58,6 +61,13 @@ Legend: 🟢 strong fit for BlitzRecorder · 🟡 generic utility · 🔴 not re
 | [`ios-debugger-agent`](https://github.com/Dimillian/Skills/tree/main/ios-debugger-agent) | 🔴 | XcodeBuildMCP + iOS simulator — this is a macOS app. |
 | [`macos-menubar-tuist-app`](https://github.com/Dimillian/Skills/tree/main/macos-menubar-tuist-app) | 🔴 | Tuist + menubar app — this is SwiftPM and not a menubar app. |
 | [`app-store-changelog`](https://github.com/Dimillian/Skills/tree/main/app-store-changelog) | 🔴 | App Store release notes — not currently shipping to App Store. |
+
+### From `code-with-beto/skills`
+
+| Skill | Verdict | Use for |
+|---|---|---|
+| `app-icon` | 🟡 | Generate app icons for React Native projects. Keep only if icon generation work recurs here. |
+| `ship` | 🟡 | Scaffold production-ready React Native apps. Keep only if shared mobile workflows need it. |
 
 ---
 
