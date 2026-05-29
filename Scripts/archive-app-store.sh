@@ -41,6 +41,7 @@ if [[ -z "$TEAM_ID" ]]; then
 fi
 
 cd "$ROOT"
+mkdir -p "$ROOT/build"
 
 if [[ "$TARGET" != "all" && "$TARGET" != "mac" && "$TARGET" != "ios" ]]; then
   echo "TARGET must be mac, ios, or all." >&2
