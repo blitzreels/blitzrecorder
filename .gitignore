@@ -2,7 +2,9 @@
 .swiftpm/
 build/
 DerivedData/
+.codex/
 .agents/
+AGENTS.md
 .DS_Store
 __pycache__/
 *.pyc

@@ -912,7 +912,8 @@ final class CameraCaptureController {
     }
 
     private func canApplyOnlyCinematicAperture(_ settings: RemoteCameraSettings) -> Bool {
-        guard settings.cinematicVideoEnabled,
+        guard #available(iOS 26.0, *),
+              settings.cinematicVideoEnabled,
               activeCinematicVideoEnabled,
               !cinematicAperturesMatch(settings.cinematicAperture, activeCinematicAperture),
               activeVideoInput?.isCinematicVideoCaptureEnabled == true else {

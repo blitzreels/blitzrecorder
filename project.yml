@@ -3,7 +3,7 @@ name: BlitzRecorder
 options:
   bundleIdPrefix: dev.blitzreels
   deploymentTarget:
-    iOS: "26.0"
+    iOS: "18.0"
     macOS: "15.0"
 
 packages:
@@ -56,7 +56,7 @@ targets:
   BlitzRecorderCamera:
     type: application
     platform: iOS
-    deploymentTarget: "26.0"
+    deploymentTarget: "18.0"
     sources:
       - path: Apps/iOSCamera/Sources
       - path: Apps/iOSCamera/Resources/Assets.xcassets
