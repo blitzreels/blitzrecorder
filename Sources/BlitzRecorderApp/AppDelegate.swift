@@ -51,6 +51,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
             self?.windowController?.applySavedRecordingOutput(output)
             self?.rebuildMenu()
         }
+        coordinator.onRecordingRecovery = { [weak self] output in
+            self?.windowController?.applyRecoveryOutput(output)
+            self?.rebuildMenu()
+        }
         coordinator.onRenderProgress = { [weak self] progress in
             self?.windowController?.updateRenderProgress(progress)
         }

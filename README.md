@@ -1,163 +1,59 @@
-# BlitzRecorder
+<p align="center">
+  <img src="Resources/AppIcon.png" width="92" alt="BlitzRecorder app icon">
+</p>
 
-Native macOS screencast recorder focused on low-overhead separate HEVC streams:
+<h1 align="center">BlitzRecorder</h1>
 
-- screen and camera recorded as separate `.mov`, `.mp4`, or `.m4v` files
-- Shorts 9:16 or YouTube 16:9 output canvas with full-aspect screen capture
-- microphone audio recorded as a separate `.m4a`
-- source rows for Screen Capture, Camera, System Audio, and Microphone
-- macOS screen picker flow via `SCContentSharingPicker` to avoid the broad Screen Recording permission path when possible
-- display, camera, and microphone device pickers
-- rule-of-thirds framing overlay plus microphone/system-audio volume controls
-- Capture and Export settings tabs, with output folder, quality, and format grouped under Export
-- selectable HEVC video container output through AVFoundation/VideoToolbox
-- framerate controls
-- pause/resume with timestamp retiming so pauses are removed from the file
-- rule-of-thirds overlay window
-- red flashing menu bar indicator while paused
-- quick merge of the last take into a picture-in-picture HEVC export
-- smooth screen zoom menu actions
-- automatic transcription after stop, followed by file/folder renaming
-- optional local small-LLM title generation through Ollama (`qwen2.5:0.5b`, `llama3.2:1b`, or `gemma3:1b`) with a fallback slugger
+<p align="center">
+  Record polished creator videos from your Mac, camera, microphone, system audio, and iPhone.
+</p>
 
-## Product & Pricing Model
+<p align="center">
+  <a href="docs/features.md">Features</a>
+  ·
+  <a href="docs/usage.md">Workflow</a>
+  ·
+  <a href="docs/permissions.md">Permissions</a>
+  ·
+  <a href="docs/README.md">Docs</a>
+</p>
 
-BlitzRecorder is a separate app from BlitzReels. Treat it as the paid recording product in the BlitzReels family:
+<p align="center">
+  <img src="Web/blitzrecorder/images/hero-app.png" alt="BlitzRecorder app preview">
+</p>
 
-- **BlitzRecorder for macOS**: standalone recording app and the only app that sells Pro access.
-- **BlitzRecorder Camera for iPhone**: free companion camera app, with no paywall and no in-app purchases.
-- **BlitzReels**: separate product; eligible active BlitzReels subscribers can unlock BlitzRecorder Pro as an included benefit.
+BlitzRecorder is a screen recording studio for product demos, tutorials, walkthroughs, creator updates, and short-form videos. It combines a Mac recording canvas with optional iPhone camera capture so each take is already framed for export.
 
-Recommended pricing:
+## Why BlitzRecorder
 
-- Free: 3 finished exports.
-- Pro monthly: `$7.99/month`.
-- Pro annual: `$49.99/year`.
-- BlitzReels bundle: included for eligible active BlitzReels subscribers.
+- **Record the full take.** Capture screen, camera, microphone, and Mac audio together.
+- **Frame before recording.** Build vertical or horizontal creator layouts on the live canvas.
+- **Use your iPhone.** Pair BlitzRecorder Camera as a controllable remote camera source.
+- **Keep takes recoverable.** Reveal source files and retry exports when a recording needs recovery.
+- **Finish faster.** Open, reveal, rename, or start a new take from the post-recording state.
 
-The iPhone app should stay free because it is a companion input device for the Mac recorder, not a standalone paid camera product. Keeping purchase and restore flows only in the Mac app avoids confusing App Store users and avoids bad reviews from people who install the iPhone app expecting it to work without BlitzRecorder for Mac.
+## Screenshots
 
-Licenses are bound to the App Store channel for launch. Do not add LemonSqueezy, Paddle, Stripe license keys, custom device activation limits, or a separate BlitzRecorder account system to the App Store build. A direct-download Mac app could add that later as a separate distribution channel, but it is intentionally out of scope for the App Store version.
+| Recording Canvas | iPhone Camera Controls |
+| --- | --- |
+| <img src="AppStore/ScreenshotAssets/macOS/01-main-recording-canvas.png" alt="BlitzRecorder recording canvas"> | <img src="AppStore/ScreenshotAssets/macOS/03-iphone-camera-controls.png" alt="BlitzRecorder iPhone camera controls"> |
 
-## Auth & Entitlement Model
+| iPhone Pairing | Companion Setup |
+| --- | --- |
+| <img src="AppStore/ScreenshotAssets/iPhone-6.9/01-pairing-screen.png" width="260" alt="BlitzRecorder Camera pairing screen"> | <img src="Web/blitzrecorder/images/iphone-setup.png" alt="BlitzRecorder iPhone companion setup"> |
 
-Do not require a BlitzRecorder account for normal App Store customers. The Mac app should support two Pro entitlement paths:
+## Apps
 
-1. **App Store subscription**: the Mac app sells, restores, and verifies BlitzRecorder Pro monthly and annual subscriptions through StoreKit. StoreKit entitlement state unlocks unlimited Mac exports. The iPhone companion does not sell or restore the subscription.
-2. **BlitzReels included access**: the Mac app opens BlitzReels sign-in only when the user wants to unlock included access from an existing BlitzReels subscription. BlitzReels redirects back to `blitzrecorder://auth/blitzreels?token=<access-token>`. The Mac app stores that token in the macOS Keychain and calls the BlitzReels entitlement endpoint. A response of `{ "active": true, "planName": "..." }` unlocks Pro.
+| App | Role |
+| --- | --- |
+| **BlitzRecorder for macOS** | Main recording, layout, export, and recovery workspace. |
+| **BlitzRecorder Camera for iPhone** | Companion camera that pairs with the Mac, records locally, and transfers the camera file back to the take. |
 
-The iPhone companion should not need its own auth. It pairs locally with the Mac app, records the high-quality camera master locally on the iPhone, transfers it back to the Mac, and lets the Mac enforce export entitlement. If the Mac is free, the user can still test the full workflow within the free export allowance. If the Mac is Pro through StoreKit or BlitzReels, exports remain unlimited.
+## Documentation
 
-## Build
-
-```bash
-cd ~/dev/blitzreels/blitzrecorder
-./script/build_and_run.sh
-```
-
-The run script builds, signs, installs `/Applications/BlitzRecorder.app`, and launches that stable app identity. Use it instead of launching random build-path copies, because macOS TCC keys screen-recording approval to bundle identity, code signature, and app location.
-
-Useful debug commands:
-
-```bash
-./script/build_and_run.sh --verify
-./script/build_and_run.sh --reset-screen-permission
-```
-
-## Workspace Layout
-
-The repo is set up as a small native Apple monorepo:
-
-- `Sources/BlitzRecorderApp`: macOS recorder app.
-- `Apps/iOSCamera`: iPhone companion app for camera mirroring and remote camera controls.
-- `Packages/BlitzRecorderCore`: shared remote-camera protocol models.
-- `Packages/BlitzRecorderTransport`: shared Bonjour discovery/advertising and JSON message encoding/decoding utilities.
-- `project.yml`: XcodeGen spec for one Xcode project with macOS and iOS targets.
-
-Generate the Xcode project:
-
-```bash
-Scripts/generate-xcode-project.sh
-```
-
-Build checks:
-
-```bash
-swift test
-swift test --package-path Packages/BlitzRecorderCore
-swift test --package-path Packages/BlitzRecorderTransport
-xcodebuild -project BlitzRecorder.xcodeproj -scheme BlitzRecorder -configuration Debug -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
-xcodebuild -project BlitzRecorder.xcodeproj -scheme BlitzRecorderCamera -configuration Debug -sdk iphonesimulator -derivedDataPath build/XcodeDerivedData-PackageCheck CODE_SIGNING_ALLOWED=NO build
-```
-
-The iOS target depends on the shared `BlitzRecorderCore` and `BlitzRecorderTransport` package products. Build the iOS scheme through Xcode so package modules and the app share one derived data workspace.
-
-## CI / CD
-
-GitHub Actions has four lanes:
-
-- `.github/workflows/ci.yml`: pull request and push checks. Runs Swift tests, App Store Connect dry-run checks, an unsigned macOS Debug build, and an unsigned iOS simulator Debug build. No Apple credentials required.
-- `.github/workflows/macos-dmg.yml`: builds a downloadable macOS DMG on pull requests, pushes, `v*` tags, and manual runs. Tag builds attach the DMG to the GitHub Release. Manual runs can set `notarize=1` to Developer ID sign, notarize, staple, and Gatekeeper-assess the DMG.
-- `.github/workflows/ios-testflight.yml`: manual iOS companion lane. It runs an unsigned simulator build, archives `BlitzRecorderCamera`, exports an App Store package, and can upload to App Store Connect/TestFlight with `upload=1`.
-- `.github/workflows/app-store-release.yml`: manual combined release lane for macOS, iOS, or both App Store targets.
-
-Reusable local scripts:
-
-```bash
-ENTITLEMENTS_PATH="$PWD/BlitzRecorder.local.entitlements" Scripts/ci-macos-dmg.sh
-UPLOAD=0 TEAM_ID="$APPLE_TEAM_ID" ASC_KEY_ID="$ASC_KEY_ID" ASC_ISSUER_ID="$ASC_ISSUER_ID" ASC_PRIVATE_KEY="$ASC_PRIVATE_KEY" Scripts/ci-ios-testflight.sh
-TARGET=all EXPORT=1 UPLOAD=0 TEAM_ID="$APPLE_TEAM_ID" Scripts/archive-app-store.sh
-```
-
-Credential and secret setup is documented in `AppStore/CI.md`.
-
-## macOS Screen Recording Context
-
-Screen Recording is deliberately harder than Camera/Microphone on macOS. Camera and mic can be authorized with normal prompts. Broad screen capture cannot reliably be granted from an app prompt; local logs showed:
-
-```text
-Service kTCCServiceScreenCapture does not allow prompting; returning denied.
-```
-
-For programmatic ScreenCaptureKit capture through `SCShareableContent`, macOS requires the app to be manually enabled in System Settings under **Privacy & Security -> Screen & System Audio Recording**, then fully quit and reopened. Renaming the app, changing the bundle id, switching between debug/installed copies, or rebuilding with a different signature can make TCC treat it as a different app.
-
-BlitzRecorder therefore supports two screen paths:
-
-- **Pick Screen...**: uses Apple's `SCContentSharingPicker`; the user explicitly picks a screen, window, or app, and macOS grants that selected capture session without broad Screen Recording approval.
-- **Display picker**: uses programmatic `SCShareableContent`; this still needs broad Screen & System Audio Recording permission.
-
-System audio still uses the broad Screen & System Audio Recording permission path.
-
-Sources:
-
-- Apple WWDC23 Privacy: `SCContentSharingPicker` handles permission for explicitly selected content.
-- Nonstrict ScreenCaptureKit notes: programmatic `SCShareableContent` requires Screen Recording authorization, picker flow does not.
-- Local BlitzRecorder TCC logs: `kTCCServiceScreenCapture` returned denied because the service does not allow app prompting.
-
-The first recording still requires macOS camera, microphone, and speech recognition permissions for those sources.
-
-Each take writes source files to a temporary per-recording scratch folder first, then exports the final video directly into the selected recording folder. The scratch folder is removed after a successful export. Video file extensions match the selected output format:
-
-- `slug-screen.mov`, `slug-screen.mp4`, or `slug-screen.m4v`
-- `slug-camera.mov`, `slug-camera.mp4`, or `slug-camera.m4v`
-- `slug-audio.m4a`
-- `slug-system-audio.m4a`
-- `slug-transcript.txt`
-- final output in the recording folder: `slug-final.mov`, `slug-final.mp4`, or `slug-final.m4v`
-
-## Stack & forward-looking notes
-
-BlitzRecorder is built on the most modern Apple stack available in 2026, intentionally:
-
-- **SwiftUI** for all new UI (sidebars, dock, top bar, inspector). Targets macOS 15 (Sequoia) with a BlitzRecorder styling seam that uses Liquid Glass on macOS 26+ and regular SwiftUI material/button fallbacks on older supported macOS versions. SF Symbols 6, `@Observable` view models, `NavigationSplitView`/`Inspector`.
-- **AppKit** kept for what SwiftUI can't yet do cleanly: `NSWindow` + `NSStatusItem`, the preview stage (drag-resize, `CALayer` masks, `AVCaptureVideoPreviewLayer` hosting, custom `NSBezierPath` drawing). Wrapped into SwiftUI via `NSViewRepresentable` (`Bridges.swift`) and `NSHostingView` (`MainWindowController`).
-- **No Catalyst, no Tauri, no Electron** — direct access to ScreenCaptureKit / AVFoundation / SCContentSharingPicker / VideoToolbox is the whole point of this app, and Apple's TCC is brittle enough already without adding a wrapper layer.
-
-### Apple AI integrations worth migrating to later
-
-- **Foundation Models framework** (macOS 26): on-device LLM. Should replace the current `TitleGenerator` Ollama dependency — drops the external install, runs locally on Apple Silicon, more private, faster.
-- **`SpeechTranscriber` v2** (macOS 26): replaces the older `SFSpeechRecognizer` we use today. Faster, more accurate, multilingual.
-- **Writing Tools / Translation / Image Playground**: available in any SwiftUI app on macOS 26.
-- **MLX**: if we want to train/run custom models locally on Apple Silicon.
-
-The combo `SwiftUI + Foundation Models + SpeechTranscriber v2` is the most modern Apple-native AI stack in 2026 — fully local, fully private, free.
+- [Feature overview](docs/features.md)
+- [User workflow](docs/usage.md)
+- [Permissions](docs/permissions.md)
+- [Development](docs/development.md)
+- [Architecture](docs/architecture.md)
+- [Release](docs/release.md)

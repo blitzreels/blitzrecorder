@@ -134,22 +134,50 @@ private struct FirstRunOnboardingView: View {
                         .frame(width: 28, height: 28)
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Set Up Capture")
+                        Text("Set Up Recording Access")
                             .font(.system(size: 17, weight: .bold))
                             .foregroundStyle(.white)
-                        Text("Use the picker first. Camera and mic prompts wait until recording.")
+                        Text(vm.permissionSetupSummary)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.white.opacity(0.58))
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Spacer(minLength: 0)
                 }
 
+                VStack(spacing: 6) {
+                    ForEach(vm.permissionStatusRows.prefix(4)) { row in
+                        HStack(spacing: 8) {
+                            Image(systemName: row.level == .granted ? "checkmark.circle.fill" : row.symbol)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(permissionTint(row.level))
+                                .frame(width: 16)
+                            Text(row.title)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.82))
+                            Spacer(minLength: 8)
+                            Text(row.status)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.48))
+                                .lineLimit(1)
+                        }
+                    }
+                }
+                .padding(10)
+                .background(Color.white.opacity(0.055), in: .rect(cornerRadius: 10))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                }
+
                 HStack(spacing: 8) {
                     Button {
-                        vm.chooseScreenFromOnboarding()
+                        vm.dismissFirstRunOnboarding()
+                        vm.runPrimaryPermissionAction()
                     } label: {
-                        Label("Pick Screen", systemImage: "rectangle.on.rectangle")
+                        Label(vm.primaryPermissionActionTitle, systemImage: vm.shouldSuggestScreenPicker ? "rectangle.on.rectangle" : "lock.open")
                             .font(.system(size: 12, weight: .bold))
                             .padding(.horizontal, 12)
                             .frame(height: 34)
@@ -183,9 +211,22 @@ private struct FirstRunOnboardingView: View {
                 }
             }
             .padding(18)
-            .frame(width: 430, alignment: .leading)
+            .frame(width: 460, alignment: .leading)
             .blitzGlassSurface(cornerRadius: 18)
             .shadow(color: .black.opacity(0.36), radius: 28, y: 14)
+        }
+    }
+
+    private func permissionTint(_ level: PermissionStatusLevel) -> Color {
+        switch level {
+        case .granted:
+            return Color(red: 0.09, green: 1.0, blue: 0.65)
+        case .warning:
+            return Color(red: 1.0, green: 0.66, blue: 0.16)
+        case .blocked:
+            return Color(red: 1.0, green: 0.24, blue: 0.22)
+        case .inactive:
+            return .white.opacity(0.34)
         }
     }
 }

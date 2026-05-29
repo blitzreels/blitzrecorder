@@ -180,6 +180,10 @@ final class MainWindowController: NSWindowController {
         viewModel.applySavedRecordingOutput(output)
     }
 
+    func applyRecoveryOutput(_ output: RecordingRecoveryOutput) {
+        viewModel.applyRecoveryOutput(output)
+    }
+
     private func showStartFailureAlert(_ message: String) {
         let alert = NSAlert()
         alert.messageText = "Recording did not start"

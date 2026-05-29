@@ -299,6 +299,9 @@ struct PermissionsPage: View {
                     .foregroundStyle(.white.opacity(0.55))
             }
 
+            PermissionSetupCard(vm: vm)
+                .frame(width: 520, alignment: .leading)
+
             VStack(spacing: 0) {
                 ForEach(Array(vm.permissionStatusRows.enumerated()), id: \.element.id) { index, row in
                     if index > 0 {
@@ -326,7 +329,15 @@ struct PermissionsPage: View {
 
     private func handleTap(_ row: PermissionStatusRow) {
         switch row.source {
-        case .screen, .systemAudio:
+        case .screen:
+            if row.isActive, vm.shouldSuggestScreenPicker {
+                vm.pickScreen()
+            } else if row.isActive {
+                vm.applyScreenRecordingPermission()
+            } else {
+                vm.refreshPermissionStatus(message: "\(row.title) is not enabled in the current setup.")
+            }
+        case .systemAudio:
             if row.isActive {
                 vm.applyScreenRecordingPermission()
             } else {
@@ -341,6 +352,84 @@ struct PermissionsPage: View {
         case nil:
             vm.requestAccessibilityPermission()
         }
+    }
+}
+
+private struct PermissionSetupCard: View {
+    @Bindable var vm: RecorderViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: vm.recordingReadiness.isReady ? "checkmark.shield.fill" : "lock.shield")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 26, height: 26)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(vm.recordingReadiness.isReady ? "Ready to record" : "Recording access needs attention")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.9))
+                    Text(vm.permissionSetupSummary)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.56))
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    vm.runPrimaryPermissionAction()
+                } label: {
+                    Label(vm.primaryPermissionActionTitle, systemImage: vm.shouldSuggestScreenPicker ? "rectangle.on.rectangle" : "lock.open")
+                        .font(.system(size: 11, weight: .bold))
+                        .padding(.horizontal, 10)
+                        .frame(height: 32)
+                }
+                .blitzGlassButton()
+                .pointingHandCursor()
+
+                Button {
+                    vm.pickScreen()
+                } label: {
+                    Label("Pick Screen", systemImage: "rectangle.on.rectangle")
+                        .font(.system(size: 11, weight: .bold))
+                        .padding(.horizontal, 10)
+                        .frame(height: 32)
+                }
+                .blitzGlassButton()
+                .pointingHandCursor()
+
+                Button {
+                    vm.openScreenRecordingSettings()
+                } label: {
+                    Label("System Settings", systemImage: "gearshape")
+                        .font(.system(size: 11, weight: .bold))
+                        .padding(.horizontal, 10)
+                        .frame(height: 32)
+                }
+                .blitzGlassButton()
+                .pointingHandCursor()
+
+                Spacer(minLength: 0)
+            }
+
+            Text("For iPhone camera pairing, allow Local Network in the iPhone app and keep both devices on the same network.")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.white.opacity(0.46))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .blitzGlassSurface(cornerRadius: 16)
+    }
+
+    private var tint: Color {
+        vm.recordingReadiness.isReady
+            ? Color(red: 0.09, green: 1.0, blue: 0.65)
+            : Color(red: 1.0, green: 0.66, blue: 0.16)
     }
 }
 

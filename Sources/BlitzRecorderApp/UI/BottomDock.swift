@@ -10,10 +10,13 @@ struct BottomDock: View {
             VStack(spacing: 12) {
                 if vm.state != .idle {
                     SessionProgressView(vm: vm)
+                } else if let recovery = vm.lastRecoveryOutput {
+                    RecoveryAvailableView(vm: vm, recovery: recovery)
                 } else if !vm.canStartRecording {
                     ReadinessIssueView(vm: vm)
                 } else if let savedURL = vm.lastExportedURL {
                     ExportCompletedView(
+                        vm: vm,
                         url: savedURL,
                         sourceTakeURL: vm.lastExportedSourceTakeURL,
                         warning: vm.lastExportWarning
@@ -98,6 +101,7 @@ private struct RecordingSettingsShortcut: View {
 }
 
 private struct ExportCompletedView: View {
+    @Bindable var vm: RecorderViewModel
     let url: URL
     let sourceTakeURL: URL?
     let warning: String?
@@ -133,6 +137,18 @@ private struct ExportCompletedView: View {
                 HStack(spacing: 6) {
                     OpenFileButton(title: "Open", systemImage: "play.fill", url: url)
                     FinderButton(title: "Reveal", systemImage: "folder", url: url)
+                    Button {
+                        vm.renameLastExportedFile()
+                    } label: {
+                        Label("Rename", systemImage: "pencil")
+                            .font(.system(size: 10, weight: .bold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                    }
+                    .blitzGlassButton()
+                    .controlSize(.small)
+                    .pointingHandCursor()
+                    .help("Rename or move this finished recording")
                 }
             }
 
@@ -169,8 +185,36 @@ private struct ExportCompletedView: View {
                     FinderButton(title: "Sources", systemImage: "tray.full", url: sourceTakeURL)
                 }
             }
+
+            HStack(spacing: 8) {
+                Button {
+                    vm.revealOutputFolder()
+                } label: {
+                    Label("Output Folder", systemImage: "folder")
+                        .font(.system(size: 10, weight: .bold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                }
+                .blitzGlassButton()
+                .controlSize(.small)
+                .pointingHandCursor()
+
+                Button {
+                    vm.clearPostRecordingStatus()
+                } label: {
+                    Label("New Take", systemImage: "plus")
+                        .font(.system(size: 10, weight: .bold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                }
+                .blitzGlassButton()
+                .controlSize(.small)
+                .pointingHandCursor()
+
+                Spacer(minLength: 0)
+            }
         }
-        .frame(width: 360)
+        .frame(width: 460)
         .task(id: url) {
             metadata = .empty
             metadata = await RecordingFileMetadata.load(for: url)
@@ -188,6 +232,87 @@ private struct ExportCompletedView: View {
     private var savedDetail: String {
         let parts = [folderLabel] + metadata.labels
         return "Saved to \(parts.joined(separator: " · "))"
+    }
+}
+
+private struct RecoveryAvailableView: View {
+    @Bindable var vm: RecorderViewModel
+    let recovery: RecordingRecoveryOutput
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.yellow.opacity(0.92))
+                    .frame(width: 16)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Recording needs recovery")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.yellow.opacity(0.92))
+                    Text(recovery.reason)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.76))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(recovery.takeDirectory.path)
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.48))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(recovery.takeDirectory.path)
+                }
+
+                Spacer(minLength: 8)
+            }
+
+            HStack(spacing: 8) {
+                if recovery.canRetryExport {
+                    Button {
+                        vm.retryRecoveredExport()
+                    } label: {
+                        Label("Retry Export", systemImage: "arrow.clockwise")
+                            .font(.system(size: 10, weight: .bold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                    }
+                    .blitzGlassButton()
+                    .controlSize(.small)
+                    .pointingHandCursor()
+                    .help("Try exporting the recovered source files again")
+                }
+
+                FinderButton(title: "Reveal Files", systemImage: "tray.full", url: recovery.takeDirectory)
+
+                Button {
+                    vm.appTab = .recording
+                } label: {
+                    Label("Export Settings", systemImage: "slider.horizontal.3")
+                        .font(.system(size: 10, weight: .bold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                }
+                .blitzGlassButton()
+                .controlSize(.small)
+                .pointingHandCursor()
+
+                Button {
+                    vm.clearPostRecordingStatus()
+                } label: {
+                    Label("Dismiss", systemImage: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                }
+                .blitzGlassButton()
+                .controlSize(.small)
+                .pointingHandCursor()
+
+                Spacer(minLength: 0)
+            }
+        }
+        .frame(width: 460)
     }
 }
 

@@ -18,6 +18,16 @@ struct SavedRecordingOutput: Equatable {
     }
 }
 
+struct RecordingRecoveryOutput: Equatable {
+    let takeDirectory: URL
+    let reason: String
+    let canRetryExport: Bool
+
+    var userMessage: String {
+        "\(reason). Recovery files: \(takeDirectory.path)"
+    }
+}
+
 enum TakeFinalizationOutcome {
     case saved(URL, sourceDirectory: URL?)
     case recoveryFiles(RecordingTake, reason: String)
@@ -37,6 +47,15 @@ enum TakeFinalizationOutcome {
     func savedOutput(warning: String? = nil) -> SavedRecordingOutput? {
         guard case .saved(let url, let sourceDirectory) = self else { return nil }
         return SavedRecordingOutput(url: url, sourceDirectory: sourceDirectory, warning: warning)
+    }
+
+    func recoveryOutput(canRetryExport: Bool = true) -> RecordingRecoveryOutput? {
+        guard case .recoveryFiles(let take, let reason) = self else { return nil }
+        return RecordingRecoveryOutput(
+            takeDirectory: take.scratchDirectory,
+            reason: reason,
+            canRetryExport: canRetryExport
+        )
     }
 }
 

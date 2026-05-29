@@ -61,6 +61,7 @@ final class RecorderViewModel {
     var lastExportedURL: URL?
     var lastExportedSourceTakeURL: URL?
     var lastExportWarning: String?
+    var lastRecoveryOutput: RecordingRecoveryOutput?
 
     var availableDisplays: [SourceOption] = []
     var availableCameras: [SourceOption] = []
@@ -235,6 +236,37 @@ final class RecorderViewModel {
             + (accessController.canRenderExport ? 0 : 1)
     }
 
+    var permissionSetupSummary: String {
+        let readiness = recordingReadiness
+        if readiness.isReady {
+            return "All selected sources are ready."
+        }
+        if settings.enabledSources.isEmpty {
+            return "Choose at least one source before recording."
+        }
+        return readiness.blockers.first?.sentence ?? readiness.detail
+    }
+
+    var primaryPermissionActionTitle: String {
+        if shouldSuggestScreenPicker {
+            return "Pick Screen"
+        }
+        if recordingReadiness.blockers.contains(where: { $0.source == .camera || $0.source == .microphone }) {
+            return "Request Access"
+        }
+        if recordingReadiness.blockers.contains(where: { $0.source == .screen || $0.source == .systemAudio }) {
+            return "Open Settings"
+        }
+        return "Check Access"
+    }
+
+    var shouldSuggestScreenPicker: Bool {
+        recordingReadiness.blockers.contains { $0.source == .screen }
+            && settings.enabledSources.contains(.screen)
+            && !settings.usesPickedScreenContent
+            && !settings.enabledSources.contains(.systemAudio)
+    }
+
     var isPersistentScreenCaptureAccessActive: Bool {
         coordinator.hasScreenCaptureAccess()
     }
@@ -304,6 +336,7 @@ final class RecorderViewModel {
             lastExportedURL = nil
             lastExportedSourceTakeURL = nil
             lastExportWarning = nil
+            lastRecoveryOutput = nil
             stopElapsedTimer()
         case .recording:
             if previousState == .idle || previousState == .starting || previousState == .finishing {
@@ -340,6 +373,14 @@ final class RecorderViewModel {
         lastExportedURL = output.url
         lastExportedSourceTakeURL = output.sourceDirectory
         lastExportWarning = output.warning
+        lastRecoveryOutput = nil
+    }
+
+    func applyRecoveryOutput(_ output: RecordingRecoveryOutput) {
+        lastRecoveryOutput = output
+        lastExportedURL = nil
+        lastExportedSourceTakeURL = nil
+        lastExportWarning = nil
     }
 
     func applyRenderProgress(_ progress: Double) {
@@ -966,6 +1007,26 @@ final class RecorderViewModel {
         }
     }
 
+    func runPrimaryPermissionAction() {
+        if shouldSuggestScreenPicker {
+            pickScreen()
+            return
+        }
+
+        if recordingReadiness.blockers.contains(where: { $0.source == .camera || $0.source == .microphone }) {
+            requestSourcePermissions()
+            return
+        }
+
+        if recordingReadiness.blockers.contains(where: { $0.source == .screen || $0.source == .systemAudio }) {
+            openScreenRecordingSettings()
+            detailMessage = "Enable Screen & System Audio Recording for BlitzRecorder, then quit and reopen it."
+            return
+        }
+
+        refreshPermissionStatus()
+    }
+
     func requestAccessibilityPermission() {
         Task {
             let result = await PermissionGate.requestAccessibilityAccessForWindowControls()
@@ -1013,6 +1074,54 @@ final class RecorderViewModel {
             guard response == .OK, let url = panel.url, let self else { return }
             self.coordinator.setOutputDirectory(url)
             self.syncSettings()
+        }
+    }
+
+    func revealOutputFolder() {
+        NSWorkspace.shared.open(settings.outputDirectory)
+    }
+
+    func retryRecoveredExport() {
+        guard lastRecoveryOutput?.canRetryExport == true else {
+            detailMessage = "This recovery needs the missing source media before export can be retried."
+            return
+        }
+        guard accessController.canRenderExport else {
+            detailMessage = "Free exports used. Subscribe for unlimited renders."
+            appTab = .creator
+            return
+        }
+        coordinator.mergeLastTake()
+    }
+
+    func clearPostRecordingStatus() {
+        lastExportedURL = nil
+        lastExportedSourceTakeURL = nil
+        lastExportWarning = nil
+        lastRecoveryOutput = nil
+        detailMessage = ""
+    }
+
+    func renameLastExportedFile() {
+        guard let lastExportedURL else { return }
+        let panel = NSSavePanel()
+        panel.directoryURL = lastExportedURL.deletingLastPathComponent()
+        panel.nameFieldStringValue = lastExportedURL.lastPathComponent
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.prompt = "Rename"
+        panel.message = "Choose a new name or folder for the finished recording."
+        panel.begin { [weak self] response in
+            guard response == .OK, let destination = panel.url, let self else { return }
+            guard destination.path != lastExportedURL.path else { return }
+            do {
+                let target = self.coordinator.uniqueOutputURL(destination)
+                try FileManager.default.moveItem(at: lastExportedURL, to: target)
+                self.lastExportedURL = target
+                self.detailMessage = "Renamed: \(target.lastPathComponent)"
+            } catch {
+                self.detailMessage = "Rename failed: \(error.localizedDescription)"
+            }
         }
     }
 

@@ -64,6 +64,66 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         XCTAssertNil(viewModel.idleStatusMessage)
     }
 
+    func testViewModelAppliesRecoveryOutputAndClearsSavedOutput() {
+        let defaults = temporaryDefaults()
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults),
+            defaults: defaults
+        )
+        let viewModel = RecorderViewModel(coordinator: coordinator, previewStage: PreviewStageView())
+        let outputURL = temporaryDirectory().appendingPathComponent("final-video.mp4")
+        let recoveryURL = temporaryDirectory().appendingPathComponent("source-take", isDirectory: true)
+
+        viewModel.applySavedRecordingOutput(
+            SavedRecordingOutput(url: outputURL, sourceDirectory: nil, warning: nil)
+        )
+        viewModel.applyRecoveryOutput(
+            RecordingRecoveryOutput(
+                takeDirectory: recoveryURL,
+                reason: "Export failed: no video track",
+                canRetryExport: true
+            )
+        )
+
+        XCTAssertNil(viewModel.lastExportedURL)
+        XCTAssertNil(viewModel.lastExportedSourceTakeURL)
+        XCTAssertNil(viewModel.lastExportWarning)
+        XCTAssertEqual(viewModel.lastRecoveryOutput?.takeDirectory.path, recoveryURL.path)
+        XCTAssertEqual(viewModel.lastRecoveryOutput?.reason, "Export failed: no video track")
+        XCTAssertEqual(viewModel.lastRecoveryOutput?.canRetryExport, true)
+    }
+
+    func testStartingStateClearsPostRecordingStatus() {
+        let defaults = temporaryDefaults()
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults),
+            defaults: defaults
+        )
+        let viewModel = RecorderViewModel(coordinator: coordinator, previewStage: PreviewStageView())
+
+        viewModel.applySavedRecordingOutput(
+            SavedRecordingOutput(
+                url: temporaryDirectory().appendingPathComponent("final-video.mp4"),
+                sourceDirectory: nil,
+                warning: "Warning"
+            )
+        )
+        viewModel.applyRecoveryOutput(
+            RecordingRecoveryOutput(
+                takeDirectory: temporaryDirectory(),
+                reason: "Export failed",
+                canRetryExport: true
+            )
+        )
+
+        viewModel.applyState(.starting)
+
+        XCTAssertNil(viewModel.lastExportedURL)
+        XCTAssertNil(viewModel.lastExportedSourceTakeURL)
+        XCTAssertNil(viewModel.lastExportWarning)
+        XCTAssertNil(viewModel.lastRecoveryOutput)
+    }
+
     func testStartingStateTellsUserRecordingHasNotStarted() {
         let defaults = temporaryDefaults()
         let coordinator = RecorderCoordinator(

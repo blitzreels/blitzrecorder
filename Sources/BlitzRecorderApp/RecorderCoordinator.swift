@@ -70,6 +70,7 @@ final class RecorderCoordinator {
     var onStateChanged: ((RecordingState) -> Void)?
     var onMessage: ((String) -> Void)?
     var onSavedRecording: ((SavedRecordingOutput) -> Void)?
+    var onRecordingRecovery: ((RecordingRecoveryOutput) -> Void)?
     var onRenderProgress: ((Double) -> Void)?
     var onRuleOfThirdsOverlayChanged: ((Bool) -> Void)?
     var onSocialSafeZoneOverlayChanged: ((SocialVideoSafeZone) -> Void)?
@@ -336,6 +337,10 @@ final class RecorderCoordinator {
         settings.outputDirectory = url
         settings.outputDirectoryBookmarkData = RecordingSettingsStore.bookmarkData(for: url)
         persistSettings()
+    }
+
+    func uniqueOutputURL(_ url: URL) -> URL {
+        takeFileStore.uniqueFileURL(url)
     }
 
     func setDisplay(id: String?) {
@@ -1243,7 +1248,13 @@ final class RecorderCoordinator {
                     } else if let takeToFinalize {
                         outputDirectoryAccess?.stop()
                         outputDirectoryAccess = nil
-                        onMessage?("Recording failed: No video frames captured. Recovery files: \(takeToFinalize.scratchDirectory.path)")
+                        let recovery = RecordingRecoveryOutput(
+                            takeDirectory: takeToFinalize.scratchDirectory,
+                            reason: "No video frames captured",
+                            canRetryExport: false
+                        )
+                        onRecordingRecovery?(recovery)
+                        onMessage?("Recording failed: \(recovery.userMessage)")
                     } else {
                         outputDirectoryAccess?.stop()
                         outputDirectoryAccess = nil
@@ -1277,6 +1288,11 @@ final class RecorderCoordinator {
                         onRenderProgress?(0)
                         takeRecording.resetSceneTimeline()
                         refreshAudioLevelMonitoring()
+                        onRecordingRecovery?(RecordingRecoveryOutput(
+                            takeDirectory: takeToFinalize.scratchDirectory,
+                            reason: "Remote iPhone import did not finish: \(error.recorderFailureDescription)",
+                            canRetryExport: false
+                        ))
                         onMessage?(remoteCameraImportFailureMessage(error: error, take: takeToFinalize))
                         return
                     }
@@ -1315,6 +1331,9 @@ final class RecorderCoordinator {
                             "\(stopWarning). \(outcome.userMessage)"
                         } else {
                             outcome.userMessage
+                        }
+                        if let recovery = outcome.recoveryOutput() {
+                            onRecordingRecovery?(recovery)
                         }
                         onMessage?("Recording failed: \(message)")
                     }
@@ -1361,7 +1380,11 @@ final class RecorderCoordinator {
                 defer { outputAccess.stop() }
                 let url = try await Merger.exportFinalVideo(take: lastTake, settings: settings)
                 accessController.recordSuccessfulExportIfNeeded()
-                onMessage?("Final video: \(url.path)")
+                let sourceDirectory = lastTake.scratchDirectory
+                self.lastTake = nil
+                let savedOutput = SavedRecordingOutput(url: url, sourceDirectory: sourceDirectory, warning: nil)
+                onSavedRecording?(savedOutput)
+                onMessage?(savedOutput.userMessage)
             } catch {
                 onMessage?("Final video export failed: \(error.recorderFailureDescription)")
             }
