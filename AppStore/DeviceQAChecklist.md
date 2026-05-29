@@ -91,7 +91,7 @@ Evidence to keep: iPhone and iPad screenshots from real devices when possible.
 ## App Store Build Checks
 
 - macOS and iOS builds have the same marketing version and build number.
-- The iOS build does not include `NSMicrophoneUsageDescription`.
+- The iOS build includes `NSMicrophoneUsageDescription` for optional source camera audio.
 - The iOS build requires camera capability.
 - The macOS build includes sandbox, network client, camera, audio input, and user-selected read/write entitlements.
 - App icons are opaque and correct size.

@@ -260,7 +260,7 @@ if command -v jq >/dev/null 2>&1; then
   [[ "$privacy_mac_tracking" == "false" ]] || fail "Privacy labels macOS dataUsedToTrackYou is $privacy_mac_tracking"
   [[ "$privacy_mac_linked" == "true" ]] || fail "Privacy labels macOS dataLinkedToYou is $privacy_mac_linked"
   [[ "$privacy_ios_collected" == "false" ]] || fail "Privacy labels iOS dataCollected is $privacy_ios_collected"
-  [[ "$privacy_ios_microphone" == "Not requested"* ]] || fail "Privacy labels iOS microphone text is $privacy_ios_microphone"
+  [[ "$privacy_ios_microphone" == *"iPhone microphone audio"* ]] || fail "Privacy labels iOS microphone text is $privacy_ios_microphone"
   [[ "$privacy_shared_tracking" == "false" ]] || fail "Privacy labels shared tracking is $privacy_shared_tracking"
 else
   fail "jq is required to validate AppStore/BlitzRecorder.storekit"
@@ -376,7 +376,7 @@ require_contains "AppStore/ReviewNotes.md" '$7.99 per month'
 require_contains "AppStore/ReviewNotes.md" '$49.99 per year'
 require_contains "AppStore/ReviewNotes.md" "redirects to BlitzReels login"
 require_contains "AppStore/ReviewNotes.md" "3 free exports"
-require_contains "AppStore/ReviewNotes.md" "does not request microphone access"
+require_contains "AppStore/ReviewNotes.md" "optional source camera audio"
 require_contains "AppStore/ReviewNotes.md" "macOS Keychain"
 require_contains "AppStore/Metadata.md" "AppStore/ReviewNotes.md"
 require_contains "AppStore/Metadata.md" "AppStore/DeviceQAChecklist.md"
@@ -406,7 +406,7 @@ require_contains "AppStore/PrivacyNutritionLabels.generated.json" '"dataUsedToTr
 require_contains "AppStore/PrivacyNutritionLabels.generated.json" '"dataLinkedToYou": true'
 require_contains "AppStore/PrivacyNutritionLabels.generated.json" '"dataCollected": false'
 require_contains "AppStore/PrivacyNutritionLabels.generated.json" '"NSPrivacyAccessedAPICategoryDiskSpace"'
-require_contains "AppStore/PrivacyNutritionLabels.generated.json" "Not requested and must not be listed for the iOS companion."
+require_contains "AppStore/PrivacyNutritionLabels.generated.json" "Can include iPhone microphone audio in the source camera file when recording starts."
 require_contains "AppStore/SubmissionChecklist.md" "AppStore/ReviewNotes.md"
 require_contains "AppStore/SubmissionChecklist.md" "AppStore/DeviceQAChecklist.md"
 require_contains "AppStore/SubmissionChecklist.md" "AppStore/PrivacyNutritionLabels.md"
@@ -428,7 +428,7 @@ require_contains "AppStore/PrivacyNutritionLabels.md" "Identifiers"
 require_contains "AppStore/PrivacyNutritionLabels.md" "User ID"
 require_contains "AppStore/PrivacyNutritionLabels.md" "BlitzReels sign-in returns an access token"
 require_contains "AppStore/PrivacyNutritionLabels.md" "Data Collected: No"
-require_contains "AppStore/PrivacyNutritionLabels.md" "Microphone: not requested"
+require_contains "AppStore/PrivacyNutritionLabels.md" "Microphone: can include iPhone microphone audio"
 require_contains "AppStore/PrivacyNutritionLabels.md" "NSPrivacyAccessedAPICategoryDiskSpace"
 require_contains "AppStore/ReleaseEvidence.md" "dev.blitzreels.blitzrecorder.pro.monthly"
 require_contains "AppStore/ReleaseEvidence.md" "3 free exports"
@@ -562,7 +562,7 @@ require_plist_value "Apps/iOSCamera/Info.plist" "CFBundleVersion" '$(CURRENT_PRO
 require_plist_contains "Apps/iOSCamera/Info.plist" "NSBonjourServices" "$bonjour_service"
 require_plist_contains "Apps/iOSCamera/Info.plist" "NSLocalNetworkUsageDescription" "local network"
 require_plist_contains "Apps/iOSCamera/Info.plist" "NSCameraUsageDescription" "camera"
-reject_plist_key "Apps/iOSCamera/Info.plist" "NSMicrophoneUsageDescription"
+require_plist_contains "Apps/iOSCamera/Info.plist" "NSMicrophoneUsageDescription" "microphone"
 require_plist_value "Sources/BlitzRecorderApp/PrivacyInfo.xcprivacy" "NSPrivacyTracking" "false"
 require_plist_contains "Sources/BlitzRecorderApp/PrivacyInfo.xcprivacy" "NSPrivacyAccessedAPITypes" "NSPrivacyAccessedAPICategoryUserDefaults"
 require_plist_contains "Sources/BlitzRecorderApp/PrivacyInfo.xcprivacy" "NSPrivacyAccessedAPITypes" "NSPrivacyAccessedAPICategoryFileTimestamp"
@@ -575,10 +575,6 @@ require_contains "Sources/BlitzRecorderApp/AccessController.swift" "kSecAttrAcce
 if rg -q --fixed-strings "simulateConnectedForPreview" Apps/iOSCamera/Sources; then
   fail "iOS companion exposes simulated pairing in release sources"
 fi
-if rg -q --fixed-strings "Microphone access" AppStore/Metadata-iOS.md; then
-  fail "iOS companion metadata claims microphone access, but the iOS target does not request it"
-fi
-
 validate_metadata_file "AppStore/Metadata-macOS.md"
 validate_metadata_file "AppStore/Metadata-iOS.md"
 

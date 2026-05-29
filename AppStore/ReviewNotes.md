@@ -61,6 +61,6 @@ For App Review, provide a BlitzReels reviewer account with an active eligible su
 
 - Recordings are stored locally by default.
 - The iOS app requires camera access and local network access.
-- The iOS app does not request microphone access.
+- The iOS app declares microphone permission for optional source camera audio.
 - The Mac app uses StoreKit for subscription status.
 - BlitzReels entitlement tokens are stored in the macOS Keychain.

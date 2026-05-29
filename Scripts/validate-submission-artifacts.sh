@@ -568,11 +568,7 @@ validate_archived_app() {
     validate_plist_contains "iOS archived app" "$info_plist" "NSLocalNetworkUsageDescription" "local network"
     validate_plist_contains "iOS archived app" "$info_plist" "NSCameraUsageDescription" "camera"
 
-    if /usr/libexec/PlistBuddy -c 'Print :NSMicrophoneUsageDescription' "$info_plist" >/dev/null 2>&1; then
-      fail "iOS archived app declares microphone usage even though the companion does not request microphone access"
-    else
-      echo "✓ iOS archived app does not declare microphone access"
-    fi
+    validate_plist_contains "iOS archived app" "$info_plist" "NSMicrophoneUsageDescription" "microphone"
 
     local privacy_manifest="$app_path/PrivacyInfo.xcprivacy"
     if [[ -f "$privacy_manifest" ]]; then

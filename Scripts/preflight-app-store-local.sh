@@ -157,7 +157,7 @@ require_plist_contains "$IOS_APP/Info.plist" "UIRequiredDeviceCapabilities" "cam
 require_plist_contains "$IOS_APP/Info.plist" "NSBonjourServices" "_blitzrecorder-camera._tcp"
 require_plist_contains "$IOS_APP/Info.plist" "NSLocalNetworkUsageDescription" "local network"
 require_plist_contains "$IOS_APP/Info.plist" "NSCameraUsageDescription" "camera"
-reject_plist_key "$IOS_APP/Info.plist" "NSMicrophoneUsageDescription"
+require_plist_contains "$IOS_APP/Info.plist" "NSMicrophoneUsageDescription" "microphone"
 require_plist_value "$IOS_APP/PrivacyInfo.xcprivacy" "NSPrivacyTracking" "false"
 require_plist_contains "$IOS_APP/PrivacyInfo.xcprivacy" "NSPrivacyAccessedAPITypes" "NSPrivacyAccessedAPICategoryUserDefaults"
 require_plist_contains "$IOS_APP/PrivacyInfo.xcprivacy" "NSPrivacyAccessedAPITypes" "NSPrivacyAccessedAPICategoryFileTimestamp"

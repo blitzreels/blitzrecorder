@@ -9,7 +9,6 @@ __pycache__/
 xcuserdata/
 *.mov
 *.mp4
-BlitzRecorder.local.entitlements
 *.p8
 *.p12
 *.mobileprovision

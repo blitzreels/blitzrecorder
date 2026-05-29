@@ -28,7 +28,7 @@ REQUIRED_SOURCE_SNIPPETS = [
     "Data Linked to You: Yes, only when the user signs in with BlitzReels for included access",
     "Data Collected: No",
     "BlitzReels sign-in returns an access token",
-    "Microphone: not requested",
+    "Microphone: can include iPhone microphone audio",
     "NSPrivacyAccessedAPICategoryDiskSpace",
     "Sources/BlitzRecorderApp/PrivacyInfo.xcprivacy",
     "Apps/iOSCamera/Resources/PrivacyInfo.xcprivacy",
@@ -136,7 +136,7 @@ def build_payload() -> dict[str, Any]:
                 "permissions": {
                     "camera": "Captures the iPhone/iPad camera source selected by the user.",
                     "localNetworkBonjour": "Pairs with the Mac, sends monitor preview and camera telemetry, receives camera controls, and transfers local camera recordings.",
-                    "microphone": "Not requested and must not be listed for the iOS companion.",
+                    "microphone": "Can include iPhone microphone audio in the source camera file when recording starts.",
                 },
                 "privacyManifest": {
                     "path": str(IOS_PRIVACY_MANIFEST.relative_to(ROOT)),
@@ -195,8 +195,8 @@ def validate_payload(payload: dict[str, Any], source: str) -> None:
     ]:
         if category not in ios["privacyManifest"]["accessedAPITypes"]:
             failures.append(f"iOS privacy manifest must declare {category}")
-    if "Not requested" not in ios["permissions"]["microphone"]:
-        failures.append("iOS microphone permission must be marked not requested")
+    if "iPhone microphone audio" not in ios["permissions"]["microphone"]:
+        failures.append("iOS microphone permission must describe optional source camera audio")
 
     if failures:
         raise SystemExit("error: generated privacy labels are invalid:\n- " + "\n- ".join(failures))

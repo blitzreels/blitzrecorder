@@ -77,7 +77,7 @@ Recommended App Store Connect answer:
 
 - Camera: captures the iPhone/iPad camera source selected by the user.
 - Local Network / Bonjour: pairs with the Mac, sends monitor preview and camera telemetry, receives camera controls, and transfers local camera recordings.
-- Microphone: not requested and must not be listed for the iOS companion.
+- Microphone: can include iPhone microphone audio in the source camera file when recording starts.
 
 ### Current Privacy Manifest
 

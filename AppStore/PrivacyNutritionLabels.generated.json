@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-22T17:55:26Z",
+  "generatedAt": "2026-05-29T12:34:06Z",
   "sourceFiles": [
     "AppStore/PrivacyNutritionLabels.md",
     "Sources/BlitzRecorderApp/PrivacyInfo.xcprivacy",
@@ -76,7 +76,7 @@
       "permissions": {
         "camera": "Captures the iPhone/iPad camera source selected by the user.",
         "localNetworkBonjour": "Pairs with the Mac, sends monitor preview and camera telemetry, receives camera controls, and transfers local camera recordings.",
-        "microphone": "Not requested and must not be listed for the iOS companion."
+        "microphone": "Can include iPhone microphone audio in the source camera file when recording starts."
       },
       "privacyManifest": {
         "path": "Apps/iOSCamera/Resources/PrivacyInfo.xcprivacy",

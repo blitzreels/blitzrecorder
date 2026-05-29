@@ -699,6 +699,7 @@ def check_local_files(root: Path) -> int:
         ("Apps/iOSCamera/Info.plist", "$(CURRENT_PROJECT_VERSION)"),
         ("Apps/iOSCamera/Info.plist", "_blitzrecorder-camera._tcp"),
         ("Apps/iOSCamera/Info.plist", "<string>camera</string>"),
+        ("Apps/iOSCamera/Info.plist", "NSMicrophoneUsageDescription"),
         ("project.yml", "PRODUCT_BUNDLE_IDENTIFIER: dev.blitzreels.blitzrecorder.camera"),
         ("project.yml", "storeKitConfiguration: AppStore/BlitzRecorder.storekit"),
         ("project.yml", f'MARKETING_VERSION: "{EXPECTED_MARKETING_VERSION}"'),
@@ -763,7 +764,7 @@ def check_local_files(root: Path) -> int:
         ("AppStore/PrivacyNutritionLabels.generated.json", '"dataLinkedToYou": true'),
         ("AppStore/PrivacyNutritionLabels.generated.json", '"dataCollected": false'),
         ("AppStore/PrivacyNutritionLabels.generated.json", '"NSPrivacyAccessedAPICategoryDiskSpace"'),
-        ("AppStore/PrivacyNutritionLabels.generated.json", "Not requested and must not be listed for the iOS companion."),
+        ("AppStore/PrivacyNutritionLabels.generated.json", "Can include iPhone microphone audio in the source camera file when recording starts."),
         ("AppStore/Metadata-macOS.md", MAC_BUNDLE_ID),
         ("AppStore/Metadata-macOS.md", SUBSCRIPTION_PRODUCT_ID),
         ("AppStore/Metadata-macOS.md", ANNUAL_SUBSCRIPTION_PRODUCT_ID),
@@ -792,7 +793,7 @@ def check_local_files(root: Path) -> int:
         ("AppStore/PrivacyNutritionLabels.md", "Data Used to Track You: No"),
         ("AppStore/PrivacyNutritionLabels.md", "BlitzReels sign-in returns an access token"),
         ("AppStore/PrivacyNutritionLabels.md", "Data Collected: No"),
-        ("AppStore/PrivacyNutritionLabels.md", "Microphone: not requested"),
+        ("AppStore/PrivacyNutritionLabels.md", "Microphone: can include iPhone microphone audio"),
         ("AppStore/ReleaseEvidence.md", SUBSCRIPTION_PRODUCT_ID),
         ("AppStore/ReleaseEvidence.md", "3 free exports"),
         ("AppStore/ReleaseEvidence.md", "Scripts/validate-submission-artifacts.sh --strict"),
@@ -931,11 +932,6 @@ def check_local_files(root: Path) -> int:
     for relative_path, expected in contains_checks:
         failures += check_text_contains(root, relative_path, expected)
 
-    failures += check_text_excludes(
-        root,
-        "Apps/iOSCamera/Info.plist",
-        "NSMicrophoneUsageDescription",
-    )
     for relative_path, unexpected in [
         ("Web/blitzrecorder/terms.html", "intended as launch copy"),
         ("Web/blitzrecorder/privacy.html", "intended as product copy"),

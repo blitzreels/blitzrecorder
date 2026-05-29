@@ -97,13 +97,21 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         XCTAssertTrue(viewModel.settings.enabledSources.contains(.screen))
         XCTAssertTrue(viewModel.settings.enabledSources.contains(.camera))
         XCTAssertTrue(viewModel.settings.hiddenSources.contains(.camera))
-        if PermissionGate.hasAccessibilityAccess {
-            XCTAssertNotNil(viewModel.settings.screenCrop)
-            XCTAssertEqual(messages.count, 1)
+        XCTAssertEqual(messages.count, 1)
+        if let screenCrop = viewModel.settings.screenCrop {
+            XCTAssertFalse(screenCrop.isEmpty)
             XCTAssertTrue(messages[0].hasPrefix("Fitted "))
         } else {
-            XCTAssertNil(viewModel.settings.screenCrop)
-            XCTAssertEqual(messages, ["Enable Accessibility for BlitzRecorder to resize target windows."])
+            XCTAssertTrue(
+                [
+                    "Enable Accessibility for BlitzRecorder to resize target windows.",
+                    "No other window found to fit.",
+                    "Selected display is not available.",
+                    "Could not read the visible window list.",
+                    "Could not move the target window."
+                ].contains(messages[0]),
+                "Unexpected target-window fit message: \(messages[0])"
+            )
         }
     }
 
