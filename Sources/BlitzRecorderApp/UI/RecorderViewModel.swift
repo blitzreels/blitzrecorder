@@ -46,6 +46,8 @@ enum ScreenCaptureAreaSelection: Equatable {
 @Observable
 @MainActor
 final class RecorderViewModel {
+    private static let firstRunOnboardingKey = "onboarding.capturePermissions.v1"
+
     let coordinator: RecorderCoordinator
     let accessController: AccessController
 
@@ -80,6 +82,7 @@ final class RecorderViewModel {
     var selectedLayer: SceneLayerKind = .camera
     var isCameraCropModeEnabled = false
     var isScreenCropModeEnabled = false
+    var showsFirstRunOnboarding: Bool
     var screenCaptureAreaSelection: ScreenCaptureAreaSelection = .fullDisplay
     var targetWindowInfo: TargetWindowInfo?
     var targetWindowStatus: String = "Detecting target..."
@@ -210,15 +213,18 @@ final class RecorderViewModel {
                 status: isActive ? PermissionGate.status(for: source, settings: settings) : "not used by current setup",
                 isActive: isActive,
                 isBlocked: readiness.blockers.contains { $0.source == source },
+                isOptional: false,
                 source: source
             )
         }
+        let hasAccessibilityAccess = PermissionGate.hasAccessibilityAccess
         rows.append(PermissionStatusRow(
             title: "Accessibility",
             symbol: "accessibility",
-            status: PermissionGate.accessibilityStatus,
-            isActive: true,
-            isBlocked: !PermissionGate.hasAccessibilityAccess,
+            status: hasAccessibilityAccess ? "allowed" : "optional for target-window controls",
+            isActive: hasAccessibilityAccess,
+            isBlocked: false,
+            isOptional: true,
             source: nil
         ))
         return rows
@@ -226,7 +232,6 @@ final class RecorderViewModel {
 
     var permissionIssueCount: Int {
         recordingReadiness.blockers.count
-            + (PermissionGate.hasAccessibilityAccess ? 0 : 1)
             + (accessController.canRenderExport ? 0 : 1)
     }
 
@@ -248,6 +253,7 @@ final class RecorderViewModel {
         self.accessController = coordinator.accessController
         self.previewStage = previewStage
         self.settings = coordinator.settings
+        self.showsFirstRunOnboarding = !UserDefaults.standard.bool(forKey: Self.firstRunOnboardingKey)
         syncScreenCaptureAreaSelection()
 
         remoteCameraPreviewSurface.setMessage("Waiting for iPhone preview")
@@ -387,6 +393,11 @@ final class RecorderViewModel {
         settings = coordinator.settings
         availableCameras = coordinator.availableCameras()
         remoteCameraRefreshToken += 1
+    }
+
+    func startRemoteCameraDiscovery() {
+        coordinator.startRemoteCameraDiscoveryIfNeeded()
+        refreshRemoteCameraState()
     }
 
     func toggleSource(_ source: CaptureSource) {
@@ -591,6 +602,37 @@ final class RecorderViewModel {
     func setCameraCropPosition(_ position: CGPoint) {
         coordinator.setCameraCropPosition(position)
         syncSettings()
+    }
+
+    func setCameraCropZoom(_ zoom: CGFloat) {
+        setCameraCropPreset(
+            amount: CGPoint(x: zoom, y: zoom),
+            position: settings.cameraCropPosition
+        )
+    }
+
+    func setCameraCropPanX(_ x: CGFloat) {
+        setCameraCropPreset(
+            amount: settings.cameraCropAmount,
+            position: CGPoint(x: x, y: settings.cameraCropPosition.y)
+        )
+    }
+
+    func setCameraCropPanY(_ y: CGFloat) {
+        setCameraCropPreset(
+            amount: settings.cameraCropAmount,
+            position: CGPoint(x: settings.cameraCropPosition.x, y: y)
+        )
+    }
+
+    func setCameraCropPreset(amount: CGPoint, position: CGPoint) {
+        if isCameraCropModeEnabled {
+            previewStage.updateCameraCropDraft(amount: amount, position: position)
+        } else {
+            coordinator.setCameraCropAmount(amount)
+            coordinator.setCameraCropPosition(position)
+            syncSettings()
+        }
     }
 
     func beginCameraCropMode() {
@@ -879,6 +921,21 @@ final class RecorderViewModel {
         pickAndEnableScreenSource()
     }
 
+    func dismissFirstRunOnboarding() {
+        UserDefaults.standard.set(true, forKey: Self.firstRunOnboardingKey)
+        showsFirstRunOnboarding = false
+    }
+
+    func chooseScreenFromOnboarding() {
+        dismissFirstRunOnboarding()
+        pickScreen()
+    }
+
+    func openAccessFromOnboarding() {
+        dismissFirstRunOnboarding()
+        appTab = .permissions
+    }
+
     private func pickAndEnableScreenSource() {
         Task {
             do {
@@ -959,6 +1016,11 @@ final class RecorderViewModel {
         }
     }
 
+    func setSpeechRenameEnabled(_ enabled: Bool) {
+        coordinator.setSpeechRenameEnabled(enabled)
+        syncSettings()
+    }
+
     func primaryAction() {
         switch state {
         case .idle:
@@ -968,7 +1030,7 @@ final class RecorderViewModel {
             }
             let readiness = coordinator.recordingReadiness()
             guard readiness.isReady else {
-                detailMessage = readiness.blockers.first?.sentence ?? readiness.detail
+                resolveStartBlockers(readiness)
                 return
             }
             coordinator.start()
@@ -977,6 +1039,38 @@ final class RecorderViewModel {
         case .starting, .finishing:
             break
         }
+    }
+
+    private func resolveStartBlockers(_ readiness: RecordingReadiness) {
+        Task {
+            if shouldUseScreenPickerForStart(readiness) {
+                do {
+                    try await coordinator.pickScreenSource()
+                    syncSettings()
+                    detailMessage = "Screen selected for this session."
+                } catch {
+                    detailMessage = "Screen picker failed: \(error.localizedDescription)"
+                    return
+                }
+            }
+
+            await coordinator.requestPermissionsForEnabledSources()
+            syncSettings()
+
+            let updatedReadiness = coordinator.recordingReadiness()
+            if updatedReadiness.isReady {
+                coordinator.start()
+            } else {
+                detailMessage = updatedReadiness.blockers.first?.sentence ?? updatedReadiness.detail
+            }
+        }
+    }
+
+    private func shouldUseScreenPickerForStart(_ readiness: RecordingReadiness) -> Bool {
+        readiness.blockers.contains { $0.source == .screen }
+            && settings.enabledSources.contains(.screen)
+            && !settings.usesPickedScreenContent
+            && !settings.enabledSources.contains(.systemAudio)
     }
 
     func togglePause() {
@@ -1159,6 +1253,7 @@ struct PermissionStatusRow: Identifiable, Equatable {
     let status: String
     let isActive: Bool
     let isBlocked: Bool
+    let isOptional: Bool
     let source: CaptureSource?
 
     var isGranted: Bool {
@@ -1270,6 +1365,7 @@ extension ScenePreset {
         case .screenFocus: return "rectangle.inset.filled"
         case .cameraInset: return "pip"
         case .cameraFocus: return "person.crop.rectangle"
+        case .webcamLeft: return "rectangle.leadingthird.inset.filled"
         case .screenFullscreen: return "rectangle.fill"
         case .webcamFullscreen: return "video.fill"
         }

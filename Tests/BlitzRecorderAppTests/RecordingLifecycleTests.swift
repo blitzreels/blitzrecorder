@@ -229,7 +229,7 @@ final class RecordingLifecycleTests: XCTestCase {
             XCTAssertEqual(error.localizedDescription, RecorderError.cameraDidNotStart.localizedDescription)
         }
         XCTAssertEqual(cameraRecorder.startCount, 1)
-        XCTAssertEqual(microphoneRecorder.startCount, 0)
+        XCTAssertEqual(microphoneRecorder.startCount, 1)
     }
 
     @MainActor
@@ -354,6 +354,32 @@ final class RecordingLifecycleTests: XCTestCase {
 
         XCTAssertEqual(screenRecorder.pauseCount, 1)
         _ = await run.stop()
+    }
+
+    @MainActor
+    func testCaptureSourceRunStartsAndStopsAudioBeforeCamera() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .camera, .microphone, .systemAudio]
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        let order = OrderedCaptureEvents()
+        let run = CaptureSourceRun(
+            take: take,
+            settings: settings,
+            pickedScreenFilter: nil,
+            screenRecorder: OrderedScreenCaptureRecorder(order: order),
+            cameraRecorder: OrderedCameraCaptureRecorder(order: order),
+            audioRecorder: OrderedMicrophoneCaptureRecorder(order: order),
+            systemAudioRecorder: OrderedSystemAudioCaptureRecorder(order: order)
+        )
+
+        try await run.start()
+        _ = await run.stop()
+
+        XCTAssertEqual(order.started, [.screen, .microphone, .systemAudio, .camera])
+        XCTAssertEqual(order.stopped, [.screen, .microphone, .systemAudio, .camera])
     }
 
     @MainActor
@@ -972,6 +998,36 @@ final class RecordingLifecycleTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: outputURL.path))
     }
 
+    func testMergerTrimsCameraOnlyRemotePrerollBeforeTimelineStart() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.camera]
+        settings.selectedCameraID = RemoteCameraProviderID.make(for: "iphone-15-pro")
+        settings.framesPerSecond = 30
+        settings.outputResolution = .p720
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try FileManager.default.createDirectory(at: take.scratchDirectory, withIntermediateDirectories: true)
+
+        try writeTestMovie(
+            url: take.cameraURL,
+            codec: .h264,
+            color: (blue: 0, green: 0, red: 255, alpha: 255)
+        )
+        try writeRemoteCameraManifest(
+            for: take.cameraURL,
+            hostTimelineStartTime: 1_300_000_000,
+            estimatedHostStartTime: 1_100_000_000
+        )
+
+        let outputURL = try await Merger.exportFinalVideo(take: take, settings: settings)
+        let asset = AVURLAsset(url: outputURL)
+        let duration = try await asset.load(.duration)
+
+        XCTAssertEqual(duration.seconds, 0.2, accuracy: 0.08)
+    }
+
     func testMergerExportsWithTimelineBackgroundChanges() async throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
@@ -1027,6 +1083,60 @@ final class RecordingLifecycleTests: XCTestCase {
         let audioTracks = try await asset.loadTracks(withMediaType: .audio)
 
         XCTAssertEqual(audioTracks.count, 0)
+    }
+
+    func testMergerKeepsMicrophoneAudioWithRemoteCameraEmbeddedAudio() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.camera, .microphone]
+        settings.selectedCameraID = RemoteCameraProviderID.make(for: "iphone-15-pro")
+        settings.framesPerSecond = 30
+        settings.outputResolution = .p720
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try FileManager.default.createDirectory(at: take.scratchDirectory, withIntermediateDirectories: true)
+
+        try writeTestMovie(
+            url: take.cameraURL,
+            codec: .h264,
+            color: (blue: 0, green: 0, red: 255, alpha: 255),
+            includeAudio: true
+        )
+        try writeSilentAudioFile(url: take.audioURL)
+
+        let outputURL = try await Merger.exportFinalVideo(take: take, settings: settings)
+        let asset = AVURLAsset(url: outputURL)
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+
+        XCTAssertEqual(audioTracks.count, 1)
+    }
+
+    func testMergerFailsWhenMicrophoneIsEnabledButAudioSidecarIsMissing() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.camera, .microphone]
+        settings.selectedCameraID = RemoteCameraProviderID.make(for: "iphone-15-pro")
+        settings.framesPerSecond = 30
+        settings.outputResolution = .p720
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try FileManager.default.createDirectory(at: take.scratchDirectory, withIntermediateDirectories: true)
+        try writeTestMovie(
+            url: take.cameraURL,
+            codec: .h264,
+            color: (blue: 0, green: 0, red: 255, alpha: 255),
+            includeAudio: true
+        )
+
+        do {
+            _ = try await Merger.exportFinalVideo(take: take, settings: settings)
+            XCTFail("Expected export to fail when microphone audio is required but missing")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("Microphone audio"))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: take.finalVideoURL.path))
     }
 
     func testCameraBackgroundPostProcessorWritesTransparentIntermediate() async throws {
@@ -1129,6 +1239,93 @@ final class RecordingLifecycleTests: XCTestCase {
         let manifest = try decoder.decode(SourceTakeManifest.self, from: data)
         XCTAssertEqual(manifest.finalVideoPath, outputURL.path)
         XCTAssertTrue(outcome.userMessage.contains("Source take:"))
+    }
+
+    @MainActor
+    func testTakeFinalizerKeepsRecoveryFilesWhenMicrophoneAudioIsMissing() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.camera, .microphone]
+        settings.selectedCameraID = RemoteCameraProviderID.make(for: "iphone-15-pro")
+        settings.framesPerSecond = 30
+        settings.outputResolution = .p720
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try writeTestMovie(
+            url: take.cameraURL,
+            codec: .h264,
+            color: (blue: 0, green: 0, red: 255, alpha: 255),
+            includeAudio: true
+        )
+
+        let finalizer = TakeFinalizer(
+            speechTranscriber: SpeechTranscriber(),
+            titleGenerator: TitleGenerator(),
+            fileStore: store
+        )
+        let outcome = await finalizer.finalize(
+            take: take,
+            settings: settings,
+            captureSummary: CaptureSourceRunSummary(completions: [
+                .camera: .wrote(take.cameraURL),
+                .microphone: .empty(take.audioURL)
+            ])
+        )
+
+        guard case .recoveryFiles(let recoveryTake, let reason) = outcome else {
+            return XCTFail("Expected recovery files when microphone audio is missing")
+        }
+        XCTAssertEqual(recoveryTake.scratchDirectory, take.scratchDirectory)
+        XCTAssertTrue(reason.contains("Microphone audio"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: take.scratchDirectory.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: take.finalVideoURL.path))
+    }
+
+    @MainActor
+    func testTakeFinalizerSavesVideoWhenMicrophoneStopFailed() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.camera, .microphone]
+        settings.selectedCameraID = RemoteCameraProviderID.make(for: "iphone-15-pro")
+        settings.framesPerSecond = 30
+        settings.outputResolution = .p720
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try writeTestMovie(
+            url: take.cameraURL,
+            codec: .h264,
+            color: (blue: 0, green: 0, red: 255, alpha: 255),
+            includeAudio: true
+        )
+
+        let finalizer = TakeFinalizer(
+            speechTranscriber: SpeechTranscriber(),
+            titleGenerator: TitleGenerator(),
+            fileStore: store
+        )
+        let outcome = await finalizer.finalize(
+            take: take,
+            settings: settings,
+            captureSummary: CaptureSourceRunSummary(
+                completions: [
+                    .camera: .wrote(take.cameraURL)
+                ],
+                stopFailures: [
+                    .microphone: RecorderError.microphoneUnavailable.localizedDescription
+                ]
+            )
+        )
+
+        guard case .saved(let outputURL, _) = outcome else {
+            return XCTFail("Expected saved video when microphone stop already failed")
+        }
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outputURL.path))
+        let asset = AVURLAsset(url: outputURL)
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        XCTAssertEqual(audioTracks.count, 0)
     }
 
     @MainActor
@@ -1632,6 +1829,99 @@ private final class NoopScreenCaptureRecorder: ScreenCaptureRecording {
     func pause() {}
     func resume() {}
     func stop() async throws -> MediaWriterCompletion { .empty() }
+}
+
+private final class OrderedCaptureEvents {
+    private(set) var started: [CaptureSource] = []
+    private(set) var stopped: [CaptureSource] = []
+
+    func start(_ source: CaptureSource) {
+        started.append(source)
+    }
+
+    func stop(_ source: CaptureSource) {
+        stopped.append(source)
+    }
+}
+
+private final class OrderedScreenCaptureRecorder: ScreenCaptureRecording {
+    private let order: OrderedCaptureEvents
+
+    init(order: OrderedCaptureEvents) {
+        self.order = order
+    }
+
+    func start(url: URL, settings: RecordingSettings, filter pickedFilter: SCContentFilter?, timelineStartTime: CMTime?) async throws {
+        order.start(.screen)
+    }
+
+    func pause() {}
+    func resume() {}
+
+    func stop() async throws -> MediaWriterCompletion {
+        order.stop(.screen)
+        return .empty()
+    }
+}
+
+private final class OrderedCameraCaptureRecorder: CameraCaptureRecording {
+    private let order: OrderedCaptureEvents
+
+    init(order: OrderedCaptureEvents) {
+        self.order = order
+    }
+
+    func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) async throws {
+        order.start(.camera)
+    }
+
+    func pause() {}
+    func resume() {}
+
+    func stop() async throws -> MediaWriterCompletion {
+        order.stop(.camera)
+        return .empty()
+    }
+}
+
+private final class OrderedMicrophoneCaptureRecorder: MicrophoneCaptureRecording {
+    private let order: OrderedCaptureEvents
+
+    init(order: OrderedCaptureEvents) {
+        self.order = order
+    }
+
+    func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) throws {
+        order.start(.microphone)
+    }
+
+    func pause() {}
+    func resume() {}
+
+    func stop() async throws -> MediaWriterCompletion {
+        order.stop(.microphone)
+        return .empty()
+    }
+}
+
+private final class OrderedSystemAudioCaptureRecorder: SystemAudioCaptureRecording {
+    private let order: OrderedCaptureEvents
+
+    init(order: OrderedCaptureEvents) {
+        self.order = order
+    }
+
+    func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) async throws {
+        order.start(.systemAudio)
+    }
+
+    func pause() {}
+    func resume() {}
+
+    func stop() async throws -> MediaWriterCompletion {
+        order.stop(.systemAudio)
+        return .empty()
+    }
 }
 
 private final class SpyScreenCaptureRecorder: ScreenCaptureRecording {

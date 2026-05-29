@@ -42,7 +42,6 @@ final class CameraCaptureController {
             statusMessage = "Camera permission required"
             return
         }
-        _ = await requestAccess(for: .audio)
         await configureSession(lens: activeLens)
     }
 
@@ -77,8 +76,10 @@ final class CameraCaptureController {
             statusMessage = "\(lens.displayName) unavailable"
             return
         }
+        let didSuspendPreview = await suspendMonitorPreviewForSettingsChange()
         await configureSession(lens: lens)
         await setZoomFactor(1)
+        await resumeMonitorPreviewAfterSettingsChange(if: didSuspendPreview)
     }
 
     @discardableResult
@@ -138,6 +139,14 @@ final class CameraCaptureController {
 
     @discardableResult
     func apply(settings: RemoteCameraSettings) async -> RemoteCameraSettings {
+        let didSuspendPreview = await suspendMonitorPreviewForSettingsChange()
+        let appliedSettings = await applySettingsWhileMonitorPreviewIsSuspended(settings)
+        await resumeMonitorPreviewAfterSettingsChange(if: didSuspendPreview)
+        return appliedSettings
+    }
+
+    @discardableResult
+    private func applySettingsWhileMonitorPreviewIsSuspended(_ settings: RemoteCameraSettings) async -> RemoteCameraSettings {
         let isCurrentlyRecording = isRecording
         var requestedSettings = settings
         if !isCurrentlyRecording,
@@ -152,7 +161,8 @@ final class CameraCaptureController {
             await setZoomFactor(1)
         } else if !isCurrentlyRecording,
                   (requestedSettings.lens != activeLens || activePrefersCinematicDevice) {
-            await setLens(requestedSettings.lens)
+            await configureSession(lens: requestedSettings.lens)
+            await setZoomFactor(1)
         }
 
         var normalizedSettings = normalizedRemoteSettings(requestedSettings)
@@ -188,7 +198,36 @@ final class CameraCaptureController {
         return normalizedSettings
     }
 
+    private func suspendMonitorPreviewForSettingsChange() async -> Bool {
+        guard isPreviewRunning else { return false }
+        await withCheckedContinuation { continuation in
+            previewQueue.async {
+                self.previewDelegate.setSuspended(true, resetEncoder: true)
+                continuation.resume()
+            }
+        }
+        return true
+    }
+
+    private func resumeMonitorPreviewAfterSettingsChange(if didSuspendPreview: Bool) async {
+        guard didSuspendPreview else { return }
+        try? await Task.sleep(for: .milliseconds(250))
+        await withCheckedContinuation { continuation in
+            previewQueue.async {
+                self.previewDelegate.setSuspended(false, resetEncoder: true)
+                continuation.resume()
+            }
+        }
+    }
+
     func startRecording(takeID: UUID) async throws -> URL {
+        if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
+            let granted = await requestAccess(for: .audio)
+            if granted {
+                await configureSession(lens: activeLens, prefersCinematicDevice: activePrefersCinematicDevice)
+            }
+        }
+
         let url = try recordingURL(takeID: takeID)
         if FileManager.default.fileExists(atPath: url.path) {
             try FileManager.default.removeItem(at: url)
@@ -858,11 +897,11 @@ final class CameraCaptureController {
             session.beginConfiguration()
             defer { session.commitConfiguration() }
 
-            activeVideoInput.isCinematicVideoCaptureEnabled = enabled
             if enabled,
                let aperture {
                 activeVideoInput.simulatedAperture = Float(aperture)
             }
+            activeVideoInput.isCinematicVideoCaptureEnabled = enabled
         }
 
         activeCinematicVideoEnabled = enabled
@@ -1317,20 +1356,33 @@ final class CameraCaptureController {
     }
 }
 
-private final class CameraMonitorPreviewDelegate: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+private final class CameraMonitorPreviewDelegate: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
     private let context = CIContext()
     private lazy var videoEncoder = CameraMonitorPreviewVideoEncoder()
     private var lastEncodedFrameDate = Date.distantPast
+    private var isSuspended = false
     private let minimumFrameInterval: TimeInterval = 1.0 / 15.0
     var onFrame: (@Sendable (Data, Int, Int) -> Void)?
     var onVideoFrame: (@Sendable (RemoteCameraMonitorVideoFrame) -> Void)?
     var onDroppedFrame: (@Sendable () -> Void)?
+
+    func setSuspended(_ suspended: Bool, resetEncoder: Bool) {
+        isSuspended = suspended
+        lastEncodedFrameDate = .distantPast
+        if resetEncoder {
+            videoEncoder.reset()
+        }
+    }
 
     func captureOutput(
         _ output: AVCaptureOutput,
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
+        guard !isSuspended else {
+            return
+        }
+
         let now = Date()
         guard now.timeIntervalSince(lastEncodedFrameDate) >= minimumFrameInterval else {
             return
@@ -1380,6 +1432,15 @@ private final class CameraMonitorPreviewVideoEncoder: @unchecked Sendable {
     private var didFail = false
 
     var onFrame: (@Sendable (RemoteCameraMonitorVideoFrame) -> Void)?
+
+    func reset() {
+        compressionSession.map { VTCompressionSessionInvalidate($0) }
+        compressionSession = nil
+        pixelBufferPool = nil
+        encodedWidth = 0
+        encodedHeight = 0
+        didFail = false
+    }
 
     func encode(sampleBuffer: CMSampleBuffer, pixelBuffer sourcePixelBuffer: CVPixelBuffer) -> Bool {
         guard !didFail else { return false }

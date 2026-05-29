@@ -54,9 +54,9 @@
   <key>NSCameraUseContinuityCameraDeviceType</key>
   <true/>
   <key>NSMicrophoneUsageDescription</key>
-  <string>BlitzRecorder captures microphone audio so recordings can be transcribed and renamed automatically.</string>
+  <string>BlitzRecorder captures microphone audio for your recording when the microphone source is enabled.</string>
   <key>NSSpeechRecognitionUsageDescription</key>
-  <string>BlitzRecorder transcribes your microphone audio locally through macOS speech recognition to create useful file names.</string>
+  <string>BlitzRecorder can use Speech Recognition to transcribe microphone audio and create useful file names when auto-naming is enabled.</string>
   <key>NSScreenCaptureUsageDescription</key>
   <string>BlitzRecorder captures your screen as a separate high-quality HEVC stream.</string>
   <key>NSPrincipalClass</key>

@@ -30,13 +30,13 @@ struct CameraCompanionView: View {
         TabView(selection: $selectedTab) {
             recordingsTab
                 .tabItem {
-                    Label("Recordings", systemImage: "record.circle")
+                    Label("Camera", systemImage: "camera")
                 }
                 .tag(CameraCompanionTab.recordings)
 
             CameraMediaLibraryView(store: store)
                 .tabItem {
-                    Label("Library", systemImage: "film.stack")
+                    Label("Clips", systemImage: "film.stack")
                 }
                 .tag(CameraCompanionTab.library)
         }
@@ -59,14 +59,14 @@ struct CameraCompanionView: View {
             background
             readabilityOverlay
 
-            VStack(spacing: 0) {
-                header
+            VStack(alignment: .leading, spacing: 0) {
+                topBar
                 Spacer(minLength: 16)
-                bottomSurface
+                statusPanel
             }
             .padding(.horizontal, 20)
             .padding(.top, 16)
-            .padding(.bottom, 16)
+            .padding(.bottom, 24)
         }
     }
 
@@ -78,9 +78,8 @@ struct CameraCompanionView: View {
         } else {
             LinearGradient(
                 colors: [
-                    Color(uiColor: .systemIndigo).opacity(0.72),
-                    Color(uiColor: .systemTeal).opacity(0.56),
-                    Color(uiColor: .systemGreen).opacity(0.64)
+                    Color(uiColor: .systemGray6),
+                    Color(uiColor: .systemGray5)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -92,9 +91,9 @@ struct CameraCompanionView: View {
     private var readabilityOverlay: some View {
         LinearGradient(
             colors: [
-                .black.opacity(0.76),
-                .black.opacity(0.18),
-                .black.opacity(0.82)
+                .black.opacity(store.isLiveCameraPreviewEnabled ? 0.56 : 0.08),
+                .black.opacity(store.isLiveCameraPreviewEnabled ? 0.12 : 0.02),
+                .black.opacity(store.isLiveCameraPreviewEnabled ? 0.72 : 0.08)
             ],
             startPoint: .top,
             endPoint: .bottom
@@ -102,14 +101,14 @@ struct CameraCompanionView: View {
         .ignoresSafeArea()
     }
 
-    private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
+    private var topBar: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("BlitzRecorder Camera")
-                    .font(.headline.weight(.semibold))
-                Text(store.connectionTitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.72))
+                Text("Camera")
+                    .font(.title2.weight(.semibold))
+                Text(topStatusText)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
             }
 
             Spacer(minLength: 12)
@@ -118,120 +117,17 @@ struct CameraCompanionView: View {
                 CameraStatusIndicator(status: headerStatus)
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(primaryForegroundStyle)
     }
 
-    @ViewBuilder
-    private var bottomSurface: some View {
-        if #available(iOS 26.0, *) {
-            GlassEffectContainer(spacing: 16) {
-                bottomSurfaceContent
-            }
-        } else {
-            bottomSurfaceContent
-        }
-    }
-
-    private var bottomSurfaceContent: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            if showsConnectionRecovery {
-                connectionRecovery
-                Divider().overlay(.white.opacity(0.18))
-            }
+    private var statusPanel: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            statusSummary
 
             if !store.hasCompletedPairing {
-                pairingSection
-            } else {
-                cameraSection
+                pairingControls
+                macAppLink
             }
-
-            Divider().overlay(.white.opacity(0.18))
-            deviceFacts
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .companionGlassPanel(cornerRadius: 24)
-        .foregroundStyle(.white)
-    }
-
-    private var connectionRecovery: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(store.connectionIssueTitle)
-                        .font(.headline.weight(.semibold))
-                    Text(store.connectionIssueRecovery)
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.72))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            } icon: {
-                Image(systemName: recoveryIcon)
-                    .font(.title2.weight(.semibold))
-                    .symbolRenderingMode(.hierarchical)
-            }
-
-            HStack(spacing: 10) {
-                Button {
-                    store.retryConnection()
-                } label: {
-                    Label("Try again", systemImage: "arrow.clockwise")
-                        .frame(maxWidth: .infinity)
-                }
-                .companionButtonStyle(prominent: true)
-
-                Button {
-                    showsDiagnostics = true
-                } label: {
-                    Label("Details", systemImage: "info.circle")
-                        .frame(maxWidth: .infinity)
-                }
-                .companionButtonStyle()
-            }
-        }
-    }
-
-    private var pairingSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(store.statusMessage)
-                    .font(.title3.weight(.semibold))
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.82)
-                Text("Open BlitzRecorder on the Mac, choose this iPhone, then enter the code.")
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.7))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            HStack(alignment: .center, spacing: 14) {
-                Image(systemName: "qrcode")
-                    .font(.title2.weight(.semibold))
-                    .symbolRenderingMode(.hierarchical)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Pairing code")
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.64))
-                    Text(store.pairingCode)
-                        .font(.system(.largeTitle, design: .monospaced).weight(.bold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.68)
-                }
-
-                Spacer(minLength: 0)
-            }
-            .accessibilityElement(children: .combine)
-
-            Label(pairingStateText, systemImage: pairingStateIcon)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.white.opacity(0.82))
-        }
-    }
-
-    private var cameraSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            cameraStatusSummary
 
             if !store.pendingRecordings.isEmpty {
                 pendingRecordings
@@ -241,32 +137,132 @@ struct CameraCompanionView: View {
                 Button(role: .destructive) {
                     store.stopFromPhone()
                 } label: {
-                    Label("Stop iPhone Recording", systemImage: "stop.fill")
+                    Label("Stop", systemImage: "stop.fill")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(store.recordingPhase != .recording)
             }
         }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .companionGlassPanel(cornerRadius: 24)
     }
 
-    private var cameraStatusSummary: some View {
-        HStack(alignment: .top, spacing: 12) {
+    private var pairingControls: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .center, spacing: 14) {
+                Image(systemName: signalIcon)
+                    .font(.title2.weight(.semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .frame(width: 32, height: 32)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(store.connectionIssueTitle)
+                        .font(.headline.weight(.semibold))
+                    Text(store.connectionIssueRecovery)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            HStack(alignment: .center, spacing: 14) {
+                Image(systemName: "qrcode")
+                    .font(.title2.weight(.semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .frame(width: 32, height: 32)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Pairing code")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    Text(store.pairingCode)
+                        .font(.system(.largeTitle, design: .monospaced).weight(.bold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+            }
+            .accessibilityElement(children: .combine)
+
+            HStack(spacing: 10) {
+                Button {
+                    store.retryConnection()
+                } label: {
+                    Label(detectButtonTitle, systemImage: "arrow.clockwise")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button {
+                    showsDiagnostics = true
+                } label: {
+                    Label("Details", systemImage: "info.circle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+    }
+
+    private var statusSummary: some View {
+        HStack(alignment: .center, spacing: 12) {
             Image(systemName: statusIcon)
                 .font(.title3.weight(.semibold))
                 .symbolRenderingMode(.hierarchical)
                 .frame(width: 32, height: 32)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(store.statusMessage)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(primaryStatusText)
                     .font(.title3.weight(.semibold))
                     .lineLimit(2)
                     .minimumScaleFactor(0.82)
-                Text("Mac controlled. Thermal \(store.thermalStateLabel).")
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.68))
+                if let secondaryStatusText {
+                    Text(secondaryStatusText)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
             }
         }
+    }
+
+    private var detectButtonTitle: String {
+        store.canRetryConnection ? "Try Again" : "Detect Mac"
+    }
+
+    private var macAppLink: some View {
+        Link(destination: BlitzRecorderProductIdentity.macInstallURL) {
+            HStack(spacing: 12) {
+                ProductIconImage(
+                    image: Bundle.main.blitzRecorderMacIcon,
+                    fallbackSystemImage: "macbook",
+                    size: 44,
+                    cornerRadius: 10
+                )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(BlitzRecorderProductIdentity.macDisplayName)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Text("Mac app")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "arrow.up.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.primary.opacity(0.06), in: .rect(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Open \(BlitzRecorderProductIdentity.macDisplayName)")
     }
 
     private var pendingRecordings: some View {
@@ -283,43 +279,12 @@ struct CameraCompanionView: View {
             .padding(.top, 8)
         } label: {
             Label(
-                "\(store.pendingRecordingCount) pending import\(store.pendingRecordingCount == 1 ? "" : "s") - \(store.pendingRecordingsByteCountLabel)",
+                "\(store.pendingRecordingCount) saved clip\(store.pendingRecordingCount == 1 ? "" : "s")",
                 systemImage: "tray.and.arrow.up"
             )
                 .font(.subheadline.weight(.semibold))
         }
-        .tint(.white)
-    }
-
-    private var deviceFacts: some View {
-        VStack(spacing: 8) {
-            fact("Pairing", store.pairingCode, icon: "qrcode")
-            fact("Port", store.listeningPortLabel, icon: "network")
-            fact("Transfer", store.transferProgressLabel, icon: "arrow.up.doc")
-            fact("Preview", store.previewHealthLabel, icon: "waveform.path.ecg")
-            fact("Storage", store.freeStorageLabel, icon: "internaldrive")
-        }
-    }
-
-    private func fact(_ title: String, _ value: String, icon: String) -> some View {
-        LabeledContent {
-            Text(value)
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-        } label: {
-            Label(title, systemImage: icon)
-        }
-        .font(.footnote.weight(.medium))
-        .foregroundStyle(.white.opacity(0.78))
-    }
-
-    private var showsConnectionRecovery: Bool {
-        switch store.connectionState {
-        case .degraded, .disconnected, .unavailable:
-            return true
-        case .discovering, .pairing, .connected:
-            return false
-        }
+        .tint(.primary)
     }
 
     private var headerStatus: CameraHeaderStatus? {
@@ -330,10 +295,89 @@ struct CameraCompanionView: View {
         case .recording:
             return CameraHeaderStatus(text: "Recording", icon: "record.circle", color: .red)
         case .transferring:
-            return CameraHeaderStatus(text: "Transferring", icon: "arrow.up.doc", color: .white)
+            return CameraHeaderStatus(text: "Saving", icon: "arrow.up.doc", color: .primary)
         case .pendingImport:
-            return CameraHeaderStatus(text: "Pending import", icon: "tray.and.arrow.up", color: .white)
+            return CameraHeaderStatus(text: "Saved", icon: "tray.and.arrow.up", color: .primary)
         default:
+            return nil
+        }
+    }
+
+    private var topStatusText: String {
+        if store.hasCompletedPairing {
+            return store.pairedMacName ?? "Connected"
+        }
+
+        switch store.connectionState {
+        case .discovering:
+            return "Waiting for Mac"
+        case .pairing:
+            return "Connecting"
+        case .degraded:
+            return "Weak connection"
+        case .unavailable:
+            return "Unavailable"
+        case .disconnected:
+            return "Disconnected"
+        case .connected:
+            return "Connected"
+        }
+    }
+
+    private var primaryStatusText: String {
+        if !store.hasCompletedPairing {
+            switch store.connectionState {
+            case .degraded:
+                return "Connection is weak"
+            case .unavailable:
+                return "Can’t find the Mac"
+            case .disconnected:
+                return "Disconnected"
+            default:
+                return "Ready to connect"
+            }
+        }
+
+        switch store.recordingPhase {
+        case .preparing:
+            return "Preparing"
+        case .recording:
+            return store.elapsedLabel
+        case .stopping:
+            return "Stopping"
+        case .transferring:
+            return "Saving"
+        case .pendingImport:
+            return "Saved"
+        case .failed:
+            return "Needs attention"
+        case .idle:
+            return store.isLiveCameraPreviewEnabled ? "Live" : "Ready"
+        }
+    }
+
+    private var secondaryStatusText: String? {
+        if !store.hasCompletedPairing {
+            switch store.connectionState {
+            case .degraded, .unavailable, .disconnected:
+                return "Open BlitzRecorder on your Mac."
+            default:
+                return "Open BlitzRecorder on your Mac."
+            }
+        }
+
+        switch store.recordingPhase {
+        case .recording:
+            return "Recording for BlitzRecorder"
+        case .preparing, .stopping:
+            return nil
+        case .transferring:
+            return "Saving the clip"
+        case .pendingImport:
+            return "Ready on this iPhone"
+        case .failed:
+            return store.statusMessage
+        case .idle:
             return nil
         }
     }
@@ -344,7 +388,8 @@ struct CameraCompanionView: View {
             case .pairing: return "link.badge.plus"
             case .degraded: return "wifi.exclamationmark"
             case .unavailable: return "exclamationmark.triangle"
-            default: return "qrcode"
+            case .disconnected: return "link.badge.plus"
+            default: return "macbook.and.iphone"
             }
         }
 
@@ -356,53 +401,86 @@ struct CameraCompanionView: View {
         }
     }
 
-    private var recoveryIcon: String {
-        switch store.connectionState {
-        case .degraded: return "wifi.exclamationmark"
-        case .disconnected: return "link.badge.plus"
-        case .unavailable: return "exclamationmark.triangle"
-        default: return "questionmark.circle"
-        }
-    }
-
-    private var pairingStateText: String {
+    private var signalIcon: String {
         switch store.connectionState {
         case .discovering:
-            return "Waiting for the Mac to connect"
+            return "dot.radiowaves.left.and.right"
         case .pairing:
-            return "Mac found. Enter the code on the Mac"
-        case .degraded:
-            return "Wi-Fi is weak. Try again"
-        case .unavailable:
-            return "Can’t find the Mac"
-        case .disconnected:
-            return "Mac disconnected. Try again from BlitzRecorder"
-        case .connected:
-            return "Paired"
-        }
-    }
-
-    private var pairingStateIcon: String {
-        switch store.connectionState {
-        case .discovering:
-            return "macbook.and.iphone"
-        case .pairing:
-            return "keyboard"
-        case .degraded:
-            return "wifi.exclamationmark"
-        case .unavailable:
-            return "exclamationmark.triangle"
-        case .disconnected:
             return "link.badge.plus"
         case .connected:
             return "link.circle.fill"
+        case .degraded:
+            return "wifi.exclamationmark"
+        case .disconnected, .unavailable:
+            return "wifi.slash"
         }
     }
+
+	private var primaryForegroundStyle: Color {
+		store.isLiveCameraPreviewEnabled ? .white : .primary
+	}
+}
+
+private struct ConnectionDiagnosticsView: View {
+	@Bindable var store: CameraCompanionStore
+	@Environment(\.dismiss) private var dismiss
+
+	var body: some View {
+		NavigationStack {
+			List {
+				Section("Connection") {
+					DiagnosticRow(title: "Status", value: store.connectionTitle)
+					DiagnosticRow(title: "Message", value: store.statusMessage)
+					DiagnosticRow(title: "Listening Port", value: store.listeningPortLabel)
+					DiagnosticRow(title: "Pairing Code", value: store.pairingCode)
+				}
+
+				Section("Device") {
+					DiagnosticRow(title: "Preview", value: store.previewHealthLabel)
+					DiagnosticRow(title: "Storage Free", value: store.freeStorageLabel)
+					DiagnosticRow(title: "Thermal", value: store.thermalStateLabel)
+					DiagnosticRow(title: "Pending Clips", value: "\(store.pendingRecordingCount)")
+				}
+
+				Section {
+					Button {
+						store.retryConnection()
+					} label: {
+						Label("Detect Mac Again", systemImage: "arrow.clockwise")
+					}
+				}
+			}
+			.navigationTitle("Connection")
+			.toolbar {
+				ToolbarItem(placement: .topBarTrailing) {
+					Button("Done") {
+						dismiss()
+					}
+				}
+			}
+		}
+	}
+}
+
+private struct DiagnosticRow: View {
+	let title: String
+	let value: String
+
+	var body: some View {
+		VStack(alignment: .leading, spacing: 4) {
+			Text(title)
+				.font(.caption.weight(.medium))
+				.foregroundStyle(.secondary)
+			Text(value)
+				.font(.body)
+				.textSelection(.enabled)
+		}
+	}
 }
 
 private struct PendingRecordingRow: View {
-    let recording: CameraPendingRecording
-    let retry: () -> Void
+	let recording: CameraPendingRecording
+	let retry: () -> Void
     let delete: () -> Void
 
     var body: some View {
@@ -414,9 +492,9 @@ private struct PendingRecordingRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(recording.createdAtLabel)
                     .font(.footnote.weight(.semibold))
-                Text("\(recording.byteCountLabel) - \(recording.fileName)")
+                Text(recording.fileName)
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.62))
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
 
@@ -428,16 +506,15 @@ private struct PendingRecordingRow: View {
             }
             .buttonStyle(.bordered)
             .disabled(recording.takeID == nil)
-            .accessibilityLabel("Retry import")
+            .accessibilityLabel("Retry")
 
             Button(role: .destructive, action: delete) {
                 Image(systemName: "trash")
                     .frame(width: 30, height: 30)
             }
             .buttonStyle(.bordered)
-            .accessibilityLabel("Delete import")
+            .accessibilityLabel("Delete")
         }
-        .foregroundStyle(.white)
     }
 }
 
@@ -460,6 +537,37 @@ private struct CameraStatusIndicator: View {
     }
 }
 
+private struct ProductIconImage: View {
+    let image: UIImage?
+    let fallbackSystemImage: String
+    let size: CGFloat
+    let cornerRadius: CGFloat
+
+    var body: some View {
+        ZStack {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                Image(systemName: fallbackSystemImage)
+                    .font(.system(size: size * 0.42, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .stroke(.white.opacity(0.18), lineWidth: 1)
+        }
+        .accessibilityHidden(true)
+    }
+}
+
 private struct CameraMediaLibraryView: View {
     @Bindable var store: CameraCompanionStore
     @State private var confirmsDeleteAll = false
@@ -468,29 +576,22 @@ private struct CameraMediaLibraryView: View {
         NavigationStack {
             List {
                 Section {
-                    LibraryMetricRow(title: "Stored clips", value: "\(store.pendingRecordingCount)", icon: "film.stack")
-                    LibraryMetricRow(title: "Used by clips", value: store.pendingRecordingsByteCountLabel, icon: "internaldrive")
-                    LibraryMetricRow(title: "Free storage", value: store.freeStorageLabel, icon: "externaldrive")
-                }
-
-                Section("Import cleanup") {
-                    Toggle(isOn: $store.keepsRecordingsAfterMacImport) {
-                        Label("Keep originals after Mac import", systemImage: "externaldrive.badge.checkmark")
-                    }
+                    LibraryMetricRow(title: "Clips", value: "\(store.pendingRecordingCount)", icon: "film.stack")
+                    LibraryMetricRow(title: "Storage", value: store.freeStorageLabel, icon: "internaldrive")
                 }
 
                 Section {
                     if store.pendingRecordings.isEmpty {
                         ContentUnavailableView(
-                            "No stored recordings",
+                            "No clips",
                             systemImage: "film.stack",
-                            description: Text("Imported clips are removed after the Mac confirms the transfer.")
+                            description: Text("Clips from this iPhone appear here.")
                         )
                     } else {
                         Button(role: .destructive) {
                             confirmsDeleteAll = true
                         } label: {
-                            Label("Delete All Recordings", systemImage: "trash")
+                            Label("Delete All Clips", systemImage: "trash")
                         }
 
                         ForEach(store.pendingRecordings) { recording in
@@ -518,7 +619,7 @@ private struct CameraMediaLibraryView: View {
                                     Button {
                                         store.retryPendingImport(recording)
                                     } label: {
-                                        Label("Retry", systemImage: "arrow.clockwise.icloud")
+                                        Label("Retry", systemImage: "arrow.clockwise")
                                     }
                                     .tint(.blue)
                                     .disabled(recording.takeID == nil)
@@ -527,7 +628,7 @@ private struct CameraMediaLibraryView: View {
                                     Button {
                                         store.retryPendingImport(recording)
                                     } label: {
-                                        Label("Retry Import", systemImage: "arrow.clockwise.icloud")
+                                        Label("Retry", systemImage: "arrow.clockwise")
                                     }
                                     .disabled(recording.takeID == nil)
 
@@ -537,7 +638,7 @@ private struct CameraMediaLibraryView: View {
                                         Label("Delete", systemImage: "trash")
                                     }
                                 }
-                                .accessibilityAction(named: "Retry import") {
+                                .accessibilityAction(named: "Retry") {
                                     store.retryPendingImport(recording)
                                 }
                                 .accessibilityAction(named: "Delete") {
@@ -546,10 +647,10 @@ private struct CameraMediaLibraryView: View {
                         }
                     }
                 } header: {
-                    Text("Local iPhone recordings")
+                    Text("Local clips")
                 }
             }
-            .navigationTitle("Media Library")
+            .navigationTitle("Clips")
             .navigationBarTitleDisplayMode(.inline)
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
@@ -559,22 +660,22 @@ private struct CameraMediaLibraryView: View {
                     Button(role: .destructive) {
                         confirmsDeleteAll = true
                     } label: {
-                        Label("Delete All Recordings", systemImage: "trash")
+                        Label("Delete All Clips", systemImage: "trash")
                     }
                     .disabled(store.pendingRecordings.isEmpty)
                 }
             }
             .confirmationDialog(
-                "Delete all local iPhone recordings?",
+                "Delete all clips?",
                 isPresented: $confirmsDeleteAll,
                 titleVisibility: .visible
             ) {
-                Button("Delete All Recordings", role: .destructive) {
+                Button("Delete All Clips", role: .destructive) {
                     store.deleteAllPendingRecordings()
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This removes \(store.pendingRecordingCount) stored clip\(store.pendingRecordingCount == 1 ? "" : "s") from this iPhone app.")
+                Text("This removes \(store.pendingRecordingCount) clip\(store.pendingRecordingCount == 1 ? "" : "s") from this iPhone.")
             }
         }
     }
@@ -671,55 +772,12 @@ private enum RecordingThumbnailGenerator {
     }
 }
 
-private struct ConnectionDiagnosticsView: View {
-    let store: CameraCompanionStore
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section("Current state") {
-                    diagnostic("Status", store.connectionTitle)
-                    diagnostic("Message", store.statusMessage)
-                    diagnostic("Listening port", store.listeningPortLabel)
-                    diagnostic("Pairing code", store.pairingCode)
-                    diagnostic("Video", store.camera.isPreviewRunning ? "On" : "Off")
-                    diagnostic("Pending imports", "\(store.pendingRecordingCount)")
-                    diagnostic("Storage free", store.freeStorageLabel)
-                    diagnostic("Thermal", store.thermalStateLabel)
-                }
-
-                Section("What to check") {
-                    Label("Allow Local Network access for BlitzRecorder Camera in iOS Settings.", systemImage: "network")
-                    Label("Keep the Mac and iPhone on the same Wi-Fi or trusted network.", systemImage: "wifi")
-                    Label("Open BlitzRecorder on the Mac, then select this iPhone again.", systemImage: "macbook.and.iphone")
-                    Label("If the Mac cannot find the iPhone, type this port on the Mac.", systemImage: "number")
-                }
-
-                Section {
-                    Button {
-                        store.retryConnection()
-                        dismiss()
-                    } label: {
-                        Label("Try again", systemImage: "arrow.clockwise")
-                    }
-                }
-            }
-            .navigationTitle("Connection")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
-            }
+private extension Bundle {
+    var blitzRecorderMacIcon: UIImage? {
+        guard let url = url(forResource: "AppIcon", withExtension: "png") else {
+            return nil
         }
-        .presentationDetents([.medium, .large])
-    }
-
-    private func diagnostic(_ title: String, _ value: String) -> some View {
-        LabeledContent(title, value: value)
+        return UIImage(contentsOfFile: url.path)
     }
 }
 
@@ -734,21 +792,6 @@ private extension View {
             }
         } else {
             self.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        }
-    }
-
-    @ViewBuilder
-    func companionButtonStyle(prominent: Bool = false) -> some View {
-        if #available(iOS 26.0, *) {
-            if prominent {
-                self.buttonStyle(.glassProminent)
-            } else {
-                self.buttonStyle(.glass)
-            }
-        } else if prominent {
-            self.buttonStyle(.borderedProminent)
-        } else {
-            self.buttonStyle(.bordered)
         }
     }
 }

@@ -64,6 +64,27 @@ final class RecordingSettingsStoreTests: XCTestCase {
         XCTAssertRect(settings.sceneLayout.cameraFrame, equals: splitLayout.cameraFrame)
     }
 
+    func testLoadDropsRemovedCameraFocusPreset() {
+        let defaults = temporaryDefaults()
+        let focusLayout = SceneLayout.presetLayout(.cameraFocus, for: .horizontal)
+        defaults.set(CaptureLayout.horizontal.rawValue, forKey: "recording.layout")
+        defaults.set(ScenePreset.cameraFocus.rawValue, forKey: "scene.selectedScenePreset")
+        defaults.set(rectString(focusLayout.screenFrame), forKey: "scene.screenFrame")
+        defaults.set(rectString(focusLayout.cameraFrame), forKey: "scene.cameraFrame")
+
+        let settings = RecordingSettingsStore.load(defaults: defaults)
+
+        XCTAssertNil(settings.selectedScenePreset)
+        XCTAssertRect(
+            settings.sceneLayout.screenFrame,
+            equals: SceneLayout.defaultLayout(for: .horizontal).screenFrame
+        )
+        XCTAssertRect(
+            settings.sceneLayout.cameraFrame,
+            equals: SceneLayout.defaultLayout(for: .horizontal).cameraFrame
+        )
+    }
+
     func testLoadKeepsLegacyStackedPresetAsEqualHalves() {
         let defaults = temporaryDefaults()
         let presetLayout = SceneLayout.presetLayout(.stackedHalves, for: .vertical)
@@ -117,12 +138,15 @@ final class RecordingSettingsStoreTests: XCTestCase {
         let defaults = temporaryDefaults()
 
         XCTAssertFalse(RecordingSettingsStore.load(defaults: defaults).savesSourceFiles)
+        XCTAssertFalse(RecordingSettingsStore.load(defaults: defaults).renamesRecordingsFromSpeech)
 
         var settings = RecordingSettings()
         settings.savesSourceFiles = true
+        settings.renamesRecordingsFromSpeech = true
         RecordingSettingsStore.save(settings, defaults: defaults)
 
         XCTAssertTrue(RecordingSettingsStore.load(defaults: defaults).savesSourceFiles)
+        XCTAssertTrue(RecordingSettingsStore.load(defaults: defaults).renamesRecordingsFromSpeech)
     }
 
     func testPersistsCameraCropAmount() {

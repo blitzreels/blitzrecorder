@@ -252,6 +252,7 @@ enum ScenePreset: String, CaseIterable {
     case screenFocus = "Screen Focus"
     case cameraInset = "Camera Inset"
     case cameraFocus = "Camera Focus"
+    case webcamLeft = "Webcam Left"
     case screenFullscreen = "Screen Fullscreen"
     case webcamFullscreen = "Webcam Fullscreen"
 
@@ -259,7 +260,7 @@ enum ScenePreset: String, CaseIterable {
         [
             .screenTop50,
             .cameraInset,
-            .cameraFocus,
+            .webcamLeft,
             .screenFullscreen,
             .webcamFullscreen
         ]
@@ -279,6 +280,8 @@ enum ScenePreset: String, CaseIterable {
             return "Cam corner"
         case .cameraFocus:
             return "Speaker main"
+        case .webcamLeft:
+            return "Webcam left"
         case .screenFullscreen:
             return "Screen 100%"
         case .webcamFullscreen:
@@ -396,6 +399,12 @@ struct SceneLayout: Equatable {
             sceneLayout.cameraFrame = canvasFillingFrame(sourceAspectRatio: cameraAspectRatio, canvasAspectRatio: canvasAR)
             sceneLayout.layerOrder = [.camera, .screen]
             return sceneLayout
+        case .webcamLeft:
+            var sceneLayout = SceneLayout()
+            sceneLayout.screenFrame = canvasFillingFrame(sourceAspectRatio: screenAspectRatio, canvasAspectRatio: canvasAR)
+            sceneLayout.cameraFrame = CGRect(x: 0, y: 0, width: 1, height: 1)
+            sceneLayout.layerOrder = [.screen, .camera]
+            return sceneLayout
         case .screenFullscreen:
             var sceneLayout = SceneLayout()
             sceneLayout.screenFrame = CGRect(x: 0, y: 0, width: 1, height: 1)
@@ -462,6 +471,12 @@ struct SceneLayout: Equatable {
             )
             sceneLayout.cameraFrame = canvasFillingFrame(sourceAspectRatio: cameraAspectRatio, canvasAspectRatio: canvasAR)
             sceneLayout.layerOrder = [.camera, .screen]
+            return sceneLayout
+        case .webcamLeft:
+            var sceneLayout = SceneLayout()
+            sceneLayout.screenFrame = CGRect(x: 1.0 / 3.0, y: 0, width: 2.0 / 3.0, height: 1)
+            sceneLayout.cameraFrame = CGRect(x: 0, y: 0, width: 1.0 / 3.0, height: 1)
+            sceneLayout.layerOrder = [.screen, .camera]
             return sceneLayout
         case .screenFullscreen:
             var sceneLayout = SceneLayout()
@@ -708,10 +723,12 @@ extension ScenePreset {
             return [.horizontal]
         case .screenFocus:
             return [.vertical, .horizontal]
-        case .cameraFocus:
-            return [.horizontal]
         case .screenFullscreen, .webcamFullscreen:
             return [.vertical, .horizontal]
+        case .webcamLeft:
+            return [.horizontal]
+        case .cameraFocus:
+            return []
         }
     }
 
@@ -735,6 +752,7 @@ struct RecordingSettings {
     var systemAudioGain: Double = 1.0
     var removesCameraBackgroundAfterRecording: Bool = false
     var savesSourceFiles: Bool = false
+    var renamesRecordingsFromSpeech: Bool = false
     var showsRuleOfThirdsOverlay: Bool = false
     var socialSafeZoneOverlay: SocialVideoSafeZone = .none
     var includeCursor: Bool = true

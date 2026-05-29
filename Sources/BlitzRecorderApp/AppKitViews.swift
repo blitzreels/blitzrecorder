@@ -539,12 +539,12 @@ final class PreviewStageView: NSView {
     }
 
     private func layer(at point: CGPoint) -> SceneLayerKind? {
-        for layer in SceneLayoutProjection.frontToBackOrder(for: sceneLayout) where enabledSources.contains(layer.source) {
-            if frame(for: layer).contains(point) {
-                return layer
-            }
-        }
-        return nil
+        PreviewStageEditing.layer(
+            at: point,
+            sceneLayout: sceneLayout,
+            enabledSources: enabledSources,
+            frameForLayer: frame(for:)
+        )
     }
 
     private func resizeHit(at point: CGPoint) -> (SceneLayerKind, ResizeAnchor)? {
@@ -798,22 +798,15 @@ final class PreviewStageView: NSView {
     }
 
     private func resizeAnchor(at point: CGPoint, in frame: NSRect) -> ResizeAnchor? {
-        resizeTargets(for: frame).first { $0.1.contains(point) }?.0
+        PreviewStageEditing.resizeAnchor(at: point, in: frame)
     }
 
     private func resizeHandles(for frame: NSRect) -> [ResizeAnchor: NSRect] {
-        let size: CGFloat = 18
-        let half = size / 2
-        return [
-            .topLeft: NSRect(x: frame.minX - half, y: frame.maxY - half, width: size, height: size),
-            .topRight: NSRect(x: frame.maxX - half, y: frame.maxY - half, width: size, height: size),
-            .bottomLeft: NSRect(x: frame.minX - half, y: frame.minY - half, width: size, height: size),
-            .bottomRight: NSRect(x: frame.maxX - half, y: frame.minY - half, width: size, height: size)
-        ]
+        PreviewStageEditing.resizeHandles(for: frame)
     }
 
     private func resizeTargets(for frame: NSRect) -> [(ResizeAnchor, NSRect)] {
-        resizeHandles(for: frame).map { ($0.key, $0.value) } + edgeHitAreas(for: frame).map { ($0.key, $0.value) }
+        PreviewStageEditing.resizeTargets(for: frame)
     }
 
     private func resizeAspectRatio(for layer: SceneLayerKind) -> CGFloat? {
@@ -826,23 +819,11 @@ final class PreviewStageView: NSView {
     }
 
     private func edgeGrips(for frame: NSRect) -> [ResizeAnchor: NSRect] {
-        [
-            .top: NSRect(x: frame.midX - 14, y: frame.maxY - 2, width: 28, height: 4),
-            .bottom: NSRect(x: frame.midX - 14, y: frame.minY - 2, width: 28, height: 4),
-            .left: NSRect(x: frame.minX - 2, y: frame.midY - 14, width: 4, height: 28),
-            .right: NSRect(x: frame.maxX - 2, y: frame.midY - 14, width: 4, height: 28)
-        ]
+        PreviewStageEditing.edgeGrips(for: frame)
     }
 
     private func edgeHitAreas(for frame: NSRect) -> [ResizeAnchor: NSRect] {
-        let thickness: CGFloat = 12
-        let half = thickness / 2
-        return [
-            .top: NSRect(x: frame.minX, y: frame.maxY - half, width: frame.width, height: thickness),
-            .bottom: NSRect(x: frame.minX, y: frame.minY - half, width: frame.width, height: thickness),
-            .left: NSRect(x: frame.minX - half, y: frame.minY, width: thickness, height: frame.height),
-            .right: NSRect(x: frame.maxX - half, y: frame.minY, width: thickness, height: frame.height)
-        ]
+        PreviewStageEditing.edgeHitAreas(for: frame)
     }
 
     private func clamped(_ frame: CGRect) -> CGRect {
@@ -916,26 +897,15 @@ final class PreviewStageView: NSView {
     }
 
     private func cameraCropDragMode(at point: CGPoint) -> DragMode.Kind? {
-        guard allowsCameraCropInteraction else { return nil }
-        let cropFrame = cameraCropFrame()
-        if let anchor = resizeAnchor(at: point, in: cropFrame) {
-            return .cropResize(anchor)
-        }
-        if cropFrame.contains(point) {
-            return .cropMove
-        }
-        return nil
+        PreviewStageEditing.cameraCropDragMode(
+            at: point,
+            cropFrame: cameraCropFrame(),
+            allowsCameraCropInteraction: allowsCameraCropInteraction
+        )
     }
 
     private func screenCropDragMode(at point: CGPoint) -> DragMode.Kind? {
-        let cropFrame = screenCropFrame()
-        if let anchor = resizeAnchor(at: point, in: cropFrame) {
-            return .screenCropResize(anchor)
-        }
-        if cropFrame.contains(point) {
-            return .screenCropMove
-        }
-        return nil
+        PreviewStageEditing.screenCropDragMode(at: point, cropFrame: screenCropFrame())
     }
 
     private func interactiveFrame(for layer: SceneLayerKind) -> NSRect {
@@ -1190,33 +1160,6 @@ final class SourceOutlineView: NSView {
             path.stroke()
         }
     }
-}
-
-private struct DragMode {
-    enum Kind {
-        case move
-        case resize(ResizeAnchor)
-        case cropMove
-        case cropResize(ResizeAnchor)
-        case screenCropMove
-        case screenCropResize(ResizeAnchor)
-
-        var isResize: Bool {
-            switch self {
-            case .resize:
-                return true
-            case .move, .cropMove, .cropResize, .screenCropMove, .screenCropResize:
-                return false
-            }
-        }
-    }
-
-    let kind: Kind
-    let layer: SceneLayerKind
-    let startPoint: CGPoint
-    let startFrame: CGRect
-    let startCropAmount: CGPoint
-    let startCropPosition: CGPoint
 }
 
 private extension ResizeAnchor {

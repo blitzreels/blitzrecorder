@@ -42,11 +42,11 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
             scene.screenSourceGeometry = screenSourceGeometry
             recordingScene = scene
         }
-        if settings.enabledSources.contains(.camera) {
-            try startCamera(settings: settings)
-        }
         if settings.enabledSources.contains(.microphone) {
             try startMicrophone(settings: settings)
+        }
+        if settings.enabledSources.contains(.camera) {
+            try startCamera(settings: settings)
         }
         await waitForRequiredVideoFrames(settings: settings)
         try await runPreroll(seconds: prerollSeconds, handler: prerollHandler)
@@ -72,11 +72,42 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
         frameTimer?.cancel()
         frameTimer = nil
 
+        if let microphoneSession {
+            microphoneSession.beginConfiguration()
+            AudioCaptureSessionCleanup.detachAudioOutputs(from: microphoneSession)
+            microphoneSession.commitConfiguration()
+        }
+
         if let screenStream {
             try? await screenStream.stopCapture()
         }
         screenStream = nil
 
+        let completion: MediaWriterCompletion
+        do {
+            completion = try await writer?.finish() ?? .empty()
+        } catch {
+            tearDownVideoAndMicrophoneSessions()
+            writer = nil
+            settings = nil
+            renderer.reset()
+            resetLatestCaptureState()
+            throw error
+        }
+
+        tearDownVideoAndMicrophoneSessions()
+        writer = nil
+        settings = nil
+        renderer.reset()
+        resetLatestCaptureState()
+        if let streamError {
+            self.streamError = nil
+            throw RecorderError.captureStreamStopped(streamError.localizedDescription)
+        }
+        return completion
+    }
+
+    private func tearDownVideoAndMicrophoneSessions() {
         cameraSession?.stopRunning()
         cameraSession = nil
 
@@ -87,17 +118,6 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
             microphoneSession.commitConfiguration()
         }
         microphoneSession = nil
-
-        let completion = try await writer?.finish() ?? .empty()
-        writer = nil
-        settings = nil
-        renderer.reset()
-        resetLatestCaptureState()
-        if let streamError {
-            self.streamError = nil
-            throw RecorderError.captureStreamStopped(streamError.localizedDescription)
-        }
-        return completion
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {

@@ -1,14 +1,15 @@
 import AppKit
+import BlitzRecorderCore
 import Foundation
 import Observation
 import Security
 import StoreKit
 
 enum AppLinks {
-    static let landingPage = URL(string: "https://www.blitzreels.com/blitzrecorder")!
-    static let support = URL(string: "https://www.blitzreels.com/blitzrecorder/support")!
-    static let privacy = URL(string: "https://www.blitzreels.com/blitzrecorder/privacy")!
-    static let terms = URL(string: "https://www.blitzreels.com/blitzrecorder/terms")!
+    static let landingPage = BlitzRecorderProductIdentity.landingPage
+    static let support = BlitzRecorderProductIdentity.supportURL
+    static let privacy = BlitzRecorderProductIdentity.privacyURL
+    static let terms = BlitzRecorderProductIdentity.termsURL
 }
 
 enum ProductConfiguration {

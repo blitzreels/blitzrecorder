@@ -4,6 +4,9 @@ import Foundation
 
 final class RemoteCameraMonitorSampleBufferFactory {
     private var h264FormatDescription: CMVideoFormatDescription?
+    private var presentationFrameIndex: Int64 = 0
+    private let previewTimescale: CMTimeScale = 600
+    private let previewFrameDurationValue: CMTimeValue = 40
 
     func makeSampleBuffer(from frame: RemoteCameraMonitorVideoFrame) -> CMSampleBuffer? {
         guard frame.codec == .h264, frame.width > 0, frame.height > 0, !frame.data.isEmpty else {
@@ -46,10 +49,16 @@ final class RemoteCameraMonitorSampleBufferFactory {
             return nil
         }
 
+        let presentationTime = CMTime(
+            value: presentationFrameIndex * previewFrameDurationValue,
+            timescale: previewTimescale
+        )
+        presentationFrameIndex += 1
+
         var sampleBuffer: CMSampleBuffer?
         var timing = CMSampleTimingInfo(
-            duration: CMTime.invalid,
-            presentationTimeStamp: CMTime(seconds: frame.presentationTimeSeconds, preferredTimescale: 1_000_000),
+            duration: CMTime(value: previewFrameDurationValue, timescale: previewTimescale),
+            presentationTimeStamp: presentationTime,
             decodeTimeStamp: CMTime.invalid
         )
         var sampleSize = frame.data.count

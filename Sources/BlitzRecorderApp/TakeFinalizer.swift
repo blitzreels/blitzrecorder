@@ -68,20 +68,21 @@ final class TakeFinalizer {
         captureSummary: CaptureSourceRunSummary,
         sceneEvents: [RecordingSceneEvent] = []
     ) async -> TakeFinalizationOutcome {
-        let renamedTake = await renameFromTranscriptIfPossible(take: take, settings: settings)
-        let processedTake = await removeCameraBackgroundIfNeeded(from: renamedTake, settings: settings)
+        let finalizationSettings = settingsForFinalization(settings, captureSummary: captureSummary)
+        let renamedTake = await renameFromTranscriptIfPossible(take: take, settings: finalizationSettings)
+        let processedTake = await removeCameraBackgroundIfNeeded(from: renamedTake, settings: finalizationSettings)
         let plan = TakeFinalizationPlan(
             take: processedTake,
-            settings: settings,
+            settings: finalizationSettings,
             captureSummary: captureSummary
         )
 
         switch plan.action {
         case .saveTransparentCameraOnly:
             do {
-                let url = try saveTransparentCameraOnly(take: processedTake, settings: settings)
+                let url = try saveTransparentCameraOnly(take: processedTake, settings: finalizationSettings)
                 onRenderProgress?(1)
-                return try savedOutcome(url: url, take: processedTake, settings: settings)
+                return try savedOutcome(url: url, take: processedTake, settings: finalizationSettings)
             } catch {
                 return .recoveryFiles(processedTake, reason: "Transparent webcam save failed: \(error.recorderFailureDescription)")
             }
@@ -91,10 +92,21 @@ final class TakeFinalizer {
         case .exportFinalVideo:
             return await exportFinalVideo(
                 take: processedTake,
-                settings: settings,
+                settings: finalizationSettings,
                 sceneEvents: sceneEvents
             )
         }
+    }
+
+    private func settingsForFinalization(
+        _ settings: RecordingSettings,
+        captureSummary: CaptureSourceRunSummary
+    ) -> RecordingSettings {
+        var settings = settings
+        for source in [CaptureSource.microphone, .systemAudio] where captureSummary.stopFailures[source] != nil {
+            settings.enabledSources.remove(source)
+        }
+        return settings
     }
 
     private func exportFinalVideo(
@@ -137,6 +149,7 @@ final class TakeFinalizer {
 
     private func renameFromTranscriptIfPossible(take: RecordingTake, settings: RecordingSettings) async -> RecordingTake {
         guard settings.enabledSources.contains(.microphone),
+              settings.renamesRecordingsFromSpeech,
               FileManager.default.fileExists(atPath: take.audioURL.path) else {
             return take
         }

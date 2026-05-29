@@ -85,6 +85,15 @@ final class MainWindowController: NSWindowController {
             self.viewModel.applyRemoteCameraPreviewSampleBuffer(sampleBuffer, width: width, height: height)
             self.cameraPreviewDeviceID = self.coordinator.settings.selectedCameraID
         }
+        coordinator.onRemoteCameraPreviewReset = { [weak self] message in
+            guard let self,
+                  self.coordinator.settings.visibleSources.contains(.camera),
+                  self.coordinator.isRemoteCameraSelected else { return }
+            self.previewStage.cameraPreview.isHidden = false
+            self.previewStage.cameraPreview.setMessage(message)
+            self.viewModel.clearRemoteCameraPreview(message: message)
+            self.cameraPreviewDeviceID = self.coordinator.settings.selectedCameraID
+        }
         coordinator.onRemoteCameraPairingCodeRequested = { [weak self] deviceName in
             self?.requestRemoteCameraPairingCode(deviceName: deviceName)
         }
@@ -107,7 +116,7 @@ final class MainWindowController: NSWindowController {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.startCameraDeviceMonitoring()
-            self.requestPermissionsAndRefresh()
+            self.refreshStartupState()
             self.startScreenPreview()
             self.startCameraPreview()
         }
@@ -294,14 +303,12 @@ final class MainWindowController: NSWindowController {
         }
     }
 
-    private func requestPermissionsAndRefresh() {
+    private func refreshStartupState() {
         Task {
-            await coordinator.requestPermissionsForEnabledSources()
             coordinator.refreshAudioLevelMonitoring()
             await viewModel.refreshSources()
             viewModel.syncSettings()
             refreshPermissionGate()
-            refreshCameraPicker()
         }
     }
 
@@ -408,6 +415,33 @@ final class MainWindowController: NSWindowController {
             refreshPermissionGate()
             return
         }
+
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            break
+        case .notDetermined:
+            previewStage.cameraPreview.isHidden = false
+            previewStage.cameraPreview.setMessage("Camera starts when recording")
+            cameraPreviewDeviceID = nil
+            isStartingCameraPreview = false
+            refreshPermissionGate()
+            return
+        case .denied, .restricted:
+            previewStage.cameraPreview.isHidden = false
+            previewStage.cameraPreview.setMessage("Camera permission required")
+            cameraPreviewDeviceID = nil
+            isStartingCameraPreview = false
+            refreshPermissionGate()
+            return
+        @unknown default:
+            previewStage.cameraPreview.isHidden = false
+            previewStage.cameraPreview.setMessage("Camera unavailable")
+            cameraPreviewDeviceID = nil
+            isStartingCameraPreview = false
+            refreshPermissionGate()
+            return
+        }
+
         if isStartingCameraPreview, cameraPreviewDeviceID == selectedID { return }
         if previewStage.cameraPreview.hasPreviewContent, cameraPreviewDeviceID == selectedID { return }
 

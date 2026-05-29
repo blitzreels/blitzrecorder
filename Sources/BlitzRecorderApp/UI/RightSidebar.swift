@@ -166,10 +166,12 @@ struct CameraCropControls: View {
                     }
                 }
             } else {
+                cropPresetControls
+
                 Button {
                     vm.beginCameraCropMode()
                 } label: {
-                    Label("Edit crop", systemImage: "viewfinder")
+                    Label("Free crop", systemImage: "viewfinder")
                         .font(.system(size: 11, weight: .semibold))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 10)
@@ -199,6 +201,73 @@ struct CameraCropControls: View {
 
     private var positionIsCentered: Bool {
         abs(vm.settings.cameraCropPosition.x) < 0.001 && abs(vm.settings.cameraCropPosition.y) < 0.001
+    }
+
+    private var cropZoom: Double {
+        Double(max(vm.settings.cameraCropAmount.x, vm.settings.cameraCropAmount.y))
+    }
+
+    private var cropPresetControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                cropPresetButton("Fit", icon: "rectangle", amount: .zero)
+                cropPresetButton("Med", icon: "plus.magnifyingglass", amount: CGPoint(x: 0.22, y: 0.22))
+                cropPresetButton("Tight", icon: "viewfinder", amount: CGPoint(x: 0.42, y: 0.42))
+            }
+
+            cropSlider(
+                title: "Zoom",
+                value: Binding(
+                    get: { cropZoom },
+                    set: { vm.setCameraCropZoom(CGFloat($0)) }
+                ),
+                range: 0...0.75
+            )
+            cropSlider(
+                title: "X",
+                value: Binding(
+                    get: { Double(vm.settings.cameraCropPosition.x) },
+                    set: { vm.setCameraCropPanX(CGFloat($0)) }
+                ),
+                range: -1...1
+            )
+            cropSlider(
+                title: "Y",
+                value: Binding(
+                    get: { Double(vm.settings.cameraCropPosition.y) },
+                    set: { vm.setCameraCropPanY(CGFloat($0)) }
+                ),
+                range: -1...1
+            )
+        }
+    }
+
+    private func cropPresetButton(_ title: String, icon: String, amount: CGPoint) -> some View {
+        Button {
+            vm.setCameraCropPreset(amount: amount, position: .zero)
+        } label: {
+            Label(title, systemImage: icon)
+                .font(.system(size: 10, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+                .frame(maxWidth: .infinity, minHeight: 26)
+        }
+        .blitzGlassButton()
+        .controlSize(.small)
+        .pointingHandCursor()
+        .help(title)
+    }
+
+    private func cropSlider(title: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.58))
+                .frame(width: 34, alignment: .leading)
+
+            Slider(value: value, in: range)
+                .controlSize(.small)
+        }
     }
 }
 

@@ -12,6 +12,7 @@ enum RecordingSettingsStore {
         static let systemAudioGain = "recording.systemAudioGain"
         static let removesCameraBackgroundAfterRecording = "recording.removesCameraBackgroundAfterRecording"
         static let savesSourceFiles = "recording.savesSourceFiles"
+        static let renamesRecordingsFromSpeech = "recording.renamesRecordingsFromSpeech"
         static let showsRuleOfThirdsOverlay = "recording.showsRuleOfThirdsOverlay"
         static let socialSafeZoneOverlay = "recording.socialSafeZoneOverlay"
         static let includeCursor = "recording.includeCursor"
@@ -73,6 +74,10 @@ enum RecordingSettingsStore {
 
         if defaults.object(forKey: Key.savesSourceFiles) != nil {
             settings.savesSourceFiles = defaults.bool(forKey: Key.savesSourceFiles)
+        }
+
+        if defaults.object(forKey: Key.renamesRecordingsFromSpeech) != nil {
+            settings.renamesRecordingsFromSpeech = defaults.bool(forKey: Key.renamesRecordingsFromSpeech)
         }
 
         if defaults.object(forKey: Key.showsRuleOfThirdsOverlay) != nil {
@@ -153,6 +158,9 @@ enum RecordingSettingsStore {
                 settings.sceneLayout = presetLayout
             }
         }
+        if defaults.string(forKey: Key.selectedScenePreset) == ScenePreset.cameraFocus.rawValue {
+            settings.sceneLayout = SceneLayout.defaultLayout(for: settings.layout)
+        }
         if let rawOrder = defaults.stringArray(forKey: Key.layerOrder) {
             let order = rawOrder.compactMap(SceneLayerKind.init(rawValue:))
             if Set(order) == Set(SceneLayerKind.allCases), order.count == SceneLayerKind.allCases.count {
@@ -214,6 +222,7 @@ enum RecordingSettingsStore {
         defaults.set(settings.systemAudioGain, forKey: Key.systemAudioGain)
         defaults.set(settings.removesCameraBackgroundAfterRecording, forKey: Key.removesCameraBackgroundAfterRecording)
         defaults.set(settings.savesSourceFiles, forKey: Key.savesSourceFiles)
+        defaults.set(settings.renamesRecordingsFromSpeech, forKey: Key.renamesRecordingsFromSpeech)
         defaults.set(settings.showsRuleOfThirdsOverlay, forKey: Key.showsRuleOfThirdsOverlay)
         defaults.set(settings.socialSafeZoneOverlay.rawValue, forKey: Key.socialSafeZoneOverlay)
         defaults.set(settings.includeCursor, forKey: Key.includeCursor)

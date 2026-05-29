@@ -91,7 +91,25 @@ private struct RecordingStorageSettings: View {
                     Label("Save source files", systemImage: "folder.badge.plus")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(.white.opacity(0.88))
-                    Text("Keeps separate screen, camera, microphone, system audio, and transcript files next to the final export.")
+                    Text("Keeps separate screen, camera, microphone, and system audio files next to the final export.")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.52))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .disabled(vm.state != .idle)
+
+            Toggle(isOn: Binding(
+                get: { vm.settings.renamesRecordingsFromSpeech },
+                set: { vm.setSpeechRenameEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Label("Auto-name from speech", systemImage: "text.bubble")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.88))
+                    Text("Requests Speech Recognition after a mic recording, then uses the transcript for the filename.")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.white.opacity(0.52))
                         .fixedSize(horizontal: false, vertical: true)
@@ -276,7 +294,7 @@ struct PermissionsPage: View {
                 Text("Access")
                     .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(.white)
-                Text("System permissions required to capture screen, camera, and audio.")
+                Text("Grant access only when a selected source needs it.")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.white.opacity(0.55))
             }
@@ -396,6 +414,9 @@ struct PermissionStatusRowView: View {
     }
 
     private var statusSymbol: String {
+        if row.isOptional, row.level == .inactive {
+            return "info.circle.fill"
+        }
         switch row.level {
         case .granted:
             return "checkmark.circle.fill"
@@ -409,6 +430,9 @@ struct PermissionStatusRowView: View {
     }
 
     private var helpText: String {
+        if row.isOptional, row.level == .inactive {
+            return "\(row.title) is optional. Click to enable target-window controls."
+        }
         switch row.level {
         case .granted:
             return "\(row.title) access is active. Click to recheck."

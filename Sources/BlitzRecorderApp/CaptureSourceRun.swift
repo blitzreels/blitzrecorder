@@ -90,7 +90,7 @@ final class CaptureSourceRun {
     private var pickedScreenFilter: SCContentFilter?
     private var timelineStartTime: CMTime?
     private var hostTimelineStartTime: UInt64?
-    private let sourceOrder: [CaptureSource] = [.screen, .camera, .microphone, .systemAudio]
+    private let sourceOrder: [CaptureSource] = [.screen, .microphone, .systemAudio, .camera]
     private let sourceAdapters: [CaptureSource: CaptureSourceRunAdapter]
     private var activeSources: Set<CaptureSource> = []
     private var isPaused = false

@@ -1,4 +1,5 @@
 import AppKit
+import BlitzRecorderCore
 import SwiftUI
 
 struct MainView: View {
@@ -32,6 +33,11 @@ struct MainView: View {
                         .padding(.top, 58)
                         .padding(.trailing, 22)
                 }
+            }
+        }
+        .overlay {
+            if vm.showsFirstRunOnboarding {
+                FirstRunOnboardingView(vm: vm)
             }
         }
         .task {
@@ -79,6 +85,118 @@ struct MainView: View {
         }
     }
 
+}
+
+private struct ProductIconImage: View {
+    let image: NSImage?
+    let fallbackSystemImage: String
+    let size: CGFloat
+    let cornerRadius: CGFloat
+
+    var body: some View {
+        ZStack {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color.white.opacity(0.10))
+                Image(systemName: fallbackSystemImage)
+                    .font(.system(size: size * 0.42, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.white.opacity(0.68))
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .stroke(Color.white.opacity(0.14), lineWidth: 1)
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+private struct FirstRunOnboardingView: View {
+    @Bindable var vm: RecorderViewModel
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.38)
+                .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    Image(systemName: "lock.shield")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Color(red: 0.09, green: 1.0, blue: 0.65))
+                        .frame(width: 28, height: 28)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Set Up Capture")
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundStyle(.white)
+                        Text("Use the picker first. Camera and mic prompts wait until recording.")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.58))
+                    }
+
+                    Spacer(minLength: 0)
+                }
+
+                HStack(spacing: 8) {
+                    Button {
+                        vm.chooseScreenFromOnboarding()
+                    } label: {
+                        Label("Pick Screen", systemImage: "rectangle.on.rectangle")
+                            .font(.system(size: 12, weight: .bold))
+                            .padding(.horizontal, 12)
+                            .frame(height: 34)
+                    }
+                    .blitzGlassButton()
+                    .pointingHandCursor()
+
+                    Button {
+                        vm.openAccessFromOnboarding()
+                    } label: {
+                        Label("Access", systemImage: "lock.shield")
+                            .font(.system(size: 12, weight: .bold))
+                            .padding(.horizontal, 12)
+                            .frame(height: 34)
+                    }
+                    .blitzGlassButton()
+                    .pointingHandCursor()
+
+                    Spacer(minLength: 0)
+
+                    Button {
+                        vm.dismissFirstRunOnboarding()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .bold))
+                            .frame(width: 32, height: 32)
+                    }
+                    .blitzGlassButton()
+                    .pointingHandCursor()
+                    .help("Dismiss")
+                }
+            }
+            .padding(18)
+            .frame(width: 430, alignment: .leading)
+            .blitzGlassSurface(cornerRadius: 18)
+            .shadow(color: .black.opacity(0.36), radius: 28, y: 14)
+        }
+    }
+}
+
+private extension Bundle {
+    var blitzRecorderCameraIcon: NSImage? {
+        guard let url = url(forResource: "Icon-App-60x60@3x", withExtension: "png") else {
+            return nil
+        }
+        return NSImage(contentsOf: url)
+    }
 }
 
 private struct ScreenCropFloatingToolbar: View {
@@ -153,13 +271,18 @@ private struct ScreenCropFloatingToolbar: View {
 private struct RemoteCameraPage: View {
     @Bindable var vm: RecorderViewModel
 
-    var body: some View {
-        if vm.isRemoteCameraSelected {
-            connectedLayout
-        } else {
-            disconnectedLayout
-        }
-    }
+	var body: some View {
+		Group {
+			if vm.isRemoteCameraSelected {
+				connectedLayout
+			} else {
+				disconnectedLayout
+			}
+		}
+		.onAppear {
+			vm.startRemoteCameraDiscovery()
+		}
+	}
 
     private var disconnectedLayout: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -179,23 +302,7 @@ private struct RemoteCameraPage: View {
                     .foregroundStyle(.white.opacity(0.52))
 
                 if vm.remoteCameraDeviceSummaries.isEmpty {
-                    HStack(spacing: 12) {
-                        Image(systemName: "iphone.gen3")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.45))
-                            .frame(width: 22)
-                        Text("Open BlitzRecorder Camera on your iPhone to pair.")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.56))
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 12)
-                    .background(Color.white.opacity(0.055), in: .rect(cornerRadius: 10))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                    }
+                    companionAppLink
                 } else {
                     VStack(spacing: 8) {
                         ForEach(vm.remoteCameraDeviceSummaries) { device in
@@ -224,6 +331,46 @@ private struct RemoteCameraPage: View {
         .padding(.horizontal, 28)
         .padding(.top, 28)
         .foregroundStyle(.white)
+    }
+
+    private var companionAppLink: some View {
+        Link(destination: BlitzRecorderProductIdentity.companionInstallURL) {
+            HStack(spacing: 12) {
+                ProductIconImage(
+                    image: Bundle.main.blitzRecorderCameraIcon,
+                    fallbackSystemImage: "iphone.gen3",
+                    size: 42,
+                    cornerRadius: 9
+                )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(BlitzRecorderProductIdentity.companionDisplayName)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.92))
+                        .lineLimit(1)
+                    Text("iPhone app")
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(.white.opacity(0.55))
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.52))
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white.opacity(0.055), in: .rect(cornerRadius: 10))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor()
+        .help("Open \(BlitzRecorderProductIdentity.companionDisplayName)")
     }
 
     private var connectedLayout: some View {

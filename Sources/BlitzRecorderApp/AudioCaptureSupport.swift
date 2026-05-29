@@ -38,10 +38,17 @@ enum MicrophoneDeviceSelection {
 }
 
 enum AudioCaptureSessionCleanup {
-    static func detachAudioOutputsAndRemoveAll(from session: AVCaptureSession) {
+    static func detachAudioOutputs(from session: AVCaptureSession) {
         session.outputs
             .compactMap { $0 as? AVCaptureAudioDataOutput }
-            .forEach { $0.setSampleBufferDelegate(nil, queue: nil) }
+            .forEach {
+                $0.setSampleBufferDelegate(nil, queue: nil)
+                session.removeOutput($0)
+            }
+    }
+
+    static func detachAudioOutputsAndRemoveAll(from session: AVCaptureSession) {
+        detachAudioOutputs(from: session)
         session.inputs.forEach { session.removeInput($0) }
         session.outputs.forEach { session.removeOutput($0) }
     }

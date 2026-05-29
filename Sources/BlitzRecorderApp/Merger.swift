@@ -59,21 +59,14 @@ enum Merger {
             ))
         }
 
+        let expectedAudioSources = expectedAudioSources(for: take, settings: settings)
         var audioMixParameters: [AVMutableAudioMixInputParameters] = []
-        if let parameters = try await addAudioIfPresent(
-            from: take.audioURL,
-            to: composition,
-            duration: duration,
-            volume: Float(settings.microphoneGain)
-        ) {
-            audioMixParameters.append(parameters)
-        }
-        if let parameters = try await addAudioIfPresent(
-            from: take.systemAudioURL,
-            to: composition,
-            duration: duration,
-            volume: Float(settings.systemAudioGain)
-        ) {
+        for audioSource in expectedAudioSources {
+            let parameters = try await addRequiredAudio(
+                audioSource,
+                to: composition,
+                duration: duration
+            )
             audioMixParameters.append(parameters)
         }
 
@@ -130,6 +123,10 @@ enum Merger {
                     progressHandler: progressHandler
                 )
             }
+            try await validateExpectedAudio(
+                in: temporaryOutputURL,
+                expectedAudioSources: expectedAudioSources
+            )
             await progressHandler?(1)
         } catch {
             try? fileManager.removeItem(at: temporaryOutputURL)
@@ -239,7 +236,7 @@ enum Merger {
                     targetRect: targetRect,
                     sourceCropAmount: settings.cameraCropAmount,
                     sourceCropPosition: settings.cameraCropPosition,
-                    timelineOffset: hasScreen ? remoteCameraTimelineOffset(for: take.cameraURL) : .zero
+                    timelineOffset: remoteCameraTimelineOffset(for: take.cameraURL, preservesPositiveOffset: hasScreen)
                 ))
             }
         }
@@ -265,7 +262,10 @@ enum Merger {
         }
     }
 
-    private static func remoteCameraTimelineOffset(for cameraURL: URL) -> CMTime {
+    private static func remoteCameraTimelineOffset(
+        for cameraURL: URL,
+        preservesPositiveOffset: Bool
+    ) -> CMTime {
         guard let manifest = remoteCameraManifest(for: cameraURL),
               let timelineStartTime = manifest.hostTimelineStartTime,
               let cameraStartTime = manifest.estimatedHostStartTime ?? manifest.hostStartTime else {
@@ -277,11 +277,15 @@ enum Merger {
         } else {
             deltaNanoseconds = -Int64(min(timelineStartTime - cameraStartTime, UInt64(Int64.max)))
         }
-        return CMTimeConvertScale(
+        let offset = CMTimeConvertScale(
             CMTime(value: deltaNanoseconds, timescale: 1_000_000_000),
             timescale: 600,
             method: .roundHalfAwayFromZero
         )
+        if preservesPositiveOffset || CMTimeCompare(offset, .zero) <= 0 {
+            return offset
+        }
+        return .zero
     }
 
     private static func remoteCameraManifest(for cameraURL: URL) -> RemoteCameraTransferManifest? {
@@ -473,25 +477,46 @@ enum Merger {
         return [0, 1, 0, 0]
     }
 
-    private static func addAudioIfPresent(
-        from url: URL,
-        to composition: AVMutableComposition,
-        duration: CMTime,
-        volume: Float
-    ) async throws -> AVMutableAudioMixInputParameters? {
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        let values = try url.resourceValues(forKeys: [.fileSizeKey])
-        guard (values.fileSize ?? 0) > 0 else { return nil }
+    private static func expectedAudioSources(for take: RecordingTake, settings: RecordingSettings) -> [ExpectedAudioSource] {
+        var sources: [ExpectedAudioSource] = []
+        if settings.enabledSources.contains(.microphone) {
+            sources.append(ExpectedAudioSource(
+                source: .microphone,
+                url: take.audioURL,
+                volume: Float(settings.microphoneGain)
+            ))
+        }
+        if settings.enabledSources.contains(.systemAudio) {
+            sources.append(ExpectedAudioSource(
+                source: .systemAudio,
+                url: take.systemAudioURL,
+                volume: Float(settings.systemAudioGain)
+            ))
+        }
+        return sources
+    }
 
-        let asset = AVURLAsset(url: url)
+    private static func addRequiredAudio(
+        _ audioSource: ExpectedAudioSource,
+        to composition: AVMutableComposition,
+        duration: CMTime
+    ) async throws -> AVMutableAudioMixInputParameters {
+        guard FileManager.default.fileExists(atPath: audioSource.url.path) else {
+            throw missingExpectedAudio(audioSource, reason: "file was not created")
+        }
+        let values = try audioSource.url.resourceValues(forKeys: [.fileSizeKey])
+        guard (values.fileSize ?? 0) > 0 else {
+            throw missingExpectedAudio(audioSource, reason: "file is empty")
+        }
+
+        let asset = AVURLAsset(url: audioSource.url)
         let audioTracks: [AVAssetTrack]
         let audioDuration: CMTime
         do {
             audioTracks = try await asset.loadTracks(withMediaType: .audio)
             audioDuration = try await asset.load(.duration)
         } catch {
-            NSLog("Skipping unreadable audio file \(url.path): \(error.localizedDescription)")
-            return nil
+            throw missingExpectedAudio(audioSource, reason: "file is unreadable: \(error.localizedDescription)")
         }
 
         guard let audioTrack = audioTracks.first,
@@ -501,7 +526,7 @@ enum Merger {
                 withMediaType: .audio,
                 preferredTrackID: kCMPersistentTrackID_Invalid
               ) else {
-            return nil
+            throw missingExpectedAudio(audioSource, reason: "file has no readable audio samples")
         }
 
         let insertDuration = CMTimeMinimum(duration, audioDuration)
@@ -512,8 +537,52 @@ enum Merger {
         )
 
         let parameters = AVMutableAudioMixInputParameters(track: compositionAudioTrack)
-        parameters.setVolume(max(0, min(2, volume)), at: .zero)
+        parameters.setVolume(max(0, min(2, audioSource.volume)), at: .zero)
         return parameters
+    }
+
+    private static func validateExpectedAudio(
+        in outputURL: URL,
+        expectedAudioSources: [ExpectedAudioSource]
+    ) async throws {
+        guard !expectedAudioSources.isEmpty else { return }
+
+        let asset = AVURLAsset(url: outputURL)
+        let audioTracks: [AVAssetTrack]
+        do {
+            audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        } catch {
+            throw RecorderError.mediaWriteFailed(
+                "Final export could not verify expected audio: \(error.localizedDescription)"
+            )
+        }
+
+        guard !audioTracks.isEmpty else {
+            throw RecorderError.mediaWriteFailed(
+                "Final export is missing expected \(audioSourceList(expectedAudioSources)) audio."
+            )
+        }
+
+        let minimumDuration = CMTime(seconds: 0.05, preferredTimescale: 600)
+        for track in audioTracks {
+            if let timeRange = try? await track.load(.timeRange),
+               timeRange.duration.isValid,
+               CMTimeCompare(timeRange.duration, minimumDuration) >= 0 {
+                return
+            }
+        }
+
+        throw RecorderError.mediaWriteFailed(
+            "Final export contains an audio track, but it is too short to trust."
+        )
+    }
+
+    private static func missingExpectedAudio(_ source: ExpectedAudioSource, reason: String) -> RecorderError {
+        .mediaWriteFailed("\(source.displayName) audio was expected, but \(reason).")
+    }
+
+    private static func audioSourceList(_ sources: [ExpectedAudioSource]) -> String {
+        sources.map(\.displayName).joined(separator: " and ")
     }
 
     private static func targetRect(
@@ -601,6 +670,23 @@ private struct ReadableVideoAsset {
     let asset: AVURLAsset
     let track: AVAssetTrack
     let duration: CMTime
+}
+
+private struct ExpectedAudioSource {
+    let source: CaptureSource
+    let url: URL
+    let volume: Float
+
+    var displayName: String {
+        switch source {
+        case .microphone:
+            "Microphone"
+        case .systemAudio:
+            "System audio"
+        case .screen, .camera:
+            source.rawValue
+        }
+    }
 }
 
 private struct VideoSource {

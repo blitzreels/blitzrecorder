@@ -427,7 +427,7 @@ final class RecorderCoordinatorFitSlotTests: XCTestCase {
             XCTAssertTrue(coordinator.settings.enabledSources.contains(.camera), file: file, line: line)
             XCTAssertFalse(coordinator.settings.hiddenSources.contains(.screen), file: file, line: line)
             XCTAssertTrue(coordinator.settings.hiddenSources.contains(.camera), file: file, line: line)
-        case .stackedHalves, .screenTop50, .screenTop70, .screenFocus, .cameraInset, .cameraFocus:
+        case .stackedHalves, .screenTop50, .screenTop70, .screenFocus, .cameraInset, .cameraFocus, .webcamLeft:
             XCTAssertTrue(coordinator.settings.enabledSources.contains(.screen), file: file, line: line)
             XCTAssertTrue(coordinator.settings.enabledSources.contains(.camera), file: file, line: line)
             XCTAssertFalse(coordinator.settings.hiddenSources.contains(.screen), file: file, line: line)

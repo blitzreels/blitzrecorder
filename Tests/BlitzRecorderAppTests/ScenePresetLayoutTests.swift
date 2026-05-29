@@ -62,6 +62,7 @@ final class ScenePresetLayoutTests: XCTestCase {
         XCTAssertFalse(ScenePreset.allCases.contains(.stackedHalves))
         XCTAssertFalse(ScenePreset.allCases.contains(.screenFocus))
         XCTAssertFalse(ScenePreset.allCases.contains(.screenTop70))
+        XCTAssertFalse(ScenePreset.allCases.contains(.cameraFocus))
     }
 
     func testWebcamFullscreenUsesFullVerticalCanvasForCameraCrop() {
@@ -107,6 +108,24 @@ final class ScenePresetLayoutTests: XCTestCase {
 
         XCTAssertRect(layout.screenFrame, equals: CGRect(x: 0, y: 0, width: 1, height: 1))
         XCTAssertEqual(layout.layerOrder, [.camera, .screen])
+    }
+
+    func testWebcamLeftUsesLeftThirdAndScreenRightTwoThirdsInHorizontalCanvas() {
+        let layout = SceneLayout.presetLayout(.webcamLeft, for: .horizontal)
+
+        XCTAssertRect(layout.cameraFrame, equals: CGRect(x: 0, y: 0, width: 1.0 / 3.0, height: 1))
+        XCTAssertRect(layout.screenFrame, equals: CGRect(x: 1.0 / 3.0, y: 0, width: 2.0 / 3.0, height: 1))
+        XCTAssertEqual(layout.layerOrder, [.screen, .camera])
+    }
+
+    func testWebcamLeftIsLandscapeOnly() {
+        XCTAssertFalse(ScenePreset.webcamLeft.supports(.vertical))
+        XCTAssertTrue(ScenePreset.webcamLeft.supports(.horizontal))
+    }
+
+    func testCameraFocusIsNoLongerSupported() {
+        XCTAssertFalse(ScenePreset.cameraFocus.supports(.vertical))
+        XCTAssertFalse(ScenePreset.cameraFocus.supports(.horizontal))
     }
 }
 

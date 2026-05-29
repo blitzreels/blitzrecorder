@@ -55,17 +55,23 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         let writerToFinish = await withCheckedContinuation { continuation in
             queue.async {
                 self.session.beginConfiguration()
-                AudioCaptureSessionCleanup.detachAudioOutputsAndRemoveAll(from: self.session)
+                AudioCaptureSessionCleanup.detachAudioOutputs(from: self.session)
                 self.session.commitConfiguration()
                 let writer = self.writer
                 self.writer = nil
                 continuation.resume(returning: writer)
             }
         }
-        session.stopRunning()
-        let completion = try await writerToFinish?.finish() ?? .empty()
-        levelPublisher.reset()
-        return completion
+        do {
+            let completion = try await writerToFinish?.finish() ?? .empty()
+            await tearDownSession()
+            levelPublisher.reset()
+            return completion
+        } catch {
+            await tearDownSession()
+            levelPublisher.reset()
+            throw error
+        }
     }
 
     func captureOutput(
@@ -75,5 +81,19 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     ) {
         levelPublisher.publish(from: sampleBuffer)
         writer?.append(sampleBuffer)
+    }
+
+    private func tearDownSession() async {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                if self.session.isRunning {
+                    self.session.stopRunning()
+                }
+                self.session.beginConfiguration()
+                AudioCaptureSessionCleanup.detachAudioOutputsAndRemoveAll(from: self.session)
+                self.session.commitConfiguration()
+                continuation.resume()
+            }
+        }
     }
 }

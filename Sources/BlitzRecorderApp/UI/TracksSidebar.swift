@@ -461,11 +461,19 @@ private struct WebcamSourceMenu: View {
         return "Default camera"
     }
 
-    var body: some View {
-        Menu {
-            Button {
-                vm.setCamera(nil)
-            } label: {
+	var body: some View {
+		Menu {
+			Button {
+				vm.startRemoteCameraDiscovery()
+			} label: {
+				Label("Detect iPhone Camera", systemImage: "iphone.radiowaves.left.and.right")
+			}
+
+			Divider()
+
+			Button {
+				vm.setCamera(nil)
+			} label: {
                 Label("Default camera", systemImage: vm.settings.selectedCameraID == nil ? "checkmark" : "video")
             }
 
@@ -605,6 +613,8 @@ private struct SceneLayoutControls: View {
         switch title {
         case ScenePreset.screenTop50.rawValue:
             return "Split"
+        case ScenePreset.webcamLeft.rawValue:
+            return "Left Cam"
         case ScenePreset.screenFullscreen.rawValue:
             return "Screen"
         case ScenePreset.webcamFullscreen.rawValue:

@@ -183,16 +183,21 @@ final class RemoteCameraTransferManager {
             return
         }
         do {
-            guard offset == transfer.receivedByteCount else {
-                if offset < transfer.receivedByteCount {
-                    sendCommand(.transferAck(
-                        takeID: takeID,
-                        receivedByteCount: transfer.receivedByteCount
-                    ))
-                    return
-                }
+            switch RemoteCameraTransferProtocol.chunkDisposition(
+                offset: offset,
+                receivedByteCount: transfer.receivedByteCount
+            ) {
+            case .append:
+                break
+            case .alreadyReceived(let acknowledgedByteCount):
+                sendCommand(.transferAck(
+                    takeID: takeID,
+                    receivedByteCount: acknowledgedByteCount
+                ))
+                return
+            case .gap(let expectedOffset, let receivedOffset):
                 throw RecorderError.remoteCameraTransferFailed(
-                    "Expected chunk at offset \(transfer.receivedByteCount), received \(offset)."
+                    "Expected chunk at offset \(expectedOffset), received \(receivedOffset)."
                 )
             }
             try transfer.fileHandle.seek(toOffset: UInt64(offset))
