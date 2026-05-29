@@ -11,6 +11,18 @@ fail() {
   failures=$((failures + 1))
 }
 
+contains_fixed_string() {
+  local pattern="$1"
+  local path="$2"
+  if command -v rg >/dev/null 2>&1; then
+    rg -q --fixed-strings -- "$pattern" "$path"
+  elif [[ -d "$path" ]]; then
+    grep -R -F -q -- "$pattern" "$path"
+  else
+    grep -F -q -- "$pattern" "$path"
+  fi
+}
+
 require_file() {
   [[ -f "$1" ]] || fail "missing file: $1"
 }
@@ -22,7 +34,7 @@ require_contains() {
     fail "missing file: $file"
     return
   fi
-  rg -q --fixed-strings -- "$pattern" "$file" || fail "$file missing: $pattern"
+  contains_fixed_string "$pattern" "$file" || fail "$file missing: $pattern"
 }
 
 reject_contains() {
@@ -32,7 +44,7 @@ reject_contains() {
     fail "missing file: $file"
     return
   fi
-  if rg -q --fixed-strings -- "$pattern" "$file"; then
+  if contains_fixed_string "$pattern" "$file"; then
     fail "$file unexpectedly contains: $pattern"
   fi
 }
@@ -546,7 +558,7 @@ require_plist_contains "Apps/iOSCamera/Resources/PrivacyInfo.xcprivacy" "NSPriva
 require_plist_contains "Apps/iOSCamera/Resources/PrivacyInfo.xcprivacy" "NSPrivacyAccessedAPITypes" "NSPrivacyAccessedAPICategoryDiskSpace"
 require_contains "Sources/BlitzRecorderApp/AccessController.swift" "KeychainBlitzReelsTokenStore"
 require_contains "Sources/BlitzRecorderApp/AccessController.swift" "kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly"
-if rg -q --fixed-strings "simulateConnectedForPreview" Apps/iOSCamera/Sources; then
+if contains_fixed_string "simulateConnectedForPreview" Apps/iOSCamera/Sources; then
   fail "iOS companion exposes simulated pairing in release sources"
 fi
 validate_metadata_file "AppStore/Metadata-macOS.md"
