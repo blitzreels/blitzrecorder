@@ -86,20 +86,6 @@ Domain setup:
   the records resolve to Vercel. If the DNS zone is rebuilt, verify the latest
   required values in Vercel before changing the records.
 
-## Product References
-
-BlitzRecorder is currently closed-source and commercial. The product direction takes inspiration
-from open-source screen recording tools without implying affiliation or code reuse:
-
-| Project | What is useful to study |
-| --- | --- |
-| [Cap](https://cap.so/) | Native-feeling recording, ownership-first positioning, and open-source transparency. |
-| [Recordly](https://github.com/webadderall/Recordly) | Polished recording-to-editing workflow for demos, tutorials, product videos, cursor polish, and zoom effects. |
-| [OpenScreen](https://github.com/RockySteveJobs/openscreen) | Free Screen Studio-style workflow: screen/window recording, automatic zooms, annotations, backgrounds, trimming, and multi-aspect export. |
-
-Reference projects should inform product taste, onboarding clarity, and workflow expectations.
-Any implementation borrowing must be reviewed separately for licensing and attribution before use.
-
 ## Documentation
 
 - [Feature overview](docs/features.md)
