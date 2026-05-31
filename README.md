@@ -67,10 +67,27 @@ The current identity uses the folded-capture mark for macOS and the folded-lens 
 
 ## Website
 
-- [Landing page](Web/blitzrecorder/index.html)
-- [Brand guidelines](Web/blitzrecorder/brand-guidelines.html)
-- [iOS App Store page](Web/blitzrecorder/ios-app-store.html)
-- [macOS App Store page](Web/blitzrecorder/macos-app-store.html)
+- Production site: [blitzrecorder.vercel.app](https://blitzrecorder.vercel.app)
+- Vercel project: `varkoffs-projects/blitzrecorder`
+- Source: [Web/blitzrecorder](Web/blitzrecorder)
+
+The website is a static Vite/React build. There is no SSR runtime and no account system.
+The production site currently uses the Vercel project URL while the final domain strategy is
+decided: either a dedicated `blitzrecorder.com` site or promotion from `blitzreels.com`.
+
+## Product References
+
+BlitzRecorder is currently closed-source and commercial. The product direction takes inspiration
+from open-source screen recording tools without implying affiliation or code reuse:
+
+| Project | What is useful to study |
+| --- | --- |
+| [Cap](https://cap.so/) | Native-feeling recording, ownership-first positioning, and open-source transparency. |
+| [Recordly](https://github.com/webadderall/Recordly) | Polished recording-to-editing workflow for demos, tutorials, product videos, cursor polish, and zoom effects. |
+| [OpenScreen](https://github.com/RockySteveJobs/openscreen) | Free Screen Studio-style workflow: screen/window recording, automatic zooms, annotations, backgrounds, trimming, and multi-aspect export. |
+
+Reference projects should inform product taste, onboarding clarity, and workflow expectations.
+Any implementation borrowing must be reviewed separately for licensing and attribution before use.
 
 ## Documentation
 
