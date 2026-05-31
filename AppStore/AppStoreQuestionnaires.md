@@ -66,7 +66,7 @@ Recommended answer:
 
 Evidence:
 
-- `Web/blitzrecorder/terms.html`
+- `Web/blitzrecorder/src/main.jsx`
 - `AppStore/Metadata-macOS.md`
 - `AppStore/Metadata-iOS.md`
 

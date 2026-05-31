@@ -82,7 +82,7 @@ def build_payload() -> dict[str, Any]:
             "shipsThirdPartyMediaCatalogs": False,
             "shipsTemplatesMusicStockFootageOrEditorialContent": False,
             "usersResponsibleForRecordedContentRights": True,
-            "termsSource": "Web/blitzrecorder/terms.html",
+            "termsSource": "Web/blitzrecorder/src/main.jsx",
         },
         "advertisingIdentifier": {
             "usesIDFA": False,

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-25T19:27:26Z",
+  "generatedAt": "2026-05-31T11:39:19Z",
   "sourceFiles": [
     "AppStore/AppStoreQuestionnaires.md"
   ],
@@ -43,7 +43,7 @@
     "shipsThirdPartyMediaCatalogs": false,
     "shipsTemplatesMusicStockFootageOrEditorialContent": false,
     "usersResponsibleForRecordedContentRights": true,
-    "termsSource": "Web/blitzrecorder/terms.html"
+    "termsSource": "Web/blitzrecorder/src/main.jsx"
   },
   "advertisingIdentifier": {
     "usesIDFA": false,

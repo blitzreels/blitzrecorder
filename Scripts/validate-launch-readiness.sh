@@ -192,9 +192,8 @@ require_file "Resources/BlitzRecorder.icns"
 require_file "Sources/BlitzRecorderApp/PrivacyInfo.xcprivacy"
 require_file "Apps/iOSCamera/Resources/PrivacyInfo.xcprivacy"
 require_file "Web/blitzrecorder/index.html"
-require_file "Web/blitzrecorder/privacy.html"
-require_file "Web/blitzrecorder/terms.html"
-require_file "Web/blitzrecorder/support.html"
+require_file "Web/blitzrecorder/src/main.jsx"
+require_file "Web/blitzrecorder/vercel.json"
 require_file "Scripts/preflight-app-store-local.sh"
 require_file "Scripts/validate-entitlement-endpoint.sh"
 require_file "Scripts/capture-app-store-screenshots.sh"
@@ -469,17 +468,18 @@ require_contains "Web/blitzrecorder/index.html" '$7.99 per month'
 require_contains "Web/blitzrecorder/index.html" '$49.99 per year'
 require_contains "Web/blitzrecorder/index.html" "3 free exports"
 require_contains "Web/blitzrecorder/index.html" "eligible BlitzReels subscribers"
-require_contains "Web/blitzrecorder/terms.html" '$7.99 per month'
-require_contains "Web/blitzrecorder/terms.html" '$49.99 per year'
-require_contains "Web/blitzrecorder/terms.html" "Eligible active BlitzReels subscribers"
-require_contains "Web/blitzrecorder/terms.html" "support@blitzreels.com"
-require_contains "Web/blitzrecorder/privacy.html" "macOS Keychain"
-require_contains "Web/blitzrecorder/privacy.html" "support@blitzreels.com"
-require_contains "Web/blitzrecorder/support.html" "support@blitzreels.com"
-reject_contains "Web/blitzrecorder/terms.html" "intended as launch copy"
-reject_contains "Web/blitzrecorder/privacy.html" "intended as product copy"
-reject_contains "Web/blitzrecorder/support.html" "For launch"
-reject_contains "Web/blitzrecorder/support.html" "support inbox or help desk"
+require_contains "Web/blitzrecorder/src/main.jsx" '$7.99 per month'
+require_contains "Web/blitzrecorder/src/main.jsx" '$49.99 per year'
+require_contains "Web/blitzrecorder/src/main.jsx" "Eligible active BlitzReels subscribers"
+require_contains "Web/blitzrecorder/src/main.jsx" "support@blitzreels.com"
+require_contains "Web/blitzrecorder/src/main.jsx" "macOS Keychain"
+require_contains "Web/blitzrecorder/vercel.json" '"/terms"'
+require_contains "Web/blitzrecorder/vercel.json" '"/privacy"'
+require_contains "Web/blitzrecorder/vercel.json" '"/support"'
+reject_contains "Web/blitzrecorder/src/main.jsx" "intended as launch copy"
+reject_contains "Web/blitzrecorder/src/main.jsx" "intended as product copy"
+reject_contains "Web/blitzrecorder/src/main.jsx" "For launch"
+reject_contains "Web/blitzrecorder/src/main.jsx" "support inbox or help desk"
 require_contains "BlitzRecorder.xcodeproj/xcshareddata/xcschemes/BlitzRecorder.xcscheme" "../../AppStore/BlitzRecorder.storekit"
 require_contains "project.yml" "storeKitConfiguration: AppStore/BlitzRecorder.storekit"
 require_contains "Scripts/release-status.sh" "Scripts/collect-release-evidence.sh"

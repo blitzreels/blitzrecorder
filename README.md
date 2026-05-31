@@ -67,13 +67,14 @@ The current identity uses the folded-capture mark for macOS and the folded-lens 
 
 ## Website
 
-- Production site: [blitzrecorder.vercel.app](https://blitzrecorder.vercel.app)
+- Production site: [blitzrecorder.com](https://blitzrecorder.com)
+- Vercel fallback: [blitzrecorder.vercel.app](https://blitzrecorder.vercel.app)
 - Vercel project: `varkoffs-projects/blitzrecorder`
 - Source: [Web/blitzrecorder](Web/blitzrecorder)
 
 The website is a static Vite/React build. There is no SSR runtime and no account system.
-The production site currently uses the Vercel project URL while the final domain strategy is
-decided: either a dedicated `blitzrecorder.com` site or promotion from `blitzreels.com`.
+Vercel rewrites the clean routes (`/terms`, `/privacy`, `/support`, `/ios`, `/macos`,
+and `/brand-guidelines`) to the single React entrypoint.
 
 ## Product References
 

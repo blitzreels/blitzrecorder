@@ -95,4 +95,4 @@ Bundled file: `Apps/iOSCamera/Resources/PrivacyInfo.xcprivacy`
 - If analytics, crash reporting, logging upload, customer support upload, receipt validation, or account telemetry is added later, update this worksheet before upload.
 - If BlitzReels entitlement verification starts returning or storing email, Stripe IDs, workspace IDs, or subscription IDs in the app, update the macOS label beyond `Identifiers / User ID`.
 - If recordings, thumbnails, transcripts, or logs are uploaded for any app feature, add the corresponding User Content, Audio Data, Diagnostics, or Other Data categories.
-- Keep this worksheet aligned with `Web/blitzrecorder/privacy.html`, `AppStore/Metadata-macOS.md`, `AppStore/Metadata-iOS.md`, and the bundled privacy manifests.
+- Keep this worksheet aligned with `Web/blitzrecorder/src/main.jsx`, `AppStore/Metadata-macOS.md`, `AppStore/Metadata-iOS.md`, and the bundled privacy manifests.

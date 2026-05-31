@@ -109,11 +109,120 @@ const pages = {
   },
 };
 
+const legalPages = {
+  terms: {
+    eyebrow: "Effective May 22, 2026",
+    title: "Terms of Use",
+    intro:
+      "These terms apply to BlitzRecorder and BlitzRecorder Camera. App Store downloads are also governed by Apple media services terms and the standard Apple licensed application end user license agreement unless a custom license is published.",
+    sections: [
+      {
+        title: "Product",
+        body:
+          "BlitzRecorder is a macOS recording app for creating screen, camera, and audio recordings. BlitzRecorder Camera is an iPhone companion that pairs with BlitzRecorder on Mac for remote camera preview, camera controls, local iPhone camera recording, and transfer back to the Mac take.",
+      },
+      {
+        title: "Subscription",
+        body:
+          "BlitzRecorder includes 3 free exports. BlitzRecorder Pro is offered through App Store subscriptions at $7.99 per month or $49.99 per year and unlocks unlimited exports while the subscription is active. Apple handles billing, renewal, cancellation, refunds, and subscription management.",
+      },
+      {
+        title: "BlitzReels subscriber access",
+        body:
+          "Eligible active BlitzReels subscribers may receive included BlitzRecorder Pro access by signing in with BlitzReels. This access is tied to an active BlitzReels subscription and may change if that subscription is cancelled, expires, or becomes ineligible.",
+      },
+      {
+        title: "User content",
+        body:
+          "You are responsible for the recordings you create, store, publish, or share. You must have the rights and permissions needed to record screens, voices, video, music, meetings, software, or other content.",
+      },
+      {
+        title: "Acceptable use",
+        body:
+          "Do not use BlitzRecorder to violate laws, infringe rights, capture content without required consent, bypass technical protections, or create harmful or abusive material.",
+      },
+      {
+        title: "Support",
+        body:
+          "Support information is available on the support page. Questions about these terms can be sent to support@blitzreels.com.",
+      },
+    ],
+  },
+  privacy: {
+    eyebrow: "Effective May 22, 2026",
+    title: "Privacy Policy",
+    intro:
+      "This policy describes how BlitzRecorder and the BlitzRecorder Camera companion app handle information.",
+    sections: [
+      {
+        title: "Recording content",
+        body:
+          "BlitzRecorder records the sources you choose, such as screen video, microphone audio, system audio, local camera video, and paired iPhone camera video. Recording files are created on your devices and saved to the output folder you select.",
+      },
+      {
+        title: "iPhone companion data",
+        body:
+          "BlitzRecorder Camera uses the local network to pair with your Mac, stream a monitor preview, receive camera controls, and transfer the recorded camera file back to the Mac.",
+      },
+      {
+        title: "Account and subscription checks",
+        body:
+          "BlitzRecorder uses StoreKit to check App Store subscription status. If you sign in with BlitzReels, the app stores the returned access token in the macOS Keychain and sends it to the BlitzReels entitlement endpoint to verify access.",
+      },
+      {
+        title: "Permissions",
+        body:
+          "The apps request permissions needed for their features: screen recording, camera, microphone, local network access, speech recognition, and user-selected file access.",
+      },
+      {
+        title: "Data sharing",
+        body:
+          "We do not sell personal information. App Store purchases are handled by Apple. BlitzReels entitlement verification is handled by BlitzReels systems.",
+      },
+      {
+        title: "Contact",
+        body: "Questions about privacy can be sent to support@blitzreels.com.",
+      },
+    ],
+  },
+  support: {
+    eyebrow: "Help and setup",
+    title: "Support",
+    intro:
+      "BlitzRecorder runs on macOS and pairs with the BlitzRecorder Camera iPhone companion over your local network.",
+    sections: [
+      {
+        title: "Pair an iPhone camera",
+        body:
+          "Open BlitzRecorder Camera on your iPhone, keep it on the same local network as your Mac, choose the iPhone in BlitzRecorder, and enter the six-digit code shown on the phone.",
+      },
+      {
+        title: "Subscription and free exports",
+        body:
+          "BlitzRecorder includes 3 free exports. After the free exports are used, subscribe to BlitzRecorder Pro in the app for unlimited exports. Eligible BlitzReels subscribers can sign in from the app to unlock included access.",
+      },
+      {
+        title: "Permissions",
+        body:
+          "If recording or pairing does not work, check macOS and iOS Settings for screen recording, camera, microphone, speech recognition, local network, and file access permissions.",
+      },
+      {
+        title: "Contact",
+        body:
+          "Email support@blitzreels.com. Include your macOS version, iOS version, app version, device model, and a short description of the recording or pairing issue.",
+      },
+    ],
+  },
+};
+
 function getInitialPage() {
   const path = window.location.pathname;
   if (path.includes("brand-guidelines")) return "hub";
-  if (path.includes("ios-app-store")) return "ios";
-  if (path.includes("macos-app-store")) return "macos";
+  if (path.includes("ios-app-store") || path === "/ios") return "ios";
+  if (path.includes("macos-app-store") || path === "/macos") return "macos";
+  if (path.includes("terms")) return "terms";
+  if (path.includes("privacy")) return "privacy";
+  if (path.includes("support")) return "support";
   return "landing";
 }
 
@@ -121,6 +230,7 @@ function App() {
   const initialPage = getInitialPage();
   if (initialPage === "landing") return <LandingPage />;
   if (initialPage === "hub") return <Hub />;
+  if (legalPages[initialPage]) return <LegalPage page={legalPages[initialPage]} />;
   return <ProductPage page={pages[initialPage]} />;
 }
 
@@ -293,9 +403,9 @@ function LandingNav() {
           <a className="hover:text-white" href="#sources">Sources</a>
           <a className="hover:text-white" href="#iphone">iPhone</a>
           <a className="hover:text-white" href="#workflow">Workflow</a>
-          <a className="hover:text-white" href="macos-app-store.html">macOS</a>
-          <a className="hover:text-white" href="ios-app-store.html">iOS</a>
-          <a className="hover:text-white" href="brand-guidelines.html">Brand</a>
+          <a className="hover:text-white" href="/macos">macOS</a>
+          <a className="hover:text-white" href="/ios">iOS</a>
+          <a className="hover:text-white" href="/brand-guidelines">Brand</a>
           <a className="hover:text-white" href="#pricing">Pricing</a>
         </nav>
         <a className="ml-auto inline-flex h-10 items-center justify-center rounded-full bg-[#63f2b1] px-4 text-sm font-bold text-[#03130d] no-underline md:ml-0" href="#pricing">
@@ -353,9 +463,9 @@ function LandingFooter() {
           BlitzRecorder
         </a>
         <nav className="ml-auto flex flex-wrap gap-5">
-          <a className="hover:text-white" href="support.html">Support</a>
-          <a className="hover:text-white" href="privacy.html">Privacy</a>
-          <a className="hover:text-white" href="terms.html">Terms</a>
+          <a className="hover:text-white" href="/support">Support</a>
+          <a className="hover:text-white" href="/privacy">Privacy</a>
+          <a className="hover:text-white" href="/terms">Terms</a>
           <a className="hover:text-white" href="https://blitzreels.com">BlitzReels</a>
         </nav>
         <p className="basis-full">© 2026 Algomax · Strasbourg</p>
@@ -364,20 +474,43 @@ function LandingFooter() {
   );
 }
 
+function LegalPage({ page }) {
+  return (
+    <div className="min-h-screen bg-[#050807] text-[#f5fbf8] antialiased">
+      <Backdrop />
+      <LandingNav />
+      <main className="mx-auto w-[min(900px,calc(100%-28px))] pt-36 pb-20">
+        <p className="mb-4 text-sm font-black uppercase text-[#63f2b1]">{page.eyebrow}</p>
+        <h1 className="text-5xl font-black leading-none sm:text-7xl">{page.title}</h1>
+        <p className="mt-6 max-w-3xl text-xl leading-8 text-[#afc0ba]">{page.intro}</p>
+        <div className="mt-12 grid gap-8 border-t border-white/10 pt-10">
+          {page.sections.map((section) => (
+            <section className="grid gap-3 border-b border-white/10 pb-8" key={section.title}>
+              <h2 className="text-2xl font-black">{section.title}</h2>
+              <p className="text-lg leading-8 text-[#afc0ba]">{section.body}</p>
+            </section>
+          ))}
+        </div>
+      </main>
+      <LandingFooter />
+    </div>
+  );
+}
+
 function Shell({ children, active }) {
   return (
     <div className="min-h-screen overflow-x-hidden bg-[#08110f] text-[#f5fbf8] antialiased">
       <Backdrop />
       <header className="sticky top-0 z-30 mx-auto flex w-[min(1240px,calc(100%-28px))] items-center justify-between gap-4 border-b border-white/10 bg-[#08110f]/80 py-4 backdrop-blur-xl max-sm:flex-col max-sm:items-stretch">
-        <a className="flex items-center gap-3 font-semibold no-underline" href="brand-guidelines.html">
+        <a className="flex items-center gap-3 font-semibold no-underline" href="/brand-guidelines">
           <img className="h-9 w-9 rounded-[10px] object-cover" src={assets.macIcon} alt="" />
           <span>BlitzRecorder</span>
         </a>
         <nav className="grid grid-cols-2 gap-1 rounded-full border border-white/10 bg-white/5 p-1 text-sm font-semibold max-sm:w-full" aria-label="App pages">
-          <NavPill href="ios-app-store.html" active={active === "ios"}>
+          <NavPill href="/ios" active={active === "ios"}>
             iOS
           </NavPill>
-          <NavPill href="macos-app-store.html" active={active === "macos"}>
+          <NavPill href="/macos" active={active === "macos"}>
             macOS
           </NavPill>
         </nav>
@@ -424,8 +557,8 @@ function Hub() {
         </section>
 
         <section className="grid gap-4 md:grid-cols-2" aria-label="Split pages">
-          <HubCard href="ios-app-store.html" icon={assets.iosIcon} label="iOS app" sublabel="BlitzRecorder Camera" />
-          <HubCard href="macos-app-store.html" icon={assets.macIcon} label="macOS app" sublabel="BlitzRecorder" />
+          <HubCard href="/ios" icon={assets.iosIcon} label="iOS app" sublabel="BlitzRecorder Camera" />
+          <HubCard href="/macos" icon={assets.macIcon} label="macOS app" sublabel="BlitzRecorder" />
         </section>
       </main>
     </Shell>
@@ -454,7 +587,7 @@ function ProductPage({ page }) {
       </main>
       <footer className="mx-auto flex w-[min(1240px,calc(100%-28px))] items-center justify-between gap-4 border-t border-white/10 py-8 text-sm text-[#7d9189] max-sm:flex-col max-sm:items-start">
         <span>Selected logo: {page.key === "ios" ? "Folded Lens" : "Folded Capture"}</span>
-        <a className="rounded-full border border-white/10 px-5 py-3 font-semibold text-white no-underline transition hover:border-white/25 hover:bg-white/10" href={page.key === "ios" ? "macos-app-store.html" : "ios-app-store.html"}>
+        <a className="rounded-full border border-white/10 px-5 py-3 font-semibold text-white no-underline transition hover:border-white/25 hover:bg-white/10" href={page.key === "ios" ? "/macos" : "/ios"}>
           Open {page.key === "ios" ? "macOS" : "iOS"} page
         </a>
       </footer>

@@ -823,13 +823,14 @@ def check_local_files(root: Path) -> int:
         ("Web/blitzrecorder/index.html", "$49.99 per year"),
         ("Web/blitzrecorder/index.html", "3 free exports"),
         ("Web/blitzrecorder/index.html", "eligible BlitzReels subscribers"),
-        ("Web/blitzrecorder/terms.html", "$7.99 per month"),
-        ("Web/blitzrecorder/terms.html", "$49.99 per year"),
-        ("Web/blitzrecorder/terms.html", "Eligible active BlitzReels subscribers"),
-        ("Web/blitzrecorder/terms.html", "support@blitzreels.com"),
-        ("Web/blitzrecorder/privacy.html", "macOS Keychain"),
-        ("Web/blitzrecorder/privacy.html", "support@blitzreels.com"),
-        ("Web/blitzrecorder/support.html", "support@blitzreels.com"),
+        ("Web/blitzrecorder/src/main.jsx", "$7.99 per month"),
+        ("Web/blitzrecorder/src/main.jsx", "$49.99 per year"),
+        ("Web/blitzrecorder/src/main.jsx", "Eligible active BlitzReels subscribers"),
+        ("Web/blitzrecorder/src/main.jsx", "support@blitzreels.com"),
+        ("Web/blitzrecorder/src/main.jsx", "macOS Keychain"),
+        ("Web/blitzrecorder/vercel.json", '"/terms"'),
+        ("Web/blitzrecorder/vercel.json", '"/privacy"'),
+        ("Web/blitzrecorder/vercel.json", '"/support"'),
         ("AppStore/BlitzReelsEntitlementContract.md", "Sign-In Redirect"),
         ("AppStore/BlitzReelsEntitlementContract.md", "must reject arbitrary"),
         ("AppStore/BlitzReelsEntitlementContract.md", "BLITZRECORDER_ENTITLEMENT_EXPECTED_ACTIVE=true"),
@@ -916,10 +917,10 @@ def check_local_files(root: Path) -> int:
         failures += check_text_contains(root, relative_path, expected)
 
     for relative_path, unexpected in [
-        ("Web/blitzrecorder/terms.html", "intended as launch copy"),
-        ("Web/blitzrecorder/privacy.html", "intended as product copy"),
-        ("Web/blitzrecorder/support.html", "For launch"),
-        ("Web/blitzrecorder/support.html", "support inbox or help desk"),
+        ("Web/blitzrecorder/src/main.jsx", "intended as launch copy"),
+        ("Web/blitzrecorder/src/main.jsx", "intended as product copy"),
+        ("Web/blitzrecorder/src/main.jsx", "For launch"),
+        ("Web/blitzrecorder/src/main.jsx", "support inbox or help desk"),
     ]:
         failures += check_text_excludes(root, relative_path, unexpected)
     failures += check_storekit_configuration(root)

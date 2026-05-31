@@ -159,10 +159,8 @@ copy_file "AppStore/Screenshots.md" "Evidence/Screenshots.md"
 copy_file "AppStore/BlitzReelsEntitlementContract.md" "Evidence/BlitzReelsEntitlementContract.md"
 
 copy_file "Web/blitzrecorder/index.html" "PublicWebSource/index.html"
-copy_file "Web/blitzrecorder/privacy.html" "PublicWebSource/privacy.html"
-copy_file "Web/blitzrecorder/terms.html" "PublicWebSource/terms.html"
-copy_file "Web/blitzrecorder/support.html" "PublicWebSource/support.html"
-copy_file "Web/blitzrecorder/styles.css" "PublicWebSource/styles.css"
+copy_file "Web/blitzrecorder/src/main.jsx" "PublicWebSource/src/main.jsx"
+copy_file "Web/blitzrecorder/vercel.json" "PublicWebSource/vercel.json"
 
 while IFS= read -r screenshot; do
   relative="${screenshot#AppStore/ScreenshotAssets/}"
