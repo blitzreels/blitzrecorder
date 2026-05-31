@@ -3,13 +3,22 @@ import { createRoot } from "react-dom/client";
 import "./style.css";
 
 const assets = {
-  iosIcon: "generated-icons/nano-folded-lens-ios.png",
-  macIcon: "generated-icons/nano-folded-capture-macos.png",
-  iosPhone: "generated-screens/ios-camera-live.png",
-  macRecorder: "generated-screens/macos-recorder-live.png",
-  macIphone: "generated-screens/macos-iphone-live.png",
-  macPlan: "generated-screens/macos-plan-live.png",
+  iosIcon: new URL("../generated-icons/nano-folded-lens-ios.png", import.meta.url).href,
+  macIcon: new URL("../generated-icons/nano-folded-capture-macos.png", import.meta.url).href,
+  iosPhone: new URL("../generated-screens/ios-camera-live.png", import.meta.url).href,
+  macRecorder: new URL("../generated-screens/macos-recorder-live.png", import.meta.url).href,
+  macIphone: new URL("../generated-screens/macos-iphone-live.png", import.meta.url).href,
+  macPlan: new URL("../generated-screens/macos-plan-live.png", import.meta.url).href,
 };
+
+const landingStrip = [
+  "ScreenCaptureKit",
+  "Clean source files",
+  "iPhone camera",
+  "System audio",
+  "Shorts 9:16",
+  "YouTube 16:9",
+];
 
 const pages = {
   ios: {
@@ -102,15 +111,257 @@ const pages = {
 
 function getInitialPage() {
   const path = window.location.pathname;
+  if (path.includes("brand-guidelines")) return "hub";
   if (path.includes("ios-app-store")) return "ios";
   if (path.includes("macos-app-store")) return "macos";
-  return "hub";
+  return "landing";
 }
 
 function App() {
   const initialPage = getInitialPage();
+  if (initialPage === "landing") return <LandingPage />;
   if (initialPage === "hub") return <Hub />;
   return <ProductPage page={pages[initialPage]} />;
+}
+
+function LandingPage() {
+  return (
+    <div className="min-h-screen overflow-x-hidden bg-[#050807] text-[#f5fbf8] antialiased">
+      <Backdrop />
+      <LandingNav />
+      <main>
+        <section className="mx-auto grid min-h-screen w-[min(1220px,calc(100%-28px))] place-items-center pt-28 pb-12 text-center">
+          <div className="w-full">
+            <p className="mx-auto mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.055] px-4 py-2 text-sm font-semibold text-[#afc0ba]">
+              <span className="h-2 w-2 rounded-full bg-[#63f2b1] shadow-[0_0_18px_rgba(99,242,177,0.9)]" />
+              Native Mac recorder · iPhone camera companion
+            </p>
+            <h1 className="mx-auto max-w-5xl text-balance text-5xl font-black leading-[0.95] tracking-normal sm:text-7xl lg:text-8xl">
+              Record on Mac.
+              <br />
+              Keep every source clean.
+            </h1>
+            <p className="mx-auto mt-7 max-w-2xl text-balance text-lg leading-8 text-[#afc0ba] sm:text-xl">
+              Capture screen, microphone, system audio, and iPhone camera as organized sources for demos, tutorials, lessons, and short-form exports.
+            </p>
+            <div className="mt-9 flex flex-wrap items-center justify-center gap-4">
+              <a className="inline-flex h-14 items-center justify-center rounded-full bg-[#63f2b1] px-7 font-bold text-[#03130d] no-underline shadow-[0_18px_60px_-24px_rgba(99,242,177,0.9)] transition hover:bg-[#9dffd4]" href="#pricing">
+                See launch pricing
+              </a>
+              <a className="inline-flex h-14 items-center justify-center rounded-full border border-white/15 bg-white/[0.045] px-7 font-semibold text-white no-underline transition hover:bg-white/10" href="#workflow">
+                See workflow
+              </a>
+            </div>
+            <p className="mt-5 text-sm text-[#71847d]">Private beta · 3 trial exports · Pro $7/mo · Lifetime launch option</p>
+
+            <div className="mx-auto mt-14 max-w-5xl">
+              <div className="rounded-[24px] border border-white/10 bg-[#0b1210] p-2 shadow-[0_44px_120px_-50px_rgba(0,0,0,0.95),0_0_56px_-36px_rgba(99,242,177,0.8)]">
+                <div className="flex gap-2 px-3 py-2" aria-hidden="true">
+                  <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
+                  <span className="h-3 w-3 rounded-full bg-[#ffbd2e]" />
+                  <span className="h-3 w-3 rounded-full bg-[#28c840]" />
+                </div>
+                <img className="aspect-[1200/820] w-full rounded-2xl object-cover object-top" src={assets.macRecorder} alt="BlitzRecorder recording studio on macOS" />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="border-y border-white/10 py-5">
+          <div className="mx-auto flex w-max animate-[br-marquee_32s_linear_infinite] items-center gap-8 text-sm font-semibold text-[#afc0ba]">
+            {[...landingStrip, ...landingStrip].map((item, index) => (
+              <span className="flex items-center gap-8" key={`${item}-${index}`}>
+                {item}
+                <i className="h-1.5 w-1.5 rounded-full bg-[#63f2b1]/70" />
+              </span>
+            ))}
+          </div>
+        </section>
+
+        <section className="relative min-h-screen overflow-hidden" id="sources">
+          <img className="absolute inset-0 h-full w-full scale-110 object-cover opacity-[0.13]" src={assets.macRecorder} alt="" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent,rgba(0,0,0,0.88)_72%),linear-gradient(180deg,rgba(5,8,7,0.92),rgba(5,8,7,0.18)_42%,rgba(5,8,7,0.94))]" />
+          <div className="relative mx-auto grid min-h-screen w-[min(900px,calc(100%-28px))] place-items-center py-24 text-center">
+            <div>
+              <p className="mb-4 text-sm font-black uppercase text-[#63f2b1]">Built for editing</p>
+              <h2 className="text-balance text-4xl font-black leading-none sm:text-6xl lg:text-7xl">
+                One recording.
+                <br />
+                <span className="text-[#9dffd4]">Clean source files.</span>
+              </h2>
+              <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-[#afc0ba]">
+                Screen, camera, microphone, and Mac audio stay organized as separate files. Rework a crop, adjust voice, or finish the edit without recording again.
+              </p>
+              <ul className="mt-9 flex flex-wrap justify-center gap-3 text-sm text-[#afc0ba]">
+                {["screen.mov", "camera.mov", "audio.m4a", "system.m4a", "transcript.txt"].map((file) => (
+                  <li className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 font-mono" key={file}>{file}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section className="mx-auto grid w-[min(1180px,calc(100%-28px))] grid-cols-1 items-center gap-12 py-24 lg:grid-cols-[0.9fr_1.1fr]" id="iphone">
+          <div className="mx-auto w-[min(330px,78vw)] rounded-[44px] border border-white/15 bg-white/[0.045] p-3 shadow-2xl">
+            <img className="rounded-[32px]" src={assets.iosPhone} alt="BlitzRecorder Camera iPhone companion app" />
+          </div>
+          <div>
+            <p className="mb-4 text-sm font-black uppercase text-[#63f2b1]">iPhone camera companion</p>
+            <h2 className="text-balance text-4xl font-black leading-none sm:text-6xl">
+              Use your iPhone as a dedicated recording camera.
+            </h2>
+            <p className="mt-6 max-w-xl text-lg leading-8 text-[#afc0ba]">
+              Pair the companion app locally, no account needed. The iPhone records the high-quality camera file and sends it back to the Mac take when recording is done.
+            </p>
+            <ul className="mt-8 grid gap-3 text-lg">
+              <CheckItem>Local pairing over the network</CheckItem>
+              <CheckItem>Camera master recorded on the iPhone</CheckItem>
+              <CheckItem>Preview and supported controls from the Mac</CheckItem>
+            </ul>
+          </div>
+        </section>
+
+        <section className="mx-auto w-[min(1180px,calc(100%-28px))] py-20" id="workflow">
+          <div className="mx-auto max-w-3xl text-center">
+            <p className="mb-4 text-sm font-black uppercase text-[#63f2b1]">Product workflow</p>
+            <h2 className="text-balance text-4xl font-black leading-none sm:text-6xl">Designed for repeatable takes.</h2>
+          </div>
+          <div className="mt-12 grid gap-4 lg:grid-cols-3">
+            <FeatureCard title="Frame before recording" image={assets.macPlan}>
+              Pick vertical or horizontal layouts before the take starts, then keep source files available for export.
+            </FeatureCard>
+            <FeatureCard title="Camera controls on Mac" image={assets.macIphone}>
+              Keep phone preview, framing, and supported camera controls close to the recorder.
+            </FeatureCard>
+            <FeatureCard title="Finish without cloud drag" image={assets.macRecorder}>
+              Export a finished take or keep every source organized for the next edit in BlitzReels.
+            </FeatureCard>
+          </div>
+        </section>
+
+        <section className="mx-auto w-[min(1180px,calc(100%-28px))] py-20" id="pricing">
+          <div className="mx-auto max-w-4xl text-center">
+            <p className="mb-4 text-sm font-black uppercase text-[#63f2b1]">Launch pricing</p>
+            <h2 className="text-balance text-4xl font-black leading-none sm:text-6xl">
+              Start free. Upgrade when it becomes a workflow.
+            </h2>
+          </div>
+          <div className="mt-12 grid gap-4 lg:grid-cols-3">
+            <Plan name="Trial" price="$0" note="For testing the full recorder flow" cta="Request access">
+              <CheckItem>3 finished exports</CheckItem>
+              <CheckItem>All capture sources</CheckItem>
+              <CheckItem>iPhone camera companion</CheckItem>
+            </Plan>
+            <Plan featured name="Pro monthly" price="$7" suffix="/mo" note="Unlimited finished exports" cta="Request access">
+              <CheckItem>Unlimited HEVC exports</CheckItem>
+              <CheckItem>Pause, resume, and PiP export</CheckItem>
+              <CheckItem>Local titles and transcripts</CheckItem>
+              <CheckItem>Wireless iPhone camera source</CheckItem>
+            </Plan>
+            <Plan name="Lifetime" price="$49" suffix=" one-time" note="Launch offer for early buyers" cta="Join launch list">
+              <CheckItem>Everything in Pro monthly</CheckItem>
+              <CheckItem>No recurring subscription</CheckItem>
+              <CheckItem>Included for eligible BlitzReels subscribers</CheckItem>
+            </Plan>
+          </div>
+        </section>
+
+        <section className="mx-auto grid w-[min(900px,calc(100%-28px))] place-items-center py-28 text-center">
+          <img className="h-24 w-24 rounded-[24%] object-cover shadow-[0_0_64px_-24px_rgba(99,242,177,0.9)]" src={assets.macIcon} alt="" />
+          <h2 className="mt-8 text-balance text-4xl font-black leading-none sm:text-6xl">
+            Record the next take without rebuilding the edit.
+          </h2>
+          <a className="mt-9 inline-flex h-14 items-center justify-center rounded-full bg-[#63f2b1] px-7 font-bold text-[#03130d] no-underline transition hover:bg-[#9dffd4]" href="#pricing">
+            See launch pricing
+          </a>
+        </section>
+      </main>
+      <LandingFooter />
+    </div>
+  );
+}
+
+function LandingNav() {
+  return (
+    <header className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-[#050807]/75 px-4 py-3 backdrop-blur-xl">
+      <div className="mx-auto flex w-[min(1220px,100%)] items-center gap-5">
+        <a className="flex items-center gap-3 font-semibold no-underline" href="/">
+          <img className="h-8 w-8 rounded-[24%] object-cover" src={assets.macIcon} alt="" />
+          <span>BlitzRecorder</span>
+        </a>
+        <nav className="ml-auto hidden items-center gap-7 text-sm font-semibold text-[#afc0ba] md:flex" aria-label="Sections">
+          <a className="hover:text-white" href="#sources">Sources</a>
+          <a className="hover:text-white" href="#iphone">iPhone</a>
+          <a className="hover:text-white" href="#workflow">Workflow</a>
+          <a className="hover:text-white" href="macos-app-store.html">macOS</a>
+          <a className="hover:text-white" href="ios-app-store.html">iOS</a>
+          <a className="hover:text-white" href="brand-guidelines.html">Brand</a>
+          <a className="hover:text-white" href="#pricing">Pricing</a>
+        </nav>
+        <a className="ml-auto inline-flex h-10 items-center justify-center rounded-full bg-[#63f2b1] px-4 text-sm font-bold text-[#03130d] no-underline md:ml-0" href="#pricing">
+          Pricing
+        </a>
+      </div>
+    </header>
+  );
+}
+
+function FeatureCard({ title, image, children }) {
+  return (
+    <article className="overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.045] transition hover:-translate-y-1 hover:border-[#63f2b1]/40">
+      <img className="aspect-[1200/820] w-full object-cover object-top" src={image} alt="" />
+      <div className="p-6">
+        <h3 className="text-2xl font-black leading-tight">{title}</h3>
+        <p className="mt-3 leading-7 text-[#afc0ba]">{children}</p>
+      </div>
+    </article>
+  );
+}
+
+function Plan({ name, price, suffix = "", note, cta, featured = false, children }) {
+  return (
+    <article className={["relative flex min-h-[430px] flex-col rounded-[24px] border p-7", featured ? "border-[#63f2b1]/45 bg-[#63f2b1]/[0.055] shadow-[0_32px_90px_-60px_rgba(99,242,177,0.9)]" : "border-white/10 bg-white/[0.045]"].join(" ")}>
+      {featured ? <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-[#63f2b1] px-4 py-1 text-xs font-black text-[#03130d]">Best first</span> : null}
+      <h3 className="text-lg font-bold text-[#afc0ba]">{name}</h3>
+      <p className="mt-3 text-5xl font-black">
+        {price}
+        {suffix ? <small className="ml-1 text-base font-semibold text-[#afc0ba]">{suffix}</small> : null}
+      </p>
+      <p className="mt-2 text-sm font-semibold text-[#63f2b1]">{note}</p>
+      <ul className="mt-7 grid gap-3">{children}</ul>
+      <a className={["mt-auto inline-flex h-12 items-center justify-center rounded-full px-5 font-bold no-underline transition", featured ? "bg-[#63f2b1] text-[#03130d] hover:bg-[#9dffd4]" : "border border-white/15 bg-white/[0.055] text-white hover:bg-white/10"].join(" ")} href="mailto:support@blitzreels.com?subject=BlitzRecorder%20early%20access">
+        {cta}
+      </a>
+    </article>
+  );
+}
+
+function CheckItem({ children }) {
+  return (
+    <li className="relative list-none pl-7 text-[#f5fbf8] before:absolute before:left-0 before:top-[0.55em] before:h-2 before:w-4 before:-rotate-45 before:border-b-2 before:border-l-2 before:border-[#63f2b1]">
+      {children}
+    </li>
+  );
+}
+
+function LandingFooter() {
+  return (
+    <footer className="border-t border-white/10 px-4 py-10 text-sm text-[#71847d]">
+      <div className="mx-auto flex w-[min(1220px,100%)] flex-wrap items-center gap-5">
+        <a className="flex items-center gap-2 font-semibold text-white no-underline" href="/">
+          <img className="h-7 w-7 rounded-[24%]" src={assets.macIcon} alt="" />
+          BlitzRecorder
+        </a>
+        <nav className="ml-auto flex flex-wrap gap-5">
+          <a className="hover:text-white" href="support.html">Support</a>
+          <a className="hover:text-white" href="privacy.html">Privacy</a>
+          <a className="hover:text-white" href="terms.html">Terms</a>
+          <a className="hover:text-white" href="https://blitzreels.com">BlitzReels</a>
+        </nav>
+        <p className="basis-full">© 2026 Algomax · Strasbourg</p>
+      </div>
+    </footer>
+  );
 }
 
 function Shell({ children, active }) {
