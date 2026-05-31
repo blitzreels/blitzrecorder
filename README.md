@@ -76,6 +76,16 @@ The website is a static Vite/React build. There is no SSR runtime and no account
 Vercel rewrites the clean routes (`/terms`, `/privacy`, `/support`, `/ios`, `/macos`,
 and `/brand-guidelines`) to the single React entrypoint.
 
+Domain setup:
+
+- Canonical host: `https://blitzrecorder.com`
+- `https://www.blitzrecorder.com` redirects to the apex domain.
+- Vercel aliases: `blitzrecorder.com`, `www.blitzrecorder.com`, and
+  `blitzrecorder.vercel.app`.
+- DNS is currently managed at OVH using `dns109.ovh.net` and `ns109.ovh.net`;
+  the records resolve to Vercel. If the DNS zone is rebuilt, verify the latest
+  required values in Vercel before changing the records.
+
 ## Product References
 
 BlitzRecorder is currently closed-source and commercial. The product direction takes inspiration

@@ -1,5 +1,11 @@
 {
   "routes": [
+    {
+      "src": "^/(.*)$",
+      "has": [{ "type": "host", "value": "www.blitzrecorder.com" }],
+      "status": 308,
+      "headers": { "Location": "https://blitzrecorder.com/$1" }
+    },
     { "src": "^/brand-guidelines\\.html$", "status": 308, "headers": { "Location": "/brand-guidelines" } },
     { "src": "^/ios-app-store\\.html$", "status": 308, "headers": { "Location": "/ios" } },
     { "src": "^/macos-app-store\\.html$", "status": 308, "headers": { "Location": "/macos" } },
