@@ -10,15 +10,7 @@ struct VideoRenderPlacement {
     let targetRect: CGRect
     var sourceCropAmount: CGPoint = .zero
     var sourceCropPosition: CGPoint = .zero
-
-    var contentMode: VideoRenderContentMode {
-        switch kind {
-        case .screen:
-            return .aspectFill
-        case .camera:
-            return .aspectFill
-        }
-    }
+    var contentMode: VideoRenderContentMode = .aspectFill
 
     func transform(naturalSize: CGSize, preferredTransform: CGAffineTransform) -> CGAffineTransform {
         transform(

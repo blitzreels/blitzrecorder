@@ -20,3 +20,9 @@ xcuserdata/
 .env.*
 AppStore/ReleaseEvidence.md
 AppStore/ReleaseEvidence.generated.md
+Web/blitzrecorder/dist/
+Web/blitzrecorder/node_modules/
+
+# Generated icon concepts; current app icons live under Resources/ and Apps/iOSCamera/Resources/.
+GeneratedIcons/
+PRODUCT.md

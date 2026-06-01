@@ -3,6 +3,13 @@ import CoreMedia
 import Foundation
 import ScreenCaptureKit
 
+private struct LiveRecordingSceneTransition {
+    let startScene: RecordingScene
+    let targetScene: RecordingScene
+    let transition: RecordingSceneTransition
+    let startedAt: Date
+}
+
 final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDataOutputSampleBufferDelegate {
     private let renderQueue = DispatchQueue(label: "blitzrecorder.live-compositor")
     private let screenQueue = DispatchQueue(label: "blitzrecorder.live-compositor.screen")
@@ -14,14 +21,20 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
     private var writer: DirectMovieWriter?
     private var settings: RecordingSettings?
     private var screenStream: SCStream?
+    private var screenDisplay: SCDisplay?
+    private var pickedScreenFilter: SCContentFilter?
     private var cameraSession: AVCaptureSession?
     private var microphoneSession: AVCaptureSession?
     private var frameTimer: DispatchSourceTimer?
     private var recordingScene: RecordingScene?
+    private var recordingSceneTransition: LiveRecordingSceneTransition?
     private var latestScreenBuffer: CVPixelBuffer?
     private var latestCameraBuffer: CVPixelBuffer?
     private var streamError: Error?
+    private var intentionallyStoppedScreenStream: SCStream?
+    private var lastScreenPreviewFrameTime = DispatchTime(uptimeNanoseconds: 0)
     var onCameraPreviewSampleBuffer: ((CMSampleBuffer, Int, Int) -> Void)?
+    var onScreenPreviewFrame: ScreenPreviewer.FrameHandler?
 
     func start(
         take: RecordingTake,
@@ -31,9 +44,14 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
         prerollHandler: (@MainActor (Int) -> Void)? = nil
     ) async throws {
         self.settings = settings
+        self.pickedScreenFilter = pickedFilter
+        screenDisplay = nil
         var screenSourceGeometry = ScreenCaptureGeometry.screenSourceGeometry(for: settings)
         recordingScene = RecordingScene(settings: settings)
+        recordingSceneTransition = nil
         streamError = nil
+        intentionallyStoppedScreenStream = nil
+        lastScreenPreviewFrameTime = DispatchTime(uptimeNanoseconds: 0)
         writer = nil
 
         if settings.enabledSources.contains(.screen) || settings.enabledSources.contains(.systemAudio) {
@@ -41,6 +59,7 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
             var scene = RecordingScene(settings: settings)
             scene.screenSourceGeometry = screenSourceGeometry
             recordingScene = scene
+            recordingSceneTransition = nil
         }
         if settings.enabledSources.contains(.microphone) {
             try startMicrophone(settings: settings)
@@ -62,9 +81,74 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
         writer?.resume()
     }
 
-    func updateScene(_ scene: RecordingScene) {
+    func updateScene(_ scene: RecordingScene, transition: RecordingSceneTransition = .cut) {
         lock.lock()
-        recordingScene = scene
+        if transition.isCut || recordingScene == nil {
+            recordingScene = scene
+            recordingSceneTransition = nil
+        } else {
+            let startedAt = Date()
+            let startScene = currentRecordingScene(at: startedAt) ?? scene
+            recordingScene = scene
+            recordingSceneTransition = LiveRecordingSceneTransition(
+                startScene: startScene,
+                targetScene: scene,
+                transition: transition,
+                startedAt: startedAt
+            )
+        }
+        lock.unlock()
+    }
+
+    func updateScreenCapture(settings: RecordingSettings, filter pickedFilter: SCContentFilter?) async throws {
+        guard let screenStream else {
+            self.settings = settings
+            return
+        }
+        self.settings = settings
+        self.pickedScreenFilter = pickedFilter
+
+        let configuration: SCStreamConfiguration
+        let screenSourceGeometry: ScreenSourceGeometry
+        if let pickedFilter {
+            screenDisplay = nil
+            screenSourceGeometry = ScreenCaptureGeometry.screenSourceGeometry(for: settings, pickedFilter: pickedFilter)
+            configuration = screenStreamConfiguration(
+                settings: settings,
+                screenSourceGeometry: screenSourceGeometry,
+                sourceRect: nil
+            )
+            try await screenStream.updateContentFilter(pickedFilter)
+        } else {
+            let content = try await SCShareableContent.current
+            guard let display = ScreenCaptureGeometry.display(from: content.displays, settings: settings) else {
+                throw RecorderError.noDisplay
+            }
+            screenDisplay = display
+            let ownProcess = getpid()
+            let excludedApplications = content.applications.filter { $0.processID == ownProcess }
+            let filter = SCContentFilter(display: display, excludingApplications: excludedApplications, exceptingWindows: [])
+            screenSourceGeometry = ScreenCaptureGeometry.screenSourceGeometry(for: settings, display: display)
+            configuration = screenStreamConfiguration(
+                settings: settings,
+                screenSourceGeometry: screenSourceGeometry,
+                sourceRect: screenSourceGeometry.sourceRect(in: CGRect(x: 0, y: 0, width: display.width, height: display.height))
+            )
+            try await screenStream.updateContentFilter(filter)
+        }
+
+        try await screenStream.updateConfiguration(configuration)
+        updateRecordingSceneScreenGeometry(screenSourceGeometry)
+    }
+
+    private func updateRecordingSceneScreenGeometry(_ screenSourceGeometry: ScreenSourceGeometry) {
+        lock.lock()
+        if var scene = recordingScene {
+            scene.screenSourceGeometry = screenSourceGeometry
+            recordingScene = scene
+            recordingSceneTransition = nil
+        }
+        latestScreenBuffer = nil
         lock.unlock()
     }
 
@@ -79,6 +163,7 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
         }
 
         if let screenStream {
+            intentionallyStoppedScreenStream = screenStream
             try? await screenStream.stopCapture()
         }
         screenStream = nil
@@ -132,6 +217,7 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
             lock.lock()
             latestScreenBuffer = pixelBuffer
             lock.unlock()
+            publishScreenPreviewFrame(sampleBuffer, imageBuffer: pixelBuffer)
         case .audio:
             writer?.appendAudio(sampleBuffer, source: .systemAudio)
         default:
@@ -140,8 +226,36 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
+        guard stream !== intentionallyStoppedScreenStream else { return }
         NSLog("Live compositor screen stream stopped: \(error.localizedDescription)")
         streamError = error
+    }
+
+    private func publishScreenPreviewFrame(_ sampleBuffer: CMSampleBuffer, imageBuffer: CVPixelBuffer) {
+        guard let onScreenPreviewFrame else { return }
+
+        let now = DispatchTime.now()
+        let minimumFrameInterval = 1_000_000_000 / UInt64(60)
+        guard now.uptimeNanoseconds - lastScreenPreviewFrameTime.uptimeNanoseconds > minimumFrameInterval else {
+            return
+        }
+        lastScreenPreviewFrameTime = now
+
+        lock.lock()
+        let sourceAspectRatio = recordingScene?.screenSourceGeometry.aspectRatio()
+            ?? SceneLayout.defaultScreenAspectRatio
+        lock.unlock()
+
+        let width = CVPixelBufferGetWidth(imageBuffer)
+        let height = CVPixelBufferGetHeight(imageBuffer)
+        Task { @MainActor [onScreenPreviewFrame, sampleBuffer] in
+            onScreenPreviewFrame(ScreenPreviewFrame(
+                sampleBuffer: sampleBuffer,
+                width: width,
+                height: height,
+                sourceAspectRatio: sourceAspectRatio
+            ))
+        }
     }
 
     func captureOutput(
@@ -184,33 +298,55 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
 
     private func startScreenStream(settings: RecordingSettings, filter pickedFilter: SCContentFilter?) async throws -> ScreenSourceGeometry {
         let filter: SCContentFilter
-        let dimensions: (width: Int, height: Int)
         let sourceRect: CGRect?
         let screenSourceGeometry: ScreenSourceGeometry
         if let pickedFilter {
+            self.pickedScreenFilter = pickedFilter
+            screenDisplay = nil
             filter = pickedFilter
             screenSourceGeometry = ScreenCaptureGeometry.screenSourceGeometry(for: settings, pickedFilter: pickedFilter)
-            dimensions = ScreenCaptureGeometry.screenCaptureDimensions(
-                for: settings,
-                sourceAspectRatio: screenSourceGeometry.aspectRatio()
-            )
             sourceRect = nil
         } else {
             let content = try await SCShareableContent.current
             guard let display = ScreenCaptureGeometry.display(from: content.displays, settings: settings) else {
                 throw RecorderError.noDisplay
             }
+            screenDisplay = display
+            self.pickedScreenFilter = nil
             let ownProcess = getpid()
             let excludedApplications = content.applications.filter { $0.processID == ownProcess }
             filter = SCContentFilter(display: display, excludingApplications: excludedApplications, exceptingWindows: [])
             screenSourceGeometry = ScreenCaptureGeometry.screenSourceGeometry(for: settings, display: display)
-            dimensions = ScreenCaptureGeometry.screenCaptureDimensions(
-                for: settings,
-                sourceAspectRatio: screenSourceGeometry.aspectRatio()
-            )
             sourceRect = screenSourceGeometry.sourceRect(in: CGRect(x: 0, y: 0, width: display.width, height: display.height))
         }
 
+        let configuration = screenStreamConfiguration(
+            settings: settings,
+            screenSourceGeometry: screenSourceGeometry,
+            sourceRect: sourceRect
+        )
+
+        let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
+        if settings.enabledSources.contains(.screen) {
+            try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: screenQueue)
+        }
+        if settings.enabledSources.contains(.systemAudio) {
+            try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: screenQueue)
+        }
+        try await stream.startCapture()
+        screenStream = stream
+        return screenSourceGeometry
+    }
+
+    private func screenStreamConfiguration(
+        settings: RecordingSettings,
+        screenSourceGeometry: ScreenSourceGeometry,
+        sourceRect: CGRect?
+    ) -> SCStreamConfiguration {
+        let dimensions = ScreenCaptureGeometry.screenCaptureDimensions(
+            for: settings,
+            sourceAspectRatio: screenSourceGeometry.aspectRatio()
+        )
         let configuration = SCStreamConfiguration()
         configuration.width = dimensions.width
         configuration.height = dimensions.height
@@ -231,17 +367,7 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
             configuration.sourceRect = sourceRect
         }
         configuration.streamName = "BlitzRecorder Live Compositor"
-
-        let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
-        if settings.enabledSources.contains(.screen) {
-            try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: screenQueue)
-        }
-        if settings.enabledSources.contains(.systemAudio) {
-            try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: screenQueue)
-        }
-        try await stream.startCapture()
-        screenStream = stream
-        return screenSourceGeometry
+        return configuration
     }
 
     private func startCamera(settings: RecordingSettings) throws {
@@ -251,13 +377,13 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
 
         let session = AVCaptureSession()
         session.beginConfiguration()
-        if session.canSetSessionPreset(.hd1920x1080) {
-            session.sessionPreset = .hd1920x1080
-        } else {
-            session.sessionPreset = .high
-        }
+        LocalCameraSessionConfiguration.configurePreset(on: session)
 
-        configure(device: device, fps: settings.framesPerSecond)
+        LocalCameraSessionConfiguration.configure(
+            device: device,
+            fps: settings.framesPerSecond,
+            logPrefix: "Live compositor"
+        )
         let input = try AVCaptureDeviceInput(device: device)
         guard session.canAddInput(input) else {
             throw RecorderError.noCamera
@@ -331,7 +457,7 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
         lock.lock()
         let screenBuffer = latestScreenBuffer
         let cameraBuffer = latestCameraBuffer
-        let scene = recordingScene
+        let scene = currentRecordingScene(at: Date())
         lock.unlock()
 
         guard let scene else {
@@ -346,9 +472,28 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
         )
     }
 
+    private func currentRecordingScene(at date: Date) -> RecordingScene? {
+        guard let transition = recordingSceneTransition else {
+            return recordingScene
+        }
+
+        let elapsed = date.timeIntervalSince(transition.startedAt)
+        guard elapsed < transition.transition.duration else {
+            recordingScene = transition.targetScene
+            recordingSceneTransition = nil
+            return transition.targetScene
+        }
+
+        return transition.startScene.interpolated(
+            to: transition.targetScene,
+            progress: transition.transition.progress(elapsed: elapsed)
+        )
+    }
+
     private func resetLatestCaptureState() {
         lock.lock()
         recordingScene = nil
+        recordingSceneTransition = nil
         latestScreenBuffer = nil
         latestCameraBuffer = nil
         lock.unlock()
@@ -392,71 +537,7 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
     }
 
     private func selectedCamera(settings: RecordingSettings) -> AVCaptureDevice? {
-        if let selectedCameraID = settings.selectedCameraID,
-           let device = AVCaptureDevice(uniqueID: selectedCameraID) {
-            return device
-        }
-
-        return AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInWideAngleCamera, .continuityCamera, .deskViewCamera, .external],
-            mediaType: .video,
-            position: .unspecified
-        ).devices
-            .filter { $0.isConnected && !$0.isSuspended }
-            .sorted { lhs, rhs in cameraSortKey(lhs) < cameraSortKey(rhs) }
-            .first
-    }
-
-    private func configure(device: AVCaptureDevice, fps: Int) {
-        do {
-            try device.lockForConfiguration()
-            defer { device.unlockForConfiguration() }
-
-            let compatibleFormats = device.formats.filter { format in
-                format.videoSupportedFrameRateRanges.contains { $0.maxFrameRate >= Double(fps) }
-            }
-            let fourKFormats = compatibleFormats.filter { format in
-                let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
-                return dimensions.width <= 3840 && dimensions.height <= 2160
-            }
-            let candidates = fourKFormats.isEmpty ? compatibleFormats : fourKFormats
-            if let format = candidates.sorted(by: { lhs, rhs in cameraFormatSortKey(lhs) < cameraFormatSortKey(rhs) }).first {
-                device.activeFormat = format
-            }
-
-            let frameDuration = CMTime(value: 1, timescale: CMTimeScale(fps))
-            if shouldForceFrameDuration(for: device),
-               device.activeFormat.videoSupportedFrameRateRanges.contains(where: { $0.maxFrameRate >= Double(fps) }) {
-                device.activeVideoMinFrameDuration = frameDuration
-                device.activeVideoMaxFrameDuration = frameDuration
-            }
-        } catch {
-            NSLog("Live compositor camera configuration failed: \(error.localizedDescription)")
-        }
-    }
-
-    private func shouldForceFrameDuration(for device: AVCaptureDevice) -> Bool {
-        device.deviceType == .builtInWideAngleCamera
-    }
-
-    private func cameraSortKey(_ device: AVCaptureDevice) -> String {
-        let priority: String
-        if device.deviceType == .continuityCamera {
-            priority = "0"
-        } else if device.deviceType == .external {
-            priority = "1"
-        } else if device.deviceType == .deskViewCamera {
-            priority = "2"
-        } else {
-            priority = "3"
-        }
-        return "\(priority)-\(device.localizedName)"
-    }
-
-    private func cameraFormatSortKey(_ format: AVCaptureDevice.Format) -> String {
-        let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
-        let maxFPS = format.videoSupportedFrameRateRanges.map(\.maxFrameRate).max() ?? 0
-        return String(format: "%05d-%05d-%05.1f", dimensions.width, dimensions.height, maxFPS)
+        LocalCameraSessionConfiguration.selectedCamera(settings: settings)
     }
 
     private func frameStatus(for sampleBuffer: CMSampleBuffer) -> SCFrameStatus {

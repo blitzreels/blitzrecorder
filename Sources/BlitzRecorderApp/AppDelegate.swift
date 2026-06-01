@@ -11,6 +11,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
     private var windowController: MainWindowController?
     private var statusItem: NSStatusItem?
     private var blinkTimer: Timer?
+    private var statusElapsedTimer: Timer?
+    private var statusElapsedStartedAt: Date?
+    private var statusElapsedAccumulated: TimeInterval = 0
     private var blinkOn = false
     private var mainMenuBuilder: MainMenuBuilder?
 
@@ -109,10 +112,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
     }
 
     private func buildStatusItem() {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem = item
-        item.button?.image = statusImage(color: .systemGray)
-        item.button?.imagePosition = .imageOnly
+        item.button?.image = appStatusImage()
+        item.button?.imagePosition = .imageLeft
+        item.button?.imageScaling = .scaleProportionallyDown
         rebuildMenu()
     }
 
@@ -141,9 +145,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
         case .recording:
             menu.addItem(NSMenuItem(title: "Pause", action: #selector(pauseRecording), keyEquivalent: "p"))
             menu.addItem(NSMenuItem(title: "Stop", action: #selector(stopRecording), keyEquivalent: "s"))
+            addSceneItems(to: menu)
         case .paused:
             menu.addItem(NSMenuItem(title: "Resume", action: #selector(resumeRecording), keyEquivalent: "p"))
             menu.addItem(NSMenuItem(title: "Stop", action: #selector(stopRecording), keyEquivalent: "s"))
+            addSceneItems(to: menu)
         case .finishing:
             let item = NSMenuItem(title: "Finishing...", action: nil, keyEquivalent: "")
             item.isEnabled = false
@@ -171,18 +177,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
         statusItem?.menu = menu
     }
 
+    private func addSceneItems(to menu: NSMenu) {
+        let scenes = coordinator.scenesForCurrentLayout()
+        guard !scenes.isEmpty else { return }
+
+        menu.addItem(.separator())
+        let heading = NSMenuItem(title: "Switch Scene", action: nil, keyEquivalent: "")
+        heading.isEnabled = false
+        menu.addItem(heading)
+
+        let selectedID = coordinator.selectedSceneIDForCurrentLayout()
+        for scene in scenes {
+            let item = NSMenuItem(title: scene.name, action: #selector(chooseSceneItem), keyEquivalent: "")
+            item.representedObject = scene.id
+            item.state = scene.id == selectedID ? .on : .off
+            menu.addItem(item)
+        }
+
+        if coordinator.settings.visibleSources.contains(.screen) {
+            menu.addItem(.separator())
+            menu.addItem(NSMenuItem(title: "Switch Window/App...", action: #selector(pickScreen), keyEquivalent: ""))
+        }
+    }
+
     private func updateStatusItem(for state: RecordingState) {
         blinkTimer?.invalidate()
         blinkTimer = nil
 
         switch state {
         case .idle:
-            statusItem?.button?.image = statusImage(color: .systemGray)
+            resetStatusElapsed()
+            statusItem?.button?.image = appStatusImage()
+            statusItem?.button?.title = ""
         case .starting:
+            resetStatusElapsed()
             statusItem?.button?.image = statusImage(color: .systemBlue)
+            statusItem?.button?.title = ""
         case .recording:
+            resumeStatusElapsed()
             statusItem?.button?.image = statusImage(color: .systemRed)
         case .paused:
+            pauseStatusElapsed()
             blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     guard let self else { return }
@@ -191,8 +226,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
                 }
             }
         case .finishing:
+            stopStatusElapsedTimer()
             statusItem?.button?.image = statusImage(color: .systemOrange)
         }
+    }
+
+    private func resumeStatusElapsed() {
+        if statusElapsedStartedAt == nil {
+            statusElapsedStartedAt = Date()
+        }
+        statusElapsedTimer?.invalidate()
+        statusElapsedTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateStatusElapsedTitle()
+            }
+        }
+        updateStatusElapsedTitle()
+    }
+
+    private func pauseStatusElapsed() {
+        if let statusElapsedStartedAt {
+            statusElapsedAccumulated += Date().timeIntervalSince(statusElapsedStartedAt)
+            self.statusElapsedStartedAt = nil
+        }
+        stopStatusElapsedTimer()
+        updateStatusElapsedTitle()
+    }
+
+    private func resetStatusElapsed() {
+        stopStatusElapsedTimer()
+        statusElapsedStartedAt = nil
+        statusElapsedAccumulated = 0
+    }
+
+    private func stopStatusElapsedTimer() {
+        statusElapsedTimer?.invalidate()
+        statusElapsedTimer = nil
+    }
+
+    private func updateStatusElapsedTitle() {
+        let activeSeconds = statusElapsedStartedAt.map { Date().timeIntervalSince($0) } ?? 0
+        let totalSeconds = Int((statusElapsedAccumulated + activeSeconds).rounded(.down))
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        statusItem?.button?.title = " \(String(format: "%02d:%02d", minutes, seconds))"
     }
 
     private func statusImage(color: NSColor) -> NSImage {
@@ -201,6 +278,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
         color.setFill()
         NSBezierPath(ovalIn: NSRect(x: 3, y: 3, width: 12, height: 12)).fill()
         image.unlockFocus()
+        image.isTemplate = false
+        return image
+    }
+
+    private func appStatusImage() -> NSImage {
+        let image = NSApp.applicationIconImage.copy() as? NSImage ?? NSImage()
+        image.size = NSSize(width: 18, height: 18)
         image.isTemplate = false
         return image
     }
@@ -325,6 +409,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
 
     @objc private func quit() {
         NSApp.terminate(nil)
+    }
+
+    @objc private func chooseSceneItem(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? UUID else { return }
+        coordinator.selectScene(id: id)
+        windowController?.syncRuleOfThirdsOverlay()
+        rebuildMenu()
     }
 
     @objc func chooseDisplayItem(_ sender: NSMenuItem) {

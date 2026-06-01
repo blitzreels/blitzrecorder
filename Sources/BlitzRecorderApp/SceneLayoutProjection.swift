@@ -9,7 +9,7 @@ enum SceneLayoutProjection {
     static let fullFrame = CGRect(x: 0, y: 0, width: 1, height: 1)
 
     static func frontToBackOrder(for layout: SceneLayout) -> [SceneLayerKind] {
-        Array(layout.layerOrder.reversed())
+        layout.graph.frontToBackOrder
     }
 
     static func backToFrontOrder(fromFrontToBackOrder order: [SceneLayerKind]) -> [SceneLayerKind] {
@@ -17,7 +17,7 @@ enum SceneLayoutProjection {
     }
 
     static func topLayer(in layout: SceneLayout, enabledSources: Set<CaptureSource>) -> SceneLayerKind? {
-        frontToBackOrder(for: layout).first { enabledSources.contains($0.source) }
+        layout.graph.frontToBackOrder.first { enabledSources.contains($0.source) }
     }
 
     static func reorderedBackToFrontOrder(
@@ -44,12 +44,7 @@ enum SceneLayoutProjection {
     }
 
     static func normalizedFrame(for kind: SceneLayerKind, in layout: SceneLayout) -> CGRect {
-        switch kind {
-        case .screen:
-            return layout.screenFrame
-        case .camera:
-            return layout.cameraFrame
-        }
+        layout.graph.frame(for: kind)
     }
 
     static func normalizedFrame(
@@ -84,13 +79,11 @@ enum SceneLayoutProjection {
         enabledSources: Set<CaptureSource>,
         fillsCanvasWhenOnlyVideoSource: Bool
     ) -> CGRect {
-        guard fillsCanvasWhenOnlyVideoSource,
-              enabledSources.contains(kind.source),
-              enabledSources.isDisjoint(with: otherVideoSources(for: kind)) else {
-            return normalizedFrame(for: kind, in: sceneLayout)
-        }
-
-        return fullFrame
+        sceneLayout.graph.normalizedFrame(
+            for: kind,
+            enabledSources: enabledSources,
+            fillsCanvasWhenOnlyVideoSource: fillsCanvasWhenOnlyVideoSource
+        )
     }
 
     static func denormalized(
@@ -157,15 +150,6 @@ enum SceneLayoutProjection {
             in: canvas,
             padding: canvasPadding
         )
-    }
-
-    private static func otherVideoSources(for kind: SceneLayerKind) -> Set<CaptureSource> {
-        switch kind {
-        case .screen:
-            return [.camera]
-        case .camera:
-            return [.screen]
-        }
     }
 }
 

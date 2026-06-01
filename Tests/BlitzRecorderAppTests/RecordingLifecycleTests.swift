@@ -328,6 +328,36 @@ final class RecordingLifecycleTests: XCTestCase {
     }
 
     @MainActor
+    func testCaptureSourceRunUpdatesActiveScreenCaptureSettings() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen]
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        let screenRecorder = SpyScreenCaptureRecorder(stopCompletion: .wrote(take.screenURL))
+        let run = CaptureSourceRun(
+            take: take,
+            settings: settings,
+            pickedScreenFilter: nil,
+            screenRecorder: screenRecorder,
+            cameraRecorder: FailingCameraCaptureRecorder(error: RecorderError.noCamera),
+            audioRecorder: SpyMicrophoneCaptureRecorder(),
+            systemAudioRecorder: NoopSystemAudioCaptureRecorder()
+        )
+
+        try await run.start()
+        var updatedSettings = settings
+        updatedSettings.screenCrop = CGRect(x: 0.25, y: 0.1, width: 0.5, height: 0.6)
+        try await run.updateScreenCapture(settings: updatedSettings, pickedScreenFilter: nil)
+
+        XCTAssertEqual(screenRecorder.startCount, 1)
+        XCTAssertEqual(screenRecorder.updateCount, 1)
+        XCTAssertEqual(screenRecorder.updatedSettings?.screenCrop, updatedSettings.screenCrop)
+        _ = await run.stop()
+    }
+
+    @MainActor
     func testCaptureSourceRunPausesScreenSourceAddedWhilePaused() async throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
@@ -1826,6 +1856,7 @@ final class RecordingLifecycleTests: XCTestCase {
 
 private final class NoopScreenCaptureRecorder: ScreenCaptureRecording {
     func start(url: URL, settings: RecordingSettings, filter pickedFilter: SCContentFilter?, timelineStartTime: CMTime?) async throws {}
+    func update(settings: RecordingSettings, filter pickedFilter: SCContentFilter?) async throws {}
     func pause() {}
     func resume() {}
     func stop() async throws -> MediaWriterCompletion { .empty() }
@@ -1855,6 +1886,7 @@ private final class OrderedScreenCaptureRecorder: ScreenCaptureRecording {
         order.start(.screen)
     }
 
+    func update(settings: RecordingSettings, filter pickedFilter: SCContentFilter?) async throws {}
     func pause() {}
     func resume() {}
 
@@ -1926,9 +1958,11 @@ private final class OrderedSystemAudioCaptureRecorder: SystemAudioCaptureRecordi
 
 private final class SpyScreenCaptureRecorder: ScreenCaptureRecording {
     private(set) var startCount = 0
+    private(set) var updateCount = 0
     private(set) var stopCount = 0
     private(set) var pauseCount = 0
     private(set) var resumeCount = 0
+    private(set) var updatedSettings: RecordingSettings?
     private(set) var capturedTimelineStartTime: CMTime?
     let stopCompletion: MediaWriterCompletion
 
@@ -1939,6 +1973,11 @@ private final class SpyScreenCaptureRecorder: ScreenCaptureRecording {
     func start(url: URL, settings: RecordingSettings, filter pickedFilter: SCContentFilter?, timelineStartTime: CMTime?) async throws {
         startCount += 1
         capturedTimelineStartTime = timelineStartTime
+    }
+
+    func update(settings: RecordingSettings, filter pickedFilter: SCContentFilter?) async throws {
+        updateCount += 1
+        updatedSettings = settings
     }
 
     func pause() {

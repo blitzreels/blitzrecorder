@@ -3,6 +3,28 @@ import CoreGraphics
 import XCTest
 
 final class VideoRenderPlacementTests: XCTestCase {
+    func testSceneRenderPlacementPolicyResolvesTargetCropAndRadius() {
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen, .camera]
+        settings.canvasPadding = 0.1
+        settings.cameraCropAmount = CGPoint(x: 0.25, y: 0)
+        settings.cameraCropPosition = CGPoint(x: 0.2, y: -0.1)
+        settings.sceneLayout.cameraFrame = CGRect(x: 0.2, y: 0.2, width: 0.4, height: 0.4)
+        let scene = RecordingScene(settings: settings)
+
+        let placement = SceneRenderGeometry(
+            canvas: CGRect(x: 0, y: 0, width: 100, height: 200),
+            scene: scene,
+            origin: .upperLeft
+        ).activePlacements.first { $0.kind == .camera }
+
+        XCTAssertRect(placement?.targetRect ?? .zero, equals: CGRect(x: 30, y: 90, width: 20, height: 60))
+        XCTAssertEqual(placement?.cornerRadius, 8)
+        XCTAssertEqual(placement?.videoPlacement.sourceCropAmount, CGPoint(x: 0.25, y: 0))
+        XCTAssertEqual(placement?.videoPlacement.sourceCropPosition, CGPoint(x: 0.2, y: -0.1))
+        XCTAssertEqual(placement?.videoPlacement.contentMode, .aspectFill)
+    }
+
     func testScreenPlacementUsesAspectFillWithCrop() {
         let placement = VideoRenderPlacement(
             kind: .screen,

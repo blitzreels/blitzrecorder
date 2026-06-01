@@ -31,6 +31,19 @@ struct RemoteIPhoneCameraState {
         services.contains { $0.id == id }
     }
 
+    func automaticSelection(settings: RecordingSettings) -> DiscoveredBonjourService? {
+        guard settings.enabledSources.contains(.camera),
+              settings.selectedCameraID == nil else {
+            return nil
+        }
+
+        let trustedServices = services.filter { settings.trustedRemoteCameraServiceIDs.contains($0.id) }
+        if trustedServices.count == 1 {
+            return trustedServices[0]
+        }
+        return services.count == 1 ? services[0] : nil
+    }
+
     mutating func setConnectionState(_ state: RemoteCameraConnectionState, for serviceID: String) {
         connectionStates[serviceID] = state
     }
@@ -45,6 +58,21 @@ struct RemoteIPhoneCameraState {
 
     func capabilities(for serviceID: String) -> RemoteCameraCapabilities? {
         capabilities[serviceID]
+    }
+
+    func selectedCapabilities(
+        settings: RecordingSettings,
+        normalizedSettings: (RemoteCameraSettings, String) -> RemoteCameraSettings
+    ) -> RemoteCameraCapabilities? {
+        guard let selectedServiceID = RemoteCameraProviderID.serviceID(from: settings.selectedCameraID),
+              let capabilities = capabilities[selectedServiceID] else {
+            return nil
+        }
+        let proposedSettings = settings.remoteCameraSettingsByServiceID[selectedServiceID]
+            ?? telemetry[selectedServiceID]?.activeSettings
+            ?? RemoteCameraSettings()
+        let remoteSettings = normalizedSettings(proposedSettings, selectedServiceID)
+        return capabilities.capabilities(for: remoteSettings.lens)
     }
 
     mutating func setTelemetry(_ telemetry: RemoteCameraTelemetry, for serviceID: String) {

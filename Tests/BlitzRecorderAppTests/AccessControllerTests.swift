@@ -87,7 +87,7 @@ final class AccessControllerTests: XCTestCase {
 
         XCTAssertTrue(access.hasBlitzReelsEntitlement)
         XCTAssertTrue(access.canRenderExport)
-        XCTAssertEqual(access.accessLabel, "Included with BlitzReels Pro")
+        XCTAssertEqual(access.accessLabel, "Free with BlitzReels Pro")
 
         access.disconnectBlitzReels()
 
@@ -177,8 +177,8 @@ final class AccessControllerTests: XCTestCase {
 
         XCTAssertTrue(access.hasBlitzReelsEntitlement)
         XCTAssertTrue(access.isPro)
-        XCTAssertEqual(access.accessLabel, "Included with BlitzReels Pro")
-        XCTAssertEqual(access.accessMessage, "Included with BlitzReels Pro.")
+        XCTAssertEqual(access.accessLabel, "Free with BlitzReels Pro")
+        XCTAssertEqual(access.accessMessage, "Pro is free with BlitzReels Pro.")
         XCTAssertEqual(defaults.string(forKey: "access.blitzReelsPlanName"), "BlitzReels Pro")
         XCTAssertEqual(defaults.object(forKey: "access.blitzReelsVerifiedAt") as? Date, now)
         XCTAssertEqual(tokenStore.loadToken(), "eligible-token")
@@ -201,7 +201,7 @@ final class AccessControllerTests: XCTestCase {
 
         XCTAssertFalse(access.hasBlitzReelsEntitlement)
         XCTAssertFalse(access.isPro)
-        XCTAssertEqual(access.accessMessage, "No active BlitzReels subscription found.")
+        XCTAssertEqual(access.accessMessage, "We didn't find a BlitzReels plan on your account.")
         XCTAssertEqual(tokenStore.loadToken(), "ineligible-token")
         XCTAssertNil(defaults.string(forKey: "access.blitzReelsPlanName"))
         XCTAssertNil(defaults.object(forKey: "access.blitzReelsVerifiedAt"))
@@ -223,7 +223,7 @@ final class AccessControllerTests: XCTestCase {
 
         XCTAssertFalse(access.hasBlitzReelsEntitlement)
         XCTAssertFalse(access.isPro)
-        XCTAssertEqual(access.accessMessage, "BlitzReels sign-in expired.")
+        XCTAssertEqual(access.accessMessage, "Your BlitzReels sign-in expired. Please sign in again.")
         XCTAssertNil(tokenStore.loadToken())
         XCTAssertNil(defaults.string(forKey: "access.blitzReelsPlanName"))
         XCTAssertNil(defaults.object(forKey: "access.blitzReelsVerifiedAt"))
@@ -247,8 +247,8 @@ final class AccessControllerTests: XCTestCase {
 
         XCTAssertTrue(access.hasBlitzReelsEntitlement)
         XCTAssertTrue(access.isPro)
-        XCTAssertEqual(access.accessMessage, "Using recently verified BlitzReels access.")
-        XCTAssertEqual(access.accessLabel, "Included with BlitzReels Pro")
+        XCTAssertEqual(access.accessMessage, "Using your saved BlitzReels access.")
+        XCTAssertEqual(access.accessLabel, "Free with BlitzReels Pro")
         XCTAssertEqual(tokenStore.loadToken(), "cached-token")
     }
 
@@ -270,7 +270,7 @@ final class AccessControllerTests: XCTestCase {
 
         XCTAssertTrue(access.hasBlitzReelsEntitlement)
         XCTAssertTrue(access.isPro)
-        XCTAssertEqual(access.accessLabel, "Included with BlitzReels Pro")
+        XCTAssertEqual(access.accessLabel, "Free with BlitzReels Pro")
         XCTAssertEqual(tokenStore.loadToken(), "cached-token")
         XCTAssertEqual(checker.requestedTokens, [])
     }
@@ -292,7 +292,7 @@ final class AccessControllerTests: XCTestCase {
         await access.refreshBlitzReelsEntitlementIfNeeded()
 
         XCTAssertTrue(access.hasBlitzReelsEntitlement)
-        XCTAssertEqual(access.accessLabel, "Included with BlitzReels Pro")
+        XCTAssertEqual(access.accessLabel, "Free with BlitzReels Pro")
         XCTAssertEqual(checker.requestedTokens, ["expired-cache-token"])
     }
 

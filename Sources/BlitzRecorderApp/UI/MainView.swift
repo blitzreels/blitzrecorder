@@ -37,7 +37,7 @@ struct MainView: View {
         }
         .overlay {
             if vm.showsFirstRunOnboarding {
-                FirstRunOnboardingView(vm: vm)
+                RecordingAccessCover(vm: vm)
             }
         }
         .task {
@@ -68,13 +68,10 @@ struct MainView: View {
                             ScreenshotPreviewCanvas(variant: screenshotVariant)
                         }
 
-                        if vm.isScreenCropModeEnabled {
-                            ScreenCropFloatingToolbar(vm: vm)
-                                .padding(.top, 18)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                        }
+                        CropToolbarOverlay(vm: vm)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
 
                     BottomDock(vm: vm)
                         .padding(.top, 16)
@@ -118,119 +115,6 @@ private struct ProductIconImage: View {
     }
 }
 
-private struct FirstRunOnboardingView: View {
-    @Bindable var vm: RecorderViewModel
-
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.38)
-                .ignoresSafeArea()
-
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 10) {
-                    Image(systemName: "lock.shield")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Color(red: 0.09, green: 1.0, blue: 0.65))
-                        .frame(width: 28, height: 28)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Set Up Recording Access")
-                            .font(.system(size: 17, weight: .bold))
-                            .foregroundStyle(.white)
-                        Text(vm.permissionSetupSummary)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.58))
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer(minLength: 0)
-                }
-
-                VStack(spacing: 6) {
-                    ForEach(vm.permissionStatusRows.prefix(4)) { row in
-                        HStack(spacing: 8) {
-                            Image(systemName: row.level == .granted ? "checkmark.circle.fill" : row.symbol)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(permissionTint(row.level))
-                                .frame(width: 16)
-                            Text(row.title)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.white.opacity(0.82))
-                            Spacer(minLength: 8)
-                            Text(row.status)
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.48))
-                                .lineLimit(1)
-                        }
-                    }
-                }
-                .padding(10)
-                .background(Color.white.opacity(0.055), in: .rect(cornerRadius: 10))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                }
-
-                HStack(spacing: 8) {
-                    Button {
-                        vm.dismissFirstRunOnboarding()
-                        vm.runPrimaryPermissionAction()
-                    } label: {
-                        Label(vm.primaryPermissionActionTitle, systemImage: vm.shouldSuggestScreenPicker ? "rectangle.on.rectangle" : "lock.open")
-                            .font(.system(size: 12, weight: .bold))
-                            .padding(.horizontal, 12)
-                            .frame(height: 34)
-                    }
-                    .blitzGlassButton()
-                    .pointingHandCursor()
-
-                    Button {
-                        vm.openAccessFromOnboarding()
-                    } label: {
-                        Label("Access", systemImage: "lock.shield")
-                            .font(.system(size: 12, weight: .bold))
-                            .padding(.horizontal, 12)
-                            .frame(height: 34)
-                    }
-                    .blitzGlassButton()
-                    .pointingHandCursor()
-
-                    Spacer(minLength: 0)
-
-                    Button {
-                        vm.dismissFirstRunOnboarding()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 11, weight: .bold))
-                            .frame(width: 32, height: 32)
-                    }
-                    .blitzGlassButton()
-                    .pointingHandCursor()
-                    .help("Dismiss")
-                }
-            }
-            .padding(18)
-            .frame(width: 460, alignment: .leading)
-            .blitzGlassSurface(cornerRadius: 18)
-            .shadow(color: .black.opacity(0.36), radius: 28, y: 14)
-        }
-    }
-
-    private func permissionTint(_ level: PermissionStatusLevel) -> Color {
-        switch level {
-        case .granted:
-            return Color(red: 0.09, green: 1.0, blue: 0.65)
-        case .warning:
-            return Color(red: 1.0, green: 0.66, blue: 0.16)
-        case .blocked:
-            return Color(red: 1.0, green: 0.24, blue: 0.22)
-        case .inactive:
-            return .white.opacity(0.34)
-        }
-    }
-}
-
 private extension Bundle {
     var blitzRecorderCameraIcon: NSImage? {
         guard let url = url(forResource: "Icon-App-60x60@3x", withExtension: "png") else {
@@ -240,32 +124,40 @@ private extension Bundle {
     }
 }
 
-private struct ScreenCropFloatingToolbar: View {
+struct CropToolbarOverlay: View {
     @Bindable var vm: RecorderViewModel
 
-    private let accent = Color(red: 0.09, green: 1.0, blue: 0.65)
+    var body: some View {
+        GeometryReader { proxy in
+            if let frame = vm.cropToolbarFrame,
+               vm.isScreenCropModeEnabled || vm.isCameraCropModeEnabled {
+                CropFloatingToolbar(vm: vm)
+                    .fixedSize()
+                    .position(
+                        x: frame.midX,
+                        y: proxy.size.height - frame.midY
+                    )
+            }
+        }
+    }
+}
+
+private struct CropFloatingToolbar: View {
+    @Bindable var vm: RecorderViewModel
+
+    private let accent = Color(red: 1.0, green: 0.66, blue: 0.16)
+    private var isCameraCrop: Bool { vm.isCameraCropModeEnabled }
 
     var body: some View {
         HStack(spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: "crop")
-                    .font(.system(size: 11, weight: .semibold))
-                Text("Crop")
-                    .font(.system(size: 11, weight: .bold))
-            }
-            .foregroundStyle(accent)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(accent.opacity(0.14), in: .capsule)
-
-            Divider()
-                .frame(height: 18)
-                .background(.white.opacity(0.14))
-
             Button {
-                vm.applyScreenCropMode()
+                if isCameraCrop {
+                    vm.applyCameraCropMode()
+                } else {
+                    vm.applyScreenCropMode()
+                }
             } label: {
-                Text("Apply")
+                Label("Done cropping", systemImage: "checkmark")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(.black.opacity(0.88))
                     .padding(.horizontal, 12)
@@ -276,7 +168,11 @@ private struct ScreenCropFloatingToolbar: View {
             .pointingHandCursor()
 
             Button {
-                vm.resetScreenCropMode()
+                if isCameraCrop {
+                    vm.resetCameraCrop()
+                } else {
+                    vm.resetScreenCropMode()
+                }
             } label: {
                 Image(systemName: "arrow.counterclockwise")
                     .font(.system(size: 11, weight: .bold))
@@ -287,7 +183,11 @@ private struct ScreenCropFloatingToolbar: View {
             .pointingHandCursor()
 
             Button {
-                vm.cancelScreenCropMode()
+                if isCameraCrop {
+                    vm.cancelCameraCropMode()
+                } else {
+                    vm.cancelScreenCropMode()
+                }
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .bold))
@@ -312,6 +212,8 @@ private struct ScreenCropFloatingToolbar: View {
 private struct RemoteCameraPage: View {
     @Bindable var vm: RecorderViewModel
 
+    private let accent = Color(red: 0.09, green: 1.0, blue: 0.65)
+
 	var body: some View {
 		Group {
 			if vm.isRemoteCameraSelected {
@@ -326,52 +228,181 @@ private struct RemoteCameraPage: View {
 	}
 
     private var disconnectedLayout: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("iPhone")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(.white)
-                Text("Select an iPhone camera source on Capture to use mirroring controls.")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.55))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                onboardingHeader
+                setupStepsCard
+                nearbyDevicesCard
             }
+            .frame(maxWidth: 560, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .padding(.horizontal, 28)
+            .padding(.vertical, 28)
+        }
+        .foregroundStyle(.white)
+    }
+
+    private var onboardingHeader: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Film with your iPhone")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(.white)
+            Text("Your iPhone has a better camera than a webcam. It records the video while your Mac shows it live.")
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(.white.opacity(0.6))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var setupStepsCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("SET UP IN 4 STEPS")
+                .font(.system(size: 10, weight: .heavy))
+                .tracking(0.7)
+                .foregroundStyle(.white.opacity(0.52))
 
             VStack(alignment: .leading, spacing: 16) {
-                Text("PAIRING")
+                downloadStep
+                stepRow(
+                    2,
+                    title: "Open it",
+                    detail: "Open the app. Use the same Wi-Fi as this Mac."
+                )
+                stepRow(
+                    3,
+                    title: "Connect them",
+                    detail: "Your iPhone shows up below. Click it, then type the 6 numbers it shows you."
+                )
+                stepRow(
+                    4,
+                    title: "Hit record",
+                    detail: "Pick your iPhone on the Capture tab and press record."
+                )
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .blitzGlassSurface(cornerRadius: 16)
+    }
+
+    private var downloadStep: some View {
+        HStack(alignment: .top, spacing: 12) {
+            stepBadge(1)
+            VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Get the app")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.95))
+                    Text("Put BlitzRecorder Camera on your iPhone.")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(.white.opacity(0.55))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                companionAppLink
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func stepRow(_ number: Int, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            stepBadge(number)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.95))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(detail)
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func stepBadge(_ number: Int) -> some View {
+        ZStack {
+            Circle()
+                .fill(accent.opacity(0.16))
+            Circle()
+                .stroke(accent.opacity(0.45), lineWidth: 1)
+            Text("\(number)")
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundStyle(accent)
+        }
+        .frame(width: 24, height: 24)
+    }
+
+    private var nearbyDevicesCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Text("NEARBY IPHONES")
                     .font(.system(size: 10, weight: .heavy))
                     .tracking(0.7)
                     .foregroundStyle(.white.opacity(0.52))
-
+                Spacer(minLength: 0)
                 if vm.remoteCameraDeviceSummaries.isEmpty {
-                    companionAppLink
-                } else {
-                    VStack(spacing: 8) {
-                        ForEach(vm.remoteCameraDeviceSummaries) { device in
-                            remoteCameraDeviceRow(device)
-                        }
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+
+            if vm.remoteCameraDeviceSummaries.isEmpty {
+                searchingRow
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(vm.remoteCameraDeviceSummaries) { device in
+                        remoteCameraDeviceRow(device)
                     }
                 }
-
-                Button {
-                    vm.appTab = .recorder
-                } label: {
-                    Label("Open Capture", systemImage: "record.circle")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                }
-                .blitzGlassButton()
-                .pointingHandCursor()
             }
-            .padding(20)
-            .frame(width: 520, alignment: .leading)
-            .blitzGlassSurface(cornerRadius: 16)
+
+            Button {
+                vm.appTab = .recorder
+            } label: {
+                Label("Open Capture", systemImage: "record.circle")
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+            }
+            .blitzGlassButton()
+            .pointingHandCursor()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.horizontal, 28)
-        .padding(.top, 28)
-        .foregroundStyle(.white)
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .blitzGlassSurface(cornerRadius: 16)
+    }
+
+    private var searchingRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "wifi")
+                .font(.system(size: 14, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.white.opacity(0.62))
+                .frame(width: 34, height: 34)
+                .background(Color.white.opacity(0.06), in: .rect(cornerRadius: 8))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Looking for your iPhone…")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.92))
+                Text("Open the app on your iPhone. Use the same Wi-Fi as this Mac.")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.04), in: .rect(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        }
     }
 
     private var companionAppLink: some View {
@@ -754,16 +785,16 @@ private extension MainView {
             ScreenshotCard(width: 320) {
                 VStack(alignment: .leading, spacing: 12) {
                     screenshotEyebrow("PLAN")
-                    Text("3 free exports left")
+                    Text("3 free videos left")
                         .font(.system(size: 16, weight: .bold))
-                    Text("BlitzRecorder Pro unlocks unlimited exports on Mac.")
+                    Text("Pro lets you save as many videos as you want.")
                         .font(.system(size: 11))
                         .foregroundStyle(.white.opacity(0.62))
-                    Text("App Store subscriptions renew until cancelled in Apple account settings.")
+                    Text("It renews until you cancel it in your Apple settings.")
                         .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(0.54))
 
-                    Label("Subscribe $49.99 / year", systemImage: "creditcard.fill")
+                    Label("Get Pro for $49.99/year", systemImage: "creditcard.fill")
                         .font(.system(size: 12, weight: .bold))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 10)
@@ -772,7 +803,7 @@ private extension MainView {
 
                     HStack(spacing: 8) {
                         screenshotSmallButton("Restore", icon: "arrow.clockwise")
-                        screenshotSmallButton("BlitzReels Sign In", icon: "person.crop.circle.badge.checkmark")
+                        screenshotSmallButton("Sign in with BlitzReels", icon: "person.crop.circle.badge.checkmark")
                     }
 
                     Divider().background(.white.opacity(0.12))

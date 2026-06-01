@@ -111,15 +111,15 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         }
 
         session.beginConfiguration()
-        if session.canSetSessionPreset(.hd1920x1080) {
-            session.sessionPreset = .hd1920x1080
-        } else {
-            session.sessionPreset = .high
-        }
+        LocalCameraSessionConfiguration.configurePreset(on: session)
         session.inputs.forEach { session.removeInput($0) }
         session.outputs.forEach { session.removeOutput($0) }
 
-        configure(device: device, fps: settings.framesPerSecond)
+        LocalCameraSessionConfiguration.configure(
+            device: device,
+            fps: settings.framesPerSecond,
+            logPrefix: "Camera"
+        )
 
         let input = try AVCaptureDeviceInput(device: device)
         if session.canAddInput(input) {
@@ -149,93 +149,8 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         }
     }
 
-    private func configure(device: AVCaptureDevice, fps: Int) {
-        do {
-            try device.lockForConfiguration()
-            defer { device.unlockForConfiguration() }
-
-            let compatibleFormats = device.formats.filter { format in
-                format.videoSupportedFrameRateRanges.contains { $0.maxFrameRate >= Double(fps) }
-            }
-            let fourKFormats = compatibleFormats.filter { format in
-                let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
-                return dimensions.width <= 3840 && dimensions.height <= 2160
-            }
-            let candidates = fourKFormats.isEmpty ? compatibleFormats : fourKFormats
-
-            if let format = candidates.sorted(by: { lhs, rhs in
-                cameraFormatSortKey(lhs) < cameraFormatSortKey(rhs)
-            }).first {
-                device.activeFormat = format
-            }
-
-            let frameDuration = CMTime(value: 1, timescale: CMTimeScale(fps))
-            if shouldForceFrameDuration(for: device),
-               device.activeFormat.videoSupportedFrameRateRanges.contains(where: { $0.maxFrameRate >= Double(fps) }) {
-                device.activeVideoMinFrameDuration = frameDuration
-                device.activeVideoMaxFrameDuration = frameDuration
-            }
-        } catch {
-            NSLog("Camera configuration failed: \(error.localizedDescription)")
-        }
-    }
-
-    private func shouldForceFrameDuration(for device: AVCaptureDevice) -> Bool {
-        device.deviceType == .builtInWideAngleCamera
-    }
-
     private func selectedCamera(settings: RecordingSettings) -> AVCaptureDevice? {
-        if let selectedCameraID = settings.selectedCameraID,
-           let device = AVCaptureDevice(uniqueID: selectedCameraID),
-           device.isConnected,
-           !device.isSuspended {
-            return device
-        }
-
-        let devices = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInWideAngleCamera, .continuityCamera, .deskViewCamera, .external],
-            mediaType: .video,
-            position: .unspecified
-        ).devices
-            .filter { $0.isConnected && !$0.isSuspended }
-            .sorted { lhs, rhs in
-                cameraSortKey(lhs) < cameraSortKey(rhs)
-            }
-
-        if let device = devices.first {
-            return device
-        }
-
-        let fallback = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .unspecified)
-            ?? AVCaptureDevice.default(for: .video)
-        guard fallback?.isConnected == true, fallback?.isSuspended == false else {
-            return nil
-        }
-        return fallback
-    }
-
-    private func cameraSortKey(_ device: AVCaptureDevice) -> String {
-        let priority: String
-        if device.isContinuityCamera {
-            priority = "0"
-        } else if device.deviceType == .external {
-            priority = "1"
-        } else if device.deviceType == .deskViewCamera {
-            priority = "2"
-        } else {
-            priority = "3"
-        }
-        return "\(priority)-\(device.localizedName)"
-    }
-
-    private func cameraFormatSortKey(_ format: AVCaptureDevice.Format) -> String {
-        let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
-        let width = max(1, Int(dimensions.width))
-        let height = max(1, Int(dimensions.height))
-        let aspect = Double(width) / Double(height)
-        let aspectPenalty = Int((abs(aspect - Double(SceneLayout.cameraAspectRatio)) * 10_000).rounded())
-        let areaRank = 10_000_000 - min(9_999_999, width * height)
-        return String(format: "%06d-%08d", aspectPenalty, areaRank)
+        LocalCameraSessionConfiguration.selectedCamera(settings: settings)
     }
 
     private func makeWriter(for sampleBuffer: CMSampleBuffer, recording: PendingRecording) throws -> VideoFileWriter {

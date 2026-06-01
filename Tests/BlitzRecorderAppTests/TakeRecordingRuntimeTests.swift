@@ -25,4 +25,20 @@ final class TakeRecordingRuntimeTests: XCTestCase {
         settings.savesSourceFiles = true
         XCTAssertFalse(TakeRecordingRuntime.shouldUseLiveCompositor(settings: settings, isRemoteCameraSelected: false))
     }
+
+    func testSceneTimelineStoresRequestedTransition() {
+        var settings = RecordingSettings()
+        settings.canvasBackgroundStyle = .black
+        let runtime = TakeRecordingRuntime()
+        runtime.startSceneTimeline(settings: settings)
+
+        settings.canvasBackgroundStyle = .aurora
+        runtime.appendSceneEventIfNeeded(
+            RecordingScene(settings: settings),
+            state: .recording,
+            transition: .sceneSwitch
+        )
+
+        XCTAssertEqual(runtime.sceneEvents.last?.transition, .sceneSwitch)
+    }
 }

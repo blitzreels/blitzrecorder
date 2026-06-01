@@ -8,25 +8,27 @@ public enum RemoteCameraSettingsResolver {
     ) -> RemoteCameraSettings {
         var remoteSettings = proposedSettings
         let supportedLenses = capabilities?.supportedLenses ?? []
-        let lens = remoteSettings.lens
-        let supportedProfiles = capabilities?.supportedCaptureProfiles ?? [
+        remoteSettings.lens = supportedLenses.contains(remoteSettings.lens)
+            ? remoteSettings.lens
+            : (supportedLenses.first ?? .wide)
+        let lensCapabilities = capabilities?.capabilities(for: remoteSettings.lens) ?? capabilities
+        let supportedProfiles = lensCapabilities?.supportedCaptureProfiles ?? [
             RemoteCameraCaptureProfile(id: .automatic)
         ]
         if !supportedProfiles.contains(where: { $0.id == remoteSettings.captureProfileID && $0.isAvailable }) {
             remoteSettings.captureProfileID = .automatic
         }
         let selectableFormats = formats(
-            capabilities?.supportedFormats ?? [],
+            lensCapabilities?.supportedFormats ?? [],
             supportedBy: remoteSettings.captureProfileID,
             profiles: supportedProfiles
         )
-        let formatCandidates = selectableFormats.isEmpty ? (capabilities?.supportedFormats ?? []) : selectableFormats
+        let formatCandidates = selectableFormats.isEmpty ? (lensCapabilities?.supportedFormats ?? []) : selectableFormats
         let format = formatCandidates.first { format in
             format.id == remoteSettings.formatID && format.frameRates.contains(remoteSettings.frameRate)
         } ?? formatCandidates.first { format in
             format.frameRates.contains(preferredFrameRate)
         } ?? formatCandidates.first
-        remoteSettings.lens = supportedLenses.contains(lens) ? lens : (supportedLenses.first ?? .wide)
         remoteSettings.formatID = format?.id
         remoteSettings.frameRate = format?.frameRates.contains(remoteSettings.frameRate) == true
             ? remoteSettings.frameRate
@@ -36,8 +38,8 @@ public enum RemoteCameraSettingsResolver {
         remoteSettings.zoomFactor = 1
         remoteSettings.torchEnabled = false
         remoteSettings.focusPosition = min(1, max(0, remoteSettings.focusPosition))
-        if let capabilities {
-            normalizeFeatureSettings(&remoteSettings, capabilities: capabilities)
+        if let lensCapabilities {
+            normalizeFeatureSettings(&remoteSettings, capabilities: lensCapabilities)
         }
         remoteSettings.rotationDegrees = RemoteCameraSettings.normalizedRotationDegrees(remoteSettings.rotationDegrees)
         return remoteSettings
@@ -134,9 +136,10 @@ public enum RemoteCameraSettingsResolver {
         if !capabilities.supportedStabilizationModes.contains(remoteSettings.stabilizationMode) {
             remoteSettings.stabilizationMode = capabilities.supportedStabilizationModes.first ?? .off
         }
-        if capabilities.supportedRotationDegrees.contains(RemoteCameraSettings.defaultRotationDegrees) {
-            remoteSettings.rotationDegrees = RemoteCameraSettings.defaultRotationDegrees
-        } else if !capabilities.supportedRotationDegrees.contains(remoteSettings.rotationDegrees) {
+        let requestedRotation = RemoteCameraSettings.normalizedRotationDegrees(remoteSettings.rotationDegrees)
+        if capabilities.supportedRotationDegrees.contains(requestedRotation) {
+            remoteSettings.rotationDegrees = requestedRotation
+        } else {
             remoteSettings.rotationDegrees = capabilities.supportedRotationDegrees.first ?? 0
         }
     }

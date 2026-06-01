@@ -61,10 +61,13 @@ final class RecorderCoordinator {
         didSet { onStateChanged?(state) }
     }
     private(set) var settings: RecordingSettings
+    private(set) var sceneLibrary: SceneLibrary
     private(set) var lastTake: RecordingTake?
     private var pickedScreenFilter: SCContentFilter?
     private var isEditingScreenCrop = false
     private(set) var screenContentSelectionRevision = 0
+    private var activeScreenCaptureConfigurationRevision = 0
+    private var activeScreenCaptureConfigurationTask: Task<Void, Never>?
     private var outputDirectoryAccess: OutputDirectoryAccess?
 
     var onStateChanged: ((RecordingState) -> Void)?
@@ -76,6 +79,7 @@ final class RecorderCoordinator {
     var onSocialSafeZoneOverlayChanged: ((SocialVideoSafeZone) -> Void)?
     var onScreenCaptureConfigurationChanged: (() -> Void)?
     var onCameraConfigurationChanged: (() -> Void)?
+    var onLiveScreenPreviewFrame: ScreenPreviewer.FrameHandler?
     var onLocalCameraPreviewSampleBuffer: ((CMSampleBuffer, Int, Int) -> Void)?
     var onRemoteCameraPreviewFrame: ((CGImage) -> Void)?
     var onRemoteCameraPreviewSampleBuffer: ((CMSampleBuffer, Int, Int) -> Void)?
@@ -102,6 +106,10 @@ final class RecorderCoordinator {
         self.accessController = accessController
         self.defaults = defaults
         settings = RecordingSettingsStore.load(defaults: defaults)
+        sceneLibrary = SceneLibraryStore.load(defaults: defaults, currentSettings: settings)
+        if let selectedScene = sceneLibrary.selectedScene(layout: settings.layout) {
+            applySceneSnapshot(selectedScene.snapshot, allowTakeLockedBindings: true)
+        }
         if clearIncompatibleScreenCropForCurrentLayout() {
             persistSettings()
         }
@@ -115,6 +123,14 @@ final class RecorderCoordinator {
                 return
             }
             self.onLocalCameraPreviewSampleBuffer?(sampleBuffer, width, height)
+        }
+        takeRecording.liveCompositedRecorder.onScreenPreviewFrame = { [weak self] frame in
+            guard let self,
+                  self.state == .starting || self.state == .recording || self.state == .paused,
+                  self.settings.visibleSources.contains(.screen) else {
+                return
+            }
+            self.onLiveScreenPreviewFrame?(frame)
         }
         if RemoteCameraProviderID.isRemote(settings.selectedCameraID) {
             startRemoteCameraDiscoveryIfNeeded()
@@ -135,7 +151,11 @@ final class RecorderCoordinator {
             previewSettings.screenCrop = nil
             previewSettings.usesPickedScreenContent = false
         }
-        try await screenPreviewer.start(settings: previewSettings, filter: isEditingScreenCrop ? nil : pickedScreenFilter, frameHandler: frameHandler)
+        try await screenPreviewer.start(
+            settings: previewSettings,
+            filter: pickedScreenFilter(for: previewSettings),
+            frameHandler: frameHandler
+        )
     }
 
     var isScreenPreviewRunning: Bool {
@@ -160,6 +180,35 @@ final class RecorderCoordinator {
         try await cameraCutoutPreviewer.start(settings: settings, frameHandler: frameHandler)
     }
 
+    func scenesForCurrentLayout() -> [RecordingSceneDefinition] {
+        sceneLibrary.scenes(for: settings.layout)
+    }
+
+    func selectedSceneIDForCurrentLayout() -> UUID? {
+        sceneLibrary.selectedSceneIDsByLayout[settings.layout]
+    }
+
+    func selectedSceneName() -> String {
+        sceneLibrary.selectedScene(layout: settings.layout)?.name ?? "Scene"
+    }
+
+    func selectScene(id: UUID) {
+        guard allowsSceneChanges else {
+            onMessage?("Scenes are locked while saving.")
+            return
+        }
+        saveCurrentSceneSnapshotIfNeeded()
+        guard let scene = sceneLibrary.selectScene(id: id, layout: settings.layout) else { return }
+        SceneLibraryStore.save(sceneLibrary, defaults: defaults)
+        applySceneSnapshot(scene.snapshot, allowTakeLockedBindings: state == .idle)
+        persistSettings(saveSceneSnapshot: false)
+        updateRecordingSceneIfNeeded(transition: .sceneSwitch)
+        onScreenCaptureConfigurationChanged?()
+        if state == .idle {
+            onCameraConfigurationChanged?()
+        }
+    }
+
     func setLayout(_ layout: CaptureLayout) {
         guard state == .idle else {
             onMessage?("Output aspect ratio is locked while recording.")
@@ -172,23 +221,24 @@ final class RecorderCoordinator {
             }
             return
         }
+        saveCurrentSceneSnapshotIfNeeded()
         settings.layout = layout
-        settings.screenCrop = nil
-        let preset: ScenePreset
-        if let saved = settings.selectedScenePreset, saved.supports(layout) {
-            preset = saved
+        sceneLibrary.ensureScenes(for: layout)
+        if let scene = sceneLibrary.selectedScene(layout: layout) {
+            applySceneSnapshot(scene.snapshot, allowTakeLockedBindings: true)
         } else {
-            preset = ScenePreset.defaultPreset(for: layout)
-            settings.selectedScenePreset = preset
+            settings.screenCrop = nil
+            settings.selectedScenePreset = ScenePreset.defaultPreset(for: layout)
+            settings.sceneLayout = SceneLayout.defaultLayout(
+                for: layout,
+                screenAspectRatio: currentScreenSourceAspectRatio(),
+                cameraAspectRatio: currentCameraSourceAspectRatio()
+            )
         }
-        settings.sceneLayout = SceneLayout.presetLayout(
-            preset,
-            for: layout,
-            screenAspectRatio: currentScreenSourceAspectRatio(),
-            cameraAspectRatio: currentCameraSourceAspectRatio()
-        )
-        persistSettings()
+        SceneLibraryStore.save(sceneLibrary, defaults: defaults)
+        persistSettings(saveSceneSnapshot: false)
         onScreenCaptureConfigurationChanged?()
+        onCameraConfigurationChanged?()
     }
 
     @discardableResult
@@ -219,6 +269,28 @@ final class RecorderCoordinator {
         settings.framesPerSecond = framesPerSecond
         persistSettings()
         onCameraConfigurationChanged?()
+    }
+
+    func setCustomVideoBitrate(_ bitrate: Int?) {
+        if let bitrate {
+            settings.customVideoBitrate = min(
+                RecordingSettings.maxCustomVideoBitrate,
+                max(RecordingSettings.minCustomVideoBitrate, bitrate)
+            )
+        } else {
+            settings.customVideoBitrate = nil
+        }
+        persistSettings()
+    }
+
+    func setAudioQuality(_ audioQuality: AudioQuality) {
+        settings.audioQuality = audioQuality
+        persistSettings()
+    }
+
+    func setSourceAudioFormat(_ sourceAudioFormat: SourceAudioFormat) {
+        settings.sourceAudioFormat = sourceAudioFormat
+        persistSettings()
     }
 
     func setMicrophoneGain(_ microphoneGain: Double) {
@@ -373,7 +445,11 @@ final class RecorderCoordinator {
         refreshAudioLevelMonitoring()
     }
 
-    func setSceneLayer(_ kind: SceneLayerKind, frame: CGRect) {
+    func setSceneLayer(
+        _ kind: SceneLayerKind,
+        frame: CGRect,
+        transition: RecordingSceneTransition = .cut
+    ) {
         guard sceneChangeIsAllowed() else { return }
         settings.selectedScenePreset = nil
         var screenCaptureConfigurationChanged = false
@@ -389,7 +465,7 @@ final class RecorderCoordinator {
             settings.sceneLayout.cameraFrame = clampedSceneFrame(frame)
         }
         persistSettings()
-        updateRecordingSceneIfNeeded()
+        updateRecordingSceneIfNeeded(transition: transition)
         if screenCaptureConfigurationChanged {
             onScreenCaptureConfigurationChanged?()
         }
@@ -470,7 +546,7 @@ final class RecorderCoordinator {
             cameraAspectRatio: currentCameraSourceAspectRatio()
         )
         persistSettings()
-        updateRecordingSceneIfNeeded()
+        updateRecordingSceneIfNeeded(transition: .sceneSwitch)
         onScreenCaptureConfigurationChanged?()
     }
 
@@ -500,7 +576,7 @@ final class RecorderCoordinator {
             settings.hiddenSources.remove(.camera)
         }
         persistSettings()
-        updateRecordingSceneIfNeeded()
+        updateRecordingSceneIfNeeded(transition: .sceneSwitch)
         onScreenCaptureConfigurationChanged?()
         if enabledSourcesBeforePreset.contains(.camera) != settings.enabledSources.contains(.camera) {
             onCameraConfigurationChanged?()
@@ -522,7 +598,7 @@ final class RecorderCoordinator {
         settings.hiddenSources.remove(.screen)
         settings.hiddenSources.remove(.camera)
         persistSettings()
-        updateRecordingSceneIfNeeded()
+        updateRecordingSceneIfNeeded(transition: .sceneSwitch)
         onScreenCaptureConfigurationChanged?()
         if enabledSourcesBeforePreset.contains(.camera) != settings.enabledSources.contains(.camera) {
             onCameraConfigurationChanged?()
@@ -548,7 +624,7 @@ final class RecorderCoordinator {
         settings.sceneLayout.screenFrame = clampedSceneFrame(screenSlot)
         settings.screenCrop = nil
         persistSettings()
-        updateRecordingSceneIfNeeded()
+        updateRecordingSceneIfNeeded(transition: .sceneSwitch)
         onScreenCaptureConfigurationChanged?()
         return settings.sceneLayout.screenFrame
     }
@@ -561,6 +637,8 @@ final class RecorderCoordinator {
             let arrangement = try ShortsWindowArranger.screenItemForFrontWindow(
                 displayID: settings.selectedDisplayID
             )
+            pickedScreenFilter = nil
+            settings.usesPickedScreenContent = false
             settings.screenCrop = clampedNormalizedRect(arrangement.screenCrop)
             persistSettings()
             updateRecordingSceneIfNeeded()
@@ -575,18 +653,16 @@ final class RecorderCoordinator {
         guard sceneChangeIsAllowed() else { return }
         guard ensureAccessibilityForWindowControls() else { return }
 
-        let screenSlot = SceneSlotGeometry.targetWindowSlot(
-            in: settings.sceneLayout,
-            enabledSources: settings.enabledSources
-        )
-
         do {
             let arrangement = try ShortsWindowArranger.fitFrontWindow(
                 displayID: settings.selectedDisplayID,
                 captureLayout: settings.layout,
-                screenSlot: screenSlot,
+                sceneLayout: settings.sceneLayout,
+                enabledSources: settings.enabledSources,
                 scale: scale
             )
+            pickedScreenFilter = nil
+            settings.usesPickedScreenContent = false
             settings.screenCrop = clampedNormalizedRect(arrangement.screenCrop)
             persistSettings()
             updateRecordingSceneIfNeeded()
@@ -653,7 +729,7 @@ final class RecorderCoordinator {
         settings.selectedScenePreset = nil
         settings.sceneLayout.layerOrder = order
         persistSettings()
-        updateRecordingSceneIfNeeded()
+        updateRecordingSceneIfNeeded(transition: .sceneSwitch)
     }
 
     func fitSceneLayer(_ kind: SceneLayerKind, scale: CGFloat = 1) {
@@ -668,7 +744,7 @@ final class RecorderCoordinator {
             sourceAspectRatio: sourceAspectRatio,
             canvasAspectRatio: settings.layout.aspectRatio
         )
-        setSceneLayer(kind, frame: scaledSceneFrame(frame, scale: scale))
+        setSceneLayer(kind, frame: scaledSceneFrame(frame, scale: scale), transition: .sceneSwitch)
     }
 
     private func scaledSceneFrame(_ frame: CGRect, scale: CGFloat) -> CGRect {
@@ -744,12 +820,13 @@ final class RecorderCoordinator {
         }
 
         let remoteSettings = remoteCameraSettings(for: selectedServiceID)
+        let lensCapabilities = capabilities.capabilities(for: remoteSettings.lens)
         let selectableFormats = RemoteCameraSettingsResolver.formats(
-            capabilities.supportedFormats,
+            lensCapabilities.supportedFormats,
             supportedBy: remoteSettings.captureProfileID,
-            profiles: capabilities.supportedCaptureProfiles
+            profiles: lensCapabilities.supportedCaptureProfiles
         )
-        let formatCandidates = selectableFormats.isEmpty ? capabilities.supportedFormats : selectableFormats
+        let formatCandidates = selectableFormats.isEmpty ? lensCapabilities.supportedFormats : selectableFormats
         guard let format = formatCandidates.first(where: { $0.id == remoteSettings.formatID })
             ?? formatCandidates.first else {
             return SceneLayout.cameraAspectRatio
@@ -772,6 +849,7 @@ final class RecorderCoordinator {
         let clampedCrop = clampedNormalizedRect(crop)
         settings.screenCrop = isEffectivelyFullDisplayCrop(clampedCrop) ? nil : clampedCrop
         persistSettings()
+        updateRecordingSceneIfNeeded()
         onScreenCaptureConfigurationChanged?()
     }
 
@@ -784,6 +862,7 @@ final class RecorderCoordinator {
     func clearScreenCrop() {
         settings.screenCrop = nil
         persistSettings()
+        updateRecordingSceneIfNeeded()
         onScreenCaptureConfigurationChanged?()
     }
 
@@ -791,6 +870,7 @@ final class RecorderCoordinator {
         guard settings.screenCrop != nil else { return }
         settings.screenCrop = nil
         persistSettings()
+        updateRecordingSceneIfNeeded()
         onScreenCaptureConfigurationChanged?()
     }
 
@@ -901,7 +981,7 @@ final class RecorderCoordinator {
         let localOptions = devices
             .filter { $0.isConnected && !$0.isSuspended }
             .sorted { lhs, rhs in
-                cameraSortKey(lhs) < cameraSortKey(rhs)
+                LocalCameraSessionConfiguration.cameraSortKey(lhs) < LocalCameraSessionConfiguration.cameraSortKey(rhs)
             }
             .map { SourceOption(id: $0.uniqueID, name: cameraDisplayName(for: $0)) }
         return remoteCameraOptions() + localOptions
@@ -916,19 +996,7 @@ final class RecorderCoordinator {
             return device
         }
 
-        let devices = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInWideAngleCamera, .continuityCamera, .deskViewCamera, .external],
-            mediaType: .video,
-            position: .unspecified
-        ).devices
-            .filter { $0.isConnected && !$0.isSuspended }
-            .sorted { lhs, rhs in
-                cameraSortKey(lhs) < cameraSortKey(rhs)
-            }
-
-        return devices.first
-            ?? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .unspecified)
-            ?? AVCaptureDevice.default(for: .video)
+        return LocalCameraSessionConfiguration.selectedCamera(settings: settings)
     }
 
     func availableMicrophones() -> [SourceOption] {
@@ -1020,10 +1088,13 @@ final class RecorderCoordinator {
                     if settings.enabledSources.contains(.camera) {
                         await cameraRecorder.stopSession()
                     }
+                    if settings.enabledSources.contains(.screen) {
+                        await stopScreenPreview()
+                    }
                     try await takeRecording.liveCompositedRecorder.start(
                         take: take,
                         settings: settings,
-                        filter: pickedScreenFilter,
+                        filter: pickedScreenFilter(for: settings),
                         prerollSeconds: recordingPrerollSeconds
                     ) { [weak self] remaining in
                         self?.onMessage?(Self.recordingPrerollMessage(remaining: remaining))
@@ -1053,7 +1124,7 @@ final class RecorderCoordinator {
                 let captureRun = CaptureSourceRun(
                     take: take,
                     settings: localCaptureSettings(usesRemoteCamera: usesRemoteCamera),
-                    pickedScreenFilter: pickedScreenFilter,
+                    pickedScreenFilter: pickedScreenFilter(for: settings),
                     screenRecorder: screenRecorder,
                     cameraRecorder: cameraRecorder,
                     audioRecorder: audioRecorder,
@@ -1212,6 +1283,7 @@ final class RecorderCoordinator {
     func stop() {
         guard state == .recording || state == .paused else { return }
         takeRecording.pauseSceneTimeline()
+        cancelPendingActiveScreenCaptureConfigurationUpdate()
         let sceneEventsForFinalization = takeRecording.sceneEvents
         state = .finishing
         onRenderProgress?(0)
@@ -1429,11 +1501,82 @@ final class RecorderCoordinator {
         return true
     }
 
-    private func updateRecordingSceneIfNeeded() {
+    private func updateRecordingSceneIfNeeded(transition: RecordingSceneTransition = .cut) {
         let scene = RecordingScene(settings: settings)
-        takeRecording.updateScene(scene)
-        takeRecording.appendSceneEventIfNeeded(scene, state: state)
+        takeRecording.updateScene(scene, transition: transition)
+        takeRecording.appendSceneEventIfNeeded(scene, state: state, transition: transition)
+        updateActiveScreenCaptureConfigurationIfNeeded()
         synchronizeActiveCaptureSourcesIfNeeded()
+    }
+
+    private func updateActiveScreenCaptureConfigurationIfNeeded() {
+        guard state == .recording || state == .paused,
+              settings.enabledSources.contains(.screen) else {
+            return
+        }
+
+        let settings = localCaptureSettings(
+            usesRemoteCamera: settings.enabledSources.contains(.camera) && isRemoteCameraSelected
+        )
+        let pickedScreenFilter = pickedScreenFilter(for: settings)
+        activeScreenCaptureConfigurationRevision += 1
+        let revision = activeScreenCaptureConfigurationRevision
+        let previousTask = activeScreenCaptureConfigurationTask
+        if takeRecording.isUsingLiveCompositor {
+            let task = Task { [weak self, previousTask, settings, pickedScreenFilter, revision] in
+                await previousTask?.value
+                guard let self,
+                      self.shouldApplyActiveScreenCaptureConfiguration(revision: revision) else {
+                    return
+                }
+                do {
+                    try await self.takeRecording.liveCompositedRecorder.updateScreenCapture(
+                        settings: settings,
+                        filter: pickedScreenFilter
+                    )
+                } catch {
+                    self.reportActiveScreenCaptureConfigurationFailure(error, revision: revision)
+                }
+            }
+            activeScreenCaptureConfigurationTask = task
+            return
+        }
+
+        if let activeCaptureRun = takeRecording.activeCaptureRun {
+            let task = Task { [weak self, previousTask, activeCaptureRun, settings, pickedScreenFilter, revision] in
+                await previousTask?.value
+                guard let self,
+                      self.shouldApplyActiveScreenCaptureConfiguration(revision: revision) else {
+                    return
+                }
+                do {
+                    try await activeCaptureRun.updateScreenCapture(
+                        settings: settings,
+                        pickedScreenFilter: pickedScreenFilter
+                    )
+                } catch {
+                    self.reportActiveScreenCaptureConfigurationFailure(error, revision: revision)
+                }
+            }
+            activeScreenCaptureConfigurationTask = task
+        }
+    }
+
+    private func cancelPendingActiveScreenCaptureConfigurationUpdate() {
+        activeScreenCaptureConfigurationRevision += 1
+        activeScreenCaptureConfigurationTask?.cancel()
+        activeScreenCaptureConfigurationTask = nil
+    }
+
+    private func shouldApplyActiveScreenCaptureConfiguration(revision: Int) -> Bool {
+        !Task.isCancelled
+            && activeScreenCaptureConfigurationRevision == revision
+            && (state == .recording || state == .paused)
+    }
+
+    private func reportActiveScreenCaptureConfigurationFailure(_ error: Error, revision: Int) {
+        guard activeScreenCaptureConfigurationRevision == revision else { return }
+        onMessage?("Screen capture update failed: \(error.recorderFailureDescription)")
     }
 
     private func synchronizeActiveCaptureSourcesIfNeeded() {
@@ -1456,7 +1599,7 @@ final class RecorderCoordinator {
         let localSettings = localCaptureSettings(
             usesRemoteCamera: settings.enabledSources.contains(.camera) && isRemoteCameraSelected
         )
-        let pickedScreenFilter = pickedScreenFilter
+        let pickedScreenFilter = pickedScreenFilter(for: localSettings)
         Task { [weak self, activeCaptureRun, localSettings, pickedScreenFilter] in
             do {
                 try await activeCaptureRun.startEnabledSources(
@@ -1469,8 +1612,48 @@ final class RecorderCoordinator {
         }
     }
 
-    private func persistSettings() {
+    private func pickedScreenFilter(for settings: RecordingSettings) -> SCContentFilter? {
+        settings.usesPickedScreenContent ? pickedScreenFilter : nil
+    }
+
+    private func persistSettings(saveSceneSnapshot: Bool = true) {
+        if saveSceneSnapshot {
+            saveCurrentSceneSnapshotIfNeeded()
+        }
         RecordingSettingsStore.save(settings, defaults: defaults)
+    }
+
+    private func saveCurrentSceneSnapshotIfNeeded() {
+        guard state == .idle else { return }
+        sceneLibrary.updateSelectedScene(
+            layout: settings.layout,
+            snapshot: RecordingSceneSnapshot(settings: settings)
+        )
+        SceneLibraryStore.save(sceneLibrary, defaults: defaults)
+    }
+
+    private func applySceneSnapshot(
+        _ snapshot: RecordingSceneSnapshot,
+        allowTakeLockedBindings: Bool
+    ) {
+        let audioSources = settings.enabledSources.subtracting([.screen, .camera])
+        let hiddenAudioSources = settings.hiddenSources.subtracting([.screen, .camera])
+
+        settings.enabledSources = audioSources.union(snapshot.enabledVideoSources)
+        settings.hiddenSources = hiddenAudioSources.union(snapshot.hiddenVideoSources)
+        settings.sceneLayout = snapshot.sceneLayout
+        settings.cameraCropAmount = snapshot.cameraCropAmount
+        settings.cameraCropPosition = snapshot.cameraCropPosition
+        settings.canvasBackgroundStyle = snapshot.canvasBackgroundStyle
+        settings.canvasPadding = snapshot.canvasPadding
+        settings.selectedScenePreset = snapshot.selectedScenePreset
+        settings.selectedDisplayID = snapshot.selectedDisplayID
+        settings.screenCrop = snapshot.screenCrop
+        settings.usesPickedScreenContent = snapshot.usesPickedScreenContent && pickedScreenFilter != nil
+
+        if allowTakeLockedBindings {
+            settings.selectedCameraID = snapshot.selectedCameraID
+        }
     }
 
     private func localCaptureSettings(usesRemoteCamera: Bool) -> RecordingSettings {
@@ -1507,10 +1690,13 @@ final class RecorderCoordinator {
     }
 
     func selectedRemoteCameraCapabilities() -> RemoteCameraCapabilities? {
-        guard let selectedServiceID = RemoteCameraProviderID.serviceID(from: settings.selectedCameraID) else {
-            return nil
-        }
-        return remoteCameraSessionState.capabilities(for: selectedServiceID)
+        remoteCameraSessionState.selectedCapabilities(
+            settings: settings,
+            normalizedSettings: { [weak self] proposedSettings, serviceID in
+                guard let self else { return proposedSettings }
+                return self.normalizedRemoteCameraSettings(proposedSettings, for: serviceID)
+            }
+        )
     }
 
     func selectedRemoteCameraTelemetry() -> RemoteCameraTelemetry? {
@@ -1532,163 +1718,84 @@ final class RecorderCoordinator {
     }
 
     func setRemoteCameraLens(_ lens: RemoteCameraLens) {
-        applyRemoteCameraSettingsOverride { settings in
-            settings.lens = lens
-            settings.zoomFactor = 1
-            settings.torchEnabled = false
-        }
+        applyRemoteCameraSettingsIntent(.lens(lens))
     }
 
     func setRemoteCameraFormat(id: String?, frameRate: Int) {
-        applyRemoteCameraSettingsOverride { settings in
-            settings.formatID = id
-            settings.frameRate = frameRate
-        }
+        applyRemoteCameraSettingsIntent(.format(id: id, frameRate: frameRate))
     }
 
     func setRemoteCameraCaptureProfile(_ profileID: RemoteCameraCaptureProfileID) {
-        if let selectedServiceID = RemoteCameraProviderID.serviceID(from: settings.selectedCameraID),
-           let capabilities = remoteCameraSessionState.capabilities[selectedServiceID],
-           let profile = capabilities.supportedCaptureProfiles.first(where: { $0.id == profileID }),
-           !profile.isAvailable {
-            onMessage?(profile.unavailableReason ?? "\(profile.displayName) is unavailable for this iPhone camera setting.")
-            return
-        }
-        applyRemoteCameraSettingsOverride { settings in
-            settings.captureProfileID = profileID
-        }
+        applyRemoteCameraSettingsIntent(.captureProfile(profileID))
     }
 
     func setRemoteCameraCinematicVideoEnabled(_ enabled: Bool) {
-        applyRemoteCameraSettingsOverride { settings in
-            settings.cinematicVideoEnabled = enabled
-            if enabled,
-               let selectedServiceID = RemoteCameraProviderID.serviceID(from: self.settings.selectedCameraID),
-               let capabilities = self.remoteCameraSessionState.capabilities[selectedServiceID] {
-                settings.cinematicAperture = settings.cinematicAperture
-                    ?? capabilities.defaultCinematicAperture
-                    ?? capabilities.minimumCinematicAperture
-            } else {
-                settings.cinematicAperture = nil
-            }
-        }
+        applyRemoteCameraSettingsIntent(.cinematicVideoEnabled(enabled))
     }
 
     func setRemoteCameraCinematicAperture(_ aperture: Double) {
-        applyRemoteCameraSettingsOverride { settings in
-            settings.cinematicVideoEnabled = true
-            settings.cinematicAperture = aperture
-        }
+        applyRemoteCameraSettingsIntent(.cinematicAperture(aperture))
     }
 
     func setRemoteCameraFocusMode(_ mode: RemoteCameraFocusMode) {
-        applyRemoteCameraSettingsOverride { settings in
-            settings.focusMode = mode
-        }
+        applyRemoteCameraSettingsIntent(.focusMode(mode))
     }
 
     func setRemoteCameraFocusPosition(_ position: Double) {
-        applyRemoteCameraSettingsOverride { settings in
-            settings.focusPosition = min(1, max(0, position))
-        }
+        applyRemoteCameraSettingsIntent(.focusPosition(position))
     }
 
     func setRemoteCameraExposureMode(_ mode: RemoteCameraExposureMode) {
-        applyRemoteCameraSettingsOverride { settings in
-            settings.exposureMode = mode
-            if mode == .continuousAuto {
-                settings.exposureBias = 0
-                settings.iso = nil
-                settings.shutterDurationSeconds = nil
-            }
-        }
+        applyRemoteCameraSettingsIntent(.exposureMode(mode))
     }
 
     func setRemoteCameraExposureBias(_ bias: Double) {
-        applyRemoteCameraSettingsOverride { settings in
-            settings.exposureBias = bias
-        }
+        applyRemoteCameraSettingsIntent(.exposureBias(bias))
     }
 
     func resetRemoteCameraExposureBias() {
-        applyRemoteCameraSettingsOverride { settings in
-            settings.exposureMode = .continuousAuto
-            settings.exposureBias = 0
-            settings.iso = nil
-            settings.shutterDurationSeconds = nil
-        }
+        applyRemoteCameraSettingsIntent(.resetExposureBias)
     }
 
     func setRemoteCameraISO(_ iso: Double?) {
-        applyRemoteCameraSettingsOverride { settings in
-            settings.iso = iso
-        }
+        applyRemoteCameraSettingsIntent(.iso(iso))
     }
 
     func setRemoteCameraShutterDuration(_ seconds: Double?) {
-        applyRemoteCameraSettingsOverride { settings in
-            settings.shutterDurationSeconds = seconds
-        }
+        applyRemoteCameraSettingsIntent(.shutterDuration(seconds))
     }
 
     func setRemoteCameraWhiteBalanceMode(_ mode: RemoteCameraWhiteBalanceMode) {
-        applyRemoteCameraSettingsOverride { settings in
-            settings.whiteBalanceMode = mode
-            if mode == .continuousAuto {
-                settings.whiteBalanceTemperature = 5_500
-                settings.whiteBalanceTint = 0
-            }
-        }
+        applyRemoteCameraSettingsIntent(.whiteBalanceMode(mode))
     }
 
     func setRemoteCameraWhiteBalance(temperature: Double, tint: Double) {
-        applyRemoteCameraSettingsOverride { settings in
-            settings.whiteBalanceTemperature = temperature
-            settings.whiteBalanceTint = tint
-        }
+        applyRemoteCameraSettingsIntent(.whiteBalance(temperature: temperature, tint: tint))
     }
 
     func setRemoteCameraStabilizationMode(_ mode: RemoteCameraStabilizationMode) {
-        applyRemoteCameraSettingsOverride { settings in
-            settings.stabilizationMode = mode
-        }
+        applyRemoteCameraSettingsIntent(.stabilizationMode(mode))
     }
 
     func setRemoteCameraRotationDegrees(_ degrees: Int) {
-        applyRemoteCameraSettingsOverride { settings in
-            settings.rotationDegrees = RemoteCameraSettings.normalizedRotationDegrees(degrees)
-        }
+        applyRemoteCameraSettingsIntent(.rotationDegrees(degrees))
     }
 
     func resetRemoteCameraImageSettings() {
-        applyRemoteCameraSettingsOverride { settings in
-            settings.focusMode = .continuousAuto
-            settings.focusPosition = 0.5
-            settings.exposureMode = .continuousAuto
-            settings.exposureBias = 0
-            settings.iso = nil
-            settings.shutterDurationSeconds = nil
-            settings.whiteBalanceMode = .continuousAuto
-            settings.whiteBalanceTemperature = 5_500
-            settings.whiteBalanceTint = 0
-        }
+        applyRemoteCameraSettingsIntent(.resetImageSettings)
     }
 
     func resetRemoteCameraSettings() {
         guard let selectedServiceID = RemoteCameraProviderID.serviceID(from: settings.selectedCameraID) else {
             return
         }
-        let resetSettings = normalizedRemoteCameraSettings(
-            RemoteCameraSettings(frameRate: settings.framesPerSecond),
-            for: selectedServiceID
+        let result = RemoteCameraSettingsCommand.apply(
+            .resetAll(frameRate: settings.framesPerSecond),
+            to: remoteCameraSettings(for: selectedServiceID),
+            capabilities: remoteCameraSessionState.capabilities[selectedServiceID],
+            preferredFrameRate: settings.framesPerSecond
         )
-        settings.remoteCameraSettingsByServiceID[selectedServiceID] = resetSettings
-        persistSettings()
-        updateRemoteCameraTelemetry(for: selectedServiceID, activeSettings: resetSettings)
-        remoteCameraSettingsSendTasks[selectedServiceID]?.cancel()
-        remoteCameraSettingsSendTasks[selectedServiceID] = nil
-        remoteCameraControlClient.send(.applySettings(resetSettings))
-        onCameraConfigurationChanged?()
+        commitRemoteCameraSettings(result.settings, serviceID: selectedServiceID, sendImmediately: true)
     }
 
     private func remoteCameraOptions() -> [SourceOption] {
@@ -1742,6 +1849,10 @@ final class RecorderCoordinator {
 					}
 					let wasRediscovered = !previousServiceIDs.contains(service.id)
 					self.connectRemoteCamera(serviceID: service.id, forceReconnect: wasRediscovered)
+				} else if let service = self.remoteCameraSessionState.automaticSelection(settings: self.settings) {
+					self.settings.selectedCameraID = RemoteCameraProviderID.make(for: service.id)
+					self.persistSettings()
+					self.connectRemoteCamera(serviceID: service.id)
 				}
 				self.onCameraConfigurationChanged?()
 			}
@@ -1858,19 +1969,40 @@ final class RecorderCoordinator {
         remoteCameraControlClient.send(.applySettings(remoteCameraSettings(for: selectedServiceID)))
     }
 
-    private func applyRemoteCameraSettingsOverride(_ update: (inout RemoteCameraSettings) -> Void) {
+    private func applyRemoteCameraSettingsIntent(_ intent: RemoteCameraSettingsIntent) {
         guard let selectedServiceID = RemoteCameraProviderID.serviceID(from: settings.selectedCameraID) else {
             return
         }
-        var remoteSettings = remoteCameraSettings(for: selectedServiceID)
-        update(&remoteSettings)
-        remoteSettings = normalizedRemoteCameraSettings(remoteSettings, for: selectedServiceID)
+        let result = RemoteCameraSettingsCommand.apply(
+            intent,
+            to: remoteCameraSettings(for: selectedServiceID),
+            capabilities: remoteCameraSessionState.capabilities[selectedServiceID],
+            preferredFrameRate: settings.framesPerSecond
+        )
+        if let message = result.message {
+            onMessage?(message)
+        }
+        guard result.didChange else { return }
+        commitRemoteCameraSettings(result.settings, serviceID: selectedServiceID)
+    }
+
+    private func commitRemoteCameraSettings(
+        _ remoteSettings: RemoteCameraSettings,
+        serviceID selectedServiceID: String,
+        sendImmediately: Bool = false
+    ) {
         settings.remoteCameraSettingsByServiceID[selectedServiceID] = remoteSettings
         suppressRemoteCameraPreview(serviceID: selectedServiceID, message: "Updating iPhone camera...")
         refreshSelectedScenePresetLayoutIfNeeded()
         persistSettings()
         updateRemoteCameraTelemetry(for: selectedServiceID, activeSettings: remoteSettings)
-        scheduleRemoteCameraSettingsSend(remoteSettings, serviceID: selectedServiceID)
+        if sendImmediately {
+            remoteCameraSettingsSendTasks[selectedServiceID]?.cancel()
+            remoteCameraSettingsSendTasks[selectedServiceID] = nil
+            remoteCameraControlClient.send(.applySettings(remoteSettings))
+        } else {
+            scheduleRemoteCameraSettingsSend(remoteSettings, serviceID: selectedServiceID)
+        }
         onCameraConfigurationChanged?()
     }
 
@@ -2186,20 +2318,6 @@ final class RecorderCoordinator {
         default:
             throw RecorderError.microphoneUnavailable
         }
-    }
-
-    private func cameraSortKey(_ device: AVCaptureDevice) -> String {
-        let priority: String
-        if device.isContinuityCamera {
-            priority = "0"
-        } else if device.deviceType == .external {
-            priority = "1"
-        } else if device.deviceType == .deskViewCamera {
-            priority = "2"
-        } else {
-            priority = "3"
-        }
-        return "\(priority)-\(device.localizedName)"
     }
 
     private func cameraDisplayName(for device: AVCaptureDevice) -> String {

@@ -126,6 +126,37 @@ final class SceneSlotGeometryTests: XCTestCase {
         XCTAssertRect(frame, equals: CGRect(x: 0, y: 480, width: 900, height: 1120))
     }
 
+    func testTargetWindowFittingPlanUsesSceneLayoutSlot() {
+        var layout = SceneLayout()
+        layout.screenFrame = CGRect(x: 0, y: 0.5, width: 1, height: 0.5)
+        layout.cameraFrame = CGRect(x: 0, y: 0, width: 1, height: 0.5)
+
+        let plan = TargetWindowFitting.plan(
+            screenFrame: CGRect(x: 0, y: 0, width: 1600, height: 900),
+            visibleFrame: CGRect(x: 0, y: 0, width: 1600, height: 900),
+            captureLayout: .vertical,
+            sceneLayout: layout,
+            enabledSources: [.screen, .camera]
+        )
+
+        XCTAssertRect(plan.screenSlot, equals: layout.screenFrame)
+        XCTAssertRect(plan.canvasFrame, equals: CGRect(x: 547, y: 0, width: 506, height: 900))
+        XCTAssertRect(plan.windowFrame, equals: CGRect(x: 547, y: 450, width: 506, height: 450))
+        XCTAssertRect(plan.screenCrop, equals: CGRect(x: 0.341875, y: 0, width: 0.31625, height: 0.5))
+    }
+
+    func testTargetWindowFittingPlanClampsScaledFrameToVisibleArea() {
+        let plan = TargetWindowFitting.plan(
+            screenFrame: CGRect(x: 0, y: 0, width: 1600, height: 900),
+            visibleFrame: CGRect(x: 0, y: 0, width: 1600, height: 900),
+            captureLayout: .vertical,
+            screenSlot: SceneSlotGeometry.shortsTopHalfSlot,
+            scale: 1.25
+        )
+
+        XCTAssertRect(plan.windowFrame, equals: CGRect(x: 483.75, y: 337.5, width: 632.5, height: 562.5))
+    }
+
     func testShortsTopHalfSlotMapsToUpperHalfOfVerticalCanvas() {
         let visibleFrame = CGRect(x: 0, y: 0, width: 1600, height: 900)
 

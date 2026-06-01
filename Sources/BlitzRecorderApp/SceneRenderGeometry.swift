@@ -5,45 +5,32 @@ struct SceneRenderGeometry {
     let scene: RecordingScene
     let origin: SceneCanvasOrigin
 
+    var activePlacements: [SceneRenderLayerPlacement] {
+        placementPolicy.activePlacements
+    }
+
+    var activeItems: [ResolvedSceneLayoutItem] {
+        placementPolicy.activeItems
+    }
+
     var activeLayerOrder: [SceneLayerKind] {
-        scene.sceneLayout.layerOrder.filter { scene.enabledSources.contains($0.source) }
+        activePlacements.map(\.kind)
     }
 
     func targetRect(for kind: SceneLayerKind) -> CGRect {
-        SceneLayoutProjection.projectedFrame(
-            for: kind,
-            in: canvas,
-            sceneLayout: scene.sceneLayout,
-            enabledSources: scene.enabledSources,
-            canvasPadding: scene.canvasPadding,
-            origin: origin,
-            fillsCanvasWhenOnlyVideoSource: true
-        )
+        placementPolicy.targetRect(for: kind)
     }
 
     func normalizedFrame(for kind: SceneLayerKind) -> CGRect {
-        SceneLayoutProjection.normalizedFrame(
-            for: kind,
-            sceneLayout: scene.sceneLayout,
-            enabledSources: scene.enabledSources,
-            fillsCanvasWhenOnlyVideoSource: true
-        )
+        placementPolicy.normalizedFrame(for: kind)
     }
 
     func videoPlacement(for kind: SceneLayerKind) -> VideoRenderPlacement {
-        VideoRenderPlacement(
-            kind: kind,
-            targetRect: targetRect(for: kind),
-            sourceCropAmount: kind == .camera ? scene.cameraCropAmount : .zero,
-            sourceCropPosition: kind == .camera ? scene.cameraCropPosition : .zero
-        )
+        placementPolicy.videoPlacement(for: kind)
     }
 
     func sourceCornerRadius(for kind: SceneLayerKind) -> CGFloat {
-        SceneLayoutProjection.sourceCornerRadius(
-            for: targetRect(for: kind),
-            canvasPadding: scene.canvasPadding
-        )
+        placementPolicy.cornerRadius(for: kind)
     }
 
     func sourceMaskPath() -> CGPath? {
@@ -121,12 +108,15 @@ struct SceneRenderGeometry {
         sourceCropAmount: CGPoint?,
         sourceCropPosition: CGPoint?
     ) -> VideoRenderPlacement {
-        VideoRenderPlacement(
-            kind: kind,
-            targetRect: targetRect(for: kind),
-            sourceCropAmount: sourceCropAmount ?? (kind == .camera ? scene.cameraCropAmount : .zero),
-            sourceCropPosition: sourceCropPosition ?? (kind == .camera ? scene.cameraCropPosition : .zero)
+        placementPolicy.videoPlacement(
+            for: kind,
+            sourceCropAmount: sourceCropAmount,
+            sourceCropPosition: sourceCropPosition
         )
+    }
+
+    private var placementPolicy: SceneRenderPlacementPolicy {
+        SceneRenderPlacementPolicy(canvas: canvas, scene: scene, origin: origin)
     }
 }
 

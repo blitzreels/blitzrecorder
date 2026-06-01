@@ -62,10 +62,10 @@ final class DirectMovieWriter: @unchecked Sendable {
 
         var inputs: [CaptureSource: AVAssetWriterInput] = [:]
         if settings.enabledSources.contains(.microphone) {
-            inputs[.microphone] = try Self.makeAudioInput(for: writer)
+            inputs[.microphone] = try Self.makeAudioInput(for: writer, bitrate: settings.finalAudioBitrate)
         }
         if settings.enabledSources.contains(.systemAudio) {
-            inputs[.systemAudio] = try Self.makeAudioInput(for: writer)
+            inputs[.systemAudio] = try Self.makeAudioInput(for: writer, bitrate: settings.finalAudioBitrate)
         }
         audioInputs = inputs
 
@@ -216,14 +216,14 @@ final class DirectMovieWriter: @unchecked Sendable {
         CMClockGetTime(CMClockGetHostTimeClock())
     }
 
-    private static func makeAudioInput(for writer: AVAssetWriter) throws -> AVAssetWriterInput {
+    private static func makeAudioInput(for writer: AVAssetWriter, bitrate: Int) throws -> AVAssetWriterInput {
         let input = AVAssetWriterInput(
             mediaType: .audio,
             outputSettings: [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
                 AVSampleRateKey: 48_000,
                 AVNumberOfChannelsKey: 2,
-                AVEncoderBitRateKey: 192_000
+                AVEncoderBitRateKey: bitrate
             ]
         )
         input.expectsMediaDataInRealTime = true

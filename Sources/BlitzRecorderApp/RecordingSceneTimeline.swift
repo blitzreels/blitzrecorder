@@ -10,6 +10,8 @@ struct RecordingSceneSegment: Equatable {
 }
 
 enum RecordingSceneTimeline {
+    private static let transitionSampleInterval = 1.0 / 30.0
+
     static func segments(
         sceneEvents: [RecordingSceneEvent],
         fallbackScene: RecordingScene,
@@ -26,18 +28,23 @@ enum RecordingSceneTimeline {
             boundaries.append(sourceTimeRange.start)
             boundaries.append(CMTimeRangeGetEnd(sourceTimeRange))
         }
+        boundaries.append(contentsOf: transitionBoundaries(
+            sceneEvents: sceneEvents,
+            duration: duration
+        ))
 
         let uniqueBoundaries = sortedUniqueBoundaries(boundaries, duration: duration)
-        let sortedEvents = sceneEvents
-            .filter { $0.time.isFinite }
-            .sorted { $0.time < $1.time }
 
         var segments: [RecordingSceneSegment] = []
         for index in 0..<(uniqueBoundaries.count - 1) {
             let start = uniqueBoundaries[index]
             let end = uniqueBoundaries[index + 1]
             guard CMTimeCompare(end, start) > 0 else { continue }
-            let scene = sortedEvents.last(where: { $0.time <= start.seconds })?.scene ?? fallbackScene
+            let scene = scene(
+                at: start.seconds,
+                sceneEvents: sceneEvents,
+                fallbackScene: fallbackScene
+            )
             segments.append(RecordingSceneSegment(
                 timeRange: CMTimeRange(start: start, duration: CMTimeSubtract(end, start)),
                 scene: scene
@@ -48,6 +55,55 @@ enum RecordingSceneTimeline {
             return [RecordingSceneSegment(timeRange: CMTimeRange(start: .zero, duration: duration), scene: fallbackScene)]
         }
         return segments
+    }
+
+    static func scene(
+        at time: TimeInterval,
+        sceneEvents: [RecordingSceneEvent],
+        fallbackScene: RecordingScene
+    ) -> RecordingScene {
+        let sortedEvents = sceneEvents
+            .filter { $0.time.isFinite }
+            .sorted { $0.time < $1.time }
+        var currentScene = fallbackScene
+        var activeTransition: (
+            startTime: TimeInterval,
+            transition: RecordingSceneTransition,
+            startScene: RecordingScene,
+            targetScene: RecordingScene
+        )?
+        for event in sortedEvents {
+            guard event.time <= time else {
+                break
+            }
+
+            if let transition = activeTransition {
+                currentScene = resolvedScene(
+                    for: transition,
+                    at: event.time
+                )
+                if event.time >= transition.startTime + transition.transition.duration {
+                    activeTransition = nil
+                }
+            }
+
+            if event.transition.isCut {
+                currentScene = event.scene
+                activeTransition = nil
+            } else {
+                activeTransition = (
+                    startTime: event.time,
+                    transition: event.transition,
+                    startScene: currentScene,
+                    targetScene: event.scene
+                )
+            }
+        }
+
+        if let activeTransition {
+            return resolvedScene(for: activeTransition, at: time)
+        }
+        return currentScene
     }
 
     static func requiresCanvasAwareRendering(
@@ -71,6 +127,48 @@ enum RecordingSceneTimeline {
             uniqueBoundaries.append(boundary)
         }
         return uniqueBoundaries
+    }
+
+    private static func transitionBoundaries(
+        sceneEvents: [RecordingSceneEvent],
+        duration: CMTime
+    ) -> [CMTime] {
+        let durationSeconds = max(0, duration.seconds)
+        var boundaries: [CMTime] = []
+        for event in sceneEvents where event.time.isFinite && !event.transition.isCut {
+            let start = min(max(0, event.time), durationSeconds)
+            let end = min(start + event.transition.duration, durationSeconds)
+            guard end > start else { continue }
+
+            boundaries.append(CMTime(seconds: start, preferredTimescale: 600))
+            var sampleTime = start + transitionSampleInterval
+            while sampleTime < end {
+                boundaries.append(CMTime(seconds: sampleTime, preferredTimescale: 600))
+                sampleTime += transitionSampleInterval
+            }
+            boundaries.append(CMTime(seconds: end, preferredTimescale: 600))
+        }
+        return boundaries
+    }
+
+    private static func resolvedScene(
+        for transition: (
+            startTime: TimeInterval,
+            transition: RecordingSceneTransition,
+            startScene: RecordingScene,
+            targetScene: RecordingScene
+        ),
+        at time: TimeInterval
+    ) -> RecordingScene {
+        let elapsed = time - transition.startTime
+        guard elapsed >= 0,
+              elapsed < transition.transition.duration else {
+            return transition.targetScene
+        }
+        return transition.startScene.interpolated(
+            to: transition.targetScene,
+            progress: transition.transition.progress(elapsed: elapsed)
+        )
     }
 }
 

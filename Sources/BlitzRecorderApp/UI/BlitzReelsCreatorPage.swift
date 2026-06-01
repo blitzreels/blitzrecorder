@@ -4,43 +4,45 @@ struct BlitzReelsCreatorPage: View {
     @Bindable var access: AccessController
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Plan")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(.white)
-                Text("Manage free exports, Pro access, and BlitzReels Creator login.")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.55))
-            }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                header
 
-            subscriptionCard
-            creatorCard
+                subscriptionCard
+                creatorCard
 
-            if !access.accessMessage.isEmpty {
-                Text(access.accessMessage)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.55))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+                if !access.accessMessage.isEmpty {
+                    Text(access.accessMessage)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.55))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
-            HStack(spacing: 12) {
-                Link("Terms", destination: AppLinks.terms)
-                Link("Privacy", destination: AppLinks.privacy)
-                Link("Support", destination: AppLinks.support)
+                footerLinks
             }
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(.white.opacity(0.55))
+            .frame(maxWidth: 560, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .padding(.horizontal, 28)
+            .padding(.vertical, 28)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.horizontal, 28)
-        .padding(.top, 28)
         .foregroundStyle(.white)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Your plan")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(.white)
+            Text("With Pro you can save as many videos as you want. Free gives you three.")
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(.white.opacity(0.6))
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var subscriptionCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("SUBSCRIPTION")
+            Text("PRO")
                 .font(.system(size: 10, weight: .heavy))
                 .tracking(0.7)
                 .foregroundStyle(.white.opacity(0.52))
@@ -53,8 +55,8 @@ struct BlitzReelsCreatorPage: View {
             )
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("BlitzRecorder Pro unlocks unlimited exports on Mac.")
-                Text("App Store subscriptions renew until cancelled in Apple account settings.")
+                Text("Pro lets you save as many videos as you want.")
+                Text("It renews until you cancel it in your Apple settings.")
             }
             .font(.system(size: 10, weight: .medium))
             .foregroundStyle(.white.opacity(0.56))
@@ -64,7 +66,7 @@ struct BlitzReelsCreatorPage: View {
                 Button {
                     Task { await access.purchaseAnnual() }
                 } label: {
-                    Label("Subscribe \(access.annualPriceLabel) / year", systemImage: "creditcard.fill")
+                    Label("Get Pro for \(access.annualPriceLabel)/year", systemImage: "creditcard.fill")
                         .font(.system(size: 12, weight: .bold))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 10)
@@ -76,7 +78,7 @@ struct BlitzReelsCreatorPage: View {
                 Button {
                     Task { await access.purchaseMonthly() }
                 } label: {
-                    Label("Subscribe \(access.monthlyPriceLabel) / month", systemImage: "creditcard.fill")
+                    Label("Get Pro for \(access.monthlyPriceLabel)/month", systemImage: "creditcard.fill")
                         .font(.system(size: 12, weight: .bold))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 10)
@@ -111,13 +113,13 @@ struct BlitzReelsCreatorPage: View {
             }
         }
         .padding(20)
-        .frame(width: 520, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .blitzGlassSurface(cornerRadius: 16)
     }
 
     private var creatorCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("BLITZREELS CREATOR")
+            Text("BLITZREELS")
                 .font(.system(size: 10, weight: .heavy))
                 .tracking(0.7)
                 .foregroundStyle(.white.opacity(0.52))
@@ -129,7 +131,7 @@ struct BlitzReelsCreatorPage: View {
                 detail: statusDetail
             )
 
-            Text("Eligible active BlitzReels subscribers can sign in for included Pro access.")
+            Text("Already pay for BlitzReels? Sign in to get Pro for free.")
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.white.opacity(0.56))
                 .fixedSize(horizontal: false, vertical: true)
@@ -138,7 +140,7 @@ struct BlitzReelsCreatorPage: View {
                 Button {
                     Task { await access.refreshBlitzReelsEntitlement() }
                 } label: {
-                    Label("Recheck Access", systemImage: "arrow.clockwise")
+                    Label("Check Again", systemImage: "arrow.clockwise")
                         .font(.system(size: 12, weight: .semibold))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 10)
@@ -160,7 +162,7 @@ struct BlitzReelsCreatorPage: View {
                 Button {
                     access.beginBlitzReelsSignIn()
                 } label: {
-                    Label("BlitzReels Sign In", systemImage: "person.crop.circle.badge.checkmark")
+                    Label("Sign in with BlitzReels", systemImage: "person.crop.circle.badge.checkmark")
                         .font(.system(size: 12, weight: .bold))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 10)
@@ -170,8 +172,18 @@ struct BlitzReelsCreatorPage: View {
             }
         }
         .padding(20)
-        .frame(width: 520, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .blitzGlassSurface(cornerRadius: 16)
+    }
+
+    private var footerLinks: some View {
+        HStack(spacing: 12) {
+            Link("Terms", destination: AppLinks.terms)
+            Link("Privacy", destination: AppLinks.privacy)
+            Link("Support", destination: AppLinks.support)
+        }
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(.white.opacity(0.55))
     }
 
     private func infoRow(
@@ -209,12 +221,12 @@ struct BlitzReelsCreatorPage: View {
 
     private var planDetail: String {
         if access.isPro {
-            return "Unlimited exports are enabled on this Mac."
+            return "You can save as many videos as you want."
         }
         if access.freeExportsRemaining == 1 {
-            return "One export remains before Pro is required."
+            return "You have 1 free video left."
         }
-        return "\(access.freeExportsRemaining) exports remain before Pro is required."
+        return "You have \(access.freeExportsRemaining) free videos left."
     }
 
     private var statusSymbol: String {
@@ -235,21 +247,21 @@ struct BlitzReelsCreatorPage: View {
 
     private var statusTitle: String {
         if access.hasBlitzReelsEntitlement {
-            return access.blitzReelsPlanName.map { "Included with \($0)" } ?? "Creator access active"
+            return access.blitzReelsPlanName.map { "Free with \($0)" } ?? "Pro is on"
         }
         if access.hasBlitzReelsAccountConnection {
-            return "Connected, no active plan"
+            return "Signed in, but no plan yet"
         }
         return "Not signed in"
     }
 
     private var statusDetail: String {
         if access.hasBlitzReelsEntitlement {
-            return "Unlimited exports are enabled from your BlitzReels account."
+            return "Your BlitzReels plan turns on Pro."
         }
         if access.hasBlitzReelsAccountConnection {
-            return "Recheck after changing your BlitzReels subscription."
+            return "Changed your BlitzReels plan? Check again."
         }
-        return "Sign in to connect BlitzRecorder to BlitzReels Creator."
+        return "Sign in to link your BlitzReels account."
     }
 }

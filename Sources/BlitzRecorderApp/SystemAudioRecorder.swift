@@ -12,10 +12,17 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         set { levelPublisher.levelHandler = newValue }
     }
     private var streamError: Error?
+    private var intentionallyStoppedStream: SCStream?
 
     func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime? = nil) async throws {
         streamError = nil
-        writer = try AudioSampleFileWriter(url: url, timelineStartTime: timelineStartTime)
+        intentionallyStoppedStream = nil
+        writer = try AudioSampleFileWriter(
+            url: url,
+            timelineStartTime: timelineStartTime,
+            stereoBitrate: settings.finalAudioBitrate,
+            format: settings.effectiveSourceAudioFormat
+        )
 
         let filter = try await SystemAudioStreamConfiguration.contentFilter(settings: settings)
         let configuration = SystemAudioStreamConfiguration.configuration(streamName: "BlitzRecorder System Audio")
@@ -37,6 +44,7 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         let writerToFinish = writer
         writer = nil
         if let stream {
+            intentionallyStoppedStream = stream
             try? await stream.stopCapture()
         }
         stream = nil
@@ -58,6 +66,7 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
+        guard stream !== intentionallyStoppedStream else { return }
         NSLog("System audio stream stopped: \(error.localizedDescription)")
         streamError = error
     }

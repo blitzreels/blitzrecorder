@@ -31,25 +31,23 @@ final class LiveCompositorRenderer: @unchecked Sendable {
         let geometry = SceneRenderGeometry(canvas: canvasRect, scene: scene, origin: .lowerLeft)
         var image = backgroundImage(style: scene.canvasBackgroundStyle, in: canvasRect)
 
-        for layer in geometry.activeLayerOrder {
-            switch layer {
+        for placement in geometry.activePlacements {
+            switch placement.kind {
             case .screen:
                 guard let screenBuffer else { continue }
-                let rect = geometry.targetRect(for: .screen)
                 image = fill(
                     CIImage(cvPixelBuffer: screenBuffer),
-                    into: rect,
-                    cornerRadius: geometry.sourceCornerRadius(for: .screen)
+                    into: placement.targetRect,
+                    cornerRadius: placement.cornerRadius
                 )
                 .composited(over: image)
             case .camera:
                 guard let cameraBuffer else { continue }
-                let rect = geometry.targetRect(for: .camera)
                 image = fill(
                     CIImage(cvPixelBuffer: cameraBuffer),
-                    into: rect,
-                    sourceCrop: { geometry.sourceCropRectangle(for: .camera, sourceExtent: $0) },
-                    cornerRadius: geometry.sourceCornerRadius(for: .camera)
+                    into: placement.targetRect,
+                    sourceCrop: { placement.videoPlacement.sourceCropRectangle(sourceExtent: $0) },
+                    cornerRadius: placement.cornerRadius
                 )
                 .composited(over: image)
             }

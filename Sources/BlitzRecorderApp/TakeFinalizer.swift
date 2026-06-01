@@ -250,8 +250,10 @@ final class TakeFinalizer {
 
         let renamedScreenURL = renamedDirectory.appendingPathComponent("\(datedSlug)-screen.\(take.outputVideoFormat.fileExtension)")
         let renamedCameraURL = renamedDirectory.appendingPathComponent("\(datedSlug)-camera.\(take.outputVideoFormat.fileExtension)")
-        let renamedAudioURL = renamedDirectory.appendingPathComponent("\(datedSlug)-audio.m4a")
-        let renamedSystemAudioURL = renamedDirectory.appendingPathComponent("\(datedSlug)-system-audio.m4a")
+        let audioExtension = take.audioURL.pathExtension.isEmpty ? "m4a" : take.audioURL.pathExtension
+        let systemAudioExtension = take.systemAudioURL.pathExtension.isEmpty ? "m4a" : take.systemAudioURL.pathExtension
+        let renamedAudioURL = renamedDirectory.appendingPathComponent("\(datedSlug)-audio.\(audioExtension)")
+        let renamedSystemAudioURL = renamedDirectory.appendingPathComponent("\(datedSlug)-system-audio.\(systemAudioExtension)")
         let renamedTranscriptURL = renamedDirectory.appendingPathComponent("\(datedSlug)-transcript.txt")
         let currentRemoteCameraManifestURL = currentCameraURL
             .deletingPathExtension()

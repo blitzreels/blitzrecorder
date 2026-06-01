@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import Foundation
 import SwiftUI
@@ -100,6 +101,29 @@ private struct RecordingSettingsShortcut: View {
     }
 }
 
+/// A compact glass button for dock actions. `fixedSize()` keeps the label at its natural
+/// width so it can never truncate, no matter how tight the surrounding row is.
+private struct DockActionButton: View {
+    let title: String
+    let systemImage: String
+    var help: String? = nil
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.system(size: 10, weight: .bold))
+                .fixedSize()
+                .padding(.horizontal, 9)
+                .padding(.vertical, 6)
+        }
+        .blitzGlassButton()
+        .controlSize(.small)
+        .pointingHandCursor()
+        .help(help ?? title)
+    }
+}
+
 private struct ExportCompletedView: View {
     @Bindable var vm: RecorderViewModel
     let url: URL
@@ -107,23 +131,27 @@ private struct ExportCompletedView: View {
     let warning: String?
     @State private var metadata = RecordingFileMetadata.empty
 
+    private let accent = Color(red: 0.09, green: 1.0, blue: 0.65)
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
+            // Info header — kept free of buttons so the filename never squeezes the actions.
+            HStack(spacing: 10) {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Color(red: 0.09, green: 1.0, blue: 0.65))
-                    .frame(width: 16)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(accent)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Recording saved")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(Color(red: 0.09, green: 1.0, blue: 0.65).opacity(0.9))
+                    Text("RECORDING SAVED")
+                        .font(.system(size: 9, weight: .heavy))
+                        .tracking(0.5)
+                        .foregroundStyle(accent.opacity(0.9))
                     Text(url.lastPathComponent)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.78))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.92))
                         .lineLimit(1)
                         .truncationMode(.middle)
+                        .help(url.lastPathComponent)
                     Text(savedDetail)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.white.opacity(0.5))
@@ -132,24 +160,7 @@ private struct ExportCompletedView: View {
                         .help(folderPath)
                 }
 
-                Spacer(minLength: 8)
-
-                HStack(spacing: 6) {
-                    OpenFileButton(title: "Open", systemImage: "play.fill", url: url)
-                    FinderButton(title: "Reveal", systemImage: "folder", url: url)
-                    Button {
-                        vm.renameLastExportedFile()
-                    } label: {
-                        Label("Rename", systemImage: "pencil")
-                            .font(.system(size: 10, weight: .bold))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                    }
-                    .blitzGlassButton()
-                    .controlSize(.small)
-                    .pointingHandCursor()
-                    .help("Rename or move this finished recording")
-                }
+                Spacer(minLength: 0)
             }
 
             if let warning {
@@ -182,36 +193,32 @@ private struct ExportCompletedView: View {
 
                     Spacer(minLength: 8)
 
-                    FinderButton(title: "Sources", systemImage: "tray.full", url: sourceTakeURL)
+                    DockActionButton(title: "Sources", systemImage: "tray.full", help: sourceTakeURL.path) {
+                        NSWorkspace.shared.activateFileViewerSelecting([sourceTakeURL])
+                    }
                 }
             }
 
+            Divider()
+                .background(.white.opacity(0.07))
+
+            // Actions on their own full-width row — plenty of room, nothing truncates.
             HStack(spacing: 8) {
-                Button {
-                    vm.revealOutputFolder()
-                } label: {
-                    Label("Output Folder", systemImage: "folder")
-                        .font(.system(size: 10, weight: .bold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
+                DockActionButton(title: "Open", systemImage: "play.fill", help: "Open \(url.lastPathComponent)") {
+                    NSWorkspace.shared.open(url)
                 }
-                .blitzGlassButton()
-                .controlSize(.small)
-                .pointingHandCursor()
+                DockActionButton(title: "Reveal", systemImage: "folder", help: "Show in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                }
+                DockActionButton(title: "Rename", systemImage: "pencil", help: "Rename or move this finished recording") {
+                    vm.renameLastExportedFile()
+                }
 
-                Button {
+                Spacer(minLength: 12)
+
+                DockActionButton(title: "New Take", systemImage: "plus", help: "Clear and get ready for the next recording") {
                     vm.clearPostRecordingStatus()
-                } label: {
-                    Label("New Take", systemImage: "plus")
-                        .font(.system(size: 10, weight: .bold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
                 }
-                .blitzGlassButton()
-                .controlSize(.small)
-                .pointingHandCursor()
-
-                Spacer(minLength: 0)
             }
         }
         .frame(width: 460)
@@ -267,47 +274,27 @@ private struct RecoveryAvailableView: View {
                 Spacer(minLength: 8)
             }
 
+            Divider()
+                .background(.white.opacity(0.07))
+
             HStack(spacing: 8) {
                 if recovery.canRetryExport {
-                    Button {
+                    DockActionButton(title: "Retry Export", systemImage: "arrow.clockwise", help: "Try exporting the recovered source files again") {
                         vm.retryRecoveredExport()
-                    } label: {
-                        Label("Retry Export", systemImage: "arrow.clockwise")
-                            .font(.system(size: 10, weight: .bold))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
                     }
-                    .blitzGlassButton()
-                    .controlSize(.small)
-                    .pointingHandCursor()
-                    .help("Try exporting the recovered source files again")
                 }
 
-                FinderButton(title: "Reveal Files", systemImage: "tray.full", url: recovery.takeDirectory)
+                DockActionButton(title: "Reveal Files", systemImage: "tray.full", help: recovery.takeDirectory.path) {
+                    NSWorkspace.shared.activateFileViewerSelecting([recovery.takeDirectory])
+                }
 
-                Button {
+                DockActionButton(title: "Export Settings", systemImage: "slider.horizontal.3") {
                     vm.appTab = .recording
-                } label: {
-                    Label("Export Settings", systemImage: "slider.horizontal.3")
-                        .font(.system(size: 10, weight: .bold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
                 }
-                .blitzGlassButton()
-                .controlSize(.small)
-                .pointingHandCursor()
 
-                Button {
+                DockActionButton(title: "Dismiss", systemImage: "xmark") {
                     vm.clearPostRecordingStatus()
-                } label: {
-                    Label("Dismiss", systemImage: "xmark")
-                        .font(.system(size: 10, weight: .bold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
                 }
-                .blitzGlassButton()
-                .controlSize(.small)
-                .pointingHandCursor()
 
                 Spacer(minLength: 0)
             }
@@ -360,48 +347,6 @@ private struct RecordingFileMetadata {
             return String(format: "%d:%02d:%02d", hours, minutes, seconds)
         }
         return String(format: "%d:%02d", minutes, seconds)
-    }
-}
-
-private struct OpenFileButton: View {
-    let title: String
-    let systemImage: String
-    let url: URL
-
-    var body: some View {
-        Button {
-            NSWorkspace.shared.open(url)
-        } label: {
-            Label(title, systemImage: systemImage)
-                .font(.system(size: 10, weight: .bold))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-        }
-        .blitzGlassButton()
-        .controlSize(.small)
-        .pointingHandCursor()
-        .help("Open \(url.lastPathComponent)")
-    }
-}
-
-private struct FinderButton: View {
-    let title: String
-    let systemImage: String
-    let url: URL
-
-    var body: some View {
-        Button {
-            NSWorkspace.shared.activateFileViewerSelecting([url])
-        } label: {
-            Label(title, systemImage: systemImage)
-                .font(.system(size: 10, weight: .bold))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-        }
-        .blitzGlassButton()
-        .controlSize(.small)
-        .pointingHandCursor()
-        .help(url.path)
     }
 }
 
@@ -610,6 +555,7 @@ private struct RecordButton: View {
                     .font(.system(size: 15, weight: .bold))
                 Text(label)
                     .font(.system(size: 13, weight: .bold))
+                    .fixedSize()
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)

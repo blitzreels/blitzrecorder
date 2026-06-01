@@ -231,12 +231,12 @@ final class AccessController {
 
     var accessLabel: String {
         if hasAppStoreSubscription {
-            return "Pro via App Store"
+            return "Pro is on"
         }
         if hasBlitzReelsEntitlement {
-            return blitzReelsPlanName.map { "Included with \($0)" } ?? "Included with BlitzReels"
+            return blitzReelsPlanName.map { "Free with \($0)" } ?? "Free with BlitzReels"
         }
-        return "\(freeExportsRemaining) free exports left"
+        return "\(freeExportsRemaining) free videos left"
     }
 
     func configure() {
@@ -283,7 +283,7 @@ final class AccessController {
                     ? monthlyProduct
                     : annualProduct
                 guard let loadedProduct else {
-                    accessMessage = "Subscription is not available yet."
+                    accessMessage = "We couldn't load Pro. Try again soon."
                     return
                 }
                 product = loadedProduct
@@ -296,16 +296,16 @@ final class AccessController {
                 hasAppStoreSubscription = ProductConfiguration.isAppStoreProductID(transaction.productID)
                     && transaction.revocationDate == nil
                 await transaction.finish()
-                accessMessage = hasAppStoreSubscription ? "BlitzRecorder Pro is active." : ""
+                accessMessage = hasAppStoreSubscription ? "Pro is on." : ""
             case .userCancelled:
-                accessMessage = "Purchase cancelled."
+                accessMessage = "You cancelled the purchase."
             case .pending:
-                accessMessage = "Purchase pending approval."
+                accessMessage = "Your purchase is waiting for approval."
             @unknown default:
-                accessMessage = "Purchase did not complete."
+                accessMessage = "The purchase didn't go through."
             }
         } catch {
-            accessMessage = "Purchase failed: \(error.localizedDescription)"
+            accessMessage = "We couldn't finish the purchase: \(error.localizedDescription)"
         }
     }
 
@@ -313,9 +313,9 @@ final class AccessController {
         do {
             try await AppStore.sync()
             await refreshEntitlements()
-            accessMessage = isPro ? "Purchases restored." : "No active App Store subscription found."
+            accessMessage = isPro ? "Your purchases are back." : "We didn't find a Pro plan to restore."
         } catch {
-            accessMessage = "Restore failed: \(error.localizedDescription)"
+            accessMessage = "We couldn't restore your purchases: \(error.localizedDescription)"
         }
     }
 
@@ -339,7 +339,7 @@ final class AccessController {
         blitzReelsTokenStore.deleteToken()
         defaults.removeObject(forKey: Key.blitzReelsAccessToken)
         clearBlitzReelsEntitlement()
-        accessMessage = "BlitzReels access disconnected."
+        accessMessage = "You're signed out of BlitzReels."
     }
 
     func handleBlitzReelsCallback(url: URL) {
@@ -351,18 +351,18 @@ final class AccessController {
         }
 
         if let error = components.queryItems?.first(where: { $0.name == "error" })?.value {
-            accessMessage = "BlitzReels sign-in failed: \(error)"
+            accessMessage = "BlitzReels sign-in didn't work: \(error)"
             return
         }
 
         guard let token = components.queryItems?.first(where: { $0.name == "token" })?.value,
               !token.isEmpty else {
-            accessMessage = "BlitzReels sign-in did not return an access token."
+            accessMessage = "BlitzReels sign-in didn't work. Please try again."
             return
         }
 
         guard blitzReelsTokenStore.saveToken(token) else {
-            accessMessage = "BlitzReels sign-in could not be saved securely."
+            accessMessage = "We couldn't save your BlitzReels sign-in. Please try again."
             return
         }
         Task { await refreshBlitzReelsEntitlement() }
@@ -381,16 +381,16 @@ final class AccessController {
             if let planName = blitzReelsPlanName {
                 defaults.set(planName, forKey: Key.blitzReelsPlanName)
                 defaults.set(dateProvider(), forKey: Key.blitzReelsVerifiedAt)
-                accessMessage = "Included with \(planName)."
+                accessMessage = "Pro is free with \(planName)."
             } else {
                 clearBlitzReelsEntitlement()
-                accessMessage = "No active BlitzReels subscription found."
+                accessMessage = "We didn't find a BlitzReels plan on your account."
             }
         } catch let error as BlitzReelsEntitlementHTTPError where error.statusCode == 401 || error.statusCode == 403 {
             blitzReelsTokenStore.deleteToken()
             defaults.removeObject(forKey: Key.blitzReelsAccessToken)
             clearBlitzReelsEntitlement()
-            accessMessage = "BlitzReels sign-in expired."
+            accessMessage = "Your BlitzReels sign-in expired. Please sign in again."
         } catch {
             handleBlitzReelsVerificationUnavailable(error)
         }
@@ -416,7 +416,7 @@ final class AccessController {
             monthlyProduct = products.first { $0.id == ProductConfiguration.monthlyProductID }
             annualProduct = products.first { $0.id == ProductConfiguration.annualProductID }
         } catch {
-            accessMessage = "Subscription products failed to load: \(error.localizedDescription)"
+            accessMessage = "We couldn't load Pro: \(error.localizedDescription)"
         }
     }
 
@@ -444,7 +444,7 @@ final class AccessController {
             }
             await transaction.finish()
         } catch {
-            accessMessage = "Transaction verification failed."
+            accessMessage = "We couldn't check that purchase."
         }
     }
 
@@ -470,13 +470,13 @@ final class AccessController {
     private func handleBlitzReelsVerificationUnavailable(_ error: Error? = nil) {
         if hasFreshBlitzReelsVerification, defaults.string(forKey: Key.blitzReelsPlanName) != nil {
             restoreCachedBlitzReelsEntitlement()
-            accessMessage = "Using recently verified BlitzReels access."
+            accessMessage = "Using your saved BlitzReels access."
         } else {
             clearBlitzReelsEntitlement()
             if let error {
-                accessMessage = "BlitzReels access check failed: \(error.localizedDescription)"
+                accessMessage = "We couldn't check your BlitzReels access: \(error.localizedDescription)"
             } else {
-                accessMessage = "BlitzReels access could not be verified."
+                accessMessage = "We couldn't check your BlitzReels access right now."
             }
         }
     }

@@ -47,51 +47,7 @@ struct CameraCropControls: View {
                 .help("Reset camera crop")
             }
 
-            if vm.isCameraCropModeEnabled {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 7) {
-                        Circle()
-                            .fill(mint)
-                            .frame(width: 6, height: 6)
-                        Text("Cropping camera")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.76))
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 2)
-
-                    HStack(spacing: 8) {
-                        Button {
-                            vm.applyCameraCropMode()
-                        } label: {
-                            Label("Done cropping", systemImage: "checkmark")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(.black.opacity(0.88))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 8)
-                                .background(mint, in: .rect(cornerRadius: 8))
-                                .shadow(color: mint.opacity(0.28), radius: 8, y: 2)
-                        }
-                        .buttonStyle(.plain)
-                        .pointingHandCursor()
-                        .help("Apply the crop")
-
-                        Button {
-                            vm.cancelCameraCropMode()
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(.white.opacity(0.72))
-                                .frame(width: 28, height: 28)
-                                .background(.white.opacity(0.08), in: .rect(cornerRadius: 8))
-                        }
-                        .buttonStyle(.plain)
-                        .pointingHandCursor()
-                        .help("Cancel crop changes")
-                    }
-                }
-            } else {
+            if !vm.isCameraCropModeEnabled {
                 cropPresetControls
 
                 Button {

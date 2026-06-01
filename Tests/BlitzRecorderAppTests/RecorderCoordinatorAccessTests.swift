@@ -142,7 +142,7 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         XCTAssertEqual(viewModel.elapsedSeconds, 0)
     }
 
-    func testScreenFullscreenPresetUsesTargetWindowFitPath() {
+    func testScreenFullscreenPresetDoesNotFitTargetWindowAutomatically() {
         let defaults = temporaryDefaults()
         let coordinator = RecorderCoordinator(
             accessController: AccessController(defaults: defaults),
@@ -157,22 +157,25 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         XCTAssertTrue(viewModel.settings.enabledSources.contains(.screen))
         XCTAssertTrue(viewModel.settings.enabledSources.contains(.camera))
         XCTAssertTrue(viewModel.settings.hiddenSources.contains(.camera))
-        XCTAssertEqual(messages.count, 1)
-        if let screenCrop = viewModel.settings.screenCrop {
-            XCTAssertFalse(screenCrop.isEmpty)
-            XCTAssertTrue(messages[0].hasPrefix("Fitted "))
-        } else {
-            XCTAssertTrue(
-                [
-                    "Enable Accessibility for BlitzRecorder to resize target windows.",
-                    "No other window found to fit.",
-                    "Selected display is not available.",
-                    "Could not read the visible window list.",
-                    "Could not move the target window."
-                ].contains(messages[0]),
-                "Unexpected target-window fit message: \(messages[0])"
-            )
-        }
+        XCTAssertNil(viewModel.settings.screenCrop)
+        XCTAssertTrue(messages.isEmpty)
+    }
+
+    func testPreviewLayerSelectionSelectsMatchingSource() {
+        let defaults = temporaryDefaults()
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults),
+            defaults: defaults
+        )
+        let previewStage = PreviewStageView()
+        let viewModel = RecorderViewModel(coordinator: coordinator, previewStage: previewStage)
+
+        viewModel.selectSource(.screen)
+        previewStage.onLayerSelected?(.camera)
+
+        XCTAssertEqual(viewModel.selectedLayer, .camera)
+        XCTAssertEqual(viewModel.selectedSource, .camera)
+        XCTAssertEqual(previewStage.selectedLayer, .camera)
     }
 
     func testRecordingStartIsBlockedBeforeStartingWhenSourcesAreNotReady() {

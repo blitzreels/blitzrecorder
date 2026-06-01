@@ -128,8 +128,8 @@ struct TakeFileStore {
             scratchDirectory: scratchDirectory,
             screenURL: scratchDirectory.appendingPathComponent("screen.\(settings.outputVideoFormat.fileExtension)"),
             cameraURL: scratchDirectory.appendingPathComponent("camera.\(settings.outputVideoFormat.fileExtension)"),
-            audioURL: scratchDirectory.appendingPathComponent("audio.m4a"),
-            systemAudioURL: scratchDirectory.appendingPathComponent("system-audio.m4a"),
+            audioURL: scratchDirectory.appendingPathComponent("audio.\(settings.effectiveSourceAudioFormat.fileExtension)"),
+            systemAudioURL: scratchDirectory.appendingPathComponent("system-audio.\(settings.effectiveSourceAudioFormat.fileExtension)"),
             transcriptURL: scratchDirectory.appendingPathComponent("transcript.txt"),
             finalVideoURL: finalVideoURL(
                 slug: Self.defaultSlug(for: scratchDirectory),

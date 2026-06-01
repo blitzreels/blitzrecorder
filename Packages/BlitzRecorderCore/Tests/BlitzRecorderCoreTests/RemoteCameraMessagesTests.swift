@@ -229,9 +229,22 @@ final class RemoteCameraMessagesTests: XCTestCase {
         XCTAssertEqual(resolved.exposureMode, .continuousAuto)
         XCTAssertEqual(resolved.whiteBalanceMode, .continuousAuto)
         XCTAssertEqual(resolved.stabilizationMode, .off)
-        XCTAssertEqual(resolved.rotationDegrees, 180)
+        XCTAssertEqual(resolved.rotationDegrees, 0)
         XCTAssertEqual(resolved.cinematicVideoEnabled, false)
         XCTAssertNil(resolved.cinematicAperture)
+    }
+
+    func testRemoteCameraSettingsResolverKeepsSupportedRotation() {
+        var capabilities = makeResolverCapabilities()
+        capabilities.supportedRotationDegrees = [0, 90, 180, 270]
+
+        let resolved = RemoteCameraSettingsResolver.normalized(
+            RemoteCameraSettings(rotationDegrees: 90),
+            capabilities: capabilities,
+            preferredFrameRate: 30
+        )
+
+        XCTAssertEqual(resolved.rotationDegrees, 90)
     }
 
     func testRemoteCameraSettingsResolverFiltersProfileFormatsAndAspectRatio() {
@@ -257,6 +270,64 @@ final class RemoteCameraMessagesTests: XCTestCase {
             16.0 / 9.0,
             accuracy: 0.0001
         )
+    }
+
+    func testRemoteCameraSettingsResolverUsesLensSpecificFormats() {
+        let capabilities = RemoteCameraCapabilities(
+            deviceName: "Alice iPhone",
+            supportedLenses: [.wide, .telephoto],
+            lensCapabilities: [
+                makeLensCapabilities(
+                    lens: .telephoto,
+                    formats: [
+                        RemoteCameraFormat(
+                            id: "tele-4k",
+                            width: 3840,
+                            height: 2160,
+                            frameRates: [30, 60],
+                            supportsStabilization: true,
+                            supportsHDR: true
+                        )
+                    ]
+                )
+            ],
+            supportedFormats: [
+                RemoteCameraFormat(
+                    id: "wide-1080p",
+                    width: 1920,
+                    height: 1080,
+                    frameRates: [30],
+                    supportsStabilization: false,
+                    supportsHDR: false
+                )
+            ],
+            supportsTorch: false,
+            supportsManualFocus: false,
+            supportsFocusLock: false,
+            supportsManualExposure: false,
+            supportsExposureLock: false,
+            supportsWhiteBalanceLock: false,
+            supportsManualWhiteBalance: false,
+            supportedStabilizationModes: [.off],
+            minimumExposureBias: -2,
+            maximumExposureBias: 2
+        )
+
+        let resolved = RemoteCameraSettingsResolver.normalized(
+            RemoteCameraSettings(
+                lens: .telephoto,
+                formatID: "tele-4k",
+                frameRate: 60,
+                stabilizationMode: .standard
+            ),
+            capabilities: capabilities,
+            preferredFrameRate: 30
+        )
+
+        XCTAssertEqual(resolved.lens, .telephoto)
+        XCTAssertEqual(resolved.formatID, "tele-4k")
+        XCTAssertEqual(resolved.frameRate, 60)
+        XCTAssertEqual(resolved.stabilizationMode, .standard)
     }
 
     func testRemoteCameraTransferProtocolNormalizesTransferState() {
@@ -352,6 +423,29 @@ final class RemoteCameraMessagesTests: XCTestCase {
             supportsManualWhiteBalance: false,
             supportedStabilizationModes: [.off],
             supportedRotationDegrees: [0, 180],
+            minimumExposureBias: -2,
+            maximumExposureBias: 2
+        )
+    }
+
+    private func makeLensCapabilities(
+        lens: RemoteCameraLens,
+        formats: [RemoteCameraFormat]
+    ) -> RemoteCameraLensCapabilities {
+        RemoteCameraLensCapabilities(
+            lens: lens,
+            supportedFormats: formats,
+            supportedCaptureProfiles: [RemoteCameraCaptureProfile(id: .automatic)],
+            supportsTorch: false,
+            minimumZoomFactor: 1,
+            maximumZoomFactor: 1,
+            supportsManualFocus: false,
+            supportsFocusLock: false,
+            supportsManualExposure: false,
+            supportsExposureLock: false,
+            supportsWhiteBalanceLock: false,
+            supportsManualWhiteBalance: false,
+            supportedStabilizationModes: [.off, .standard],
             minimumExposureBias: -2,
             maximumExposureBias: 2
         )

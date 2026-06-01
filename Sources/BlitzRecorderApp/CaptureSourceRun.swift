@@ -4,6 +4,7 @@ import ScreenCaptureKit
 
 protocol ScreenCaptureRecording: AnyObject {
     func start(url: URL, settings: RecordingSettings, filter pickedFilter: SCContentFilter?, timelineStartTime: CMTime?) async throws
+    func update(settings: RecordingSettings, filter pickedFilter: SCContentFilter?) async throws
     func pause()
     func resume()
     func stop() async throws -> MediaWriterCompletion
@@ -97,6 +98,7 @@ final class CaptureSourceRun {
 
     private struct CaptureSourceRunAdapter {
         let start: (RecordingSettings, SCContentFilter?, CMTime?) async throws -> Void
+        let update: (RecordingSettings, SCContentFilter?) async throws -> Void
         let pause: () -> Void
         let resume: () -> Void
         let stop: () async throws -> MediaWriterCompletion
@@ -163,6 +165,20 @@ final class CaptureSourceRun {
                 adapter.pause()
             }
         }
+    }
+
+    func updateScreenCapture(
+        settings: RecordingSettings,
+        pickedScreenFilter: SCContentFilter?
+    ) async throws {
+        self.settings = settings
+        self.pickedScreenFilter = pickedScreenFilter
+        guard activeSources.contains(.screen),
+              settings.enabledSources.contains(.screen),
+              let adapter = sourceAdapters[.screen] else {
+            return
+        }
+        try await adapter.update(settings, pickedScreenFilter)
     }
 
     func pause() {
@@ -240,6 +256,9 @@ final class CaptureSourceRun {
                         timelineStartTime: timelineStartTime
                     )
                 },
+                update: { settings, pickedScreenFilter in
+                    try await screenRecorder.update(settings: settings, filter: pickedScreenFilter)
+                },
                 pause: { screenRecorder.pause() },
                 resume: { screenRecorder.resume() },
                 stop: { try await screenRecorder.stop() }
@@ -252,6 +271,7 @@ final class CaptureSourceRun {
                         timelineStartTime: timelineStartTime
                     )
                 },
+                update: { _, _ in },
                 pause: { cameraRecorder.pause() },
                 resume: { cameraRecorder.resume() },
                 stop: { try await cameraRecorder.stop() }
@@ -264,6 +284,7 @@ final class CaptureSourceRun {
                         timelineStartTime: timelineStartTime
                     )
                 },
+                update: { _, _ in },
                 pause: { audioRecorder.pause() },
                 resume: { audioRecorder.resume() },
                 stop: { try await audioRecorder.stop() }
@@ -276,6 +297,7 @@ final class CaptureSourceRun {
                         timelineStartTime: timelineStartTime
                     )
                 },
+                update: { _, _ in },
                 pause: { systemAudioRecorder.pause() },
                 resume: { systemAudioRecorder.resume() },
                 stop: { try await systemAudioRecorder.stop() }

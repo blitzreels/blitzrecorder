@@ -42,6 +42,8 @@ enum PermissionGate {
     private static var hasRequestedScreenCaptureAccessThisSession = false
     private static let screenCaptureSettingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
     private static let accessibilitySettingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+    private static let cameraSettingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!
+    private static let microphoneSettingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!
 
     static func readiness(for settings: RecordingSettings) -> RecordingReadiness {
         guard !settings.enabledSources.isEmpty else {
@@ -178,6 +180,14 @@ enum PermissionGate {
 
     static func openAccessibilitySettings() {
         NSWorkspace.shared.open(accessibilitySettingsURL)
+    }
+
+    static func openCameraSettings() {
+        NSWorkspace.shared.open(cameraSettingsURL)
+    }
+
+    static func openMicrophoneSettings() {
+        NSWorkspace.shared.open(microphoneSettingsURL)
     }
 
     static func writeDiagnostic(_ readiness: RecordingReadiness) {

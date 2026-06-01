@@ -8,6 +8,9 @@ enum RecordingSettingsStore {
         static let outputResolution = "recording.outputResolution"
         static let outputVideoFormat = "recording.outputVideoFormat"
         static let framesPerSecond = "recording.framesPerSecond"
+        static let customVideoBitrate = "recording.customVideoBitrate"
+        static let audioQuality = "recording.audioQuality"
+        static let sourceAudioFormat = "recording.sourceAudioFormat"
         static let microphoneGain = "recording.microphoneGain"
         static let systemAudioGain = "recording.systemAudioGain"
         static let removesCameraBackgroundAfterRecording = "recording.removesCameraBackgroundAfterRecording"
@@ -58,6 +61,26 @@ enum RecordingSettingsStore {
         let framesPerSecond = defaults.integer(forKey: Key.framesPerSecond)
         if RecordingSettings.supportedFrameRates.contains(framesPerSecond) {
             settings.framesPerSecond = framesPerSecond
+        }
+
+        if defaults.object(forKey: Key.customVideoBitrate) != nil {
+            let stored = defaults.integer(forKey: Key.customVideoBitrate)
+            if stored > 0 {
+                settings.customVideoBitrate = min(
+                    RecordingSettings.maxCustomVideoBitrate,
+                    max(RecordingSettings.minCustomVideoBitrate, stored)
+                )
+            }
+        }
+
+        if let rawAudioQuality = defaults.string(forKey: Key.audioQuality),
+           let audioQuality = AudioQuality(rawValue: rawAudioQuality) {
+            settings.audioQuality = audioQuality
+        }
+
+        if let rawSourceAudioFormat = defaults.string(forKey: Key.sourceAudioFormat),
+           let sourceAudioFormat = SourceAudioFormat(rawValue: rawSourceAudioFormat) {
+            settings.sourceAudioFormat = sourceAudioFormat
         }
 
         if defaults.object(forKey: Key.microphoneGain) != nil {
@@ -218,6 +241,13 @@ enum RecordingSettingsStore {
         defaults.set(settings.outputResolution.rawValue, forKey: Key.outputResolution)
         defaults.set(settings.outputVideoFormat.rawValue, forKey: Key.outputVideoFormat)
         defaults.set(settings.framesPerSecond, forKey: Key.framesPerSecond)
+        if let customVideoBitrate = settings.customVideoBitrate {
+            defaults.set(customVideoBitrate, forKey: Key.customVideoBitrate)
+        } else {
+            defaults.removeObject(forKey: Key.customVideoBitrate)
+        }
+        defaults.set(settings.audioQuality.rawValue, forKey: Key.audioQuality)
+        defaults.set(settings.sourceAudioFormat.rawValue, forKey: Key.sourceAudioFormat)
         defaults.set(settings.microphoneGain, forKey: Key.microphoneGain)
         defaults.set(settings.systemAudioGain, forKey: Key.systemAudioGain)
         defaults.set(settings.removesCameraBackgroundAfterRecording, forKey: Key.removesCameraBackgroundAfterRecording)

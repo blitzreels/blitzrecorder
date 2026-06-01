@@ -55,6 +55,36 @@ final class SceneLayoutProjectionTests: XCTestCase {
         XCTAssertEqual(frame, SceneLayoutProjection.fullFrame)
     }
 
+    func testSceneLayoutGraphResolvesOnlyEnabledItemsInBackToFrontOrder() {
+        var layout = SceneLayout()
+        layout.screenFrame = CGRect(x: 0, y: 0.5, width: 1, height: 0.5)
+        layout.cameraFrame = CGRect(x: 0.2, y: 0.1, width: 0.6, height: 0.3)
+        layout.layerOrder = [.camera, .screen]
+
+        let items = layout.resolvedItems(
+            enabledSources: [.screen, .camera],
+            fillsCanvasWhenOnlyVideoSource: true
+        )
+
+        XCTAssertEqual(items.map(\.kind), [.camera, .screen])
+        XCTAssertEqual(items[0].normalizedFrame, layout.cameraFrame)
+        XCTAssertEqual(items[1].normalizedFrame, layout.screenFrame)
+    }
+
+    func testSceneLayoutGraphExpandsSingleVisibleVideoItem() {
+        var layout = SceneLayout()
+        layout.cameraFrame = CGRect(x: 0.2, y: 0.1, width: 0.6, height: 0.3)
+
+        let items = layout.resolvedItems(
+            enabledSources: [.camera],
+            fillsCanvasWhenOnlyVideoSource: true
+        )
+
+        XCTAssertEqual(items, [
+            ResolvedSceneLayoutItem(kind: .camera, normalizedFrame: SceneLayoutProjection.fullFrame)
+        ])
+    }
+
     func testPaddedRectUsesShortestCanvasEdge() {
         let canvas = CGRect(x: 0, y: 0, width: 100, height: 200)
         let rect = CGRect(x: 0, y: 0, width: 100, height: 200)

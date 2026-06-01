@@ -24,7 +24,7 @@ final class ScreenPreviewer: NSObject, SCStreamOutput, SCStreamDelegate, @unchec
     }
 
     func start(settings: RecordingSettings, filter pickedFilter: SCContentFilter?, frameHandler: @escaping FrameHandler) async throws {
-        try await stop()
+        try? await stop()
         self.frameHandler = frameHandler
 
         let configuration = SCStreamConfiguration()
@@ -76,7 +76,7 @@ final class ScreenPreviewer: NSObject, SCStreamOutput, SCStreamDelegate, @unchec
 
     func stop() async throws {
         if let stream {
-            try await stream.stopCapture()
+            try? await stream.stopCapture()
         }
         stream = nil
     }

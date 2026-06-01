@@ -6,6 +6,8 @@ final class AudioSampleFileWriter: @unchecked Sendable {
     private let url: URL
     private let queue = DispatchQueue(label: "blitzrecorder.audio-writer")
     private let timelineStartTime: CMTime?
+    private let stereoBitrate: Int
+    private let format: SourceAudioFormat
 
     private var writer: AVAssetWriter?
     private var input: AVAssetWriterInput?
@@ -19,9 +21,16 @@ final class AudioSampleFileWriter: @unchecked Sendable {
     private var writeError: Error?
     private static let maximumTrustedTimelineOffsetSeconds: Double = 30
 
-    init(url: URL, timelineStartTime: CMTime? = nil) throws {
+    init(
+        url: URL,
+        timelineStartTime: CMTime? = nil,
+        stereoBitrate: Int = 192_000,
+        format: SourceAudioFormat = .aac
+    ) throws {
         self.url = url
         self.timelineStartTime = timelineStartTime
+        self.stereoBitrate = stereoBitrate
+        self.format = format
         try? FileManager.default.removeItem(at: url)
     }
 
@@ -124,8 +133,8 @@ final class AudioSampleFileWriter: @unchecked Sendable {
     private func prepareWriter(for sampleBuffer: CMSampleBuffer) throws {
         guard writer == nil, input == nil else { return }
 
-        let writer = try AVAssetWriter(outputURL: url, fileType: .m4a)
-        let outputSettings = Self.outputSettings(for: sampleBuffer)
+        let writer = try AVAssetWriter(outputURL: url, fileType: format.avFileType)
+        let outputSettings = outputSettings(for: sampleBuffer)
         let input = AVAssetWriterInput(mediaType: .audio, outputSettings: outputSettings)
         input.expectsMediaDataInRealTime = true
 
@@ -141,18 +150,29 @@ final class AudioSampleFileWriter: @unchecked Sendable {
         self.input = input
     }
 
-    private static func outputSettings(for sampleBuffer: CMSampleBuffer) -> [String: Any] {
+    private func outputSettings(for sampleBuffer: CMSampleBuffer) -> [String: Any] {
         let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer)
         let streamDescription = formatDescription.flatMap {
             CMAudioFormatDescriptionGetStreamBasicDescription($0)?.pointee
         }
         let sampleRate = streamDescription?.mSampleRate ?? 48_000
         let channelCount = max(1, min(2, Int(streamDescription?.mChannelsPerFrame ?? 2)))
+        if format.isLossless {
+            return [
+                AVFormatIDKey: kAudioFormatLinearPCM,
+                AVSampleRateKey: sampleRate,
+                AVNumberOfChannelsKey: channelCount,
+                AVLinearPCMBitDepthKey: 24,
+                AVLinearPCMIsFloatKey: false,
+                AVLinearPCMIsBigEndianKey: false,
+                AVLinearPCMIsNonInterleaved: false
+            ]
+        }
         return [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
             AVSampleRateKey: sampleRate,
             AVNumberOfChannelsKey: channelCount,
-            AVEncoderBitRateKey: channelCount == 1 ? 96_000 : 192_000
+            AVEncoderBitRateKey: channelCount == 1 ? stereoBitrate / 2 : stereoBitrate
         ]
     }
 

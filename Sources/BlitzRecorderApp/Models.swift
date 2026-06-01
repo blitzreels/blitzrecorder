@@ -187,6 +187,18 @@ enum OutputVideoFormat: String, CaseIterable {
         rawValue
     }
 
+    /// Plain-English, no-jargon explanation of when to pick this file type.
+    var plainDescription: String {
+        switch self {
+        case .mov:
+            return "Best for editing on a Mac"
+        case .mp4:
+            return "Best for sharing and uploading"
+        case .m4v:
+            return "For Apple devices and iTunes"
+        }
+    }
+
     var avFileType: AVFileType {
         switch self {
         case .mov:
@@ -195,6 +207,97 @@ enum OutputVideoFormat: String, CaseIterable {
             return .mp4
         case .m4v:
             return .m4v
+        }
+    }
+}
+
+enum AudioQuality: String, CaseIterable {
+    case standard
+    case high
+    case studio
+
+    /// Stereo AAC bitrate in bits per second.
+    var bitrate: Int {
+        switch self {
+        case .standard:
+            return 192_000
+        case .high:
+            return 256_000
+        case .studio:
+            return 320_000
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .standard:
+            return "Normal"
+        case .high:
+            return "High"
+        case .studio:
+            return "Studio"
+        }
+    }
+
+    var detail: String {
+        "\(bitrate / 1000) kbps"
+    }
+
+    var plainDescription: String {
+        switch self {
+        case .standard:
+            return "Great for most videos"
+        case .high:
+            return "Clearer voices and music"
+        case .studio:
+            return "Best for podcasts and music"
+        }
+    }
+}
+
+/// File type for the separate source audio files that "Save source files" keeps.
+enum SourceAudioFormat: String, CaseIterable {
+    case aac
+    case wav
+
+    var fileExtension: String {
+        switch self {
+        case .aac:
+            return "m4a"
+        case .wav:
+            return "wav"
+        }
+    }
+
+    var avFileType: AVFileType {
+        switch self {
+        case .aac:
+            return .m4a
+        case .wav:
+            return .wav
+        }
+    }
+
+    /// Lossless formats store raw samples instead of a compressed stream.
+    var isLossless: Bool {
+        self == .wav
+    }
+
+    var displayName: String {
+        switch self {
+        case .aac:
+            return "M4A"
+        case .wav:
+            return "WAV"
+        }
+    }
+
+    var plainDescription: String {
+        switch self {
+        case .aac:
+            return "Smaller files, good for sharing"
+        case .wav:
+            return "No quality lost, best for editing"
         }
     }
 }
@@ -696,9 +799,57 @@ struct ScreenSourceGeometry: Equatable {
     }
 }
 
+enum RecordingSceneTransitionCurve: Equatable {
+    case linear
+    case easeInOut
+
+    func value(at progress: CGFloat) -> CGFloat {
+        let progress = min(1, max(0, progress))
+        switch self {
+        case .linear:
+            return progress
+        case .easeInOut:
+            return progress * progress * (3 - 2 * progress)
+        }
+    }
+}
+
+struct RecordingSceneTransition: Equatable {
+    var duration: TimeInterval
+    var curve: RecordingSceneTransitionCurve
+
+    static let cut = RecordingSceneTransition(duration: 0, curve: .linear)
+    static let sceneSwitch = RecordingSceneTransition(duration: 0.22, curve: .easeInOut)
+
+    init(duration: TimeInterval, curve: RecordingSceneTransitionCurve = .easeInOut) {
+        self.duration = max(0, duration)
+        self.curve = curve
+    }
+
+    var isCut: Bool {
+        duration <= 0
+    }
+
+    func progress(elapsed: TimeInterval) -> CGFloat {
+        guard duration > 0 else { return 1 }
+        return curve.value(at: CGFloat(elapsed / duration))
+    }
+}
+
 struct RecordingSceneEvent: Equatable {
     let time: TimeInterval
     let scene: RecordingScene
+    let transition: RecordingSceneTransition
+
+    init(
+        time: TimeInterval,
+        scene: RecordingScene,
+        transition: RecordingSceneTransition = .cut
+    ) {
+        self.time = time
+        self.scene = scene
+        self.transition = transition
+    }
 }
 
 extension ScenePreset {
@@ -743,11 +894,18 @@ extension ScenePreset {
 
 struct RecordingSettings {
     static let supportedFrameRates = [24, 30, 60]
+    /// Bounds for the pro "Video detail" bitrate slider, in bits per second.
+    static let minCustomVideoBitrate = 2_000_000
+    static let maxCustomVideoBitrate = 80_000_000
 
     var layout: CaptureLayout = .vertical
     var outputResolution: OutputResolution = .p1080
     var outputVideoFormat: OutputVideoFormat = .mov
     var framesPerSecond: Int = 60
+    /// `nil` means Auto (bitrate is picked from the resolution and frame rate).
+    var customVideoBitrate: Int?
+    var audioQuality: AudioQuality = .standard
+    var sourceAudioFormat: SourceAudioFormat = .aac
     var microphoneGain: Double = 1.0
     var systemAudioGain: Double = 1.0
     var removesCameraBackgroundAfterRecording: Bool = false
@@ -776,26 +934,56 @@ struct RecordingSettings {
         .appendingPathComponent("Movies", isDirectory: true)
         .appendingPathComponent("BlitzRecorder", isDirectory: true)
 
-    var screenBitrate: Int {
-        SocialVideoEncoding.screenIntermediateBitrate(
-            resolution: outputResolution,
-            layout: layout,
-            fps: framesPerSecond
-        )
-    }
-
-    var cameraBitrate: Int {
-        SocialVideoEncoding.cameraIntermediateBitrate(
-            resolution: outputResolution,
-            fps: framesPerSecond
-        )
-    }
-
-    var finalVideoBitrate: Int {
+    /// The bitrate Auto would pick for the current resolution and frame rate.
+    var autoVideoBitrate: Int {
         SocialVideoEncoding.videoBitrate(
             resolution: outputResolution,
             fps: framesPerSecond
         )
+    }
+
+    var screenBitrate: Int {
+        let base = SocialVideoEncoding.screenIntermediateBitrate(
+            resolution: outputResolution,
+            layout: layout,
+            fps: framesPerSecond
+        )
+        return Int(Double(base) * intermediateVideoBoost)
+    }
+
+    var cameraBitrate: Int {
+        let base = SocialVideoEncoding.cameraIntermediateBitrate(
+            resolution: outputResolution,
+            fps: framesPerSecond
+        )
+        return Int(Double(base) * intermediateVideoBoost)
+    }
+
+    var finalVideoBitrate: Int {
+        guard let customVideoBitrate else { return autoVideoBitrate }
+        return min(
+            RecordingSettings.maxCustomVideoBitrate,
+            max(RecordingSettings.minCustomVideoBitrate, customVideoBitrate)
+        )
+    }
+
+    var finalAudioBitrate: Int {
+        audioQuality.bitrate
+    }
+
+    /// The format the source audio files are actually written in. The chosen
+    /// format only applies when source files are kept; otherwise the temporary
+    /// capture stays compressed.
+    var effectiveSourceAudioFormat: SourceAudioFormat {
+        savesSourceFiles ? sourceAudioFormat : .aac
+    }
+
+    /// How much to scale the captured (intermediate) video bitrate when a custom
+    /// final bitrate is set. Clamped so real-time capture stays safe.
+    private var intermediateVideoBoost: Double {
+        guard customVideoBitrate != nil else { return 1.0 }
+        let boost = Double(finalVideoBitrate) / Double(autoVideoBitrate)
+        return min(2.5, max(0.5, boost))
     }
 
     var visibleSources: Set<CaptureSource> {

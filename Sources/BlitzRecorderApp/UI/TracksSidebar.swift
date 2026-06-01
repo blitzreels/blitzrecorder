@@ -32,7 +32,7 @@ struct SourcesSidebar: View {
     private var sceneSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             subHeader("Scenes", icon: "square.split.2x1")
-            SceneLayoutControls(vm: vm)
+            SceneListControls(vm: vm)
         }
     }
 
@@ -523,6 +523,148 @@ private struct WebcamSourceMenu: View {
         .disabled(vm.state != .idle)
         .pointingHandCursor()
         .help("Choose camera source")
+    }
+}
+
+private struct SceneListControls: View {
+    @Bindable var vm: RecorderViewModel
+    @State private var showsSceneEditor = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(spacing: 6) {
+                ForEach(vm.currentScenes) { scene in
+                    sceneRow(scene)
+                }
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    showsSceneEditor.toggle()
+                } label: {
+                    Label("Edit scenes", systemImage: "slider.horizontal.3")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(.white.opacity(0.06), in: .rect(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(.white.opacity(0.08), lineWidth: 1)
+                }
+                .disabled(vm.state != .idle)
+                .opacity(vm.state == .idle ? 1 : 0.45)
+                .help(vm.state == .idle ? "Manage scenes" : "Scene editing is locked while recording")
+                .popover(isPresented: $showsSceneEditor, arrowEdge: .bottom) {
+                    SceneManagementPopover(vm: vm)
+                }
+
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private func sceneRow(_ scene: RecordingSceneDefinition) -> some View {
+        let isSelected = vm.selectedSceneID == scene.id
+        return Button {
+            vm.selectScene(scene.id)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: sceneIcon(for: scene))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(isSelected ? Color(red: 0.09, green: 1.0, blue: 0.65) : .white.opacity(0.62))
+                    .frame(width: 18, height: 18)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(scene.name)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(isSelected ? .white : .white.opacity(0.82))
+                        .lineLimit(1)
+
+                    Text(sceneDetail(for: scene))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.48))
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Color(red: 0.09, green: 1.0, blue: 0.65))
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .background(Color.white.opacity(isSelected ? 0.10 : 0.045), in: .rect(cornerRadius: 9))
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(
+                    isSelected ? Color(red: 0.09, green: 1.0, blue: 0.65).opacity(0.5) : Color.white.opacity(0.08),
+                    lineWidth: 1
+                )
+        }
+        .pointingHandCursor()
+        .help("Switch to \(scene.name)")
+    }
+
+    private func sceneIcon(for scene: RecordingSceneDefinition) -> String {
+        let visible = scene.snapshot.enabledVideoSources.subtracting(scene.snapshot.hiddenVideoSources)
+        if visible.contains(.screen), visible.contains(.camera) {
+            return "rectangle.on.rectangle"
+        }
+        if visible.contains(.screen) {
+            return "display"
+        }
+        if visible.contains(.camera) {
+            return "video.fill"
+        }
+        return "square.dashed"
+    }
+
+    private func sceneDetail(for scene: RecordingSceneDefinition) -> String {
+        let visible = scene.snapshot.enabledVideoSources.subtracting(scene.snapshot.hiddenVideoSources)
+        if visible.contains(.screen), visible.contains(.camera) {
+            return "Screen and camera"
+        }
+        if visible.contains(.screen) {
+            return "Screen only"
+        }
+        if visible.contains(.camera) {
+            return "Camera only"
+        }
+        return "No visual sources"
+    }
+}
+
+private struct SceneManagementPopover: View {
+    @Bindable var vm: RecorderViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("Edit scenes")
+                    .font(.system(size: 13, weight: .bold))
+            }
+            .foregroundStyle(.primary)
+
+            Text("Reset the current scene from a preset. Rename, duplicate, and reorder come next.")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            SceneLayoutControls(vm: vm)
+        }
+        .padding(14)
+        .frame(width: 300)
     }
 }
 
@@ -1022,7 +1164,8 @@ private struct ScreenSourceInspector: View {
                     "Full",
                     icon: "display",
                     isSelected: vm.screenCaptureAreaSelection == .fullDisplay,
-                    help: "Capture the full selected display or picked content"
+                    help: "Capture the full selected display or picked content",
+                    disabled: !enabled
                 ) {
                     vm.clearScreenCrop()
                 }
@@ -1031,29 +1174,27 @@ private struct ScreenSourceInspector: View {
                     "Window",
                     icon: "app.window",
                     isSelected: vm.screenCaptureAreaSelection == .activeWindow,
-                    help: "Fit capture to the active window"
+                    help: "Resize the active window to the current screen layout",
+                    disabled: !enabled
                 ) {
-                    vm.fitScreenItemToFrontWindow()
+                    vm.fitFrontWindowForShorts()
                 }
 
                 captureAreaButton(
                     "Crop",
                     icon: "crop",
                     isSelected: vm.screenCaptureAreaSelection == .manualCrop,
-                    help: "Pick a manual screen crop"
+                    help: "Pick a manual screen crop",
+                    disabled: !enabled || vm.state != .idle
                 ) {
                     vm.selectScreenCrop()
                 }
             }
-            .disabled(!enabled || vm.state != .idle)
 
             cropStatusRow
 
             if vm.screenCaptureAreaSelection == .activeWindow {
                 windowScaleControl
-            }
-            if vm.isScreenCropModeEnabled {
-                cropModeStatus
             }
         }
     }
@@ -1081,31 +1222,16 @@ private struct ScreenSourceInspector: View {
                         .font(.system(size: 9, weight: .bold))
                         .frame(width: 22, height: 22)
                 }
-                .blitzGlassButton()
-                .controlSize(.small)
-                .disabled(!enabled || vm.state != .idle)
-                .pointingHandCursor()
-                .help("Reset crop")
+            .blitzGlassButton()
+            .controlSize(.small)
+            .disabled(!enabled)
+            .pointingHandCursor()
+            .help("Reset crop")
             }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .background(.white.opacity(0.04), in: .rect(cornerRadius: 8))
-    }
-
-    private var cropModeStatus: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "lock")
-                .font(.system(size: 10, weight: .semibold))
-            Text("Scene locked while cropping")
-                .font(.system(size: 11, weight: .semibold))
-                .lineLimit(1)
-            Spacer(minLength: 0)
-        }
-        .foregroundStyle(accent.opacity(enabled ? 0.86 : 0.38))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(accent.opacity(0.10), in: .rect(cornerRadius: 8))
     }
 
     private var windowScaleControl: some View {
@@ -1137,18 +1263,34 @@ private struct ScreenSourceInspector: View {
                 .background(.white.opacity(0.07))
 
             HStack(spacing: 8) {
-                Text("Fit scale")
+                Text("Window zoom")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.white.opacity(enabled ? 0.56 : 0.3))
                 Spacer(minLength: 0)
+                screenSettingIconButton(
+                    "minus.magnifyingglass",
+                    help: "Zoom out and refit the active window",
+                    disabled: vm.targetWindowFitScale <= 0.75
+                ) {
+                    vm.zoomTargetWindowFit(by: -0.05)
+                }
+
                 Text(windowScaleLabel)
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.white.opacity(enabled ? 0.78 : 0.38))
                     .monospacedDigit()
 
                 screenSettingIconButton(
+                    "plus.magnifyingglass",
+                    help: "Zoom in and refit the active window",
+                    disabled: vm.targetWindowFitScale >= 1.25
+                ) {
+                    vm.zoomTargetWindowFit(by: 0.05)
+                }
+
+                screenSettingIconButton(
                     "arrow.counterclockwise",
-                    help: "Reset window scale to 100%",
+                    help: "Reset window zoom to 100%",
                     disabled: false
                 ) {
                     vm.fitFrontWindowForShorts(scale: 1.0)
@@ -1159,7 +1301,7 @@ private struct ScreenSourceInspector: View {
                 value: Binding(
                     get: { vm.targetWindowFitScale },
                     set: { value in
-                        vm.fitFrontWindowForShorts(scale: CGFloat(value))
+                        vm.setTargetWindowFitScale(CGFloat(value))
                     }
                 ),
                 in: 0.75...1.25,
@@ -1178,6 +1320,20 @@ private struct ScreenSourceInspector: View {
             .font(.system(size: 9, weight: .medium, design: .monospaced))
             .foregroundStyle(.white.opacity(enabled ? 0.34 : 0.2))
             .monospacedDigit()
+
+            Button {
+                vm.fitFrontWindowForShorts()
+            } label: {
+                Label("Fit Window", systemImage: "rectangle.arrowtriangle.2.inward")
+                    .font(.system(size: 11, weight: .bold))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 28)
+            }
+            .blitzGlassButton()
+            .controlSize(.small)
+            .disabled(!enabled)
+            .pointingHandCursor()
+            .help("Resize the active window to the current screen layout")
         }
         .padding(8)
         .background(.white.opacity(0.035), in: .rect(cornerRadius: 8))
@@ -1234,6 +1390,7 @@ private struct ScreenSourceInspector: View {
         icon: String,
         isSelected: Bool,
         help: String,
+        disabled: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -1250,6 +1407,7 @@ private struct ScreenSourceInspector: View {
             .contentShape(.rect(cornerRadius: 8))
         }
         .buttonStyle(.plain)
+        .disabled(disabled)
         .background(.white.opacity(isSelected ? 0.12 : 0.045), in: .rect(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)

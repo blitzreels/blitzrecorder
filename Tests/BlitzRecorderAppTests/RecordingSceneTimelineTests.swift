@@ -1,3 +1,4 @@
+import CoreGraphics
 import CoreMedia
 @testable import BlitzRecorderApp
 import XCTest
@@ -57,6 +58,86 @@ final class RecordingSceneTimelineTests: XCTestCase {
             settings: settings,
             sceneEvents: [RecordingSceneEvent(time: 0.2, scene: RecordingScene(settings: changedSettings))]
         ))
+    }
+
+    func testSceneAtInterpolatesDuringTransition() {
+        var initialSettings = RecordingSettings()
+        initialSettings.sceneLayout.screenFrame = CGRect(x: 0, y: 0.5, width: 1, height: 0.5)
+        initialSettings.canvasPadding = 0
+        var changedSettings = initialSettings
+        changedSettings.sceneLayout.screenFrame = CGRect(x: 0, y: 0, width: 1, height: 1)
+        changedSettings.canvasPadding = 0.1
+
+        let scene = RecordingSceneTimeline.scene(
+            at: 0.25,
+            sceneEvents: [
+                RecordingSceneEvent(
+                    time: 0,
+                    scene: RecordingScene(settings: changedSettings),
+                    transition: RecordingSceneTransition(duration: 0.5, curve: .linear)
+                )
+            ],
+            fallbackScene: RecordingScene(settings: initialSettings)
+        )
+
+        XCTAssertEqual(scene.sceneLayout.screenFrame.minY, 0.25, accuracy: 0.0001)
+        XCTAssertEqual(scene.sceneLayout.screenFrame.height, 0.75, accuracy: 0.0001)
+        XCTAssertEqual(scene.canvasPadding, 0.05, accuracy: 0.0001)
+    }
+
+    func testSceneAtStartsLaterTransitionFromCurrentInterpolatedScene() {
+        var initialSettings = RecordingSettings()
+        initialSettings.sceneLayout.screenFrame = CGRect(x: 0, y: 0.5, width: 1, height: 0.5)
+        var firstTargetSettings = initialSettings
+        firstTargetSettings.sceneLayout.screenFrame = CGRect(x: 0, y: 0, width: 1, height: 1)
+        var secondTargetSettings = initialSettings
+        secondTargetSettings.sceneLayout.screenFrame = CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)
+
+        let scene = RecordingSceneTimeline.scene(
+            at: 0.15,
+            sceneEvents: [
+                RecordingSceneEvent(
+                    time: 0,
+                    scene: RecordingScene(settings: firstTargetSettings),
+                    transition: RecordingSceneTransition(duration: 0.5, curve: .linear)
+                ),
+                RecordingSceneEvent(
+                    time: 0.1,
+                    scene: RecordingScene(settings: secondTargetSettings),
+                    transition: RecordingSceneTransition(duration: 0.5, curve: .linear)
+                )
+            ],
+            fallbackScene: RecordingScene(settings: initialSettings)
+        )
+
+        XCTAssertEqual(scene.sceneLayout.screenFrame.minX, 0.025, accuracy: 0.0001)
+        XCTAssertEqual(scene.sceneLayout.screenFrame.minY, 0.385, accuracy: 0.0001)
+        XCTAssertEqual(scene.sceneLayout.screenFrame.width, 0.95, accuracy: 0.0001)
+        XCTAssertEqual(scene.sceneLayout.screenFrame.height, 0.59, accuracy: 0.0001)
+    }
+
+    func testSegmentsSampleTransitionBoundaries() {
+        var initialSettings = RecordingSettings()
+        initialSettings.sceneLayout.screenFrame = CGRect(x: 0, y: 0.5, width: 1, height: 0.5)
+        var changedSettings = initialSettings
+        changedSettings.sceneLayout.screenFrame = CGRect(x: 0, y: 0, width: 1, height: 1)
+
+        let segments = RecordingSceneTimeline.segments(
+            sceneEvents: [
+                RecordingSceneEvent(
+                    time: 0,
+                    scene: RecordingScene(settings: changedSettings),
+                    transition: RecordingSceneTransition(duration: 0.1, curve: .linear)
+                )
+            ],
+            fallbackScene: RecordingScene(settings: initialSettings),
+            duration: CMTime(seconds: 0.2, preferredTimescale: 600)
+        )
+
+        XCTAssertGreaterThan(segments.count, 2)
+        XCTAssertTimeRange(segments[0].timeRange, startsAt: 0, duration: 1.0 / 30.0)
+        XCTAssertEqual(segments[0].scene.sceneLayout.screenFrame.minY, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(segments.last?.scene.sceneLayout.screenFrame.minY ?? -1, 0, accuracy: 0.0001)
     }
 }
 

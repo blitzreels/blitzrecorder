@@ -43,7 +43,7 @@ final class MainWindowController: NSWindowController {
         window.isMovableByWindowBackground = false
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.moveToActiveSpace]
-        window.minSize = NSSize(width: 1040, height: 720)
+        window.minSize = Self.minimumWindowContentSize
         window.backgroundColor = .black
         window.tabbingMode = .disallowed
         window.center()
@@ -55,6 +55,12 @@ final class MainWindowController: NSWindowController {
         }
         coordinator.onScreenCaptureConfigurationChanged = { [weak self] in
             self?.restartScreenPreview()
+        }
+        coordinator.onLiveScreenPreviewFrame = { [weak self] frame in
+            guard let self,
+                  self.coordinator.settings.visibleSources.contains(.screen) else { return }
+            self.previewStage.screenSourceAspectRatio = frame.sourceAspectRatio
+            self.previewStage.screenPreview.enqueuePreviewSampleBuffer(frame.sampleBuffer)
         }
         coordinator.onCameraConfigurationChanged = { [weak self] in
             self?.refreshCameraPicker()
@@ -108,8 +114,18 @@ final class MainWindowController: NSWindowController {
         previewStage.canvasPadding = coordinator.settings.canvasPadding
 
         let host = NSHostingView(rootView: MainView(vm: viewModel))
-        host.translatesAutoresizingMaskIntoConstraints = false
+        // Don't let SwiftUI's ideal size drive the window. MainView uses .frame(maxHeight: .infinity),
+        // so an unbounded ideal height would otherwise resize the whole window to the full screen on
+        // relayout (e.g. switching tabs). Empty sizingOptions + autoresizing keeps the window fixed
+        // and just fills it with the content.
+        host.sizingOptions = []
+        host.translatesAutoresizingMaskIntoConstraints = true
+        host.autoresizingMask = [.width, .height]
         window.contentView = host
+        // Re-assert the floor after installing the hosting view and clamp the content area too,
+        // so the fixed-width tab rail + sidebar + dock can't be squeezed past the point where they clip.
+        window.contentMinSize = Self.minimumWindowContentSize
+        window.minSize = Self.minimumWindowContentSize
 
         viewModel.applyState(coordinator.state)
 
@@ -125,6 +141,11 @@ final class MainWindowController: NSWindowController {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+
+    /// Smallest size the recorder layout fits without clipping: tab rail (154) + sidebar (340) +
+    /// the fixed-width preview/dock column (~492) + paddings ≈ 1044pt wide. Floor it with margin so
+    /// the preview keeps some breathing room rather than the UI clipping.
+    static let minimumWindowContentSize = NSSize(width: 1120, height: 740)
 
     private static func initialContentRect() -> NSRect {
         let fallback = NSRect(x: 0, y: 0, width: 1200, height: 820)
@@ -157,6 +178,7 @@ final class MainWindowController: NSWindowController {
         switch state {
         case .idle:
             refreshPermissionGate()
+            restartScreenPreview()
             restartCameraPreview()
         case .recording, .paused:
             showRecordingCameraPreview()
@@ -371,6 +393,7 @@ final class MainWindowController: NSWindowController {
                 }
                 refreshPermissionGate()
             } catch {
+                guard coordinator.state == .idle else { return }
                 previewStage.screenPreview.setMessage("Screen preview unavailable")
                 viewModel.applyMessage("Screen preview failed: \(error.localizedDescription)")
                 refreshPermissionGate()

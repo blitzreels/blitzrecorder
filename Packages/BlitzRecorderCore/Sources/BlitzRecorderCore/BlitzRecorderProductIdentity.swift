@@ -7,10 +7,10 @@ public enum BlitzRecorderProductIdentity {
     public static let macBundleID = "dev.blitzreels.blitzrecorder"
     public static let companionBundleID = "dev.blitzreels.blitzrecorder.camera"
 
-    public static let landingPage = URL(string: "https://www.blitzreels.com/blitzrecorder")!
-    public static let supportURL = URL(string: "https://www.blitzreels.com/blitzrecorder/support")!
-    public static let privacyURL = URL(string: "https://www.blitzreels.com/blitzrecorder/privacy")!
-    public static let termsURL = URL(string: "https://www.blitzreels.com/blitzrecorder/terms")!
+    public static let landingPage = URL(string: "https://blitzrecorder.com")!
+    public static let supportURL = URL(string: "https://blitzrecorder.com/support")!
+    public static let privacyURL = URL(string: "https://blitzrecorder.com/privacy")!
+    public static let termsURL = URL(string: "https://blitzrecorder.com/terms")!
 
     public static let macAppStoreURL: URL? = nil
     public static let companionAppStoreURL: URL? = nil

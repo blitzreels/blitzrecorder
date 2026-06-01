@@ -17,27 +17,68 @@ final class PreviewStageViewTests: XCTestCase {
         XCTAssertEqual(view.renderedCanvasAspectRatio, CaptureLayout.horizontal.aspectRatio, accuracy: 0.01)
     }
 
-    func testSelectionUsesVisibleCanvasFrameForCropFillLayer() throws {
+    func testSelectionUsesFullRenderedMediaFrameForCropFillLayer() throws {
         let view = PreviewStageView()
         view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
         view.captureLayout = .vertical
-        view.enabledSources = [.camera]
+        view.enabledSources = [.screen, .camera]
         view.selectedLayer = .camera
 
         var layout = SceneLayout()
-        layout.cameraFrame = SceneLayout.canvasFillingFrame(
-            sourceAspectRatio: SceneLayout.cameraAspectRatio,
-            canvasAspectRatio: CaptureLayout.vertical.aspectRatio
-        )
+        layout.cameraFrame = CGRect(x: -0.25, y: 0, width: 1.5, height: 1)
         view.sceneLayout = layout
         view.layoutSubtreeIfNeeded()
 
         let selectionFrame = try XCTUnwrap(view.renderedSelectionFrameForTesting)
         let canvasFrame = view.renderedCanvasFrameForTesting
-        XCTAssertEqual(selectionFrame.minX, canvasFrame.minX, accuracy: 0.0001)
-        XCTAssertEqual(selectionFrame.minY, canvasFrame.minY, accuracy: 0.0001)
-        XCTAssertEqual(selectionFrame.width, canvasFrame.width, accuracy: 0.0001)
+        let mediaFrame = view.renderedCameraFrameForTesting
+        XCTAssertLessThan(selectionFrame.minX, canvasFrame.minX)
+        XCTAssertGreaterThan(selectionFrame.width, canvasFrame.width)
+        XCTAssertRect(selectionFrame, equals: mediaFrame)
         XCTAssertEqual(selectionFrame.height, canvasFrame.height, accuracy: 0.0001)
+    }
+
+    func testCropButtonRequestsCropModeForSelectedLayer() throws {
+        let view = PreviewStageView()
+        let window = hostInWindow(view)
+        view.captureLayout = .vertical
+        view.enabledSources = [.camera]
+        view.selectedLayer = .camera
+        view.layoutSubtreeIfNeeded()
+
+        var requestedLayer: SceneLayerKind?
+        view.onCropButtonPressed = { requestedLayer = $0 }
+
+        let buttonFrame = try XCTUnwrap(view.renderedCropButtonFrameForTesting)
+        let point = CGPoint(x: buttonFrame.midX, y: buttonFrame.midY)
+        view.mouseDown(with: mouseEvent(.leftMouseDown, at: point, in: window))
+
+        XCTAssertEqual(requestedLayer, .camera)
+    }
+
+    func testCropToolbarTracksActiveCropSelection() throws {
+        let view = PreviewStageView()
+        view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
+        view.captureLayout = .vertical
+        view.enabledSources = [.camera]
+        view.selectedLayer = .camera
+        var layout = SceneLayout()
+        layout.cameraFrame = CGRect(x: 0.2, y: 0.1, width: 0.4, height: 0.2)
+        view.sceneLayout = layout
+        view.layoutSubtreeIfNeeded()
+
+        view.beginCameraCropEditing()
+
+        let selectionFrame = try XCTUnwrap(view.renderedSelectionFrameForTesting)
+        let toolbarFrame = try XCTUnwrap(view.renderedCropToolbarFrameForTesting)
+        XCTAssertEqual(toolbarFrame.midX, selectionFrame.midX, accuracy: 0.5)
+        let isAboveSelection = toolbarFrame.minY > selectionFrame.maxY
+        let isInsideSelectionTop = toolbarFrame.minY >= selectionFrame.minY && toolbarFrame.maxY <= selectionFrame.maxY
+        XCTAssertTrue(isAboveSelection || isInsideSelectionTop)
+
+        view.cancelCameraCropEditing()
+
+        XCTAssertNil(view.renderedCropToolbarFrameForTesting)
     }
 
     func testFullscreenWebcamFillsPaddedCanvasWhenPaddingIsEnabled() {
@@ -83,25 +124,59 @@ final class PreviewStageViewTests: XCTestCase {
         XCTAssertNil(view.renderedSelectionFrameForTesting)
     }
 
-    func testScreenTopEdgeResizeChangesHeightWithoutChangingWidth() {
+    func testCanSelectLayerFrameOutsideCanvas() {
         let view = PreviewStageView()
         let window = hostInWindow(view)
         view.captureLayout = .vertical
         view.enabledSources = [.screen, .camera]
-        view.selectedLayer = .screen
-        view.sceneLayout = SceneLayout.screenSplitLayout(screenHeight: 0.5)
+        view.selectedLayer = .camera
+
+        var layout = SceneLayout()
+        layout.screenFrame = CGRect(x: 0, y: 0.88, width: 1, height: 0.3)
+        layout.cameraFrame = CGRect(x: 0.1, y: 0.1, width: 0.8, height: 0.5)
+        layout.layerOrder = [.screen, .camera]
+        view.sceneLayout = layout
         view.layoutSubtreeIfNeeded()
 
+        var selectedLayer: SceneLayerKind?
+        view.onLayerSelected = { selectedLayer = $0 }
+
         let screenFrame = view.renderedScreenFrameForTesting
-        let start = CGPoint(x: screenFrame.midX, y: screenFrame.maxY)
-        let end = CGPoint(x: screenFrame.midX, y: screenFrame.maxY - 60)
+        let canvasFrame = view.renderedCanvasFrameForTesting
+        XCTAssertGreaterThan(screenFrame.maxY, canvasFrame.maxY)
+
+        let point = CGPoint(x: screenFrame.midX, y: screenFrame.maxY - 8)
+        XCTAssertFalse(canvasFrame.contains(point))
+        view.mouseDown(with: mouseEvent(.leftMouseDown, at: point, in: window))
+
+        XCTAssertEqual(selectedLayer, .screen)
+        XCTAssertEqual(view.selectedLayer, .screen)
+    }
+
+    func testNormalLayerCornerResizePreservesAspectRatio() {
+        let view = PreviewStageView()
+        let window = hostInWindow(view)
+        view.captureLayout = .vertical
+        view.enabledSources = [.screen, .camera]
+        view.selectedLayer = .camera
+        var layout = SceneLayout()
+        layout.cameraFrame = CGRect(x: 0.2, y: 0.2, width: 0.38, height: 0.28)
+        view.sceneLayout = layout
+        view.layoutSubtreeIfNeeded()
+
+        let originalFrame = view.sceneLayout.cameraFrame
+        let originalAspectRatio = originalFrame.width / originalFrame.height
+        let cameraFrame = view.renderedCameraFrameForTesting
+        let start = CGPoint(x: cameraFrame.maxX, y: cameraFrame.maxY)
+        let end = CGPoint(x: cameraFrame.maxX + 70, y: cameraFrame.maxY + 20)
         view.mouseDown(with: mouseEvent(.leftMouseDown, at: start, in: window))
         view.mouseDragged(with: mouseEvent(.leftMouseDragged, at: end, in: window))
         view.mouseUp(with: mouseEvent(.leftMouseUp, at: end, in: window))
 
-        XCTAssertEqual(view.sceneLayout.screenFrame.minX, 0, accuracy: 0.0001)
-        XCTAssertEqual(view.sceneLayout.screenFrame.width, 1, accuracy: 0.0001)
-        XCTAssertLessThan(view.sceneLayout.screenFrame.height, 0.5)
+        let resizedFrame = view.sceneLayout.cameraFrame
+        XCTAssertGreaterThan(resizedFrame.width, originalFrame.width)
+        XCTAssertGreaterThan(resizedFrame.height, originalFrame.height)
+        XCTAssertEqual(resizedFrame.width / resizedFrame.height, originalAspectRatio, accuracy: 0.0001)
     }
 
     func testLayerInteractionLockStillAllowsCameraCropEditing() {
@@ -290,6 +365,48 @@ final class PreviewStageViewTests: XCTestCase {
         XCTAssertEqual(view.renderedScreenFrameForTesting.minY, view.renderedCanvasFrameForTesting.minY, accuracy: 0.0001)
         XCTAssertEqual(view.renderedScreenFrameForTesting.width, view.renderedCanvasFrameForTesting.width, accuracy: 0.0001)
         XCTAssertEqual(view.renderedScreenFrameForTesting.height, view.renderedCanvasFrameForTesting.height, accuracy: 0.0001)
+    }
+
+    func testScreenCropEditingShowsFullSourceOutsidePortraitCanvas() throws {
+        let view = PreviewStageView()
+        view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
+        view.captureLayout = .vertical
+        view.enabledSources = [.screen]
+        view.screenSourceAspectRatio = 16.0 / 9.0
+        view.sceneLayout = SceneLayout.presetLayout(.screenFullscreen, for: .vertical)
+        view.layoutSubtreeIfNeeded()
+
+        view.beginScreenCropEditing(crop: nil)
+
+        let canvasFrame = view.renderedCanvasFrameForTesting
+        let screenFrame = view.renderedScreenFrameForTesting
+        XCTAssertLessThan(screenFrame.minX, canvasFrame.minX)
+        XCTAssertGreaterThan(screenFrame.maxX, canvasFrame.maxX)
+        XCTAssertEqual(screenFrame.height, canvasFrame.height, accuracy: 0.0001)
+
+        XCTAssertRect(try XCTUnwrap(view.renderedSelectionFrameForTesting), equals: canvasFrame)
+    }
+
+    func testScreenCropEditingCanResizeWideSourceInsidePortraitCanvas() throws {
+        let view = PreviewStageView()
+        let window = hostInWindow(view)
+        view.captureLayout = .vertical
+        view.enabledSources = [.screen]
+        view.screenSourceAspectRatio = 16.0 / 9.0
+        view.sceneLayout = SceneLayout.presetLayout(.screenFullscreen, for: .vertical)
+        view.layoutSubtreeIfNeeded()
+
+        view.beginScreenCropEditing(crop: nil)
+
+        let initialFrame = try XCTUnwrap(view.renderedSelectionFrameForTesting)
+        let start = CGPoint(x: initialFrame.maxX, y: initialFrame.midY)
+        let end = CGPoint(x: initialFrame.maxX + 80, y: initialFrame.midY)
+        view.mouseDown(with: mouseEvent(.leftMouseDown, at: start, in: window))
+        view.mouseDragged(with: mouseEvent(.leftMouseDragged, at: end, in: window))
+        view.mouseUp(with: mouseEvent(.leftMouseUp, at: end, in: window))
+
+        let resizedFrame = try XCTUnwrap(view.renderedSelectionFrameForTesting)
+        XCTAssertGreaterThan(resizedFrame.width, initialFrame.width)
     }
 
     func testStackedLayoutFitsPaddedCanvasWidthWhenPaddingIsEnabled() {

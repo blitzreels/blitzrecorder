@@ -83,7 +83,7 @@ enum OptimizedCompositionExporter {
                     AVFormatIDKey: kAudioFormatMPEG4AAC,
                     AVSampleRateKey: 48_000,
                     AVNumberOfChannelsKey: 2,
-                    AVEncoderBitRateKey: 192_000
+                    AVEncoderBitRateKey: settings.finalAudioBitrate
                 ]
             )
             guard writer.canAdd(input) else {

@@ -10,9 +10,12 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     private var writer: VideoFileWriter?
     private var settings: RecordingSettings?
     private var currentDisplay: SCDisplay?
+    private var currentPickedFilter: SCContentFilter?
+    private var currentDimensions: (width: Int, height: Int)?
     private var currentZoom: CGFloat = 1.0
     private var currentSourceRect = CGRect.zero
     private var streamError: Error?
+    private var intentionallyStoppedStream: SCStream?
 
     func start(
         url: URL,
@@ -23,6 +26,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         self.settings = settings
         currentZoom = 1.0
         streamError = nil
+        intentionallyStoppedStream = nil
 
         let filter: SCContentFilter
         let configuration: SCStreamConfiguration
@@ -30,6 +34,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 
         if let pickedFilter {
             filter = pickedFilter
+            currentPickedFilter = pickedFilter
             currentDisplay = nil
             let screenSourceGeometry = ScreenCaptureGeometry.screenSourceGeometry(for: settings, pickedFilter: pickedFilter)
             dimensions = ScreenCaptureGeometry.screenCaptureDimensions(
@@ -38,6 +43,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
             )
             configuration = streamConfigurationForPickedContent(settings: settings, filter: pickedFilter)
         } else {
+            currentPickedFilter = nil
             let content = try await SCShareableContent.current
             guard let display = ScreenCaptureGeometry.display(from: content.displays, settings: settings) else {
                 throw RecorderError.noDisplay
@@ -54,6 +60,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
             )
             configuration = streamConfiguration(for: display, settings: settings, zoom: currentZoom)
         }
+        currentDimensions = dimensions
 
         writer = try VideoFileWriter(
             url: url,
@@ -71,6 +78,47 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         self.stream = stream
     }
 
+    func update(settings: RecordingSettings, filter pickedFilter: SCContentFilter?) async throws {
+        guard let stream else {
+            self.settings = settings
+            return
+        }
+        self.settings = settings
+
+        if let pickedFilter {
+            currentPickedFilter = pickedFilter
+            currentDisplay = nil
+            try await stream.updateContentFilter(pickedFilter)
+            try await stream.updateConfiguration(streamConfigurationForPickedContent(
+                settings: settings,
+                filter: pickedFilter,
+                dimensions: currentDimensions
+            ))
+            return
+        }
+
+        let content = try await SCShareableContent.current
+        guard let display = ScreenCaptureGeometry.display(from: content.displays, settings: settings) else {
+            throw RecorderError.noDisplay
+        }
+        currentPickedFilter = nil
+        currentDisplay = display
+        let ownProcess = getpid()
+        let excludedApplications = content.applications.filter { $0.processID == ownProcess }
+        let filter = SCContentFilter(
+            display: display,
+            excludingApplications: excludedApplications,
+            exceptingWindows: []
+        )
+        try await stream.updateContentFilter(filter)
+        try await stream.updateConfiguration(streamConfiguration(
+            for: display,
+            settings: settings,
+            zoom: currentZoom,
+            dimensions: currentDimensions
+        ))
+    }
+
     func pause() {
         writer?.pause()
     }
@@ -81,6 +129,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 
     func stop() async throws -> MediaWriterCompletion {
         if let stream {
+            intentionallyStoppedStream = stream
             try? await stream.stopCapture()
         }
         stream = nil
@@ -88,8 +137,10 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         writer = nil
         if let streamError {
             self.streamError = nil
+            currentDimensions = nil
             throw RecorderError.captureStreamStopped(streamError.localizedDescription)
         }
+        currentDimensions = nil
         return completion
     }
 
@@ -115,6 +166,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
+        guard stream !== intentionallyStoppedStream else { return }
         NSLog("Screen stream stopped: \(error.localizedDescription)")
         streamError = error
     }
@@ -135,9 +187,14 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         currentZoom = target
     }
 
-    private func streamConfiguration(for display: SCDisplay, settings: RecordingSettings, zoom: CGFloat) -> SCStreamConfiguration {
+    private func streamConfiguration(
+        for display: SCDisplay,
+        settings: RecordingSettings,
+        zoom: CGFloat,
+        dimensions fixedDimensions: (width: Int, height: Int)? = nil
+    ) -> SCStreamConfiguration {
         let screenSourceGeometry = ScreenCaptureGeometry.screenSourceGeometry(for: settings, display: display)
-        let dimensions = ScreenCaptureGeometry.screenCaptureDimensions(
+        let dimensions = fixedDimensions ?? ScreenCaptureGeometry.screenCaptureDimensions(
             for: settings,
             sourceAspectRatio: screenSourceGeometry.aspectRatio()
         )
@@ -172,9 +229,13 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         return configuration
     }
 
-    private func streamConfigurationForPickedContent(settings: RecordingSettings, filter: SCContentFilter) -> SCStreamConfiguration {
+    private func streamConfigurationForPickedContent(
+        settings: RecordingSettings,
+        filter: SCContentFilter,
+        dimensions fixedDimensions: (width: Int, height: Int)? = nil
+    ) -> SCStreamConfiguration {
         let screenSourceGeometry = ScreenCaptureGeometry.screenSourceGeometry(for: settings, pickedFilter: filter)
-        let dimensions = ScreenCaptureGeometry.screenCaptureDimensions(
+        let dimensions = fixedDimensions ?? ScreenCaptureGeometry.screenCaptureDimensions(
             for: settings,
             sourceAspectRatio: screenSourceGeometry.aspectRatio()
         )

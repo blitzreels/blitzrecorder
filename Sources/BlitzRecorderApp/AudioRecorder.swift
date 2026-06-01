@@ -17,7 +17,12 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
             throw RecorderError.microphoneUnavailable
         }
 
-        writer = try AudioSampleFileWriter(url: url, timelineStartTime: timelineStartTime)
+        writer = try AudioSampleFileWriter(
+            url: url,
+            timelineStartTime: timelineStartTime,
+            stereoBitrate: settings.finalAudioBitrate,
+            format: settings.effectiveSourceAudioFormat
+        )
 
         session.beginConfiguration()
         AudioCaptureSessionCleanup.detachAudioOutputsAndRemoveAll(from: session)

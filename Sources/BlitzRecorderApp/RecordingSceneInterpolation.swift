@@ -1,0 +1,47 @@
+import CoreGraphics
+
+extension RecordingScene {
+    func interpolated(to target: RecordingScene, progress: CGFloat) -> RecordingScene {
+        let progress = min(1, max(0, progress))
+        return RecordingScene(
+            enabledSources: progress < 1 ? enabledSources.union(target.enabledSources) : target.enabledSources,
+            sceneLayout: sceneLayout.interpolated(to: target.sceneLayout, progress: progress),
+            screenSourceGeometry: progress < 1 ? screenSourceGeometry : target.screenSourceGeometry,
+            cameraCropAmount: cameraCropAmount.interpolated(to: target.cameraCropAmount, progress: progress),
+            cameraCropPosition: cameraCropPosition.interpolated(to: target.cameraCropPosition, progress: progress),
+            canvasBackgroundStyle: progress < 0.5 ? canvasBackgroundStyle : target.canvasBackgroundStyle,
+            canvasPadding: canvasPadding + (target.canvasPadding - canvasPadding) * progress
+        )
+    }
+}
+
+extension SceneLayout {
+    func interpolated(to target: SceneLayout, progress: CGFloat) -> SceneLayout {
+        let progress = min(1, max(0, progress))
+        return SceneLayout(
+            screenFrame: screenFrame.interpolated(to: target.screenFrame, progress: progress),
+            cameraFrame: cameraFrame.interpolated(to: target.cameraFrame, progress: progress),
+            layerOrder: progress < 0.5 ? layerOrder : target.layerOrder
+        )
+    }
+}
+
+private extension CGRect {
+    func interpolated(to target: CGRect, progress: CGFloat) -> CGRect {
+        CGRect(
+            x: minX + (target.minX - minX) * progress,
+            y: minY + (target.minY - minY) * progress,
+            width: width + (target.width - width) * progress,
+            height: height + (target.height - height) * progress
+        )
+    }
+}
+
+private extension CGPoint {
+    func interpolated(to target: CGPoint, progress: CGFloat) -> CGPoint {
+        CGPoint(
+            x: x + (target.x - x) * progress,
+            y: y + (target.y - y) * progress
+        )
+    }
+}

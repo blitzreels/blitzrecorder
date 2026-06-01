@@ -71,11 +71,9 @@ final class MainMenuBuilder {
     private func editMenuItem() -> NSMenuItem {
         let item = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
         let submenu = NSMenu(title: "Edit")
-        submenu.addItem(menuItem("Undo", action: Selector(("undo:")), keyEquivalent: "z", target: nil))
-        let redo = menuItem("Redo", action: Selector(("redo:")), keyEquivalent: "z", target: nil)
-        redo.keyEquivalentModifierMask = [.command, .shift]
-        submenu.addItem(redo)
-        submenu.addItem(.separator())
+        // Undo/Redo are intentionally omitted: the app has no undo manager, so they only ever
+        // applied inside the transient iPhone pairing-code field and were disabled everywhere else.
+        // Cut/Copy/Paste/Select All stay so ⌘X/⌘C/⌘V keep working in that field.
         submenu.addItem(menuItem("Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x", target: nil))
         submenu.addItem(menuItem("Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c", target: nil))
         submenu.addItem(menuItem("Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v", target: nil))

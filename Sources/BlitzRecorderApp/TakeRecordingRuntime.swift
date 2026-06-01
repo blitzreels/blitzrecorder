@@ -96,9 +96,9 @@ final class TakeRecordingRuntime {
         resetSceneTimeline()
     }
 
-    func updateScene(_ scene: RecordingScene) {
+    func updateScene(_ scene: RecordingScene, transition: RecordingSceneTransition = .cut) {
         if isUsingLiveCompositor {
-            liveCompositedRecorder.updateScene(scene)
+            liveCompositedRecorder.updateScene(scene, transition: transition)
         }
     }
 
@@ -127,12 +127,16 @@ final class TakeRecordingRuntime {
         timelineAccumulatedSeconds = 0
     }
 
-    func appendSceneEventIfNeeded(_ scene: RecordingScene, state: RecordingState) {
+    func appendSceneEventIfNeeded(
+        _ scene: RecordingScene,
+        state: RecordingState,
+        transition: RecordingSceneTransition = .cut
+    ) {
         guard state == .recording || state == .paused else { return }
         if sceneEvents.last?.scene == scene { return }
 
         let eventTime = currentSceneTime()
-        let event = RecordingSceneEvent(time: eventTime, scene: scene)
+        let event = RecordingSceneEvent(time: eventTime, scene: scene, transition: transition)
         if let last = sceneEvents.last,
            abs(last.time - eventTime) < 0.05 {
             sceneEvents[sceneEvents.count - 1] = event

@@ -93,23 +93,56 @@ enum ShortsWindowArranger {
     static func fitFrontWindow(
         displayID: String?,
         captureLayout: CaptureLayout,
+        sceneLayout: SceneLayout,
+        enabledSources: Set<CaptureSource>,
+        scale: CGFloat
+    ) throws -> ShortsWindowArrangement {
+        try fitFrontWindow(
+            displayID: displayID,
+            fittingPlan: { screen in
+                TargetWindowFitting.plan(
+                    screenFrame: screen.frame,
+                    visibleFrame: screen.visibleFrame,
+                    captureLayout: captureLayout,
+                    sceneLayout: sceneLayout,
+                    enabledSources: enabledSources,
+                    scale: scale
+                )
+            }
+        )
+    }
+
+    static func fitFrontWindow(
+        displayID: String?,
+        captureLayout: CaptureLayout,
         screenSlot: CGRect,
         scale: CGFloat
+    ) throws -> ShortsWindowArrangement {
+        try fitFrontWindow(
+            displayID: displayID,
+            fittingPlan: { screen in
+                TargetWindowFitting.plan(
+                    screenFrame: screen.frame,
+                    visibleFrame: screen.visibleFrame,
+                    captureLayout: captureLayout,
+                    screenSlot: screenSlot,
+                    scale: scale
+                )
+            }
+        )
+    }
+
+    private static func fitFrontWindow(
+        displayID: String?,
+        fittingPlan: (NSScreen) -> TargetWindowFittingPlan
     ) throws -> ShortsWindowArrangement {
         guard accessibilityTrusted(prompt: true) else {
             throw ShortsWindowArrangerError.accessibilityPermissionRequired
         }
 
         let screen = try targetScreen(displayID: displayID)
-        let targetFrame = clamped(
-            frame: SceneSlotGeometry.physicalFrame(
-                for: screenSlot,
-                in: screen.visibleFrame,
-                captureLayout: captureLayout,
-                scale: scale
-            ),
-            in: screen.visibleFrame
-        )
+        let plan = fittingPlan(screen)
+        let targetFrame = plan.windowFrame
         let targetAXFrame = accessibilityFrame(for: targetFrame, on: screen)
         let candidate = try frontmostCandidate(on: screen)
         let window = try accessibilityWindow(for: candidate)
@@ -120,14 +153,14 @@ enum ShortsWindowArranger {
             appName: candidate.ownerName,
             windowTitle: candidate.title,
             frame: targetFrame,
-            screenCrop: normalizedCrop(from: targetFrame, on: screen)
+            screenCrop: plan.screenCrop
         )
     }
 
     static func screenItemForFrontWindow(displayID: String?) throws -> ShortsWindowArrangement {
         let screen = try targetScreen(displayID: displayID)
         let candidate = try frontmostCandidate(on: screen)
-        let appKitFrame = clamped(
+        let appKitFrame = TargetWindowFitting.clamped(
             frame: appKitFrame(for: candidate.bounds, on: screen),
             in: screen.visibleFrame
         )
@@ -136,7 +169,7 @@ enum ShortsWindowArranger {
             appName: candidate.ownerName,
             windowTitle: candidate.title,
             frame: appKitFrame,
-            screenCrop: normalizedCrop(from: appKitFrame, on: screen)
+            screenCrop: TargetWindowFitting.screenCrop(for: appKitFrame, in: screen.frame)
         )
     }
 
@@ -156,7 +189,7 @@ enum ShortsWindowArranger {
             throw ShortsWindowArrangerError.noWindowFound
         }
 
-        let targetFrame = clamped(
+        let targetFrame = TargetWindowFitting.clamped(
             frame: resizing(frame, widthDelta: widthDelta, heightDelta: heightDelta),
             in: accessibilityFrame(for: screen.visibleFrame, on: screen)
         )
@@ -167,7 +200,7 @@ enum ShortsWindowArranger {
             appName: candidate.ownerName,
             windowTitle: candidate.title,
             frame: appKitFrame,
-            screenCrop: normalizedCrop(from: appKitFrame, on: screen)
+            screenCrop: TargetWindowFitting.screenCrop(for: appKitFrame, in: screen.frame)
         )
     }
 
@@ -187,7 +220,7 @@ enum ShortsWindowArranger {
             throw ShortsWindowArrangerError.noWindowFound
         }
 
-        let targetFrame = clamped(
+        let targetFrame = TargetWindowFitting.clamped(
             frame: CGRect(
                 x: frame.midX - width / 2,
                 y: frame.midY - height / 2,
@@ -203,7 +236,7 @@ enum ShortsWindowArranger {
             appName: candidate.ownerName,
             windowTitle: candidate.title,
             frame: appKitFrame,
-            screenCrop: normalizedCrop(from: appKitFrame, on: screen)
+            screenCrop: TargetWindowFitting.screenCrop(for: appKitFrame, in: screen.frame)
         )
     }
 
@@ -221,21 +254,6 @@ enum ShortsWindowArranger {
             return main
         }
         throw ShortsWindowArrangerError.displayUnavailable
-    }
-
-    private static func normalizedCrop(from frame: CGRect, on screen: NSScreen) -> CGRect {
-        let screenFrame = screen.frame
-        let local = frame.intersection(screenFrame)
-        guard !local.isEmpty, screenFrame.width > 0, screenFrame.height > 0 else {
-            return CGRect(x: 0, y: 0, width: 1, height: 1)
-        }
-
-        return CGRect(
-            x: (local.minX - screenFrame.minX) / screenFrame.width,
-            y: (screenFrame.maxY - local.maxY) / screenFrame.height,
-            width: local.width / screenFrame.width,
-            height: local.height / screenFrame.height
-        )
     }
 
     private static func accessibilityFrame(for appKitFrame: CGRect, on screen: NSScreen) -> CGRect {
@@ -365,14 +383,6 @@ enum ShortsWindowArranger {
             width: width,
             height: height
         )
-    }
-
-    private static func clamped(frame: CGRect, in bounds: CGRect) -> CGRect {
-        let width = min(frame.width, bounds.width)
-        let height = min(frame.height, bounds.height)
-        let x = min(bounds.maxX - width, max(bounds.minX, frame.minX))
-        let y = min(bounds.maxY - height, max(bounds.minY, frame.minY))
-        return CGRect(x: x, y: y, width: width, height: height)
     }
 
     private static func frame(of window: AXUIElement) -> CGRect? {

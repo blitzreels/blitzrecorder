@@ -9,22 +9,23 @@ struct RecordingSettingsPage: View {
                 Text("Export")
                     .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(.white)
-                Text("Final video quality, file type, and save location.")
+                Text("Choose how your video looks and where it gets saved.")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.white.opacity(0.55))
             }
 
-            VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 18) {
                 RecordingSettingsControls(vm: vm)
-            }
-            .padding(20)
-            .frame(width: 520, alignment: .leading)
-            .blitzGlassSurface(cornerRadius: 16)
+                    .padding(20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .blitzGlassSurface(cornerRadius: 16)
 
-            RecordingStorageSettings(vm: vm)
-                .padding(20)
-                .frame(width: 520, alignment: .leading)
-                .blitzGlassSurface(cornerRadius: 16)
+                RecordingStorageSettings(vm: vm)
+                    .padding(20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .blitzGlassSurface(cornerRadius: 16)
+            }
+            .frame(maxWidth: 900, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.horizontal, 28)
@@ -83,52 +84,64 @@ private struct RecordingStorageSettings: View {
                 }
             }
 
-            Toggle(isOn: Binding(
-                get: { vm.settings.savesSourceFiles },
-                set: { vm.setSourceFilesSaved($0) }
-            )) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Label("Save source files", systemImage: "folder.badge.plus")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.88))
-                    Text("Keeps separate screen, camera, microphone, and system audio files next to the final export.")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.52))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .toggleStyle(.switch)
-            .controlSize(.small)
-            .disabled(vm.state != .idle)
+            toggleRow(
+                title: "Save source files",
+                systemImage: "folder.badge.plus",
+                description: "Keeps separate screen, camera, microphone, and system audio files next to the final export.",
+                isOn: Binding(
+                    get: { vm.settings.savesSourceFiles },
+                    set: { vm.setSourceFilesSaved($0) }
+                )
+            )
 
-            Toggle(isOn: Binding(
-                get: { vm.settings.renamesRecordingsFromSpeech },
-                set: { vm.setSpeechRenameEnabled($0) }
-            )) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Label("Auto-name from speech", systemImage: "text.bubble")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.88))
-                    Text("Requests Speech Recognition after a mic recording, then uses the transcript for the filename.")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.52))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .toggleStyle(.switch)
-            .controlSize(.small)
-            .disabled(vm.state != .idle)
+            toggleRow(
+                title: "Auto-name from speech",
+                systemImage: "text.bubble",
+                description: "Requests Speech Recognition after a mic recording, then uses the transcript for the filename.",
+                isOn: Binding(
+                    get: { vm.settings.renamesRecordingsFromSpeech },
+                    set: { vm.setSpeechRenameEnabled($0) }
+                )
+            )
         }
+    }
+
+    private func toggleRow(
+        title: String,
+        systemImage: String,
+        description: String,
+        isOn: Binding<Bool>
+    ) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
+                Label(title, systemImage: systemImage)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.88))
+                Text(description)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.52))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Toggle("", isOn: isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .padding(.top, 1)
+        }
+        .disabled(vm.state != .idle)
     }
 }
 
 private struct RecordingSettingsControls: View {
     @Bindable var vm: RecorderViewModel
+    @State private var showsAdvanced = false
     private var canEdit: Bool { vm.state == .idle }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            optionSection("Resolution") {
+            optionSection("Quality") {
                 LazyVGrid(
                     columns: [
                         GridItem(.flexible(), spacing: 10),
@@ -140,7 +153,7 @@ private struct RecordingSettingsControls: View {
                         let dimensions = resolution.dimensions(for: vm.settings.layout)
                         optionButton(
                             title: resolution.displayName,
-                            detail: "\(dimensions.width)x\(dimensions.height)",
+                            detail: "\(dimensions.width) × \(dimensions.height)",
                             systemImage: "rectangle.dashed",
                             isSelected: vm.settings.outputResolution == resolution
                         ) {
@@ -150,45 +163,215 @@ private struct RecordingSettingsControls: View {
                 }
             }
 
-            HStack(alignment: .top, spacing: 16) {
-                optionSection("Framerate") {
-                    HStack(spacing: 8) {
-                        ForEach(RecordingSettings.supportedFrameRates, id: \.self) { fps in
-                            compactOptionButton(
-                                title: "\(fps)",
-                                detail: "fps",
-                                isSelected: vm.settings.framesPerSecond == fps
-                            ) {
-                                vm.setFrameRate(fps)
-                            }
+            optionSection("Smoothness") {
+                HStack(spacing: 8) {
+                    ForEach(RecordingSettings.supportedFrameRates, id: \.self) { fps in
+                        pillButton(
+                            title: "\(fps) fps",
+                            detail: frameRateLabel(fps),
+                            isSelected: vm.settings.framesPerSecond == fps
+                        ) {
+                            vm.setFrameRate(fps)
                         }
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                optionSection("Container") {
-                    HStack(spacing: 8) {
-                        ForEach(OutputVideoFormat.allCases, id: \.self) { format in
-                            compactOptionButton(
-                                title: format.displayName,
-                                detail: "",
-                                isSelected: vm.settings.outputVideoFormat == format
-                            ) {
-                                vm.setFormat(format)
-                            }
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
+            optionSection("File type") {
+                VStack(spacing: 8) {
+                    ForEach(OutputVideoFormat.allCases, id: \.self) { format in
+                        formatRow(
+                            title: format.displayName,
+                            description: format.plainDescription,
+                            isSelected: vm.settings.outputVideoFormat == format
+                        ) {
+                            vm.setFormat(format)
+                        }
+                    }
+                }
+                Text("All three keep the same crisp video quality.")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.42))
+            }
+
+            advancedSection
+
             if !canEdit {
-                Label("Recording settings are locked while capture is active.", systemImage: "lock.fill")
+                Label("Settings are locked while recording.", systemImage: "lock.fill")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.55))
             }
         }
         .opacity(canEdit ? 1 : 0.62)
+    }
+
+    @ViewBuilder
+    private var advancedSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Divider()
+                .background(Color.white.opacity(0.08))
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    showsAdvanced.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Text("Advanced")
+                        .font(.system(size: 10, weight: .heavy))
+                        .tracking(0.7)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 8, weight: .heavy))
+                        .rotationEffect(.degrees(showsAdvanced ? 90 : 0))
+                    Text("for podcasts and courses")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.34))
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(.white.opacity(0.52))
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .pointingHandCursor()
+
+            if showsAdvanced {
+                videoDetailControl
+                audioQualityControl
+                sourceAudioControl
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var sourceAudioControl: some View {
+        optionSection("Source audio") {
+            if vm.settings.savesSourceFiles {
+                VStack(spacing: 8) {
+                    ForEach(SourceAudioFormat.allCases, id: \.self) { format in
+                        formatRow(
+                            title: format.displayName,
+                            description: format.plainDescription,
+                            isSelected: vm.settings.sourceAudioFormat == format
+                        ) {
+                            vm.setSourceAudioFormat(format)
+                        }
+                    }
+                }
+                Text("Sets the format for your saved mic and system-audio files.")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.42))
+            } else {
+                Text("Turn on Save source files to pick this.")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.4))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var videoDetailControl: some View {
+        let isAuto = vm.settings.customVideoBitrate == nil
+        let mbps = Double(vm.settings.finalVideoBitrate) / 1_000_000
+
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("Video detail")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.78))
+                Spacer(minLength: 0)
+                modeChip("Auto", isSelected: isAuto) {
+                    vm.setCustomVideoBitrate(nil)
+                }
+                modeChip("Custom", isSelected: !isAuto) {
+                    if vm.settings.customVideoBitrate == nil {
+                        vm.setCustomVideoBitrate(vm.settings.autoVideoBitrate)
+                    }
+                }
+            }
+
+            Slider(
+                value: customMbpsBinding,
+                in: Double(RecordingSettings.minCustomVideoBitrate / 1_000_000)
+                    ... Double(RecordingSettings.maxCustomVideoBitrate / 1_000_000),
+                step: 1
+            )
+            .controlSize(.small)
+            .tint(.white)
+            .disabled(isAuto || !canEdit)
+
+            HStack(spacing: 8) {
+                Text(isAuto
+                    ? "Auto picks a good size for you."
+                    : "Higher keeps more detail but makes bigger files.")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.46))
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Text("\(Int(mbps.rounded())) Mbps")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white.opacity(isAuto ? 0.5 : 0.88))
+                    .monospacedDigit()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var audioQualityControl: some View {
+        optionSection("Audio quality") {
+            VStack(spacing: 8) {
+                ForEach(AudioQuality.allCases, id: \.self) { quality in
+                    formatRow(
+                        title: quality.displayName,
+                        description: "\(quality.plainDescription) · \(quality.detail)",
+                        isSelected: vm.settings.audioQuality == quality
+                    ) {
+                        vm.setAudioQuality(quality)
+                    }
+                }
+            }
+        }
+    }
+
+    private var customMbpsBinding: Binding<Double> {
+        Binding(
+            get: {
+                let bps = vm.settings.customVideoBitrate ?? vm.settings.autoVideoBitrate
+                return Double(bps) / 1_000_000
+            },
+            set: { newMbps in
+                vm.setCustomVideoBitrate(Int(newMbps.rounded()) * 1_000_000)
+            }
+        )
+    }
+
+    private func modeChip(
+        _ title: String,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(isSelected ? .black : .white.opacity(0.72))
+                .padding(.horizontal, 11)
+                .frame(height: 24)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(isSelected ? Color.white : Color.white.opacity(0.08))
+                )
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .disabled(!canEdit)
+        .pointingHandCursor()
+    }
+
+    private func frameRateLabel(_ fps: Int) -> String {
+        switch fps {
+        case ...24: return "Movie"
+        case 25...30: return "Normal"
+        default: return "Smooth"
+        }
     }
 
     private func optionSection<Content: View>(
@@ -248,26 +431,25 @@ private struct RecordingSettingsControls: View {
         .help(title)
     }
 
-    private func compactOptionButton(
+    private func pillButton(
         title: String,
         detail: String,
         isSelected: Bool,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            VStack(spacing: 1) {
+            VStack(spacing: 2) {
                 Text(title)
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(isSelected ? .black : .white.opacity(0.84))
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(isSelected ? .black : .white.opacity(0.86))
                     .lineLimit(1)
-                if !detail.isEmpty {
-                    Text(detail)
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(isSelected ? .black.opacity(0.58) : .white.opacity(0.46))
-                        .lineLimit(1)
-                }
+                Text(detail)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(isSelected ? .black.opacity(0.55) : .white.opacity(0.46))
+                    .lineLimit(1)
             }
-            .frame(width: 58, height: 42)
+            .frame(maxWidth: .infinity)
+            .frame(height: 48)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -281,7 +463,47 @@ private struct RecordingSettingsControls: View {
         }
         .disabled(!canEdit)
         .pointingHandCursor()
-        .help(detail.isEmpty ? title : "\(title) \(detail)")
+        .help("\(title) — \(detail)")
+    }
+
+    private func formatRow(
+        title: String,
+        description: String,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Text(title)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(isSelected ? .black : .white.opacity(0.86))
+                    .frame(width: 58, alignment: .leading)
+
+                Text(description)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(isSelected ? .black.opacity(0.62) : .white.opacity(0.56))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(isSelected ? .black.opacity(0.72) : .white.opacity(0.26))
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 44)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(isSelected ? Color.white : Color.white.opacity(0.055))
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(isSelected ? Color.white.opacity(0.0) : Color.white.opacity(0.08), lineWidth: 1)
+        }
+        .disabled(!canEdit)
+        .pointingHandCursor()
+        .help("\(title): \(description)")
     }
 }
 
