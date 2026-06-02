@@ -1,0 +1,59 @@
+name: Bug report
+description: Report something that is broken or behaving unexpectedly.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. Please do not include secrets, private logs, customer data, or unpublished recordings.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the bug in a few sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the smallest set of steps that triggers the issue.
+      placeholder: |
+        1. Open BlitzRecorder
+        2. Choose ...
+        3. Press ...
+    validations:
+      required: true
+  - type: dropdown
+    id: app
+    attributes:
+      label: Affected app
+      options:
+        - BlitzRecorder for macOS
+        - BlitzRecorder Camera for iOS
+        - Website
+        - Build or release pipeline
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      placeholder: "0.1.0 build 1"
+  - type: input
+    id: os
+    attributes:
+      label: OS version
+      placeholder: "macOS 15.0 or iOS 18.0"
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+  - type: textarea
+    id: extra
+    attributes:
+      label: Extra context
+      description: Add screenshots or logs only if they do not contain private information.

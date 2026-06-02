@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 EXPECTED_MIN_MACOS="${EXPECTED_MIN_MACOS:-15.0}"
+EXPECTED_ARCHS="${EXPECTED_ARCHS:-arm64 x86_64}"
 ASSESS_DMG="${ASSESS_DMG:-${NOTARIZE:-0}}"
 
 cd "$ROOT"
@@ -43,6 +44,14 @@ BINARY_PATH="$APP_PATH/Contents/MacOS/BlitzRecorder"
 INFO_PLIST="$APP_PATH/Contents/Info.plist"
 
 test -x "$BINARY_PATH"
+
+ACTUAL_ARCHS="$(lipo -archs "$BINARY_PATH")"
+for EXPECTED_ARCH in $EXPECTED_ARCHS; do
+  if ! printf ' %s ' "$ACTUAL_ARCHS" | grep -q " $EXPECTED_ARCH "; then
+    echo "error: $BINARY_PATH is missing architecture $EXPECTED_ARCH. Found: $ACTUAL_ARCHS" >&2
+    exit 1
+  fi
+done
 
 MIN_MACOS="$(plutil -extract LSMinimumSystemVersion raw "$INFO_PLIST")"
 if [[ "$MIN_MACOS" != "$EXPECTED_MIN_MACOS" ]]; then

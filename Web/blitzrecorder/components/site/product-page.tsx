@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { ProductShell } from "@/components/site/product-shell";
 import { CheckItem } from "@/components/site/check-item";
+import { DownloadButton, VersionTag } from "@/components/site/download-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Section } from "@/components/ui/layout";
@@ -13,19 +14,21 @@ import { pages, type ProductPageData, type ProductScreen } from "@/lib/content";
 export function ProductPage({ variant }: { variant: "ios" | "macos" }) {
   const page = pages[variant];
   const other = variant === "ios" ? "macos" : "ios";
+  // Only the Mac app ships a DMG; the iOS companion keeps the App Store CTA.
+  const isMac = variant === "macos";
   return (
     <ProductShell>
       <main>
-        <Hero page={page} />
+        <Hero page={page} isMac={isMac} />
         <CopyBlock page={page} />
         <Screens page={page} />
-        <ClosingCTA page={page} other={other} />
+        <ClosingCTA page={page} other={other} isMac={isMac} />
       </main>
     </ProductShell>
   );
 }
 
-function Hero({ page }: { page: ProductPageData }) {
+function Hero({ page, isMac }: { page: ProductPageData; isMac: boolean }) {
   return (
     <Section className="grid grid-cols-1 items-center gap-12 pt-28 pb-16 sm:pt-32 lg:grid-cols-[minmax(0,0.92fr)_minmax(420px,1fr)] lg:gap-16">
       <div className="min-w-0">
@@ -38,9 +41,13 @@ function Hero({ page }: { page: ProductPageData }) {
         </Heading>
         <Paragraph className="mt-6 max-w-xl sm:text-xl">{page.hero}</Paragraph>
         <div className="mt-8 flex flex-wrap items-center gap-3">
-          <Button render={<Link href="/#pricing" />} className="h-12 rounded-full px-7 text-base">
-            Request access
-          </Button>
+          {isMac ? (
+            <DownloadButton className="h-12 rounded-full px-7 text-base" />
+          ) : (
+            <Button render={<Link href="/#pricing" />} className="h-12 rounded-full px-7 text-base">
+              Request access
+            </Button>
+          )}
           <Button variant="outline" render={<Link href="/#how" />} className="h-12 rounded-full px-7 text-base">
             See how it works
           </Button>
@@ -48,6 +55,9 @@ function Hero({ page }: { page: ProductPageData }) {
         <Paragraph tone="faint" size="sm" className="mt-5">
           {page.requirement}
         </Paragraph>
+        {isMac ? (
+          <VersionTag className="mt-2 inline-flex font-mono text-xs text-muted-foreground transition-colors hover:text-foreground" />
+        ) : null}
       </div>
       <div className="grid min-w-0 place-items-center">
         {page.previewKind === "phone" ? <PhoneFrame src={page.preview} /> : <MacFrame src={page.preview} />}
@@ -134,7 +144,15 @@ function ScreenCard({ screen, index }: { screen: ProductScreen; index: number })
   );
 }
 
-function ClosingCTA({ page, other }: { page: ProductPageData; other: "ios" | "macos" }) {
+function ClosingCTA({
+  page,
+  other,
+  isMac,
+}: {
+  page: ProductPageData;
+  other: "ios" | "macos";
+  isMac: boolean;
+}) {
   const otherLabel = other === "ios" ? "the iPhone camera app" : "the Mac app";
   return (
     <Section width="sm" className="grid place-items-center border-t border-border py-24 text-center">
@@ -149,9 +167,13 @@ function ClosingCTA({ page, other }: { page: ProductPageData; other: "ios" | "ma
         Start recording in studio quality.
       </Heading>
       <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-        <Button render={<Link href="/#pricing" />} className="h-12 rounded-full px-7 text-base">
-          Request access
-        </Button>
+        {isMac ? (
+          <DownloadButton className="h-12 rounded-full px-7 text-base" />
+        ) : (
+          <Button render={<Link href="/#pricing" />} className="h-12 rounded-full px-7 text-base">
+            Request access
+          </Button>
+        )}
         <Button
           variant="outline"
           render={<Link href={`/${other}`} />}

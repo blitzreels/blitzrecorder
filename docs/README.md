@@ -1,6 +1,6 @@
-# BlitzRecorder Docs
+# BlitzRecorder docs
 
-This folder keeps product, development, release, and platform-behavior notes out of the top-level README.
+This folder keeps product, development, release, and platform notes out of the top-level README.
 
 ## Product
 
@@ -15,7 +15,7 @@ This folder keeps product, development, release, and platform-behavior notes out
 - [Architecture](architecture.md): app targets, shared packages, source layout, and implementation notes
 - [Release](release.md): GitHub Actions, DMG packaging, TestFlight, App Store release, and local release scripts
 
-## Related Project Files
+## Related project files
 
 - [../AppStore/Metadata.md](../AppStore/Metadata.md): App Store metadata index
 - [../AppStore/CI.md](../AppStore/CI.md): App Store and CI secret setup

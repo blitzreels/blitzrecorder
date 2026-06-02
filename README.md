@@ -1,17 +1,17 @@
 # BlitzRecorder
 
-Native Mac screen recording studio with an iPhone camera companion.
+A native Mac screen recorder with an iPhone camera companion.
 
 [Website](https://blitzrecorder.com)
 
-BlitzRecorder helps creators record product demos, tutorials, walkthroughs, and short-form videos from one focused Mac workspace. It captures screen, camera, microphone, and system audio, with optional iPhone camera capture for higher-quality talking-head shots.
+BlitzRecorder helps creators record product demos, tutorials, walkthroughs, and short videos from one Mac workspace. It captures screen, camera, microphone, and system audio. You can also pair an iPhone and use it as the camera for talking-head shots.
 
 ## Features
 
 - Record a display, window, app, camera, microphone, and Mac system audio.
 - Frame 16:9 and 9:16 videos before pressing record.
 - Pair an iPhone as a remote camera with live preview and supported camera controls.
-- Keep source files available so failed exports do not mean lost recordings.
+- Keep source files when possible, so failed exports do not mean lost recordings.
 - Open, reveal, rename, move, or retry a take after recording.
 
 ## Apps
@@ -30,6 +30,12 @@ Requirements:
 - Swift Package Manager
 - XcodeGen when regenerating the Xcode project
 - Node.js for the website
+
+Issues and pull requests are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening larger changes.
+
+Security reports should be sent by email. See [SECURITY.md](SECURITY.md).
+
+Release notes are tracked in [CHANGELOG.md](CHANGELOG.md) and GitHub Releases.
 
 Generate the Xcode project:
 
@@ -73,4 +79,11 @@ docs/                        Product, development, and release notes
 
 ## Status
 
-BlitzRecorder is in active development. The public website is available at [blitzrecorder.com](https://blitzrecorder.com).
+BlitzRecorder is in active development. The public website is [blitzrecorder.com](https://blitzrecorder.com).
+
+## License
+
+BlitzRecorder uses a dual-license model:
+
+- Open source under the GNU Affero General Public License v3.0 only. See [LICENSE](LICENSE).
+- Commercial licenses are available for organizations that need non-AGPL terms. See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).

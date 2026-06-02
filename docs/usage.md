@@ -1,8 +1,8 @@
-# User Workflow
+# User workflow
 
-This is the product-level workflow BlitzRecorder should make obvious in the app.
+The app should make this workflow clear.
 
-## Record a Mac Video
+## Record a Mac video
 
 1. Choose the screen source.
 2. Choose an optional camera source.
@@ -13,7 +13,7 @@ This is the product-level workflow BlitzRecorder should make obvious in the app.
 7. Pause and resume if needed.
 8. Stop and wait for the final export.
 
-## Use an iPhone as Camera
+## Use an iPhone as a camera
 
 1. Open BlitzRecorder Camera on iPhone.
 2. Keep the iPhone and Mac on the same local network.
@@ -23,7 +23,7 @@ This is the product-level workflow BlitzRecorder should make obvious in the app.
 6. Record from the Mac.
 7. Keep the iPhone app open until the camera file transfers back.
 
-## After Recording
+## After recording
 
 The post-recording state should always make the next action clear:
 
@@ -34,6 +34,6 @@ The post-recording state should always make the next action clear:
 - Retry export from recovery files when possible.
 - Start a new take.
 
-## Recovery Expectations
+## Recovery expectations
 
 A failed export should not feel like a lost recording. BlitzRecorder should keep source files when possible and show the recovery folder with a retry path when enough media exists.

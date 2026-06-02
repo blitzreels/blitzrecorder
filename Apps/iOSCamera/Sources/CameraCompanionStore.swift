@@ -94,6 +94,14 @@ final class CameraCompanionStore {
     var isLiveCameraPreviewEnabled: Bool {
         !isScreenshotMode && isPairedWithMac && camera.isPreviewRunning
     }
+    /// A bundled face-cam frame shown as the live preview in paired screenshot
+    /// variants (connected / recording / transfer); nil otherwise.
+    var screenshotPreviewImage: UIImage? { cachedScreenshotPreviewImage }
+    /// True when a camera surface fills the screen — the real live preview or
+    /// the bundled screenshot preview image used for App Store captures.
+    var isCameraSurfaceVisible: Bool {
+        isLiveCameraPreviewEnabled || screenshotPreviewImage != nil
+    }
     var canRetryConnection: Bool {
         switch connectionState {
         case .degraded, .disconnected, .unavailable:
@@ -168,6 +176,15 @@ final class CameraCompanionStore {
     private var previewFrameSendInFlight = false
     private var lastPreviewFrameSentAt: Date?
     private let isScreenshotMode: Bool
+    private let screenshotVariant: String
+    @ObservationIgnored private lazy var cachedScreenshotPreviewImage: UIImage? = {
+        guard isScreenshotMode,
+              ["connected", "recording", "transfer"].contains(screenshotVariant),
+              let url = Bundle.main.url(forResource: "ScreenshotPreview", withExtension: "jpg") else {
+            return nil
+        }
+        return UIImage(contentsOfFile: url.path)
+    }()
     private let defaults = UserDefaults.standard
     private let trustedMacStore = RemoteCameraTrustedMacStore()
     private let deviceID: UUID
@@ -210,6 +227,7 @@ final class CameraCompanionStore {
     init() {
         isScreenshotMode = ProcessInfo.processInfo.environment["BLITZRECORDER_CAMERA_SCREENSHOT_MODE"] == "1"
             || ProcessInfo.processInfo.arguments.contains("--blitzrecorder-camera-screenshot-mode")
+        screenshotVariant = Self.resolveScreenshotVariant()
         deviceID = Self.loadDeviceID(defaults: UserDefaults.standard)
         keepsRecordingsAfterMacImport = UserDefaults.standard.bool(forKey: Key.keepsRecordingsAfterMacImport)
     }
@@ -322,22 +340,68 @@ final class CameraCompanionStore {
         }
     }
 
+    /// Resolves the App Store screenshot variant from the launch environment.
+    /// `BLITZRECORDER_CAMERA_SCREENSHOT_VARIANT` (set by the capture script) or a
+    /// `--blitzrecorder-camera-screenshot-variant=<name>` argument; defaults to pairing.
+    private static func resolveScreenshotVariant() -> String {
+        let env = ProcessInfo.processInfo.environment
+        if let value = env["BLITZRECORDER_CAMERA_SCREENSHOT_VARIANT"], !value.isEmpty {
+            return value.lowercased()
+        }
+        let prefix = "--blitzrecorder-camera-screenshot-variant="
+        if let arg = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix(prefix) }) {
+            return String(arg.dropFirst(prefix.count)).lowercased()
+        }
+        return "pairing"
+    }
+
     private func configureForScreenshotMode() {
         refreshDeviceState()
-        connectionState = .discovering
-        recordingPhase = .idle
-        pairedMacName = nil
-        elapsedSeconds = 0
+        // Shared, deterministic baseline so captures are reproducible.
         availableLenses = [.wide]
         activeSettings = RemoteCameraSettings(lens: .wide, zoomFactor: 1)
         pendingRecordings = []
         pendingRecordingCount = 0
         pendingRecordingsByteCountLabel = "0 KB"
-        transferProgressLabel = "Idle"
         previewHealthLabel = "Waiting"
         listeningPortLabel = "Ready"
         thermalStateLabel = "Nominal"
-        statusMessage = "Waiting for Mac pairing"
+        pairingCode = "428913"
+
+        switch screenshotVariant {
+        case "connected":
+            isPairedWithMac = true
+            pairedMacName = "BlitzRecorder"
+            connectionState = .connected
+            recordingPhase = .idle
+            elapsedSeconds = 0
+            transferProgressLabel = "Ready"
+            statusMessage = "Ready for Mac control"
+        case "recording":
+            isPairedWithMac = true
+            pairedMacName = "BlitzRecorder"
+            connectionState = .connected
+            recordingPhase = .recording
+            elapsedSeconds = 47
+            transferProgressLabel = "Live"
+            statusMessage = "Recording for BlitzRecorder"
+        case "transfer":
+            isPairedWithMac = true
+            pairedMacName = "BlitzRecorder"
+            connectionState = .connected
+            recordingPhase = .transferring
+            elapsedSeconds = 0
+            transferProgressLabel = "Sending 100%"
+            statusMessage = "Saving the clip to your Mac"
+        default: // "pairing"
+            isPairedWithMac = false
+            pairedMacName = nil
+            connectionState = .discovering
+            recordingPhase = .idle
+            elapsedSeconds = 0
+            transferProgressLabel = "Idle"
+            statusMessage = "Waiting for Mac pairing"
+        }
     }
 
     func stopFromPhone() {

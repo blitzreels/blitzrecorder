@@ -5,6 +5,7 @@ enum ScreenCropPickerError: LocalizedError {
     case displayUnavailable
     case cancelled
     case selectionTooSmall
+    case selectionInProgress
 
     var errorDescription: String? {
         switch self {
@@ -14,6 +15,8 @@ enum ScreenCropPickerError: LocalizedError {
             return "Screen region selection cancelled."
         case .selectionTooSmall:
             return "Selected screen region is too small."
+        case .selectionInProgress:
+            return "Screen region selection is already open."
         }
     }
 }
@@ -24,6 +27,9 @@ final class ScreenCropPicker {
     private var continuation: CheckedContinuation<CGRect, Error>?
 
     func pick(displayID: String?, initialCrop: CGRect? = nil) async throws -> CGRect {
+        guard continuation == nil else {
+            throw ScreenCropPickerError.selectionInProgress
+        }
         guard let screen = targetScreen(displayID: displayID) else {
             throw ScreenCropPickerError.displayUnavailable
         }

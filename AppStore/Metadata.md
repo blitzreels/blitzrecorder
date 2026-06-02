@@ -20,7 +20,7 @@ Shared product details:
 - Monthly subscription price: $7.99 per month
 - Annual subscription product ID: `dev.blitzreels.blitzrecorder.pro.annual`
 - Annual subscription price: $49.99 per year
-- Free behavior: 3 exports/renders before Pro is required
+- Free behavior: 10 exports/renders before Pro is required
 - Marketing URL: `https://www.blitzreels.com/blitzrecorder`
 - Support URL: `https://www.blitzreels.com/blitzrecorder/support`
 - Privacy URL: `https://www.blitzreels.com/blitzrecorder/privacy`

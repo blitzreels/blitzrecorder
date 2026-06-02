@@ -1,5 +1,14 @@
 import Foundation
 
+enum RemoteCameraImportPhase: String, Codable, Equatable {
+    case waitingForStop
+    case ready
+    case transferring
+    case complete
+    case failedRecoverable
+    case failedUnrecoverable
+}
+
 struct RemoteCameraPendingImport: Codable, Equatable {
     var takeID: UUID
     var serviceID: String?
@@ -7,6 +16,46 @@ struct RemoteCameraPendingImport: Codable, Equatable {
     var destinationURL: URL
     var createdAt: Date
     var expectedByteCount: Int64?
+    var phase: RemoteCameraImportPhase
+
+    init(
+        takeID: UUID,
+        serviceID: String?,
+        scratchDirectory: URL,
+        destinationURL: URL,
+        createdAt: Date,
+        expectedByteCount: Int64?,
+        phase: RemoteCameraImportPhase = .waitingForStop
+    ) {
+        self.takeID = takeID
+        self.serviceID = serviceID
+        self.scratchDirectory = scratchDirectory
+        self.destinationURL = destinationURL
+        self.createdAt = createdAt
+        self.expectedByteCount = expectedByteCount
+        self.phase = phase
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case takeID
+        case serviceID
+        case scratchDirectory
+        case destinationURL
+        case createdAt
+        case expectedByteCount
+        case phase
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        takeID = try container.decode(UUID.self, forKey: .takeID)
+        serviceID = try container.decodeIfPresent(String.self, forKey: .serviceID)
+        scratchDirectory = try container.decode(URL.self, forKey: .scratchDirectory)
+        destinationURL = try container.decode(URL.self, forKey: .destinationURL)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        expectedByteCount = try container.decodeIfPresent(Int64.self, forKey: .expectedByteCount)
+        phase = try container.decodeIfPresent(RemoteCameraImportPhase.self, forKey: .phase) ?? .waitingForStop
+    }
 }
 
 enum RemoteCameraTakeIDResolver {
@@ -62,6 +111,13 @@ struct RemoteCameraPendingImportStore {
         var imports = all(settings: settings)
         guard let index = imports.firstIndex(where: { $0.takeID == takeID }) else { return }
         imports[index].expectedByteCount = expectedByteCount
+        save(imports, settings: settings)
+    }
+
+    func updatePhase(takeID: UUID, phase: RemoteCameraImportPhase, settings: RecordingSettings) {
+        var imports = all(settings: settings)
+        guard let index = imports.firstIndex(where: { $0.takeID == takeID }) else { return }
+        imports[index].phase = phase
         save(imports, settings: settings)
     }
 

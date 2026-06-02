@@ -57,7 +57,7 @@ Scripts/app-store-connect-bootstrap.py --apply
 
 Important review context:
 
-- The Mac app includes `3 free exports`.
+- The Mac app includes `10 free exports`.
 - BlitzRecorder Pro is sold through auto-renewable App Store subscriptions at `$7.99 per month` and `$49.99 per year`.
 - Eligible active BlitzReels subscribers can unlock included Pro access by signing in from the Plan popover.
 - The iOS app is a companion app and should be reviewed with the Mac app when possible.
@@ -106,7 +106,7 @@ Create the subscription under the macOS app record.
 
 Subscription review notes:
 
-- The subscription unlocks unlimited Mac exports/renders after the `3 free exports` are used.
+- The subscription unlocks unlimited Mac exports/renders after the `10 free exports` are used.
 - Purchase, restore, and subscription management are handled in the macOS app through StoreKit.
 - The iOS companion app does not sell or restore the subscription.
 - BlitzReels included access is a separate entitlement path for eligible active BlitzReels subscribers and does not bill through the iOS companion.
@@ -153,7 +153,7 @@ Minimum reviewer instructions:
 2. Install BlitzRecorder Camera on iPhone or iPad.
 3. Use both devices on the same local network.
 4. Pair using the six-digit code shown by the iOS app.
-5. Verify the Mac app allows `3 free exports`.
+5. Verify the Mac app allows `10 free exports`.
 6. Use StoreKit sandbox to test subscription purchase and restore.
 7. Optional: sign in with the provided BlitzReels account from the Mac Plan popover to verify included access.
 

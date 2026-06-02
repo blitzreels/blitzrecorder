@@ -295,7 +295,7 @@ require_contains "AppStore/Metadata-macOS.md" "$expected_product_id"
 require_contains "AppStore/Metadata-macOS.md" "$expected_annual_product_id"
 require_contains "AppStore/Metadata-macOS.md" '$7.99 per month'
 require_contains "AppStore/Metadata-macOS.md" '$49.99 per year'
-require_contains "AppStore/Metadata-macOS.md" "3 free exports"
+require_contains "AppStore/Metadata-macOS.md" "10 free exports"
 require_contains "AppStore/Metadata-macOS.md" "macOS Keychain"
 require_contains "AppStore/Metadata-iOS.md" "dev.blitzreels.blitzrecorder.camera"
 require_contains "AppStore/Metadata-iOS.md" "$expected_product_id"
@@ -384,7 +384,7 @@ require_contains "AppStore/ReviewNotes.md" "$expected_annual_product_id"
 require_contains "AppStore/ReviewNotes.md" '$7.99 per month'
 require_contains "AppStore/ReviewNotes.md" '$49.99 per year'
 require_contains "AppStore/ReviewNotes.md" "redirects to BlitzReels login"
-require_contains "AppStore/ReviewNotes.md" "3 free exports"
+require_contains "AppStore/ReviewNotes.md" "10 free exports"
 require_contains "AppStore/ReviewNotes.md" "optional source camera audio"
 require_contains "AppStore/ReviewNotes.md" "macOS Keychain"
 require_contains "AppStore/Metadata.md" "AppStore/ReviewNotes.md"
@@ -445,7 +445,7 @@ require_contains "AppStore/AppStoreConnectManualSetup.md" "$expected_product_id"
 require_contains "AppStore/AppStoreConnectManualSetup.md" "$expected_annual_product_id"
 require_contains "AppStore/AppStoreConnectManualSetup.md" '$7.99 per month'
 require_contains "AppStore/AppStoreConnectManualSetup.md" '$49.99 per year'
-require_contains "AppStore/AppStoreConnectManualSetup.md" "3 free exports"
+require_contains "AppStore/AppStoreConnectManualSetup.md" "10 free exports"
 require_contains "AppStore/AppStoreConnectManualSetup.md" "AppStore/Metadata-macOS.md"
 require_contains "AppStore/AppStoreConnectManualSetup.md" "AppStore/Metadata-iOS.md"
 require_contains "AppStore/AppStoreConnectManualSetup.md" "AppStore/AppStoreConnectFields.generated.json"
@@ -466,7 +466,7 @@ require_contains "AppStore/AppStoreQuestionnaires.md" "iOS companion has no in-a
 require_contains "AppStore/AppStoreQuestionnaires.md" "Users are responsible for rights"
 require_contains "Web/blitzrecorder/index.html" '$7.99 per month'
 require_contains "Web/blitzrecorder/index.html" '$49.99 per year'
-require_contains "Web/blitzrecorder/index.html" "3 free exports"
+require_contains "Web/blitzrecorder/index.html" "10 free exports"
 require_contains "Web/blitzrecorder/index.html" "eligible BlitzReels subscribers"
 require_contains "Web/blitzrecorder/src/main.jsx" '$7.99 per month'
 require_contains "Web/blitzrecorder/src/main.jsx" '$49.99 per year'

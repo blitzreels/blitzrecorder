@@ -22,29 +22,59 @@ final class AccessControllerTests: XCTestCase {
         let access = AccessController(defaults: defaults)
 
         XCTAssertTrue(access.canRenderExport)
-        XCTAssertEqual(access.freeExportsRemaining, 3)
+        XCTAssertEqual(access.freeExportsRemaining, ProductConfiguration.freeExportLimit)
 
-        access.recordSuccessfulExportIfNeeded()
-        access.recordSuccessfulExportIfNeeded()
-        access.recordSuccessfulExportIfNeeded()
+        for _ in 0..<ProductConfiguration.freeExportLimit {
+            access.recordSuccessfulExportIfNeeded()
+        }
 
         XCTAssertFalse(access.canRenderExport)
         XCTAssertEqual(access.freeExportsRemaining, 0)
 
         access.recordSuccessfulExportIfNeeded()
 
-        XCTAssertEqual(access.usedFreeExports, 3)
-        XCTAssertEqual(defaults.integer(forKey: "access.usedFreeExports"), 3)
+        XCTAssertEqual(access.usedFreeExports, ProductConfiguration.freeExportLimit)
+        XCTAssertNotNil(defaults.data(forKey: "access.usedFreeExportsEnvelope"))
     }
 
-    func testCorruptNegativeFreeExportCountDoesNotExtendTrial() {
+    func testCorruptNegativeLegacyFreeExportCountDoesNotExtendTrial() {
         let defaults = UserDefaults(suiteName: suiteName())!
         defaults.set(-10, forKey: "access.usedFreeExports")
 
         let access = AccessController(defaults: defaults)
 
         XCTAssertEqual(access.usedFreeExports, 0)
-        XCTAssertEqual(access.freeExportsRemaining, 3)
+        XCTAssertEqual(access.freeExportsRemaining, ProductConfiguration.freeExportLimit)
+    }
+
+    func testTamperingLegacyFreeExportCountDoesNotResetSignedCounter() {
+        let defaults = UserDefaults(suiteName: suiteName())!
+        let access = AccessController(defaults: defaults)
+
+        for _ in 0..<ProductConfiguration.freeExportLimit {
+            access.recordSuccessfulExportIfNeeded()
+        }
+        defaults.set(0, forKey: "access.usedFreeExports")
+
+        let restoredAccess = AccessController(defaults: defaults)
+
+        XCTAssertEqual(restoredAccess.usedFreeExports, ProductConfiguration.freeExportLimit)
+        XCTAssertFalse(restoredAccess.canRenderExport)
+    }
+
+    func testCorruptSignedFreeExportCounterFailsClosed() {
+        let defaults = UserDefaults(suiteName: suiteName())!
+        let access = AccessController(defaults: defaults)
+        access.recordSuccessfulExportIfNeeded()
+
+        var envelope = defaults.data(forKey: "access.usedFreeExportsEnvelope")!
+        envelope[envelope.startIndex] ^= 0xff
+        defaults.set(envelope, forKey: "access.usedFreeExportsEnvelope")
+
+        let restoredAccess = AccessController(defaults: defaults)
+
+        XCTAssertEqual(restoredAccess.usedFreeExports, ProductConfiguration.freeExportLimit)
+        XCTAssertFalse(restoredAccess.canRenderExport)
     }
 
     func testProAccessDoesNotConsumeFreeExports() {
@@ -56,7 +86,27 @@ final class AccessControllerTests: XCTestCase {
 
         XCTAssertTrue(access.canRenderExport)
         XCTAssertEqual(access.usedFreeExports, 0)
-        XCTAssertEqual(access.freeExportsRemaining, 3)
+        XCTAssertEqual(access.freeExportsRemaining, ProductConfiguration.freeExportLimit)
+    }
+
+    func testFailedAppIntegrityBlocksFreeExportsAndProAccess() {
+        let defaults = UserDefaults(suiteName: suiteName())!
+        let access = AccessController(
+            defaults: defaults,
+            appIntegrityChecker: StubAppIntegrityChecker(status: .failed("Signature mismatch."))
+        )
+
+        XCTAssertFalse(access.hasValidAppIntegrity)
+        XCTAssertFalse(access.canRenderExport)
+        XCTAssertEqual(access.accessLabel, "App verification failed")
+        XCTAssertEqual(access.accessMessage, "This copy of BlitzRecorder could not be verified. Signature mismatch.")
+
+        access.recordSuccessfulExportIfNeeded()
+        access.hasAppStoreSubscription = true
+
+        XCTAssertFalse(access.isPro)
+        XCTAssertEqual(access.usedFreeExports, 0)
+        XCTAssertFalse(access.canRenderExport)
     }
 
     func testBlitzReelsCacheRequiresTokenAndFreshVerification() {
@@ -76,14 +126,19 @@ final class AccessControllerTests: XCTestCase {
         XCTAssertFalse(expired.hasBlitzReelsEntitlement)
     }
 
-    func testFreshBlitzReelsCacheUnlocksProAndDisconnectClearsIt() {
+    func testFreshBlitzReelsCacheUnlocksProAndDisconnectClearsIt() async {
         let now = Date(timeIntervalSince1970: 1_000)
         let defaults = UserDefaults(suiteName: suiteName())!
-        defaults.set("token", forKey: "access.blitzReelsAccessToken")
-        defaults.set("BlitzReels Pro", forKey: "access.blitzReelsPlanName")
-        defaults.set(now, forKey: "access.blitzReelsVerifiedAt")
+        let tokenStore = InMemoryBlitzReelsTokenStore(token: "token")
+        let cacheWriter = AccessController(
+            defaults: defaults,
+            dateProvider: { now },
+            blitzReelsTokenStore: tokenStore,
+            blitzReelsEntitlementChecker: StubBlitzReelsEntitlementChecker(result: .success(.init(active: true, planName: "BlitzReels Pro")))
+        )
+        await cacheWriter.refreshBlitzReelsEntitlement()
 
-        let access = AccessController(defaults: defaults, dateProvider: { now })
+        let access = AccessController(defaults: defaults, dateProvider: { now }, blitzReelsTokenStore: tokenStore)
 
         XCTAssertTrue(access.hasBlitzReelsEntitlement)
         XCTAssertTrue(access.canRenderExport)
@@ -92,9 +147,49 @@ final class AccessControllerTests: XCTestCase {
         access.disconnectBlitzReels()
 
         XCTAssertFalse(access.hasBlitzReelsEntitlement)
-        XCTAssertNil(defaults.string(forKey: "access.blitzReelsAccessToken"))
+        XCTAssertNil(tokenStore.loadToken())
         XCTAssertNil(defaults.string(forKey: "access.blitzReelsPlanName"))
         XCTAssertNil(defaults.object(forKey: "access.blitzReelsVerifiedAt"))
+        XCTAssertNil(defaults.data(forKey: "access.blitzReelsEntitlementEnvelope"))
+    }
+
+    func testFreshLegacyBlitzReelsCacheMigratesToSignedCache() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let defaults = UserDefaults(suiteName: suiteName())!
+        defaults.set("BlitzReels Pro", forKey: "access.blitzReelsPlanName")
+        defaults.set(now, forKey: "access.blitzReelsVerifiedAt")
+        let tokenStore = InMemoryBlitzReelsTokenStore(token: "legacy-cache-token")
+
+        let access = AccessController(defaults: defaults, dateProvider: { now }, blitzReelsTokenStore: tokenStore)
+
+        XCTAssertTrue(access.hasBlitzReelsEntitlement)
+        XCTAssertTrue(access.isPro)
+        XCTAssertEqual(access.accessLabel, "Free with BlitzReels Pro")
+        XCTAssertNotNil(defaults.data(forKey: "access.blitzReelsEntitlementEnvelope"))
+        XCTAssertNil(defaults.string(forKey: "access.blitzReelsPlanName"))
+        XCTAssertNil(defaults.object(forKey: "access.blitzReelsVerifiedAt"))
+    }
+
+    func testTamperedBlitzReelsCacheDoesNotUnlockPro() async {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let defaults = UserDefaults(suiteName: suiteName())!
+        let tokenStore = InMemoryBlitzReelsTokenStore(token: "token")
+        let cacheWriter = AccessController(
+            defaults: defaults,
+            dateProvider: { now },
+            blitzReelsTokenStore: tokenStore,
+            blitzReelsEntitlementChecker: StubBlitzReelsEntitlementChecker(result: .success(.init(active: true, planName: "BlitzReels Pro")))
+        )
+        await cacheWriter.refreshBlitzReelsEntitlement()
+
+        var envelope = defaults.data(forKey: "access.blitzReelsEntitlementEnvelope")!
+        envelope[envelope.startIndex] ^= 0xff
+        defaults.set(envelope, forKey: "access.blitzReelsEntitlementEnvelope")
+
+        let access = AccessController(defaults: defaults, dateProvider: { now }, blitzReelsTokenStore: tokenStore)
+
+        XCTAssertFalse(access.hasBlitzReelsEntitlement)
+        XCTAssertFalse(access.isPro)
     }
 
     func testBlitzReelsConnectionCanExistWithoutActiveEntitlement() {
@@ -179,8 +274,9 @@ final class AccessControllerTests: XCTestCase {
         XCTAssertTrue(access.isPro)
         XCTAssertEqual(access.accessLabel, "Free with BlitzReels Pro")
         XCTAssertEqual(access.accessMessage, "Pro is free with BlitzReels Pro.")
-        XCTAssertEqual(defaults.string(forKey: "access.blitzReelsPlanName"), "BlitzReels Pro")
-        XCTAssertEqual(defaults.object(forKey: "access.blitzReelsVerifiedAt") as? Date, now)
+        XCTAssertNotNil(defaults.data(forKey: "access.blitzReelsEntitlementEnvelope"))
+        XCTAssertNil(defaults.string(forKey: "access.blitzReelsPlanName"))
+        XCTAssertNil(defaults.object(forKey: "access.blitzReelsVerifiedAt"))
         XCTAssertEqual(tokenStore.loadToken(), "eligible-token")
         XCTAssertEqual(checker.requestedTokens, ["eligible-token"])
     }
@@ -232,9 +328,15 @@ final class AccessControllerTests: XCTestCase {
     func testUnavailableBlitzReelsEntitlementUsesFreshCachedAccess() async {
         let now = Date(timeIntervalSince1970: 1_000)
         let defaults = UserDefaults(suiteName: suiteName())!
-        defaults.set("BlitzReels Pro", forKey: "access.blitzReelsPlanName")
-        defaults.set(now, forKey: "access.blitzReelsVerifiedAt")
         let tokenStore = InMemoryBlitzReelsTokenStore(token: "cached-token")
+        let cacheWriter = AccessController(
+            defaults: defaults,
+            dateProvider: { now },
+            blitzReelsTokenStore: tokenStore,
+            blitzReelsEntitlementChecker: StubBlitzReelsEntitlementChecker(result: .success(.init(active: true, planName: "BlitzReels Pro")))
+        )
+        await cacheWriter.refreshBlitzReelsEntitlement()
+
         let checker = StubBlitzReelsEntitlementChecker(result: .failure(URLError(.timedOut)))
         let access = AccessController(
             defaults: defaults,
@@ -255,9 +357,15 @@ final class AccessControllerTests: XCTestCase {
     func testAutomaticBlitzReelsRefreshKeepsFreshCachedAccess() async {
         let now = Date(timeIntervalSince1970: 1_000)
         let defaults = UserDefaults(suiteName: suiteName())!
-        defaults.set("BlitzReels Pro", forKey: "access.blitzReelsPlanName")
-        defaults.set(now, forKey: "access.blitzReelsVerifiedAt")
         let tokenStore = InMemoryBlitzReelsTokenStore(token: "cached-token")
+        let cacheWriter = AccessController(
+            defaults: defaults,
+            dateProvider: { now },
+            blitzReelsTokenStore: tokenStore,
+            blitzReelsEntitlementChecker: StubBlitzReelsEntitlementChecker(result: .success(.init(active: true, planName: "BlitzReels Pro")))
+        )
+        await cacheWriter.refreshBlitzReelsEntitlement()
+
         let checker = StubBlitzReelsEntitlementChecker(result: .failure(BlitzReelsEntitlementHTTPError(statusCode: 401)))
         let access = AccessController(
             defaults: defaults,
@@ -325,6 +433,14 @@ private final class InMemoryBlitzReelsTokenStore: BlitzReelsTokenStore {
 
     func deleteToken() {
         token = nil
+    }
+}
+
+private struct StubAppIntegrityChecker: AppIntegrityChecking {
+    let status: AppIntegrityStatus
+
+    func validateAppIntegrity() -> AppIntegrityStatus {
+        status
     }
 }
 

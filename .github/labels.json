@@ -1,0 +1,72 @@
+[
+  {
+    "name": "bug",
+    "color": "d73a4a",
+    "description": "Something is broken or behaves unexpectedly."
+  },
+  {
+    "name": "fix",
+    "color": "d73a4a",
+    "description": "Bug fix or regression fix."
+  },
+  {
+    "name": "enhancement",
+    "color": "a2eeef",
+    "description": "Improvement to an existing feature."
+  },
+  {
+    "name": "feature",
+    "color": "0e8a16",
+    "description": "New user-facing feature."
+  },
+  {
+    "name": "documentation",
+    "color": "0075ca",
+    "description": "Documentation update."
+  },
+  {
+    "name": "docs",
+    "color": "0075ca",
+    "description": "Documentation update."
+  },
+  {
+    "name": "build",
+    "color": "5319e7",
+    "description": "Build, packaging, signing, or dependency work."
+  },
+  {
+    "name": "release",
+    "color": "5319e7",
+    "description": "Release, versioning, notarization, or App Store work."
+  },
+  {
+    "name": "ci",
+    "color": "5319e7",
+    "description": "Continuous integration workflow work."
+  },
+  {
+    "name": "security",
+    "color": "b60205",
+    "description": "Security hardening or private security follow-up."
+  },
+  {
+    "name": "question",
+    "color": "d876e3",
+    "description": "Needs more information or discussion."
+  },
+  {
+    "name": "good first issue",
+    "color": "7057ff",
+    "description": "Small, well-scoped issue for new contributors."
+  },
+  {
+    "name": "help wanted",
+    "color": "008672",
+    "description": "A focused contribution would be useful."
+  },
+  {
+    "name": "ignore-for-release",
+    "color": "ededed",
+    "description": "Exclude from generated release notes."
+  }
+]

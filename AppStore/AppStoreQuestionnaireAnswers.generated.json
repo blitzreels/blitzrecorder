@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-31T11:39:19Z",
+  "generatedAt": "2026-06-02T16:17:31Z",
   "sourceFiles": [
     "AppStore/AppStoreQuestionnaires.md"
   ],
@@ -69,7 +69,7 @@
     "annualSubscriptionName": "BlitzRecorder Pro Annual",
     "annualProductId": "dev.blitzreels.blitzrecorder.pro.annual",
     "annualPrice": "$49.99 per year",
-    "freeBehavior": "3 free exports",
+    "freeBehavior": "10 free exports",
     "iosCompanionHasInAppPurchases": false,
     "iosCompanionHasPaywall": false
   },

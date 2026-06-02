@@ -24,7 +24,12 @@ private let noResizeActions: [String: any CAAction] = [
 final class PreviewStageView: NSView {
     let screenPreview = ScreenPreviewView()
     let cameraPreview = CameraPreviewView()
-    private let canvasBackgroundLayer = CAGradientLayer()
+    private let canvasBackgroundLayer = CALayer()
+    private var renderedBackgroundKey: (style: CanvasBackgroundStyle, width: Int, height: Int)?
+    private var backgroundAnimationTimer: Timer?
+    private let backgroundAnimationQueue = DispatchQueue(label: "blitzrecorder.preview-background", qos: .userInitiated)
+    private var backgroundAnimationStart: CFTimeInterval = 0
+    private var isRenderingAnimatedFrame = false
     private let safeZoneOverlay = SafeZoneOverlayView()
     private let selectionOverlay = SceneSelectionOverlayView()
     private let outlineOverlay = SourceOutlineView()
@@ -74,8 +79,14 @@ final class PreviewStageView: NSView {
     var onLayerFrameChanged: ((SceneLayerKind, CGRect) -> Void)?
     var onSceneLayoutChanged: ((SceneLayout) -> Void)?
     var onLayerSelected: ((SceneLayerKind) -> Void)?
-    var onCropButtonPressed: ((SceneLayerKind) -> Void)?
+    /// Fired when the user clicks empty canvas (not on a source) to select the
+    /// scene's bottom Background layer.
+    var onBackgroundSelected: (() -> Void)?
     var onCropToolbarFrameChanged: ((CGRect?) -> Void)?
+    /// The screen layer's rect within the canvas (view coords, bottom-left origin),
+    /// or nil when the Screen source is off. Lets the "Pick a screen" prompt sit over
+    /// the screen region only, not the whole stage.
+    var onScreenLayerFrameChanged: ((CGRect?) -> Void)?
     var onCameraCropChanged: ((CGPoint, CGPoint) -> Void)?
     var onScreenCropChanged: ((CGRect?) -> Void)?
     var renderedCanvasAspectRatio: CGFloat {
@@ -86,12 +97,17 @@ final class PreviewStageView: NSView {
     var renderedScreenFrameForTesting: CGRect { screenPreview.frame }
     var renderedCameraFrameForTesting: CGRect { cameraPreview.frame }
     var renderedSelectionFrameForTesting: CGRect? { selectionOverlay.selectionFrame }
-    var renderedCropButtonFrameForTesting: CGRect? { selectionOverlay.cropButtonFrame }
     var renderedCropToolbarFrameForTesting: CGRect? { cropToolbarFrame }
     private var cropToolbarFrame: CGRect? {
         didSet {
             guard oldValue != cropToolbarFrame else { return }
             onCropToolbarFrameChanged?(cropToolbarFrame)
+        }
+    }
+    private var screenLayerFrame: CGRect? {
+        didSet {
+            guard oldValue != screenLayerFrame else { return }
+            onScreenLayerFrameChanged?(screenLayerFrame)
         }
     }
 
@@ -163,7 +179,26 @@ final class PreviewStageView: NSView {
 
     var canvasBackgroundStyle: CanvasBackgroundStyle = .black {
         didSet {
-            applyCanvasBackgroundStyle()
+            guard oldValue != canvasBackgroundStyle else { return }
+            renderedBackgroundKey = nil
+            refreshCanvasBackground()
+        }
+    }
+
+    var canvasBackgroundAnimated: Bool = false {
+        didSet {
+            guard oldValue != canvasBackgroundAnimated else { return }
+            updateBackgroundAnimation()
+        }
+    }
+
+    /// When the Background layer is selected we suppress the source selection
+    /// handles and ring the canvas in mint so the whole frame reads as selected.
+    var isBackgroundLayerSelected: Bool = false {
+        didSet {
+            guard oldValue != isBackgroundLayerSelected else { return }
+            updateCanvasSelectionAffordance()
+            updateSelectionOverlay()
         }
     }
 
@@ -218,16 +253,29 @@ final class PreviewStageView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = .clear
-        layer?.masksToBounds = false
+        // Clip to the stage (the grey area). Layers + their handles may overscan past the
+        // black canvas into the grey margin (intended), but must not escape the stage onto
+        // the sidebar/top/dock — so clip here rather than letting overscan bleed out.
+        layer?.masksToBounds = true
 
-        applyCanvasBackgroundStyle()
+        canvasBackgroundLayer.backgroundColor = canvasBackgroundStyle.appearance.solidCGColor
+        canvasBackgroundLayer.contentsGravity = .resize
         canvasBackgroundLayer.zPosition = -1
+        // The single rounded outline that hugs the 9:16 canvas lives here (AppKit
+        // centers canvasFrame in bounds), so SwiftUI must NOT also stroke its full
+        // wrapper — that would draw a second, larger frame around the gap.
+        canvasBackgroundLayer.cornerRadius = 8
+        canvasBackgroundLayer.masksToBounds = true
+        canvasBackgroundLayer.borderWidth = 1.5
+        canvasBackgroundLayer.borderColor = NSColor.white.withAlphaComponent(0.20).cgColor
         canvasBackgroundLayer.actions = [
             "frame": NSNull(),
             "bounds": NSNull(),
             "position": NSNull(),
-            "colors": NSNull(),
-            "locations": NSNull()
+            "contents": NSNull(),
+            "borderColor": NSNull(),
+            "borderWidth": NSNull(),
+            "cornerRadius": NSNull()
         ]
         layer?.addSublayer(canvasBackgroundLayer)
 
@@ -272,13 +320,24 @@ final class PreviewStageView: NSView {
         super.layout()
 
         performWithoutUIAnimation {
-            canvasFrame = fittedCanvas(in: bounds.insetBy(dx: resizeHandleOutset, dy: resizeHandleOutset))
+            canvasFrame = fittedCanvas(in: bounds.insetBy(dx: resizeHandleOutset + 12, dy: resizeHandleOutset + 12))
             canvasBackgroundLayer.frame = canvasFrame
+            refreshCanvasBackground()
             applyLayerOrder()
             applySceneFrames()
             updateSelectionOverlay()
         }
+        // Start the drift once the canvas has real bounds (first layout), or keep
+        // it running across relayouts; the call is a no-op if already animating.
+        if canvasBackgroundAnimated {
+            updateBackgroundAnimation()
+        }
         invalidateResizeCursorRects()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateBackgroundAnimation()
     }
 
     override func resetCursorRects() {
@@ -320,9 +379,6 @@ final class PreviewStageView: NSView {
                 addCursorRect(moveRect, cursor: .openHand)
             }
             guard layer == selectedLayer else { continue }
-            if let cropButtonFrame = cropButtonFrame(for: layer) {
-                addCursorRect(cropButtonFrame, cursor: .pointingHand)
-            }
             for (anchor, rect) in cornerResizeTargets(for: selectionFrame(for: layer)) {
                 addCursorRect(rect, cursor: anchor.cursor)
             }
@@ -423,14 +479,6 @@ final class PreviewStageView: NSView {
             return
         }
 
-        if let layer = cropButtonHit(at: location) {
-            selectedLayer = layer
-            onLayerSelected?(layer)
-            onCropButtonPressed?(layer)
-            needsDisplay = true
-            return
-        }
-
         if let (layer, anchor) = resizeHit(at: location) {
             selectedLayer = layer
             onLayerSelected?(layer)
@@ -447,7 +495,17 @@ final class PreviewStageView: NSView {
             return
         }
 
-        guard let layer = layer(at: location) else { return }
+        guard let layer = layer(at: location) else {
+            // Empty canvas → select the Background layer (the scene's bottom layer).
+            if canvasFrame.contains(location) {
+                isBackgroundLayerSelected = true
+                onBackgroundSelected?()
+                dragMode = nil
+                needsDisplay = true
+            }
+            return
+        }
+        isBackgroundLayerSelected = false
         let wasSelected = layer == selectedLayer
         selectedLayer = layer
         onLayerSelected?(layer)
@@ -591,9 +649,6 @@ final class PreviewStageView: NSView {
             return cursor(for: mode)
         }
         guard allowsLayerInteraction else { return .arrow }
-        if cropButtonHit(at: point) != nil {
-            return .pointingHand
-        }
         if let (_, anchor) = resizeHit(at: point) {
             return anchor.cursor
         }
@@ -627,6 +682,7 @@ final class PreviewStageView: NSView {
             updateSafeZoneOverlayVisibility()
             selectionOverlay.isHidden = false
             selectionOverlay.frame = bounds
+            selectionOverlay.canvasClip = canvasFrame
 
             if hasScreen {
                 screenPreview.frame = isScreenCropEditingEnabled ? screenCropSourceFrame() : projectedFrame(for: .screen, in: canvasFrame)
@@ -645,6 +701,9 @@ final class PreviewStageView: NSView {
 
             updateOutlineOverlay()
             updateSelectionOverlay()
+            // The screen region only exists when Screen is on; report it so the
+            // "Pick a screen" prompt can sit over exactly that rect.
+            screenLayerFrame = hasScreen ? screenPreview.frame : nil
         }
     }
 
@@ -764,7 +823,21 @@ final class PreviewStageView: NSView {
         let geometry = renderGeometry(in: canvasFrame)
         outlineOverlay.frame = bounds
         outlineOverlay.canvasFrame = canvasFrame
-        outlineOverlay.sourceFrames = geometry.activeLayerOrder.map { frame(for: $0) }
+        // Only outline sources that actually have a live frame. In the empty /
+        // placeholder state every source shows the shared canvas gradient, so a
+        // dashed per-source outline would re-introduce the "two boxes" read.
+        outlineOverlay.sourceFrames = geometry.activeLayerOrder
+            .filter { hasLiveContent(for: $0) }
+            .map { frame(for: $0) }
+    }
+
+    private func hasLiveContent(for layer: SceneLayerKind) -> Bool {
+        switch layer {
+        case .screen:
+            return screenPreview.hasPreviewContent
+        case .camera:
+            return cameraPreview.hasPreviewContent
+        }
     }
 
     private func frame(for layer: SceneLayerKind) -> NSRect {
@@ -852,12 +925,96 @@ final class PreviewStageView: NSView {
         SceneLayerResizing.clamped(frame)
     }
 
-    private func applyCanvasBackgroundStyle() {
+    /// Render the mesh background to a CGImage sized to the canvas and set it as
+    /// the layer's contents. Cached on (style, pixel size) so window resizes and
+    /// repeated style assignments don't re-render needlessly. No-ops while the
+    /// background is animating — the timer owns `contents` then.
+    private func refreshCanvasBackground() {
+        guard !canvasBackgroundAnimated else { return }
+        let scale = window?.backingScaleFactor ?? layer?.contentsScale ?? 2
+        canvasBackgroundLayer.contentsScale = scale
+        let width = Int((canvasBackgroundLayer.bounds.width * scale).rounded(.up))
+        let height = Int((canvasBackgroundLayer.bounds.height * scale).rounded(.up))
+        guard width > 0, height > 0 else { return }
+        if let key = renderedBackgroundKey,
+           key.style == canvasBackgroundStyle, key.width == width, key.height == height {
+            return
+        }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        canvasBackgroundStyle.appearance.apply(to: canvasBackgroundLayer)
+        let appearance = canvasBackgroundStyle.appearance
+        canvasBackgroundLayer.backgroundColor = appearance.solidCGColor
+        canvasBackgroundLayer.contents = appearance.renderCGImage(pixelWidth: width, pixelHeight: height)
+        CATransaction.commit()
+        renderedBackgroundKey = (canvasBackgroundStyle, width, height)
+    }
+
+    // MARK: - Animated background
+
+    /// Start/stop the drift timer based on the animated flag + whether the view
+    /// is on screen with a non-empty canvas.
+    private func updateBackgroundAnimation() {
+        let shouldAnimate = canvasBackgroundAnimated && window != nil && !canvasBackgroundLayer.bounds.isEmpty
+        if shouldAnimate {
+            guard backgroundAnimationTimer == nil else { return }
+            backgroundAnimationStart = CACurrentMediaTime()
+            // ~20 fps is plenty for slow ambient drift.
+            let timer = Timer(timeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.renderAnimatedBackgroundFrame()
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            backgroundAnimationTimer = timer
+            renderAnimatedBackgroundFrame()
+        } else {
+            backgroundAnimationTimer?.invalidate()
+            backgroundAnimationTimer = nil
+            renderedBackgroundKey = nil
+            refreshCanvasBackground()
+        }
+    }
+
+    private func renderAnimatedBackgroundFrame() {
+        guard canvasBackgroundAnimated, !isRenderingAnimatedFrame else { return }
+        let scale = window?.backingScaleFactor ?? layer?.contentsScale ?? 2
+        canvasBackgroundLayer.contentsScale = scale
+        let width = Int((canvasBackgroundLayer.bounds.width * scale).rounded(.up))
+        let height = Int((canvasBackgroundLayer.bounds.height * scale).rounded(.up))
+        guard width > 0, height > 0 else { return }
+        let style = canvasBackgroundStyle
+        let loop = CanvasAppearance.animationLoopDuration
+        let phase = ((CACurrentMediaTime() - backgroundAnimationStart) / loop).truncatingRemainder(dividingBy: 1)
+        isRenderingAnimatedFrame = true
+        backgroundAnimationQueue.async { [weak self] in
+            let image = style.appearance.renderCGImage(pixelWidth: width, pixelHeight: height, animationPhase: phase)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isRenderingAnimatedFrame = false
+                guard self.canvasBackgroundAnimated, self.canvasBackgroundStyle == style else { return }
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                self.canvasBackgroundLayer.contents = image
+                CATransaction.commit()
+            }
+        }
+    }
+
+    /// Mint outline when the Background layer is selected, default hairline otherwise.
+    private func updateCanvasSelectionAffordance() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if isBackgroundLayerSelected {
+            canvasBackgroundLayer.borderColor = Self.backgroundSelectionColor.cgColor
+            canvasBackgroundLayer.borderWidth = 2
+        } else {
+            canvasBackgroundLayer.borderColor = NSColor.white.withAlphaComponent(0.20).cgColor
+            canvasBackgroundLayer.borderWidth = 1.5
+        }
         CATransaction.commit()
     }
+
+    private static let backgroundSelectionColor = NSColor(srgbRed: 0.09, green: 1.0, blue: 0.65, alpha: 0.95)
 
     private func applyLayerOrder() {
         for (index, kind) in sceneLayout.layerOrder.enumerated() {
@@ -879,16 +1036,27 @@ final class PreviewStageView: NSView {
     }
 
     private func updateSelectionOverlay() {
+        if isBackgroundLayerSelected {
+            // Whole-canvas selection: no source marquee or handles.
+            selectionOverlay.isCropMode = false
+            selectionOverlay.selectionFrame = nil
+            selectionOverlay.sourceFrame = nil
+            selectionOverlay.canvasClip = nil
+            cropToolbarFrame = nil
+            return
+        }
+
         if isScreenCropEditingEnabled {
             selectionOverlay.isCropMode = true
-            selectionOverlay.cropButtonFrame = nil
             guard enabledSources.contains(.screen), !canvasFrame.isEmpty else {
                 selectionOverlay.selectionFrame = nil
                 selectionOverlay.sourceFrame = nil
+                selectionOverlay.canvasClip = nil
                 cropToolbarFrame = nil
                 return
             }
             selectionOverlay.frame = bounds
+            selectionOverlay.canvasClip = canvasFrame
             selectionOverlay.sourceFrame = screenCropSourceFrame()
             let cropFrame = screenCropFrame()
             selectionOverlay.selectionFrame = cropFrame
@@ -899,21 +1067,22 @@ final class PreviewStageView: NSView {
         let isCropMode = allowsCameraCropInteraction && isCameraCropEditingEnabled && selectedLayer == .camera
         guard allowsLayerInteraction || isCropMode else {
             selectionOverlay.isCropMode = false
-            selectionOverlay.cropButtonFrame = nil
             selectionOverlay.selectionFrame = nil
             selectionOverlay.sourceFrame = nil
+            selectionOverlay.canvasClip = nil
             cropToolbarFrame = nil
             return
         }
         selectionOverlay.isCropMode = isCropMode
-        selectionOverlay.cropButtonFrame = nil
         guard enabledSources.contains(selectedLayer.source), !canvasFrame.isEmpty else {
             selectionOverlay.selectionFrame = nil
             selectionOverlay.sourceFrame = nil
+            selectionOverlay.canvasClip = nil
             cropToolbarFrame = nil
             return
         }
         selectionOverlay.frame = bounds
+        selectionOverlay.canvasClip = canvasFrame
         if isCropMode {
             selectionOverlay.sourceFrame = cameraCropSourceFrame()
             let cropFrame = cameraCropFrame()
@@ -921,8 +1090,11 @@ final class PreviewStageView: NSView {
             cropToolbarFrame = cropToolbarFrame(above: cropFrame)
         } else {
             selectionOverlay.sourceFrame = nil
-            selectionOverlay.selectionFrame = selectionFrame(for: selectedLayer)
-            selectionOverlay.cropButtonFrame = cropButtonFrame(for: selectedLayer)
+            // Clamp the displayed marquee to the visible canvas so it never wraps
+            // an off-canvas source rect (which would spill the green frame/handles
+            // into the side gaps, above/below the canvas, and through the glass
+            // sidebar). Hit-testing still uses the unclamped selectionFrame(for:).
+            selectionOverlay.selectionFrame = interactiveFrame(for: selectedLayer)
             cropToolbarFrame = nil
         }
     }
@@ -966,32 +1138,6 @@ final class PreviewStageView: NSView {
 
     private func selectionFrame(for layer: SceneLayerKind) -> NSRect {
         frame(for: layer)
-    }
-
-    private func cropButtonHit(at point: CGPoint) -> SceneLayerKind? {
-        guard !isCameraCropEditingEnabled, !isScreenCropEditingEnabled else { return nil }
-        guard enabledSources.contains(selectedLayer.source),
-              let buttonFrame = cropButtonFrame(for: selectedLayer),
-              buttonFrame.contains(point) else {
-            return nil
-        }
-        return selectedLayer
-    }
-
-    private func cropButtonFrame(for layer: SceneLayerKind) -> NSRect? {
-        guard allowsLayerInteraction, enabledSources.contains(layer.source), layer == selectedLayer else { return nil }
-        if layer == .camera, !allowsCameraCropInteraction {
-            return nil
-        }
-        guard !isCameraCropEditingEnabled, !isScreenCropEditingEnabled else { return nil }
-        let frame = selectionFrame(for: layer)
-        guard !frame.isEmpty else { return nil }
-        let size = CGSize(width: 70, height: 26)
-        let x = min(bounds.maxX - size.width - 8, max(bounds.minX + 8, frame.midX - size.width / 2))
-        let preferredY = frame.maxY + 8
-        let fallbackY = frame.maxY - size.height - 8
-        let y = preferredY + size.height <= bounds.maxY - 8 ? preferredY : fallbackY
-        return NSRect(x: x, y: max(bounds.minY + 8, y), width: size.width, height: size.height)
     }
 
     private func updateCameraCrop(movingFrom dragMode: DragMode, to location: CGPoint) {
@@ -1147,12 +1293,16 @@ final class PreviewStageView: NSView {
         let target = projectedFrame(for: .screen, in: canvasFrame)
         guard screenSourceAspectRatio > 0, target.width > 0, target.height > 0 else { return target }
         let targetAspect = target.width / target.height
+        // Aspect-FIT the whole display inside the output slot so the entire screen
+        // stays visible (letterboxed) while cropping. The crop box, handles, and
+        // image then all live inside the canvas and follow the cursor — instead of
+        // an aspect-FILL frame that spills off-canvas and gets clipped/pinned.
         if targetAspect > screenSourceAspectRatio {
-            let height = target.width / screenSourceAspectRatio
-            return CGRect(x: target.minX, y: target.midY - height / 2, width: target.width, height: height)
+            let width = target.height * screenSourceAspectRatio
+            return CGRect(x: target.midX - width / 2, y: target.minY, width: width, height: target.height)
         }
-        let width = target.height * screenSourceAspectRatio
-        return CGRect(x: target.midX - width / 2, y: target.minY, width: width, height: target.height)
+        let height = target.width / screenSourceAspectRatio
+        return CGRect(x: target.minX, y: target.midY - height / 2, width: target.width, height: height)
     }
 
     private func screenCropFrame() -> CGRect {
@@ -1245,7 +1395,13 @@ final class SourceOutlineView: NSView {
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
 
-        let outsideCanvas = NSBezierPath(rect: bounds)
+        // Confine the white "outside the canvas" source hint to a thin margin
+        // hugging the canvas (canvas expanded by the handle radius, minus the
+        // canvas itself) so the dashed outline can never reach the sidebar /
+        // top bar / dock or bleed through the translucent glass sidebar.
+        let margin = canvasFrame.insetBy(dx: -SceneSelectionOverlayView.handleRadius,
+                                         dy: -SceneSelectionOverlayView.handleRadius)
+        let outsideCanvas = NSBezierPath(rect: margin)
         outsideCanvas.append(NSBezierPath(rect: canvasFrame).reversed)
         outsideCanvas.addClip()
 
@@ -1335,6 +1491,12 @@ private extension NSCursor {
 
 @MainActor
 private final class SceneSelectionOverlayView: NSView {
+    // Radius of the largest resize handle (size 12 -> half 6). Edge handles may
+    // straddle the canvas edge by at most this much, so the clip is inset by the
+    // negative of it. Anything beyond is hard-clipped so it can never reach the
+    // surrounding sidebar / top bar / dock (or bleed through the glass sidebar).
+    static let handleRadius: CGFloat = 6
+
     var selectionFrame: NSRect? {
         didSet { needsDisplay = true }
     }
@@ -1344,7 +1506,10 @@ private final class SceneSelectionOverlayView: NSView {
     var isCropMode = false {
         didSet { needsDisplay = true }
     }
-    var cropButtonFrame: NSRect? {
+    /// The canvas rect (in this view's coordinate space) that every overlay
+    /// element is clipped to. While this view's frame == the parent bounds, the
+    /// parent-space canvasFrame is the correct clip rect. Empty/nil clips to nothing.
+    var canvasClip: NSRect? {
         didSet { needsDisplay = true }
     }
 
@@ -1358,12 +1523,26 @@ private final class SceneSelectionOverlayView: NSView {
         super.draw(dirtyRect)
         guard let frame = selectionFrame else { return }
 
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+
+        // Hard-clip ALL overlay drawing (marquee, crop shade/grid, source
+        // outline, edge grips, resize handles) to the canvas, expanded by the
+        // handle radius so edge handles survive but never spill onto the
+        // sidebar/top/dock. If we have no canvas to clip to, draw nothing.
+        guard let canvasClip, !canvasClip.isEmpty else { return }
+        let clipRect = canvasClip.insetBy(dx: -Self.handleRadius, dy: -Self.handleRadius)
+        NSBezierPath(rect: clipRect).addClip()
+
         if isCropMode, let sourceFrame {
-            drawCropShade(sourceFrame: sourceFrame, cropFrame: frame)
+            // Dim the whole frame around the kept region (not just the screen) so
+            // the letterbox margins beside a fitted screen read as intentional
+            // dead space rather than bright gaps.
+            drawCropShade(within: canvasClip, cropFrame: frame)
             drawCropSourceOutline(sourceFrame)
         }
 
-        let strokeColor = isCropMode ? cropColor : Brand.primary
+        let strokeColor = Brand.primary
         strokeColor.setStroke()
         let outerPath = NSBezierPath(rect: frame.insetBy(dx: 0.5, dy: 0.5))
         outerPath.lineWidth = isCropMode ? 2 : 1.5
@@ -1390,19 +1569,11 @@ private final class SceneSelectionOverlayView: NSView {
             handleBorder.lineWidth = 1
             handleBorder.stroke()
         }
-
-        if !isCropMode, let cropButtonFrame {
-            drawCropButton(in: cropButtonFrame)
-        }
     }
 
-    private var cropColor: NSColor {
-        NSColor(calibratedRed: 1.0, green: 0.66, blue: 0.16, alpha: 1)
-    }
-
-    private func drawCropShade(sourceFrame: NSRect, cropFrame: NSRect) {
+    private func drawCropShade(within region: NSRect, cropFrame: NSRect) {
         NSColor.black.withAlphaComponent(0.58).setFill()
-        let shade = NSBezierPath(rect: sourceFrame)
+        let shade = NSBezierPath(rect: region)
         shade.append(NSBezierPath(rect: cropFrame).reversed)
         shade.fill()
     }
@@ -1429,44 +1600,6 @@ private final class SceneSelectionOverlayView: NSView {
             grid.line(to: NSPoint(x: frame.maxX, y: y))
         }
         grid.stroke()
-    }
-
-    private func drawCropButton(in rect: NSRect) {
-        NSColor.black.withAlphaComponent(0.76).setFill()
-        NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8).fill()
-
-        cropColor.withAlphaComponent(0.82).setStroke()
-        let border = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8)
-        border.lineWidth = 1
-        border.stroke()
-
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11, weight: .bold),
-            .foregroundColor: NSColor.white.withAlphaComponent(0.92)
-        ]
-        let title = "Crop"
-        let titleSize = title.size(withAttributes: attributes)
-        let iconRect = NSRect(x: rect.minX + 10, y: rect.midY - 6, width: 12, height: 12)
-        drawCropGlyph(in: iconRect)
-        title.draw(
-            at: NSPoint(x: iconRect.maxX + 6, y: rect.midY - titleSize.height / 2 - 0.5),
-            withAttributes: attributes
-        )
-    }
-
-    private func drawCropGlyph(in rect: NSRect) {
-        cropColor.setStroke()
-        let path = NSBezierPath()
-        path.lineWidth = 1.6
-        path.lineCapStyle = .round
-        path.lineJoinStyle = .round
-        path.move(to: NSPoint(x: rect.minX + 2, y: rect.maxY))
-        path.line(to: NSPoint(x: rect.minX + 2, y: rect.minY + 2))
-        path.line(to: NSPoint(x: rect.maxX, y: rect.minY + 2))
-        path.move(to: NSPoint(x: rect.minX, y: rect.maxY - 2))
-        path.line(to: NSPoint(x: rect.maxX - 2, y: rect.maxY - 2))
-        path.line(to: NSPoint(x: rect.maxX - 2, y: rect.minY))
-        path.stroke()
     }
 
     private func resizeHandles(for frame: NSRect, constrainedTo constraint: NSRect? = nil) -> [ResizeAnchor: NSRect] {
@@ -1706,6 +1839,10 @@ final class ScreenPreviewView: NSView {
     private var sampleBufferLayer: AVSampleBufferDisplayLayer?
     private let label = NSTextField(labelWithString: "SCREEN PREVIEW")
 
+    /// True only when a live frame is mounted (placeholder hidden). Used so the
+    /// empty/placeholder state does not draw a per-source outline.
+    var hasPreviewContent: Bool { placeholderLayer.isHidden }
+
     init() {
         super.init(frame: .zero)
         wantsLayer = true
@@ -1713,9 +1850,11 @@ final class ScreenPreviewView: NSView {
         layer?.masksToBounds = true
         layer?.actions = noResizeActions
 
-        placeholderLayer.backgroundColor = Brand.card.withAlphaComponent(0.96).cgColor
-        placeholderLayer.borderColor = NSColor.white.withAlphaComponent(0.08).cgColor
-        placeholderLayer.borderWidth = 1
+        // Transparent placeholder: the shared canvas gradient (drawn behind every
+        // source) shows through, so the empty state reads as one filled 9:16 canvas
+        // instead of a separately-bordered opaque tile.
+        placeholderLayer.backgroundColor = .clear
+        placeholderLayer.borderWidth = 0
         placeholderLayer.actions = noResizeActions
         layer?.addSublayer(placeholderLayer)
 
@@ -1817,7 +1956,9 @@ final class ScreenPreviewView: NSView {
         sampleBufferLayer?.removeFromSuperlayer()
         sampleBufferLayer = nil
         imageLayer.contents = nil
-        label.isHidden = false
+        // An empty message clears the chip entirely (the SwiftUI "Pick a screen" CTA
+        // owns that empty state) instead of drawing a blank black pill.
+        label.isHidden = message.isEmpty
         label.stringValue = message
     }
 }
@@ -1852,12 +1993,16 @@ final class CameraPreviewView: NSView {
         imageLayer.actions = noResizeActions
         layer?.addSublayer(imageLayer)
 
-        label.font = .monospacedSystemFont(ofSize: 11, weight: .semibold)
-        label.textColor = .white
+        label.font = .systemFont(ofSize: 12, weight: .semibold)
+        label.textColor = NSColor.white.withAlphaComponent(0.9)
         label.alignment = .center
+        label.lineBreakMode = .byWordWrapping
+        label.maximumNumberOfLines = 2
         label.translatesAutoresizingMaskIntoConstraints = false
         label.wantsLayer = true
-        label.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.42).cgColor
+        label.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.62).cgColor
+        label.layer?.cornerRadius = 6
+        label.layer?.masksToBounds = true
         addSubview(label)
 
         NSLayoutConstraint.activate([

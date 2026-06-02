@@ -42,7 +42,7 @@ Use 16:10 screenshots. Accepted sizes include:
 Recommended set:
 
 1. Main recording canvas with screen and camera layers visible.
-2. Plan popover showing 3 free exports, $7.99/month or $49.99/year Pro, Restore, Terms, Privacy, and Support.
+2. Plan popover showing 10 free exports, $7.99/month or $49.99/year Pro, Restore, Terms, Privacy, and Support.
 3. Remote iPhone camera controls showing connected companion capabilities.
 4. Export/render completed state with a finished take.
 5. Scene layout controls showing picture-in-picture or stacked layout.
@@ -53,6 +53,19 @@ The local capture script currently writes the first three macOS screenshots:
 - `02-plan-popover.png`
 - `03-iphone-camera-controls.png`
 
+## Branded iPhone composites
+
+iPhone 6.9-inch uploads are **branded marketing composites**, not bare captures. The flow is two-stage:
+
+1. `capture-app-store-screenshots.sh --iphone` records the real companion UI into `AppStore/ScreenshotAssets/iPhone-6.9/raw/` (full device resolution, an accepted 6.9-inch size).
+2. It then runs `Scripts/compose-app-store-screenshots.swift`, which wraps each raw capture in a brand mesh-gradient background (mint over deep ink), a mint `BLITZRECORDER CAMERA` eyebrow, a bold outcome headline, and an iPhone bezel, writing the final `*.png` into the upload folder at `1320 x 2868`.
+
+The real app UI is preserved inside the bezel (App Store compliant); only the framing is marketing. Headlines are keyed by raw file name in the compositor's `headlines` map — add a raw capture named `NN-foo.png` and give it a matching headline there. To restyle without recapturing:
+
+```bash
+swift Scripts/compose-app-store-screenshots.swift
+```
+
 ## iOS
 
 Required for the BlitzRecorder Camera app record. Since the companion target supports iPhone and iPad, prepare both iPhone and iPad screenshots unless the App Store Connect record is changed to iPhone-only.
@@ -62,13 +75,16 @@ Minimum practical upload set:
 - iPhone 6.9-inch portrait: 1260 x 2736, 1290 x 2796, or 1320 x 2868.
 - iPad 13-inch portrait: 2064 x 2752 or 2048 x 2732.
 
-Recommended iPhone set:
+iPhone set (auto-generated — one launch per state, keyed to a screenshot variant):
 
-1. Pairing screen showing the 6-digit code.
-2. Connected camera preview.
-3. Connected state while Mac controls are available.
-4. Recording state.
-5. Transfer complete state.
+| File | Variant | State shown |
+| --- | --- | --- |
+| `01-pairing-screen.png` | `pairing` | Pairing card with the 6-digit code |
+| `02-connected.png` | `connected` | Paired and ready for Mac control |
+| `03-recording.png` | `recording` | Recording with the live timer and Stop |
+| `04-transfer.png` | `transfer` | Finished take saving to the Mac |
+
+The variant is selected by `BLITZRECORDER_CAMERA_SCREENSHOT_VARIANT` (the capture script sets it per launch; `CameraCompanionStore.configureForScreenshotMode()` maps each variant to a deterministic state). Add a shot by adding a `NN-name:variant` entry in `capture_iphone` plus a matching headline in the compositor.
 
 Recommended iPad set:
 

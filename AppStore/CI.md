@@ -56,7 +56,7 @@ Set `UPLOAD=1` from the workflow dispatch UI only when the app records, subscrip
 
 `.github/workflows/macos-dmg.yml` builds a downloadable DMG for quick testing on every pull request, every push to `main` or `codex/**`, every `v*` tag, and manual `workflow_dispatch` runs.
 
-The normal artifact lane does not need Apple credentials. It calls `Scripts/ci-macos-dmg.sh`, packages the app through `Scripts/package-dmg.sh`, and uploads `build/Distributions/BlitzRecorder-*.dmg` as the `blitzrecorder-macos-dmg` workflow artifact. When the workflow runs for a `v*` tag, it also attaches the DMG to the matching GitHub Release.
+The normal artifact lane can run without Apple credentials on non-tag builds. It calls `Scripts/ci-macos-dmg.sh`, packages the app through `Scripts/package-dmg.sh`, and uploads `build/Distributions/BlitzRecorder-*.dmg` plus `SHA256SUMS` as the `blitzrecorder-macos-dmg` workflow artifact. When the workflow runs for a `v*` tag, it signs and notarizes the universal DMG, then attaches the DMG and checksum file to the matching GitHub Release.
 
 For a signed and notarized manual DMG, configure these additional GitHub Actions secrets, then run the workflow manually with `notarize=1`:
 
@@ -69,7 +69,57 @@ For a signed and notarized manual DMG, configure these additional GitHub Actions
 | `ASC_ISSUER_ID` | App Store Connect issuer ID. |
 | `ASC_PRIVATE_KEY` | Full `.p8` private key contents. |
 
+You can set those release secrets with the GitHub CLI:
+
+```bash
+DEVELOPER_ID_CERTIFICATE_PATH="$PWD/private/DeveloperID.p12" \
+DEVELOPER_ID_CERTIFICATE_PASSWORD_FILE="$PWD/private/developer-id-password.txt" \
+KEYCHAIN_PASSWORD="$(openssl rand -base64 32)" \
+ASC_KEY_ID="$ASC_KEY_ID" \
+ASC_ISSUER_ID="$ASC_ISSUER_ID" \
+ASC_PRIVATE_KEY_PATH="$PWD/private/AuthKey_$ASC_KEY_ID.p8" \
+Scripts/configure-github-release-secrets.sh
+```
+
+Configure the App Store/TestFlight secrets with:
+
+```bash
+APPLE_TEAM_ID="$APPLE_TEAM_ID" \
+APPLE_DISTRIBUTION_CERTIFICATE_PATH="$PWD/private/AppleDistribution.p12" \
+APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD_FILE="$PWD/private/apple-distribution-password.txt" \
+KEYCHAIN_PASSWORD="$(openssl rand -base64 32)" \
+ASC_KEY_ID="$ASC_KEY_ID" \
+ASC_ISSUER_ID="$ASC_ISSUER_ID" \
+ASC_PRIVATE_KEY_PATH="$PWD/private/AuthKey_$ASC_KEY_ID.p8" \
+IOS_APP_STORE_PROVISION_PROFILE_PATH="$PWD/private/BlitzRecorderCamera.mobileprovision" \
+Scripts/configure-github-app-store-secrets.sh
+```
+
+Check the repo, workflow, local scripts, and required secrets with:
+
+```bash
+Scripts/check-github-release-readiness.sh
+```
+
+If the GitHub repo has not been created or the `origin` remote points to a repo the active `gh` account cannot access, run the bootstrap dry-run:
+
+```bash
+Scripts/bootstrap-github-repo.sh --repo blitzreels/blitzrecorder
+```
+
+Then apply it after confirming the printed commands:
+
+```bash
+Scripts/bootstrap-github-repo.sh --repo blitzreels/blitzrecorder --apply --push
+```
+
 The DMG lane stages the app with `ditto`, signs the DMG when a Developer ID Application identity is available, verifies the image, verifies the DMG signature when present, mounts it, checks `LSMinimumSystemVersion`, checks Mach-O minimum macOS metadata, and verifies the app code signature. Manual `notarize=1` also runs `spctl -a -t open`, staples the DMG, and validates the staple.
+
+Release DMGs are universal by default and must contain both `arm64` and `x86_64` slices. The expected filename shape is:
+
+```text
+BlitzRecorder-0.1.0-1-macOS-universal.dmg
+```
 
 Run the same lane locally with:
 

@@ -1,3 +1,5 @@
+import BlitzRecorderCore
+import AppKit
 import SwiftUI
 
 struct BlitzReelsCreatorPage: View {
@@ -49,7 +51,7 @@ struct BlitzReelsCreatorPage: View {
 
             infoRow(
                 symbol: access.isPro ? "checkmark.seal.fill" : "sparkles",
-                color: access.isPro ? Color(red: 0.09, green: 1.0, blue: 0.65) : .white.opacity(0.55),
+                color: access.isPro ? BlitzUI.mint : .white.opacity(0.55),
                 title: access.accessLabel,
                 detail: planDetail
             )
@@ -119,10 +121,7 @@ struct BlitzReelsCreatorPage: View {
 
     private var creatorCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("BLITZREELS")
-                .font(.system(size: 10, weight: .heavy))
-                .tracking(0.7)
-                .foregroundStyle(.white.opacity(0.52))
+            blitzReelsWordmark
 
             infoRow(
                 symbol: statusSymbol,
@@ -131,10 +130,24 @@ struct BlitzReelsCreatorPage: View {
                 detail: statusDetail
             )
 
-            Text("Already pay for BlitzReels? Sign in to get Pro for free.")
+            Text("Already a customer? Sign in to get Pro for free.")
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.white.opacity(0.56))
                 .fixedSize(horizontal: false, vertical: true)
+
+            Text("Have footage already? BlitzReels turns it into clips with captions.")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.white.opacity(0.56))
+                .fixedSize(horizontal: false, vertical: true)
+
+            Link(destination: BlitzRecorderProductIdentity.blitzReelsURL(source: "macos_app", placement: "plan_page")) {
+                Label("Turn my footage into clips", systemImage: "arrow.up.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+            }
+            .blitzGlassButton()
 
             if access.hasBlitzReelsAccountConnection {
                 Button {
@@ -162,7 +175,7 @@ struct BlitzReelsCreatorPage: View {
                 Button {
                     access.beginBlitzReelsSignIn()
                 } label: {
-                    Label("Sign in with BlitzReels", systemImage: "person.crop.circle.badge.checkmark")
+                    Label("Sign in", systemImage: "person.crop.circle.badge.checkmark")
                         .font(.system(size: 12, weight: .bold))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 10)
@@ -184,6 +197,21 @@ struct BlitzReelsCreatorPage: View {
         }
         .font(.system(size: 10, weight: .semibold))
         .foregroundStyle(.white.opacity(0.55))
+    }
+
+    private var blitzReelsWordmark: some View {
+        Group {
+            if let image = Bundle.main.blitzReelsWordmark {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+            } else {
+                Text("BlitzReels")
+                    .font(.system(size: 12, weight: .heavy))
+            }
+        }
+        .frame(width: 126, height: 20, alignment: .leading)
+        .accessibilityLabel("BlitzReels")
     }
 
     private func infoRow(
@@ -237,7 +265,7 @@ struct BlitzReelsCreatorPage: View {
 
     private var statusColor: Color {
         if access.hasBlitzReelsEntitlement {
-            return Color(red: 0.09, green: 1.0, blue: 0.65)
+            return BlitzUI.mint
         }
         if access.hasBlitzReelsAccountConnection {
             return .yellow
@@ -247,7 +275,7 @@ struct BlitzReelsCreatorPage: View {
 
     private var statusTitle: String {
         if access.hasBlitzReelsEntitlement {
-            return access.blitzReelsPlanName.map { "Free with \($0)" } ?? "Pro is on"
+            return "Pro is on"
         }
         if access.hasBlitzReelsAccountConnection {
             return "Signed in, but no plan yet"
@@ -257,11 +285,20 @@ struct BlitzReelsCreatorPage: View {
 
     private var statusDetail: String {
         if access.hasBlitzReelsEntitlement {
-            return "Your BlitzReels plan turns on Pro."
+            return "Your plan turns on Pro."
         }
         if access.hasBlitzReelsAccountConnection {
-            return "Changed your BlitzReels plan? Check again."
+            return "Changed your plan? Check again."
         }
-        return "Sign in to link your BlitzReels account."
+        return "Sign in to link your account."
+    }
+}
+
+private extension Bundle {
+    var blitzReelsWordmark: NSImage? {
+        guard let url = url(forResource: "BlitzReelsWordmarkWhite", withExtension: "png") else {
+            return nil
+        }
+        return NSImage(contentsOf: url)
     }
 }

@@ -2,22 +2,14 @@ import AppKit
 import SwiftUI
 
 struct BlitzGlassContainer<Content: View>: View {
-    private let spacing: CGFloat
     private let content: Content
 
     init(spacing: CGFloat = 0, @ViewBuilder content: () -> Content) {
-        self.spacing = spacing
         self.content = content()
     }
 
     var body: some View {
-        if #available(macOS 26.0, *) {
-            GlassEffectContainer(spacing: spacing) {
-                content
-            }
-        } else {
-            content
-        }
+        content
     }
 }
 
@@ -25,35 +17,33 @@ private struct BlitzGlassSurfaceModifier: ViewModifier {
     let cornerRadius: CGFloat
 
     func body(content: Content) -> some View {
-        if #available(macOS 26.0, *) {
-            content
-                .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
-        } else {
-            content
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(.white.opacity(0.12), lineWidth: 1)
-                }
-                .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
-        }
+        let radius = min(cornerRadius, 10)
+        // Flat: the material fill alone defines the panel. No stroke border — borders
+        // on every surface read as "boxes inside boxes". (Native Tahoe look.)
+        content
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
     }
 }
 
 private struct BlitzGlassCapsuleModifier: ViewModifier {
     func body(content: Content) -> some View {
-        if #available(macOS 26.0, *) {
-            content
-                .glassEffect(.regular, in: .capsule)
-        } else {
-            content
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay {
-                    Capsule()
-                        .strokeBorder(.white.opacity(0.12), lineWidth: 1)
-                }
-                .shadow(color: .black.opacity(0.16), radius: 14, y: 6)
-        }
+        content
+            .background(Color.white.opacity(0.075), in: Capsule())
+    }
+}
+
+/// Canonical device-card / inspector-card surface: a FLAT fill over the .regularMaterial
+/// rail (NOT glass-on-glass). Use this for on-rail cards; reserve `blitzGlassSurface`
+/// for free-floating panels (TopBar, popovers, creator page).
+private struct BlitzCardModifier: ViewModifier {
+    var cornerRadius: CGFloat = 12
+    var selected: Bool = false
+
+    func body(content: Content) -> some View {
+        // Selection reads from a brighter FILL (+ the mint icon/label inside), not a
+        // mint outline. Flat fills, no stroke — the native segmented-control look.
+        content
+            .background(selected ? BlitzUI.selectedFill : BlitzUI.cardFill, in: .rect(cornerRadius: cornerRadius))
     }
 }
 
@@ -89,22 +79,22 @@ extension View {
         modifier(BlitzGlassCapsuleModifier())
     }
 
+    func blitzCard(cornerRadius: CGFloat = 12, selected: Bool = false) -> some View {
+        modifier(BlitzCardModifier(cornerRadius: cornerRadius, selected: selected))
+    }
+
+    func blitzSeparator() -> some View {
+        self.overlay(BlitzUI.separator)
+    }
+
     @ViewBuilder
     func blitzGlassButton() -> some View {
-        if #available(macOS 26.0, *) {
-            self.buttonStyle(.glass)
-        } else {
-            self.buttonStyle(.bordered)
-        }
+        self.buttonStyle(.bordered)
     }
 
     @ViewBuilder
     func blitzProminentGlassButton() -> some View {
-        if #available(macOS 26.0, *) {
-            self.buttonStyle(.glassProminent)
-        } else {
-            self.buttonStyle(.borderedProminent)
-        }
+        self.buttonStyle(.borderedProminent)
     }
 
     func pointingHandCursor() -> some View {

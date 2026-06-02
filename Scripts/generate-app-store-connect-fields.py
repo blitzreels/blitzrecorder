@@ -203,7 +203,7 @@ def build_payload() -> dict[str, Any]:
             "displayName": SUBSCRIPTION_GROUP_NAME,
             "description": "Unlimited exports in BlitzRecorder.",
             "benefit": "Unlimited BlitzRecorder exports/renders while active.",
-            "freeBehavior": "3 exports/renders without subscription.",
+            "freeBehavior": "10 exports/renders without subscription.",
             "includedAccess": "Eligible active BlitzReels subscribers can sign in to unlock included Pro access.",
             "purchaseSurface": "macOS app only; the iOS companion does not include a paywall or initiate purchases.",
         },

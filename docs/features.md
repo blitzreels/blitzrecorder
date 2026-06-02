@@ -17,7 +17,7 @@
 - Use picture-in-picture and stacked layouts.
 - Show cursor and framing overlays when useful.
 
-## iPhone Camera
+## iPhone camera
 
 - Pair an iPhone over the local network.
 - Show a live monitor preview on the Mac.
@@ -25,7 +25,7 @@
 - Record the iPhone camera file locally on the phone.
 - Transfer the completed camera file back to the Mac take.
 
-## After Recording
+## After recording
 
 - Export the finished video.
 - Open the final recording.

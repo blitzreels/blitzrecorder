@@ -15,7 +15,7 @@ Record each run with:
 
 ## Mac App Subscription And Export Gate
 
-- Fresh install starts with 3 free exports available.
+- Fresh install starts with 10 free exports available.
 - A short local Mac-only recording can be created and exported.
 - Each successful free export decrements the free export count.
 - After the third successful free export, starting or exporting another take is blocked by the Pro message.
@@ -24,7 +24,7 @@ Record each run with:
 - Manage Subscription opens Apple's subscription management destination.
 - A cancelled sandbox purchase leaves the app locked after free exports are used.
 
-Evidence to keep: screen recording or screenshots of the Plan popover before export, after 3 exports, and after sandbox subscription/restore.
+Evidence to keep: screen recording or screenshots of the Plan popover before export, after 10 exports, and after sandbox subscription/restore.
 
 ## BlitzReels Included Access
 

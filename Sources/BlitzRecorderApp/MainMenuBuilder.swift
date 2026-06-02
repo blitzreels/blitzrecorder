@@ -35,7 +35,6 @@ final class MainMenuBuilder {
         menu.addItem(captureMenuItem())
         menu.addItem(viewMenuItem())
         menu.addItem(windowMenuItem())
-        menu.addItem(helpMenuItem())
         NSApp.mainMenu = menu
     }
 
@@ -43,6 +42,8 @@ final class MainMenuBuilder {
         let item = NSMenuItem()
         let submenu = NSMenu(title: "BlitzRecorder")
         submenu.addItem(menuItem("About BlitzRecorder", action: #selector(NSApp.orderFrontStandardAboutPanel(_:)), target: NSApp))
+        submenu.addItem(.separator())
+        submenu.addItem(menuItem("Settings…", action: #selector(MenuActionsTarget.showSettings), keyEquivalent: ","))
         submenu.addItem(.separator())
         submenu.addItem(menuItem("Hide BlitzRecorder", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h", target: NSApp))
         let hideOthers = menuItem("Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h", target: NSApp)
@@ -131,10 +132,6 @@ final class MainMenuBuilder {
         let fitWindow = menuItem("Fit Front Window for Shorts", action: #selector(MenuActionsTarget.fitFrontWindowForShorts), keyEquivalent: "f")
         fitWindow.keyEquivalentModifierMask = [.command, .shift]
         submenu.addItem(fitWindow)
-        submenu.addItem(menuItem("Target Window Wider", action: #selector(MenuActionsTarget.makeTargetWindowWider)))
-        submenu.addItem(menuItem("Target Window Narrower", action: #selector(MenuActionsTarget.makeTargetWindowNarrower)))
-        submenu.addItem(menuItem("Target Window Taller", action: #selector(MenuActionsTarget.makeTargetWindowTaller)))
-        submenu.addItem(menuItem("Target Window Shorter", action: #selector(MenuActionsTarget.makeTargetWindowShorter)))
 
         submenu.addItem(.separator())
 
@@ -174,14 +171,6 @@ final class MainMenuBuilder {
         submenu.addItem(.separator())
         submenu.addItem(menuItem("Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), target: NSApp))
         NSApp.windowsMenu = submenu
-        item.submenu = submenu
-        return item
-    }
-
-    private func helpMenuItem() -> NSMenuItem {
-        let item = NSMenuItem(title: "Help", action: nil, keyEquivalent: "")
-        let submenu = NSMenu(title: "Help")
-        submenu.addItem(menuItem("BlitzRecorder Help", action: #selector(NSApplication.showHelp(_:)), target: NSApp))
         item.submenu = submenu
         return item
     }
@@ -251,6 +240,7 @@ final class MainMenuBuilder {
     func pauseRecording()
     func resumeRecording()
     func stopRecording()
+    func showSettings()
     func chooseDisplayItem(_ sender: NSMenuItem)
     func chooseCameraItem(_ sender: NSMenuItem)
     func chooseMicrophoneItem(_ sender: NSMenuItem)
@@ -265,10 +255,4 @@ final class MainMenuBuilder {
     func chooseOutputFolder()
     func mergeLastTake()
     func fitFrontWindowForShorts()
-    func selectScreenRegion()
-    func clearScreenRegion()
-    func makeTargetWindowWider()
-    func makeTargetWindowNarrower()
-    func makeTargetWindowTaller()
-    func makeTargetWindowShorter()
 }

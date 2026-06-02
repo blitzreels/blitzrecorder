@@ -13,37 +13,50 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     }
 
     func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime? = nil) throws {
-        guard let device = MicrophoneDeviceSelection.selectedMicrophone(settings: settings) else {
-            throw RecorderError.microphoneUnavailable
-        }
+        try queue.sync {
+            guard let device = MicrophoneDeviceSelection.selectedMicrophone(settings: settings) else {
+                throw RecorderError.microphoneUnavailable
+            }
 
-        writer = try AudioSampleFileWriter(
-            url: url,
-            timelineStartTime: timelineStartTime,
-            stereoBitrate: settings.finalAudioBitrate,
-            format: settings.effectiveSourceAudioFormat
-        )
+            var didBeginConfiguration = false
+            do {
+                writer = try AudioSampleFileWriter(
+                    url: url,
+                    timelineStartTime: timelineStartTime,
+                    stereoBitrate: settings.finalAudioBitrate,
+                    format: settings.effectiveSourceAudioFormat
+                )
 
-        session.beginConfiguration()
-        AudioCaptureSessionCleanup.detachAudioOutputsAndRemoveAll(from: session)
+                session.beginConfiguration()
+                didBeginConfiguration = true
+                AudioCaptureSessionCleanup.detachAudioOutputsAndRemoveAll(from: session)
 
-        let input = try AVCaptureDeviceInput(device: device)
-        guard session.canAddInput(input) else {
-            throw RecorderError.microphoneUnavailable
-        }
-        session.addInput(input)
+                let input = try AVCaptureDeviceInput(device: device)
+                guard session.canAddInput(input) else {
+                    throw RecorderError.microphoneUnavailable
+                }
+                session.addInput(input)
 
-        let output = AVCaptureAudioDataOutput()
-        output.setSampleBufferDelegate(self, queue: queue)
-        guard session.canAddOutput(output) else {
-            throw RecorderError.writerNotReady
-        }
-        session.addOutput(output)
+                let output = AVCaptureAudioDataOutput()
+                output.setSampleBufferDelegate(self, queue: queue)
+                guard session.canAddOutput(output) else {
+                    output.setSampleBufferDelegate(nil, queue: nil)
+                    throw RecorderError.writerNotReady
+                }
+                session.addOutput(output)
 
-        session.commitConfiguration()
-        queue.async { [session] in
-            if !session.isRunning {
-                session.startRunning()
+                session.commitConfiguration()
+                didBeginConfiguration = false
+                if !session.isRunning {
+                    session.startRunning()
+                }
+            } catch {
+                writer = nil
+                if didBeginConfiguration {
+                    AudioCaptureSessionCleanup.detachAudioOutputsAndRemoveAll(from: session)
+                    session.commitConfiguration()
+                }
+                throw error
             }
         }
     }

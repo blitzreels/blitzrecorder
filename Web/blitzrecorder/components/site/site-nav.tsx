@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Button } from "@/components/ui/button";
+import { DownloadButton, VersionTag } from "@/components/site/download-button";
 import { assets } from "@/lib/assets";
 
 export function SiteNav() {
@@ -43,12 +43,10 @@ export function SiteNav() {
           <Link className="transition-colors hover:text-foreground" href="/#how">How it works</Link>
           <Link className="transition-colors hover:text-foreground" href="/#pricing">Pricing</Link>
         </nav>
-        <Button
-          render={<Link href="/#pricing" />}
-          className="ml-auto h-9 rounded-full px-4 shadow-[0_14px_40px_-22px_rgba(94,242,175,0.95)] md:ml-8"
-        >
-          Request access
-        </Button>
+        <div className="ml-auto flex items-center gap-2.5 md:ml-8">
+          <VersionTag className="hidden rounded-full border border-border px-2.5 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground sm:inline-flex" />
+          <DownloadButton className="h-9 rounded-full px-4 shadow-[0_14px_40px_-22px_rgba(94,242,175,0.95)]" />
+        </div>
       </div>
     </header>
   );

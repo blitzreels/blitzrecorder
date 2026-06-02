@@ -28,10 +28,13 @@ targets:
       - path: Sources/BlitzRecorderApp
       - path: Resources/BlitzRecorder.icns
         buildPhase: resources
+      - path: Resources/CompanionAppIcon.png
+        buildPhase: resources
+      - path: Resources/BlitzReelsWordmarkWhite.png
+        buildPhase: resources
     resources:
       - path: Resources/AppIcon.png
         optional: true
-      - path: Apps/iOSCamera/Resources/Icons/Icon-App-60x60@3x.png
       - path: Sources/BlitzRecorderApp/PrivacyInfo.xcprivacy
     dependencies:
       - package: BlitzRecorderCore
@@ -52,6 +55,8 @@ targets:
           CODE_SIGN_ENTITLEMENTS: BlitzRecorder.local.entitlements
         Release:
           CODE_SIGN_ENTITLEMENTS: BlitzRecorder.entitlements
+          ENABLE_HARDENED_RUNTIME: YES
+          OTHER_SWIFT_FLAGS: "$(inherited) -D RELEASE_APP_INTEGRITY_CHECKS"
 
   BlitzRecorderCamera:
     type: application
@@ -61,6 +66,8 @@ targets:
       - path: Apps/iOSCamera/Sources
       - path: Apps/iOSCamera/Resources/Assets.xcassets
       - path: Apps/iOSCamera/Resources/PrivacyInfo.xcprivacy
+        buildPhase: resources
+      - path: Apps/iOSCamera/Resources/ScreenshotPreview.jpg
         buildPhase: resources
       - path: Resources/AppIcon.png
         buildPhase: resources

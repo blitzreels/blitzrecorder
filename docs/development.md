@@ -7,7 +7,7 @@
 - XcodeGen when regenerating `BlitzRecorder.xcodeproj`
 - Optional: Ollama for local title generation experiments
 
-## Generate the Xcode Project
+## Generate the Xcode project
 
 ```bash
 Scripts/generate-xcode-project.sh
@@ -15,7 +15,7 @@ Scripts/generate-xcode-project.sh
 
 The generated project contains the macOS recorder target, the iOS companion target, and the shared Swift packages.
 
-## Build and Run the Mac App
+## Build and run the Mac app
 
 ```bash
 ./script/build_and_run.sh
@@ -36,7 +36,7 @@ Before rebuilding or restarting the Mac app during debugging, check which copy i
 pgrep -x BlitzRecorder && ps -axo pid,lstart,comm,args | rg 'BlitzRecorder'
 ```
 
-## Test and Build Checks
+## Test and build checks
 
 ```bash
 swift test
@@ -48,7 +48,7 @@ xcodebuild -project BlitzRecorder.xcodeproj -scheme BlitzRecorderCamera -configu
 
 The iOS target depends on `BlitzRecorderCore` and `BlitzRecorderTransport`. Build the iOS scheme through Xcode or `xcodebuild` so package modules and the app share one derived data workspace.
 
-## Local Packaging Checks
+## Local packaging checks
 
 ```bash
 ENTITLEMENTS_PATH="$PWD/BlitzRecorder.local.entitlements" Scripts/ci-macos-dmg.sh

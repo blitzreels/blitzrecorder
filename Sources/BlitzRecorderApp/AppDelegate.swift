@@ -134,9 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
             menu.addItem(startItem)
 
             if !readiness.isReady {
-                let reasonItem = NSMenuItem(title: readiness.detail, action: nil, keyEquivalent: "")
-                reasonItem.isEnabled = false
-                menu.addItem(reasonItem)
+                menu.addItem(Self.wrappingCaptionItem(readiness.detail))
             }
         case .starting:
             let item = NSMenuItem(title: "Starting...", action: nil, keyEquivalent: "")
@@ -175,6 +173,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
             item.target = self
         }
         statusItem?.menu = menu
+    }
+
+    /// A non-interactive, word-wrapping caption row for the status menu. Plain
+    /// `NSMenuItem` titles never wrap, so a long readiness reason runs off the
+    /// screen edge; a custom wrapping `NSTextField` view paragraphs it instead.
+    private static func wrappingCaptionItem(_ text: String, width: CGFloat = 300) -> NSMenuItem {
+        let item = NSMenuItem()
+        item.isEnabled = false
+
+        let label = NSTextField(wrappingLabelWithString: text)
+        label.font = .systemFont(ofSize: 11.5)
+        label.textColor = .secondaryLabelColor
+        label.isSelectable = false
+        label.lineBreakMode = .byWordWrapping
+        label.maximumNumberOfLines = 0
+        label.preferredMaxLayoutWidth = width
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        // Leading inset of 21pt aligns the caption with standard menu item text.
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(label)
+        NSLayoutConstraint.activate([
+            container.widthAnchor.constraint(equalToConstant: width + 33),
+            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 21),
+            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
+            label.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
+            label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -7),
+        ])
+        item.view = container
+        return item
     }
 
     private func addSceneItems(to menu: NSMenu) {
@@ -291,6 +320,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
 
     @objc private func showWindow() {
         presentMainWindow()
+    }
+
+    @objc func showSettings() {
+        windowController?.presentSettings()
     }
 
     private func presentMainWindow() {

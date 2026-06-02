@@ -3,6 +3,7 @@ import AVFoundation
 import BlitzRecorderCore
 import Foundation
 import Observation
+import QuartzCore
 
 enum SourceSelection: CaseIterable, Equatable {
     case screen
@@ -74,16 +75,27 @@ final class RecorderViewModel {
 
     var elapsedSeconds: Int = 0
     var renderProgress: Double = 0
-    private var elapsedTimer: Timer?
-    private var elapsedAccumulatedSeconds: TimeInterval = 0
-    private var currentRecordingSegmentStartedAt: Date?
+    private let elapsedClock = RecordingElapsedClock()
 
-    var appTab: AppTab = .recorder
+    /// Routes SwiftUI nav intents to the native Settings window (wired in
+    /// MainWindowController). The 6-item app rail was removed; every former
+    /// destination now opens the matching Settings pane (rule #5). `@ObservationIgnored`
+    /// because it is wiring, not observable UI state.
+    @ObservationIgnored var onPresentSettings: ((SettingsPane?) -> Void)?
     var selectedSource: SourceSelection? = .screen
     var selectedLayer: SceneLayerKind = .camera
+    /// UI-only selection for the scene's bottom "Background" layer. `SceneLayerKind`
+    /// has no `.background` case (it maps 1:1 to real capture sources), so the
+    /// Background row in the Layers list is tracked separately. Selecting any real
+    /// layer clears it; selecting Background shows the style/padding controls.
+    var isBackgroundLayerSelected = false
     var isCameraCropModeEnabled = false
     var isScreenCropModeEnabled = false
+    private var sceneLibraryRevision = 0
     var cropToolbarFrame: CGRect?
+    /// The screen layer's rect within the canvas (stage view coords), or nil when
+    /// Screen is off. Positions the "Pick a screen" prompt over the screen region only.
+    var screenLayerFrame: CGRect?
     var showsFirstRunOnboarding: Bool
     var screenAccessAwaitingRestart = false
     var screenCaptureAreaSelection: ScreenCaptureAreaSelection = .fullDisplay
@@ -182,14 +194,18 @@ final class RecorderViewModel {
     }
 
     var canEditScene: Bool {
-        coordinator.allowsSceneChanges
+        state == .idle
     }
 
     var canManipulateCanvasItems: Bool {
-        coordinator.allowsSceneChanges
+        canEditScene
     }
 
     var canEditCameraCrop: Bool {
+        canEditScene
+    }
+
+    var canSwitchScene: Bool {
         coordinator.allowsSceneChanges
     }
 
@@ -206,15 +222,18 @@ final class RecorderViewModel {
     }
 
     var currentScenes: [RecordingSceneDefinition] {
-        coordinator.scenesForCurrentLayout()
+        _ = sceneLibraryRevision
+        return coordinator.scenesForCurrentLayout()
     }
 
     var selectedSceneID: UUID? {
-        coordinator.selectedSceneIDForCurrentLayout()
+        _ = sceneLibraryRevision
+        return coordinator.selectedSceneIDForCurrentLayout()
     }
 
     var selectedSceneName: String {
-        coordinator.selectedSceneName()
+        _ = sceneLibraryRevision
+        return coordinator.selectedSceneName()
     }
 
     var permissionStatusRows: [PermissionStatusRow] {
@@ -285,6 +304,21 @@ final class RecorderViewModel {
         coordinator.hasScreenCaptureAccess()
     }
 
+    /// Accessibility is required to move/resize the front window for "Window" fit.
+    var hasAccessibilityAccessForWindowControls: Bool {
+        _ = permissionRefreshToken
+        return PermissionGate.hasAccessibilityAccess
+    }
+
+    func requestAccessibilityForWindowControls() {
+        Task {
+            let result = await PermissionGate.requestAccessibilityAccessForWindowControls()
+            detailMessage = result.message
+            refreshPermissionStatus()
+            refreshTargetWindow()
+        }
+    }
+
     var needsPersistentScreenCaptureAccess: Bool {
         let needsScreen = settings.enabledSources.contains(.screen) && !settings.usesPickedScreenContent
         let needsSystemAudio = settings.enabledSources.contains(.systemAudio)
@@ -302,22 +336,23 @@ final class RecorderViewModel {
         self.showsFirstRunOnboarding = ProcessInfo.processInfo.environment["BLITZRECORDER_FORCE_ONBOARDING"] == "1"
             || !UserDefaults.standard.bool(forKey: Self.firstRunOnboardingKey)
         syncScreenCaptureAreaSelection()
+        elapsedClock.onElapsedSecondsChanged = { [weak self] elapsedSeconds in
+            self?.elapsedSeconds = elapsedSeconds
+        }
 
         remoteCameraPreviewSurface.setMessage("Waiting for iPhone preview")
 
         previewStage.onLayerSelected = { [weak self] kind in
             self?.selectLayer(kind)
         }
-        previewStage.onCropButtonPressed = { [weak self] kind in
-            switch kind {
-            case .screen:
-                self?.beginScreenCropMode()
-            case .camera:
-                self?.beginCameraCropMode()
-            }
+        previewStage.onBackgroundSelected = { [weak self] in
+            self?.selectBackgroundLayer()
         }
         previewStage.onCropToolbarFrameChanged = { [weak self] frame in
             self?.cropToolbarFrame = frame
+        }
+        previewStage.onScreenLayerFrameChanged = { [weak self] frame in
+            self?.screenLayerFrame = frame
         }
         previewStage.onSceneLayoutChanged = { [weak self] layout in
             guard let self else { return }
@@ -351,42 +386,25 @@ final class RecorderViewModel {
     func applyState(_ newState: RecordingState) {
         let previousState = state
         state = newState
+        elapsedClock.applyState(newState, previousState: previousState)
         syncPreviewInteractionState()
         switch newState {
         case .starting:
-            elapsedAccumulatedSeconds = 0
-            elapsedSeconds = 0
             renderProgress = 0
             detailMessage = "Not recording yet. Hang on while BlitzRecorder prepares capture."
-            currentRecordingSegmentStartedAt = nil
             lastExportedURL = nil
             lastExportedSourceTakeURL = nil
             lastExportWarning = nil
             lastRecoveryOutput = nil
-            stopElapsedTimer()
         case .recording:
             if previousState == .idle || previousState == .starting || previousState == .finishing {
-                elapsedAccumulatedSeconds = 0
-                elapsedSeconds = 0
                 renderProgress = 0
             }
-            currentRecordingSegmentStartedAt = Date()
-            updateElapsedSeconds()
-            startElapsedTimer()
         case .paused:
-            updateElapsedSeconds()
-            commitCurrentRecordingSegment()
-            stopElapsedTimer()
+            break
         case .finishing:
-            updateElapsedSeconds()
-            commitCurrentRecordingSegment()
-            stopElapsedTimer()
             renderProgress = 0
         case .idle:
-            stopElapsedTimer()
-            elapsedAccumulatedSeconds = 0
-            currentRecordingSegmentStartedAt = nil
-            elapsedSeconds = 0
             renderProgress = 0
         }
     }
@@ -436,7 +454,9 @@ final class RecorderViewModel {
         previewStage.showsRuleOfThirdsOverlay = coordinator.settings.showsRuleOfThirdsOverlay
         previewStage.socialSafeZoneOverlay = coordinator.settings.socialSafeZoneOverlay
         previewStage.canvasBackgroundStyle = coordinator.settings.canvasBackgroundStyle
+        previewStage.canvasBackgroundAnimated = coordinator.settings.canvasBackgroundAnimated
         previewStage.canvasPadding = coordinator.settings.canvasPadding
+        previewStage.isBackgroundLayerSelected = isBackgroundLayerSelected
     }
 
     func refreshTargetWindow() {
@@ -514,7 +534,45 @@ final class RecorderViewModel {
 
     func selectScene(_ id: UUID) {
         coordinator.selectScene(id: id)
+        sceneLibraryRevision += 1
         syncSettingsAfterSceneChange()
+    }
+
+    func createScene() {
+        coordinator.createSceneFromCurrentSettings()
+        sceneLibraryRevision += 1
+        syncSettingsAfterSceneChange()
+    }
+
+    func duplicateSelectedScene() {
+        coordinator.duplicateSelectedScene()
+        sceneLibraryRevision += 1
+        syncSettingsAfterSceneChange()
+    }
+
+    func renameScene(_ id: UUID, to name: String) {
+        coordinator.renameScene(id: id, to: name)
+        sceneLibraryRevision += 1
+        syncSettingsAfterSceneChange()
+    }
+
+    func deleteScene(_ id: UUID) {
+        coordinator.deleteScene(id: id)
+        sceneLibraryRevision += 1
+        syncSettingsAfterSceneChange()
+    }
+
+    func moveScene(_ id: UUID, direction: SceneMoveDirection) {
+        guard let currentIndex = currentScenes.firstIndex(where: { $0.id == id }) else { return }
+        let targetIndex: Int
+        switch direction {
+        case .up:
+            targetIndex = currentIndex - 1
+        case .down:
+            targetIndex = currentIndex + 1
+        }
+        coordinator.moveScene(id: id, to: targetIndex)
+        sceneLibraryRevision += 1
     }
 
     func setScenePreset(_ preset: ScenePreset) {
@@ -549,11 +607,12 @@ final class RecorderViewModel {
     }
 
     func fitFrontWindowForShorts() {
+        // Enter Window mode up front so the fit + zoom controls appear immediately —
+        // even if the resize can't complete yet (Accessibility not granted, or no
+        // eligible front window). `syncScreenCaptureAreaSelection` keeps it sticky.
+        screenCaptureAreaSelection = .activeWindow
         coordinator.fitFrontWindowForShorts(scale: targetWindowFitScale)
         syncSettings()
-        if settings.screenCrop != nil {
-            screenCaptureAreaSelection = .activeWindow
-        }
         refreshTargetWindow()
     }
 
@@ -563,21 +622,17 @@ final class RecorderViewModel {
     }
 
     func fitScreenItemToFrontWindow() {
+        screenCaptureAreaSelection = .activeWindow
         coordinator.fitScreenItemToFrontWindow()
         syncSettings()
-        if settings.screenCrop != nil {
-            screenCaptureAreaSelection = .activeWindow
-        }
         refreshTargetWindow()
     }
 
     func fitFrontWindowForShorts(scale: CGFloat) {
+        screenCaptureAreaSelection = .activeWindow
         targetWindowFitScale = clampedTargetWindowFitScale(scale)
         coordinator.fitFrontWindowForShorts(scale: targetWindowFitScale)
         syncSettings()
-        if settings.screenCrop != nil {
-            screenCaptureAreaSelection = .activeWindow
-        }
         refreshTargetWindow()
     }
 
@@ -617,13 +672,18 @@ final class RecorderViewModel {
     }
 
     private func syncScreenCaptureAreaSelection() {
+        // "Window" is sticky once chosen: keep the fit + zoom controls visible even
+        // when the fit hasn't set a crop yet (Accessibility not granted, or no
+        // eligible front window). Full (`clearScreenCrop`) and Free crop exit
+        // window mode explicitly, so this never traps the user in it.
+        if screenCaptureAreaSelection == .activeWindow {
+            return
+        }
         guard settings.screenCrop != nil else {
             screenCaptureAreaSelection = .fullDisplay
             return
         }
-        if screenCaptureAreaSelection != .activeWindow {
-            screenCaptureAreaSelection = .manualCrop
-        }
+        screenCaptureAreaSelection = .manualCrop
     }
 
     private func syncPreviewInteractionState() {
@@ -642,9 +702,20 @@ final class RecorderViewModel {
 
     func selectLayer(_ layer: SceneLayerKind) {
         guard settings.enabledSources.contains(layer.source) else { return }
+        isBackgroundLayerSelected = false
+        previewStage.isBackgroundLayerSelected = false
         selectedLayer = layer
         selectedSource = SourceSelection(source: layer.source)
         previewStage.selectedLayer = layer
+    }
+
+    /// Select the scene's bottom Background layer (UI-only — see
+    /// `isBackgroundLayerSelected`). Reveals the background style / padding controls
+    /// in the right inspector.
+    func selectBackgroundLayer() {
+        isBackgroundLayerSelected = true
+        previewStage.isBackgroundLayerSelected = true
+        selectedSource = nil
     }
 
     func selectSource(_ source: CaptureSource) {
@@ -680,24 +751,11 @@ final class RecorderViewModel {
         syncSettings()
     }
 
+
     func setCameraCropZoom(_ zoom: CGFloat) {
         setCameraCropPreset(
             amount: CGPoint(x: zoom, y: zoom),
             position: settings.cameraCropPosition
-        )
-    }
-
-    func setCameraCropPanX(_ x: CGFloat) {
-        setCameraCropPreset(
-            amount: settings.cameraCropAmount,
-            position: CGPoint(x: x, y: settings.cameraCropPosition.y)
-        )
-    }
-
-    func setCameraCropPanY(_ y: CGFloat) {
-        setCameraCropPreset(
-            amount: settings.cameraCropAmount,
-            position: CGPoint(x: settings.cameraCropPosition.x, y: y)
         )
     }
 
@@ -788,6 +846,13 @@ final class RecorderViewModel {
 
     func setCanvasBackgroundStyle(_ style: CanvasBackgroundStyle) {
         coordinator.setCanvasBackgroundStyle(style)
+        previewStage.canvasBackgroundStyle = coordinator.settings.canvasBackgroundStyle
+        syncSettings()
+    }
+
+    func setCanvasBackgroundAnimated(_ animated: Bool) {
+        coordinator.setCanvasBackgroundAnimated(animated)
+        previewStage.canvasBackgroundAnimated = coordinator.settings.canvasBackgroundAnimated
         syncSettings()
     }
 
@@ -1024,12 +1089,11 @@ final class RecorderViewModel {
 
     func openAccessFromOnboarding() {
         dismissFirstRunOnboarding()
-        appTab = .permissions
+        onPresentSettings?(.permissions)
     }
 
     func startFromCover() {
         dismissFirstRunOnboarding()
-        appTab = .recorder
     }
 
     func requestScreenAccessFromCover() {
@@ -1107,11 +1171,24 @@ final class RecorderViewModel {
         NSApp.terminate(nil)
     }
 
+    /// True when the Screen source is on and visible but has nothing to preview yet —
+    /// no picked content and no Screen-Recording grant. Drives the tappable
+    /// "Pick a screen" call-to-action on the center stage.
+    var screenNeedsPicking: Bool {
+        settings.enabledSources.contains(.screen)
+            && !settings.hiddenSources.contains(.screen)
+            && !settings.usesPickedScreenContent
+            && !coordinator.hasScreenCaptureAccess()
+    }
+
     private func pickAndEnableScreenSource() {
         Task {
             do {
                 try await coordinator.pickScreenSource()
                 syncSettings()
+                // Picking enables + unhides the Screen source; also select its layer so
+                // the right inspector immediately shows the screen's crop/area controls.
+                selectLayer(.screen)
                 detailMessage = "Screen selected for this session."
             } catch {
                 detailMessage = "Screen picker failed: \(error.localizedDescription)"
@@ -1218,7 +1295,7 @@ final class RecorderViewModel {
         }
         guard accessController.canRenderExport else {
             detailMessage = "Free exports used. Subscribe for unlimited renders."
-            appTab = .creator
+            onPresentSettings?(.account)
             return
         }
         coordinator.mergeLastTake()
@@ -1327,12 +1404,10 @@ final class RecorderViewModel {
         coordinator.recordingReadiness().isReady && accessController.canRenderExport
     }
 
-    var readinessDetailsTab: AppTab {
-        accessController.canRenderExport ? .permissions : .creator
-    }
-
     func openReadinessDetails() {
-        appTab = readinessDetailsTab
+        // Free exports exhausted -> Account pane (upgrade); otherwise a permission /
+        // source blocker -> Permissions pane.
+        onPresentSettings?(accessController.canRenderExport ? .permissions : .account)
     }
 
     var recordingBlockerDetail: String? {
@@ -1411,37 +1486,6 @@ final class RecorderViewModel {
             return "Active window"
         }
         return "Manual crop · \(width)% x \(height)%"
-    }
-
-    private func startElapsedTimer() {
-        elapsedTimer?.invalidate()
-        elapsedTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.updateElapsedSeconds()
-            }
-        }
-    }
-
-    private func stopElapsedTimer() {
-        elapsedTimer?.invalidate()
-        elapsedTimer = nil
-    }
-
-    private func updateElapsedSeconds() {
-        let currentSegmentSeconds: TimeInterval
-        if let currentRecordingSegmentStartedAt {
-            currentSegmentSeconds = Date().timeIntervalSince(currentRecordingSegmentStartedAt)
-        } else {
-            currentSegmentSeconds = 0
-        }
-        elapsedSeconds = Int((elapsedAccumulatedSeconds + currentSegmentSeconds).rounded(.down))
-    }
-
-    private func commitCurrentRecordingSegment() {
-        guard let currentRecordingSegmentStartedAt else { return }
-        elapsedAccumulatedSeconds += Date().timeIntervalSince(currentRecordingSegmentStartedAt)
-        self.currentRecordingSegmentStartedAt = nil
-        elapsedSeconds = Int(elapsedAccumulatedSeconds.rounded(.down))
     }
 
     private var remoteTransferProgress: RemoteCameraTransferProgress? {
@@ -1553,32 +1597,9 @@ extension CaptureSource {
     }
 }
 
-enum AppTab: CaseIterable, Equatable {
-    case recorder
-    case iphone
-    case recording
-    case creator
-    case permissions
-
-    var title: String {
-        switch self {
-        case .recorder: return "Capture"
-        case .iphone: return "iPhone"
-        case .recording: return "Export"
-        case .creator: return "Plan"
-        case .permissions: return "Access"
-        }
-    }
-
-    var symbolName: String {
-        switch self {
-        case .recorder: return "record.circle"
-        case .iphone: return "iphone.gen3"
-        case .recording: return "square.and.arrow.up"
-        case .creator: return "creditcard"
-        case .permissions: return "lock.shield"
-        }
-    }
+enum SceneMoveDirection {
+    case up
+    case down
 }
 
 extension CaptureLayout {

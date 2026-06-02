@@ -201,8 +201,9 @@ capture_simulator() {
   local output_dir="$2"
   local simulator_name="$3"
   local device_type="$4"
-  shift 4
-  local accepted_dimensions=("$@")
+  local accepted_csv="$5"          # space-separated accepted dimensions
+  shift 5
+  local variant_specs=("$@")       # "file_name:variant" entries (relaunch per shot)
 
   require_tool xcrun
   require_tool sips
@@ -216,26 +217,46 @@ capture_simulator() {
   xcrun simctl boot "$udid" >/dev/null 2>&1 || true
   xcrun simctl bootstatus "$udid" -b >/dev/null
   build_ios_for_simulator "$udid"
-  xcrun simctl terminate "$udid" "$IOS_BUNDLE_ID" >/dev/null 2>&1 || true
   xcrun simctl uninstall "$udid" "$IOS_BUNDLE_ID" >/dev/null 2>&1 || true
   xcrun simctl install "$udid" "$IOS_APP_PATH"
-  SIMCTL_CHILD_BLITZRECORDER_CAMERA_SCREENSHOT_MODE=1 \
-    xcrun simctl launch "$udid" "$IOS_BUNDLE_ID" --blitzrecorder-camera-screenshot-mode >/dev/null
-  sleep "${SIMULATOR_CAPTURE_WAIT_SECONDS:-4}"
 
-  local output="$output_dir/01-pairing-screen.png"
-  xcrun simctl io "$udid" screenshot --type=png "$output" >/dev/null
-  assert_dimensions_one_of "$output" "${accepted_dimensions[@]}"
-  echo "✓ $label screenshot captured from $simulator_name ($udid)"
+  local accepted_dimensions
+  read -r -a accepted_dimensions <<<"$accepted_csv"
+
+  local spec file_name variant output
+  for spec in "${variant_specs[@]}"; do
+    file_name="${spec%%:*}"
+    variant="${spec##*:}"
+    xcrun simctl terminate "$udid" "$IOS_BUNDLE_ID" >/dev/null 2>&1 || true
+    SIMCTL_CHILD_BLITZRECORDER_CAMERA_SCREENSHOT_MODE=1 \
+      SIMCTL_CHILD_BLITZRECORDER_CAMERA_SCREENSHOT_VARIANT="$variant" \
+      xcrun simctl launch "$udid" "$IOS_BUNDLE_ID" \
+        --blitzrecorder-camera-screenshot-mode \
+        "--blitzrecorder-camera-screenshot-variant=$variant" >/dev/null
+    sleep "${SIMULATOR_CAPTURE_WAIT_SECONDS:-4}"
+
+    output="$output_dir/$file_name.png"
+    xcrun simctl io "$udid" screenshot --type=png "$output" >/dev/null
+    assert_dimensions_one_of "$output" "${accepted_dimensions[@]}"
+    echo "✓ $label/$file_name captured ($variant)"
+  done
 }
 
 capture_iphone() {
+  # Capture the real UI to a raw/ subfolder, then compose branded marketing
+  # screenshots (gradient + headline + device bezel) into the upload folder.
+  local raw_dir="$IPHONE_OUTPUT_DIR/raw"
   capture_simulator \
     "iPhone 6.9-inch" \
-    "$IPHONE_OUTPUT_DIR" \
+    "$raw_dir" \
     "${IPHONE_SIMULATOR_NAME:-BlitzRecorder iPhone 6.9}" \
     "${IPHONE_DEVICE_TYPE:-com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro-Max}" \
-    "1260x2736" "1290x2796" "1320x2868"
+    "1260x2736 1290x2796 1320x2868" \
+    "01-pairing-screen:pairing" \
+    "02-connected:connected" \
+    "03-recording:recording" \
+    "04-transfer:transfer"
+  swift "$ROOT/Scripts/compose-app-store-screenshots.swift" "$raw_dir" "$IPHONE_OUTPUT_DIR"
 }
 
 capture_ipad() {
@@ -244,7 +265,8 @@ capture_ipad() {
     "$IPAD_OUTPUT_DIR" \
     "${IPAD_SIMULATOR_NAME:-BlitzRecorder iPad 13}" \
     "${IPAD_DEVICE_TYPE:-com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M4-8GB}" \
-    "2048x2732" "2064x2752"
+    "2048x2732 2064x2752" \
+    "01-pairing-screen:pairing"
 }
 
 case "$MODE" in

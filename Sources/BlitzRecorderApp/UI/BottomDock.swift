@@ -7,36 +7,45 @@ struct BottomDock: View {
     @Bindable var vm: RecorderViewModel
 
     var body: some View {
-        BlitzGlassContainer(spacing: 12) {
-            VStack(spacing: 12) {
-                if vm.state != .idle {
-                    SessionProgressView(vm: vm)
-                } else if let recovery = vm.lastRecoveryOutput {
-                    RecoveryAvailableView(vm: vm, recovery: recovery)
-                } else if !vm.canStartRecording {
-                    ReadinessIssueView(vm: vm)
-                } else if let savedURL = vm.lastExportedURL {
-                    ExportCompletedView(
-                        vm: vm,
-                        url: savedURL,
-                        sourceTakeURL: vm.lastExportedSourceTakeURL,
-                        warning: vm.lastExportWarning
-                    )
-                } else if let message = vm.idleStatusMessage {
-                    Text(message)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.55))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .frame(width: 300)
-                }
-
-                RecordingActionRow(vm: vm)
+        VStack(spacing: 12) {
+            if vm.state != .idle {
+                SessionProgressView(vm: vm)
+            } else if let recovery = vm.lastRecoveryOutput {
+                RecoveryAvailableView(vm: vm, recovery: recovery)
+            } else if !vm.canStartRecording {
+                ReadinessIssueView(vm: vm)
+            } else if let savedURL = vm.lastExportedURL {
+                ExportCompletedView(
+                    vm: vm,
+                    url: savedURL,
+                    sourceTakeURL: vm.lastExportedSourceTakeURL,
+                    warning: vm.lastExportWarning
+                )
+            } else if let message = vm.idleStatusMessage {
+                Text(message)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 300)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+
+            RecordingActionRow(vm: vm)
         }
-        .blitzGlassSurface(cornerRadius: 26)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity)
+        .background(.bar)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(.white.opacity(0.08))
+                .frame(height: 1)
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(.white.opacity(0.08))
+                .frame(height: 1)
+        }
     }
 }
 
@@ -44,56 +53,61 @@ private struct RecordingActionRow: View {
     @Bindable var vm: RecorderViewModel
 
     var body: some View {
-        HStack(spacing: 10) {
-            switch vm.state {
-            case .idle:
-                RecordingSettingsShortcut(vm: vm)
-                RecordButton(vm: vm)
-            case .recording, .paused:
-                PauseButton(vm: vm)
-                RecordButton(vm: vm)
-            case .starting, .finishing:
-                RecordButton(vm: vm)
+        HStack(spacing: 12) {
+            // Leading cluster
+            HStack(spacing: 10) {
+                switch vm.state {
+                case .idle:
+                    RecordingSettingsShortcut(vm: vm)
+                case .recording, .paused:
+                    PauseButton(vm: vm)
+                case .starting, .finishing:
+                    EmptyView()
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            RecordButton(vm: vm)
+
+            // Trailing balancer keeps the record button centered. The old "Recordings"
+            // shortcut lived here but was redundant — it only opened export settings,
+            // exactly like the EXPORT chip on the left.
+            HStack(spacing: 10) {}
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
 }
 
+/// Idle dock control: shows the export quality + FPS and opens export settings on
+/// click. One quiet line — a small gear glyph for affordance + the value, with no
+/// "EXPORT" eyebrow and no box (that chip read as cluttered). Text brightens on hover.
 private struct RecordingSettingsShortcut: View {
     @Bindable var vm: RecorderViewModel
+    @State private var hovering = false
 
     var body: some View {
         Button {
-            vm.appTab = .recording
+            vm.onPresentSettings?(.recording)
         } label: {
-            HStack(spacing: 8) {
-                ZStack {
-                    Circle()
-                        .fill(.white.opacity(0.08))
-                    Image(systemName: "gearshape.fill")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.72))
-                }
-                .frame(width: 26, height: 26)
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Export")
-                        .font(.system(size: 9, weight: .heavy))
-                        .foregroundStyle(.white.opacity(0.44))
-                    Text(settingsSummary)
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.82))
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 0)
+            HStack(spacing: 7) {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 13, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                Text(settingsSummary)
+                    .font(.system(size: 12, weight: .semibold))
+                    .monospacedDigit()
+                    .fixedSize()
             }
+            .foregroundStyle(.white.opacity(hovering ? 0.92 : 0.58))
             .padding(.horizontal, 12)
-            .frame(height: 44)
-            .frame(width: 142)
+            .frame(height: 40)
+            .contentShape(.rect)
         }
-        .blitzGlassButton()
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
         .pointingHandCursor()
-        .help("Open export settings")
+        .help("Export settings")
     }
 
     private var settingsSummary: String {
@@ -131,7 +145,7 @@ private struct ExportCompletedView: View {
     let warning: String?
     @State private var metadata = RecordingFileMetadata.empty
 
-    private let accent = Color(red: 0.09, green: 1.0, blue: 0.65)
+    private let accent = BlitzUI.mint
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -167,7 +181,7 @@ private struct ExportCompletedView: View {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.yellow.opacity(0.92))
+                        .foregroundStyle(BlitzUI.warning)
                         .frame(width: 16)
                     Text(warning)
                         .font(.system(size: 10, weight: .semibold))
@@ -203,7 +217,7 @@ private struct ExportCompletedView: View {
                 .background(.white.opacity(0.07))
 
             // Actions on their own full-width row — plenty of room, nothing truncates.
-            HStack(spacing: 8) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 86), spacing: 8)], alignment: .leading, spacing: 8) {
                 DockActionButton(title: "Open", systemImage: "play.fill", help: "Open \(url.lastPathComponent)") {
                     NSWorkspace.shared.open(url)
                 }
@@ -214,14 +228,12 @@ private struct ExportCompletedView: View {
                     vm.renameLastExportedFile()
                 }
 
-                Spacer(minLength: 12)
-
                 DockActionButton(title: "New Take", systemImage: "plus", help: "Clear and get ready for the next recording") {
                     vm.clearPostRecordingStatus()
                 }
             }
         }
-        .frame(width: 460)
+        .frame(maxWidth: 460)
         .task(id: url) {
             metadata = .empty
             metadata = await RecordingFileMetadata.load(for: url)
@@ -251,13 +263,13 @@ private struct RecoveryAvailableView: View {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(.yellow.opacity(0.92))
+                    .foregroundStyle(BlitzUI.warning)
                     .frame(width: 16)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Recording needs recovery")
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.yellow.opacity(0.92))
+                        .foregroundStyle(BlitzUI.warning)
                     Text(recovery.reason)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.76))
@@ -277,7 +289,7 @@ private struct RecoveryAvailableView: View {
             Divider()
                 .background(.white.opacity(0.07))
 
-            HStack(spacing: 8) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 8)], alignment: .leading, spacing: 8) {
                 if recovery.canRetryExport {
                     DockActionButton(title: "Retry Export", systemImage: "arrow.clockwise", help: "Try exporting the recovered source files again") {
                         vm.retryRecoveredExport()
@@ -289,17 +301,15 @@ private struct RecoveryAvailableView: View {
                 }
 
                 DockActionButton(title: "Export Settings", systemImage: "slider.horizontal.3") {
-                    vm.appTab = .recording
+                    vm.onPresentSettings?(.recording)
                 }
 
                 DockActionButton(title: "Dismiss", systemImage: "xmark") {
                     vm.clearPostRecordingStatus()
                 }
-
-                Spacer(minLength: 0)
             }
         }
-        .frame(width: 460)
+        .frame(maxWidth: 460)
     }
 }
 
@@ -354,32 +364,22 @@ private struct ReadinessIssueView: View {
     @Bindable var vm: RecorderViewModel
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 9) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(.yellow.opacity(0.92))
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(BlitzUI.warning)
 
             Text(message)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(.white.opacity(0.74))
-                .lineLimit(1)
-                .truncationMode(.tail)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 12)
 
-            Button {
-                vm.openReadinessDetails()
-            } label: {
-                Text("Details")
-                    .font(.system(size: 10, weight: .bold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-            }
-            .blitzGlassButton()
-            .controlSize(.small)
-            .pointingHandCursor()
+            DetailsLink { vm.openReadinessDetails() }
         }
-        .frame(width: 300)
+        .frame(maxWidth: .infinity)
     }
 
     private var message: String {
@@ -387,6 +387,27 @@ private struct ReadinessIssueView: View {
             return "Free exports used"
         }
         return vm.recordingReadiness.blockers.first?.sentence ?? vm.recordingReadiness.detail
+    }
+}
+
+/// A quiet text affordance ("Details ›") — no button chrome, brightens on hover.
+private struct DetailsLink: View {
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 3) {
+                Text("Details")
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 8, weight: .bold))
+            }
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.white.opacity(hovering ? 1 : 0.78))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .pointingHandCursor()
     }
 }
 
@@ -420,10 +441,10 @@ private struct StartingRecordingView: View {
         HStack(spacing: 10) {
             ZStack {
                 Circle()
-                    .fill(Color(red: 0.27, green: 0.7, blue: 1).opacity(0.16))
+                    .fill(.white.opacity(0.12))
                 Image(systemName: "hourglass")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color(red: 0.5, green: 0.82, blue: 1))
+                    .foregroundStyle(.white.opacity(0.7))
             }
             .frame(width: 28, height: 28)
 
@@ -445,7 +466,7 @@ private struct StartingRecordingView: View {
                 .controlSize(.small)
                 .frame(width: 18, height: 18)
         }
-        .frame(width: 360)
+        .frame(maxWidth: 360)
     }
 }
 
@@ -457,7 +478,7 @@ private struct RecordingElapsedView: View {
         HStack(spacing: 8) {
             Image(systemName: state == .paused ? "pause.fill" : "record.circle")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(state == .paused ? .yellow.opacity(0.9) : .red.opacity(0.95))
+                .foregroundStyle(state == .paused ? BlitzUI.warning : BlitzUI.recordRed)
                 .frame(width: 16)
             Text(state == .paused ? "Paused" : "Recording")
                 .font(.system(size: 11, weight: .semibold))
@@ -468,7 +489,7 @@ private struct RecordingElapsedView: View {
                 .monospacedDigit()
                 .foregroundStyle(.white.opacity(0.95))
         }
-        .frame(width: 224)
+        .frame(minWidth: 160, maxWidth: 224)
     }
 }
 
@@ -509,7 +530,7 @@ private struct RenderingProgressView: View {
                 .progressViewStyle(.linear)
                 .tint(.white.opacity(0.85))
         }
-        .frame(width: 360)
+        .frame(maxWidth: 360)
     }
 }
 
@@ -543,55 +564,89 @@ private struct PauseButton: View {
     }
 }
 
+/// Subtle press feedback for the record control — a small, calm dip, no bounce.
+private struct RecordButtonPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+/// Round, Final Cut-style record control — the hero of the dock. Red is the ONLY
+/// red in the UI. Idle = a flat solid-red disc inside a faint ring; recording/paused
+/// = a red ring around a white stop square. Flat by design — no gradient, gloss, or
+/// glow. Not-ready/locked states dim rather than recolor.
 private struct RecordButton: View {
     @Bindable var vm: RecorderViewModel
+
+    private let diameter: CGFloat = 64
+    @State private var isHovering = false
+
+    private var lifted: Bool { isHovering && enabled && !dimmed }
 
     var body: some View {
         Button {
             vm.primaryAction()
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: symbol)
-                    .font(.system(size: 15, weight: .bold))
-                Text(label)
-                    .font(.system(size: 13, weight: .bold))
-                    .fixedSize()
+            ZStack {
+                // Faint ring the disc sits inside (the classic record-button well).
+                Circle()
+                    .strokeBorder(.white.opacity(0.14), lineWidth: 2)
+                    .frame(width: diameter, height: diameter)
+
+                recordGlyph
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .frame(minWidth: 168)
+            .frame(width: diameter, height: diameter)
+            .contentShape(.circle)
+            .scaleEffect(lifted ? 1.03 : 1)
+            .animation(.easeOut(duration: 0.16), value: lifted)
         }
-        .blitzProminentGlassButton()
-        .tint(tint)
+        .buttonStyle(RecordButtonPressStyle())
+        .opacity(dimmed ? 0.5 : 1)
         .disabled(!enabled)
+        .onHover { isHovering = $0 }
         .pointingHandCursor()
-        .help(vm.recordingBlockerDetail ?? "")
+        .help(vm.recordingBlockerDetail ?? helpText)
     }
 
-    private var symbol: String {
+    @ViewBuilder
+    private var recordGlyph: some View {
         switch vm.state {
-        case .idle: return "record.circle"
-        case .recording, .paused: return "stop.fill"
-        case .starting: return "hourglass"
-        case .finishing: return "ellipsis"
+        case .idle:
+            Circle()
+                .fill(BlitzUI.recordRed)
+                .frame(width: diameter - 8, height: diameter - 8)
+        case .recording, .paused:
+            ZStack {
+                Circle()
+                    .strokeBorder(BlitzUI.recordRed, lineWidth: 4)
+                    .frame(width: diameter - 6, height: diameter - 6)
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(.white.opacity(0.95))
+                    .frame(width: 20, height: 20)
+            }
+        case .starting, .finishing:
+            ProgressView()
+                .controlSize(.small)
         }
     }
 
-    private var label: String {
+    private var helpText: String {
         switch vm.state {
-        case .idle: return "Start Recording"
-        case .recording, .paused: return "Stop"
-        case .starting: return "Please Wait"
+        case .idle: return "Start recording"
+        case .recording, .paused: return "Stop recording"
+        case .starting: return "Please wait"
         case .finishing: return "Saving…"
         }
     }
 
-    private var tint: Color {
+    /// Idle-but-not-ready stays red but dims; we never turn it yellow (one red only).
+    private var dimmed: Bool {
         switch vm.state {
-        case .idle:
-            return vm.canStartRecording ? Color(red: 1, green: 0.27, blue: 0.27) : .yellow
-        case .recording, .paused: return Color(red: 0.9, green: 0.9, blue: 0.95)
-        case .starting, .finishing: return .gray
+        case .idle: return !vm.canStartRecording
+        case .recording, .paused: return false
+        case .starting, .finishing: return true
         }
     }
 

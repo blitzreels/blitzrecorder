@@ -13,7 +13,7 @@ Last updated: 2026-05-22
 - Monthly price: $7.99 per month
 - Annual subscription product ID: `dev.blitzreels.blitzrecorder.pro.annual`
 - Annual price: $49.99 per year
-- Trial behavior: 3 free exports, then Pro required for additional exports
+- Trial behavior: 10 free exports, then Pro required for additional exports
 - BlitzReels access: active eligible BlitzReels subscribers can unlock Pro by signing in
 
 ## Public URLs
@@ -47,7 +47,7 @@ Use `AppStore/AppStoreConnectFields.generated.json` as the exact machine-readabl
 - Add support URL to both app records.
 - Use Apple standard EULA unless a reviewed custom EULA is published.
 - Add review notes explaining:
-  - The Mac app has 3 free exports.
+  - The Mac app has 10 free exports.
   - Additional exports require the App Store subscription or a BlitzReels entitlement.
   - The iOS app is a companion remote camera and does not function as a standalone recorder.
   - Pairing requires both devices on the same local network and a six-digit code shown on the iPhone.

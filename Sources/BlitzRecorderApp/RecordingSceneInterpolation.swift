@@ -10,6 +10,7 @@ extension RecordingScene {
             cameraCropAmount: cameraCropAmount.interpolated(to: target.cameraCropAmount, progress: progress),
             cameraCropPosition: cameraCropPosition.interpolated(to: target.cameraCropPosition, progress: progress),
             canvasBackgroundStyle: progress < 0.5 ? canvasBackgroundStyle : target.canvasBackgroundStyle,
+            canvasBackgroundAnimated: progress < 0.5 ? canvasBackgroundAnimated : target.canvasBackgroundAnimated,
             canvasPadding: canvasPadding + (target.canvasPadding - canvasPadding) * progress
         )
     }

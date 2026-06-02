@@ -24,6 +24,7 @@ final class CameraCaptureController {
     private let sessionQueue = DispatchQueue(label: "blitzrecorder.camera-capture-session", qos: .userInitiated)
     private let previewQueue = DispatchQueue(label: "blitzrecorder.camera-monitor-preview")
     private let previewDelegate = CameraMonitorPreviewDelegate()
+    private let recordingLibrary = CameraRecordingLibrary()
     private var activeVideoInput: AVCaptureDeviceInput?
     private var recordingDelegate: MovieRecordingDelegate?
     private var activeRecordingURL: URL?
@@ -232,7 +233,7 @@ final class CameraCaptureController {
             }
         }
 
-        let url = try recordingURL(takeID: takeID)
+        let url = try recordingLibrary.recordingURL(takeID: takeID)
         if FileManager.default.fileExists(atPath: url.path) {
             try FileManager.default.removeItem(at: url)
         }
@@ -324,7 +325,7 @@ final class CameraCaptureController {
                         }
                     case .failure(let error):
                         if let url = finishedURL,
-                           Self.hasRecoverableMedia(at: url) {
+                           self.recordingLibrary.hasRecoverableMedia(at: url) {
                             do {
                                 continuation.resume(returning: try await CameraRecordingResult(
                                     url: url,
@@ -351,7 +352,7 @@ final class CameraCaptureController {
         recordingDelegate = nil
         activeRecordingURL = url
         let result: Result<CameraRecordingResult, Error>
-        if Self.hasRecoverableMedia(at: url) {
+        if recordingLibrary.hasRecoverableMedia(at: url) {
             do {
                 result = .success(try await CameraRecordingResult(
                     url: url,
@@ -1092,42 +1093,16 @@ final class CameraCaptureController {
         onMonitorVideoFrame?(frame)
     }
 
-    private static func hasRecoverableMedia(at url: URL) -> Bool {
-        guard FileManager.default.fileExists(atPath: url.path),
-              let byteCount = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value else {
-            return false
-        }
-        return byteCount > 0
-    }
-
     func existingRecordingURL(takeID: UUID) -> URL? {
-        guard let url = try? recordingURL(takeID: takeID),
-              FileManager.default.fileExists(atPath: url.path) else {
-            return nil
-        }
-        return url
+        recordingLibrary.existingRecordingURL(takeID: takeID)
     }
 
     func pendingRecordingURLs() -> [URL] {
-        guard let directory = try? recordingsDirectory(),
-              let urls = try? FileManager.default.contentsOfDirectory(
-                  at: directory,
-                  includingPropertiesForKeys: [.creationDateKey, .fileSizeKey],
-                  options: [.skipsHiddenFiles]
-              ) else {
-            return []
-        }
-        return urls
-            .filter { $0.pathExtension.lowercased() == "mov" }
-            .sorted { lhs, rhs in
-                let lhsDate = (try? lhs.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
-                let rhsDate = (try? rhs.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
-                return lhsDate > rhsDate
-            }
+        recordingLibrary.pendingRecordingURLs()
     }
 
     func removeRecording(at url: URL) {
-        try? FileManager.default.removeItem(at: url)
+        recordingLibrary.removeRecording(at: url)
     }
 
     var captureProfileID: RemoteCameraCaptureProfileID {
@@ -1140,17 +1115,6 @@ final class CameraCaptureController {
 
     var captureFormatLabel: String? {
         activeCaptureFormatLabel
-    }
-
-    private func recordingURL(takeID: UUID) throws -> URL {
-        try recordingsDirectory().appendingPathComponent("\(takeID.uuidString)-camera.mov")
-    }
-
-    private func recordingsDirectory() throws -> URL {
-        let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("RemoteCameraRecordings", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory
     }
 
     fileprivate static func formatID(for format: AVCaptureDevice.Format) -> String {

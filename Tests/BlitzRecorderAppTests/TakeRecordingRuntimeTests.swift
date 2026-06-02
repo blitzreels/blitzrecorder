@@ -26,6 +26,31 @@ final class TakeRecordingRuntimeTests: XCTestCase {
         XCTAssertFalse(TakeRecordingRuntime.shouldUseLiveCompositor(settings: settings, isRemoteCameraSelected: false))
     }
 
+    func testTakeStartPlanSelectsRemoteCameraCapturePath() {
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen, .camera, .microphone]
+        settings.savesSourceFiles = false
+
+        let plan = TakeStartPlan.make(settings: settings, isRemoteCameraSelected: true)
+
+        XCTAssertTrue(plan.usesRemoteCamera)
+        XCTAssertFalse(plan.usesLiveCompositor)
+        XCTAssertEqual(plan.localCaptureSettings.enabledSources, [.screen, .microphone])
+    }
+
+    func testTakeStartPlanKeepsLocalCameraInLiveCompositorPath() {
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen, .camera]
+        settings.savesSourceFiles = false
+        settings.removesCameraBackgroundAfterRecording = false
+
+        let plan = TakeStartPlan.make(settings: settings, isRemoteCameraSelected: false)
+
+        XCTAssertFalse(plan.usesRemoteCamera)
+        XCTAssertTrue(plan.usesLiveCompositor)
+        XCTAssertEqual(plan.localCaptureSettings.enabledSources, [.screen, .camera])
+    }
+
     func testSceneTimelineStoresRequestedTransition() {
         var settings = RecordingSettings()
         settings.canvasBackgroundStyle = .black

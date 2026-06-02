@@ -17,7 +17,7 @@ final class PreviewStageViewTests: XCTestCase {
         XCTAssertEqual(view.renderedCanvasAspectRatio, CaptureLayout.horizontal.aspectRatio, accuracy: 0.01)
     }
 
-    func testSelectionUsesFullRenderedMediaFrameForCropFillLayer() throws {
+    func testCropFillUsesFullMediaFrameWhileSelectionMarqueeIsClampedToCanvas() throws {
         let view = PreviewStageView()
         view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
         view.captureLayout = .vertical
@@ -32,28 +32,19 @@ final class PreviewStageViewTests: XCTestCase {
         let selectionFrame = try XCTUnwrap(view.renderedSelectionFrameForTesting)
         let canvasFrame = view.renderedCanvasFrameForTesting
         let mediaFrame = view.renderedCameraFrameForTesting
-        XCTAssertLessThan(selectionFrame.minX, canvasFrame.minX)
-        XCTAssertGreaterThan(selectionFrame.width, canvasFrame.width)
-        XCTAssertRect(selectionFrame, equals: mediaFrame)
+
+        // The crop FILL layer (the camera media) uses the full rendered media
+        // frame, which overscans the canvas horizontally for an off-canvas source.
+        XCTAssertLessThan(mediaFrame.minX, canvasFrame.minX)
+        XCTAssertGreaterThan(mediaFrame.width, canvasFrame.width)
+
+        // The selection MARQUEE, however, is clamped to the visible canvas so the
+        // green frame never spills into the side gaps (hit-testing still uses the
+        // full, unclamped frame).
+        XCTAssertGreaterThanOrEqual(selectionFrame.minX, canvasFrame.minX - 0.0001)
+        XCTAssertLessThanOrEqual(selectionFrame.maxX, canvasFrame.maxX + 0.0001)
+        XCTAssertLessThanOrEqual(selectionFrame.width, canvasFrame.width + 0.0001)
         XCTAssertEqual(selectionFrame.height, canvasFrame.height, accuracy: 0.0001)
-    }
-
-    func testCropButtonRequestsCropModeForSelectedLayer() throws {
-        let view = PreviewStageView()
-        let window = hostInWindow(view)
-        view.captureLayout = .vertical
-        view.enabledSources = [.camera]
-        view.selectedLayer = .camera
-        view.layoutSubtreeIfNeeded()
-
-        var requestedLayer: SceneLayerKind?
-        view.onCropButtonPressed = { requestedLayer = $0 }
-
-        let buttonFrame = try XCTUnwrap(view.renderedCropButtonFrameForTesting)
-        let point = CGPoint(x: buttonFrame.midX, y: buttonFrame.midY)
-        view.mouseDown(with: mouseEvent(.leftMouseDown, at: point, in: window))
-
-        XCTAssertEqual(requestedLayer, .camera)
     }
 
     func testCropToolbarTracksActiveCropSelection() throws {
@@ -367,7 +358,7 @@ final class PreviewStageViewTests: XCTestCase {
         XCTAssertEqual(view.renderedScreenFrameForTesting.height, view.renderedCanvasFrameForTesting.height, accuracy: 0.0001)
     }
 
-    func testScreenCropEditingShowsFullSourceOutsidePortraitCanvas() throws {
+    func testScreenCropEditingFitsFullSourceInsidePortraitCanvas() throws {
         let view = PreviewStageView()
         view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
         view.captureLayout = .vertical
@@ -380,14 +371,18 @@ final class PreviewStageViewTests: XCTestCase {
 
         let canvasFrame = view.renderedCanvasFrameForTesting
         let screenFrame = view.renderedScreenFrameForTesting
-        XCTAssertLessThan(screenFrame.minX, canvasFrame.minX)
-        XCTAssertGreaterThan(screenFrame.maxX, canvasFrame.maxX)
-        XCTAssertEqual(screenFrame.height, canvasFrame.height, accuracy: 0.0001)
+        // The whole 16:9 display fits inside the portrait canvas (letterboxed top
+        // and bottom): full canvas width, shorter than the canvas, centered.
+        XCTAssertEqual(screenFrame.minX, canvasFrame.minX, accuracy: 0.5)
+        XCTAssertEqual(screenFrame.maxX, canvasFrame.maxX, accuracy: 0.5)
+        XCTAssertLessThan(screenFrame.height, canvasFrame.height)
+        XCTAssertEqual(screenFrame.midY, canvasFrame.midY, accuracy: 0.5)
 
-        XCTAssertRect(try XCTUnwrap(view.renderedSelectionFrameForTesting), equals: canvasFrame)
+        // The default crop selects the entire visible display.
+        XCTAssertRect(try XCTUnwrap(view.renderedSelectionFrameForTesting), equals: screenFrame)
     }
 
-    func testScreenCropEditingCanResizeWideSourceInsidePortraitCanvas() throws {
+    func testScreenCropEditingCanResizeSourceInsidePortraitCanvas() throws {
         let view = PreviewStageView()
         let window = hostInWindow(view)
         view.captureLayout = .vertical
@@ -399,14 +394,17 @@ final class PreviewStageViewTests: XCTestCase {
         view.beginScreenCropEditing(crop: nil)
 
         let initialFrame = try XCTUnwrap(view.renderedSelectionFrameForTesting)
-        let start = CGPoint(x: initialFrame.maxX, y: initialFrame.midY)
-        let end = CGPoint(x: initialFrame.maxX + 80, y: initialFrame.midY)
+        // The default crop fills the visible display, so crop inward by dragging
+        // the right edge left; the selection must shrink and stay on-canvas. Grab
+        // a few px inside the edge — the edge hit area excludes the exact maxX.
+        let start = CGPoint(x: initialFrame.maxX - 4, y: initialFrame.midY)
+        let end = CGPoint(x: initialFrame.maxX - 84, y: initialFrame.midY)
         view.mouseDown(with: mouseEvent(.leftMouseDown, at: start, in: window))
         view.mouseDragged(with: mouseEvent(.leftMouseDragged, at: end, in: window))
         view.mouseUp(with: mouseEvent(.leftMouseUp, at: end, in: window))
 
         let resizedFrame = try XCTUnwrap(view.renderedSelectionFrameForTesting)
-        XCTAssertGreaterThan(resizedFrame.width, initialFrame.width)
+        XCTAssertLessThan(resizedFrame.width, initialFrame.width)
     }
 
     func testStackedLayoutFitsPaddedCanvasWidthWhenPaddingIsEnabled() {

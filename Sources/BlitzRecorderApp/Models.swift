@@ -394,11 +394,20 @@ enum ScenePreset: String, CaseIterable {
 }
 
 enum CanvasBackgroundStyle: String, CaseIterable {
+    // Order here = swatch order in the inspector. Raw values are persisted, so
+    // never rename an existing one — only add. New mesh styles slot in between
+    // the originals to group cool → warm → light.
     case black = "black"
     case graphite = "graphite"
-    case aurora = "aurora"
+    case slate = "slate"
+    case midnight = "midnight"
     case ocean = "ocean"
+    case aurora = "aurora"
+    case nebula = "nebula"
+    case monterey = "monterey"
     case sunset = "sunset"
+    case dune = "dune"
+    case blush = "blush"
     case silver = "silver"
 
     var displayName: String {
@@ -407,12 +416,24 @@ enum CanvasBackgroundStyle: String, CaseIterable {
             return "Black"
         case .graphite:
             return "Titanium"
-        case .aurora:
-            return "Aurora"
+        case .slate:
+            return "Slate"
+        case .midnight:
+            return "Midnight"
         case .ocean:
             return "Lagoon"
+        case .aurora:
+            return "Aurora"
+        case .nebula:
+            return "Nebula"
+        case .monterey:
+            return "Monterey"
         case .sunset:
             return "Ember"
+        case .dune:
+            return "Dune"
+        case .blush:
+            return "Blush"
         case .silver:
             return "Liquid Silver"
         }
@@ -713,6 +734,7 @@ struct RecordingScene: Equatable {
     var cameraCropAmount: CGPoint
     var cameraCropPosition: CGPoint
     var canvasBackgroundStyle: CanvasBackgroundStyle
+    var canvasBackgroundAnimated: Bool
     var canvasPadding: CGFloat
 
     init(settings: RecordingSettings) {
@@ -723,6 +745,7 @@ struct RecordingScene: Equatable {
             cameraCropAmount: settings.cameraCropAmount,
             cameraCropPosition: settings.cameraCropPosition,
             canvasBackgroundStyle: settings.canvasBackgroundStyle,
+            canvasBackgroundAnimated: settings.canvasBackgroundAnimated,
             canvasPadding: settings.canvasPadding
         )
     }
@@ -734,6 +757,7 @@ struct RecordingScene: Equatable {
         cameraCropAmount: CGPoint = .zero,
         cameraCropPosition: CGPoint = .zero,
         canvasBackgroundStyle: CanvasBackgroundStyle = .black,
+        canvasBackgroundAnimated: Bool = false,
         canvasPadding: CGFloat = 0
     ) {
         self.enabledSources = enabledSources
@@ -742,6 +766,7 @@ struct RecordingScene: Equatable {
         self.cameraCropAmount = cameraCropAmount
         self.cameraCropPosition = cameraCropPosition
         self.canvasBackgroundStyle = canvasBackgroundStyle
+        self.canvasBackgroundAnimated = canvasBackgroundAnimated
         self.canvasPadding = canvasPadding
     }
 }
@@ -926,6 +951,7 @@ struct RecordingSettings {
     var cameraCropAmount: CGPoint = .zero
     var cameraCropPosition: CGPoint = .zero
     var canvasBackgroundStyle: CanvasBackgroundStyle = .black
+    var canvasBackgroundAnimated: Bool = false
     var canvasPadding: CGFloat = 0
     var sceneLayout = SceneLayout()
     var selectedScenePreset: ScenePreset?

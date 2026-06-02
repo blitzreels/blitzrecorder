@@ -3,19 +3,29 @@ import Image from "next/image";
 import { ArrowUpRight } from "lucide-react";
 import { Container } from "@/components/ui/layout";
 import { Paragraph } from "@/components/ui/typography";
+import { VersionTag } from "@/components/site/download-button";
 import { assets } from "@/lib/assets";
 import { BLITZREELS_URL, ALGOMAX_URL } from "@/lib/content";
+import { GITHUB_REPO_URL, RELEASES_URL, CHANGELOG_URL } from "@/lib/release";
 
-const productLinks = [
+type FooterLink = { label: string; href: string; external?: boolean };
+
+const productLinks: FooterLink[] = [
   { label: "macOS app", href: "/macos" },
   { label: "iOS camera app", href: "/ios" },
   { label: "Pricing", href: "/#pricing" },
 ];
 
-const resourceLinks = [
+const resourceLinks: FooterLink[] = [
   { label: "Support", href: "/support" },
   { label: "Privacy", href: "/privacy" },
   { label: "Terms", href: "/terms" },
+];
+
+const openSourceLinks: FooterLink[] = [
+  { label: "Source code", href: GITHUB_REPO_URL, external: true },
+  { label: "Releases", href: RELEASES_URL, external: true },
+  { label: "Changelog", href: CHANGELOG_URL, external: true },
 ];
 
 export function SiteFooter() {
@@ -30,14 +40,14 @@ export function SiteFooter() {
         }}
       />
       <Container>
-        <div className="grid gap-12 py-16 md:grid-cols-[1.6fr_1fr_1fr] lg:gap-16">
+        <div className="grid gap-12 py-16 sm:grid-cols-2 lg:grid-cols-[1.6fr_1fr_1fr_1fr] lg:gap-16">
           <div className="max-w-sm">
             <Link href="/" className="inline-flex items-center gap-2.5">
               <Image src={assets.macIcon} width={36} height={36} alt="" className="rounded-[22%]" />
               <span className="font-display text-lg font-bold tracking-tight">BlitzRecorder</span>
             </Link>
             <Paragraph tone="faint" size="sm" className="mt-4">
-              Turn your iPhone into a studio camera for your Mac. Record in full quality and edit later
+              Turn your iPhone into a camera for your Mac. Record locally on the phone and edit later
               without filming again.
             </Paragraph>
 
@@ -66,6 +76,7 @@ export function SiteFooter() {
 
           <FooterNav title="Product" links={productLinks} />
           <FooterNav title="Resources" links={resourceLinks} />
+          <FooterNav title="Open source" links={openSourceLinks} />
         </div>
 
         <div className="flex flex-col items-start justify-between gap-4 border-t border-border py-7 text-sm text-faint sm:flex-row sm:items-center">
@@ -82,13 +93,14 @@ export function SiteFooter() {
             . Made in Strasbourg, France.
           </Paragraph>
           <div className="flex items-center gap-6">
+            <VersionTag className="font-mono text-xs text-muted-foreground transition-colors hover:text-foreground" />
             <a
               href={BLITZREELS_URL}
               target="_blank"
               rel="noopener"
               className="transition-colors hover:text-foreground"
             >
-              BlitzReels
+              <Image src={assets.blitzreelsWordmark} alt="BlitzReels" sizes="96px" className="h-4 w-auto" />
             </a>
             <a
               href={ALGOMAX_URL}
@@ -105,16 +117,27 @@ export function SiteFooter() {
   );
 }
 
-function FooterNav({ title, links }: { title: string; links: { label: string; href: string }[] }) {
+function FooterNav({ title, links }: { title: string; links: FooterLink[] }) {
   return (
     <nav className="text-sm" aria-label={title}>
       <p className="font-display font-bold">{title}</p>
       <ul className="mt-4 flex flex-col gap-3 text-muted-foreground">
         {links.map((link) => (
           <li key={link.href}>
-            <Link className="transition-colors hover:text-foreground" href={link.href}>
-              {link.label}
-            </Link>
+            {link.external ? (
+              <a
+                className="transition-colors hover:text-foreground"
+                href={link.href}
+                target="_blank"
+                rel="noopener"
+              >
+                {link.label}
+              </a>
+            ) : (
+              <Link className="transition-colors hover:text-foreground" href={link.href}>
+                {link.label}
+              </Link>
+            )}
           </li>
         ))}
       </ul>

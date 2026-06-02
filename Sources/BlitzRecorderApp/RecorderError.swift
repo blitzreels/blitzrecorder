@@ -14,6 +14,7 @@ enum RecorderError: LocalizedError {
     case outputDirectoryUnavailable(String)
     case screenCapturePermissionRequired
     case screenSelectionCancelled
+    case screenSelectionInProgress
     case backgroundRemovalUnavailable
     case remoteCameraPreviewUnavailable
     case remoteCameraRecordingUnavailable
@@ -49,6 +50,8 @@ enum RecorderError: LocalizedError {
             "Screen & System Audio Recording permission is required. Enable BlitzRecorder in Privacy settings, then quit and reopen the app."
         case .screenSelectionCancelled:
             "Screen selection was cancelled."
+        case .screenSelectionInProgress:
+            "Screen selection is already open."
         case .backgroundRemovalUnavailable:
             "Webcam background removal could not process the camera recording."
         case .remoteCameraPreviewUnavailable:

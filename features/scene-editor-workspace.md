@@ -1,17 +1,17 @@
-# Scene Editor Workspace
+# Scene editor workspace
 
 ## Goal
 
-Create a premium scene editing workspace for BlitzRecorder that feels like a focused creative tool, while keeping the everyday capture screen simple.
+Create a scene editing workspace for BlitzRecorder that feels like a focused creative tool, while keeping the everyday capture screen simple.
 
 The design must preserve all existing recording, source, crop, canvas, audio, and scene features. This is a reorganization of the UI, not a feature reduction.
 
-## Product Model
+## Product model
 
 BlitzRecorder has three distinct surfaces:
 
 - Capture: simple setup and start recording.
-- Edit Scenes: powerful scene composition workspace.
+- Edit Scenes: scene composition workspace.
 - Live Recording: small menu bar or floating controller for elapsed time, scene switching, pause, stop, and source changes.
 
 Edit Scenes is available only before recording. During recording it remains visible but disabled.
@@ -24,7 +24,7 @@ The editor uses a three-column workspace:
 [ Scene Library ]  [ Editable Canvas ]  [ Inspector ]
 ```
 
-### Scene Library
+### Scene library
 
 The left column is for scene management, not source settings.
 
@@ -47,7 +47,7 @@ Recording rules:
 - Scene switching is allowed during recording from the live controller.
 - Scene editing is not allowed during recording.
 
-### Editable Canvas
+### Editable canvas
 
 The center column is the primary visual surface.
 
@@ -62,7 +62,7 @@ It should include:
 - Canvas background preview.
 - Canvas format locked for the take.
 
-The canvas must be the visual hero. Side panels should feel secondary.
+The canvas should be the main visual surface. Side panels should feel secondary.
 
 Crop mode rules:
 
@@ -85,7 +85,7 @@ Recommended tabs:
 
 The inspector should show controls for the selected object, not every setting at once.
 
-#### Scene Tab
+#### Scene tab
 
 Includes:
 
@@ -97,7 +97,7 @@ Includes:
 - Screen split height controls.
 - Scene-level source composition settings.
 
-#### Source Tab
+#### Source tab
 
 When screen is selected:
 
@@ -134,7 +134,7 @@ When system audio is selected:
 - Live levels.
 - Mute or hide state.
 
-#### Canvas Tab
+#### Canvas tab
 
 Includes:
 
@@ -144,7 +144,7 @@ Includes:
 - Social safe zones.
 - Output format visibility, while still keeping actual canvas format locked for the take.
 
-## Visual Direction
+## Visual direction
 
 The UI should feel closer to Figma, Final Cut, Screen Studio, or a refined OBS scene editor than a settings form.
 
@@ -166,7 +166,7 @@ Color roles:
 - Red: recording, stop, destructive.
 - Neutral glass: inactive surfaces and secondary controls.
 
-## Capture Screen Relationship
+## Capture screen relationship
 
 The capture screen should become simpler after this editor exists.
 

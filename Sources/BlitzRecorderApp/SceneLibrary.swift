@@ -77,6 +77,98 @@ struct SceneLibrary: Codable, Equatable {
         scenesByLayout[layout] = scenes
     }
 
+    @discardableResult
+    mutating func createScene(
+        layout: CaptureLayout,
+        name: String,
+        snapshot: RecordingSceneSnapshot
+    ) -> RecordingSceneDefinition {
+        ensureScenes(for: layout)
+        let scene = RecordingSceneDefinition(
+            name: uniqueSceneName(name, layout: layout),
+            layout: layout,
+            snapshot: snapshot
+        )
+        scenesByLayout[layout, default: []].append(scene)
+        selectedSceneIDsByLayout[layout] = scene.id
+        return scene
+    }
+
+    @discardableResult
+    mutating func duplicateScene(id: UUID, layout: CaptureLayout) -> RecordingSceneDefinition? {
+        ensureScenes(for: layout)
+        guard var scenes = scenesByLayout[layout],
+              let index = scenes.firstIndex(where: { $0.id == id }) else {
+            return nil
+        }
+        let original = scenes[index]
+        let duplicate = RecordingSceneDefinition(
+            name: uniqueSceneName("\(original.name) Copy", layout: layout),
+            layout: layout,
+            snapshot: original.snapshot
+        )
+        scenes.insert(duplicate, at: min(index + 1, scenes.count))
+        scenesByLayout[layout] = scenes
+        selectedSceneIDsByLayout[layout] = duplicate.id
+        return duplicate
+    }
+
+    @discardableResult
+    mutating func renameScene(id: UUID, layout: CaptureLayout, name: String) -> Bool {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty,
+              var scenes = scenesByLayout[layout],
+              let index = scenes.firstIndex(where: { $0.id == id }) else {
+            return false
+        }
+        scenes[index].name = uniqueSceneName(trimmedName, layout: layout, ignoring: id)
+        scenesByLayout[layout] = scenes
+        return true
+    }
+
+    @discardableResult
+    mutating func deleteScene(id: UUID, layout: CaptureLayout) -> Bool {
+        ensureScenes(for: layout)
+        guard var scenes = scenesByLayout[layout],
+              scenes.count > 1,
+              let index = scenes.firstIndex(where: { $0.id == id }) else {
+            return false
+        }
+        scenes.remove(at: index)
+        scenesByLayout[layout] = scenes
+        if selectedSceneIDsByLayout[layout] == id {
+            let nextIndex = min(index, scenes.count - 1)
+            selectedSceneIDsByLayout[layout] = scenes[nextIndex].id
+        }
+        return true
+    }
+
+    @discardableResult
+    mutating func moveScene(id: UUID, layout: CaptureLayout, to targetIndex: Int) -> Bool {
+        ensureScenes(for: layout)
+        guard var scenes = scenesByLayout[layout],
+              let sourceIndex = scenes.firstIndex(where: { $0.id == id }) else {
+            return false
+        }
+        let scene = scenes.remove(at: sourceIndex)
+        let clampedIndex = min(max(targetIndex, 0), scenes.count)
+        scenes.insert(scene, at: clampedIndex)
+        scenesByLayout[layout] = scenes
+        return true
+    }
+
+    @discardableResult
+    mutating func resetScene(id: UUID, layout: CaptureLayout, snapshot: RecordingSceneSnapshot) -> Bool {
+        ensureScenes(for: layout)
+        guard var scenes = scenesByLayout[layout],
+              let index = scenes.firstIndex(where: { $0.id == id }) else {
+            return false
+        }
+        scenes[index].snapshot = snapshot
+        scenesByLayout[layout] = scenes
+        return true
+    }
+
     private static func defaultScenes(for layout: CaptureLayout) -> [RecordingSceneDefinition] {
         switch layout {
         case .vertical:
@@ -121,6 +213,24 @@ struct SceneLibrary: Codable, Equatable {
             layout: layout,
             snapshot: RecordingSceneSnapshot(settings: settings)
         )
+    }
+
+    private func uniqueSceneName(_ requestedName: String, layout: CaptureLayout, ignoring ignoredID: UUID? = nil) -> String {
+        let fallbackName = "Scene"
+        let baseName = requestedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedBaseName = baseName.isEmpty ? fallbackName : baseName
+        let existingNames = Set((scenesByLayout[layout] ?? [])
+            .filter { $0.id != ignoredID }
+            .map(\.name))
+        guard existingNames.contains(normalizedBaseName) else {
+            return normalizedBaseName
+        }
+
+        var index = 2
+        while existingNames.contains("\(normalizedBaseName) \(index)") {
+            index += 1
+        }
+        return "\(normalizedBaseName) \(index)"
     }
 }
 
@@ -167,6 +277,7 @@ struct RecordingSceneSnapshot: Codable, Equatable {
     var cameraCropAmount: CGPoint
     var cameraCropPosition: CGPoint
     var canvasBackgroundStyle: CanvasBackgroundStyle
+    var canvasBackgroundAnimated: Bool
     var canvasPadding: CGFloat
     var sceneLayout: SceneLayout
     var selectedScenePreset: ScenePreset?
@@ -181,9 +292,27 @@ struct RecordingSceneSnapshot: Codable, Equatable {
         cameraCropAmount = settings.cameraCropAmount
         cameraCropPosition = settings.cameraCropPosition
         canvasBackgroundStyle = settings.canvasBackgroundStyle
+        canvasBackgroundAnimated = settings.canvasBackgroundAnimated
         canvasPadding = settings.canvasPadding
         sceneLayout = settings.sceneLayout
         selectedScenePreset = settings.selectedScenePreset
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        enabledVideoSources = try container.decode(Set<CaptureSource>.self, forKey: .enabledVideoSources)
+        hiddenVideoSources = try container.decode(Set<CaptureSource>.self, forKey: .hiddenVideoSources)
+        usesPickedScreenContent = try container.decode(Bool.self, forKey: .usesPickedScreenContent)
+        selectedDisplayID = try container.decodeIfPresent(String.self, forKey: .selectedDisplayID)
+        selectedCameraID = try container.decodeIfPresent(String.self, forKey: .selectedCameraID)
+        screenCrop = try container.decodeIfPresent(CGRect.self, forKey: .screenCrop)
+        cameraCropAmount = try container.decode(CGPoint.self, forKey: .cameraCropAmount)
+        cameraCropPosition = try container.decode(CGPoint.self, forKey: .cameraCropPosition)
+        canvasBackgroundStyle = try container.decode(CanvasBackgroundStyle.self, forKey: .canvasBackgroundStyle)
+        canvasBackgroundAnimated = try container.decodeIfPresent(Bool.self, forKey: .canvasBackgroundAnimated) ?? false
+        canvasPadding = try container.decode(CGFloat.self, forKey: .canvasPadding)
+        sceneLayout = try container.decode(SceneLayout.self, forKey: .sceneLayout)
+        selectedScenePreset = try container.decodeIfPresent(ScenePreset.self, forKey: .selectedScenePreset)
     }
 
     private static let videoSources: Set<CaptureSource> = [.screen, .camera]

@@ -120,7 +120,7 @@ final class RemoteCameraSessionRuntime {
             throw RecorderError.remoteCameraTransferFailed("Missing active remote take.")
         }
         activeTakeID = takeID
-        return try await transferManager.waitForStopAndImport(takeID: takeID, take: take)
+        return try await transferManager.waitForStopAndImport(takeID: takeID, take: take, settings: settings)
     }
 
     func requestPendingImports(serviceID: String, settings: RecordingSettings) {

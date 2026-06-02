@@ -3,7 +3,7 @@ import SwiftUI
 struct CameraCropControls: View {
     @Bindable var vm: RecorderViewModel
 
-    private let mint = Color(red: 0.09, green: 1.0, blue: 0.65)
+    private let mint = BlitzUI.mint
 
     private var disabled: Bool {
         !vm.isSourceConfigured(.camera) || !vm.canEditCameraCrop
@@ -67,11 +67,11 @@ struct CameraCropControls: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color.white.opacity(0.055), in: .rect(cornerRadius: 10))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(vm.isCameraCropModeEnabled ? mint.opacity(0.5) : Color.white.opacity(0.08), lineWidth: 1)
-        }
+        // Active crop-edit mode reads from a mint-tinted fill, not a mint outline.
+        .background(
+            vm.isCameraCropModeEnabled ? mint.opacity(0.12) : Color.white.opacity(0.055),
+            in: .rect(cornerRadius: 10)
+        )
         .disabled(disabled)
         .opacity(disabled ? 0.6 : 1)
     }
@@ -104,22 +104,6 @@ struct CameraCropControls: View {
                     set: { vm.setCameraCropZoom(CGFloat($0)) }
                 ),
                 range: 0...0.75
-            )
-            cropSlider(
-                title: "X",
-                value: Binding(
-                    get: { Double(vm.settings.cameraCropPosition.x) },
-                    set: { vm.setCameraCropPanX(CGFloat($0)) }
-                ),
-                range: -1...1
-            )
-            cropSlider(
-                title: "Y",
-                value: Binding(
-                    get: { Double(vm.settings.cameraCropPosition.y) },
-                    set: { vm.setCameraCropPanY(CGFloat($0)) }
-                ),
-                range: -1...1
             )
         }
     }
@@ -235,7 +219,7 @@ private struct SafeZonePopover: View {
     @Binding var selected: SocialVideoSafeZone
     @Binding var isOpen: Bool
 
-    private let mint = Color(red: 0.09, green: 1.0, blue: 0.65)
+    private let mint = BlitzUI.mint
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {

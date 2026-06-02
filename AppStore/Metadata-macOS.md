@@ -14,19 +14,19 @@ Mac studio with iPhone camera
 
 ## Promotional Text
 
-Record polished creator videos on Mac, pair an iPhone as a controllable camera, and export finished takes quickly. Includes 3 free exports.
+Record clean creator videos on Mac, pair an iPhone as a controllable camera, and export finished takes quickly. Includes 10 free exports.
 
 ## Description
 
-BlitzRecorder is a Mac recording studio for creators who need clean screen, camera, and audio recordings without assembling a heavy production setup.
+BlitzRecorder is a Mac recorder for creators who need clean screen, camera, and audio recordings without a heavy production setup.
 
 Capture your Mac screen, microphone, system audio, and camera into a take that is ready to export. Pair BlitzRecorder Camera on iPhone to use your phone as a remote camera source with live monitor preview, lens selection, zoom, focus, exposure, white balance, stabilization, and torch controls where supported by the device.
 
 The Mac app stays in charge of the take. The iPhone records the master camera file locally, then transfers it back to the Mac so the final export uses the high-quality iPhone recording instead of the monitor preview.
 
-BlitzRecorder includes 3 free exports. BlitzRecorder Pro unlocks unlimited exports for $7.99 per month or $49.99 per year through the App Store. Eligible active BlitzReels subscribers can sign in to unlock included BlitzRecorder Pro access.
+BlitzRecorder includes 10 free exports. BlitzRecorder Pro unlocks unlimited exports for $7.99 per month or $49.99 per year through the App Store. Eligible active BlitzReels subscribers can sign in to unlock included BlitzRecorder Pro access.
 
-Key features:
+Features:
 
 - Mac screen, camera, microphone, and system audio recording
 - iPhone companion camera pairing over the local network
@@ -34,7 +34,7 @@ Key features:
 - Remote camera controls for supported iPhone hardware
 - Local iPhone master recording with transfer back to the Mac take
 - Scene layout and picture-in-picture export
-- 3 free exports before Pro is required
+- 10 free exports before Pro is required
 - BlitzReels subscriber entitlement support
 
 Terms: https://www.blitzreels.com/blitzrecorder/terms
@@ -58,7 +58,7 @@ https://www.blitzreels.com/blitzrecorder/privacy
 
 ## Review Notes
 
-BlitzRecorder includes 3 free exports. After the free exports are used, additional exports require either the App Store auto-renewable subscription or an eligible BlitzReels entitlement.
+BlitzRecorder includes 10 free exports. After the free exports are used, additional exports require either the App Store auto-renewable subscription or an eligible BlitzReels entitlement.
 
 The App Store subscription product IDs are `dev.blitzreels.blitzrecorder.pro.monthly` and `dev.blitzreels.blitzrecorder.pro.annual`, configured as BlitzRecorder Pro at $7.99 per month and $49.99 per year.
 
@@ -75,7 +75,7 @@ The iPhone companion app is named BlitzRecorder Camera. It is a separate App Sto
 - Annual price: $49.99/year
 - Type: Auto-renewable subscriptions
 - Benefit: Unlimited BlitzRecorder exports while active
-- Free behavior: 3 exports without subscription
+- Free behavior: 10 exports without subscription
 
 ## Privacy Summary
 

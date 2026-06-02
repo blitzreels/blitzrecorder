@@ -69,7 +69,7 @@ under \`build/\` so release evidence stays local unless explicitly packaged.
 - iOS companion bundle ID: \`dev.blitzreels.blitzrecorder.camera\`
 - Subscription product ID: \`dev.blitzreels.blitzrecorder.pro.monthly\`
 - Subscription prices: \`\$7.99 per month\` and \`\$49.99 per year\`
-- Free quota: \`3 free exports\`
+- Free quota: \`10 free exports\`
 
 ## Command Evidence
 EOF

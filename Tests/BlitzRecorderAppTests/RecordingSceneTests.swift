@@ -17,6 +17,7 @@ final class RecordingSceneTests: XCTestCase {
         settings.cameraCropAmount = CGPoint(x: 0.2, y: 0.1)
         settings.cameraCropPosition = CGPoint(x: -0.3, y: 0.4)
         settings.canvasBackgroundStyle = .ocean
+        settings.canvasBackgroundAnimated = true
         settings.canvasPadding = 0.08
 
         let scene = RecordingScene(settings: settings)
@@ -29,6 +30,7 @@ final class RecordingSceneTests: XCTestCase {
         XCTAssertEqual(scene.cameraCropAmount, CGPoint(x: 0.2, y: 0.1))
         XCTAssertEqual(scene.cameraCropPosition, CGPoint(x: -0.3, y: 0.4))
         XCTAssertEqual(scene.canvasBackgroundStyle, .ocean)
+        XCTAssertEqual(scene.canvasBackgroundAnimated, true)
         XCTAssertEqual(scene.canvasPadding, 0.08)
     }
 }

@@ -32,6 +32,7 @@ enum RecordingSettingsStore {
         static let cameraCropAmount = "camera.cropAmount"
         static let cameraCropPosition = "camera.cropPosition"
         static let canvasBackgroundStyle = "scene.canvasBackgroundStyle"
+        static let canvasBackgroundAnimated = "scene.canvasBackgroundAnimated"
         static let canvasPadding = "scene.canvasPadding"
         static let screenFrame = "scene.screenFrame"
         static let cameraFrame = "scene.cameraFrame"
@@ -137,6 +138,9 @@ enum RecordingSettingsStore {
         if let rawCanvasBackgroundStyle = defaults.string(forKey: Key.canvasBackgroundStyle),
            let canvasBackgroundStyle = CanvasBackgroundStyle(rawValue: rawCanvasBackgroundStyle) {
             settings.canvasBackgroundStyle = canvasBackgroundStyle
+        }
+        if defaults.object(forKey: Key.canvasBackgroundAnimated) != nil {
+            settings.canvasBackgroundAnimated = defaults.bool(forKey: Key.canvasBackgroundAnimated)
         }
         if defaults.object(forKey: Key.canvasPadding) != nil {
             settings.canvasPadding = clampedCanvasPadding(defaults.double(forKey: Key.canvasPadding))
@@ -281,6 +285,7 @@ enum RecordingSettingsStore {
         defaults.set(string(from: settings.cameraCropAmount), forKey: Key.cameraCropAmount)
         defaults.set(string(from: settings.cameraCropPosition), forKey: Key.cameraCropPosition)
         defaults.set(settings.canvasBackgroundStyle.rawValue, forKey: Key.canvasBackgroundStyle)
+        defaults.set(settings.canvasBackgroundAnimated, forKey: Key.canvasBackgroundAnimated)
         defaults.set(clampedCanvasPadding(Double(settings.canvasPadding)), forKey: Key.canvasPadding)
         defaults.set(string(from: settings.sceneLayout.screenFrame), forKey: Key.screenFrame)
         defaults.set(string(from: settings.sceneLayout.cameraFrame), forKey: Key.cameraFrame)

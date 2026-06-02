@@ -361,12 +361,21 @@ enum Merger {
         guard !segments.isEmpty else { return }
         let durationSeconds = max(0, duration.seconds)
         if segments.count == 1 || durationSeconds <= 0 {
-            parentLayer.addSublayer(canvasBackgroundLayer(style: segments[0].scene.canvasBackgroundStyle, frame: frame))
+            let scene = segments[0].scene
+            parentLayer.addSublayer(canvasBackgroundLayer(
+                style: scene.canvasBackgroundStyle,
+                animated: scene.canvasBackgroundAnimated,
+                frame: frame
+            ))
             return
         }
 
         for segment in segments {
-            let layer = canvasBackgroundLayer(style: segment.scene.canvasBackgroundStyle, frame: frame)
+            let layer = canvasBackgroundLayer(
+                style: segment.scene.canvasBackgroundStyle,
+                animated: segment.scene.canvasBackgroundAnimated,
+                frame: frame
+            )
             layer.opacity = CMTimeCompare(segment.timeRange.start, .zero) == 0 ? 1 : 0
             let start = max(0, min(1, segment.timeRange.start.seconds / durationSeconds))
             let end = max(start, min(1, CMTimeGetSeconds(CMTimeRangeGetEnd(segment.timeRange)) / durationSeconds))
@@ -453,8 +462,49 @@ enum Merger {
         return values
     }
 
-    private static func canvasBackgroundLayer(style: CanvasBackgroundStyle, frame: CGRect) -> CAGradientLayer {
-        style.appearance.gradientLayer(frame: frame)
+    private static func canvasBackgroundLayer(style: CanvasBackgroundStyle, animated: Bool, frame: CGRect) -> CALayer {
+        guard animated else {
+            // `frame` is already in output pixels, so render at scale 1.
+            return style.appearance.backgroundLayer(frame: frame, scale: 1)
+        }
+        let layer = CALayer()
+        layer.frame = frame
+        layer.contentsGravity = .resize
+        layer.masksToBounds = true
+        layer.backgroundColor = style.appearance.solidCGColor
+        attachBackgroundDriftAnimation(to: layer, style: style, frame: frame)
+        return layer
+    }
+
+    /// Drive the background layer's `contents` through one prebaked loop of mesh
+    /// frames, repeated across the export. Frames are rendered at a capped
+    /// resolution (the mesh is soft, so upscaling to output is invisible) to keep
+    /// the held image set small. Discrete keyframes — images can't interpolate —
+    /// and the motion model is seamless (last frame → first frame).
+    private static func attachBackgroundDriftAnimation(to layer: CALayer, style: CanvasBackgroundStyle, frame: CGRect) {
+        let frameCount = 48
+        let cap: CGFloat = 1024
+        let longEdge = max(frame.width, frame.height)
+        let scale = longEdge > cap ? cap / longEdge : 1
+        let width = max(1, Int((frame.width * scale).rounded(.up)))
+        let height = max(1, Int((frame.height * scale).rounded(.up)))
+        let frames = style.appearance.animationFrames(pixelWidth: width, pixelHeight: height, count: frameCount)
+        guard frames.count == frameCount else {
+            layer.contents = frames.first ?? style.appearance.renderCGImage(pixelWidth: width, pixelHeight: height)
+            return
+        }
+
+        layer.contents = frames[0]
+        let animation = CAKeyframeAnimation(keyPath: "contents")
+        animation.values = frames
+        animation.keyTimes = (0..<frameCount).map { NSNumber(value: Double($0) / Double(frameCount)) }
+        animation.calculationMode = .discrete
+        animation.duration = CanvasAppearance.animationLoopDuration
+        animation.repeatCount = .greatestFiniteMagnitude
+        animation.beginTime = AVCoreAnimationBeginTimeAtZero
+        animation.isRemovedOnCompletion = false
+        animation.fillMode = .both
+        layer.add(animation, forKey: "background-drift")
     }
 
     private static func opacityKeyTimes(start: Double, end: Double) -> [NSNumber] {

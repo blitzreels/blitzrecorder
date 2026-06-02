@@ -279,7 +279,7 @@ def ensure_subscription(
                     "productId": SUBSCRIPTION_PRODUCT_ID,
                     "subscriptionPeriod": SUBSCRIPTION_PERIOD,
                     "familySharable": False,
-                    "reviewNote": "Unlocks unlimited exports and renders in BlitzRecorder after 3 free exports.",
+                    "reviewNote": "Unlocks unlimited exports and renders in BlitzRecorder after 10 free exports.",
                     "groupLevel": 1,
                 },
                 "relationships": {

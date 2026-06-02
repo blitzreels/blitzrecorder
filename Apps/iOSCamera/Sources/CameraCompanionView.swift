@@ -21,6 +21,18 @@ enum CameraCompanionTab: Hashable {
     }
 }
 
+enum CompanionTheme {
+    static let accent = Color(red: 0.09, green: 1.0, blue: 0.65)
+    static let warning = Color(red: 1.0, green: 0.66, blue: 0.16)
+    static let canvasTop = Color(red: 0.025, green: 0.026, blue: 0.034)
+    static let canvasBottom = Color(red: 0.075, green: 0.075, blue: 0.095)
+    static let panel = Color.white.opacity(0.075)
+    static let panelStrong = Color.white.opacity(0.12)
+    static let stroke = Color.white.opacity(0.12)
+    static let faintText = Color.white.opacity(0.56)
+    static let secondaryText = Color.white.opacity(0.70)
+}
+
 struct CameraCompanionView: View {
     @Bindable var store: CameraCompanionStore
     @Binding var selectedTab: CameraCompanionTab
@@ -40,7 +52,7 @@ struct CameraCompanionView: View {
                 }
                 .tag(CameraCompanionTab.library)
         }
-        .tint(.blue)
+        .tint(CompanionTheme.accent)
         .sheet(isPresented: $showsDiagnostics) {
             ConnectionDiagnosticsView(store: store)
         }
@@ -55,19 +67,26 @@ struct CameraCompanionView: View {
     }
 
     private var recordingsTab: some View {
-        ZStack {
-            background
-            readabilityOverlay
-
-            VStack(alignment: .leading, spacing: 0) {
-                topBar
-                Spacer(minLength: 16)
-                statusPanel
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
-            .padding(.bottom, 24)
+        // Content lives in the safe area; the camera surface fills behind it via
+        // .background (which ignores safe area internally). Keeping the surface
+        // out of the content's ZStack preserves the top/bottom safe-area insets
+        // so controls never collide with the status bar or home indicator.
+        VStack(alignment: .leading, spacing: 0) {
+            topBar
+            Spacer(minLength: 18)
+            statusPanel
         }
+        .padding(.horizontal, 18)
+        .padding(.top, 14)
+        .padding(.bottom, 22)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background {
+            ZStack {
+                background
+                readabilityOverlay
+            }
+        }
+        .toolbarBackground(.hidden, for: .tabBar)
     }
 
     @ViewBuilder
@@ -75,25 +94,39 @@ struct CameraCompanionView: View {
         if store.isLiveCameraPreviewEnabled {
             CameraPreview(session: store.camera.session)
                 .ignoresSafeArea()
+        } else if let preview = store.screenshotPreviewImage {
+            // Flexible fill + clip so the image fills the screen edge to edge
+            // without proposing an oversized layout that would push the control
+            // VStack out of the top safe area (matches the gradient's sizing).
+            Image(uiImage: preview)
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
+                .ignoresSafeArea()
         } else {
             LinearGradient(
                 colors: [
-                    Color(uiColor: .systemGray6),
-                    Color(uiColor: .systemGray5)
+                    CompanionTheme.canvasTop,
+                    CompanionTheme.canvasBottom
                 ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
+                startPoint: .top,
+                endPoint: .bottom
             )
             .ignoresSafeArea()
+            .overlay {
+                CompanionStudioGrid()
+            }
         }
     }
 
     private var readabilityOverlay: some View {
-        LinearGradient(
+        let onCamera = store.isCameraSurfaceVisible
+        return LinearGradient(
             colors: [
-                .black.opacity(store.isLiveCameraPreviewEnabled ? 0.56 : 0.08),
-                .black.opacity(store.isLiveCameraPreviewEnabled ? 0.12 : 0.02),
-                .black.opacity(store.isLiveCameraPreviewEnabled ? 0.72 : 0.08)
+                .black.opacity(onCamera ? 0.58 : 0.10),
+                .black.opacity(onCamera ? 0.18 : 0.02),
+                .black.opacity(onCamera ? 0.78 : 0.18)
             ],
             startPoint: .top,
             endPoint: .bottom
@@ -102,46 +135,62 @@ struct CameraCompanionView: View {
     }
 
     private var topBar: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Camera")
-                    .font(.title2.weight(.semibold))
+        HStack(alignment: .center, spacing: 12) {
+            ProductIconImage(
+                image: Bundle.main.blitzRecorderCameraIcon,
+                fallbackSystemImage: "camera.fill",
+                size: 42,
+                cornerRadius: 10
+            )
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("BlitzRecorder Camera")
+                    .font(.headline.weight(.bold))
                 Text(topStatusText)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(CompanionTheme.faintText)
             }
 
             Spacer(minLength: 12)
 
             if let headerStatus {
                 CameraStatusIndicator(status: headerStatus)
+            } else {
+                CameraStatusIndicator(
+                    status: CameraHeaderStatus(
+                        text: store.hasCompletedPairing ? "Ready" : "Pairing",
+                        icon: store.hasCompletedPairing ? "checkmark.circle.fill" : "dot.radiowaves.left.and.right",
+                        color: store.hasCompletedPairing ? CompanionTheme.accent : CompanionTheme.warning
+                    )
+                )
             }
         }
-        .foregroundStyle(primaryForegroundStyle)
+        .foregroundStyle(.white)
     }
 
     private var statusPanel: some View {
         VStack(alignment: .leading, spacing: 16) {
-            statusSummary
-
             if !store.hasCompletedPairing {
-                pairingControls
-                macAppLink
-            }
+                pairingGuide
+            } else {
+                statusSummary
 
-            if !store.pendingRecordings.isEmpty {
-                pendingRecordings
-            }
-
-            if store.recordingPhase == .recording || store.recordingPhase == .stopping {
-                Button(role: .destructive) {
-                    store.stopFromPhone()
-                } label: {
-                    Label("Stop", systemImage: "stop.fill")
-                        .frame(maxWidth: .infinity)
+                if !store.pendingRecordings.isEmpty {
+                    pendingRecordings
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(store.recordingPhase != .recording)
+
+                if store.recordingPhase == .recording || store.recordingPhase == .stopping {
+                    Button(role: .destructive) {
+                        store.stopFromPhone()
+                    } label: {
+                        Label("Stop", systemImage: "stop.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.roundedRectangle(radius: 14))
+                    .tint(.red)
+                    .disabled(store.recordingPhase != .recording)
+                }
             }
         }
         .padding(20)
@@ -149,120 +198,135 @@ struct CameraCompanionView: View {
         .companionGlassPanel(cornerRadius: 24)
     }
 
-    private var pairingControls: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center, spacing: 14) {
-                Image(systemName: signalIcon)
-                    .font(.title2.weight(.semibold))
-                    .symbolRenderingMode(.hierarchical)
-                    .frame(width: 32, height: 32)
+    private var pairingGuide: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(pairingTitle)
+                    .font(.title2.weight(.heavy))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.82)
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(store.connectionIssueTitle)
-                        .font(.headline.weight(.semibold))
-                    Text(store.connectionIssueRecovery)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                Text("Follow these steps in order.")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(CompanionTheme.faintText)
+            }
+
+            VStack(alignment: .leading, spacing: 16) {
+                CompanionStepRow(
+                    number: 1,
+                    title: "Open this Mac app",
+                    detail: "BlitzRecorder on your Mac.",
+                    systemImage: "macbook",
+                    appIcon: Bundle.main.blitzRecorderMacIcon
+                )
+
+                CompanionStepRow(
+                    number: 2,
+                    title: "Choose this iPhone",
+                    detail: "Pick it as the camera.",
+                    systemImage: "iphone"
+                )
+
+                HStack(alignment: .top, spacing: 12) {
+                    CompanionStepNumber(value: 3)
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        CompanionStepTitle(title: "Enter this code", systemImage: "qrcode")
+
+                        Text(store.pairingCode)
+                            .font(.system(size: 40, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.72)
+                            .accessibilityLabel("Pairing code \(store.pairingCode)")
+
+                        Text("Type it in the Mac app.")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(CompanionTheme.faintText)
+                    }
                 }
             }
 
-            HStack(alignment: .center, spacing: 14) {
-                Image(systemName: "qrcode")
-                    .font(.title2.weight(.semibold))
-                    .symbolRenderingMode(.hierarchical)
-                    .frame(width: 32, height: 32)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Pairing code")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                    Text(store.pairingCode)
-                        .font(.system(.largeTitle, design: .monospaced).weight(.bold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                }
-            }
-            .accessibilityElement(children: .combine)
-
-            HStack(spacing: 10) {
+            VStack(spacing: 10) {
                 Button {
                     store.retryConnection()
                 } label: {
                     Label(detectButtonTitle, systemImage: "arrow.clockwise")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.black)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.roundedRectangle(radius: 14))
+                .tint(CompanionTheme.accent)
 
                 Button {
                     showsDiagnostics = true
                 } label: {
-                    Label("Details", systemImage: "info.circle")
-                        .frame(maxWidth: .infinity)
+                    Text("Connection details")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(CompanionTheme.secondaryText)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.plain)
             }
         }
     }
 
     private var statusSummary: some View {
         HStack(alignment: .center, spacing: 12) {
-            Image(systemName: statusIcon)
-                .font(.title3.weight(.semibold))
-                .symbolRenderingMode(.hierarchical)
-                .frame(width: 32, height: 32)
+            CompanionSymbolTile(
+                systemImage: statusIcon,
+                accent: store.recordingPhase == .recording ? .red : CompanionTheme.accent
+            )
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(primaryStatusText)
-                    .font(.title3.weight(.semibold))
+                    .font(.system(size: store.recordingPhase == .recording ? 30 : 20, weight: .heavy))
+                    .monospacedDigit()
                     .lineLimit(2)
                     .minimumScaleFactor(0.82)
                 if let secondaryStatusText {
                     Text(secondaryStatusText)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(CompanionTheme.faintText)
                         .lineLimit(2)
                 }
             }
+
+            Spacer(minLength: 8)
+
+            if store.hasCompletedPairing {
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text(store.transferProgressLabel)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(CompanionTheme.secondaryText)
+                        .lineLimit(1)
+                    Text(store.thermalStateLabel)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(CompanionTheme.faintText)
+                        .lineLimit(1)
+                }
+            }
         }
+        .foregroundStyle(.white)
     }
 
     private var detectButtonTitle: String {
         store.canRetryConnection ? "Try Again" : "Detect Mac"
     }
 
-    private var macAppLink: some View {
-        Link(destination: BlitzRecorderProductIdentity.macInstallURL) {
-            HStack(spacing: 12) {
-                ProductIconImage(
-                    image: Bundle.main.blitzRecorderMacIcon,
-                    fallbackSystemImage: "macbook",
-                    size: 44,
-                    cornerRadius: 10
-                )
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(BlitzRecorderProductIdentity.macDisplayName)
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                    Text("Mac app")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 8)
-
-                Image(systemName: "arrow.up.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.primary.opacity(0.06), in: .rect(cornerRadius: 16))
+    private var pairingTitle: String {
+        switch store.connectionState {
+        case .degraded:
+            return "Connection is weak"
+        case .unavailable:
+            return "Can’t find the Mac"
+        case .disconnected:
+            return "Disconnected"
+        default:
+            return "Connect to your Mac"
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Open \(BlitzRecorderProductIdentity.macDisplayName)")
     }
 
     private var pendingRecordings: some View {
@@ -284,7 +348,8 @@ struct CameraCompanionView: View {
             )
                 .font(.subheadline.weight(.semibold))
         }
-        .tint(.primary)
+        .tint(.white)
+        .foregroundStyle(.white)
     }
 
     private var headerStatus: CameraHeaderStatus? {
@@ -295,9 +360,9 @@ struct CameraCompanionView: View {
         case .recording:
             return CameraHeaderStatus(text: "Recording", icon: "record.circle", color: .red)
         case .transferring:
-            return CameraHeaderStatus(text: "Saving", icon: "arrow.up.doc", color: .primary)
+            return CameraHeaderStatus(text: "Saving", icon: "arrow.up.doc", color: CompanionTheme.accent)
         case .pendingImport:
-            return CameraHeaderStatus(text: "Saved", icon: "tray.and.arrow.up", color: .primary)
+            return CameraHeaderStatus(text: "Saved", icon: "tray.and.arrow.up", color: CompanionTheme.accent)
         default:
             return nil
         }
@@ -352,7 +417,7 @@ struct CameraCompanionView: View {
         case .failed:
             return "Needs attention"
         case .idle:
-            return store.isLiveCameraPreviewEnabled ? "Live" : "Ready"
+            return store.isCameraSurfaceVisible ? "Live" : "Ready"
         }
     }
 
@@ -401,24 +466,6 @@ struct CameraCompanionView: View {
         }
     }
 
-    private var signalIcon: String {
-        switch store.connectionState {
-        case .discovering:
-            return "dot.radiowaves.left.and.right"
-        case .pairing:
-            return "link.badge.plus"
-        case .connected:
-            return "link.circle.fill"
-        case .degraded:
-            return "wifi.exclamationmark"
-        case .disconnected, .unavailable:
-            return "wifi.slash"
-        }
-    }
-
-	private var primaryForegroundStyle: Color {
-		store.isLiveCameraPreviewEnabled ? .white : .primary
-	}
 }
 
 private struct ConnectionDiagnosticsView: View {
@@ -492,9 +539,10 @@ private struct PendingRecordingRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(recording.createdAtLabel)
                     .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.white)
                 Text(recording.fileName)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(CompanionTheme.faintText)
                     .lineLimit(1)
             }
 
@@ -505,6 +553,7 @@ private struct PendingRecordingRow: View {
                     .frame(width: 30, height: 30)
             }
             .buttonStyle(.bordered)
+            .tint(CompanionTheme.accent)
             .disabled(recording.takeID == nil)
             .accessibilityLabel("Retry")
 
@@ -515,6 +564,7 @@ private struct PendingRecordingRow: View {
             .buttonStyle(.bordered)
             .accessibilityLabel("Delete")
         }
+        .foregroundStyle(.white)
     }
 }
 
@@ -529,11 +579,129 @@ private struct CameraStatusIndicator: View {
 
     var body: some View {
         Label(status.text, systemImage: status.icon)
-            .font(.caption.weight(.semibold))
+            .font(.caption2.weight(.heavy))
             .lineLimit(1)
             .symbolRenderingMode(.hierarchical)
             .foregroundStyle(status.color)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(status.color.opacity(0.14), in: .capsule)
+            .overlay {
+                Capsule()
+                    .stroke(status.color.opacity(0.30), lineWidth: 1)
+            }
             .accessibilityLabel(status.text)
+    }
+}
+
+private struct CompanionStepRow: View {
+    let number: Int
+    let title: String
+    let detail: String
+    let systemImage: String
+    var appIcon: UIImage? = nil
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            CompanionStepNumber(value: number)
+
+            VStack(alignment: .leading, spacing: 4) {
+                CompanionStepTitle(title: title, systemImage: systemImage, appIcon: appIcon)
+
+                Text(detail)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(CompanionTheme.faintText)
+            }
+        }
+    }
+}
+
+private struct CompanionStepTitle: View {
+    let title: String
+    let systemImage: String
+    var appIcon: UIImage? = nil
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if let appIcon {
+                ProductIconImage(
+                    image: appIcon,
+                    fallbackSystemImage: systemImage,
+                    size: 26,
+                    cornerRadius: 6
+                )
+            } else {
+                Image(systemName: systemImage)
+                    .font(.system(size: 18, weight: .bold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(CompanionTheme.accent)
+                    .frame(width: 26, height: 22, alignment: .center)
+            }
+
+            Text(title)
+                .font(.headline.weight(.bold))
+                .foregroundStyle(.white)
+        }
+    }
+}
+
+private struct CompanionStepNumber: View {
+    let value: Int
+
+    var body: some View {
+        Text("\(value)")
+            .font(.footnote.weight(.heavy))
+            .foregroundStyle(.black)
+            .frame(width: 26, height: 26)
+            .background(CompanionTheme.accent, in: Circle())
+            .accessibilityHidden(true)
+    }
+}
+
+private struct CompanionSymbolTile: View {
+    let systemImage: String
+    let accent: Color
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(accent.opacity(0.14))
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(accent.opacity(0.38), lineWidth: 1)
+            Image(systemName: systemImage)
+                .font(.system(size: 17, weight: .bold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(accent)
+        }
+        .frame(width: 42, height: 42)
+        .accessibilityHidden(true)
+    }
+}
+
+struct CompanionStudioGrid: View {
+    var body: some View {
+        Canvas { context, size in
+            let spacing: CGFloat = 34
+            var path = Path()
+
+            var x: CGFloat = 0
+            while x <= size.width {
+                path.move(to: CGPoint(x: x, y: 0))
+                path.addLine(to: CGPoint(x: x, y: size.height))
+                x += spacing
+            }
+
+            var y: CGFloat = 0
+            while y <= size.height {
+                path.move(to: CGPoint(x: 0, y: y))
+                path.addLine(to: CGPoint(x: size.width, y: y))
+                y += spacing
+            }
+
+            context.stroke(path, with: .color(.white.opacity(0.025)), lineWidth: 1)
+        }
+        .ignoresSafeArea()
+        .accessibilityHidden(true)
     }
 }
 
@@ -551,11 +719,11 @@ private struct ProductIconImage: View {
                     .scaledToFill()
             } else {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                    .fill(CompanionTheme.panelStrong)
                 Image(systemName: fallbackSystemImage)
                     .font(.system(size: size * 0.42, weight: .semibold))
                     .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(CompanionTheme.secondaryText)
             }
         }
         .frame(width: size, height: size)
@@ -574,40 +742,59 @@ private struct CameraMediaLibraryView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    LibraryMetricRow(title: "Clips", value: "\(store.pendingRecordingCount)", icon: "film.stack")
-                    LibraryMetricRow(title: "Storage", value: store.freeStorageLabel, icon: "internaldrive")
-                }
+            ZStack {
+                LinearGradient(
+                    colors: [CompanionTheme.canvasTop, CompanionTheme.canvasBottom],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+                CompanionStudioGrid()
 
-                Section {
-                    if store.pendingRecordings.isEmpty {
-                        ContentUnavailableView(
-                            "No clips",
-                            systemImage: "film.stack",
-                            description: Text("Clips from this iPhone appear here.")
-                        )
-                    } else {
-                        Button(role: .destructive) {
-                            confirmsDeleteAll = true
-                        } label: {
-                            Label("Delete All Clips", systemImage: "trash")
-                        }
+                List {
+                    Section {
+                        BlitzReelsClipAd()
+                            .listRowInsets(.init(top: 12, leading: 16, bottom: 12, trailing: 16))
+                            .listRowBackground(Color.clear)
+                    }
 
-                        ForEach(store.pendingRecordings) { recording in
-                            NavigationLink {
-                                CameraRecordingPlaybackView(
-                                    recording: recording,
-                                    retryImport: {
-                                        store.retryPendingImport(recording)
-                                    },
-                                    delete: {
-                                        store.deletePendingRecording(recording)
-                                    }
-                                )
+                    Section {
+                        LibraryMetricRow(title: "Clips", value: "\(store.pendingRecordingCount)", icon: "film.stack")
+                        LibraryMetricRow(title: "Storage", value: store.freeStorageLabel, icon: "internaldrive")
+                    }
+
+                    Section {
+                        if store.pendingRecordings.isEmpty {
+                            ContentUnavailableView(
+                                "No clips",
+                                systemImage: "film.stack",
+                                description: Text("Clips from this iPhone appear here.")
+                            )
+                            .foregroundStyle(.white)
+                            .listRowBackground(Color.clear)
+                        } else {
+                            Button(role: .destructive) {
+                                confirmsDeleteAll = true
                             } label: {
-                                RecordingLibraryRow(recording: recording)
+                                Label("Delete All Clips", systemImage: "trash")
                             }
+                            .listRowBackground(CompanionTheme.panel)
+
+                            ForEach(store.pendingRecordings) { recording in
+                                NavigationLink {
+                                    CameraRecordingPlaybackView(
+                                        recording: recording,
+                                        retryImport: {
+                                            store.retryPendingImport(recording)
+                                        },
+                                        delete: {
+                                            store.deletePendingRecording(recording)
+                                        }
+                                    )
+                                } label: {
+                                    RecordingLibraryRow(recording: recording)
+                                }
+                                .listRowBackground(CompanionTheme.panel)
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                     Button(role: .destructive) {
                                         store.deletePendingRecording(recording)
@@ -621,7 +808,7 @@ private struct CameraMediaLibraryView: View {
                                     } label: {
                                         Label("Retry", systemImage: "arrow.clockwise")
                                     }
-                                    .tint(.blue)
+                                    .tint(CompanionTheme.accent)
                                     .disabled(recording.takeID == nil)
                                 }
                                 .contextMenu {
@@ -644,17 +831,21 @@ private struct CameraMediaLibraryView: View {
                                 .accessibilityAction(named: "Delete") {
                                     store.deletePendingRecording(recording)
                                 }
+                            }
                         }
+                    } header: {
+                        Text("Local clips")
+                            .foregroundStyle(CompanionTheme.faintText)
                     }
-                } header: {
-                    Text("Local clips")
                 }
+                .foregroundStyle(.white)
+                .listStyle(.insetGrouped)
+                .scrollContentBackground(.hidden)
             }
             .navigationTitle("Clips")
             .navigationBarTitleDisplayMode(.inline)
-            .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
-            .background(Color(uiColor: .systemGroupedBackground))
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(role: .destructive) {
@@ -678,6 +869,63 @@ private struct CameraMediaLibraryView: View {
                 Text("This removes \(store.pendingRecordingCount) clip\(store.pendingRecordingCount == 1 ? "" : "s") from this iPhone.")
             }
         }
+        .tint(CompanionTheme.accent)
+    }
+}
+
+private struct BlitzReelsClipAd: View {
+    private let destination = BlitzRecorderProductIdentity.blitzReelsURL(
+        source: "ios_app",
+        placement: "clips_tab"
+    )
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 8) {
+                Image("BlitzReelsIcon")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 26, height: 26)
+                    .accessibilityLabel("BlitzReels")
+
+                Text("BlitzReels")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(CompanionTheme.accent)
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Have footage already?")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(.white)
+
+                Text("BlitzReels turns it into clips with captions.")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(CompanionTheme.faintText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Link(destination: destination) {
+                HStack(spacing: 10) {
+                    Image(systemName: "arrow.up.right")
+                        .font(.body.weight(.bold))
+                        .frame(width: 22, height: 22)
+
+                    Text("Turn my footage into clips")
+                        .font(.subheadline.weight(.bold))
+                }
+                .foregroundStyle(.black)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.roundedRectangle(radius: 14))
+            .tint(CompanionTheme.accent)
+            .accessibilityLabel("Open BlitzReels")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .companionGlassPanel(cornerRadius: 18)
     }
 }
 
@@ -690,10 +938,13 @@ private struct LibraryMetricRow: View {
         LabeledContent {
             Text(value)
                 .font(.body.weight(.semibold))
+                .foregroundStyle(.white)
         } label: {
             Label(title, systemImage: icon)
                 .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(CompanionTheme.secondaryText)
         }
+        .listRowBackground(CompanionTheme.panel)
     }
 }
 
@@ -709,13 +960,14 @@ private struct RecordingLibraryRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(recording.createdAtLabel)
                     .font(.headline)
+                    .foregroundStyle(.white)
                 Text(recording.fileName)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(CompanionTheme.faintText)
                     .lineLimit(1)
                 Text(recording.byteCountLabel)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(CompanionTheme.secondaryText)
             }
 
             Spacer(minLength: 0)
@@ -773,6 +1025,10 @@ private enum RecordingThumbnailGenerator {
 }
 
 private extension Bundle {
+    var blitzRecorderCameraIcon: UIImage? {
+        UIImage(named: "BlitzRecorderCameraIcon")
+    }
+
     var blitzRecorderMacIcon: UIImage? {
         guard let url = url(forResource: "AppIcon", withExtension: "png") else {
             return nil
@@ -781,17 +1037,15 @@ private extension Bundle {
     }
 }
 
-private extension View {
-    @ViewBuilder
+extension View {
     func companionGlassPanel(cornerRadius: CGFloat, interactive: Bool = false) -> some View {
-        if #available(iOS 26.0, *) {
-            if interactive {
-                self.glassEffect(.regular.interactive(), in: .rect(cornerRadius: cornerRadius))
-            } else {
-                self.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+        self
+            .background(.black.opacity(0.54), in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(.white.opacity(interactive ? 0.18 : 0.12), lineWidth: 1)
             }
-        } else {
-            self.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        }
+            .shadow(color: .black.opacity(0.36), radius: 24, y: 14)
     }
 }

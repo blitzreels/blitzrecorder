@@ -1,4 +1,4 @@
-# Product Model
+# Product model
 
 BlitzRecorder is the paid recording product in the BlitzReels family. BlitzRecorder Camera for iPhone is a free companion input app.
 
@@ -26,7 +26,7 @@ The Mac app supports two Pro entitlement paths:
 
 The iPhone companion does not sell, restore, or verify subscriptions. It pairs locally with the Mac app and lets the Mac enforce export entitlement.
 
-## Distribution Scope
+## Distribution scope
 
 Launch licensing is bound to the App Store channel. Do not add LemonSqueezy, Paddle, Stripe license keys, custom device activation limits, or a separate BlitzRecorder account system to the App Store build.
 

@@ -12,6 +12,8 @@ import { SiteNav } from "@/components/site/site-nav";
 import { SiteFooter } from "@/components/site/site-footer";
 import { SiteBackground } from "@/components/site/site-background";
 import { CheckItem } from "@/components/site/check-item";
+import { DownloadButton } from "@/components/site/download-button";
+import { useRelease } from "@/components/site/release-context";
 import { useReveal } from "@/components/site/use-reveal";
 import { assets } from "@/lib/assets";
 import {
@@ -69,6 +71,7 @@ function Eyebrow({ children, center }: { children: React.ReactNode; center?: boo
 }
 
 function Hero() {
+  const release = useRelease();
   return (
     <Section className="relative pt-32 pb-20 text-center sm:pt-40">
       <div data-reveal className="flex justify-center">
@@ -77,7 +80,7 @@ function Hero() {
             <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
             <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
           </span>
-          Private beta for Mac creators
+          Beta for Mac creators
         </span>
       </div>
 
@@ -101,19 +104,14 @@ function Hero() {
           <AppleLogo className="mr-1.5 inline-block h-[0.85em] w-auto align-[-0.08em]" />
           Mac
         </span>{" "}
-        and records in full quality, so your videos look better than Continuity Camera.
+        and records locally on the phone, so your camera source stays sharp.
       </Paragraph>
       <div
         data-reveal
         className="mt-9 flex flex-wrap items-center justify-center gap-3"
         style={revealDelay("180ms")}
       >
-        <Button
-          render={<a href="#pricing" />}
-          className="h-12 rounded-full px-7 text-base shadow-[0_20px_60px_-22px_rgba(94,242,175,0.95)] transition-transform hover:scale-[1.03]"
-        >
-          Request access
-        </Button>
+        <DownloadButton className="h-12 rounded-full px-7 text-base shadow-[0_20px_60px_-22px_rgba(94,242,175,0.95)] transition-transform hover:scale-[1.03]" />
         <Button
           variant="outline"
           render={<a href="#how" />}
@@ -129,7 +127,9 @@ function Hero() {
         data-reveal
         style={revealDelay("240ms")}
       >
-        Private beta · 3 free exports · No card to start
+        {release
+          ? `Free and open source · 10 free exports, then Pro · v${release.version}`
+          : "Beta · 10 free exports · No card to start"}
       </Paragraph>
 
       <div
@@ -165,16 +165,16 @@ function CleanSources() {
   return (
     <Section width="md" id="how" className="scroll-mt-24 py-28 text-center">
       <div data-reveal>
-        <Eyebrow center>One source, every format</Eyebrow>
+        <Eyebrow center>Choose the canvas before recording</Eyebrow>
       </div>
       <Heading level={2} data-reveal className="mt-5">
-        One take.
+        One recording flow.
         <br />
-        <span className="text-gradient">Shorts and long-form.</span>
+        <span className="text-gradient">Shorts or long-form.</span>
       </Heading>
       <Paragraph data-reveal className="mx-auto mt-6 max-w-2xl">
-        Every source records as its own file. Turn one take into a tall Short or a wide YouTube video, and fix
-        anything later without filming again.
+        Pick a vertical or horizontal canvas, switch scenes while recording, and optionally keep source files when
+        you want more control after the take.
       </Paragraph>
       <ul data-reveal className="mt-10 flex flex-wrap justify-center gap-2.5">
         {cleanOutcomes.map((outcome) => (
@@ -223,14 +223,14 @@ function IphoneCompanion() {
           <Eyebrow>iPhone companion</Eyebrow>
         </div>
         <Heading level={2} data-reveal className="mt-5 sm:text-5xl">
-          Better than Continuity Camera.
+          Record on the iPhone itself.
         </Heading>
         <Paragraph data-reveal className="mt-6 max-w-xl">
-          Continuity Camera lowers your quality. BlitzRecorder records your iPhone at full quality and saves
-          the file to your Mac when you stop. You get camera-level video from the phone you already own.
+          BlitzRecorder records locally on your iPhone and saves the file to your Mac when you stop. You get
+          a clean camera source from the phone you already own.
         </Paragraph>
         <ul data-reveal className="mt-8 flex flex-col gap-3.5 text-lg">
-          <CheckItem>Records on your iPhone at full quality</CheckItem>
+          <CheckItem>Records locally on your iPhone</CheckItem>
           <CheckItem>See and line up the shot from your Mac</CheckItem>
           <CheckItem>The video saves to your Mac on its own</CheckItem>
         </ul>
@@ -246,7 +246,7 @@ function Workflow() {
         <Eyebrow center>Your workflow</Eyebrow>
       </div>
       <Heading level={2} data-reveal className="mx-auto mt-5 max-w-3xl text-center">
-        Built for the way you publish.
+        Fits the way you publish.
       </Heading>
       <div className="mt-14 grid gap-5 lg:grid-cols-3">
         {workflowCards.map((card, i) => (
@@ -281,6 +281,7 @@ function Workflow() {
 }
 
 function Pricing() {
+  const release = useRelease();
   return (
     <Section width="lg" id="pricing" className="scroll-mt-24 py-28">
       <div className="mx-auto max-w-2xl text-center">
@@ -305,8 +306,8 @@ function Pricing() {
       </div>
 
       <Paragraph tone="faint" size="sm" className="mt-6 text-center" data-reveal>
-        Public beta. Access requests open soon. Needs {requirements.macos}, and the iPhone camera needs{" "}
-        {requirements.ios}.
+        {release ? "Free and open source." : "Public beta. Access requests open soon."} Requires{" "}
+        {requirements.macos}. The iPhone camera needs {requirements.ios}.
       </Paragraph>
 
       <div data-reveal>
@@ -368,16 +369,13 @@ function PlanCard({ plan, featured = false }: { plan: Plan; featured?: boolean }
 
           <div className="grow" />
 
-          <Button
-            type="button"
+          <DownloadButton
             variant={featured ? "default" : "outline"}
             className={
               "mt-8 h-12 w-full rounded-full text-base" +
               (featured ? " shadow-[0_20px_50px_-20px_rgba(94,242,175,0.9)]" : "")
             }
-          >
-            Request access
-          </Button>
+          />
         </CardContent>
       </Card>
     </div>
@@ -396,7 +394,7 @@ function BlitzReelsBanner() {
             className="h-6 w-auto"
           />
           <Paragraph size="base" className="mt-3">
-            Already pay for BlitzReels? You get Pro for free. Just sign in.
+            Have footage already? BlitzReels turns it into clips with captions.
           </Paragraph>
         </div>
         <Button
@@ -404,7 +402,7 @@ function BlitzReelsBanner() {
           render={<a href={BLITZREELS_URL} />}
           className="h-11 shrink-0 rounded-full border-primary/40 px-5 text-primary"
         >
-          Go to BlitzReels
+          Turn my footage into clips
           <ArrowUpRight className="size-4" />
         </Button>
       </CardContent>
@@ -438,13 +436,9 @@ function ClosingCTA() {
       <Paragraph data-reveal className="mt-5">
         Start free. No card needed.
       </Paragraph>
-      <Button
-        render={<a href="#pricing" />}
-        data-reveal
-        className="mt-8 h-12 rounded-full px-7 text-base shadow-[0_20px_60px_-22px_rgba(94,242,175,0.95)] transition-transform hover:scale-[1.03]"
-      >
-        Request access
-      </Button>
+      <div data-reveal className="mt-8 inline-flex">
+        <DownloadButton className="h-12 rounded-full px-7 text-base shadow-[0_20px_60px_-22px_rgba(94,242,175,0.95)] transition-transform hover:scale-[1.03]" />
+      </div>
     </Section>
   );
 }

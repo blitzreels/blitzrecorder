@@ -11,6 +11,7 @@ final class RemoteCameraTransferManager {
         var expectedByteCount: Int64
         var manifest: RemoteCameraTransferManifest?
         var receivedByteCount: Int64
+        var settings: RecordingSettings?
     }
 
     private let pendingImportStore: RemoteCameraPendingImportStore
@@ -71,9 +72,10 @@ final class RemoteCameraTransferManager {
         return size.int64Value > 0
     }
 
-    func waitForStopAndImport(takeID: UUID, take: RecordingTake) async throws -> MediaWriterCompletion {
+    func waitForStopAndImport(takeID: UUID, take: RecordingTake, settings: RecordingSettings) async throws -> MediaWriterCompletion {
         try await withCheckedThrowingContinuation { continuation in
             continuations[takeID] = continuation
+            pendingImportStore.updatePhase(takeID: takeID, phase: .waitingForStop, settings: settings)
             if transfers[takeID] != nil {
                 onMessage("Waiting for iPhone media download...")
                 scheduleTimeout(
@@ -91,8 +93,10 @@ final class RemoteCameraTransferManager {
             let resumeOffset = beginTransfer(
                 takeID: takeID,
                 destinationURL: take.cameraURL,
-                expectedByteCount: 0
+                expectedByteCount: 0,
+                settings: settings
             )
+            guard let resumeOffset else { return }
             if resumeOffset > 0 {
                 onMessage("iPhone media download will resume when the recording is ready.")
             }
@@ -103,8 +107,9 @@ final class RemoteCameraTransferManager {
     func beginTransfer(
         takeID: UUID,
         destinationURL: URL,
-        expectedByteCount: Int64
-    ) -> Int64 {
+        expectedByteCount: Int64,
+        settings: RecordingSettings? = nil
+    ) -> Int64? {
         do {
             try FileManager.default.createDirectory(
                 at: destinationURL.deletingLastPathComponent(),
@@ -125,8 +130,12 @@ final class RemoteCameraTransferManager {
                 fileHandle: handle,
                 expectedByteCount: expectedByteCount,
                 manifest: nil,
-                receivedByteCount: resumeOffset
+                receivedByteCount: resumeOffset,
+                settings: settings
             )
+            if let settings {
+                pendingImportStore.updatePhase(takeID: takeID, phase: .transferring, settings: settings)
+            }
             scheduleTimeout(
                 takeID: takeID,
                 reason: "Timed out waiting for iPhone recording transfer."
@@ -137,7 +146,7 @@ final class RemoteCameraTransferManager {
             return resumeOffset
         } catch {
             finish(takeID: takeID, result: .failure(error))
-            return 0
+            return nil
         }
     }
 
@@ -163,6 +172,7 @@ final class RemoteCameraTransferManager {
         transfer.expectedByteCount = byteCount
         transfer.manifest = manifest
         transfers[takeID] = transfer
+        pendingImportStore.updatePhase(takeID: takeID, phase: .ready, settings: settings)
         pendingImportStore.updateExpectedByteCount(
             takeID: takeID,
             expectedByteCount: byteCount,
@@ -232,11 +242,12 @@ final class RemoteCameraTransferManager {
         for pendingImport in pendingImportStore.all(settings: settings) {
             guard pendingImport.serviceID == nil || pendingImport.serviceID == serviceID else { continue }
             guard transfers[pendingImport.takeID] == nil else { continue }
-            let resumeOffset = beginTransfer(
+            guard let resumeOffset = beginTransfer(
                 takeID: pendingImport.takeID,
                 destinationURL: pendingImport.destinationURL,
-                expectedByteCount: pendingImport.expectedByteCount ?? 0
-            )
+                expectedByteCount: pendingImport.expectedByteCount ?? 0,
+                settings: settings
+            ) else { continue }
             sendCommand(.requestTransfer(takeID: pendingImport.takeID, resumeOffset: resumeOffset))
         }
     }
@@ -262,6 +273,9 @@ final class RemoteCameraTransferManager {
     private func finish(takeID: UUID, result: Result<MediaWriterCompletion, Error>) {
         timeoutTasks.removeValue(forKey: takeID)?.cancel()
         if let transfer = transfers.removeValue(forKey: takeID) {
+            if let settings = transfer.settings {
+                pendingImportStore.updatePhase(takeID: takeID, phase: .failedRecoverable, settings: settings)
+            }
             try? transfer.fileHandle.close()
         }
         onTransferFinished(takeID)
@@ -306,6 +320,7 @@ final class RemoteCameraTransferManager {
             }
             try FileManager.default.moveItem(at: transfer.partialURL, to: transfer.destinationURL)
             try Self.writeManifest(transfer.manifest, destinationURL: transfer.destinationURL, sha256: sha256)
+            pendingImportStore.updatePhase(takeID: takeID, phase: .complete, settings: settings)
             pendingImportStore.remove(takeID: takeID, settings: settings)
             sendCommand(.transferAck(takeID: takeID, receivedByteCount: byteCount))
             onTransferFinished(takeID)
@@ -315,6 +330,7 @@ final class RemoteCameraTransferManager {
             }
             continuation.resume(returning: .wrote(transfer.destinationURL))
         } catch {
+            pendingImportStore.updatePhase(takeID: takeID, phase: .failedRecoverable, settings: settings)
             transfers.removeValue(forKey: takeID)
             onTransferFinished(takeID)
             if let continuation = continuations.removeValue(forKey: takeID) {

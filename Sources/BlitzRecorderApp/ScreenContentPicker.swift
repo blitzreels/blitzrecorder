@@ -6,6 +6,9 @@ final class ScreenContentPicker: NSObject, @preconcurrency SCContentSharingPicke
     private var continuation: CheckedContinuation<SCContentFilter, Error>?
 
     func pick() async throws -> SCContentFilter {
+        guard continuation == nil else {
+            throw RecorderError.screenSelectionInProgress
+        }
         guard #available(macOS 14.0, *) else {
             throw RecorderError.screenCapturePermissionRequired
         }

@@ -36,8 +36,10 @@ final class RemoteCameraTransferManagerTests: XCTestCase {
         XCTAssertEqual(manager.beginTransfer(
             takeID: takeID,
             destinationURL: take.cameraURL,
-            expectedByteCount: 0
+            expectedByteCount: 0,
+            settings: settings
         ), 0)
+        XCTAssertEqual(RemoteCameraPendingImportStore().all(settings: settings).first?.phase, .transferring)
 
         manager.applyTransferReady(
             takeID: takeID,
@@ -47,6 +49,7 @@ final class RemoteCameraTransferManagerTests: XCTestCase {
             hostTimelineStartTime: 11,
             estimatedHostStartTime: 22
         )
+        XCTAssertEqual(RemoteCameraPendingImportStore().all(settings: settings).first?.phase, .ready)
         manager.writeChunk(takeID: takeID, offset: 0, data: Data("hello".utf8), isFinal: true)
         manager.completeTransfer(takeID: takeID, byteCount: 5, sha256: nil, settings: settings)
 
@@ -69,6 +72,55 @@ final class RemoteCameraTransferManagerTests: XCTestCase {
         XCTAssertEqual(sidecar.hostTimelineStartTime, 11)
         XCTAssertEqual(sidecar.estimatedHostStartTime, 22)
         XCTAssertTrue(RemoteCameraPendingImportStore().all(settings: settings).isEmpty)
+    }
+
+    func testPendingImportDecodesLegacyImportAsWaitingForStop() throws {
+        let takeID = UUID()
+        let directory = temporaryDirectory()
+        let json = """
+        [{
+          "takeID": "\(takeID.uuidString)",
+          "serviceID": "iphone",
+          "scratchDirectory": "\(directory.path)",
+          "destinationURL": "\(directory.appendingPathComponent("camera.mov").path)",
+          "createdAt": 0,
+          "expectedByteCount": 42
+        }]
+        """
+
+        let imports = try JSONDecoder().decode([RemoteCameraPendingImport].self, from: Data(json.utf8))
+
+        XCTAssertEqual(imports.first?.phase, .waitingForStop)
+    }
+
+    func testPendingImportDoesNotRequestTransferWhenDestinationCannotOpen() throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        try FileManager.default.createDirectory(at: settings.outputDirectory, withIntermediateDirectories: true)
+        let blockedDirectory = settings.outputDirectory.appendingPathComponent("blocked")
+        try Data("not a directory".utf8).write(to: blockedDirectory)
+        let takeID = UUID()
+        var commands: [RemoteCameraCommand] = []
+        var finishedTakeIDs: [UUID] = []
+        let manager = RemoteCameraTransferManager(
+            sendCommand: { commands.append($0) },
+            onMessage: { _ in },
+            onTransferFinished: { finishedTakeIDs.append($0) }
+        )
+
+        RemoteCameraPendingImportStore().upsert(RemoteCameraPendingImport(
+            takeID: takeID,
+            serviceID: "iphone-15-pro",
+            scratchDirectory: blockedDirectory,
+            destinationURL: blockedDirectory.appendingPathComponent("camera.mov"),
+            createdAt: Date(),
+            expectedByteCount: nil
+        ), settings: settings)
+
+        manager.requestPendingImports(serviceID: "iphone-15-pro", settings: settings)
+
+        XCTAssertEqual(commands, [])
+        XCTAssertEqual(finishedTakeIDs, [takeID])
     }
 
     private func makeTake(in directory: URL) -> RecordingTake {

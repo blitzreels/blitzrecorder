@@ -650,8 +650,8 @@ private struct PermissionSetupCard: View {
 
     private var tint: Color {
         vm.recordingReadiness.isReady
-            ? Color(red: 0.09, green: 1.0, blue: 0.65)
-            : Color(red: 1.0, green: 0.66, blue: 0.16)
+            ? BlitzUI.mint
+            : BlitzUI.warning
     }
 }
 
@@ -698,11 +698,11 @@ struct PermissionStatusRowView: View {
     private var tint: Color {
         switch row.level {
         case .granted:
-            return Color(red: 0.09, green: 1.0, blue: 0.65)
+            return BlitzUI.mint
         case .warning:
-            return Color(red: 1.0, green: 0.66, blue: 0.16)
+            return BlitzUI.warning
         case .blocked:
-            return Color(red: 1.0, green: 0.24, blue: 0.22)
+            return BlitzUI.warning
         case .inactive:
             return .white.opacity(0.34)
         }

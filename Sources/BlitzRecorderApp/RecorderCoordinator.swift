@@ -209,6 +209,82 @@ final class RecorderCoordinator {
         }
     }
 
+    func createSceneFromCurrentSettings(named name: String? = nil) {
+        guard state == .idle else {
+            onMessage?("Scene library editing is locked while recording.")
+            return
+        }
+        saveCurrentSceneSnapshotIfNeeded()
+        let snapshot = RecordingSceneSnapshot(settings: settings)
+        let scene = sceneLibrary.createScene(
+            layout: settings.layout,
+            name: name ?? RecordingSceneDefinition.defaultName(for: settings),
+            snapshot: snapshot
+        )
+        SceneLibraryStore.save(sceneLibrary, defaults: defaults)
+        applySceneSnapshot(scene.snapshot, allowTakeLockedBindings: true)
+        persistSettings(saveSceneSnapshot: false)
+        onScreenCaptureConfigurationChanged?()
+        onCameraConfigurationChanged?()
+    }
+
+    func duplicateSelectedScene() {
+        guard state == .idle else {
+            onMessage?("Scene library editing is locked while recording.")
+            return
+        }
+        saveCurrentSceneSnapshotIfNeeded()
+        guard let selectedSceneID = sceneLibrary.selectedSceneIDsByLayout[settings.layout],
+              let scene = sceneLibrary.duplicateScene(id: selectedSceneID, layout: settings.layout) else {
+            return
+        }
+        SceneLibraryStore.save(sceneLibrary, defaults: defaults)
+        applySceneSnapshot(scene.snapshot, allowTakeLockedBindings: true)
+        persistSettings(saveSceneSnapshot: false)
+        onScreenCaptureConfigurationChanged?()
+        onCameraConfigurationChanged?()
+    }
+
+    func renameScene(id: UUID, to name: String) {
+        guard state == .idle else {
+            onMessage?("Scene library editing is locked while recording.")
+            return
+        }
+        guard sceneLibrary.renameScene(id: id, layout: settings.layout, name: name) else {
+            return
+        }
+        SceneLibraryStore.save(sceneLibrary, defaults: defaults)
+    }
+
+    func deleteScene(id: UUID) {
+        guard state == .idle else {
+            onMessage?("Scene library editing is locked while recording.")
+            return
+        }
+        guard sceneLibrary.deleteScene(id: id, layout: settings.layout) else {
+            onMessage?("Keep at least one scene in this canvas format.")
+            return
+        }
+        SceneLibraryStore.save(sceneLibrary, defaults: defaults)
+        if let selectedScene = sceneLibrary.selectedScene(layout: settings.layout) {
+            applySceneSnapshot(selectedScene.snapshot, allowTakeLockedBindings: true)
+            persistSettings(saveSceneSnapshot: false)
+            onScreenCaptureConfigurationChanged?()
+            onCameraConfigurationChanged?()
+        }
+    }
+
+    func moveScene(id: UUID, to index: Int) {
+        guard state == .idle else {
+            onMessage?("Scene library editing is locked while recording.")
+            return
+        }
+        guard sceneLibrary.moveScene(id: id, layout: settings.layout, to: index) else {
+            return
+        }
+        SceneLibraryStore.save(sceneLibrary, defaults: defaults)
+    }
+
     func setLayout(_ layout: CaptureLayout) {
         guard state == .idle else {
             onMessage?("Output aspect ratio is locked while recording.")
@@ -488,6 +564,13 @@ final class RecorderCoordinator {
     func setCanvasBackgroundStyle(_ style: CanvasBackgroundStyle) {
         guard sceneChangeIsAllowed() else { return }
         settings.canvasBackgroundStyle = style
+        persistSettings()
+        updateRecordingSceneIfNeeded()
+    }
+
+    func setCanvasBackgroundAnimated(_ animated: Bool) {
+        guard sceneChangeIsAllowed() else { return }
+        settings.canvasBackgroundAnimated = animated
         persistSettings()
         updateRecordingSceneIfNeeded()
     }
@@ -1047,11 +1130,11 @@ final class RecorderCoordinator {
                 guard !settings.enabledSources.isEmpty else {
                     throw RecorderError.noSourcesSelected
                 }
-                let usesRemoteCamera = settings.enabledSources.contains(.camera) && isRemoteCameraSelected
-                if usesRemoteCamera {
+                let startPlan = TakeStartPlan.make(settings: settings, isRemoteCameraSelected: isRemoteCameraSelected)
+                if startPlan.usesRemoteCamera {
                     try await requireRemoteCameraConnection()
                 }
-                if settings.enabledSources.contains(.camera), !usesRemoteCamera {
+                if settings.enabledSources.contains(.camera), !startPlan.usesRemoteCamera {
                     try await requestCameraAccess()
                     await cameraCutoutPreviewer.stop()
                 }
@@ -1065,7 +1148,7 @@ final class RecorderCoordinator {
                 }
                 let take = try takeFileStore.createTake(settings: settings)
                 createdTake = take
-                let remoteTakeID = usesRemoteCamera ? UUID() : nil
+                let remoteTakeID = startPlan.usesRemoteCamera ? UUID() : nil
                 if let remoteTakeID {
                     remoteCameraRuntime.beginTake(
                         takeID: remoteTakeID,
@@ -1079,7 +1162,7 @@ final class RecorderCoordinator {
                         hostStartTime: DispatchTime.now().uptimeNanoseconds
                     )
                 }
-                if shouldUseLiveCompositor {
+                if startPlan.usesLiveCompositor {
                     if settings.enabledSources.contains(.screen) || settings.enabledSources.contains(.systemAudio) {
                         guard settings.usesPickedScreenContent || hasScreenCaptureAccess() else {
                             throw RecorderError.screenCapturePermissionRequired
@@ -1123,7 +1206,7 @@ final class RecorderCoordinator {
                 }
                 let captureRun = CaptureSourceRun(
                     take: take,
-                    settings: localCaptureSettings(usesRemoteCamera: usesRemoteCamera),
+                    settings: startPlan.localCaptureSettings,
                     pickedScreenFilter: pickedScreenFilter(for: settings),
                     screenRecorder: screenRecorder,
                     cameraRecorder: cameraRecorder,
@@ -1645,11 +1728,18 @@ final class RecorderCoordinator {
         settings.cameraCropAmount = snapshot.cameraCropAmount
         settings.cameraCropPosition = snapshot.cameraCropPosition
         settings.canvasBackgroundStyle = snapshot.canvasBackgroundStyle
+        settings.canvasBackgroundAnimated = snapshot.canvasBackgroundAnimated
         settings.canvasPadding = snapshot.canvasPadding
         settings.selectedScenePreset = snapshot.selectedScenePreset
         settings.selectedDisplayID = snapshot.selectedDisplayID
         settings.screenCrop = snapshot.screenCrop
-        settings.usesPickedScreenContent = snapshot.usesPickedScreenContent && pickedScreenFilter != nil
+        // `pickedScreenFilter` is single, session-global state — there is only one picked
+        // screen for the whole app, not one per scene, and every pick/clear path keeps it
+        // and `usesPickedScreenContent` in lockstep. The flag therefore tracks the live
+        // filter, not the (possibly stale) per-scene snapshot: restoring a snapshot's
+        // `usesPickedScreenContent == false` while a valid filter was still held is what
+        // snapped the preview back to "Pick a screen to preview" on a scene switch.
+        settings.usesPickedScreenContent = pickedScreenFilter != nil
 
         if allowTakeLockedBindings {
             settings.selectedCameraID = snapshot.selectedCameraID

@@ -108,7 +108,7 @@ def build_payload() -> dict[str, Any]:
             "annualSubscriptionName": "BlitzRecorder Pro Annual",
             "annualProductId": ANNUAL_SUBSCRIPTION_PRODUCT_ID,
             "annualPrice": "$49.99 per year",
-            "freeBehavior": "3 free exports",
+            "freeBehavior": "10 free exports",
             "iosCompanionHasInAppPurchases": False,
             "iosCompanionHasPaywall": False,
         },

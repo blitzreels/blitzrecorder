@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Schibsted_Grotesk, Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { ReleaseProvider } from "@/components/site/release-context";
+import { getLatestRelease } from "@/lib/release";
 
 const display = Schibsted_Grotesk({
   variable: "--font-display",
@@ -35,17 +37,20 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const release = await getLatestRelease();
   return (
     <html
       lang="en"
       className={`dark ${display.variable} ${sans.variable} ${mono.variable}`}
     >
-      <body>{children}</body>
+      <body>
+        <ReleaseProvider release={release}>{children}</ReleaseProvider>
+      </body>
     </html>
   );
 }

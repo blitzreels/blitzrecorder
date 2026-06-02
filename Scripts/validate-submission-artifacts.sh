@@ -350,7 +350,7 @@ check_public_urls() {
   check_url_status "https://www.blitzreels.com/blitzrecorder/privacy" "200"
   check_url_status "https://www.blitzreels.com/blitzrecorder/terms" "200"
   check_url_status "https://www.blitzreels.com/blitzrecorder/support" "200"
-  check_url_contains "https://www.blitzreels.com/blitzrecorder" "3 free exports"
+  check_url_contains "https://www.blitzreels.com/blitzrecorder" "10 free exports"
   check_url_contains "https://www.blitzreels.com/blitzrecorder" '$7.99 per month'
   check_url_contains "https://www.blitzreels.com/blitzrecorder" '$49.99 per year'
   check_url_contains "https://www.blitzreels.com/blitzrecorder" "eligible BlitzReels subscribers"
@@ -361,7 +361,7 @@ check_public_urls() {
   check_url_contains "https://www.blitzreels.com/blitzrecorder/terms" '$49.99 per year'
   check_url_contains "https://www.blitzreels.com/blitzrecorder/terms" "Eligible active BlitzReels subscribers"
   check_url_contains "https://www.blitzreels.com/blitzrecorder/support" "support@blitzreels.com"
-  check_url_contains "https://www.blitzreels.com/blitzrecorder/support" "3 free exports"
+  check_url_contains "https://www.blitzreels.com/blitzrecorder/support" "10 free exports"
   check_redirect_location_contains \
     "https://www.blitzreels.com/blitzrecorder/sign-in?return_to=blitzrecorder://auth/blitzreels" \
     "307" \

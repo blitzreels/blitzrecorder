@@ -30,6 +30,7 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
     private var recordingSceneTransition: LiveRecordingSceneTransition?
     private var latestScreenBuffer: CVPixelBuffer?
     private var latestCameraBuffer: CVPixelBuffer?
+    private var backgroundAnimationStartUptime: CFTimeInterval?
     private var streamError: Error?
     private var intentionallyStoppedScreenStream: SCStream?
     private var lastScreenPreviewFrameTime = DispatchTime(uptimeNanoseconds: 0)
@@ -468,8 +469,24 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
             cameraBuffer: cameraBuffer,
             scene: scene,
             settings: settings,
+            backgroundPhase: backgroundAnimationPhase(for: scene),
             to: outputBuffer
         )
+    }
+
+    /// Loop phase (0...1) for the animated background, anchored to the first
+    /// animated frame. Runs on `renderQueue` only. `nil` when not animating.
+    private func backgroundAnimationPhase(for scene: RecordingScene) -> Double? {
+        guard scene.canvasBackgroundAnimated else {
+            backgroundAnimationStartUptime = nil
+            return nil
+        }
+        let now = ProcessInfo.processInfo.systemUptime
+        if backgroundAnimationStartUptime == nil {
+            backgroundAnimationStartUptime = now
+        }
+        let elapsed = now - (backgroundAnimationStartUptime ?? now)
+        return (elapsed / CanvasAppearance.animationLoopDuration).truncatingRemainder(dividingBy: 1)
     }
 
     private func currentRecordingScene(at date: Date) -> RecordingScene? {
@@ -496,6 +513,7 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
         recordingSceneTransition = nil
         latestScreenBuffer = nil
         latestCameraBuffer = nil
+        backgroundAnimationStartUptime = nil
         lock.unlock()
     }
 

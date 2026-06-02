@@ -66,36 +66,56 @@ jobs:
           security find-identity -v -p codesigning
 
       - name: Build DMG
+        id: build_dmg
         env:
-          NOTARIZE: ${{ github.event_name == 'workflow_dispatch' && inputs.notarize || '0' }}
+          NOTARIZE: ${{ startsWith(github.ref, 'refs/tags/v') && '1' || (github.event_name == 'workflow_dispatch' && inputs.notarize || '0') }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
           ENTITLEMENTS_PATH: ${{ github.workspace }}/BlitzRecorder.local.entitlements
+          APP_ARCHS: arm64 x86_64
+          EXPECTED_ARCHS: arm64 x86_64
+          ALLOW_AD_HOC_RELEASE_SIGNING: ${{ startsWith(github.ref, 'refs/tags/v') && '0' || '1' }}
         run: |
           set -euo pipefail
           chmod +x Scripts/ci-macos-dmg.sh
-          Scripts/ci-macos-dmg.sh
+          LOG_PATH="$RUNNER_TEMP/macos-dmg.log"
+          Scripts/ci-macos-dmg.sh | tee "$LOG_PATH"
+          DMG_PATH="$(tail -n 1 "$LOG_PATH")"
+          test -f "$DMG_PATH"
+          echo "dmg_path=$DMG_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Generate Checksums
+        env:
+          DMG_PATH: ${{ steps.build_dmg.outputs.dmg_path }}
+        run: |
+          set -euo pipefail
+          cd "$(dirname "$DMG_PATH")"
+          shasum -a 256 "$(basename "$DMG_PATH")" > SHA256SUMS
 
       - name: Upload DMG Artifact
         uses: actions/upload-artifact@v4
         with:
           name: blitzrecorder-macos-dmg
-          path: build/Distributions/BlitzRecorder-*.dmg
+          path: |
+            ${{ steps.build_dmg.outputs.dmg_path }}
+            build/Distributions/SHA256SUMS
           if-no-files-found: error
 
       - name: Publish Tagged Release
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         env:
           GH_TOKEN: ${{ github.token }}
+          DMG_PATH: ${{ steps.build_dmg.outputs.dmg_path }}
         run: |
           set -euo pipefail
-          DMG_PATH="$(find build/Distributions -maxdepth 1 -name 'BlitzRecorder-*.dmg' -print -quit)"
-          test -n "$DMG_PATH"
+          CHECKSUM_PATH="build/Distributions/SHA256SUMS"
+          test -f "$DMG_PATH"
+          test -f "$CHECKSUM_PATH"
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" "$DMG_PATH" --clobber
+            gh release upload "$GITHUB_REF_NAME" "$DMG_PATH" "$CHECKSUM_PATH" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" "$DMG_PATH" \
+            gh release create "$GITHUB_REF_NAME" "$DMG_PATH" "$CHECKSUM_PATH" \
               --title "$GITHUB_REF_NAME" \
               --generate-notes
           fi

@@ -23,24 +23,39 @@ struct CameraRecordingPlaybackView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                ZoomablePlayerSurface(player: playback.player, resetToken: zoomResetToken)
-                    .frame(maxWidth: .infinity)
-                    .aspectRatio(playback.displayAspectRatio, contentMode: .fit)
-                    .background(.black)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .accessibilityLabel("Recording preview")
+        ZStack {
+            LinearGradient(
+                colors: [CompanionTheme.canvasTop, CompanionTheme.canvasBottom],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+            CompanionStudioGrid()
 
-                playbackControls
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    ZoomablePlayerSurface(player: playback.player, resetToken: zoomResetToken)
+                        .frame(maxWidth: .infinity)
+                        .aspectRatio(playback.displayAspectRatio, contentMode: .fit)
+                        .background(.black)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(CompanionTheme.stroke, lineWidth: 1)
+                        }
+                        .accessibilityLabel("Recording preview")
 
-                metadata
+                    playbackControls
+
+                    metadata
+                }
+                .padding()
             }
-            .padding()
         }
-        .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("Recording")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button {
@@ -65,6 +80,7 @@ struct CameraRecordingPlaybackView: View {
         .onDisappear {
             playback.pause()
         }
+        .tint(CompanionTheme.accent)
     }
 
     private var playbackControls: some View {
@@ -82,6 +98,7 @@ struct CameraRecordingPlaybackView: View {
                         .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(CompanionTheme.accent)
                 .clipShape(Circle())
 
                 VStack(spacing: 4) {
@@ -101,7 +118,7 @@ struct CameraRecordingPlaybackView: View {
                         Text(playback.durationLabel)
                     }
                     .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(CompanionTheme.faintText)
                 }
             }
 
@@ -112,17 +129,18 @@ struct CameraRecordingPlaybackView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
+            .buttonBorderShape(.roundedRectangle(radius: 14))
 
             if let message = playback.statusMessage {
                 Label(message, systemImage: "exclamationmark.triangle")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(CompanionTheme.faintText)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding()
-        .background(.background)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .foregroundStyle(.white)
+        .companionGlassPanel(cornerRadius: 18)
     }
 
     private var metadata: some View {
@@ -136,8 +154,8 @@ struct CameraRecordingPlaybackView: View {
         }
         .font(.subheadline)
         .padding()
-        .background(.background)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .foregroundStyle(.white)
+        .companionGlassPanel(cornerRadius: 18)
     }
 }
 

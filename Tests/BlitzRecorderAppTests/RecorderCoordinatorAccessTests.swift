@@ -7,9 +7,9 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
     func testRecordingStartIsBlockedAfterFreeExportsAreUsed() {
         let defaults = temporaryDefaults()
         let access = AccessController(defaults: defaults)
-        access.recordSuccessfulExportIfNeeded()
-        access.recordSuccessfulExportIfNeeded()
-        access.recordSuccessfulExportIfNeeded()
+        for _ in 0..<ProductConfiguration.freeExportLimit {
+            access.recordSuccessfulExportIfNeeded()
+        }
 
         let coordinator = RecorderCoordinator(accessController: access, defaults: defaults)
         var messages: [String] = []
@@ -19,22 +19,26 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
 
         XCTAssertEqual(coordinator.state, .idle)
         XCTAssertEqual(messages, ["Free exports used. Subscribe for unlimited renders."])
-        XCTAssertEqual(access.usedFreeExports, 3)
+        XCTAssertEqual(access.usedFreeExports, ProductConfiguration.freeExportLimit)
     }
 
     func testReadinessDetailsOpenPlanAfterFreeExportsAreUsed() {
         let defaults = temporaryDefaults()
         let access = AccessController(defaults: defaults)
-        access.recordSuccessfulExportIfNeeded()
-        access.recordSuccessfulExportIfNeeded()
-        access.recordSuccessfulExportIfNeeded()
+        for _ in 0..<ProductConfiguration.freeExportLimit {
+            access.recordSuccessfulExportIfNeeded()
+        }
 
         let coordinator = RecorderCoordinator(accessController: access, defaults: defaults)
         let viewModel = RecorderViewModel(coordinator: coordinator, previewStage: PreviewStageView())
+        var presentedPane: SettingsPane?
+        viewModel.onPresentSettings = { presentedPane = $0 }
 
         viewModel.openReadinessDetails()
 
-        XCTAssertEqual(viewModel.appTab, .creator)
+        // Free exports exhausted -> the upgrade surface is the Settings Account pane
+        // (the 6-item app rail / `appTab` was removed in the studio redesign).
+        XCTAssertEqual(presentedPane, .account)
     }
 
     func testViewModelAppliesSavedOutputAfterStopWarning() {

@@ -112,7 +112,7 @@ Recommended answer:
 - Monthly price: `$7.99 per month`
 - Annual product ID: `dev.blitzreels.blitzrecorder.pro.annual`
 - Annual price: `$49.99 per year`
-- Free behavior: `3 free exports`
+- Free behavior: `10 free exports`
 - iOS companion has no in-app purchases and no paywall.
 
 ## Review Before Submission

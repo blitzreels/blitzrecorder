@@ -8,7 +8,7 @@ import SwiftUI
 struct RecordingAccessCover: View {
     @Bindable var vm: RecorderViewModel
 
-    private let accent = Color(red: 0.09, green: 1.0, blue: 0.65)
+    private let accent = BlitzUI.mint
 
     /// The four capture sources (Accessibility lives in the Access tab, not here).
     private var sourceRows: [PermissionStatusRow] {

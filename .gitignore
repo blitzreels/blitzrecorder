@@ -4,7 +4,9 @@ build/
 DerivedData/
 .codex/
 .agents/
+.claude/
 AGENTS.md
+CLAUDE.md
 .DS_Store
 __pycache__/
 *.pyc

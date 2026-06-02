@@ -1,7 +1,8 @@
 import type { StaticImageData } from "next/image";
 import { assets } from "@/lib/assets";
 
-export const BLITZREELS_URL = "https://blitzreels.com";
+export const BLITZREELS_URL =
+  "https://www.blitzreels.com/?ref=blitzrecorder&source=website&placement=blitzrecorder_site";
 export const ALGOMAX_URL = "https://algomax.fr";
 
 export const requirements = {
@@ -9,7 +10,7 @@ export const requirements = {
   ios: "iOS 18 or later",
 };
 
-export const cleanOutcomes = ["No reshoots", "Fix mistakes later", "One take, many videos"];
+export const cleanOutcomes = ["Scene switches", "Optional source files", "Recovery files when needed"];
 
 export type WorkflowCard = { title: string; image: StaticImageData; body: string };
 
@@ -17,17 +18,17 @@ export const workflowCards: WorkflowCard[] = [
   {
     title: "Set up the shot first",
     image: assets.macPlan,
-    body: "Pick a tall or wide layout before you hit record. What you see is what you get, so you don't fix it later.",
+    body: "Pick a tall or wide layout before you hit record. What you see is what you export.",
   },
   {
     title: "Make a Short and a video",
     image: assets.macIphone,
-    body: "One recording works as a tall Short or a wide YouTube video. Make both from the same take.",
+    body: "Pick vertical for Shorts or horizontal for YouTube before recording. Switch scenes during the take.",
   },
   {
     title: "Jump straight to editing",
     image: assets.macRecorder,
-    body: "Export the finished video, or send every file to BlitzReels and start editing right away.",
+    body: "Export the finished video, or send the files to BlitzReels and keep editing.",
   },
 ];
 
@@ -45,11 +46,11 @@ export const pricing: { trial: Plan; pro: Plan } = {
   trial: {
     name: "Trial",
     price: "$0",
-    note: "Try the whole app, free",
+    note: "Try the whole app for free",
     features: [
-      "Make 3 videos for free",
+      "Make 10 videos for free",
       "Use your iPhone as the camera",
-      "Make tall and wide videos",
+      "Make tall or wide videos",
       "No card needed",
     ],
   },
@@ -59,11 +60,11 @@ export const pricing: { trial: Plan; pro: Plan } = {
     suffix: "/year",
     subline: "or $7.99/month",
     save: "Save 48%",
-    note: "Make as many videos as you want",
+    note: "Export as many videos as you want",
     features: [
-      "Save as many videos as you want",
-      "Studio-quality video from your iPhone",
-      "Fix anything later, never reshoot",
+      "Export as many videos as you want",
+      "Use full-quality iPhone recordings",
+      "Keep source files when you need them",
       "Pause and pick back up while recording",
       "Add titles and captions",
     ],
@@ -96,16 +97,16 @@ export const pages: Record<"ios" | "macos", ProductPageData> = {
     eyebrow: "iPhone app",
     appName: "BlitzRecorder Camera",
     tagline: "Your iPhone, as a Mac camera",
-    hero: "Use your iPhone as a studio-quality camera for your Mac.",
+    hero: "Use your iPhone as the camera for your Mac recordings.",
     icon: assets.iosIcon,
     previewKind: "phone",
     preview: assets.iosPhone,
-    copyTitle: "Look like you filmed with a real camera.",
+    copyTitle: "Record with the phone you already have.",
     copy:
-      "Open the app and scan a code to pair your iPhone with your Mac. Your iPhone records you in full quality and sends the video to your Mac when you stop. You set up the shot from your desk.",
+      "Open the app and pair your iPhone with your Mac. Your iPhone records locally and sends the video to your Mac when you stop. You set up the shot from your desk.",
     bullets: [
       "Pairs with your Mac in seconds. No account.",
-      "Records in full quality, better than Continuity Camera.",
+      "Records locally on the iPhone at full quality.",
       "Set up the shot from your Mac, not the phone.",
       "Your video saves to your Mac on its own.",
     ],
@@ -143,18 +144,18 @@ export const pages: Record<"ios" | "macos", ProductPageData> = {
     eyebrow: "Mac app",
     appName: "BlitzRecorder",
     tagline: "Studio recording for Mac",
-    hero: "Record studio-quality videos on your Mac, and fix them later without filming again.",
+    hero: "Record Mac videos with scenes, screen capture, and iPhone camera support.",
     icon: assets.macIcon,
     previewKind: "desktop",
     preview: assets.macRecorder,
     copyTitle: "Record once. Fix anything later.",
     copy:
-      "Set up your shot, hit record, and BlitzRecorder saves your screen, camera, and sound as separate files. Change the framing or fix the sound later, and turn one take into both a Short and a long video.",
+      "Set up your shot, pick a vertical or horizontal canvas, and hit record. BlitzRecorder can keep source files when you want more control after the take.",
     bullets: [
       "Record your screen, camera, mic, and Mac sound.",
-      "Use your iPhone as a studio-quality camera.",
+      "Use your iPhone as the camera.",
       "Set up tall or wide videos before you record.",
-      "Fix anything later without filming again.",
+      "Keep source files for post-recording fixes.",
     ],
     requirement: requirements.macos,
     screensTitle: "How it works",
@@ -189,7 +190,7 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
     eyebrow: "Effective May 22, 2026",
     title: "Terms of Use",
     intro:
-      "These terms cover BlitzRecorder and BlitzRecorder Camera. If you download from the App Store, Apple's media services terms and standard app license also apply, unless we publish a separate license.",
+      "These terms cover BlitzRecorder and BlitzRecorder Camera. If you download from the App Store, Apple's media services terms also apply.",
     sections: [
       {
         title: "Product",
@@ -199,7 +200,7 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
       {
         title: "Subscription",
         body:
-          "BlitzRecorder includes 3 free exports. BlitzRecorder Pro is an App Store subscription that costs $7.99 per month or $49.99 per year. While it is active, you can export as many videos as you want. Apple handles billing, renewals, cancellations, and refunds.",
+          "BlitzRecorder includes 10 free exports. BlitzRecorder Pro is an App Store subscription that costs $7.99 per month or $49.99 per year. While it is active, you can export as many videos as you want. Apple handles billing, renewals, cancellations, and refunds.",
       },
       {
         title: "BlitzReels subscriber access",
@@ -274,7 +275,7 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
       {
         title: "Subscription and free exports",
         body:
-          "BlitzRecorder comes with 3 free exports. Once you use them, subscribe to BlitzRecorder Pro in the app to export as many videos as you want. If you already pay for BlitzReels, sign in from the app to unlock Pro at no extra cost.",
+          "BlitzRecorder comes with 10 free exports. Once you use them, subscribe to BlitzRecorder Pro in the app to export as many videos as you want. If you already pay for BlitzReels, sign in from the app to unlock Pro at no extra cost.",
       },
       {
         title: "Permissions",

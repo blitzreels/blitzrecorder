@@ -4,8 +4,12 @@ import CoreVideo
 import Metal
 
 final class LiveCompositorRenderer: @unchecked Sendable {
+    /// Animated-background frames per loop. 8s loop ÷ 96 ≈ 12 fps of background
+    /// motion, which the per-frame cache collapses so we render ~12×/s, not 60×/s.
+    private static let backgroundFramesPerLoop = 96
+
     private let ciContext: CIContext
-    private var cachedBackground: (style: CanvasBackgroundStyle, size: CGSize, image: CIImage)?
+    private var cachedBackground: (style: CanvasBackgroundStyle, size: CGSize, frameIndex: Int, image: CIImage)?
 
     init(metalDevice: MTLDevice? = MTLCreateSystemDefaultDevice()) {
         if let metalDevice {
@@ -20,6 +24,7 @@ final class LiveCompositorRenderer: @unchecked Sendable {
         cameraBuffer: CVPixelBuffer?,
         scene: RecordingScene,
         settings: RecordingSettings,
+        backgroundPhase: Double? = nil,
         to outputBuffer: CVPixelBuffer
     ) -> Bool {
         guard screenBuffer != nil || cameraBuffer != nil else {
@@ -29,7 +34,11 @@ final class LiveCompositorRenderer: @unchecked Sendable {
         let dimensions = ScreenCaptureGeometry.outputDimensions(for: settings)
         let canvasRect = CGRect(x: 0, y: 0, width: dimensions.width, height: dimensions.height)
         let geometry = SceneRenderGeometry(canvas: canvasRect, scene: scene, origin: .lowerLeft)
-        var image = backgroundImage(style: scene.canvasBackgroundStyle, in: canvasRect)
+        var image = backgroundImage(
+            style: scene.canvasBackgroundStyle,
+            animationPhase: scene.canvasBackgroundAnimated ? backgroundPhase : nil,
+            in: canvasRect
+        )
 
         for placement in geometry.activePlacements {
             switch placement.kind {
@@ -61,16 +70,59 @@ final class LiveCompositorRenderer: @unchecked Sendable {
         cachedBackground = nil
     }
 
-    private func backgroundImage(style: CanvasBackgroundStyle, in canvasRect: CGRect) -> CIImage {
+    private func backgroundImage(style: CanvasBackgroundStyle, animationPhase: Double?, in canvasRect: CGRect) -> CIImage {
+        let frameIndex: Int
+        if let phase = animationPhase {
+            let wrapped = (phase.truncatingRemainder(dividingBy: 1) + 1).truncatingRemainder(dividingBy: 1)
+            frameIndex = min(Self.backgroundFramesPerLoop - 1, Int(wrapped * Double(Self.backgroundFramesPerLoop)))
+        } else {
+            frameIndex = -1
+        }
+
         if let cachedBackground,
            cachedBackground.style == style,
-           cachedBackground.size == canvasRect.size {
+           cachedBackground.size == canvasRect.size,
+           cachedBackground.frameIndex == frameIndex {
             return cachedBackground.image
         }
 
-        let image = style.appearance.ciImage(in: canvasRect)
-        cachedBackground = (style, canvasRect.size, image)
+        let image: CIImage
+        if frameIndex < 0 {
+            image = style.appearance.ciImage(in: canvasRect)
+        } else {
+            image = Self.animatedBackgroundImage(
+                style: style,
+                frameIndex: frameIndex,
+                framesPerLoop: Self.backgroundFramesPerLoop,
+                canvasRect: canvasRect
+            )
+        }
+        cachedBackground = (style, canvasRect.size, frameIndex, image)
         return image
+    }
+
+    /// Animated background frame, rendered at a capped resolution then scaled to
+    /// the canvas (the mesh is soft, so upscaling is invisible and keeps the
+    /// per-frame render cheap even at 4K).
+    private static func animatedBackgroundImage(
+        style: CanvasBackgroundStyle,
+        frameIndex: Int,
+        framesPerLoop: Int,
+        canvasRect: CGRect
+    ) -> CIImage {
+        let cap: CGFloat = 1280
+        let longEdge = max(canvasRect.width, canvasRect.height)
+        let scale = longEdge > cap ? cap / longEdge : 1
+        let width = max(1, Int((canvasRect.width * scale).rounded(.up)))
+        let height = max(1, Int((canvasRect.height * scale).rounded(.up)))
+        let phase = Double(frameIndex) / Double(framesPerLoop)
+        guard let cgImage = style.appearance.renderCGImage(pixelWidth: width, pixelHeight: height, animationPhase: phase) else {
+            return CIImage(color: CIColor(cgColor: style.appearance.solidCGColor)).cropped(to: canvasRect)
+        }
+        return CIImage(cgImage: cgImage)
+            .transformed(by: CGAffineTransform(scaleX: canvasRect.width / CGFloat(width), y: canvasRect.height / CGFloat(height)))
+            .transformed(by: CGAffineTransform(translationX: canvasRect.minX, y: canvasRect.minY))
+            .cropped(to: canvasRect)
     }
 
     private func fill(
