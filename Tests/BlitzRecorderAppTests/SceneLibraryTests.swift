@@ -34,6 +34,27 @@ final class SceneLibraryTests: XCTestCase {
         XCTAssertEqual(decoded.canvasBackgroundAnimated, false)
     }
 
+    func testSceneSnapshotPersistsScreenSourceBinding() throws {
+        var settings = RecordingSettings()
+        settings.screenSourceBinding = ScreenSourceBinding(
+            kind: .window,
+            displayID: "2",
+            bundleIdentifier: "com.apple.Safari",
+            applicationName: "Safari",
+            processID: 77,
+            windowID: 991,
+            windowTitle: "Demo"
+        )
+
+        let snapshot = RecordingSceneSnapshot(settings: settings)
+        let decoded = try JSONDecoder().decode(
+            RecordingSceneSnapshot.self,
+            from: JSONEncoder().encode(snapshot)
+        )
+
+        XCTAssertEqual(decoded.screenSourceBinding, settings.screenSourceBinding)
+    }
+
     func testCoordinatorRestoresLastScenePerCanvasFormat() {
         let defaults = temporaryDefaults()
         var settings = RecordingSettings()

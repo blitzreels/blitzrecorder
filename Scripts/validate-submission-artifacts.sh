@@ -3,15 +3,26 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 STRICT=0
+TARGET="${TARGET:-all}"
+REQUIRE_EXPORTS="${REQUIRE_EXPORTS:-1}"
 EXPECTED_MARKETING_VERSION="0.1.0"
 EXPECTED_BUILD_NUMBER="1"
 
-if [[ "${1:-}" == "--strict" ]]; then
-  STRICT=1
-elif [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --strict)
+      STRICT=1
+      shift
+      ;;
+    --target)
+      [[ $# -ge 2 ]] || { echo "error: --target needs all, mac, or ios" >&2; exit 2; }
+      TARGET="$2"
+      shift 2
+      ;;
+    --help|-h)
   cat <<'USAGE'
 Usage:
-  Scripts/validate-submission-artifacts.sh [--strict]
+  Scripts/validate-submission-artifacts.sh [--strict] [--target all|mac|ios]
 
 Checks the artifacts App Store Connect actually needs after local builds pass:
 public URLs, screenshot asset dimensions, signed archive locations, export
@@ -19,8 +30,26 @@ options/packages, and optional live App Store Connect records.
 
 Without --strict, missing screenshots/archives/exports are reported as pending
 and the script exits 0. With --strict, missing or invalid final artifacts fail.
+Set REQUIRE_EXPORTS=0 to validate archives and metadata without requiring
+exported .pkg/.ipa files.
 USAGE
-  exit 0
+      exit 0
+      ;;
+    *)
+      echo "error: unknown argument: $1" >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ "$TARGET" != "all" && "$TARGET" != "mac" && "$TARGET" != "ios" ]]; then
+  echo "TARGET must be all, mac, or ios." >&2
+  exit 2
+fi
+
+if [[ "$REQUIRE_EXPORTS" != "0" && "$REQUIRE_EXPORTS" != "1" ]]; then
+  echo "REQUIRE_EXPORTS must be 0 or 1." >&2
+  exit 2
 fi
 
 cd "$ROOT"
@@ -346,57 +375,46 @@ require_screenshot_file() {
 }
 
 check_public_urls() {
-  check_url_status "https://www.blitzreels.com/blitzrecorder" "200"
-  check_url_status "https://www.blitzreels.com/blitzrecorder/privacy" "200"
-  check_url_status "https://www.blitzreels.com/blitzrecorder/terms" "200"
-  check_url_status "https://www.blitzreels.com/blitzrecorder/support" "200"
-  check_url_contains "https://www.blitzreels.com/blitzrecorder" "10 free exports"
-  check_url_contains "https://www.blitzreels.com/blitzrecorder" '$7.99 per month'
-  check_url_contains "https://www.blitzreels.com/blitzrecorder" '$49.99 per year'
-  check_url_contains "https://www.blitzreels.com/blitzrecorder" "eligible BlitzReels subscribers"
-  check_url_contains "https://www.blitzreels.com/blitzrecorder/privacy" "macOS Keychain"
-  check_url_contains "https://www.blitzreels.com/blitzrecorder/privacy" "StoreKit"
-  check_url_contains "https://www.blitzreels.com/blitzrecorder/privacy" "support@blitzreels.com"
-  check_url_contains "https://www.blitzreels.com/blitzrecorder/terms" '$7.99 per month'
-  check_url_contains "https://www.blitzreels.com/blitzrecorder/terms" '$49.99 per year'
-  check_url_contains "https://www.blitzreels.com/blitzrecorder/terms" "Eligible active BlitzReels subscribers"
-  check_url_contains "https://www.blitzreels.com/blitzrecorder/support" "support@blitzreels.com"
-  check_url_contains "https://www.blitzreels.com/blitzrecorder/support" "10 free exports"
-  check_redirect_location_contains \
-    "https://www.blitzreels.com/blitzrecorder/sign-in?return_to=blitzrecorder://auth/blitzreels" \
-    "307" \
-    "/login?next=%2Fblitzrecorder%2Fsign-in"
-  check_url_status "https://www.blitzreels.com/blitzrecorder/sign-in?return_to=https://example.com" "400"
-  check_url_status "https://www.blitzreels.com/api/blitzrecorder/entitlement" "401"
+  check_url_status "https://blitzrecorder.com" "200"
+  check_url_status "https://blitzrecorder.com/privacy" "200"
+  check_url_status "https://blitzrecorder.com/terms" "200"
+  check_url_status "https://blitzrecorder.com/support" "200"
+  check_url_contains "https://blitzrecorder.com/privacy" "support@blitzreels.com"
+  check_url_contains "https://blitzrecorder.com/terms" "support@blitzreels.com"
+  check_url_contains "https://blitzrecorder.com/support" "support@blitzreels.com"
 }
 
 check_screenshots() {
-  validate_screenshot_set \
-    "macOS" \
-    "AppStore/ScreenshotAssets/macOS" \
-    "1280x800" "1440x900" "2560x1600" "2880x1800"
-  require_screenshot_file \
-    "macOS main canvas" \
-    "AppStore/ScreenshotAssets/macOS/01-main-recording-canvas.png" \
-    "1280x800" "1440x900" "2560x1600" "2880x1800"
-  require_screenshot_file \
-    "macOS plan popover" \
-    "AppStore/ScreenshotAssets/macOS/02-plan-popover.png" \
-    "1280x800" "1440x900" "2560x1600" "2880x1800"
-  require_screenshot_file \
-    "macOS iPhone camera controls" \
-    "AppStore/ScreenshotAssets/macOS/03-iphone-camera-controls.png" \
-    "1280x800" "1440x900" "2560x1600" "2880x1800"
+  if [[ "$TARGET" == "all" || "$TARGET" == "mac" ]]; then
+    validate_screenshot_set \
+      "macOS" \
+      "AppStore/ScreenshotAssets/macOS" \
+      "1280x800" "1440x900" "2560x1600" "2880x1800"
+    require_screenshot_file \
+      "macOS main canvas" \
+      "AppStore/ScreenshotAssets/macOS/01-main-recording-canvas.png" \
+      "1280x800" "1440x900" "2560x1600" "2880x1800"
+    require_screenshot_file \
+      "macOS plan popover" \
+      "AppStore/ScreenshotAssets/macOS/02-plan-popover.png" \
+      "1280x800" "1440x900" "2560x1600" "2880x1800"
+    require_screenshot_file \
+      "macOS iPhone camera controls" \
+      "AppStore/ScreenshotAssets/macOS/03-iphone-camera-controls.png" \
+      "1280x800" "1440x900" "2560x1600" "2880x1800"
+  fi
 
-  validate_screenshot_set \
-    "iPhone 6.9-inch" \
-    "AppStore/ScreenshotAssets/iPhone-6.9" \
-    "1260x2736" "1290x2796" "1320x2868"
+  if [[ "$TARGET" == "all" || "$TARGET" == "ios" ]]; then
+    validate_screenshot_set \
+      "iPhone 6.9-inch" \
+      "AppStore/ScreenshotAssets/iPhone-6.9" \
+      "1260x2736" "1290x2796" "1320x2868"
 
-  validate_screenshot_set \
-    "iPad 13-inch" \
-    "AppStore/ScreenshotAssets/iPad-13" \
-    "2048x2732" "2064x2752"
+    validate_screenshot_set \
+      "iPad 13-inch" \
+      "AppStore/ScreenshotAssets/iPad-13" \
+      "2048x2732" "2064x2752"
+  fi
 }
 
 require_export_output() {
@@ -583,10 +601,15 @@ validate_archived_app() {
 }
 
 check_archives() {
-  require_or_pending "build/AppStoreArchives/BlitzRecorder-macOS.xcarchive" "macOS App Store archive"
-  require_or_pending "build/AppStoreArchives/BlitzRecorderCamera-iOS.xcarchive" "iOS App Store archive"
+  if [[ "$TARGET" == "all" || "$TARGET" == "mac" ]]; then
+    require_or_pending "build/AppStoreArchives/BlitzRecorder-macOS.xcarchive" "macOS App Store archive"
+  fi
+  if [[ "$TARGET" == "all" || "$TARGET" == "ios" ]]; then
+    require_or_pending "build/AppStoreArchives/BlitzRecorderCamera-iOS.xcarchive" "iOS App Store archive"
+  fi
 
-  if [[ -d "build/AppStoreArchives/BlitzRecorder-macOS.xcarchive" ]]; then
+  if [[ "$TARGET" == "all" || "$TARGET" == "mac" ]] &&
+     [[ -d "build/AppStoreArchives/BlitzRecorder-macOS.xcarchive" ]]; then
     validate_archived_app \
       "macOS" \
       "build/AppStoreArchives/BlitzRecorder-macOS.xcarchive/Products/Applications/BlitzRecorder.app" \
@@ -595,7 +618,8 @@ check_archives() {
       "3rd Party Mac Developer Application"
   fi
 
-  if [[ -d "build/AppStoreArchives/BlitzRecorderCamera-iOS.xcarchive" ]]; then
+  if [[ "$TARGET" == "all" || "$TARGET" == "ios" ]] &&
+     [[ -d "build/AppStoreArchives/BlitzRecorderCamera-iOS.xcarchive" ]]; then
     validate_archived_app \
       "iOS" \
       "build/AppStoreArchives/BlitzRecorderCamera-iOS.xcarchive/Products/Applications/BlitzRecorderCamera.app" \
@@ -606,10 +630,19 @@ check_archives() {
 }
 
 check_exports() {
-  validate_export_options_plist "macOS" "build/AppStoreExports/macOS-export-options.plist"
-  validate_export_options_plist "iOS" "build/AppStoreExports/iOS-export-options.plist"
-  require_export_output "macOS" "build/AppStoreExports/macOS" "pkg"
-  require_export_output "iOS" "build/AppStoreExports/iOS" "ipa"
+  if [[ "$REQUIRE_EXPORTS" == "0" ]]; then
+    echo "✓ App Store exports are not required for this validation"
+    return
+  fi
+
+  if [[ "$TARGET" == "all" || "$TARGET" == "mac" ]]; then
+    validate_export_options_plist "macOS" "build/AppStoreExports/macOS-export-options.plist"
+    require_export_output "macOS" "build/AppStoreExports/macOS" "pkg"
+  fi
+  if [[ "$TARGET" == "all" || "$TARGET" == "ios" ]]; then
+    validate_export_options_plist "iOS" "build/AppStoreExports/iOS-export-options.plist"
+    require_export_output "iOS" "build/AppStoreExports/iOS" "ipa"
+  fi
 }
 
 check_app_store_connect() {

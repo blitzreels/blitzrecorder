@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
     private var statusElapsedAccumulated: TimeInterval = 0
     private var blinkOn = false
     private var mainMenuBuilder: MainMenuBuilder?
+    private lazy var updateController = AppUpdateController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         launchIfNeeded()
@@ -36,6 +37,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
 
         accessController.configure()
         NSApp.setActivationPolicy(.regular)
+        applyDevIconBadgeIfNeeded()
+        _ = updateController
 
         let windowController = MainWindowController(coordinator: coordinator)
         self.windowController = windowController
@@ -68,6 +71,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
         coordinator.onSocialSafeZoneOverlayChanged = { [weak self] _ in
             self?.windowController?.syncRuleOfThirdsOverlay()
             self?.rebuildMenu()
+        }
+        coordinator.onRequestForeground = { [weak self] in
+            self?.presentMainWindow()
         }
 
         mainMenuBuilder = MainMenuBuilder(coordinator: coordinator, target: self)
@@ -318,12 +324,80 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
         return image
     }
 
+    /// The local dev build uses a distinct bundle id (…​.debug). Stamp a "DEV"
+    /// ribbon on the Dock / Cmd-Tab icon so it's never confused with the release.
+    private func applyDevIconBadgeIfNeeded() {
+        guard Bundle.main.bundleIdentifier?.hasSuffix(".debug") == true else { return }
+        guard let base = NSApp.applicationIconImage.copy() as? NSImage else { return }
+
+        let side: CGFloat = 512
+        let canvas = NSSize(width: side, height: side)
+        let badged = NSImage(size: canvas)
+        badged.lockFocus()
+        base.draw(in: NSRect(origin: .zero, size: canvas))
+
+        let badge = NSRect(x: side * 0.10, y: side * 0.07, width: side * 0.80, height: side * 0.22)
+        let pill = NSBezierPath(roundedRect: badge, xRadius: badge.height / 2, yRadius: badge.height / 2)
+        NSColor(calibratedRed: 1.0, green: 0.66, blue: 0.16, alpha: 1).setFill()
+        pill.fill()
+
+        let label = NSAttributedString(
+            string: "DEV",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: badge.height * 0.62, weight: .heavy),
+                .foregroundColor: NSColor.black,
+                .kern: 2
+            ]
+        )
+        let labelSize = label.size()
+        label.draw(at: NSPoint(x: badge.midX - labelSize.width / 2, y: badge.midY - labelSize.height / 2))
+        badged.unlockFocus()
+
+        NSApp.applicationIconImage = badged
+    }
+
     @objc private func showWindow() {
         presentMainWindow()
     }
 
     @objc func showSettings() {
         windowController?.presentSettings()
+    }
+
+    @objc func showAbout() {
+        AppSupportActions.showAboutPanel()
+    }
+
+    @objc func checkForUpdates() {
+        updateController.checkForUpdates(nil)
+    }
+
+    @objc func openReleaseNotes() {
+        updateController.openReleaseNotes(nil)
+    }
+
+    @objc func openHelp() {
+        AppSupportActions.openHelp()
+    }
+
+    @objc func reportIssue() {
+        AppSupportActions.reportIssue(diagnostics: diagnosticsReport())
+    }
+
+    @objc func sendFeedback() {
+        AppSupportActions.sendFeedback(diagnostics: diagnosticsReport())
+    }
+
+    @objc func copyDiagnostics() {
+        AppSupportActions.copyDiagnostics(diagnosticsReport())
+    }
+
+    @objc func openPrivacyPolicy() {
+        AppSupportActions.openPrivacyPolicy()
+    }
+
+    private func diagnosticsReport() -> String {
+        AppDiagnostics.report(coordinator: coordinator, accessController: accessController)
     }
 
     private func presentMainWindow() {

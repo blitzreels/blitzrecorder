@@ -1,8 +1,6 @@
 import type { StaticImageData } from "next/image";
 import { assets } from "@/lib/assets";
 
-export const BLITZREELS_URL =
-  "https://www.blitzreels.com/?ref=blitzrecorder&source=website&placement=blitzrecorder_site";
 export const ALGOMAX_URL = "https://algomax.fr";
 
 export const requirements = {
@@ -10,25 +8,97 @@ export const requirements = {
   ios: "iOS 18 or later",
 };
 
-export const cleanOutcomes = ["Scene switches", "Optional source files", "Recovery files when needed"];
+/** Shown next to the Mac download. The DMG is a universal build. */
+export const macCompatibility = "macOS 15 Sequoia or later · Apple silicon and Intel";
 
-export type WorkflowCard = { title: string; image: StaticImageData; body: string };
+export type FeatureIconKey =
+  | "composite"
+  | "scenes"
+  | "background"
+  | "remote"
+  | "aspect"
+  | "sources";
 
-export const workflowCards: WorkflowCard[] = [
+export type FeatureItem = { icon: FeatureIconKey; title: string; body: string };
+
+export const features: FeatureItem[] = [
   {
-    title: "Set up the shot first",
+    icon: "composite",
+    title: "Screen and camera together",
+    body: "Composite your screen and camera into one frame.",
+  },
+  {
+    icon: "scenes",
+    title: "Live scene switching",
+    body: "Cut or dissolve between layouts while you record.",
+  },
+  {
+    icon: "background",
+    title: "Replace your background",
+    body: "Drop in a clean backdrop instead of your room.",
+  },
+  {
+    icon: "remote",
+    title: "Control the iPhone from your Mac",
+    body: "Frame and adjust the camera without touching the phone.",
+  },
+  {
+    icon: "aspect",
+    title: "Vertical or horizontal",
+    body: "9:16 for Shorts, 16:9 for long-form. Set it before you record.",
+  },
+  {
+    icon: "sources",
+    title: "Keep the source files",
+    body: "Save screen, camera, and audio as separate files.",
+  },
+];
+
+export type Setup = { title: string; image: StaticImageData; body: string };
+
+export const setups: Setup[] = [
+  {
+    title: "Camera only",
     image: assets.macPlan,
-    body: "Pick a tall or wide layout before you hit record. What you see is what you export.",
+    body: "Talk straight to camera for a clean face-cam take.",
   },
   {
-    title: "Make a Short and a video",
-    image: assets.macIphone,
-    body: "Pick vertical for Shorts or horizontal for YouTube before recording. Switch scenes during the take.",
-  },
-  {
-    title: "Jump straight to editing",
+    title: "Screen and camera",
     image: assets.macRecorder,
-    body: "Export the finished video, or send the files to BlitzReels and keep editing.",
+    body: "Stack your screen over your camera for tutorials and demos.",
+  },
+];
+
+export type FaqItem = { q: string; a: string };
+
+export const faqs: FaqItem[] = [
+  {
+    q: "What is the Early Price?",
+    a: "A $39 one-time lifetime license. It unlocks the iPhone camera, 4K export, and 60 fps export in the Mac app, with updates through beta and v1.",
+  },
+  {
+    q: "What does the free app do?",
+    a: "Record your screen, Mac camera, and mic with scenes, layouts, and backgrounds, and export in 1080p. No account or card.",
+  },
+  {
+    q: "Do I need an account?",
+    a: "No app account is required. Checkout is handled by Stripe, then you claim a license key for the Mac app.",
+  },
+  {
+    q: "Does it run on Intel Macs?",
+    a: "Yes. It is a universal build for Apple silicon and Intel, on macOS 15 Sequoia or later.",
+  },
+  {
+    q: "Do I have to plug in my iPhone?",
+    a: "No. The iPhone pairs with your Mac over your local network. It needs iOS 18 or later.",
+  },
+  {
+    q: "Is my footage private?",
+    a: "Yes. Recording happens on your own devices and saves to a folder you choose. The native apps do not include an analytics SDK, and recordings are not uploaded.",
+  },
+  {
+    q: "Where do I get the apps?",
+    a: "Download the Mac app from blitzrecorder.com. The iPhone app is the companion camera and needs the Mac app to do useful recording work.",
   },
 ];
 
@@ -40,34 +110,40 @@ export type Plan = {
   save?: string;
   note: string;
   features: string[];
+  cta: "buy" | "download";
+  ctaLabel: string;
 };
 
-export const pricing: { trial: Plan; pro: Plan } = {
-  trial: {
-    name: "Trial",
+export const pricing: { free: Plan; early: Plan } = {
+  free: {
+    name: "Free",
     price: "$0",
-    note: "Try the whole app for free",
+    note: "The Mac app",
     features: [
-      "Make 10 videos for free",
-      "Use your iPhone as the camera",
-      "Make tall or wide videos",
-      "No card needed",
+      "Record your screen, camera, and mic",
+      "Scenes, layouts, and backgrounds",
+      "1080p export",
+      "No account, no card",
     ],
+    cta: "download",
+    ctaLabel: "Download for Mac",
   },
-  pro: {
-    name: "Pro",
-    price: "$49.99",
-    suffix: "/year",
-    subline: "or $7.99/month",
-    save: "Save 48%",
-    note: "Export as many videos as you want",
+  early: {
+    name: "Early Price",
+    price: "$39",
+    suffix: " lifetime",
+    subline: "One-time beta price",
+    save: "Limited",
+    note: "Unlocks the full studio",
     features: [
-      "Export as many videos as you want",
-      "Use full-quality iPhone recordings",
-      "Keep source files when you need them",
-      "Pause and pick back up while recording",
-      "Add titles and captions",
+      "Use your iPhone as the camera",
+      "4K export",
+      "60 fps export",
+      "One license for all your Macs",
+      "Updates through beta and v1",
     ],
+    cta: "buy",
+    ctaLabel: "Get Early Price",
   },
 };
 
@@ -128,7 +204,7 @@ export const pages: Record<"ios" | "macos", ProductPageData> = {
       {
         title: "Set up the shot from your Mac.",
         text: "See your iPhone on your Mac and line up the shot from your desk.",
-        image: assets.macIphone,
+        image: assets.macPlan,
         kind: "desktop",
       },
       {
@@ -148,14 +224,14 @@ export const pages: Record<"ios" | "macos", ProductPageData> = {
     icon: assets.macIcon,
     previewKind: "desktop",
     preview: assets.macRecorder,
-    copyTitle: "Record once. Fix anything later.",
+    copyTitle: "Set up the shot, then record it.",
     copy:
-      "Set up your shot, pick a vertical or horizontal canvas, and hit record. BlitzRecorder can keep source files when you want more control after the take.",
+      "Set up your shot, pick tall or wide, and hit record. You can keep the raw screen, camera, and audio files to use later.",
     bullets: [
       "Record your screen, camera, mic, and Mac sound.",
       "Use your iPhone as the camera.",
       "Set up tall or wide videos before you record.",
-      "Keep source files for post-recording fixes.",
+      "Keep the raw screen, camera, and audio files.",
     ],
     requirement: requirements.macos,
     screensTitle: "How it works",
@@ -198,14 +274,9 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
           "BlitzRecorder is a Mac app for recording your screen, camera, and audio. BlitzRecorder Camera is an iPhone app that pairs with BlitzRecorder on your Mac. It lets you preview and control the iPhone camera, record on the iPhone, and send that video back to your Mac.",
       },
       {
-        title: "Subscription",
+        title: "License",
         body:
-          "BlitzRecorder includes 10 free exports. BlitzRecorder Pro is an App Store subscription that costs $7.99 per month or $49.99 per year. While it is active, you can export as many videos as you want. Apple handles billing, renewals, cancellations, and refunds.",
-      },
-      {
-        title: "BlitzReels subscriber access",
-        body:
-          "If you have an active BlitzReels subscription, you may get BlitzRecorder Pro at no extra cost by signing in with BlitzReels. This access depends on your BlitzReels subscription. It can change if that subscription ends or is no longer eligible.",
+          "The Mac app is free to download and use, including 1080p export. Early Price is a one-time lifetime license, handled through Stripe checkout, that unlocks the iPhone camera, 4K export, and 60 fps export. After payment, Stripe redirects you to a claim page where your license key is created.",
       },
       {
         title: "User content",
@@ -241,9 +312,9 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
           "BlitzRecorder Camera uses your local network to pair with your Mac. It sends a preview to your Mac, receives camera controls, and transfers the recorded video back to your Mac.",
       },
       {
-        title: "Account and subscription checks",
+        title: "License checks",
         body:
-          "BlitzRecorder uses Apple StoreKit to check your App Store subscription status. If you sign in with BlitzReels, the app saves the access token in your macOS Keychain and sends it to BlitzReels to confirm your access.",
+          "Checkout is handled by Stripe. BlitzRecorder license validation checks the license key you provide and may verify the associated Stripe payment status. The app does not need a BlitzReels account to record.",
       },
       {
         title: "Permissions",
@@ -253,7 +324,17 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
       {
         title: "Data sharing",
         body:
-          "We do not sell your personal information. Apple handles App Store purchases. BlitzReels handles checks for BlitzReels access.",
+          "We do not sell your personal information. Recordings stay on your devices unless you choose to share them. Stripe handles checkout and payment records for license purchases.",
+      },
+      {
+        title: "Website analytics",
+        body:
+          "The BlitzRecorder website uses DataFast to measure page visits, checkout starts, license claims, and basic conversion metadata. The native Mac and iPhone apps do not include a DataFast or analytics SDK.",
+      },
+      {
+        title: "Diagnostics and feedback",
+        body:
+          "BlitzRecorder does not include an analytics SDK or crash-reporting SDK. If you need help, you can copy diagnostics from the Help menu and choose what to paste into a GitHub issue or support email.",
       },
       {
         title: "Contact",
@@ -273,9 +354,9 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
           "Open BlitzRecorder Camera on your iPhone and keep it on the same network as your Mac. In BlitzRecorder, pick your iPhone, then type the six-digit code shown on the phone.",
       },
       {
-        title: "Subscription and free exports",
+        title: "License",
         body:
-          "BlitzRecorder comes with 10 free exports. Once you use them, subscribe to BlitzRecorder Pro in the app to export as many videos as you want. If you already pay for BlitzReels, sign in from the app to unlock Pro at no extra cost.",
+          "After buying Early Price, Stripe redirects you to a claim page with your license key. Enter that key in the Mac app to unlock the iPhone camera, 4K export, and 60 fps export. If an export fails, check macOS permissions, available disk space, and whether the source media still exists.",
       },
       {
         title: "Permissions",
@@ -285,7 +366,7 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
       {
         title: "Contact",
         body:
-          "Email support@blitzreels.com. Tell us your macOS version, iOS version, app version, device model, and a short description of the problem.",
+          "Email support@blitzreels.com. On Mac, use Help -> Copy Diagnostics if you want to include app version, macOS version, chip architecture, permission state, and current recording settings. Diagnostics are copied to your clipboard and are not sent automatically.",
       },
     ],
   },

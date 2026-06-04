@@ -47,6 +47,7 @@ struct RemoteCameraControlsPane: View {
 
         remoteSection("Quality") {
             qualityPicker(capabilities: capabilities)
+            colorModePicker(capabilities: capabilities)
             cinematicControls(capabilities: capabilities)
         }
     }
@@ -194,6 +195,31 @@ struct RemoteCameraControlsPane: View {
             }
         }
         .disabled(!allowsFormatChanges || cinematicLocksFormatControls || availableRemoteFormats(capabilities).isEmpty)
+    }
+
+    private func colorModePicker(capabilities: RemoteCameraCapabilities) -> some View {
+        let modes = availableColorModes(capabilities)
+        return VStack(alignment: .leading, spacing: 5) {
+            if modes.count > 1 || currentRemoteSettings.colorMode != .standard {
+                modePicker(
+                    title: "Color",
+                    selection: Binding(
+                        get: { currentRemoteSettings.colorMode },
+                        set: { vm.setRemoteCameraColorMode($0) }
+                    )
+                ) {
+                    ForEach(modes, id: \.self) { mode in
+                        Text(colorModeLabel(mode)).tag(mode)
+                    }
+                }
+                Text(colorModeHelpText(currentRemoteSettings.colorMode))
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .disabled(!allowsFormatChanges || cinematicLocksFormatControls)
     }
 
     private func formatPicker(capabilities: RemoteCameraCapabilities) -> some View {
@@ -634,9 +660,51 @@ struct RemoteCameraControlsPane: View {
 
     private func frameRates(for formatID: String, capabilities: RemoteCameraCapabilities) -> [Int] {
         let formats = availableRemoteFormats(capabilities)
-        return formats.first(where: { $0.id == formatID })?.frameRates
-            ?? formats.first?.frameRates
-            ?? [30]
+        let format = formats.first(where: { $0.id == formatID }) ?? formats.first
+        guard let format else { return [30] }
+        return RemoteCameraSettingsResolver.compatibleFrameRates(
+            for: format,
+            profileID: currentRemoteSettings.captureProfileID,
+            colorMode: currentRemoteSettings.colorMode,
+            profiles: capabilities.supportedCaptureProfiles
+        )
+    }
+
+    private func availableColorModes(_ capabilities: RemoteCameraCapabilities) -> [RemoteCameraColorMode] {
+        var formats = availableRemoteFormats(capabilities)
+        if currentRemoteSettings.captureProfileID != .proRes422,
+           let proResProfile = capabilities.supportedCaptureProfiles.first(where: { $0.id == .proRes422 && $0.isAvailable }),
+           !proResProfile.supportedFormatIDs.isEmpty {
+            let supportedIDs = Set(proResProfile.supportedFormatIDs)
+            formats = capabilities.supportedFormats.filter { supportedIDs.contains($0.id) }
+        }
+        let modes = Set(formats.flatMap(\.colorModes))
+        let ordered = RemoteCameraColorMode.allCases.filter { mode in
+            mode == .standard || modes.contains(mode)
+        }
+        return ordered.isEmpty ? [.standard] : ordered
+    }
+
+    private func colorModeLabel(_ mode: RemoteCameraColorMode) -> String {
+        switch mode {
+        case .standard:
+            return "Standard"
+        case .appleLog:
+            return "Log"
+        case .appleLog2:
+            return "Log 2"
+        }
+    }
+
+    private func colorModeHelpText(_ mode: RemoteCameraColorMode) -> String {
+        switch mode {
+        case .standard:
+            return "The normal iPhone video color pipeline."
+        case .appleLog:
+            return "Flat Apple Log ProRes for grading. Preview LUT is not applied yet."
+        case .appleLog2:
+            return "Apple Log 2 ProRes for newer iPhones. Preview LUT is not applied yet."
+        }
     }
 
     private func availableRemoteFormats(_ capabilities: RemoteCameraCapabilities) -> [RemoteCameraFormat] {
@@ -645,8 +713,14 @@ struct RemoteCameraControlsPane: View {
             return capabilities.supportedFormats
         }
         let supportedIDs = Set(profile.supportedFormatIDs)
-        let formats = capabilities.supportedFormats.filter { supportedIDs.contains($0.id) }
-        return formats.isEmpty ? capabilities.supportedFormats : formats
+        var formats = capabilities.supportedFormats.filter { supportedIDs.contains($0.id) }
+        if currentRemoteSettings.colorMode != .standard {
+            let colorModeFormats = formats.filter { $0.colorModes.contains(currentRemoteSettings.colorMode) }
+            if !colorModeFormats.isEmpty {
+                formats = colorModeFormats
+            }
+        }
+        return formats
     }
 
     private func profileUnavailableReason(

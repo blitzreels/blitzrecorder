@@ -9,7 +9,7 @@
   <key>CFBundleDisplayName</key>
   <string>BlitzRecorder</string>
   <key>CFBundleIdentifier</key>
-  <string>dev.blitzreels.blitzrecorder</string>
+  <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
   <key>CFBundleIconFile</key>
   <string>BlitzRecorder</string>
   <key>CFBundleURLTypes</key>

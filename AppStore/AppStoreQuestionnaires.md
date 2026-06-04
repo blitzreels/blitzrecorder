@@ -93,26 +93,26 @@ Recommended answer:
 Rationale:
 
 - BlitzRecorder is a creator/productivity recording tool, not a child-directed app.
-- The product has subscription purchase flows in the Mac app.
+- The product has no subscription purchase flow.
 
 ## Sign-In Requirement
 
 Recommended answer:
 
-- App Store subscription path does not require BlitzReels sign-in.
-- BlitzReels sign-in is optional and used only to verify included access for eligible active BlitzReels subscribers.
+- No sign-in is required to record or export.
+- BlitzReels sign-in is not used as a recorder entitlement gate.
 - The iOS companion app does not require an account; pairing is local-network based.
 
 ## Paid Content And Subscriptions
 
 Recommended answer:
 
-- Mac app has auto-renewable subscriptions: `BlitzRecorder Pro Monthly` and `BlitzRecorder Pro Annual`
-- Monthly product ID: `dev.blitzreels.blitzrecorder.pro.monthly`
-- Monthly price: `$7.99 per month`
-- Annual product ID: `dev.blitzreels.blitzrecorder.pro.annual`
-- Annual price: `$49.99 per year`
-- Free behavior: `10 free exports`
+- Mac app has auto-renewable subscriptions: No
+- Monthly product ID: none
+- Monthly price: `$0`
+- Annual product ID: none
+- Annual price: `$0`
+- Free behavior: unlimited exports
 - iOS companion has no in-app purchases and no paywall.
 
 ## Review Before Submission
@@ -123,4 +123,4 @@ Recheck this worksheet if any of the following changes before submission:
 - Cloud upload, sharing, hosting, collaboration, comments, public profiles, or publishing are added.
 - End-user templates, music, stock footage, or other bundled third-party media are added.
 - Custom encryption, encrypted messaging, VPN/security, DRM, crypto wallet, or password-management functionality is added.
-- BlitzReels entitlement responses start returning email, billing IDs, workspace IDs, subscription IDs, or receipt data.
+- Account, purchase, entitlement, analytics, or cloud upload flows are added.

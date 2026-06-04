@@ -35,13 +35,15 @@ final class MainMenuBuilder {
         menu.addItem(captureMenuItem())
         menu.addItem(viewMenuItem())
         menu.addItem(windowMenuItem())
+        menu.addItem(helpMenuItem())
         NSApp.mainMenu = menu
     }
 
     private func applicationMenuItem() -> NSMenuItem {
         let item = NSMenuItem()
         let submenu = NSMenu(title: "BlitzRecorder")
-        submenu.addItem(menuItem("About BlitzRecorder", action: #selector(NSApp.orderFrontStandardAboutPanel(_:)), target: NSApp))
+        submenu.addItem(menuItem("About BlitzRecorder", action: #selector(MenuActionsTarget.showAbout)))
+        submenu.addItem(menuItem("Check for Updates…", action: #selector(MenuActionsTarget.checkForUpdates)))
         submenu.addItem(.separator())
         submenu.addItem(menuItem("Settings…", action: #selector(MenuActionsTarget.showSettings), keyEquivalent: ","))
         submenu.addItem(.separator())
@@ -175,6 +177,22 @@ final class MainMenuBuilder {
         return item
     }
 
+    private func helpMenuItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "Help", action: nil, keyEquivalent: "")
+        let submenu = NSMenu(title: "Help")
+        submenu.addItem(menuItem("BlitzRecorder Help", action: #selector(MenuActionsTarget.openHelp)))
+        submenu.addItem(menuItem("Release Notes", action: #selector(MenuActionsTarget.openReleaseNotes)))
+        submenu.addItem(.separator())
+        submenu.addItem(menuItem("Report an Issue…", action: #selector(MenuActionsTarget.reportIssue)))
+        submenu.addItem(menuItem("Send Feedback…", action: #selector(MenuActionsTarget.sendFeedback)))
+        submenu.addItem(menuItem("Copy Diagnostics", action: #selector(MenuActionsTarget.copyDiagnostics)))
+        submenu.addItem(.separator())
+        submenu.addItem(menuItem("Privacy Policy", action: #selector(MenuActionsTarget.openPrivacyPolicy)))
+        NSApp.helpMenu = submenu
+        item.submenu = submenu
+        return item
+    }
+
     private func deviceSubmenu(
         title: String,
         options: [SourceOption],
@@ -236,11 +254,19 @@ final class MainMenuBuilder {
 
 @MainActor
 @objc protocol MenuActionsTarget: AnyObject {
+    func showAbout()
     func startRecording()
     func pauseRecording()
     func resumeRecording()
     func stopRecording()
     func showSettings()
+    func checkForUpdates()
+    func openReleaseNotes()
+    func openHelp()
+    func reportIssue()
+    func sendFeedback()
+    func copyDiagnostics()
+    func openPrivacyPolicy()
     func chooseDisplayItem(_ sender: NSMenuItem)
     func chooseCameraItem(_ sender: NSMenuItem)
     func chooseMicrophoneItem(_ sender: NSMenuItem)

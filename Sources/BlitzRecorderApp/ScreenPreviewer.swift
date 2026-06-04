@@ -39,24 +39,16 @@ final class ScreenPreviewer: NSObject, SCStreamOutput, SCStreamDelegate, @unchec
             configuration.height = dimensions.height
         } else {
             let content = try await SCShareableContent.current
-            guard let display = ScreenCaptureGeometry.display(from: content.displays, settings: settings) else {
-                throw RecorderError.noDisplay
-            }
-
-            let ownProcess = getpid()
-            let excludedApplications = content.applications.filter { $0.processID == ownProcess }
-            filter = SCContentFilter(
-                display: display,
-                excludingApplications: excludedApplications,
-                exceptingWindows: []
-            )
-
-            let screenSourceGeometry = ScreenCaptureGeometry.screenSourceGeometry(for: settings, display: display)
+            let source = try ScreenCaptureGeometry.screenSource(for: settings, content: content)
+            filter = source.filter
+            let screenSourceGeometry = source.geometry
             sourceAspectRatio = screenSourceGeometry.aspectRatio()
-            let dimensions = ScreenCaptureGeometry.previewDimensions(for: display, settings: settings)
+            let dimensions = ScreenCaptureGeometry.previewDimensions(forSourceAspectRatio: sourceAspectRatio)
             configuration.width = dimensions.width
             configuration.height = dimensions.height
-            configuration.sourceRect = screenSourceGeometry.sourceRect(in: CGRect(x: 0, y: 0, width: display.width, height: display.height))
+            if let sourceRect = source.sourceRect {
+                configuration.sourceRect = sourceRect
+            }
         }
 
         let previewFrameRate = min(max(settings.framesPerSecond, 15), 60)

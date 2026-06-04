@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Schibsted_Grotesk, Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import { ReleaseProvider } from "@/components/site/release-context";
 import { getLatestRelease } from "@/lib/release";
@@ -31,9 +32,13 @@ export const metadata: Metadata = {
     "BlitzRecorder turns your iPhone into a studio camera for your Mac. It records in full quality, so your videos look better than Continuity Camera.",
   openGraph: {
     title: "BlitzRecorder",
+    siteName: "BlitzRecorder",
     description: "Your iPhone is your studio camera. It looks better than Continuity Camera.",
     type: "website",
     url: "https://blitzrecorder.com",
+  },
+  twitter: {
+    card: "summary_large_image",
   },
 };
 
@@ -49,6 +54,25 @@ export default async function RootLayout({
       className={`dark ${display.variable} ${sans.variable} ${mono.variable}`}
     >
       <body>
+        <Script
+          id="datafast-queue"
+          strategy="afterInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `
+              window.datafast = window.datafast || function() {
+                window.datafast.q = window.datafast.q || [];
+                window.datafast.q.push(arguments);
+              };
+            `,
+          }}
+        />
+        <Script
+          defer
+          data-website-id="dfid_BzjT2eJIF50AhugWpYPoM"
+          data-domain="blitzrecorder.com"
+          src="https://datafa.st/js/script.js"
+          strategy="afterInteractive"
+        />
         <ReleaseProvider release={release}>{children}</ReleaseProvider>
       </body>
     </html>

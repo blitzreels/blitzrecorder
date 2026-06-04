@@ -45,6 +45,6 @@ BlitzRecorder Camera asks for:
 
 The iPhone app records the camera master locally first, then transfers the completed file to the paired Mac.
 
-## BlitzReels included access
+## Accounts
 
-Normal App Store customers do not need a BlitzRecorder account. If a user chooses BlitzReels included access, the Mac app opens BlitzReels sign-in, receives a callback token, stores it in the macOS Keychain, and uses it only to verify the included Pro entitlement.
+BlitzRecorder does not require an account to record or export. BlitzReels is optional and must not be used as an entitlement gate for recorder features.

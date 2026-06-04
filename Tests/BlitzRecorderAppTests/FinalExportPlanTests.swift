@@ -52,6 +52,9 @@ final class FinalExportPlanTests: XCTestCase {
         XCTAssertEqual(cameraInsertion.sourceStart.seconds, 0, accuracy: 0.0001)
         XCTAssertEqual(cameraInsertion.compositionStart.seconds, 0.2, accuracy: 0.0001)
         XCTAssertEqual(cameraInsertion.duration.seconds, 0.8, accuracy: 0.0001)
+        XCTAssertTrue(plan.renderSegments.contains { segment in
+            segment.activeLayerOrder.contains(.camera)
+        })
     }
 
     func testPlanTrimsNegativeSourceOffsetFromSourceStart() throws {
@@ -86,6 +89,49 @@ final class FinalExportPlanTests: XCTestCase {
 
         XCTAssertEqual(plan.duration.seconds, 1, accuracy: 0.0001)
         XCTAssertNotNil(plan.insertion(for: .camera))
+        XCTAssertTrue(plan.renderSegments.contains { segment in
+            segment.activeLayerOrder.contains(.camera)
+        })
+    }
+
+    func testPlanDoesNotInsertNeverVisibleSource() throws {
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen, .camera]
+        settings.hiddenSources = [.camera]
+
+        let plan = try FinalExportPlanning.plan(
+            settings: settings,
+            sceneEvents: [],
+            sources: [
+                source(.screen, duration: 1),
+                source(.camera, duration: 1)
+            ]
+        )
+
+        XCTAssertNotNil(plan.insertion(for: .screen))
+        XCTAssertNil(plan.insertion(for: .camera))
+        XCTAssertFalse(plan.renderSegments.contains { segment in
+            segment.activeLayerOrder.contains(.camera)
+        })
+    }
+
+    func testPlanKeepsCameraLayerWhenSourceFileCaptureTimelineIncludesCamera() throws {
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen, .camera]
+
+        let plan = try FinalExportPlanning.plan(
+            settings: settings,
+            sceneEvents: [RecordingSceneEvent(time: 0, scene: RecordingScene(settings: settings))],
+            sources: [
+                source(.screen, duration: 1),
+                source(.camera, duration: 1)
+            ]
+        )
+
+        XCTAssertNotNil(plan.insertion(for: .camera))
+        XCTAssertTrue(plan.renderSegments.contains { segment in
+            segment.activeLayerOrder.contains(.camera)
+        })
     }
 
     private func source(_ kind: SceneLayerKind, duration: Double, offset: Double = 0) -> FinalExportSourceInput {

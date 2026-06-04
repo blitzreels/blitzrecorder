@@ -90,7 +90,7 @@ struct SourcesSidebar: View {
             DeviceCard(
                 source: .screen,
                 title: "Screen",
-                subtitle: vm.screenCropLabel,
+                subtitle: vm.selectedScreenSourceDisplayName,
                 status: sourceStatus(for: .screen),
                 isExpanded: expansionBinding(for: .screen),
                 vm: vm
@@ -201,7 +201,14 @@ struct SourcesSidebar: View {
             if vm.settings.usesPickedScreenContent {
                 return SourceRowStatus(label: "Picked", tone: .active)
             }
-            return SourceRowStatus(label: "Display", tone: .active)
+            switch vm.settings.screenSourceBinding?.kind {
+            case .application:
+                return SourceRowStatus(label: "App", tone: .active)
+            case .window:
+                return SourceRowStatus(label: "Window", tone: .active)
+            case .display, nil:
+                return SourceRowStatus(label: "Display", tone: .active)
+            }
         case .camera:
             if vm.isRemoteCameraSelected {
                 return remoteCameraStatus
@@ -569,13 +576,15 @@ private struct ScreenSourceInspector: View {
 
             Spacer(minLength: 0)
 
-            screenSettingIconButton(
-                "rectangle.on.rectangle",
-                help: "Choose a display, app, or window",
-                disabled: vm.state != .idle
-            ) {
-                vm.pickScreen()
+            BlitzGlassMenu(entries: screenSourceMenuEntries, menuWidth: 286) {
+                Image(systemName: "rectangle.on.rectangle")
+                    .font(.system(size: 10, weight: .bold))
+                    .frame(width: 26, height: 24)
             }
+            .controlSize(.small)
+            .disabled(vm.state != .idle)
+            .pointingHandCursor()
+            .help("Choose a display, app, or window")
         }
     }
 
@@ -821,7 +830,40 @@ private struct ScreenSourceInspector: View {
     }
 
     private var captureSourceLabel: String {
-        vm.settings.usesPickedScreenContent ? "Picked screen content" : "Display capture"
+        vm.selectedScreenSourceDisplayName
+    }
+
+    private var screenSourceMenuEntries: [BlitzMenuEntry] {
+        var entries: [BlitzMenuEntry] = []
+        appendScreenSourceSection(.display, title: "Displays", to: &entries)
+        appendScreenSourceSection(.application, title: "Apps", to: &entries)
+        appendScreenSourceSection(.window, title: "Windows", to: &entries)
+        if !entries.isEmpty {
+            entries.append(.divider)
+        }
+        entries.append(.item(BlitzMenuItem(title: "System Picker...", systemImage: "rectangle.dashed") {
+            vm.pickScreen()
+        }))
+        return entries
+    }
+
+    private func appendScreenSourceSection(
+        _ kind: ScreenSourceBinding.Kind,
+        title: String,
+        to entries: inout [BlitzMenuEntry]
+    ) {
+        let options = vm.availableScreenSources.filter { $0.binding.kind == kind }
+        guard !options.isEmpty else { return }
+        entries.append(.section(title))
+        entries += options.prefix(kind == .window ? 16 : 12).map { option in
+            .item(BlitzMenuItem(
+                title: kind == .window ? "\(option.subtitle): \(option.title)" : option.title,
+                systemImage: option.systemImage,
+                isSelected: !vm.settings.usesPickedScreenContent && vm.settings.screenSourceBinding == option.binding
+            ) {
+                vm.setScreenSource(option.binding)
+            })
+        }
     }
 
     private var captureAreaLabel: String {
@@ -916,9 +958,49 @@ private struct CameraSourceInspector: View {
             // The selector already shows the chosen camera by name + icon, so no separate
             // "Selected" row here — it would just repeat the dropdown label.
             WebcamSourceMenu(vm: vm, enabled: enabled)
+            if vm.isRemoteCameraSelected {
+                remoteCameraSettingsShortcut
+            }
             TransparentWebcamToggle(vm: vm, enabled: enabled)
         }
         .settingsPanelStyle()
+    }
+
+    private var remoteCameraSettingsShortcut: some View {
+        Button {
+            vm.onPresentSettings?(.devices)
+        } label: {
+            HStack(spacing: 8) {
+                inspectorIcon("slider.horizontal.3", enabled: enabled)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("iPhone settings")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white.opacity(enabled ? 0.82 : 0.38))
+                        .lineLimit(1)
+                    Text("Change camera controls in Settings (Cmd+,).")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(enabled ? 0.55 : 0.3))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+
+                Spacer(minLength: 0)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white.opacity(enabled ? 0.42 : 0.24))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(.rect(cornerRadius: 8))
+        }
+        .blitzGlassButton()
+        .controlSize(.small)
+        .disabled(!enabled)
+        .pointingHandCursor()
+        .help("Open iPhone camera settings. You can also use Cmd+, then Devices.")
     }
 }
 

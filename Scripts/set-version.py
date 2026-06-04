@@ -65,6 +65,11 @@ def main() -> None:
     replace("Scripts/prepare-app-store-review-package.sh", r'VERSION="[^"]+"', f'VERSION="{args.version}"')
     replace("Scripts/prepare-app-store-review-package.sh", r'BUILD="[^"]+"', f'BUILD="{args.build}"')
     replace(
+        "Web/blitzrecorder/lib/release.ts",
+        r'FALLBACK_VERSION = "[^"]+"',
+        f'FALLBACK_VERSION = "{args.version}"',
+    )
+    replace(
         "Scripts/collect-release-evidence.sh",
         r'Version/build: \\`[^`]+\\`',
         f'Version/build: \\`{args.version} / {args.build}\\`',

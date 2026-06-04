@@ -122,20 +122,15 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
             try await screenStream.updateContentFilter(pickedFilter)
         } else {
             let content = try await SCShareableContent.current
-            guard let display = ScreenCaptureGeometry.display(from: content.displays, settings: settings) else {
-                throw RecorderError.noDisplay
-            }
-            screenDisplay = display
-            let ownProcess = getpid()
-            let excludedApplications = content.applications.filter { $0.processID == ownProcess }
-            let filter = SCContentFilter(display: display, excludingApplications: excludedApplications, exceptingWindows: [])
-            screenSourceGeometry = ScreenCaptureGeometry.screenSourceGeometry(for: settings, display: display)
+            let source = try ScreenCaptureGeometry.screenSource(for: settings, content: content)
+            screenDisplay = source.display
+            screenSourceGeometry = source.geometry
             configuration = screenStreamConfiguration(
                 settings: settings,
                 screenSourceGeometry: screenSourceGeometry,
-                sourceRect: screenSourceGeometry.sourceRect(in: CGRect(x: 0, y: 0, width: display.width, height: display.height))
+                sourceRect: source.sourceRect
             )
-            try await screenStream.updateContentFilter(filter)
+            try await screenStream.updateContentFilter(source.filter)
         }
 
         try await screenStream.updateConfiguration(configuration)
@@ -309,16 +304,12 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
             sourceRect = nil
         } else {
             let content = try await SCShareableContent.current
-            guard let display = ScreenCaptureGeometry.display(from: content.displays, settings: settings) else {
-                throw RecorderError.noDisplay
-            }
-            screenDisplay = display
+            let source = try ScreenCaptureGeometry.screenSource(for: settings, content: content)
+            screenDisplay = source.display
             self.pickedScreenFilter = nil
-            let ownProcess = getpid()
-            let excludedApplications = content.applications.filter { $0.processID == ownProcess }
-            filter = SCContentFilter(display: display, excludingApplications: excludedApplications, exceptingWindows: [])
-            screenSourceGeometry = ScreenCaptureGeometry.screenSourceGeometry(for: settings, display: display)
-            sourceRect = screenSourceGeometry.sourceRect(in: CGRect(x: 0, y: 0, width: display.width, height: display.height))
+            filter = source.filter
+            screenSourceGeometry = source.geometry
+            sourceRect = source.sourceRect
         }
 
         let configuration = screenStreamConfiguration(

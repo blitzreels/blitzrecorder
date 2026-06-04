@@ -17,6 +17,14 @@ protocol CameraCaptureRecording: AnyObject {
     func stop() async throws -> MediaWriterCompletion
 }
 
+@MainActor
+protocol RemoteCameraCaptureRecording: AnyObject {
+    func startRemoteCamera(take: RecordingTake, settings: RecordingSettings, hostTimelineStartTime: UInt64) async throws
+    func pauseRemoteCamera()
+    func resumeRemoteCamera()
+    func stopRemoteCamera(take: RecordingTake, settings: RecordingSettings) async throws -> MediaWriterCompletion
+}
+
 protocol MicrophoneCaptureRecording: AnyObject {
     func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) throws
     func pause()
@@ -97,11 +105,11 @@ final class CaptureSourceRun {
     private var isPaused = false
 
     private struct CaptureSourceRunAdapter {
-        let start: (RecordingSettings, SCContentFilter?, CMTime?) async throws -> Void
+        let start: (RecordingSettings, SCContentFilter?, CaptureSourceRunStartResult) async throws -> Void
         let update: (RecordingSettings, SCContentFilter?) async throws -> Void
         let pause: () -> Void
         let resume: () -> Void
-        let stop: () async throws -> MediaWriterCompletion
+        let stop: (RecordingSettings) async throws -> MediaWriterCompletion
     }
 
     init(
@@ -111,6 +119,7 @@ final class CaptureSourceRun {
         timelineStartTime: CMTime? = nil,
         screenRecorder: ScreenCaptureRecording,
         cameraRecorder: CameraCaptureRecording,
+        remoteCameraRecorder: RemoteCameraCaptureRecording? = nil,
         audioRecorder: MicrophoneCaptureRecording,
         systemAudioRecorder: SystemAudioCaptureRecording
     ) {
@@ -122,6 +131,7 @@ final class CaptureSourceRun {
             take: take,
             screenRecorder: screenRecorder,
             cameraRecorder: cameraRecorder,
+            remoteCameraRecorder: remoteCameraRecorder,
             audioRecorder: audioRecorder,
             systemAudioRecorder: systemAudioRecorder
         )
@@ -149,15 +159,15 @@ final class CaptureSourceRun {
     ) async throws {
         self.settings = settings
         self.pickedScreenFilter = pickedScreenFilter
-        let timelineStartTime = establishTimelineStartIfNeeded().timelineStartTime
+        let timeline = establishTimelineStartIfNeeded()
 
         for source in sourceOrder where settings.enabledSources.contains(source) && !activeSources.contains(source) {
             guard let adapter = sourceAdapters[source] else { continue }
             activeSources.insert(source)
             do {
-                try await adapter.start(settings, pickedScreenFilter, timelineStartTime)
+                try await adapter.start(settings, pickedScreenFilter, timeline)
             } catch {
-                _ = try? await adapter.stop()
+                _ = try? await adapter.stop(settings)
                 activeSources.remove(source)
                 throw error
             }
@@ -204,7 +214,7 @@ final class CaptureSourceRun {
         for source in sourcesToStop {
             guard let adapter = sourceAdapters[source] else { continue }
             do {
-                completions[source] = try await adapter.stop()
+                completions[source] = try await adapter.stop(settings)
             } catch {
                 stopFailures[source] = sourceStopFailureDescription(error)
             }
@@ -243,17 +253,51 @@ final class CaptureSourceRun {
         take: RecordingTake,
         screenRecorder: ScreenCaptureRecording,
         cameraRecorder: CameraCaptureRecording,
+        remoteCameraRecorder: RemoteCameraCaptureRecording?,
         audioRecorder: MicrophoneCaptureRecording,
         systemAudioRecorder: SystemAudioCaptureRecording
     ) -> [CaptureSource: CaptureSourceRunAdapter] {
-        [
+        let cameraAdapter: CaptureSourceRunAdapter
+        if let remoteCameraRecorder {
+            cameraAdapter = CaptureSourceRunAdapter(
+                start: { settings, _, timeline in
+                    try await remoteCameraRecorder.startRemoteCamera(
+                        take: take,
+                        settings: settings,
+                        hostTimelineStartTime: timeline.hostTimelineStartTime
+                    )
+                },
+                update: { _, _ in },
+                pause: { remoteCameraRecorder.pauseRemoteCamera() },
+                resume: { remoteCameraRecorder.resumeRemoteCamera() },
+                stop: { settings in
+                    try await remoteCameraRecorder.stopRemoteCamera(take: take, settings: settings)
+                }
+            )
+        } else {
+            cameraAdapter = CaptureSourceRunAdapter(
+                start: { settings, _, timeline in
+                    try await cameraRecorder.start(
+                        url: take.cameraURL,
+                        settings: settings,
+                        timelineStartTime: timeline.timelineStartTime
+                    )
+                },
+                update: { _, _ in },
+                pause: { cameraRecorder.pause() },
+                resume: { cameraRecorder.resume() },
+                stop: { _ in try await cameraRecorder.stop() }
+            )
+        }
+
+        let adapters: [CaptureSource: CaptureSourceRunAdapter] = [
             .screen: CaptureSourceRunAdapter(
-                start: { settings, pickedScreenFilter, timelineStartTime in
+                start: { settings, pickedScreenFilter, timeline in
                     try await screenRecorder.start(
                         url: take.screenURL,
                         settings: settings,
                         filter: pickedScreenFilter,
-                        timelineStartTime: timelineStartTime
+                        timelineStartTime: timeline.timelineStartTime
                     )
                 },
                 update: { settings, pickedScreenFilter in
@@ -261,48 +305,37 @@ final class CaptureSourceRun {
                 },
                 pause: { screenRecorder.pause() },
                 resume: { screenRecorder.resume() },
-                stop: { try await screenRecorder.stop() }
+                stop: { _ in try await screenRecorder.stop() }
             ),
-            .camera: CaptureSourceRunAdapter(
-                start: { settings, _, timelineStartTime in
-                    try await cameraRecorder.start(
-                        url: take.cameraURL,
-                        settings: settings,
-                        timelineStartTime: timelineStartTime
-                    )
-                },
-                update: { _, _ in },
-                pause: { cameraRecorder.pause() },
-                resume: { cameraRecorder.resume() },
-                stop: { try await cameraRecorder.stop() }
-            ),
+            .camera: cameraAdapter,
             .microphone: CaptureSourceRunAdapter(
-                start: { settings, _, timelineStartTime in
+                start: { settings, _, timeline in
                     try audioRecorder.start(
                         url: take.audioURL,
                         settings: settings,
-                        timelineStartTime: timelineStartTime
+                        timelineStartTime: timeline.timelineStartTime
                     )
                 },
                 update: { _, _ in },
                 pause: { audioRecorder.pause() },
                 resume: { audioRecorder.resume() },
-                stop: { try await audioRecorder.stop() }
+                stop: { _ in try await audioRecorder.stop() }
             ),
             .systemAudio: CaptureSourceRunAdapter(
-                start: { settings, _, timelineStartTime in
+                start: { settings, _, timeline in
                     try await systemAudioRecorder.start(
                         url: take.systemAudioURL,
                         settings: settings,
-                        timelineStartTime: timelineStartTime
+                        timelineStartTime: timeline.timelineStartTime
                     )
                 },
                 update: { _, _ in },
                 pause: { systemAudioRecorder.pause() },
                 resume: { systemAudioRecorder.resume() },
-                stop: { try await systemAudioRecorder.stop() }
+                stop: { _ in try await systemAudioRecorder.stop() }
             )
         ]
+        return adapters
     }
 
     private func sourceStopFailureDescription(_ error: Error) -> String {

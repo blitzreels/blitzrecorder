@@ -254,5 +254,5 @@ case "$TARGET" in
 esac
 
 if [[ "$DRY_RUN" != "1" ]]; then
-  Scripts/validate-submission-artifacts.sh
+  TARGET="$TARGET" Scripts/validate-submission-artifacts.sh
 fi

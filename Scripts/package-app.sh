@@ -5,6 +5,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIG="${CONFIGURATION:-release}"
 PRODUCT_NAME="BlitzRecorder"
 MACOS_TRIPLE_VERSION="${MACOS_TRIPLE_VERSION:-15.0}"
+DIRECT_DISTRIBUTION="${DIRECT_DISTRIBUTION:-1}"
+export DIRECT_DISTRIBUTION
 
 cd "$ROOT"
 
@@ -27,7 +29,7 @@ if [[ -z "$APP_ARCHS" && "$CONFIG" == "release" ]]; then
 fi
 
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 
 if [[ -n "$APP_ARCHS" && "$APP_ARCHS" != "native" ]]; then
   ARCH_BINARIES=()
@@ -61,12 +63,72 @@ fi
 
 chmod +x "$APP_BINARY"
 
+if [[ "$DIRECT_DISTRIBUTION" == "1" ]] &&
+   ! otool -l "$APP_BINARY" | grep -q '@executable_path/../Frameworks'; then
+  install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BINARY"
+fi
+
 MARKETING_VERSION="${MARKETING_VERSION:-$(awk -F '"' '/MARKETING_VERSION:/ { print $2; exit }' "$ROOT/project.yml")}"
 CURRENT_PROJECT_VERSION="${CURRENT_PROJECT_VERSION:-$(awk -F '"' '/CURRENT_PROJECT_VERSION:/ { print $2; exit }' "$ROOT/project.yml")}"
+PRODUCT_BUNDLE_IDENTIFIER="${PRODUCT_BUNDLE_IDENTIFIER:-dev.blitzreels.blitzrecorder}"
 sed \
   -e "s/\$(MARKETING_VERSION)/$MARKETING_VERSION/g" \
   -e "s/\$(CURRENT_PROJECT_VERSION)/$CURRENT_PROJECT_VERSION/g" \
+  -e "s/\$(PRODUCT_BUNDLE_IDENTIFIER)/$PRODUCT_BUNDLE_IDENTIFIER/g" \
   "$ROOT/Info.plist" >"$APP/Contents/Info.plist"
+
+plist_set_string() {
+  /usr/libexec/PlistBuddy -c "Delete :$1" "$APP/Contents/Info.plist" >/dev/null 2>&1 || true
+  /usr/libexec/PlistBuddy -c "Add :$1 string $2" "$APP/Contents/Info.plist"
+}
+
+plist_set_bool() {
+  /usr/libexec/PlistBuddy -c "Delete :$1" "$APP/Contents/Info.plist" >/dev/null 2>&1 || true
+  /usr/libexec/PlistBuddy -c "Add :$1 bool $2" "$APP/Contents/Info.plist"
+}
+
+plist_set_integer() {
+  /usr/libexec/PlistBuddy -c "Delete :$1" "$APP/Contents/Info.plist" >/dev/null 2>&1 || true
+  /usr/libexec/PlistBuddy -c "Add :$1 integer $2" "$APP/Contents/Info.plist"
+}
+
+copy_sparkle_framework() {
+  local sparkle_framework
+  sparkle_framework="$(
+    find "$ROOT/.build/artifacts" "$ROOT/.build/checkouts" \
+      -path '*/Sparkle.framework' \
+      -type d \
+      -print \
+      -quit 2>/dev/null || true
+  )"
+
+  if [[ -z "$sparkle_framework" || ! -d "$sparkle_framework" ]]; then
+    echo "error: Sparkle.framework was not found after swift build." >&2
+    exit 1
+  fi
+
+  ditto "$sparkle_framework" "$APP/Contents/Frameworks/Sparkle.framework"
+}
+
+if [[ "$DIRECT_DISTRIBUTION" == "1" ]]; then
+  copy_sparkle_framework
+
+  if [[ "${ENABLE_SPARKLE_UPDATES:-1}" == "1" ]]; then
+    SPARKLE_APPCAST_URL="${SPARKLE_APPCAST_URL:-https://blitzrecorder.com/appcast.xml}"
+    if [[ -n "${SPARKLE_PUBLIC_ED_KEY:-}" ]]; then
+      plist_set_string "SUFeedURL" "$SPARKLE_APPCAST_URL"
+      plist_set_string "SUPublicEDKey" "$SPARKLE_PUBLIC_ED_KEY"
+      plist_set_bool "SUEnableAutomaticChecks" "true"
+      plist_set_bool "SUAutomaticallyUpdate" "true"
+      plist_set_bool "SUAllowsAutomaticUpdates" "true"
+      plist_set_bool "SUVerifyUpdateBeforeExtraction" "true"
+      plist_set_integer "SUScheduledCheckInterval" "86400"
+    else
+      echo "warning: SPARKLE_PUBLIC_ED_KEY is not set; embedded Sparkle updater will stay disabled." >&2
+    fi
+  fi
+fi
+
 cp "$ROOT/Sources/BlitzRecorderApp/PrivacyInfo.xcprivacy" "$APP/Contents/Resources/PrivacyInfo.xcprivacy"
 cp "$ROOT/Resources/CompanionAppIcon.png" "$APP/Contents/Resources/CompanionAppIcon.png"
 cp "$ROOT/Resources/BlitzReelsWordmarkWhite.png" "$APP/Contents/Resources/BlitzReelsWordmarkWhite.png"
@@ -79,7 +141,13 @@ else
   rm -rf "$ICONSET"
 fi
 
-ENTITLEMENTS="${ENTITLEMENTS_PATH:-$ROOT/BlitzRecorder.entitlements}"
+if [[ -n "${ENTITLEMENTS_PATH:-}" ]]; then
+  ENTITLEMENTS="$ENTITLEMENTS_PATH"
+elif [[ "$DIRECT_DISTRIBUTION" == "1" ]]; then
+  ENTITLEMENTS="$ROOT/BlitzRecorder.local.entitlements"
+else
+  ENTITLEMENTS="$ROOT/BlitzRecorder.entitlements"
+fi
 
 if [[ -n "$SIGN_IDENTITY" ]]; then
   codesign --force --deep --options runtime --entitlements "$ENTITLEMENTS" --sign "$SIGN_IDENTITY" "$APP" >/dev/null

@@ -67,9 +67,9 @@ under \`build/\` so release evidence stays local unless explicitly packaged.
 - Version/build: \`0.1.0 / 1\`
 - macOS bundle ID: \`dev.blitzreels.blitzrecorder\`
 - iOS companion bundle ID: \`dev.blitzreels.blitzrecorder.camera\`
-- Subscription product ID: \`dev.blitzreels.blitzrecorder.pro.monthly\`
-- Subscription prices: \`\$7.99 per month\` and \`\$49.99 per year\`
-- Free quota: \`10 free exports\`
+- Pricing: \`free\`
+- In-app purchases: \`none\`
+- Export quota: \`none\`
 
 ## Command Evidence
 EOF
@@ -149,12 +149,9 @@ start_report
 failures=0
 
 run_evidence "launch-readiness" "Launch Readiness" Scripts/validate-launch-readiness.sh || failures=$((failures + 1))
-run_evidence "app-store-connect-fixtures" "App Store Connect Verifier Fixtures" Scripts/test-app-store-connect-readiness.py || failures=$((failures + 1))
-run_evidence "app-store-connect-bootstrap-fixtures" "App Store Connect Bootstrap Fixtures" Scripts/test-app-store-connect-bootstrap.py || failures=$((failures + 1))
-run_evidence "app-store-connect-dry-run" "App Store Connect Dry Run" Scripts/app-store-connect-readiness.py --dry-run || failures=$((failures + 1))
-run_evidence "storekit-local" "StoreKit Local Configuration" Scripts/validate-storekit-local.sh || failures=$((failures + 1))
+run_evidence "storekit-removal" "StoreKit Removal" Scripts/validate-storekit-local.sh || failures=$((failures + 1))
 run_evidence "submission-artifacts" "Submission Artifacts" Scripts/validate-submission-artifacts.sh || failures=$((failures + 1))
-run_evidence "entitlement-unauthenticated" "Unauthenticated BlitzReels Entitlement Check" Scripts/validate-entitlement-endpoint.sh || failures=$((failures + 1))
+pending_evidence "app-store-connect-live" "App Store Connect Live Verification" "not run; App Store Connect helpers need the free/no-IAP model before use"
 
 if [[ "$FULL" == "1" ]]; then
   run_evidence "local-preflight" "Local Build/Test Preflight" Scripts/preflight-app-store-local.sh || failures=$((failures + 1))

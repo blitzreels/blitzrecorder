@@ -55,6 +55,39 @@ final class RemoteCameraSettingsCommandTests: XCTestCase {
         XCTAssertFalse(result.settings.torchEnabled)
     }
 
+    func testAppleLogSelectionSwitchesToProRes() {
+        let result = RemoteCameraSettingsCommand.apply(
+            .colorMode(.appleLog2),
+            to: RemoteCameraSettings(lens: .wide, frameRate: 30),
+            capabilities: makeCapabilities(),
+            preferredFrameRate: 30
+        )
+
+        XCTAssertTrue(result.didChange)
+        XCTAssertEqual(result.settings.colorMode, .appleLog2)
+        XCTAssertEqual(result.settings.captureProfileID, .proRes422)
+    }
+
+    func testCinematicClearsAppleLogMode() {
+        let currentSettings = RemoteCameraSettings(
+            lens: .wide,
+            frameRate: 30,
+            captureProfileID: .proRes422,
+            colorMode: .appleLog2
+        )
+
+        let result = RemoteCameraSettingsCommand.apply(
+            .cinematicVideoEnabled(true),
+            to: currentSettings,
+            capabilities: makeCapabilities(),
+            preferredFrameRate: 30
+        )
+
+        XCTAssertEqual(result.settings.colorMode, .standard)
+        XCTAssertEqual(result.settings.captureProfileID, .automatic)
+        XCTAssertTrue(result.settings.cinematicVideoEnabled)
+    }
+
     private func makeCapabilities(proResAvailable: Bool = true) -> RemoteCameraCapabilities {
         RemoteCameraCapabilities(
             deviceName: "iPhone",
@@ -103,7 +136,8 @@ final class RemoteCameraSettingsCommandTests: XCTestCase {
                     id: .proRes422,
                     isAvailable: proResAvailable,
                     unavailableReason: proResAvailable ? nil : "ProRes unavailable",
-                    supportedFormatIDs: [formatID]
+                    supportedFormatIDs: [formatID],
+                    supportedFormatFrameRates: [formatID: [30, 60, 120]]
                 )
             ],
             supportsTorch: false,
@@ -130,7 +164,9 @@ final class RemoteCameraSettingsCommandTests: XCTestCase {
             id: id,
             width: 1920,
             height: 1080,
-            frameRates: [30],
+            frameRates: [30, 60, 120],
+            colorModes: [.standard, .appleLog, .appleLog2],
+            colorModeFrameRates: [.standard: [30, 60, 120], .appleLog: [30, 60], .appleLog2: [30]],
             supportsStabilization: true,
             supportsHDR: true
         )

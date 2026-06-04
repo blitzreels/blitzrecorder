@@ -1,5 +1,12 @@
 import Foundation
+import CoreMedia
 import ScreenCaptureKit
+
+enum TakeRecordingStopOutcome {
+    case liveComposited(MediaWriterCompletion)
+    case sourceFiles(CaptureSourceRunSummary)
+    case none
+}
 
 @MainActor
 final class TakeRecordingRuntime {
@@ -9,7 +16,7 @@ final class TakeRecordingRuntime {
         case captureRun(CaptureSourceRun)
     }
 
-    let liveCompositedRecorder: LiveCompositedRecorder
+    private let liveCompositedRecorder: LiveCompositedRecorder
 
     private var mode: Mode = .idle
     private(set) var sceneEvents: [RecordingSceneEvent] = []
@@ -25,17 +32,68 @@ final class TakeRecordingRuntime {
         return false
     }
 
-    var activeCaptureRun: CaptureSourceRun? {
-        if case .captureRun(let captureRun) = mode { return captureRun }
-        return nil
+    func setLiveCompositorCameraPreviewHandler(_ handler: @escaping (CMSampleBuffer, Int, Int) -> Void) {
+        liveCompositedRecorder.onCameraPreviewSampleBuffer = handler
     }
 
-    func markLiveCompositorStarted() {
+    func setLiveCompositorScreenPreviewHandler(_ handler: @escaping ScreenPreviewer.FrameHandler) {
+        liveCompositedRecorder.onScreenPreviewFrame = handler
+    }
+
+    @discardableResult
+    func startLiveCompositedTake(
+        take: RecordingTake,
+        settings: RecordingSettings,
+        pickedScreenFilter: SCContentFilter?,
+        prerollSeconds: Int,
+        prerollHandler: ((Int) -> Void)?
+    ) async throws -> UInt64 {
+        try await liveCompositedRecorder.start(
+            take: take,
+            settings: settings,
+            filter: pickedScreenFilter,
+            prerollSeconds: prerollSeconds,
+            prerollHandler: prerollHandler
+        )
         mode = .liveCompositor
+        startSceneTimeline(settings: settings)
+        return DispatchTime.now().uptimeNanoseconds
     }
 
-    func setActiveCaptureRun(_ captureRun: CaptureSourceRun) {
+    @discardableResult
+    func startSourceFileTake(
+        take: RecordingTake,
+        settings: RecordingSettings,
+        sceneTimelineSettings: RecordingSettings? = nil,
+        pickedScreenFilter: SCContentFilter?,
+        prerollSeconds: Int,
+        screenRecorder: ScreenCaptureRecording,
+        cameraRecorder: CameraCaptureRecording,
+        remoteCameraRecorder: RemoteCameraCaptureRecording? = nil,
+        audioRecorder: MicrophoneCaptureRecording,
+        systemAudioRecorder: SystemAudioCaptureRecording,
+        prerollHandler: ((Int) -> Void)?
+    ) async throws -> CaptureSourceRunStartResult {
+        let captureRunSettings = remoteCameraRecorder == nil
+            ? settings
+            : (sceneTimelineSettings ?? settings)
+        let captureRun = CaptureSourceRun(
+            take: take,
+            settings: captureRunSettings,
+            pickedScreenFilter: pickedScreenFilter,
+            screenRecorder: screenRecorder,
+            cameraRecorder: cameraRecorder,
+            remoteCameraRecorder: remoteCameraRecorder,
+            audioRecorder: audioRecorder,
+            systemAudioRecorder: systemAudioRecorder
+        )
         mode = .captureRun(captureRun)
+        let start = try await captureRun.start(
+            prerollSeconds: prerollSeconds,
+            prerollHandler: prerollHandler
+        )
+        startSceneTimeline(settings: sceneTimelineSettings ?? settings)
+        return start
     }
 
     func pause() {
@@ -62,7 +120,22 @@ final class TakeRecordingRuntime {
         }
     }
 
-    func stopLiveCompositor() async throws -> MediaWriterCompletion {
+    func stop() async throws -> TakeRecordingStopOutcome {
+        pauseSceneTimeline()
+        switch mode {
+        case .liveCompositor:
+            let completion = try await stopLiveCompositor()
+            return .liveComposited(completion)
+        case .captureRun:
+            let summary = await stopCaptureRun()
+            return .sourceFiles(summary)
+        case .idle:
+            resetSceneTimeline()
+            return .none
+        }
+    }
+
+    private func stopLiveCompositor() async throws -> MediaWriterCompletion {
         defer {
             mode = .idle
             resetSceneTimeline()
@@ -70,7 +143,7 @@ final class TakeRecordingRuntime {
         return try await liveCompositedRecorder.stop()
     }
 
-    func stopCaptureRun() async -> CaptureSourceRunSummary {
+    private func stopCaptureRun() async -> CaptureSourceRunSummary {
         guard case .captureRun(let captureRun) = mode else {
             return CaptureSourceRunSummary(completions: [:])
         }
@@ -100,6 +173,31 @@ final class TakeRecordingRuntime {
         if isUsingLiveCompositor {
             liveCompositedRecorder.updateScene(scene, transition: transition)
         }
+    }
+
+    func updateScreenCapture(settings: RecordingSettings, pickedScreenFilter: SCContentFilter?) async throws {
+        switch mode {
+        case .liveCompositor:
+            try await liveCompositedRecorder.updateScreenCapture(
+                settings: settings,
+                filter: pickedScreenFilter
+            )
+        case .captureRun(let captureRun):
+            try await captureRun.updateScreenCapture(
+                settings: settings,
+                pickedScreenFilter: pickedScreenFilter
+            )
+        case .idle:
+            break
+        }
+    }
+
+    func startEnabledSources(settings: RecordingSettings, pickedScreenFilter: SCContentFilter?) async throws {
+        guard case .captureRun(let captureRun) = mode else { return }
+        try await captureRun.startEnabledSources(
+            settings: settings,
+            pickedScreenFilter: pickedScreenFilter
+        )
     }
 
     func startSceneTimeline(settings: RecordingSettings) {

@@ -60,6 +60,15 @@ struct SceneLibrary: Codable, Equatable {
         return scenesByLayout[layout]?.first { $0.id == selectedID }
     }
 
+    /// The aspect-ratio bucket a scene lives in. Scenes are siloed per layout, so
+    /// this resolves which layout an "All scenes" tile belongs to.
+    func layout(ofSceneID id: UUID) -> CaptureLayout? {
+        for layout in CaptureLayout.allCases where scenesByLayout[layout]?.contains(where: { $0.id == id }) == true {
+            return layout
+        }
+        return nil
+    }
+
     mutating func selectScene(id: UUID, layout: CaptureLayout) -> RecordingSceneDefinition? {
         guard let scene = scenesByLayout[layout]?.first(where: { $0.id == id }) else { return nil }
         selectedSceneIDsByLayout[layout] = id
@@ -271,6 +280,7 @@ struct RecordingSceneSnapshot: Codable, Equatable {
     var enabledVideoSources: Set<CaptureSource>
     var hiddenVideoSources: Set<CaptureSource>
     var usesPickedScreenContent: Bool
+    var screenSourceBinding: ScreenSourceBinding?
     var selectedDisplayID: String?
     var selectedCameraID: String?
     var screenCrop: CGRect?
@@ -286,6 +296,7 @@ struct RecordingSceneSnapshot: Codable, Equatable {
         enabledVideoSources = settings.enabledSources.intersection(Self.videoSources)
         hiddenVideoSources = settings.hiddenSources.intersection(Self.videoSources)
         usesPickedScreenContent = settings.usesPickedScreenContent
+        screenSourceBinding = settings.screenSourceBinding
         selectedDisplayID = settings.selectedDisplayID
         selectedCameraID = settings.selectedCameraID
         screenCrop = settings.screenCrop
@@ -303,6 +314,7 @@ struct RecordingSceneSnapshot: Codable, Equatable {
         enabledVideoSources = try container.decode(Set<CaptureSource>.self, forKey: .enabledVideoSources)
         hiddenVideoSources = try container.decode(Set<CaptureSource>.self, forKey: .hiddenVideoSources)
         usesPickedScreenContent = try container.decode(Bool.self, forKey: .usesPickedScreenContent)
+        screenSourceBinding = try container.decodeIfPresent(ScreenSourceBinding.self, forKey: .screenSourceBinding)
         selectedDisplayID = try container.decodeIfPresent(String.self, forKey: .selectedDisplayID)
         selectedCameraID = try container.decodeIfPresent(String.self, forKey: .selectedCameraID)
         screenCrop = try container.decodeIfPresent(CGRect.self, forKey: .screenCrop)

@@ -351,6 +351,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private struct ScreenCaptureSignature: Equatable {
         let usesPickedContent: Bool
         let selectionRevision: Int
+        let screenSourceBinding: ScreenSourceBinding?
         let selectedDisplayID: String?
         let screenCrop: CGRect?
         let framesPerSecond: Int
@@ -363,6 +364,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         return ScreenCaptureSignature(
             usesPickedContent: settings.usesPickedScreenContent,
             selectionRevision: coordinator.screenContentSelectionRevision,
+            screenSourceBinding: settings.screenSourceBinding,
             selectedDisplayID: settings.selectedDisplayID,
             screenCrop: settings.screenCrop,
             framesPerSecond: settings.framesPerSecond,
@@ -556,9 +558,23 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             break
         case .notDetermined:
             previewStage.cameraPreview.isHidden = false
-            previewStage.cameraPreview.setMessage("Camera starts when recording")
+            previewStage.cameraPreview.setMessage("Allow Camera to preview")
             cameraPreviewDeviceID = nil
-            isStartingCameraPreview = false
+            guard !isStartingCameraPreview else {
+                refreshPermissionGate()
+                return
+            }
+            isStartingCameraPreview = true
+            Task {
+                let granted = await AVCaptureDevice.requestAccess(for: .video)
+                isStartingCameraPreview = false
+                if granted {
+                    startCameraPreview()
+                } else {
+                    previewStage.cameraPreview.setMessage("Camera permission required")
+                }
+                refreshPermissionGate()
+            }
             refreshPermissionGate()
             return
         case .denied, .restricted:

@@ -264,7 +264,7 @@ struct CameraCompanionView: View {
                 Button {
                     showsDiagnostics = true
                 } label: {
-                    Text("Connection details")
+                    Text("Help / Details")
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(CompanionTheme.secondaryText)
                 }
@@ -275,10 +275,14 @@ struct CameraCompanionView: View {
 
     private var statusSummary: some View {
         HStack(alignment: .center, spacing: 12) {
-            CompanionSymbolTile(
-                systemImage: statusIcon,
-                accent: store.recordingPhase == .recording ? .red : CompanionTheme.accent
-            )
+            if store.recordingPhase == .failed {
+                CompanionIssueMark()
+            } else {
+                CompanionSymbolTile(
+                    systemImage: statusIcon,
+                    accent: store.recordingPhase == .recording ? .red : CompanionTheme.accent
+                )
+            }
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(primaryStatusText)
@@ -296,7 +300,7 @@ struct CameraCompanionView: View {
 
             Spacer(minLength: 8)
 
-            if store.hasCompletedPairing {
+            if store.hasCompletedPairing && store.recordingPhase != .failed {
                 VStack(alignment: .trailing, spacing: 3) {
                     Text(store.transferProgressLabel)
                         .font(.caption.weight(.bold))
@@ -313,7 +317,7 @@ struct CameraCompanionView: View {
     }
 
     private var detectButtonTitle: String {
-        store.canRetryConnection ? "Try Again" : "Detect Mac"
+        store.canRetryConnection ? "Try Again" : "Find Mac"
     }
 
     private var pairingTitle: String {
@@ -323,7 +327,7 @@ struct CameraCompanionView: View {
         case .unavailable:
             return "Can’t find the Mac"
         case .disconnected:
-            return "Disconnected"
+            return "Not connected"
         default:
             return "Connect to your Mac"
         }
@@ -360,9 +364,11 @@ struct CameraCompanionView: View {
         case .recording:
             return CameraHeaderStatus(text: "Recording", icon: "record.circle", color: .red)
         case .transferring:
-            return CameraHeaderStatus(text: "Saving", icon: "arrow.up.doc", color: CompanionTheme.accent)
+            return CameraHeaderStatus(text: "Sending", icon: "arrow.up.doc", color: CompanionTheme.accent)
         case .pendingImport:
-            return CameraHeaderStatus(text: "Saved", icon: "tray.and.arrow.up", color: CompanionTheme.accent)
+            return CameraHeaderStatus(text: "Ready to send", icon: "tray.and.arrow.up", color: CompanionTheme.accent)
+        case .failed:
+            return CameraHeaderStatus(text: "Check", icon: "exclamationmark.triangle.fill", color: CompanionTheme.warning)
         default:
             return nil
         }
@@ -381,9 +387,9 @@ struct CameraCompanionView: View {
         case .degraded:
             return "Weak connection"
         case .unavailable:
-            return "Unavailable"
+            return "Not available"
         case .disconnected:
-            return "Disconnected"
+            return "Not connected"
         case .connected:
             return "Connected"
         }
@@ -397,7 +403,7 @@ struct CameraCompanionView: View {
             case .unavailable:
                 return "Can’t find the Mac"
             case .disconnected:
-                return "Disconnected"
+                return "Not connected"
             default:
                 return "Ready to connect"
             }
@@ -405,17 +411,17 @@ struct CameraCompanionView: View {
 
         switch store.recordingPhase {
         case .preparing:
-            return "Preparing"
+            return "Getting ready"
         case .recording:
             return store.elapsedLabel
         case .stopping:
             return "Stopping"
         case .transferring:
-            return "Saving"
+            return "Sending"
         case .pendingImport:
-            return "Saved"
+            return "Ready to send"
         case .failed:
-            return "Needs attention"
+            return "Needs help"
         case .idle:
             return store.isCameraSurfaceVisible ? "Live" : "Ready"
         }
@@ -433,13 +439,13 @@ struct CameraCompanionView: View {
 
         switch store.recordingPhase {
         case .recording:
-            return "Recording for BlitzRecorder"
+            return "Recording for your Mac"
         case .preparing, .stopping:
             return nil
         case .transferring:
-            return "Saving the clip"
+            return "Sending clip to Mac"
         case .pendingImport:
-            return "Ready on this iPhone"
+            return "Saved on this iPhone"
         case .failed:
             return store.statusMessage
         case .idle:
@@ -462,6 +468,7 @@ struct CameraCompanionView: View {
         case .recording: return "record.circle"
         case .transferring: return "arrow.up.doc"
         case .pendingImport: return "tray.and.arrow.up"
+        case .failed: return "exclamationmark.triangle.fill"
         default: return "link.circle.fill"
         }
     }
@@ -478,24 +485,24 @@ private struct ConnectionDiagnosticsView: View {
 				Section("Connection") {
 					DiagnosticRow(title: "Status", value: store.connectionTitle)
 					DiagnosticRow(title: "Message", value: store.statusMessage)
-					DiagnosticRow(title: "Listening Port", value: store.listeningPortLabel)
+					DiagnosticRow(title: "Port", value: store.listeningPortLabel)
 					DiagnosticRow(title: "Pairing Code", value: store.pairingCode)
 				}
 
 				Section("Device") {
-					DiagnosticRow(title: "Preview", value: store.previewHealthLabel)
-					DiagnosticRow(title: "Storage Free", value: store.freeStorageLabel)
-					DiagnosticRow(title: "Thermal", value: store.thermalStateLabel)
-					DiagnosticRow(title: "Pending Clips", value: "\(store.pendingRecordingCount)")
+					DiagnosticRow(title: "Live view", value: store.previewHealthLabel)
+					DiagnosticRow(title: "Free space", value: store.freeStorageLabel)
+					DiagnosticRow(title: "Phone temp", value: store.thermalStateLabel)
+					DiagnosticRow(title: "Saved clips", value: "\(store.pendingRecordingCount)")
 				}
 
-				Section {
-					Button {
-						store.retryConnection()
-					} label: {
-						Label("Detect Mac Again", systemImage: "arrow.clockwise")
+					Section {
+						Button {
+							store.retryConnection()
+						} label: {
+							Label("Find Mac Again", systemImage: "arrow.clockwise")
+						}
 					}
-				}
 			}
 			.navigationTitle("Connection")
 			.toolbar {
@@ -678,6 +685,35 @@ private struct CompanionSymbolTile: View {
     }
 }
 
+private struct CompanionIssueMark: View {
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(CompanionTheme.warning.opacity(0.16))
+                .overlay(alignment: .leading) {
+                    Capsule()
+                        .fill(CompanionTheme.warning)
+                        .frame(width: 4)
+                        .padding(.vertical, 9)
+                        .padding(.leading, 8)
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(CompanionTheme.warning.opacity(0.38), lineWidth: 1)
+                }
+
+            Image(systemName: "exclamationmark")
+                .font(.system(size: 18, weight: .heavy))
+                .foregroundStyle(.black)
+                .frame(width: 28, height: 28)
+                .background(CompanionTheme.warning, in: Circle())
+                .offset(x: -7, y: 7)
+        }
+        .frame(width: 42, height: 42)
+        .accessibilityHidden(true)
+    }
+}
+
 struct CompanionStudioGrid: View {
     var body: some View {
         Canvas { context, size in
@@ -753,14 +789,14 @@ private struct CameraMediaLibraryView: View {
 
                 List {
                     Section {
-                        BlitzReelsClipAd()
+                        BlitzRecorderMacInstallCard()
                             .listRowInsets(.init(top: 12, leading: 16, bottom: 12, trailing: 16))
                             .listRowBackground(Color.clear)
                     }
 
                     Section {
                         LibraryMetricRow(title: "Clips", value: "\(store.pendingRecordingCount)", icon: "film.stack")
-                        LibraryMetricRow(title: "Storage", value: store.freeStorageLabel, icon: "internaldrive")
+                        LibraryMetricRow(title: "Free space", value: store.freeStorageLabel, icon: "internaldrive")
                     }
 
                     Section {
@@ -776,7 +812,7 @@ private struct CameraMediaLibraryView: View {
                             Button(role: .destructive) {
                                 confirmsDeleteAll = true
                             } label: {
-                                Label("Delete All Clips", systemImage: "trash")
+                                Label("Delete All", systemImage: "trash")
                             }
                             .listRowBackground(CompanionTheme.panel)
 
@@ -806,7 +842,7 @@ private struct CameraMediaLibraryView: View {
                                     Button {
                                         store.retryPendingImport(recording)
                                     } label: {
-                                        Label("Retry", systemImage: "arrow.clockwise")
+                                        Label("Send Again", systemImage: "arrow.clockwise")
                                     }
                                     .tint(CompanionTheme.accent)
                                     .disabled(recording.takeID == nil)
@@ -815,7 +851,7 @@ private struct CameraMediaLibraryView: View {
                                     Button {
                                         store.retryPendingImport(recording)
                                     } label: {
-                                        Label("Retry", systemImage: "arrow.clockwise")
+                                        Label("Send Again", systemImage: "arrow.clockwise")
                                     }
                                     .disabled(recording.takeID == nil)
 
@@ -825,7 +861,7 @@ private struct CameraMediaLibraryView: View {
                                         Label("Delete", systemImage: "trash")
                                     }
                                 }
-                                .accessibilityAction(named: "Retry") {
+                                .accessibilityAction(named: "Send Again") {
                                     store.retryPendingImport(recording)
                                 }
                                 .accessibilityAction(named: "Delete") {
@@ -834,7 +870,7 @@ private struct CameraMediaLibraryView: View {
                             }
                         }
                     } header: {
-                        Text("Local clips")
+                        Text("Clips on this iPhone")
                             .foregroundStyle(CompanionTheme.faintText)
                     }
                 }
@@ -851,7 +887,7 @@ private struct CameraMediaLibraryView: View {
                     Button(role: .destructive) {
                         confirmsDeleteAll = true
                     } label: {
-                        Label("Delete All Clips", systemImage: "trash")
+                        Label("Delete All", systemImage: "trash")
                     }
                     .disabled(store.pendingRecordings.isEmpty)
                 }
@@ -861,44 +897,41 @@ private struct CameraMediaLibraryView: View {
                 isPresented: $confirmsDeleteAll,
                 titleVisibility: .visible
             ) {
-                Button("Delete All Clips", role: .destructive) {
+                Button("Delete All", role: .destructive) {
                     store.deleteAllPendingRecordings()
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This removes \(store.pendingRecordingCount) clip\(store.pendingRecordingCount == 1 ? "" : "s") from this iPhone.")
+                Text("This deletes \(store.pendingRecordingCount) clip\(store.pendingRecordingCount == 1 ? "" : "s") from this iPhone.")
             }
         }
         .tint(CompanionTheme.accent)
     }
 }
 
-private struct BlitzReelsClipAd: View {
-    private let destination = BlitzRecorderProductIdentity.blitzReelsURL(
-        source: "ios_app",
-        placement: "clips_tab"
-    )
+private struct BlitzRecorderMacInstallCard: View {
+    private let destination = BlitzRecorderProductIdentity.macInstallURL
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 8) {
-                Image("BlitzReelsIcon")
+                Image("BlitzRecorderCameraIcon")
                     .resizable()
                     .scaledToFit()
                     .frame(width: 26, height: 26)
-                    .accessibilityLabel("BlitzReels")
+                    .accessibilityLabel("BlitzRecorder")
 
-                Text("BlitzReels")
+                Text("BlitzRecorder")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(CompanionTheme.accent)
             }
 
             VStack(alignment: .leading, spacing: 5) {
-                Text("Have footage already?")
+                Text("Need the Mac app?")
                     .font(.headline.weight(.bold))
                     .foregroundStyle(.white)
 
-                Text("BlitzReels turns it into clips with captions.")
+                Text("Install BlitzRecorder on your Mac to pair this iPhone and record.")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(CompanionTheme.faintText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -910,7 +943,7 @@ private struct BlitzReelsClipAd: View {
                         .font(.body.weight(.bold))
                         .frame(width: 22, height: 22)
 
-                    Text("Turn my footage into clips")
+                    Text("Open blitzrecorder.com")
                         .font(.subheadline.weight(.bold))
                 }
                 .foregroundStyle(.black)
@@ -920,7 +953,7 @@ private struct BlitzReelsClipAd: View {
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.roundedRectangle(radius: 14))
             .tint(CompanionTheme.accent)
-            .accessibilityLabel("Open BlitzReels")
+            .accessibilityLabel("Open BlitzRecorder website")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 18)

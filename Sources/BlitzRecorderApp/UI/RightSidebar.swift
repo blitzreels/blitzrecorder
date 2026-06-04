@@ -21,19 +21,6 @@ struct CameraCropControls: View {
                     .foregroundStyle(.white.opacity(disabled ? 0.55 : 0.95))
                 Spacer(minLength: 0)
                 Button {
-                    vm.centerCameraCrop()
-                } label: {
-                    Image(systemName: "scope")
-                        .font(.system(size: 10, weight: .bold))
-                        .frame(width: 22, height: 22)
-                }
-                .blitzGlassButton()
-                .controlSize(.small)
-                .disabled(!vm.isCameraCropModeEnabled && positionIsCentered)
-                .pointingHandCursor()
-                .help("Center crop")
-
-                Button {
                     vm.resetCameraCrop()
                 } label: {
                     Image(systemName: "arrow.counterclockwise")
@@ -48,7 +35,7 @@ struct CameraCropControls: View {
             }
 
             if !vm.isCameraCropModeEnabled {
-                cropPresetControls
+                cropZoomControl
 
                 Button {
                     vm.beginCameraCropMode()
@@ -81,47 +68,19 @@ struct CameraCropControls: View {
             && abs(vm.settings.cameraCropPosition.x) < 0.001 && abs(vm.settings.cameraCropPosition.y) < 0.001
     }
 
-    private var positionIsCentered: Bool {
-        abs(vm.settings.cameraCropPosition.x) < 0.001 && abs(vm.settings.cameraCropPosition.y) < 0.001
-    }
-
     private var cropZoom: Double {
         Double(max(vm.settings.cameraCropAmount.x, vm.settings.cameraCropAmount.y))
     }
 
-    private var cropPresetControls: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                cropPresetButton("Fit", icon: "rectangle", amount: .zero)
-                cropPresetButton("Med", icon: "plus.magnifyingglass", amount: CGPoint(x: 0.22, y: 0.22))
-                cropPresetButton("Tight", icon: "viewfinder", amount: CGPoint(x: 0.42, y: 0.42))
-            }
-
-            cropSlider(
-                title: "Zoom",
-                value: Binding(
-                    get: { cropZoom },
-                    set: { vm.setCameraCropZoom(CGFloat($0)) }
-                ),
-                range: 0...0.75
-            )
-        }
-    }
-
-    private func cropPresetButton(_ title: String, icon: String, amount: CGPoint) -> some View {
-        Button {
-            vm.setCameraCropPreset(amount: amount, position: .zero)
-        } label: {
-            Label(title, systemImage: icon)
-                .font(.system(size: 10, weight: .semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
-                .frame(maxWidth: .infinity, minHeight: 26)
-        }
-        .blitzGlassButton()
-        .controlSize(.small)
-        .pointingHandCursor()
-        .help(title)
+    private var cropZoomControl: some View {
+        cropSlider(
+            title: "Zoom",
+            value: Binding(
+                get: { cropZoom },
+                set: { vm.setCameraCropZoom(CGFloat($0)) }
+            ),
+            range: 0...0.75
+        )
     }
 
     private func cropSlider(title: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {

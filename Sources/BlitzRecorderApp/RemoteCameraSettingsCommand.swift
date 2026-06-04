@@ -5,6 +5,7 @@ enum RemoteCameraSettingsIntent: Equatable {
     case lens(RemoteCameraLens)
     case format(id: String?, frameRate: Int)
     case captureProfile(RemoteCameraCaptureProfileID)
+    case colorMode(RemoteCameraColorMode)
     case cinematicVideoEnabled(Bool)
     case cinematicAperture(Double)
     case focusMode(RemoteCameraFocusMode)
@@ -56,8 +57,20 @@ enum RemoteCameraSettingsCommand {
                 )
             }
             remoteSettings.captureProfileID = profileID
+            if profileID != .proRes422 {
+                remoteSettings.colorMode = .standard
+            }
+        case .colorMode(let colorMode):
+            remoteSettings.colorMode = colorMode
+            if colorMode != .standard {
+                remoteSettings.captureProfileID = .proRes422
+            }
         case .cinematicVideoEnabled(let enabled):
             remoteSettings.cinematicVideoEnabled = enabled
+            if enabled {
+                remoteSettings.colorMode = .standard
+                remoteSettings.captureProfileID = .automatic
+            }
             if enabled,
                let lensCapabilities,
                lensCapabilities.supportsCinematicVideo {

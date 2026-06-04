@@ -61,7 +61,7 @@ struct CameraRecordingPlaybackView: View {
                 Button {
                     retryImport()
                 } label: {
-                    Label("Retry Import", systemImage: "arrow.clockwise.icloud")
+                    Label("Send Again", systemImage: "arrow.clockwise.icloud")
                 }
                 .disabled(recording.takeID == nil)
 
@@ -125,7 +125,7 @@ struct CameraRecordingPlaybackView: View {
             Button {
                 zoomResetToken += 1
             } label: {
-                Label("Reset Zoom", systemImage: "arrow.up.left.and.down.right.magnifyingglass")
+                Label("Reset view", systemImage: "arrow.up.left.and.down.right.magnifyingglass")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
@@ -277,7 +277,7 @@ private final class CameraRecordingPlaybackModel {
                 let seconds = duration.seconds
                 durationSeconds = seconds.isFinite ? max(seconds, 0) : 0
                 didLoadDuration = true
-                statusMessage = durationSeconds > 0 ? nil : "Duration unavailable"
+                statusMessage = durationSeconds > 0 ? nil : "Length not available"
 
                 guard let videoTrack = try await asset.loadTracks(withMediaType: .video).first else {
                     resolutionLabel = "No video track"
@@ -310,7 +310,7 @@ private final class CameraRecordingPlaybackModel {
             } catch {
                 guard !Task.isCancelled else { return }
                 didLoadDuration = true
-                statusMessage = "Unable to read duration"
+                statusMessage = "Couldn’t read clip length"
                 resolutionLabel = "Unknown"
                 codecLabel = "Unknown"
                 frameRateLabel = "Unknown"

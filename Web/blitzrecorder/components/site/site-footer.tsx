@@ -1,12 +1,18 @@
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight } from "@/components/site/icons";
 import { Container } from "@/components/ui/layout";
 import { Paragraph } from "@/components/ui/typography";
 import { VersionTag } from "@/components/site/download-button";
 import { assets } from "@/lib/assets";
-import { BLITZREELS_URL, ALGOMAX_URL } from "@/lib/content";
-import { GITHUB_REPO_URL, RELEASES_URL, CHANGELOG_URL } from "@/lib/release";
+import { ALGOMAX_URL } from "@/lib/content";
+import {
+  GITHUB_REPO_URL,
+  RELEASES_URL,
+  CHANGELOG_URL,
+  LATEST_RELEASE_URL,
+} from "@/lib/release";
+import { OPEN_SOURCE } from "@/lib/flags";
 
 type FooterLink = { label: string; href: string; external?: boolean };
 
@@ -17,6 +23,7 @@ const productLinks: FooterLink[] = [
 ];
 
 const resourceLinks: FooterLink[] = [
+  { label: "Claim license", href: "/license" },
   { label: "Support", href: "/support" },
   { label: "Privacy", href: "/privacy" },
   { label: "Terms", href: "/terms" },
@@ -26,6 +33,12 @@ const openSourceLinks: FooterLink[] = [
   { label: "Source code", href: GITHUB_REPO_URL, external: true },
   { label: "Releases", href: RELEASES_URL, external: true },
   { label: "Changelog", href: CHANGELOG_URL, external: true },
+];
+
+/** Shown in place of the open-source column until the source repo is public. */
+const downloadLinks: FooterLink[] = [
+  { label: "Latest release", href: LATEST_RELEASE_URL, external: true },
+  { label: "All releases", href: RELEASES_URL, external: true },
 ];
 
 export function SiteFooter() {
@@ -53,16 +66,6 @@ export function SiteFooter() {
 
             <div className="mt-7 flex flex-col gap-3">
               <a
-                href={BLITZREELS_URL}
-                target="_blank"
-                rel="noopener"
-                className="group inline-flex items-center gap-2 text-sm text-faint transition-colors hover:text-foreground"
-              >
-                <span>Part of</span>
-                <Image src={assets.blitzreelsWordmark} alt="BlitzReels" sizes="110px" className="h-4 w-auto" />
-                <ArrowUpRight className="size-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
-              </a>
-              <a
                 href={ALGOMAX_URL}
                 target="_blank"
                 rel="noopener"
@@ -76,7 +79,11 @@ export function SiteFooter() {
 
           <FooterNav title="Product" links={productLinks} />
           <FooterNav title="Resources" links={resourceLinks} />
-          <FooterNav title="Open source" links={openSourceLinks} />
+          {OPEN_SOURCE ? (
+            <FooterNav title="Open source" links={openSourceLinks} />
+          ) : (
+            <FooterNav title="Download" links={downloadLinks} />
+          )}
         </div>
 
         <div className="flex flex-col items-start justify-between gap-4 border-t border-border py-7 text-sm text-faint sm:flex-row sm:items-center">
@@ -94,14 +101,6 @@ export function SiteFooter() {
           </Paragraph>
           <div className="flex items-center gap-6">
             <VersionTag className="font-mono text-xs text-muted-foreground transition-colors hover:text-foreground" />
-            <a
-              href={BLITZREELS_URL}
-              target="_blank"
-              rel="noopener"
-              className="transition-colors hover:text-foreground"
-            >
-              <Image src={assets.blitzreelsWordmark} alt="BlitzReels" sizes="96px" className="h-4 w-auto" />
-            </a>
             <a
               href={ALGOMAX_URL}
               target="_blank"

@@ -445,6 +445,68 @@ struct SourceOption: Equatable {
     let name: String
 }
 
+struct ScreenSourceBinding: Codable, Equatable, Identifiable {
+    enum Kind: String, Codable {
+        case display
+        case application
+        case window
+    }
+
+    var kind: Kind
+    var displayID: String?
+    var bundleIdentifier: String?
+    var applicationName: String?
+    var processID: Int32?
+    var windowID: UInt32?
+    var windowTitle: String?
+
+    var id: String {
+        switch kind {
+        case .display:
+            return "display:\(displayID ?? "auto")"
+        case .application:
+            return "application:\(bundleIdentifier ?? applicationName ?? "\(processID ?? 0)")"
+        case .window:
+            return "window:\(windowID.map(String.init) ?? "\(bundleIdentifier ?? ""):\(windowTitle ?? "")")"
+        }
+    }
+
+    var displayName: String {
+        switch kind {
+        case .display:
+            return "Display \(displayID ?? "Auto")"
+        case .application:
+            return applicationName ?? bundleIdentifier ?? "Application"
+        case .window:
+            if let applicationName, let windowTitle, !windowTitle.isEmpty {
+                return "\(applicationName) - \(windowTitle)"
+            }
+            return windowTitle ?? applicationName ?? "Window"
+        }
+    }
+
+    static func display(id: String?, name: String? = nil) -> ScreenSourceBinding {
+        ScreenSourceBinding(
+            kind: .display,
+            displayID: id,
+            bundleIdentifier: nil,
+            applicationName: name,
+            processID: nil,
+            windowID: nil,
+            windowTitle: nil
+        )
+    }
+}
+
+struct ScreenSourceOption: Equatable, Identifiable {
+    let binding: ScreenSourceBinding
+    let title: String
+    let subtitle: String
+    let systemImage: String
+
+    var id: String { binding.id }
+}
+
 struct SceneLayout: Equatable {
     // Frames are normalized in the preview canvas coordinate space: origin at bottom-left.
     // layerOrder is back-to-front, so the last layer is visually on top.
@@ -926,7 +988,7 @@ struct RecordingSettings {
     var layout: CaptureLayout = .vertical
     var outputResolution: OutputResolution = .p1080
     var outputVideoFormat: OutputVideoFormat = .mov
-    var framesPerSecond: Int = 60
+    var framesPerSecond: Int = 30
     /// `nil` means Auto (bitrate is picked from the resolution and frame rate).
     var customVideoBitrate: Int?
     var audioQuality: AudioQuality = .standard
@@ -942,6 +1004,7 @@ struct RecordingSettings {
     var enabledSources: Set<CaptureSource> = [.screen, .camera, .microphone]
     var hiddenSources: Set<CaptureSource> = []
     var usesPickedScreenContent: Bool = false
+    var screenSourceBinding: ScreenSourceBinding? = .display(id: nil)
     var selectedDisplayID: String?
     var selectedCameraID: String?
     var selectedMicrophoneID: String?

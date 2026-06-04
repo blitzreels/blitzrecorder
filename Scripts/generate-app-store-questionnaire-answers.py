@@ -14,9 +14,6 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE_PATH = ROOT / "AppStore" / "AppStoreQuestionnaires.md"
 OUTPUT_PATH = ROOT / "AppStore" / "AppStoreQuestionnaireAnswers.generated.json"
 
-SUBSCRIPTION_PRODUCT_ID = "dev.blitzreels.blitzrecorder.pro.monthly"
-ANNUAL_SUBSCRIPTION_PRODUCT_ID = "dev.blitzreels.blitzrecorder.pro.annual"
-
 REQUIRED_SOURCE_SNIPPETS = [
     "Recommended rating target: `4+`",
     "Does the app use IDFA? `No`",
@@ -27,8 +24,8 @@ REQUIRED_SOURCE_SNIPPETS = [
     "SHA-256 transfer digest",
     "Users are responsible for rights",
     "iOS companion has no in-app purchases and no paywall.",
-    SUBSCRIPTION_PRODUCT_ID,
-    ANNUAL_SUBSCRIPTION_PRODUCT_ID,
+    "Mac app has auto-renewable subscriptions: No",
+    "Free behavior: unlimited exports",
 ]
 
 
@@ -76,7 +73,7 @@ def build_payload() -> dict[str, Any]:
             "usesVPNOrSecurityProductFunctionality": False,
             "usesCryptoWalletFunctionality": False,
             "sha256Use": "file-transfer integrity checks only",
-            "networking": "Apple system networking and HTTPS for fixed BlitzRecorder/BlitzReels URLs; local network transport for companion pairing, preview, controls, and transfer.",
+            "networking": "Apple system networking and HTTPS for fixed BlitzRecorder URLs; local network transport for companion pairing, preview, controls, and transfer.",
         },
         "contentRights": {
             "shipsThirdPartyMediaCatalogs": False,
@@ -91,24 +88,24 @@ def build_payload() -> dict[str, Any]:
         },
         "kidsCategory": {
             "madeForKids": False,
-            "rationale": "Creator/productivity recording tool with subscription purchase flow in the Mac app.",
+            "rationale": "Creator/productivity recording tool with no subscription purchase flow.",
         },
         "signInRequirement": {
             "appStoreSubscriptionRequiresBlitzReelsSignIn": False,
-            "blitzReelsSignInOptional": True,
+            "blitzReelsSignInOptional": False,
             "iosCompanionRequiresAccount": False,
             "iosCompanionPairing": "local network",
         },
         "paidContentAndSubscriptions": {
-            "macAppHasAutoRenewableSubscription": True,
-            "subscriptionName": "BlitzRecorder Pro",
-            "monthlySubscriptionName": "BlitzRecorder Pro Monthly",
-            "productId": SUBSCRIPTION_PRODUCT_ID,
-            "price": "$7.99 per month",
-            "annualSubscriptionName": "BlitzRecorder Pro Annual",
-            "annualProductId": ANNUAL_SUBSCRIPTION_PRODUCT_ID,
-            "annualPrice": "$49.99 per year",
-            "freeBehavior": "10 free exports",
+            "macAppHasAutoRenewableSubscription": False,
+            "subscriptionName": None,
+            "monthlySubscriptionName": None,
+            "productId": None,
+            "price": "$0",
+            "annualSubscriptionName": None,
+            "annualProductId": None,
+            "annualPrice": "$0",
+            "freeBehavior": "unlimited exports",
             "iosCompanionHasInAppPurchases": False,
             "iosCompanionHasPaywall": False,
         },
@@ -117,7 +114,7 @@ def build_payload() -> dict[str, Any]:
             "Cloud upload, sharing, hosting, collaboration, comments, public profiles, or publishing are added.",
             "End-user templates, music, stock footage, or other bundled third-party media are added.",
             "Custom encryption, encrypted messaging, VPN/security, DRM, crypto wallet, or password-management functionality is added.",
-            "BlitzReels entitlement responses start returning email, billing IDs, workspace IDs, subscription IDs, or receipt data.",
+            "Account, purchase, entitlement, analytics, or cloud upload flows are added.",
         ],
     }
 
@@ -138,8 +135,8 @@ def validate_payload(payload: dict[str, Any], source: str) -> None:
         failures.append("madeForKids must be false")
     if payload["exportCompliance"]["itsAppUsesNonExemptEncryption"]:
         failures.append("ITSAppUsesNonExemptEncryption must be false")
-    if payload["paidContentAndSubscriptions"]["productId"] != SUBSCRIPTION_PRODUCT_ID:
-        failures.append("subscription product ID mismatch")
+    if payload["paidContentAndSubscriptions"]["macAppHasAutoRenewableSubscription"]:
+        failures.append("mac app must not have auto-renewable subscription")
     if payload["paidContentAndSubscriptions"]["iosCompanionHasInAppPurchases"]:
         failures.append("iOS companion must not have IAP")
     if payload["paidContentAndSubscriptions"]["iosCompanionHasPaywall"]:

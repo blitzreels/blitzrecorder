@@ -17,6 +17,7 @@ final class RemoteCameraMessagesTests: XCTestCase {
             formatID: "4k-30",
             frameRate: 60,
             captureProfileID: .proRes422,
+            colorMode: .appleLog2,
             zoomFactor: 2.5,
             focusMode: .manual,
             focusPosition: 0.65,
@@ -178,6 +179,7 @@ final class RemoteCameraMessagesTests: XCTestCase {
         let decoded = try JSONDecoder().decode(RemoteCameraSettings.self, from: data)
 
         XCTAssertEqual(decoded.captureProfileID, .automatic)
+        XCTAssertEqual(decoded.colorMode, .standard)
         XCTAssertEqual(decoded.formatID, "1920x1080")
         XCTAssertEqual(decoded.rotationDegrees, RemoteCameraSettings.defaultRotationDegrees)
         XCTAssertEqual(decoded.cinematicVideoEnabled, false)
@@ -223,6 +225,7 @@ final class RemoteCameraMessagesTests: XCTestCase {
         XCTAssertEqual(resolved.formatID, "1080p")
         XCTAssertEqual(resolved.frameRate, 30)
         XCTAssertEqual(resolved.captureProfileID, .automatic)
+        XCTAssertEqual(resolved.colorMode, .standard)
         XCTAssertEqual(resolved.zoomFactor, 1)
         XCTAssertEqual(resolved.torchEnabled, false)
         XCTAssertEqual(resolved.focusPosition, 1)
@@ -270,6 +273,65 @@ final class RemoteCameraMessagesTests: XCTestCase {
             16.0 / 9.0,
             accuracy: 0.0001
         )
+    }
+
+    func testRemoteCameraSettingsResolverFiltersFrameRatesByProfileAndColorMode() {
+        let format = RemoteCameraFormat(
+            id: "4k",
+            width: 3840,
+            height: 2160,
+            frameRates: [30, 60, 120],
+            colorModes: [.standard, .appleLog2],
+            colorModeFrameRates: [.standard: [30, 60, 120], .appleLog2: [30, 60]],
+            supportsStabilization: false,
+            supportsHDR: true
+        )
+        let profiles = [
+            RemoteCameraCaptureProfile(id: .automatic),
+            RemoteCameraCaptureProfile(
+                id: .proRes422,
+                supportedFormatIDs: ["4k"],
+                supportedFormatFrameRates: ["4k": [30, 60]]
+            )
+        ]
+        let frameRates = RemoteCameraSettingsResolver.compatibleFrameRates(
+            for: format,
+            profileID: .proRes422,
+            colorMode: .appleLog2,
+            profiles: profiles
+        )
+
+        XCTAssertEqual(frameRates, [30, 60])
+
+        let resolved = RemoteCameraSettingsResolver.normalized(
+            RemoteCameraSettings(
+                formatID: "4k",
+                frameRate: 120,
+                captureProfileID: .proRes422,
+                colorMode: .appleLog2
+            ),
+            capabilities: RemoteCameraCapabilities(
+                deviceName: "Alice iPhone",
+                supportedLenses: [.wide],
+                supportedFormats: [format],
+                supportedCaptureProfiles: profiles,
+                supportsTorch: false,
+                supportsManualFocus: false,
+                supportsFocusLock: false,
+                supportsManualExposure: false,
+                supportsExposureLock: false,
+                supportsWhiteBalanceLock: false,
+                supportsManualWhiteBalance: false,
+                supportedStabilizationModes: [.off],
+                minimumExposureBias: -2,
+                maximumExposureBias: 2
+            ),
+            preferredFrameRate: 30
+        )
+
+        XCTAssertEqual(resolved.colorMode, .appleLog2)
+        XCTAssertEqual(resolved.captureProfileID, .proRes422)
+        XCTAssertEqual(resolved.frameRate, 30)
     }
 
     func testRemoteCameraSettingsResolverUsesLensSpecificFormats() {

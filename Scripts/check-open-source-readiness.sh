@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RUN_RELEASE_CHECK=1
 RUN_SECRET_SCAN=1
+RUN_HISTORY_SCAN=1
 
 usage() {
   cat <<'USAGE'
@@ -13,6 +14,7 @@ Usage:
 Options:
   --skip-release-check   Skip release readiness checks.
   --skip-secret-scan     Skip public-text secret pattern scan.
+  --skip-history-scan    Skip Git history scan.
   -h, --help             Show this help.
 
 Checks the files and local gates expected before making the repository public.
@@ -26,6 +28,9 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-secret-scan)
       RUN_SECRET_SCAN=0
+      ;;
+    --skip-history-scan)
+      RUN_HISTORY_SCAN=0
       ;;
     -h|--help)
       usage
@@ -85,6 +90,13 @@ require_file ".github/workflows/macos-dmg.yml"
 require_file ".github/workflows/ios-testflight.yml"
 require_file ".github/workflows/app-store-release.yml"
 require_file "Scripts/check-github-release-readiness.sh"
+require_file "Scripts/audit-public-history.sh"
+require_file "Scripts/create-public-snapshot.sh"
+require_file "Scripts/publish-public-snapshot.sh"
+require_file "Scripts/promote-public-branch.sh"
+require_file "Scripts/generate-sparkle-appcast.sh"
+require_file "Scripts/configure-github-developer-id-from-keychain.sh"
+require_file "Scripts/configure-github-sparkle-secrets.sh"
 require_file "Scripts/sync-github-labels.py"
 
 require_contains "README.md" "License"
@@ -98,6 +110,8 @@ require_contains ".gitignore" ".env"
 require_contains ".gitignore" ".claude/"
 require_contains ".github/release.yml" "Build and release"
 require_contains ".github/labels.json" "\"good first issue\""
+require_contains ".github/workflows/macos-dmg.yml" "SPARKLE_PRIVATE_ED_KEY"
+require_contains ".github/workflows/macos-dmg.yml" "appcast.xml"
 
 if [[ "$RUN_RELEASE_CHECK" == "1" ]]; then
   if Scripts/check-github-release-readiness.sh --local-only >/dev/null; then
@@ -115,6 +129,14 @@ if [[ "$RUN_SECRET_SCAN" == "1" ]]; then
     fail "public files contain secret-like patterns"
   else
     pass "public file secret pattern scan found no hits"
+  fi
+fi
+
+if [[ "$RUN_HISTORY_SCAN" == "1" ]]; then
+  if Scripts/audit-public-history.sh >/dev/null; then
+    pass "Git history audit passes"
+  else
+    fail "Git history audit fails"
   fi
 fi
 

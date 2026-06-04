@@ -73,10 +73,8 @@ enum Merger {
         let videoComposition = AVMutableVideoComposition()
         videoComposition.instructions = videoCompositionInstructions(
             sources: compositedSources,
-            duration: duration,
             renderSize: renderSize,
-            settings: settings,
-            sceneEvents: sceneEvents
+            renderSegments: exportPlan.renderSegments
         )
         videoComposition.renderSize = renderSize
         videoComposition.frameDuration = CMTime(value: 1, timescale: CMTimeScale(settings.framesPerSecond))
@@ -650,23 +648,16 @@ enum Merger {
 
     private static func videoCompositionInstructions(
         sources: [CompositedVideoSource],
-        duration: CMTime,
         renderSize: CGSize,
-        settings: RecordingSettings,
-        sceneEvents: [RecordingSceneEvent]
+        renderSegments: [FinalExportRenderSegment]
     ) -> [AVMutableVideoCompositionInstruction] {
-        let fallbackScene = RecordingScene(settings: settings)
-        return RecordingSceneTimeline.segments(
-            sceneEvents: sceneEvents,
-            fallbackScene: fallbackScene,
-            duration: duration,
-            sourceTimeRanges: sources.map(\.timeRange)
-        ).map { segment in
+        renderSegments.map { segment in
             let instruction = AVMutableVideoCompositionInstruction()
             instruction.timeRange = segment.timeRange
             instruction.layerInstructions = layerInstructions(
                 sources: sources,
                 scene: segment.scene,
+                activeLayerOrder: segment.activeLayerOrder,
                 renderSize: renderSize,
                 at: segment.timeRange.start
             ).reversed()
@@ -678,6 +669,7 @@ enum Merger {
     private static func layerInstructions(
         sources: [CompositedVideoSource],
         scene: RecordingScene,
+        activeLayerOrder: [SceneLayerKind],
         renderSize: CGSize,
         at time: CMTime
     ) -> [AVMutableVideoCompositionLayerInstruction] {
@@ -686,7 +678,7 @@ enum Merger {
             scene: scene,
             origin: .upperLeft
         )
-        return geometry.activeLayerOrder.compactMap { kind -> AVMutableVideoCompositionLayerInstruction? in
+        return activeLayerOrder.compactMap { kind -> AVMutableVideoCompositionLayerInstruction? in
             guard let source = sources.first(where: { $0.kind == kind && $0.isActive(at: time) }) else {
                 return nil
             }

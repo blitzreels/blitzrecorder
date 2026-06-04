@@ -50,13 +50,13 @@ ALLOW_PROVISIONING_UPDATES=1 \
 Scripts/archive-app-store.sh
 ```
 
-Set `UPLOAD=1` from the workflow dispatch UI only when the app records, subscription, screenshots, privacy labels, and reviewer notes are ready.
+Set `UPLOAD=1` from the workflow dispatch UI only when app records, free-access QA, screenshots, privacy labels, and reviewer notes are ready.
 
 ## macOS DMG CI
 
 `.github/workflows/macos-dmg.yml` builds a downloadable DMG for quick testing on every pull request, every push to `main` or `codex/**`, every `v*` tag, and manual `workflow_dispatch` runs.
 
-The normal artifact lane can run without Apple credentials on non-tag builds. It calls `Scripts/ci-macos-dmg.sh`, packages the app through `Scripts/package-dmg.sh`, and uploads `build/Distributions/BlitzRecorder-*.dmg` plus `SHA256SUMS` as the `blitzrecorder-macos-dmg` workflow artifact. When the workflow runs for a `v*` tag, it signs and notarizes the universal DMG, then attaches the DMG and checksum file to the matching GitHub Release.
+The normal artifact lane can run without Apple credentials on non-tag builds. It calls `Scripts/ci-macos-dmg.sh`, packages the app through `Scripts/package-dmg.sh`, and uploads `build/Distributions/BlitzRecorder-*.dmg` plus `SHA256SUMS` as the `blitzrecorder-macos-dmg` workflow artifact. When the workflow runs for a `v*` tag, it signs and notarizes the universal DMG, generates a signed Sparkle `appcast.xml`, then attaches the DMG, checksum file, and appcast to the matching GitHub Release.
 
 For a signed and notarized manual DMG, configure these additional GitHub Actions secrets, then run the workflow manually with `notarize=1`:
 
@@ -68,6 +68,8 @@ For a signed and notarized manual DMG, configure these additional GitHub Actions
 | `ASC_KEY_ID` | App Store Connect API key ID for notarization. |
 | `ASC_ISSUER_ID` | App Store Connect issuer ID. |
 | `ASC_PRIVATE_KEY` | Full `.p8` private key contents. |
+| `SPARKLE_PUBLIC_ED_KEY` | Public Sparkle EdDSA key embedded in direct DMG builds. |
+| `SPARKLE_PRIVATE_ED_KEY` | Private Sparkle EdDSA key used to sign `appcast.xml`. |
 
 You can set those release secrets with the GitHub CLI:
 
@@ -79,6 +81,18 @@ ASC_KEY_ID="$ASC_KEY_ID" \
 ASC_ISSUER_ID="$ASC_ISSUER_ID" \
 ASC_PRIVATE_KEY_PATH="$PWD/private/AuthKey_$ASC_KEY_ID.p8" \
 Scripts/configure-github-release-secrets.sh
+```
+
+If the Developer ID Application identity is already in the local macOS Keychain, use the safer temporary-export helper instead:
+
+```bash
+Scripts/configure-github-developer-id-from-keychain.sh --repo OWNER/REPO
+```
+
+Configure Sparkle update signing with:
+
+```bash
+Scripts/configure-github-sparkle-secrets.sh
 ```
 
 Configure the App Store/TestFlight secrets with:
@@ -112,6 +126,24 @@ Then apply it after confirming the printed commands:
 ```bash
 Scripts/bootstrap-github-repo.sh --repo blitzreels/blitzrecorder --apply --push
 ```
+
+## Public Source Release
+
+Do not make the private development repo public while old private-history refs are still present. Run the full gate first:
+
+```bash
+Scripts/check-open-source-readiness.sh
+```
+
+If the history audit fails, publish from a fresh-history snapshot:
+
+```bash
+Scripts/create-public-snapshot.sh
+Scripts/publish-public-snapshot.sh
+Scripts/publish-public-snapshot.sh --apply
+```
+
+The default public target is `blitzreels/blitzrecorder-public`. To use the existing repo instead, use `Scripts/promote-public-branch.sh` only after reviewing all remote refs and tags.
 
 The DMG lane stages the app with `ditto`, signs the DMG when a Developer ID Application identity is available, verifies the image, verifies the DMG signature when present, mounts it, checks `LSMinimumSystemVersion`, checks Mach-O minimum macOS metadata, and verifies the app code signature. Manual `notarize=1` also runs `spctl -a -t open`, staples the DMG, and validates the staple.
 

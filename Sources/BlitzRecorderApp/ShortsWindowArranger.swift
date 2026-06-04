@@ -240,6 +240,47 @@ enum ShortsWindowArranger {
         )
     }
 
+    /// Resize a SPECIFIC window (identified by pid / bounds / title — e.g. the
+    /// window just chosen in the content picker) to its slot in the current
+    /// layout. Unlike `fitFrontWindow`, this targets a given window rather than
+    /// the frontmost one, and is best-effort: it never prompts for Accessibility.
+    @discardableResult
+    static func fitWindow(
+        ownerPID: pid_t,
+        bounds: CGRect,
+        title: String?,
+        appName: String,
+        displayID: String?,
+        captureLayout: CaptureLayout,
+        sceneLayout: SceneLayout,
+        enabledSources: Set<CaptureSource>,
+        scale: CGFloat = 1
+    ) throws -> ShortsWindowArrangement {
+        guard accessibilityTrusted(prompt: false) else {
+            throw ShortsWindowArrangerError.accessibilityPermissionRequired
+        }
+
+        let screen = try targetScreen(displayID: displayID)
+        let plan = TargetWindowFitting.plan(
+            screenFrame: screen.frame,
+            visibleFrame: screen.visibleFrame,
+            captureLayout: captureLayout,
+            sceneLayout: sceneLayout,
+            enabledSources: enabledSources,
+            scale: scale
+        )
+        let candidate = WindowCandidate(ownerPID: ownerPID, ownerName: appName, title: title, bounds: bounds)
+        let window = try accessibilityWindow(for: candidate)
+        try set(window: window, frame: accessibilityFrame(for: plan.windowFrame, on: screen))
+
+        return ShortsWindowArrangement(
+            appName: appName,
+            windowTitle: title,
+            frame: plan.windowFrame,
+            screenCrop: plan.screenCrop
+        )
+    }
+
     private static func accessibilityTrusted(prompt: Bool) -> Bool {
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         return AXIsProcessTrustedWithOptions([key: prompt] as CFDictionary)
@@ -421,6 +462,15 @@ private struct WindowCandidate {
     let bounds: CGRect
     let layer: Int
     let alpha: Double
+
+    init(ownerPID: pid_t, ownerName: String, title: String?, bounds: CGRect) {
+        self.ownerPID = ownerPID
+        self.ownerName = ownerName
+        self.title = title
+        self.bounds = bounds
+        self.layer = 0
+        self.alpha = 1
+    }
 
     init?(info: [String: Any]) {
         guard let ownerPID = info[kCGWindowOwnerPID as String] as? pid_t,

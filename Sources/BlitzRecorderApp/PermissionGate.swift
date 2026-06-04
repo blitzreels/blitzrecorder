@@ -24,6 +24,30 @@ struct PermissionBlocker: Equatable {
     }
 }
 
+extension Array where Element == PermissionBlocker {
+    /// One short, human phrase for the dock/status line. Screen and System Audio share
+    /// the Screen Recording permission, so they fold into a single fix; the verbose
+    /// technical wording stays in `sentence` for tooltips and diagnostics.
+    var shortSummary: String {
+        if contains(where: { $0.permission == "Sources" }) {
+            return "Pick a source to record"
+        }
+        var parts: [String] = []
+        if contains(where: { $0.source == .screen || $0.source == .systemAudio }) {
+            parts.append("Screen Recording")
+        }
+        if contains(where: { $0.permission == "Camera" }) { parts.append("Camera") }
+        if contains(where: { $0.source == .microphone }) { parts.append("Microphone") }
+        if parts.isEmpty {
+            if contains(where: { $0.permission == "Remote iPhone" }) {
+                return "Waiting for the iPhone camera to connect"
+            }
+            return "Permission needed to record"
+        }
+        return parts.count == 1 ? "\(parts[0]) permission needed" : "Permissions needed to record"
+    }
+}
+
 struct PermissionRequestResult: Equatable {
     enum Status: Equatable {
         case granted
@@ -97,7 +121,7 @@ enum PermissionGate {
             if settings.usesPickedScreenContent {
                 return "selected with macOS picker"
             }
-            return CGPreflightScreenCaptureAccess() ? "allowed" : "needs permission or app restart; use Pick Screen"
+            return CGPreflightScreenCaptureAccess() ? "allowed" : "needs Screen Recording permission or app restart"
         case .systemAudio:
             return CGPreflightScreenCaptureAccess() ? "allowed" : "needs Screen Recording permission or app restart"
         case .camera:

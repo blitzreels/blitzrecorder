@@ -123,6 +123,7 @@ require_file ".github/labels.json"
 require_file "Scripts/package-app.sh"
 require_file "Scripts/package-dmg.sh"
 require_file "Scripts/ci-macos-dmg.sh"
+require_file "Scripts/validate-public-dmg.sh"
 require_file "Scripts/ci-ios-testflight.sh"
 require_file "Scripts/archive-app-store.sh"
 require_file "Scripts/set-version.py"
@@ -130,6 +131,13 @@ require_file "Scripts/prepare-github-release.sh"
 require_file "Scripts/bootstrap-github-repo.sh"
 require_file "Scripts/configure-github-release-secrets.sh"
 require_file "Scripts/configure-github-app-store-secrets.sh"
+require_file "Scripts/configure-github-developer-id-from-keychain.sh"
+require_file "Scripts/configure-github-sparkle-secrets.sh"
+require_file "Scripts/generate-sparkle-appcast.sh"
+require_file "Scripts/audit-public-history.sh"
+require_file "Scripts/create-public-snapshot.sh"
+require_file "Scripts/publish-public-snapshot.sh"
+require_file "Scripts/promote-public-branch.sh"
 require_file "Scripts/check-github-release-readiness.sh"
 require_file "Scripts/check-open-source-readiness.sh"
 require_file "Scripts/sync-github-labels.py"
@@ -137,6 +145,7 @@ require_file "Scripts/sync-github-labels.py"
 require_executable "Scripts/package-app.sh"
 require_executable "Scripts/package-dmg.sh"
 require_executable "Scripts/ci-macos-dmg.sh"
+require_executable "Scripts/validate-public-dmg.sh"
 require_executable "Scripts/ci-ios-testflight.sh"
 require_executable "Scripts/archive-app-store.sh"
 require_executable "Scripts/set-version.py"
@@ -144,11 +153,18 @@ require_executable "Scripts/prepare-github-release.sh"
 require_executable "Scripts/bootstrap-github-repo.sh"
 require_executable "Scripts/configure-github-release-secrets.sh"
 require_executable "Scripts/configure-github-app-store-secrets.sh"
+require_executable "Scripts/configure-github-developer-id-from-keychain.sh"
+require_executable "Scripts/configure-github-sparkle-secrets.sh"
+require_executable "Scripts/generate-sparkle-appcast.sh"
+require_executable "Scripts/audit-public-history.sh"
+require_executable "Scripts/create-public-snapshot.sh"
+require_executable "Scripts/publish-public-snapshot.sh"
+require_executable "Scripts/promote-public-branch.sh"
 require_executable "Scripts/check-github-release-readiness.sh"
 require_executable "Scripts/check-open-source-readiness.sh"
 require_executable "Scripts/sync-github-labels.py"
 
-if bash -n Scripts/package-app.sh Scripts/package-dmg.sh Scripts/ci-macos-dmg.sh Scripts/ci-ios-testflight.sh Scripts/archive-app-store.sh Scripts/prepare-github-release.sh Scripts/bootstrap-github-repo.sh Scripts/configure-github-release-secrets.sh Scripts/configure-github-app-store-secrets.sh Scripts/check-github-release-readiness.sh Scripts/check-open-source-readiness.sh; then
+if bash -n Scripts/package-app.sh Scripts/package-dmg.sh Scripts/ci-macos-dmg.sh Scripts/validate-public-dmg.sh Scripts/archive-app-store.sh Scripts/ci-ios-testflight.sh Scripts/prepare-github-release.sh Scripts/bootstrap-github-repo.sh Scripts/configure-github-release-secrets.sh Scripts/configure-github-app-store-secrets.sh Scripts/configure-github-developer-id-from-keychain.sh Scripts/configure-github-sparkle-secrets.sh Scripts/generate-sparkle-appcast.sh Scripts/audit-public-history.sh Scripts/create-public-snapshot.sh Scripts/publish-public-snapshot.sh Scripts/promote-public-branch.sh Scripts/check-github-release-readiness.sh Scripts/check-open-source-readiness.sh; then
   pass "release shell scripts parse"
 else
   fail "release shell scripts do not parse"
@@ -181,14 +197,46 @@ fi
 require_contains ".github/workflows/macos-dmg.yml" "APP_ARCHS: arm64 x86_64"
 require_contains ".github/workflows/macos-dmg.yml" "EXPECTED_ARCHS: arm64 x86_64"
 require_contains ".github/workflows/macos-dmg.yml" "SHA256SUMS"
+require_contains ".github/workflows/macos-dmg.yml" "SPARKLE_PUBLIC_ED_KEY"
+require_contains ".github/workflows/macos-dmg.yml" "SPARKLE_PRIVATE_ED_KEY"
+require_contains ".github/workflows/macos-dmg.yml" "Scripts/generate-sparkle-appcast.sh"
+require_contains ".github/workflows/macos-dmg.yml" "appcast.xml"
+require_contains ".github/workflows/macos-dmg.yml" "release-metadata.json"
+require_contains ".github/workflows/macos-dmg.yml" "build/ReleaseEvidence"
 require_contains ".github/workflows/macos-dmg.yml" "gh release create"
 require_contains ".github/workflows/ios-testflight.yml" "Scripts/ci-ios-testflight.sh"
+require_contains ".github/workflows/ios-testflight.yml" "Validate iOS Submission Artifacts"
+require_contains ".github/workflows/ios-testflight.yml" "build/ReleaseEvidence/ios-testflight"
 require_contains ".github/workflows/app-store-release.yml" "Scripts/archive-app-store.sh"
+require_contains ".github/workflows/app-store-release.yml" "Validate App Store Submission Artifacts"
+require_contains ".github/workflows/app-store-release.yml" "build/ReleaseEvidence/app-store"
 require_contains ".github/release.yml" "ignore-for-release"
 require_contains ".github/labels.json" "\"ignore-for-release\""
 require_contains "Scripts/package-dmg.sh" "macOS-\${DMG_ARCH_LABEL}"
+require_contains "Scripts/package-dmg.sh" "notarytool-submit.json"
 require_contains "Scripts/ci-macos-dmg.sh" "EXPECTED_ARCHS"
+require_contains "Scripts/ci-macos-dmg.sh" "Scripts/validate-public-dmg.sh"
 require_contains "Scripts/archive-app-store.sh" "TARGET=all|mac|ios"
+
+public_download_dmgs=()
+while IFS= read -r dmg; do
+  public_download_dmgs+=("$dmg")
+done < <(find Web/blitzrecorder/public/downloads -maxdepth 1 -type f -name '*.dmg' -print 2>/dev/null || true)
+
+if [[ "${#public_download_dmgs[@]}" -eq 0 ]]; then
+  pass "no static public DMG fallback"
+else
+  for dmg in "${public_download_dmgs[@]}"; do
+    if Scripts/validate-public-dmg.sh \
+        --dmg "$dmg" \
+        --require-notarized \
+        --evidence-dir "$ROOT/build/ReleaseEvidence/static-public-dmg/$(basename "$dmg" .dmg)" >/dev/null; then
+      pass "public DMG is signed, notarized, and stapled: $dmg"
+    else
+      fail "public DMG is not ready for end users: $dmg"
+    fi
+  done
+fi
 
 if [[ "$CHECK_LOCAL_DMG" == "1" ]]; then
   if ALLOW_AD_HOC_RELEASE_SIGNING=1 ENTITLEMENTS_PATH="$ROOT/BlitzRecorder.local.entitlements" Scripts/ci-macos-dmg.sh >/dev/null; then
@@ -217,7 +265,9 @@ if [[ "$LOCAL_ONLY" != "1" ]]; then
       KEYCHAIN_PASSWORD \
       ASC_KEY_ID \
       ASC_ISSUER_ID \
-      ASC_PRIVATE_KEY
+      ASC_PRIVATE_KEY \
+      SPARKLE_PUBLIC_ED_KEY \
+      SPARKLE_PRIVATE_ED_KEY
     do
       if printf '%s\n' "$secrets" | grep -Fxq "$secret"; then
         pass "GitHub secret exists: $secret"

@@ -20,20 +20,10 @@ REVIEW_NOTES_PATH = ROOT / "AppStore" / "ReviewNotes.md"
 
 MAC_BUNDLE_ID = "dev.blitzreels.blitzrecorder"
 IOS_BUNDLE_ID = "dev.blitzreels.blitzrecorder.camera"
-SUBSCRIPTION_PRODUCT_ID = "dev.blitzreels.blitzrecorder.pro.monthly"
-ANNUAL_SUBSCRIPTION_PRODUCT_ID = "dev.blitzreels.blitzrecorder.pro.annual"
-SUBSCRIPTION_GROUP_NAME = "BlitzRecorder Pro"
-SUBSCRIPTION_REFERENCE_NAME = "BlitzRecorder Pro Monthly"
-ANNUAL_SUBSCRIPTION_REFERENCE_NAME = "BlitzRecorder Pro Annual"
-SUBSCRIPTION_PERIOD = "ONE_MONTH"
-STOREKIT_SUBSCRIPTION_PERIOD = "P1M"
-PRICE_USD = "7.99"
-ANNUAL_PRICE_USD = "49.99"
-
-LANDING_URL = "https://www.blitzreels.com/blitzrecorder"
-SUPPORT_URL = "https://www.blitzreels.com/blitzrecorder/support"
-PRIVACY_URL = "https://www.blitzreels.com/blitzrecorder/privacy"
-TERMS_URL = "https://www.blitzreels.com/blitzrecorder/terms"
+LANDING_URL = "https://blitzrecorder.com"
+SUPPORT_URL = "https://blitzrecorder.com/support"
+PRIVACY_URL = "https://blitzrecorder.com/privacy"
+TERMS_URL = "https://blitzrecorder.com/terms"
 
 
 def read(path: Path) -> str:
@@ -111,16 +101,9 @@ def app_fields(
 def validate_fields(payload: dict[str, Any]) -> None:
     mac_app = payload["apps"]["macOS"]
     ios_app = payload["apps"]["iOS"]
-    subscription = payload["subscription"]
-
     expected = [
         (mac_app["bundleId"], MAC_BUNDLE_ID, "macOS bundle ID"),
         (ios_app["bundleId"], IOS_BUNDLE_ID, "iOS bundle ID"),
-        (subscription["productId"], SUBSCRIPTION_PRODUCT_ID, "subscription product ID"),
-        (subscription["annualProductId"], ANNUAL_SUBSCRIPTION_PRODUCT_ID, "annual subscription product ID"),
-        (subscription["duration"], SUBSCRIPTION_PERIOD, "subscription duration"),
-        (subscription["priceUSD"], PRICE_USD, "subscription price"),
-        (subscription["annualPriceUSD"], ANNUAL_PRICE_USD, "annual subscription price"),
     ]
     failures = [f"{label}: got {actual}, expected {expected}" for actual, expected, label in expected if actual != expected]
 
@@ -139,6 +122,10 @@ def validate_fields(payload: dict[str, Any]) -> None:
         failures.append("iOS companionOnly must be true")
     if ios_app["initiatesPurchases"]:
         failures.append("iOS initiatesPurchases must be false")
+    if mac_app["initiatesPurchases"]:
+        failures.append("macOS initiatesPurchases must be false")
+    if payload["subscription"] is not None:
+        failures.append("subscription must be null for the free open-source build")
 
     if failures:
         raise SystemExit("error: generated fields are invalid:\n- " + "\n- ".join(failures))
@@ -170,7 +157,7 @@ def build_payload() -> dict[str, Any]:
                 category="Photo & Video",
                 screenshot_directories=["AppStore/ScreenshotAssets/macOS"],
                 companion_only=False,
-                initiates_purchases=True,
+                initiates_purchases=False,
             ),
             "iOS": app_fields(
                 platform="iOS",
@@ -186,27 +173,7 @@ def build_payload() -> dict[str, Any]:
                 initiates_purchases=False,
             ),
         },
-        "subscription": {
-            "groupReferenceName": SUBSCRIPTION_GROUP_NAME,
-            "groupDisplayName": SUBSCRIPTION_GROUP_NAME,
-            "referenceName": SUBSCRIPTION_REFERENCE_NAME,
-            "productId": SUBSCRIPTION_PRODUCT_ID,
-            "annualReferenceName": ANNUAL_SUBSCRIPTION_REFERENCE_NAME,
-            "annualProductId": ANNUAL_SUBSCRIPTION_PRODUCT_ID,
-            "type": "autoRenewable",
-            "duration": SUBSCRIPTION_PERIOD,
-            "storeKitSubscriptionPeriod": STOREKIT_SUBSCRIPTION_PERIOD,
-            "priceUSD": PRICE_USD,
-            "annualDuration": "ONE_YEAR",
-            "annualStoreKitSubscriptionPeriod": "P1Y",
-            "annualPriceUSD": ANNUAL_PRICE_USD,
-            "displayName": SUBSCRIPTION_GROUP_NAME,
-            "description": "Unlimited exports in BlitzRecorder.",
-            "benefit": "Unlimited BlitzRecorder exports/renders while active.",
-            "freeBehavior": "10 exports/renders without subscription.",
-            "includedAccess": "Eligible active BlitzReels subscribers can sign in to unlock included Pro access.",
-            "purchaseSurface": "macOS app only; the iOS companion does not include a paywall or initiate purchases.",
-        },
+        "subscription": None,
     }
 
 

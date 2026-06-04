@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-URL="${BLITZRECORDER_ENTITLEMENT_URL:-https://www.blitzreels.com/api/blitzrecorder/entitlement}"
+URL="${BLITZRECORDER_ENTITLEMENT_URL:-https://blitzrecorder.com/api/blitzrecorder/entitlement}"
 TOKEN="${BLITZRECORDER_ENTITLEMENT_TOKEN:-}"
 EXPECTED_ACTIVE="${BLITZRECORDER_ENTITLEMENT_EXPECTED_ACTIVE:-}"
 BODY="$(mktemp)"

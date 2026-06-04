@@ -21,6 +21,7 @@ enum RecordingSettingsStore {
         static let includeCursor = "recording.includeCursor"
         static let enabledSources = "recording.enabledSources"
         static let hiddenSources = "recording.hiddenSources"
+        static let screenSourceBinding = "recording.screenSourceBinding"
         static let selectedDisplayID = "recording.selectedDisplayID"
         static let selectedCameraID = "recording.selectedCameraID"
         static let selectedMicrophoneID = "recording.selectedMicrophoneID"
@@ -128,6 +129,12 @@ enum RecordingSettingsStore {
         }
 
         settings.selectedDisplayID = defaults.string(forKey: Key.selectedDisplayID)
+        if let data = defaults.data(forKey: Key.screenSourceBinding),
+           let binding = try? JSONDecoder().decode(ScreenSourceBinding.self, from: data) {
+            settings.screenSourceBinding = binding
+        } else if let selectedDisplayID = settings.selectedDisplayID {
+            settings.screenSourceBinding = .display(id: selectedDisplayID)
+        }
         settings.selectedCameraID = defaults.string(forKey: Key.selectedCameraID)
         settings.selectedMicrophoneID = defaults.string(forKey: Key.selectedMicrophoneID)
         settings.trustedRemoteCameraServiceIDs = Set(defaults.stringArray(forKey: Key.trustedRemoteCameraServiceIDs) ?? [])
@@ -262,6 +269,12 @@ enum RecordingSettingsStore {
         defaults.set(settings.includeCursor, forKey: Key.includeCursor)
         defaults.set(settings.enabledSources.map(\.rawValue).sorted(), forKey: Key.enabledSources)
         defaults.set(settings.hiddenSources.map(\.rawValue).sorted(), forKey: Key.hiddenSources)
+        if let screenSourceBinding = settings.screenSourceBinding,
+           let data = try? JSONEncoder().encode(screenSourceBinding) {
+            defaults.set(data, forKey: Key.screenSourceBinding)
+        } else {
+            defaults.removeObject(forKey: Key.screenSourceBinding)
+        }
         defaults.set(settings.selectedDisplayID, forKey: Key.selectedDisplayID)
         defaults.set(settings.selectedCameraID, forKey: Key.selectedCameraID)
         defaults.set(settings.selectedMicrophoneID, forKey: Key.selectedMicrophoneID)

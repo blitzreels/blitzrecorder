@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-29T12:34:06Z",
+  "generatedAt": "2026-06-03T16:42:03Z",
   "sourceFiles": [
     "AppStore/PrivacyNutritionLabels.md",
     "Sources/BlitzRecorderApp/PrivacyInfo.xcprivacy",
@@ -11,27 +11,16 @@
     "dataBrokerSharing": false,
     "recordingsUploadedByDefault": false,
     "localNetworkTrafficCollectedByDeveloper": false,
-    "storeKitHandlesPurchases": true,
+    "storeKitHandlesPurchases": false,
     "supportDataOnlyIfUserContactsSupport": true
   },
   "apps": {
     "macOS": {
       "bundleId": "dev.blitzreels.blitzrecorder",
       "dataUsedToTrackYou": false,
-      "dataLinkedToYou": true,
+      "dataLinkedToYou": false,
       "dataNotLinkedToYou": false,
-      "collectedDataTypes": [
-        {
-          "category": "Identifiers",
-          "dataType": "User ID",
-          "collected": true,
-          "conditional": true,
-          "linkedToUser": true,
-          "tracking": false,
-          "purpose": "App Functionality",
-          "note": "Only when the user signs in with BlitzReels for included Pro access. The app stores the access token in macOS Keychain and sends it to the BlitzReels entitlement endpoint only to verify access."
-        }
-      ],
+      "collectedDataTypes": [],
       "notCollectedDataTypes": [
         "Purchase History",
         "Photos or Videos",
@@ -92,7 +81,7 @@
   },
   "reviewTriggers": [
     "Analytics, crash reporting, logging upload, customer support upload, receipt validation, or account telemetry is added.",
-    "BlitzReels entitlement verification starts returning or storing email, Stripe IDs, workspace IDs, subscription IDs, or receipt data in the app.",
+    "Account, purchase, entitlement, analytics, or cloud upload flows are added.",
     "Recordings, thumbnails, transcripts, or logs are uploaded for any app feature."
   ]
 }

@@ -1,10 +1,9 @@
-import AppKit
 import BlitzRecorderCore
+import AppKit
 import CryptoKit
 import Foundation
 import Observation
 import Security
-import StoreKit
 
 enum AppLinks {
     static let landingPage = BlitzRecorderProductIdentity.landingPage
@@ -14,17 +13,12 @@ enum AppLinks {
 }
 
 enum ProductConfiguration {
-    static let monthlyProductID = "dev.blitzreels.blitzrecorder.pro.monthly"
-    static let annualProductID = "dev.blitzreels.blitzrecorder.pro.annual"
-    static let appStoreProductIDs = [monthlyProductID, annualProductID]
-    static let blitzReelsSignInURL = URL(string: "https://www.blitzreels.com/blitzrecorder/sign-in")!
-    static let blitzReelsEntitlementURL = URL(string: "https://www.blitzreels.com/api/blitzrecorder/entitlement")!
+    static let blitzReelsSignInURL = URL(string: "https://blitzrecorder.com/sign-in")!
+    static let blitzReelsEntitlementURL = URL(string: "https://blitzrecorder.com/api/blitzrecorder/entitlement")!
+    static let licenseValidationURL = URL(string: "https://blitzrecorder.com/api/licenses/validate")!
+    static let earlyPriceURL = URL(string: "https://blitzrecorder.com/#pricing")!
     static let freeExportLimit = 10
     static let blitzReelsEntitlementCacheDuration: TimeInterval = 7 * 24 * 60 * 60
-
-    static func isAppStoreProductID(_ productID: String) -> Bool {
-        appStoreProductIDs.contains(productID)
-    }
 }
 
 struct BlitzReelsEntitlementResponse: Decodable {
@@ -36,8 +30,29 @@ struct BlitzReelsEntitlementHTTPError: Error {
     let statusCode: Int
 }
 
+struct BlitzRecorderLicenseValidationResponse: Decodable {
+    struct Payload: Decodable {
+        let licenseId: String
+        let email: String
+        let kind: String
+    }
+
+    let ok: Bool
+    let status: String
+    let reason: String?
+    let payload: Payload?
+}
+
+struct BlitzRecorderLicenseValidationHTTPError: Error {
+    let statusCode: Int
+}
+
 protocol BlitzReelsEntitlementChecking {
     func entitlement(for token: String) async throws -> BlitzReelsEntitlementResponse
+}
+
+protocol BlitzRecorderLicenseValidating {
+    func validate(licenseKey: String) async throws -> BlitzRecorderLicenseValidationResponse
 }
 
 struct URLSessionBlitzReelsEntitlementChecker: BlitzReelsEntitlementChecking {
@@ -55,11 +70,46 @@ struct URLSessionBlitzReelsEntitlementChecker: BlitzReelsEntitlementChecking {
     }
 }
 
+struct URLSessionBlitzRecorderLicenseValidator: BlitzRecorderLicenseValidating {
+    private struct RequestBody: Encodable {
+        let licenseKey: String
+    }
+
+    func validate(licenseKey: String) async throws -> BlitzRecorderLicenseValidationResponse {
+        var request = URLRequest(url: ProductConfiguration.licenseValidationURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.httpBody = try JSONEncoder().encode(RequestBody(licenseKey: licenseKey))
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+
+        if let validation = try? JSONDecoder().decode(BlitzRecorderLicenseValidationResponse.self, from: data) {
+            return validation
+        }
+
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw BlitzRecorderLicenseValidationHTTPError(statusCode: httpResponse.statusCode)
+        }
+        return try JSONDecoder().decode(BlitzRecorderLicenseValidationResponse.self, from: data)
+    }
+}
+
 protocol BlitzReelsTokenStore {
     func loadToken() -> String?
     @discardableResult
     func saveToken(_ token: String) -> Bool
     func deleteToken()
+}
+
+protocol BlitzRecorderLicenseKeyStore {
+    func loadLicenseKey() -> String?
+    @discardableResult
+    func saveLicenseKey(_ licenseKey: String) -> Bool
+    func deleteLicenseKey()
 }
 
 struct UserDefaultsBlitzReelsTokenStore: BlitzReelsTokenStore {
@@ -130,6 +180,77 @@ struct KeychainBlitzReelsTokenStore: BlitzReelsTokenStore {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
+    }
+}
+
+struct KeychainBlitzRecorderLicenseKeyStore: BlitzRecorderLicenseKeyStore {
+    private let service = "dev.blitzreels.blitzrecorder"
+    private let account = "blitzrecorder-license-key"
+
+    func loadLicenseKey() -> String? {
+        var query = baseQuery()
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess,
+              let data = result as? Data,
+              let key = String(data: data, encoding: .utf8),
+              !key.isEmpty else {
+            return nil
+        }
+        return key
+    }
+
+    func saveLicenseKey(_ licenseKey: String) -> Bool {
+        let data = Data(licenseKey.utf8)
+        let updateStatus = SecItemUpdate(
+            baseQuery() as CFDictionary,
+            [kSecValueData as String: data] as CFDictionary
+        )
+        if updateStatus == errSecSuccess {
+            return true
+        }
+        guard updateStatus == errSecItemNotFound else {
+            return false
+        }
+
+        var item = baseQuery()
+        item[kSecValueData as String] = data
+        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        item[kSecAttrIsInvisible as String] = true
+        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
+    }
+
+    func deleteLicenseKey() {
+        SecItemDelete(baseQuery() as CFDictionary)
+    }
+
+    private func baseQuery() -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+    }
+}
+
+struct UserDefaultsBlitzRecorderLicenseKeyStore: BlitzRecorderLicenseKeyStore {
+    let defaults: UserDefaults
+    let key: String
+
+    func loadLicenseKey() -> String? {
+        defaults.string(forKey: key)
+    }
+
+    func saveLicenseKey(_ licenseKey: String) -> Bool {
+        defaults.set(licenseKey, forKey: key)
+        return defaults.string(forKey: key) == licenseKey
+    }
+
+    func deleteLicenseKey() {
+        defaults.removeObject(forKey: key)
     }
 }
 
@@ -566,6 +687,7 @@ final class AccessController {
         static let blitzReelsAccessToken = "access.blitzReelsAccessToken"
         static let blitzReelsPlanName = "access.blitzReelsPlanName"
         static let blitzReelsVerifiedAt = "access.blitzReelsVerifiedAt"
+        static let blitzRecorderLicenseKey = "access.blitzRecorderLicenseKey"
     }
 
     private let defaults: UserDefaults
@@ -573,18 +695,21 @@ final class AccessController {
     private let freeExportCounterStore: FreeExportCounterStoring
     private let blitzReelsEntitlementCacheStore: BlitzReelsEntitlementCacheStoring
     private let blitzReelsEntitlementChecker: BlitzReelsEntitlementChecking
+    private let blitzRecorderLicenseKeyStore: BlitzRecorderLicenseKeyStore
+    private let blitzRecorderLicenseValidator: BlitzRecorderLicenseValidating
     private let dateProvider: () -> Date
-    private var transactionUpdatesTask: Task<Void, Never>?
+    var onLicenseStateChanged: (() -> Void)?
 
-    var monthlyProduct: Product?
-    var annualProduct: Product?
     var usedFreeExports: Int
-    var hasAppStoreSubscription = false
     var hasBlitzReelsEntitlement = false
+    var hasActiveLicense = false
     var hasValidAppIntegrity = true
     var blitzReelsPlanName: String?
+    var licenseEmail: String?
+    var licenseID: String?
     var isLoadingProducts = false
     var isPurchasing = false
+    var isValidatingLicense = false
     var accessMessage = ""
 
     init(
@@ -593,8 +718,10 @@ final class AccessController {
         blitzReelsTokenStore: BlitzReelsTokenStore? = nil,
         freeExportCounterStore: FreeExportCounterStoring? = nil,
         blitzReelsEntitlementCacheStore: BlitzReelsEntitlementCacheStoring? = nil,
+        blitzRecorderLicenseKeyStore: BlitzRecorderLicenseKeyStore? = nil,
         appIntegrityChecker: AppIntegrityChecking = RuntimeAppIntegrityChecker(),
-        blitzReelsEntitlementChecker: BlitzReelsEntitlementChecking = URLSessionBlitzReelsEntitlementChecker()
+        blitzReelsEntitlementChecker: BlitzReelsEntitlementChecking = URLSessionBlitzReelsEntitlementChecker(),
+        blitzRecorderLicenseValidator: BlitzRecorderLicenseValidating = URLSessionBlitzRecorderLicenseValidator()
     ) {
         let resolvedDefaults = defaults ?? .standard
         let usesKeychainStores = defaults == nil
@@ -614,6 +741,14 @@ final class AccessController {
         self.blitzReelsEntitlementCacheStore = blitzReelsEntitlementCacheStore
             ?? SignedBlitzReelsEntitlementCacheStore(defaults: resolvedDefaults, usesKeychain: usesKeychainStores)
         self.blitzReelsEntitlementChecker = blitzReelsEntitlementChecker
+        self.blitzRecorderLicenseKeyStore = blitzRecorderLicenseKeyStore
+            ?? (defaults == nil
+                ? KeychainBlitzRecorderLicenseKeyStore()
+                : UserDefaultsBlitzRecorderLicenseKeyStore(
+                    defaults: resolvedDefaults,
+                    key: Key.blitzRecorderLicenseKey
+                ))
+        self.blitzRecorderLicenseValidator = blitzRecorderLicenseValidator
         self.dateProvider = dateProvider
         switch appIntegrityChecker.validateAppIntegrity() {
         case .trusted:
@@ -631,158 +766,144 @@ final class AccessController {
                 _ = self.freeExportCounterStore.save(usedFreeExports)
             }
         case .invalid:
-            usedFreeExports = ProductConfiguration.freeExportLimit
-            accessMessage = "Free export allowance could not be verified."
+            usedFreeExports = 0
         }
         migrateLegacyBlitzReelsTokenIfNeeded()
         restoreCachedBlitzReelsEntitlement()
     }
 
     var isPro: Bool {
-        hasValidAppIntegrity && (hasAppStoreSubscription || hasBlitzReelsEntitlement)
+        hasActiveLicense
     }
 
     var freeExportsRemaining: Int {
-        max(0, ProductConfiguration.freeExportLimit - usedFreeExports)
+        ProductConfiguration.freeExportLimit
     }
 
     var canRenderExport: Bool {
-        hasValidAppIntegrity && (isPro || freeExportsRemaining > 0)
+        true
+    }
+
+    var canUseIPhoneCamera: Bool {
+        hasActiveLicense
+    }
+
+    var canUse4KExport: Bool {
+        hasActiveLicense
+    }
+
+    var canUse60FPSExport: Bool {
+        hasActiveLicense
     }
 
     var hasBlitzReelsAccountConnection: Bool {
         blitzReelsTokenStore.loadToken()?.isEmpty == false
     }
 
-    var monthlyPriceLabel: String {
-        monthlyProduct?.displayPrice ?? "$7.99"
-    }
-
-    var annualPriceLabel: String {
-        annualProduct?.displayPrice ?? "$49.99"
+    var hasSavedLicenseKey: Bool {
+        blitzRecorderLicenseKeyStore.loadLicenseKey()?.isEmpty == false
     }
 
     var accessLabel: String {
-        if !hasValidAppIntegrity {
-            return "App verification failed"
-        }
-        if hasAppStoreSubscription {
-            return "Pro is on"
-        }
-        if hasBlitzReelsEntitlement {
-            return blitzReelsPlanName.map { "Free with \($0)" } ?? "Free with BlitzReels"
-        }
-        return "\(freeExportsRemaining) free videos left"
+        hasActiveLicense ? "Early Price license active" : "Free"
     }
 
     func configure() {
-        transactionUpdatesTask?.cancel()
-        transactionUpdatesTask = Task { [weak self] in
-            for await update in Transaction.updates {
-                await self?.handle(transactionResult: update)
-            }
-        }
-
-        Task {
-            await refreshProducts()
-            await refreshEntitlements()
-            await refreshBlitzReelsEntitlementIfNeeded()
-        }
+        isLoadingProducts = false
+        isPurchasing = false
+        hasBlitzReelsEntitlement = false
+        blitzReelsPlanName = nil
+        Task { await refreshLicenseIfNeeded() }
     }
 
     func recordSuccessfulExportIfNeeded() {
-        guard hasValidAppIntegrity else { return }
-        guard !isPro else { return }
-        guard freeExportsRemaining > 0 else { return }
-        let updatedCount = usedFreeExports + 1
-        guard freeExportCounterStore.save(updatedCount) else {
-            usedFreeExports = ProductConfiguration.freeExportLimit
-            accessMessage = "Free export allowance could not be updated."
-            return
-        }
-        usedFreeExports = updatedCount
-    }
-
-    func purchaseMonthly() async {
-        await purchase(product: monthlyProduct, fallbackProductID: ProductConfiguration.monthlyProductID)
-    }
-
-    func purchaseAnnual() async {
-        await purchase(product: annualProduct, fallbackProductID: ProductConfiguration.annualProductID)
-    }
-
-    private func purchase(product existingProduct: Product?, fallbackProductID: String) async {
-        guard hasValidAppIntegrity else {
-            accessMessage = "This copy of BlitzRecorder could not be verified."
-            return
-        }
-        isPurchasing = true
-        defer { isPurchasing = false }
-
-        do {
-            let product: Product
-            if let existingProduct {
-                product = existingProduct
-            } else {
-                await refreshProducts()
-                let loadedProduct = fallbackProductID == ProductConfiguration.monthlyProductID
-                    ? monthlyProduct
-                    : annualProduct
-                guard let loadedProduct else {
-                    accessMessage = "We couldn't load Pro. Try again soon."
-                    return
-                }
-                product = loadedProduct
-            }
-
-            let result = try await product.purchase()
-            switch result {
-            case .success(let verification):
-                let transaction = try checkVerified(verification)
-                hasAppStoreSubscription = ProductConfiguration.isAppStoreProductID(transaction.productID)
-                    && transaction.revocationDate == nil
-                await transaction.finish()
-                accessMessage = hasAppStoreSubscription ? "Pro is on." : ""
-            case .userCancelled:
-                accessMessage = "You cancelled the purchase."
-            case .pending:
-                accessMessage = "Your purchase is waiting for approval."
-            @unknown default:
-                accessMessage = "The purchase didn't go through."
-            }
-        } catch {
-            accessMessage = "We couldn't finish the purchase: \(error.localizedDescription)"
-        }
-    }
-
-    func restorePurchases() async {
-        guard hasValidAppIntegrity else {
-            accessMessage = "This copy of BlitzRecorder could not be verified."
-            return
-        }
-        do {
-            try await AppStore.sync()
-            await refreshEntitlements()
-            accessMessage = isPro ? "Your purchases are back." : "We didn't find a Pro plan to restore."
-        } catch {
-            accessMessage = "We couldn't restore your purchases: \(error.localizedDescription)"
-        }
-    }
-
-    func openSubscriptionManagement() {
-        let subscriptionsURL = URL(string: "macappstore://showSubscriptions")!
-        if !NSWorkspace.shared.open(subscriptionsURL),
-           let fallbackURL = URL(string: "https://apps.apple.com/account/subscriptions") {
-            NSWorkspace.shared.open(fallbackURL)
-        }
+        usedFreeExports = 0
     }
 
     func beginBlitzReelsSignIn() {
-        var components = URLComponents(url: ProductConfiguration.blitzReelsSignInURL, resolvingAgainstBaseURL: false)
-        components?.queryItems = [
-            URLQueryItem(name: "return_to", value: "blitzrecorder://auth/blitzreels")
-        ]
-        NSWorkspace.shared.open(components?.url ?? ProductConfiguration.blitzReelsSignInURL)
+        accessMessage = "No account is required."
+    }
+
+    func beginPurchase() {
+        NSWorkspace.shared.open(ProductConfiguration.earlyPriceURL)
+    }
+
+    func activateLicenseKey(_ licenseKey: String) async {
+        let normalizedKey = licenseKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedKey.isEmpty else {
+            accessMessage = "Paste your BlitzRecorder license key first."
+            return
+        }
+
+        isValidatingLicense = true
+        defer { isValidatingLicense = false }
+
+        do {
+            let validation = try await blitzRecorderLicenseValidator.validate(licenseKey: normalizedKey)
+            guard validation.ok, validation.status == "active", let payload = validation.payload else {
+                clearLicenseState(deleteStoredKey: true)
+                accessMessage = validation.reason ?? "This license is not active."
+                return
+            }
+
+            guard blitzRecorderLicenseKeyStore.saveLicenseKey(normalizedKey) else {
+                accessMessage = "License is valid, but it could not be saved. Please try again."
+                return
+            }
+
+            applyActiveLicense(payload)
+            accessMessage = "License activated for \(payload.email)."
+        } catch {
+            accessMessage = "We couldn't validate this license: \(error.localizedDescription)"
+        }
+    }
+
+    func refreshLicenseIfNeeded() async {
+        guard blitzRecorderLicenseKeyStore.loadLicenseKey()?.isEmpty == false else {
+            clearLicenseState(deleteStoredKey: false)
+            return
+        }
+        await refreshLicense()
+    }
+
+    func refreshLicense() async {
+        guard let licenseKey = blitzRecorderLicenseKeyStore.loadLicenseKey(), !licenseKey.isEmpty else {
+            clearLicenseState(deleteStoredKey: false)
+            accessMessage = "No BlitzRecorder license is saved."
+            return
+        }
+
+        isValidatingLicense = true
+        defer { isValidatingLicense = false }
+
+        do {
+            let validation = try await blitzRecorderLicenseValidator.validate(licenseKey: licenseKey)
+            guard validation.ok, validation.status == "active", let payload = validation.payload else {
+                clearLicenseState(deleteStoredKey: true)
+                accessMessage = validation.reason ?? "Your saved license is no longer active."
+                return
+            }
+
+            applyActiveLicense(payload)
+            accessMessage = "License active for \(payload.email)."
+        } catch {
+            hasActiveLicense = false
+            accessMessage = "We couldn't check your license: \(error.localizedDescription)"
+        }
+    }
+
+    func clearLicense() {
+        clearLicenseState(deleteStoredKey: true)
+        accessMessage = "License removed from this Mac."
+    }
+
+    @discardableResult
+    func requirePaidFeature(_ featureName: String) -> Bool {
+        guard hasActiveLicense else {
+            accessMessage = "\(featureName) requires a BlitzRecorder Early Price license."
+            return false
+        }
+        return true
     }
 
     func disconnectBlitzReels() {
@@ -819,96 +940,12 @@ final class AccessController {
     }
 
     func refreshBlitzReelsEntitlement() async {
-        guard hasValidAppIntegrity else {
-            clearBlitzReelsEntitlement()
-            return
-        }
-        guard let token = blitzReelsTokenStore.loadToken(), !token.isEmpty else {
-            clearBlitzReelsEntitlement()
-            return
-        }
-
-        do {
-            let entitlement = try await blitzReelsEntitlementChecker.entitlement(for: token)
-            hasBlitzReelsEntitlement = entitlement.active
-            blitzReelsPlanName = entitlement.active ? entitlement.planName : nil
-            if let planName = blitzReelsPlanName {
-                _ = blitzReelsEntitlementCacheStore.save(
-                    planName: planName,
-                    token: token,
-                    verifiedAt: dateProvider()
-                )
-                defaults.removeObject(forKey: Key.blitzReelsPlanName)
-                defaults.removeObject(forKey: Key.blitzReelsVerifiedAt)
-                accessMessage = "Pro is free with \(planName)."
-            } else {
-                clearBlitzReelsEntitlement()
-                accessMessage = "We didn't find a BlitzReels plan on your account."
-            }
-        } catch let error as BlitzReelsEntitlementHTTPError where error.statusCode == 401 || error.statusCode == 403 {
-            blitzReelsTokenStore.deleteToken()
-            defaults.removeObject(forKey: Key.blitzReelsAccessToken)
-            clearBlitzReelsEntitlement()
-            accessMessage = "Your BlitzReels sign-in expired. Please sign in again."
-        } catch {
-            handleBlitzReelsVerificationUnavailable(error)
-        }
+        clearBlitzReelsEntitlement()
+        accessMessage = "BlitzRecorder is free and open source. No account is required."
     }
 
     func refreshBlitzReelsEntitlementIfNeeded() async {
-        guard hasBlitzReelsAccountConnection else {
-            clearBlitzReelsEntitlement()
-            return
-        }
-        guard !hasBlitzReelsEntitlement || !hasFreshBlitzReelsVerification else {
-            return
-        }
-        await refreshBlitzReelsEntitlement()
-    }
-
-    private func refreshProducts() async {
-        isLoadingProducts = true
-        defer { isLoadingProducts = false }
-
-        do {
-            let products = try await Product.products(for: ProductConfiguration.appStoreProductIDs)
-            monthlyProduct = products.first { $0.id == ProductConfiguration.monthlyProductID }
-            annualProduct = products.first { $0.id == ProductConfiguration.annualProductID }
-        } catch {
-            accessMessage = "We couldn't load Pro: \(error.localizedDescription)"
-        }
-    }
-
-    private func refreshEntitlements() async {
-        guard hasValidAppIntegrity else {
-            hasAppStoreSubscription = false
-            return
-        }
-        var hasSubscription = false
-        for await entitlement in Transaction.currentEntitlements {
-            do {
-                let transaction = try checkVerified(entitlement)
-                if ProductConfiguration.isAppStoreProductID(transaction.productID),
-                   transaction.revocationDate == nil {
-                    hasSubscription = true
-                }
-            } catch {
-                continue
-            }
-        }
-        hasAppStoreSubscription = hasSubscription
-    }
-
-    private func handle(transactionResult: VerificationResult<Transaction>) async {
-        do {
-            let transaction = try checkVerified(transactionResult)
-            if ProductConfiguration.isAppStoreProductID(transaction.productID) {
-                await refreshEntitlements()
-            }
-            await transaction.finish()
-        } catch {
-            accessMessage = "We couldn't check that purchase."
-        }
+        clearBlitzReelsEntitlement()
     }
 
     private func restoreCachedBlitzReelsEntitlement() {
@@ -998,20 +1035,22 @@ final class AccessController {
         defaults.removeObject(forKey: Key.blitzReelsVerifiedAt)
     }
 
-    private func checkVerified<T>(_ result: VerificationResult<T>) throws -> T {
-        switch result {
-        case .verified(let value):
-            return value
-        case .unverified:
-            throw AccessError.failedVerification
+    private func applyActiveLicense(_ payload: BlitzRecorderLicenseValidationResponse.Payload) {
+        hasActiveLicense = true
+        licenseEmail = payload.email
+        licenseID = payload.licenseId
+        onLicenseStateChanged?()
+    }
+
+    private func clearLicenseState(deleteStoredKey: Bool) {
+        hasActiveLicense = false
+        licenseEmail = nil
+        licenseID = nil
+        if deleteStoredKey {
+            blitzRecorderLicenseKeyStore.deleteLicenseKey()
+            defaults.removeObject(forKey: Key.blitzRecorderLicenseKey)
         }
+        onLicenseStateChanged?()
     }
-}
 
-enum AccessError: LocalizedError {
-    case failedVerification
-
-    var errorDescription: String? {
-        "The App Store transaction could not be verified."
-    }
 }

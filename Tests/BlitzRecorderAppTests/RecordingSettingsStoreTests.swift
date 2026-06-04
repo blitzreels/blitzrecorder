@@ -134,6 +134,26 @@ final class RecordingSettingsStoreTests: XCTestCase {
         XCTAssertEqual(loaded.remoteCameraSettingsByServiceID, settings.remoteCameraSettingsByServiceID)
     }
 
+    func testPersistsScreenSourceBinding() {
+        let defaults = temporaryDefaults()
+        var settings = RecordingSettings()
+        settings.screenSourceBinding = ScreenSourceBinding(
+            kind: .application,
+            displayID: "1",
+            bundleIdentifier: "com.google.Chrome",
+            applicationName: "Google Chrome",
+            processID: 42,
+            windowID: nil,
+            windowTitle: nil
+        )
+
+        RecordingSettingsStore.save(settings, defaults: defaults)
+        let loaded = RecordingSettingsStore.load(defaults: defaults)
+
+        XCTAssertEqual(loaded.screenSourceBinding, settings.screenSourceBinding)
+        XCTAssertFalse(loaded.usesPickedScreenContent)
+    }
+
     func testSaveSourceFilesDefaultsOffAndPersists() {
         let defaults = temporaryDefaults()
 

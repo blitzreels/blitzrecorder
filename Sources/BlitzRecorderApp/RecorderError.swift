@@ -13,6 +13,7 @@ enum RecorderError: LocalizedError {
     case noSourcesSelected
     case outputDirectoryUnavailable(String)
     case screenCapturePermissionRequired
+    case screenSourceUnavailable(String)
     case screenSelectionCancelled
     case screenSelectionInProgress
     case backgroundRemovalUnavailable
@@ -48,6 +49,8 @@ enum RecorderError: LocalizedError {
             "Export folder is not writable: \(reason)"
         case .screenCapturePermissionRequired:
             "Screen & System Audio Recording permission is required. Enable BlitzRecorder in Privacy settings, then quit and reopen the app."
+        case .screenSourceUnavailable(let name):
+            "\(name) is not available for capture. Open it or choose another screen source."
         case .screenSelectionCancelled:
             "Screen selection was cancelled."
         case .screenSelectionInProgress:

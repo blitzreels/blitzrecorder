@@ -24,6 +24,26 @@ The normal artifact lane can run without Apple credentials on non-tag builds. It
 
 Release builds are triggered by Git tags that start with `v`, for example `v0.1.0`. Tagged builds create a universal macOS DMG, sign and notarize it, generate `SHA256SUMS`, and attach both files to the GitHub Release.
 
+Do not copy local or non-tag CI DMGs into `Web/blitzrecorder/public/downloads` for end users. The website download button falls back to GitHub Releases until `getLatestRelease()` finds a published `.dmg` asset, and `Scripts/check-github-release-readiness.sh` rejects static public DMGs unless `Scripts/validate-public-dmg.sh --require-notarized` passes.
+
+`Scripts/ci-macos-dmg.sh` validates every produced DMG through `Scripts/validate-public-dmg.sh`. The validator checks:
+
+- disk image integrity
+- DMG code signature when present
+- app bundle signature, entitlements, architectures, bundle ID, and minimum macOS
+- Gatekeeper open assessment and stapled ticket for notarized releases
+- generated provenance metadata under `build/ReleaseEvidence/dmg/metadata.json`
+
+Run the release-grade validation manually with:
+
+```bash
+Scripts/validate-public-dmg.sh \
+  --dmg path/to/BlitzRecorder.dmg \
+  --require-notarized
+```
+
+The GitHub DMG workflow uploads `build/ReleaseEvidence` as a separate artifact so signing, Gatekeeper, stapler, architecture, notarization, and metadata evidence remain available after the run. Tagged releases also attach `release-metadata.json` beside the DMG, checksums, and Sparkle appcast.
+
 The DMG filename includes the app version, build number, platform, and architecture label:
 
 ```text
@@ -56,6 +76,35 @@ To build only the native host architecture locally:
 APP_ARCHS=native ALLOW_AD_HOC_RELEASE_SIGNING=1 ENTITLEMENTS_PATH="$PWD/BlitzRecorder.local.entitlements" Scripts/package-dmg.sh
 ```
 
+## Automatic updates
+
+Direct macOS DMG builds include Sparkle for in-app update checks. `Scripts/package-app.sh` sets `DIRECT_DISTRIBUTION=1`, embeds `Sparkle.framework`, and uses the non-sandboxed local entitlements by default so Sparkle can replace the installed app.
+
+Automatic checks and automatic install are enabled only when the package step receives the Sparkle public EdDSA key:
+
+```bash
+SPARKLE_PUBLIC_ED_KEY="$SPARKLE_PUBLIC_ED_KEY" \
+SPARKLE_APPCAST_URL="https://github.com/blitzreels/blitzrecorder-public/releases/latest/download/appcast.xml" \
+Scripts/package-dmg.sh
+```
+
+`SPARKLE_APPCAST_URL` defaults to `https://blitzrecorder.com/appcast.xml` for local builds. The GitHub release workflow overrides it to `https://github.com/blitzreels/blitzrecorder-public/releases/latest/download/appcast.xml`, so the direct-download app can update from the latest GitHub Release asset.
+
+Tagged GitHub releases sign the appcast with `SPARKLE_PRIVATE_ED_KEY` and attach `appcast.xml` beside the DMG and `SHA256SUMS`. App Store builds do not include Sparkle; the in-app menu opens the Mac App Store updates page because App Store updates are managed by macOS.
+
+Release notes should be present in two places for every tagged release:
+
+- GitHub Releases, because the app's Help -> Release Notes item opens the latest GitHub release.
+- The Sparkle appcast item, because Sparkle shows release notes before users install a direct-download update.
+
+Generate or reuse the Sparkle keypair and store it as GitHub Actions secrets with:
+
+```bash
+Scripts/configure-github-sparkle-secrets.sh
+```
+
+The script writes `SPARKLE_PUBLIC_ED_KEY` and `SPARKLE_PRIVATE_ED_KEY`. It never prints the secret values.
+
 ## Versioning
 
 `MARKETING_VERSION` is the public version, such as `0.1.0`. `CURRENT_PROJECT_VERSION` is the Apple build number, such as `1`.
@@ -71,6 +120,48 @@ Before making the repository public, run:
 ```bash
 Scripts/check-open-source-readiness.sh
 ```
+
+If that check fails because old Git history contains private tooling or other non-public material, publish from a fresh-history snapshot instead of making the existing history public:
+
+```bash
+Scripts/create-public-snapshot.sh
+```
+
+The snapshot is created under `build/public-snapshot`, committed as a fresh Git repository, and verified with the same open-source readiness and history-audit gates. To push it to a separate public repo or staging branch:
+
+```bash
+Scripts/create-public-snapshot.sh \
+  --remote git@github.com:blitzreels/blitzrecorder-public.git \
+  --branch main \
+  --push
+```
+
+You can automate that separate-public-repo path with:
+
+```bash
+Scripts/publish-public-snapshot.sh
+Scripts/publish-public-snapshot.sh --apply
+```
+
+The dry run prints the `gh` and `git` commands first. The default target is `blitzreels/blitzrecorder-public`, keeping this private development repo and its old history private.
+
+If you instead want this existing GitHub repo to become the public repo, promote the verified `public-main` branch first:
+
+```bash
+Scripts/promote-public-branch.sh
+```
+
+That dry run verifies `public-main`, then prints the default-branch change. To actually make the current repo public and delete the old remote `main` ref, run:
+
+```bash
+Scripts/promote-public-branch.sh \
+  --make-public \
+  --delete-main \
+  --confirm promote-clean-public-branch \
+  --apply
+```
+
+Use that only after confirming no other remote refs or tags point to private history.
 
 If the GitHub repo is not created yet or your active `gh` account cannot access it, run the local checks only:
 
@@ -111,11 +202,11 @@ git tag v0.1.1
 git push origin main --tags
 ```
 
-The `v*` tag starts the macOS DMG workflow and publishes the GitHub Release assets.
+The `v*` tag starts the macOS DMG workflow and publishes the GitHub Release assets: universal DMG, `SHA256SUMS`, and signed Sparkle `appcast.xml`.
 
 ## GitHub release secrets
 
-Tagged macOS releases require Developer ID and App Store Connect notary secrets. You can configure them with:
+Tagged macOS releases require Developer ID, App Store Connect notary, and Sparkle update secrets. You can configure the Developer ID and notary secrets with:
 
 ```bash
 DEVELOPER_ID_CERTIFICATE_PATH="$PWD/private/DeveloperID.p12" \
@@ -125,6 +216,18 @@ ASC_KEY_ID="$ASC_KEY_ID" \
 ASC_ISSUER_ID="$ASC_ISSUER_ID" \
 ASC_PRIVATE_KEY_PATH="$PWD/private/AuthKey_$ASC_KEY_ID.p8" \
 Scripts/configure-github-release-secrets.sh
+```
+
+Configure Sparkle update signing separately:
+
+```bash
+Scripts/configure-github-sparkle-secrets.sh
+```
+
+If the Developer ID Application certificate is already installed in the local macOS Keychain, you can export and upload only that identity without creating a long-lived `.p12` file:
+
+```bash
+Scripts/configure-github-developer-id-from-keychain.sh --repo OWNER/REPO
 ```
 
 App Store and TestFlight workflows use Apple Distribution signing. Configure those separately:
@@ -182,5 +285,14 @@ Reusable local command:
 ```bash
 TARGET=all EXPORT=1 UPLOAD=0 TEAM_ID="$APPLE_TEAM_ID" Scripts/archive-app-store.sh
 ```
+
+`Scripts/validate-submission-artifacts.sh` is target-aware and is run in strict mode by the TestFlight and App Store workflows after archive/export:
+
+```bash
+Scripts/validate-submission-artifacts.sh --strict --target ios
+Scripts/validate-submission-artifacts.sh --strict --target all
+```
+
+Set `REQUIRE_EXPORTS=0` for archive-only validations. CI stores the strict validation log under `build/ReleaseEvidence/ios-testflight` or `build/ReleaseEvidence/app-store` and uploads it with the build artifacts.
 
 Credential and secret setup is documented in [../AppStore/CI.md](../AppStore/CI.md).

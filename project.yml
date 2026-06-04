@@ -53,6 +53,11 @@ targets:
       configs:
         Debug:
           CODE_SIGN_ENTITLEMENTS: BlitzRecorder.local.entitlements
+          # Distinct bundle id for local dev so it gets its own stable TCC slot
+          # and never collides with the Developer-ID release in /Applications.
+          # Grant the dev build its permissions once; the DR is stable so they
+          # persist across rebuilds (see project_blitzrecorder_accessibility_tcc).
+          PRODUCT_BUNDLE_IDENTIFIER: dev.blitzreels.blitzrecorder.debug
         Release:
           CODE_SIGN_ENTITLEMENTS: BlitzRecorder.entitlements
           ENABLE_HARDENED_RUNTIME: YES
@@ -119,7 +124,6 @@ schemes:
         BlitzRecorder: all
     run:
       config: Debug
-      storeKitConfiguration: AppStore/BlitzRecorder.storekit
   BlitzRecorderCamera:
     build:
       targets:

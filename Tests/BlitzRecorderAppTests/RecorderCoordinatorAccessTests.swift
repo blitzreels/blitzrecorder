@@ -1,28 +1,22 @@
 import Foundation
+import BlitzRecorderCore
 @testable import BlitzRecorderApp
 import XCTest
 
 @MainActor
 final class RecorderCoordinatorAccessTests: XCTestCase {
-    func testRecordingStartIsBlockedAfterFreeExportsAreUsed() {
+    func testRecordingStartIsNotBlockedByLegacyExportCount() {
         let defaults = temporaryDefaults()
         let access = AccessController(defaults: defaults)
         for _ in 0..<ProductConfiguration.freeExportLimit {
             access.recordSuccessfulExportIfNeeded()
         }
 
-        let coordinator = RecorderCoordinator(accessController: access, defaults: defaults)
-        var messages: [String] = []
-        coordinator.onMessage = { messages.append($0) }
-
-        coordinator.start()
-
-        XCTAssertEqual(coordinator.state, .idle)
-        XCTAssertEqual(messages, ["Free exports used. Subscribe for unlimited renders."])
-        XCTAssertEqual(access.usedFreeExports, ProductConfiguration.freeExportLimit)
+        XCTAssertTrue(access.canRenderExport)
+        XCTAssertEqual(access.usedFreeExports, 0)
     }
 
-    func testReadinessDetailsOpenPlanAfterFreeExportsAreUsed() {
+    func testReadinessDetailsOpenPermissionsWhenAccessIsFree() {
         let defaults = temporaryDefaults()
         let access = AccessController(defaults: defaults)
         for _ in 0..<ProductConfiguration.freeExportLimit {
@@ -36,9 +30,7 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
 
         viewModel.openReadinessDetails()
 
-        // Free exports exhausted -> the upgrade surface is the Settings Account pane
-        // (the 6-item app rail / `appTab` was removed in the studio redesign).
-        XCTAssertEqual(presentedPane, .account)
+        XCTAssertEqual(presentedPane, .permissions)
     }
 
     func testViewModelAppliesSavedOutputAfterStopWarning() {
@@ -197,6 +189,114 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
 
         XCTAssertEqual(coordinator.state, .idle)
         XCTAssertEqual(messages, ["Start failed: Select at least one source before recording."])
+    }
+
+    func testFreeAccessBlocksPaidOutputControls() {
+        let defaults = temporaryDefaults()
+        let access = AccessController(defaults: defaults)
+        let coordinator = RecorderCoordinator(accessController: access, defaults: defaults)
+        var messages: [String] = []
+        coordinator.onMessage = { messages.append($0) }
+
+        coordinator.setOutputResolution(.p2160)
+        coordinator.setFramesPerSecond(60)
+
+        XCTAssertEqual(coordinator.settings.outputResolution, .p1080)
+        XCTAssertEqual(coordinator.settings.framesPerSecond, 30)
+        XCTAssertEqual(
+            messages,
+            [
+                "4K export requires a BlitzRecorder Early Price license.",
+                "60 fps export requires a BlitzRecorder Early Price license."
+            ]
+        )
+    }
+
+    func testFreeAccessBlocksRemoteCameraSelection() {
+        let defaults = temporaryDefaults()
+        let access = AccessController(defaults: defaults)
+        let coordinator = RecorderCoordinator(accessController: access, defaults: defaults)
+        var messages: [String] = []
+        coordinator.onMessage = { messages.append($0) }
+
+        coordinator.setCamera(id: RemoteCameraProviderID.make(for: "iphone-15-pro"))
+
+        XCTAssertNil(coordinator.settings.selectedCameraID)
+        XCTAssertEqual(messages, ["iPhone camera requires a BlitzRecorder Early Price license."])
+    }
+
+    func testFreeAccessBlocksDirectRemoteCameraConnection() {
+        let defaults = temporaryDefaults()
+        let access = AccessController(defaults: defaults)
+        let coordinator = RecorderCoordinator(accessController: access, defaults: defaults)
+        var messages: [String] = []
+        coordinator.onMessage = { messages.append($0) }
+
+        coordinator.connectDirectRemoteCamera(host: "127.0.0.1", portString: "49152")
+
+        XCTAssertNil(coordinator.settings.selectedCameraID)
+        XCTAssertEqual(messages, ["iPhone camera requires a BlitzRecorder Early Price license."])
+    }
+
+    func testFreeAccessDowngradesPersistedPaidSettingsOnLaunch() {
+        let defaults = temporaryDefaults()
+        var settings = RecordingSettings()
+        settings.outputResolution = .p2160
+        settings.framesPerSecond = 60
+        settings.selectedCameraID = RemoteCameraProviderID.make(for: "iphone-15-pro")
+        RecordingSettingsStore.save(settings, defaults: defaults)
+
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults),
+            defaults: defaults
+        )
+
+        XCTAssertEqual(coordinator.settings.outputResolution, .p1080)
+        XCTAssertEqual(coordinator.settings.framesPerSecond, 30)
+        XCTAssertNil(coordinator.settings.selectedCameraID)
+
+        let restoredSettings = RecordingSettingsStore.load(defaults: defaults)
+        XCTAssertEqual(restoredSettings.outputResolution, .p1080)
+        XCTAssertEqual(restoredSettings.framesPerSecond, 30)
+        XCTAssertNil(restoredSettings.selectedCameraID)
+    }
+
+    func testSavedLicenseKeyDefersPaidSettingsDowngradeOnLaunch() {
+        let defaults = temporaryDefaults()
+        var settings = RecordingSettings()
+        settings.outputResolution = .p2160
+        settings.framesPerSecond = 60
+        settings.selectedCameraID = RemoteCameraProviderID.make(for: "iphone-15-pro")
+        RecordingSettingsStore.save(settings, defaults: defaults)
+        defaults.set("BRL1_saved", forKey: "access.blitzRecorderLicenseKey")
+
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults),
+            defaults: defaults
+        )
+
+        XCTAssertEqual(coordinator.settings.outputResolution, .p2160)
+        XCTAssertEqual(coordinator.settings.framesPerSecond, 60)
+        XCTAssertEqual(
+            RemoteCameraProviderID.serviceID(from: coordinator.settings.selectedCameraID),
+            "iphone-15-pro"
+        )
+    }
+
+    func testActiveLicenseAllowsPaidOutputControls() {
+        let defaults = temporaryDefaults()
+        let access = AccessController(defaults: defaults)
+        access.hasActiveLicense = true
+        let coordinator = RecorderCoordinator(accessController: access, defaults: defaults)
+        var messages: [String] = []
+        coordinator.onMessage = { messages.append($0) }
+
+        coordinator.setOutputResolution(.p2160)
+        coordinator.setFramesPerSecond(60)
+
+        XCTAssertEqual(coordinator.settings.outputResolution, .p2160)
+        XCTAssertEqual(coordinator.settings.framesPerSecond, 60)
+        XCTAssertTrue(messages.isEmpty)
     }
 
     private func temporaryDefaults() -> UserDefaults {

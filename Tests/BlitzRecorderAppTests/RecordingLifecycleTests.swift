@@ -413,6 +413,39 @@ final class RecordingLifecycleTests: XCTestCase {
     }
 
     @MainActor
+    func testCaptureSourceRunCanUseRemoteCameraAdapterForCameraSource() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .camera]
+        settings.selectedCameraID = RemoteCameraProviderID.make(for: "iphone-15-pro")
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        let localCamera = FailingCameraCaptureRecorder(error: RecorderError.cameraDidNotStart)
+        let remoteCamera = SpyRemoteCameraCaptureRecorder(completion: .wrote(take.cameraURL))
+        let run = CaptureSourceRun(
+            take: take,
+            settings: settings,
+            pickedScreenFilter: nil,
+            screenRecorder: SpyScreenCaptureRecorder(stopCompletion: .wrote(take.screenURL)),
+            cameraRecorder: localCamera,
+            remoteCameraRecorder: remoteCamera,
+            audioRecorder: SpyMicrophoneCaptureRecorder(),
+            systemAudioRecorder: NoopSystemAudioCaptureRecorder()
+        )
+
+        let start = try await run.start()
+        let summary = await run.stop()
+
+        XCTAssertEqual(localCamera.startCount, 0)
+        XCTAssertEqual(remoteCamera.startCount, 1)
+        XCTAssertEqual(remoteCamera.stopCount, 1)
+        XCTAssertEqual(remoteCamera.capturedHostTimelineStartTime, start.hostTimelineStartTime)
+        XCTAssertEqual(remoteCamera.capturedStartSettings?.selectedCameraID, settings.selectedCameraID)
+        XCTAssertEqual(summary.completions[.camera], .wrote(take.cameraURL))
+    }
+
+    @MainActor
     func testCaptureSourceRunStopPreservesVideoCompletionWhenAudioStopFails() async throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
@@ -1359,6 +1392,52 @@ final class RecordingLifecycleTests: XCTestCase {
     }
 
     @MainActor
+    func testTakeFinalizerKeepsRecoveryFilesWhenVisibleIPhoneCameraMediaIsMissing() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .camera, .microphone]
+        settings.selectedCameraID = RemoteCameraProviderID.make(for: "iphone-15-pro")
+        settings.framesPerSecond = 30
+        settings.outputResolution = .p720
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try writeTestMovie(
+            url: take.screenURL,
+            codec: .h264,
+            color: (blue: 255, green: 0, red: 0, alpha: 255)
+        )
+
+        let finalizer = TakeFinalizer(
+            speechTranscriber: SpeechTranscriber(),
+            titleGenerator: TitleGenerator(),
+            fileStore: store
+        )
+        let outcome = await finalizer.finalize(
+            take: take,
+            settings: settings,
+            captureSummary: CaptureSourceRunSummary(
+                completions: [
+                    .screen: .wrote(take.screenURL),
+                    .camera: .empty(take.cameraURL)
+                ],
+                stopFailures: [
+                    .microphone: RecorderError.microphoneUnavailable.localizedDescription
+                ]
+            )
+        )
+
+        guard case .recoveryFiles(let recoveryTake, let reason) = outcome else {
+            return XCTFail("Expected recovery files when visible iPhone camera media is missing")
+        }
+
+        XCTAssertEqual(recoveryTake.scratchDirectory, take.scratchDirectory)
+        XCTAssertTrue(reason.contains("iPhone camera video"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: take.scratchDirectory.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: take.finalVideoURL.path))
+    }
+
+    @MainActor
     func testTakeFinalizerMergesAudioForTransparentCameraOnlyExport() async throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
@@ -2010,6 +2089,41 @@ private final class FailingCameraCaptureRecorder: CameraCaptureRecording {
     func pause() {}
     func resume() {}
     func stop() async throws -> MediaWriterCompletion { .empty() }
+}
+
+private final class SpyRemoteCameraCaptureRecorder: RemoteCameraCaptureRecording {
+    private(set) var startCount = 0
+    private(set) var stopCount = 0
+    private(set) var pauseCount = 0
+    private(set) var resumeCount = 0
+    private(set) var capturedHostTimelineStartTime: UInt64?
+    private(set) var capturedStartSettings: RecordingSettings?
+    private(set) var capturedStopSettings: RecordingSettings?
+    let completion: MediaWriterCompletion
+
+    init(completion: MediaWriterCompletion) {
+        self.completion = completion
+    }
+
+    func startRemoteCamera(take: RecordingTake, settings: RecordingSettings, hostTimelineStartTime: UInt64) async throws {
+        startCount += 1
+        capturedStartSettings = settings
+        capturedHostTimelineStartTime = hostTimelineStartTime
+    }
+
+    func pauseRemoteCamera() {
+        pauseCount += 1
+    }
+
+    func resumeRemoteCamera() {
+        resumeCount += 1
+    }
+
+    func stopRemoteCamera(take: RecordingTake, settings: RecordingSettings) async throws -> MediaWriterCompletion {
+        stopCount += 1
+        capturedStopSettings = settings
+        return completion
+    }
 }
 
 private final class SpyMicrophoneCaptureRecorder: MicrophoneCaptureRecording {

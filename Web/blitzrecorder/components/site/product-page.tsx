@@ -1,12 +1,11 @@
 import Image from "next/image";
 import type { StaticImageData } from "next/image";
 import Link from "next/link";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight } from "@/components/site/icons";
 import { ProductShell } from "@/components/site/product-shell";
 import { CheckItem } from "@/components/site/check-item";
-import { DownloadButton, VersionTag } from "@/components/site/download-button";
+import { DownloadButton, DownloadMeta } from "@/components/site/download-button";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Section } from "@/components/ui/layout";
 import { Heading, Paragraph } from "@/components/ui/typography";
 import { pages, type ProductPageData, type ProductScreen } from "@/lib/content";
@@ -52,12 +51,13 @@ function Hero({ page, isMac }: { page: ProductPageData; isMac: boolean }) {
             See how it works
           </Button>
         </div>
-        <Paragraph tone="faint" size="sm" className="mt-5">
-          {page.requirement}
-        </Paragraph>
         {isMac ? (
-          <VersionTag className="mt-2 inline-flex font-mono text-xs text-muted-foreground transition-colors hover:text-foreground" />
-        ) : null}
+          <DownloadMeta className="mt-5 text-sm" />
+        ) : (
+          <Paragraph tone="faint" size="sm" className="mt-5">
+            {page.requirement}
+          </Paragraph>
+        )}
       </div>
       <div className="grid min-w-0 place-items-center">
         {page.previewKind === "phone" ? <PhoneFrame src={page.preview} /> : <MacFrame src={page.preview} />}
@@ -107,40 +107,61 @@ function Screens({ page }: { page: ProductPageData }) {
   return (
     <Section className="border-t border-border py-20">
       <Heading level={2}>{page.screensTitle}</Heading>
-      <div
-        className={`mt-12 grid gap-5 ${
-          page.screens.length === 4 ? "md:grid-cols-2 lg:grid-cols-4" : "md:grid-cols-2 lg:grid-cols-3"
-        }`}
-      >
+      <div className="mt-16 flex flex-col gap-20 lg:gap-24">
         {page.screens.map((screen, index) => (
-          <ScreenCard key={screen.title} screen={screen} index={index} />
+          <ScreenRow key={screen.title} screen={screen} index={index} />
         ))}
       </div>
     </Section>
   );
 }
 
-function ScreenCard({ screen, index }: { screen: ProductScreen; index: number }) {
-  const imageClass =
-    screen.kind === "icon"
-      ? "mx-auto my-6 w-[min(180px,55%)] rounded-[24%] shadow-2xl"
-      : screen.kind === "phone"
-        ? "mx-auto mt-2 mb-5 w-[min(190px,calc(100%-48px))] rounded-[28px] border border-border"
-        : "mx-4 mt-2 mb-4 w-[calc(100%-32px)] rounded-xl border border-border";
-
+/** One step per row: copy on one side, a properly sized visual on the other. */
+function ScreenRow({ screen, index }: { screen: ProductScreen; index: number }) {
+  const reversed = index % 2 === 1;
   return (
-    <Card className="gap-0 overflow-hidden py-0 ring-border">
-      <CardContent className="p-6 pb-2">
-        <span className="font-mono text-sm font-semibold text-primary">{String(index + 1).padStart(2, "0")}</span>
-        <Heading level={3} className="mt-3">
+    <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
+      <div className={reversed ? "lg:order-2" : undefined}>
+        <span className="font-mono text-sm font-semibold text-primary">
+          {String(index + 1).padStart(2, "0")}
+        </span>
+        <Heading level={3} className="mt-3 text-2xl sm:text-3xl">
           {screen.title}
         </Heading>
-        <Paragraph size="base" className="mt-2">
-          {screen.text}
-        </Paragraph>
-      </CardContent>
-      <Image src={screen.image} alt="" sizes="320px" className={`h-auto ${imageClass}`} />
-    </Card>
+        <Paragraph className="mt-4 max-w-md">{screen.text}</Paragraph>
+      </div>
+      <div className={`grid place-items-center ${reversed ? "lg:order-1" : ""}`}>
+        <ScreenVisual screen={screen} />
+      </div>
+    </div>
+  );
+}
+
+function ScreenVisual({ screen }: { screen: ProductScreen }) {
+  if (screen.kind === "icon") {
+    return (
+      <Image
+        src={screen.image}
+        alt=""
+        sizes="220px"
+        className="my-6 w-[min(220px,55vw)] rounded-[24%] shadow-[0_0_90px_-25px_rgba(94,242,175,0.8)]"
+      />
+    );
+  }
+  if (screen.kind === "phone") {
+    return (
+      <div className="w-[min(290px,72vw)] rounded-[44px] border border-input bg-muted p-3 shadow-2xl">
+        <Image src={screen.image} alt="" sizes="290px" className="h-auto w-full rounded-[34px]" />
+      </div>
+    );
+  }
+  return (
+    <Image
+      src={screen.image}
+      alt=""
+      sizes="(min-width: 1024px) 560px, 100vw"
+      className="h-auto w-full max-w-[560px] rounded-xl border border-border shadow-2xl"
+    />
   );
 }
 

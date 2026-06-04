@@ -2,7 +2,7 @@
 
 import type { CSSProperties } from "react";
 import Image from "next/image";
-import { ArrowUpRight, Check } from "lucide-react";
+import { ChevronDown, FeatureIcon } from "@/components/site/icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,14 +12,20 @@ import { SiteNav } from "@/components/site/site-nav";
 import { SiteFooter } from "@/components/site/site-footer";
 import { SiteBackground } from "@/components/site/site-background";
 import { CheckItem } from "@/components/site/check-item";
-import { DownloadButton } from "@/components/site/download-button";
-import { useRelease } from "@/components/site/release-context";
+import { BuyButton } from "@/components/site/buy-button";
+import {
+  DownloadButton,
+  DownloadMeta,
+  GitHubMark,
+} from "@/components/site/download-button";
 import { useReveal } from "@/components/site/use-reveal";
+import { GITHUB_REPO_URL } from "@/lib/release";
+import { OPEN_SOURCE } from "@/lib/flags";
 import { assets } from "@/lib/assets";
 import {
-  BLITZREELS_URL,
-  cleanOutcomes,
-  workflowCards,
+  features,
+  setups,
+  faqs,
   pricing,
   requirements,
   type Plan,
@@ -37,10 +43,11 @@ export function Landing() {
       <SiteNav />
       <main>
         <Hero />
-        <CleanSources />
+        <Features />
         <IphoneCompanion />
-        <Workflow />
+        <Setups />
         <Pricing />
+        <Faq />
         <ClosingCTA />
       </main>
       <SiteFooter />
@@ -71,124 +78,169 @@ function Eyebrow({ children, center }: { children: React.ReactNode; center?: boo
 }
 
 function Hero() {
-  const release = useRelease();
   return (
-    <Section className="relative pt-32 pb-20 text-center sm:pt-40">
-      <div data-reveal className="flex justify-center">
-        <span className="glass ring-gradient inline-flex items-center gap-2.5 rounded-full px-4 py-1.5 text-sm text-muted-foreground">
-          <span className="relative flex size-1.5">
-            <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
-            <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
-          </span>
-          Beta for Mac creators
-        </span>
-      </div>
-
-      <Heading
-        level={1}
-        data-reveal
-        className="mx-auto mt-7 max-w-[15ch] text-5xl leading-[0.94] sm:text-7xl lg:text-[5.4rem]"
-        style={revealDelay("60ms")}
-      >
-        Your iPhone is
-        <br />
-        <span className="text-gradient">your studio camera.</span>
-      </Heading>
-      <Paragraph
-        data-reveal
-        className="mx-auto mt-7 max-w-2xl text-balance sm:text-xl"
-        style={revealDelay("120ms")}
-      >
-        It connects to your{" "}
-        <span className="font-semibold whitespace-nowrap text-foreground">
-          <AppleLogo className="mr-1.5 inline-block h-[0.85em] w-auto align-[-0.08em]" />
-          Mac
-        </span>{" "}
-        and records locally on the phone, so your camera source stays sharp.
-      </Paragraph>
-      <div
-        data-reveal
-        className="mt-9 flex flex-wrap items-center justify-center gap-3"
-        style={revealDelay("180ms")}
-      >
-        <DownloadButton className="h-12 rounded-full px-7 text-base shadow-[0_20px_60px_-22px_rgba(94,242,175,0.95)] transition-transform hover:scale-[1.03]" />
-        <Button
-          variant="outline"
-          render={<a href="#how" />}
-          className="h-12 rounded-full px-7 text-base"
+    <Section className="relative grid items-center gap-9 pt-24 pb-24 sm:gap-14 sm:pt-40 xl:grid-cols-[1fr_1.18fr] xl:gap-12">
+      {/* Left — copy */}
+      <div className="text-center xl:text-left">
+        <Heading
+          level={1}
+          data-reveal
+          // clamp keeps "studio quality." on one line down to 320px-wide phones
+          className="mx-auto max-w-[15ch] text-[clamp(2.25rem,14vw_-_8px,3rem)] leading-[0.94] sm:text-7xl xl:mx-0 xl:text-[4.4rem]"
+          style={revealDelay("60ms")}
         >
-          See how it works
-        </Button>
+          Short video,
+          <br />
+          <span className="text-gradient">studio quality.</span>
+        </Heading>
+        <Paragraph
+          data-reveal
+          className="mx-auto mt-5 max-w-xl text-balance sm:mt-6 sm:text-xl xl:mx-0"
+          style={revealDelay("120ms")}
+        >
+          Your iPhone is the camera, recording locally at full resolution. Run
+          it from your{" "}
+          <span className="font-semibold whitespace-nowrap text-foreground">
+            <AppleLogo className="mr-1.5 inline-block h-[0.85em] w-auto align-[-0.08em]" />
+            Mac
+          </span>
+          .
+        </Paragraph>
+        <div
+          data-reveal
+          className="mt-7 flex flex-col items-center gap-3 min-[480px]:flex-row min-[480px]:flex-wrap min-[480px]:justify-center sm:mt-8 xl:justify-start"
+          style={revealDelay("180ms")}
+        >
+          <BuyButton className="h-12 w-full max-w-80 rounded-full px-7 text-base shadow-[0_20px_60px_-22px_rgba(94,242,175,0.95)] transition-transform hover:scale-[1.03] min-[480px]:w-auto" />
+          {/* On phones the secondary action is a quiet link, not a second pill. */}
+          <Button
+            variant="outline"
+            render={<a href="#how" />}
+            className="hidden h-12 rounded-full px-7 text-base min-[480px]:inline-flex"
+          >
+            See how it works
+          </Button>
+          <a
+            href="#how"
+            className="inline-flex items-center gap-1.5 py-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground min-[480px]:hidden"
+          >
+            See how it works
+            <ChevronDown className="size-4" />
+          </a>
+        </div>
+        <Paragraph
+          tone="faint"
+          size="sm"
+          className="mt-4 sm:mt-5"
+          data-reveal
+          style={revealDelay("240ms")}
+        >
+          {OPEN_SOURCE
+            ? "Free 1080p app · $39 unlocks the full studio · AGPL source"
+            : "Free 1080p app · $39 unlocks the full studio"}
+        </Paragraph>
+        <div data-reveal className="mt-2" style={revealDelay("280ms")}>
+          {/* compact: phones skip the requirements line — it lives in Pricing. */}
+          <DownloadMeta compact className="text-sm" />
+        </div>
       </div>
-      <Paragraph
-        tone="faint"
-        size="sm"
-        className="mt-5"
-        data-reveal
-        style={revealDelay("240ms")}
-      >
-        {release
-          ? `Free and open source · 10 free exports, then Pro · v${release.version}`
-          : "Beta · 10 free exports · No card to start"}
-      </Paragraph>
 
+      {/* Right — device scene: Mac studio with the iPhone floating over its corner */}
       <div
         data-reveal
-        className="relative mx-auto mt-16 max-w-5xl"
-        style={revealDelay("300ms")}
+        className="relative mx-auto w-full max-w-xl xl:max-w-none"
+        style={revealDelay("220ms")}
       >
-        {/* emerald spotlight behind the app window */}
-        <div aria-hidden className="pointer-events-none absolute -inset-x-12 -top-20 -bottom-8 -z-10">
+        {/* emerald spotlight behind the window */}
+        <div aria-hidden className="pointer-events-none absolute -inset-x-10 -top-16 -bottom-12 -z-10">
           <div
-            className="mx-auto h-full w-3/4"
+            className="size-full"
             style={{
               background:
-                "radial-gradient(50% 50% at 50% 45%, rgba(94,242,175,0.28), transparent 72%)",
+                "radial-gradient(55% 55% at 55% 45%, rgba(94,242,175,0.26), transparent 72%)",
             }}
           />
         </div>
-        <div className="ring-gradient overflow-hidden rounded-2xl bg-card/40 p-1.5 shadow-[0_50px_120px_-40px_rgba(0,0,0,0.9)] backdrop-blur-xl">
-          <Image
-            src={assets.macRecorder}
-            alt="BlitzRecorder recording studio on macOS"
-            priority
-            sizes="(min-width: 1024px) 1024px, 100vw"
-            className="h-auto w-full rounded-xl"
-          />
+
+        {/* MacBook: aluminum rim, black bezel with camera notch, bottom deck */}
+        <div className="w-full">
+          <div className="rounded-[20px] bg-gradient-to-b from-[#5b5b60] to-[#26262a] p-[2px] shadow-[0_50px_120px_-40px_rgba(0,0,0,0.9)]">
+            <div className="relative rounded-[18px] bg-[#08080a] p-2 sm:p-2.5">
+              <div
+                aria-hidden
+                className="absolute left-1/2 top-0 z-10 flex h-4 w-[18%] max-w-[120px] -translate-x-1/2 items-center justify-center rounded-b-[7px] bg-[#08080a]"
+              >
+                <span className="size-[3px] rounded-full bg-white/30" />
+              </div>
+              <Image
+                src={assets.macRecorder}
+                alt="BlitzRecorder recording studio on macOS"
+                priority
+                sizes="(min-width: 1024px) 620px, 100vw"
+                className="h-auto w-full rounded-[10px] ring-1 ring-white/5"
+              />
+            </div>
+          </div>
+          <div className="relative mx-auto h-3 w-[104%] -translate-x-[2%] rounded-t-[2px] rounded-b-[12px] bg-gradient-to-b from-[#6a6a70] via-[#34343a] to-[#161618] shadow-[0_26px_34px_-22px_rgba(0,0,0,0.85)]">
+            <div className="absolute left-1/2 top-0 h-[6px] w-[13%] -translate-x-1/2 rounded-b-[7px] bg-[#1b1b1e]" />
+          </div>
+        </div>
+
+        {/* iPhone — feeds the Mac, so it sits in front of the window.
+            Larger on phones (the viewer is holding one) and at right-0 so the
+            rotated corner is not clipped by the page's overflow-x-hidden. */}
+        <div
+          className="absolute -bottom-9 right-0 w-[34%] min-w-[96px] max-w-[150px] sm:-bottom-8 sm:-right-6 sm:w-[27%]"
+          style={{ animation: "br-float 7s ease-in-out infinite" }}
+        >
+          <div className="rotate-[5deg]">
+            <div className="ring-gradient rounded-[26px] bg-muted/70 p-1.5 shadow-[0_30px_70px_-25px_rgba(0,0,0,0.95)] backdrop-blur-xl">
+              <Image
+                src={assets.iosPhone}
+                alt="BlitzRecorder Camera app recording on iPhone"
+                sizes="150px"
+                className="h-auto w-full rounded-[20px]"
+              />
+            </div>
+          </div>
         </div>
       </div>
     </Section>
   );
 }
 
-function CleanSources() {
+function Features() {
   return (
-    <Section width="md" id="how" className="scroll-mt-24 py-28 text-center">
-      <div data-reveal>
-        <Eyebrow center>Choose the canvas before recording</Eyebrow>
+    <Section id="how" className="scroll-mt-24 py-28">
+      <div data-reveal className="flex justify-center">
+        <Eyebrow center>One recorder</Eyebrow>
       </div>
-      <Heading level={2} data-reveal className="mt-5">
-        One recording flow.
-        <br />
-        <span className="text-gradient">Shorts or long-form.</span>
+      <Heading level={2} data-reveal className="mx-auto mt-5 max-w-3xl text-center">
+        Every source,{" "}
+        <span className="text-gradient">one recorder.</span>
       </Heading>
-      <Paragraph data-reveal className="mx-auto mt-6 max-w-2xl">
-        Pick a vertical or horizontal canvas, switch scenes while recording, and optionally keep source files when
-        you want more control after the take.
+      <Paragraph data-reveal className="mx-auto mt-6 max-w-2xl text-center">
+        Capture your screen, camera, microphone, and system audio into a single
+        composed frame. Arrange the shot once, then record start to finish.
       </Paragraph>
-      <ul data-reveal className="mt-10 flex flex-wrap justify-center gap-2.5">
-        {cleanOutcomes.map((outcome) => (
-          <li key={outcome}>
-            <Badge
-              variant="secondary"
-              className="glass ring-gradient h-9 gap-1.5 px-4 text-sm font-medium text-foreground"
-            >
-              <Check className="size-3.5 text-primary" />
-              {outcome}
-            </Badge>
-          </li>
+      <div className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {features.map((feat, i) => (
+          <Card
+            key={feat.title}
+            data-reveal
+            style={revealDelay(`${(i % 3) * 90}ms`)}
+            className="glass ring-gradient gap-0 py-0 ring-0"
+          >
+            <CardContent className="flex flex-col gap-3 p-6">
+              <span className="inline-flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20">
+                <FeatureIcon name={feat.icon} className="size-5" />
+              </span>
+              <Heading level={3}>{feat.title}</Heading>
+              <Paragraph size="base">{feat.body}</Paragraph>
+            </CardContent>
+          </Card>
         ))}
-      </ul>
+      </div>
     </Section>
   );
 }
@@ -220,36 +272,37 @@ function IphoneCompanion() {
       </div>
       <div>
         <div data-reveal>
-          <Eyebrow>iPhone companion</Eyebrow>
+          <Eyebrow>iPhone camera</Eyebrow>
         </div>
         <Heading level={2} data-reveal className="mt-5 sm:text-5xl">
-          Record on the iPhone itself.
+          Shot on the iPhone you already own.
         </Heading>
         <Paragraph data-reveal className="mt-6 max-w-xl">
-          BlitzRecorder records locally on your iPhone and saves the file to your Mac when you stop. You get
-          a clean camera source from the phone you already own.
+          The iPhone records locally at full resolution, so quality never drops
+          to a live video stream. When you stop, it hands the file off to your
+          Mac automatically.
         </Paragraph>
         <ul data-reveal className="mt-8 flex flex-col gap-3.5 text-lg">
-          <CheckItem>Records locally on your iPhone</CheckItem>
-          <CheckItem>See and line up the shot from your Mac</CheckItem>
-          <CheckItem>The video saves to your Mac on its own</CheckItem>
+          <CheckItem>Records locally at full resolution</CheckItem>
+          <CheckItem>Framed and controlled from your Mac</CheckItem>
+          <CheckItem>Transfers to your Mac automatically</CheckItem>
         </ul>
       </div>
     </Section>
   );
 }
 
-function Workflow() {
+function Setups() {
   return (
     <Section className="py-20">
       <div data-reveal className="flex justify-center">
-        <Eyebrow center>Your workflow</Eyebrow>
+        <Eyebrow center>Two setups</Eyebrow>
       </div>
       <Heading level={2} data-reveal className="mx-auto mt-5 max-w-3xl text-center">
-        Fits the way you publish.
+        Two ways to record.
       </Heading>
-      <div className="mt-14 grid gap-5 lg:grid-cols-3">
-        {workflowCards.map((card, i) => (
+      <div className="mx-auto mt-14 grid max-w-4xl gap-5 md:grid-cols-2">
+        {setups.map((card, i) => (
           <Card
             key={card.title}
             data-reveal
@@ -257,13 +310,10 @@ function Workflow() {
             className="glass ring-gradient group/card gap-0 py-0 ring-0 transition-all duration-500 hover:-translate-y-1.5 hover:shadow-[0_40px_90px_-45px_rgba(94,242,175,0.5)]"
           >
             <div className="relative overflow-hidden">
-              <span className="absolute left-4 top-4 z-[3] inline-flex size-8 items-center justify-center rounded-full bg-background/70 font-display text-sm font-bold text-primary ring-1 ring-primary/30 backdrop-blur-md">
-                {String(i + 1).padStart(2, "0")}
-              </span>
               <Image
                 src={card.image}
-                alt=""
-                sizes="(min-width: 1024px) 380px, 100vw"
+                alt={card.title}
+                sizes="(min-width: 768px) 520px, 100vw"
                 className="h-auto w-full transition-transform duration-700 group-hover/card:scale-[1.04]"
               />
             </div>
@@ -281,7 +331,6 @@ function Workflow() {
 }
 
 function Pricing() {
-  const release = useRelease();
   return (
     <Section width="lg" id="pricing" className="scroll-mt-24 py-28">
       <div className="mx-auto max-w-2xl text-center">
@@ -289,30 +338,26 @@ function Pricing() {
           <Eyebrow center>Pricing</Eyebrow>
         </div>
         <Heading level={2} data-reveal className="mt-5">
-          Start free. Upgrade when it&rsquo;s a habit.
+          Free to record. Pay once for the full studio.
         </Heading>
         <Paragraph data-reveal className="mt-5">
-          The free trial gives you the whole app. Pro lets you save as many videos as you want.
+          The Mac app is free. A one-time $39 license unlocks the iPhone
+          camera, 4K, and 60 fps export.
         </Paragraph>
       </div>
 
       <div className="mx-auto mt-14 grid max-w-3xl gap-5 md:grid-cols-2">
         <div data-reveal>
-          <PlanCard plan={pricing.trial} />
+          <PlanCard plan={pricing.free} />
         </div>
         <div data-reveal style={revealDelay("110ms")}>
-          <PlanCard plan={pricing.pro} featured />
+          <PlanCard plan={pricing.early} featured />
         </div>
       </div>
 
       <Paragraph tone="faint" size="sm" className="mt-6 text-center" data-reveal>
-        {release ? "Free and open source." : "Public beta. Access requests open soon."} Requires{" "}
-        {requirements.macos}. The iPhone camera needs {requirements.ios}.
+        Requires {requirements.macos}. The iPhone camera needs {requirements.ios}.
       </Paragraph>
-
-      <div data-reveal>
-        <BlitzReelsBanner />
-      </div>
     </Section>
   );
 }
@@ -339,10 +384,7 @@ function PlanCard({ plan, featured = false }: { plan: Plan; featured?: boolean }
         }
       >
         <CardHeader className="px-8">
-          <div className="flex items-center gap-3">
-            <CardTitle className="font-display text-lg font-bold">{plan.name}</CardTitle>
-            {featured ? <Badge>Recommended</Badge> : null}
-          </div>
+          <CardTitle className="font-display text-lg font-bold">{plan.name}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-1 flex-col px-8">
           <p className="flex items-baseline gap-1.5 font-display tabular-nums">
@@ -369,44 +411,59 @@ function PlanCard({ plan, featured = false }: { plan: Plan; featured?: boolean }
 
           <div className="grow" />
 
-          <DownloadButton
-            variant={featured ? "default" : "outline"}
-            className={
-              "mt-8 h-12 w-full rounded-full text-base" +
-              (featured ? " shadow-[0_20px_50px_-20px_rgba(94,242,175,0.9)]" : "")
-            }
-          />
+          {plan.cta === "buy" ? (
+            <BuyButton
+              label={plan.ctaLabel}
+              className={
+                "mt-8 h-12 w-full rounded-full text-base" +
+                (featured ? " shadow-[0_20px_50px_-20px_rgba(94,242,175,0.9)]" : "")
+              }
+            />
+          ) : (
+            <DownloadButton
+              variant={featured ? "default" : "outline"}
+              label={plan.ctaLabel}
+              className={
+                "mt-8 h-12 w-full rounded-full text-base" +
+                (featured ? " shadow-[0_20px_50px_-20px_rgba(94,242,175,0.9)]" : "")
+              }
+            />
+          )}
         </CardContent>
       </Card>
     </div>
   );
 }
 
-function BlitzReelsBanner() {
+function Faq() {
   return (
-    <Card className="glass ring-gradient mx-auto mt-5 max-w-3xl ring-0">
-      <CardContent className="flex flex-col items-start justify-between gap-5 px-7 py-2 sm:flex-row sm:items-center">
-        <div>
-          <Image
-            src={assets.blitzreelsWordmark}
-            alt="BlitzReels"
-            sizes="150px"
-            className="h-6 w-auto"
-          />
-          <Paragraph size="base" className="mt-3">
-            Have footage already? BlitzReels turns it into clips with captions.
-          </Paragraph>
-        </div>
-        <Button
-          variant="outline"
-          render={<a href={BLITZREELS_URL} />}
-          className="h-11 shrink-0 rounded-full border-primary/40 px-5 text-primary"
-        >
-          Turn my footage into clips
-          <ArrowUpRight className="size-4" />
-        </Button>
-      </CardContent>
-    </Card>
+    <Section width="md" id="faq" className="scroll-mt-24 py-24">
+      <div data-reveal className="flex justify-center">
+        <Eyebrow center>FAQ</Eyebrow>
+      </div>
+      <Heading level={2} data-reveal className="mx-auto mt-5 max-w-2xl text-center">
+        Questions, answered.
+      </Heading>
+      <div className="mx-auto mt-12 flex max-w-2xl flex-col gap-3">
+        {faqs.map((item) => (
+          <details
+            key={item.q}
+            data-reveal
+            className="group glass ring-gradient overflow-hidden rounded-xl ring-0"
+          >
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 font-medium text-foreground [&::-webkit-details-marker]:hidden">
+              {item.q}
+              <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform duration-300 group-open:rotate-180" />
+            </summary>
+            <div className="px-5 pb-5">
+              <Paragraph size="base" className="max-w-xl">
+                {item.a}
+              </Paragraph>
+            </div>
+          </details>
+        ))}
+      </div>
+    </Section>
   );
 }
 
@@ -434,10 +491,22 @@ function ClosingCTA() {
         The studio camera is already in your pocket.
       </Heading>
       <Paragraph data-reveal className="mt-5">
-        Start free. No card needed.
+        {OPEN_SOURCE
+          ? "Paid official builds. Open source. Private by default."
+          : "Early Price is live. Private by default. No app account required."}
       </Paragraph>
-      <div data-reveal className="mt-8 inline-flex">
-        <DownloadButton className="h-12 rounded-full px-7 text-base shadow-[0_20px_60px_-22px_rgba(94,242,175,0.95)] transition-transform hover:scale-[1.03]" />
+      <div data-reveal className="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <BuyButton className="h-12 rounded-full px-7 text-base shadow-[0_20px_60px_-22px_rgba(94,242,175,0.95)] transition-transform hover:scale-[1.03]" />
+        {OPEN_SOURCE ? (
+          <Button
+            variant="outline"
+            render={<a href={GITHUB_REPO_URL} target="_blank" rel="noopener" />}
+            className="h-12 gap-2 rounded-full px-7 text-base"
+          >
+            <GitHubMark className="size-4" />
+            View on GitHub
+          </Button>
+        ) : null}
       </div>
     </Section>
   );

@@ -105,9 +105,9 @@ Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
 - Build: \`$BUILD\`
 - macOS bundle ID: \`dev.blitzreels.blitzrecorder\`
 - iOS companion bundle ID: \`dev.blitzreels.blitzrecorder.camera\`
-- Subscription product ID: \`dev.blitzreels.blitzrecorder.pro.monthly\`
-- Subscription prices: \`\$7.99 per month\` and \`\$49.99 per year\`
-- Free quota: \`10 free exports\`
+- Pricing: \`free\`
+- In-app purchases: \`none\`
+- Export quota: \`none\`
 
 ## Contents
 
@@ -122,10 +122,9 @@ EOF
 ## Still Required Outside This Package
 
 - Create App Store Connect app records.
-- Create and price the auto-renewable subscription.
+- Confirm no in-app purchases or subscriptions are configured.
 - Upload signed App Store archives.
-- Run live App Store Connect verification with API credentials.
-- Verify a positive production BlitzReels entitlement token.
+- Run live App Store Connect verification with API credentials after the helper scripts support the free/no-IAP model.
 - Complete physical Mac/iPhone/iPad QA.
 - Complete legal/privacy review.
 EOF

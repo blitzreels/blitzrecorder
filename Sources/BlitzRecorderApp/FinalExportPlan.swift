@@ -24,6 +24,27 @@ struct FinalExportSourceInsertion: Equatable {
             && CMTimeCompare(lhs.compositionStart, rhs.compositionStart) == 0
             && CMTimeCompare(lhs.duration, rhs.duration) == 0
     }
+
+    var timeRange: CMTimeRange {
+        CMTimeRange(start: compositionStart, duration: duration)
+    }
+
+    func isActive(at time: CMTime) -> Bool {
+        CMTimeCompare(time, compositionStart) >= 0
+            && CMTimeCompare(time, CMTimeRangeGetEnd(timeRange)) < 0
+    }
+}
+
+struct FinalExportRenderSegment: Equatable {
+    let timeRange: CMTimeRange
+    let scene: RecordingScene
+    let activeLayerOrder: [SceneLayerKind]
+
+    static func == (lhs: FinalExportRenderSegment, rhs: FinalExportRenderSegment) -> Bool {
+        CMTimeRangeEqual(lhs.timeRange, rhs.timeRange)
+            && lhs.scene == rhs.scene
+            && lhs.activeLayerOrder == rhs.activeLayerOrder
+    }
 }
 
 struct FinalExportPlan: Equatable {
@@ -31,12 +52,14 @@ struct FinalExportPlan: Equatable {
     let renderSize: CGSize
     let engine: FinalExportEngine
     let sourceInsertions: [FinalExportSourceInsertion]
+    let renderSegments: [FinalExportRenderSegment]
 
     static func == (lhs: FinalExportPlan, rhs: FinalExportPlan) -> Bool {
         CMTimeCompare(lhs.duration, rhs.duration) == 0
             && lhs.renderSize == rhs.renderSize
             && lhs.engine == rhs.engine
             && lhs.sourceInsertions == rhs.sourceInsertions
+            && lhs.renderSegments == rhs.renderSegments
     }
 
     func insertion(for kind: SceneLayerKind) -> FinalExportSourceInsertion? {
@@ -63,16 +86,25 @@ enum FinalExportPlanning {
             .map { CMTimeAdd($0.timelineOffset, $0.duration) }
             .reduce(CMTimeAdd(durationSources[0].timelineOffset, durationSources[0].duration)) { CMTimeMinimum($0, $1) }
         let dimensions = ScreenCaptureGeometry.outputDimensions(for: settings)
+        let renderSize = CGSize(width: dimensions.width, height: dimensions.height)
+        let sourceInsertions: [FinalExportSourceInsertion] = durationSources.compactMap { source in
+            let insertion = sourceInsertion(for: source, compositionDuration: duration)
+            guard CMTimeCompare(insertion.duration, .zero) > 0 else { return nil }
+            return insertion
+        }
 
         return FinalExportPlan(
             duration: duration,
-            renderSize: CGSize(width: dimensions.width, height: dimensions.height),
+            renderSize: renderSize,
             engine: engine(settings: settings, sceneEvents: sceneEvents),
-            sourceInsertions: sources.compactMap { source in
-                let insertion = sourceInsertion(for: source, compositionDuration: duration)
-                guard CMTimeCompare(insertion.duration, .zero) > 0 else { return nil }
-                return insertion
-            }
+            sourceInsertions: sourceInsertions,
+            renderSegments: renderSegments(
+                settings: settings,
+                sceneEvents: sceneEvents,
+                duration: duration,
+                renderSize: renderSize,
+                sourceInsertions: sourceInsertions
+            )
         )
     }
 
@@ -104,6 +136,37 @@ enum FinalExportPlanning {
             visibleSources.formUnion(event.scene.enabledSources)
         }
         return sources.filter { visibleSources.contains($0.kind.source) }
+    }
+
+    private static func renderSegments(
+        settings: RecordingSettings,
+        sceneEvents: [RecordingSceneEvent],
+        duration: CMTime,
+        renderSize: CGSize,
+        sourceInsertions: [FinalExportSourceInsertion]
+    ) -> [FinalExportRenderSegment] {
+        let fallbackScene = RecordingScene(settings: settings)
+        let insertionByKind = Dictionary(uniqueKeysWithValues: sourceInsertions.map { ($0.kind, $0) })
+        return RecordingSceneTimeline.segments(
+            sceneEvents: sceneEvents,
+            fallbackScene: fallbackScene,
+            duration: duration,
+            sourceTimeRanges: sourceInsertions.map(\.timeRange)
+        ).map { segment in
+            let geometry = SceneRenderGeometry(
+                canvas: CGRect(origin: .zero, size: renderSize),
+                scene: segment.scene,
+                origin: .upperLeft
+            )
+            let activeLayerOrder = geometry.activeLayerOrder.filter { kind in
+                insertionByKind[kind]?.isActive(at: segment.timeRange.start) == true
+            }
+            return FinalExportRenderSegment(
+                timeRange: segment.timeRange,
+                scene: segment.scene,
+                activeLayerOrder: activeLayerOrder
+            )
+        }
     }
 
     private static func engine(

@@ -36,6 +36,7 @@ public struct RemoteCameraSettings: Codable, Equatable, Sendable {
     public var formatID: String?
     public var frameRate: Int
     public var captureProfileID: RemoteCameraCaptureProfileID
+    public var colorMode: RemoteCameraColorMode
     public var zoomFactor: Double
     public var focusMode: RemoteCameraFocusMode
     public var focusPosition: Double
@@ -57,6 +58,7 @@ public struct RemoteCameraSettings: Codable, Equatable, Sendable {
         formatID: String? = nil,
         frameRate: Int = 30,
         captureProfileID: RemoteCameraCaptureProfileID = .automatic,
+        colorMode: RemoteCameraColorMode = .standard,
         zoomFactor: Double = 1,
         focusMode: RemoteCameraFocusMode = .continuousAuto,
         focusPosition: Double = 0.5,
@@ -77,6 +79,7 @@ public struct RemoteCameraSettings: Codable, Equatable, Sendable {
         self.formatID = formatID
         self.frameRate = frameRate
         self.captureProfileID = captureProfileID
+        self.colorMode = colorMode
         self.zoomFactor = zoomFactor
         self.focusMode = focusMode
         self.focusPosition = focusPosition
@@ -106,6 +109,7 @@ extension RemoteCameraSettings {
         case formatID
         case frameRate
         case captureProfileID
+        case colorMode
         case zoomFactor
         case focusMode
         case focusPosition
@@ -133,6 +137,7 @@ extension RemoteCameraSettings {
                 RemoteCameraCaptureProfileID.self,
                 forKey: .captureProfileID
             ) ?? .automatic,
+            colorMode: try container.decodeIfPresent(RemoteCameraColorMode.self, forKey: .colorMode) ?? .standard,
             zoomFactor: try container.decodeIfPresent(Double.self, forKey: .zoomFactor) ?? 1,
             focusMode: try container.decodeIfPresent(RemoteCameraFocusMode.self, forKey: .focusMode) ?? .continuousAuto,
             focusPosition: try container.decodeIfPresent(Double.self, forKey: .focusPosition) ?? 0.5,

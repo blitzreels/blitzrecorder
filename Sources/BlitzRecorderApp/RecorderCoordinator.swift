@@ -3,7 +3,6 @@ import AVFoundation
 import BlitzRecorderCore
 import BlitzRecorderTransport
 import Foundation
-import ImageIO
 import ScreenCaptureKit
 
 @MainActor
@@ -20,28 +19,27 @@ final class RecorderCoordinator {
     private let audioRecorder = AudioRecorder()
     private let systemAudioRecorder = SystemAudioRecorder()
     private let takeRecording = TakeRecordingRuntime()
-    private let remoteCameraMonitorSampleBufferFactory = RemoteCameraMonitorSampleBufferFactory()
     private let microphoneLevelMonitor = MicrophoneLevelMonitor()
     private let systemAudioLevelMonitor = SystemAudioLevelMonitor()
     private let speechTranscriber = SpeechTranscriber()
     private let titleGenerator = TitleGenerator()
     private let takeFileStore = TakeFileStore()
     private let recordingPrerollSeconds = 3
-    private let remoteCameraBrowser = BonjourServiceBrowser(serviceType: RemoteCameraConstants.bonjourServiceType)
-    private let remoteCameraControlClient = RemoteCameraControlClient()
-    private lazy var remoteCameraRuntime = RemoteCameraSessionRuntime(
-        sendCommand: { [weak self] command in
-            self?.remoteCameraControlClient.send(command)
+    private lazy var remoteCamera = RemoteIPhoneCameraSession(
+        readSettings: { [weak self] in
+            self?.settings ?? RecordingSettings()
         },
-        onMessage: { [weak self] message in
-            self?.onMessage?(message)
+        saveSettings: { [weak self] settings in
+            self?.settings = settings
+            self?.persistSettings()
+        },
+        screenAspectRatio: { [weak self] in
+            self?.currentScreenSourceAspectRatio() ?? SceneLayout.defaultScreenAspectRatio
+        },
+        canAttemptPendingImports: { [weak self] in
+            self?.state == .idle || self?.state == .finishing
         }
     )
-    private var remoteCameraSessionState = RemoteIPhoneCameraState()
-    private var remoteCameraReconnectTasks: [String: Task<Void, Never>] = [:]
-    private var remoteCameraSettingsSendTasks: [String: Task<Void, Never>] = [:]
-    private var remoteCameraPreviewSuppressedUntil: [String: Date] = [:]
-    private var isRemoteCameraDiscoveryStarted = false
     private lazy var takeFinalizer: TakeFinalizer = {
         let finalizer = TakeFinalizer(
             speechTranscriber: speechTranscriber,
@@ -79,6 +77,9 @@ final class RecorderCoordinator {
     var onSocialSafeZoneOverlayChanged: ((SocialVideoSafeZone) -> Void)?
     var onScreenCaptureConfigurationChanged: (() -> Void)?
     var onCameraConfigurationChanged: (() -> Void)?
+    /// Ask the UI to bring BlitzRecorder back to the front (e.g. after the
+    /// system content picker steals focus).
+    var onRequestForeground: (() -> Void)?
     var onLiveScreenPreviewFrame: ScreenPreviewer.FrameHandler?
     var onLocalCameraPreviewSampleBuffer: ((CMSampleBuffer, Int, Int) -> Void)?
     var onRemoteCameraPreviewFrame: ((CGImage) -> Void)?
@@ -110,13 +111,32 @@ final class RecorderCoordinator {
         if let selectedScene = sceneLibrary.selectedScene(layout: settings.layout) {
             applySceneSnapshot(selectedScene.snapshot, allowTakeLockedBindings: true)
         }
+        accessController.onLicenseStateChanged = { [weak self] in
+            self?.reconcileLicenseLimitsForCurrentAccess()
+        }
+        reconcileLicenseLimitsForCurrentAccess()
         if clearIncompatibleScreenCropForCurrentLayout() {
             persistSettings()
         }
-        remoteCameraControlClient.onMessage = { [weak self] message in
+        remoteCamera.onMessage = { [weak self] message in
             self?.onMessage?(message)
         }
-        takeRecording.liveCompositedRecorder.onCameraPreviewSampleBuffer = { [weak self] sampleBuffer, width, height in
+        remoteCamera.onCameraConfigurationChanged = { [weak self] in
+            self?.onCameraConfigurationChanged?()
+        }
+        remoteCamera.onPreviewFrame = { [weak self] image in
+            self?.onRemoteCameraPreviewFrame?(image)
+        }
+        remoteCamera.onPreviewSampleBuffer = { [weak self] sampleBuffer, width, height in
+            self?.onRemoteCameraPreviewSampleBuffer?(sampleBuffer, width, height)
+        }
+        remoteCamera.onPreviewReset = { [weak self] message in
+            self?.onRemoteCameraPreviewReset?(message)
+        }
+        remoteCamera.onPairingCodeRequested = { [weak self] deviceName in
+            self?.onRemoteCameraPairingCodeRequested?(deviceName)
+        }
+        takeRecording.setLiveCompositorCameraPreviewHandler { [weak self] sampleBuffer, width, height in
             guard let self,
                   self.state == .starting || self.state == .recording || self.state == .paused,
                   self.settings.visibleSources.contains(.camera) else {
@@ -124,7 +144,7 @@ final class RecorderCoordinator {
             }
             self.onLocalCameraPreviewSampleBuffer?(sampleBuffer, width, height)
         }
-        takeRecording.liveCompositedRecorder.onScreenPreviewFrame = { [weak self] frame in
+        takeRecording.setLiveCompositorScreenPreviewHandler { [weak self] frame in
             guard let self,
                   self.state == .starting || self.state == .recording || self.state == .paused,
                   self.settings.visibleSources.contains(.screen) else {
@@ -182,6 +202,14 @@ final class RecorderCoordinator {
 
     func scenesForCurrentLayout() -> [RecordingSceneDefinition] {
         sceneLibrary.scenes(for: settings.layout)
+    }
+
+    func scenes(for layout: CaptureLayout) -> [RecordingSceneDefinition] {
+        sceneLibrary.scenes(for: layout)
+    }
+
+    func layout(ofSceneID id: UUID) -> CaptureLayout? {
+        sceneLibrary.layout(ofSceneID: id)
     }
 
     func selectedSceneIDForCurrentLayout() -> UUID? {
@@ -330,7 +358,41 @@ final class RecorderCoordinator {
         return true
     }
 
+    @discardableResult
+    private func enforceLicenseLimits() -> Bool {
+        guard !accessController.hasActiveLicense else { return false }
+        var changed = false
+
+        if settings.outputResolution == .p2160 {
+            settings.outputResolution = .p1080
+            changed = true
+        }
+
+        if settings.framesPerSecond >= 60 {
+            settings.framesPerSecond = 30
+            changed = true
+        }
+
+        if RemoteCameraProviderID.isRemote(settings.selectedCameraID) {
+            settings.selectedCameraID = nil
+            changed = true
+        }
+
+        return changed
+    }
+
+    private func reconcileLicenseLimitsForCurrentAccess() {
+        guard !accessController.hasSavedLicenseKey else { return }
+        guard enforceLicenseLimits() else { return }
+        persistSettings()
+        onCameraConfigurationChanged?()
+    }
+
     func setOutputResolution(_ outputResolution: OutputResolution) {
+        guard outputResolution != .p2160 || accessController.requirePaidFeature("4K export") else {
+            onMessage?("4K export requires a BlitzRecorder Early Price license.")
+            return
+        }
         settings.outputResolution = outputResolution
         persistSettings()
     }
@@ -342,6 +404,10 @@ final class RecorderCoordinator {
 
     func setFramesPerSecond(_ framesPerSecond: Int) {
         guard RecordingSettings.supportedFrameRates.contains(framesPerSecond) else { return }
+        guard framesPerSecond < 60 || accessController.requirePaidFeature("60 fps export") else {
+            onMessage?("60 fps export requires a BlitzRecorder Early Price license.")
+            return
+        }
         settings.framesPerSecond = framesPerSecond
         persistSettings()
         onCameraConfigurationChanged?()
@@ -493,6 +559,7 @@ final class RecorderCoordinator {
 
     func setDisplay(id: String?) {
         settings.selectedDisplayID = id
+        settings.screenSourceBinding = .display(id: id)
         pickedScreenFilter = nil
         settings.usesPickedScreenContent = false
         settings.screenCrop = nil
@@ -501,18 +568,31 @@ final class RecorderCoordinator {
         onScreenCaptureConfigurationChanged?()
     }
 
-    func setCamera(id: String?) {
-        let isRetryingSelectedRemoteCamera = id == settings.selectedCameraID
-            && RemoteCameraProviderID.isRemote(id)
-        settings.selectedCameraID = id
-        if let serviceID = RemoteCameraProviderID.serviceID(from: id) {
-            startRemoteCameraDiscoveryIfNeeded()
-            connectRemoteCamera(serviceID: serviceID, forceReconnect: isRetryingSelectedRemoteCamera)
-        } else {
-            remoteCameraControlClient.disconnect()
+    func setScreenSource(_ binding: ScreenSourceBinding) {
+        settings.screenSourceBinding = binding
+        if binding.kind == .display {
+            settings.selectedDisplayID = binding.displayID
         }
+        pickedScreenFilter = nil
+        settings.usesPickedScreenContent = false
+        settings.screenCrop = nil
+        settings.enabledSources.insert(.screen)
+        settings.hiddenSources.remove(.screen)
         persistSettings()
-        onCameraConfigurationChanged?()
+        updateRecordingSceneIfNeeded()
+        refreshAudioLevelMonitoring()
+        onScreenCaptureConfigurationChanged?()
+        if binding.kind == .window {
+            autoFitScreenSourceWindow(binding)
+        }
+    }
+
+    func setCamera(id: String?) {
+        guard id.map(RemoteCameraProviderID.isRemote) != true || accessController.requirePaidFeature("iPhone camera") else {
+            onMessage?("iPhone camera requires a BlitzRecorder Early Price license.")
+            return
+        }
+        remoteCamera.selectCamera(id: id)
     }
 
     func setMicrophone(id: String?) {
@@ -583,21 +663,11 @@ final class RecorderCoordinator {
     }
 
     func connectDirectRemoteCamera(host: String, portString: String) {
-        let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedPort = portString.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedHost.isEmpty,
-              let port = UInt16(trimmedPort),
-              port > 0 else {
-            onMessage?("Enter the iPhone IP address and the port shown in the companion app.")
+        guard accessController.requirePaidFeature("iPhone camera") else {
+            onMessage?("iPhone camera requires a BlitzRecorder Early Price license.")
             return
         }
-
-        let service = DiscoveredBonjourService.directTCP(host: trimmedHost, port: port)
-        remoteCameraSessionState.upsertDirectService(service)
-        settings.selectedCameraID = RemoteCameraProviderID.make(for: service.id)
-        persistSettings()
-        connectRemoteCamera(serviceID: service.id)
-        onCameraConfigurationChanged?()
+        remoteCamera.connectDirect(host: host, portString: portString)
     }
 
     func setSceneLayout(_ sceneLayout: SceneLayout) {
@@ -734,6 +804,12 @@ final class RecorderCoordinator {
 
     func fitFrontWindowForShorts(scale: CGFloat) {
         guard sceneChangeIsAllowed() else { return }
+
+        if settings.usesPickedScreenContent, let pickedScreenFilter {
+            fitPickedScreenWindowForShorts(pickedScreenFilter, scale: scale)
+            return
+        }
+
         guard ensureAccessibilityForWindowControls() else { return }
 
         do {
@@ -753,6 +829,40 @@ final class RecorderCoordinator {
             onMessage?(arrangement.message)
         } catch {
             onMessage?(error.localizedDescription)
+        }
+    }
+
+    private func fitPickedScreenWindowForShorts(_ filter: SCContentFilter, scale: CGFloat) {
+        guard ensureAccessibilityForWindowControls() else { return }
+
+        Task { [weak self, filter, scale] in
+            await self?.fitPickedScreenWindow(filter, scale: scale, shouldUpdateCapture: true)
+        }
+    }
+
+    private func autoFitScreenSourceWindow(_ binding: ScreenSourceBinding) {
+        guard PermissionGate.hasAccessibilityAccess else { return }
+        Task { [weak self, binding] in
+            guard let self,
+                  let target = await ScreenCaptureGeometry.windowTarget(for: binding) else {
+                return
+            }
+            do {
+                let arrangement = try ShortsWindowArranger.fitWindow(
+                    ownerPID: target.pid,
+                    bounds: target.bounds,
+                    title: target.title,
+                    appName: target.appName ?? "",
+                    displayID: self.settings.selectedDisplayID,
+                    captureLayout: self.settings.layout,
+                    sceneLayout: self.settings.sceneLayout,
+                    enabledSources: self.settings.enabledSources,
+                    scale: 1
+                )
+                self.onMessage?(arrangement.resizedMessage)
+            } catch {
+                self.onMessage?(error.localizedDescription)
+            }
         }
     }
 
@@ -897,25 +1007,7 @@ final class RecorderCoordinator {
     }
 
     func currentCameraSourceAspectRatio() -> CGFloat {
-        guard let selectedServiceID = RemoteCameraProviderID.serviceID(from: settings.selectedCameraID),
-              let capabilities = remoteCameraSessionState.capabilities[selectedServiceID] else {
-            return SceneLayout.cameraAspectRatio
-        }
-
-        let remoteSettings = remoteCameraSettings(for: selectedServiceID)
-        let lensCapabilities = capabilities.capabilities(for: remoteSettings.lens)
-        let selectableFormats = RemoteCameraSettingsResolver.formats(
-            lensCapabilities.supportedFormats,
-            supportedBy: remoteSettings.captureProfileID,
-            profiles: lensCapabilities.supportedCaptureProfiles
-        )
-        let formatCandidates = selectableFormats.isEmpty ? lensCapabilities.supportedFormats : selectableFormats
-        guard let format = formatCandidates.first(where: { $0.id == remoteSettings.formatID })
-            ?? formatCandidates.first else {
-            return SceneLayout.cameraAspectRatio
-        }
-
-        return CGFloat(RemoteCameraSettingsResolver.aspectRatio(format: format, rotationDegrees: remoteSettings.rotationDegrees))
+        remoteCamera.currentCameraSourceAspectRatio()
     }
 
     func selectScreenCrop() async throws {
@@ -978,6 +1070,91 @@ final class RecorderCoordinator {
         }
     }
 
+    func availableScreenSources() async -> [ScreenSourceOption] {
+        let displays = await availableDisplays()
+        let displayOptions = displays.map { option in
+            ScreenSourceOption(
+                binding: .display(id: option.id, name: option.name),
+                title: option.name,
+                subtitle: "Full display",
+                systemImage: "display"
+            )
+        }
+
+        guard hasScreenCaptureAccess(),
+              let content = try? await SCShareableContent.current else {
+            return displayOptions
+        }
+
+        let ownProcess = getpid()
+        let appOptions = content.applications
+            .filter { $0.processID != ownProcess }
+            .sorted { lhs, rhs in
+                lhs.applicationName.localizedCaseInsensitiveCompare(rhs.applicationName) == .orderedAscending
+            }
+            .map { app in
+                ScreenSourceOption(
+                    binding: ScreenSourceBinding(
+                        kind: .application,
+                        displayID: settings.selectedDisplayID,
+                        bundleIdentifier: app.bundleIdentifier,
+                        applicationName: app.applicationName,
+                        processID: app.processID,
+                        windowID: nil,
+                        windowTitle: nil
+                    ),
+                    title: app.applicationName,
+                    subtitle: "Application",
+                    systemImage: "macwindow.on.rectangle"
+                )
+            }
+
+        let windowOptions = content.windows
+            .filter { window in
+                window.isOnScreen
+                    && window.frame.width > 0
+                    && window.frame.height > 0
+                    && window.owningApplication?.processID != ownProcess
+            }
+            .sorted { lhs, rhs in
+                let leftName = "\(lhs.owningApplication?.applicationName ?? "") \(lhs.title ?? "")"
+                let rightName = "\(rhs.owningApplication?.applicationName ?? "") \(rhs.title ?? "")"
+                return leftName.localizedCaseInsensitiveCompare(rightName) == .orderedAscending
+            }
+            .map { window in
+                let appName = window.owningApplication?.applicationName
+                let title = window.title?.isEmpty == false ? window.title! : "Untitled window"
+                return ScreenSourceOption(
+                    binding: ScreenSourceBinding(
+                        kind: .window,
+                        displayID: displayID(for: window, displays: content.displays),
+                        bundleIdentifier: window.owningApplication?.bundleIdentifier,
+                        applicationName: appName,
+                        processID: window.owningApplication?.processID,
+                        windowID: window.windowID,
+                        windowTitle: window.title
+                    ),
+                    title: title,
+                    subtitle: appName ?? "Window",
+                    systemImage: "app.window"
+                )
+            }
+
+        return displayOptions + appOptions + windowOptions
+    }
+
+    private func displayID(for window: SCWindow, displays: [SCDisplay]) -> String? {
+        let display = displays.max { lhs, rhs in
+            overlapArea(lhs.frame, window.frame) < overlapArea(rhs.frame, window.frame)
+        }
+        return display.map { "\($0.displayID)" }
+    }
+
+    private func overlapArea(_ lhs: CGRect, _ rhs: CGRect) -> CGFloat {
+        let intersection = lhs.intersection(rhs)
+        return intersection.isNull ? 0 : intersection.width * intersection.height
+    }
+
     func hasScreenCaptureAccess() -> Bool {
         CGPreflightScreenCaptureAccess()
     }
@@ -1028,9 +1205,67 @@ final class RecorderCoordinator {
             settings.enabledSources.insert(.screen)
             settings.hiddenSources.remove(.screen)
         }
+        // Resize the picked window to fill its slot in the current layout. This
+        // keeps picked-content capture (no display-capture switch, no screenCrop);
+        // it just sizes the real window so it fills the region.
+        await autoFitPickedWindow(filter)
         persistSettings()
         updateRecordingSceneIfNeeded()
         onScreenCaptureConfigurationChanged?()
+        // Pull focus back to BlitzRecorder after the system picker.
+        onRequestForeground?()
+    }
+
+    /// Best-effort: resize the just-picked window to its scene slot. Skips
+    /// display picks and silently no-ops without Accessibility or on failure
+    /// (e.g. a full-screen app that can't be resized) — never blocks the pick.
+    private func autoFitPickedWindow(_ filter: SCContentFilter) async {
+        guard PermissionGate.hasAccessibilityAccess else {
+            return
+        }
+        await fitPickedScreenWindow(filter, scale: 1, shouldUpdateCapture: false)
+    }
+
+    @discardableResult
+    private func fitPickedScreenWindow(
+        _ filter: SCContentFilter,
+        scale: CGFloat,
+        shouldUpdateCapture: Bool
+    ) async -> Bool {
+        guard let target = await ScreenCaptureGeometry.pickedWindowTarget(for: filter) else {
+            if shouldUpdateCapture {
+                onMessage?("Picked content is not a resizable window.")
+            }
+            return false
+        }
+
+        do {
+            let arrangement = try ShortsWindowArranger.fitWindow(
+                ownerPID: target.pid,
+                bounds: target.bounds,
+                title: target.title,
+                appName: target.appName ?? "",
+                displayID: settings.selectedDisplayID,
+                captureLayout: settings.layout,
+                sceneLayout: settings.sceneLayout,
+                enabledSources: settings.enabledSources,
+                scale: scale
+            )
+            if shouldUpdateCapture {
+                settings.usesPickedScreenContent = true
+                settings.screenCrop = nil
+                persistSettings()
+                updateRecordingSceneIfNeeded()
+                onScreenCaptureConfigurationChanged?()
+                onMessage?(arrangement.resizedMessage)
+            }
+            return true
+        } catch {
+            if shouldUpdateCapture {
+                onMessage?(error.localizedDescription)
+            }
+            return false
+        }
     }
 
     func requestPermissionsForEnabledSources() async {
@@ -1104,7 +1339,7 @@ final class RecorderCoordinator {
     func start() {
         guard state == .idle else { return }
         guard accessController.canRenderExport else {
-            onMessage?("Free exports used. Subscribe for unlimited renders.")
+            onMessage?("Recording is unavailable.")
             return
         }
         let readiness = recordingReadiness()
@@ -1148,16 +1383,14 @@ final class RecorderCoordinator {
                 }
                 let take = try takeFileStore.createTake(settings: settings)
                 createdTake = take
-                let remoteTakeID = startPlan.usesRemoteCamera ? UUID() : nil
+                let remoteTakeID = startPlan.usesRemoteCamera && startPlan.usesLiveCompositor ? UUID() : nil
                 if let remoteTakeID {
-                    remoteCameraRuntime.beginTake(
+                    remoteCamera.beginTake(
                         takeID: remoteTakeID,
-                        serviceID: RemoteCameraProviderID.serviceID(from: settings.selectedCameraID),
-                        take: take,
-                        settings: settings
+                        take: take
                     )
-                    sendRemoteCameraSettings()
-                    _ = try await remoteCameraRuntime.prepare(
+                    remoteCamera.sendSettings()
+                    _ = try await remoteCamera.prepare(
                         takeID: remoteTakeID,
                         hostStartTime: DispatchTime.now().uptimeNanoseconds
                     )
@@ -1174,21 +1407,18 @@ final class RecorderCoordinator {
                     if settings.enabledSources.contains(.screen) {
                         await stopScreenPreview()
                     }
-                    try await takeRecording.liveCompositedRecorder.start(
+                    let hostStartTime = try await takeRecording.startLiveCompositedTake(
                         take: take,
                         settings: settings,
-                        filter: pickedScreenFilter(for: settings),
+                        pickedScreenFilter: pickedScreenFilter(for: settings),
                         prerollSeconds: recordingPrerollSeconds
                     ) { [weak self] remaining in
                         self?.onMessage?(Self.recordingPrerollMessage(remaining: remaining))
                     }
-                    takeRecording.markLiveCompositorStarted()
-                    takeRecording.startSceneTimeline(settings: settings)
                     if let remoteTakeID {
                         remoteStartCommandSent = true
-                        let hostStartTime = DispatchTime.now().uptimeNanoseconds
-                        remoteCameraRuntime.markTimelineStart(takeID: remoteTakeID, hostTimelineStartTime: hostStartTime)
-                        _ = try await remoteCameraRuntime.start(
+                        remoteCamera.markTimelineStart(takeID: remoteTakeID, hostTimelineStartTime: hostStartTime)
+                        _ = try await remoteCamera.start(
                             takeID: remoteTakeID,
                             hostStartTime: hostStartTime,
                             hostTimelineStartTime: hostStartTime
@@ -1204,46 +1434,30 @@ final class RecorderCoordinator {
                         throw RecorderError.screenCapturePermissionRequired
                     }
                 }
-                let captureRun = CaptureSourceRun(
+                try await takeRecording.startSourceFileTake(
                     take: take,
                     settings: startPlan.localCaptureSettings,
+                    sceneTimelineSettings: startPlan.sceneTimelineSettings,
                     pickedScreenFilter: pickedScreenFilter(for: settings),
+                    prerollSeconds: recordingPrerollSeconds,
                     screenRecorder: screenRecorder,
                     cameraRecorder: cameraRecorder,
+                    remoteCameraRecorder: startPlan.usesRemoteCamera ? remoteCamera : nil,
                     audioRecorder: audioRecorder,
                     systemAudioRecorder: systemAudioRecorder
-                )
-                takeRecording.setActiveCaptureRun(captureRun)
-                if let remoteTakeID {
-                    remoteStartCommandSent = true
-                    _ = try await remoteCameraRuntime.start(
-                        takeID: remoteTakeID,
-                        hostStartTime: DispatchTime.now().uptimeNanoseconds,
-                        hostTimelineStartTime: nil
-                    )
-                }
-                let captureStart = try await captureRun.start(
-                    prerollSeconds: recordingPrerollSeconds
                 ) { [weak self] remaining in
                     self?.onMessage?(Self.recordingPrerollMessage(remaining: remaining))
                 }
-                if let remoteTakeID {
-                    remoteCameraRuntime.markTimelineStart(
-                        takeID: remoteTakeID,
-                        hostTimelineStartTime: captureStart.hostTimelineStartTime
-                    )
-                }
                 lastTake = take
-                takeRecording.startSceneTimeline(settings: settings)
                 state = .recording
                 onMessage?("Recording...")
             } catch {
-                remoteCameraRuntime.cancelCommand()
-                if let activeRemoteCameraTakeID = remoteCameraRuntime.activeTakeID, !remoteStartCommandSent {
-                    remoteCameraRuntime.removePendingImport(takeID: activeRemoteCameraTakeID, settings: settings)
+                remoteCamera.cancelCommand()
+                if let activeRemoteCameraTakeID = remoteCamera.activeTakeID, !remoteStartCommandSent {
+                    remoteCamera.removePendingImport(takeID: activeRemoteCameraTakeID)
                 }
-                if let activeRemoteCameraTakeID = remoteCameraRuntime.activeTakeID {
-                    remoteCameraRuntime.abandonTake(takeID: activeRemoteCameraTakeID)
+                if let activeRemoteCameraTakeID = remoteCamera.activeTakeID {
+                    remoteCamera.abandonTake(takeID: activeRemoteCameraTakeID)
                 }
                 await takeRecording.stopAnyActiveRecording()
                 if let createdTake, !remoteStartCommandSent {
@@ -1375,9 +1589,10 @@ final class RecorderCoordinator {
         Task {
             do {
                 let takeToFinalize = lastTake
-                if takeRecording.isUsingLiveCompositor {
+                let stopOutcome = try await takeRecording.stop()
+                switch stopOutcome {
+                case .liveComposited(let completion):
                     onMessage?("Saving recording...")
-                    let completion = try await takeRecording.stopLiveCompositor()
                     onRenderProgress?(1)
                     try? await Task.sleep(for: .milliseconds(250))
                     if completion.wroteMedia, let finalURL = completion.url {
@@ -1419,84 +1634,62 @@ final class RecorderCoordinator {
                     state = .idle
                     refreshAudioLevelMonitoring()
                     return
-                }
-                var captureSummary = await takeRecording.stopCaptureRun()
-                var stopWarnings: [String] = []
-                if let warning = captureSummary.stopFailureWarning {
-                    stopWarnings.append(warning)
-                }
-                if settings.enabledSources.contains(.camera), isRemoteCameraSelected, let takeToFinalize {
-                    do {
-                        onMessage?("Waiting for iPhone media...")
-                        let remoteCompletion = try await stopRemoteCameraAndImport(take: takeToFinalize)
-                        var completions = captureSummary.completions
-                        completions[.camera] = remoteCompletion
-                        captureSummary = CaptureSourceRunSummary(
-                            completions: completions,
-                            stopFailures: captureSummary.stopFailures
+                case .sourceFiles(let captureSummary):
+                    var stopWarnings: [String] = []
+                    if let warning = captureSummary.stopFailureWarning {
+                        stopWarnings.append(warning)
+                    }
+
+                    if let takeToFinalize {
+                        let outcome = await takeFinalizer.finalize(
+                            take: takeToFinalize,
+                            settings: settings,
+                            captureSummary: captureSummary,
+                            sceneEvents: sceneEventsForFinalization
                         )
-                    } catch {
-                        lastTake = takeToFinalize
+                        if case .saved = outcome {
+                            accessController.recordSuccessfulExportIfNeeded()
+                            lastTake = nil
+                        } else if case .recoveryFiles(let recoveryTake, _) = outcome {
+                            lastTake = recoveryTake
+                        }
                         outputDirectoryAccess?.stop()
                         outputDirectoryAccess = nil
                         state = .idle
-                        onRenderProgress?(0)
                         takeRecording.resetSceneTimeline()
                         refreshAudioLevelMonitoring()
-                        onRecordingRecovery?(RecordingRecoveryOutput(
-                            takeDirectory: takeToFinalize.scratchDirectory,
-                            reason: "Remote iPhone import did not finish: \(error.recorderFailureDescription)",
-                            canRetryExport: false
-                        ))
-                        onMessage?(remoteCameraImportFailureMessage(error: error, take: takeToFinalize))
-                        return
+                        switch outcome {
+                        case .saved:
+                            let savedOutput = outcome.savedOutput(warning: captureSummary.savedRecordingStopWarning)
+                            if let savedOutput {
+                                onSavedRecording?(savedOutput)
+                                onMessage?(savedOutput.userMessage)
+                            } else {
+                                onMessage?(outcome.userMessage)
+                            }
+                        case .recoveryFiles:
+                            let stopWarning = stopWarnings.isEmpty ? nil : stopWarnings.joined(separator: ". ")
+                            let message = if let stopWarning {
+                                "\(stopWarning). \(outcome.userMessage)"
+                            } else {
+                                outcome.userMessage
+                            }
+                            if let recovery = outcome.recoveryOutput() {
+                                onRecordingRecovery?(recovery)
+                            }
+                            onMessage?("Recording failed: \(message)")
+                        }
+                    } else {
+                        outputDirectoryAccess?.stop()
+                        outputDirectoryAccess = nil
+                        state = .idle
+                        takeRecording.resetSceneTimeline()
+                        refreshAudioLevelMonitoring()
                     }
-                }
-
-                if let takeToFinalize {
-                    let outcome = await takeFinalizer.finalize(
-                        take: takeToFinalize,
-                        settings: settings,
-                        captureSummary: captureSummary,
-                        sceneEvents: sceneEventsForFinalization
-                    )
-                    if case .saved = outcome {
-                        accessController.recordSuccessfulExportIfNeeded()
-                        lastTake = nil
-                    } else if case .recoveryFiles(let recoveryTake, _) = outcome {
-                        lastTake = recoveryTake
-                    }
+                case .none:
                     outputDirectoryAccess?.stop()
                     outputDirectoryAccess = nil
                     state = .idle
-                    takeRecording.resetSceneTimeline()
-                    refreshAudioLevelMonitoring()
-                    switch outcome {
-                    case .saved:
-                        let savedOutput = outcome.savedOutput(warning: captureSummary.savedRecordingStopWarning)
-                        if let savedOutput {
-                            onSavedRecording?(savedOutput)
-                            onMessage?(savedOutput.userMessage)
-                        } else {
-                            onMessage?(outcome.userMessage)
-                        }
-                    case .recoveryFiles:
-                        let stopWarning = stopWarnings.isEmpty ? nil : stopWarnings.joined(separator: ". ")
-                        let message = if let stopWarning {
-                            "\(stopWarning). \(outcome.userMessage)"
-                        } else {
-                            outcome.userMessage
-                        }
-                        if let recovery = outcome.recoveryOutput() {
-                            onRecordingRecovery?(recovery)
-                        }
-                        onMessage?("Recording failed: \(message)")
-                    }
-                } else {
-                    outputDirectoryAccess?.stop()
-                    outputDirectoryAccess = nil
-                    state = .idle
-                    takeRecording.resetSceneTimeline()
                     refreshAudioLevelMonitoring()
                 }
             } catch {
@@ -1525,7 +1718,7 @@ final class RecorderCoordinator {
             return
         }
         guard accessController.canRenderExport else {
-            onMessage?("Free exports used. Subscribe for unlimited renders.")
+            onMessage?("Export is unavailable.")
             return
         }
 
@@ -1605,44 +1798,22 @@ final class RecorderCoordinator {
         activeScreenCaptureConfigurationRevision += 1
         let revision = activeScreenCaptureConfigurationRevision
         let previousTask = activeScreenCaptureConfigurationTask
-        if takeRecording.isUsingLiveCompositor {
-            let task = Task { [weak self, previousTask, settings, pickedScreenFilter, revision] in
-                await previousTask?.value
-                guard let self,
-                      self.shouldApplyActiveScreenCaptureConfiguration(revision: revision) else {
-                    return
-                }
-                do {
-                    try await self.takeRecording.liveCompositedRecorder.updateScreenCapture(
-                        settings: settings,
-                        filter: pickedScreenFilter
-                    )
-                } catch {
-                    self.reportActiveScreenCaptureConfigurationFailure(error, revision: revision)
-                }
+        let task = Task { [weak self, previousTask, settings, pickedScreenFilter, revision] in
+            await previousTask?.value
+            guard let self,
+                  self.shouldApplyActiveScreenCaptureConfiguration(revision: revision) else {
+                return
             }
-            activeScreenCaptureConfigurationTask = task
-            return
-        }
-
-        if let activeCaptureRun = takeRecording.activeCaptureRun {
-            let task = Task { [weak self, previousTask, activeCaptureRun, settings, pickedScreenFilter, revision] in
-                await previousTask?.value
-                guard let self,
-                      self.shouldApplyActiveScreenCaptureConfiguration(revision: revision) else {
-                    return
-                }
-                do {
-                    try await activeCaptureRun.updateScreenCapture(
-                        settings: settings,
-                        pickedScreenFilter: pickedScreenFilter
-                    )
-                } catch {
-                    self.reportActiveScreenCaptureConfigurationFailure(error, revision: revision)
-                }
+            do {
+                try await self.takeRecording.updateScreenCapture(
+                    settings: settings,
+                    pickedScreenFilter: pickedScreenFilter
+                )
+            } catch {
+                self.reportActiveScreenCaptureConfigurationFailure(error, revision: revision)
             }
-            activeScreenCaptureConfigurationTask = task
         }
+        activeScreenCaptureConfigurationTask = task
     }
 
     private func cancelPendingActiveScreenCaptureConfigurationUpdate() {
@@ -1664,7 +1835,6 @@ final class RecorderCoordinator {
 
     private func synchronizeActiveCaptureSourcesIfNeeded() {
         guard !takeRecording.isUsingLiveCompositor,
-              let activeCaptureRun = takeRecording.activeCaptureRun,
               state == .recording || state == .paused else {
             return
         }
@@ -1683,9 +1853,9 @@ final class RecorderCoordinator {
             usesRemoteCamera: settings.enabledSources.contains(.camera) && isRemoteCameraSelected
         )
         let pickedScreenFilter = pickedScreenFilter(for: localSettings)
-        Task { [weak self, activeCaptureRun, localSettings, pickedScreenFilter] in
+        Task { [weak self, localSettings, pickedScreenFilter] in
             do {
-                try await activeCaptureRun.startEnabledSources(
+                try await self?.takeRecording.startEnabledSources(
                     settings: localSettings,
                     pickedScreenFilter: pickedScreenFilter
                 )
@@ -1732,6 +1902,7 @@ final class RecorderCoordinator {
         settings.canvasPadding = snapshot.canvasPadding
         settings.selectedScenePreset = snapshot.selectedScenePreset
         settings.selectedDisplayID = snapshot.selectedDisplayID
+        settings.screenSourceBinding = snapshot.screenSourceBinding
         settings.screenCrop = snapshot.screenCrop
         // `pickedScreenFilter` is single, session-global state — there is only one picked
         // screen for the whole app, not one per scene, and every pick/clear path keeps it
@@ -1751,565 +1922,127 @@ final class RecorderCoordinator {
     }
 
     var isRemoteCameraSelected: Bool {
-        RemoteCameraProviderID.isRemote(settings.selectedCameraID)
+        remoteCamera.isRemoteCameraSelected()
     }
 
     func selectedRemoteCameraName() -> String? {
-        remoteCameraSessionState.selectedName(settings: settings)
+        remoteCamera.selectedName()
     }
 
     func selectedRemoteCameraStatus() -> String? {
-        remoteCameraSessionState.selectedStatus(
-            settings: settings,
-            previewHealthStatus: Self.previewHealthStatus
-        )
+        remoteCamera.selectedStatus()
     }
 
     func selectedRemoteCameraConnectionState() -> RemoteCameraConnectionState? {
-        guard let selectedServiceID = RemoteCameraProviderID.serviceID(from: settings.selectedCameraID) else {
-            return nil
-        }
-        return remoteCameraSessionState.connectionState(for: selectedServiceID)
+        remoteCamera.selectedConnectionState()
     }
 
     func selectedRemoteCameraDeviceDescription() -> String {
-        remoteCameraSessionState.selectedDeviceDescription(
-            settings: settings,
-            marketingName: Self.iPhoneMarketingName
-        )
+        remoteCamera.selectedDeviceDescription()
     }
 
     func selectedRemoteCameraCapabilities() -> RemoteCameraCapabilities? {
-        remoteCameraSessionState.selectedCapabilities(
-            settings: settings,
-            normalizedSettings: { [weak self] proposedSettings, serviceID in
-                guard let self else { return proposedSettings }
-                return self.normalizedRemoteCameraSettings(proposedSettings, for: serviceID)
-            }
-        )
+        remoteCamera.selectedCapabilities()
     }
 
     func selectedRemoteCameraTelemetry() -> RemoteCameraTelemetry? {
-        remoteCameraSessionState.selectedTelemetry(
-            settings: settings,
-            normalizedSettings: { [weak self] proposedSettings, serviceID in
-                guard let self else { return proposedSettings }
-                return self.normalizedRemoteCameraSettings(proposedSettings, for: serviceID)
-            }
-        )
+        remoteCamera.selectedTelemetry()
     }
 
     func remoteCameraDeviceSummaries() -> [RemoteCameraDeviceSummary] {
-        remoteCameraSessionState.deviceSummaries(
-            settings: settings,
-            marketingName: Self.iPhoneMarketingName,
-            previewHealthStatus: Self.previewHealthStatus
-        )
+        remoteCamera.deviceSummaries()
     }
 
     func setRemoteCameraLens(_ lens: RemoteCameraLens) {
-        applyRemoteCameraSettingsIntent(.lens(lens))
+        remoteCamera.applySettingsIntent(.lens(lens))
     }
 
     func setRemoteCameraFormat(id: String?, frameRate: Int) {
-        applyRemoteCameraSettingsIntent(.format(id: id, frameRate: frameRate))
+        remoteCamera.applySettingsIntent(.format(id: id, frameRate: frameRate))
     }
 
     func setRemoteCameraCaptureProfile(_ profileID: RemoteCameraCaptureProfileID) {
-        applyRemoteCameraSettingsIntent(.captureProfile(profileID))
+        remoteCamera.applySettingsIntent(.captureProfile(profileID))
+    }
+
+    func setRemoteCameraColorMode(_ colorMode: RemoteCameraColorMode) {
+        remoteCamera.applySettingsIntent(.colorMode(colorMode))
     }
 
     func setRemoteCameraCinematicVideoEnabled(_ enabled: Bool) {
-        applyRemoteCameraSettingsIntent(.cinematicVideoEnabled(enabled))
+        remoteCamera.applySettingsIntent(.cinematicVideoEnabled(enabled))
     }
 
     func setRemoteCameraCinematicAperture(_ aperture: Double) {
-        applyRemoteCameraSettingsIntent(.cinematicAperture(aperture))
+        remoteCamera.applySettingsIntent(.cinematicAperture(aperture))
     }
 
     func setRemoteCameraFocusMode(_ mode: RemoteCameraFocusMode) {
-        applyRemoteCameraSettingsIntent(.focusMode(mode))
+        remoteCamera.applySettingsIntent(.focusMode(mode))
     }
 
     func setRemoteCameraFocusPosition(_ position: Double) {
-        applyRemoteCameraSettingsIntent(.focusPosition(position))
+        remoteCamera.applySettingsIntent(.focusPosition(position))
     }
 
     func setRemoteCameraExposureMode(_ mode: RemoteCameraExposureMode) {
-        applyRemoteCameraSettingsIntent(.exposureMode(mode))
+        remoteCamera.applySettingsIntent(.exposureMode(mode))
     }
 
     func setRemoteCameraExposureBias(_ bias: Double) {
-        applyRemoteCameraSettingsIntent(.exposureBias(bias))
+        remoteCamera.applySettingsIntent(.exposureBias(bias))
     }
 
     func resetRemoteCameraExposureBias() {
-        applyRemoteCameraSettingsIntent(.resetExposureBias)
+        remoteCamera.applySettingsIntent(.resetExposureBias)
     }
 
     func setRemoteCameraISO(_ iso: Double?) {
-        applyRemoteCameraSettingsIntent(.iso(iso))
+        remoteCamera.applySettingsIntent(.iso(iso))
     }
 
     func setRemoteCameraShutterDuration(_ seconds: Double?) {
-        applyRemoteCameraSettingsIntent(.shutterDuration(seconds))
+        remoteCamera.applySettingsIntent(.shutterDuration(seconds))
     }
 
     func setRemoteCameraWhiteBalanceMode(_ mode: RemoteCameraWhiteBalanceMode) {
-        applyRemoteCameraSettingsIntent(.whiteBalanceMode(mode))
+        remoteCamera.applySettingsIntent(.whiteBalanceMode(mode))
     }
 
     func setRemoteCameraWhiteBalance(temperature: Double, tint: Double) {
-        applyRemoteCameraSettingsIntent(.whiteBalance(temperature: temperature, tint: tint))
+        remoteCamera.applySettingsIntent(.whiteBalance(temperature: temperature, tint: tint))
     }
 
     func setRemoteCameraStabilizationMode(_ mode: RemoteCameraStabilizationMode) {
-        applyRemoteCameraSettingsIntent(.stabilizationMode(mode))
+        remoteCamera.applySettingsIntent(.stabilizationMode(mode))
     }
 
     func setRemoteCameraRotationDegrees(_ degrees: Int) {
-        applyRemoteCameraSettingsIntent(.rotationDegrees(degrees))
+        remoteCamera.applySettingsIntent(.rotationDegrees(degrees))
     }
 
     func resetRemoteCameraImageSettings() {
-        applyRemoteCameraSettingsIntent(.resetImageSettings)
+        remoteCamera.applySettingsIntent(.resetImageSettings)
     }
 
     func resetRemoteCameraSettings() {
-        guard let selectedServiceID = RemoteCameraProviderID.serviceID(from: settings.selectedCameraID) else {
-            return
-        }
-        let result = RemoteCameraSettingsCommand.apply(
-            .resetAll(frameRate: settings.framesPerSecond),
-            to: remoteCameraSettings(for: selectedServiceID),
-            capabilities: remoteCameraSessionState.capabilities[selectedServiceID],
-            preferredFrameRate: settings.framesPerSecond
-        )
-        commitRemoteCameraSettings(result.settings, serviceID: selectedServiceID, sendImmediately: true)
+        remoteCamera.resetSettings()
     }
 
     private func remoteCameraOptions() -> [SourceOption] {
-        remoteCameraSessionState.cameraOptions()
+        remoteCamera.cameraOptions()
     }
 
     func startRemoteCameraDiscoveryIfNeeded() {
-        guard !isRemoteCameraDiscoveryStarted else { return }
-        isRemoteCameraDiscoveryStarted = true
-
-        remoteCameraControlClient.onStateChanged = { [weak self] state in
-            Task { @MainActor [weak self] in
-                guard let self,
-                      let serviceID = RemoteCameraProviderID.serviceID(from: self.settings.selectedCameraID) else {
-                    return
-                }
-                self.remoteCameraSessionState.setConnectionState(state, for: serviceID)
-                switch state {
-                case .connected, .pairing:
-                    self.remoteCameraReconnectTasks[serviceID]?.cancel()
-                    self.remoteCameraReconnectTasks[serviceID] = nil
-                case .disconnected, .degraded:
-                    self.scheduleRemoteCameraReconnect(serviceID: serviceID)
-                default:
-                    break
-                }
-                self.onCameraConfigurationChanged?()
-            }
-        }
-        remoteCameraControlClient.onEvent = { [weak self] event in
-            Task { @MainActor [weak self] in
-                self?.handleRemoteCameraEvent(event)
-            }
-        }
-        remoteCameraBrowser.onStateChanged = { [weak self] state in
-            if case .failed(let message) = state {
-                Task { @MainActor [weak self] in
-                    self?.onMessage?("Remote iPhone discovery failed: \(message)")
-                }
-            }
-        }
-		remoteCameraBrowser.onServicesChanged = { [weak self] services in
-			Task { @MainActor [weak self] in
-				guard let self else { return }
-				let previousServiceIDs = self.remoteCameraSessionState.replaceDiscoveredServices(services)
-				if let selectedServiceID = RemoteCameraProviderID.serviceID(from: self.settings.selectedCameraID),
-				   let service = self.bestMatchingRemoteCameraService(for: selectedServiceID, services: services) {
-					if service.id != selectedServiceID {
-						self.settings.selectedCameraID = RemoteCameraProviderID.make(for: service.id)
-						self.persistSettings()
-					}
-					let wasRediscovered = !previousServiceIDs.contains(service.id)
-					self.connectRemoteCamera(serviceID: service.id, forceReconnect: wasRediscovered)
-				} else if let service = self.remoteCameraSessionState.automaticSelection(settings: self.settings) {
-					self.settings.selectedCameraID = RemoteCameraProviderID.make(for: service.id)
-					self.persistSettings()
-					self.connectRemoteCamera(serviceID: service.id)
-				}
-				self.onCameraConfigurationChanged?()
-			}
-		}
-		remoteCameraBrowser.start()
-	}
-
-	private func bestMatchingRemoteCameraService(
-		for selectedServiceID: String,
-		services: [DiscoveredBonjourService]
-	) -> DiscoveredBonjourService? {
-		if let exactMatch = services.first(where: { $0.id == selectedServiceID }) {
-			return exactMatch
-		}
-		let selectedName = selectedServiceID
-			.split(separator: ".")
-			.first
-			.map(String.init)?
-			.removingPercentEncoding
-		if let selectedName,
-		   let nameMatch = services.first(where: { $0.name == selectedName }) {
-			return nameMatch
-		}
-		return services.count == 1 ? services[0] : nil
-	}
-
-	private func connectRemoteCamera(serviceID: String, forceReconnect: Bool = false) {
-        guard let service = remoteCameraSessionState.service(id: serviceID) else {
-            remoteCameraSessionState.setConnectionState(.discovering, for: serviceID)
-            return
-        }
-        remoteCameraSessionState.setConnectionState(.pairing, for: serviceID)
-        if forceReconnect || remoteCameraControlClient.connectedServiceID != serviceID {
-            remoteCameraSessionState.clearSettingsRestoreMarker(for: serviceID)
-        }
-        remoteCameraControlClient.connect(to: service, forceReconnect: forceReconnect)
-    }
-
-    private func scheduleRemoteCameraReconnect(serviceID: String) {
-        guard settings.selectedCameraID == RemoteCameraProviderID.make(for: serviceID),
-              remoteCameraReconnectTasks[serviceID] == nil,
-              remoteCameraSessionState.containsService(id: serviceID) else {
-            return
-        }
-        remoteCameraReconnectTasks[serviceID] = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(2))
-            await MainActor.run { [weak self] in
-                guard let self,
-                      !Task.isCancelled,
-                      self.settings.selectedCameraID == RemoteCameraProviderID.make(for: serviceID) else {
-                    return
-                }
-                self.remoteCameraReconnectTasks[serviceID] = nil
-                self.connectRemoteCamera(serviceID: serviceID, forceReconnect: true)
-            }
-        }
+        remoteCamera.startDiscoveryIfNeeded()
     }
 
     private func requireRemoteCameraConnection() async throws {
-        guard let selectedServiceID = RemoteCameraProviderID.serviceID(from: settings.selectedCameraID) else {
-            throw RecorderError.remoteCameraNotConnected
-        }
-        if remoteCameraIsConnected(serviceID: selectedServiceID) {
-            return
-        }
-
-        if remoteCameraSessionState.containsService(id: selectedServiceID) {
-            connectRemoteCamera(serviceID: selectedServiceID, forceReconnect: true)
-        }
-
-        let deadline = Date().addingTimeInterval(5)
-        while Date() < deadline {
-            if remoteCameraIsConnected(serviceID: selectedServiceID) {
-                return
-            }
-            try await Task.sleep(for: .milliseconds(100))
-        }
-
-        throw RecorderError.remoteCameraNotConnected
-    }
-
-    private func remoteCameraIsConnected(serviceID: String) -> Bool {
-        remoteCameraSessionState.connectionStates[serviceID] == .connected
-            && remoteCameraControlClient.connectedServiceID == serviceID
-            && remoteCameraControlClient.isConnected
+        try await remoteCamera.requireConnection()
     }
 
     private func remoteCameraConnectionBlocker() -> PermissionBlocker? {
-        guard settings.enabledSources.contains(.camera),
-              let selectedServiceID = RemoteCameraProviderID.serviceID(from: settings.selectedCameraID),
-              !remoteCameraIsConnected(serviceID: selectedServiceID) else {
-            return nil
-        }
-
-        if remoteCameraSessionState.containsService(id: selectedServiceID),
-           remoteCameraSessionState.connectionStates[selectedServiceID] != .pairing {
-            scheduleRemoteCameraReconnect(serviceID: selectedServiceID)
-        }
-
-        return PermissionBlocker(
-            source: .camera,
-            permission: "Remote iPhone",
-            status: selectedRemoteCameraStatus() ?? "not connected",
-            recovery: "Keep the iPhone camera app open and wait for it to reconnect."
-        )
-    }
-
-    private func sendRemoteCameraSettings() {
-        guard let selectedServiceID = RemoteCameraProviderID.serviceID(from: settings.selectedCameraID) else {
-            return
-        }
-        remoteCameraSettingsSendTasks[selectedServiceID]?.cancel()
-        remoteCameraSettingsSendTasks[selectedServiceID] = nil
-        remoteCameraControlClient.send(.applySettings(remoteCameraSettings(for: selectedServiceID)))
-    }
-
-    private func applyRemoteCameraSettingsIntent(_ intent: RemoteCameraSettingsIntent) {
-        guard let selectedServiceID = RemoteCameraProviderID.serviceID(from: settings.selectedCameraID) else {
-            return
-        }
-        let result = RemoteCameraSettingsCommand.apply(
-            intent,
-            to: remoteCameraSettings(for: selectedServiceID),
-            capabilities: remoteCameraSessionState.capabilities[selectedServiceID],
-            preferredFrameRate: settings.framesPerSecond
-        )
-        if let message = result.message {
-            onMessage?(message)
-        }
-        guard result.didChange else { return }
-        commitRemoteCameraSettings(result.settings, serviceID: selectedServiceID)
-    }
-
-    private func commitRemoteCameraSettings(
-        _ remoteSettings: RemoteCameraSettings,
-        serviceID selectedServiceID: String,
-        sendImmediately: Bool = false
-    ) {
-        settings.remoteCameraSettingsByServiceID[selectedServiceID] = remoteSettings
-        suppressRemoteCameraPreview(serviceID: selectedServiceID, message: "Updating iPhone camera...")
-        refreshSelectedScenePresetLayoutIfNeeded()
-        persistSettings()
-        updateRemoteCameraTelemetry(for: selectedServiceID, activeSettings: remoteSettings)
-        if sendImmediately {
-            remoteCameraSettingsSendTasks[selectedServiceID]?.cancel()
-            remoteCameraSettingsSendTasks[selectedServiceID] = nil
-            remoteCameraControlClient.send(.applySettings(remoteSettings))
-        } else {
-            scheduleRemoteCameraSettingsSend(remoteSettings, serviceID: selectedServiceID)
-        }
-        onCameraConfigurationChanged?()
-    }
-
-    private func refreshSelectedScenePresetLayoutIfNeeded() {
-        guard let preset = settings.selectedScenePreset,
-              preset.supports(settings.layout) else {
-            return
-        }
-        settings.sceneLayout = SceneLayout.presetLayout(
-            preset,
-            for: settings.layout,
-            screenAspectRatio: currentScreenSourceAspectRatio(),
-            cameraAspectRatio: currentCameraSourceAspectRatio()
-        )
-    }
-
-    private func scheduleRemoteCameraSettingsSend(_ remoteSettings: RemoteCameraSettings, serviceID: String) {
-        remoteCameraSettingsSendTasks[serviceID]?.cancel()
-        remoteCameraSettingsSendTasks[serviceID] = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(150))
-            await MainActor.run { [weak self] in
-                guard let self,
-                      !Task.isCancelled,
-                      self.settings.selectedCameraID == RemoteCameraProviderID.make(for: serviceID) else {
-                    return
-                }
-                self.remoteCameraSettingsSendTasks[serviceID] = nil
-                self.remoteCameraControlClient.send(.applySettings(remoteSettings))
-            }
-        }
-    }
-
-    private func remoteCameraSettings(for selectedServiceID: String) -> RemoteCameraSettings {
-        let activeTelemetry = remoteCameraSessionState.telemetry[selectedServiceID]
-        return normalizedRemoteCameraSettings(
-            settings.remoteCameraSettingsByServiceID[selectedServiceID]
-                ?? activeTelemetry?.activeSettings
-                ?? RemoteCameraSettings(),
-            for: selectedServiceID
-        )
-    }
-
-    private static func previewHealthStatus(_ health: RemoteCameraPreviewHealth) -> String {
-        if let lastFrameAgeSeconds = health.lastFrameAgeSeconds, lastFrameAgeSeconds >= 2 {
-            return "Waiting for live view"
-        }
-        return "iPhone connected"
-    }
-
-    private func suppressRemoteCameraPreview(serviceID: String, message: String) {
-        remoteCameraPreviewSuppressedUntil[serviceID] = Date().addingTimeInterval(1.25)
-        onRemoteCameraPreviewReset?(message)
-    }
-
-    private func isRemoteCameraPreviewSuppressed(serviceID: String) -> Bool {
-        guard let suppressedUntil = remoteCameraPreviewSuppressedUntil[serviceID] else {
-            return false
-        }
-        if Date() < suppressedUntil {
-            return true
-        }
-        remoteCameraPreviewSuppressedUntil.removeValue(forKey: serviceID)
-        return false
-    }
-
-    private func updateRemoteCameraTelemetry(for selectedServiceID: String, activeSettings: RemoteCameraSettings) {
-        remoteCameraSessionState.updateTelemetrySettings(for: selectedServiceID, activeSettings: activeSettings)
-    }
-
-    private func normalizedRemoteCameraSettings(
-        _ proposedSettings: RemoteCameraSettings,
-        for selectedServiceID: String
-    ) -> RemoteCameraSettings {
-        RemoteCameraSettingsResolver.normalized(
-            proposedSettings,
-            capabilities: remoteCameraSessionState.capabilities[selectedServiceID],
-            preferredFrameRate: settings.framesPerSecond
-        )
-    }
-
-    private func stopRemoteCameraAndImport(take: RecordingTake) async throws -> MediaWriterCompletion {
-        try await remoteCameraRuntime.stopAndImport(take: take, settings: settings)
-    }
-
-    private func remoteCameraImportFailureMessage(error: Error, take: RecordingTake) -> String {
-        let reason = error.recorderFailureDescription
-        let lowercasedReason = reason.lowercased()
-        let failedBeforeSavingMedia = lowercasedReason.contains("failed before stop")
-            || lowercasedReason.contains("empty file")
-            || lowercasedReason.contains("while failed")
-
-        if failedBeforeSavingMedia {
-            return "Recording failed: iPhone camera did not save usable media: \(reason). "
-                + "Screen/source files are in \(take.scratchDirectory.path)."
-        }
-
-        return "Recording failed: Remote iPhone import did not finish: \(reason). "
-            + "The take is waiting for the iPhone master recording. Keep both devices on the same Wi-Fi, reopen BlitzRecorder Camera, then retry the pending import. Recovery files: \(take.scratchDirectory.path)"
-    }
-
-    private func handleRemoteCameraEvent(_ event: RemoteCameraEvent) {
-        guard let serviceID = RemoteCameraProviderID.serviceID(from: settings.selectedCameraID) else {
-            return
-        }
-        switch event {
-        case .pairingChallenge(let challenge):
-            remoteCameraSessionState.setConnectionState(.pairing, for: serviceID)
-            if !challenge.requiresShortCode {
-                remoteCameraControlClient.pair(shortCode: "", challenge: challenge)
-                onMessage?("Verifying trusted Remote iPhone Camera...")
-                onCameraConfigurationChanged?()
-                return
-            }
-            guard let code = requestRemoteCameraPairingCode(for: challenge) else {
-                remoteCameraControlClient.send(.cancel)
-                onMessage?("Remote iPhone pairing cancelled.")
-                onCameraConfigurationChanged?()
-                return
-            }
-            remoteCameraControlClient.pair(shortCode: code, challenge: challenge)
-            onMessage?("Pairing \(challenge.deviceName)...")
-            onCameraConfigurationChanged?()
-        case .paired(let trust):
-            settings.trustedRemoteCameraServiceIDs.insert(serviceID)
-            persistSettings()
-            remoteCameraSessionState.setConnectionState(.connected, for: serviceID)
-            onMessage?("Paired \(trust.deviceName) as Remote iPhone Camera.")
-            remoteCameraControlClient.send(.requestCapabilities)
-            attemptPendingRemoteCameraImports(serviceID: serviceID)
-            onCameraConfigurationChanged?()
-        case .capabilities(let capabilities):
-            remoteCameraSessionState.setCapabilities(capabilities, for: serviceID)
-            remoteCameraSessionState.setConnectionState(.connected, for: serviceID)
-            onMessage?("Remote iPhone ready: \(capabilities.supportedLenses.map(\.displayName).joined(separator: ", "))")
-            if settings.selectedCameraID == RemoteCameraProviderID.make(for: serviceID),
-               settings.selectedScenePreset?.supports(settings.layout) == true {
-                refreshSelectedScenePresetLayoutIfNeeded()
-                persistSettings()
-            }
-            if settings.remoteCameraSettingsByServiceID[serviceID] != nil,
-               !remoteCameraSessionState.hasSentSettingsRestore(for: serviceID) {
-                let remoteSettings = remoteCameraSettings(for: serviceID)
-                updateRemoteCameraTelemetry(for: serviceID, activeSettings: remoteSettings)
-                remoteCameraSessionState.markSettingsRestoreSent(for: serviceID)
-                suppressRemoteCameraPreview(serviceID: serviceID, message: "Updating iPhone camera...")
-                remoteCameraControlClient.send(.applySettings(remoteSettings))
-            }
-            attemptPendingRemoteCameraImports(serviceID: serviceID)
-            onCameraConfigurationChanged?()
-        case .telemetry(let telemetry):
-            remoteCameraSessionState.setTelemetry(telemetry, for: serviceID)
-            onCameraConfigurationChanged?()
-        case .failed(let failedTakeID, let reason):
-            remoteCameraSessionState.setConnectionState(.degraded, for: serviceID)
-            onMessage?("Remote iPhone error: \(reason)")
-            remoteCameraRuntime.handleFailed(takeID: failedTakeID, reason: reason)
-        case .transferReady(let takeID, _, let byteCount, let manifest):
-            remoteCameraRuntime.applyTransferReady(
-                takeID: takeID,
-                byteCount: byteCount,
-                manifest: manifest,
-                settings: settings
-            )
-            onCameraConfigurationChanged?()
-        case .monitorFrame(let jpegData, _, _):
-            guard !isRemoteCameraPreviewSuppressed(serviceID: serviceID) else { return }
-            if let image = Self.makeCGImage(fromJPEGData: jpegData) {
-                onRemoteCameraPreviewFrame?(image)
-            }
-        case .monitorVideoFrame(let frame):
-            guard !isRemoteCameraPreviewSuppressed(serviceID: serviceID) else { return }
-            if let sampleBuffer = remoteCameraMonitorSampleBufferFactory.makeSampleBuffer(from: frame) {
-                onRemoteCameraPreviewSampleBuffer?(sampleBuffer, frame.width, frame.height)
-            }
-        case .transferChunk(let takeID, let offset, let data, let isFinal):
-            remoteCameraRuntime.writeChunk(takeID: takeID, offset: offset, data: data, isFinal: isFinal)
-            onCameraConfigurationChanged?()
-        case .transferComplete(let takeID, let byteCount, let sha256):
-            remoteCameraRuntime.completeTransfer(
-                takeID: takeID,
-                byteCount: byteCount,
-                sha256: sha256,
-                settings: settings
-            )
-            onCameraConfigurationChanged?()
-        case .prepared(let takeID, let deviceStartTime):
-            remoteCameraRuntime.resolvePrepared(takeID: takeID, deviceStartTime: deviceStartTime)
-            onCameraConfigurationChanged?()
-        case .started(let takeID, let deviceStartTime):
-            remoteCameraRuntime.resolveStarted(takeID: takeID, deviceStartTime: deviceStartTime)
-            onCameraConfigurationChanged?()
-        case .stopped(_, _, _, let reason):
-            if let reason, !reason.isEmpty {
-                onMessage?("Remote iPhone stopped recording: \(reason)")
-            }
-            onCameraConfigurationChanged?()
-        }
-    }
-
-    private func attemptPendingRemoteCameraImports(serviceID: String) {
-        guard state == .idle || state == .finishing else { return }
-        remoteCameraRuntime.requestPendingImports(serviceID: serviceID, settings: settings)
-    }
-
-    private func requestRemoteCameraPairingCode(for challenge: RemoteCameraPairingChallenge) -> String? {
-        guard let rawCode = onRemoteCameraPairingCodeRequested?(challenge.deviceName) else {
-            return nil
-        }
-        let code = RemoteCameraPairingCode.normalized(rawCode)
-        return RemoteCameraPairingCode.isValid(code) ? code : nil
-    }
-
-    private static func makeCGImage(fromJPEGData data: Data) -> CGImage? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
-            return nil
-        }
-        return CGImageSourceCreateImageAtIndex(source, 0, nil)
+        remoteCamera.connectionBlocker()
     }
 
     private func configureAudioLevelMonitoring() async {

@@ -108,6 +108,19 @@ jobs:
           fi
           Scripts/archive-app-store.sh
 
+      - name: Validate App Store Submission Artifacts
+        env:
+          TARGET: ${{ inputs.target }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          REQUIRE_EXPORTS: ${{ (inputs.export == '1' || inputs.upload == '1') && '1' || '0' }}
+        run: |
+          set -euo pipefail
+          mkdir -p build/ReleaseEvidence/app-store
+          Scripts/validate-submission-artifacts.sh --strict --target "$TARGET" \
+            | tee build/ReleaseEvidence/app-store/submission-validation.log
+
       - name: Upload Build Artifacts
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -116,6 +129,7 @@ jobs:
           path: |
             build/AppStoreArchives
             build/AppStoreExports
+            build/ReleaseEvidence/app-store
           if-no-files-found: ignore
 
       - name: Clean Up Keychain

@@ -18,23 +18,47 @@ public enum RemoteCameraSettingsResolver {
         if !supportedProfiles.contains(where: { $0.id == remoteSettings.captureProfileID && $0.isAvailable }) {
             remoteSettings.captureProfileID = .automatic
         }
+        if remoteSettings.colorMode != .standard,
+           let proResProfile = supportedProfiles.first(where: { $0.id == .proRes422 && $0.isAvailable }) {
+            remoteSettings.captureProfileID = proResProfile.id
+        } else if remoteSettings.colorMode != .standard {
+            remoteSettings.colorMode = .standard
+        }
         let selectableFormats = formats(
             lensCapabilities?.supportedFormats ?? [],
             supportedBy: remoteSettings.captureProfileID,
             profiles: supportedProfiles
         )
         let formatCandidates = selectableFormats.isEmpty ? (lensCapabilities?.supportedFormats ?? []) : selectableFormats
-        let format = formatCandidates.first { format in
+        let colorModeFormatCandidates: [RemoteCameraFormat]
+        if remoteSettings.colorMode == .standard {
+            colorModeFormatCandidates = formatCandidates
+        } else {
+            let matchingFormats = formatCandidates.filter { $0.colorModes.contains(remoteSettings.colorMode) }
+            colorModeFormatCandidates = matchingFormats.isEmpty ? formatCandidates : matchingFormats
+        }
+        let format = colorModeFormatCandidates.first { format in
             format.id == remoteSettings.formatID && format.frameRates.contains(remoteSettings.frameRate)
-        } ?? formatCandidates.first { format in
+        } ?? colorModeFormatCandidates.first { format in
             format.frameRates.contains(preferredFrameRate)
-        } ?? formatCandidates.first
+        } ?? colorModeFormatCandidates.first
         remoteSettings.formatID = format?.id
-        remoteSettings.frameRate = format?.frameRates.contains(remoteSettings.frameRate) == true
+        if let format, !format.colorModes.contains(remoteSettings.colorMode) {
+            remoteSettings.colorMode = .standard
+        }
+        let frameRates = format.map {
+            compatibleFrameRates(
+                for: $0,
+                profileID: remoteSettings.captureProfileID,
+                colorMode: remoteSettings.colorMode,
+                profiles: supportedProfiles
+            )
+        } ?? []
+        remoteSettings.frameRate = frameRates.contains(remoteSettings.frameRate) == true
             ? remoteSettings.frameRate
-            : (format?.frameRates.contains(preferredFrameRate) == true
+            : (frameRates.contains(preferredFrameRate) == true
                 ? preferredFrameRate
-                : (format?.frameRates.first ?? preferredFrameRate))
+                : (frameRates.first ?? preferredFrameRate))
         remoteSettings.zoomFactor = 1
         remoteSettings.torchEnabled = false
         remoteSettings.focusPosition = min(1, max(0, remoteSettings.focusPosition))
@@ -56,6 +80,27 @@ public enum RemoteCameraSettingsResolver {
         }
         let supportedIDs = Set(profile.supportedFormatIDs)
         return formats.filter { supportedIDs.contains($0.id) }
+    }
+
+    public static func compatibleFrameRates(
+        for format: RemoteCameraFormat,
+        profileID: RemoteCameraCaptureProfileID,
+        colorMode: RemoteCameraColorMode,
+        profiles: [RemoteCameraCaptureProfile]
+    ) -> [Int] {
+        var frameRates = Set(format.frameRates)
+        if let profile = profiles.first(where: { $0.id == profileID }),
+           let profileFrameRates = profile.supportedFormatFrameRates[format.id],
+           !profileFrameRates.isEmpty {
+            frameRates.formIntersection(profileFrameRates)
+        }
+        if colorMode != .standard,
+           let colorModeFrameRates = format.colorModeFrameRates[colorMode],
+           !colorModeFrameRates.isEmpty {
+            frameRates.formIntersection(colorModeFrameRates)
+        }
+        let sortedFrameRates = frameRates.sorted()
+        return sortedFrameRates.isEmpty ? format.frameRates : sortedFrameRates
     }
 
     public static func aspectRatio(width: Int, height: Int, rotationDegrees: Int) -> Double {

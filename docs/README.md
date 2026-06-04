@@ -6,7 +6,7 @@ This folder keeps product, development, release, and platform notes out of the t
 
 - [Feature overview](features.md): recording, layout, iPhone camera, and post-recording features
 - [User workflow](usage.md): recording, iPhone companion, post-recording, and recovery flow
-- [Product model](product-model.md): free exports, Pro subscription, and BlitzReels included access
+- [Product model](product-model.md): free open-source access, no Pro tier, and distribution scope
 - [Permissions](permissions.md): macOS screen capture, audio, camera, microphone, and local network behavior
 
 ## Engineering
@@ -14,6 +14,7 @@ This folder keeps product, development, release, and platform notes out of the t
 - [Development](development.md): local setup, project generation, builds, and tests
 - [Architecture](architecture.md): app targets, shared packages, source layout, and implementation notes
 - [Release](release.md): GitHub Actions, DMG packaging, TestFlight, App Store release, and local release scripts
+- [Open-source launch](launch.md): launch checklist, repo links, and X announcement drafts
 
 ## Related project files
 

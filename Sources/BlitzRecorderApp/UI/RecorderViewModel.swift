@@ -65,6 +65,7 @@ final class RecorderViewModel {
     var lastRecoveryOutput: RecordingRecoveryOutput?
 
     var availableDisplays: [SourceOption] = []
+    var availableScreenSources: [ScreenSourceOption] = []
     var availableCameras: [SourceOption] = []
     var availableMicrophones: [SourceOption] = []
     var directRemoteCameraHost: String = ""
@@ -130,6 +131,17 @@ final class RecorderViewModel {
             return option.name
         }
         return "Default camera"
+    }
+
+    var selectedScreenSourceDisplayName: String {
+        if settings.usesPickedScreenContent {
+            return "Picked screen content"
+        }
+        if let binding = settings.screenSourceBinding,
+           let option = availableScreenSources.first(where: { $0.binding == binding }) {
+            return option.title
+        }
+        return settings.screenSourceBinding?.displayName ?? "Display capture"
     }
 
     var selectedRemoteCameraCapabilities: RemoteCameraCapabilities? {
@@ -226,6 +238,17 @@ final class RecorderViewModel {
         return coordinator.scenesForCurrentLayout()
     }
 
+    /// Every scene across all aspect ratios, current ratio first so the live
+    /// scene stays near the front of the "All" view.
+    var allScenes: [RecordingSceneDefinition] {
+        _ = sceneLibraryRevision
+        let current = coordinator.scenesForCurrentLayout()
+        let others = CaptureLayout.allCases
+            .filter { $0 != settings.layout }
+            .flatMap { coordinator.scenes(for: $0) }
+        return current + others
+    }
+
     var selectedSceneID: UUID? {
         _ = sceneLibraryRevision
         return coordinator.selectedSceneIDForCurrentLayout()
@@ -297,6 +320,7 @@ final class RecorderViewModel {
         recordingReadiness.blockers.contains { $0.source == .screen }
             && settings.enabledSources.contains(.screen)
             && !settings.usesPickedScreenContent
+            && settings.screenSourceBinding == nil
             && !settings.enabledSources.contains(.systemAudio)
     }
 
@@ -470,8 +494,10 @@ final class RecorderViewModel {
     }
 
     func refreshSources() async {
-        let displays = await coordinator.availableDisplays()
-        availableDisplays = displays
+        async let displays = coordinator.availableDisplays()
+        async let screenSources = coordinator.availableScreenSources()
+        availableDisplays = await displays
+        availableScreenSources = await screenSources
         availableCameras = coordinator.availableCameras()
         availableMicrophones = coordinator.availableMicrophones()
     }
@@ -483,6 +509,10 @@ final class RecorderViewModel {
     }
 
     func startRemoteCameraDiscovery() {
+        guard accessController.requirePaidFeature("iPhone camera") else {
+            onPresentSettings?(.account)
+            return
+        }
         coordinator.startRemoteCameraDiscoveryIfNeeded()
         refreshRemoteCameraState()
     }
@@ -529,10 +559,25 @@ final class RecorderViewModel {
 
     func setLayout(_ layout: CaptureLayout) {
         coordinator.setLayout(layout)
+        // The scenes strip is gated on this token; bump it so the per-ratio
+        // scene list + selection re-render when the aspect ratio changes.
+        sceneLibraryRevision += 1
         syncSettingsAfterSceneChange()
     }
 
     func selectScene(_ id: UUID) {
+        coordinator.selectScene(id: id)
+        sceneLibraryRevision += 1
+        syncSettingsAfterSceneChange()
+    }
+
+    /// Select a scene that may live in another aspect ratio (the "All" view):
+    /// flip the canvas to that scene's ratio first, then make it live. A
+    /// same-ratio scene skips the flip and behaves like `selectScene`.
+    func selectSceneAcrossLayouts(_ id: UUID) {
+        if let target = coordinator.layout(ofSceneID: id), target != settings.layout {
+            coordinator.setLayout(target)
+        }
         coordinator.selectScene(id: id)
         sceneLibraryRevision += 1
         syncSettingsAfterSceneChange()
@@ -599,6 +644,21 @@ final class RecorderViewModel {
 
     var screenSplitHeight: Double {
         Double(settings.sceneLayout.screenSplitHeight ?? SceneLayout.defaultScreenSplitHeight)
+    }
+
+    /// Show the split-height ("screen region") control whenever the scene is a
+    /// vertical screen-over-camera split — including after a manual edit cleared
+    /// the preset, as long as the Split preset is the active intent.
+    var showsScreenSplitControl: Bool {
+        settings.sceneLayout.screenSplitHeight != nil || settings.selectedScenePreset == .screenTop50
+    }
+
+    /// A preset tile reads as active either when it's the selected preset or when
+    /// the live geometry matches it (e.g. a split that lost its preset on a
+    /// manual edit still lights the Split tile).
+    func isScenePresetActive(_ preset: ScenePreset) -> Bool {
+        if settings.selectedScenePreset == preset { return true }
+        return preset == .screenTop50 && settings.sceneLayout.screenSplitHeight != nil
     }
 
     func setScreenSplitHeight(_ height: Double) {
@@ -732,8 +792,15 @@ final class RecorderViewModel {
     }
 
     func fitSelectedLayer() {
-        coordinator.fitSceneLayer(selectedLayer)
-        syncSettings()
+        // Fitting the screen = resize the captured window to its slot in the
+        // current layout (e.g. a split's top band) so it fills the region at
+        // native resolution — no content zoom, and the split stays intact.
+        if selectedLayer == .screen {
+            fitFrontWindowForShorts()
+        } else {
+            coordinator.fitSceneLayer(selectedLayer)
+            syncSettings()
+        }
     }
 
     func fitSelectedLayer(scale: CGFloat) {
@@ -788,14 +855,6 @@ final class RecorderViewModel {
         previewStage.cancelCameraCropEditing()
         isCameraCropModeEnabled = false
         syncPreviewInteractionState()
-    }
-
-    func centerCameraCrop() {
-        if isCameraCropModeEnabled {
-            previewStage.updateCameraCropDraft(position: .zero)
-        } else {
-            setCameraCropPosition(.zero)
-        }
     }
 
     func resetCameraCrop() {
@@ -862,6 +921,10 @@ final class RecorderViewModel {
     }
 
     func setResolution(_ resolution: OutputResolution) {
+        guard resolution != .p2160 || accessController.requirePaidFeature("4K export") else {
+            onPresentSettings?(.account)
+            return
+        }
         coordinator.setOutputResolution(resolution)
         syncSettings()
     }
@@ -872,6 +935,10 @@ final class RecorderViewModel {
     }
 
     func setFrameRate(_ fps: Int) {
+        guard fps < 60 || accessController.requirePaidFeature("60 fps export") else {
+            onPresentSettings?(.account)
+            return
+        }
         coordinator.setFramesPerSecond(fps)
         syncSettings()
     }
@@ -931,7 +998,18 @@ final class RecorderViewModel {
         syncSettings()
     }
 
+    func setScreenSource(_ binding: ScreenSourceBinding) {
+        coordinator.setScreenSource(binding)
+        syncSettings()
+        screenCaptureAreaSelection = .fullDisplay
+        detailMessage = "Screen source set to \(binding.displayName)."
+    }
+
     func setCamera(_ id: String?) {
+        guard id.map(RemoteCameraProviderID.isRemote) != true || accessController.requirePaidFeature("iPhone camera") else {
+            onPresentSettings?(.account)
+            return
+        }
         coordinator.setCamera(id: id)
         syncSettings()
     }
@@ -995,6 +1073,11 @@ final class RecorderViewModel {
 
     func setRemoteCameraCaptureProfile(_ profileID: RemoteCameraCaptureProfileID) {
         coordinator.setRemoteCameraCaptureProfile(profileID)
+        syncSettings()
+    }
+
+    func setRemoteCameraColorMode(_ colorMode: RemoteCameraColorMode) {
+        coordinator.setRemoteCameraColorMode(colorMode)
         syncSettings()
     }
 
@@ -1294,7 +1377,7 @@ final class RecorderViewModel {
             return
         }
         guard accessController.canRenderExport else {
-            detailMessage = "Free exports used. Subscribe for unlimited renders."
+            detailMessage = "Export is unavailable."
             onPresentSettings?(.account)
             return
         }
@@ -1341,7 +1424,7 @@ final class RecorderViewModel {
         switch state {
         case .idle:
             guard accessController.canRenderExport else {
-                detailMessage = "Free exports used. Subscribe for unlimited renders."
+                detailMessage = "Recording is unavailable."
                 return
             }
             let readiness = coordinator.recordingReadiness()
@@ -1405,14 +1488,13 @@ final class RecorderViewModel {
     }
 
     func openReadinessDetails() {
-        // Free exports exhausted -> Account pane (upgrade); otherwise a permission /
-        // source blocker -> Permissions pane.
+        // Recording blockers now come from permissions or source setup.
         onPresentSettings?(accessController.canRenderExport ? .permissions : .account)
     }
 
     var recordingBlockerDetail: String? {
         if !accessController.canRenderExport {
-            return "Subscribe for unlimited renders."
+            return "Recording is unavailable."
         }
         let readiness = coordinator.recordingReadiness()
         return readiness.isReady ? nil : readiness.detail

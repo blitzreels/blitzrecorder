@@ -71,6 +71,13 @@ bash -n \
   Scripts/bootstrap-github-repo.sh \
   Scripts/configure-github-release-secrets.sh \
   Scripts/configure-github-app-store-secrets.sh \
+  Scripts/configure-github-developer-id-from-keychain.sh \
+  Scripts/configure-github-sparkle-secrets.sh \
+  Scripts/generate-sparkle-appcast.sh \
+  Scripts/audit-public-history.sh \
+  Scripts/create-public-snapshot.sh \
+  Scripts/publish-public-snapshot.sh \
+  Scripts/promote-public-branch.sh \
   Scripts/check-github-release-readiness.sh \
   Scripts/check-open-source-readiness.sh
 
@@ -104,7 +111,7 @@ Prepared BlitzRecorder $VERSION build $BUILD.
 
 Next steps:
   git status --short
-  git add README.md SECURITY.md CHANGELOG.md .github/PULL_REQUEST_TEMPLATE.md .github/ISSUE_TEMPLATE .github/release.yml .github/labels.json project.yml BlitzRecorder.xcodeproj/project.pbxproj .github/workflows/macos-dmg.yml .github/workflows/ios-testflight.yml .github/workflows/app-store-release.yml AppStore/CI.md docs/release.md Scripts/set-version.py Scripts/sync-github-labels.py Scripts/prepare-github-release.sh Scripts/bootstrap-github-repo.sh Scripts/configure-github-release-secrets.sh Scripts/configure-github-app-store-secrets.sh Scripts/check-github-release-readiness.sh Scripts/check-open-source-readiness.sh Scripts/package-app.sh Scripts/package-dmg.sh Scripts/ci-macos-dmg.sh Scripts/ci-ios-testflight.sh Scripts/archive-app-store.sh Scripts/preflight-app-store-local.sh Scripts/validate-submission-artifacts.sh Scripts/app-store-connect-readiness.py Scripts/validate-launch-readiness.sh Scripts/prepare-app-store-review-package.sh Scripts/collect-release-evidence.sh
+  git add README.md SECURITY.md CHANGELOG.md .github/PULL_REQUEST_TEMPLATE.md .github/ISSUE_TEMPLATE .github/release.yml .github/labels.json project.yml BlitzRecorder.xcodeproj/project.pbxproj .github/workflows/macos-dmg.yml .github/workflows/ios-testflight.yml .github/workflows/app-store-release.yml AppStore/CI.md docs/release.md Scripts/set-version.py Scripts/sync-github-labels.py Scripts/prepare-github-release.sh Scripts/bootstrap-github-repo.sh Scripts/configure-github-release-secrets.sh Scripts/configure-github-app-store-secrets.sh Scripts/configure-github-developer-id-from-keychain.sh Scripts/configure-github-sparkle-secrets.sh Scripts/generate-sparkle-appcast.sh Scripts/audit-public-history.sh Scripts/create-public-snapshot.sh Scripts/publish-public-snapshot.sh Scripts/promote-public-branch.sh Scripts/check-github-release-readiness.sh Scripts/check-open-source-readiness.sh Scripts/package-app.sh Scripts/package-dmg.sh Scripts/ci-macos-dmg.sh Scripts/ci-ios-testflight.sh Scripts/archive-app-store.sh Scripts/preflight-app-store-local.sh Scripts/validate-submission-artifacts.sh Scripts/app-store-connect-readiness.py Scripts/validate-launch-readiness.sh Scripts/prepare-app-store-review-package.sh Scripts/collect-release-evidence.sh
   git commit -m "Release BlitzRecorder $VERSION"
   git tag v$VERSION
   git push origin main --tags

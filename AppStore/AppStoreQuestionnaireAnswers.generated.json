@@ -37,7 +37,7 @@
     "usesVPNOrSecurityProductFunctionality": false,
     "usesCryptoWalletFunctionality": false,
     "sha256Use": "file-transfer integrity checks only",
-    "networking": "Apple system networking and HTTPS for fixed BlitzRecorder/BlitzReels URLs; local network transport for companion pairing, preview, controls, and transfer."
+    "networking": "Apple system networking and HTTPS for fixed BlitzRecorder URLs; local network transport for companion pairing, preview, controls, and transfer."
   },
   "contentRights": {
     "shipsThirdPartyMediaCatalogs": false,
@@ -52,24 +52,24 @@
   },
   "kidsCategory": {
     "madeForKids": false,
-    "rationale": "Creator/productivity recording tool with subscription purchase flow in the Mac app."
+    "rationale": "Creator/productivity recording tool with no subscription purchase flow."
   },
   "signInRequirement": {
     "appStoreSubscriptionRequiresBlitzReelsSignIn": false,
-    "blitzReelsSignInOptional": true,
+    "blitzReelsSignInOptional": false,
     "iosCompanionRequiresAccount": false,
     "iosCompanionPairing": "local network"
   },
   "paidContentAndSubscriptions": {
-    "macAppHasAutoRenewableSubscription": true,
-    "subscriptionName": "BlitzRecorder Pro",
-    "monthlySubscriptionName": "BlitzRecorder Pro Monthly",
-    "productId": "dev.blitzreels.blitzrecorder.pro.monthly",
-    "price": "$7.99 per month",
-    "annualSubscriptionName": "BlitzRecorder Pro Annual",
-    "annualProductId": "dev.blitzreels.blitzrecorder.pro.annual",
-    "annualPrice": "$49.99 per year",
-    "freeBehavior": "10 free exports",
+    "macAppHasAutoRenewableSubscription": false,
+    "subscriptionName": null,
+    "monthlySubscriptionName": null,
+    "productId": null,
+    "price": "$0",
+    "annualSubscriptionName": null,
+    "annualProductId": null,
+    "annualPrice": "$0",
+    "freeBehavior": "unlimited exports",
     "iosCompanionHasInAppPurchases": false,
     "iosCompanionHasPaywall": false
   },
@@ -78,6 +78,6 @@
     "Cloud upload, sharing, hosting, collaboration, comments, public profiles, or publishing are added.",
     "End-user templates, music, stock footage, or other bundled third-party media are added.",
     "Custom encryption, encrypted messaging, VPN/security, DRM, crypto wallet, or password-management functionality is added.",
-    "BlitzReels entitlement responses start returning email, billing IDs, workspace IDs, subscription IDs, or receipt data."
+    "Account, purchase, entitlement, analytics, or cloud upload flows are added."
   ]
 }

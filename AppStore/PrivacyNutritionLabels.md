@@ -9,8 +9,9 @@ Draft App Store Connect worksheet. Confirm final answers in App Store Connect wi
 - Data broker sharing: No.
 - Recordings are local by default and are not uploaded to BlitzReels or BlitzRecorder servers by the apps.
 - Local network traffic between Mac and iPhone is device-to-device app functionality, not developer collection.
-- App Store purchases are handled by Apple StoreKit. The app reads entitlement state locally.
+- The apps do not require an account, purchase, subscription, or entitlement check.
 - Support data is only received if the user contacts support and chooses what to send.
+- The Mac app can copy a local diagnostics report to the clipboard from the Help menu. Nothing is uploaded automatically.
 
 ## macOS App: BlitzRecorder
 
@@ -19,19 +20,19 @@ Bundle ID: `dev.blitzreels.blitzrecorder`
 Recommended App Store Connect answer:
 
 - Data Used to Track You: No
-- Data Linked to You: Yes, only when the user signs in with BlitzReels for included access
+- Data Linked to You: No
 - Data Not Linked to You: No app analytics or diagnostics collected by the app
 
 ### Collected Data Types
 
 | App Store Category | Data Type | Collected? | Linked to User? | Tracking? | Purpose | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| Identifiers | User ID | Yes, conditional | Yes | No | App Functionality | BlitzReels sign-in returns an access token. The app stores it in macOS Keychain and sends it to the BlitzReels entitlement endpoint only to verify included Pro access. |
-| Purchases | Purchase History | No by BlitzRecorder | No | No | App Functionality | StoreKit handles App Store subscription state. Do not mark this collected unless BlitzRecorder starts sending transaction or receipt details to a developer server. |
+| Identifiers | User ID | No | No | No | App Functionality | No account is required to record or export. |
+| Purchases | Purchase History | No | No | No | App Functionality | No in-app purchases or subscriptions are required to record or export. |
 | User Content | Photos or Videos | No | No | No | App Functionality | Screen/camera recordings are saved locally to user-selected folders. |
 | User Content | Audio Data | No | No | No | App Functionality | Microphone/system audio recordings are saved locally to user-selected folders. |
-| Diagnostics | Crash Data / Performance Data | No | No | No | App Functionality | No crash or analytics SDK is currently integrated. |
-| Usage Data | Product Interaction | No | No | No | App Functionality | Export counts and settings are stored locally in UserDefaults. |
+| Diagnostics | Crash Data / Performance Data | No | No | No | App Functionality | No crash or analytics SDK is currently integrated. Help -> Copy Diagnostics creates a local clipboard report only. |
+| Usage Data | Product Interaction | No | No | No | App Functionality | Settings are stored locally in UserDefaults. |
 | Contact Info | Email Address | No in app | No | No | Customer Support | Support may receive email only if the user contacts support outside the app flow. |
 
 ### Required Permission Explanations
@@ -92,7 +93,8 @@ Bundled file: `Apps/iOSCamera/Resources/PrivacyInfo.xcprivacy`
 
 ## Review Before Submission
 
-- If analytics, crash reporting, logging upload, customer support upload, receipt validation, or account telemetry is added later, update this worksheet before upload.
-- If BlitzReels entitlement verification starts returning or storing email, Stripe IDs, workspace IDs, or subscription IDs in the app, update the macOS label beyond `Identifiers / User ID`.
+- If analytics, crash reporting, automatic logging upload, receipt validation, or account telemetry is added later, update this worksheet before upload.
+- If support starts receiving diagnostics through an in-app upload instead of user-copied text, update the Diagnostics row before upload.
+- If account, purchase, entitlement, analytics, or cloud upload flows are added later, update the macOS labels before submission.
 - If recordings, thumbnails, transcripts, or logs are uploaded for any app feature, add the corresponding User Content, Audio Data, Diagnostics, or Other Data categories.
 - Keep this worksheet aligned with `Web/blitzrecorder/src/main.jsx`, `AppStore/Metadata-macOS.md`, `AppStore/Metadata-iOS.md`, and the bundled privacy manifests.

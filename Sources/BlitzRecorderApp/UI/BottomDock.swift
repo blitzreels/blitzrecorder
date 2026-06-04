@@ -149,17 +149,27 @@ private struct ExportCompletedView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Info header — kept free of buttons so the filename never squeezes the actions.
-            HStack(spacing: 10) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(accent)
+            // One file card: thumbnail = the primary "open" affordance, info beside it,
+            // quiet secondary actions under the info, dismiss tucked top-right.
+            HStack(alignment: .top, spacing: 12) {
+                RecordingThumbnailButton(
+                    image: metadata.thumbnail,
+                    durationLabel: metadata.durationLabel,
+                    help: "Play \(url.lastPathComponent)"
+                ) {
+                    NSWorkspace.shared.open(url)
+                }
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("RECORDING SAVED")
-                        .font(.system(size: 9, weight: .heavy))
-                        .tracking(0.5)
-                        .foregroundStyle(accent.opacity(0.9))
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 10, weight: .heavy))
+                        Text("RECORDING SAVED")
+                            .font(.system(size: 9, weight: .heavy))
+                            .tracking(0.5)
+                    }
+                    .foregroundStyle(accent.opacity(0.9))
+
                     Text(url.lastPathComponent)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.92))
@@ -172,9 +182,28 @@ private struct ExportCompletedView: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .help(folderPath)
+
+                    HStack(spacing: 8) {
+                        DockActionButton(title: "Reveal", systemImage: "folder", help: "Show in Finder") {
+                            NSWorkspace.shared.activateFileViewerSelecting([url])
+                        }
+                        DockActionButton(title: "Rename", systemImage: "pencil", help: "Rename or move this finished recording") {
+                            vm.renameLastExportedFile()
+                        }
+                        if let sourceTakeURL {
+                            DockActionButton(title: "Sources", systemImage: "tray.full", help: "Show saved source files: \(sourceTakeURL.path)") {
+                                NSWorkspace.shared.activateFileViewerSelecting([sourceTakeURL])
+                            }
+                        }
+                    }
+                    .padding(.top, 6)
                 }
 
                 Spacer(minLength: 0)
+
+                DockDismissButton(help: "Clear and get ready for the next take") {
+                    vm.clearPostRecordingStatus()
+                }
             }
 
             if let warning {
@@ -189,47 +218,6 @@ private struct ExportCompletedView: View {
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
                         .help(warning)
-                }
-            }
-
-            if let sourceTakeURL {
-                HStack(spacing: 8) {
-                    Image(systemName: "archivebox.fill")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.62))
-                        .frame(width: 16)
-                    Text("Sources saved: \(sourceTakeURL.lastPathComponent)")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.62))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(sourceTakeURL.path)
-
-                    Spacer(minLength: 8)
-
-                    DockActionButton(title: "Sources", systemImage: "tray.full", help: sourceTakeURL.path) {
-                        NSWorkspace.shared.activateFileViewerSelecting([sourceTakeURL])
-                    }
-                }
-            }
-
-            Divider()
-                .background(.white.opacity(0.07))
-
-            // Actions on their own full-width row — plenty of room, nothing truncates.
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 86), spacing: 8)], alignment: .leading, spacing: 8) {
-                DockActionButton(title: "Open", systemImage: "play.fill", help: "Open \(url.lastPathComponent)") {
-                    NSWorkspace.shared.open(url)
-                }
-                DockActionButton(title: "Reveal", systemImage: "folder", help: "Show in Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([url])
-                }
-                DockActionButton(title: "Rename", systemImage: "pencil", help: "Rename or move this finished recording") {
-                    vm.renameLastExportedFile()
-                }
-
-                DockActionButton(title: "New Take", systemImage: "plus", help: "Clear and get ready for the next recording") {
-                    vm.clearPostRecordingStatus()
                 }
             }
         }
@@ -249,8 +237,103 @@ private struct ExportCompletedView: View {
     }
 
     private var savedDetail: String {
-        let parts = [folderLabel] + metadata.labels
+        var parts = [folderLabel]
+        if let sizeLabel = metadata.sizeLabel {
+            parts.append(sizeLabel)
+        }
+        // Duration lives on the thumbnail badge; only fall back here when there's no
+        // thumbnail to host it.
+        if metadata.thumbnail == nil, let durationLabel = metadata.durationLabel {
+            parts.append(durationLabel)
+        }
         return "Saved to \(parts.joined(separator: " · "))"
+    }
+}
+
+/// The recording's first frame as a click-to-play tile. Fixed height; width follows the
+/// video's aspect (vertical shorts stay narrow, screen takes go wide) within sane bounds.
+/// Hover dims the frame and surfaces a play glyph, like QuickLook.
+private struct RecordingThumbnailButton: View {
+    let image: NSImage?
+    let durationLabel: String?
+    let help: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    private let height: CGFloat = 68
+
+    private var width: CGFloat {
+        guard let image, image.size.height > 0 else { return height * 16 / 9 }
+        let ideal = height * image.size.width / image.size.height
+        return min(max(ideal, 40), 130)
+    }
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                if let image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    Rectangle()
+                        .fill(.white.opacity(0.06))
+                    Image(systemName: "film")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.3))
+                }
+
+                Rectangle()
+                    .fill(.black.opacity(hovering ? 0.35 : 0))
+                Image(systemName: "play.fill")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.white)
+                    .opacity(hovering ? 1 : 0)
+            }
+            .frame(width: width, height: height)
+            .overlay(alignment: .bottomTrailing) {
+                if let durationLabel {
+                    Text(durationLabel)
+                        .font(.system(size: 9, weight: .bold))
+                        .monospacedDigit()
+                        .foregroundStyle(.white.opacity(0.95))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        .padding(4)
+                        .opacity(hovering ? 0 : 1)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .pointingHandCursor()
+        .help(help)
+    }
+}
+
+/// A quiet ✕ — no button chrome, brightens on hover.
+private struct DockDismissButton: View {
+    let help: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.white.opacity(hovering ? 0.9 : 0.45))
+                .frame(width: 22, height: 22)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .pointingHandCursor()
+        .help(help)
     }
 }
 
@@ -316,17 +399,26 @@ private struct RecoveryAvailableView: View {
 private struct RecordingFileMetadata {
     let sizeLabel: String?
     let durationLabel: String?
+    let thumbnail: NSImage?
 
-    static let empty = RecordingFileMetadata(sizeLabel: nil, durationLabel: nil)
-
-    var labels: [String] {
-        [sizeLabel, durationLabel].compactMap { $0 }
-    }
+    static let empty = RecordingFileMetadata(sizeLabel: nil, durationLabel: nil, thumbnail: nil)
 
     static func load(for url: URL) async -> RecordingFileMetadata {
         async let sizeLabel = fileSizeLabel(for: url)
         async let durationLabel = durationLabel(for: url)
-        return await RecordingFileMetadata(sizeLabel: sizeLabel, durationLabel: durationLabel)
+        async let thumbnail = thumbnail(for: url)
+        return await RecordingFileMetadata(sizeLabel: sizeLabel, durationLabel: durationLabel, thumbnail: thumbnail)
+    }
+
+    private static func thumbnail(for url: URL) async -> NSImage? {
+        let asset = AVURLAsset(url: url)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 480, height: 480)
+        guard let (cgImage, _) = try? await generator.image(at: .zero) else {
+            return nil
+        }
+        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
     }
 
     private static func fileSizeLabel(for url: URL) -> String? {
@@ -372,8 +464,9 @@ private struct ReadinessIssueView: View {
             Text(message)
                 .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(.white.opacity(0.74))
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .help(fullExplanation)
 
             Spacer(minLength: 12)
 
@@ -382,11 +475,19 @@ private struct ReadinessIssueView: View {
         .frame(maxWidth: .infinity)
     }
 
+    // Short and human; the full technical sentence lives in the hover tooltip and
+    // the Permissions tab behind "Details".
     private var message: String {
         if !vm.accessController.canRenderExport {
-            return "Free exports used"
+            return "Recording unavailable"
         }
-        return vm.recordingReadiness.blockers.first?.sentence ?? vm.recordingReadiness.detail
+        let blockers = vm.recordingReadiness.blockers
+        return blockers.isEmpty ? vm.recordingReadiness.detail : blockers.shortSummary
+    }
+
+    private var fullExplanation: String {
+        let sentences = vm.recordingReadiness.blockers.map(\.sentence)
+        return sentences.isEmpty ? message : sentences.joined(separator: "\n")
     }
 }
 

@@ -13,7 +13,7 @@ final class CameraCaptureController {
 
     var isPreviewRunning = false
     var isRecording = false
-    var statusMessage = "Camera not started"
+    var statusMessage = "Camera is off"
     var capabilities: RemoteCameraCapabilities?
 
     private var activeDevice: AVCaptureDevice?
@@ -42,9 +42,13 @@ final class CameraCaptureController {
         RemoteCameraCaptureCapabilityBuilder(movieOutput: movieOutput)
     }
 
+    private var settingsPlanner: CameraCaptureSettingsPlanner {
+        CameraCaptureSettingsPlanner(capabilityBuilder: capabilityBuilder)
+    }
+
     func configure() async {
         guard await requestAccess(for: .video) else {
-            statusMessage = "Camera permission required"
+            statusMessage = "Allow camera access"
             return
         }
         await configureSession(lens: activeLens)
@@ -78,7 +82,7 @@ final class CameraCaptureController {
 
     func setLens(_ lens: RemoteCameraLens) async {
         guard supportedLenses().contains(lens) else {
-            statusMessage = "\(lens.displayName) unavailable"
+            statusMessage = "\(lens.displayName) not available"
             return
         }
         let didSuspendPreview = await suspendMonitorPreviewForSettingsChange()
@@ -105,7 +109,7 @@ final class CameraCaptureController {
             }
         }
         if !result.1 {
-            statusMessage = "Zoom unavailable"
+            statusMessage = "Zoom not available"
         }
         return result.0
     }
@@ -117,7 +121,7 @@ final class CameraCaptureController {
         }
         guard activeDevice.hasTorch, activeDevice.isTorchAvailable else {
             if isEnabled {
-                statusMessage = "Torch unavailable"
+                statusMessage = "Light not available"
             }
             return false
         }
@@ -137,7 +141,7 @@ final class CameraCaptureController {
             }
         }
         if !result.1 {
-            statusMessage = "Torch unavailable"
+            statusMessage = "Light not available"
         }
         return result.0
     }
@@ -153,27 +157,38 @@ final class CameraCaptureController {
     @discardableResult
     private func applySettingsWhileMonitorPreviewIsSuspended(_ settings: RemoteCameraSettings) async -> RemoteCameraSettings {
         let isCurrentlyRecording = isRecording
-        var requestedSettings = settings
-        if !isCurrentlyRecording,
-           requestedSettings.cinematicVideoEnabled,
-           let cinematicLens = preferredCinematicLens() {
-            requestedSettings.lens = cinematicLens
-        }
-        if !isCurrentlyRecording,
-           requestedSettings.cinematicVideoEnabled,
-           (requestedSettings.lens != activeLens || !activePrefersCinematicDevice) {
-            await configureSession(lens: requestedSettings.lens, prefersCinematicDevice: true)
-            await setZoomFactor(1)
-        } else if !isCurrentlyRecording,
-                  (requestedSettings.lens != activeLens || activePrefersCinematicDevice) {
-            await configureSession(lens: requestedSettings.lens)
-            await setZoomFactor(1)
+        let plan = settingsPlanner.requestPlan(
+            for: settings,
+            isRecording: isCurrentlyRecording,
+            activeLens: activeLens,
+            activePrefersCinematicDevice: activePrefersCinematicDevice
+        )
+        if let sessionConfiguration = plan.sessionConfiguration {
+            await configureSession(
+                lens: sessionConfiguration.lens,
+                prefersCinematicDevice: sessionConfiguration.prefersCinematicDevice
+            )
+            if sessionConfiguration.resetsZoom {
+                await setZoomFactor(1)
+            }
         }
 
-        var normalizedSettings = normalizedRemoteSettings(requestedSettings)
+        var normalizedSettings = settingsPlanner.normalizedSettings(plan.settings, activeDevice: activeDevice)
         if isCurrentlyRecording {
-            normalizedSettings = preserveActiveCaptureSettings(in: normalizedSettings)
-        } else if canApplyOnlyCinematicAperture(normalizedSettings) {
+            normalizedSettings = settingsPlanner.preserveActiveCaptureSettings(
+                in: normalizedSettings,
+                activeLens: activeLens,
+                activeCaptureProfileID: activeCaptureProfileID,
+                activeCinematicVideoEnabled: activeCinematicVideoEnabled,
+                activeCinematicAperture: activeCinematicAperture,
+                activeDevice: activeDevice
+            )
+        } else if settingsPlanner.canApplyOnlyCinematicAperture(
+            normalizedSettings,
+            activeCinematicVideoEnabled: activeCinematicVideoEnabled,
+            activeCinematicAperture: activeCinematicAperture,
+            activeVideoInput: activeVideoInput
+        ) {
             normalizedSettings = await applyCinematicSettings(normalizedSettings)
             if let activeDevice {
                 capabilities = makeCapabilities(activeDevice: activeDevice)
@@ -181,8 +196,9 @@ final class CameraCaptureController {
             return normalizedSettings
         } else {
             await applyFormat(normalizedSettings)
-            normalizedSettings = normalizedRemoteSettings(normalizedSettings)
+            normalizedSettings = settingsPlanner.normalizedSettings(normalizedSettings, activeDevice: activeDevice)
             normalizedSettings.captureProfileID = await applyCaptureCodec(normalizedSettings)
+            normalizedSettings = settingsPlanner.normalizedSettings(normalizedSettings, activeDevice: activeDevice)
             normalizedSettings = await applyCinematicSettings(normalizedSettings)
         }
         normalizedSettings.zoomFactor = Double(await setZoomFactor(1))
@@ -401,7 +417,7 @@ final class CameraCaptureController {
                 guard let self else {
                     continuation.resume(returning: SessionConfigurationResult(
                         device: nil,
-                        statusMessage: "Camera unavailable",
+                        statusMessage: "Camera not available",
                         isRunning: false
                     ))
                     return
@@ -559,115 +575,6 @@ final class CameraCaptureController {
         )
     }
 
-    private func cinematicCapabilities(for device: AVCaptureDevice) -> (
-        supportsCinematicVideo: Bool,
-        minimumAperture: Double?,
-        maximumAperture: Double?,
-        defaultAperture: Double?
-    ) {
-        let cinematic = capabilityBuilder.cinematicCapabilities(for: device)
-        return (
-            cinematic.supportsCinematicVideo,
-            cinematic.minimumAperture,
-            cinematic.maximumAperture,
-            cinematic.defaultAperture
-        )
-    }
-
-    private func preferredCinematicLens() -> RemoteCameraLens? {
-        capabilityBuilder.preferredCinematicLens()
-    }
-
-    private func remoteFormats(for device: AVCaptureDevice) -> [RemoteCameraFormat] {
-        capabilityBuilder.remoteFormats(for: device)
-    }
-
-    private func supportedRemoteFrameRates(for formats: [AVCaptureDevice.Format]) -> [Int] {
-        capabilityBuilder.supportedRemoteFrameRates(for: formats)
-    }
-
-    private func normalizedRemoteSettings(_ settings: RemoteCameraSettings) -> RemoteCameraSettings {
-        guard let activeDevice else {
-            return RemoteCameraSettingsResolver.normalized(
-                settings,
-                capabilities: nil,
-                preferredFrameRate: settings.frameRate
-            )
-        }
-        var normalizedSettings = RemoteCameraSettingsResolver.normalized(
-            settings,
-            capabilities: makeCapabilities(activeDevice: activeDevice),
-            preferredFrameRate: settings.frameRate
-        )
-        normalizedSettings = normalizedCinematicCaptureFormat(
-            normalizedSettings,
-            activeDevice: activeDevice
-        )
-        return normalizedSettings
-    }
-
-    private func normalizedCinematicCaptureFormat(
-        _ settings: RemoteCameraSettings,
-        activeDevice: AVCaptureDevice
-    ) -> RemoteCameraSettings {
-        var normalizedSettings = settings
-        guard normalizedSettings.cinematicVideoEnabled else {
-            return normalizedSettings
-        }
-        let cinematic = cinematicCapabilities(for: activeDevice)
-        guard cinematic.supportsCinematicVideo else {
-            normalizedSettings.cinematicVideoEnabled = false
-            normalizedSettings.cinematicAperture = nil
-            return normalizedSettings
-        }
-        let formats = remoteFormats(for: activeDevice)
-        let preferredFormatID = normalizedSettings.formatID ?? formats.first?.id
-        guard let preferredFormatID,
-              let cinematicFormat = RemoteCameraCaptureProfileResolver.captureFormat(
-                for: normalizedSettings.captureProfileID,
-                formatID: preferredFormatID,
-                frameRate: normalizedSettings.frameRate,
-                device: activeDevice,
-                requiresCinematic: true
-              ) ?? RemoteCameraCaptureProfileResolver.captureFormat(
-                for: .automatic,
-                formatID: preferredFormatID,
-                frameRate: normalizedSettings.frameRate,
-                device: activeDevice,
-                requiresCinematic: true
-              ) ?? RemoteCameraCaptureProfileResolver.preferredCinematicCaptureFormat(
-                for: activeDevice,
-                preferredFrameRate: normalizedSettings.frameRate
-              ) else {
-            normalizedSettings.cinematicVideoEnabled = false
-            normalizedSettings.cinematicAperture = nil
-            return normalizedSettings
-        }
-        normalizedSettings.captureProfileID = .automatic
-        normalizedSettings.formatID = Self.formatID(for: cinematicFormat)
-        let frameRates = supportedRemoteFrameRates(for: [cinematicFormat])
-        if !frameRates.contains(normalizedSettings.frameRate) {
-            normalizedSettings.frameRate = frameRates.contains(30) ? 30 : (frameRates.first ?? 30)
-        }
-        return normalizedSettings
-    }
-
-    private func preserveActiveCaptureSettings(in settings: RemoteCameraSettings) -> RemoteCameraSettings {
-        var preservedSettings = settings
-        preservedSettings.lens = activeLens
-        preservedSettings.captureProfileID = activeCaptureProfileID
-        preservedSettings.cinematicVideoEnabled = activeCinematicVideoEnabled
-        preservedSettings.cinematicAperture = activeCinematicAperture
-        if let activeDevice {
-            preservedSettings.formatID = Self.formatID(for: activeDevice.activeFormat)
-            let frameRate = activeFrameRate(for: activeDevice)
-            if frameRate > 0 {
-                preservedSettings.frameRate = frameRate
-            }
-        }
-        return preservedSettings
-    }
-
     private func applyCinematicSettings(_ settings: RemoteCameraSettings) async -> RemoteCameraSettings {
         var appliedSettings = settings
         guard let activeVideoInput else {
@@ -698,7 +605,7 @@ final class CameraCaptureController {
         let enabled = appliedSettings.cinematicVideoEnabled
         let aperture = appliedSettings.cinematicAperture
         if enabled == activeCinematicVideoEnabled,
-           cinematicAperturesMatch(aperture, activeCinematicAperture) {
+           CameraCaptureSettingsPlanner.cinematicAperturesMatch(aperture, activeCinematicAperture) {
             return appliedSettings
         }
 
@@ -733,28 +640,6 @@ final class CameraCaptureController {
         return appliedSettings
     }
 
-    private func canApplyOnlyCinematicAperture(_ settings: RemoteCameraSettings) -> Bool {
-        guard #available(iOS 26.0, *),
-              settings.cinematicVideoEnabled,
-              activeCinematicVideoEnabled,
-              !cinematicAperturesMatch(settings.cinematicAperture, activeCinematicAperture),
-              activeVideoInput?.isCinematicVideoCaptureEnabled == true else {
-            return false
-        }
-        return true
-    }
-
-    private func cinematicAperturesMatch(_ lhs: Double?, _ rhs: Double?) -> Bool {
-        switch (lhs, rhs) {
-        case (.none, .none):
-            return true
-        case let (.some(lhs), .some(rhs)):
-            return abs(lhs - rhs) < 0.001
-        default:
-            return false
-        }
-    }
-
     private func activeFrameRate(for device: AVCaptureDevice) -> Int {
         let seconds = CMTimeGetSeconds(device.activeVideoMinFrameDuration)
         guard seconds.isFinite, seconds > 0 else { return 0 }
@@ -768,7 +653,9 @@ final class CameraCaptureController {
             return
         }
 
-        if activeFormatMatches(format, on: activeDevice, frameRate: settings.frameRate) {
+        let colorSpace = Self.captureColorSpace(for: settings.colorMode, format: format)
+        if activeFormatMatches(format, on: activeDevice, frameRate: settings.frameRate),
+           activeColorSpaceMatches(colorSpace, on: activeDevice) {
             activeCaptureFormatLabel = "\(formatID) @ \(settings.frameRate) fps"
             return
         }
@@ -780,7 +667,14 @@ final class CameraCaptureController {
                 defer { session.commitConfiguration() }
                 try activeDevice.lockForConfiguration()
                 defer { activeDevice.unlockForConfiguration() }
+                session.automaticallyConfiguresCaptureDeviceForWideColor = colorSpace == nil
                 activeDevice.activeFormat = format
+                if let colorSpace {
+                    activeDevice.activeColorSpace = colorSpace
+                } else if activeDevice.activeColorSpace == .appleLog
+                    || Self.isAppleLog2(activeDevice.activeColorSpace) {
+                    activeDevice.activeColorSpace = .sRGB
+                }
                 let frameDuration = CMTime(value: 1, timescale: CMTimeScale(max(1, settings.frameRate)))
                 activeDevice.activeVideoMinFrameDuration = frameDuration
                 activeDevice.activeVideoMaxFrameDuration = frameDuration
@@ -792,7 +686,7 @@ final class CameraCaptureController {
         if applied {
             activeCaptureFormatLabel = "\(formatID) @ \(settings.frameRate) fps"
         } else {
-            statusMessage = "Format unavailable"
+            statusMessage = "Format not available"
         }
     }
 
@@ -803,6 +697,7 @@ final class CameraCaptureController {
             formatID: formatID,
             frameRate: settings.frameRate,
             device: device,
+            colorMode: settings.colorMode,
             requiresCinematic: settings.cinematicVideoEnabled
         )
     }
@@ -813,6 +708,13 @@ final class CameraCaptureController {
         frameRate: Int
     ) -> Bool {
         captureFormatsMatch(device.activeFormat, format) && activeFrameRate(for: device) == frameRate
+    }
+
+    private func activeColorSpaceMatches(_ colorSpace: AVCaptureColorSpace?, on device: AVCaptureDevice) -> Bool {
+        guard let colorSpace else {
+            return device.activeColorSpace != .appleLog && !Self.isAppleLog2(device.activeColorSpace)
+        }
+        return device.activeColorSpace == colorSpace
     }
 
     private func captureFormatsMatch(_ lhs: AVCaptureDevice.Format, _ rhs: AVCaptureDevice.Format) -> Bool {
@@ -849,6 +751,30 @@ final class CameraCaptureController {
         return result.0
     }
 
+    private static func captureColorSpace(
+        for colorMode: RemoteCameraColorMode,
+        format: AVCaptureDevice.Format
+    ) -> AVCaptureColorSpace? {
+        switch colorMode {
+        case .standard:
+            return nil
+        case .appleLog:
+            return format.supportedColorSpaces.contains(.appleLog) ? .appleLog : nil
+        case .appleLog2:
+            if #available(iOS 26.0, *), format.supportedColorSpaces.contains(.appleLog2) {
+                return .appleLog2
+            }
+            return nil
+        }
+    }
+
+    private static func isAppleLog2(_ colorSpace: AVCaptureColorSpace) -> Bool {
+        if #available(iOS 26.0, *) {
+            return colorSpace == .appleLog2
+        }
+        return false
+    }
+
     private func applyFocus(_ settings: RemoteCameraSettings) async {
         guard let activeDevice else { return }
         let applied = await runOnSessionQueue { () -> Bool in
@@ -878,7 +804,7 @@ final class CameraCaptureController {
             }
         }
         if !applied {
-            statusMessage = "Focus unavailable"
+            statusMessage = "Focus not available"
         }
     }
 
@@ -924,7 +850,7 @@ final class CameraCaptureController {
             }
         }
         if !applied {
-            statusMessage = "Exposure unavailable"
+            statusMessage = "Exposure not available"
         }
     }
 
@@ -971,7 +897,7 @@ final class CameraCaptureController {
             }
         }
         if !applied {
-            statusMessage = "White balance unavailable"
+            statusMessage = "White balance not available"
         }
     }
 
@@ -1421,7 +1347,8 @@ enum RemoteCameraCaptureProfileResolver {
     ) -> [RemoteCameraCaptureProfile] {
         let formats = remoteFormats(for: device)
         let availableCodecs = movieOutput.availableVideoCodecTypes
-        let proResFormatIDs = proResRemoteFormats(for: device).map(\.id)
+        let proResFormatFrameRates = proResRemoteFormatFrameRates(for: device)
+        let proResFormatIDs = Array(proResFormatFrameRates.keys).sorted()
         let hasProResFormat = !proResFormatIDs.isEmpty
         let hasProResCodec = availableCodecs.contains(.proRes422)
         let hasProResStorage = hasMinimumProResStorageHeadroom()
@@ -1445,9 +1372,10 @@ enum RemoteCameraCaptureProfileResolver {
                 id: .highEfficiency,
                 displayName: "HEVC",
                 isAvailable: availableCodecs.contains(.hevc),
-                unavailableReason: availableCodecs.contains(.hevc) ? nil : "HEVC recording is not available.",
+                unavailableReason: availableCodecs.contains(.hevc) ? nil : "HEVC is not available.",
                 codecLabel: "HEVC",
-                supportedFormatIDs: formats.map(\.id)
+                supportedFormatIDs: formats.map(\.id),
+                supportedFormatFrameRates: Dictionary(uniqueKeysWithValues: formats.map { ($0.id, $0.frameRates) })
             ),
             RemoteCameraCaptureProfile(
                 id: .proRes422,
@@ -1455,7 +1383,8 @@ enum RemoteCameraCaptureProfileResolver {
                 isAvailable: proResReason == nil,
                 unavailableReason: proResReason,
                 codecLabel: "ProRes 422",
-                supportedFormatIDs: proResFormatIDs
+                supportedFormatIDs: proResFormatIDs,
+                supportedFormatFrameRates: proResFormatFrameRates
             )
         ]
     }
@@ -1478,12 +1407,14 @@ enum RemoteCameraCaptureProfileResolver {
         formatID: String,
         frameRate: Int,
         device: AVCaptureDevice,
+        colorMode: RemoteCameraColorMode = .standard,
         requiresCinematic: Bool = false
     ) -> AVCaptureDevice.Format? {
         let candidates = profileID == .proRes422 ? proResCaptureFormats(for: device) : device.formats
         return candidates.first { format in
             Self.formatID(for: format) == formatID
                 && (!requiresCinematic || Self.formatSupportsCinematicVideoCapture(format))
+                && Self.format(format, supports: colorMode)
                 && format.videoSupportedFrameRateRanges.contains { range in
                     range.minFrameRate <= Double(frameRate)
                         && range.maxFrameRate >= Double(frameRate)
@@ -1540,11 +1471,14 @@ enum RemoteCameraCaptureProfileResolver {
                     let dimensions = CMVideoFormatDescriptionGetDimensions(first.formatDescription)
                     let frameRates = supportedRemoteFrameRates(for: formats)
                     guard !frameRates.isEmpty else { return nil }
+                    let colorModeFrameRates = supportedColorModeFrameRates(for: formats)
                     return RemoteCameraFormat(
                         id: key,
                         width: Int(dimensions.width),
                         height: Int(dimensions.height),
                         frameRates: frameRates,
+                        colorModes: supportedColorModes(from: colorModeFrameRates),
+                        colorModeFrameRates: colorModeFrameRates,
                         supportsStabilization: formats.contains(where: Self.formatSupportsStabilization),
                         supportsHDR: formats.contains { $0.isVideoHDRSupported }
                     )
@@ -1561,19 +1495,10 @@ enum RemoteCameraCaptureProfileResolver {
         )
     }
 
-    private static func proResRemoteFormats(for device: AVCaptureDevice) -> [RemoteCameraFormat] {
-        remoteFormats(for: device).filter { remoteFormat in
-            device.formats.contains { format in
-                Self.formatID(for: format) == remoteFormat.id
-                    && isProResSourceFormat(format)
-                    && format.videoSupportedFrameRateRanges.contains { range in
-                        remoteFormat.frameRates.contains { frameRate in
-                            range.minFrameRate <= Double(frameRate)
-                                && range.maxFrameRate >= Double(frameRate)
-                        }
-                    }
-            }
-        }
+    private static func proResRemoteFormatFrameRates(for device: AVCaptureDevice) -> [String: [Int]] {
+        Dictionary(grouping: proResCaptureFormats(for: device), by: Self.formatID(for:))
+            .mapValues(supportedRemoteFrameRates)
+            .filter { !$0.value.isEmpty }
     }
 
     private static func proResCaptureFormats(for device: AVCaptureDevice) -> [AVCaptureDevice.Format] {
@@ -1587,9 +1512,21 @@ enum RemoteCameraCaptureProfileResolver {
     private static func supportedRemoteFrameRates(for formats: [AVCaptureDevice.Format]) -> [Int] {
         Array(Set(formats.flatMap { format in
             format.videoSupportedFrameRateRanges.flatMap { range in
-                [24, 30, 60].filter { range.minFrameRate <= Double($0) && range.maxFrameRate >= Double($0) }
+                preferredFrameRates.filter { range.minFrameRate <= Double($0) && range.maxFrameRate >= Double($0) }
             }
         })).sorted()
+    }
+
+    private static func supportedColorModeFrameRates(for formats: [AVCaptureDevice.Format]) -> [RemoteCameraColorMode: [Int]] {
+        var result: [RemoteCameraColorMode: Set<Int>] = [.standard: Set(supportedRemoteFrameRates(for: formats))]
+        for format in formats {
+            let frameRates = Set(supportedRemoteFrameRates(for: [format]))
+            guard !frameRates.isEmpty else { continue }
+            for colorMode in colorModes(for: format) {
+                result[colorMode, default: []].formUnion(frameRates)
+            }
+        }
+        return result.mapValues { $0.sorted() }
     }
 
     private static func formatSupportsStabilization(_ format: AVCaptureDevice.Format) -> Bool {
@@ -1606,6 +1543,30 @@ enum RemoteCameraCaptureProfileResolver {
         }
         return false
     }
+
+    private static func supportedColorModes(from frameRates: [RemoteCameraColorMode: [Int]]) -> [RemoteCameraColorMode] {
+        let modes = RemoteCameraColorMode.allCases.filter { mode in
+            frameRates[mode]?.isEmpty == false
+        }
+        return modes.isEmpty ? [.standard] : modes
+    }
+
+    private static func colorModes(for format: AVCaptureDevice.Format) -> [RemoteCameraColorMode] {
+        var modes: [RemoteCameraColorMode] = [.standard]
+        if format.supportedColorSpaces.contains(.appleLog) {
+            modes.append(.appleLog)
+        }
+        if #available(iOS 26.0, *), format.supportedColorSpaces.contains(.appleLog2) {
+            modes.append(.appleLog2)
+        }
+        return modes
+    }
+
+    private static func format(_ format: AVCaptureDevice.Format, supports colorMode: RemoteCameraColorMode) -> Bool {
+        colorModes(for: format).contains(colorMode)
+    }
+
+    private static let preferredFrameRates = [24, 25, 30, 60, 100, 120, 240]
 
     private static func hasMinimumProResStorageHeadroom() -> Bool {
         guard let attributes = try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory()),

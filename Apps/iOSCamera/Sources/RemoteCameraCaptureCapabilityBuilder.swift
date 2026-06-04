@@ -145,11 +145,14 @@ struct RemoteCameraCaptureCapabilityBuilder {
                 let dimensions = CMVideoFormatDescriptionGetDimensions(first.formatDescription)
                 let frameRates = supportedRemoteFrameRates(for: formats)
                 guard !frameRates.isEmpty else { return nil }
+                let colorModeFrameRates = supportedColorModeFrameRates(for: formats)
                 return RemoteCameraFormat(
                     id: key,
                     width: Int(dimensions.width),
                     height: Int(dimensions.height),
                     frameRates: frameRates,
+                    colorModes: Self.supportedColorModes(from: colorModeFrameRates),
+                    colorModeFrameRates: colorModeFrameRates,
                     supportsStabilization: formats.contains(where: Self.formatSupportsStabilization),
                     supportsHDR: formats.contains { $0.isVideoHDRSupported }
                 )
@@ -169,9 +172,21 @@ struct RemoteCameraCaptureCapabilityBuilder {
     func supportedRemoteFrameRates(for formats: [AVCaptureDevice.Format]) -> [Int] {
         Array(Set(formats.flatMap { format in
             format.videoSupportedFrameRateRanges.flatMap { range in
-                [24, 30, 60].filter { range.minFrameRate <= Double($0) && range.maxFrameRate >= Double($0) }
+                Self.preferredFrameRates.filter { range.minFrameRate <= Double($0) && range.maxFrameRate >= Double($0) }
             }
         })).sorted()
+    }
+
+    func supportedColorModeFrameRates(for formats: [AVCaptureDevice.Format]) -> [RemoteCameraColorMode: [Int]] {
+        var result: [RemoteCameraColorMode: Set<Int>] = [.standard: Set(supportedRemoteFrameRates(for: formats))]
+        for format in formats {
+            let frameRates = Set(supportedRemoteFrameRates(for: [format]))
+            guard !frameRates.isEmpty else { continue }
+            for colorMode in Self.colorModes(for: format) {
+                result[colorMode, default: []].formUnion(frameRates)
+            }
+        }
+        return result.mapValues { $0.sorted() }
     }
 
     func supportedStabilizationModes() -> [RemoteCameraStabilizationMode] {
@@ -243,6 +258,26 @@ struct RemoteCameraCaptureCapabilityBuilder {
             .auto
         ].contains { format.isVideoStabilizationModeSupported($0) }
     }
+
+    private static func supportedColorModes(from frameRates: [RemoteCameraColorMode: [Int]]) -> [RemoteCameraColorMode] {
+        let modes = RemoteCameraColorMode.allCases.filter { mode in
+            frameRates[mode]?.isEmpty == false
+        }
+        return modes.isEmpty ? [.standard] : modes
+    }
+
+    private static func colorModes(for format: AVCaptureDevice.Format) -> [RemoteCameraColorMode] {
+        var modes: [RemoteCameraColorMode] = [.standard]
+        if format.supportedColorSpaces.contains(.appleLog) {
+            modes.append(.appleLog)
+        }
+        if #available(iOS 26.0, *), format.supportedColorSpaces.contains(.appleLog2) {
+            modes.append(.appleLog2)
+        }
+        return modes
+    }
+
+    private static let preferredFrameRates = [24, 25, 30, 60, 100, 120, 240]
 
     private static let stabilizationModeMap: [(RemoteCameraStabilizationMode, AVCaptureVideoStabilizationMode)] = [
         (.standard, .standard),

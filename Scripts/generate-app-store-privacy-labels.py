@@ -25,9 +25,9 @@ REQUIRED_SOURCE_SNIPPETS = [
     "Third-party advertising: No.",
     "Data broker sharing: No.",
     "Data Used to Track You: No",
-    "Data Linked to You: Yes, only when the user signs in with BlitzReels for included access",
+    "Data Linked to You: No",
     "Data Collected: No",
-    "BlitzReels sign-in returns an access token",
+    "No account is required to record or export.",
     "Microphone: can include iPhone microphone audio",
     "NSPrivacyAccessedAPICategoryDiskSpace",
     "Sources/BlitzRecorderApp/PrivacyInfo.xcprivacy",
@@ -74,27 +74,16 @@ def build_payload() -> dict[str, Any]:
             "dataBrokerSharing": False,
             "recordingsUploadedByDefault": False,
             "localNetworkTrafficCollectedByDeveloper": False,
-            "storeKitHandlesPurchases": True,
+            "storeKitHandlesPurchases": False,
             "supportDataOnlyIfUserContactsSupport": True,
         },
         "apps": {
             "macOS": {
                 "bundleId": MAC_BUNDLE_ID,
                 "dataUsedToTrackYou": False,
-                "dataLinkedToYou": True,
+                "dataLinkedToYou": False,
                 "dataNotLinkedToYou": False,
-                "collectedDataTypes": [
-                    {
-                        "category": "Identifiers",
-                        "dataType": "User ID",
-                        "collected": True,
-                        "conditional": True,
-                        "linkedToUser": True,
-                        "tracking": False,
-                        "purpose": "App Functionality",
-                        "note": "Only when the user signs in with BlitzReels for included Pro access. The app stores the access token in macOS Keychain and sends it to the BlitzReels entitlement endpoint only to verify access.",
-                    }
-                ],
+                "collectedDataTypes": [],
                 "notCollectedDataTypes": [
                     "Purchase History",
                     "Photos or Videos",
@@ -148,7 +137,7 @@ def build_payload() -> dict[str, Any]:
         },
         "reviewTriggers": [
             "Analytics, crash reporting, logging upload, customer support upload, receipt validation, or account telemetry is added.",
-            "BlitzReels entitlement verification starts returning or storing email, Stripe IDs, workspace IDs, subscription IDs, or receipt data in the app.",
+            "Account, purchase, entitlement, analytics, or cloud upload flows are added.",
             "Recordings, thumbnails, transcripts, or logs are uploaded for any app feature.",
         ],
     }
@@ -167,8 +156,8 @@ def validate_payload(payload: dict[str, Any], source: str) -> None:
         failures.append("shared tracking must be false")
     if payload["shared"]["thirdPartyAdvertising"]:
         failures.append("third-party advertising must be false")
-    if not mac["dataLinkedToYou"]:
-        failures.append("macOS conditional BlitzReels User ID must be linked to user")
+    if mac["dataLinkedToYou"]:
+        failures.append("macOS dataLinkedToYou must be false")
     if mac["dataUsedToTrackYou"]:
         failures.append("macOS dataUsedToTrackYou must be false")
     if mac["privacyManifest"]["tracking"]:

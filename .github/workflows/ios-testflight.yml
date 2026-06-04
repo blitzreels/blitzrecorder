@@ -86,6 +86,19 @@ jobs:
           chmod +x Scripts/ci-ios-testflight.sh
           Scripts/ci-ios-testflight.sh
 
+      - name: Validate iOS Submission Artifacts
+        env:
+          TARGET: ios
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          REQUIRE_EXPORTS: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p build/ReleaseEvidence/ios-testflight
+          Scripts/validate-submission-artifacts.sh --strict --target ios \
+            | tee build/ReleaseEvidence/ios-testflight/submission-validation.log
+
       - name: Upload iOS Artifacts
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -94,6 +107,8 @@ jobs:
           path: |
             build/AppStoreArchives/BlitzRecorderCamera-iOS.xcarchive
             build/AppStoreExports/iOS
+            build/AppStoreExports/iOS-export-options.plist
+            build/ReleaseEvidence/ios-testflight
           if-no-files-found: ignore
 
       - name: Clean Up Keychain

@@ -93,7 +93,8 @@ final class TakeFinalizer {
         let plan = TakeFinalizationPlan(
             take: processedTake,
             settings: finalizationSettings,
-            captureSummary: captureSummary
+            captureSummary: captureSummary,
+            sceneEvents: sceneEvents
         )
 
         switch plan.action {

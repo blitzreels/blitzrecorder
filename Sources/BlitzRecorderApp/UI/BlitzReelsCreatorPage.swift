@@ -4,14 +4,16 @@ import SwiftUI
 
 struct BlitzReelsCreatorPage: View {
     @Bindable var access: AccessController
+    @State private var licenseKey = ""
+    private let sourceCodeURL = URL(string: "https://github.com/blitzreels/blitzrecorder-public")!
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
 
-                subscriptionCard
-                creatorCard
+                accessCard
+                communityCard
 
                 if !access.accessMessage.isEmpty {
                     Text(access.accessMessage)
@@ -32,157 +34,138 @@ struct BlitzReelsCreatorPage: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Your plan")
+            Text("BlitzRecorder")
                 .font(.system(size: 24, weight: .bold))
                 .foregroundStyle(.white)
-            Text("With Pro you can save as many videos as you want. Free gives you three.")
+            Text("Free for local 1080p recording. Early Price unlocks iPhone camera, 4K export, and 60 fps.")
                 .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(.white.opacity(0.6))
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private var subscriptionCard: some View {
+    private var accessCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("PRO")
+            Text("ACCESS")
                 .font(.system(size: 10, weight: .heavy))
                 .tracking(0.7)
                 .foregroundStyle(.white.opacity(0.52))
 
             infoRow(
-                symbol: access.isPro ? "checkmark.seal.fill" : "sparkles",
-                color: access.isPro ? BlitzUI.mint : .white.opacity(0.55),
+                symbol: access.hasActiveLicense ? "checkmark.seal.fill" : "lock.fill",
+                color: BlitzUI.mint,
                 title: access.accessLabel,
-                detail: planDetail
+                detail: access.hasActiveLicense
+                    ? "Full studio unlocked on this Mac."
+                    : "Buy Early Price, then paste your license key here."
             )
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Pro lets you save as many videos as you want.")
-                Text("It renews until you cancel it in your Apple settings.")
+                Text("Free: screen, Mac camera, mic, scenes, and 1080p export.")
+                Text("Paid: iPhone camera, 4K export, 60 fps export, and updates through beta and v1.")
             }
             .font(.system(size: 10, weight: .medium))
             .foregroundStyle(.white.opacity(0.56))
             .fixedSize(horizontal: false, vertical: true)
 
-            if !access.isPro {
-                Button {
-                    Task { await access.purchaseAnnual() }
-                } label: {
-                    Label("Get Pro for \(access.annualPriceLabel)/year", systemImage: "creditcard.fill")
-                        .font(.system(size: 12, weight: .bold))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                }
-                .blitzProminentGlassButton()
-                .disabled(access.isPurchasing)
-
-                Button {
-                    Task { await access.purchaseMonthly() }
-                } label: {
-                    Label("Get Pro for \(access.monthlyPriceLabel)/month", systemImage: "creditcard.fill")
-                        .font(.system(size: 12, weight: .bold))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                }
-                .blitzProminentGlassButton()
-                .disabled(access.isPurchasing)
+            if let email = access.licenseEmail {
+                infoRow(
+                    symbol: "person.crop.circle.fill",
+                    color: .white.opacity(0.72),
+                    title: email,
+                    detail: access.licenseID ?? "License active"
+                )
             }
 
-            Button {
-                Task { await access.restorePurchases() }
-            } label: {
-                Label("Restore Purchases", systemImage: "arrow.clockwise")
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-            }
-            .blitzGlassButton()
-
-            if access.hasAppStoreSubscription {
-                Button {
-                    access.openSubscriptionManagement()
-                } label: {
-                    Label("Manage Subscription", systemImage: "slider.horizontal.3")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                }
-                .blitzGlassButton()
-            }
+            activationForm
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .blitzGlassSurface(cornerRadius: 16)
     }
 
-    private var creatorCard: some View {
+    private var activationForm: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TextField("Paste license key", text: $licenseKey)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(.white.opacity(0.12), lineWidth: 1)
+                }
+
+            HStack(spacing: 10) {
+                Button {
+                    Task { await access.activateLicenseKey(licenseKey) }
+                } label: {
+                    if access.isValidatingLicense {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Label("Activate", systemImage: "key.fill")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(access.isValidatingLicense || licenseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                Button {
+                    access.beginPurchase()
+                } label: {
+                    Label("Get Early Price", systemImage: "creditcard.fill")
+                }
+                .buttonStyle(.bordered)
+
+                if access.hasActiveLicense {
+                    Button {
+                        Task { await access.refreshLicense() }
+                    } label: {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(access.isValidatingLicense)
+
+                    Button(role: .destructive) {
+                        access.clearLicense()
+                    } label: {
+                        Label("Remove", systemImage: "trash")
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+            .controlSize(.small)
+        }
+    }
+
+    private var communityCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            blitzReelsWordmark
+            Text("OPEN SOURCE")
+                .font(.system(size: 10, weight: .heavy))
+                .tracking(0.7)
+                .foregroundStyle(.white.opacity(0.52))
 
             infoRow(
-                symbol: statusSymbol,
-                color: statusColor,
-                title: statusTitle,
-                detail: statusDetail
+                symbol: "curlybraces.square.fill",
+                color: .white.opacity(0.72),
+                title: "Source available",
+                detail: "Source code is AGPL. Official signed builds use the paid license."
             )
 
-            Text("Already a customer? Sign in to get Pro for free.")
+            Text("BlitzRecorder records locally and does not require a cloud account.")
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.white.opacity(0.56))
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text("Have footage already? BlitzReels turns it into clips with captions.")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.white.opacity(0.56))
-                .fixedSize(horizontal: false, vertical: true)
-
-            Link(destination: BlitzRecorderProductIdentity.blitzReelsURL(source: "macos_app", placement: "plan_page")) {
-                Label("Turn my footage into clips", systemImage: "arrow.up.right")
+            Link(destination: sourceCodeURL) {
+                Label("Open source code", systemImage: "chevron.left.forwardslash.chevron.right")
                     .font(.system(size: 12, weight: .bold))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
             }
             .blitzGlassButton()
-
-            if access.hasBlitzReelsAccountConnection {
-                Button {
-                    Task { await access.refreshBlitzReelsEntitlement() }
-                } label: {
-                    Label("Check Again", systemImage: "arrow.clockwise")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                }
-                .blitzGlassButton()
-
-                Button {
-                    access.disconnectBlitzReels()
-                } label: {
-                    Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                }
-                .blitzGlassButton()
-            } else {
-                Button {
-                    access.beginBlitzReelsSignIn()
-                } label: {
-                    Label("Sign in", systemImage: "person.crop.circle.badge.checkmark")
-                        .font(.system(size: 12, weight: .bold))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                }
-                .blitzProminentGlassButton()
-            }
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -197,21 +180,6 @@ struct BlitzReelsCreatorPage: View {
         }
         .font(.system(size: 10, weight: .semibold))
         .foregroundStyle(.white.opacity(0.55))
-    }
-
-    private var blitzReelsWordmark: some View {
-        Group {
-            if let image = Bundle.main.blitzReelsWordmark {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFit()
-            } else {
-                Text("BlitzReels")
-                    .font(.system(size: 12, weight: .heavy))
-            }
-        }
-        .frame(width: 126, height: 20, alignment: .leading)
-        .accessibilityLabel("BlitzReels")
     }
 
     private func infoRow(
@@ -247,58 +215,4 @@ struct BlitzReelsCreatorPage: View {
         }
     }
 
-    private var planDetail: String {
-        if access.isPro {
-            return "You can save as many videos as you want."
-        }
-        if access.freeExportsRemaining == 1 {
-            return "You have 1 free video left."
-        }
-        return "You have \(access.freeExportsRemaining) free videos left."
-    }
-
-    private var statusSymbol: String {
-        if access.hasBlitzReelsEntitlement { return "checkmark.seal.fill" }
-        if access.hasBlitzReelsAccountConnection { return "exclamationmark.triangle.fill" }
-        return "person.crop.circle"
-    }
-
-    private var statusColor: Color {
-        if access.hasBlitzReelsEntitlement {
-            return BlitzUI.mint
-        }
-        if access.hasBlitzReelsAccountConnection {
-            return .yellow
-        }
-        return .white.opacity(0.55)
-    }
-
-    private var statusTitle: String {
-        if access.hasBlitzReelsEntitlement {
-            return "Pro is on"
-        }
-        if access.hasBlitzReelsAccountConnection {
-            return "Signed in, but no plan yet"
-        }
-        return "Not signed in"
-    }
-
-    private var statusDetail: String {
-        if access.hasBlitzReelsEntitlement {
-            return "Your plan turns on Pro."
-        }
-        if access.hasBlitzReelsAccountConnection {
-            return "Changed your plan? Check again."
-        }
-        return "Sign in to link your account."
-    }
-}
-
-private extension Bundle {
-    var blitzReelsWordmark: NSImage? {
-        guard let url = url(forResource: "BlitzReelsWordmarkWhite", withExtension: "png") else {
-            return nil
-        }
-        return NSImage(contentsOf: url)
-    }
 }

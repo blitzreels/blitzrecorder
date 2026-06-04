@@ -4,6 +4,7 @@ struct TakeStartPlan {
     let usesRemoteCamera: Bool
     let usesLiveCompositor: Bool
     let localCaptureSettings: RecordingSettings
+    let sceneTimelineSettings: RecordingSettings
 
     @MainActor
     static func make(settings: RecordingSettings, isRemoteCameraSelected: Bool) -> TakeStartPlan {
@@ -18,7 +19,8 @@ struct TakeStartPlan {
                 settings: settings,
                 isRemoteCameraSelected: isRemoteCameraSelected
             ),
-            localCaptureSettings: localCaptureSettings
+            localCaptureSettings: localCaptureSettings,
+            sceneTimelineSettings: settings
         )
     }
 }

@@ -1,7 +1,77 @@
 import CoreGraphics
+import Darwin
 import ScreenCaptureKit
 
+/// Identity of the on-screen window behind a picked content filter.
+struct PickedWindowTarget {
+    let pid: pid_t
+    let bounds: CGRect
+    let title: String?
+    let appName: String?
+}
+
+struct ResolvedScreenSource {
+    let filter: SCContentFilter
+    let geometry: ScreenSourceGeometry
+    let sourceRect: CGRect?
+    let display: SCDisplay?
+}
+
 enum ScreenCaptureGeometry {
+    static func screenSource(for settings: RecordingSettings, content: SCShareableContent) throws -> ResolvedScreenSource {
+        let binding = settings.screenSourceBinding
+
+        switch binding?.kind {
+        case .window:
+            guard let window = window(matching: binding, in: content) else {
+                throw RecorderError.screenSourceUnavailable(binding?.displayName ?? "Selected window")
+            }
+            let filter = SCContentFilter(desktopIndependentWindow: window)
+            return ResolvedScreenSource(
+                filter: filter,
+                geometry: screenSourceGeometry(for: settings, pickedFilter: filter),
+                sourceRect: nil,
+                display: nil
+            )
+
+        case .application:
+            guard let application = application(matching: binding, in: content) else {
+                throw RecorderError.screenSourceUnavailable(binding?.displayName ?? "Selected app")
+            }
+            guard let display = display(from: content.displays, id: binding?.displayID)
+                ?? display(from: content.displays, settings: settings) else {
+                throw RecorderError.noDisplay
+            }
+            let filter = SCContentFilter(display: display, including: [application], exceptingWindows: [])
+            return ResolvedScreenSource(
+                filter: filter,
+                geometry: screenSourceGeometry(for: settings, pickedFilter: filter),
+                sourceRect: nil,
+                display: display
+            )
+
+        case .display, nil:
+            guard let display = display(from: content.displays, id: binding?.displayID)
+                ?? display(from: content.displays, settings: settings) else {
+                throw RecorderError.noDisplay
+            }
+            let ownProcess = getpid()
+            let excludedApplications = content.applications.filter { $0.processID == ownProcess }
+            let filter = SCContentFilter(
+                display: display,
+                excludingApplications: excludedApplications,
+                exceptingWindows: []
+            )
+            let geometry = screenSourceGeometry(for: settings, display: display)
+            return ResolvedScreenSource(
+                filter: filter,
+                geometry: geometry,
+                sourceRect: geometry.sourceRect(in: CGRect(x: 0, y: 0, width: display.width, height: display.height)),
+                display: display
+            )
+        }
+    }
+
     static func screenSourceGeometry(for settings: RecordingSettings) -> ScreenSourceGeometry {
         ScreenSourceGeometry(settings: settings)
     }
@@ -34,6 +104,11 @@ enum ScreenCaptureGeometry {
             return display
         }
         return displays.first(where: { CGMainDisplayID() == $0.displayID }) ?? displays.first
+    }
+
+    static func display(from displays: [SCDisplay], id: String?) -> SCDisplay? {
+        guard let id, let numericID = UInt32(id) else { return nil }
+        return displays.first(where: { $0.displayID == numericID })
     }
 
     static func outputDimensions(for settings: RecordingSettings) -> (width: Int, height: Int) {
@@ -112,6 +187,10 @@ enum ScreenCaptureGeometry {
         dimensions(forAspectRatio: pickedContentAspectRatio(for: pickedFilter), longEdge: 1280)
     }
 
+    static func previewDimensions(forSourceAspectRatio sourceAspectRatio: CGFloat) -> (width: Int, height: Int) {
+        dimensions(forAspectRatio: sourceAspectRatio, longEdge: 1280)
+    }
+
     static func sourceRect(for display: SCDisplay, settings: RecordingSettings) -> CGRect {
         let fullRect = CGRect(x: 0, y: 0, width: display.width, height: display.height)
         return screenSourceGeometry(for: settings, display: display).sourceRect(in: fullRect)
@@ -134,6 +213,95 @@ enum ScreenCaptureGeometry {
             return SceneLayout.defaultScreenAspectRatio
         }
         return rect.width / rect.height
+    }
+
+    /// The on-screen window behind a picked content filter, so the caller can
+    /// resize it. Returns nil for a display pick (nothing to resize) or when no
+    /// window matches. For a whole-application pick this resolves to the app's
+    /// most-overlapping (main) window.
+    static func pickedWindowTarget(for filter: SCContentFilter) async -> PickedWindowTarget? {
+        let contentRect = SCShareableContent.info(for: filter).contentRect
+        guard contentRect.width > 0, contentRect.height > 0,
+              let content = try? await SCShareableContent.current else {
+            return nil
+        }
+
+        // Display pick: the captured rect spans a whole display → no window.
+        let matchesDisplay = content.displays.contains { display in
+            abs(display.frame.width - contentRect.width) < 2
+                && abs(display.frame.height - contentRect.height) < 2
+        }
+        if matchesDisplay { return nil }
+
+        let target = content.windows
+            .filter { $0.isOnScreen && $0.frame.width > 0 && $0.frame.height > 0 }
+            .max { overlapArea($0.frame, contentRect) < overlapArea($1.frame, contentRect) }
+
+        guard let window = target,
+              overlapArea(window.frame, contentRect) > 0,
+              let pid = window.owningApplication?.processID else {
+            return nil
+        }
+
+        return PickedWindowTarget(
+            pid: pid,
+            bounds: window.frame,
+            title: window.title,
+            appName: window.owningApplication?.applicationName
+        )
+    }
+
+    static func windowTarget(for binding: ScreenSourceBinding) async -> PickedWindowTarget? {
+        guard let content = try? await SCShareableContent.current else { return nil }
+        guard let window = window(matching: binding, in: content),
+              let pid = window.owningApplication?.processID else {
+            return nil
+        }
+        return PickedWindowTarget(
+            pid: pid,
+            bounds: window.frame,
+            title: window.title,
+            appName: window.owningApplication?.applicationName
+        )
+    }
+
+    private static func overlapArea(_ a: CGRect, _ b: CGRect) -> CGFloat {
+        let intersection = a.intersection(b)
+        return intersection.isNull ? 0 : intersection.width * intersection.height
+    }
+
+    private static func application(
+        matching binding: ScreenSourceBinding?,
+        in content: SCShareableContent
+    ) -> SCRunningApplication? {
+        guard let binding else { return nil }
+        if let bundleIdentifier = binding.bundleIdentifier,
+           let app = content.applications.first(where: { $0.bundleIdentifier == bundleIdentifier }) {
+            return app
+        }
+        if let processID = binding.processID,
+           let app = content.applications.first(where: { $0.processID == processID }) {
+            return app
+        }
+        if let applicationName = binding.applicationName {
+            return content.applications.first(where: { $0.applicationName == applicationName })
+        }
+        return nil
+    }
+
+    private static func window(matching binding: ScreenSourceBinding?, in content: SCShareableContent) -> SCWindow? {
+        guard let binding else { return nil }
+        let windows = content.windows.filter { $0.isOnScreen && $0.frame.width > 0 && $0.frame.height > 0 }
+        if let windowID = binding.windowID,
+           let window = windows.first(where: { $0.windowID == windowID }) {
+            return window
+        }
+        return windows.first { window in
+            let bundleMatches = binding.bundleIdentifier == nil
+                || window.owningApplication?.bundleIdentifier == binding.bundleIdentifier
+            let titleMatches = binding.windowTitle == nil || window.title == binding.windowTitle
+            return bundleMatches && titleMatches
+        }
     }
 
     private static func dimensions(forAspectRatio aspectRatio: CGFloat, longEdge: Int) -> (width: Int, height: Int) {

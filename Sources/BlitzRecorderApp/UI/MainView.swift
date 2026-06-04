@@ -10,7 +10,7 @@ struct MainView: View {
 
         // The 6-item app rail is gone: the Capture page IS the window (mock B). Every
         // former destination is reachable elsewhere (rule #5): Export -> dock gear +
-        // ⌘, Recording; Plan -> the command-bar Pro/free pill (-> ⌘, Account);
+        // ⌘, Recording; Account -> the command-bar free/open-source pill;
         // Access -> device cards + ⌘, Permissions; iPhone -> the Camera card + ⌘,
         // Devices; Scenes -> the right inspector + bottom scenes strip.
         ZStack {
@@ -301,10 +301,10 @@ private struct CaptureCommandBar: View {
                 vm.onPresentSettings?(.account)
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: vm.accessController.isPro ? "checkmark.seal.fill" : "sparkles")
+                    Image(systemName: "checkmark.seal.fill")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(vm.accessController.isPro ? BlitzUI.mint : .white.opacity(0.70))
-                    Text(vm.accessController.isPro ? "Pro" : "\(vm.accessController.freeExportsRemaining) free")
+                        .foregroundStyle(BlitzUI.mint)
+                    Text("Free")
                         .font(.system(size: 12, weight: .semibold))
                 }
                 .foregroundStyle(.white)
@@ -313,9 +313,21 @@ private struct CaptureCommandBar: View {
             }
             .blitzGlassButton()
             .pointingHandCursor()
-            .help("Open plan and account")
+            .help("Open account")
 
             RecordingOutputPicker(vm: vm)
+
+            Button {
+                vm.onPresentSettings?(nil)
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(width: 32, height: 32)
+            }
+            .blitzGlassButton()
+            .controlSize(.small)
+            .pointingHandCursor()
+            .help("Open Settings (Cmd+,)")
         }
     }
 
@@ -374,43 +386,32 @@ private struct CaptureCommandBar: View {
         case .finishing: return "Finishing…"
         case .idle:
             let readiness = vm.recordingReadiness
-            return readiness.isReady ? "Ready to record" : Self.shortBlocker(readiness.blockers)
-        }
-    }
-
-    // Collapse the structured blockers into a short, human phrase. Screen and System
-    // Audio share one Screen Recording permission, so they fold into a single fix.
-    private static func shortBlocker(_ blockers: [PermissionBlocker]) -> String {
-        if blockers.contains(where: { $0.permission == "Sources" }) {
-            return "Pick a source to record"
-        }
-        var parts: [String] = []
-        if blockers.contains(where: { $0.source == .screen || $0.source == .systemAudio }) {
-            parts.append("Screen Recording")
-        }
-        if blockers.contains(where: { $0.source == .camera }) { parts.append("Camera") }
-        if blockers.contains(where: { $0.source == .microphone }) { parts.append("Microphone") }
-        switch parts.count {
-        case 0: return "Permission needed to record"
-        case 1: return "\(parts[0]) permission needed"
-        default: return "Permissions needed to record"
+            return readiness.isReady ? "Ready to record" : readiness.blockers.shortSummary
         }
     }
 }
 
 private struct CaptureSceneCarousel: View {
     @Bindable var vm: RecorderViewModel
+    /// Sticky "All" toggle. While false the strip auto-follows the current
+    /// aspect ratio; once the user picks All it stays put across ratio flips.
+    @State private var showsAllRatios = false
+
+    private var displayedScenes: [RecordingSceneDefinition] {
+        showsAllRatios ? vm.allScenes : vm.currentScenes
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 workspaceHeader("Scenes", icon: "rectangle.stack")
                 Spacer(minLength: 0)
+                ratioFilter
             }
 
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: 8) {
-                    ForEach(vm.currentScenes) { scene in
+                    ForEach(displayedScenes) { scene in
                         sceneButton(scene)
                     }
                     newSceneButton
@@ -436,13 +437,29 @@ private struct CaptureSceneCarousel: View {
     }
 
     private func sceneButton(_ scene: RecordingSceneDefinition) -> some View {
-        let isSelected = vm.selectedSceneID == scene.id
+        // Only the one live scene (in the current ratio) carries the checkmark;
+        // off-ratio tiles in the All view are switchable but never "live".
+        let isOffRatio = scene.layout != vm.settings.layout
+        let isSelected = !isOffRatio && vm.selectedSceneID == scene.id
+        // Flipping ratio is locked while recording, so off-ratio tiles go inert then.
+        let isInteractive = vm.canSwitchScene && !(isOffRatio && vm.state != .idle)
         return Button {
-            vm.selectScene(scene.id)
+            vm.selectSceneAcrossLayouts(scene.id)
         } label: {
             VStack(spacing: 6) {
                 SceneWorkspaceThumbnail(scene: scene)
                     .frame(width: 64, height: 60)
+                    .overlay(alignment: .topLeading) {
+                        if showsAllRatios {
+                            Text(scene.layout.shortLabel)
+                                .font(.system(size: 8.5, weight: .heavy))
+                                .foregroundStyle(.white.opacity(0.9))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(.black.opacity(0.55)))
+                                .offset(x: 3, y: 3)
+                        }
+                    }
                     .overlay(alignment: .topTrailing) {
                         if isSelected {
                             Image(systemName: "checkmark.circle.fill")
@@ -466,24 +483,86 @@ private struct CaptureSceneCarousel: View {
         }
         .buttonStyle(.plain)
         .blitzSelectedSurface(isSelected: isSelected, cornerRadius: 10)
-        .disabled(!vm.canSwitchScene)
-        .opacity(vm.canSwitchScene || isSelected ? 1 : 0.5)
+        .disabled(!isInteractive)
+        .opacity(isInteractive || isSelected ? 1 : 0.5)
         .pointingHandCursor()
-        .help("Switch to \(scene.name)")
+        .help(isOffRatio ? "Switch to \(scene.name) (\(scene.layout.shortLabel))" : "Switch to \(scene.name)")
         .contextMenu {
             Button("Duplicate Scene") {
                 vm.selectScene(scene.id)
                 vm.duplicateSelectedScene()
             }
-            .disabled(!vm.canEditScene)
+            .disabled(!vm.canEditScene || isOffRatio)
 
             Divider()
 
             Button("Delete \(scene.name)", role: .destructive) {
                 vm.deleteScene(scene.id)
             }
-            .disabled(!vm.canEditScene || vm.currentScenes.count <= 1)
+            .disabled(!vm.canEditScene || isOffRatio || vm.currentScenes.count <= 1)
         }
+    }
+
+    /// Format filter in the Scenes header: one segment per aspect ratio plus
+    /// "All". Picking a ratio scopes the strip to it and makes it the live
+    /// format (kept in sync with the TopBar); "All" reveals every ratio's scenes
+    /// and stays sticky across ratio flips.
+    private var ratioFilter: some View {
+        HStack(spacing: 2) {
+            ForEach(CaptureLayout.allCases, id: \.self) { layout in
+                filterSegment(
+                    label: layout.shortLabel,
+                    icon: layout.symbolName,
+                    isSelected: !showsAllRatios && vm.settings.layout == layout
+                ) {
+                    showsAllRatios = false
+                    if vm.settings.layout != layout {
+                        vm.setLayout(layout)
+                    }
+                }
+                // Switching format is locked mid-recording; re-selecting the
+                // current format (to leave All) stays available.
+                .disabled(vm.state != .idle && vm.settings.layout != layout)
+            }
+
+            filterSegment(
+                label: "All",
+                icon: "square.grid.2x2",
+                isSelected: showsAllRatios
+            ) { showsAllRatios = true }
+        }
+        .padding(2)
+        .background(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(BlitzUI.quietFill)
+        )
+        .help("Filter scenes by aspect ratio")
+    }
+
+    private func filterSegment(
+        label: String,
+        icon: String,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .bold))
+                Text(label)
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundStyle(.white.opacity(isSelected ? 0.95 : 0.6))
+            .padding(.horizontal, 9)
+            .frame(height: 22)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(isSelected ? BlitzUI.selectedFill : Color.clear)
+        )
+        .pointingHandCursor()
     }
 
     private var newSceneButton: some View {
@@ -766,7 +845,7 @@ private struct SceneWorkspaceInspector: View {
                     ScenePresetTile(
                         title: shortPresetTitle(preset),
                         icon: preset.symbolName,
-                        isSelected: vm.settings.selectedScenePreset == preset,
+                        isSelected: vm.isScenePresetActive(preset),
                         isEnabled: vm.canEditScene
                     ) {
                         vm.setScenePreset(preset)
@@ -783,7 +862,7 @@ private struct SceneWorkspaceInspector: View {
 
             selectedLayerControls
 
-            if vm.settings.sceneLayout.screenSplitHeight != nil {
+            if vm.showsScreenSplitControl {
                 splitHeightControl
             }
         }
@@ -809,6 +888,7 @@ private struct SceneWorkspaceInspector: View {
             }
 
             if vm.selectedLayer == .screen {
+                screenWindowZoomControl
                 workspaceAction("Free crop", icon: "crop") {
                     vm.beginScreenCropMode()
                 }
@@ -872,6 +952,52 @@ private struct SceneWorkspaceInspector: View {
             .toggleStyle(.switch)
             .controlSize(.mini)
             .disabled(!vm.canEditScene)
+        }
+    }
+
+    // Window zoom for the screen source: size the captured window from 75–125%
+    // of its slot. Dragging sets the target scale; the window is physically
+    // re-fit on release (Accessibility resizes are too costly to do per tick).
+    private var screenWindowZoomControl: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text("Window zoom")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.58))
+                Spacer(minLength: 0)
+                Text("\(Int((vm.targetWindowFitScale * 100).rounded()))%")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .monospacedDigit()
+                    .foregroundStyle(.white.opacity(0.7))
+            }
+
+            Slider(
+                value: Binding(
+                    get: { Double(vm.targetWindowFitScale) },
+                    set: { vm.setTargetWindowFitScale(CGFloat($0)) }
+                ),
+                in: 0.75...1.25,
+                step: 0.05,
+                onEditingChanged: { editing in
+                    if !editing {
+                        vm.fitFrontWindowForShorts(scale: vm.targetWindowFitScale)
+                    }
+                }
+            )
+            .controlSize(.small)
+            .tint(BlitzUI.mint)
+            .disabled(!vm.canEditScene)
+
+            HStack {
+                Text("75%")
+                Spacer(minLength: 0)
+                Text("100%")
+                Spacer(minLength: 0)
+                Text("125%")
+            }
+            .font(.system(size: 9, weight: .medium, design: .monospaced))
+            .monospacedDigit()
+            .foregroundStyle(.white.opacity(0.4))
         }
     }
 
@@ -1189,12 +1315,12 @@ private struct SceneWorkspaceThumbnail: View {
             )
 
             ZStack(alignment: .topLeading) {
-                // Mini-canvas with the scene's real mesh background.
-                CanvasBackgroundSwatchCache.image(scene.snapshot.canvasBackgroundStyle)
-                    .resizable()
-                    .scaledToFill()
+                // Uniform neutral canvas so every tile reads as one consistent
+                // set. Each scene's real background still lives on the main
+                // canvas — the strip diagrams the layout, not the backdrop.
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(BlitzUI.canvasBackground)
                     .frame(width: canvas.width, height: canvas.height)
-                    .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
                     .overlay {
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                             .stroke(.white.opacity(0.16), lineWidth: 1)
@@ -1217,6 +1343,10 @@ private struct SceneWorkspaceThumbnail: View {
                 }
             }
             .frame(width: canvas.width, height: canvas.height)
+            // Clip panes to the mini-canvas like the live compositor does, so an
+            // overscanning frame (e.g. a "Fit"/canvas-filling screen) fills the
+            // tile instead of spilling out as a stray rectangle.
+            .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
             .offset(x: canvas.minX, y: canvas.minY)
         }
     }
@@ -1232,17 +1362,17 @@ private struct SceneWorkspaceLayerRect: View {
 
     private var corner: CGFloat { kind == .camera ? 5 : 4 }
 
-    private var fill: Color {
-        kind == .camera ? Color.white.opacity(0.28) : SceneWorkspaceTheme.mint.opacity(0.22)
-    }
+    /// Both source kinds use the same light translucent pane over the neutral
+    /// tile canvas, so screen and camera tiles look consistent. They're told
+    /// apart by the glyph, not by colour — mint stays reserved for
+    /// selection/active states.
+    private var fill: Color { Color.white.opacity(0.14) }
 
     private var glyph: String {
         kind == .camera ? "video.fill" : "macwindow"
     }
 
-    private var glyphTint: Color {
-        kind == .camera ? Color.white.opacity(0.82) : SceneWorkspaceTheme.mint.opacity(0.95)
-    }
+    private var glyphTint: Color { Color.white.opacity(0.85) }
 
     var body: some View {
         let minSide = min(width, height)
@@ -1250,7 +1380,7 @@ private struct SceneWorkspaceLayerRect: View {
             .fill(fill)
             .overlay {
                 RoundedRectangle(cornerRadius: corner, style: .continuous)
-                    .stroke(.white.opacity(0.18), lineWidth: 1)
+                    .stroke(.white.opacity(0.28), lineWidth: 1)
             }
             .overlay {
                 if minSide > 14 {
@@ -1737,17 +1867,17 @@ private extension MainView {
         case .plan:
             ScreenshotCard(width: 320) {
                 VStack(alignment: .leading, spacing: 12) {
-                    screenshotEyebrow("PLAN")
-                    Text("10 free videos left")
+                    screenshotEyebrow("ACCESS")
+                    Text("Free and open source")
                         .font(.system(size: 16, weight: .bold))
-                    Text("Pro lets you save as many videos as you want.")
+                    Text("No export limit, no account, no subscription.")
                         .font(.system(size: 11))
                         .foregroundStyle(.white.opacity(0.62))
-                    Text("It renews until you cancel it in your Apple settings.")
+                    Text("Record and export as many videos as you want.")
                         .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(0.54))
 
-                    Label("Get Pro for $49.99/year", systemImage: "creditcard.fill")
+                    Label("Open source code", systemImage: "chevron.left.forwardslash.chevron.right")
                         .font(.system(size: 12, weight: .bold))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 10)
@@ -1755,8 +1885,8 @@ private extension MainView {
                         .background(Color.white.opacity(0.16), in: .rect(cornerRadius: 8))
 
                     HStack(spacing: 8) {
-                        screenshotSmallButton("Restore", icon: "arrow.clockwise")
-                        screenshotSmallButton("Sign in with BlitzReels", icon: "person.crop.circle.badge.checkmark")
+                        screenshotSmallButton("Privacy", icon: "hand.raised")
+                        screenshotSmallButton("Support", icon: "questionmark.circle")
                     }
 
                     Divider().background(.white.opacity(0.12))
@@ -2098,7 +2228,7 @@ private struct ScreenshotPreviewCanvas: View {
     private var exportStatusText: String {
         switch variant {
         case .plan:
-            return "10 free exports included"
+            return "Unlimited exports included"
         case .iphoneControls:
             return "Transfer ready from iPhone"
         case .none:

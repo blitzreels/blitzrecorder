@@ -1,4 +1,4 @@
-import { Check } from "lucide-react";
+import { Check } from "@/components/site/icons";
 
 export function CheckItem({ children }: { children: React.ReactNode }) {
   return (

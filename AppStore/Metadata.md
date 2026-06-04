@@ -16,12 +16,11 @@ Use these platform-specific files when filling App Store Connect:
 
 Shared product details:
 
-- Monthly subscription product ID: `dev.blitzreels.blitzrecorder.pro.monthly`
-- Monthly subscription price: $7.99 per month
-- Annual subscription product ID: `dev.blitzreels.blitzrecorder.pro.annual`
-- Annual subscription price: $49.99 per year
-- Free behavior: 10 exports/renders before Pro is required
-- Marketing URL: `https://www.blitzreels.com/blitzrecorder`
-- Support URL: `https://www.blitzreels.com/blitzrecorder/support`
-- Privacy URL: `https://www.blitzreels.com/blitzrecorder/privacy`
-- Terms URL: `https://www.blitzreels.com/blitzrecorder/terms`
+- Price: free
+- In-app purchases: none
+- Subscription: none
+- Free behavior: unlimited recording and export, no Pro tier required
+- Marketing URL: `https://blitzrecorder.com`
+- Support URL: `https://blitzrecorder.com/support`
+- Privacy URL: `https://blitzrecorder.com/privacy`
+- Terms URL: `https://blitzrecorder.com/terms`

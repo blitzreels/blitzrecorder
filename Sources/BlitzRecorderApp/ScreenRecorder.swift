@@ -45,20 +45,18 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         } else {
             currentPickedFilter = nil
             let content = try await SCShareableContent.current
-            guard let display = ScreenCaptureGeometry.display(from: content.displays, settings: settings) else {
-                throw RecorderError.noDisplay
-            }
-            currentDisplay = display
-            dimensions = ScreenCaptureGeometry.screenCaptureDimensions(for: settings, display: display)
-
-            let ownProcess = getpid()
-            let excludedApplications = content.applications.filter { $0.processID == ownProcess }
-            filter = SCContentFilter(
-                display: display,
-                excludingApplications: excludedApplications,
-                exceptingWindows: []
+            let source = try ScreenCaptureGeometry.screenSource(for: settings, content: content)
+            currentDisplay = source.display
+            dimensions = ScreenCaptureGeometry.screenCaptureDimensions(
+                for: settings,
+                sourceAspectRatio: source.geometry.aspectRatio()
             )
-            configuration = streamConfiguration(for: display, settings: settings, zoom: currentZoom)
+            filter = source.filter
+            configuration = streamConfiguration(
+                settings: settings,
+                screenSourceGeometry: source.geometry,
+                sourceRect: source.sourceRect
+            )
         }
         currentDimensions = dimensions
 
@@ -98,23 +96,14 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         }
 
         let content = try await SCShareableContent.current
-        guard let display = ScreenCaptureGeometry.display(from: content.displays, settings: settings) else {
-            throw RecorderError.noDisplay
-        }
+        let source = try ScreenCaptureGeometry.screenSource(for: settings, content: content)
         currentPickedFilter = nil
-        currentDisplay = display
-        let ownProcess = getpid()
-        let excludedApplications = content.applications.filter { $0.processID == ownProcess }
-        let filter = SCContentFilter(
-            display: display,
-            excludingApplications: excludedApplications,
-            exceptingWindows: []
-        )
-        try await stream.updateContentFilter(filter)
+        currentDisplay = source.display
+        try await stream.updateContentFilter(source.filter)
         try await stream.updateConfiguration(streamConfiguration(
-            for: display,
             settings: settings,
-            zoom: currentZoom,
+            screenSourceGeometry: source.geometry,
+            sourceRect: source.sourceRect,
             dimensions: currentDimensions
         ))
     }
@@ -194,10 +183,6 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         dimensions fixedDimensions: (width: Int, height: Int)? = nil
     ) -> SCStreamConfiguration {
         let screenSourceGeometry = ScreenCaptureGeometry.screenSourceGeometry(for: settings, display: display)
-        let dimensions = fixedDimensions ?? ScreenCaptureGeometry.screenCaptureDimensions(
-            for: settings,
-            sourceAspectRatio: screenSourceGeometry.aspectRatio()
-        )
         var sourceRect = screenSourceGeometry.sourceRect(in: CGRect(x: 0, y: 0, width: display.width, height: display.height))
         if zoom > 1 {
             let width = sourceRect.width / zoom
@@ -211,6 +196,26 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         }
         currentSourceRect = sourceRect
 
+        return streamConfiguration(
+            settings: settings,
+            screenSourceGeometry: screenSourceGeometry,
+            sourceRect: sourceRect,
+            dimensions: fixedDimensions
+        )
+    }
+
+    private func streamConfiguration(
+        settings: RecordingSettings,
+        screenSourceGeometry: ScreenSourceGeometry,
+        sourceRect: CGRect?,
+        dimensions fixedDimensions: (width: Int, height: Int)? = nil
+    ) -> SCStreamConfiguration {
+        let dimensions = fixedDimensions ?? ScreenCaptureGeometry.screenCaptureDimensions(
+            for: settings,
+            sourceAspectRatio: screenSourceGeometry.aspectRatio()
+        )
+        currentSourceRect = sourceRect ?? .zero
+
         let configuration = SCStreamConfiguration()
         configuration.width = dimensions.width
         configuration.height = dimensions.height
@@ -222,7 +227,9 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
             configuration.showMouseClicks = true
         }
         configuration.capturesAudio = false
-        configuration.sourceRect = sourceRect
+        if let sourceRect {
+            configuration.sourceRect = sourceRect
+        }
         configuration.scalesToFit = true
         configuration.preservesAspectRatio = true
         configuration.streamName = "BlitzRecorder Screen"
