@@ -1,0 +1,21 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>BlitzRecorder</title>
+        <item>
+            <title>0.1.1</title>
+            <pubDate>Sat, 06 Jun 2026 21:54:14 +0200</pubDate>
+            <link>https://blitzrecorder.com</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/blitzreels/blitzrecorder/releases/tag/v0.1.1</sparkle:fullReleaseNotesLink>
+            <sparkle:version>2</sparkle:version>
+            <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[# BlitzRecorder v0.1.1
+
+See the full release notes on GitHub:
+https://github.com/blitzreels/blitzrecorder/releases/tag/v0.1.1
+]]></description>
+            <enclosure url="https://blitzrecorder.com/downloads/BlitzRecorder-0.1.1-2-macOS-universal.dmg" length="9938854" type="application/octet-stream" sparkle:edSignature="5K1MTJYQb38Ts4e3fwkgQQnpPDRR1PFF44amPuOaY+Yl2WsB0RWoAkSg2Mxhgve+LW1oWv7EEfH/UPTaLqrrBg=="/>
+        </item>
+    </channel>
+</rss>

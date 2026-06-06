@@ -1,0 +1,132 @@
+name: BlitzRecorder
+
+options:
+  bundleIdPrefix: dev.blitzreels
+  deploymentTarget:
+    iOS: "18.0"
+    macOS: "15.0"
+
+packages:
+  BlitzRecorderCore:
+    path: Packages/BlitzRecorderCore
+  BlitzRecorderTransport:
+    path: Packages/BlitzRecorderTransport
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: 54LJ85K2P7
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+
+targets:
+  BlitzRecorder:
+    type: application
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Sources/BlitzRecorderApp
+      - path: Resources/BlitzRecorder.icns
+        buildPhase: resources
+      - path: Resources/CompanionAppIcon.png
+        buildPhase: resources
+      - path: Resources/BlitzReelsWordmarkWhite.png
+        buildPhase: resources
+    resources:
+      - path: Resources/AppIcon.png
+        optional: true
+      - path: Sources/BlitzRecorderApp/PrivacyInfo.xcprivacy
+    dependencies:
+      - package: BlitzRecorderCore
+        product: BlitzRecorderCore
+      - package: BlitzRecorderTransport
+        product: BlitzRecorderTransport
+    settings:
+      base:
+        PRODUCT_NAME: BlitzRecorder
+        PRODUCT_BUNDLE_IDENTIFIER: dev.blitzreels.blitzrecorder
+        INFOPLIST_FILE: Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        MARKETING_VERSION: "0.1.1"
+        CURRENT_PROJECT_VERSION: "2"
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+      configs:
+        Debug:
+          CODE_SIGN_ENTITLEMENTS: BlitzRecorder.local.entitlements
+          # Distinct bundle id for local dev so it gets its own stable TCC slot
+          # and never collides with the Developer-ID release in /Applications.
+          # Grant the dev build its permissions once; the DR is stable so they
+          # persist across rebuilds (see project_blitzrecorder_accessibility_tcc).
+          PRODUCT_BUNDLE_IDENTIFIER: dev.blitzreels.blitzrecorder.debug
+        Release:
+          CODE_SIGN_ENTITLEMENTS: BlitzRecorder.entitlements
+          ENABLE_HARDENED_RUNTIME: YES
+          OTHER_SWIFT_FLAGS: "$(inherited) -D RELEASE_APP_INTEGRITY_CHECKS"
+
+  BlitzRecorderCamera:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Apps/iOSCamera/Sources
+      - path: Apps/iOSCamera/Resources/Assets.xcassets
+      - path: Apps/iOSCamera/Resources/PrivacyInfo.xcprivacy
+        buildPhase: resources
+      - path: Apps/iOSCamera/Resources/ScreenshotPreview.jpg
+        buildPhase: resources
+      - path: Resources/AppIcon.png
+        buildPhase: resources
+      - path: Apps/iOSCamera/Resources/Icons/Icon-App-20x20@2x.png
+        buildPhase: resources
+      - path: Apps/iOSCamera/Resources/Icons/Icon-App-20x20@3x.png
+        buildPhase: resources
+      - path: Apps/iOSCamera/Resources/Icons/Icon-App-29x29@2x.png
+        buildPhase: resources
+      - path: Apps/iOSCamera/Resources/Icons/Icon-App-29x29@3x.png
+        buildPhase: resources
+      - path: Apps/iOSCamera/Resources/Icons/Icon-App-40x40@2x.png
+        buildPhase: resources
+      - path: Apps/iOSCamera/Resources/Icons/Icon-App-40x40@3x.png
+        buildPhase: resources
+      - path: Apps/iOSCamera/Resources/Icons/Icon-App-60x60@2x.png
+        buildPhase: resources
+      - path: Apps/iOSCamera/Resources/Icons/Icon-App-60x60@3x.png
+        buildPhase: resources
+      - path: Apps/iOSCamera/Resources/Icons/Icon-App-76x76@1x.png
+        buildPhase: resources
+      - path: Apps/iOSCamera/Resources/Icons/Icon-App-76x76@2x.png
+        buildPhase: resources
+      - path: Apps/iOSCamera/Resources/Icons/Icon-App-83.5x83.5@2x.png
+        buildPhase: resources
+      - path: Apps/iOSCamera/Resources/Icons/Icon-App-1024x1024@1x.png
+        buildPhase: resources
+    dependencies:
+      - package: BlitzRecorderCore
+        product: BlitzRecorderCore
+      - package: BlitzRecorderTransport
+        product: BlitzRecorderTransport
+    settings:
+      base:
+        PRODUCT_NAME: BlitzRecorderCamera
+        PRODUCT_BUNDLE_IDENTIFIER: dev.blitzreels.blitzrecorder.camera
+        INFOPLIST_FILE: Apps/iOSCamera/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Apps/iOSCamera/BlitzRecorderCamera.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: ""
+        TARGETED_DEVICE_FAMILY: "1,2"
+        MARKETING_VERSION: "0.1.1"
+        CURRENT_PROJECT_VERSION: "2"
+
+schemes:
+  BlitzRecorder:
+    build:
+      targets:
+        BlitzRecorder: all
+    run:
+      config: Debug
+  BlitzRecorderCamera:
+    build:
+      targets:
+        BlitzRecorderCamera: all
+    run:
+      config: Debug

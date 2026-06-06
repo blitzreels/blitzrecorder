@@ -1,0 +1,133 @@
+name: iOS TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: Upload exported iOS build to App Store Connect/TestFlight
+        required: true
+        type: choice
+        default: "0"
+        options:
+          - "0"
+          - "1"
+
+jobs:
+  testflight:
+    name: Archive iOS Companion
+    runs-on: macos-latest
+    environment: app-store
+    timeout-minutes: 75
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 26 When Available
+        run: |
+          set -euo pipefail
+          if [[ -d /Applications/Xcode_26.5.app ]]; then
+            sudo xcode-select -s /Applications/Xcode_26.5.app
+          elif [[ -d /Applications/Xcode_26.0.app ]]; then
+            sudo xcode-select -s /Applications/Xcode_26.0.app
+          fi
+          xcodebuild -version
+
+      - name: Install Workflow Tools
+        run: |
+          set -euo pipefail
+          if ! command -v rg >/dev/null 2>&1; then
+            brew install ripgrep
+          fi
+
+      - name: Install Signing Certificate And iOS Profile
+        env:
+          APPLE_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.APPLE_DISTRIBUTION_CERTIFICATE_BASE64 }}
+          APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          IOS_APP_STORE_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_APP_STORE_PROVISION_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$APPLE_DISTRIBUTION_CERTIFICATE_BASE64" || -z "$APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD" || -z "$KEYCHAIN_PASSWORD" ]]; then
+            echo "Missing signing certificate secrets." >&2
+            exit 2
+          fi
+
+          CERTIFICATE_PATH="$RUNNER_TEMP/apple_distribution.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/ios-app-signing.keychain-db"
+
+          echo -n "$APPLE_DISTRIBUTION_CERTIFICATE_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          if [[ -n "$IOS_APP_STORE_PROVISION_PROFILE_BASE64" ]]; then
+            DECODED_PROFILE="$RUNNER_TEMP/ios-profile.mobileprovision"
+            PROFILE_PLIST="$RUNNER_TEMP/ios-profile.plist"
+            echo -n "$IOS_APP_STORE_PROVISION_PROFILE_BASE64" | base64 --decode -o "$DECODED_PROFILE"
+            security cms -D -i "$DECODED_PROFILE" > "$PROFILE_PLIST"
+            PROFILE_UUID="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$PROFILE_PLIST")"
+            PROFILE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :Name' "$PROFILE_PLIST")"
+            cp "$DECODED_PROFILE" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+            echo "IOS_PROVISIONING_PROFILE_SPECIFIER=$PROFILE_NAME" >> "$GITHUB_ENV"
+            echo "Installed provisioning profile for IOS_PROVISIONING_PROFILE_SPECIFIER"
+          fi
+
+      - name: Local App Store Checks
+        run: |
+          set -euo pipefail
+          Scripts/test-app-store-connect-readiness.py
+          Scripts/test-app-store-connect-bootstrap.py
+          Scripts/app-store-connect-readiness.py --dry-run
+
+      - name: Archive And Export iOS
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          UPLOAD: ${{ inputs.upload }}
+          ALLOW_PROVISIONING_UPDATES: "1"
+          APP_STORE_REQUIRE_MANUAL_SIGNING: "1"
+        run: |
+          set -euo pipefail
+          if [[ -z "$TEAM_ID" || -z "$ASC_KEY_ID" || -z "$ASC_ISSUER_ID" || -z "$ASC_PRIVATE_KEY" ]]; then
+            echo "Missing APPLE_TEAM_ID or App Store Connect API secrets." >&2
+            exit 2
+          fi
+          chmod +x Scripts/ci-ios-testflight.sh
+          Scripts/ci-ios-testflight.sh
+
+      - name: Validate iOS Submission Artifacts
+        env:
+          TARGET: ios
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          REQUIRE_EXPORTS: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p build/ReleaseEvidence/ios-testflight
+          Scripts/validate-submission-artifacts.sh --strict --target ios \
+            | tee build/ReleaseEvidence/ios-testflight/submission-validation.log
+
+      - name: Upload iOS Artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: blitzrecorder-ios-testflight-artifacts
+          path: |
+            build/AppStoreArchives/BlitzRecorderCamera-iOS.xcarchive
+            build/AppStoreExports/iOS
+            build/AppStoreExports/iOS-export-options.plist
+            build/ReleaseEvidence/ios-testflight
+          if-no-files-found: ignore
+
+      - name: Clean Up Keychain
+        if: ${{ always() }}
+        run: |
+          security delete-keychain "$RUNNER_TEMP/ios-app-signing.keychain-db" 2>/dev/null || true

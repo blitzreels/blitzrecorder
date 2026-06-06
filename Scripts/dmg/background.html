@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<!--
+  BlitzRecorder DMG installer background — LIGHT (shipped).
+  create-dmg window 660x400, icon-size 128, icons at app(175,185) apps(485,185).
+  Light because Finder draws icon labels in the system text color (black in Light
+  Mode) with no override, so a light backdrop keeps "BlitzRecorder"/"Applications"
+  readable for ALL users regardless of appearance. Dark hero kept at
+  background-dark.html — to ship dark instead: cp background-dark.html background.html
+  Render with Scripts/dmg/render.sh -> Resources/dmg/background.png / @2x.png.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  :root { --mint:#17ffa6; --mint-deep:#0a9d63; --w:660px; --h:400px; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body {
+    width:var(--w); height:var(--h); overflow:hidden;
+    font-family:-apple-system,"SF Pro Display","Helvetica Neue",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .stage {
+    position:relative; width:var(--w); height:var(--h);
+    background:
+      radial-gradient(circle at 175px 185px, rgba(23,255,166,0.22), rgba(23,255,166,0) 36%),
+      radial-gradient(circle at 560px 330px, rgba(11,184,119,0.10), rgba(11,184,119,0) 44%),
+      linear-gradient(165deg, #f6f8f7 0%, #e6eae8 100%);
+  }
+  .vignette { position:absolute; inset:0; pointer-events:none;
+    background:radial-gradient(circle at 50% 46%, rgba(0,0,0,0) 60%, rgba(0,0,0,0.06) 100%); }
+  .brand { position:absolute; top:30px; left:0; right:0;
+    display:flex; align-items:center; justify-content:center; gap:9px; }
+  .brand .mark { width:27px; height:27px; object-fit:contain;
+    filter:drop-shadow(0 1px 3px rgba(0,0,0,0.18)); }
+  .brand .name { font-size:24px; font-weight:700; letter-spacing:-0.4px; color:#0f1a14; }
+  .drop { position:absolute; width:150px; height:150px; left:410px; top:110px;
+    border-radius:34px; border:1.5px dashed rgba(20,30,25,0.22); }
+  .arrow { position:absolute; left:250px; top:161px; width:160px; height:48px;
+    filter:drop-shadow(0 1px 2px rgba(10,120,80,0.25)); }
+  .caption { position:absolute; bottom:30px; left:0; right:0; text-align:center;
+    font-size:13px; font-weight:500; letter-spacing:0.15px; color:rgba(24,34,29,0.6); }
+  .caption b { color:rgba(14,22,18,0.92); font-weight:600; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="vignette"></div>
+    <div class="brand">
+      <img class="mark" src="mark.png" alt="" />
+      <span class="name">BlitzRecorder</span>
+    </div>
+    <div class="drop"></div>
+    <svg class="arrow" viewBox="0 0 160 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs><linearGradient id="g" x1="0" y1="24" x2="160" y2="24" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#0a9d63" stop-opacity="0.35"/>
+        <stop offset="0.55" stop-color="#0a9d63"/><stop offset="1" stop-color="#0a9d63"/>
+      </linearGradient></defs>
+      <path d="M6 24 H136" stroke="url(#g)" stroke-width="3" stroke-linecap="round"/>
+      <path d="M124 12 L150 24 L124 36" stroke="#0a9d63" stroke-width="3"
+            stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </svg>
+    <div class="caption">Drag <b>BlitzRecorder</b> onto <b>Applications</b> to install</div>
+  </div>
+</body>
+</html>
