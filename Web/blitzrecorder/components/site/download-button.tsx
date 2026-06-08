@@ -4,6 +4,7 @@ import { Download } from "@/components/site/icons";
 import { Button } from "@/components/ui/button";
 import { useRelease } from "@/components/site/release-context";
 import { useUserOS } from "@/components/site/use-user-os";
+import { NotifyForm } from "@/components/site/notify-form";
 import { trackJourneyEvent } from "@/lib/journey-events";
 import {
   FALLBACK_VERSION,
@@ -100,11 +101,12 @@ export function DownloadMeta({
   const os = useUserOS();
   const version = release?.version ?? FALLBACK_VERSION;
 
+  const notMac = os !== null && os !== "mac";
   const hint =
     os === "ios"
-      ? "BlitzRecorder runs on your Mac. Open this page on your Mac to download."
-      : os === "windows" || os === "linux" || os === "android" || os === "other"
-        ? "BlitzRecorder is a macOS app."
+      ? "BlitzRecorder runs on your Mac. We can email you the download link."
+      : notMac
+        ? "BlitzRecorder is a macOS app. We can email you the download link."
         : null;
 
   return (
@@ -112,7 +114,17 @@ export function DownloadMeta({
       <p className={"text-balance text-faint" + (compact ? " hidden sm:block" : "")}>
         {macCompatibility} · v{version}
       </p>
-      {hint ? <p className="mt-1 text-balance text-faint">{hint}</p> : null}
+      {hint ? <p className="mt-2 text-balance text-faint">{hint}</p> : null}
+      {notMac ? (
+        <div className="mt-3 flex justify-center xl:justify-start">
+          <NotifyForm
+            source={`download_link_${os}`}
+            os={os ?? undefined}
+            cta="Email me the link"
+            success="Thanks. We'll send the Mac download link."
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

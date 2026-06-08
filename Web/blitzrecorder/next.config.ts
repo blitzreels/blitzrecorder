@@ -10,6 +10,8 @@ const nextConfig: NextConfig = {
       { source: "/privacy.html", destination: "/privacy", permanent: true },
       { source: "/support.html", destination: "/support", permanent: true },
       { source: "/terms.html", destination: "/terms", permanent: true },
+      // People type /pricing and external links assume it; pricing lives on home.
+      { source: "/pricing", destination: "/#pricing", permanent: false },
       // www → apex
       {
         source: "/:path*",

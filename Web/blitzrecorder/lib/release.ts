@@ -1,7 +1,7 @@
-// Server-only helper: reads the latest GitHub Release so the site can show the
-// current version and link the DMG built by .github/workflows/macos-dmg.yml.
-// Called from the root layout (Server Component); cached with hourly ISR so a
-// new tag surfaces within the hour without a redeploy.
+// Client-safe release constants + the GitHub release lookup. Imported by both
+// client components (constants/types) and the server layout (getLatestRelease),
+// so it must stay free of Node built-ins. The self-hosted DMG fallback lives in
+// the server-only root layout (app/layout.tsx).
 
 const OWNER = "blitzreels";
 const REPO = "blitzrecorder";

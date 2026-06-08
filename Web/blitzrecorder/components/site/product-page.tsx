@@ -13,10 +13,8 @@ import { TrackedLinkButton } from "@/components/site/tracked-link-button";
 import { Button } from "@/components/ui/button";
 import { Section } from "@/components/ui/layout";
 import { Heading, Paragraph } from "@/components/ui/typography";
+import { NotifyForm } from "@/components/site/notify-form";
 import { pages, type ProductPageData, type ProductScreen } from "@/lib/content";
-
-const IOS_BETA_HREF =
-  "mailto:support@blitzreels.com?subject=Join%20the%20BlitzRecorder%20Camera%20beta";
 
 export function ProductPage({ variant }: { variant: "ios" | "macos" }) {
   const page = pages[variant];
@@ -66,13 +64,10 @@ function Hero({ page, isMac }: { page: ProductPageData; isMac: boolean }) {
               className="h-12 rounded-full px-7 text-base"
             />
           ) : (
-            <TrackedLinkButton
-              href={IOS_BETA_HREF}
-              label="Join iPhone beta"
-              className="h-12 rounded-full px-7 text-base"
-              area="product"
-              eventName="product_cta_clicked"
-              payload={{ page: page.key, cta: "join_iphone_beta" }}
+            <NotifyForm
+              source="ios_beta_hero"
+              cta="Join the waitlist"
+              success="You're on the list. We'll email you."
             />
           )}
           <TrackedLinkButton
@@ -89,7 +84,7 @@ function Hero({ page, isMac }: { page: ProductPageData; isMac: boolean }) {
           <DownloadMeta className="mt-5 text-sm" />
         ) : (
           <Paragraph tone="faint" size="sm" className="mt-5">
-            {page.requirement} · beta access by email
+            {page.requirement} · join the iPhone app waitlist
           </Paragraph>
         )}
       </div>
@@ -238,13 +233,10 @@ function ClosingCTA({
             className="h-12 rounded-full px-7 text-base"
           />
         ) : (
-          <TrackedLinkButton
-            href={IOS_BETA_HREF}
-            label="Join iPhone beta"
-            className="h-12 rounded-full px-7 text-base"
-            area="product"
-            eventName="product_cta_clicked"
-            payload={{ page: page.key, cta: "closing_join_iphone_beta" }}
+          <NotifyForm
+            source="ios_beta_closing"
+            cta="Join the waitlist"
+            success="You're on the list. We'll email you."
           />
         )}
         <Button

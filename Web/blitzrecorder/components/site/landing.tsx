@@ -2,7 +2,7 @@
 
 import { useEffect, type CSSProperties } from "react";
 import Image from "next/image";
-import { ChevronDown, FeatureIcon } from "@/components/site/icons";
+import { ChevronDown, FeatureIcon, Check, Close } from "@/components/site/icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +26,6 @@ import {
 import { useReveal } from "@/components/site/use-reveal";
 import { trackJourneyEvent } from "@/lib/journey-events";
 import { GITHUB_REPO_URL } from "@/lib/release";
-import { OPEN_SOURCE } from "@/lib/flags";
 import { assets } from "@/lib/assets";
 import {
   features,
@@ -34,6 +33,7 @@ import {
   faqs,
   pricing,
   requirements,
+  comparison,
   type Plan,
 } from "@/lib/content";
 
@@ -68,17 +68,20 @@ export function Landing() {
         eventName="landing_page_viewed"
         payload={{
           page: "home",
-          open_source: OPEN_SOURCE,
+          open_source: true,
         }}
       />
       <SiteBackground />
       <SiteNav />
       <main>
         <Hero />
+        <TrustStrip />
         <Features />
         <IphoneCompanion />
         <Setups />
+        <Comparison />
         <Pricing />
+        <HowToStart />
         <Faq />
         <ClosingCTA />
       </main>
@@ -156,8 +159,9 @@ function Hero() {
           className="mx-auto mt-5 max-w-xl text-balance sm:mt-6 sm:text-xl xl:mx-0"
           style={revealDelay("120ms")}
         >
-          Your iPhone is the camera, recording locally at full resolution. Run
-          it from your{" "}
+          Your iPhone is the camera, and it records in full quality on the
+          phone, so your video looks better than Continuity Camera. You set up
+          the whole shot from your{" "}
           <span className="font-semibold whitespace-nowrap text-foreground">
             <AppleLogo className="mr-1.5 inline-block h-[0.85em] w-auto align-[-0.08em]" />
             Mac
@@ -169,16 +173,13 @@ function Hero() {
           className="mt-7 flex flex-col items-center gap-3 min-[480px]:flex-row min-[480px]:flex-wrap min-[480px]:justify-center sm:mt-8 xl:justify-start"
           style={revealDelay("180ms")}
         >
+          {/* One primary action above the fold: download free. The $39 unlock
+              is a deliberate, quiet secondary — the purchase decision belongs in
+              the Pricing section, after the demo. */}
           <DownloadButton
             source="home_hero"
             className="h-12 w-full max-w-80 rounded-full px-7 text-base shadow-[0_20px_60px_-22px_rgba(94,242,175,0.95)] transition-transform hover:scale-[1.03] min-[480px]:w-auto"
           />
-          <BuyButton
-            label="Unlock iPhone Camera"
-            source="home_hero"
-            className="h-12 w-full max-w-80 rounded-full px-7 text-base min-[480px]:w-auto"
-          />
-          {/* On phones the secondary action is a quiet link, not a second pill. */}
           <Button
             variant="outline"
             render={<a href="#how" />}
@@ -206,6 +207,21 @@ function Hero() {
             <ChevronDown className="size-4" />
           </a>
         </div>
+        <a
+          href="#pricing"
+          data-reveal
+          onClick={() =>
+            trackLandingCtaClicked({
+              cta: "hero_unlock_link",
+              destination: "#pricing",
+            })
+          }
+          className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+          style={revealDelay("210ms")}
+        >
+          or unlock the iPhone camera for $39
+          <ChevronDown className="size-4 -rotate-90" />
+        </a>
         <Paragraph
           tone="faint"
           size="sm"
@@ -213,9 +229,7 @@ function Hero() {
           data-reveal
           style={revealDelay("240ms")}
         >
-          {OPEN_SOURCE
-            ? "Free 1080p app · $39 unlocks the full studio · AGPL source"
-            : "Free 1080p app · $39 unlocks the full studio"}
+          Free 1080p app · $39 unlocks the full studio · AGPL source
         </Paragraph>
         <div data-reveal className="mt-2" style={revealDelay("280ms")}>
           {/* compact: phones skip the requirements line — it lives in Pricing. */}
@@ -383,6 +397,161 @@ function IphoneCompanion() {
   );
 }
 
+/** Slim credibility row under the hero. Every claim here is literally true.
+ *  TODO: add real beta-tester testimonials once collected — never fabricate. */
+function TrustStrip() {
+  const items = [
+    "No account, ever",
+    "Recordings stay on your Mac",
+    "Pay once, no subscription",
+    "30-day money-back guarantee",
+    "From the makers of BlitzReels",
+  ];
+  return (
+    <Section width="lg" className="pb-6 pt-0 sm:pb-10">
+      <div
+        data-reveal
+        className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3"
+      >
+        {items.map((item) => (
+          <span
+            key={item}
+            className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground"
+          >
+            <Check className="size-4 text-primary" />
+            {item}
+          </span>
+        ))}
+      </div>
+    </Section>
+  );
+}
+
+function CompareCell({ on, highlight }: { on: boolean; highlight: boolean }) {
+  return (
+    <span className="flex justify-center">
+      {on ? (
+        <Check className={highlight ? "size-5 text-primary" : "size-5 text-muted-foreground"} />
+      ) : (
+        <Close className="size-4 text-faint" />
+      )}
+    </span>
+  );
+}
+
+function Comparison() {
+  return (
+    <Section width="lg" className="py-24">
+      <JourneySectionView
+        area="landing"
+        section="comparison"
+        payload={{ page: "home" }}
+      />
+      <div data-reveal className="flex justify-center">
+        <Eyebrow center>How it compares</Eyebrow>
+      </div>
+      <Heading level={2} data-reveal className="mx-auto mt-5 max-w-3xl text-center">
+        Sharper than Continuity Camera.{" "}
+        <span className="text-gradient">Simpler than a subscription.</span>
+      </Heading>
+      <Paragraph data-reveal className="mx-auto mt-6 max-w-2xl text-center">
+        The iPhone records your video at full quality, not a live stream, and
+        you keep every raw file. No monthly fee for any of it.
+      </Paragraph>
+      <div data-reveal className="mx-auto mt-12 max-w-3xl overflow-x-auto">
+        <table className="w-full border-collapse text-left text-sm">
+          <thead>
+            <tr>
+              <th className="w-1/2 py-3 pr-4" />
+              {comparison.columns.map((col) => (
+                <th
+                  key={col.key}
+                  className={
+                    "px-3 py-3 text-center font-display text-[13px] font-bold sm:text-sm " +
+                    (col.key === "blitz"
+                      ? "rounded-t-xl bg-primary/[0.07] text-primary"
+                      : "text-muted-foreground")
+                  }
+                >
+                  {col.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {comparison.rows.map((row) => (
+              <tr key={row.label} className="border-t border-border">
+                <td className="py-3.5 pr-4 text-foreground">{row.label}</td>
+                {comparison.columns.map((col) => (
+                  <td
+                    key={col.key}
+                    className={
+                      "px-3 py-3.5 " + (col.key === "blitz" ? "bg-primary/[0.07]" : "")
+                    }
+                  >
+                    <CompareCell on={row[col.key]} highlight={col.key === "blitz"} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Section>
+  );
+}
+
+function HowToStart() {
+  const steps = [
+    {
+      n: "01",
+      title: "Download and open",
+      body: "Drag BlitzRecorder to your Applications folder and open it. No account and no sign up.",
+    },
+    {
+      n: "02",
+      title: "Approve permissions",
+      body: "Allow screen recording, camera, and microphone when macOS asks. It takes a few clicks, one time.",
+    },
+    {
+      n: "03",
+      title: "Set up and record",
+      body: "Pick your layout, pair your iPhone if you want it, and hit record. What you see is what you get.",
+    },
+  ];
+  return (
+    <Section className="py-20">
+      <JourneySectionView
+        area="landing"
+        section="how_to_start"
+        payload={{ page: "home" }}
+      />
+      <div data-reveal className="flex justify-center">
+        <Eyebrow center>Get started</Eyebrow>
+      </div>
+      <Heading level={2} data-reveal className="mx-auto mt-5 max-w-2xl text-center">
+        Recording in three steps.
+      </Heading>
+      <div className="mx-auto mt-14 grid max-w-4xl gap-5 md:grid-cols-3">
+        {steps.map((step, i) => (
+          <Card
+            key={step.n}
+            data-reveal
+            style={revealDelay(`${i * 90}ms`)}
+            className="glass ring-gradient gap-0 py-0 ring-0"
+          >
+            <CardContent className="flex flex-col gap-3 p-6">
+              <span className="font-mono text-sm font-semibold text-primary">{step.n}</span>
+              <Heading level={3}>{step.title}</Heading>
+              <Paragraph size="base">{step.body}</Paragraph>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </Section>
+  );
+}
+
 function Setups() {
   return (
     <Section className="py-20">
@@ -442,8 +611,8 @@ function Pricing() {
           Free to record. Pay once for the full studio.
         </Heading>
         <Paragraph data-reveal className="mt-5">
-          The Mac app is free. A one-time $39 license unlocks the iPhone
-          camera, 4K, and 60 fps export.
+          The Mac app is free. One payment of $39 unlocks the iPhone camera, 4K,
+          and 60 fps export. Pay once, with no subscription ever.
         </Paragraph>
       </div>
 
@@ -620,31 +789,27 @@ function ClosingCTA() {
         The studio camera is already in your pocket.
       </Heading>
         <Paragraph data-reveal className="mt-5">
-          {OPEN_SOURCE
-            ? "Paid official builds. Open source. Private by default."
-            : "$39 beta lifetime license. Private by default. No app account required."}
+          Paid official builds. Open source. Private by default.
         </Paragraph>
       <div data-reveal className="mt-8 flex flex-wrap items-center justify-center gap-3">
         <BuyButton
           source="home_closing"
           className="h-12 rounded-full px-7 text-base shadow-[0_20px_60px_-22px_rgba(94,242,175,0.95)] transition-transform hover:scale-[1.03]"
         />
-        {OPEN_SOURCE ? (
-          <Button
-            variant="outline"
-            render={<a href={GITHUB_REPO_URL} target="_blank" rel="noopener" />}
-            onClick={() =>
-              trackLandingCtaClicked({
-                cta: "closing_github",
-                destination: GITHUB_REPO_URL,
-              })
-            }
-            className="h-12 gap-2 rounded-full px-7 text-base"
-          >
-            <GitHubMark className="size-4" />
-            View on GitHub
-          </Button>
-        ) : null}
+        <Button
+          variant="outline"
+          render={<a href={GITHUB_REPO_URL} target="_blank" rel="noopener" />}
+          onClick={() =>
+            trackLandingCtaClicked({
+              cta: "closing_github",
+              destination: GITHUB_REPO_URL,
+            })
+          }
+          className="h-12 gap-2 rounded-full px-7 text-base"
+        >
+          <GitHubMark className="size-4" />
+          View on GitHub
+        </Button>
       </div>
     </Section>
   );

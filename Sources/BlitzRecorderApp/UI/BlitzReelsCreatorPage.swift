@@ -103,7 +103,9 @@ struct BlitzReelsCreatorPage: View {
                     access.beginPurchase()
                 } label: {
                     Label(
-                        access.lockedFeatureName == nil ? "Get Early Price" : "Unlock \(access.lockedFeatureName!)",
+                        access.lockedFeatureName == nil
+                            ? "Unlock the full studio for $39"
+                            : "Unlock \(access.lockedFeatureName!) for $39",
                         systemImage: "creditcard.fill"
                     )
                 }

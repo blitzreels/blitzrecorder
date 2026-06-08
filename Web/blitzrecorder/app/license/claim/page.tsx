@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { JourneyPageView } from "@/components/site/journey-markers";
 import { SiteBackground } from "@/components/site/site-background";
 import { SiteFooter } from "@/components/site/site-footer";
@@ -78,6 +79,13 @@ export default async function ClaimLicensePage({
                   <LicenseCopy licenseId={result.licenseId} licenseKey={result.licenseKey} />
                   <Paragraph tone="faint" size="sm" className="mt-5">
                     Open BlitzRecorder to activate automatically, or copy the key and paste it in Account.
+                  </Paragraph>
+                  <Paragraph tone="faint" size="sm" className="mt-2">
+                    Don&apos;t have the app yet?{" "}
+                    <Link href="/macos" className="font-medium text-primary underline-offset-4 hover:underline">
+                      Download BlitzRecorder for Mac
+                    </Link>
+                    , then paste your key in Account.
                   </Paragraph>
                 </>
               ) : result.kind === "missing" ? (

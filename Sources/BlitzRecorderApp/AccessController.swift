@@ -16,7 +16,22 @@ enum ProductConfiguration {
     static let blitzReelsSignInURL = URL(string: "https://blitzrecorder.com/sign-in")!
     static let blitzReelsEntitlementURL = URL(string: "https://blitzrecorder.com/api/blitzrecorder/entitlement")!
     static let licenseValidationURL = URL(string: "https://blitzrecorder.com/api/licenses/validate")!
-    static let earlyPriceURL = URL(string: "https://blitzrecorder.com/#pricing")!
+    static let earlyPriceURL = URL(string: "https://blitzrecorder.com/upgrade?source=app_paywall")!
+
+    /// Direct-to-checkout upgrade link with attribution. Sends a high-intent
+    /// buyer straight to Stripe instead of the marketing homepage, and tags
+    /// which locked feature drove the upgrade so the website can segment it.
+    static func upgradeURL(feature: String?) -> URL {
+        guard var components = URLComponents(string: "https://blitzrecorder.com/upgrade") else {
+            return earlyPriceURL
+        }
+        var items = [URLQueryItem(name: "source", value: "app_paywall")]
+        if let feature, !feature.isEmpty {
+            items.append(URLQueryItem(name: "feature", value: feature))
+        }
+        components.queryItems = items
+        return components.url ?? earlyPriceURL
+    }
     static let freeExportLimit = 10
     static let blitzReelsEntitlementCacheDuration: TimeInterval = 7 * 24 * 60 * 60
 }
@@ -845,7 +860,7 @@ final class AccessController {
         } else {
             accessMessage = "Opening checkout. After payment, claim your key and paste it here."
         }
-        NSWorkspace.shared.open(ProductConfiguration.earlyPriceURL)
+        NSWorkspace.shared.open(ProductConfiguration.upgradeURL(feature: lockedFeatureName))
     }
 
     func activateLicenseKey(_ licenseKey: String) async {

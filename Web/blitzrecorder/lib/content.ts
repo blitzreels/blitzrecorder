@@ -73,8 +73,12 @@ export type FaqItem = { q: string; a: string };
 
 export const faqs: FaqItem[] = [
   {
+    q: "Why not just use Continuity Camera?",
+    a: "Continuity Camera sends a live video stream to your Mac, so the quality drops and depends on your connection. BlitzRecorder records on the iPhone at full quality and sends the finished file to your Mac when you stop, so your video looks sharper. You also get scenes, layouts, and screen capture in the same app.",
+  },
+  {
     q: "What does the paid license include?",
-    a: "A $39 beta lifetime license, planned to become $79 after launch. It unlocks the iPhone camera, 4K export, and 60 fps export in the Mac app, with updates through beta and v1.",
+    a: "A $39 beta lifetime license, planned to become $79 after launch. It unlocks the iPhone camera, 4K export, and 60 fps export in the Mac app. You get free updates through v1, and the app stays yours forever.",
   },
   {
     q: "What does the free app do?",
@@ -83,6 +87,10 @@ export const faqs: FaqItem[] = [
   {
     q: "Do I need an account?",
     a: "No app account is required. Checkout is handled by Stripe, then you claim a license key for the Mac app.",
+  },
+  {
+    q: "What if it does not work for me?",
+    a: "Every license comes with a 30-day money-back guarantee. If BlitzRecorder is not right for you, email support@blitzreels.com within 30 days and we will refund you, no questions asked.",
   },
   {
     q: "Does it run on Intel Macs?",
@@ -141,12 +149,34 @@ export const pricing: { free: Plan; early: Plan } = {
       "Use your iPhone as the camera",
       "4K export",
       "60 fps export",
-      "One license for your personal Macs",
-      "Updates through beta and v1",
+      "One license for all your personal Macs",
+      "Free updates through v1, yours to keep forever",
+      "30-day money-back guarantee",
     ],
     cta: "buy",
     ctaLabel: "Buy Lifetime License",
   },
+};
+
+export type CompareCol = "blitz" | "continuity" | "subscription";
+export type CompareRow = { label: string } & Record<CompareCol, boolean>;
+
+/** Honest side-by-side. The point that pops: full-quality local recording,
+ *  scenes/layouts, screen+camera, and keeping the raw files. */
+export const comparison: { columns: { key: CompareCol; label: string }[]; rows: CompareRow[] } = {
+  columns: [
+    { key: "blitz", label: "BlitzRecorder" },
+    { key: "continuity", label: "Continuity Camera" },
+    { key: "subscription", label: "Subscription recorders" },
+  ],
+  rows: [
+    { label: "Records in full quality, not a live stream", blitz: true, continuity: false, subscription: false },
+    { label: "Screen and camera in one frame", blitz: true, continuity: false, subscription: true },
+    { label: "Scenes and layouts while you record", blitz: true, continuity: false, subscription: false },
+    { label: "Keep the raw screen, camera, and audio files", blitz: true, continuity: false, subscription: false },
+    { label: "Use the iPhone you already own", blitz: true, continuity: true, subscription: false },
+    { label: "Pay once, no subscription", blitz: true, continuity: true, subscription: false },
+  ],
 };
 
 export type ScreenKind = "icon" | "phone" | "desktop";

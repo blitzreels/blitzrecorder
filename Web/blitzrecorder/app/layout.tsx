@@ -1,9 +1,44 @@
 import type { Metadata } from "next";
 import { Schibsted_Grotesk, Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
 import Script from "next/script";
+import { readdir } from "node:fs/promises";
+import path from "node:path";
 import "./globals.css";
 import { ReleaseProvider } from "@/components/site/release-context";
-import { getLatestRelease } from "@/lib/release";
+import {
+  getLatestRelease,
+  FALLBACK_VERSION,
+  RELEASES_URL,
+  type Release,
+} from "@/lib/release";
+
+/**
+ * Self-hosted DMG fallback (server-only — uses fs, so it must not live in the
+ * client-imported lib/release.ts). When the GitHub release lookup returns
+ * nothing (rate limit, network blip, or no published DMG asset yet), serve the
+ * newest DMG committed under public/downloads so the download CTA never 404s.
+ */
+async function resolveRelease(): Promise<Release | null> {
+  const fromGitHub = await getLatestRelease();
+  if (fromGitHub) return fromGitHub;
+  try {
+    const dir = path.join(process.cwd(), "public", "downloads");
+    const dmgs = (await readdir(dir))
+      .filter((name) => name.toLowerCase().endsWith(".dmg"))
+      .sort();
+    const dmg = dmgs.at(-1);
+    if (!dmg) return null;
+    return {
+      version: FALLBACK_VERSION,
+      tag: `v${FALLBACK_VERSION}`,
+      dmgUrl: `/downloads/${dmg}`,
+      htmlUrl: RELEASES_URL,
+      publishedAt: null,
+    };
+  } catch {
+    return null;
+  }
+}
 
 const display = Schibsted_Grotesk({
   variable: "--font-display",
@@ -47,7 +82,7 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const release = await getLatestRelease();
+  const release = await resolveRelease();
   return (
     <html
       lang="en"

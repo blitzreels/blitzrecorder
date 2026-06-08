@@ -6,13 +6,7 @@ import { Paragraph } from "@/components/ui/typography";
 import { VersionTag } from "@/components/site/download-button";
 import { assets } from "@/lib/assets";
 import { ALGOMAX_URL } from "@/lib/content";
-import {
-  GITHUB_REPO_URL,
-  RELEASES_URL,
-  CHANGELOG_URL,
-  LATEST_RELEASE_URL,
-} from "@/lib/release";
-import { OPEN_SOURCE } from "@/lib/flags";
+import { GITHUB_REPO_URL, RELEASES_URL, CHANGELOG_URL } from "@/lib/release";
 
 type FooterLink = { label: string; href: string; external?: boolean };
 
@@ -32,12 +26,6 @@ const resourceLinks: FooterLink[] = [
 const openSourceLinks: FooterLink[] = [
   { label: "Source code", href: GITHUB_REPO_URL, external: true },
   { label: "Releases", href: RELEASES_URL, external: true },
-  { label: "Changelog", href: CHANGELOG_URL, external: true },
-];
-
-/** Shown in place of the open-source column until the source repo is public. */
-const downloadLinks: FooterLink[] = [
-  { label: "Latest release", href: LATEST_RELEASE_URL, external: true },
   { label: "Changelog", href: CHANGELOG_URL, external: true },
 ];
 
@@ -79,11 +67,7 @@ export function SiteFooter() {
 
           <FooterNav title="Product" links={productLinks} />
           <FooterNav title="Resources" links={resourceLinks} />
-          {OPEN_SOURCE ? (
-            <FooterNav title="Open source" links={openSourceLinks} />
-          ) : (
-            <FooterNav title="Download" links={downloadLinks} />
-          )}
+          <FooterNav title="Open source" links={openSourceLinks} />
         </div>
 
         <div className="flex flex-col items-start justify-between gap-4 border-t border-border py-7 text-sm text-faint sm:flex-row sm:items-center">

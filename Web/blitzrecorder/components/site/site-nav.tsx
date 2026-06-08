@@ -7,9 +7,7 @@ import {
   DownloadButton,
   VersionTag,
   GitHubLink,
-  GitHubMark,
 } from "@/components/site/download-button";
-import { OPEN_SOURCE } from "@/lib/flags";
 import { assets } from "@/lib/assets";
 
 export function SiteNav() {
@@ -53,19 +51,7 @@ export function SiteNav() {
           <Link className="transition-colors hover:text-foreground" href="/#pricing">Pricing</Link>
         </nav>
         <div className="ml-auto flex items-center gap-2.5 md:ml-8">
-          {OPEN_SOURCE ? (
-            <GitHubLink className="hidden text-muted-foreground transition-colors hover:text-foreground sm:inline-flex" />
-          ) : (
-            <span
-              className="hidden items-center gap-1.5 text-muted-foreground sm:inline-flex"
-              title="Source code coming soon"
-            >
-              <GitHubMark className="size-5" />
-              <span className="rounded-full border border-border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-faint">
-                Soon
-              </span>
-            </span>
-          )}
+          <GitHubLink className="hidden text-muted-foreground transition-colors hover:text-foreground sm:inline-flex" />
           <VersionTag className="hidden rounded-full border border-border px-2.5 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground sm:inline-flex" />
           <DownloadButton
             label="Download"

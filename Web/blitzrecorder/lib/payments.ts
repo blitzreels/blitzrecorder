@@ -92,7 +92,7 @@ export async function createEarlyPriceCheckoutSession({
     custom_text: {
       submit: {
         message:
-          "One-time $39 beta lifetime license, planned to become $79 after launch. Unlocks iPhone camera recording, 4K export, 60 fps export, and updates through beta and v1.",
+          "One-time $39 beta lifetime license, planned to become $79 after launch. Unlocks iPhone camera recording, 4K export, and 60 fps export, with free updates through v1. Backed by a 30-day money-back guarantee.",
       },
       after_submit: {
         message:
