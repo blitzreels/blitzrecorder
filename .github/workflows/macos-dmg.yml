@@ -1,0 +1,212 @@
+name: macOS DMG
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "codex/**"
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      notarize:
+        description: Notarize and staple when signing/notary secrets are configured
+        required: true
+        type: choice
+        default: "0"
+        options:
+          - "0"
+          - "1"
+
+jobs:
+  dmg:
+    name: Build DMG
+    runs-on: macos-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 26 When Available
+        run: |
+          set -euo pipefail
+          if [[ -d /Applications/Xcode_26.5.app ]]; then
+            sudo xcode-select -s /Applications/Xcode_26.5.app
+          elif [[ -d /Applications/Xcode_26.0.app ]]; then
+            sudo xcode-select -s /Applications/Xcode_26.0.app
+          fi
+          xcodebuild -version
+
+      - name: Install DMG Layout Tool
+        run: |
+          set -euo pipefail
+          brew list create-dmg >/dev/null 2>&1 || brew install create-dmg
+
+      - name: Install Developer ID Certificate
+        env:
+          DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$DEVELOPER_ID_CERTIFICATE_BASE64" || -z "$DEVELOPER_ID_CERTIFICATE_PASSWORD" || -z "$KEYCHAIN_PASSWORD" ]]; then
+            echo "Developer ID certificate secrets are not configured; building an ad-hoc signed DMG."
+            exit 0
+          fi
+
+          CERTIFICATE_PATH="$RUNNER_TEMP/developer_id_application.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/developer-id-signing.keychain-db"
+
+          echo -n "$DEVELOPER_ID_CERTIFICATE_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$DEVELOPER_ID_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security find-identity -v -p codesigning
+
+      - name: Build DMG
+        id: build_dmg
+        env:
+          NOTARIZE: ${{ startsWith(github.ref, 'refs/tags/v') && '1' || (github.event_name == 'workflow_dispatch' && inputs.notarize || '0') }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          ENTITLEMENTS_PATH: ${{ github.workspace }}/BlitzRecorder.local.entitlements
+          APP_ARCHS: arm64 x86_64
+          EXPECTED_ARCHS: arm64 x86_64
+          ALLOW_AD_HOC_RELEASE_SIGNING: ${{ startsWith(github.ref, 'refs/tags/v') && '0' || '1' }}
+          SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
+          SPARKLE_APPCAST_URL: https://github.com/${{ github.repository }}/releases/latest/download/appcast.xml
+          EVIDENCE_DIR: ${{ github.workspace }}/build/ReleaseEvidence/dmg
+          NOTARY_EVIDENCE_DIR: ${{ github.workspace }}/build/ReleaseEvidence/notarization
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/v* && -z "${SPARKLE_PUBLIC_ED_KEY:-}" ]]; then
+            echo "SPARKLE_PUBLIC_ED_KEY is required for tagged direct-download releases." >&2
+            exit 2
+          fi
+          chmod +x Scripts/ci-macos-dmg.sh
+          LOG_PATH="$RUNNER_TEMP/macos-dmg.log"
+          Scripts/ci-macos-dmg.sh | tee "$LOG_PATH"
+          DMG_PATH="$(tail -n 1 "$LOG_PATH")"
+          test -f "$DMG_PATH"
+          echo "dmg_path=$DMG_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Validate DMG Evidence
+        env:
+          DMG_PATH: ${{ steps.build_dmg.outputs.dmg_path }}
+        run: |
+          set -euo pipefail
+          test -f build/ReleaseEvidence/dmg/metadata.json
+          python3 - <<'PY'
+          import json
+
+          with open("build/ReleaseEvidence/dmg/metadata.json", encoding="utf-8") as handle:
+              metadata = json.load(handle)
+
+          missing = [arch for arch in ("arm64", "x86_64") if arch not in metadata["architectures"]]
+          if missing:
+              raise SystemExit(f"metadata missing architectures: {missing}")
+          if metadata["minimumMacOS"] != "15.0":
+              raise SystemExit(f"unexpected minimum macOS: {metadata['minimumMacOS']}")
+          PY
+          cp build/ReleaseEvidence/dmg/metadata.json build/Distributions/release-metadata.json
+
+      - name: Generate Checksums
+        env:
+          DMG_PATH: ${{ steps.build_dmg.outputs.dmg_path }}
+        run: |
+          set -euo pipefail
+          cd "$(dirname "$DMG_PATH")"
+          shasum -a 256 "$(basename "$DMG_PATH")" > SHA256SUMS
+
+      - name: Generate Sparkle Appcast
+        id: sparkle_appcast
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          DMG_PATH: ${{ steps.build_dmg.outputs.dmg_path }}
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+          SPARKLE_DOWNLOAD_URL_PREFIX: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/
+          SPARKLE_FULL_RELEASE_NOTES_URL: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SPARKLE_PRIVATE_ED_KEY" ]]; then
+            echo "SPARKLE_PRIVATE_ED_KEY is required for tagged direct-download releases." >&2
+            exit 2
+          fi
+
+          RELEASE_NOTES_PATH="$RUNNER_TEMP/${GITHUB_REF_NAME}-release-notes.md"
+          cat >"$RELEASE_NOTES_PATH" <<EOF
+          # BlitzRecorder ${GITHUB_REF_NAME}
+
+          See the full release notes on GitHub:
+          ${SPARKLE_FULL_RELEASE_NOTES_URL}
+          EOF
+
+          chmod +x Scripts/generate-sparkle-appcast.sh
+          APPCAST_PATH="$(Scripts/generate-sparkle-appcast.sh \
+            --dmg "$DMG_PATH" \
+            --repo "$GITHUB_REPOSITORY" \
+            --tag "$GITHUB_REF_NAME" \
+            --release-notes "$RELEASE_NOTES_PATH")"
+          test -f "$APPCAST_PATH"
+          echo "appcast_path=$APPCAST_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Upload DMG Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: blitzrecorder-macos-dmg
+          path: |
+            ${{ steps.build_dmg.outputs.dmg_path }}
+            build/Distributions/SHA256SUMS
+            build/Distributions/release-metadata.json
+          if-no-files-found: error
+
+      - name: Upload DMG Evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: blitzrecorder-macos-dmg-evidence
+          path: build/ReleaseEvidence
+          if-no-files-found: ignore
+
+      - name: Upload Sparkle Appcast Artifact
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: blitzrecorder-sparkle-appcast
+          path: ${{ steps.sparkle_appcast.outputs.appcast_path }}
+          if-no-files-found: error
+
+      - name: Publish Tagged Release
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DMG_PATH: ${{ steps.build_dmg.outputs.dmg_path }}
+          APPCAST_PATH: ${{ steps.sparkle_appcast.outputs.appcast_path }}
+        run: |
+          set -euo pipefail
+          CHECKSUM_PATH="build/Distributions/SHA256SUMS"
+          METADATA_PATH="build/Distributions/release-metadata.json"
+          test -f "$DMG_PATH"
+          test -f "$CHECKSUM_PATH"
+          test -f "$METADATA_PATH"
+          test -f "$APPCAST_PATH"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$DMG_PATH" "$CHECKSUM_PATH" "$METADATA_PATH" "$APPCAST_PATH" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$DMG_PATH" "$CHECKSUM_PATH" "$METADATA_PATH" "$APPCAST_PATH" \
+              --title "$GITHUB_REF_NAME" \
+              --generate-notes
+          fi
+
+      - name: Clean Up Keychain
+        if: ${{ always() }}
+        run: |
+          security delete-keychain "$RUNNER_TEMP/developer-id-signing.keychain-db" 2>/dev/null || true

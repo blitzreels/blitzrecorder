@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security report
+    url: mailto:support@blitzreels.com
+    about: Please report vulnerabilities, leaked credentials, and private data exposure by email.
+  - name: Commercial licensing
+    url: mailto:support@blitzreels.com
+    about: Ask about commercial licenses or non-AGPL terms.

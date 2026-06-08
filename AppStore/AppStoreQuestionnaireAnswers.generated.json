@@ -1,0 +1,84 @@
+{
+  "generatedAt": "2026-06-06T19:55:45Z",
+  "sourceFiles": [
+    "AppStore/AppStoreQuestionnaires.md"
+  ],
+  "appliesTo": {
+    "macOSBundleId": "dev.blitzreels.blitzrecorder",
+    "iOSBundleId": "dev.blitzreels.blitzrecorder.camera"
+  },
+  "ageRating": {
+    "recommendedTarget": "4+",
+    "frequencyAnswers": {
+      "cartoonOrFantasyViolence": "None",
+      "realisticViolence": "None",
+      "prolongedGraphicOrSadisticRealisticViolence": "None",
+      "profanityOrCrudeHumor": "None",
+      "matureOrSuggestiveThemes": "None",
+      "horrorOrFearThemes": "None",
+      "medicalOrTreatmentInformation": "None",
+      "alcoholTobaccoDrugUseOrReferences": "None",
+      "simulatedGambling": "None",
+      "sexualContentOrNudity": "None"
+    },
+    "booleanAnswers": {
+      "contests": false,
+      "gambling": false,
+      "unrestrictedWebAccess": false,
+      "userGeneratedContentService": false
+    },
+    "note": "Users create local recordings, but the apps do not host, publish, browse, moderate, or share UGC through a developer service."
+  },
+  "exportCompliance": {
+    "intendedResult": "no non-exempt encryption",
+    "itsAppUsesNonExemptEncryption": false,
+    "usesProprietaryEncryption": false,
+    "usesCustomCryptographicProtocol": false,
+    "usesVPNOrSecurityProductFunctionality": false,
+    "usesCryptoWalletFunctionality": false,
+    "sha256Use": "file-transfer integrity checks only",
+    "networking": "Apple system networking and HTTPS for fixed BlitzRecorder URLs; local network transport for companion pairing, preview, controls, and transfer."
+  },
+  "contentRights": {
+    "shipsThirdPartyMediaCatalogs": false,
+    "shipsTemplatesMusicStockFootageOrEditorialContent": false,
+    "usersResponsibleForRecordedContentRights": true,
+    "termsSource": "Web/blitzrecorder/src/main.jsx"
+  },
+  "advertisingIdentifier": {
+    "usesIDFA": false,
+    "tracking": false,
+    "thirdPartyAdvertising": false
+  },
+  "kidsCategory": {
+    "madeForKids": false,
+    "rationale": "Creator/productivity recording tool with no subscription purchase flow."
+  },
+  "signInRequirement": {
+    "appStoreSubscriptionRequiresBlitzReelsSignIn": false,
+    "blitzReelsSignInOptional": false,
+    "iosCompanionRequiresAccount": false,
+    "iosCompanionPairing": "local network"
+  },
+  "paidContentAndSubscriptions": {
+    "macAppHasAutoRenewableSubscription": false,
+    "subscriptionName": null,
+    "monthlySubscriptionName": null,
+    "productId": null,
+    "price": "$0",
+    "annualSubscriptionName": null,
+    "annualProductId": null,
+    "annualPrice": "$0",
+    "freeBehavior": "1080p Mac recording and export",
+    "paidBehavior": "direct-download Early Lifetime License unlocks iPhone camera, 4K export, and 60 fps export",
+    "iosCompanionHasInAppPurchases": false,
+    "iosCompanionHasPaywall": false
+  },
+  "reviewTriggers": [
+    "Analytics, crash reporting, ads, attribution, or tracking SDKs are added.",
+    "Cloud upload, sharing, hosting, collaboration, comments, public profiles, or publishing are added.",
+    "End-user templates, music, stock footage, or other bundled third-party media are added.",
+    "Custom encryption, encrypted messaging, VPN/security, DRM, crypto wallet, or password-management functionality is added.",
+    "Account, purchase, entitlement, analytics, or cloud upload flows are added."
+  ]
+}

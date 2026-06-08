@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleExecutable</key>
+  <string>BlitzRecorder</string>
+  <key>CFBundleDisplayName</key>
+  <string>BlitzRecorder</string>
+  <key>CFBundleIdentifier</key>
+  <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+  <key>CFBundleIconFile</key>
+  <string>BlitzRecorder</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>BlitzRecorder BlitzReels Sign In</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>blitzrecorder</string>
+      </array>
+    </dict>
+  </array>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>BlitzRecorder</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>$(MARKETING_VERSION)</string>
+  <key>CFBundleVersion</key>
+  <string>$(CURRENT_PROJECT_VERSION)</string>
+  <key>ITSAppUsesNonExemptEncryption</key>
+  <false/>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.video</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>15.0</string>
+  <key>LSMultipleInstancesProhibited</key>
+  <true/>
+  <key>NSBonjourServices</key>
+  <array>
+    <string>_blitzrecorder-camera._tcp</string>
+  </array>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>BlitzRecorder uses your local network to discover and pair with the BlitzRecorder Camera iPhone companion app.</string>
+  <key>NSHumanReadableCopyright</key>
+  <string>Copyright © 2026 BlitzReels. All rights reserved.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>BlitzRecorder captures your camera as a separate high-quality HEVC stream.</string>
+  <key>NSCameraUseContinuityCameraDeviceType</key>
+  <true/>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>BlitzRecorder captures microphone audio for your recording when the microphone source is enabled.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>BlitzRecorder can use Speech Recognition to transcribe microphone audio and create useful file names when auto-naming is enabled.</string>
+  <key>NSScreenCaptureUsageDescription</key>
+  <string>BlitzRecorder captures your screen as a separate high-quality HEVC stream.</string>
+  <key>NSPrincipalClass</key>
+  <string>NSApplication</string>
+</dict>
+</plist>

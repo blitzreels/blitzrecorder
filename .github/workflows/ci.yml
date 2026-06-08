@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "codex/**"
+
+jobs:
+  test:
+    name: Swift Tests And Unsigned Builds
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 26 When Available
+        run: |
+          set -euo pipefail
+          if [[ -d /Applications/Xcode_26.5.app ]]; then
+            sudo xcode-select -s /Applications/Xcode_26.5.app
+          elif [[ -d /Applications/Xcode_26.0.app ]]; then
+            sudo xcode-select -s /Applications/Xcode_26.0.app
+          fi
+          xcodebuild -version
+
+      - name: Swift Package Tests
+        run: |
+          set -euo pipefail
+          swift test
+          swift test --package-path Packages/BlitzRecorderCore
+          swift test --package-path Packages/BlitzRecorderTransport
+
+      - name: App Store Connect Local Checks
+        run: |
+          set -euo pipefail
+          Scripts/test-app-store-connect-readiness.py
+          Scripts/test-app-store-connect-bootstrap.py
+          Scripts/app-store-connect-readiness.py --dry-run
+
+      - name: macOS Unsigned Build
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project BlitzRecorder.xcodeproj \
+            -scheme BlitzRecorder \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath build/XcodeDerivedData-CI-macOS \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: iOS Simulator Unsigned Build
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project BlitzRecorder.xcodeproj \
+            -scheme BlitzRecorderCamera \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -derivedDataPath build/XcodeDerivedData-CI-iOS \
+            CODE_SIGNING_ALLOWED=NO \
+            build

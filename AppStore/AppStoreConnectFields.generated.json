@@ -1,0 +1,64 @@
+{
+  "generatedAt": "2026-06-06T19:54:50Z",
+  "sourceFiles": [
+    "AppStore/Metadata-macOS.md",
+    "AppStore/Metadata-iOS.md",
+    "AppStore/ReviewNotes.md"
+  ],
+  "urls": {
+    "landing": "https://blitzrecorder.com",
+    "support": "https://blitzrecorder.com/support",
+    "privacyPolicy": "https://blitzrecorder.com/privacy",
+    "terms": "https://blitzrecorder.com/terms"
+  },
+  "apps": {
+    "macOS": {
+      "platform": "macOS",
+      "appName": "BlitzRecorder",
+      "bundleId": "dev.blitzreels.blitzrecorder",
+      "sku": "BLITZRECORDER-MAC",
+      "primaryLocale": "en-US",
+      "category": "Photo & Video",
+      "subtitle": "Mac studio with iPhone camera",
+      "promotionalText": "Record clean creator videos on Mac, then upgrade the direct-download build for iPhone camera, 4K, and 60 fps.",
+      "description": "BlitzRecorder is an open-source Mac recorder for creators who need clean screen, camera, and audio recordings without a heavy production setup.\n\nThe free direct-download Mac tier captures your Mac screen, microphone, system audio, and Mac camera into 1080p takes that are ready to export. The paid Early Lifetime License unlocks iPhone camera recording, 4K export, and 60 fps export.\n\nPair BlitzRecorder Camera on iPhone to use your phone as a remote camera source with live monitor preview, lens selection, zoom, focus, exposure, white balance, stabilization, and torch controls where supported by the device.\n\nThe Mac app stays in charge of the take. The iPhone records the master camera file locally, then transfers it back to the Mac so the final export uses the high-quality iPhone recording instead of the monitor preview.\n\nThere is no account requirement, watermark, or subscription. The current launch checkout is handled by Stripe on blitzrecorder.com and is not a Mac App Store purchase.\n\nFeatures:\n\n- Mac screen, camera, microphone, and system audio recording\n- Free 1080p screen, Mac camera, microphone, and system audio recording\n- Paid iPhone companion camera pairing over the local network\n- Live iPhone monitor preview on the Mac\n- Remote camera controls for supported iPhone hardware\n- Local iPhone master recording with transfer back to the Mac take\n- Scene layout and picture-in-picture export\n- 4K and 60 fps export with the paid direct-download license\n- AGPL source code\n\nTerms: https://blitzrecorder.com/terms\nPrivacy: https://blitzrecorder.com/privacy",
+      "keywords": "screen recorder,video recorder,iphone camera,mac recording,screen capture,webcam,creator video",
+      "supportUrl": "https://blitzrecorder.com/support",
+      "marketingUrl": "https://blitzrecorder.com",
+      "privacyPolicyUrl": "https://blitzrecorder.com/privacy",
+      "termsUrl": "https://blitzrecorder.com/terms",
+      "reviewNotes": "Do not submit this macOS listing for the current launch. The current macOS build is distributed outside the Mac App Store, validates BlitzRecorder license keys, and uses Sparkle updates.\n\nThe iPhone companion app is named BlitzRecorder Camera. It is a separate App Store app that pairs with the Mac app over the local network, shows a 6-digit pairing code, streams monitor preview, accepts camera controls, records the master camera file locally, and transfers the file back to the Mac take.",
+      "screenshotDirectories": [
+        "AppStore/ScreenshotAssets/macOS"
+      ],
+      "companionOnly": false,
+      "initiatesPurchases": false,
+      "metadataSource": "AppStore/Metadata-macOS.md"
+    },
+    "iOS": {
+      "platform": "iOS",
+      "appName": "BlitzRecorder Camera",
+      "bundleId": "dev.blitzreels.blitzrecorder.camera",
+      "sku": "BLITZRECORDER-CAMERA-IOS",
+      "primaryLocale": "en-US",
+      "category": "Photo & Video",
+      "subtitle": "iPhone camera for Mac",
+      "promotionalText": "Use your iPhone as a controllable camera source for BlitzRecorder on Mac with pairing, monitor preview, recording, and transfer.",
+      "description": "BlitzRecorder Camera is the free iPhone companion for BlitzRecorder on Mac. It turns your iPhone into a remote camera source for creator recordings without making the iPhone app a standalone recorder.\n\nPair your iPhone with the Mac app over your local network using a 6-digit code. Once connected, BlitzRecorder on Mac can show a live monitor preview, choose supported lenses, adjust zoom, focus, exposure, white balance, stabilization, and torch, then start and stop the iPhone camera recording as part of a Mac take.\n\nThe iPhone records the master camera file locally for quality, then transfers it back to the paired Mac so BlitzRecorder can include it in the final export.\n\nBlitzRecorder Camera requires BlitzRecorder for Mac. The Mac app has a free 1080p tier; the direct-download Early Lifetime License unlocks iPhone camera recording, 4K export, and 60 fps export. The iPhone companion itself has no checkout or paywall.\n\nFeatures:\n\n- Local network pairing with BlitzRecorder on Mac\n- 6-digit pairing code for first connection\n- Live monitor preview on the Mac\n- Remote camera controls for supported iPhone hardware\n- Local high-quality iPhone camera recording\n- Transfer back to the Mac take after recording\n- Works as a companion, not a standalone video editor\n\nTerms: https://blitzrecorder.com/terms\nPrivacy: https://blitzrecorder.com/privacy",
+      "keywords": "iphone camera,mac camera,remote camera,creator camera,video camera,webcam,blitzrecorder",
+      "supportUrl": "https://blitzrecorder.com/support",
+      "marketingUrl": "https://blitzrecorder.com",
+      "privacyPolicyUrl": "https://blitzrecorder.com/privacy",
+      "termsUrl": "https://blitzrecorder.com/terms",
+      "reviewNotes": "BlitzRecorder Camera is a companion app for BlitzRecorder on Mac. It does not function as a standalone recorder or editor.\n\nTo test it, install BlitzRecorder on a Mac and BlitzRecorder Camera on an iPhone or iPad connected to the same local network. Open the iPhone app, note the 6-digit pairing code, then choose the iPhone camera source in the Mac app and enter the code. After pairing, the Mac app shows monitor preview, sends camera controls, starts and stops a local iPhone camera recording, and imports the finished camera file back to the Mac take.\n\nThe iOS companion app does not initiate purchases and does not include a paywall. The current Mac launch uses Stripe license keys on blitzrecorder.com for iPhone camera access, so coordinate App Review notes before submitting this iOS companion.",
+      "screenshotDirectories": [
+        "AppStore/ScreenshotAssets/iPhone-6.9",
+        "AppStore/ScreenshotAssets/iPad-13"
+      ],
+      "companionOnly": true,
+      "initiatesPurchases": false,
+      "metadataSource": "AppStore/Metadata-iOS.md"
+    }
+  },
+  "subscription": null
+}

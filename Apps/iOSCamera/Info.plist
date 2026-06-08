@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>BlitzRecorder Camera</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIcons</key>
+	<dict>
+    <key>CFBundlePrimaryIcon</key>
+    <dict>
+      <key>CFBundleIconFiles</key>
+      <array>
+        <string>Icon-App-20x20</string>
+        <string>Icon-App-29x29</string>
+        <string>Icon-App-40x40</string>
+        <string>Icon-App-60x60</string>
+      </array>
+      <key>UIPrerenderedIcon</key>
+      <false/>
+    </dict>
+  </dict>
+  <key>CFBundleIcons~ipad</key>
+  <dict>
+    <key>CFBundlePrimaryIcon</key>
+    <dict>
+      <key>CFBundleIconFiles</key>
+      <array>
+        <string>Icon-App-20x20</string>
+        <string>Icon-App-29x29</string>
+        <string>Icon-App-40x40</string>
+        <string>Icon-App-76x76</string>
+        <string>Icon-App-83.5x83.5</string>
+      </array>
+      <key>UIPrerenderedIcon</key>
+      <false/>
+    </dict>
+  </dict>
+  <key>CFBundleIdentifier</key>
+  <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>BlitzRecorder Camera</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>BlitzRecorder Camera</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>blitzrecorder-camera</string>
+      </array>
+    </dict>
+  </array>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>$(MARKETING_VERSION)</string>
+  <key>CFBundleVersion</key>
+  <string>$(CURRENT_PROJECT_VERSION)</string>
+  <key>ITSAppUsesNonExemptEncryption</key>
+  <false/>
+  <key>UIRequiredDeviceCapabilities</key>
+  <array>
+    <string>arm64</string>
+  </array>
+  <key>NSBonjourServices</key>
+  <array>
+    <string>_blitzrecorder-camera._tcp</string>
+  </array>
+  <key>NSCameraUsageDescription</key>
+  <string>BlitzRecorder Camera uses your iPhone camera as a remote camera source for BlitzRecorder on Mac.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>BlitzRecorder Camera uses your local network to pair with your Mac, show monitor preview, receive camera controls, and transfer recordings.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>BlitzRecorder Camera can include iPhone microphone audio in the source camera file when recording starts.</string>
+	<key>UIApplicationSceneManifest</key>
+  <dict>
+    <key>UIApplicationSupportsMultipleScenes</key>
+    <false/>
+  </dict>
+  <key>UILaunchScreen</key>
+  <dict/>
+  <key>UISupportedInterfaceOrientations</key>
+  <array>
+    <string>UIInterfaceOrientationPortrait</string>
+    <string>UIInterfaceOrientationPortraitUpsideDown</string>
+    <string>UIInterfaceOrientationLandscapeLeft</string>
+    <string>UIInterfaceOrientationLandscapeRight</string>
+  </array>
+</dict>
+</plist>

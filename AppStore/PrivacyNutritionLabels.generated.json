@@ -1,0 +1,87 @@
+{
+  "generatedAt": "2026-06-03T16:42:03Z",
+  "sourceFiles": [
+    "AppStore/PrivacyNutritionLabels.md",
+    "Sources/BlitzRecorderApp/PrivacyInfo.xcprivacy",
+    "Apps/iOSCamera/Resources/PrivacyInfo.xcprivacy"
+  ],
+  "shared": {
+    "tracking": false,
+    "thirdPartyAdvertising": false,
+    "dataBrokerSharing": false,
+    "recordingsUploadedByDefault": false,
+    "localNetworkTrafficCollectedByDeveloper": false,
+    "storeKitHandlesPurchases": false,
+    "supportDataOnlyIfUserContactsSupport": true
+  },
+  "apps": {
+    "macOS": {
+      "bundleId": "dev.blitzreels.blitzrecorder",
+      "dataUsedToTrackYou": false,
+      "dataLinkedToYou": false,
+      "dataNotLinkedToYou": false,
+      "collectedDataTypes": [],
+      "notCollectedDataTypes": [
+        "Purchase History",
+        "Photos or Videos",
+        "Audio Data",
+        "Crash Data",
+        "Performance Data",
+        "Product Interaction",
+        "Email Address"
+      ],
+      "permissions": {
+        "camera": "Records the selected local camera source.",
+        "microphone": "Records selected microphone audio and may support local transcription-based file naming.",
+        "screenAndSystemAudioRecording": "Records selected screen and system audio sources.",
+        "speechRecognition": "Supports local transcription-based file naming.",
+        "localNetworkBonjour": "Discovers and pairs with BlitzRecorder Camera on iPhone or iPad.",
+        "userSelectedFileAccess": "Saves recordings and exports in the output folder the user chooses."
+      },
+      "privacyManifest": {
+        "path": "Sources/BlitzRecorderApp/PrivacyInfo.xcprivacy",
+        "tracking": false,
+        "collectedDataTypes": [],
+        "accessedAPITypes": [
+          "NSPrivacyAccessedAPICategoryFileTimestamp",
+          "NSPrivacyAccessedAPICategoryUserDefaults"
+        ]
+      }
+    },
+    "iOS": {
+      "bundleId": "dev.blitzreels.blitzrecorder.camera",
+      "dataUsedToTrackYou": false,
+      "dataLinkedToYou": false,
+      "dataNotLinkedToYou": false,
+      "dataCollected": false,
+      "collectedDataTypes": [],
+      "notCollectedDataTypes": [
+        "Photos or Videos",
+        "Crash Data",
+        "Performance Data",
+        "Product Interaction",
+        "Device ID"
+      ],
+      "permissions": {
+        "camera": "Captures the iPhone/iPad camera source selected by the user.",
+        "localNetworkBonjour": "Pairs with the Mac, sends monitor preview and camera telemetry, receives camera controls, and transfers local camera recordings.",
+        "microphone": "Can include iPhone microphone audio in the source camera file when recording starts."
+      },
+      "privacyManifest": {
+        "path": "Apps/iOSCamera/Resources/PrivacyInfo.xcprivacy",
+        "tracking": false,
+        "collectedDataTypes": [],
+        "accessedAPITypes": [
+          "NSPrivacyAccessedAPICategoryDiskSpace",
+          "NSPrivacyAccessedAPICategoryFileTimestamp",
+          "NSPrivacyAccessedAPICategoryUserDefaults"
+        ]
+      }
+    }
+  },
+  "reviewTriggers": [
+    "Analytics, crash reporting, logging upload, customer support upload, receipt validation, or account telemetry is added.",
+    "Account, purchase, entitlement, analytics, or cloud upload flows are added.",
+    "Recordings, thumbnails, transcripts, or logs are uploaded for any app feature."
+  ]
+}

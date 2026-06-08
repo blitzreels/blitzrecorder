@@ -1,0 +1,152 @@
+name: BlitzRecorder Web
+
+on:
+  pull_request:
+    paths:
+      - "Web/blitzrecorder/**"
+      - ".github/workflows/blitzrecorder-web.yml"
+  push:
+    branches:
+      - main
+      - "codex/**"
+    paths:
+      - "Web/blitzrecorder/**"
+      - ".github/workflows/blitzrecorder-web.yml"
+
+permissions:
+  contents: read
+
+env:
+  WEB_DIR: Web/blitzrecorder
+  NODE_VERSION: "24"
+
+jobs:
+  verify:
+    name: Lint And Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ${{ env.WEB_DIR }}/package-lock.json
+
+      - name: Install
+        working-directory: ${{ env.WEB_DIR }}
+        run: npm ci
+
+      - name: Lint
+        working-directory: ${{ env.WEB_DIR }}
+        run: npm run lint
+
+      - name: Build
+        working-directory: ${{ env.WEB_DIR }}
+        env:
+          BLITZRECORDER_STRIPE_PRICE_ID: price_1TeL4LRibTVfQOaErwsdVjH9
+          STRIPE_AUTOMATIC_TAX: "false"
+          NEXT_PUBLIC_SITE_URL: https://blitzrecorder.com
+        run: npm run build
+
+  vercel-preview:
+    name: Deploy Preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: verify
+    if: github.event_name == 'pull_request'
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+    steps:
+      - name: Checkout
+        if: env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != ''
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        if: env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ${{ env.WEB_DIR }}/package-lock.json
+
+      - name: Install
+        if: env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != ''
+        working-directory: ${{ env.WEB_DIR }}
+        run: npm ci
+
+      - name: Pull Vercel Preview Environment
+        if: env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != ''
+        working-directory: ${{ env.WEB_DIR }}
+        run: npx vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+
+      - name: Build Vercel Preview
+        if: env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != ''
+        working-directory: ${{ env.WEB_DIR }}
+        run: npx vercel build --token="$VERCEL_TOKEN"
+
+      - name: Deploy Vercel Preview
+        if: env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != ''
+        working-directory: ${{ env.WEB_DIR }}
+        run: npx vercel deploy --prebuilt --token="$VERCEL_TOKEN"
+
+      - name: Missing Vercel Secrets
+        if: env.VERCEL_TOKEN == '' || env.VERCEL_ORG_ID == '' || env.VERCEL_PROJECT_ID == ''
+        run: |
+          echo "Skipping preview deploy: set VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID GitHub secrets."
+
+  vercel-production:
+    name: Deploy Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+    steps:
+      - name: Checkout
+        if: env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != ''
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        if: env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ${{ env.WEB_DIR }}/package-lock.json
+
+      - name: Install
+        if: env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != ''
+        working-directory: ${{ env.WEB_DIR }}
+        run: npm ci
+
+      - name: Pull Vercel Production Environment
+        if: env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != ''
+        working-directory: ${{ env.WEB_DIR }}
+        run: npx vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Build Vercel Production
+        if: env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != ''
+        working-directory: ${{ env.WEB_DIR }}
+        run: npx vercel build --prod --token="$VERCEL_TOKEN"
+
+      - name: Deploy Vercel Production
+        if: env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != ''
+        working-directory: ${{ env.WEB_DIR }}
+        run: npx vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+
+      - name: Missing Vercel Secrets
+        if: env.VERCEL_TOKEN == '' || env.VERCEL_ORG_ID == '' || env.VERCEL_PROJECT_ID == ''
+        run: |
+          echo "Skipping production deploy: set VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID GitHub secrets."
