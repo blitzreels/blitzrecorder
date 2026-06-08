@@ -36,22 +36,17 @@ type GitHubRelease = {
 };
 
 /**
- * Latest published release, or null when none exists / the repo is private /
- * the request fails. Callers fall back to the "Request access" state.
+ * Latest published release, or null when none exists or the request fails.
  * `/releases/latest` already excludes drafts and prereleases.
  */
 export async function getLatestRelease(): Promise<Release | null> {
   try {
-    // A token lets the API (and asset downloads) work while the repo is still
-    // private. Set GITHUB_TOKEN in the deployment env; omit it once public.
-    const token = process.env.GITHUB_TOKEN;
     const res = await fetch(
       `https://api.github.com/repos/${OWNER}/${REPO}/releases/latest`,
       {
         headers: {
           Accept: "application/vnd.github+json",
           "X-GitHub-Api-Version": "2022-11-28",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         next: { revalidate: 3600 },
       },

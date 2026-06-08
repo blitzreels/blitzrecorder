@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import type Stripe from "stripe";
-import { BLITZRECORDER_EARLY_PRICE_ID, earlyPrice, getStripe } from "@/lib/payments";
+import { earlyPrice, getBlitzRecorderEarlyPriceId, getStripe } from "@/lib/payments";
 import {
   getPaymentIntentRevocation,
   getLicense,
@@ -130,13 +130,14 @@ function sessionPriceIds(session: Stripe.Checkout.Session): string[] {
 }
 
 function assertPaidBlitzRecorderSession(session: Stripe.Checkout.Session): void {
+  const priceId = getBlitzRecorderEarlyPriceId();
   if (session.mode !== "payment") {
     throw new Error("Checkout session is not a one-time payment");
   }
   if (session.payment_status !== "paid") {
     throw new Error("Checkout session is not paid");
   }
-  if (!sessionPriceIds(session).includes(BLITZRECORDER_EARLY_PRICE_ID)) {
+  if (!sessionPriceIds(session).includes(priceId)) {
     throw new Error("Checkout session is not for the BlitzRecorder lifetime license");
   }
 }
@@ -170,6 +171,7 @@ export async function claimLicenseForCheckoutSession(
   context: LicenseClaimContext = {},
 ): Promise<ClaimedLicense> {
   const stripe = getStripe();
+  const priceId = getBlitzRecorderEarlyPriceId();
   const session = await stripe.checkout.sessions.retrieve(sessionId, {
     expand: ["line_items.data.price", "payment_intent", "customer"],
   });
@@ -198,7 +200,7 @@ export async function claimLicenseForCheckoutSession(
     stripeSessionId: session.id,
     stripeCustomerId: stripeId(session.customer),
     stripePaymentIntentId: stripeId(session.payment_intent),
-    stripePriceId: BLITZRECORDER_EARLY_PRICE_ID,
+    stripePriceId: priceId,
     issuedAt: session.created,
   };
 
@@ -255,7 +257,7 @@ export async function validateLicenseKey(licenseKey: string): Promise<LicenseVal
     };
   }
 
-  if (payload.stripePriceId !== BLITZRECORDER_EARLY_PRICE_ID) {
+  if (payload.stripePriceId !== getBlitzRecorderEarlyPriceId()) {
     return { ok: false, status: "wrong_product", reason: "License is for a different Stripe price" };
   }
 

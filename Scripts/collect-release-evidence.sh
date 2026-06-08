@@ -170,7 +170,7 @@ append "- Complete \`AppStore/AppStoreConnectManualSetup.md\` in App Store Conne
 append "- Complete \`AppStore/AppStoreQuestionnaires.md\` for age rating, export compliance, content rights, IDFA, Kids Category, and paid-content answers."
 append "- Fill \`AppStore/DeviceQAChecklist.md\` after physical Mac/iPhone/iPad QA."
 append "- Record legal/privacy approval for terms, privacy policy, and privacy nutrition labels."
-append "- Keep account-side records, signed archive paths, QA evidence, and the final submission decision with the private release handoff."
+append "- Keep account-side records, signed archive paths, QA evidence, and the final submission decision in the maintainer release archive."
 
 append ""
 append "## Result"

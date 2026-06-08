@@ -56,4 +56,4 @@ Use `Scripts/validate-submission-artifacts.sh --strict` only after public URLs, 
 
 Before each App Store upload, bump both targets together in `project.yml`, then create signed archives through the App Store release workflow or local archive scripts.
 
-Keep account-side records, signed archive paths, QA evidence, and the final submission decision with the private release handoff.
+Keep account-side records, signed archive paths, QA evidence, and the final submission decision in the maintainer release archive.

@@ -47,7 +47,8 @@ jobs:
       - name: Build
         working-directory: ${{ env.WEB_DIR }}
         env:
-          BLITZRECORDER_STRIPE_PRICE_ID: price_1TeL4LRibTVfQOaErwsdVjH9
+          BLITZRECORDER_STRIPE_PRODUCT_ID: prod_test_blitzrecorder
+          BLITZRECORDER_STRIPE_PRICE_ID: price_test_blitzrecorder_lifetime
           STRIPE_AUTOMATIC_TAX: "false"
           NEXT_PUBLIC_SITE_URL: https://blitzrecorder.com
         run: npm run build

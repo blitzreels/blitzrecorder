@@ -1,8 +1,20 @@
 import Stripe from "stripe";
 
-export const BLITZRECORDER_PRODUCT_ID = "prod_UdcIOAn7zHpoGN";
-export const BLITZRECORDER_EARLY_PRICE_ID =
-  process.env.BLITZRECORDER_STRIPE_PRICE_ID ?? "price_1TeL4LRibTVfQOaErwsdVjH9";
+function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing ${name}`);
+  }
+  return value;
+}
+
+export function getBlitzRecorderProductId(): string {
+  return requiredEnv("BLITZRECORDER_STRIPE_PRODUCT_ID");
+}
+
+export function getBlitzRecorderEarlyPriceId(): string {
+  return requiredEnv("BLITZRECORDER_STRIPE_PRICE_ID");
+}
 
 export const earlyPrice = {
   name: "BlitzRecorder Lifetime License",
@@ -13,8 +25,12 @@ export const earlyPrice = {
     "Unlock iPhone camera recording, 4K export, 60 fps export, your personal Macs, and updates through beta and v1.",
   display: "$39",
   regularDisplay: "$79",
-  productId: BLITZRECORDER_PRODUCT_ID,
-  priceId: BLITZRECORDER_EARLY_PRICE_ID,
+  get productId() {
+    return getBlitzRecorderProductId();
+  },
+  get priceId() {
+    return getBlitzRecorderEarlyPriceId();
+  },
 };
 
 let stripeClient: Stripe | null = null;
@@ -54,6 +70,7 @@ export async function createEarlyPriceCheckoutSession({
 }): Promise<Stripe.Checkout.Session> {
   const siteUrl = getSiteUrl(requestUrl);
   const stripe = getStripe();
+  const priceId = getBlitzRecorderEarlyPriceId();
   const metadata = {
     app: "blitzrecorder",
     product: "early_lifetime",
@@ -68,7 +85,7 @@ export async function createEarlyPriceCheckoutSession({
   return stripe.checkout.sessions.create({
     mode: "payment",
     customer_email: email || undefined,
-    line_items: [{ price: BLITZRECORDER_EARLY_PRICE_ID, quantity: 1 }],
+    line_items: [{ price: priceId, quantity: 1 }],
     success_url: `${siteUrl}/license/claim?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${siteUrl}/?checkout=cancel#pricing`,
     submit_type: "pay",

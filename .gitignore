@@ -2,11 +2,6 @@
 .swiftpm/
 build/
 DerivedData/
-.codex/
-.agents/
-.claude/
-AGENTS.md
-CLAUDE.md
 .DS_Store
 __pycache__/
 *.pyc
@@ -20,6 +15,7 @@ xcuserdata/
 *.provisionprofile
 .env
 .env.*
+.local/
 AppStore/ReleaseEvidence.md
 AppStore/ReleaseEvidence.generated.md
 Web/blitzrecorder/dist/
@@ -27,22 +23,7 @@ Web/blitzrecorder/node_modules/
 Web/blitzrecorder/public/downloads/*
 Web/blitzrecorder/public/appcast.xml
 
-# Maintainer-local publication and credential helpers.
-Scripts/audit-public-history.sh
-Scripts/create-public-snapshot.sh
-Scripts/publish-public-snapshot.sh
-Scripts/promote-public-branch.sh
-Scripts/configure-github-app-store-secrets.sh
-Scripts/configure-github-developer-id-from-keychain.sh
-Scripts/configure-github-release-secrets.sh
-Scripts/configure-github-sparkle-secrets.sh
-Scripts/validate-entitlement-endpoint.sh
-
 # Generated icon concepts; current app icons live under Resources/ and Apps/iOSCamera/Resources/.
 GeneratedIcons/
-PRODUCT.md
 
-# Internal planning notes, UI mocks, scratch files, and local dev helpers (not for the public repo).
-features/
 tmp/
-script/build_and_run.sh

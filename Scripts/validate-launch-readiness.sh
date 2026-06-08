@@ -39,7 +39,6 @@ reject_contains() {
 
 require_file "README.md"
 require_file "LICENSE"
-require_file "docs/product-model.md"
 require_file "AppStore/Metadata-macOS.md"
 require_file "AppStore/Metadata-iOS.md"
 require_file "AppStore/ReviewNotes.md"
@@ -51,9 +50,6 @@ require_file "Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift"
 require_file "Web/blitzrecorder/lib/content.ts"
 require_file "Scripts/validate-storekit-local.sh"
 
-require_contains "docs/product-model.md" "Early Lifetime License"
-require_contains "docs/product-model.md" "Free Mac tier"
-require_contains "docs/product-model.md" "Mac App Store distribution is paused"
 require_contains "Sources/BlitzRecorderApp/AccessController.swift" "var canRenderExport: Bool"
 require_contains "Sources/BlitzRecorderApp/AccessController.swift" "Early Price unlocks iPhone camera"
 require_contains "Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift" "No export limit, no account, no subscription."

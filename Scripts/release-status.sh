@@ -54,7 +54,7 @@ print_pending_items() {
 - Run Scripts/validate-submission-artifacts.sh --strict after archives and ASC credentials exist
 - Complete physical Mac/iPhone/iPad QA using AppStore/DeviceQAChecklist.md
 - Complete legal review of privacy policy, terms, and privacy nutrition labels
-- Keep account-side records, signed archive paths, QA evidence, and the final submission decision with the private release handoff
+- Keep account-side records, signed archive paths, QA evidence, and the final submission decision in the maintainer release archive
 PENDING
 }
 

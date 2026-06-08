@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/readme/app-icon.png" width="130" alt="BlitzRecorder app icon">
+  <img src=".github/assets/readme/app-icon.png" width="130" alt="BlitzRecorder app icon">
 </p>
 
 <h1 align="center">BlitzRecorder</h1>
@@ -105,7 +105,6 @@ Packages/BlitzRecorderTransport/  Pairing and transport layer
 Sources/BlitzRecorderApp/         macOS app source
 Tests/                            macOS app tests
 Web/blitzrecorder/                Website
-docs/                             Product, development, and release notes
 ```
 
 ## Contributing
@@ -129,8 +128,8 @@ BlitzRecorder uses a dual-license model:
 <p align="center">
   <a href="https://blitzreels.com?utm_source=github&utm_medium=readme&utm_campaign=blitzrecorder-oss&utm_content=footer-logo">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/blitzreels-logo-white.png">
-      <img src="docs/assets/readme/blitzreels-logo-dark.png" width="190" alt="BlitzReels">
+      <source media="(prefers-color-scheme: dark)" srcset=".github/assets/readme/blitzreels-logo-white.png">
+      <img src=".github/assets/readme/blitzreels-logo-dark.png" width="190" alt="BlitzReels">
     </picture>
   </a>
 </p>

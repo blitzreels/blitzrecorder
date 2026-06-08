@@ -141,7 +141,6 @@ require_file "Scripts/prepare-github-release.sh"
 require_file "Scripts/bootstrap-github-repo.sh"
 require_file "Scripts/generate-sparkle-appcast.sh"
 require_file "Scripts/check-github-release-readiness.sh"
-require_file "Scripts/check-open-source-readiness.sh"
 require_file "Scripts/sync-github-labels.py"
 
 require_executable "Scripts/package-app.sh"
@@ -155,10 +154,9 @@ require_executable "Scripts/prepare-github-release.sh"
 require_executable "Scripts/bootstrap-github-repo.sh"
 require_executable "Scripts/generate-sparkle-appcast.sh"
 require_executable "Scripts/check-github-release-readiness.sh"
-require_executable "Scripts/check-open-source-readiness.sh"
 require_executable "Scripts/sync-github-labels.py"
 
-if bash -n Scripts/package-app.sh Scripts/package-dmg.sh Scripts/ci-macos-dmg.sh Scripts/validate-public-dmg.sh Scripts/archive-app-store.sh Scripts/ci-ios-testflight.sh Scripts/prepare-github-release.sh Scripts/bootstrap-github-repo.sh Scripts/generate-sparkle-appcast.sh Scripts/check-github-release-readiness.sh Scripts/check-open-source-readiness.sh; then
+if bash -n Scripts/package-app.sh Scripts/package-dmg.sh Scripts/ci-macos-dmg.sh Scripts/validate-public-dmg.sh Scripts/archive-app-store.sh Scripts/ci-ios-testflight.sh Scripts/prepare-github-release.sh Scripts/bootstrap-github-repo.sh Scripts/generate-sparkle-appcast.sh Scripts/check-github-release-readiness.sh; then
   pass "release shell scripts parse"
 else
   fail "release shell scripts do not parse"
