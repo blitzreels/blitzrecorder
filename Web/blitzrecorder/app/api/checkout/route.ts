@@ -17,6 +17,8 @@ const ATTRIBUTION_FIELDS = [
   "ttclid",
 ] as const;
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function formString(formData: FormData | null, key: string): string | null {
   const value = formData?.get(key);
   return typeof value === "string" ? value : null;
@@ -30,7 +32,10 @@ function metadataValue(value: string | null | undefined, maxLength = 500): strin
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData().catch(() => null);
-    const email = formString(formData, "email");
+    const email = metadataValue(formString(formData, "email"), 320);
+    if (!email || !EMAIL_RE.test(email)) {
+      return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
+    }
     const checkoutSource = metadataValue(formString(formData, "source"), 80) ?? "unknown";
     const datafastVisitorId = request.cookies.get("datafast_visitor_id")?.value;
     const datafastSessionId = request.cookies.get("datafast_session_id")?.value;

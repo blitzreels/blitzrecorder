@@ -143,6 +143,18 @@ INFO_PLIST="$APP_PATH/Contents/Info.plist"
 [[ -x "$BINARY_PATH" ]] || { echo "error: app binary is not executable: $BINARY_PATH" >&2; exit 1; }
 [[ -f "$INFO_PLIST" ]] || { echo "error: Info.plist is missing: $INFO_PLIST" >&2; exit 1; }
 
+for SUPPORT_NAME in ".background" ".VolumeIcon.icns"; do
+  SUPPORT_PATH="$MOUNT_POINT/$SUPPORT_NAME"
+  if [[ -e "$SUPPORT_PATH" ]]; then
+    SUPPORT_FLAGS="$(stat -f '%Sf' "$SUPPORT_PATH")"
+    printf '%s %s\n' "$SUPPORT_NAME" "$SUPPORT_FLAGS" >>"$EVIDENCE_DIR/dmg-support-file-flags.log"
+    if [[ " $SUPPORT_FLAGS " != *" hidden "* ]]; then
+      echo "error: $SUPPORT_NAME is not Finder-hidden in DMG root." >&2
+      exit 1
+    fi
+  fi
+done
+
 run_log "app-codesign-verify" codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 run_log "app-codesign-display" codesign -dvv "$APP_PATH"
 run_log "app-entitlements" codesign -d --entitlements :- "$APP_PATH"

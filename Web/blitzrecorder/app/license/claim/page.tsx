@@ -73,6 +73,9 @@ export default async function ClaimLicensePage({
                     This lifetime license is assigned to{" "}
                     <span className="font-semibold text-foreground">{result.email}</span>.
                   </Paragraph>
+                  <Paragraph tone="faint" size="sm" className="mt-3">
+                    Stripe is sending the payment receipt there. Keep this key for activation.
+                  </Paragraph>
                   <Paragraph tone="faint" size="sm" className="mt-3 font-mono">
                     {result.licenseId}
                   </Paragraph>
@@ -92,7 +95,8 @@ export default async function ClaimLicensePage({
                 <>
                   <Heading level={1}>Claim your license.</Heading>
                   <Paragraph className="mt-4">
-                    Complete checkout first, then Stripe will send you back here to reveal your license key.
+                    Complete checkout first. Stripe will send a receipt and bring you back here to activate
+                    BlitzRecorder.
                   </Paragraph>
                   <TrackedLinkButton
                     href="/#pricing"

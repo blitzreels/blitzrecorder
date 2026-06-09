@@ -82,13 +82,29 @@ export async function createEarlyPriceCheckoutSession({
     ...attributionMetadata,
   };
 
+  const paymentIntentData: Stripe.Checkout.SessionCreateParams.PaymentIntentData = {
+    metadata,
+    description: "BlitzRecorder lifetime license",
+    statement_descriptor_suffix: "BLITZRECORDER",
+  };
+  if (email) {
+    paymentIntentData.receipt_email = email;
+  }
+
   return stripe.checkout.sessions.create({
     mode: "payment",
     customer_email: email || undefined,
+    customer_creation: "always",
     line_items: [{ price: priceId, quantity: 1 }],
     success_url: `${siteUrl}/license/claim?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${siteUrl}/?checkout=cancel#pricing`,
     submit_type: "pay",
+    branding_settings: {
+      display_name: "BlitzRecorder",
+      border_style: "rounded",
+      button_color: "#5EF2AF",
+      font_family: "inter",
+    },
     custom_text: {
       submit: {
         message:
@@ -103,6 +119,6 @@ export async function createEarlyPriceCheckoutSession({
     billing_address_collection: "auto",
     automatic_tax: { enabled: process.env.STRIPE_AUTOMATIC_TAX === "true" },
     metadata,
-    payment_intent_data: { metadata },
+    payment_intent_data: paymentIntentData,
   });
 }

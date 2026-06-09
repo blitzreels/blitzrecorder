@@ -75,7 +75,7 @@ function stableLicenseId(sessionId: string): string {
 function signPayload(payload: LicensePayload): string {
   const body = base64url(JSON.stringify(payload));
   const signature = hmac(body);
-  return `BRL1_${body}_${signature}`;
+  return `BRL1.${body}.${signature}`;
 }
 
 function isManualSignedLicense(payload: LicensePayload): boolean {
@@ -90,12 +90,7 @@ function isManualSignedLicense(payload: LicensePayload): boolean {
 }
 
 export function decodeLicenseKey(licenseKey: string): LicensePayload {
-  const parts = licenseKey.trim().split("_");
-  if (parts.length !== 3 || parts[0] !== "BRL1") {
-    throw new Error("License key format is invalid");
-  }
-
-  const [, body, signature] = parts;
+  const { body, signature } = licenseKeyParts(licenseKey);
   const expected = hmac(body);
   const given = Buffer.from(signature);
   const wanted = Buffer.from(expected);
@@ -109,6 +104,38 @@ export function decodeLicenseKey(licenseKey: string): LicensePayload {
   }
 
   return payload;
+}
+
+function licenseKeyParts(licenseKey: string): { body: string; signature: string } {
+  const key = licenseKey.trim();
+
+  if (key.startsWith("BRL1.")) {
+    const parts = key.split(".");
+    if (parts.length !== 3 || !parts[1] || !parts[2]) {
+      throw new Error("License key format is invalid");
+    }
+    return { body: parts[1], signature: parts[2] };
+  }
+
+  if (!key.startsWith("BRL1_")) {
+    throw new Error("License key format is invalid");
+  }
+
+  // Legacy keys used "_" as a separator, but base64url output may also contain
+  // underscores. Try each possible separator and keep the one that verifies.
+  const rest = key.slice("BRL1_".length);
+  for (let index = rest.indexOf("_"); index !== -1; index = rest.indexOf("_", index + 1)) {
+    const body = rest.slice(0, index);
+    const signature = rest.slice(index + 1);
+    if (!body || !signature) {
+      continue;
+    }
+    if (hmac(body) === signature) {
+      return { body, signature };
+    }
+  }
+
+  throw new Error("License signature is invalid");
 }
 
 function stripeId(value: string | { id: string } | null | undefined): string | null {

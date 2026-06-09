@@ -49,11 +49,11 @@ enum TakeFinalizationOutcome {
         return SavedRecordingOutput(url: url, sourceDirectory: sourceDirectory, warning: warning)
     }
 
-    func recoveryOutput(canRetryExport: Bool = true) -> RecordingRecoveryOutput? {
+    func recoveryOutput(reason overrideReason: String? = nil, canRetryExport: Bool = true) -> RecordingRecoveryOutput? {
         guard case .recoveryFiles(let take, let reason) = self else { return nil }
         return RecordingRecoveryOutput(
             takeDirectory: take.scratchDirectory,
-            reason: reason,
+            reason: overrideReason ?? reason,
             canRetryExport: canRetryExport
         )
     }

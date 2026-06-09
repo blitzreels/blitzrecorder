@@ -98,7 +98,42 @@ final class AccessControllerTests: XCTestCase {
         XCTAssertEqual(access.accessLabel, "Early Price license active")
         XCTAssertEqual(access.licenseEmail, "buyer@example.com")
         XCTAssertEqual(access.licenseID, "br_test")
+        XCTAssertEqual(access.accessMessage, "License activated for buyer@example.com.")
         XCTAssertEqual(keyStore.licenseKey, "BRL1_test")
+    }
+
+    func testLicenseActivationShowsValidatingStateBeforeNetworkReturns() async {
+        let validator = StubLicenseValidator(
+            result: .success(
+                BlitzRecorderLicenseValidationResponse(
+                    ok: true,
+                    status: "active",
+                    reason: nil,
+                    payload: .init(licenseId: "br_test", email: "buyer@example.com", kind: "early_lifetime")
+                )
+            ),
+            delayNanoseconds: 50_000_000
+        )
+        let access = AccessController(
+            defaults: temporaryDefaults(),
+            blitzRecorderLicenseKeyStore: InMemoryLicenseKeyStore(),
+            blitzRecorderLicenseValidator: validator
+        )
+
+        let activation = Task {
+            await access.activateLicenseKey("BRL1_test")
+        }
+        for _ in 0..<50 {
+            if access.isValidatingLicense { break }
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+
+        XCTAssertTrue(access.isValidatingLicense)
+        XCTAssertEqual(access.accessMessage, "Activating license...")
+
+        await activation.value
+        XCTAssertFalse(access.isValidatingLicense)
+        XCTAssertTrue(access.hasActiveLicense)
     }
 
     func testInvalidLicenseDoesNotActivatePaidFeatures() async {
@@ -125,6 +160,34 @@ final class AccessControllerTests: XCTestCase {
         XCTAssertFalse(access.canUseIPhoneCamera)
         XCTAssertNil(keyStore.licenseKey)
         XCTAssertEqual(access.accessMessage, "License signature is invalid")
+    }
+
+    func testWrongPriceLicenseShowsReadableFailure() async {
+        let keyStore = InMemoryLicenseKeyStore()
+        let validator = StubLicenseValidator(
+            result: .success(
+                BlitzRecorderLicenseValidationResponse(
+                    ok: false,
+                    status: "wrong_product",
+                    reason: "License is for a different Stripe price",
+                    payload: nil
+                )
+            )
+        )
+        let access = AccessController(
+            defaults: temporaryDefaults(),
+            blitzRecorderLicenseKeyStore: keyStore,
+            blitzRecorderLicenseValidator: validator
+        )
+
+        await access.activateLicenseKey("BRL1_wrong_price")
+
+        XCTAssertFalse(access.hasActiveLicense)
+        XCTAssertNil(keyStore.licenseKey)
+        XCTAssertEqual(
+            access.accessMessage,
+            "This key is signed correctly, but it is for an old BlitzRecorder price. Paste the newer key you were given, or ask support to reissue it."
+        )
     }
 
     func testPaidFeatureStoresUpgradeContext() {
@@ -240,12 +303,17 @@ private final class StubBlitzReelsEntitlementChecker: BlitzReelsEntitlementCheck
 
 private final class StubLicenseValidator: BlitzRecorderLicenseValidating {
     private let result: Result<BlitzRecorderLicenseValidationResponse, Error>
+    private let delayNanoseconds: UInt64
 
-    init(result: Result<BlitzRecorderLicenseValidationResponse, Error>) {
+    init(result: Result<BlitzRecorderLicenseValidationResponse, Error>, delayNanoseconds: UInt64 = 0) {
         self.result = result
+        self.delayNanoseconds = delayNanoseconds
     }
 
     func validate(licenseKey: String) async throws -> BlitzRecorderLicenseValidationResponse {
-        try result.get()
+        if delayNanoseconds > 0 {
+            try await Task.sleep(nanoseconds: delayNanoseconds)
+        }
+        return try result.get()
     }
 }

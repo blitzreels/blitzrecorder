@@ -5,6 +5,7 @@ import SwiftUI
 struct BlitzReelsCreatorPage: View {
     @Bindable var access: AccessController
     @State private var licenseKey = ""
+    @FocusState private var licenseKeyFieldFocused: Bool
     private let sourceCodeURL = URL(string: "https://github.com/blitzreels/blitzrecorder")!
 
     var body: some View {
@@ -14,13 +15,6 @@ struct BlitzReelsCreatorPage: View {
 
                 accessCard
                 communityCard
-
-                if !access.accessMessage.isEmpty {
-                    Text(access.accessMessage)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.white.opacity(0.55))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
 
                 footerLinks
             }
@@ -69,15 +63,6 @@ struct BlitzReelsCreatorPage: View {
             .foregroundStyle(.white.opacity(0.56))
             .fixedSize(horizontal: false, vertical: true)
 
-            if let email = access.licenseEmail {
-                infoRow(
-                    symbol: "person.crop.circle.fill",
-                    color: .white.opacity(0.72),
-                    title: email,
-                    detail: access.licenseID ?? "License active"
-                )
-            }
-
             activationForm
         }
         .padding(20)
@@ -86,80 +71,243 @@ struct BlitzReelsCreatorPage: View {
     }
 
     private var activationForm: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 10) {
+                Label("License", systemImage: "key.horizontal.fill")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.86))
+
+                Spacer(minLength: 10)
+
+                licenseStatusPill
+            }
+
+            if access.hasActiveLicense {
+                activeLicensePanel
+            } else {
+                licenseEntryPanel
+            }
+
+            licenseFeedback
+        }
+        .padding(14)
+        .background(BlitzUI.quietFill, in: .rect(cornerRadius: 10))
+    }
+
+    private var licenseEntryPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
             TextField("Paste license key", text: $licenseKey)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .focused($licenseKeyFieldFocused)
+                .textSelection(.enabled)
+                .onSubmit {
+                    activateLicenseKey()
+                }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
-                .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(Color.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(.white.opacity(0.12), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(licenseKeyFieldFocused ? BlitzUI.mint.opacity(0.62) : .white.opacity(0.12), lineWidth: 1)
                 }
 
             HStack(spacing: 10) {
                 Button {
-                    access.beginPurchase()
-                } label: {
-                    Label(
-                        access.lockedFeatureName == nil
-                            ? "Unlock the full studio for $39"
-                            : "Unlock \(access.lockedFeatureName!) for $39",
-                        systemImage: "creditcard.fill"
-                    )
-                }
-                .buttonStyle(.borderedProminent)
-
-                Button {
                     pasteLicenseKeyFromClipboard()
                 } label: {
-                    Label("Paste", systemImage: "doc.on.clipboard")
+                    Label("Paste key", systemImage: "doc.on.clipboard")
                 }
                 .buttonStyle(.bordered)
                 .disabled(access.isValidatingLicense)
 
                 Button {
-                    Task { await access.activateLicenseKey(licenseKey) }
+                    activateLicenseKey()
                 } label: {
                     if access.isValidatingLicense {
-                        ProgressView()
-                            .controlSize(.small)
+                        Label("Checking license", systemImage: "arrow.triangle.2.circlepath")
                     } else {
-                        Label("Activate", systemImage: "key.fill")
+                        Label("Activate license", systemImage: "checkmark.seal.fill")
                     }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderedProminent)
+                .tint(BlitzUI.mint)
+                .keyboardShortcut(.return, modifiers: [])
                 .disabled(access.isValidatingLicense || licenseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-                if access.hasActiveLicense {
-                    Button {
-                        Task { await access.refreshLicense() }
-                    } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(access.isValidatingLicense)
+                Spacer(minLength: 0)
 
-                    Button(role: .destructive) {
-                        access.clearLicense()
-                    } label: {
-                        Label("Remove", systemImage: "trash")
-                    }
-                    .buttonStyle(.bordered)
+                Button {
+                    access.beginPurchase()
+                } label: {
+                    Label("Buy license", systemImage: "creditcard.fill")
                 }
+                .buttonStyle(.bordered)
             }
             .controlSize(.small)
         }
+        .onAppear {
+            guard !access.hasActiveLicense else { return }
+            DispatchQueue.main.async {
+                licenseKeyFieldFocused = true
+            }
+        }
+    }
+
+    private var activeLicensePanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(BlitzUI.mint)
+                    .frame(width: 22)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(access.licenseEmail ?? "License active")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .textSelection(.enabled)
+
+                    Text(access.licenseID ?? "Early lifetime license")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.58))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+            }
+
+            HStack(spacing: 6) {
+                licenseFeatureChip("iPhone camera")
+                licenseFeatureChip("4K export")
+                licenseFeatureChip("60 fps")
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    Task { await access.refreshLicense() }
+                } label: {
+                    Label("Refresh license", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .disabled(access.isValidatingLicense)
+
+                Button(role: .destructive) {
+                    access.clearLicense()
+                    licenseKey = ""
+                    licenseKeyFieldFocused = true
+                } label: {
+                    Label("Remove license", systemImage: "trash")
+                }
+                .buttonStyle(.bordered)
+            }
+            .controlSize(.small)
+        }
+    }
+
+    private func licenseFeatureChip(_ title: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "checkmark")
+                .font(.system(size: 8, weight: .heavy))
+            Text(title)
+                .font(.system(size: 10, weight: .semibold))
+        }
+        .foregroundStyle(BlitzUI.mint.opacity(0.92))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(BlitzUI.mint.opacity(0.10), in: Capsule())
+    }
+
+    @ViewBuilder
+    private var licenseFeedback: some View {
+        if !access.accessMessage.isEmpty {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: licenseStatusSymbol)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(licenseStatusColor)
+                    .frame(width: 14)
+
+                Text(access.accessMessage)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.68))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.top, 1)
+        }
+    }
+
+    private var licenseStatusPill: some View {
+        HStack(spacing: 6) {
+            BlitzStatusDot(tone: access.hasActiveLicense ? .ready : (access.isValidatingLicense ? .live : .muted), diameter: 6)
+            Text(licenseStatusText)
+                .font(.system(size: 10, weight: .bold))
+        }
+        .foregroundStyle(access.hasActiveLicense || access.isValidatingLicense ? BlitzUI.mint : .white.opacity(0.58))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.white.opacity(0.055), in: Capsule())
+    }
+
+    private var licenseStatusText: String {
+        if access.isValidatingLicense {
+            return "Checking"
+        }
+        if access.hasActiveLicense {
+            return "Active"
+        }
+        return "Not active"
+    }
+
+    private var licenseStatusSymbol: String {
+        if access.isValidatingLicense { return "arrow.triangle.2.circlepath" }
+        if access.hasActiveLicense { return "checkmark.circle.fill" }
+        if licenseMessageLooksLikeError { return "exclamationmark.triangle.fill" }
+        return "info.circle.fill"
+    }
+
+    private var licenseStatusColor: Color {
+        if access.isValidatingLicense || access.hasActiveLicense {
+            return BlitzUI.mint
+        }
+        if licenseMessageLooksLikeError {
+            return BlitzUI.warning
+        }
+        return .white.opacity(0.5)
+    }
+
+    private var licenseMessageLooksLikeError: Bool {
+        let message = access.accessMessage.lowercased()
+        return message.contains("couldn't")
+            || message.contains("invalid")
+            || message.contains("not active")
+            || message.contains("different")
+            || message.contains("revoked")
+            || message.contains("refunded")
+            || message.contains("clipboard does not")
     }
 
     private func pasteLicenseKeyFromClipboard() {
         guard let pasted = NSPasteboard.general.string(forType: .string)?
             .trimmingCharacters(in: .whitespacesAndNewlines),
               !pasted.isEmpty else {
+            access.accessMessage = "Clipboard does not contain a license key."
             return
         }
         licenseKey = pasted
+        licenseKeyFieldFocused = true
+        access.accessMessage = "License key pasted."
+    }
+
+    private func activateLicenseKey() {
+        Task {
+            await access.activateLicenseKey(licenseKey)
+            if access.hasActiveLicense {
+                licenseKey = ""
+                licenseKeyFieldFocused = false
+            }
+        }
     }
 
     private var communityCard: some View {

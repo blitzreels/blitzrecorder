@@ -481,27 +481,58 @@ private struct RecoveryAvailableView: View {
             Divider()
                 .background(.white.opacity(0.07))
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 8)], alignment: .leading, spacing: 8) {
-                if recovery.canRetryExport {
-                    DockActionButton(title: "Retry Export", systemImage: "arrow.clockwise", help: "Try exporting the recovered source files again") {
-                        vm.retryRecoveredExport()
-                    }
-                }
-
-                DockActionButton(title: "Reveal Files", systemImage: "tray.full", help: recovery.takeDirectory.path) {
-                    NSWorkspace.shared.activateFileViewerSelecting([recovery.takeDirectory])
-                }
-
-                DockActionButton(title: "Export Settings", systemImage: "slider.horizontal.3") {
-                    vm.onPresentSettings?(.recording)
-                }
-
-                DockActionButton(title: "Dismiss", systemImage: "xmark") {
-                    vm.clearPostRecordingStatus()
+            ViewThatFits(in: .horizontal) {
+                recoveryActionRow
+                VStack(alignment: .leading, spacing: 8) {
+                    recoveryPrimaryActionRow
+                    recoverySecondaryActionRow
                 }
             }
         }
-        .frame(maxWidth: 460)
+        .frame(maxWidth: 560)
+    }
+
+    private var recoveryActionRow: some View {
+        HStack(spacing: 8) {
+            recoveryPrimaryActions
+            recoverySecondaryActions
+        }
+    }
+
+    private var recoveryPrimaryActionRow: some View {
+        HStack(spacing: 8) {
+            recoveryPrimaryActions
+        }
+    }
+
+    private var recoverySecondaryActionRow: some View {
+        HStack(spacing: 8) {
+            recoverySecondaryActions
+        }
+    }
+
+    @ViewBuilder
+    private var recoveryPrimaryActions: some View {
+        if recovery.canRetryExport {
+            DockActionButton(title: "Retry Export", systemImage: "arrow.clockwise", help: "Try exporting the recovered source files again") {
+                vm.retryRecoveredExport()
+            }
+        }
+
+        DockActionButton(title: "Reveal Files", systemImage: "tray.full", help: recovery.takeDirectory.path) {
+            NSWorkspace.shared.activateFileViewerSelecting([recovery.takeDirectory])
+        }
+    }
+
+    @ViewBuilder
+    private var recoverySecondaryActions: some View {
+        DockActionButton(title: "Export Settings", systemImage: "slider.horizontal.3") {
+            vm.onPresentSettings?(.recording)
+        }
+
+        DockActionButton(title: "Dismiss", systemImage: "xmark") {
+            vm.clearPostRecordingStatus()
+        }
     }
 }
 

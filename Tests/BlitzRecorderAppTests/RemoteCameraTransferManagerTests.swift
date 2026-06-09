@@ -573,7 +573,7 @@ final class RemoteCameraTransferManagerTests: XCTestCase {
         }
 
         XCTAssertEqual(finishedTakeIDs, [takeID])
-        XCTAssertTrue(messages.contains("iPhone media import failed: Remote iPhone transfer failed: Imported iPhone recording has no video track."))
+        XCTAssertTrue(messages.contains("iPhone import failed: the iPhone recording has no usable video. Keep the iPhone app open until recording stops, then retry."))
         XCTAssertFalse(FileManager.default.fileExists(atPath: take.cameraURL.path))
         XCTAssertEqual(RemoteCameraPendingImportStore().all(settings: settings).first?.phase, .failedRecoverable)
     }

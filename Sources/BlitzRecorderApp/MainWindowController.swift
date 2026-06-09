@@ -28,6 +28,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// affect screen capture) so the live frame never flashes back to "Starting…".
     private var lastStartedScreenCaptureSignature: ScreenCaptureSignature?
     private var settingsWindowController: SettingsWindowController?
+    private var currentRecordingState: RecordingState = .idle
+    private var idlePreviewRestartTask: Task<Void, Never>?
 
     init(coordinator: RecorderCoordinator) {
         self.coordinator = coordinator
@@ -139,7 +141,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         previewStage.canvasBackgroundStyle = coordinator.settings.canvasBackgroundStyle
         previewStage.canvasPadding = coordinator.settings.canvasPadding
 
-        let host = NSHostingView(rootView: MainView(vm: viewModel))
+        let host = NSHostingView(rootView: MainView(vm: viewModel).preferredColorScheme(.dark))
         // Don't let SwiftUI's ideal size drive the window. MainView uses .frame(maxHeight: .infinity),
         // so an unbounded ideal height would otherwise resize the whole window to the full screen on
         // relayout (e.g. switching tabs). Empty sizingOptions + autoresizing keeps the window fixed
@@ -206,23 +208,52 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     deinit {
+        idlePreviewRestartTask?.cancel()
         for observer in cameraDeviceObservers {
             NotificationCenter.default.removeObserver(observer)
         }
     }
 
     func update(for state: RecordingState) {
+        let previousState = currentRecordingState
+        currentRecordingState = state
         viewModel.applyState(state)
         switch state {
         case .idle:
             refreshPermissionGate()
-            restartScreenPreview()
-            restartCameraPreview()
+            scheduleIdlePreviewRestart(afterNanoseconds: IdlePreviewRestartPolicy.delayNanoseconds(
+                previousState: previousState,
+                newState: state
+            ))
         case .recording, .paused:
+            cancelScheduledIdlePreviewRestart()
             showRecordingCameraPreview()
         case .starting, .finishing:
+            cancelScheduledIdlePreviewRestart()
             break
         }
+    }
+
+    private func scheduleIdlePreviewRestart(afterNanoseconds delayNanoseconds: UInt64) {
+        idlePreviewRestartTask?.cancel()
+        idlePreviewRestartTask = Task { @MainActor [weak self] in
+            if delayNanoseconds > 0 {
+                try? await Task.sleep(nanoseconds: delayNanoseconds)
+            }
+            guard let self,
+                  !Task.isCancelled,
+                  self.coordinator.state == .idle else {
+                return
+            }
+            self.restartScreenPreview()
+            self.restartCameraPreview()
+            self.idlePreviewRestartTask = nil
+        }
+    }
+
+    private func cancelScheduledIdlePreviewRestart() {
+        idlePreviewRestartTask?.cancel()
+        idlePreviewRestartTask = nil
     }
 
     func setDetail(_ message: String) {

@@ -76,10 +76,26 @@ struct CaptureSourceRunSummary {
         let failures = CaptureSource.allCases.compactMap { source -> String? in
             guard sources.contains(source) else { return nil }
             guard let reason = stopFailures[source] else { return nil }
-            return "\(source.rawValue): \(reason)"
+            return "\(source.rawValue): \(Self.userFacingStopFailureReason(for: source, reason: reason))"
         }
         guard !failures.isEmpty else { return nil }
         return "Some sources stopped with errors: \(failures.joined(separator: "; "))"
+    }
+
+    private static func userFacingStopFailureReason(for source: CaptureSource, reason: String) -> String {
+        let lowercased = reason.lowercased()
+        if source == .camera,
+           lowercased.contains("remote iphone"),
+           lowercased.contains("no video frames captured") {
+            return "iPhone camera did not save usable video. Keep BlitzRecorder Camera open until recording stops, then retry."
+        }
+        if lowercased.contains("no video frames captured") {
+            return "No video was captured from this source."
+        }
+        if lowercased.contains("cannot open") || lowercased.contains("operation not permitted") {
+            return "BlitzRecorder could not open the saved media. Check recording-folder permission, then retry."
+        }
+        return reason
     }
 }
 

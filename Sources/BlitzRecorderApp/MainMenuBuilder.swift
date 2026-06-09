@@ -77,10 +77,10 @@ final class MainMenuBuilder {
         // Undo/Redo are intentionally omitted: the app has no undo manager, so they only ever
         // applied inside the transient iPhone pairing-code field and were disabled everywhere else.
         // Cut/Copy/Paste/Select All stay so ⌘X/⌘C/⌘V keep working in that field.
-        submenu.addItem(menuItem("Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x", target: nil))
-        submenu.addItem(menuItem("Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c", target: nil))
-        submenu.addItem(menuItem("Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v", target: nil))
-        submenu.addItem(menuItem("Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a", target: nil))
+        submenu.addItem(menuItem("Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x", usesResponderChain: true))
+        submenu.addItem(menuItem("Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c", usesResponderChain: true))
+        submenu.addItem(menuItem("Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v", usesResponderChain: true))
+        submenu.addItem(menuItem("Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a", usesResponderChain: true))
         item.submenu = submenu
         return item
     }
@@ -240,10 +240,13 @@ final class MainMenuBuilder {
         _ title: String,
         action: Selector?,
         keyEquivalent: String = "",
-        target: AnyObject? = nil
+        target: AnyObject? = nil,
+        usesResponderChain: Bool = false
     ) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
-        if let target {
+        if usesResponderChain {
+            item.target = nil
+        } else if let target {
             item.target = target
         } else if action != nil {
             item.target = self.target

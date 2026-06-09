@@ -689,6 +689,7 @@ final class RecorderViewModel {
                     try await coordinator.pickScreenSource()
                     coordinator.applyScenePreset(preset)
                     syncSettingsAfterSceneChange()
+                    refitActiveScreenWindowAfterPresetIfNeeded(preset)
                     detailMessage = "Screen selected for this session."
                 } catch {
                     detailMessage = "Screen picker failed: \(error.localizedDescription)"
@@ -699,6 +700,7 @@ final class RecorderViewModel {
 
         coordinator.applyScenePreset(preset)
         syncSettingsAfterSceneChange()
+        refitActiveScreenWindowAfterPresetIfNeeded(preset)
     }
 
     var screenSplitHeight: Double {
@@ -796,6 +798,17 @@ final class RecorderViewModel {
         } else {
             coordinator.fitFrontWindowForShorts(scale: scale)
         }
+    }
+
+    private func refitActiveScreenWindowAfterPresetIfNeeded(_ preset: ScenePreset) {
+        guard preset == .screenTop50,
+              screenCaptureAreaSelection == .activeWindow,
+              settings.visibleSources.contains(.screen),
+              hasAccessibilityAccessForWindowControls else {
+            return
+        }
+        fitCurrentScreenWindow(scale: targetWindowFitScale)
+        refreshTargetWindow()
     }
 
     private func syncScreenCaptureAreaSelection() {

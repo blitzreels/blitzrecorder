@@ -47,6 +47,8 @@ if ! create-dmg "${CREATE_DMG_ARGS[@]}" >&2; then
   create-dmg --skip-jenkins "${CREATE_DMG_ARGS[@]}" >&2
 fi
 
+"$ROOT/Scripts/dmg/hide-support-files.sh" "$DMG_PATH"
+
 DMG_SIGN_IDENTITY="${DMG_SIGN_IDENTITY:-$(
   security find-identity -v -p codesigning 2>/dev/null \
     | awk -F '"' '/Developer ID Application/ { print $2; exit }'

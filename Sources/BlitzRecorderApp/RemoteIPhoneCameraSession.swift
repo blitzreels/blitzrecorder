@@ -411,13 +411,14 @@ final class RemoteIPhoneCameraSession {
         let failedBeforeSavingMedia = lowercasedReason.contains("failed before stop")
             || lowercasedReason.contains("empty file")
             || lowercasedReason.contains("while failed")
+            || lowercasedReason.contains("no video frames captured")
 
         if failedBeforeSavingMedia {
-            return "Recording failed: iPhone camera did not save usable media: \(reason). "
+            return "Recording needs recovery: iPhone camera did not save usable video. Keep BlitzRecorder Camera open until recording stops, then retry. "
                 + "Screen/source files are in \(take.scratchDirectory.path)."
         }
 
-        return "Recording failed: Remote iPhone import did not finish: \(reason). "
+        return "Recording needs recovery: Remote iPhone import did not finish. "
             + "The take is waiting for the iPhone master recording. Keep both devices on the same Wi-Fi, reopen BlitzRecorder Camera, then retry the pending import. Recovery files: \(take.scratchDirectory.path)"
     }
 

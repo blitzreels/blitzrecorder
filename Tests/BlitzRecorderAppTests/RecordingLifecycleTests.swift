@@ -26,6 +26,20 @@ final class RecordingLifecycleTests: XCTestCase {
         XCTAssertFalse(emptyCamera.hasVideoMedia)
     }
 
+    func testCaptureSourceRunSummarySanitizesRemoteIPhoneNoFramesFailure() {
+        let summary = CaptureSourceRunSummary(
+            completions: [.camera: .empty(URL(fileURLWithPath: "/tmp/camera.mov"))],
+            stopFailures: [
+                .camera: "Remote iPhone transfer failed: iPhone recording failed before stop: Cannot Complete Action. No video frames captured"
+            ]
+        )
+
+        XCTAssertEqual(
+            summary.stopFailureWarning,
+            "Some sources stopped with errors: Camera: iPhone camera did not save usable video. Keep BlitzRecorder Camera open until recording stops, then retry."
+        )
+    }
+
     func testTakeFileStoreCreatesAndCleansScratchDirectory() throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
@@ -142,6 +156,25 @@ final class RecordingLifecycleTests: XCTestCase {
         defer { access.stop() }
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: settings.outputDirectory.path))
+    }
+
+    func testOutputDirectoryPreflightExplainsPermissionRecovery() throws {
+        var settings = RecordingSettings()
+        let blockedDirectory = temporaryDirectory()
+        try FileManager.default.createDirectory(at: blockedDirectory, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: blockedDirectory.path)
+        addTeardownBlock {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: blockedDirectory.path)
+            try? FileManager.default.removeItem(at: blockedDirectory)
+        }
+        settings.outputDirectory = blockedDirectory
+
+        XCTAssertThrowsError(try TakeFileStore().prepareOutputDirectory(settings: settings)) { error in
+            guard case RecorderError.outputDirectoryUnavailable(let reason) = error else {
+                return XCTFail("Expected outputDirectoryUnavailable, got \(error)")
+            }
+            XCTAssertTrue(reason.contains("Choose this folder again in Export Settings"))
+        }
     }
 
     func testAvailableCapacityFallsBackWhenImportantUsageCapacityIsZero() {

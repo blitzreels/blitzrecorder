@@ -348,7 +348,7 @@ final class RemoteCameraTransferManager {
             }
             continuation.resume(returning: .wrote(transfer.destinationURL))
         } catch {
-            onMessage("iPhone media import failed: \(error.localizedDescription)")
+            onMessage(Self.importFailureStatusMessage(for: error))
             pendingImportStore.updatePhase(takeID: takeID, phase: .failedRecoverable, settings: settings)
             transfers.removeValue(forKey: takeID)
             onTransferFinished(takeID)
@@ -356,6 +356,18 @@ final class RemoteCameraTransferManager {
                 continuation.resume(throwing: error)
             }
         }
+    }
+
+    private static func importFailureStatusMessage(for error: Error) -> String {
+        let reason = error.recorderFailureDescription
+        let lowercased = reason.lowercased()
+        if lowercased.contains("no video track") || lowercased.contains("no video frames captured") {
+            return "iPhone import failed: the iPhone recording has no usable video. Keep the iPhone app open until recording stops, then retry."
+        }
+        if lowercased.contains("cannot open") || lowercased.contains("operation not permitted") {
+            return "iPhone import failed: BlitzRecorder could not open the saved media. Check recording-folder permission, then retry."
+        }
+        return "iPhone import failed. Keep both devices on the same Wi-Fi, reopen BlitzRecorder Camera, then retry."
     }
 
     private static func sha256HexDigest(for url: URL) throws -> String {

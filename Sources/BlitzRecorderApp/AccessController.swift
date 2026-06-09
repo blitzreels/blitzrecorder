@@ -870,6 +870,7 @@ final class AccessController {
             return
         }
 
+        accessMessage = "Activating license..."
         isValidatingLicense = true
         defer { isValidatingLicense = false }
 
@@ -877,7 +878,7 @@ final class AccessController {
             let validation = try await blitzRecorderLicenseValidator.validate(licenseKey: normalizedKey)
             guard validation.ok, validation.status == "active", let payload = validation.payload else {
                 clearLicenseState(deleteStoredKey: true)
-                accessMessage = validation.reason ?? "This license is not active."
+                accessMessage = licenseActivationFailureMessage(for: validation)
                 return
             }
 
@@ -916,7 +917,7 @@ final class AccessController {
             let validation = try await blitzRecorderLicenseValidator.validate(licenseKey: licenseKey)
             guard validation.ok, validation.status == "active", let payload = validation.payload else {
                 clearLicenseState(deleteStoredKey: true)
-                accessMessage = validation.reason ?? "Your saved license is no longer active."
+                accessMessage = licenseRefreshFailureMessage(for: validation)
                 return
             }
 
@@ -989,6 +990,40 @@ final class AccessController {
 
         accessMessage = "Activating license..."
         Task { await activateLicenseKey(licenseKey) }
+    }
+
+    private func licenseActivationFailureMessage(for validation: BlitzRecorderLicenseValidationResponse) -> String {
+        switch validation.status {
+        case "wrong_product":
+            return "This key is signed correctly, but it is for an old BlitzRecorder price. Paste the newer key you were given, or ask support to reissue it."
+        case "unpaid":
+            return "This checkout is not marked paid yet. Wait a moment, then try again."
+        case "refunded":
+            return "This license was refunded and is no longer active."
+        case "revoked":
+            return validation.reason ?? "This license was revoked."
+        case "invalid":
+            return validation.reason ?? "This license key is not valid."
+        default:
+            return validation.reason ?? "This license is not active."
+        }
+    }
+
+    private func licenseRefreshFailureMessage(for validation: BlitzRecorderLicenseValidationResponse) -> String {
+        switch validation.status {
+        case "wrong_product":
+            return "Your saved license is for an old BlitzRecorder price. Paste the newer key or ask support to reissue it."
+        case "unpaid":
+            return "Your saved checkout is not marked paid yet. Wait a moment, then refresh."
+        case "refunded":
+            return "Your saved license was refunded and has been removed."
+        case "revoked":
+            return validation.reason ?? "Your saved license was revoked and has been removed."
+        case "invalid":
+            return validation.reason ?? "Your saved license key is not valid and has been removed."
+        default:
+            return validation.reason ?? "Your saved license is no longer active."
+        }
     }
 
     private func isBlitzReelsAuthCallback(url: URL) -> Bool {

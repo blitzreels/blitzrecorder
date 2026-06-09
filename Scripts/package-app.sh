@@ -182,6 +182,7 @@ if [[ "${SKIP_DMG:-0}" != "1" ]]; then
         --hide-extension "${PRODUCT_NAME}.app" \
         --app-drop-link 485 185 \
         "$DMG" "$STAGE" >&2; then
+      "$ROOT/Scripts/dmg/hide-support-files.sh" "$DMG"
       if [[ -n "$SIGN_IDENTITY" && "$SIGN_IDENTITY" != "-" ]]; then
         codesign --force --sign "$SIGN_IDENTITY" "$DMG" >/dev/null 2>&1 || true
       fi

@@ -21,7 +21,6 @@ import {
 import {
   DownloadButton,
   DownloadMeta,
-  GitHubMark,
 } from "@/components/site/download-button";
 import { useReveal } from "@/components/site/use-reveal";
 import { trackJourneyEvent } from "@/lib/journey-events";
@@ -628,6 +627,22 @@ function Pricing() {
       <Paragraph tone="faint" size="sm" className="mt-6 text-center" data-reveal>
         Requires {requirements.macos}. The iPhone camera needs {requirements.ios}.
       </Paragraph>
+      <p className="mt-3 text-center text-xs text-faint" data-reveal>
+        <a
+          href={GITHUB_REPO_URL}
+          target="_blank"
+          rel="noopener"
+          onClick={() =>
+            trackLandingCtaClicked({
+              cta: "pricing_github_repo",
+              destination: GITHUB_REPO_URL,
+            })
+          }
+          className="font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+        >
+          GitHub repo
+        </a>
+      </p>
     </Section>
   );
 }
@@ -690,8 +705,9 @@ function PlanCard({ plan, featured = false }: { plan: Plan; featured?: boolean }
             <BuyButton
               label={plan.ctaLabel}
               source={featured ? "home_pricing_early" : "home_pricing_free"}
+              formClassName="mt-8"
               className={
-                "mt-8 h-12 w-full rounded-full text-base" +
+                "h-12 w-full rounded-full text-base" +
                 (featured ? " shadow-[0_20px_50px_-20px_rgba(94,242,175,0.9)]" : "")
               }
             />
@@ -789,28 +805,29 @@ function ClosingCTA() {
         The studio camera is already in your pocket.
       </Heading>
         <Paragraph data-reveal className="mt-5">
-          Paid official builds. Open source. Private by default.
+          Pay once for the iPhone camera, 4K export, and 60 fps.
         </Paragraph>
       <div data-reveal className="mt-8 flex flex-wrap items-center justify-center gap-3">
         <BuyButton
           source="home_closing"
           className="h-12 rounded-full px-7 text-base shadow-[0_20px_60px_-22px_rgba(94,242,175,0.95)] transition-transform hover:scale-[1.03]"
         />
-        <Button
-          variant="outline"
-          render={<a href={GITHUB_REPO_URL} target="_blank" rel="noopener" />}
-          onClick={() =>
-            trackLandingCtaClicked({
-              cta: "closing_github",
-              destination: GITHUB_REPO_URL,
-            })
-          }
-          className="h-12 gap-2 rounded-full px-7 text-base"
-        >
-          <GitHubMark className="size-4" />
-          View on GitHub
-        </Button>
       </div>
+      <a
+        href={GITHUB_REPO_URL}
+        target="_blank"
+        rel="noopener"
+        data-reveal
+        onClick={() =>
+          trackLandingCtaClicked({
+            cta: "closing_github_repo",
+            destination: GITHUB_REPO_URL,
+          })
+        }
+        className="mt-5 inline-flex text-xs font-medium text-faint underline-offset-4 transition-colors hover:text-foreground hover:underline"
+      >
+        GitHub repo
+      </a>
     </Section>
   );
 }

@@ -21,10 +21,16 @@ final class OutputDirectoryAccess {
     private let url: URL
     private let shouldStopAccessing: Bool
     private var isStopped = false
+    let needsSecurityScopedAccess: Bool
 
     init(url: URL, usesSecurityScopedBookmark: Bool) {
         self.url = url
+        self.needsSecurityScopedAccess = usesSecurityScopedBookmark
         shouldStopAccessing = usesSecurityScopedBookmark && url.startAccessingSecurityScopedResource()
+    }
+
+    var hasSecurityScopedAccess: Bool {
+        !needsSecurityScopedAccess || shouldStopAccessing
     }
 
     deinit {
@@ -46,6 +52,10 @@ struct TakeFileStore {
             url: settings.outputDirectory,
             usesSecurityScopedBookmark: settings.outputDirectoryBookmarkData != nil
         )
+        guard access.hasSecurityScopedAccess else {
+            access.stop()
+            throw RecorderError.outputDirectoryUnavailable(Self.permissionRecoveryMessage(for: settings.outputDirectory))
+        }
 
         do {
             let fileManager = FileManager.default
@@ -85,8 +95,27 @@ struct TakeFileStore {
             throw error
         } catch {
             access.stop()
-            throw RecorderError.outputDirectoryUnavailable(error.localizedDescription)
+            throw RecorderError.outputDirectoryUnavailable(Self.outputDirectoryFailureMessage(error, url: settings.outputDirectory))
         }
+    }
+
+    private static func outputDirectoryFailureMessage(_ error: Error, url: URL) -> String {
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain,
+           (nsError.code == NSFileWriteNoPermissionError || nsError.code == NSFileReadNoPermissionError) {
+            return permissionRecoveryMessage(for: url)
+        }
+
+        let message = error.localizedDescription
+        let lowercased = message.lowercased()
+        if lowercased.contains("permission") || lowercased.contains("operation not permitted") {
+            return permissionRecoveryMessage(for: url)
+        }
+        return message
+    }
+
+    private static func permissionRecoveryMessage(for url: URL) -> String {
+        "BlitzRecorder does not have permission to save to \(url.path). Choose this folder again in Export Settings, or pick another recording folder."
     }
 
     static func availableCapacityForRecording(

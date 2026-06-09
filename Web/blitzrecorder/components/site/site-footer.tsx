@@ -6,7 +6,7 @@ import { Paragraph } from "@/components/ui/typography";
 import { VersionTag } from "@/components/site/download-button";
 import { assets } from "@/lib/assets";
 import { ALGOMAX_URL } from "@/lib/content";
-import { GITHUB_REPO_URL, RELEASES_URL, CHANGELOG_URL } from "@/lib/release";
+import { GITHUB_REPO_URL } from "@/lib/release";
 
 type FooterLink = { label: string; href: string; external?: boolean };
 
@@ -23,12 +23,6 @@ const resourceLinks: FooterLink[] = [
   { label: "Terms", href: "/terms" },
 ];
 
-const openSourceLinks: FooterLink[] = [
-  { label: "Source code", href: GITHUB_REPO_URL, external: true },
-  { label: "Releases", href: RELEASES_URL, external: true },
-  { label: "Changelog", href: CHANGELOG_URL, external: true },
-];
-
 export function SiteFooter() {
   return (
     <footer className="relative border-t border-border bg-card/30">
@@ -41,7 +35,7 @@ export function SiteFooter() {
         }}
       />
       <Container>
-        <div className="grid gap-12 py-16 sm:grid-cols-2 lg:grid-cols-[1.6fr_1fr_1fr_1fr] lg:gap-16">
+        <div className="grid gap-12 py-16 sm:grid-cols-2 lg:grid-cols-[1.6fr_1fr_1fr] lg:gap-16">
           <div className="max-w-sm">
             <Link href="/" className="inline-flex items-center gap-2.5">
               <Image src={assets.macIcon} width={36} height={36} alt="" className="rounded-[22%]" />
@@ -67,7 +61,6 @@ export function SiteFooter() {
 
           <FooterNav title="Product" links={productLinks} />
           <FooterNav title="Resources" links={resourceLinks} />
-          <FooterNav title="Open source" links={openSourceLinks} />
         </div>
 
         <div className="flex flex-col items-start justify-between gap-4 border-t border-border py-7 text-sm text-faint sm:flex-row sm:items-center">
@@ -85,6 +78,14 @@ export function SiteFooter() {
           </Paragraph>
           <div className="flex items-center gap-6">
             <VersionTag className="font-mono text-xs text-muted-foreground transition-colors hover:text-foreground" />
+            <a
+              href={GITHUB_REPO_URL}
+              target="_blank"
+              rel="noopener"
+              className="transition-colors hover:text-foreground"
+            >
+              GitHub repo
+            </a>
             <a
               href={ALGOMAX_URL}
               target="_blank"

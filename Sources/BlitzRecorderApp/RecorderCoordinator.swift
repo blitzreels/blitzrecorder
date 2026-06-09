@@ -867,6 +867,7 @@ final class RecorderCoordinator {
                     enabledSources: self.settings.enabledSources,
                     scale: scale
                 )
+                self.applyFittedScreenWindowArrangement(arrangement, shouldUpdateCapture: true)
                 self.onMessage?(arrangement.resizedMessage)
             } catch {
                 self.onMessage?(error.localizedDescription)
@@ -893,6 +894,7 @@ final class RecorderCoordinator {
                     enabledSources: self.settings.enabledSources,
                     scale: 1
                 )
+                self.applyFittedScreenWindowArrangement(arrangement, shouldUpdateCapture: true)
                 self.onMessage?(arrangement.resizedMessage)
             } catch {
                 self.onMessage?(error.localizedDescription)
@@ -1514,6 +1516,7 @@ final class RecorderCoordinator {
                 enabledSources: settings.enabledSources,
                 scale: scale
             )
+            applyFittedScreenWindowArrangement(arrangement, shouldUpdateCapture: false)
             if shouldUpdateCapture {
                 settings.usesPickedScreenContent = true
                 settings.screenCrop = nil
@@ -1528,6 +1531,19 @@ final class RecorderCoordinator {
                 onMessage?(error.localizedDescription)
             }
             return false
+        }
+    }
+
+    private func applyFittedScreenWindowArrangement(
+        _ arrangement: ShortsWindowArrangement,
+        shouldUpdateCapture: Bool
+    ) {
+        if arrangement.frame.width > 0, arrangement.frame.height > 0 {
+            noteScreenSourceAspectRatio(arrangement.frame.width / arrangement.frame.height)
+        }
+        updateRecordingSceneIfNeeded()
+        if shouldUpdateCapture {
+            onScreenCaptureConfigurationChanged?()
         }
     }
 
@@ -1891,7 +1907,7 @@ final class RecorderCoordinator {
                             canRetryExport: false
                         )
                         onRecordingRecovery?(recovery)
-                        onMessage?("Recording failed: \(recovery.userMessage)")
+                        onMessage?("Recording needs recovery: \(recovery.userMessage)")
                     } else {
                         outputDirectoryAccess?.stop()
                         outputDirectoryAccess = nil
@@ -1936,15 +1952,17 @@ final class RecorderCoordinator {
                             }
                         case .recoveryFiles:
                             let stopWarning = stopWarnings.isEmpty ? nil : stopWarnings.joined(separator: ". ")
-                            let message = if let stopWarning {
-                                "\(stopWarning). \(outcome.userMessage)"
-                            } else {
-                                outcome.userMessage
-                            }
-                            if let recovery = outcome.recoveryOutput() {
+                            let recoveryReason = Self.recoveryReason(
+                                outcome: outcome,
+                                stopWarning: stopWarning,
+                                settings: settings
+                            )
+                            if let recovery = outcome.recoveryOutput(reason: recoveryReason) {
                                 onRecordingRecovery?(recovery)
+                                onMessage?("Recording needs recovery: \(recovery.userMessage)")
+                            } else {
+                                onMessage?("Recording needs recovery: \(outcome.userMessage)")
                             }
-                            onMessage?("Recording failed: \(message)")
                         }
                     } else {
                         outputDirectoryAccess?.stop()
@@ -1977,6 +1995,30 @@ final class RecorderCoordinator {
         Task {
             await configureAudioLevelMonitoring()
         }
+    }
+
+    private static func recoveryReason(
+        outcome: TakeFinalizationOutcome,
+        stopWarning: String?,
+        settings: RecordingSettings
+    ) -> String {
+        let baseReason: String
+        if case .recoveryFiles(_, let reason) = outcome {
+            baseReason = reason
+        } else {
+            baseReason = outcome.userMessage
+        }
+
+        guard let stopWarning, !stopWarning.isEmpty else {
+            return baseReason
+        }
+
+        if RemoteCameraProviderID.isRemote(settings.selectedCameraID),
+           stopWarning.lowercased().contains("iphone") {
+            return "\(baseReason). iPhone camera did not save usable video. Keep BlitzRecorder Camera open until recording stops, then retry."
+        }
+
+        return "\(baseReason). \(stopWarning)"
     }
 
     func mergeLastTake() {
