@@ -123,6 +123,82 @@ final class ScenePresetLayoutTests: XCTestCase {
         XCTAssertTrue(ScenePreset.webcamLeft.supports(.horizontal))
     }
 
+    func testCameraInsetDefaultsToBottomRightWideFrame() {
+        let layout = SceneLayout.presetLayout(.cameraInset, for: .horizontal)
+
+        XCTAssertRect(
+            layout.cameraFrame,
+            equals: CGRect(x: 0.685, y: 0.035, width: 0.28, height: 0.28)
+        )
+        XCTAssertEqual(SceneLayout.cameraInsetAlignment(for: layout.cameraFrame), .bottomRight)
+        XCTAssertEqual(SceneLayout.cameraInsetShape(for: layout.cameraFrame, in: .horizontal), .landscape)
+        XCTAssertEqual(SceneLayout.cameraInsetSize(for: layout.cameraFrame, in: .horizontal), 0.28, accuracy: 0.0001)
+    }
+
+    func testVerticalCameraInsetDefaultsToFullWidthLowerBand() {
+        let layout = SceneLayout.presetLayout(.cameraInset, for: .vertical)
+
+        XCTAssertRect(
+            layout.cameraFrame,
+            equals: CGRect(x: 0.035, y: 0.035, width: 0.93, height: 0.2942578125)
+        )
+        XCTAssertEqual(SceneLayout.cameraInsetAlignment(for: layout.cameraFrame), .bottomRight)
+        XCTAssertEqual(SceneLayout.cameraInsetShape(for: layout.cameraFrame, in: .vertical), .landscape)
+        XCTAssertEqual(SceneLayout.cameraInsetSize(for: layout.cameraFrame, in: .vertical), 0.93, accuracy: 0.0001)
+        XCTAssertEqual(SceneLayout.maximumCameraInsetSize(for: .vertical), 0.93, accuracy: 0.0001)
+    }
+
+    func testCameraInsetCanUseBottomLeftPortraitFrame() {
+        let frame = SceneLayout.cameraInsetFrame(
+            for: .horizontal,
+            alignment: .bottomLeft,
+            shape: .portrait,
+            size: 0.42
+        )
+
+        XCTAssertEqual(frame.minX, 0.035, accuracy: 0.0001)
+        XCTAssertEqual(frame.minY, 0.035, accuracy: 0.0001)
+        XCTAssertEqual(frame.height, 0.42, accuracy: 0.0001)
+        XCTAssertEqual((frame.width / frame.height) * CaptureLayout.horizontal.aspectRatio, 9.0 / 16.0, accuracy: 0.0001)
+        XCTAssertEqual(SceneLayout.cameraInsetAlignment(for: frame), .bottomLeft)
+        XCTAssertEqual(SceneLayout.cameraInsetShape(for: frame, in: .horizontal), .portrait)
+        XCTAssertEqual(SceneLayout.cameraInsetSize(for: frame, in: .horizontal), 0.42, accuracy: 0.0001)
+    }
+
+    func testCameraInsetFrameUsesRealCameraAspectRatio() {
+        let frame = SceneLayout.cameraInsetFrame(
+            for: .horizontal,
+            alignment: .bottomRight,
+            shape: .landscape,
+            size: 0.28,
+            sourceAspectRatio: 4.0 / 3.0
+        )
+
+        XCTAssertEqual(
+            (frame.width / frame.height) * CaptureLayout.horizontal.aspectRatio,
+            4.0 / 3.0,
+            accuracy: 0.0001
+        )
+        XCTAssertEqual(SceneLayout.cameraInsetShape(for: frame, in: .horizontal), .landscape)
+    }
+
+    func testVerticalCameraInsetFrameUsesInvertedRealAspectRatio() {
+        let frame = SceneLayout.cameraInsetFrame(
+            for: .horizontal,
+            alignment: .bottomLeft,
+            shape: .portrait,
+            size: 0.42,
+            sourceAspectRatio: 4.0 / 3.0
+        )
+
+        XCTAssertEqual(
+            (frame.width / frame.height) * CaptureLayout.horizontal.aspectRatio,
+            3.0 / 4.0,
+            accuracy: 0.0001
+        )
+        XCTAssertEqual(SceneLayout.cameraInsetShape(for: frame, in: .horizontal), .portrait)
+    }
+
     func testCameraFocusIsNoLongerSupported() {
         XCTAssertFalse(ScenePreset.cameraFocus.supports(.vertical))
         XCTAssertFalse(ScenePreset.cameraFocus.supports(.horizontal))

@@ -188,7 +188,6 @@ enum OutputVideoFormat: String, CaseIterable {
         rawValue
     }
 
-    /// Plain-English, no-jargon explanation of when to pick this file type.
     var plainDescription: String {
         switch self {
         case .mov:
@@ -217,7 +216,6 @@ enum AudioQuality: String, CaseIterable {
     case high
     case studio
 
-    /// Stereo AAC bitrate in bits per second.
     var bitrate: Int {
         switch self {
         case .standard:
@@ -256,7 +254,6 @@ enum AudioQuality: String, CaseIterable {
     }
 }
 
-/// File type for the separate source audio files that "Save source files" keeps.
 enum SourceAudioFormat: String, CaseIterable {
     case aac
     case wav
@@ -279,7 +276,6 @@ enum SourceAudioFormat: String, CaseIterable {
         }
     }
 
-    /// Lossless formats store raw samples instead of a compressed stream.
     var isLossless: Bool {
         self == .wav
     }
@@ -349,6 +345,103 @@ enum SceneLayerKind: String, CaseIterable {
     case camera = "Camera"
 }
 
+enum CameraInsetAlignment: String, CaseIterable {
+    case bottomLeft
+    case bottomRight
+
+    var displayName: String {
+        switch self {
+        case .bottomLeft:
+            return "Left"
+        case .bottomRight:
+            return "Right"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .bottomLeft:
+            return "arrow.down.left"
+        case .bottomRight:
+            return "arrow.down.right"
+        }
+    }
+}
+
+enum CameraInsetShape: String, CaseIterable {
+    case landscape
+    case portrait
+
+    var displayName: String {
+        switch self {
+        case .landscape:
+            return "Wide"
+        case .portrait:
+            return "Vertical"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .landscape:
+            return "rectangle"
+        case .portrait:
+            return "rectangle.portrait"
+        }
+    }
+
+    var aspectRatio: CGFloat {
+        switch self {
+        case .landscape:
+            return 16.0 / 9.0
+        case .portrait:
+            return 9.0 / 16.0
+        }
+    }
+
+    func aspectRatio(forSource sourceAspectRatio: CGFloat) -> CGFloat {
+        guard sourceAspectRatio > 0 else { return aspectRatio }
+        switch self {
+        case .landscape:
+            return max(sourceAspectRatio, 1 / sourceAspectRatio)
+        case .portrait:
+            return min(sourceAspectRatio, 1 / sourceAspectRatio)
+        }
+    }
+}
+
+enum CameraContentMode: String, CaseIterable, Codable {
+    case fill
+    case fit
+
+    var displayName: String {
+        switch self {
+        case .fill:
+            return "Fill"
+        case .fit:
+            return "Fit"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .fill:
+            return "arrow.up.left.and.arrow.down.right"
+        case .fit:
+            return "rectangle"
+        }
+    }
+
+    var renderContentMode: VideoRenderContentMode {
+        switch self {
+        case .fill:
+            return .aspectFill
+        case .fit:
+            return .aspectFit
+        }
+    }
+}
+
 enum ScenePreset: String, CaseIterable {
     case stackedHalves = "Stacked"
     case screenTop50 = "Screen 50%"
@@ -395,9 +488,6 @@ enum ScenePreset: String, CaseIterable {
 }
 
 enum CanvasBackgroundStyle: String, CaseIterable {
-    // Order here = swatch order in the inspector. Raw values are persisted, so
-    // never rename an existing one — only add. New mesh styles slot in between
-    // the originals to group cool → warm → light.
     case black = "black"
     case graphite = "graphite"
     case slate = "slate"
@@ -565,8 +655,6 @@ struct ScreenSourceOption: Equatable, Identifiable {
 }
 
 struct SceneLayout: Equatable {
-    // Frames are normalized in the preview canvas coordinate space: origin at bottom-left.
-    // layerOrder is back-to-front, so the last layer is visually on top.
     var screenFrame: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1)
     var cameraFrame: CGRect = CGRect(x: 0, y: 0.046796875, width: 1, height: 0.31640625)
     var layerOrder: [SceneLayerKind] = [.screen, .camera]
@@ -624,14 +712,11 @@ struct SceneLayout: Equatable {
             sceneLayout.cameraFrame = CGRect(x: 0.455, y: 0.045, width: 0.5, height: 0.25)
             return sceneLayout
         case .cameraInset:
-            var sceneLayout = SceneLayout()
-            sceneLayout.screenFrame = canvasFillingFrame(sourceAspectRatio: screenAspectRatio, canvasAspectRatio: canvasAR)
-            sceneLayout.cameraFrame = fittedSourceFrame(
-                sourceAspectRatio: cameraAspectRatio,
-                canvasAspectRatio: canvasAR,
-                in: CGRect(x: 0, y: 0.035, width: 1, height: 0.34)
+            return cameraInsetLayout(
+                for: .vertical,
+                screenAspectRatio: screenAspectRatio,
+                cameraAspectRatio: cameraAspectRatio
             )
-            return sceneLayout
         case .cameraFocus:
             var sceneLayout = SceneLayout()
             sceneLayout.screenFrame = fittedSourceFrame(
@@ -697,14 +782,11 @@ struct SceneLayout: Equatable {
             )
             return sceneLayout
         case .cameraInset:
-            var sceneLayout = SceneLayout()
-            sceneLayout.screenFrame = canvasFillingFrame(sourceAspectRatio: screenAspectRatio, canvasAspectRatio: canvasAR)
-            sceneLayout.cameraFrame = fittedSourceFrame(
-                sourceAspectRatio: cameraAspectRatio,
-                canvasAspectRatio: canvasAR,
-                in: CGRect(x: 0.685, y: 0.035, width: 0.28, height: 0.28)
+            return cameraInsetLayout(
+                for: .horizontal,
+                screenAspectRatio: screenAspectRatio,
+                cameraAspectRatio: cameraAspectRatio
             )
-            return sceneLayout
         case .cameraFocus:
             var sceneLayout = SceneLayout()
             sceneLayout.screenFrame = fittedSourceFrame(
@@ -744,6 +826,29 @@ struct SceneLayout: Equatable {
     static let defaultScreenSplitHeight: CGFloat = 0.5
     static let minimumScreenSplitHeight: CGFloat = 0.3
     static let maximumScreenSplitHeight: CGFloat = 0.75
+    static let defaultCameraInsetSize: CGFloat = 0.28
+    static let minimumCameraInsetSize: CGFloat = 0.18
+    static let maximumCameraInsetSize: CGFloat = 0.52
+    static let cameraInsetMargin: CGFloat = 0.035
+    static let maximumCameraFramePadding: CGFloat = 0.18
+
+    static func defaultCameraInsetSize(for layout: CaptureLayout) -> CGFloat {
+        switch layout {
+        case .horizontal:
+            return defaultCameraInsetSize
+        case .vertical:
+            return maximumCameraInsetSize(for: layout)
+        }
+    }
+
+    static func maximumCameraInsetSize(for layout: CaptureLayout) -> CGFloat {
+        switch layout {
+        case .horizontal:
+            return maximumCameraInsetSize
+        case .vertical:
+            return max(minimumCameraInsetSize, 1 - cameraInsetMargin * 2)
+        }
+    }
 
     static func screenSplitLayout(
         screenHeight: CGFloat,
@@ -762,12 +867,109 @@ struct SceneLayout: Equatable {
         return sceneLayout
     }
 
+    static func cameraInsetLayout(
+        for layout: CaptureLayout,
+        alignment: CameraInsetAlignment = .bottomRight,
+        shape: CameraInsetShape = .landscape,
+        size: CGFloat? = nil,
+        screenAspectRatio: CGFloat = defaultScreenAspectRatio,
+        cameraAspectRatio: CGFloat = SceneLayout.cameraAspectRatio
+    ) -> SceneLayout {
+        let size = size ?? defaultCameraInsetSize(for: layout)
+        var sceneLayout = SceneLayout()
+        sceneLayout.screenFrame = canvasFillingFrame(
+            sourceAspectRatio: screenAspectRatio,
+            canvasAspectRatio: layout.aspectRatio
+        )
+        sceneLayout.cameraFrame = cameraInsetFrame(
+            for: layout,
+            alignment: alignment,
+            shape: shape,
+            size: size,
+            sourceAspectRatio: cameraAspectRatio
+        )
+        sceneLayout.layerOrder = [.screen, .camera]
+        return sceneLayout
+    }
+
+    static func cameraInsetFrame(
+        for layout: CaptureLayout,
+        alignment: CameraInsetAlignment,
+        shape: CameraInsetShape,
+        size: CGFloat,
+        sourceAspectRatio: CGFloat = SceneLayout.cameraAspectRatio
+    ) -> CGRect {
+        let availableWidth = max(0.001, 1 - cameraInsetMargin * 2)
+        let availableHeight = max(0.001, 1 - cameraInsetMargin * 2)
+        let dominantSize = min(maximumCameraInsetSize(for: layout), max(minimumCameraInsetSize, size))
+        let canvasAspectRatio = layout.aspectRatio
+        let shapeAspectRatio = shape.aspectRatio(forSource: sourceAspectRatio)
+
+        var width: CGFloat
+        var height: CGFloat
+        switch shape {
+        case .landscape:
+            width = dominantSize
+            height = width * canvasAspectRatio / shapeAspectRatio
+        case .portrait:
+            height = dominantSize
+            width = height * shapeAspectRatio / canvasAspectRatio
+        }
+
+        let fitScale = min(1, availableWidth / width, availableHeight / height)
+        width *= fitScale
+        height *= fitScale
+
+        let x: CGFloat
+        switch alignment {
+        case .bottomLeft:
+            x = cameraInsetMargin
+        case .bottomRight:
+            x = 1 - cameraInsetMargin - width
+        }
+
+        return CGRect(x: x, y: cameraInsetMargin, width: width, height: height)
+    }
+
+    static func cameraInsetAlignment(for frame: CGRect) -> CameraInsetAlignment {
+        frame.standardized.midX < 0.5 ? .bottomLeft : .bottomRight
+    }
+
+    static func isCameraInsetFrame(_ frame: CGRect) -> Bool {
+        let frame = frame.standardized
+        guard frame.width > 0.0001, frame.height > 0.0001 else { return false }
+        guard abs(frame.minY - cameraInsetMargin) < 0.005 else { return false }
+        let leftAnchored = abs(frame.minX - cameraInsetMargin) < 0.005
+        let rightAnchored = abs(frame.maxX - (1 - cameraInsetMargin)) < 0.005
+        return leftAnchored || rightAnchored
+    }
+
+    static func cameraInsetShape(for frame: CGRect, in layout: CaptureLayout) -> CameraInsetShape {
+        cameraInsetAspectRatio(for: frame, in: layout) < 1 ? .portrait : .landscape
+    }
+
+    static func cameraInsetSize(for frame: CGRect, in layout: CaptureLayout) -> CGFloat {
+        let frame = frame.standardized
+        switch cameraInsetShape(for: frame, in: layout) {
+        case .landscape:
+            return min(maximumCameraInsetSize(for: layout), max(minimumCameraInsetSize, frame.width))
+        case .portrait:
+            return min(maximumCameraInsetSize(for: layout), max(minimumCameraInsetSize, frame.height))
+        }
+    }
+
+    private static func cameraInsetAspectRatio(for frame: CGRect, in layout: CaptureLayout) -> CGFloat {
+        let frame = frame.standardized
+        guard frame.width > 0, frame.height > 0 else {
+            return CameraInsetShape.landscape.aspectRatio
+        }
+        return (frame.width / frame.height) * layout.aspectRatio
+    }
+
     static func clampedScreenSplitHeight(_ height: CGFloat) -> CGFloat {
         min(maximumScreenSplitHeight, max(minimumScreenSplitHeight, height))
     }
 
-    /// Canvas-normalized frame for a source that fills the canvas at its native aspect ratio,
-    /// extending past the canvas in whichever dimension can't fit. Centered.
     static func canvasFillingFrame(sourceAspectRatio: CGFloat, canvasAspectRatio: CGFloat) -> CGRect {
         guard sourceAspectRatio > 0, canvasAspectRatio > 0 else {
             return CGRect(x: 0, y: 0, width: 1, height: 1)
@@ -855,6 +1057,9 @@ struct RecordingScene: Equatable {
     var canvasBackgroundStyle: CanvasBackgroundStyle
     var canvasBackgroundAnimated: Bool
     var canvasPadding: CGFloat
+    var cameraContentMode: CameraContentMode
+    var cameraFramePadding: CGFloat
+    var cameraShadowEnabled: Bool
     var sourceOpacities: [CaptureSource: CGFloat]
 
     init(settings: RecordingSettings) {
@@ -866,7 +1071,10 @@ struct RecordingScene: Equatable {
             cameraCropPosition: settings.cameraCropPosition,
             canvasBackgroundStyle: settings.canvasBackgroundStyle,
             canvasBackgroundAnimated: settings.canvasBackgroundAnimated,
-            canvasPadding: settings.canvasPadding
+            canvasPadding: settings.canvasPadding,
+            cameraContentMode: settings.cameraContentMode,
+            cameraFramePadding: 0,
+            cameraShadowEnabled: settings.cameraShadowEnabled
         )
     }
 
@@ -879,6 +1087,9 @@ struct RecordingScene: Equatable {
         canvasBackgroundStyle: CanvasBackgroundStyle = .black,
         canvasBackgroundAnimated: Bool = false,
         canvasPadding: CGFloat = 0,
+        cameraContentMode: CameraContentMode = .fill,
+        cameraFramePadding: CGFloat = 0,
+        cameraShadowEnabled: Bool = false,
         sourceOpacities: [CaptureSource: CGFloat] = [:]
     ) {
         self.enabledSources = enabledSources
@@ -889,6 +1100,9 @@ struct RecordingScene: Equatable {
         self.canvasBackgroundStyle = canvasBackgroundStyle
         self.canvasBackgroundAnimated = canvasBackgroundAnimated
         self.canvasPadding = canvasPadding
+        self.cameraContentMode = cameraContentMode
+        self.cameraFramePadding = 0
+        self.cameraShadowEnabled = cameraShadowEnabled
         self.sourceOpacities = sourceOpacities
     }
 
@@ -1051,7 +1265,6 @@ extension ScenePreset {
 
 struct RecordingSettings {
     static let supportedFrameRates = [24, 30, 60]
-    /// Bounds for the pro "Video detail" bitrate slider, in bits per second.
     static let minCustomVideoBitrate = 2_000_000
     static let maxCustomVideoBitrate = 80_000_000
 
@@ -1059,14 +1272,13 @@ struct RecordingSettings {
     var outputResolution: OutputResolution = .p1080
     var outputVideoFormat: OutputVideoFormat = .mov
     var framesPerSecond: Int = 30
-    /// `nil` means Auto (bitrate is picked from the resolution and frame rate).
     var customVideoBitrate: Int?
     var audioQuality: AudioQuality = .standard
     var sourceAudioFormat: SourceAudioFormat = .aac
     var microphoneGain: Double = 1.0
     var systemAudioGain: Double = 1.0
     var removesCameraBackgroundAfterRecording: Bool = false
-    var savesSourceFiles: Bool = false
+    var savesSourceFiles: Bool = true
     var renamesRecordingsFromSpeech: Bool = false
     var showsRuleOfThirdsOverlay: Bool = false
     var socialSafeZoneOverlay: SocialVideoSafeZone = .none
@@ -1086,6 +1298,9 @@ struct RecordingSettings {
     var canvasBackgroundStyle: CanvasBackgroundStyle = .black
     var canvasBackgroundAnimated: Bool = false
     var canvasPadding: CGFloat = 0
+    var cameraContentMode: CameraContentMode = .fill
+    var cameraFramePadding: CGFloat = 0
+    var cameraShadowEnabled: Bool = false
     var sceneLayout = SceneLayout()
     var selectedScenePreset: ScenePreset?
     var outputDirectoryBookmarkData: Data?
@@ -1093,7 +1308,6 @@ struct RecordingSettings {
         .appendingPathComponent("Movies", isDirectory: true)
         .appendingPathComponent("BlitzRecorder", isDirectory: true)
 
-    /// The bitrate Auto would pick for the current resolution and frame rate.
     var autoVideoBitrate: Int {
         SocialVideoEncoding.videoBitrate(
             resolution: outputResolution,
@@ -1130,15 +1344,14 @@ struct RecordingSettings {
         audioQuality.bitrate
     }
 
-    /// The format the source audio files are actually written in. The chosen
-    /// format only applies when source files are kept; otherwise the temporary
-    /// capture stays compressed.
     var effectiveSourceAudioFormat: SourceAudioFormat {
         savesSourceFiles ? sourceAudioFormat : .aac
     }
 
-    /// How much to scale the captured (intermediate) video bitrate when a custom
-    /// final bitrate is set. Clamped so real-time capture stays safe.
+    var sourceVideoFormat: OutputVideoFormat {
+        savesSourceFiles ? .mov : outputVideoFormat
+    }
+
     private var intermediateVideoBoost: Double {
         guard customVideoBitrate != nil else { return 1.0 }
         let boost = Double(finalVideoBitrate) / Double(autoVideoBitrate)
@@ -1163,5 +1376,9 @@ struct RecordingTake {
 
     var sourceManifestURL: URL {
         scratchDirectory.appendingPathComponent("take.json")
+    }
+
+    var projectURL: URL {
+        scratchDirectory.appendingPathComponent("project.blitzrecorder.json")
     }
 }

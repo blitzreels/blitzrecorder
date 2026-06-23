@@ -81,15 +81,26 @@ struct SceneRenderPlacementPolicy {
     }
 
     private func targetRect(for kind: SceneLayerKind, normalizedFrame: CGRect) -> CGRect {
-        let paddedRect = SceneLayoutProjection.padded(
-            SceneLayoutProjection.denormalized(normalizedFrame, in: canvas, origin: origin),
+        let denormalized = SceneLayoutProjection.denormalized(normalizedFrame, in: canvas, origin: origin)
+        var paddedRect = SceneLayoutProjection.padded(
+            denormalized,
             in: canvas,
             padding: scene.canvasPadding
         )
+        if kind == .camera {
+            paddedRect = cameraPaddedRect(
+                original: denormalized,
+                padded: paddedRect,
+                normalizedFrame: normalizedFrame
+            )
+        }
         guard kind == .screen,
               scene.canvasPadding > 0.001,
               scene.screenSourceGeometry.normalizedCrop == nil else {
             return paddedRect
+        }
+        if usesSideBySideScreenSlot(normalizedFrame) {
+            return sideBySideScreenTargetRect(in: paddedRect)
         }
         return aspectFit(
             sourceAspectRatio: scene.screenSourceGeometry.aspectRatio(),
@@ -102,8 +113,29 @@ struct SceneRenderPlacementPolicy {
         case .screen:
             return .aspectFill
         case .camera:
-            return .aspectFill
+            return scene.cameraContentMode.renderContentMode
         }
+    }
+
+    private func cameraPaddedRect(
+        original: CGRect,
+        padded: CGRect,
+        normalizedFrame: CGRect
+    ) -> CGRect {
+        let frame = normalizedFrame.standardized
+        guard frame.width < 0.95, frame.height < 0.95,
+              original.width > 0, original.height > 0,
+              canvas.width > 0, canvas.height > 0 else {
+            return padded
+        }
+        let paddedCanvas = SceneLayoutProjection.padded(canvas, in: canvas, padding: scene.canvasPadding)
+        let scale = min(paddedCanvas.width / canvas.width, paddedCanvas.height / canvas.height)
+        guard scale > 0, scale <= 1 else { return padded }
+        let width = original.width * scale
+        let height = original.height * scale
+        let centerX = paddedCanvas.minX + ((original.midX - canvas.minX) / canvas.width) * paddedCanvas.width
+        let centerY = paddedCanvas.minY + ((original.midY - canvas.minY) / canvas.height) * paddedCanvas.height
+        return CGRect(x: centerX - width / 2, y: centerY - height / 2, width: width, height: height)
     }
 
     private func aspectFit(sourceAspectRatio: CGFloat, in rect: CGRect) -> CGRect {
@@ -119,6 +151,30 @@ struct SceneRenderPlacementPolicy {
         }
         let height = rect.width / sourceAspectRatio
         return CGRect(x: rect.minX, y: rect.midY - height / 2, width: rect.width, height: height)
+    }
+
+    private func usesSideBySideScreenSlot(_ normalizedFrame: CGRect) -> Bool {
+        guard scene.renderedSources.contains(.screen),
+              scene.renderedSources.contains(.camera) else {
+            return false
+        }
+        let frame = normalizedFrame.standardized
+        return frame.height >= 0.95 && frame.width < 0.95
+    }
+
+    private func sideBySideScreenTargetRect(in rect: CGRect) -> CGRect {
+        let sourceAspectRatio = scene.screenSourceGeometry.aspectRatio()
+        guard sourceAspectRatio > 0,
+              rect.width > 0,
+              rect.height > 0 else {
+            return rect
+        }
+
+        let targetAspectRatio = rect.width / rect.height
+        if sourceAspectRatio >= targetAspectRatio {
+            return rect
+        }
+        return aspectFit(sourceAspectRatio: sourceAspectRatio, in: rect)
     }
 
     private func defaultSourceCropAmount(for kind: SceneLayerKind) -> CGPoint {

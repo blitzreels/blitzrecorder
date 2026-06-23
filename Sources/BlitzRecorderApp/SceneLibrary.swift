@@ -60,8 +60,6 @@ struct SceneLibrary: Codable, Equatable {
         return scenesByLayout[layout]?.first { $0.id == selectedID }
     }
 
-    /// The aspect-ratio bucket a scene lives in. Scenes are siloed per layout, so
-    /// this resolves which layout an "All scenes" tile belongs to.
     func layout(ofSceneID id: UUID) -> CaptureLayout? {
         for layout in CaptureLayout.allCases where scenesByLayout[layout]?.contains(where: { $0.id == id }) == true {
             return layout
@@ -289,6 +287,9 @@ struct RecordingSceneSnapshot: Codable, Equatable {
     var canvasBackgroundStyle: CanvasBackgroundStyle
     var canvasBackgroundAnimated: Bool
     var canvasPadding: CGFloat
+    var cameraContentMode: CameraContentMode
+    var cameraFramePadding: CGFloat
+    var cameraShadowEnabled: Bool
     var sceneLayout: SceneLayout
     var selectedScenePreset: ScenePreset?
 
@@ -305,6 +306,9 @@ struct RecordingSceneSnapshot: Codable, Equatable {
         canvasBackgroundStyle = settings.canvasBackgroundStyle
         canvasBackgroundAnimated = settings.canvasBackgroundAnimated
         canvasPadding = settings.canvasPadding
+        cameraContentMode = settings.cameraContentMode
+        cameraFramePadding = 0
+        cameraShadowEnabled = settings.cameraShadowEnabled
         sceneLayout = settings.sceneLayout
         selectedScenePreset = settings.selectedScenePreset
     }
@@ -324,6 +328,10 @@ struct RecordingSceneSnapshot: Codable, Equatable {
         canvasBackgroundStyle = try container.decode(CanvasBackgroundStyle.self, forKey: .canvasBackgroundStyle)
         canvasBackgroundAnimated = try container.decodeIfPresent(Bool.self, forKey: .canvasBackgroundAnimated) ?? false
         canvasPadding = try container.decode(CGFloat.self, forKey: .canvasPadding)
+        cameraContentMode = try container.decodeIfPresent(CameraContentMode.self, forKey: .cameraContentMode) ?? .fill
+        _ = try container.decodeIfPresent(CGFloat.self, forKey: .cameraFramePadding)
+        cameraFramePadding = 0
+        cameraShadowEnabled = try container.decodeIfPresent(Bool.self, forKey: .cameraShadowEnabled) ?? false
         sceneLayout = try container.decode(SceneLayout.self, forKey: .sceneLayout)
         selectedScenePreset = try container.decodeIfPresent(ScenePreset.self, forKey: .selectedScenePreset)
     }

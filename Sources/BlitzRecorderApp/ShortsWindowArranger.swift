@@ -49,6 +49,7 @@ struct ShortsWindowArrangement {
 }
 
 struct TargetWindowInfo: Equatable {
+    let processID: pid_t?
     let appName: String
     let windowTitle: String?
     let frame: CGRect
@@ -63,6 +64,13 @@ struct TargetWindowInfo: Equatable {
         }
         return "\(Int(frame.width))x\(Int(frame.height))"
     }
+
+    init(processID: pid_t? = nil, appName: String, windowTitle: String?, frame: CGRect) {
+        self.processID = processID
+        self.appName = appName
+        self.windowTitle = windowTitle
+        self.frame = frame
+    }
 }
 
 @MainActor
@@ -71,6 +79,7 @@ enum ShortsWindowArranger {
         let screen = try targetScreen(displayID: displayID)
         let candidate = try frontmostCandidate(on: screen)
         return TargetWindowInfo(
+            processID: candidate.ownerPID,
             appName: candidate.ownerName,
             windowTitle: candidate.title,
             frame: candidate.bounds
@@ -78,15 +87,15 @@ enum ShortsWindowArranger {
     }
 
     static func fitFrontWindow(displayID: String?) throws -> ShortsWindowArrangement {
-        try fitFrontWindow(displayID: displayID, scale: 1)
+        try fitFrontWindow(displayID: displayID, zoom: 1)
     }
 
-    static func fitFrontWindow(displayID: String?, scale: CGFloat) throws -> ShortsWindowArrangement {
+    static func fitFrontWindow(displayID: String?, zoom: CGFloat) throws -> ShortsWindowArrangement {
         try fitFrontWindow(
             displayID: displayID,
             captureLayout: .vertical,
             screenSlot: SceneSlotGeometry.shortsTopHalfSlot,
-            scale: scale
+            zoom: zoom
         )
     }
 
@@ -95,7 +104,7 @@ enum ShortsWindowArranger {
         captureLayout: CaptureLayout,
         sceneLayout: SceneLayout,
         enabledSources: Set<CaptureSource>,
-        scale: CGFloat
+        zoom: CGFloat
     ) throws -> ShortsWindowArrangement {
         try fitFrontWindow(
             displayID: displayID,
@@ -106,7 +115,7 @@ enum ShortsWindowArranger {
                     captureLayout: captureLayout,
                     sceneLayout: sceneLayout,
                     enabledSources: enabledSources,
-                    scale: scale
+                    zoom: zoom
                 )
             }
         )
@@ -116,7 +125,7 @@ enum ShortsWindowArranger {
         displayID: String?,
         captureLayout: CaptureLayout,
         screenSlot: CGRect,
-        scale: CGFloat
+        zoom: CGFloat
     ) throws -> ShortsWindowArrangement {
         try fitFrontWindow(
             displayID: displayID,
@@ -126,7 +135,7 @@ enum ShortsWindowArranger {
                     visibleFrame: screen.visibleFrame,
                     captureLayout: captureLayout,
                     screenSlot: screenSlot,
-                    scale: scale
+                    zoom: zoom
                 )
             }
         )
@@ -147,13 +156,14 @@ enum ShortsWindowArranger {
         let candidate = try frontmostCandidate(on: screen)
         let window = try accessibilityWindow(for: candidate)
 
-        try set(window: window, frame: targetAXFrame)
+        let appliedAXFrame = try set(window: window, frame: targetAXFrame)
+        let appliedFrame = appKitFrame(for: appliedAXFrame, on: screen)
 
         return ShortsWindowArrangement(
             appName: candidate.ownerName,
             windowTitle: candidate.title,
-            frame: targetFrame,
-            screenCrop: plan.screenCrop
+            frame: appliedFrame,
+            screenCrop: TargetWindowFitting.screenCrop(for: appliedFrame, in: screen.frame)
         )
     }
 
@@ -193,9 +203,9 @@ enum ShortsWindowArranger {
             frame: resizing(frame, widthDelta: widthDelta, heightDelta: heightDelta),
             in: accessibilityFrame(for: screen.visibleFrame, on: screen)
         )
-        try set(window: window, frame: targetFrame)
+        let appliedFrame = try set(window: window, frame: targetFrame)
 
-        let appKitFrame = appKitFrame(for: targetFrame, on: screen)
+        let appKitFrame = appKitFrame(for: appliedFrame, on: screen)
         return ShortsWindowArrangement(
             appName: candidate.ownerName,
             windowTitle: candidate.title,
@@ -229,9 +239,9 @@ enum ShortsWindowArranger {
             ),
             in: accessibilityFrame(for: screen.visibleFrame, on: screen)
         )
-        try set(window: window, frame: targetFrame)
+        let appliedFrame = try set(window: window, frame: targetFrame)
 
-        let appKitFrame = appKitFrame(for: targetFrame, on: screen)
+        let appKitFrame = appKitFrame(for: appliedFrame, on: screen)
         return ShortsWindowArrangement(
             appName: candidate.ownerName,
             windowTitle: candidate.title,
@@ -240,10 +250,6 @@ enum ShortsWindowArranger {
         )
     }
 
-    /// Resize a SPECIFIC window (identified by pid / bounds / title — e.g. the
-    /// window just chosen in the content picker) to its slot in the current
-    /// layout. Unlike `fitFrontWindow`, this targets a given window rather than
-    /// the frontmost one, and is best-effort: it never prompts for Accessibility.
     @discardableResult
     static func fitWindow(
         ownerPID: pid_t,
@@ -254,7 +260,7 @@ enum ShortsWindowArranger {
         captureLayout: CaptureLayout,
         sceneLayout: SceneLayout,
         enabledSources: Set<CaptureSource>,
-        scale: CGFloat = 1
+        zoom: CGFloat = 1
     ) throws -> ShortsWindowArrangement {
         guard accessibilityTrusted(prompt: false) else {
             throw ShortsWindowArrangerError.accessibilityPermissionRequired
@@ -267,17 +273,53 @@ enum ShortsWindowArranger {
             captureLayout: captureLayout,
             sceneLayout: sceneLayout,
             enabledSources: enabledSources,
-            scale: scale
+            zoom: zoom
         )
         let candidate = WindowCandidate(ownerPID: ownerPID, ownerName: appName, title: title, bounds: bounds)
         let window = try accessibilityWindow(for: candidate)
-        try set(window: window, frame: accessibilityFrame(for: plan.windowFrame, on: screen))
+        let appliedAXFrame = try set(window: window, frame: accessibilityFrame(for: plan.windowFrame, on: screen))
+        let appliedFrame = appKitFrame(for: appliedAXFrame, on: screen)
 
         return ShortsWindowArrangement(
             appName: appName,
             windowTitle: title,
-            frame: plan.windowFrame,
-            screenCrop: plan.screenCrop
+            frame: appliedFrame,
+            screenCrop: TargetWindowFitting.screenCrop(for: appliedFrame, in: screen.frame)
+        )
+    }
+
+    @discardableResult
+    static func fitAppWindow(
+        ownerPID: pid_t,
+        appName: String,
+        displayID: String?,
+        captureLayout: CaptureLayout,
+        sceneLayout: SceneLayout,
+        enabledSources: Set<CaptureSource>,
+        zoom: CGFloat = 1
+    ) throws -> ShortsWindowArrangement {
+        guard accessibilityTrusted(prompt: false) else {
+            throw ShortsWindowArrangerError.accessibilityPermissionRequired
+        }
+
+        let screen = try targetScreen(displayID: displayID)
+        let plan = TargetWindowFitting.plan(
+            screenFrame: screen.frame,
+            visibleFrame: screen.visibleFrame,
+            captureLayout: captureLayout,
+            sceneLayout: sceneLayout,
+            enabledSources: enabledSources,
+            zoom: zoom
+        )
+        let window = try primaryAccessibilityWindow(ownerPID: ownerPID, on: screen)
+        let appliedAXFrame = try set(window: window, frame: accessibilityFrame(for: plan.windowFrame, on: screen))
+        let appliedFrame = appKitFrame(for: appliedAXFrame, on: screen)
+
+        return ShortsWindowArrangement(
+            appName: appName,
+            windowTitle: title(of: window),
+            frame: appliedFrame,
+            screenCrop: TargetWindowFitting.screenCrop(for: appliedFrame, in: screen.frame)
         )
     }
 
@@ -366,6 +408,49 @@ enum ShortsWindowArranger {
         throw ShortsWindowArrangerError.noWindowFound
     }
 
+    private static func primaryAccessibilityWindow(ownerPID: pid_t, on screen: NSScreen) throws -> AXUIElement {
+        let app = AXUIElementCreateApplication(ownerPID)
+
+        guard let windowsValue = copyAttribute(kAXWindowsAttribute, from: app) else {
+            throw ShortsWindowArrangerError.noWindowFound
+        }
+        let windows = windowsValue as? [AXUIElement] ?? []
+
+        let movableWindows = windows.filter { isMovableWindow($0) }
+        let screenAXFrame = accessibilityFrame(for: screen.visibleFrame, on: screen)
+        let visibleOnTargetScreen = movableWindows.filter {
+            frame(of: $0)?.intersects(screenAXFrame) == true
+        }
+        let displayScopedWindows = visibleOnTargetScreen.isEmpty ? movableWindows : visibleOnTargetScreen
+        let standardWindows = displayScopedWindows.filter { isStandardWindow($0) }
+        let windowsInPriorityPool = standardWindows.isEmpty ? displayScopedWindows : standardWindows
+        let candidates = windowsInPriorityPool.enumerated().compactMap { index, window -> AppWindowSelectionCandidate? in
+            guard let frame = frame(of: window) else { return nil }
+            return AppWindowSelectionCandidate(
+                id: index,
+                frame: frame,
+                isStandard: isStandardWindow(window)
+            )
+        }
+        let focusedID = copyAttribute(kAXFocusedWindowAttribute, from: app)
+            .flatMap { focused in
+                windowsInPriorityPool.firstIndex(where: { CFEqual($0, focused) })
+            }
+        let mainID = copyAttribute(kAXMainWindowAttribute, from: app)
+            .flatMap { main in
+                windowsInPriorityPool.firstIndex(where: { CFEqual($0, main) })
+            }
+        guard let selected = AppWindowSelection.primary(
+            from: candidates,
+            focusedID: focusedID,
+            mainID: mainID
+        ) else {
+            throw ShortsWindowArrangerError.noWindowFound
+        }
+
+        return windowsInPriorityPool[selected.id]
+    }
+
     private static func window(_ window: AXUIElement, matches candidate: WindowCandidate) -> Bool {
         guard isMovableWindow(window),
               let frame = frame(of: window) else {
@@ -392,9 +477,17 @@ enum ShortsWindowArranger {
         return role == kAXWindowRole as String
     }
 
-    private static func set(window: AXUIElement, frame: CGRect) throws {
-        var position = CGPoint(x: frame.minX, y: frame.minY)
-        var size = CGSize(width: frame.width, height: frame.height)
+    private static func isStandardWindow(_ window: AXUIElement) -> Bool {
+        stringAttribute(kAXSubroleAttribute, from: window) == kAXStandardWindowSubrole as String
+    }
+
+    private static func windowArea(_ window: AXUIElement) -> CGFloat {
+        frame(of: window)?.area ?? 0
+    }
+
+    private static func set(window: AXUIElement, frame targetFrame: CGRect) throws -> CGRect {
+        var position = CGPoint(x: targetFrame.minX, y: targetFrame.minY)
+        var size = CGSize(width: targetFrame.width, height: targetFrame.height)
 
         guard let positionValue = AXValueCreate(.cgPoint, &position),
               let sizeValue = AXValueCreate(.cgSize, &size) else {
@@ -407,6 +500,8 @@ enum ShortsWindowArranger {
         guard positionError == .success, sizeError == .success else {
             throw ShortsWindowArrangerError.windowMoveFailed
         }
+
+        return frame(of: window) ?? targetFrame
     }
 
     private static func resizing(
@@ -496,5 +591,53 @@ private extension NSScreen {
             return number.uint32Value
         }
         return deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+    }
+}
+
+private extension CGRect {
+    var area: CGFloat {
+        width * height
+    }
+}
+
+struct AppWindowSelectionCandidate: Equatable {
+    let id: Int
+    let frame: CGRect
+    let isStandard: Bool
+
+    var area: CGFloat {
+        frame.width * frame.height
+    }
+
+    var isUsablePrimary: Bool {
+        frame.width >= 320 && frame.height >= 220 && area > 0
+    }
+}
+
+enum AppWindowSelection {
+    static func primary(
+        from candidates: [AppWindowSelectionCandidate],
+        focusedID: Int?,
+        mainID: Int?
+    ) -> AppWindowSelectionCandidate? {
+        let validCandidates = candidates.filter { $0.area > 0 }
+        let standardCandidates = validCandidates.filter(\.isStandard)
+        let pool = standardCandidates.isEmpty ? validCandidates : standardCandidates
+
+        if let focused = candidate(with: focusedID, in: pool), focused.isUsablePrimary {
+            return focused
+        }
+        if let main = candidate(with: mainID, in: pool), main.isUsablePrimary {
+            return main
+        }
+        return pool.max(by: { $0.area < $1.area })
+    }
+
+    private static func candidate(
+        with id: Int?,
+        in candidates: [AppWindowSelectionCandidate]
+    ) -> AppWindowSelectionCandidate? {
+        guard let id else { return nil }
+        return candidates.first { $0.id == id }
     }
 }

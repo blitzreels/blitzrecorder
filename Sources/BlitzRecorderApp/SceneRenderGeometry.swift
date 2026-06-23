@@ -21,6 +21,21 @@ struct SceneRenderGeometry {
         placementPolicy.targetRect(for: kind)
     }
 
+    func visibleSourceRect(for kind: SceneLayerKind, sourceAspectRatio: CGFloat?) -> CGRect {
+        guard kind == .camera,
+              scene.cameraContentMode == .fit,
+              let sourceAspectRatio,
+              sourceAspectRatio > 0 else {
+            return targetRect(for: kind)
+        }
+        return sourceFrame(
+            for: .camera,
+            sourceAspectRatio: sourceAspectRatio,
+            sourceCropAmount: .zero,
+            sourceCropPosition: .zero
+        )
+    }
+
     func normalizedFrame(for kind: SceneLayerKind) -> CGRect {
         placementPolicy.normalizedFrame(for: kind)
     }
@@ -33,11 +48,11 @@ struct SceneRenderGeometry {
         placementPolicy.cornerRadius(for: kind)
     }
 
-    func sourceMaskPath() -> CGPath? {
+    func sourceMaskPath(sourceAspectRatios: [SceneLayerKind: CGFloat] = [:]) -> CGPath? {
         let path = CGMutablePath()
         var hasRoundedSource = false
         for kind in activeLayerOrder {
-            let rect = targetRect(for: kind)
+            let rect = visibleSourceRect(for: kind, sourceAspectRatio: sourceAspectRatios[kind])
             let radius = sourceCornerRadius(for: kind)
             guard radius > 0 else { continue }
             path.addRoundedRect(in: rect, cornerWidth: radius, cornerHeight: radius)
@@ -48,6 +63,16 @@ struct SceneRenderGeometry {
 
     func isFullCanvasFrame(for kind: SceneLayerKind) -> Bool {
         normalizedFrame(for: kind).isAlmostFullCanvasFrame
+    }
+
+    func isFullCanvasTarget(for kind: SceneLayerKind) -> Bool {
+        targetRect(for: kind).standardized.isAlmostEqual(to: canvas.standardized)
+    }
+
+    func isVisibleSourceFullCanvas(for kind: SceneLayerKind, sourceAspectRatio: CGFloat?) -> Bool {
+        visibleSourceRect(for: kind, sourceAspectRatio: sourceAspectRatio)
+            .standardized
+            .isAlmostEqual(to: canvas.standardized)
     }
 
     func isFullCanvasWidth(for kind: SceneLayerKind) -> Bool {
@@ -126,5 +151,12 @@ private extension CGRect {
             && abs(minY) <= 0.0001
             && abs(width - 1) <= 0.0001
             && abs(height - 1) <= 0.0001
+    }
+
+    func isAlmostEqual(to other: CGRect) -> Bool {
+        abs(minX - other.minX) <= 0.0001
+            && abs(minY - other.minY) <= 0.0001
+            && abs(width - other.width) <= 0.0001
+            && abs(height - other.height) <= 0.0001
     }
 }

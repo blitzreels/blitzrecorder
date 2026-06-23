@@ -278,6 +278,14 @@ final class AudioSampleFileWriter: @unchecked Sendable {
             return firstSampleTime
         }
 
+        if offset < -maximumLeadingTimelineOffsetSeconds {
+            NSLog(
+                "Audio writer ignoring leading timeline start offset %.3fs; using first sample time.",
+                offset
+            )
+            return firstSampleTime
+        }
+
         return timelineStartTime
     }
 }

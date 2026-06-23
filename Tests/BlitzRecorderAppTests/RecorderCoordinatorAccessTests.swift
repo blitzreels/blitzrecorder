@@ -33,6 +33,16 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         XCTAssertEqual(presentedPane, .permissions)
     }
 
+    func testPickedScreenCanRecordWhenSystemAudioPermissionIsInactive() {
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen, .systemAudio]
+        settings.usesPickedScreenContent = true
+
+        let blockers = PermissionGate.blockers(for: settings)
+
+        XCTAssertFalse(blockers.contains { $0.source == .systemAudio })
+    }
+
     func testViewModelAppliesSavedOutputAfterStopWarning() {
         let defaults = temporaryDefaults()
         let coordinator = RecorderCoordinator(
@@ -58,6 +68,30 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
             "Some sources stopped with errors: System Audio: Capture stream stopped: display went away"
         )
         XCTAssertNil(viewModel.idleStatusMessage)
+    }
+
+    func testViewModelOpensEditorForSavedOutputWithProject() throws {
+        let defaults = temporaryDefaults()
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults),
+            defaults: defaults
+        )
+        let viewModel = RecorderViewModel(coordinator: coordinator, previewStage: PreviewStageView())
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.savesSourceFiles = true
+        let take = try TakeFileStore().createTake(settings: settings)
+        let outputURL = take.scratchDirectory.appendingPathComponent("final.mov")
+
+        viewModel.applySavedRecordingOutput(
+            SavedRecordingOutput(url: outputURL, sourceDirectory: take.scratchDirectory, warning: nil)
+        )
+
+        XCTAssertNotNil(viewModel.lastExportedProject)
+        guard case .edit = viewModel.studioMode else {
+            XCTFail("Expected saved project output to open Edit")
+            return
+        }
     }
 
     func testViewModelAppliesRecoveryOutputAndClearsSavedOutput() {
@@ -186,6 +220,35 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         XCTAssertTrue(messages.isEmpty)
     }
 
+    func testFillingSelectedScreenLayerUsesAvailableSlotWithoutTargetWindow() {
+        let defaults = temporaryDefaults()
+        var settings = RecordingSettings()
+        settings.layout = .vertical
+        settings.enabledSources = [.screen, .camera]
+        settings.sceneLayout.screenFrame = CGRect(x: 0, y: 0.5, width: 1, height: 0.5)
+        RecordingSettingsStore.save(settings, defaults: defaults)
+
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults),
+            defaults: defaults
+        )
+        var messages: [String] = []
+        coordinator.onMessage = { messages.append($0) }
+        let viewModel = RecorderViewModel(coordinator: coordinator, previewStage: PreviewStageView())
+
+        viewModel.selectSource(.screen)
+        viewModel.fitSelectedLayer()
+
+        XCTAssertRect(
+            viewModel.settings.sceneLayout.screenFrame,
+            equals: SceneSlotGeometry.screenSlot(
+                in: settings.sceneLayout,
+                enabledSources: settings.enabledSources
+            )
+        )
+        XCTAssertTrue(messages.isEmpty)
+    }
+
     func testScreenWindowFitControlsRequireAccessibility() {
         var settings = RecordingSettings()
         settings.enabledSources = [.screen]
@@ -226,6 +289,168 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
             hasAccessibilityAccess: true,
             canEditScene: true
         ))
+    }
+
+    func testScreenWindowFitControlsShowForApplicationBindingWithAccessibility() {
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen]
+        settings.screenSourceBinding = ScreenSourceBinding(
+            kind: .application,
+            displayID: nil,
+            bundleIdentifier: "com.google.Chrome",
+            applicationName: "Google Chrome",
+            processID: nil,
+            windowID: nil,
+            windowTitle: nil
+        )
+
+        XCTAssertTrue(RecorderViewModel.canShowScreenWindowFitControls(
+            settings: settings,
+            targetWindowInfo: nil,
+            hasAccessibilityAccess: true,
+            canEditScene: true
+        ))
+    }
+
+    func testWindowOnlyDoesNotFallbackToAppCaptureWhenNoWindowSourceExists() {
+        let defaults = temporaryDefaults()
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen]
+        settings.screenSourceBinding = ScreenSourceBinding(
+            kind: .application,
+            displayID: nil,
+            bundleIdentifier: "com.google.Chrome",
+            applicationName: "Google Chrome",
+            processID: nil,
+            windowID: nil,
+            windowTitle: nil
+        )
+        RecordingSettingsStore.save(settings, defaults: defaults)
+        let viewModel = RecorderViewModel(
+            coordinator: RecorderCoordinator(
+                accessController: AccessController(defaults: defaults),
+                defaults: defaults
+            ),
+            previewStage: PreviewStageView()
+        )
+        viewModel.availableScreenSources = [
+            ScreenSourceOption(
+                binding: .display(id: "display-1"),
+                title: "Display 1",
+                subtitle: "",
+                systemImage: "display",
+                icon: nil
+            )
+        ]
+
+        viewModel.setWindowOnlyCapture()
+
+        XCTAssertEqual(viewModel.settings.screenSourceBinding?.kind, .application)
+        XCTAssertEqual(viewModel.settings.screenSourceBinding?.applicationName, "Google Chrome")
+        XCTAssertEqual(viewModel.detailMessage, "No window source available for Google Chrome.")
+    }
+
+    func testSliderWindowZoomKeepsWindowModeSelected() {
+        let defaults = temporaryDefaults()
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen]
+        settings.screenSourceBinding = .display(id: "display-1")
+        RecordingSettingsStore.save(settings, defaults: defaults)
+        let viewModel = RecorderViewModel(
+            coordinator: RecorderCoordinator(
+                accessController: AccessController(defaults: defaults),
+                defaults: defaults
+            ),
+            previewStage: PreviewStageView()
+        )
+
+        viewModel.setTargetWindowZoom(1.25)
+
+        XCTAssertEqual(viewModel.screenCaptureAreaSelection, .activeWindow)
+        XCTAssertEqual(viewModel.targetWindowZoom, 1.25)
+    }
+
+    func testStepWindowZoomKeepsWindowModeSelected() {
+        let defaults = temporaryDefaults()
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen]
+        settings.screenSourceBinding = .display(id: "display-1")
+        RecordingSettingsStore.save(settings, defaults: defaults)
+        let viewModel = RecorderViewModel(
+            coordinator: RecorderCoordinator(
+                accessController: AccessController(defaults: defaults),
+                defaults: defaults
+            ),
+            previewStage: PreviewStageView()
+        )
+
+        viewModel.zoomTargetWindowFit(by: 0.05)
+
+        XCTAssertEqual(viewModel.screenCaptureAreaSelection, .activeWindow)
+        XCTAssertEqual(viewModel.targetWindowZoom, 1.05, accuracy: 0.0001)
+    }
+
+    func testResetWindowZoomKeepsWindowModeSelected() {
+        let defaults = temporaryDefaults()
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen]
+        settings.screenSourceBinding = .display(id: "display-1")
+        RecordingSettingsStore.save(settings, defaults: defaults)
+        let viewModel = RecorderViewModel(
+            coordinator: RecorderCoordinator(
+                accessController: AccessController(defaults: defaults),
+                defaults: defaults
+            ),
+            previewStage: PreviewStageView()
+        )
+
+        viewModel.setTargetWindowZoom(1.25)
+        viewModel.resetTargetWindowZoom()
+
+        XCTAssertEqual(viewModel.screenCaptureAreaSelection, .activeWindow)
+        XCTAssertEqual(viewModel.targetWindowZoom, 1, accuracy: 0.0001)
+    }
+
+    func testAppWindowSelectionPrefersFocusedWindowOverLargerAuxiliaryWindow() {
+        let selected = AppWindowSelection.primary(
+            from: [
+                AppWindowSelectionCandidate(
+                    id: 0,
+                    frame: CGRect(x: 0, y: 0, width: 500, height: 500),
+                    isStandard: true
+                ),
+                AppWindowSelectionCandidate(
+                    id: 1,
+                    frame: CGRect(x: 0, y: 0, width: 1200, height: 900),
+                    isStandard: true
+                )
+            ],
+            focusedID: 0,
+            mainID: 1
+        )
+
+        XCTAssertEqual(selected?.id, 0)
+    }
+
+    func testAppWindowSelectionFallsBackWhenFocusedWindowIsTooSmall() {
+        let selected = AppWindowSelection.primary(
+            from: [
+                AppWindowSelectionCandidate(
+                    id: 0,
+                    frame: CGRect(x: 0, y: 0, width: 260, height: 180),
+                    isStandard: true
+                ),
+                AppWindowSelectionCandidate(
+                    id: 1,
+                    frame: CGRect(x: 0, y: 0, width: 900, height: 700),
+                    isStandard: true
+                )
+            ],
+            focusedID: 0,
+            mainID: nil
+        )
+
+        XCTAssertEqual(selected?.id, 1)
     }
 
     func testScreenWindowFitControlsHideDisplayWithoutDetectedTargetWindow() {
@@ -521,5 +746,17 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         return directory
+    }
+
+    private func XCTAssertRect(
+        _ actual: CGRect,
+        equals expected: CGRect,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(actual.origin.x, expected.origin.x, accuracy: 0.0001, file: file, line: line)
+        XCTAssertEqual(actual.origin.y, expected.origin.y, accuracy: 0.0001, file: file, line: line)
+        XCTAssertEqual(actual.size.width, expected.size.width, accuracy: 0.0001, file: file, line: line)
+        XCTAssertEqual(actual.size.height, expected.size.height, accuracy: 0.0001, file: file, line: line)
     }
 }

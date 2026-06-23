@@ -63,6 +63,11 @@ final class RecorderViewModel {
     var lastExportedSourceTakeURL: URL?
     var lastExportWarning: String?
     var lastRecoveryOutput: RecordingRecoveryOutput?
+    var lastPostRecordingProjectOutput: PostRecordingProjectOutput?
+    var lastExportedProject: RecordingProject?
+    enum StudioMode { case record, edit }
+    var studioMode: StudioMode = .record
+    var recentProjects: [RecordingProjectHistory.Entry] = []
 
     var availableDisplays: [SourceOption] = []
     var availableScreenSources: [ScreenSourceOption] = []
@@ -79,24 +84,14 @@ final class RecorderViewModel {
     var renderProgress: Double = 0
     private let elapsedClock = RecordingElapsedClock()
 
-    /// Routes SwiftUI nav intents to the native Settings window (wired in
-    /// MainWindowController). The 6-item app rail was removed; every former
-    /// destination now opens the matching Settings pane (rule #5). `@ObservationIgnored`
-    /// because it is wiring, not observable UI state.
     @ObservationIgnored var onPresentSettings: ((SettingsPane?) -> Void)?
     var selectedSource: SourceSelection? = .screen
     var selectedLayer: SceneLayerKind = .camera
-    /// UI-only selection for the scene's bottom "Background" layer. `SceneLayerKind`
-    /// has no `.background` case (it maps 1:1 to real capture sources), so the
-    /// Background row in the Layers list is tracked separately. Selecting any real
-    /// layer clears it; selecting Background shows the style/padding controls.
     var isBackgroundLayerSelected = false
     var isCameraCropModeEnabled = false
     var isScreenCropModeEnabled = false
     private var sceneLibraryRevision = 0
     var cropToolbarFrame: CGRect?
-    /// The screen layer's rect within the canvas (stage view coords), or nil when
-    /// Screen is off. Positions the "Pick a screen" prompt over the screen region only.
     var screenLayerFrame: CGRect?
     var showsFirstRunOnboarding: Bool
     var screenAccessAwaitingRestart = false
@@ -104,9 +99,16 @@ final class RecorderViewModel {
     private var lastApplicationScreenSourceBinding: ScreenSourceBinding?
     var targetWindowInfo: TargetWindowInfo?
     var targetWindowStatus: String = "Detecting target..."
-    var targetWindowFitScale: CGFloat = 1.0
+    var targetWindowZoom: CGFloat = 1.0
+    @ObservationIgnored private var targetWindowZoomTask: Task<Void, Never>?
     private var permissionRefreshToken = 0
     private var remoteCameraRefreshToken = 0
+
+    private struct ScheduledTargetWindowFitContext: Equatable {
+        let areaSelection: ScreenCaptureAreaSelection
+        let screenSourceBinding: ScreenSourceBinding?
+        let usesPickedScreenContent: Bool
+    }
 
     var idleStatusMessage: String? {
         guard state == .idle,
@@ -267,8 +269,6 @@ final class RecorderViewModel {
         return coordinator.scenesForCurrentLayout()
     }
 
-    /// Every scene across all aspect ratios, current ratio first so the live
-    /// scene stays near the front of the "All" view.
     var allScenes: [RecordingSceneDefinition] {
         _ = sceneLibraryRevision
         let current = coordinator.scenesForCurrentLayout()
@@ -357,7 +357,6 @@ final class RecorderViewModel {
         coordinator.hasScreenCaptureAccess()
     }
 
-    /// Accessibility is required to move/resize the front window for "Window" fit.
     var hasAccessibilityAccessForWindowControls: Bool {
         _ = permissionRefreshToken
         return PermissionGate.hasAccessibilityAccess
@@ -386,7 +385,9 @@ final class RecorderViewModel {
         }
 
         switch settings.screenSourceBinding?.kind {
-        case .application, .window:
+        case .window:
+            return true
+        case .application:
             return true
         case .display, .none:
             return targetWindowInfo != nil
@@ -418,6 +419,7 @@ final class RecorderViewModel {
         self.settings = coordinator.settings
         self.showsFirstRunOnboarding = ProcessInfo.processInfo.environment["BLITZRECORDER_FORCE_ONBOARDING"] == "1"
             || !UserDefaults.standard.bool(forKey: Self.firstRunOnboardingKey)
+        refreshRecentProjects()
         syncScreenCaptureAreaSelection()
         elapsedClock.onElapsedSecondsChanged = { [weak self] elapsedSeconds in
             self?.elapsedSeconds = elapsedSeconds
@@ -478,6 +480,9 @@ final class RecorderViewModel {
             lastExportedURL = nil
             lastExportedSourceTakeURL = nil
             lastExportWarning = nil
+            lastExportedProject = nil
+            lastPostRecordingProjectOutput = nil
+            studioMode = .record
             lastRecoveryOutput = nil
         case .recording:
             if previousState == .idle || previousState == .starting || previousState == .finishing {
@@ -501,6 +506,21 @@ final class RecorderViewModel {
         lastExportedSourceTakeURL = output.sourceDirectory
         lastExportWarning = output.warning
         lastRecoveryOutput = nil
+        lastPostRecordingProjectOutput = nil
+        refreshRecentProjects()
+        refreshLastExportedProject()
+        studioMode = lastExportedProject != nil ? .edit : .record
+    }
+
+    func applyPostRecordingProjectOutput(_ output: PostRecordingProjectOutput) {
+        lastPostRecordingProjectOutput = output
+        lastExportedURL = nil
+        lastExportedSourceTakeURL = output.sourceDirectory
+        lastExportWarning = output.warning
+        lastRecoveryOutput = nil
+        refreshRecentProjects()
+        refreshLastExportedProject()
+        studioMode = lastExportedProject != nil ? .edit : .record
     }
 
     func applyRecoveryOutput(_ output: RecordingRecoveryOutput) {
@@ -508,6 +528,10 @@ final class RecorderViewModel {
         lastExportedURL = nil
         lastExportedSourceTakeURL = nil
         lastExportWarning = nil
+        lastPostRecordingProjectOutput = nil
+        lastExportedProject = nil
+        studioMode = .record
+        refreshRecentProjects()
     }
 
     func applyRenderProgress(_ progress: Double) {
@@ -539,6 +563,9 @@ final class RecorderViewModel {
         previewStage.canvasBackgroundStyle = coordinator.settings.canvasBackgroundStyle
         previewStage.canvasBackgroundAnimated = coordinator.settings.canvasBackgroundAnimated
         previewStage.canvasPadding = coordinator.settings.canvasPadding
+        previewStage.cameraContentMode = coordinator.settings.cameraContentMode
+        previewStage.cameraFramePadding = coordinator.settings.cameraFramePadding
+        previewStage.cameraShadowEnabled = coordinator.settings.cameraShadowEnabled
         previewStage.isBackgroundLayerSelected = isBackgroundLayerSelected
     }
 
@@ -618,8 +645,6 @@ final class RecorderViewModel {
 
     func setLayout(_ layout: CaptureLayout) {
         coordinator.setLayout(layout)
-        // The scenes strip is gated on this token; bump it so the per-ratio
-        // scene list + selection re-render when the aspect ratio changes.
         sceneLibraryRevision += 1
         syncSettingsAfterSceneChange()
     }
@@ -630,9 +655,6 @@ final class RecorderViewModel {
         syncSettingsAfterSceneChange()
     }
 
-    /// Select a scene that may live in another aspect ratio (the "All" view):
-    /// flip the canvas to that scene's ratio first, then make it live. A
-    /// same-ratio scene skips the flip and behaves like `selectScene`.
     func selectSceneAcrossLayouts(_ id: UUID) {
         if let target = coordinator.layout(ofSceneID: id), target != settings.layout {
             coordinator.setLayout(target)
@@ -707,16 +729,26 @@ final class RecorderViewModel {
         Double(settings.sceneLayout.screenSplitHeight ?? SceneLayout.defaultScreenSplitHeight)
     }
 
-    /// Show the split-height ("screen region") control whenever the scene is a
-    /// vertical screen-over-camera split — including after a manual edit cleared
-    /// the preset, as long as the Split preset is the active intent.
+    var cameraInsetAlignment: CameraInsetAlignment {
+        SceneLayout.cameraInsetAlignment(for: settings.sceneLayout.cameraFrame)
+    }
+
+    var cameraInsetShape: CameraInsetShape {
+        SceneLayout.cameraInsetShape(for: settings.sceneLayout.cameraFrame, in: settings.layout)
+    }
+
+    var cameraInsetSize: Double {
+        Double(SceneLayout.cameraInsetSize(for: settings.sceneLayout.cameraFrame, in: settings.layout))
+    }
+
+    var cameraInsetSizeRange: ClosedRange<Double> {
+        Double(SceneLayout.minimumCameraInsetSize)...Double(SceneLayout.maximumCameraInsetSize(for: settings.layout))
+    }
+
     var showsScreenSplitControl: Bool {
         settings.sceneLayout.screenSplitHeight != nil || settings.selectedScenePreset == .screenTop50
     }
 
-    /// A preset tile reads as active either when it's the selected preset or when
-    /// the live geometry matches it (e.g. a split that lost its preset on a
-    /// manual edit still lights the Split tile).
     func isScenePresetActive(_ preset: ScenePreset) -> Bool {
         if settings.selectedScenePreset == preset { return true }
         return preset == .screenTop50 && settings.sceneLayout.screenSplitHeight != nil
@@ -727,12 +759,73 @@ final class RecorderViewModel {
         syncSettingsAfterSceneChange()
     }
 
+    func setCameraContentMode(_ mode: CameraContentMode) {
+        coordinator.setCameraContentMode(mode)
+        syncSettingsAfterSceneChange()
+    }
+
+    func setCameraFramePadding(_ padding: Double) {
+        coordinator.setCameraFramePadding(CGFloat(padding))
+        syncSettingsAfterSceneChange()
+    }
+
+    func setCameraShadowEnabled(_ enabled: Bool) {
+        coordinator.setCameraShadowEnabled(enabled)
+        syncSettingsAfterSceneChange()
+    }
+
+    func setCameraInsetAlignment(_ alignment: CameraInsetAlignment) {
+        setCameraInset(
+            alignment: alignment,
+            shape: cameraInsetShape,
+            size: CGFloat(cameraInsetSize)
+        )
+    }
+
+    func setCameraInsetShape(_ shape: CameraInsetShape) {
+        setCameraInset(
+            alignment: cameraInsetAlignment,
+            shape: shape,
+            size: CGFloat(cameraInsetSize)
+        )
+    }
+
+    func setCameraInsetSize(_ size: Double) {
+        setCameraInset(
+            alignment: cameraInsetAlignment,
+            shape: cameraInsetShape,
+            size: CGFloat(size)
+        )
+    }
+
+    private func setCameraInset(
+        alignment: CameraInsetAlignment,
+        shape: CameraInsetShape,
+        size: CGFloat
+    ) {
+        if !isSourceConfigured(.screen),
+           !coordinator.settings.usesPickedScreenContent,
+           !coordinator.hasScreenCaptureAccess() {
+            Task {
+                do {
+                    try await coordinator.pickScreenSource()
+                    coordinator.setCameraInset(alignment: alignment, shape: shape, size: size)
+                    syncSettingsAfterSceneChange()
+                    detailMessage = "Screen selected for this session."
+                } catch {
+                    detailMessage = "Screen picker failed: \(error.localizedDescription)"
+                }
+            }
+            return
+        }
+
+        coordinator.setCameraInset(alignment: alignment, shape: shape, size: size)
+        syncSettingsAfterSceneChange()
+    }
+
     func fitFrontWindowForShorts() {
-        // Enter Window mode up front so the fit + zoom controls appear immediately —
-        // even if the resize can't complete yet (Accessibility not granted, or no
-        // eligible front window). `syncScreenCaptureAreaSelection` keeps it sticky.
         screenCaptureAreaSelection = .activeWindow
-        fitCurrentScreenWindow(scale: targetWindowFitScale)
+        fitCurrentScreenWindow(zoom: targetWindowZoom)
         syncSettings()
         refreshTargetWindow()
     }
@@ -749,20 +842,53 @@ final class RecorderViewModel {
         refreshTargetWindow()
     }
 
-    func fitFrontWindowForShorts(scale: CGFloat) {
+    func fitFrontWindowForShorts(zoom: CGFloat) {
+        cancelScheduledTargetWindowFit()
         screenCaptureAreaSelection = .activeWindow
-        targetWindowFitScale = clampedTargetWindowFitScale(scale)
-        fitCurrentScreenWindow(scale: targetWindowFitScale)
+        targetWindowZoom = clampedTargetWindowZoom(zoom)
+        fitCurrentScreenWindow(zoom: targetWindowZoom)
         syncSettings()
         refreshTargetWindow()
     }
 
-    func setTargetWindowFitScale(_ scale: CGFloat) {
-        targetWindowFitScale = clampedTargetWindowFitScale(scale)
+    func setTargetWindowZoom(_ zoom: CGFloat) {
+        screenCaptureAreaSelection = .activeWindow
+        targetWindowZoom = clampedTargetWindowZoom(zoom)
+        scheduleTargetWindowFit()
+    }
+
+    func applyTargetWindowZoom() {
+        cancelScheduledTargetWindowFit()
+        fitCurrentScreenWindow(zoom: targetWindowZoom)
+        syncSettings()
+        refreshTargetWindow()
+    }
+
+    func fitCurrentScreenWindowToSlot() {
+        cancelScheduledTargetWindowFit()
+        applyCurrentScreenWindowZoom(targetWindowZoom)
     }
 
     func zoomTargetWindowFit(by delta: CGFloat) {
-        fitFrontWindowForShorts(scale: targetWindowFitScale + delta)
+        cancelScheduledTargetWindowFit()
+        applyCurrentScreenWindowZoom(targetWindowZoom + delta)
+    }
+
+    func resetTargetWindowZoom() {
+        cancelScheduledTargetWindowFit()
+        applyCurrentScreenWindowZoom(1)
+    }
+
+    func zoomScreenSourceContentIn() {
+        coordinator.zoomScreenSourceContent(.zoomIn)
+    }
+
+    func zoomScreenSourceContentOut() {
+        coordinator.zoomScreenSourceContent(.zoomOut)
+    }
+
+    func resetScreenSourceContentZoom() {
+        coordinator.zoomScreenSourceContent(.reset)
     }
 
     func resizeTargetWindow(widthDelta: CGFloat = 0, heightDelta: CGFloat = 0) {
@@ -792,12 +918,55 @@ final class RecorderViewModel {
         }
     }
 
-    private func fitCurrentScreenWindow(scale: CGFloat) {
-        if let binding = settings.screenSourceBinding, binding.kind != .display {
-            coordinator.fitScreenSourceWindow(binding, scale: scale)
-        } else {
-            coordinator.fitFrontWindowForShorts(scale: scale)
+    private func fitCurrentScreenWindow(zoom: CGFloat) {
+        if settings.usesPickedScreenContent {
+            coordinator.fitPickedScreenWindowToSlot(zoom: zoom)
+            return
         }
+        if let binding = settings.screenSourceBinding, binding.kind != .display {
+            coordinator.fitScreenSourceWindow(binding, zoom: zoom)
+        } else {
+            coordinator.fitFrontWindowForShorts(zoom: zoom)
+        }
+    }
+
+    private func applyCurrentScreenWindowZoom(_ zoom: CGFloat) {
+        screenCaptureAreaSelection = .activeWindow
+        targetWindowZoom = clampedTargetWindowZoom(zoom)
+        fitCurrentScreenWindow(zoom: targetWindowZoom)
+        syncSettings()
+        refreshTargetWindow()
+    }
+
+    private func scheduleTargetWindowFit() {
+        cancelScheduledTargetWindowFit()
+        let zoom = targetWindowZoom
+        let context = scheduledTargetWindowFitContext()
+        targetWindowZoomTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 140_000_000)
+            guard !Task.isCancelled, let self else { return }
+            guard self.scheduledTargetWindowFitContext() == context,
+                  self.screenCaptureAreaSelection == .activeWindow else {
+                return
+            }
+            self.targetWindowZoomTask = nil
+            self.fitCurrentScreenWindow(zoom: zoom)
+            self.syncSettings()
+            self.refreshTargetWindow()
+        }
+    }
+
+    private func cancelScheduledTargetWindowFit() {
+        targetWindowZoomTask?.cancel()
+        targetWindowZoomTask = nil
+    }
+
+    private func scheduledTargetWindowFitContext() -> ScheduledTargetWindowFitContext {
+        ScheduledTargetWindowFitContext(
+            areaSelection: screenCaptureAreaSelection,
+            screenSourceBinding: settings.screenSourceBinding,
+            usesPickedScreenContent: settings.usesPickedScreenContent
+        )
     }
 
     private func refitActiveScreenWindowAfterPresetIfNeeded(_ preset: ScenePreset) {
@@ -807,15 +976,11 @@ final class RecorderViewModel {
               hasAccessibilityAccessForWindowControls else {
             return
         }
-        fitCurrentScreenWindow(scale: targetWindowFitScale)
+        fitCurrentScreenWindow(zoom: targetWindowZoom)
         refreshTargetWindow()
     }
 
     private func syncScreenCaptureAreaSelection() {
-        // "Window" is sticky once chosen: keep the fit + zoom controls visible even
-        // when the fit hasn't set a crop yet (Accessibility not granted, or no
-        // eligible front window). Full (`clearScreenCrop`) and Free crop exit
-        // window mode explicitly, so this never traps the user in it.
         if screenCaptureAreaSelection == .activeWindow {
             return
         }
@@ -836,8 +1001,8 @@ final class RecorderViewModel {
         }
     }
 
-    private func clampedTargetWindowFitScale(_ scale: CGFloat) -> CGFloat {
-        min(1.25, max(0.75, scale))
+    private func clampedTargetWindowZoom(_ zoom: CGFloat) -> CGFloat {
+        WindowZoomGeometry.clampedZoom(zoom)
     }
 
     func selectLayer(_ layer: SceneLayerKind) {
@@ -849,9 +1014,6 @@ final class RecorderViewModel {
         previewStage.selectedLayer = layer
     }
 
-    /// Select the scene's bottom Background layer (UI-only — see
-    /// `isBackgroundLayerSelected`). Reveals the background style / padding controls
-    /// in the right inspector.
     func selectBackgroundLayer() {
         isBackgroundLayerSelected = true
         previewStage.isBackgroundLayerSelected = true
@@ -872,15 +1034,8 @@ final class RecorderViewModel {
     }
 
     func fitSelectedLayer() {
-        // Fitting the screen = resize the captured window to its slot in the
-        // current layout (e.g. a split's top band) so it fills the region at
-        // native resolution — no content zoom, and the split stays intact.
-        if selectedLayer == .screen {
-            fitFrontWindowForShorts()
-        } else {
-            coordinator.fitSceneLayer(selectedLayer)
-            syncSettings()
-        }
+        coordinator.fitSceneLayer(selectedLayer)
+        syncSettings()
     }
 
     func fitSelectedLayer(scale: CGFloat) {
@@ -1080,6 +1235,7 @@ final class RecorderViewModel {
     }
 
     func setScreenSource(_ binding: ScreenSourceBinding) {
+        cancelScheduledTargetWindowFit()
         if binding.kind == .application {
             lastApplicationScreenSourceBinding = binding
         }
@@ -1107,7 +1263,29 @@ final class RecorderViewModel {
         }
     }
 
+    func setWindowOnlyCapture() {
+        cancelScheduledTargetWindowFit()
+        if settings.screenSourceBinding?.kind == .window {
+            screenCaptureAreaSelection = .activeWindow
+            fitCurrentScreenWindow(zoom: targetWindowZoom)
+            syncSettings()
+            refreshTargetWindow()
+            return
+        }
+        if let binding = preferredWindowBindingForCurrentSource() {
+            setScreenSource(binding)
+            return
+        }
+        if settings.screenSourceBinding?.kind == .application {
+            detailMessage = "No window source available for \(settings.screenSourceBinding?.displayName ?? "this app")."
+            return
+        }
+        screenCaptureAreaSelection = .activeWindow
+        fitFrontWindowForShorts()
+    }
+
     func setFullDisplayScreenCapture() {
+        cancelScheduledTargetWindowFit()
         cancelScreenCropMode()
         let displayID = settings.screenSourceBinding?.displayID ?? settings.selectedDisplayID
         coordinator.setScreenSource(.display(id: displayID))
@@ -1115,6 +1293,24 @@ final class RecorderViewModel {
         syncSettings()
         screenCaptureAreaSelection = .fullDisplay
         detailMessage = "Screen source set to full display."
+    }
+
+    private func preferredWindowBindingForCurrentSource() -> ScreenSourceBinding? {
+        let windowBindings = availableScreenSources
+            .map(\.binding)
+            .filter { $0.kind == .window }
+        guard !windowBindings.isEmpty,
+              let current = settings.screenSourceBinding,
+              current.kind == .application else {
+            return nil
+        }
+
+        let matching = windowBindings.filter { $0.matches(applicationBinding: current) }
+        if let displayID = current.displayID,
+           let sameDisplay = matching.first(where: { $0.displayID == displayID }) {
+            return sameDisplay
+        }
+        return matching.first
     }
 
     func setCamera(_ id: String?) {
@@ -1395,8 +1591,6 @@ final class RecorderViewModel {
     }
 
     func quitAndReopen() {
-        // Screen Recording grants only take effect for a fresh process. Relaunch after this
-        // instance exits so the single-instance lock is released before the new one claims it.
         let bundlePath = Bundle.main.bundlePath
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -1405,8 +1599,6 @@ final class RecorderViewModel {
         NSApp.terminate(nil)
     }
 
-    /// True only for legacy/unbound screen setup. Native display/app/window bindings
-    /// should ask for Screen Recording permission instead of re-opening the system picker.
     var screenNeedsPicking: Bool {
         settings.enabledSources.contains(.screen)
             && !settings.hiddenSources.contains(.screen)
@@ -1420,10 +1612,12 @@ final class RecorderViewModel {
             do {
                 try await coordinator.pickScreenSource()
                 syncSettings()
-                // Picking enables + unhides the Screen source; also select its layer so
-                // the right inspector immediately shows the screen's crop/area controls.
                 selectLayer(.screen)
-                detailMessage = "Screen selected for this session."
+                if settings.usesPickedScreenContent, settings.screenSourceBinding != nil {
+                    detailMessage = "Screen source saved. Using picker grant for this session."
+                } else {
+                    detailMessage = settings.usesPickedScreenContent ? "Screen selected for this session." : "Screen source saved."
+                }
             } catch {
                 detailMessage = "Screen picker failed: \(error.localizedDescription)"
             }
@@ -1515,11 +1709,186 @@ final class RecorderViewModel {
             guard response == .OK, let url = panel.url, let self else { return }
             self.coordinator.setOutputDirectory(url)
             self.syncSettings()
+            self.refreshRecentProjects()
         }
     }
 
     func revealOutputFolder() {
         NSWorkspace.shared.open(settings.outputDirectory)
+    }
+
+    func refreshRecentProjects() {
+        recentProjects = TakeFileStore().loadProjectHistory(settings: settings).entries
+    }
+
+    func revealProject(_ project: RecordingProjectHistory.Entry) {
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: project.takeDirectoryPath, isDirectory: true)])
+    }
+
+    func openProject(_ project: RecordingProjectHistory.Entry) {
+        let projectURL = URL(fileURLWithPath: project.projectPath)
+        let sourceDirectory = URL(fileURLWithPath: project.takeDirectoryPath, isDirectory: true)
+        do {
+            lastExportedProject = try TakeFileStore().loadRecordingProject(at: projectURL)
+            lastPostRecordingProjectOutput = PostRecordingProjectOutput(
+                projectURL: projectURL,
+                sourceDirectory: sourceDirectory,
+                warning: nil
+            )
+            lastExportedURL = project.finalVideoPath.map(URL.init(fileURLWithPath:))
+            lastExportedSourceTakeURL = sourceDirectory
+            lastExportWarning = nil
+            lastRecoveryOutput = nil
+            studioMode = .edit
+        } catch {
+            detailMessage = "Project could not be opened: \(error.localizedDescription)"
+        }
+    }
+
+    func exportLastProject(
+        as format: OutputVideoFormat,
+        hiddenVideoSources: Set<SceneLayerKind> = [],
+        mutedAudioSources: Set<CaptureSource> = []
+    ) {
+        guard let projectURL = lastExportedProjectURL else {
+            detailMessage = "No editable project is available for this recording."
+            return
+        }
+        coordinator.exportProject(
+            at: projectURL,
+            outputFormat: format,
+            hiddenVideoSources: hiddenVideoSources,
+            mutedAudioSources: mutedAudioSources
+        )
+    }
+
+    var canOpenEditor: Bool {
+        lastExportedProject != nil || lastExportedProjectURL != nil
+    }
+
+    func openEditor() {
+        refreshLastExportedProject()
+        if lastExportedProject == nil {
+            detailMessage = "This take's project file could not be opened."
+        }
+        studioMode = lastExportedProject != nil ? .edit : .record
+    }
+
+    func closeEditor() {
+        studioMode = .record
+    }
+
+    func applyProjectSceneCorrection(eventIndex: Int, correction: RecordingProjectSceneCorrection) {
+        guard let projectURL = lastExportedProjectURL else {
+            detailMessage = "No editable project is available for this recording."
+            return
+        }
+        do {
+            lastExportedProject = try coordinator.updateProjectScene(
+                at: projectURL,
+                eventIndex: eventIndex,
+                correction: correction
+            )
+            refreshRecentProjects()
+            detailMessage = "Updated project segment. Export again to render the correction."
+        } catch {
+            detailMessage = error.localizedDescription
+        }
+    }
+
+    @discardableResult
+    func applyProjectSceneEdit(eventIndex: Int, _ mutate: (inout RecordingScene) -> Void) -> Bool {
+        guard let projectURL = lastExportedProjectURL else {
+            detailMessage = "No editable project is available for this recording."
+            return false
+        }
+        do {
+            lastExportedProject = try coordinator.updateProjectScene(
+                at: projectURL,
+                eventIndex: eventIndex,
+                mutate: mutate
+            )
+            return true
+        } catch {
+            detailMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    @discardableResult
+    func splitProjectScene(at time: Double, duration: Double) -> Bool {
+        guard let projectURL = lastExportedProjectURL else {
+            detailMessage = "No editable project is available for this recording."
+            return false
+        }
+        guard duration <= 0 || time < duration - 0.05 else {
+            detailMessage = "Move the playhead before the end before splitting."
+            return false
+        }
+        do {
+            lastExportedProject = try coordinator.insertProjectSceneEvent(
+                at: projectURL,
+                time: time
+            )
+            refreshRecentProjects()
+            detailMessage = "Added cut at \(formatProjectEditTime(time))."
+            return true
+        } catch {
+            detailMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    @discardableResult
+    func removeProjectSceneEvent(eventIndex: Int) -> Bool {
+        guard let projectURL = lastExportedProjectURL else {
+            detailMessage = "No editable project is available for this recording."
+            return false
+        }
+        do {
+            lastExportedProject = try coordinator.removeProjectSceneEvent(
+                at: projectURL,
+                eventIndex: eventIndex
+            )
+            refreshRecentProjects()
+            detailMessage = "Removed cut."
+            return true
+        } catch {
+            detailMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func revealLastSourceTracks() {
+        guard let lastExportedSourceTakeURL else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([lastExportedSourceTakeURL])
+    }
+
+    func revealLastExportOrSource() {
+        if let lastExportedURL, FileManager.default.fileExists(atPath: lastExportedURL.path) {
+            NSWorkspace.shared.activateFileViewerSelecting([lastExportedURL])
+            return
+        }
+        revealLastSourceTracks()
+    }
+
+    func refreshLastExportedProject() {
+        guard let projectURL = lastExportedProjectURL else {
+            lastExportedProject = nil
+            return
+        }
+        lastExportedProject = try? TakeFileStore().loadRecordingProject(at: projectURL)
+    }
+
+    private var lastExportedProjectURL: URL? {
+        lastExportedSourceTakeURL?.appendingPathComponent("project.blitzrecorder.json")
+    }
+
+    private func formatProjectEditTime(_ seconds: Double) -> String {
+        let totalSeconds = max(0, Int(seconds.rounded()))
+        let minutes = totalSeconds / 60
+        let secs = totalSeconds % 60
+        return String(format: "%02d:%02d", minutes, secs)
     }
 
     func retryRecoveredExport() {
@@ -1540,6 +1909,9 @@ final class RecorderViewModel {
         lastExportedSourceTakeURL = nil
         lastExportWarning = nil
         lastRecoveryOutput = nil
+        lastPostRecordingProjectOutput = nil
+        lastExportedProject = nil
+        studioMode = .record
         detailMessage = ""
     }
 
@@ -1639,7 +2011,6 @@ final class RecorderViewModel {
     }
 
     func openReadinessDetails() {
-        // Recording blockers now come from permissions or source setup.
         onPresentSettings?(accessController.canRenderExport ? .permissions : .account)
     }
 
@@ -1827,6 +2198,31 @@ extension CaptureSource {
 
     var isAudioSource: Bool {
         self == .microphone || self == .systemAudio
+    }
+}
+
+private extension ScreenSourceBinding {
+    func matches(applicationBinding: ScreenSourceBinding) -> Bool {
+        guard kind == .window,
+              applicationBinding.kind == .application else {
+            return false
+        }
+        if let processID,
+           let applicationProcessID = applicationBinding.processID,
+           processID == applicationProcessID {
+            return true
+        }
+        if let bundleIdentifier,
+           let applicationBundleIdentifier = applicationBinding.bundleIdentifier,
+           bundleIdentifier == applicationBundleIdentifier {
+            return true
+        }
+        if let applicationName,
+           let selectedApplicationName = applicationBinding.applicationName,
+           applicationName == selectedApplicationName {
+            return true
+        }
+        return false
     }
 }
 

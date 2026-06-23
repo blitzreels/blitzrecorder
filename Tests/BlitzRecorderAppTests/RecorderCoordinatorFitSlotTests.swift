@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import BlitzRecorderCore
 @testable import BlitzRecorderApp
 import XCTest
 
@@ -228,6 +229,7 @@ final class RecorderCoordinatorFitSlotTests: XCTestCase {
         let defaults = temporaryDefaults()
         var settings = RecordingSettings()
         settings.layout = .vertical
+        settings.enabledSources = [.screen]
         settings.selectedScenePreset = .stackedHalves
         settings.screenCrop = CGRect(x: 0, y: 0, width: 1, height: 9.0 / 16.0)
         settings.sceneLayout.screenFrame = CGRect(x: 0.2, y: 0.2, width: 0.4, height: 0.4)
@@ -251,12 +253,42 @@ final class RecorderCoordinatorFitSlotTests: XCTestCase {
         XCTAssertNil(coordinator.settings.selectedScenePreset)
     }
 
+    func testFitScreenLayerInLeftCamLayoutStaysBesideCamera() {
+        let defaults = temporaryDefaults()
+        var settings = RecordingSettings()
+        settings.layout = .horizontal
+        settings.enabledSources = [.screen, .camera]
+        settings.selectedScenePreset = .webcamLeft
+        settings.sceneLayout = SceneLayout.presetLayout(.webcamLeft, for: .horizontal)
+        RecordingSettingsStore.save(settings, defaults: defaults)
+
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults),
+            defaults: defaults
+        )
+
+        coordinator.fitSceneLayer(.screen)
+
+        XCTAssertRect(
+            coordinator.settings.sceneLayout.screenFrame,
+            equals: CGRect(x: 1.0 / 3.0, y: 0, width: 2.0 / 3.0, height: 1)
+        )
+        XCTAssertEqual(
+            coordinator.settings.sceneLayout.screenFrame.minX,
+            coordinator.settings.sceneLayout.cameraFrame.maxX,
+            accuracy: 0.0001
+        )
+        XCTAssertNil(coordinator.settings.selectedScenePreset)
+    }
+
     func testFitSceneLayerAppliesScaleAroundCanvasCenter() {
         let defaults = temporaryDefaults()
         var settings = RecordingSettings()
         settings.layout = .vertical
         settings.sceneLayout.cameraFrame = CGRect(x: 0, y: 0, width: 1, height: 0.5)
+        settings.selectedCameraID = RemoteCameraProviderID.make(for: "iphone-15-pro")
         RecordingSettingsStore.save(settings, defaults: defaults)
+        defaults.set("BRL1_saved", forKey: "access.blitzRecorderLicenseKey")
 
         let coordinator = RecorderCoordinator(
             accessController: AccessController(defaults: defaults),
@@ -339,7 +371,7 @@ final class RecorderCoordinatorFitSlotTests: XCTestCase {
         XCTAssertTrue(coordinator.settings.hiddenSources.contains(.camera))
         XCTAssertNil(coordinator.settings.screenCrop)
         XCTAssertEqual(screenConfigurationChangeCount, 1)
-        XCTAssertEqual(cameraConfigurationChangeCount, 0)
+        XCTAssertEqual(cameraConfigurationChangeCount, 1)
 
         let persisted = RecordingSettingsStore.load(defaults: defaults)
         XCTAssertTrue(persisted.enabledSources.contains(.screen))
@@ -376,6 +408,35 @@ final class RecorderCoordinatorFitSlotTests: XCTestCase {
         XCTAssertTrue(persisted.enabledSources.contains(.screen))
         XCTAssertTrue(persisted.enabledSources.contains(.camera))
         XCTAssertFalse(persisted.hiddenSources.contains(.camera))
+    }
+
+    func testCameraInsetRestartsPreviewsWhenHiddenSourcesBecomeVisible() {
+        let defaults = temporaryDefaults()
+        var settings = RecordingSettings()
+        settings.layout = .vertical
+        settings.enabledSources = [.screen, .camera, .microphone]
+        settings.hiddenSources = [.screen, .camera]
+        RecordingSettingsStore.save(settings, defaults: defaults)
+
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults),
+            defaults: defaults
+        )
+        var screenConfigurationChangeCount = 0
+        var cameraConfigurationChangeCount = 0
+        coordinator.onScreenCaptureConfigurationChanged = {
+            screenConfigurationChangeCount += 1
+        }
+        coordinator.onCameraConfigurationChanged = {
+            cameraConfigurationChangeCount += 1
+        }
+
+        coordinator.setCameraInset(alignment: .bottomRight, shape: .portrait, size: 0.28)
+
+        XCTAssertFalse(coordinator.settings.hiddenSources.contains(.screen))
+        XCTAssertFalse(coordinator.settings.hiddenSources.contains(.camera))
+        XCTAssertEqual(screenConfigurationChangeCount, 1)
+        XCTAssertEqual(cameraConfigurationChangeCount, 1)
     }
 
     func testScenePresetsNormalizeVideoSourcesForEverySupportedLayout() {

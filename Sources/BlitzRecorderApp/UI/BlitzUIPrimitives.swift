@@ -4,24 +4,21 @@ import SwiftUI
 enum BlitzUI {
     static let mint = Color(red: 0.09, green: 1.0, blue: 0.65)
     static let orange = Color(red: 1.0, green: 0.66, blue: 0.16)
-    /// The single red in the UI — reserved for the record button only.
     static let recordRed = Color(red: 1.0, green: 0.27, blue: 0.27)
-    /// Amber for No-access / Waiting / needs-recovery states only. Never a selected accent.
     static let warning = Color(red: 1.0, green: 0.72, blue: 0.22)
     static let panelStroke = Color.white.opacity(0.10)
-    /// The near-black canvas surround behind the (intentionally dark) NSView preview stage.
-    /// A single named token so the literal isn't duplicated across the center column.
     static let canvasBackground = Color(red: 0.035, green: 0.035, blue: 0.043)
     static let quietFill = Color.white.opacity(0.045)
-    /// Selected-surface fill. Brighter than the neutral fills so selection reads on
-    /// its own, now that surfaces no longer draw a mint outline.
     static let selectedFill = Color.white.opacity(0.16)
     static let controlFill = Color.white.opacity(0.055)
-    /// Canonical device-card / inspector-card surface fill (flat, over the .regularMaterial rail).
     static let cardFill = Color.white.opacity(0.055)
     static let separator = Color.white.opacity(0.08)
 
-    /// Level-meter bar color. Active feeds use mint; idle feeds fall back to dim white.
+    static let trackScreen = Color.cyan
+    static let trackCamera = Color.teal
+    static let trackMicrophone = Color(red: 0.72, green: 0.54, blue: 1.0)
+    static let trackSystemAudio = Color(red: 0.36, green: 0.56, blue: 1.0)
+
     static func levelColor(active: Bool) -> Color {
         active ? mint : Color.white.opacity(0.3)
     }
@@ -84,8 +81,6 @@ enum BlitzStatusTone: Equatable {
     }
 }
 
-/// Connected-by-presence status indicator. A small colored dot with an optional
-/// soft glow ring when live. Replaces ad-hoc green/amber dots + textual status.
 struct BlitzStatusDot: View {
     var tone: BlitzStatusTone
     var diameter: CGFloat = 7
@@ -104,7 +99,6 @@ struct BlitzStatusDot: View {
     }
 }
 
-/// Reusable horizontal audio level meter, shared by the Devices mic card and the audio inspector.
 struct BlitzLevelMeter: View {
     let levels: TrackLevels
     let active: Bool
@@ -141,8 +135,6 @@ struct BlitzSelectedSurface: ViewModifier {
     var cornerRadius: CGFloat = 10
 
     func body(content: Content) -> some View {
-        // Flat fill, no outline. Selected = brighter fill; the mint comes from the
-        // icon/label inside the row (keeps "mint = selected" without a border).
         content
             .background(isSelected ? BlitzUI.selectedFill : BlitzUI.quietFill, in: .rect(cornerRadius: cornerRadius))
     }
@@ -154,9 +146,7 @@ extension View {
     }
 }
 
-// MARK: - Glass dropdown menu
 
-/// A single selectable row in a `BlitzGlassMenu`.
 struct BlitzMenuItem {
     var title: String
     var subtitle: String?
@@ -185,18 +175,12 @@ struct BlitzMenuItem {
     }
 }
 
-/// One entry in a `BlitzGlassMenu` — a tappable item, a divider, or a section caption.
 enum BlitzMenuEntry {
     case item(BlitzMenuItem)
     case divider
     case section(String)
 }
 
-/// A dropdown that matches the Liquid Glass kit instead of the system `Menu`.
-/// The trigger is a standard bordered (glass) button; the list is presented in a
-/// `.popover` (so it escapes the Devices `ScrollView` clip) with kit-styled rows.
-/// Built on a plain button + popover rather than `Menu` on purpose: `Menu`'s gesture
-/// recognizers fight the `.draggable` device cards, which made the old menus flicker shut.
 struct BlitzGlassMenu<Label: View>: View {
     let entries: [BlitzMenuEntry]
     var menuWidth: CGFloat = 240
@@ -212,18 +196,29 @@ struct BlitzGlassMenu<Label: View>: View {
         }
         .buttonStyle(.bordered)
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-            BlitzGlassMenuList(entries: entries, width: menuWidth) {
+            BlitzGlassMenuList(entries: entries, width: menuWidth, maxHeight: adaptivePopoverMaxHeight) {
                 isPresented = false
             }
             .preferredColorScheme(.dark)
         }
+    }
+
+    private var adaptivePopoverMaxHeight: CGFloat {
+        let visibleHeight = NSScreen.main?.visibleFrame.height ?? 720
+        return min(520, max(260, visibleHeight - 120))
     }
 }
 
 private struct BlitzGlassMenuList: View {
     let entries: [BlitzMenuEntry]
     let width: CGFloat
+    let maxHeight: CGFloat
     let dismiss: () -> Void
+
+    private var adaptiveWidth: CGFloat {
+        let visibleWidth = NSScreen.main?.visibleFrame.width ?? width
+        return min(width, max(220, visibleWidth - 32))
+    }
 
     var body: some View {
         ScrollView {
@@ -252,8 +247,8 @@ private struct BlitzGlassMenuList: View {
             .padding(6)
         }
         .scrollIndicators(.visible)
-        .frame(width: width)
-        .frame(maxHeight: 620)
+        .frame(width: adaptiveWidth)
+        .frame(maxHeight: maxHeight)
         .background(.regularMaterial)
     }
 }

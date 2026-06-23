@@ -25,9 +25,6 @@ struct PermissionBlocker: Equatable {
 }
 
 extension Array where Element == PermissionBlocker {
-    /// One short, human phrase for the dock/status line. Screen and System Audio share
-    /// the Screen Recording permission, so they fold into a single fix; the verbose
-    /// technical wording stays in `sentence` for tooltips and diagnostics.
     var shortSummary: String {
         if contains(where: { $0.permission == "Sources" }) {
             return "Pick a source to record"
@@ -238,7 +235,9 @@ enum PermissionGate {
             blockers.append(screenCaptureBlocker(source: .screen))
         }
 
-        if settings.enabledSources.contains(.systemAudio), !CGPreflightScreenCaptureAccess() {
+        if settings.enabledSources.contains(.systemAudio),
+           !settings.usesPickedScreenContent,
+           !CGPreflightScreenCaptureAccess() {
             blockers.append(screenCaptureBlocker(source: .systemAudio))
         }
 

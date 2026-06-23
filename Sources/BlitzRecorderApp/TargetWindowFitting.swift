@@ -14,7 +14,7 @@ enum TargetWindowFitting {
         captureLayout: CaptureLayout,
         sceneLayout: SceneLayout,
         enabledSources: Set<CaptureSource>,
-        scale: CGFloat = 1
+        zoom: CGFloat = 1
     ) -> TargetWindowFittingPlan {
         plan(
             screenFrame: screenFrame,
@@ -24,7 +24,7 @@ enum TargetWindowFitting {
                 in: sceneLayout,
                 enabledSources: enabledSources
             ),
-            scale: scale
+            zoom: zoom
         )
     }
 
@@ -33,7 +33,7 @@ enum TargetWindowFitting {
         visibleFrame: CGRect,
         captureLayout: CaptureLayout,
         screenSlot: CGRect,
-        scale: CGFloat = 1
+        zoom: CGFloat = 1
     ) -> TargetWindowFittingPlan {
         let canvasFrame = SceneSlotGeometry.canvasFrame(
             in: visibleFrame,
@@ -45,7 +45,7 @@ enum TargetWindowFitting {
             origin: .lowerLeft
         )
         let windowFrame = clamped(
-            frame: scaled(unscaledFrame, scale: scale),
+            frame: WindowZoomGeometry.sourceFrame(for: unscaledFrame, zoom: zoom),
             in: visibleFrame
         )
         return TargetWindowFittingPlan(
@@ -78,15 +78,4 @@ enum TargetWindowFitting {
         return CGRect(x: x, y: y, width: width, height: height)
     }
 
-    private static func scaled(_ frame: CGRect, scale: CGFloat) -> CGRect {
-        let scale = min(1.25, max(0.75, scale))
-        let width = frame.width * scale
-        let height = frame.height * scale
-        return CGRect(
-            x: frame.midX - width / 2,
-            y: frame.midY - height / 2,
-            width: width,
-            height: height
-        )
-    }
 }

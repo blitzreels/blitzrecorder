@@ -126,7 +126,8 @@ final class SceneLayoutProjectionTests: XCTestCase {
             origin: .upperLeft
         ).targetRect(for: .camera)
 
-        XCTAssertRect(frame, equals: CGRect(x: 30, y: 90, width: 20, height: 60))
+        XCTAssertRect(frame, equals: CGRect(x: 26, y: 86, width: 32, height: 64))
+        XCTAssertEqual(frame.width / frame.height, 0.5, accuracy: 0.0001)
     }
 
     func testSceneRenderGeometryOwnsActiveLayerOrderAndSourceMask() {

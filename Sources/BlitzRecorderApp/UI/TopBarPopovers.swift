@@ -35,6 +35,7 @@ struct RecordingSettingsPage: View {
 
 private struct RecordingStorageSettings: View {
     @Bindable var vm: RecorderViewModel
+    @State private var openingRecentProjectID: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -87,7 +88,7 @@ private struct RecordingStorageSettings: View {
             toggleRow(
                 title: "Save source files",
                 systemImage: "folder.badge.plus",
-                description: "Keeps separate screen, camera, microphone, and system audio files next to the final export.",
+                description: "Keeps an editable project with separate screen, camera, microphone, and system audio files.",
                 isOn: Binding(
                     get: { vm.settings.savesSourceFiles },
                     set: { vm.setSourceFilesSaved($0) }
@@ -103,7 +104,102 @@ private struct RecordingStorageSettings: View {
                     set: { vm.setSpeechRenameEnabled($0) }
                 )
             )
+
+            recentProjectsSection
         }
+    }
+
+    @ViewBuilder
+    private var recentProjectsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Label("Recent projects", systemImage: "clock.arrow.circlepath")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.88))
+                Spacer(minLength: 0)
+                Button {
+                    vm.refreshRecentProjects()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.white.opacity(0.62))
+                .help("Refresh project history")
+            }
+
+            if vm.recentProjects.isEmpty {
+                Text("Projects appear here after recordings that keep source files.")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.48))
+            } else {
+                VStack(spacing: 6) {
+                    ForEach(vm.recentProjects.prefix(4), id: \.id) { project in
+                        let isOpening = openingRecentProjectID == project.id
+                        HStack(spacing: 6) {
+                            Button {
+                                openingRecentProjectID = project.id
+                                Task {
+                                    await Task.yield()
+                                    vm.openProject(project)
+                                    openingRecentProjectID = nil
+                                }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    if isOpening {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                            .frame(width: 16)
+                                    } else {
+                                        Image(systemName: "rectangle.and.pencil.and.ellipsis")
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundStyle(BlitzUI.mint.opacity(0.82))
+                                            .frame(width: 16)
+                                    }
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(project.title)
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundStyle(.white.opacity(0.82))
+                                            .lineLimit(1)
+                                        Text(project.takeDirectoryPath)
+                                            .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                            .foregroundStyle(.white.opacity(0.44))
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
+                                    }
+                                    Spacer(minLength: 0)
+                                    Image(systemName: isOpening ? "hourglass" : "arrow.right")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundStyle(.white.opacity(isOpening ? 0.52 : 0.36))
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(openingRecentProjectID != nil)
+                            .pointingHandCursor()
+                            .help("Open project review")
+
+                            Button {
+                                vm.revealProject(project)
+                            } label: {
+                                Image(systemName: "folder")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .frame(width: 28, height: 28)
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.white.opacity(0.56))
+                            .disabled(openingRecentProjectID != nil)
+                            .pointingHandCursor()
+                            .help("Reveal source tracks")
+                        }
+                        .background(Color.white.opacity(0.04), in: .rect(cornerRadius: 8))
+                    }
+                }
+            }
+        }
+        .padding(.top, 2)
     }
 
     private func toggleRow(

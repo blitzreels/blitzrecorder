@@ -4,9 +4,6 @@ import SwiftUI
 struct SourcesSidebar: View {
     @Bindable var vm: RecorderViewModel
 
-    /// Which device cards are expanded. Hoisted here (instead of living inside each
-    /// `DeviceCard`) so the sidebar can drop `.draggable` from a card while it's open —
-    /// otherwise the reorder drag fights the sliders/menus inside the expanded body.
     @State private var expandedSources: Set<CaptureSource> = []
 
     var body: some View {
@@ -63,8 +60,6 @@ struct SourcesSidebar: View {
             ForEach(shownVideoOrder, id: \.self) { kind in
                 let source = captureSource(for: kind)
                 Group {
-                    // Only collapsed cards are draggable — an expanded card holds
-                    // interactive controls (camera menu, screen crop) that the drag would hijack.
                     if expandedSources.contains(source) {
                         deviceCard(for: source)
                     } else {
@@ -378,8 +373,6 @@ private struct WebcamSourceMenu: View {
     }
 }
 
-/// Shared trigger label for the device selector dropdowns: an icon, the selected
-/// device name, and a chevron — styled to read as one of our glass selectors.
 private struct BlitzMenuSelectorLabel: View {
     let title: String
     let icon: String
@@ -404,9 +397,6 @@ private struct BlitzMenuSelectorLabel: View {
     }
 }
 
-/// A C-style expandable glass device card. The header is the selection mechanism
-/// (tap selects the source and toggles the expanded inspector body). No on/off
-/// toggle — being listed means connected.
 private struct DeviceCard: View {
     let source: CaptureSource
     let title: String
@@ -452,9 +442,6 @@ private struct DeviceCard: View {
     }
 
     private var header: some View {
-        // Select and expand are separate gestures: tapping the row selects the source and
-        // opens it (never collapses — that was the "click to select closes it" bug), while
-        // the trailing chevron is the only thing that collapses it.
         HStack(spacing: 8) {
             Button {
                 vm.selectSource(source)
@@ -571,24 +558,20 @@ private struct ScreenSourceInspector: View {
     }
 
     private var captureSourceRow: some View {
-        HStack(spacing: 10) {
-            inspectorIcon(vm.settings.usesPickedScreenContent ? "rectangle.dashed" : "display", enabled: enabled)
-
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                inspectorIcon(selectedScreenSourceSystemImage, enabled: enabled)
                 inspectorLabel("Source", enabled: enabled)
-                Text(captureSourceLabel)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white.opacity(enabled ? 0.82 : 0.38))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                Spacer(minLength: 0)
             }
 
-            Spacer(minLength: 0)
-
-            BlitzGlassMenu(entries: screenSourceMenuEntries, menuWidth: 320) {
-                Image(systemName: "rectangle.on.rectangle")
-                    .font(.system(size: 10, weight: .bold))
-                    .frame(width: 26, height: 24)
+            BlitzGlassMenu(entries: screenSourceMenuEntries, menuWidth: 300) {
+                ScreenSourceSelectorLabel(
+                    title: captureSourceLabel,
+                    systemImage: selectedScreenSourceSystemImage,
+                    icon: selectedScreenSourceIcon,
+                    enabled: enabled
+                )
             }
             .controlSize(.small)
             .disabled(vm.state != .idle)
@@ -599,6 +582,33 @@ private struct ScreenSourceInspector: View {
 
     private var captureSourceLabel: String {
         vm.selectedScreenSourceDisplayName
+    }
+
+    private var selectedScreenSourceIcon: NSImage? {
+        selectedScreenSourceOption?.icon
+    }
+
+    private var selectedScreenSourceOption: ScreenSourceOption? {
+        guard !vm.settings.usesPickedScreenContent,
+              let binding = vm.settings.screenSourceBinding else {
+            return nil
+        }
+        return vm.availableScreenSources.first { $0.binding == binding }
+    }
+
+    private var selectedScreenSourceSystemImage: String {
+        if vm.settings.usesPickedScreenContent {
+            return "rectangle.dashed"
+        }
+
+        switch vm.settings.screenSourceBinding?.kind {
+        case .application:
+            return "app"
+        case .window:
+            return "macwindow"
+        case .display, nil:
+            return "display"
+        }
     }
 
     private var screenSourceMenuEntries: [BlitzMenuEntry] {
@@ -642,14 +652,52 @@ private struct ScreenSourceInspector: View {
 
 }
 
+private struct ScreenSourceSelectorLabel: View {
+    let title: String
+    let systemImage: String
+    let icon: NSImage?
+    let enabled: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 16, height: 16)
+                    .clipShape(.rect(cornerRadius: 4))
+            } else {
+                Image(systemName: systemImage)
+                    .font(.system(size: 10, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .frame(width: 16, height: 16)
+            }
+
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .minimumScaleFactor(0.82)
+
+            Spacer(minLength: 4)
+
+            Image(systemName: "chevron.down")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(.white.opacity(enabled ? 0.42 : 0.24))
+        }
+        .foregroundStyle(.white.opacity(enabled ? 0.78 : 0.34))
+        .padding(.horizontal, 9)
+        .frame(height: 28)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 private struct CameraSourceInspector: View {
     @Bindable var vm: RecorderViewModel
     let enabled: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // The selector already shows the chosen camera by name + icon, so no separate
-            // "Selected" row here — it would just repeat the dropdown label.
             WebcamSourceMenu(vm: vm, enabled: enabled)
             if vm.isRemoteCameraSelected {
                 remoteCameraSettingsShortcut
@@ -724,7 +772,6 @@ private struct AudioSourceInspector: View {
             }
 
             if source == .microphone {
-                // Selector already names the chosen mic — no duplicate "Selected" row.
                 MicrophoneSourceMenu(vm: vm, enabled: enabled)
             } else {
                 InspectorMetricRow(
@@ -837,10 +884,6 @@ private struct MicrophoneSourceMenu: View {
 }
 
 private extension View {
-    /// The expanded device-card inspector body sits FLAT on the card surface — no
-    /// nested fill/stroke. This used to wrap the content in another `blitzCard`,
-    /// which stacked a card-inside-a-card; the device card and the divider above
-    /// already contain it. Inset/rhythm now comes from `expandedBody`'s padding.
     func settingsPanelStyle() -> some View {
         self
     }

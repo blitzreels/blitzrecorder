@@ -18,9 +18,6 @@ enum ProductConfiguration {
     static let licenseValidationURL = URL(string: "https://blitzrecorder.com/api/licenses/validate")!
     static let earlyPriceURL = URL(string: "https://blitzrecorder.com/upgrade?source=app_paywall")!
 
-    /// Direct-to-checkout upgrade link with attribution. Sends a high-intent
-    /// buyer straight to Stripe instead of the marketing homepage, and tags
-    /// which locked feature drove the upgrade so the website can segment it.
     static func upgradeURL(feature: String?) -> URL {
         guard var components = URLComponents(string: "https://blitzrecorder.com/upgrade") else {
             return earlyPriceURL
@@ -125,6 +122,17 @@ protocol BlitzRecorderLicenseKeyStore {
     @discardableResult
     func saveLicenseKey(_ licenseKey: String) -> Bool
     func deleteLicenseKey()
+}
+
+enum AccessStoragePolicy {
+    static func usesKeychainStores(defaults: UserDefaults?) -> Bool {
+        guard defaults == nil else { return false }
+#if DEBUG
+        return ProcessInfo.processInfo.environment["BLITZRECORDER_DEV_USE_KEYCHAIN"] == "1"
+#else
+        return true
+#endif
+    }
 }
 
 struct UserDefaultsBlitzReelsTokenStore: BlitzReelsTokenStore {
@@ -740,10 +748,10 @@ final class AccessController {
         blitzRecorderLicenseValidator: BlitzRecorderLicenseValidating = URLSessionBlitzRecorderLicenseValidator()
     ) {
         let resolvedDefaults = defaults ?? .standard
-        let usesKeychainStores = defaults == nil
+        let usesKeychainStores = AccessStoragePolicy.usesKeychainStores(defaults: defaults)
         self.defaults = resolvedDefaults
         self.blitzReelsTokenStore = blitzReelsTokenStore
-            ?? (defaults == nil
+            ?? (usesKeychainStores
                 ? RedundantBlitzReelsTokenStore(
                     primary: KeychainBlitzReelsTokenStore(),
                     fallback: UserDefaultsBlitzReelsTokenStore(
@@ -758,7 +766,7 @@ final class AccessController {
             ?? SignedBlitzReelsEntitlementCacheStore(defaults: resolvedDefaults, usesKeychain: usesKeychainStores)
         self.blitzReelsEntitlementChecker = blitzReelsEntitlementChecker
         self.blitzRecorderLicenseKeyStore = blitzRecorderLicenseKeyStore
-            ?? (defaults == nil
+            ?? (usesKeychainStores
                 ? KeychainBlitzRecorderLicenseKeyStore()
                 : UserDefaultsBlitzRecorderLicenseKeyStore(
                     defaults: resolvedDefaults,

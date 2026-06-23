@@ -14,6 +14,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
     private var currentDimensions: (width: Int, height: Int)?
     private var currentZoom: CGFloat = 1.0
     private var currentSourceRect = CGRect.zero
+    private var streamBackgroundColor: CGColor?
     private var streamError: Error?
     private var intentionallyStoppedStream: SCStream?
     private var startupContinuation: CheckedContinuation<Void, Error>?
@@ -70,7 +71,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
             height: dimensions.height,
             bitrate: settings.screenBitrate,
             fps: settings.framesPerSecond,
-            outputFormat: settings.outputVideoFormat,
+            outputFormat: settings.sourceVideoFormat,
             timelineStartTime: timelineStartTime
         )
 
@@ -277,6 +278,9 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         if let sourceRect {
             configuration.sourceRect = sourceRect
         }
+        let backgroundColor = settings.canvasBackgroundStyle.appearance.solidCGColor
+        streamBackgroundColor = backgroundColor
+        configuration.backgroundColor = backgroundColor
         configuration.scalesToFit = true
         configuration.preservesAspectRatio = true
         configuration.streamName = "BlitzRecorder Screen"
@@ -304,6 +308,9 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
             configuration.showMouseClicks = true
         }
         configuration.capturesAudio = false
+        let backgroundColor = settings.canvasBackgroundStyle.appearance.solidCGColor
+        streamBackgroundColor = backgroundColor
+        configuration.backgroundColor = backgroundColor
         configuration.scalesToFit = true
         configuration.preservesAspectRatio = true
         configuration.streamName = "BlitzRecorder Picked Screen"

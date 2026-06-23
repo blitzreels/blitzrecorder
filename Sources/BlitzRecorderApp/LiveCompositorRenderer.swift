@@ -4,8 +4,6 @@ import CoreVideo
 import Metal
 
 final class LiveCompositorRenderer: @unchecked Sendable {
-    /// Animated-background frames per loop. 8s loop ÷ 96 ≈ 12 fps of background
-    /// motion, which the per-frame cache collapses so we render ~12×/s, not 60×/s.
     private static let backgroundFramesPerLoop = 96
 
     private let ciContext: CIContext
@@ -55,10 +53,28 @@ final class LiveCompositorRenderer: @unchecked Sendable {
                 .composited(over: image)
             case .camera:
                 guard let cameraBuffer else { continue }
+                let visibleCameraRect = geometry.visibleSourceRect(
+                    for: .camera,
+                    sourceAspectRatio: sourceAspectRatio(for: cameraBuffer)
+                )
+                if scene.cameraShadowEnabled,
+                   cameraIsTopRenderedLayer(in: scene),
+                   !geometry.isVisibleSourceFullCanvas(
+                       for: .camera,
+                       sourceAspectRatio: sourceAspectRatio(for: cameraBuffer)
+                   ) {
+                    image = shadow(
+                        for: visibleCameraRect,
+                        cornerRadius: placement.cornerRadius
+                    )
+                    .settingOpacity(opacity)
+                    .composited(over: image)
+                }
                 image = fill(
                     CIImage(cvPixelBuffer: cameraBuffer),
                     into: placement.targetRect,
                     sourceCrop: { placement.videoPlacement.sourceCropRectangle(sourceExtent: $0) },
+                    contentMode: placement.videoPlacement.contentMode,
                     cornerRadius: placement.cornerRadius
                 )
                 .settingOpacity(opacity)
@@ -72,6 +88,13 @@ final class LiveCompositorRenderer: @unchecked Sendable {
 
     func reset() {
         cachedBackground = nil
+    }
+
+    private func sourceAspectRatio(for pixelBuffer: CVPixelBuffer) -> CGFloat {
+        let width = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
+        let height = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
+        guard width > 0, height > 0 else { return SceneLayout.cameraAspectRatio }
+        return width / height
     }
 
     private func backgroundImage(style: CanvasBackgroundStyle, animationPhase: Double?, in canvasRect: CGRect) -> CIImage {
@@ -105,9 +128,6 @@ final class LiveCompositorRenderer: @unchecked Sendable {
         return image
     }
 
-    /// Animated background frame, rendered at a capped resolution then scaled to
-    /// the canvas (the mesh is soft, so upscaling is invisible and keeps the
-    /// per-frame render cheap even at 4K).
     private static func animatedBackgroundImage(
         style: CanvasBackgroundStyle,
         frameIndex: Int,
@@ -133,22 +153,38 @@ final class LiveCompositorRenderer: @unchecked Sendable {
         _ image: CIImage,
         into target: CGRect,
         sourceCrop: ((CGRect) -> CGRect),
+        contentMode: VideoRenderContentMode,
         cornerRadius: CGFloat = 0
     ) -> CIImage {
         let source = image.extent
         guard source.width > 0, source.height > 0, target.width > 0, target.height > 0 else {
             return image
         }
-        let croppedImage = image.cropped(to: sourceCrop(source))
-        return fill(croppedImage, into: target, cornerRadius: cornerRadius)
+        let sourceImage = contentMode == .aspectFill ? image.cropped(to: sourceCrop(source)) : image
+        return fill(sourceImage, into: target, contentMode: contentMode, cornerRadius: cornerRadius)
     }
 
     private func fill(_ image: CIImage, into target: CGRect, cornerRadius: CGFloat = 0) -> CIImage {
+        fill(image, into: target, contentMode: .aspectFill, cornerRadius: cornerRadius)
+    }
+
+    private func fill(
+        _ image: CIImage,
+        into target: CGRect,
+        contentMode: VideoRenderContentMode,
+        cornerRadius: CGFloat = 0
+    ) -> CIImage {
         let source = image.extent
         guard source.width > 0, source.height > 0, target.width > 0, target.height > 0 else {
             return image
         }
-        let scale = max(target.width / source.width, target.height / source.height)
+        let scale: CGFloat
+        switch contentMode {
+        case .aspectFit:
+            scale = min(target.width / source.width, target.height / source.height)
+        case .aspectFill:
+            scale = max(target.width / source.width, target.height / source.height)
+        }
         let scaledWidth = source.width * scale
         let scaledHeight = source.height * scale
         let x = target.midX - scaledWidth / 2
@@ -159,6 +195,70 @@ final class LiveCompositorRenderer: @unchecked Sendable {
             .transformed(by: CGAffineTransform(translationX: x, y: y))
             .cropped(to: target)
             .rounded(to: target, radius: cornerRadius)
+    }
+
+    private func shadow(for target: CGRect, cornerRadius: CGFloat) -> CIImage {
+        guard target.width > 0,
+              target.height > 0,
+              let filter = CIFilter(name: "CIRoundedRectangleGenerator") else {
+            return CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 0)).cropped(to: target)
+        }
+        let spread = max(24, min(target.width, target.height) * 0.2)
+        let shadowRect = target.insetBy(dx: -spread, dy: -spread)
+        filter.setValue(CIVector(cgRect: target), forKey: "inputExtent")
+        filter.setValue(max(0, cornerRadius), forKey: "inputRadius")
+        filter.setValue(CIColor(red: 0, green: 0, blue: 0, alpha: 0.36), forKey: "inputColor")
+        let blurredShadow = (filter.outputImage ?? CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 0)).cropped(to: target))
+            .cropped(to: shadowRect)
+            .applyingFilter("CIGaussianBlur", parameters: ["inputRadius": 18])
+            .transformed(by: CGAffineTransform(translationX: 0, y: -8))
+            .cropped(to: shadowRect)
+        return shadowOutsideSource(
+            blurredShadow,
+            target: target,
+            shadowRect: shadowRect,
+            cornerRadius: cornerRadius
+        )
+    }
+
+    private func shadowOutsideSource(
+        _ shadow: CIImage,
+        target: CGRect,
+        shadowRect: CGRect,
+        cornerRadius: CGFloat
+    ) -> CIImage {
+        guard let clipFilter = CIFilter(name: "CIRoundedRectangleGenerator") else {
+            return shadow
+        }
+        clipFilter.setValue(CIVector(cgRect: target), forKey: "inputExtent")
+        clipFilter.setValue(max(0, cornerRadius), forKey: "inputRadius")
+        clipFilter.setValue(CIColor(red: 1, green: 1, blue: 1, alpha: 1), forKey: "inputColor")
+
+        let outsideMask = CIImage(color: CIColor(red: 1, green: 1, blue: 1, alpha: 1)).cropped(to: shadowRect)
+        let insideMask = (clipFilter.outputImage ?? CIImage(color: .clear)).cropped(to: shadowRect)
+        let mask = outsideMask
+            .applyingFilter("CISourceOutCompositing", parameters: [kCIInputBackgroundImageKey: insideMask])
+            .cropped(to: shadowRect)
+        let transparent = CIImage(color: .clear).cropped(to: shadowRect)
+        return shadow.applyingFilter(
+            "CIBlendWithAlphaMask",
+            parameters: [
+                kCIInputBackgroundImageKey: transparent,
+                kCIInputMaskImageKey: mask
+            ]
+        )
+        .cropped(to: shadowRect)
+    }
+
+    private func cameraIsTopRenderedLayer(in scene: RecordingScene) -> Bool {
+        scene.sceneLayout.layerOrder.last(where: { layer in
+            switch layer {
+            case .screen:
+                return scene.renderedSources.contains(.screen)
+            case .camera:
+                return scene.renderedSources.contains(.camera)
+            }
+        }) == .camera
     }
 
 }

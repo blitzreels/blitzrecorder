@@ -60,6 +60,15 @@ final class RecordingSceneTimelineTests: XCTestCase {
         ))
     }
 
+    func testCameraShadowRequiresCanvasAwareRendering() {
+        var settings = RecordingSettings()
+        settings.canvasBackgroundStyle = .black
+        settings.canvasPadding = 0
+        settings.cameraShadowEnabled = true
+
+        XCTAssertTrue(RecordingSceneTimeline.requiresCanvasAwareRendering(settings: settings, sceneEvents: []))
+    }
+
     func testSceneAtInterpolatesDuringTransition() {
         var initialSettings = RecordingSettings()
         initialSettings.sceneLayout.screenFrame = CGRect(x: 0, y: 0.5, width: 1, height: 0.5)
@@ -196,6 +205,52 @@ final class RecordingSceneTimelineTests: XCTestCase {
         XCTAssertEqual(scene.renderedSources, [.screen])
     }
 
+    func testEditorPlaybackOverrideReplacesContainingRenderSegmentOnly() {
+        var firstSettings = RecordingSettings()
+        firstSettings.canvasPadding = 0
+        var secondSettings = firstSettings
+        secondSettings.canvasPadding = 0.05
+        var draftSettings = secondSettings
+        draftSettings.canvasPadding = 0.14
+
+        let segments = [
+            renderSegment(start: 0, duration: 1, scene: RecordingScene(settings: firstSettings)),
+            renderSegment(start: 1, duration: 1, scene: RecordingScene(settings: secondSettings))
+        ]
+
+        let updated = EditorPlaybackComposition.renderSegments(
+            segments,
+            overriding: RecordingScene(settings: draftSettings),
+            at: CMTime(seconds: 1.25, preferredTimescale: 600)
+        )
+
+        XCTAssertEqual(updated[0].scene.canvasPadding, 0)
+        XCTAssertEqual(updated[1].scene.canvasPadding, 0.14)
+    }
+
+    func testEditorPlaybackOverridePrefersSegmentStartingAtBoundary() {
+        var firstSettings = RecordingSettings()
+        firstSettings.canvasBackgroundStyle = .black
+        var secondSettings = firstSettings
+        secondSettings.canvasBackgroundStyle = .ocean
+        var draftSettings = secondSettings
+        draftSettings.canvasBackgroundStyle = .aurora
+
+        let segments = [
+            renderSegment(start: 0, duration: 1, scene: RecordingScene(settings: firstSettings)),
+            renderSegment(start: 1, duration: 1, scene: RecordingScene(settings: secondSettings))
+        ]
+
+        let updated = EditorPlaybackComposition.renderSegments(
+            segments,
+            overriding: RecordingScene(settings: draftSettings),
+            at: CMTime(seconds: 1, preferredTimescale: 600)
+        )
+
+        XCTAssertEqual(updated[0].scene.canvasBackgroundStyle, .black)
+        XCTAssertEqual(updated[1].scene.canvasBackgroundStyle, .aurora)
+    }
+
     func testSceneAtStartsLaterTransitionFromCurrentInterpolatedScene() {
         var initialSettings = RecordingSettings()
         initialSettings.sceneLayout.screenFrame = CGRect(x: 0, y: 0.5, width: 1, height: 0.5)
@@ -285,4 +340,15 @@ private func XCTAssertTimeRange(
 ) {
     XCTAssertEqual(actual.start.seconds, expectedStart, accuracy: 0.0001, file: file, line: line)
     XCTAssertEqual(actual.duration.seconds, expectedDuration, accuracy: 0.0001, file: file, line: line)
+}
+
+private func renderSegment(start: Double, duration: Double, scene: RecordingScene) -> FinalExportRenderSegment {
+    FinalExportRenderSegment(
+        timeRange: CMTimeRange(
+            start: CMTime(seconds: start, preferredTimescale: 600),
+            duration: CMTime(seconds: duration, preferredTimescale: 600)
+        ),
+        scene: scene,
+        activeLayerOrder: [.screen, .camera]
+    )
 }

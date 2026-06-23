@@ -60,7 +60,10 @@ struct VideoRenderPlacement {
     }
 
     func sourceFrame(sourceAspectRatio: CGFloat) -> CGRect {
-        SourceCropGeometry.sourceFrame(
+        if contentMode == .aspectFit {
+            return aspectFitSourceFrame(sourceAspectRatio: sourceAspectRatio)
+        }
+        return SourceCropGeometry.sourceFrame(
             sourceAspectRatio: sourceAspectRatio,
             bounds: targetRect,
             sourceCropAmount: sourceCropAmount,
@@ -135,6 +138,21 @@ struct VideoRenderPlacement {
     private static func orientedSize(size: CGSize, transform: CGAffineTransform) -> CGSize {
         let transformed = CGRect(origin: .zero, size: size).applying(transform)
         return CGSize(width: abs(transformed.width), height: abs(transformed.height))
+    }
+
+    private func aspectFitSourceFrame(sourceAspectRatio: CGFloat) -> CGRect {
+        guard sourceAspectRatio > 0,
+              targetRect.width > 0,
+              targetRect.height > 0 else {
+            return targetRect
+        }
+        let targetAspectRatio = targetRect.width / targetRect.height
+        if targetAspectRatio > sourceAspectRatio {
+            let width = targetRect.height * sourceAspectRatio
+            return CGRect(x: targetRect.midX - width / 2, y: targetRect.minY, width: width, height: targetRect.height)
+        }
+        let height = targetRect.width / sourceAspectRatio
+        return CGRect(x: targetRect.minX, y: targetRect.midY - height / 2, width: targetRect.width, height: height)
     }
 }
 

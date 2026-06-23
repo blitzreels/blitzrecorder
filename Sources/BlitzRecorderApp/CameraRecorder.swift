@@ -169,7 +169,7 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             height: height,
             bitrate: recording.settings.cameraBitrate,
             fps: recording.settings.framesPerSecond,
-            outputFormat: recording.settings.outputVideoFormat,
+            outputFormat: recording.settings.sourceVideoFormat,
             timelineStartTime: recording.timelineStartTime
         )
     }

@@ -8,11 +8,6 @@ struct MainView: View {
     var body: some View {
         let screenshotVariant = ScreenshotVariant.current
 
-        // The 6-item app rail is gone: the Capture page IS the window (mock B). Every
-        // former destination is reachable elsewhere (rule #5): Export -> dock gear +
-        // ⌘, Recording; Access -> the command-bar plan pill;
-        // Access -> device cards + ⌘, Permissions; iPhone -> the Camera card + ⌘,
-        // Devices; Scenes -> the right inspector + bottom scenes strip.
         ZStack {
             backgroundLayer
 
@@ -32,6 +27,7 @@ struct MainView: View {
             await vm.refreshSources()
             vm.syncSettings()
             vm.refreshTargetWindow()
+            vm.refreshRecentProjects()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             vm.refreshTargetWindow()
@@ -51,6 +47,15 @@ struct MainView: View {
                         .frame(height: 1)
                 }
 
+            if vm.studioMode == .edit {
+                EditorView(vm: vm)
+            } else {
+                recordContent(screenshotVariant: screenshotVariant)
+            }
+        }
+    }
+
+    private func recordContent(screenshotVariant: ScreenshotVariant) -> some View {
             HStack(alignment: .top, spacing: 0) {
                 SourcesSidebar(vm: vm)
 
@@ -59,11 +64,6 @@ struct MainView: View {
                     .frame(width: 1)
 
                 VStack(spacing: 12) {
-                    // The 9:16 canvas, its single rounded outline, and any
-                    // outside-canvas crop/source overlays are all drawn by the
-                    // AppKit PreviewStageView (it centers the canvas in its
-                    // bounds). No SwiftUI clip/stroke here, or we'd draw a second
-                    // larger frame around the canvas gap.
                     ZStack(alignment: .top) {
                         PreviewStageRepresentable(view: vm.previewStage)
 
@@ -94,9 +94,7 @@ struct MainView: View {
                 SceneWorkspaceInspector(vm: vm)
             }
             .frame(maxHeight: .infinity)
-        }
     }
-
 }
 
 private struct ProductIconImage: View {
@@ -157,10 +155,6 @@ struct CropToolbarOverlay: View {
     }
 }
 
-/// Places the `ScreenPickPrompt` over the screen layer's rect within the canvas
-/// (not the whole stage), so it reads as "this screen slot is empty". Falls back to
-/// stage-center until the stage reports the screen frame. The Y-flip matches
-/// `CropToolbarOverlay`: stage frames are AppKit (bottom-left) coords.
 private struct ScreenPickPromptOverlay: View {
     @Bindable var vm: RecorderViewModel
 
@@ -168,49 +162,65 @@ private struct ScreenPickPromptOverlay: View {
         GeometryReader { proxy in
             if let frame = vm.screenLayerFrame, frame.width > 1, frame.height > 1 {
                 ScreenPickPrompt(vm: vm)
-                    .frame(maxWidth: max(120, frame.width - 16),
-                           maxHeight: max(80, frame.height - 16))
+                    .frame(
+                        width: min(320, max(120, frame.width - 16)),
+                        height: min(170, max(80, frame.height - 16))
+                    )
                     .position(x: frame.midX, y: proxy.size.height - frame.midY)
             } else {
                 ScreenPickPrompt(vm: vm)
+                    .frame(
+                        width: min(320, max(120, proxy.size.width - 48)),
+                        height: min(170, max(80, proxy.size.height - 48))
+                    )
                     .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
             }
         }
     }
 }
 
-/// Centered call-to-action shown on the stage when the Screen source is on but has
-/// nothing to preview yet. Tapping it opens the macOS screen picker; choosing a
-/// source enables/unhides Screen and selects its layer (see `pickScreen`).
 private struct ScreenPickPrompt: View {
     @Bindable var vm: RecorderViewModel
 
     var body: some View {
-        Button {
-            vm.pickScreen()
-        } label: {
-            VStack(spacing: 10) {
-                Image(systemName: "rectangle.on.rectangle.angled")
-                    .font(.system(size: 26, weight: .semibold))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(BlitzUI.mint)
-                VStack(spacing: 3) {
-                    Text("Pick a screen to preview")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.92))
-                    Text("Choose a display, window, or app")
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.55))
+        GeometryReader { proxy in
+            let compact = proxy.size.width < 220 || proxy.size.height < 128
+
+            Button {
+                vm.pickScreen()
+            } label: {
+                VStack(spacing: compact ? 6 : 10) {
+                    Image(systemName: "rectangle.on.rectangle.angled")
+                        .font(.system(size: compact ? 18 : 26, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(BlitzUI.mint)
+
+                    VStack(spacing: 3) {
+                        Text(compact ? "Pick screen" : "Pick a screen to preview")
+                            .font(.system(size: compact ? 11 : 13, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.92))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
+
+                        if !compact {
+                            Text("Choose a display, window, or app")
+                                .font(.system(size: 11, weight: .regular))
+                                .foregroundStyle(.white.opacity(0.55))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.82)
+                        }
+                    }
                 }
+                .padding(.horizontal, compact ? 12 : 24)
+                .padding(.vertical, compact ? 10 : 20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.black.opacity(0.4), in: .rect(cornerRadius: compact ? 10 : 14))
+                .contentShape(.rect(cornerRadius: compact ? 10 : 14))
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 20)
-            .background(.black.opacity(0.4), in: .rect(cornerRadius: 14))
-            .contentShape(.rect(cornerRadius: 14))
+            .buttonStyle(.plain)
+            .pointingHandCursor()
+            .help("Pick a screen, window, or app to capture")
         }
-        .buttonStyle(.plain)
-        .pointingHandCursor()
-        .help("Pick a screen, window, or app to capture")
     }
 }
 
@@ -282,6 +292,53 @@ private struct CropFloatingToolbar: View {
 
 private typealias SceneWorkspaceTheme = BlitzUI
 
+private struct StudioModeSwitch: View {
+    @Bindable var vm: RecorderViewModel
+
+    var body: some View {
+        HStack(spacing: 2) {
+            tab("Record", icon: "record.circle", mode: .record)
+            tab("Edit", icon: "timeline.selection", mode: .edit)
+        }
+        .padding(3)
+        .background(Color.white.opacity(0.06), in: .rect(cornerRadius: 9))
+    }
+
+    private func tab(_ title: String, icon: String, mode: RecorderViewModel.StudioMode) -> some View {
+        let isSelected = vm.studioMode == mode
+        let isEnabled = mode == .record || (vm.canOpenEditor && vm.state == .idle)
+        return Button {
+            if mode == .edit {
+                vm.openEditor()
+            } else {
+                vm.closeEditor()
+            }
+        } label: {
+            Label(title, systemImage: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(isSelected ? .white : .white.opacity(0.62))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+        }
+        .buttonStyle(.plain)
+        .background(isSelected ? Color.white.opacity(0.14) : Color.clear, in: .rect(cornerRadius: 7))
+        .contentShape(.rect(cornerRadius: 7))
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.45)
+        .pointingHandCursor()
+        .help(helpText(for: mode, isEnabled: isEnabled))
+    }
+
+    private func helpText(for mode: RecorderViewModel.StudioMode, isEnabled: Bool) -> String {
+        switch mode {
+        case .record:
+            return "Capture studio"
+        case .edit:
+            return isEnabled ? "Edit and export the last take" : "Record a take first"
+        }
+    }
+}
+
 private struct CaptureCommandBar: View {
     @Bindable var vm: RecorderViewModel
 
@@ -294,7 +351,11 @@ private struct CaptureCommandBar: View {
                     .lineLimit(1)
                 statusRow
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
+            StudioModeSwitch(vm: vm)
+
+            HStack(spacing: 12) {
             Spacer(minLength: 0)
 
             Button {
@@ -328,12 +389,11 @@ private struct CaptureCommandBar: View {
             .controlSize(.small)
             .pointingHandCursor()
             .help("Open Settings (Cmd+,)")
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
 
-    // When idle and blocked, the status is a one-tap shortcut to fix it (opens
-    // Permissions), with the full per-source diagnostic kept in the hover tooltip
-    // instead of dumped into the title.
     private var isBlocked: Bool {
         vm.state == .idle && !vm.recordingReadiness.isReady
     }
@@ -368,8 +428,6 @@ private struct CaptureCommandBar: View {
         .contentShape(.rect)
     }
 
-    // The header earns its keep by reflecting record state: mint when you're ready,
-    // record-red running timer while rolling, amber for transitional/blocked states.
     private var statusDotColor: Color {
         switch vm.state {
         case .recording: return BlitzUI.recordRed
@@ -393,8 +451,6 @@ private struct CaptureCommandBar: View {
 
 private struct CaptureSceneCarousel: View {
     @Bindable var vm: RecorderViewModel
-    /// Sticky "All" toggle. While false the strip auto-follows the current
-    /// aspect ratio; once the user picks All it stays put across ratio flips.
     @State private var showsAllRatios = false
 
     private var displayedScenes: [RecordingSceneDefinition] {
@@ -437,11 +493,8 @@ private struct CaptureSceneCarousel: View {
     }
 
     private func sceneButton(_ scene: RecordingSceneDefinition) -> some View {
-        // Only the one live scene (in the current ratio) carries the checkmark;
-        // off-ratio tiles in the All view are switchable but never "live".
         let isOffRatio = scene.layout != vm.settings.layout
         let isSelected = !isOffRatio && vm.selectedSceneID == scene.id
-        // Flipping ratio is locked while recording, so off-ratio tiles go inert then.
         let isInteractive = vm.canSwitchScene && !(isOffRatio && vm.state != .idle)
         return Button {
             vm.selectSceneAcrossLayouts(scene.id)
@@ -503,10 +556,6 @@ private struct CaptureSceneCarousel: View {
         }
     }
 
-    /// Format filter in the Scenes header: one segment per aspect ratio plus
-    /// "All". Picking a ratio scopes the strip to it and makes it the live
-    /// format (kept in sync with the TopBar); "All" reveals every ratio's scenes
-    /// and stays sticky across ratio flips.
     private var ratioFilter: some View {
         HStack(spacing: 2) {
             ForEach(CaptureLayout.allCases, id: \.self) { layout in
@@ -520,8 +569,6 @@ private struct CaptureSceneCarousel: View {
                         vm.setLayout(layout)
                     }
                 }
-                // Switching format is locked mid-recording; re-selecting the
-                // current format (to leave All) stays available.
                 .disabled(vm.state != .idle && vm.settings.layout != layout)
             }
 
@@ -602,12 +649,6 @@ private struct CaptureSceneCarousel: View {
     }
 }
 
-/// The per-scene editor header at the very top of the right inspector. It names
-/// the SELECTED scene ("Editing — Cam Corner") so the Layout / Layers / Split /
-/// Background controls below clearly belong to THAT scene. The name is
-/// inline-renamable (double-click the name, or the pencil) and a trailing trash
-/// deletes the scene. Both are gated by `vm.canEditScene` (idle only), matching
-/// the rest of the inspector, so the header is read-only while recording.
 private struct SceneEditorHeader: View {
     @Bindable var vm: RecorderViewModel
 
@@ -637,19 +678,14 @@ private struct SceneEditorHeader: View {
                 }
             }
 
-            // Camera selection is global; scenes only decide whether and where the
-            // camera layer appears. This read-only line keeps the active device visible.
             if vm.isSourceVisible(.camera) {
                 cameraSummary
             }
         }
         .padding(.bottom, 2)
-        // If a live switch changes the selected scene while editing, drop edit
-        // mode so a stale draft can't be committed to the wrong scene.
         .onChange(of: vm.selectedSceneID) { _, _ in
             if isEditing { exitEditing(commit: false) }
         }
-        // Recording locks the inspector: never leave the header mid-rename.
         .onChange(of: vm.canEditScene) { _, canEdit in
             if !canEdit && isEditing { exitEditing(commit: false) }
         }
@@ -676,11 +712,7 @@ private struct SceneEditorHeader: View {
             .focused($isNameFocused)
             .frame(maxWidth: .infinity)
             .onSubmit { exitEditing(commit: true) }
-            // Esc reverts to the original name.
             .onExitCommand { exitEditing(commit: false) }
-            // Clicking away reverts — UNLESS ✓ / Return already ended editing this
-            // tick. Those resign focus too, so defer the cancel and let an explicit
-            // commit win the race (it sets `isEditing = false` first, so this no-ops).
             .onChange(of: isNameFocused) { _, focused in
                 guard !focused, isEditing else { return }
                 DispatchQueue.main.async {
@@ -823,10 +855,6 @@ private struct SceneWorkspaceInspector: View {
         .background(.regularMaterial)
     }
 
-    // The right panel is a single, tabless "Scene" surface: Layout tiles, one
-    // Layers list (Camera / Screen / Background), the controls for whichever
-    // layer is selected, and Split height when the layout exposes it. Inputs
-    // (devices) stay on the left; this panel owns the OUTPUT scene only.
     private var scenePanel: some View {
         VStack(alignment: .leading, spacing: 14) {
             SceneEditorHeader(vm: vm)
@@ -867,16 +895,13 @@ private struct SceneWorkspaceInspector: View {
         }
     }
 
-    // Controls for whichever layer is currently selected. Camera -> crop / zoom /
-    // position; Screen -> free crop on the canvas; Background -> style + padding +
-    // rule-of-thirds (the Background is the scene's bottom layer in the IA).
     @ViewBuilder
     private var selectedLayerControls: some View {
         if vm.isBackgroundLayerSelected {
             backgroundControls
         } else {
             HStack(spacing: 8) {
-                workspaceAction("Fit", icon: "arrow.up.left.and.arrow.down.right") {
+                workspaceAction(vm.selectedLayer == .screen ? "Fill slot" : "Fill", icon: "arrow.up.left.and.arrow.down.right") {
                     vm.fitSelectedLayer()
                 }
                 .disabled(!vm.canEditScene)
@@ -1046,21 +1071,16 @@ private struct SceneWorkspaceInspector: View {
                 }
             }
 
-            if sourceKind != .application {
-                screenCaptureAreaButton(
-                    sourceKind == .window ? "Window only" : "Window",
-                    icon: "app.window",
-                    isSelected: vm.screenCaptureAreaSelection == .activeWindow
-                ) {
-                    vm.fitFrontWindowForShorts()
-                }
+            screenCaptureAreaButton(
+                sourceKind == .window ? "Window only" : "Window",
+                icon: "app.window",
+                isSelected: sourceKind == .window || (sourceKind != .application && vm.screenCaptureAreaSelection == .activeWindow)
+            ) {
+                vm.setWindowOnlyCapture()
             }
         }
     }
 
-    // Window zoom for the screen source: size the captured window from 75–125%
-    // of its slot. Dragging sets the target scale; the window is physically
-    // re-fit on release (Accessibility resizes are too costly to do per tick).
     private var screenWindowZoomControl: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
@@ -1068,54 +1088,126 @@ private struct SceneWorkspaceInspector: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.58))
                 Spacer(minLength: 0)
-                Text("\(Int((vm.targetWindowFitScale * 100).rounded()))%")
+                Text("\(Int((vm.targetWindowZoom * 100).rounded()))%")
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .monospacedDigit()
                     .foregroundStyle(.white.opacity(0.7))
             }
 
-            Slider(
-                value: Binding(
-                    get: { Double(vm.targetWindowFitScale) },
-                    set: { vm.setTargetWindowFitScale(CGFloat($0)) }
-                ),
-                in: 0.75...1.25,
-                step: 0.05,
-                onEditingChanged: { editing in
-                    if !editing {
-                        vm.fitFrontWindowForShorts(scale: vm.targetWindowFitScale)
-                    }
+            HStack(spacing: 6) {
+                windowSizeStepButton(icon: "minus", isDisabled: vm.targetWindowZoom <= WindowZoomGeometry.minimumZoom) {
+                    vm.zoomTargetWindowFit(by: -0.05)
                 }
-            )
-            .controlSize(.small)
-            .tint(BlitzUI.mint)
-            .disabled(!vm.canEditScene)
+                .help("Zoom out by using a larger source window")
+
+                Slider(
+                    value: Binding(
+                        get: { Double(vm.targetWindowZoom) },
+                        set: { vm.setTargetWindowZoom(CGFloat($0)) }
+                    ),
+                    in: WindowZoomGeometry.minimumZoom...WindowZoomGeometry.maximumZoom,
+                    step: 0.05
+                )
+                .controlSize(.small)
+                .tint(BlitzUI.mint)
+                .disabled(!vm.canEditScene)
+                .help("Change the selected app's visual zoom in the canvas")
+
+                windowSizeStepButton(icon: "plus", isDisabled: vm.targetWindowZoom >= WindowZoomGeometry.maximumZoom) {
+                    vm.zoomTargetWindowFit(by: 0.05)
+                }
+                .help("Zoom in by using a narrower source window")
+
+                windowSizeStepButton(icon: "arrow.counterclockwise", isDisabled: abs(vm.targetWindowZoom - 1) < 0.001) {
+                    vm.resetTargetWindowZoom()
+                }
+                .help("Reset window zoom")
+            }
 
             HStack {
-                Text("75%")
+                Text("50%")
                 Spacer(minLength: 0)
                 Text("100%")
                 Spacer(minLength: 0)
-                Text("125%")
+                Text("150%")
             }
             .font(.system(size: 9, weight: .medium, design: .monospaced))
             .monospacedDigit()
             .foregroundStyle(.white.opacity(0.4))
 
-            Button {
-                vm.fitFrontWindowForShorts()
-            } label: {
-                Label("Fit Window", systemImage: "rectangle.arrowtriangle.2.inward")
-                    .font(.system(size: 11, weight: .bold))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 28)
+            workspaceAction("Resize window", icon: "rectangle.arrowtriangle.2.inward") {
+                vm.fitCurrentScreenWindowToSlot()
             }
-            .blitzGlassButton()
-            .controlSize(.small)
             .disabled(!vm.canEditScene)
-            .pointingHandCursor()
-            .help("Resize the active window to the current screen layout")
+            .help("Apply the current window zoom to the selected app or window")
+
+            appContentZoomControl
         }
+    }
+
+    private var appContentZoomControl: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("App text zoom")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.58))
+
+            HStack(spacing: 6) {
+                appZoomButton("Smaller", icon: "minus") {
+                    vm.zoomScreenSourceContentOut()
+                }
+                .help("Send Cmd - to the selected app")
+
+                appZoomButton("100%", icon: "arrow.counterclockwise") {
+                    vm.resetScreenSourceContentZoom()
+                }
+                .help("Send Cmd 0 to the selected app")
+
+                appZoomButton("Larger", icon: "plus") {
+                    vm.zoomScreenSourceContentIn()
+                }
+                .help("Send Cmd = to the selected app")
+            }
+        }
+    }
+
+    private func appZoomButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: 9, weight: .bold))
+                Text(title)
+                    .font(.system(size: 10.5, weight: .bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 26)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white.opacity(0.84))
+        .background(Color.white.opacity(0.055), in: .rect(cornerRadius: 6))
+        .overlay {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(.white.opacity(0.10), lineWidth: 1)
+        }
+        .disabled(!vm.canEditScene)
+        .pointingHandCursor()
+    }
+
+    private func windowSizeStepButton(icon: String, isDisabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .bold))
+                .frame(width: 24, height: 22)
+        }
+        .buttonStyle(.plain)
+        .background(Color.white.opacity(0.055), in: .rect(cornerRadius: 6))
+        .overlay {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(.white.opacity(0.10), lineWidth: 1)
+        }
+        .disabled(!vm.canEditScene || isDisabled)
+        .pointingHandCursor()
     }
 
     private var screenSourceIcon: String {
@@ -1416,10 +1508,6 @@ private struct SceneLayerControlRow: View {
     }
 }
 
-/// The scene's bottom "Background" layer in the Layers list. There is no
-/// `.background` case in `SceneLayerKind`, so selection is tracked on the view
-/// model (`isBackgroundLayerSelected`). Selecting this row reveals the
-/// background style / padding / overlay controls in the inspector.
 private struct SceneBackgroundLayerRow: View {
     @Bindable var vm: RecorderViewModel
 
@@ -1466,8 +1554,6 @@ private struct SceneBackgroundLayerRow: View {
     }
 }
 
-/// Wrapping swatch-card grids for mesh, macOS, seasonal, and studio backgrounds.
-/// Selected card gets a mint ring.
 private struct SceneBackgroundSwatchRow: View {
     @Bindable var vm: RecorderViewModel
 
@@ -1543,23 +1629,11 @@ private struct SceneBackgroundSwatchRow: View {
     }
 }
 
-/// An accurate, auto-updating mini-diagram of a scene's real layout. It mirrors
-/// the live `PreviewStageView` path so the thumbnail matches the canvas:
-/// - mini-canvas at the scene's real aspect (`scene.layout.aspectRatio`),
-///   letterboxed/pillarboxed inside its slot,
-/// - filled with the scene's actual `CanvasBackgroundStyle` gradient
-///   (via `CanvasAppearance`, the same source of truth as the live canvas),
-/// - visible source layers resolved through the SAME geometry the canvas uses
-///   (`resolvedItems(enabledSources:fillsCanvasWhenOnlyVideoSource:true)`), so a
-///   single visible source fills the canvas and split/inset layouts read true,
-/// - a tiny SF Symbol + tint per layer so screen vs camera read at a glance.
-/// Purely model-derived (no cached image) so it updates reactively.
 private struct SceneWorkspaceThumbnail: View {
     let scene: RecordingSceneDefinition
 
     private var aspect: CGFloat { scene.layout.aspectRatio }
 
-    /// Fit a rect of `aspect` inside `slot`, centered. Mirrors `fittedCanvas`.
     private func fittedCanvas(in slot: CGSize) -> CGRect {
         guard slot.width > 0, slot.height > 0 else { return .zero }
         var width = slot.width
@@ -1584,9 +1658,6 @@ private struct SceneWorkspaceThumbnail: View {
             )
 
             ZStack(alignment: .topLeading) {
-                // Uniform neutral canvas so every tile reads as one consistent
-                // set. Each scene's real background still lives on the main
-                // canvas — the strip diagrams the layout, not the backdrop.
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(BlitzUI.canvasBackground)
                     .frame(width: canvas.width, height: canvas.height)
@@ -1595,7 +1666,6 @@ private struct SceneWorkspaceThumbnail: View {
                             .stroke(.white.opacity(0.16), lineWidth: 1)
                     }
 
-                // Visible source layers, drawn back-to-front in resolved order.
                 ForEach(items, id: \.kind) { item in
                     let frame = item.normalizedFrame.standardized
                     let rectWidth = max(3, frame.width * canvas.width)
@@ -1612,18 +1682,12 @@ private struct SceneWorkspaceThumbnail: View {
                 }
             }
             .frame(width: canvas.width, height: canvas.height)
-            // Clip panes to the mini-canvas like the live compositor does, so an
-            // overscanning frame (e.g. a "Fit"/canvas-filling screen) fills the
-            // tile instead of spilling out as a stray rectangle.
             .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
             .offset(x: canvas.minX, y: canvas.minY)
         }
     }
 }
 
-/// A single source layer inside the mini-diagram: a tinted rounded rect with a
-/// thin stroke and a centered SF Symbol that only appears when the rect is big
-/// enough to read.
 private struct SceneWorkspaceLayerRect: View {
     let kind: SceneLayerKind
     let width: CGFloat
@@ -1631,10 +1695,6 @@ private struct SceneWorkspaceLayerRect: View {
 
     private var corner: CGFloat { kind == .camera ? 5 : 4 }
 
-    /// Both source kinds use the same light translucent pane over the neutral
-    /// tile canvas, so screen and camera tiles look consistent. They're told
-    /// apart by the glyph, not by colour — mint stays reserved for
-    /// selection/active states.
     private var fill: Color { Color.white.opacity(0.14) }
 
     private var glyph: String {

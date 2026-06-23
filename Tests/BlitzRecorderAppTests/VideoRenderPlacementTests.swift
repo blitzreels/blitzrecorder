@@ -18,11 +18,29 @@ final class VideoRenderPlacementTests: XCTestCase {
             origin: .upperLeft
         ).activePlacements.first { $0.kind == .camera }
 
-        XCTAssertRect(placement?.targetRect ?? .zero, equals: CGRect(x: 30, y: 90, width: 20, height: 60))
+        XCTAssertRect(placement?.targetRect ?? .zero, equals: CGRect(x: 26, y: 86, width: 32, height: 64))
         XCTAssertEqual(placement?.cornerRadius, 8)
         XCTAssertEqual(placement?.videoPlacement.sourceCropAmount, CGPoint(x: 0.25, y: 0))
         XCTAssertEqual(placement?.videoPlacement.sourceCropPosition, CGPoint(x: 0.2, y: -0.1))
         XCTAssertEqual(placement?.videoPlacement.contentMode, .aspectFill)
+    }
+
+    func testSceneRenderPlacementPolicyIgnoresLegacyCameraFramePadding() {
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen, .camera]
+        settings.canvasPadding = 0.1
+        settings.cameraFramePadding = 0.1
+        settings.cameraContentMode = .fit
+        settings.sceneLayout.cameraFrame = CGRect(x: 0.2, y: 0.2, width: 0.4, height: 0.4)
+
+        let placement = SceneRenderGeometry(
+            canvas: CGRect(x: 0, y: 0, width: 100, height: 200),
+            scene: RecordingScene(settings: settings),
+            origin: .upperLeft
+        ).activePlacements.first { $0.kind == .camera }
+
+        XCTAssertRect(placement?.targetRect ?? .zero, equals: CGRect(x: 26, y: 86, width: 32, height: 64))
+        XCTAssertEqual(placement?.videoPlacement.contentMode, .aspectFit)
     }
 
     func testPaddedScreenPlacementFitsSourceWithoutCropping() {
@@ -151,6 +169,94 @@ final class VideoRenderPlacementTests: XCTestCase {
                 ty: 0
             )
         )
+    }
+
+    func testCameraFitModeShowsFullWideSourceInsidePortraitFrame() {
+        let placement = VideoRenderPlacement(
+            kind: .camera,
+            targetRect: CGRect(x: 0, y: 0, width: 1080, height: 1920),
+            contentMode: .aspectFit
+        )
+
+        XCTAssertNil(placement.cropRectangle(naturalSize: CGSize(width: 1920, height: 1080)))
+        XCTAssertRect(
+            placement.sourceFrame(sourceAspectRatio: 16.0 / 9.0),
+            equals: CGRect(x: 0, y: 656.25, width: 1080, height: 607.5)
+        )
+    }
+
+    func testEditorLayerFramesUseVisibleCameraFitFrame() {
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen, .camera]
+        settings.cameraContentMode = .fit
+        settings.sceneLayout.cameraFrame = CGRect(x: 0, y: 0, width: 1, height: 1)
+        let frames = EditorPlaybackComposition.normalizedLayerFrames(
+            scene: RecordingScene(settings: settings),
+            renderSize: CGSize(width: 100, height: 200),
+            activeLayerOrder: [.camera],
+            hiding: [],
+            sourceAspectRatios: [.camera: 16.0 / 9.0]
+        )
+
+        XCTAssertEqual(frames.count, 1)
+        XCTAssertEqual(frames.first?.kind, .camera)
+        XCTAssertRect(
+            frames.first?.frame ?? .zero,
+            equals: CGRect(x: 0, y: 0.359375, width: 1, height: 0.28125)
+        )
+    }
+
+    func testVisibleCameraSourceRectUsesFitFrame() {
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen, .camera]
+        settings.cameraContentMode = .fit
+        settings.sceneLayout.cameraFrame = CGRect(x: 0, y: 0, width: 1, height: 1)
+        let geometry = SceneRenderGeometry(
+            canvas: CGRect(x: 0, y: 0, width: 100, height: 200),
+            scene: RecordingScene(settings: settings),
+            origin: .upperLeft
+        )
+
+        XCTAssertRect(
+            geometry.visibleSourceRect(for: .camera, sourceAspectRatio: 16.0 / 9.0),
+            equals: CGRect(x: 0, y: 71.875, width: 100, height: 56.25)
+        )
+    }
+
+    func testSourceMaskPathUsesVisibleCameraFitFrame() {
+        var settings = RecordingSettings()
+        settings.enabledSources = [.camera]
+        settings.cameraContentMode = .fit
+        settings.canvasPadding = 0.1
+        settings.sceneLayout.cameraFrame = CGRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8)
+        let geometry = SceneRenderGeometry(
+            canvas: CGRect(x: 0, y: 0, width: 100, height: 200),
+            scene: RecordingScene(settings: settings),
+            origin: .upperLeft
+        )
+
+        XCTAssertRect(
+            geometry.sourceMaskPath(sourceAspectRatios: [.camera: 16.0 / 9.0])?.boundingBoxOfPath ?? .zero,
+            equals: CGRect(x: 10, y: 77.5, width: 80, height: 45)
+        )
+    }
+
+    func testHiddenLayerFramesReflowRemainingSourceLikeExport() {
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen, .camera]
+        settings.layout = .vertical
+        settings.sceneLayout = SceneLayout.presetLayout(.screenTop50, for: .vertical)
+        let frames = EditorPlaybackComposition.normalizedLayerFrames(
+            scene: RecordingScene(settings: settings),
+            renderSize: CGSize(width: 100, height: 200),
+            activeLayerOrder: [.screen, .camera],
+            hiding: [.camera],
+            sourceAspectRatios: [.screen: 16.0 / 9.0, .camera: 16.0 / 9.0]
+        )
+
+        XCTAssertEqual(frames.count, 1)
+        XCTAssertEqual(frames.first?.kind, .screen)
+        XCTAssertRect(frames.first?.frame ?? .zero, equals: CGRect(x: 0, y: 0, width: 1, height: 1))
     }
 
     func testCompositionCropRectangleAlignsFourByThreeCameraToEvenPixels() {

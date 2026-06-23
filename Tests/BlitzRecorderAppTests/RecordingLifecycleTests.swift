@@ -90,13 +90,332 @@ final class RecordingLifecycleTests: XCTestCase {
         XCTAssertNil(manifest.finalVideoPath)
     }
 
-    func testTakeFileStoreDoesNotWriteSourceTakeManifestByDefault() throws {
+    func testTakeFileStoreKeepsSourceVideosInEditableMovContainer() throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.savesSourceFiles = true
+        settings.outputVideoFormat = .mp4
+
+        let take = try TakeFileStore().createTake(settings: settings)
+
+        XCTAssertEqual(take.screenURL.pathExtension, "mov")
+        XCTAssertEqual(take.cameraURL.pathExtension, "mov")
+        XCTAssertEqual(take.finalVideoURL.pathExtension, "mp4")
+    }
+
+    func testTakeFileStoreWritesRecoverableProjectByDefault() throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
 
         let take = try TakeFileStore().createTake(settings: settings)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let project = try decoder.decode(RecordingProject.self, from: Data(contentsOf: take.projectURL))
+        let history = try decoder.decode(
+            RecordingProjectHistory.self,
+            from: Data(contentsOf: TakeFileStore().projectHistoryURL(for: settings))
+        )
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: take.sourceManifestURL.path))
+        XCTAssertEqual(project.version, 1)
+        XCTAssertEqual(project.takeDirectoryPath, take.scratchDirectory.path)
+        XCTAssertEqual(project.projectPath, take.projectURL.path)
+        XCTAssertEqual(project.sceneEvents.count, 1)
+        XCTAssertTrue(project.sources.contains { $0.role == "screen" && $0.path == take.screenURL.path })
+        XCTAssertEqual(history.entries.first?.projectPath, take.projectURL.path)
+    }
+
+    func testTakeFileStoreRehydratesRecoverableProjectForExport() throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.outputVideoFormat = .mov
+        settings.canvasPadding = 0.08
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        let project = try store.loadRecordingProject(at: take.projectURL)
+        let exportSettings = store.recordingSettings(
+            from: project,
+            baseSettings: settings,
+            outputFormat: .mp4
+        )
+        let exportTake = store.recordingTake(
+            from: project,
+            settings: exportSettings,
+            outputFormat: .mp4
+        )
+        let sceneEvents = store.sceneEvents(from: project)
+
+        XCTAssertEqual(exportSettings.outputVideoFormat, .mp4)
+        XCTAssertEqual(exportSettings.canvasPadding, 0.08, accuracy: 0.0001)
+        XCTAssertEqual(exportTake.scratchDirectory, take.scratchDirectory)
+        XCTAssertEqual(exportTake.screenURL, take.screenURL)
+        XCTAssertEqual(exportTake.finalVideoURL.pathExtension, "mp4")
+        XCTAssertEqual(sceneEvents.count, 1)
+        XCTAssertEqual(sceneEvents.first?.scene.sceneLayout, settings.sceneLayout)
+    }
+
+    func testTakeFileStoreUpdatesRecoverableProjectSceneCorrection() throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.layout = .vertical
+        settings.enabledSources = [.screen, .camera, .microphone]
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try Data().write(to: take.screenURL)
+        try Data().write(to: take.cameraURL)
+        let updatedProject = try store.updateProjectSceneEvent(
+            at: take.projectURL,
+            eventIndex: 0,
+            correction: .cameraOnly,
+            baseSettings: settings
+        )
+        let scene = try XCTUnwrap(store.sceneEvents(from: updatedProject).first?.scene)
+
+        XCTAssertEqual(scene.enabledSources, [.camera, .microphone])
+        XCTAssertEqual(updatedProject.settings.enabledSources, ["Camera", "Microphone"])
+        XCTAssertEqual(updatedProject.settings.hiddenSources, [])
+        XCTAssertEqual(
+            scene.sceneLayout,
+            SceneLayout.presetLayout(
+                .webcamFullscreen,
+                for: .vertical,
+                screenAspectRatio: scene.screenSourceGeometry.aspectRatio()
+            )
+        )
+        XCTAssertEqual(store.loadProjectHistory(settings: settings).entries.first?.projectPath, take.projectURL.path)
+    }
+
+    func testTakeFileStoreRejectsSceneCorrectionForMissingSourceFile() throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.layout = .vertical
+        settings.enabledSources = [.screen, .camera]
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try Data().write(to: take.screenURL)
+
+        XCTAssertThrowsError(try store.updateProjectSceneEvent(
+            at: take.projectURL,
+            eventIndex: 0,
+            correction: .cameraOnly,
+            baseSettings: settings
+        )) { error in
+            XCTAssertTrue(error.recorderFailureDescription.contains("missing from this project"))
+        }
+    }
+
+    func testTakeFileStoreInsertsProjectSceneEventForCut() throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.layout = .horizontal
+        settings.enabledSources = [.screen, .camera]
+        settings.sceneLayout.cameraFrame = CGRect(x: 0.1, y: 0.1, width: 0.35, height: 0.35)
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        let updatedProject = try store.insertProjectSceneEvent(
+            at: take.projectURL,
+            time: 1.25,
+            baseSettings: settings
+        )
+
+        XCTAssertEqual(updatedProject.sceneEvents.map(\.time), [0, 1.25])
+        let sceneEvents = store.sceneEvents(from: updatedProject)
+        XCTAssertEqual(sceneEvents[1].scene.sceneLayout, settings.sceneLayout)
+        XCTAssertEqual(updatedProject.settings.enabledSources, ["Camera", "Screen"])
+        XCTAssertEqual(store.loadProjectHistory(settings: settings).entries.first?.projectPath, take.projectURL.path)
+    }
+
+    func testTakeFileStoreRemovesProjectSceneEventCut() throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .camera]
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        _ = try store.insertProjectSceneEvent(
+            at: take.projectURL,
+            time: 1.25,
+            baseSettings: settings
+        )
+        let updatedProject = try store.removeProjectSceneEvent(
+            at: take.projectURL,
+            eventIndex: 1,
+            baseSettings: settings
+        )
+
+        XCTAssertEqual(updatedProject.sceneEvents.map(\.time), [0])
+        XCTAssertThrowsError(try store.removeProjectSceneEvent(
+            at: take.projectURL,
+            eventIndex: 0,
+            baseSettings: settings
+        )) { error in
+            XCTAssertTrue(error.recorderFailureDescription.contains("after the first segment"))
+        }
+    }
+
+    func testEditorAssetsHideMissingInactiveSources() throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .camera]
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try Data().write(to: take.screenURL)
+        try Data().write(to: take.cameraURL)
+        let project = try store.loadRecordingProject(at: take.projectURL)
+        let assets = EditorAsset.assets(project: project, finalVideoURL: nil)
+
+        XCTAssertEqual(assets.map(\.kind), [.screen, .camera])
+        XCTAssertFalse(assets.contains { $0.title == "Transcript" })
+        XCTAssertFalse(assets.contains { $0.kind == .microphone })
+        XCTAssertFalse(assets.contains { $0.kind == .systemAudio })
+    }
+
+    func testEditorAssetsShowMissingSceneAudioSources() throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .camera]
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try Data().write(to: take.screenURL)
+        try Data().write(to: take.cameraURL)
+
+        var sceneSettings = settings
+        sceneSettings.enabledSources = [.screen, .camera, .microphone]
+        let sceneEvent = RecordingSceneEvent(time: 0, scene: RecordingScene(settings: sceneSettings))
+        try store.writeRecordingProject(
+            for: take,
+            settings: settings,
+            sceneEvents: [sceneEvent],
+            finalVideoURL: nil
+        )
+
+        let project = try store.loadRecordingProject(at: take.projectURL)
+        let assets = EditorAsset.assets(project: project, finalVideoURL: nil)
+        let microphoneAsset = try XCTUnwrap(assets.first { $0.kind == .microphone })
+
+        XCTAssertEqual(assets.map(\.kind), [.screen, .camera, .microphone])
+        XCTAssertFalse(microphoneAsset.exists)
+    }
+
+    func testEditorPlaybackCompositionRendersSourceFrame() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .camera]
+        settings.layout = .horizontal
+        settings.outputResolution = .p720
+        settings.sceneLayout = SceneLayout.presetLayout(.cameraInset, for: .horizontal)
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try writeTestMovie(
+            url: take.screenURL,
+            codec: .h264,
+            color: (blue: 255, green: 0, red: 0, alpha: 255)
+        )
+        try writeTestMovie(
+            url: take.cameraURL,
+            codec: .h264,
+            color: (blue: 0, green: 0, red: 255, alpha: 255)
+        )
+
+        let project = try store.loadRecordingProject(at: take.projectURL)
+        let playback = try await Merger.editorPlaybackComposition(
+            take: take,
+            settings: settings,
+            sceneEvents: store.sceneEvents(from: project)
+        )
+        let generator = AVAssetImageGenerator(asset: playback.composition)
+        generator.videoComposition = playback.videoComposition(hiding: [])
+        generator.requestedTimeToleranceBefore = CMTime(value: 1, timescale: 30)
+        generator.requestedTimeToleranceAfter = CMTime(value: 1, timescale: 30)
+        let image = try await generator.image(at: CMTime(seconds: 0.1, preferredTimescale: 600)).image
+        let colors = try samplePixelColors(
+            in: image,
+            normalizedPoints: [
+                CGPoint(x: 0.5, y: 0.5),
+                CGPoint(x: 0.82, y: 0.76)
+            ]
+        )
+
+        XCTAssertTrue(colors.contains { color in
+            color.red > 40 || color.green > 40 || color.blue > 40
+        })
+    }
+
+    func testEditorPlaybackPlayerItemProducesVideoOutputFrame() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .camera]
+        settings.layout = .horizontal
+        settings.outputResolution = .p720
+        settings.sceneLayout = SceneLayout.presetLayout(.webcamLeft, for: .horizontal)
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try writeTestMovie(
+            url: take.screenURL,
+            codec: .h264,
+            color: (blue: 255, green: 0, red: 0, alpha: 255),
+            frameCount: 90
+        )
+        try writeTestMovie(
+            url: take.cameraURL,
+            codec: .h264,
+            color: (blue: 0, green: 0, red: 255, alpha: 255),
+            frameCount: 90
+        )
+
+        let project = try store.loadRecordingProject(at: take.projectURL)
+        let playback = try await Merger.editorPlaybackComposition(
+            take: take,
+            settings: settings,
+            sceneEvents: store.sceneEvents(from: project)
+        )
+        let item = playback.playerItem()
+        let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+        ])
+        item.add(output)
+
+        let player = AVPlayer(playerItem: item)
+        player.automaticallyWaitsToMinimizeStalling = false
+        let targetTime = CMTime(seconds: 1, preferredTimescale: 600)
+        await player.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero)
+        player.play()
+        try await Task.sleep(for: .milliseconds(350))
+        player.pause()
+
+        let itemTime = player.currentTime()
+        let pixelBuffer = output.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: nil)
+            ?? output.copyPixelBuffer(forItemTime: targetTime, itemTimeForDisplay: nil)
+        guard let pixelBuffer else {
+            return XCTFail("Editor AVPlayerItem produced no video frame")
+        }
+        let center = samplePixelColor(
+            in: pixelBuffer,
+            x: CVPixelBufferGetWidth(pixelBuffer) / 2,
+            y: CVPixelBufferGetHeight(pixelBuffer) / 2
+        )
+
+        XCTAssertTrue(center.red > 40 || center.green > 40 || center.blue > 40)
+    }
+
+    func testTakeFileStoreCanOptOutOfRecoverableProjectFiles() throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.savesSourceFiles = false
+
+        let take = try TakeFileStore().createTake(settings: settings)
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: take.sourceManifestURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: take.projectURL.path))
     }
 
     func testTakeFileStorePrefixesGeneratedSlugWithTakeDate() throws {
@@ -610,6 +929,29 @@ final class RecordingLifecycleTests: XCTestCase {
         let writer = try AudioSampleFileWriter(
             url: url,
             timelineStartTime: CMTime(seconds: 100_000, preferredTimescale: 1_000_000_000)
+        )
+
+        for packet in 0..<12 {
+            let sampleBuffer = try makeSilentAudioSampleBuffer(
+                presentationTime: CMTime(value: CMTimeValue(packet * 480), timescale: 48_000),
+                frames: 480
+            )
+            writer.append(sampleBuffer)
+        }
+
+        let completion = try await writer.finish()
+
+        XCTAssertTrue(completion.wroteMedia)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    func testAudioSampleFileWriterFallsBackWhenAudioClockLeadsTimeline() async throws {
+        let directory = temporaryDirectory()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("audio.m4a")
+        let writer = try AudioSampleFileWriter(
+            url: url,
+            timelineStartTime: CMTime(seconds: 10, preferredTimescale: 48_000)
         )
 
         for packet in 0..<12 {
@@ -1150,6 +1492,224 @@ final class RecordingLifecycleTests: XCTestCase {
         XCTAssertGreaterThan(screenCenter.red, 140)
     }
 
+    func testMergerRendersCameraShadowOverScreenInFinalExport() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .camera]
+        settings.framesPerSecond = 30
+        settings.outputResolution = .p720
+        settings.layout = .vertical
+        settings.cameraShadowEnabled = true
+        var layout = SceneLayout.presetLayout(.screenFullscreen, for: .vertical)
+        layout.cameraFrame = CGRect(x: 0.35, y: 0.35, width: 0.4, height: 0.225)
+        layout.layerOrder = [.screen, .camera]
+        settings.sceneLayout = layout
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try FileManager.default.createDirectory(at: take.scratchDirectory, withIntermediateDirectories: true)
+        try writeTestMovie(
+            url: take.screenURL,
+            codec: .h264,
+            color: (blue: 255, green: 255, red: 255, alpha: 255)
+        )
+        try writeTestMovie(
+            url: take.cameraURL,
+            codec: .h264,
+            color: (blue: 0, green: 0, red: 255, alpha: 255)
+        )
+
+        let outputURL = try await Merger.exportFinalVideo(take: take, settings: settings)
+        let renderSize = CGSize(width: 720, height: 1280)
+        let cameraRect = SceneRenderGeometry(
+            canvas: CGRect(origin: .zero, size: renderSize),
+            scene: RecordingScene(settings: settings),
+            origin: .upperLeft
+        ).targetRect(for: .camera)
+        let sampledColors = try await samplePixelColors(
+            in: outputURL,
+            normalizedPoints: [
+                CGPoint(
+                    x: (cameraRect.maxX + 8) / renderSize.width,
+                    y: cameraRect.midY / renderSize.height
+                ),
+                CGPoint(
+                    x: cameraRect.midX / renderSize.width,
+                    y: cameraRect.midY / renderSize.height
+                )
+            ],
+            at: CMTime(seconds: 0.1, preferredTimescale: 600)
+        )
+        let shadowEdgeColor = sampledColors[0]
+        let cameraCenterColor = sampledColors[1]
+
+        XCTAssertLessThan(shadowEdgeColor.red, 245)
+        XCTAssertLessThan(shadowEdgeColor.green, 245)
+        XCTAssertLessThan(shadowEdgeColor.blue, 245)
+        XCTAssertGreaterThan(cameraCenterColor.red, 180)
+        XCTAssertLessThan(cameraCenterColor.green, 80)
+        XCTAssertLessThan(cameraCenterColor.blue, 80)
+    }
+
+    func testMergerSuppressesCameraShadowBehindScreenInFinalExport() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .camera]
+        settings.framesPerSecond = 30
+        settings.outputResolution = .p720
+        settings.layout = .vertical
+        settings.cameraShadowEnabled = true
+        var layout = SceneLayout.presetLayout(.screenFullscreen, for: .vertical)
+        layout.cameraFrame = CGRect(x: 0.35, y: 0.35, width: 0.4, height: 0.225)
+        layout.layerOrder = [.camera, .screen]
+        settings.sceneLayout = layout
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try FileManager.default.createDirectory(at: take.scratchDirectory, withIntermediateDirectories: true)
+        try writeTestMovie(
+            url: take.screenURL,
+            codec: .h264,
+            color: (blue: 255, green: 255, red: 255, alpha: 255)
+        )
+        try writeTestMovie(
+            url: take.cameraURL,
+            codec: .h264,
+            color: (blue: 0, green: 0, red: 255, alpha: 255)
+        )
+
+        let outputURL = try await Merger.exportFinalVideo(take: take, settings: settings)
+        let renderSize = CGSize(width: 720, height: 1280)
+        let cameraRect = SceneRenderGeometry(
+            canvas: CGRect(origin: .zero, size: renderSize),
+            scene: RecordingScene(settings: settings),
+            origin: .upperLeft
+        ).targetRect(for: .camera)
+        let sampledColors = try await samplePixelColors(
+            in: outputURL,
+            normalizedPoints: [
+                CGPoint(
+                    x: (cameraRect.maxX + 8) / renderSize.width,
+                    y: cameraRect.midY / renderSize.height
+                ),
+                CGPoint(
+                    x: cameraRect.midX / renderSize.width,
+                    y: cameraRect.midY / renderSize.height
+                )
+            ],
+            at: CMTime(seconds: 0.1, preferredTimescale: 600)
+        )
+
+        for color in sampledColors {
+            XCTAssertGreaterThan(color.red, 245)
+            XCTAssertGreaterThan(color.green, 245)
+            XCTAssertGreaterThan(color.blue, 245)
+        }
+    }
+
+    func testMergerSuppressesCameraShadowWhenCameraVideoIsMissing() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .camera]
+        settings.framesPerSecond = 30
+        settings.outputResolution = .p720
+        settings.layout = .vertical
+        settings.cameraShadowEnabled = true
+        var layout = SceneLayout.presetLayout(.screenFullscreen, for: .vertical)
+        layout.cameraFrame = CGRect(x: 0.35, y: 0.35, width: 0.4, height: 0.225)
+        layout.layerOrder = [.screen, .camera]
+        settings.sceneLayout = layout
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try FileManager.default.createDirectory(at: take.scratchDirectory, withIntermediateDirectories: true)
+        try writeTestMovie(
+            url: take.screenURL,
+            codec: .h264,
+            color: (blue: 255, green: 255, red: 255, alpha: 255)
+        )
+
+        let outputURL = try await Merger.exportFinalVideo(take: take, settings: settings)
+        let renderSize = CGSize(width: 720, height: 1280)
+        let cameraRect = SceneRenderGeometry(
+            canvas: CGRect(origin: .zero, size: renderSize),
+            scene: RecordingScene(settings: settings),
+            origin: .upperLeft
+        ).targetRect(for: .camera)
+        let sampledColors = try await samplePixelColors(
+            in: outputURL,
+            normalizedPoints: [
+                CGPoint(
+                    x: (cameraRect.maxX + 8) / renderSize.width,
+                    y: cameraRect.midY / renderSize.height
+                )
+            ],
+            at: CMTime(seconds: 0.1, preferredTimescale: 600)
+        )
+
+        let shadowEdgeColor = sampledColors[0]
+        XCTAssertGreaterThan(shadowEdgeColor.red, 245)
+        XCTAssertGreaterThan(shadowEdgeColor.green, 245)
+        XCTAssertGreaterThan(shadowEdgeColor.blue, 245)
+    }
+
+    func testMergerSuppressesCameraShadowBeforeDelayedCameraStarts() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .camera]
+        settings.selectedCameraID = RemoteCameraProviderID.make(for: "iphone-15-pro")
+        settings.framesPerSecond = 30
+        settings.outputResolution = .p720
+        settings.layout = .vertical
+        settings.cameraShadowEnabled = true
+        var layout = SceneLayout.presetLayout(.screenFullscreen, for: .vertical)
+        layout.cameraFrame = CGRect(x: 0.35, y: 0.35, width: 0.4, height: 0.225)
+        layout.layerOrder = [.screen, .camera]
+        settings.sceneLayout = layout
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try FileManager.default.createDirectory(at: take.scratchDirectory, withIntermediateDirectories: true)
+        try writeTestMovie(
+            url: take.screenURL,
+            codec: .h264,
+            color: (blue: 255, green: 255, red: 255, alpha: 255)
+        )
+        try writeTestMovie(
+            url: take.cameraURL,
+            codec: .h264,
+            color: (blue: 0, green: 0, red: 255, alpha: 255)
+        )
+        try writeRemoteCameraManifest(
+            for: take.cameraURL,
+            hostTimelineStartTime: 1_000_000_000,
+            estimatedHostStartTime: 1_200_000_000
+        )
+
+        let outputURL = try await Merger.exportFinalVideo(take: take, settings: settings)
+        let renderSize = CGSize(width: 720, height: 1280)
+        let cameraRect = SceneRenderGeometry(
+            canvas: CGRect(origin: .zero, size: renderSize),
+            scene: RecordingScene(settings: settings),
+            origin: .upperLeft
+        ).targetRect(for: .camera)
+        let sampledColors = try await samplePixelColors(
+            in: outputURL,
+            normalizedPoints: [
+                CGPoint(
+                    x: (cameraRect.maxX + 8) / renderSize.width,
+                    y: cameraRect.midY / renderSize.height
+                )
+            ],
+            at: CMTime(seconds: 0.1, preferredTimescale: 600)
+        )
+
+        let shadowEdgeColor = sampledColors[0]
+        XCTAssertGreaterThan(shadowEdgeColor.red, 245)
+        XCTAssertGreaterThan(shadowEdgeColor.green, 245)
+        XCTAssertGreaterThan(shadowEdgeColor.blue, 245)
+    }
+
     func testMergerExportsCameraOnlyRemoteCameraWithoutTimelineGap() async throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
@@ -1370,17 +1930,21 @@ final class RecordingLifecycleTests: XCTestCase {
         XCTAssertEqual(reason, "No video frames captured")
         XCTAssertEqual(recoveryTake.scratchDirectory, take.scratchDirectory)
         XCTAssertTrue(FileManager.default.fileExists(atPath: take.scratchDirectory.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: take.projectURL.path))
+        XCTAssertEqual(store.loadProjectHistory(settings: settings).entries.first?.projectPath, take.projectURL.path)
         XCTAssertTrue(outcome.userMessage.contains("No video frames captured"))
     }
 
     @MainActor
-    func testTakeFinalizerPreservesSourceTakeAfterSuccessfulExport() async throws {
+    func testTakeFinalizerPreparesEditableProjectInsteadOfDefaultExport() async throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
         settings.savesSourceFiles = true
         settings.enabledSources = [.screen]
         settings.framesPerSecond = 30
         settings.outputResolution = .p720
+        settings.microphoneGain = 0.35
+        settings.systemAudioGain = 1.65
 
         let store = TakeFileStore()
         let take = try store.createTake(settings: settings)
@@ -1395,20 +1959,27 @@ final class RecordingLifecycleTests: XCTestCase {
             titleGenerator: TitleGenerator(),
             fileStore: store
         )
+        var changedSettings = settings
+        changedSettings.sceneLayout.cameraFrame = CGRect(x: 0.1, y: 0.1, width: 0.3, height: 0.3)
+        let sceneEvents = [
+            RecordingSceneEvent(time: 0, scene: RecordingScene(settings: settings)),
+            RecordingSceneEvent(time: 1.25, scene: RecordingScene(settings: changedSettings), transition: .sceneSwitch)
+        ]
         let outcome = await finalizer.finalize(
             take: take,
             settings: settings,
             captureSummary: CaptureSourceRunSummary(completions: [
                 .screen: .wrote(take.screenURL)
-            ])
+            ]),
+            sceneEvents: sceneEvents
         )
 
-        guard case .saved(let outputURL, let sourceDirectory) = outcome else {
-            return XCTFail("Expected saved outcome")
+        guard case .projectReady(let projectTake) = outcome else {
+            return XCTFail("Expected editable project outcome")
         }
 
-        XCTAssertTrue(FileManager.default.fileExists(atPath: outputURL.path))
-        XCTAssertEqual(sourceDirectory, take.scratchDirectory)
+        XCTAssertEqual(projectTake.scratchDirectory, take.scratchDirectory)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: take.finalVideoURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: take.scratchDirectory.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: take.screenURL.path))
 
@@ -1416,12 +1987,31 @@ final class RecordingLifecycleTests: XCTestCase {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let manifest = try decoder.decode(SourceTakeManifest.self, from: data)
-        XCTAssertEqual(manifest.finalVideoPath, outputURL.path)
-        XCTAssertTrue(outcome.userMessage.contains("Source take:"))
+        XCTAssertNil(manifest.finalVideoPath)
+        let project = try decoder.decode(RecordingProject.self, from: Data(contentsOf: take.projectURL))
+        XCTAssertNil(project.finalVideoPath)
+        XCTAssertEqual(project.settings.microphoneGain, 0.35)
+        XCTAssertEqual(project.settings.systemAudioGain, 1.65)
+        XCTAssertEqual(project.sceneEvents.count, 2)
+        XCTAssertEqual(project.sceneEvents[1].time, 1.25)
+        XCTAssertTrue(project.sources.contains { $0.role == "screen" && $0.exists })
+        var changedBaseSettings = settings
+        changedBaseSettings.microphoneGain = 2.0
+        changedBaseSettings.systemAudioGain = 0
+        let restoredSettings = store.recordingSettings(
+            from: project,
+            baseSettings: changedBaseSettings,
+            outputFormat: settings.outputVideoFormat
+        )
+        XCTAssertEqual(restoredSettings.microphoneGain, 0.35)
+        XCTAssertEqual(restoredSettings.systemAudioGain, 1.65)
+        let history = store.loadProjectHistory(settings: settings)
+        XCTAssertEqual(history.entries.first?.projectPath, take.projectURL.path)
+        XCTAssertTrue(outcome.userMessage.contains("Project ready:"))
     }
 
     @MainActor
-    func testTakeFinalizerKeepsRecoveryFilesWhenMicrophoneAudioIsMissing() async throws {
+    func testTakeFinalizerPreparesEditableProjectWhenMicrophoneAudioIsMissing() async throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
         settings.enabledSources = [.camera, .microphone]
@@ -1452,19 +2042,31 @@ final class RecordingLifecycleTests: XCTestCase {
             ])
         )
 
-        guard case .recoveryFiles(let recoveryTake, let reason) = outcome else {
-            return XCTFail("Expected recovery files when microphone audio is missing")
+        guard case .projectReadyWithWarning(let projectTake, let warning) = outcome else {
+            return XCTFail("Expected editable project with warning when microphone audio is missing")
         }
-        XCTAssertEqual(recoveryTake.scratchDirectory, take.scratchDirectory)
-        XCTAssertTrue(reason.contains("Microphone audio"))
+        XCTAssertEqual(projectTake.scratchDirectory, take.scratchDirectory)
+        XCTAssertTrue(warning.contains("Microphone audio"))
+        XCTAssertTrue(outcome.projectOutput()?.userMessage.contains("Project ready:") == true)
         XCTAssertTrue(FileManager.default.fileExists(atPath: take.scratchDirectory.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: take.projectURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: take.finalVideoURL.path))
+
+        let project = try store.loadRecordingProject(at: take.projectURL)
+        XCTAssertFalse(project.settings.enabledSources.contains("Microphone"))
+        let restoredSettings = store.recordingSettings(
+            from: project,
+            baseSettings: settings,
+            outputFormat: settings.outputVideoFormat
+        )
+        XCTAssertFalse(restoredSettings.enabledSources.contains(.microphone))
     }
 
     @MainActor
     func testTakeFinalizerSavesVideoWhenMicrophoneStopFailed() async throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
+        settings.savesSourceFiles = false
         settings.enabledSources = [.camera, .microphone]
         settings.selectedCameraID = RemoteCameraProviderID.make(for: "iphone-15-pro")
         settings.framesPerSecond = 30
@@ -1557,6 +2159,7 @@ final class RecordingLifecycleTests: XCTestCase {
     func testTakeFinalizerExportsScreenOnlyWhenHiddenIPhoneCameraMediaIsMissing() async throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
+        settings.savesSourceFiles = false
         settings.enabledSources = [.screen, .camera]
         settings.hiddenSources = [.camera]
         settings.selectedCameraID = RemoteCameraProviderID.make(for: "iphone-15-pro")
@@ -1599,6 +2202,7 @@ final class RecordingLifecycleTests: XCTestCase {
     func testTakeFinalizerMergesAudioForTransparentCameraOnlyExport() async throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
+        settings.savesSourceFiles = false
         settings.enabledSources = [.camera, .systemAudio]
         settings.removesCameraBackgroundAfterRecording = true
         settings.framesPerSecond = 30
@@ -1641,6 +2245,7 @@ final class RecordingLifecycleTests: XCTestCase {
     func testTakeFinalizerKeepsWrittenSystemAudioDespiteStopWarning() async throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
+        settings.savesSourceFiles = false
         settings.enabledSources = [.screen, .systemAudio]
         settings.framesPerSecond = 30
         settings.outputResolution = .p720
@@ -1686,6 +2291,7 @@ final class RecordingLifecycleTests: XCTestCase {
     func testTakeFinalizerSavesVideoWhenSystemAudioHasNoSamples() async throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
+        settings.savesSourceFiles = false
         settings.enabledSources = [.screen, .systemAudio]
         settings.framesPerSecond = 30
         settings.outputResolution = .p720
@@ -1725,6 +2331,7 @@ final class RecordingLifecycleTests: XCTestCase {
     func testTakeFinalizerMutesRemoteCameraEmbeddedAudio() async throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
+        settings.savesSourceFiles = false
         settings.enabledSources = [.camera]
         settings.selectedCameraID = RemoteCameraProviderID.make(for: "iphone-15-pro")
         settings.framesPerSecond = 30
@@ -1925,6 +2532,13 @@ final class RecordingLifecycleTests: XCTestCase {
         generator.requestedTimeToleranceAfter = CMTime(value: 1, timescale: 30)
 
         let image = try await generator.image(at: time).image
+        return try samplePixelColors(in: image, normalizedPoints: normalizedPoints)
+    }
+
+    private func samplePixelColors(
+        in image: CGImage,
+        normalizedPoints: [CGPoint]
+    ) throws -> [(red: Int, green: Int, blue: Int, alpha: Int)] {
         let width = image.width
         let height = image.height
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
@@ -1952,6 +2566,31 @@ final class RecordingLifecycleTests: XCTestCase {
                 alpha: Int(pixels[index + 3])
             )
         }
+    }
+
+    private func samplePixelColor(
+        in pixelBuffer: CVPixelBuffer,
+        x: Int,
+        y: Int
+    ) -> (red: Int, green: Int, blue: Int, alpha: Int) {
+        CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
+        guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else {
+            return (0, 0, 0, 0)
+        }
+        let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
+        let width = CVPixelBufferGetWidth(pixelBuffer)
+        let height = CVPixelBufferGetHeight(pixelBuffer)
+        let clampedX = min(width - 1, max(0, x))
+        let clampedY = min(height - 1, max(0, y))
+        let index = clampedY * bytesPerRow + clampedX * 4
+        let bytes = baseAddress.assumingMemoryBound(to: UInt8.self)
+        return (
+            red: Int(bytes[index + 2]),
+            green: Int(bytes[index + 1]),
+            blue: Int(bytes[index]),
+            alpha: Int(bytes[index + 3])
+        )
     }
 
     private func fill(

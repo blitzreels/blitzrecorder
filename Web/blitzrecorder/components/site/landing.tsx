@@ -396,8 +396,6 @@ function IphoneCompanion() {
   );
 }
 
-/** Slim credibility row under the hero. Every claim here is literally true.
- *  TODO: add real beta-tester testimonials once collected — never fabricate. */
 function TrustStrip() {
   const items = [
     "No account, ever",

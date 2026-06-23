@@ -154,14 +154,14 @@ final class RecordingSettingsStoreTests: XCTestCase {
         XCTAssertFalse(loaded.usesPickedScreenContent)
     }
 
-    func testSaveSourceFilesDefaultsOffAndPersists() {
+    func testSaveSourceFilesDefaultsOnAndIgnoresLegacyOptOut() {
         let defaults = temporaryDefaults()
 
-        XCTAssertFalse(RecordingSettingsStore.load(defaults: defaults).savesSourceFiles)
+        XCTAssertTrue(RecordingSettingsStore.load(defaults: defaults).savesSourceFiles)
         XCTAssertFalse(RecordingSettingsStore.load(defaults: defaults).renamesRecordingsFromSpeech)
 
         var settings = RecordingSettings()
-        settings.savesSourceFiles = true
+        settings.savesSourceFiles = false
         settings.renamesRecordingsFromSpeech = true
         RecordingSettingsStore.save(settings, defaults: defaults)
 
@@ -180,6 +180,21 @@ final class RecordingSettingsStoreTests: XCTestCase {
 
         XCTAssertEqual(loaded.cameraCropAmount, settings.cameraCropAmount)
         XCTAssertEqual(loaded.cameraCropPosition, settings.cameraCropPosition)
+    }
+
+    func testPersistsCameraFrameOptionsWithoutLegacyFramePadding() {
+        let defaults = temporaryDefaults()
+        var settings = RecordingSettings()
+        settings.cameraContentMode = .fit
+        settings.cameraFramePadding = 0.12
+        settings.cameraShadowEnabled = true
+
+        RecordingSettingsStore.save(settings, defaults: defaults)
+        let loaded = RecordingSettingsStore.load(defaults: defaults)
+
+        XCTAssertEqual(loaded.cameraContentMode, .fit)
+        XCTAssertEqual(loaded.cameraFramePadding, 0, accuracy: 0.0001)
+        XCTAssertTrue(loaded.cameraShadowEnabled)
     }
 
     func testPersistsCanvasAppearance() {

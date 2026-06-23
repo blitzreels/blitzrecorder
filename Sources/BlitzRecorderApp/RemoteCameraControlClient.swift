@@ -205,17 +205,26 @@ private enum RemoteCameraMacIdentityStore {
     private static let defaultsFallbackKey = "remoteCamera.macSigningPrivateKey"
 
     static func load(defaults: UserDefaults = .standard) -> RemoteCameraMacCredential {
-        if let data = loadPrivateKeyDataFromKeychain() ?? defaults.data(forKey: defaultsFallbackKey),
+        let keychainData = usesKeychainStore ? loadPrivateKeyDataFromKeychain() : nil
+        if let data = keychainData ?? defaults.data(forKey: defaultsFallbackKey),
            let privateKey = try? Curve25519.Signing.PrivateKey(rawRepresentation: data) {
             return RemoteCameraMacCredential(privateKey: privateKey)
         }
 
         let privateKey = Curve25519.Signing.PrivateKey()
         let rawRepresentation = privateKey.rawRepresentation
-        if !savePrivateKeyDataToKeychain(rawRepresentation) {
+        if !usesKeychainStore || !savePrivateKeyDataToKeychain(rawRepresentation) {
             defaults.set(rawRepresentation, forKey: defaultsFallbackKey)
         }
         return RemoteCameraMacCredential(privateKey: privateKey)
+    }
+
+    private static var usesKeychainStore: Bool {
+#if DEBUG
+        ProcessInfo.processInfo.environment["BLITZRECORDER_DEV_USE_KEYCHAIN"] == "1"
+#else
+        true
+#endif
     }
 
     private static func loadPrivateKeyDataFromKeychain() -> Data? {

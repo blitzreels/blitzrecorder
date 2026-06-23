@@ -7,8 +7,6 @@ struct BottomDock: View {
     @Bindable var vm: RecorderViewModel
 
     var body: some View {
-        // One fixed-height transport row for every session state; only the rare
-        // idle-time problems (recovery, readiness) still stack a banner above it.
         VStack(spacing: 10) {
             if vm.state == .idle {
                 if let recovery = vm.lastRecoveryOutput {
@@ -39,13 +37,9 @@ struct BottomDock: View {
 
 private struct RecordingActionRow: View {
     @Bindable var vm: RecorderViewModel
-    /// Preview-only escape hatch: readiness checks need live permissions, which
-    /// render previews never have.
     var forcesSavedChip = false
 
     var body: some View {
-        // Both side clusters hug the record button with equal gaps — one symmetric
-        // transport cluster around the hero, not satellites scattered to the edges.
         HStack(spacing: 24) {
             HStack(spacing: 10) {
                 switch vm.state {
@@ -61,8 +55,6 @@ private struct RecordingActionRow: View {
 
             RecordButton(vm: vm)
 
-            // Trailing slot: session status or the saved-take chip — always IN
-            // the row, never stacked above it, so the dock height holds still.
             HStack(spacing: 10) {
                 switch vm.state {
                 case .idle:
@@ -73,9 +65,9 @@ private struct RecordingActionRow: View {
                             sourceTakeURL: vm.lastExportedSourceTakeURL,
                             warning: vm.lastExportWarning
                         )
+                    } else if vm.lastPostRecordingProjectOutput != nil {
+                        ProjectReadyChip(vm: vm)
                     } else if let message = vm.idleStatusMessage {
-                        // Transient status ("Fitted <window>…") rides in the row
-                        // like everything else; never cut mid-sentence.
                         Text(message)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.white.opacity(0.55))
@@ -85,8 +77,6 @@ private struct RecordingActionRow: View {
                             .help(message)
                     }
                 case .starting:
-                    // The record button's spinner is the ONLY loading indicator;
-                    // this is just words.
                     SessionStatusText(title: vm.sessionProgressTitle, detail: vm.sessionProgressDetail)
                 case .recording, .paused:
                     ElapsedTimeText(isPaused: vm.state == .paused, elapsed: vm.formattedElapsed)
@@ -103,8 +93,6 @@ private struct RecordingActionRow: View {
         }
     }
 
-    /// Same precedence the stacked dock used: recovery and readiness issues win,
-    /// and a new session hides the previous take.
     private var savedExportURL: URL? {
         if forcesSavedChip { return vm.lastExportedURL }
         guard vm.state == .idle,
@@ -114,9 +102,6 @@ private struct RecordingActionRow: View {
     }
 }
 
-/// Idle dock control: shows the export quality + FPS and opens export settings on
-/// click. One quiet line — a small gear glyph for affordance + the value, with no
-/// "EXPORT" eyebrow and no box (that chip read as cluttered). Text brightens on hover.
 private struct RecordingSettingsShortcut: View {
     @Bindable var vm: RecorderViewModel
     @State private var hovering = false
@@ -151,8 +136,6 @@ private struct RecordingSettingsShortcut: View {
     }
 }
 
-/// A compact glass button for dock actions. `fixedSize()` keeps the label at its natural
-/// width so it can never truncate, no matter how tight the surrounding row is.
 private struct DockActionButton: View {
     let title: String
     let systemImage: String
@@ -174,10 +157,75 @@ private struct DockActionButton: View {
     }
 }
 
-/// Compact "last take" chip beside the record button — two click targets, zero
-/// toolbar. Thumbnail = play; the text block = show in Finder; everything else
-/// (rename, sources, clear) lives in the right-click menu. Only the quiet ✕
-/// surfaces on hover. At rest it reads as one calm object.
+private struct ProjectReadyChip: View {
+    @Bindable var vm: RecorderViewModel
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button {
+                vm.openEditor()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "rectangle.and.pencil.and.ellipsis")
+                        .font(.system(size: 13, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(BlitzUI.mint)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Project ready")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.90))
+                        Text(projectDetail)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.52))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 40)
+            }
+            .blitzGlassButton()
+            .pointingHandCursor()
+            .help("Open this take in Edit")
+
+            ProjectActionsMenu(vm: vm)
+
+            if hovering {
+                DockDismissButton(help: "Clear and get ready for the next take") {
+                    vm.clearPostRecordingStatus()
+                }
+            }
+        }
+        .frame(maxWidth: 440, alignment: .leading)
+        .contentShape(.rect)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.15), value: hovering)
+        .contextMenu {
+            Button("Open in Edit") { vm.openEditor() }
+            ProjectCorrectionMenuContent(vm: vm)
+            Menu("Export As") {
+                ForEach(OutputVideoFormat.allCases, id: \.self) { format in
+                    Button(format.displayName) {
+                        vm.exportLastProject(as: format)
+                    }
+                }
+            }
+            Button("Show Source Files") {
+                vm.revealLastSourceTracks()
+            }
+            Divider()
+            Button("Clear") { vm.clearPostRecordingStatus() }
+        }
+    }
+
+    private var projectDetail: String {
+        vm.lastPostRecordingProjectOutput?.sourceDirectory.lastPathComponent
+            ?? vm.lastExportedSourceTakeURL?.lastPathComponent
+            ?? "Editable source project"
+    }
+}
+
 private struct SavedRecordingChip: View {
     @Bindable var vm: RecorderViewModel
     let url: URL
@@ -208,11 +256,23 @@ private struct SavedRecordingChip: View {
                     .help(warning)
             }
 
-            DockDismissButton(help: "Clear and get ready for the next take") {
-                vm.clearPostRecordingStatus()
+            if sourceTakeURL != nil {
+                HStack(spacing: 6) {
+                    DockActionButton(title: "Edit", systemImage: "rectangle.and.pencil.and.ellipsis", help: "Open this take in Edit") {
+                        vm.openEditor()
+                    }
+                    ProjectActionsMenu(vm: vm)
+                }
+                .fixedSize()
             }
-            .opacity(hovering ? 1 : 0)
+
+            if hovering {
+                DockDismissButton(help: "Clear and get ready for the next take") {
+                    vm.clearPostRecordingStatus()
+                }
+            }
         }
+        .frame(maxWidth: 440, alignment: .leading)
         .contentShape(.rect)
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.15), value: hovering)
@@ -221,6 +281,15 @@ private struct SavedRecordingChip: View {
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
             Button("Rename…") { vm.renameLastExportedFile() }
             if let sourceTakeURL {
+                Button("Open in Edit") { vm.openEditor() }
+                ProjectCorrectionMenuContent(vm: vm)
+                Menu("Export As") {
+                    ForEach(OutputVideoFormat.allCases, id: \.self) { format in
+                        Button(format.displayName) {
+                            vm.exportLastProject(as: format)
+                        }
+                    }
+                }
                 Button("Show Source Files") {
                     NSWorkspace.shared.activateFileViewerSelecting([sourceTakeURL])
                 }
@@ -235,8 +304,6 @@ private struct SavedRecordingChip: View {
     }
 
     private var savedDetail: String {
-        // Filename + size; the full path lives in the hover tooltip, the duration
-        // on the thumbnail badge (fall back here when there's no thumbnail).
         var parts = [url.lastPathComponent]
         if metadata.thumbnail == nil, let durationLabel = metadata.durationLabel {
             parts.append(durationLabel)
@@ -248,8 +315,110 @@ private struct SavedRecordingChip: View {
     }
 }
 
-/// The chip's two text lines as one click target (→ Finder). The headline never
-/// compresses; only the detail line truncates when the dock gets tight.
+private struct ProjectActionsMenu: View {
+    @Bindable var vm: RecorderViewModel
+
+    var body: some View {
+        Menu {
+            ProjectCorrectionMenuContent(vm: vm)
+            Divider()
+            Menu("Export As") {
+                ForEach(OutputVideoFormat.allCases, id: \.self) { format in
+                    Button(format.displayName) {
+                        vm.exportLastProject(as: format)
+                    }
+                }
+            }
+            Button("Show Source Files") {
+                vm.revealLastSourceTracks()
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 12, weight: .bold))
+                .frame(width: 28, height: 26)
+        }
+        .menuStyle(.button)
+        .controlSize(.small)
+        .help("More take actions")
+        .task(id: vm.lastExportedSourceTakeURL) {
+            vm.refreshLastExportedProject()
+        }
+    }
+}
+
+private struct ProjectCorrectionMenuContent: View {
+    @Bindable var vm: RecorderViewModel
+
+    var body: some View {
+        if let project = vm.lastExportedProject, !project.sceneEvents.isEmpty {
+            if project.sceneEvents.count == 1 {
+                Menu("Video Mix") {
+                    correctionButtons(eventIndex: 0, event: project.sceneEvents[0])
+                }
+            } else {
+                Menu("Mix Changes") {
+                    ForEach(Array(project.sceneEvents.enumerated()), id: \.offset) { index, event in
+                        Menu(segmentTitle(for: event, index: index)) {
+                            correctionButtons(eventIndex: index, event: event)
+                        }
+                    }
+                }
+            }
+        } else {
+            Button("No editable video mix") {}
+                .disabled(true)
+        }
+    }
+
+    @ViewBuilder
+    private func correctionButtons(
+        eventIndex: Int,
+        event: RecordingProject.SceneEventSnapshot
+    ) -> some View {
+        let selected = selectedCorrection(for: event)
+        ForEach(RecordingProjectSceneCorrection.allCases, id: \.self) { correction in
+            Button {
+                vm.applyProjectSceneCorrection(eventIndex: eventIndex, correction: correction)
+            } label: {
+                Label(
+                    correction.displayName,
+                    systemImage: correction == selected ? "checkmark" : correction.symbolName
+                )
+            }
+        }
+    }
+
+    private func selectedCorrection(for event: RecordingProject.SceneEventSnapshot) -> RecordingProjectSceneCorrection {
+        let sources = Set(event.scene.enabledSources.compactMap(CaptureSource.init(rawValue:)))
+        let hasScreen = sources.contains(.screen)
+        let hasCamera = sources.contains(.camera)
+        switch (hasScreen, hasCamera) {
+        case (true, true):
+            return .screenAndCamera
+        case (true, false):
+            return .screenOnly
+        case (false, true):
+            return .cameraOnly
+        default:
+            return .screenAndCamera
+        }
+    }
+
+    private func segmentTitle(for event: RecordingProject.SceneEventSnapshot, index: Int) -> String {
+        if index == 0 && event.time == 0 {
+            return "From 00:00"
+        }
+        return "From \(formatTime(event.time))"
+    }
+
+    private func formatTime(_ seconds: TimeInterval) -> String {
+        let totalSeconds = max(0, Int(seconds.rounded()))
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        return String(format: "%02d:%02d", minutes, seconds)
+    }
+}
+
 private struct SavedRecordingSummaryButton: View {
     let detail: String
     let path: String
@@ -278,8 +447,8 @@ private struct SavedRecordingSummaryButton: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .frame(maxWidth: 230, alignment: .leading)
-        .layoutPriority(1)
+        .frame(minWidth: 120, maxWidth: 180, alignment: .leading)
+        .layoutPriority(-1)
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
         .pointingHandCursor()
@@ -287,8 +456,6 @@ private struct SavedRecordingSummaryButton: View {
     }
 }
 
-/// Quiet words beside the record button while capture spins up — the button's
-/// spinner is the only loading indicator, deliberately.
 private struct SessionStatusText: View {
     let title: String
     let detail: String?
@@ -312,7 +479,6 @@ private struct SessionStatusText: View {
     }
 }
 
-/// The running clock beside the record button. Paused = dimmed digits + amber word.
 private struct ElapsedTimeText: View {
     let isPaused: Bool
     let elapsed: String
@@ -332,7 +498,6 @@ private struct ElapsedTimeText: View {
     }
 }
 
-/// Compact export progress beside the record button — title, percent, one bar.
 private struct FinishingProgressStatus: View {
     let title: String
     let detail: String?
@@ -360,9 +525,6 @@ private struct FinishingProgressStatus: View {
     }
 }
 
-/// The recording's first frame as a click-to-play tile. Fixed height; width follows the
-/// video's aspect (vertical shorts stay narrow, screen takes go wide) within sane bounds.
-/// Hover dims the frame and surfaces a play glyph, like QuickLook.
 private struct RecordingThumbnailButton: View {
     let image: NSImage?
     let durationLabel: String?
@@ -424,7 +586,6 @@ private struct RecordingThumbnailButton: View {
     }
 }
 
-/// A quiet ✕ — no button chrome, brightens on hover.
 private struct DockDismissButton: View {
     let help: String
     let action: () -> Void
@@ -615,8 +776,6 @@ private struct ReadinessIssueView: View {
         .frame(maxWidth: .infinity)
     }
 
-    // Short and human; the full technical sentence lives in the hover tooltip and
-    // the Permissions tab behind "Details".
     private var message: String {
         if !vm.accessController.canRenderExport {
             return "Recording unavailable"
@@ -631,7 +790,6 @@ private struct ReadinessIssueView: View {
     }
 }
 
-/// A quiet text affordance ("Details ›") — no button chrome, brightens on hover.
 private struct DetailsLink: View {
     let action: () -> Void
     @State private var hovering = false
@@ -682,7 +840,6 @@ private struct PauseButton: View {
     }
 }
 
-/// Subtle press feedback for the record control — a small, calm dip, no bounce.
 private struct RecordButtonPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -691,10 +848,6 @@ private struct RecordButtonPressStyle: ButtonStyle {
     }
 }
 
-/// Round, Final Cut-style record control — the hero of the dock. Red is the ONLY
-/// red in the UI. Idle = a flat solid-red disc inside a faint ring; recording/paused
-/// = a red ring around a white stop square. Flat by design — no gradient, gloss, or
-/// glow. Not-ready/locked states dim rather than recolor.
 private struct RecordButton: View {
     @Bindable var vm: RecorderViewModel
 
@@ -708,7 +861,6 @@ private struct RecordButton: View {
             vm.primaryAction()
         } label: {
             ZStack {
-                // Faint ring the disc sits inside (the classic record-button well).
                 Circle()
                     .strokeBorder(.white.opacity(0.14), lineWidth: 2)
                     .frame(width: diameter, height: diameter)
@@ -748,8 +900,6 @@ private struct RecordButton: View {
             ProgressView()
                 .controlSize(.small)
         case .finishing:
-            // The linear export bar beside the button is the one progress
-            // indicator; a spinner here would be a duplicate.
             Circle()
                 .fill(BlitzUI.recordRed)
                 .frame(width: diameter - 8, height: diameter - 8)
@@ -765,7 +915,6 @@ private struct RecordButton: View {
         }
     }
 
-    /// Idle-but-not-ready stays red but dims; we never turn it yellow (one red only).
     private var dimmed: Bool {
         switch vm.state {
         case .idle: return !vm.canStartRecording
@@ -794,7 +943,6 @@ private func bottomDockPreviewModel(warning: String? = nil) -> RecorderViewModel
         defaults: defaults
     )
     let vm = RecorderViewModel(coordinator: coordinator, previewStage: PreviewStageView())
-    // A real local file when available so the thumbnail/duration/size pipeline runs.
     vm.lastExportedURL = URL(fileURLWithPath: "/Volumes/harddrive/recordings/video-exa.mov")
     vm.lastExportedSourceTakeURL = URL(fileURLWithPath: "/Volumes/harddrive/recordings/sources/video-exa")
     vm.lastExportWarning = warning

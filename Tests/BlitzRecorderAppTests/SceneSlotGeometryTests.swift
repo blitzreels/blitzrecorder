@@ -65,6 +65,16 @@ final class SceneSlotGeometryTests: XCTestCase {
         XCTAssertRect(slot, equals: CGRect(x: 0, y: 0, width: 1, height: 0.72))
     }
 
+    func testLeftDockedCameraLeavesScreenSlotBesideIt() {
+        var layout = SceneLayout()
+        layout.screenFrame = CGRect(x: 1.0 / 3.0, y: 0, width: 2.0 / 3.0, height: 1)
+        layout.cameraFrame = CGRect(x: 0, y: 0, width: 1.0 / 3.0, height: 1)
+
+        let slot = SceneSlotGeometry.screenSlot(in: layout, enabledSources: [.screen, .camera])
+
+        XCTAssertRect(slot, equals: CGRect(x: 1.0 / 3.0, y: 0, width: 2.0 / 3.0, height: 1))
+    }
+
     func testInsetCameraUsesLargestAdjacentFreeSlot() {
         var layout = SceneLayout()
         layout.screenFrame = CGRect(x: 0.1, y: 0.2, width: 0.8, height: 0.6)
@@ -145,16 +155,36 @@ final class SceneSlotGeometryTests: XCTestCase {
         XCTAssertRect(plan.screenCrop, equals: CGRect(x: 0.341875, y: 0, width: 0.31625, height: 0.5))
     }
 
-    func testTargetWindowFittingPlanClampsScaledFrameToVisibleArea() {
+    func testTargetWindowFittingPlanZoomInUsesSmallerSourceWindow() {
         let plan = TargetWindowFitting.plan(
             screenFrame: CGRect(x: 0, y: 0, width: 1600, height: 900),
             visibleFrame: CGRect(x: 0, y: 0, width: 1600, height: 900),
             captureLayout: .vertical,
             screenSlot: SceneSlotGeometry.shortsTopHalfSlot,
-            scale: 1.25
+            zoom: 1.25
         )
 
-        XCTAssertRect(plan.windowFrame, equals: CGRect(x: 483.75, y: 337.5, width: 632.5, height: 562.5))
+        XCTAssertRect(plan.windowFrame, equals: CGRect(x: 597.6, y: 495, width: 404.8, height: 360))
+    }
+
+    func testTargetWindowFittingPlanZoomOutUsesLargerSourceWindow() {
+        let plan = TargetWindowFitting.plan(
+            screenFrame: CGRect(x: 0, y: 0, width: 1600, height: 900),
+            visibleFrame: CGRect(x: 0, y: 0, width: 1600, height: 900),
+            captureLayout: .vertical,
+            screenSlot: SceneSlotGeometry.shortsTopHalfSlot,
+            zoom: 0.75
+        )
+
+        XCTAssertRect(
+            plan.windowFrame,
+            equals: CGRect(
+                x: 462.6666666667,
+                y: 300,
+                width: 674.6666666667,
+                height: 600
+            )
+        )
     }
 
     func testShortsTopHalfSlotMapsToUpperHalfOfVerticalCanvas() {
@@ -169,30 +199,38 @@ final class SceneSlotGeometryTests: XCTestCase {
         XCTAssertRect(frame, equals: CGRect(x: 547, y: 450, width: 506, height: 450))
     }
 
-    func testShortsTopHalfSlotCanScaleToSeventyFivePercent() {
+    func testShortsTopHalfSlotZoomOutUsesLargerSourceFrame() {
         let visibleFrame = CGRect(x: 0, y: 0, width: 1600, height: 900)
 
         let frame = SceneSlotGeometry.physicalFrame(
             for: SceneSlotGeometry.shortsTopHalfSlot,
             in: visibleFrame,
             captureLayout: .vertical,
-            scale: 0.75
+            zoom: 0.75
         )
 
-        XCTAssertRect(frame, equals: CGRect(x: 610.25, y: 506.25, width: 379.5, height: 337.5))
+        XCTAssertRect(
+            frame,
+            equals: CGRect(
+                x: 462.6666666667,
+                y: 300,
+                width: 674.6666666667,
+                height: 600
+            )
+        )
     }
 
-    func testShortsTopHalfSlotCanScaleToOneHundredTwentyFivePercent() {
+    func testShortsTopHalfSlotZoomInUsesSmallerSourceFrame() {
         let visibleFrame = CGRect(x: 0, y: 0, width: 1600, height: 900)
 
         let frame = SceneSlotGeometry.physicalFrame(
             for: SceneSlotGeometry.shortsTopHalfSlot,
             in: visibleFrame,
             captureLayout: .vertical,
-            scale: 1.25
+            zoom: 1.25
         )
 
-        XCTAssertRect(frame, equals: CGRect(x: 483.75, y: 393.75, width: 632.5, height: 562.5))
+        XCTAssertRect(frame, equals: CGRect(x: 597.6, y: 495, width: 404.8, height: 360))
     }
 }
 

@@ -11,61 +11,76 @@ struct CameraCropControls: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Image(systemName: "crop")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(disabled ? 0.4 : 0.82))
-                    .frame(width: 18, height: 18)
-                Text("Camera crop")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white.opacity(disabled ? 0.55 : 0.95))
-                Spacer(minLength: 0)
-                Button {
-                    vm.resetCameraCrop()
-                } label: {
-                    Image(systemName: "arrow.counterclockwise")
-                        .font(.system(size: 10, weight: .bold))
-                        .frame(width: 22, height: 22)
-                }
-                .blitzGlassButton()
-                .controlSize(.small)
-                .disabled(!vm.isCameraCropModeEnabled && isCentered)
-                .pointingHandCursor()
-                .help("Reset camera crop")
-            }
-
-            if !vm.isCameraCropModeEnabled {
+        VStack(alignment: .leading, spacing: 12) {
+            if vm.isCameraCropModeEnabled {
+                cropActiveNotice
+            } else {
                 if vm.isRemoteCameraSelected {
                     RemoteCameraOrientationControl(vm: vm)
                 }
 
-                cropZoomControl
+                CameraInsetFrameControls(vm: vm)
 
-                Button {
-                    vm.beginCameraCropMode()
-                } label: {
-                    Label("Free crop", systemImage: "viewfinder")
-                        .font(.system(size: 11, weight: .semibold))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                }
-                .blitzGlassButton()
-                .controlSize(.small)
-                .pointingHandCursor()
-                .help("Edit camera crop on the live canvas")
+                CameraInspectorSliderRow(
+                    title: "Zoom",
+                    value: Binding(
+                        get: { cropZoom },
+                        set: { vm.setCameraCropZoom(CGFloat($0)) }
+                    ),
+                    range: 0...0.75
+                )
+                .help("Zoom into the camera image")
+
+                cropActions
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        // Active crop-edit mode reads from a mint-tinted fill, not a mint outline.
-        .background(
-            vm.isCameraCropModeEnabled ? mint.opacity(0.12) : Color.white.opacity(0.055),
-            in: .rect(cornerRadius: 10)
-        )
         .disabled(disabled)
         .opacity(disabled ? 0.6 : 1)
+    }
+
+    private var cropActiveNotice: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "crop")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(mint)
+            Text("Cropping on canvas")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.85))
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(mint.opacity(0.12), in: .rect(cornerRadius: 8))
+    }
+
+    private var cropActions: some View {
+        HStack(spacing: 8) {
+            Button {
+                vm.beginCameraCropMode()
+            } label: {
+                Label("Free crop", systemImage: "viewfinder")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+            }
+            .blitzGlassButton()
+            .controlSize(.small)
+            .pointingHandCursor()
+            .help("Edit the camera crop on the live canvas")
+
+            Button {
+                vm.resetCameraCrop()
+            } label: {
+                Image(systemName: "arrow.counterclockwise")
+                    .font(.system(size: 10, weight: .bold))
+                    .frame(width: 24, height: 24)
+            }
+            .blitzGlassButton()
+            .controlSize(.small)
+            .disabled(isCentered)
+            .pointingHandCursor()
+            .help("Reset camera crop")
+        }
     }
 
     private var isCentered: Bool {
@@ -76,27 +91,144 @@ struct CameraCropControls: View {
     private var cropZoom: Double {
         Double(max(vm.settings.cameraCropAmount.x, vm.settings.cameraCropAmount.y))
     }
+}
 
-    private var cropZoomControl: some View {
-        cropSlider(
-            title: "Zoom",
-            value: Binding(
-                get: { cropZoom },
-                set: { vm.setCameraCropZoom(CGFloat($0)) }
-            ),
-            range: 0...0.75
+struct CameraInsetFrameControls: View {
+    @Bindable var vm: RecorderViewModel
+
+    private var disabled: Bool {
+        !vm.isSourceConfigured(.camera) || !vm.canEditScene
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            CameraInspectorRow(title: "Position") {
+                Picker("Position", selection: alignmentSelection) {
+                    ForEach(CameraInsetAlignment.allCases, id: \.self) { alignment in
+                        Text(alignment.displayName).tag(alignment)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .controlSize(.small)
+            }
+            .help("Place the camera in the bottom left or bottom right corner")
+
+            CameraInspectorRow(title: "Shape") {
+                Picker("Shape", selection: shapeSelection) {
+                    ForEach(CameraInsetShape.allCases, id: \.self) { shape in
+                        Text(shape.displayName).tag(shape)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .controlSize(.small)
+            }
+            .help("Camera frame shape")
+
+            CameraInspectorSliderRow(
+                title: "Size",
+                value: Binding(
+                    get: { vm.cameraInsetSize },
+                    set: { vm.setCameraInsetSize($0) }
+                ),
+                range: vm.cameraInsetSizeRange,
+                step: 0.005
+            )
+            .help("Camera frame size — the frame keeps the camera's real aspect ratio")
+
+            CameraInspectorRow(title: "Image") {
+                Picker("Image", selection: contentModeSelection) {
+                    ForEach(CameraContentMode.allCases, id: \.self) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .controlSize(.small)
+            }
+            .help("Fill the frame edge to edge, or fit the whole camera image")
+
+            Toggle(isOn: shadowSelection) {
+                Label("Shadow", systemImage: "square.stack.3d.down.right")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .tint(BlitzUI.mint)
+            .help("Add a soft shadow under the camera")
+        }
+        .disabled(disabled)
+        .opacity(disabled ? 0.6 : 1)
+    }
+
+    private var alignmentSelection: Binding<CameraInsetAlignment> {
+        Binding(
+            get: { vm.cameraInsetAlignment },
+            set: { vm.setCameraInsetAlignment($0) }
         )
     }
 
-    private func cropSlider(title: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
+    private var shapeSelection: Binding<CameraInsetShape> {
+        Binding(
+            get: { vm.cameraInsetShape },
+            set: { vm.setCameraInsetShape($0) }
+        )
+    }
+
+    private var contentModeSelection: Binding<CameraContentMode> {
+        Binding(
+            get: { vm.settings.cameraContentMode },
+            set: { vm.setCameraContentMode($0) }
+        )
+    }
+
+    private var shadowSelection: Binding<Bool> {
+        Binding(
+            get: { vm.settings.cameraShadowEnabled },
+            set: { vm.setCameraShadowEnabled($0) }
+        )
+    }
+}
+
+struct CameraInspectorRow<Content: View>: View {
+    let title: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
         HStack(spacing: 8) {
             Text(title)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.58))
-                .frame(width: 34, alignment: .leading)
+                .frame(width: 50, alignment: .leading)
+            content
+        }
+    }
+}
 
-            Slider(value: value, in: range)
-                .controlSize(.small)
+struct CameraInspectorSliderRow: View {
+    let title: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    var step: Double?
+
+    var body: some View {
+        CameraInspectorRow(title: title) {
+            Group {
+                if let step {
+                    Slider(value: $value, in: range, step: step)
+                } else {
+                    Slider(value: $value, in: range)
+                }
+            }
+            .controlSize(.small)
+            .tint(BlitzUI.mint)
+
+            Text("\(Int((value * 100).rounded()))%")
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.68))
+                .frame(width: 34, alignment: .trailing)
         }
     }
 }

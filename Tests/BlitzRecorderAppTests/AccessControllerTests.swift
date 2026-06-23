@@ -4,6 +4,26 @@ import XCTest
 
 @MainActor
 final class AccessControllerTests: XCTestCase {
+    func testDefaultStoragePolicyAvoidsKeychainInDebugBuilds() {
+        let keychainOptInVariable = "BLITZRECORDER_DEV_USE_KEYCHAIN"
+        let originalOptInValue = ProcessInfo.processInfo.environment[keychainOptInVariable]
+        unsetenv(keychainOptInVariable)
+        defer {
+            if let originalOptInValue {
+                setenv(keychainOptInVariable, originalOptInValue, 1)
+            } else {
+                unsetenv(keychainOptInVariable)
+            }
+        }
+
+#if DEBUG
+        XCTAssertFalse(AccessStoragePolicy.usesKeychainStores(defaults: nil))
+#else
+        XCTAssertTrue(AccessStoragePolicy.usesKeychainStores(defaults: nil))
+#endif
+        XCTAssertFalse(AccessStoragePolicy.usesKeychainStores(defaults: temporaryDefaults()))
+    }
+
     func testAccessIsFreeByDefault() {
         let access = AccessController(defaults: temporaryDefaults())
 

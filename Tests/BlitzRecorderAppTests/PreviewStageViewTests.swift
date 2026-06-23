@@ -42,14 +42,9 @@ final class PreviewStageViewTests: XCTestCase {
         let canvasFrame = view.renderedCanvasFrameForTesting
         let mediaFrame = view.renderedCameraFrameForTesting
 
-        // The crop FILL layer (the camera media) uses the full rendered media
-        // frame, which overscans the canvas horizontally for an off-canvas source.
         XCTAssertLessThan(mediaFrame.minX, canvasFrame.minX)
         XCTAssertGreaterThan(mediaFrame.width, canvasFrame.width)
 
-        // The selection MARQUEE, however, is clamped to the visible canvas so the
-        // green frame never spills into the side gaps (hit-testing still uses the
-        // full, unclamped frame).
         XCTAssertGreaterThanOrEqual(selectionFrame.minX, canvasFrame.minX - 0.0001)
         XCTAssertLessThanOrEqual(selectionFrame.maxX, canvasFrame.maxX + 0.0001)
         XCTAssertLessThanOrEqual(selectionFrame.width, canvasFrame.width + 0.0001)
@@ -215,6 +210,20 @@ final class PreviewStageViewTests: XCTestCase {
         view.beginCameraCropEditing()
 
         XCTAssertTrue(view.isCameraCropEditingEnabled)
+    }
+
+    func testCameraShadowUsesUnclippedStageLayer() {
+        let view = PreviewStageView()
+        view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
+        view.captureLayout = .vertical
+        view.enabledSources = [.screen, .camera]
+        view.sceneLayout = SceneLayout.presetLayout(.cameraInset, for: .vertical)
+        view.cameraShadowEnabled = true
+
+        view.layoutSubtreeIfNeeded()
+
+        XCTAssertTrue(view.renderedCameraContentMasksToBoundsForTesting)
+        XCTAssertGreaterThan(view.renderedCameraShadowOpacityForTesting, 0)
     }
 
     func testCameraCropInteractionLockPreventsCameraCropEditing() {
@@ -433,16 +442,11 @@ final class PreviewStageViewTests: XCTestCase {
 
         let canvasFrame = view.renderedCanvasFrameForTesting
         let screenFrame = view.renderedScreenFrameForTesting
-        // The 16:9 display aspect-fills the portrait crop editor: full canvas
-        // height, wider than the canvas, centered. No letterbox bars are shown
-        // inside the crop zone.
         XCTAssertLessThan(screenFrame.minX, canvasFrame.minX)
         XCTAssertGreaterThan(screenFrame.maxX, canvasFrame.maxX)
         XCTAssertEqual(screenFrame.minY, canvasFrame.minY, accuracy: 0.5)
         XCTAssertEqual(screenFrame.maxY, canvasFrame.maxY, accuracy: 0.5)
 
-        // The default crop selects the visible output slot, not the overscanned
-        // off-canvas source margins.
         XCTAssertRect(try XCTUnwrap(view.renderedSelectionFrameForTesting), equals: canvasFrame)
     }
 
@@ -458,9 +462,6 @@ final class PreviewStageViewTests: XCTestCase {
         view.beginScreenCropEditing(crop: nil)
 
         let initialFrame = try XCTUnwrap(view.renderedSelectionFrameForTesting)
-        // The default crop fills the visible display, so crop inward by dragging
-        // the right edge left; the selection must shrink and stay on-canvas. Grab
-        // a few px inside the edge — the edge hit area excludes the exact maxX.
         let start = CGPoint(x: initialFrame.maxX - 4, y: initialFrame.midY)
         let end = CGPoint(x: initialFrame.maxX - 84, y: initialFrame.midY)
         view.mouseDown(with: mouseEvent(.leftMouseDown, at: start, in: window))
@@ -497,6 +498,50 @@ final class PreviewStageViewTests: XCTestCase {
             equals: aspectFit(sourceAspectRatio: SceneLayout.defaultScreenAspectRatio, in: expectedScreenFrame)
         )
         XCTAssertRect(view.renderedCameraFrameForTesting, equals: expectedCameraFrame)
+    }
+
+    func testLeftCamScreenFillsPaddedSlotHeight() {
+        let view = PreviewStageView()
+        view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
+        view.captureLayout = .horizontal
+        view.enabledSources = [.screen, .camera]
+        view.canvasPadding = 0.12
+        view.sceneLayout = SceneLayout.presetLayout(.webcamLeft, for: .horizontal)
+        view.layoutSubtreeIfNeeded()
+
+        let canvasFrame = view.renderedCanvasFrameForTesting
+        let layout = SceneLayout.presetLayout(.webcamLeft, for: .horizontal)
+        let expectedScreenFrame = SceneLayoutProjection.padded(
+            SceneLayoutProjection.denormalized(layout.screenFrame, in: canvasFrame, origin: .lowerLeft),
+            in: canvasFrame,
+            padding: view.canvasPadding
+        )
+
+        XCTAssertRect(view.renderedScreenFrameForTesting, equals: expectedScreenFrame)
+    }
+
+    func testLeftCamTallScreenSourceFitsInsidePaddedSlot() {
+        let view = PreviewStageView()
+        view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
+        view.captureLayout = .horizontal
+        view.enabledSources = [.screen, .camera]
+        view.canvasPadding = 0.12
+        view.screenSourceAspectRatio = 9.0 / 19.5
+        view.sceneLayout = SceneLayout.presetLayout(.webcamLeft, for: .horizontal)
+        view.layoutSubtreeIfNeeded()
+
+        let canvasFrame = view.renderedCanvasFrameForTesting
+        let layout = SceneLayout.presetLayout(.webcamLeft, for: .horizontal)
+        let expectedScreenFrame = SceneLayoutProjection.padded(
+            SceneLayoutProjection.denormalized(layout.screenFrame, in: canvasFrame, origin: .lowerLeft),
+            in: canvasFrame,
+            padding: view.canvasPadding
+        )
+
+        XCTAssertRect(
+            view.renderedScreenFrameForTesting,
+            equals: aspectFit(sourceAspectRatio: 9.0 / 19.5, in: expectedScreenFrame)
+        )
     }
 
     func testScreenFocusScreenFitsPaddedCanvasWhenPaddingIsEnabled() {

@@ -66,22 +66,13 @@ enum SceneSlotGeometry {
         for slot: CGRect,
         in visibleFrame: CGRect,
         captureLayout: CaptureLayout,
-        scale: CGFloat = 1
+        zoom: CGFloat = 1
     ) -> CGRect {
         let canvas = canvasFrame(in: visibleFrame, captureLayout: captureLayout)
         let frame = SceneLayoutProjection.denormalized(slot, in: canvas, origin: .lowerLeft)
-        return scaled(frame, scale: scale)
-    }
-
-    private static func scaled(_ frame: CGRect, scale: CGFloat) -> CGRect {
-        let scale = min(1.25, max(0.75, scale))
-        let width = frame.width * scale
-        let height = frame.height * scale
-        return CGRect(
-            x: frame.midX - width / 2,
-            y: frame.midY - height / 2,
-            width: width,
-            height: height
+        return TargetWindowFitting.clamped(
+            frame: WindowZoomGeometry.sourceFrame(for: frame, zoom: zoom),
+            in: visibleFrame
         )
     }
 }

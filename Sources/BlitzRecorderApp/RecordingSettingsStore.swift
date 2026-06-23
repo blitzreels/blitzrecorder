@@ -35,6 +35,9 @@ enum RecordingSettingsStore {
         static let canvasBackgroundStyle = "scene.canvasBackgroundStyle"
         static let canvasBackgroundAnimated = "scene.canvasBackgroundAnimated"
         static let canvasPadding = "scene.canvasPadding"
+        static let cameraContentMode = "scene.cameraContentMode"
+        static let cameraFramePadding = "scene.cameraFramePadding"
+        static let cameraShadowEnabled = "scene.cameraShadowEnabled"
         static let screenFrame = "scene.screenFrame"
         static let cameraFrame = "scene.cameraFrame"
         static let layerOrder = "scene.layerOrder"
@@ -97,10 +100,6 @@ enum RecordingSettingsStore {
             settings.removesCameraBackgroundAfterRecording = defaults.bool(forKey: Key.removesCameraBackgroundAfterRecording)
         }
 
-        if defaults.object(forKey: Key.savesSourceFiles) != nil {
-            settings.savesSourceFiles = defaults.bool(forKey: Key.savesSourceFiles)
-        }
-
         if defaults.object(forKey: Key.renamesRecordingsFromSpeech) != nil {
             settings.renamesRecordingsFromSpeech = defaults.bool(forKey: Key.renamesRecordingsFromSpeech)
         }
@@ -154,6 +153,15 @@ enum RecordingSettingsStore {
         }
         if defaults.object(forKey: Key.canvasPadding) != nil {
             settings.canvasPadding = clampedCanvasPadding(defaults.double(forKey: Key.canvasPadding))
+        }
+        if let rawCameraContentMode = defaults.string(forKey: Key.cameraContentMode),
+           let cameraContentMode = CameraContentMode(rawValue: rawCameraContentMode) {
+            settings.cameraContentMode = cameraContentMode
+        }
+        settings.cameraFramePadding = 0
+        defaults.removeObject(forKey: Key.cameraFramePadding)
+        if defaults.object(forKey: Key.cameraShadowEnabled) != nil {
+            settings.cameraShadowEnabled = defaults.bool(forKey: Key.cameraShadowEnabled)
         }
         settings.sceneLayout = SceneLayout.defaultLayout(for: settings.layout)
         let savedScreenFrame = rect(for: Key.screenFrame, defaults: defaults)
@@ -265,7 +273,7 @@ enum RecordingSettingsStore {
         defaults.set(settings.microphoneGain, forKey: Key.microphoneGain)
         defaults.set(settings.systemAudioGain, forKey: Key.systemAudioGain)
         defaults.set(settings.removesCameraBackgroundAfterRecording, forKey: Key.removesCameraBackgroundAfterRecording)
-        defaults.set(settings.savesSourceFiles, forKey: Key.savesSourceFiles)
+        defaults.set(true, forKey: Key.savesSourceFiles)
         defaults.set(settings.renamesRecordingsFromSpeech, forKey: Key.renamesRecordingsFromSpeech)
         defaults.set(settings.showsRuleOfThirdsOverlay, forKey: Key.showsRuleOfThirdsOverlay)
         defaults.set(settings.socialSafeZoneOverlay.rawValue, forKey: Key.socialSafeZoneOverlay)
@@ -303,6 +311,9 @@ enum RecordingSettingsStore {
         defaults.set(settings.canvasBackgroundStyle.rawValue, forKey: Key.canvasBackgroundStyle)
         defaults.set(settings.canvasBackgroundAnimated, forKey: Key.canvasBackgroundAnimated)
         defaults.set(clampedCanvasPadding(Double(settings.canvasPadding)), forKey: Key.canvasPadding)
+        defaults.set(settings.cameraContentMode.rawValue, forKey: Key.cameraContentMode)
+        defaults.removeObject(forKey: Key.cameraFramePadding)
+        defaults.set(settings.cameraShadowEnabled, forKey: Key.cameraShadowEnabled)
         defaults.set(string(from: settings.sceneLayout.screenFrame), forKey: Key.screenFrame)
         defaults.set(string(from: settings.sceneLayout.cameraFrame), forKey: Key.cameraFrame)
         defaults.set(settings.sceneLayout.layerOrder.map(\.rawValue), forKey: Key.layerOrder)
@@ -390,4 +401,5 @@ enum RecordingSettingsStore {
     private static func clampedCanvasPadding(_ padding: Double) -> CGFloat {
         CGFloat(min(0.16, max(0, padding)))
     }
+
 }

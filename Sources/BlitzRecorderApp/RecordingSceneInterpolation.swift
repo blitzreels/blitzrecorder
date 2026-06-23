@@ -13,6 +13,9 @@ extension RecordingScene {
             canvasBackgroundStyle: progress < 1 ? canvasBackgroundStyle : target.canvasBackgroundStyle,
             canvasBackgroundAnimated: progress < 1 ? canvasBackgroundAnimated : target.canvasBackgroundAnimated,
             canvasPadding: canvasPadding + (target.canvasPadding - canvasPadding) * progress,
+            cameraContentMode: progress < 1 ? cameraContentMode : target.cameraContentMode,
+            cameraFramePadding: 0,
+            cameraShadowEnabled: progress < 1 ? cameraShadowEnabled : target.cameraShadowEnabled,
             sourceOpacities: interpolatedSourceOpacities(to: target, sources: enabledSources, progress: progress)
         )
     }

@@ -57,6 +57,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
             self?.windowController?.applySavedRecordingOutput(output)
             self?.rebuildMenu()
         }
+        coordinator.onPostRecordingProject = { [weak self] output in
+            self?.windowController?.applyPostRecordingProjectOutput(output)
+            self?.rebuildMenu()
+        }
         coordinator.onRecordingRecovery = { [weak self] output in
             self?.windowController?.applyRecoveryOutput(output)
             self?.rebuildMenu()
@@ -181,9 +185,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
         statusItem?.menu = menu
     }
 
-    /// A non-interactive, word-wrapping caption row for the status menu. Plain
-    /// `NSMenuItem` titles never wrap, so a long readiness reason runs off the
-    /// screen edge; a custom wrapping `NSTextField` view paragraphs it instead.
     private static func wrappingCaptionItem(_ text: String, width: CGFloat = 300) -> NSMenuItem {
         let item = NSMenuItem()
         item.isEnabled = false
@@ -197,7 +198,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
         label.preferredMaxLayoutWidth = width
         label.translatesAutoresizingMaskIntoConstraints = false
 
-        // Leading inset of 21pt aligns the caption with standard menu item text.
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(label)
@@ -324,11 +324,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
         return image
     }
 
-    /// The local dev build uses a distinct bundle id (…​.debug). Stamp a "DEV"
-    /// ribbon on the Dock / Cmd-Tab icon so it's never confused with the release.
     private func applyDevIconBadgeIfNeeded() {
+#if DEBUG
+        guard ProcessInfo.processInfo.environment["BLITZRECORDER_HIDE_DEV_ICON"] != "1" else { return }
+#else
         guard Bundle.main.bundleIdentifier?.hasSuffix(".debug") == true else { return }
-        guard let base = NSApp.applicationIconImage.copy() as? NSImage else { return }
+#endif
+        guard let base = devIconBaseImage() else { return }
 
         let side: CGFloat = 512
         let canvas = NSSize(width: side, height: side)
@@ -354,6 +356,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
         badged.unlockFocus()
 
         NSApp.applicationIconImage = badged
+    }
+
+    private func devIconBaseImage() -> NSImage? {
+        if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "png"),
+           let image = NSImage(contentsOf: url) {
+            return image
+        }
+
+#if DEBUG
+        let sourceURL = URL(fileURLWithPath: #filePath)
+        let repoRoot = sourceURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let appIconURL = repoRoot.appendingPathComponent("Resources/AppIcon.png")
+        if let image = NSImage(contentsOf: appIconURL) {
+            return image
+        }
+#endif
+
+        return NSApp.applicationIconImage.copy() as? NSImage
     }
 
     @objc private func showWindow() {

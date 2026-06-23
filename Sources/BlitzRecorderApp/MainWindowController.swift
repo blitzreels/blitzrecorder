@@ -23,9 +23,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var isStartingCameraPreview = false
     private var cameraPreviewDeviceID: String?
     private var preservedHiddenScreenPreviewSelectionRevision: Int?
-    /// The screen-source config the currently running preview stream was started with.
-    /// Lets us skip a restart when only the layout/scene/camera changed (those don't
-    /// affect screen capture) so the live frame never flashes back to "Starting…".
     private var lastStartedScreenCaptureSignature: ScreenCaptureSignature?
     private var settingsWindowController: SettingsWindowController?
     private var currentRecordingState: RecordingState = .idle
@@ -58,13 +55,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         super.init(window: window)
 
-        // Enforce the minimum window size ourselves. `window.minSize` alone gets
-        // overridden by the SwiftUI NSHostingView on relayout, so clamp every live
-        // resize via the window delegate (AppKit always honors this).
         window.delegate = self
 
-        // SwiftUI views reach the native Settings window through this hook (the app
-        // rail is gone, so every former rail destination routes here per rule #5).
         viewModel.onPresentSettings = { [weak self] pane in
             self?.presentSettings(selecting: pane)
         }
@@ -142,16 +134,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         previewStage.canvasPadding = coordinator.settings.canvasPadding
 
         let host = NSHostingView(rootView: MainView(vm: viewModel).preferredColorScheme(.dark))
-        // Don't let SwiftUI's ideal size drive the window. MainView uses .frame(maxHeight: .infinity),
-        // so an unbounded ideal height would otherwise resize the whole window to the full screen on
-        // relayout (e.g. switching tabs). Empty sizingOptions + autoresizing keeps the window fixed
-        // and just fills it with the content.
         host.sizingOptions = []
         host.translatesAutoresizingMaskIntoConstraints = true
         host.autoresizingMask = [.width, .height]
         window.contentView = host
-        // Re-assert the floor after installing the hosting view and clamp the content area too,
-        // so the fixed-width tab rail + sidebar + dock can't be squeezed past the point where they clip.
         window.contentMinSize = Self.minimumWindowContentSize
         window.minSize = Self.minimumWindowContentSize
 
@@ -170,10 +156,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         fatalError("init(coder:) has not been implemented")
     }
 
-    // MARK: - NSWindowDelegate
 
-    /// Hard floor on the window size. `window.minSize` gets clobbered by the SwiftUI
-    /// hosting view, so we clamp every live resize here — AppKit always honors this.
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
         let minSize = Self.minimumWindowContentSize
         return NSSize(
@@ -182,9 +165,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         )
     }
 
-    /// Smallest size the recorder layout fits without clipping: tab rail + setup panel +
-    /// preview column + advanced drawer + spacing. The panels can compress to their minimums,
-    /// but the preview needs enough width for source chips, crop controls, and the record dock.
     static let minimumWindowContentSize = NSSize(width: 1120, height: 760)
 
     private static func initialContentRect() -> NSRect {
@@ -271,6 +251,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         viewModel.applySavedRecordingOutput(output)
     }
 
+    func applyPostRecordingProjectOutput(_ output: PostRecordingProjectOutput) {
+        viewModel.applyPostRecordingProjectOutput(output)
+    }
+
     func applyRecoveryOutput(_ output: RecordingRecoveryOutput) {
         viewModel.applyRecoveryOutput(output)
     }
@@ -336,10 +320,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         viewModel.syncSettings()
     }
 
-    /// Opens (or re-focuses) the native ⌘, Settings window, reusing the main window's
-    /// view model so changes stay in sync with the recorder. When `pane` is supplied
-    /// the window opens directly on that pane (rule #5 nav routing); otherwise it
-    /// keeps its last/default selection (the bare ⌘, path).
     func presentSettings(selecting pane: SettingsPane? = nil) {
         if settingsWindowController == nil {
             settingsWindowController = SettingsWindowController(viewModel: viewModel)
@@ -347,10 +327,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if let pane {
             settingsWindowController?.select(pane)
         }
-        // macOS 14+ uses cooperative activation: activate() is a request, and is dropped
-        // if issued in the same runloop tick the window is shown — which is why the window
-        // landed behind other apps. Request activation first, then order the window front on
-        // the next tick, with orderFrontRegardless() as the backstop.
         if #available(macOS 14.0, *) {
             NSApp.activate()
         } else {
@@ -385,9 +361,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         try data.write(to: url, options: .atomic)
     }
 
-    /// The inputs that actually shape the screen-preview `SCStream`. Deliberately
-    /// excludes output layout / scene / camera — those are composited on the canvas,
-    /// not at the capture level, so changing them must not restart the stream.
     private struct ScreenCaptureSignature: Equatable {
         let usesPickedContent: Bool
         let selectionRevision: Int
@@ -417,10 +390,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         viewModel.syncSettings()
         guard coordinator.state == .idle else { return }
 
-        // If the screen SOURCE config is unchanged and the stream is already running,
-        // leave it running. Layout/scene/camera switches land here too (they fire the
-        // same config-changed hook) but don't touch screen capture, so tearing the
-        // stream down would only flash "Starting screen preview" for nothing.
         if coordinator.isScreenPreviewRunning,
            coordinator.settings.enabledSources.contains(.screen),
            !coordinator.settings.hiddenSources.contains(.screen),
@@ -522,8 +491,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         guard coordinator.settings.usesPickedScreenContent || coordinator.hasScreenCaptureAccess() else {
             if coordinator.settings.screenSourceBinding == nil {
-                // The stage shows a tappable "Pick a screen" call-to-action (SwiftUI), so
-                // the NSView clears its label instead of printing the prompt a second time.
                 previewStage.screenPreview.setMessage("")
                 viewModel.applyMessage("Pick a screen to preview, or enable Screen Recording for full capture.")
             } else {
@@ -535,9 +502,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             return
         }
 
-        // Only show the loading text on a cold start. If a frame is already mounted
-        // (e.g. a crop/display change is restarting the stream), keep showing it so
-        // the preview never flashes back to a placeholder.
         if !previewStage.screenPreview.hasPreviewContent {
             previewStage.screenPreview.setMessage("Starting screen preview")
         }
