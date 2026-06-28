@@ -185,16 +185,37 @@ final class CaptureSourceRun {
         self.pickedScreenFilter = pickedScreenFilter
         let timeline = establishTimelineStartIfNeeded()
 
-        for source in sourceOrder where settings.enabledSources.contains(source) && !activeSources.contains(source) {
+        let sourcesToStart = sourceOrder.filter {
+            settings.enabledSources.contains($0) && !activeSources.contains($0)
+        }
+        guard !sourcesToStart.isEmpty else { return }
+
+        var startupTasks: [(source: CaptureSource, task: Task<Void, Error>)] = []
+        for source in sourcesToStart {
             guard let adapter = sourceAdapters[source] else { continue }
             activeSources.insert(source)
-            do {
+
+            let task = Task { @MainActor in
                 try await adapter.start(settings, pickedScreenFilter, timeline)
-            } catch {
-                _ = try? await adapter.stop(settings)
-                activeSources.remove(source)
-                throw error
             }
+            startupTasks.append((source, task))
+        }
+
+        do {
+            for startupTask in startupTasks {
+                try await startupTask.task.value
+            }
+        } catch {
+            for startupTask in startupTasks {
+                startupTask.task.cancel()
+            }
+            _ = await stopSources(sourcesToStart, settings: settings)
+            throw error
+        }
+
+        for source in sourcesToStart {
+            guard activeSources.contains(source),
+                  let adapter = sourceAdapters[source] else { continue }
             if isPaused {
                 adapter.pause()
             }
@@ -230,13 +251,18 @@ final class CaptureSourceRun {
     }
 
     func stop() async -> CaptureSourceRunSummary {
-        var completions: [CaptureSource: MediaWriterCompletion] = [:]
-        var stopFailures: [CaptureSource: String] = [:]
         let sourcesToStop = stopOrder.filter { activeSources.contains($0) }
         activeSources.removeAll()
+        return await stopSources(sourcesToStop, settings: settings)
+    }
+
+    private func stopSources(_ sourcesToStop: [CaptureSource], settings: RecordingSettings) async -> CaptureSourceRunSummary {
+        var completions: [CaptureSource: MediaWriterCompletion] = [:]
+        var stopFailures: [CaptureSource: String] = [:]
 
         for source in sourcesToStop {
             guard let adapter = sourceAdapters[source] else { continue }
+            activeSources.remove(source)
             do {
                 completions[source] = try await adapter.stop(settings)
             } catch let stopFailure as CaptureSourceStopFailure {

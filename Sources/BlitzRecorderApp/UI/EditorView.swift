@@ -1,6 +1,5 @@
 import AppKit
 import AVFoundation
-import AVKit
 import CoreImage
 import QuartzCore
 import SwiftUI
@@ -12,6 +11,7 @@ struct EditorView: View {
     @State private var assets: [EditorAsset] = []
     @State private var selection: EditorSelection?
     @State private var selectedFormat: OutputVideoFormat = .mov
+    @State private var selectedResolution: OutputResolution = .p1080
     @State private var reloadTask: Task<Void, Never>?
     @State private var sceneEvents: [RecordingSceneEvent] = []
     @State private var layoutDraft: EditorLayoutDraft?
@@ -120,12 +120,12 @@ struct EditorView: View {
         } else {
             selectedFormat = vm.settings.outputVideoFormat
         }
+        selectedResolution = sourceResolution(for: project)
         assets = EditorAsset.assets(project: project, finalVideoURL: vm.lastExportedURL)
         async let media: Void = library.loadAssets(assets)
         await playback.load(project: project, baseSettings: vm.settings)
         await media
     }
-
 
     private var project: RecordingProject? {
         vm.lastExportedProject
@@ -246,22 +246,37 @@ struct EditorView: View {
                     .truncationMode(.middle)
             }
 
-            settingsChips
-
             Spacer(minLength: 12)
 
-            Button {
-                vm.revealLastExportOrSource()
-            } label: {
-                Label("Show in Finder", systemImage: "folder")
-                    .font(.system(size: 11.5, weight: .semibold))
-            }
-            .buttonStyle(.bordered)
-            .disabled(project == nil)
-            .pointingHandCursor()
+            revealButton
 
             editorExportControls
         }
+    }
+
+    private var revealButton: some View {
+        Button {
+            vm.revealLastExportOrSource()
+        } label: {
+            HStack(spacing: 7) {
+                Image(systemName: "folder")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.7))
+                Text(vm.lastRevealIsExport ? "Show export" : "Show recording")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 44)
+            .background(BlitzUI.controlFill, in: .rect(cornerRadius: 11))
+        }
+        .buttonStyle(.plain)
+        .disabled(project == nil)
+        .opacity(project == nil ? 0.45 : 1)
+        .pointingHandCursor()
+        .help(vm.lastRevealIsExport
+            ? "Reveal the exported video in Finder"
+            : "Reveal the recording's source files in Finder")
     }
 
     private var toolbarSubtitle: String {
@@ -269,23 +284,6 @@ struct EditorView: View {
             return project.updatedAt.formatted(date: .abbreviated, time: .shortened)
         }
         return "Editable project"
-    }
-
-    private var settingsChips: some View {
-        HStack(spacing: 6) {
-            settingsChip(project.flatMap { OutputResolution(rawValue: $0.settings.outputResolution)?.displayName } ?? "—")
-            settingsChip("\(project?.settings.framesPerSecond ?? vm.settings.framesPerSecond) FPS")
-        }
-    }
-
-    private func settingsChip(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 10, weight: .bold, design: .monospaced))
-            .monospacedDigit()
-            .foregroundStyle(.white.opacity(0.66))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(BlitzUI.controlFill, in: .capsule)
     }
 
     private var editorExportControls: some View {
@@ -296,19 +294,7 @@ struct EditorView: View {
     }
 
     private var exportQualityMenu: some View {
-        BlitzGlassMenu(
-            entries: OutputVideoFormat.allCases.map { format in
-                .item(BlitzMenuItem(
-                    title: format.displayName,
-                    subtitle: format.plainDescription,
-                    systemImage: format == .mp4 ? "paperplane.fill" : "film",
-                    isSelected: format == selectedFormat
-                ) {
-                    selectedFormat = format
-                })
-            },
-            menuWidth: 260
-        ) {
+        BlitzGlassMenu(entries: qualityMenuEntries, menuWidth: 264) {
             HStack(spacing: 10) {
                 Image(systemName: "slider.horizontal.3")
                     .font(.system(size: 13, weight: .semibold))
@@ -327,18 +313,68 @@ struct EditorView: View {
                     .font(.system(size: 8.5, weight: .heavy))
                     .foregroundStyle(.white.opacity(0.45))
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 14)
             .frame(height: 44)
-            .background(BlitzUI.controlFill, in: .rect(cornerRadius: 10))
+            .background(BlitzUI.controlFill, in: .rect(cornerRadius: 11))
         }
         .pointingHandCursor()
-        .help(selectedFormat.plainDescription)
+        .help("Choose export resolution and file format")
+    }
+
+    private var qualityMenuEntries: [BlitzMenuEntry] {
+        var entries: [BlitzMenuEntry] = [.section("Resolution")]
+        entries += availableResolutions.map { resolution in
+            .item(BlitzMenuItem(
+                title: resolution == sourceResolution
+                    ? "\(resolution.displayName) · Source"
+                    : resolution.displayName,
+                subtitle: resolutionDimensions(resolution),
+                systemImage: "rectangle.on.rectangle",
+                isSelected: resolution == selectedResolution
+            ) {
+                selectedResolution = resolution
+            })
+        }
+        entries.append(.divider)
+        entries.append(.section("Format"))
+        entries += OutputVideoFormat.allCases.map { format in
+            .item(BlitzMenuItem(
+                title: format.displayName,
+                subtitle: format.plainDescription,
+                systemImage: format == .mp4 ? "paperplane.fill" : "film",
+                isSelected: format == selectedFormat
+            ) {
+                selectedFormat = format
+            })
+        }
+        return entries
+    }
+
+    private func sourceResolution(for project: RecordingProject) -> OutputResolution {
+        OutputResolution(rawValue: project.settings.outputResolution) ?? .p1080
+    }
+
+    private var sourceResolution: OutputResolution {
+        project.map(sourceResolution(for:)) ?? .p1080
+    }
+
+    private var availableResolutions: [OutputResolution] {
+        OutputResolution.allCases
+            .filter { $0.height <= sourceResolution.height }
+            .sorted { $0.height > $1.height }
+    }
+
+    private func resolutionDimensions(_ resolution: OutputResolution) -> String {
+        guard let captureLayout else { return resolution.displayName }
+        let size = resolution.dimensions(for: captureLayout)
+        return "\(size.width) × \(size.height)"
     }
 
     private var exportButton: some View {
         Button {
             vm.exportLastProject(
                 as: selectedFormat,
+                resolution: selectedResolution,
                 hiddenVideoSources: playback.hiddenKinds,
                 mutedAudioSources: playback.mutedSources
             )
@@ -362,10 +398,6 @@ struct EditorView: View {
         }
         .buttonStyle(.plain)
         .background(BlitzUI.selectedFill, in: .rect(cornerRadius: 11))
-        .overlay {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .stroke(BlitzUI.mint.opacity(0.35), lineWidth: 1)
-        }
         .pointingHandCursor()
         .disabled(project == nil || vm.state != .idle)
         .opacity(project == nil ? 0.45 : 1)
@@ -373,7 +405,7 @@ struct EditorView: View {
     }
 
     private var qualitySummary: String {
-        "\(selectedFormat.displayName) · \(resolutionLabel) · \(project?.settings.framesPerSecond ?? vm.settings.framesPerSecond) FPS"
+        "\(selectedResolution.displayName) · \(selectedFormat.displayName) · \(project?.settings.framesPerSecond ?? vm.settings.framesPerSecond) FPS"
     }
 
     private var editorExportProgressBar: some View {
@@ -698,8 +730,7 @@ struct EditorView: View {
 
     private func canEditLayout(of scene: RecordingScene) -> Bool {
         playback.isReady
-            && scene.enabledSources.contains(.screen)
-            && scene.enabledSources.contains(.camera)
+            && !scene.enabledSources.intersection([.screen, .camera]).isEmpty
     }
 
     private var displayedCanvasLayers: [EditorCanvasLayer] {
@@ -1740,7 +1771,7 @@ private final class EditorPlayerLayerHostView: NSView {
             fallbackTimer = nil
             return
         }
-        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             self?.renderFallbackFrame()
         }
         fallbackTimer = timer
@@ -1750,11 +1781,21 @@ private final class EditorPlayerLayerHostView: NSView {
     private func renderFallbackFrame() {
         guard let player = playerLayer.player,
               let output = videoOutput else { return }
-        let itemTime = player.currentTime()
-        guard let pixelBuffer = output.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: nil) else {
+        let itemTime = player.rate != 0
+            ? output.itemTime(forHostTime: CACurrentMediaTime())
+            : player.currentTime()
+        let pixelBuffer = output.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: nil)
+        switch EditorFallbackFramePolicy.decision(isPlaying: player.rate != 0, hasPixelBuffer: pixelBuffer != nil) {
+        case .renderPixelBuffer:
+            break
+        case .renderStillFrame:
             renderFallbackStillFrame(from: player.currentItem, at: itemTime)
             return
+        case .hideFallback:
+            fallbackLayer.isHidden = true
+            return
         }
+        guard let pixelBuffer else { return }
         let image = CIImage(cvPixelBuffer: pixelBuffer)
         guard let cgImage = ciContext.createCGImage(image, from: image.extent) else { return }
         fallbackLayer.contents = cgImage
@@ -1797,6 +1838,24 @@ private final class EditorPlayerLayerHostView: NSView {
                 }
             }
         }
+    }
+}
+
+enum EditorFallbackFrameDecision: Equatable {
+    case renderPixelBuffer
+    case renderStillFrame
+    case hideFallback
+}
+
+enum EditorFallbackFramePolicy {
+    static func decision(isPlaying: Bool, hasPixelBuffer: Bool) -> EditorFallbackFrameDecision {
+        if hasPixelBuffer {
+            return .renderPixelBuffer
+        }
+        if isPlaying {
+            return .hideFallback
+        }
+        return .renderStillFrame
     }
 }
 

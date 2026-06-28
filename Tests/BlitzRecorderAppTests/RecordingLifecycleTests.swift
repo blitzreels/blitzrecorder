@@ -126,6 +126,88 @@ final class RecordingLifecycleTests: XCTestCase {
         XCTAssertEqual(history.entries.first?.projectPath, take.projectURL.path)
     }
 
+    func testRecordingProjectPersistsChaptersAndEditorTimeline() throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        let chapters = [
+            RecordingProject.ChapterSnapshot(
+                id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+                time: 1.2,
+                endTime: 4.8,
+                title: "Setup",
+                summary: "Intro and context",
+                confidence: 0.92
+            )
+        ]
+        let timeline = RecordingProject.TimelineSnapshot(
+            tracks: [
+                .init(id: "video-camera", kind: "video", title: "Camera", sourceRole: "camera")
+            ],
+            clips: [
+                .init(
+                    id: "clip-camera",
+                    trackID: "video-camera",
+                    sourceRole: "camera",
+                    time: 0,
+                    duration: 5,
+                    startOffset: 0,
+                    frame: RecordingProject.RectValue(CGRect(x: 0.1, y: 0.2, width: 0.7, height: 0.6)),
+                    crop: nil,
+                    opacity: 1,
+                    layerOrder: 1
+                )
+            ],
+            keyframes: [
+                .init(
+                    id: "kf-camera-x",
+                    clipID: "clip-camera",
+                    property: "frame.x",
+                    time: 1,
+                    value: 0.15,
+                    easing: "linear"
+                )
+            ]
+        )
+
+        try store.writeRecordingProject(
+            for: take,
+            settings: settings,
+            sceneEvents: [RecordingSceneEvent(time: 0, scene: RecordingScene(settings: settings))],
+            finalVideoURL: nil,
+            chapters: chapters,
+            editorTimeline: timeline
+        )
+        let project = try store.loadRecordingProject(at: take.projectURL)
+
+        XCTAssertEqual(project.chapters, chapters)
+        XCTAssertEqual(project.editorTimeline, timeline)
+    }
+
+    func testRecordingProjectDecodesLegacyProjectWithoutChaptersOrTimeline() throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        let data = try Data(contentsOf: take.projectURL)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object.removeValue(forKey: "chapters")
+        object.removeValue(forKey: "timeline")
+        let legacyData = try JSONSerialization.data(withJSONObject: object)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let project = try decoder.decode(RecordingProject.self, from: legacyData)
+
+        XCTAssertTrue(project.chapters.isEmpty)
+        XCTAssertTrue(project.editorTimeline.tracks.isEmpty)
+        XCTAssertTrue(project.editorTimeline.clips.isEmpty)
+        XCTAssertTrue(project.editorTimeline.keyframes.isEmpty)
+    }
+
     func testTakeFileStoreRehydratesRecoverableProjectForExport() throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
@@ -405,6 +487,270 @@ final class RecordingLifecycleTests: XCTestCase {
         )
 
         XCTAssertTrue(center.red > 40 || center.green > 40 || center.blue > 40)
+    }
+
+    func testEditorPlaybackInfersLegacyCameraStartupOffsetFromShorterSidecar() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .camera]
+        settings.layout = .vertical
+        settings.outputResolution = .p720
+        settings.sceneLayout = SceneLayout.presetLayout(.screenTop50, for: .vertical)
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try writeTestMovie(
+            url: take.screenURL,
+            codec: .h264,
+            color: (blue: 255, green: 0, red: 0, alpha: 255),
+            frameCount: 90
+        )
+        try writeTestMovie(
+            url: take.cameraURL,
+            codec: .h264,
+            color: (blue: 0, green: 0, red: 255, alpha: 255),
+            frameCount: 75
+        )
+
+        let project = try store.loadRecordingProject(at: take.projectURL)
+        let playback = try await Merger.editorPlaybackComposition(
+            take: take,
+            settings: settings,
+            sceneEvents: store.sceneEvents(from: project)
+        )
+        let cameraInput = try XCTUnwrap(playback.sourceInputs.first { $0.kind == .camera })
+        let screenInput = try XCTUnwrap(playback.sourceInputs.first { $0.kind == .screen })
+
+        XCTAssertEqual(cameraInput.timelineOffset.seconds, 0.5, accuracy: 0.05)
+        XCTAssertEqual(playback.duration.seconds, screenInput.duration.seconds, accuracy: 0.05)
+    }
+
+    func testEditorPlaybackTrimsProcessedCameraLeadInUsingRawCameraTiming() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .camera]
+        settings.layout = .horizontal
+        settings.outputResolution = .p720
+        settings.sceneLayout = SceneLayout.presetLayout(.webcamLeft, for: .horizontal)
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        let processedCameraURL = take.scratchDirectory.appendingPathComponent("camera-background-removed.mov")
+        try writeTestMovie(
+            url: take.screenURL,
+            codec: .h264,
+            color: (blue: 255, green: 0, red: 0, alpha: 255),
+            frameCount: 60
+        )
+        try writeTestMovie(
+            url: take.cameraURL,
+            codec: .h264,
+            color: (blue: 0, green: 0, red: 255, alpha: 255),
+            frameCount: 60,
+            firstPresentationTime: CMTime(seconds: 0.3, preferredTimescale: 600)
+        )
+        try writeTestMovie(
+            url: processedCameraURL,
+            codec: .proRes4444,
+            color: (blue: 0, green: 0, red: 255, alpha: 128),
+            frameCount: 69
+        )
+        let processedTake = RecordingTake(
+            scratchDirectory: take.scratchDirectory,
+            screenURL: take.screenURL,
+            cameraURL: processedCameraURL,
+            audioURL: take.audioURL,
+            systemAudioURL: take.systemAudioURL,
+            transcriptURL: take.transcriptURL,
+            finalVideoURL: take.finalVideoURL,
+            outputVideoFormat: take.outputVideoFormat,
+            titleSlug: take.titleSlug
+        )
+
+        let project = try store.loadRecordingProject(at: take.projectURL)
+        let playback = try await Merger.editorPlaybackComposition(
+            take: processedTake,
+            settings: settings,
+            sceneEvents: store.sceneEvents(from: project)
+        )
+        let cameraInput = try XCTUnwrap(playback.sourceInputs.first { $0.kind == .camera })
+
+        XCTAssertEqual(cameraInput.timelineOffset.seconds, 0.3, accuracy: 0.05)
+        XCTAssertEqual(cameraInput.sourceStartOffset.seconds, 0.3, accuracy: 0.05)
+    }
+
+    func testEditorSceneTitleUsesVisibleFullFrameLayer() {
+        var layout = SceneLayout()
+        layout.screenFrame = CGRect(x: -1.0802469135802468, y: 0, width: 3.1604938271604937, height: 1)
+        layout.cameraFrame = CGRect(x: 0, y: 0, width: 1, height: 1)
+        layout.layerOrder = [.screen, .camera]
+        let scene = RecordingScene(
+            enabledSources: [.screen, .camera],
+            sceneLayout: layout
+        )
+
+        XCTAssertEqual(EditorSceneTitle.title(for: scene), "Camera")
+    }
+
+    func testEditorSceneTitleKeepsScreenAndCameraWhenBothAreVisible() {
+        let scene = RecordingScene(
+            enabledSources: [.screen, .camera],
+            sceneLayout: SceneLayout.presetLayout(.cameraInset, for: .vertical)
+        )
+
+        XCTAssertEqual(EditorSceneTitle.title(for: scene), "Screen + Camera")
+    }
+
+    func testEditorPlaybackPlayerItemProducesFrameWithTransparentCamera() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .camera]
+        settings.layout = .vertical
+        settings.outputResolution = .p720
+        settings.sceneLayout = SceneLayout.presetLayout(.screenTop50, for: .vertical)
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try writeTestMovie(
+            url: take.screenURL,
+            codec: .h264,
+            color: (blue: 255, green: 0, red: 0, alpha: 255),
+            frameCount: 90
+        )
+        try writeTestMovie(
+            url: take.cameraURL,
+            codec: .proRes4444,
+            color: (blue: 0, green: 0, red: 255, alpha: 96),
+            frameCount: 90
+        )
+
+        let project = try store.loadRecordingProject(at: take.projectURL)
+        let playback = try await Merger.editorPlaybackComposition(
+            take: take,
+            settings: settings,
+            sceneEvents: store.sceneEvents(from: project)
+        )
+        let item = playback.playerItem()
+        let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+        ])
+        item.add(output)
+
+        let player = AVPlayer(playerItem: item)
+        player.automaticallyWaitsToMinimizeStalling = false
+        let targetTime = CMTime(seconds: 1, preferredTimescale: 600)
+        await player.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero)
+        player.play()
+        try await Task.sleep(for: .milliseconds(350))
+        player.pause()
+
+        let itemTime = player.currentTime()
+        let pixelBuffer = output.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: nil)
+            ?? output.copyPixelBuffer(forItemTime: targetTime, itemTimeForDisplay: nil)
+        guard let pixelBuffer else {
+            return XCTFail("Editor AVPlayerItem produced no transparent-camera video frame")
+        }
+        let center = samplePixelColor(
+            in: pixelBuffer,
+            x: CVPixelBufferGetWidth(pixelBuffer) / 2,
+            y: CVPixelBufferGetHeight(pixelBuffer) / 2
+        )
+
+        XCTAssertTrue(center.red > 40 || center.green > 40 || center.blue > 40)
+    }
+
+    func testEditorFallbackFramePolicyRendersAvailablePixelBufferDuringPlayback() {
+        XCTAssertEqual(
+            EditorFallbackFramePolicy.decision(isPlaying: true, hasPixelBuffer: false),
+            .hideFallback
+        )
+        XCTAssertEqual(
+            EditorFallbackFramePolicy.decision(isPlaying: true, hasPixelBuffer: true),
+            .renderPixelBuffer
+        )
+        XCTAssertEqual(
+            EditorFallbackFramePolicy.decision(isPlaying: false, hasPixelBuffer: false),
+            .renderStillFrame
+        )
+    }
+
+    func testEditorPlaybackCompositionPlaysAudioOnlyProject() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.microphone]
+        settings.layout = .horizontal
+        settings.outputResolution = .p720
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        let writer = try AudioSampleFileWriter(url: take.audioURL)
+        for packet in 0..<12 {
+            let sampleBuffer = try makeSilentAudioSampleBuffer(
+                presentationTime: CMTime(value: CMTimeValue(packet * 480), timescale: 48_000),
+                frames: 480
+            )
+            writer.append(sampleBuffer)
+        }
+        let completion = try await writer.finish()
+        XCTAssertTrue(completion.wroteMedia)
+        let sidecarAsset = AVURLAsset(url: take.audioURL)
+        let sidecarTracks = try await sidecarAsset.loadTracks(withMediaType: .audio)
+        let sidecarDuration = try await sidecarAsset.load(.duration)
+
+        XCTAssertEqual(sidecarTracks.count, 1)
+        XCTAssertGreaterThan(sidecarDuration.seconds, 0)
+
+        let project = try store.loadRecordingProject(at: take.projectURL)
+        let playback = try await Merger.editorPlaybackComposition(
+            take: take,
+            settings: settings,
+            sceneEvents: store.sceneEvents(from: project)
+        )
+        _ = playback.playerItem()
+        let audioTracks = try await playback.composition.loadTracks(withMediaType: .audio)
+
+        XCTAssertEqual(playback.audioInputs.map(\.source), [.microphone])
+        XCTAssertGreaterThan(playback.duration.seconds, 0)
+        XCTAssertEqual(audioTracks.count, 1)
+    }
+
+    func testEditorPlaybackCompositionPlaysExistingAudioSidecarWhenSourceIsDisabled() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen]
+        settings.layout = .horizontal
+        settings.outputResolution = .p720
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try writeTestMovie(
+            url: take.screenURL,
+            codec: .h264,
+            color: (blue: 255, green: 0, red: 0, alpha: 255),
+            frameCount: 30
+        )
+        let writer = try AudioSampleFileWriter(url: take.audioURL)
+        for packet in 0..<12 {
+            let sampleBuffer = try makeSilentAudioSampleBuffer(
+                presentationTime: CMTime(value: CMTimeValue(packet * 480), timescale: 48_000),
+                frames: 480
+            )
+            writer.append(sampleBuffer)
+        }
+        let completion = try await writer.finish()
+        XCTAssertTrue(completion.wroteMedia)
+
+        let project = try store.loadRecordingProject(at: take.projectURL)
+        let playback = try await Merger.editorPlaybackComposition(
+            take: take,
+            settings: settings,
+            sceneEvents: store.sceneEvents(from: project)
+        )
+        _ = playback.playerItem()
+        let audioTracks = try await playback.composition.loadTracks(withMediaType: .audio)
+
+        XCTAssertEqual(playback.audioInputs.map(\.source), [.microphone])
+        XCTAssertEqual(audioTracks.count, 1)
     }
 
     func testTakeFileStoreCanOptOutOfRecoverableProjectFiles() throws {
@@ -739,7 +1085,7 @@ final class RecordingLifecycleTests: XCTestCase {
     }
 
     @MainActor
-    func testCaptureSourceRunStartsScreenFirstAndStopsScreenLast() async throws {
+    func testCaptureSourceRunStartsEnabledSourcesBeforeWaitingForStartupCompletionAndStopsScreenLast() async throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
         settings.enabledSources = [.screen, .camera, .microphone, .systemAudio]
@@ -747,20 +1093,29 @@ final class RecordingLifecycleTests: XCTestCase {
         let store = TakeFileStore()
         let take = try store.createTake(settings: settings)
         let order = OrderedCaptureEvents()
+        let startup = ConcurrentStartupProbe()
         let run = CaptureSourceRun(
             take: take,
             settings: settings,
             pickedScreenFilter: nil,
-            screenRecorder: OrderedScreenCaptureRecorder(order: order),
-            cameraRecorder: OrderedCameraCaptureRecorder(order: order),
-            audioRecorder: OrderedMicrophoneCaptureRecorder(order: order),
-            systemAudioRecorder: OrderedSystemAudioCaptureRecorder(order: order)
+            screenRecorder: BlockingScreenCaptureRecorder(startup: startup, order: order),
+            cameraRecorder: BlockingCameraCaptureRecorder(startup: startup, order: order),
+            audioRecorder: BlockingMicrophoneCaptureRecorder(startup: startup, order: order),
+            systemAudioRecorder: BlockingSystemAudioCaptureRecorder(startup: startup, order: order)
         )
 
-        try await run.start()
+        let startTask = Task { @MainActor in
+            try await run.start()
+        }
+        await startup.waitUntilStarted(count: 4, timeout: 1)
+        let startedSources = await startup.startedSnapshot
+        XCTAssertEqual(startedSources.count, 4)
+        XCTAssertEqual(Set(startedSources), Set([.screen, .microphone, .systemAudio, .camera]))
+
+        await startup.releaseAll()
+        _ = try await startTask.value
         _ = await run.stop()
 
-        XCTAssertEqual(order.started, [.screen, .microphone, .systemAudio, .camera])
         XCTAssertEqual(order.stopped, [.microphone, .systemAudio, .camera, .screen])
     }
 
@@ -920,6 +1275,35 @@ final class RecordingLifecycleTests: XCTestCase {
 
         XCTAssertTrue(completion.wroteMedia)
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    func testVideoFileWriterPreservesLeadingTimelineGap() async throws {
+        let directory = temporaryDirectory()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("video.mov")
+        let writer = try VideoFileWriter(
+            url: url,
+            width: 64,
+            height: 64,
+            bitrate: 1_000_000,
+            fps: 30,
+            outputFormat: .mov,
+            timelineStartTime: .zero
+        )
+
+        for frame in 0..<12 {
+            let sampleBuffer = try makeVideoSampleBuffer(
+                presentationTime: CMTime(seconds: 0.5 + Double(frame) / 30.0, preferredTimescale: 600)
+            )
+            writer.append(sampleBuffer)
+        }
+
+        let completion = try await writer.finish()
+        let asset = AVURLAsset(url: url)
+        let duration = try await asset.load(.duration)
+
+        XCTAssertTrue(completion.wroteMedia)
+        XCTAssertGreaterThan(duration.seconds, 0.65)
     }
 
     func testAudioSampleFileWriterFallsBackWhenTimelineUsesDifferentClock() async throws {
@@ -2382,7 +2766,8 @@ final class RecordingLifecycleTests: XCTestCase {
         codec: AVVideoCodecType,
         color: (blue: UInt8, green: UInt8, red: UInt8, alpha: UInt8),
         includeAudio: Bool = false,
-        frameCount: Int = 12
+        frameCount: Int = 12,
+        firstPresentationTime: CMTime = .zero
     ) throws {
         try? FileManager.default.removeItem(at: url)
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
@@ -2438,7 +2823,11 @@ final class RecordingLifecycleTests: XCTestCase {
             while !input.isReadyForMoreMediaData {
                 usleep(1_000)
             }
-            XCTAssertTrue(adaptor.append(pixelBuffer, withPresentationTime: CMTime(value: CMTimeValue(frame), timescale: 30)))
+            let presentationTime = CMTimeAdd(
+                firstPresentationTime,
+                CMTime(value: CMTimeValue(frame), timescale: 30)
+            )
+            XCTAssertTrue(adaptor.append(pixelBuffer, withPresentationTime: presentationTime))
         }
 
         if let audioInput {
@@ -2832,6 +3221,151 @@ private final class OrderedCaptureEvents {
 
     func stop(_ source: CaptureSource) {
         stopped.append(source)
+    }
+}
+
+private actor ConcurrentStartupProbe {
+    private var startContinuations: [CheckedContinuation<Void, Never>] = []
+    private var waitContinuations: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var timeoutTasks: [Task<Void, Never>] = []
+    private var startedSources: [CaptureSource] = []
+
+    var startedSnapshot: [CaptureSource] {
+        startedSources
+    }
+
+    func waitForStart(_ source: CaptureSource) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            startedSources.append(source)
+            startContinuations.append(continuation)
+            let readyContinuations = waitContinuations.filter { startedSources.count >= $0.count }.map(\.continuation)
+            waitContinuations.removeAll { startedSources.count >= $0.count }
+            readyContinuations.forEach { $0.resume() }
+        }
+    }
+
+    func waitUntilStarted(count: Int, timeout: TimeInterval) async {
+        if startedSnapshot.count >= count {
+            return
+        }
+
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            if startedSources.count >= count {
+                continuation.resume()
+                return
+            }
+            waitContinuations.append((count, continuation))
+            let timeoutTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                await self?.releaseWaiter(count: count)
+            }
+            timeoutTasks.append(timeoutTask)
+        }
+
+    }
+
+    func releaseAll() {
+        let continuations = startContinuations
+        startContinuations.removeAll()
+        let tasks = timeoutTasks
+        timeoutTasks.removeAll()
+        tasks.forEach { $0.cancel() }
+        continuations.forEach { $0.resume() }
+    }
+
+    private func releaseWaiter(count: Int) {
+        guard let index = waitContinuations.firstIndex(where: { $0.count == count }) else { return }
+        let continuation = waitContinuations.remove(at: index).continuation
+        continuation.resume()
+    }
+}
+
+private final class BlockingScreenCaptureRecorder: ScreenCaptureRecording {
+    private let startup: ConcurrentStartupProbe
+    private let order: OrderedCaptureEvents
+
+    init(startup: ConcurrentStartupProbe, order: OrderedCaptureEvents) {
+        self.startup = startup
+        self.order = order
+    }
+
+    func start(url: URL, settings: RecordingSettings, filter pickedFilter: SCContentFilter?, timelineStartTime: CMTime?) async throws {
+        await startup.waitForStart(.screen)
+    }
+
+    func update(settings: RecordingSettings, filter pickedFilter: SCContentFilter?) async throws {}
+    func pause() {}
+    func resume() {}
+
+    func stop() async throws -> MediaWriterCompletion {
+        order.stop(.screen)
+        return .empty()
+    }
+}
+
+private final class BlockingCameraCaptureRecorder: CameraCaptureRecording {
+    private let startup: ConcurrentStartupProbe
+    private let order: OrderedCaptureEvents
+
+    init(startup: ConcurrentStartupProbe, order: OrderedCaptureEvents) {
+        self.startup = startup
+        self.order = order
+    }
+
+    func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) async throws {
+        await startup.waitForStart(.camera)
+    }
+
+    func pause() {}
+    func resume() {}
+
+    func stop() async throws -> MediaWriterCompletion {
+        order.stop(.camera)
+        return .empty()
+    }
+}
+
+private final class BlockingMicrophoneCaptureRecorder: MicrophoneCaptureRecording {
+    private let startup: ConcurrentStartupProbe
+    private let order: OrderedCaptureEvents
+
+    init(startup: ConcurrentStartupProbe, order: OrderedCaptureEvents) {
+        self.startup = startup
+        self.order = order
+    }
+
+    func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) async throws {
+        await startup.waitForStart(.microphone)
+    }
+
+    func pause() {}
+    func resume() {}
+
+    func stop() async throws -> MediaWriterCompletion {
+        order.stop(.microphone)
+        return .empty()
+    }
+}
+
+private final class BlockingSystemAudioCaptureRecorder: SystemAudioCaptureRecording {
+    private let startup: ConcurrentStartupProbe
+    private let order: OrderedCaptureEvents
+
+    init(startup: ConcurrentStartupProbe, order: OrderedCaptureEvents) {
+        self.startup = startup
+        self.order = order
+    }
+
+    func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) async throws {
+        await startup.waitForStart(.systemAudio)
+    }
+
+    func pause() {}
+    func resume() {}
+
+    func stop() async throws -> MediaWriterCompletion {
+        order.stop(.systemAudio)
+        return .empty()
     }
 }
 

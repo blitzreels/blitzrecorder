@@ -20,7 +20,17 @@ struct PermissionBlocker: Equatable {
     let recovery: String
 
     var sentence: String {
-        "\(source.rawValue) blocked by \(permission): \(status). \(recovery)"
+        if permission == "Screen & System Audio Recording" {
+            switch source {
+            case .screen:
+                return "Screen source selected; full-capture access is inactive. \(recovery)"
+            case .systemAudio:
+                return "System Audio needs Screen Recording access. \(recovery)"
+            case .camera, .microphone:
+                break
+            }
+        }
+        return "\(source.rawValue) blocked by \(permission): \(status). \(recovery)"
     }
 }
 
@@ -28,6 +38,9 @@ extension Array where Element == PermissionBlocker {
     var shortSummary: String {
         if contains(where: { $0.permission == "Sources" }) {
             return "Pick a source to record"
+        }
+        if contains(where: { $0.permission == "Screen source" }) {
+            return "Pick a screen or app to record"
         }
         var parts: [String] = []
         if contains(where: { $0.source == .screen || $0.source == .systemAudio }) {
@@ -118,9 +131,18 @@ enum PermissionGate {
             if settings.usesPickedScreenContent {
                 return "selected with macOS picker"
             }
-            return CGPreflightScreenCaptureAccess() ? "allowed" : "needs Screen Recording permission or app restart"
+            if settings.screenSourceBinding?.isConcreteSelection == true {
+                return CGPreflightScreenCaptureAccess() ? "selected source ready" : "source selected; needs Screen Recording for full capture"
+            }
+            return CGPreflightScreenCaptureAccess() ? "allowed" : "no screen selected"
         case .systemAudio:
-            return CGPreflightScreenCaptureAccess() ? "allowed" : "needs Screen Recording permission or app restart"
+            if CGPreflightScreenCaptureAccess() {
+                return "allowed"
+            }
+            if settings.usesPickedScreenContent {
+                return "off without Screen Recording"
+            }
+            return "needs Screen Recording for Mac audio"
         case .camera:
             if RemoteCameraProviderID.isRemote(settings.selectedCameraID) {
                 return "remote iPhone"
@@ -232,13 +254,16 @@ enum PermissionGate {
         if settings.enabledSources.contains(.screen),
            !settings.usesPickedScreenContent,
            !CGPreflightScreenCaptureAccess() {
-            blockers.append(screenCaptureBlocker(source: .screen))
+            blockers.append(screenCaptureBlocker(
+                source: .screen,
+                hasScreenSourceBinding: settings.screenSourceBinding?.isConcreteSelection == true
+            ))
         }
 
         if settings.enabledSources.contains(.systemAudio),
            !settings.usesPickedScreenContent,
            !CGPreflightScreenCaptureAccess() {
-            blockers.append(screenCaptureBlocker(source: .systemAudio))
+            blockers.append(screenCaptureBlocker(source: .systemAudio, hasScreenSourceBinding: true))
         }
 
         if settings.enabledSources.contains(.camera),
@@ -303,12 +328,31 @@ enum PermissionGate {
         return false
     }
 
-    private static func screenCaptureBlocker(source: CaptureSource) -> PermissionBlocker {
-        PermissionBlocker(
+    private static func screenCaptureBlocker(
+        source: CaptureSource,
+        hasScreenSourceBinding: Bool
+    ) -> PermissionBlocker {
+        if source == .screen {
+            if !hasScreenSourceBinding {
+                return PermissionBlocker(
+                    source: source,
+                    permission: "Screen source",
+                    status: "no app or screen picked",
+                    recovery: "Pick a screen or app to record, or enable Screen Recording for full-display capture."
+                )
+            }
+            return PermissionBlocker(
+                source: source,
+                permission: "Screen & System Audio Recording",
+                status: "source selected; full-capture access inactive",
+                recovery: "Use Pick Screen for picker-based capture, or enable Screen Recording for full-display capture."
+            )
+        }
+        return PermissionBlocker(
             source: source,
             permission: "Screen & System Audio Recording",
-            status: "not active for this app process",
-            recovery: "Use Pick Screen for picker-based capture, or enable Screen Recording and restart BlitzRecorder if it is already enabled."
+            status: "Mac audio capture needs Screen Recording access",
+            recovery: "Enable Screen Recording, or turn System Audio off."
         )
     }
 

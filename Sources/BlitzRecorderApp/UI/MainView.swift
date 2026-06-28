@@ -345,7 +345,7 @@ private struct CaptureCommandBar: View {
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(vm.selectedSceneName)
+                Text(commandTitle)
                     .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(.white.opacity(0.94))
                     .lineLimit(1)
@@ -376,7 +376,9 @@ private struct CaptureCommandBar: View {
             .pointingHandCursor()
             .help("Open account")
 
-            RecordingOutputPicker(vm: vm)
+            if vm.studioMode == .record {
+                RecordingOutputPicker(vm: vm)
+            }
 
             Button {
                 vm.onPresentSettings?(nil)
@@ -395,7 +397,11 @@ private struct CaptureCommandBar: View {
     }
 
     private var isBlocked: Bool {
-        vm.state == .idle && !vm.recordingReadiness.isReady
+        vm.studioMode == .record && vm.state == .idle && !vm.recordingReadiness.isReady
+    }
+
+    private var commandTitle: String {
+        vm.studioMode == .edit ? "Editor" : vm.selectedSceneName
     }
 
     @ViewBuilder private var statusRow: some View {
@@ -429,6 +435,9 @@ private struct CaptureCommandBar: View {
     }
 
     private var statusDotColor: Color {
+        if vm.studioMode == .edit && vm.state == .idle {
+            return BlitzUI.mint
+        }
         switch vm.state {
         case .recording: return BlitzUI.recordRed
         case .paused, .starting, .finishing: return BlitzUI.warning
@@ -437,6 +446,9 @@ private struct CaptureCommandBar: View {
     }
 
     private var statusText: String {
+        if vm.studioMode == .edit && vm.state == .idle {
+            return "Edit and export last take"
+        }
         switch vm.state {
         case .recording: return "Recording  \(vm.formattedElapsed)"
         case .paused: return "Paused  \(vm.formattedElapsed)"

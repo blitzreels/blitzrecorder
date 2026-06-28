@@ -624,6 +624,15 @@ struct ScreenSourceBinding: Codable, Equatable, Identifiable {
         }
     }
 
+    var isConcreteSelection: Bool {
+        switch kind {
+        case .display:
+            return displayID != nil
+        case .application, .window:
+            return true
+        }
+    }
+
     static func display(id: String?, name: String? = nil) -> ScreenSourceBinding {
         ScreenSourceBinding(
             kind: .display,

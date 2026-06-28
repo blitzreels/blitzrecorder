@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIG="${CONFIGURATION:-release}"
 PRODUCT_NAME="BlitzRecorder"
+APP_BUNDLE_NAME="${APP_BUNDLE_NAME:-$PRODUCT_NAME}"
+APP_DISPLAY_NAME="${APP_DISPLAY_NAME:-$PRODUCT_NAME}"
 MACOS_TRIPLE_VERSION="${MACOS_TRIPLE_VERSION:-15.0}"
 DIRECT_DISTRIBUTION="${DIRECT_DISTRIBUTION:-1}"
 export DIRECT_DISTRIBUTION
@@ -20,7 +22,7 @@ if [[ "$CONFIG" == "release" && "${APP_INTEGRITY_CHECKS:-1}" == "1" && -n "$SIGN
   SWIFT_BUILD_ARGS+=(-Xswiftc -D -Xswiftc RELEASE_APP_INTEGRITY_CHECKS)
 fi
 
-APP="$ROOT/build/BlitzRecorder.app"
+APP="$ROOT/build/${APP_BUNDLE_NAME}.app"
 APP_BINARY="$APP/Contents/MacOS/BlitzRecorder"
 
 APP_ARCHS="${APP_ARCHS:-}"
@@ -75,6 +77,8 @@ sed \
   -e "s/\$(MARKETING_VERSION)/$MARKETING_VERSION/g" \
   -e "s/\$(CURRENT_PROJECT_VERSION)/$CURRENT_PROJECT_VERSION/g" \
   -e "s/\$(PRODUCT_BUNDLE_IDENTIFIER)/$PRODUCT_BUNDLE_IDENTIFIER/g" \
+  -e "s/\$(APP_DISPLAY_NAME)/$APP_DISPLAY_NAME/g" \
+  -e "s/\$(EXECUTABLE_NAME)/$PRODUCT_NAME/g" \
   "$ROOT/Info.plist" >"$APP/Contents/Info.plist"
 
 plist_set_string() {
@@ -166,20 +170,20 @@ fi
 # the first run on a machine prompts for Automation permission.
 if [[ "${SKIP_DMG:-0}" != "1" ]]; then
   if command -v create-dmg >/dev/null 2>&1; then
-    DMG="$ROOT/build/${PRODUCT_NAME}-${MARKETING_VERSION}.dmg"
+    DMG="$ROOT/build/${APP_BUNDLE_NAME}-${MARKETING_VERSION}.dmg"
     STAGE="$(mktemp -d)"
-    cp -R "$APP" "$STAGE/${PRODUCT_NAME}.app"
+    cp -R "$APP" "$STAGE/${APP_BUNDLE_NAME}.app"
     rm -f "$DMG"
     echo "Building DMG..." >&2
     if create-dmg \
-        --volname "$PRODUCT_NAME" \
+        --volname "$APP_DISPLAY_NAME" \
         --volicon "$ROOT/Resources/BlitzRecorder.icns" \
         --background "$ROOT/Resources/dmg/background.png" \
         --window-pos 200 120 \
         --window-size 660 400 \
         --icon-size 128 \
-        --icon "${PRODUCT_NAME}.app" 175 185 \
-        --hide-extension "${PRODUCT_NAME}.app" \
+        --icon "${APP_BUNDLE_NAME}.app" 175 185 \
+        --hide-extension "${APP_BUNDLE_NAME}.app" \
         --app-drop-link 485 185 \
         "$DMG" "$STAGE" >&2; then
       "$ROOT/Scripts/dmg/hide-support-files.sh" "$DMG"

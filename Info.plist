@@ -5,9 +5,9 @@
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleExecutable</key>
-  <string>BlitzRecorder</string>
+  <string>$(EXECUTABLE_NAME)</string>
   <key>CFBundleDisplayName</key>
-  <string>BlitzRecorder</string>
+  <string>$(APP_DISPLAY_NAME)</string>
   <key>CFBundleIdentifier</key>
   <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
   <key>CFBundleIconFile</key>
@@ -26,7 +26,7 @@
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>BlitzRecorder</string>
+  <string>$(APP_DISPLAY_NAME)</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>

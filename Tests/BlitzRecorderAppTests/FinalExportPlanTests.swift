@@ -74,6 +74,25 @@ final class FinalExportPlanTests: XCTestCase {
         XCTAssertEqual(cameraInsertion.duration.seconds, 0.8, accuracy: 0.0001)
     }
 
+    func testPlanCanTrimProcessedSourceMediaSeparatelyFromTimelineOffset() throws {
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen, .camera]
+
+        let plan = try FinalExportPlanning.plan(
+            settings: settings,
+            sceneEvents: [],
+            sources: [
+                source(.screen, duration: 1),
+                source(.camera, duration: 1, offset: 0.3, sourceStartOffset: 0.3)
+            ]
+        )
+        let cameraInsertion = try XCTUnwrap(plan.insertion(for: .camera))
+
+        XCTAssertEqual(cameraInsertion.sourceStart.seconds, 0.3, accuracy: 0.0001)
+        XCTAssertEqual(cameraInsertion.compositionStart.seconds, 0.3, accuracy: 0.0001)
+        XCTAssertEqual(cameraInsertion.duration.seconds, 0.7, accuracy: 0.0001)
+    }
+
     func testPlanCanUseSourceRevealedBySceneEvent() throws {
         var settings = RecordingSettings()
         settings.enabledSources = [.screen, .camera]
@@ -191,11 +210,17 @@ final class FinalExportPlanTests: XCTestCase {
         XCTAssertTrue(plan.renderSegments[0].activeLayerOrder.contains(.screen))
     }
 
-    private func source(_ kind: SceneLayerKind, duration: Double, offset: Double = 0) -> FinalExportSourceInput {
+    private func source(
+        _ kind: SceneLayerKind,
+        duration: Double,
+        offset: Double = 0,
+        sourceStartOffset: Double = 0
+    ) -> FinalExportSourceInput {
         FinalExportSourceInput(
             kind: kind,
             duration: CMTime(seconds: duration, preferredTimescale: 600),
-            timelineOffset: CMTime(seconds: offset, preferredTimescale: 600)
+            timelineOffset: CMTime(seconds: offset, preferredTimescale: 600),
+            sourceStartOffset: CMTime(seconds: sourceStartOffset, preferredTimescale: 600)
         )
     }
 }

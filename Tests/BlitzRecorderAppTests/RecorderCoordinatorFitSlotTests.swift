@@ -465,6 +465,8 @@ final class RecorderCoordinatorFitSlotTests: XCTestCase {
         settings.enabledSources = [.screen, .camera]
         settings.selectedScenePreset = .stackedHalves
         settings.screenCrop = CGRect(x: 0.1, y: 0.2, width: 0.4, height: 0.3)
+        settings.cameraCropAmount = CGPoint(x: 0.35, y: 0.2)
+        settings.cameraCropPosition = CGPoint(x: -0.4, y: 0.6)
         settings.sceneLayout.screenFrame = CGRect(x: 0, y: 0.5, width: 1, height: 0.5)
         settings.sceneLayout.cameraFrame = CGRect(x: 0.12, y: 0.05, width: 0.76, height: 0.25)
         RecordingSettingsStore.save(settings, defaults: defaults)
@@ -487,6 +489,8 @@ final class RecorderCoordinatorFitSlotTests: XCTestCase {
         XCTAssertTrue(coordinator.settings.removesCameraBackgroundAfterRecording)
         XCTAssertNil(coordinator.settings.selectedScenePreset)
         XCTAssertNil(coordinator.settings.screenCrop)
+        XCTAssertEqual(coordinator.settings.cameraCropAmount, .zero)
+        XCTAssertEqual(coordinator.settings.cameraCropPosition, .zero)
         XCTAssertRect(coordinator.settings.sceneLayout.screenFrame, equals: expectedFrame)
         XCTAssertRect(coordinator.settings.sceneLayout.cameraFrame, equals: settings.sceneLayout.cameraFrame)
         XCTAssertEqual(configurationChangeCount, 1)

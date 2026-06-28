@@ -231,6 +231,10 @@ enum Merger {
                 let targetRect = hasScreen
                     ? targetRect(for: .camera, settings: settings, renderSize: renderSize)
                     : fullCanvasTargetRect
+                let processedTiming = await processedLocalCameraTiming(
+                    visibleCameraURL: take.cameraURL,
+                    preservesPositiveOffset: hasScreen
+                )
                 sources.append(try await VideoSource(
                     kind: .camera,
                     asset: cameraAsset.asset,
@@ -239,12 +243,58 @@ enum Merger {
                     targetRect: targetRect,
                     sourceCropAmount: settings.cameraCropAmount,
                     sourceCropPosition: settings.cameraCropPosition,
-                    timelineOffset: remoteCameraTimelineOffset(for: take.cameraURL, preservesPositiveOffset: hasScreen)
+                    timelineOffset: processedTiming?.timelineOffset ?? cameraTimelineOffset(
+                        for: take.cameraURL,
+                        preservesPositiveOffset: hasScreen,
+                        screenDuration: screenAsset?.duration,
+                        cameraDuration: cameraAsset.duration
+                    ),
+                    sourceStartOffset: processedTiming?.sourceStartOffset ?? .zero
                 ))
             }
         }
 
         return sources
+    }
+
+    private static func processedLocalCameraTiming(
+        visibleCameraURL: URL,
+        preservesPositiveOffset: Bool
+    ) async -> (timelineOffset: CMTime, sourceStartOffset: CMTime)? {
+        guard preservesPositiveOffset,
+              visibleCameraURL.lastPathComponent.contains("background-removed"),
+              let rawCameraURL = rawCameraURL(forProcessedCameraURL: visibleCameraURL),
+              FileManager.default.fileExists(atPath: rawCameraURL.path),
+              let rawStart = await leadingEmptyVideoDuration(in: rawCameraURL),
+              CMTimeCompare(rawStart, .zero) > 0 else {
+            return nil
+        }
+        let start = CMTimeConvertScale(rawStart, timescale: 600, method: .roundHalfAwayFromZero)
+        return (timelineOffset: start, sourceStartOffset: start)
+    }
+
+    private static func rawCameraURL(forProcessedCameraURL url: URL) -> URL? {
+        let baseName = url.deletingPathExtension().lastPathComponent
+        guard baseName.hasSuffix("-background-removed") else { return nil }
+        let rawBaseName = String(baseName.dropLast("-background-removed".count))
+        guard !rawBaseName.isEmpty else { return nil }
+        return url
+            .deletingLastPathComponent()
+            .appendingPathComponent(rawBaseName)
+            .appendingPathExtension(url.pathExtension.isEmpty ? "mov" : url.pathExtension)
+    }
+
+    private static func leadingEmptyVideoDuration(in url: URL) async -> CMTime? {
+        let asset = AVURLAsset(url: url)
+        guard let track = try? await asset.loadTracks(withMediaType: .video).first else {
+            return nil
+        }
+        guard let firstSegment = try? await track.load(.segments).first,
+              firstSegment.isEmpty,
+              firstSegment.timeMapping.target.duration.isValid else {
+            return nil
+        }
+        return firstSegment.timeMapping.target.duration
     }
 
     private static func readableVideoAsset(kind: String, url: URL) async -> ReadableVideoAsset? {
@@ -265,14 +315,32 @@ enum Merger {
         }
     }
 
+    private static func cameraTimelineOffset(
+        for cameraURL: URL,
+        preservesPositiveOffset: Bool,
+        screenDuration: CMTime?,
+        cameraDuration: CMTime
+    ) -> CMTime {
+        if let manifestOffset = remoteCameraTimelineOffset(
+            for: cameraURL,
+            preservesPositiveOffset: preservesPositiveOffset
+        ) {
+            return manifestOffset
+        }
+        return inferredLegacyLocalCameraStartupOffset(
+            screenDuration: screenDuration,
+            cameraDuration: cameraDuration
+        )
+    }
+
     private static func remoteCameraTimelineOffset(
         for cameraURL: URL,
         preservesPositiveOffset: Bool
-    ) -> CMTime {
+    ) -> CMTime? {
         guard let manifest = remoteCameraManifest(for: cameraURL),
               let timelineStartTime = manifest.hostTimelineStartTime,
               let cameraStartTime = manifest.estimatedHostStartTime ?? manifest.hostStartTime else {
-            return .zero
+            return nil
         }
         let deltaNanoseconds: Int64
         if cameraStartTime >= timelineStartTime {
@@ -289,6 +357,26 @@ enum Merger {
             return offset
         }
         return .zero
+    }
+
+    private static func inferredLegacyLocalCameraStartupOffset(
+        screenDuration: CMTime?,
+        cameraDuration: CMTime
+    ) -> CMTime {
+        guard let screenDuration,
+              screenDuration.isValid,
+              cameraDuration.isValid,
+              CMTimeCompare(screenDuration, cameraDuration) > 0 else {
+            return .zero
+        }
+        let offset = CMTimeSubtract(screenDuration, cameraDuration)
+        let minimumOffset = CMTime(seconds: 0.1, preferredTimescale: 600)
+        let maximumOffset = CMTime(seconds: 2, preferredTimescale: 600)
+        guard CMTimeCompare(offset, minimumOffset) >= 0,
+              CMTimeCompare(offset, maximumOffset) <= 0 else {
+            return .zero
+        }
+        return CMTimeConvertScale(offset, timescale: 600, method: .roundHalfAwayFromZero)
     }
 
     private static func remoteCameraManifest(for cameraURL: URL) -> RemoteCameraTransferManifest? {
@@ -995,7 +1083,9 @@ struct EditorPlaybackComposition {
         muting mutedSources: Set<CaptureSource> = []
     ) -> AVPlayerItem {
         let item = AVPlayerItem(asset: composition)
-        item.videoComposition = videoComposition(hiding: hiddenKinds)
+        if !videoKinds.isEmpty {
+            item.videoComposition = videoComposition(hiding: hiddenKinds)
+        }
         item.audioMix = audioMix(muting: mutedSources)
         return item
     }
@@ -1188,21 +1278,34 @@ extension Merger {
         sceneEvents: [RecordingSceneEvent]
     ) async throws -> EditorPlaybackComposition {
         let videoSources = try await availableVideoSources(for: take, settings: settings)
-        guard !videoSources.isEmpty else {
+        let audioSources = await readablePlaybackAudioSources(for: take, settings: settings)
+        guard !videoSources.isEmpty || !audioSources.isEmpty else {
             throw RecorderError.exportUnavailable
         }
         let sourceInputs = videoSources.map(\.planningInput)
-        let exportPlan = try FinalExportPlanning.plan(
-            settings: settings,
-            sceneEvents: sceneEvents,
-            sources: sourceInputs
-        )
-        let previewDuration = sourceInputs
-            .map { CMTimeAdd($0.timelineOffset, $0.duration) }
-            .reduce(CMTimeAdd(sourceInputs[0].timelineOffset, sourceInputs[0].duration)) { CMTimeMaximum($0, $1) }
-        let playbackInsertionByKind = Dictionary(uniqueKeysWithValues: sourceInputs.map {
-            ($0.kind, FinalExportPlanning.sourceInsertion(for: $0, compositionDuration: previewDuration))
-        })
+        let outputDimensions = ScreenCaptureGeometry.outputDimensions(for: settings)
+        let fallbackRenderSize = CGSize(width: outputDimensions.width, height: outputDimensions.height)
+        let exportPlan: FinalExportPlan?
+        let videoPlaybackDuration: CMTime
+        let playbackInsertionByKind: [SceneLayerKind: FinalExportSourceInsertion]
+        if sourceInputs.isEmpty {
+            exportPlan = nil
+            videoPlaybackDuration = .zero
+            playbackInsertionByKind = [:]
+        } else {
+            let plan = try FinalExportPlanning.plan(
+                settings: settings,
+                sceneEvents: sceneEvents,
+                sources: sourceInputs
+            )
+            exportPlan = plan
+            videoPlaybackDuration = sourceInputs
+                .map { CMTimeAdd($0.timelineOffset, $0.duration) }
+                .reduce(CMTimeAdd(sourceInputs[0].timelineOffset, sourceInputs[0].duration)) { CMTimeMaximum($0, $1) }
+            playbackInsertionByKind = Dictionary(uniqueKeysWithValues: sourceInputs.map {
+                ($0.kind, FinalExportPlanning.sourceInsertion(for: $0, compositionDuration: videoPlaybackDuration))
+            })
+        }
 
         let composition = AVMutableComposition()
         var compositedSources: [CompositedVideoSource] = []
@@ -1227,22 +1330,33 @@ extension Merger {
             ))
         }
 
+        let audioPlaybackDuration = audioSources.map(\.duration).max(by: { CMTimeCompare($0, $1) < 0 }) ?? .zero
+        let playbackDuration = CMTimeMaximum(
+            exportPlan?.duration ?? .zero,
+            CMTimeMaximum(videoPlaybackDuration, audioPlaybackDuration)
+        )
         var audioInputs: [EditorPlaybackComposition.AudioInput] = []
-        for audioSource in expectedAudioSources(for: take, settings: settings) {
-            if let input = await addOptionalPlaybackAudio(
+        for audioSource in audioSources {
+            if let input = addOptionalPlaybackAudio(
                 audioSource,
                 to: composition,
-                duration: previewDuration
+                duration: playbackDuration
             ) {
                 audioInputs.append(input)
             }
         }
 
-        let renderSize = exportPlan.renderSize
-        let renderSegments = exportPlan.renderSegments
+        let renderSize = exportPlan?.renderSize ?? fallbackRenderSize
+        let renderSegments = exportPlan?.renderSegments ?? [
+            FinalExportRenderSegment(
+                timeRange: CMTimeRange(start: .zero, duration: playbackDuration),
+                scene: RecordingScene(settings: settings),
+                activeLayerOrder: []
+            )
+        ]
         return EditorPlaybackComposition(
             composition: composition,
-            duration: exportPlan.duration,
+            duration: playbackDuration,
             renderSize: renderSize,
             frameDuration: CMTime(value: 1, timescale: CMTimeScale(settings.framesPerSecond)),
             renderSegments: renderSegments,
@@ -1264,6 +1378,55 @@ extension Merger {
         )
     }
 
+    private static func readablePlaybackAudioSources(
+        for take: RecordingTake,
+        settings: RecordingSettings
+    ) async -> [ReadablePlaybackAudioSource] {
+        var sources: [ReadablePlaybackAudioSource] = []
+        for audioSource in playbackAudioSources(for: take, settings: settings) {
+            guard FileManager.default.fileExists(atPath: audioSource.url.path) else { continue }
+            let asset = AVURLAsset(url: audioSource.url)
+            let tracks: [AVAssetTrack]
+            let duration: CMTime
+            do {
+                tracks = try await asset.loadTracks(withMediaType: .audio)
+                duration = try await asset.load(.duration)
+            } catch {
+                continue
+            }
+            guard let track = tracks.first,
+                  duration.isValid,
+                  CMTimeCompare(duration, .zero) > 0 else { continue }
+            let trackTimeRange = (try? await track.load(.timeRange)) ?? .invalid
+            let trackDuration = trackTimeRange.duration
+            let playableDuration = trackDuration.isValid && CMTimeCompare(trackDuration, .zero) > 0
+                ? trackDuration
+                : duration
+            sources.append(ReadablePlaybackAudioSource(
+                source: audioSource,
+                asset: asset,
+                track: track,
+                duration: playableDuration
+            ))
+        }
+        return sources
+    }
+
+    private static func playbackAudioSources(for take: RecordingTake, settings: RecordingSettings) -> [ExpectedAudioSource] {
+        var sources = expectedAudioSources(for: take, settings: settings)
+        let includedSources = Set(sources.map(\.source))
+        let sidecars = [
+            ExpectedAudioSource(source: .microphone, url: take.audioURL, volume: Float(settings.microphoneGain)),
+            ExpectedAudioSource(source: .systemAudio, url: take.systemAudioURL, volume: Float(settings.systemAudioGain))
+        ]
+        for sidecar in sidecars where !includedSources.contains(sidecar.source) {
+            if FileManager.default.fileExists(atPath: sidecar.url.path) {
+                sources.append(sidecar)
+            }
+        }
+        return sources
+    }
+
     private static func sourceAspectRatio(for source: CompositedVideoSource) -> CGFloat {
         let orientedRect = CGRect(origin: .zero, size: source.naturalSize)
             .applying(source.preferredTransform)
@@ -1277,26 +1440,20 @@ extension Merger {
     }
 
     private static func addOptionalPlaybackAudio(
-        _ audioSource: ExpectedAudioSource,
+        _ audioSource: ReadablePlaybackAudioSource,
         to composition: AVMutableComposition,
         duration: CMTime
-    ) async -> EditorPlaybackComposition.AudioInput? {
-        guard FileManager.default.fileExists(atPath: audioSource.url.path) else { return nil }
-        let asset = AVURLAsset(url: audioSource.url)
-        guard let audioTrack = try? await asset.loadTracks(withMediaType: .audio).first,
-              let audioDuration = try? await asset.load(.duration),
-              audioDuration.isValid,
-              CMTimeCompare(audioDuration, .zero) > 0,
-              let compositionAudioTrack = composition.addMutableTrack(
+    ) -> EditorPlaybackComposition.AudioInput? {
+        guard let compositionAudioTrack = composition.addMutableTrack(
                 withMediaType: .audio,
                 preferredTrackID: kCMPersistentTrackID_Invalid
-              ) else {
+        ) else {
             return nil
         }
         do {
             try compositionAudioTrack.insertTimeRange(
-                CMTimeRange(start: .zero, duration: CMTimeMinimum(duration, audioDuration)),
-                of: audioTrack,
+                CMTimeRange(start: .zero, duration: CMTimeMinimum(duration, audioSource.duration)),
+                of: audioSource.track,
                 at: .zero
             )
         } catch {
@@ -1304,14 +1461,21 @@ extension Merger {
             return nil
         }
         return EditorPlaybackComposition.AudioInput(
-            source: audioSource.source,
+            source: audioSource.source.source,
             track: compositionAudioTrack,
-            volume: max(0, min(2, audioSource.volume))
+            volume: max(0, min(2, audioSource.source.volume))
         )
     }
 }
 
 private struct ReadableVideoAsset {
+    let asset: AVURLAsset
+    let track: AVAssetTrack
+    let duration: CMTime
+}
+
+private struct ReadablePlaybackAudioSource {
+    let source: ExpectedAudioSource
     let asset: AVURLAsset
     let track: AVAssetTrack
     let duration: CMTime
@@ -1343,9 +1507,15 @@ private struct VideoSource {
     let preferredTransform: CGAffineTransform
     let placement: VideoRenderPlacement
     let timelineOffset: CMTime
+    let sourceStartOffset: CMTime
 
     var planningInput: FinalExportSourceInput {
-        FinalExportSourceInput(kind: kind, duration: duration, timelineOffset: timelineOffset)
+        FinalExportSourceInput(
+            kind: kind,
+            duration: duration,
+            timelineOffset: timelineOffset,
+            sourceStartOffset: sourceStartOffset
+        )
     }
 
     init(
@@ -1356,13 +1526,15 @@ private struct VideoSource {
         targetRect: CGRect,
         sourceCropAmount: CGPoint = .zero,
         sourceCropPosition: CGPoint = .zero,
-        timelineOffset: CMTime = .zero
+        timelineOffset: CMTime = .zero,
+        sourceStartOffset: CMTime = .zero
     ) async throws {
         self.kind = kind
         self.asset = asset
         self.track = track
         self.duration = duration
         self.timelineOffset = timelineOffset
+        self.sourceStartOffset = sourceStartOffset
         self.naturalSize = try await track.load(.naturalSize)
         self.preferredTransform = try await track.load(.preferredTransform)
         self.placement = VideoRenderPlacement(

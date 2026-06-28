@@ -24,6 +24,7 @@ struct EditorTimelineView: View {
 
     private let gutterWidth: CGFloat = 112
     private let rulerHeight: CGFloat = 20
+    private let chaptersRowHeight: CGFloat = 30
     private let segmentsRowHeight: CGFloat = 46
 
     var body: some View {
@@ -85,6 +86,9 @@ struct EditorTimelineView: View {
                         ruler(pxPerSecond: pxPerSecond, width: contentWidth)
 
                         if duration > 0 {
+                            if showsChaptersTrack {
+                                chaptersTrack(pxPerSecond: pxPerSecond, contentWidth: contentWidth)
+                            }
                             if showsSegmentsTrack {
                                 segmentsTrack(pxPerSecond: pxPerSecond, contentWidth: contentWidth)
                             }
@@ -210,6 +214,48 @@ struct EditorTimelineView: View {
     }
 
 
+    private func chaptersTrack(pxPerSecond: CGFloat, contentWidth: CGFloat) -> some View {
+        let chapters = timelineChapters
+        return ZStack(alignment: .topLeading) {
+            ForEach(chapters.indices, id: \.self) { index in
+                let chapter = chapters[index]
+                let start = min(max(chapter.time, 0), duration)
+                let rawEnd = chapter.endTime
+                    ?? (index + 1 < chapters.count ? chapters[index + 1].time : duration)
+                let end = min(max(rawEnd, start + 0.1), duration)
+                let gap: CGFloat = index + 1 < chapters.count ? 2 : 0
+                let width = max(34, CGFloat(end - start) * pxPerSecond - gap)
+                chapterClip(chapter, start: start)
+                    .frame(width: width, height: chaptersRowHeight)
+                    .offset(x: CGFloat(start) * pxPerSecond)
+            }
+        }
+        .frame(width: contentWidth, height: chaptersRowHeight, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.white.opacity(0.03))
+        )
+    }
+
+    private func chapterClip(_ chapter: RecordingProject.ChapterSnapshot, start: Double) -> some View {
+        RoundedRectangle(cornerRadius: 7, style: .continuous)
+            .fill(BlitzUI.trackCamera.opacity(0.22))
+            .overlay(alignment: .leading) {
+                Text(chapter.title)
+                    .font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(.white.opacity(0.86))
+                    .lineLimit(1)
+                    .padding(.horizontal, 7)
+            }
+            .contentShape(.rect(cornerRadius: 7))
+            .modifier(TimelineClipHover(cornerRadius: 7))
+            .onTapGesture {
+                onSeek(start)
+                onSeekEnded()
+            }
+    }
+
+
     private func segmentsTrack(pxPerSecond: CGFloat, contentWidth: CGFloat) -> some View {
         let events = sceneEvents
         let frames = outputAsset.flatMap { library.filmstrips[$0.id] } ?? []
@@ -266,16 +312,8 @@ struct EditorTimelineView: View {
     }
 
     private func mixTitle(for index: Int) -> String {
-        let raw = sceneEvents.indices.contains(index) ? sceneEvents[index].scene.enabledSources : []
-        let sources = Set(raw.compactMap(CaptureSource.init(rawValue:)))
-        let hasScreen = sources.contains(.screen)
-        let hasCamera = sources.contains(.camera)
-        switch (hasScreen, hasCamera) {
-        case (true, true): return "Screen + Camera"
-        case (true, false): return "Screen"
-        case (false, true): return "Camera"
-        case (false, false): return "Scene"
-        }
+        guard sceneEvents.indices.contains(index) else { return "Scene" }
+        return EditorSceneTitle.title(for: sceneEvents[index].scene)
     }
 
 
@@ -397,8 +435,21 @@ struct EditorTimelineView: View {
         project?.sceneEvents ?? []
     }
 
+    private var timelineChapters: [RecordingProject.ChapterSnapshot] {
+        (project?.chapters ?? []).sorted { lhs, rhs in
+            if lhs.time == rhs.time {
+                return lhs.title < rhs.title
+            }
+            return lhs.time < rhs.time
+        }
+    }
+
     private var outputAsset: EditorAsset? {
         assets.first { $0.kind == .output && $0.exists && $0.isVideo }
+    }
+
+    private var showsChaptersTrack: Bool {
+        !timelineChapters.isEmpty
     }
 
     private var showsSegmentsTrack: Bool {
@@ -406,7 +457,7 @@ struct EditorTimelineView: View {
     }
 
     private var trackAssets: [EditorAsset] {
-        var rows = assets.filter { $0.isPlayable && $0.kind != .output }
+        var rows = assets.filter { $0.exists && $0.isPlayable && $0.kind != .output }
         if let output = outputAsset, sceneEvents.isEmpty {
             rows.insert(output, at: 0)
         }
@@ -423,6 +474,9 @@ struct EditorTimelineView: View {
     private var gutterRows: [(icon: String, title: String, height: CGFloat, asset: EditorAsset?)] {
         guard duration > 0 else { return [] }
         var rows: [(icon: String, title: String, height: CGFloat, asset: EditorAsset?)] = []
+        if showsChaptersTrack {
+            rows.append((icon: "text.quote", title: "Chapters", height: chaptersRowHeight, asset: nil))
+        }
         if showsSegmentsTrack {
             rows.append((icon: "film", title: "Scenes", height: segmentsRowHeight, asset: nil))
         }
@@ -440,6 +494,9 @@ struct EditorTimelineView: View {
     private var contentHeight: CGFloat {
         var height = rulerHeight
         if duration > 0 {
+            if showsChaptersTrack {
+                height += 6 + chaptersRowHeight
+            }
             if showsSegmentsTrack {
                 height += 6 + segmentsRowHeight
             }
@@ -490,6 +547,59 @@ private struct TimelineZoomButton: View {
             button
         } else {
             button.pointingHandCursor()
+        }
+    }
+}
+
+enum EditorSceneTitle {
+    static func title(for snapshot: RecordingProject.SceneSnapshot) -> String {
+        let layerOrder = snapshot.sceneLayout.layerOrder.compactMap(SceneLayerKind.init(rawValue:))
+        let sourceOpacities = Dictionary(uniqueKeysWithValues: snapshot.sourceOpacities.compactMap { key, value in
+            CaptureSource(rawValue: key).map { ($0, CGFloat(value)) }
+        })
+        let scene = RecordingScene(
+            enabledSources: Set(snapshot.enabledSources.compactMap(CaptureSource.init(rawValue:))),
+            sceneLayout: SceneLayout(
+                screenFrame: CGRect(
+                    x: snapshot.sceneLayout.screenFrame.x,
+                    y: snapshot.sceneLayout.screenFrame.y,
+                    width: snapshot.sceneLayout.screenFrame.width,
+                    height: snapshot.sceneLayout.screenFrame.height
+                ),
+                cameraFrame: CGRect(
+                    x: snapshot.sceneLayout.cameraFrame.x,
+                    y: snapshot.sceneLayout.cameraFrame.y,
+                    width: snapshot.sceneLayout.cameraFrame.width,
+                    height: snapshot.sceneLayout.cameraFrame.height
+                ),
+                layerOrder: layerOrder.isEmpty ? [.screen, .camera] : layerOrder
+            ),
+            cameraContentMode: CameraContentMode(rawValue: snapshot.cameraContentMode) ?? .fill,
+            sourceOpacities: sourceOpacities
+        )
+        return title(for: scene)
+    }
+
+    static func title(for scene: RecordingScene) -> String {
+        let canvas = CGRect(x: 0, y: 0, width: 1, height: 1)
+        let geometry = SceneRenderGeometry(canvas: canvas, scene: scene, origin: .upperLeft)
+        let activeKinds = geometry.activeLayerOrder.filter { scene.renderedSources.contains($0.source) }
+        if let topKind = activeKinds.last,
+           geometry.isFullCanvasFrame(for: topKind) {
+            return title(hasScreen: topKind == .screen, hasCamera: topKind == .camera)
+        }
+        return title(
+            hasScreen: activeKinds.contains(.screen),
+            hasCamera: activeKinds.contains(.camera)
+        )
+    }
+
+    private static func title(hasScreen: Bool, hasCamera: Bool) -> String {
+        switch (hasScreen, hasCamera) {
+        case (true, true): return "Screen + Camera"
+        case (true, false): return "Screen"
+        case (false, true): return "Camera"
+        case (false, false): return "Scene"
         }
     }
 }

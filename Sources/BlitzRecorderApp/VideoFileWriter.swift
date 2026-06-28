@@ -19,7 +19,6 @@ final class VideoFileWriter: @unchecked Sendable {
     private var wroteSample = false
     private var writeError: Error?
     private static let maximumTrustedTimelineOffsetSeconds: Double = 30
-    private static let maximumLeadingTimelineOffsetSeconds: Double = 0.001
 
     init(
         url: URL,
@@ -246,14 +245,6 @@ final class VideoFileWriter: @unchecked Sendable {
               abs(offset) <= maximumTrustedTimelineOffsetSeconds else {
             NSLog(
                 "Video writer ignoring mismatched timeline start offset %.3fs; using first sample time.",
-                offset
-            )
-            return firstSampleTime
-        }
-
-        if offset > maximumLeadingTimelineOffsetSeconds {
-            NSLog(
-                "Video writer trimming %.3fs source startup gap; using first sample time.",
                 offset
             )
             return firstSampleTime

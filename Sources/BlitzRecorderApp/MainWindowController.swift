@@ -60,6 +60,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         viewModel.onPresentSettings = { [weak self] pane in
             self?.presentSettings(selecting: pane)
         }
+        viewModel.onProjectOpened = { [weak self] in
+            self?.showEditorAfterOpeningProject()
+        }
 
         coordinator.onAudioLevel = { [weak self] source, level in
             self?.viewModel.appendAudioLevel(level, source: source)
@@ -340,6 +343,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    private func showEditorAfterOpeningProject() {
+        settingsWindowController?.close()
+        guard let window else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        showWindow(nil)
+        window.deminiaturize(nil)
+        window.makeKeyAndOrderFront(nil)
+        window.makeMain()
+        window.orderFrontRegardless()
+    }
+
     func writeScreenshot(to url: URL) throws {
         guard let view = window?.contentView else {
             throw CocoaError(.fileWriteUnknown)
@@ -462,7 +476,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func shortReadinessMessage(_ readiness: RecordingReadiness) -> String {
         if readiness.isReady { return "" }
         if readiness.blockers.contains(where: { $0.source == .screen || $0.source == .systemAudio }) {
-            if coordinator.settings.screenSourceBinding == nil {
+            if coordinator.settings.screenSourceBinding?.isConcreteSelection != true {
                 return "Pick a screen to preview, or enable Screen Recording for full capture."
             }
             return "Enable Screen Recording to preview the selected screen source."
@@ -490,7 +504,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
 
         guard coordinator.settings.usesPickedScreenContent || coordinator.hasScreenCaptureAccess() else {
-            if coordinator.settings.screenSourceBinding == nil {
+            if coordinator.settings.screenSourceBinding?.isConcreteSelection != true {
                 previewStage.screenPreview.setMessage("")
                 viewModel.applyMessage("Pick a screen to preview, or enable Screen Recording for full capture.")
             } else {

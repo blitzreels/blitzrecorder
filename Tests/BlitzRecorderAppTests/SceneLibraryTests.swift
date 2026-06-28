@@ -89,7 +89,7 @@ final class SceneLibraryTests: XCTestCase {
         XCTAssertEqual(coordinator.settings.layout, .horizontal)
     }
 
-    func testCoordinatorSceneSwitchPreservesCurrentCameraDeviceAndCrop() {
+    func testCoordinatorSceneSwitchRestoresSceneCameraDeviceAndCrop() {
         let defaults = temporaryDefaults()
         var currentSettings = RecordingSettings()
         currentSettings.layout = .vertical
@@ -130,9 +130,9 @@ final class SceneLibraryTests: XCTestCase {
         coordinator.selectScene(id: staleScene.id)
 
         XCTAssertEqual(coordinator.settings.sceneLayout.cameraFrame, staleSceneSettings.sceneLayout.cameraFrame)
-        XCTAssertEqual(coordinator.settings.selectedCameraID, "current-camera")
-        XCTAssertEqual(coordinator.settings.cameraCropAmount, CGPoint(x: 0.22, y: 0.11))
-        XCTAssertEqual(coordinator.settings.cameraCropPosition, CGPoint(x: -0.18, y: 0.31))
+        XCTAssertEqual(coordinator.settings.selectedCameraID, "stale-camera")
+        XCTAssertEqual(coordinator.settings.cameraCropAmount, .zero)
+        XCTAssertEqual(coordinator.settings.cameraCropPosition, .zero)
     }
 
     func testSceneLibraryCreatesDuplicateRenamesReordersAndDeletesScenes() {

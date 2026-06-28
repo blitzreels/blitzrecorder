@@ -10,6 +10,19 @@ struct FinalExportSourceInput: Equatable {
     let kind: SceneLayerKind
     let duration: CMTime
     let timelineOffset: CMTime
+    let sourceStartOffset: CMTime
+
+    init(
+        kind: SceneLayerKind,
+        duration: CMTime,
+        timelineOffset: CMTime,
+        sourceStartOffset: CMTime = .zero
+    ) {
+        self.kind = kind
+        self.duration = duration
+        self.timelineOffset = timelineOffset
+        self.sourceStartOffset = sourceStartOffset
+    }
 }
 
 struct FinalExportSourceInsertion: Equatable {
@@ -114,7 +127,8 @@ enum FinalExportPlanning {
         compositionDuration: CMTime
     ) -> FinalExportSourceInsertion {
         let offset = source.timelineOffset
-        let sourceStart = CMTimeCompare(offset, .zero) < 0 ? CMTimeMultiplyByFloat64(offset, multiplier: -1) : .zero
+        let offsetSourceStart = CMTimeCompare(offset, .zero) < 0 ? CMTimeMultiplyByFloat64(offset, multiplier: -1) : .zero
+        let sourceStart = CMTimeAdd(offsetSourceStart, source.sourceStartOffset)
         let compositionStart = CMTimeCompare(offset, .zero) > 0 ? offset : .zero
         let remainingCompositionDuration = CMTimeSubtract(compositionDuration, compositionStart)
         let remainingSourceDuration = CMTimeSubtract(source.duration, sourceStart)

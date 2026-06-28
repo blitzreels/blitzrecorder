@@ -117,7 +117,7 @@ final class RecorderCoordinator {
         settings = RecordingSettingsStore.load(defaults: defaults)
         sceneLibrary = SceneLibraryStore.load(defaults: defaults, currentSettings: settings)
         if let selectedScene = sceneLibrary.selectedScene(layout: settings.layout) {
-            applySceneSnapshot(selectedScene.snapshot, allowTakeLockedBindings: true)
+            applySceneSnapshot(selectedScene.snapshot)
         }
         accessController.onLicenseStateChanged = { [weak self] in
             self?.reconcileLicenseLimitsForCurrentAccess()
@@ -249,7 +249,7 @@ final class RecorderCoordinator {
         saveCurrentSceneSnapshotIfNeeded()
         guard let scene = sceneLibrary.selectScene(id: id, layout: settings.layout) else { return }
         SceneLibraryStore.save(sceneLibrary, defaults: defaults)
-        applySceneSnapshot(scene.snapshot, allowTakeLockedBindings: state == .idle)
+        applySceneSnapshot(scene.snapshot)
         persistSettings(saveSceneSnapshot: false)
         updateRecordingSceneIfNeeded(transition: .sceneSwitch)
         onScreenCaptureConfigurationChanged?()
@@ -271,7 +271,7 @@ final class RecorderCoordinator {
             snapshot: snapshot
         )
         SceneLibraryStore.save(sceneLibrary, defaults: defaults)
-        applySceneSnapshot(scene.snapshot, allowTakeLockedBindings: true)
+        applySceneSnapshot(scene.snapshot)
         persistSettings(saveSceneSnapshot: false)
         onScreenCaptureConfigurationChanged?()
         onCameraConfigurationChanged?()
@@ -288,7 +288,7 @@ final class RecorderCoordinator {
             return
         }
         SceneLibraryStore.save(sceneLibrary, defaults: defaults)
-        applySceneSnapshot(scene.snapshot, allowTakeLockedBindings: true)
+        applySceneSnapshot(scene.snapshot)
         persistSettings(saveSceneSnapshot: false)
         onScreenCaptureConfigurationChanged?()
         onCameraConfigurationChanged?()
@@ -316,7 +316,7 @@ final class RecorderCoordinator {
         }
         SceneLibraryStore.save(sceneLibrary, defaults: defaults)
         if let selectedScene = sceneLibrary.selectedScene(layout: settings.layout) {
-            applySceneSnapshot(selectedScene.snapshot, allowTakeLockedBindings: true)
+            applySceneSnapshot(selectedScene.snapshot)
             persistSettings(saveSceneSnapshot: false)
             onScreenCaptureConfigurationChanged?()
             onCameraConfigurationChanged?()
@@ -351,7 +351,7 @@ final class RecorderCoordinator {
         settings.layout = layout
         sceneLibrary.ensureScenes(for: layout)
         if let scene = sceneLibrary.selectedScene(layout: layout) {
-            applySceneSnapshot(scene.snapshot, allowTakeLockedBindings: true)
+            applySceneSnapshot(scene.snapshot)
         } else {
             settings.screenCrop = nil
             settings.selectedScenePreset = ScenePreset.defaultPreset(for: layout)
@@ -472,16 +472,20 @@ final class RecorderCoordinator {
     func setCameraBackgroundRemovalAfterRecording(_ enabled: Bool) {
         let wasEnabled = settings.removesCameraBackgroundAfterRecording
         settings.removesCameraBackgroundAfterRecording = enabled
-        if enabled, !wasEnabled, settings.enabledSources.contains(.screen) {
-            settings.selectedScenePreset = nil
-            settings.screenCrop = nil
-            settings.sceneLayout.screenFrame = clampedSceneFrame(
-                SceneLayout.canvasFillingFrame(
-                    sourceAspectRatio: currentScreenSourceAspectRatio(),
-                    canvasAspectRatio: settings.layout.aspectRatio
+        if enabled, !wasEnabled {
+            settings.cameraCropAmount = .zero
+            settings.cameraCropPosition = .zero
+            if settings.enabledSources.contains(.screen) {
+                settings.selectedScenePreset = nil
+                settings.screenCrop = nil
+                settings.sceneLayout.screenFrame = clampedSceneFrame(
+                    SceneLayout.canvasFillingFrame(
+                        sourceAspectRatio: currentScreenSourceAspectRatio(),
+                        canvasAspectRatio: settings.layout.aspectRatio
+                    )
                 )
-            )
-            onScreenCaptureConfigurationChanged?()
+                onScreenCaptureConfigurationChanged?()
+            }
         }
         persistSettings()
         onCameraConfigurationChanged?()
@@ -1815,30 +1819,17 @@ final class RecorderCoordinator {
                 pickedScreenFilter = filter
                 currentPickedScreenSourceAspectRatio = pickedAspectRatio
                 settings.usesPickedScreenContent = true
-                await autoFitPickedWindow(filter)
             }
         } else {
             pickedScreenFilter = filter
             currentPickedScreenSourceAspectRatio = pickedAspectRatio
             settings.usesPickedScreenContent = true
-            await autoFitPickedWindow(filter)
         }
 
         persistSettings()
         updateRecordingSceneIfNeeded()
         onScreenCaptureConfigurationChanged?()
-        if let persistentBinding, persistentBinding.kind != .display {
-            autoFitScreenSourceWindow(persistentBinding, zoom: 1)
-        }
         onRequestForeground?()
-    }
-
-    private func autoFitPickedWindow(_ filter: SCContentFilter) async {
-        guard PermissionGate.hasAccessibilityAccess else {
-            return
-        }
-        let revision = beginScreenWindowFit()
-        await fitPickedScreenWindow(filter, zoom: 1, shouldUpdateCapture: false, revision: revision)
     }
 
     @discardableResult
@@ -1906,7 +1897,9 @@ final class RecorderCoordinator {
 
     func requestPermissionsForEnabledSources() async {
         let needsScreenRecordingGrant =
-            (settings.enabledSources.contains(.screen) && !settings.usesPickedScreenContent)
+            (settings.enabledSources.contains(.screen)
+                && !settings.usesPickedScreenContent
+                && settings.screenSourceBinding?.isConcreteSelection == true)
             || settings.enabledSources.contains(.systemAudio)
         if needsScreenRecordingGrant {
             _ = await PermissionGate.requestScreenCaptureAccess()
@@ -2440,6 +2433,7 @@ final class RecorderCoordinator {
     func exportProject(
         at projectURL: URL,
         outputFormat: OutputVideoFormat,
+        outputResolution: OutputResolution? = nil,
         hiddenVideoSources: Set<SceneLayerKind> = [],
         mutedAudioSources: Set<CaptureSource> = []
     ) {
@@ -2475,6 +2469,9 @@ final class RecorderCoordinator {
                 let sceneEvents = takeFileStore.sceneEvents(from: project)
 
                 var renderSettings = exportSettings
+                if let outputResolution {
+                    renderSettings.outputResolution = outputResolution
+                }
                 if mutedAudioSources.contains(.microphone) {
                     renderSettings.microphoneGain = 0
                 }
@@ -2514,7 +2511,9 @@ final class RecorderCoordinator {
                     for: take,
                     settings: exportSettings,
                     sceneEvents: sceneEvents,
-                    finalVideoURL: url
+                    finalVideoURL: url,
+                    chapters: project.chapters,
+                    editorTimeline: project.editorTimeline
                 )
                 accessController.recordSuccessfulExportIfNeeded()
                 onRenderProgress?(1)
@@ -2735,10 +2734,7 @@ final class RecorderCoordinator {
         SceneLibraryStore.save(sceneLibrary, defaults: defaults)
     }
 
-    private func applySceneSnapshot(
-        _ snapshot: RecordingSceneSnapshot,
-        allowTakeLockedBindings _: Bool
-    ) {
+    private func applySceneSnapshot(_ snapshot: RecordingSceneSnapshot) {
         let audioSources = settings.enabledSources.subtracting([.screen, .camera])
         let hiddenAudioSources = settings.hiddenSources.subtracting([.screen, .camera])
 
@@ -2753,10 +2749,13 @@ final class RecorderCoordinator {
         settings.cameraFramePadding = 0
         settings.cameraShadowEnabled = snapshot.cameraShadowEnabled
         settings.selectedScenePreset = snapshot.selectedScenePreset
+        settings.cameraCropAmount = snapshot.cameraCropAmount
+        settings.cameraCropPosition = snapshot.cameraCropPosition
+        settings.selectedCameraID = snapshot.selectedCameraID
         settings.selectedDisplayID = snapshot.selectedDisplayID
         settings.screenSourceBinding = snapshot.screenSourceBinding
         settings.screenCrop = snapshot.screenCrop
-        settings.usesPickedScreenContent = pickedScreenFilter != nil
+        settings.usesPickedScreenContent = pickedScreenFilter != nil && snapshot.usesPickedScreenContent
         refitCameraInsetFrameForCurrentSource()
     }
 

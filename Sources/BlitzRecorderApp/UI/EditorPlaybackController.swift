@@ -24,6 +24,7 @@ final class EditorPlaybackController {
 
     @ObservationIgnored private var playback: EditorPlaybackComposition?
     @ObservationIgnored private var timeObserver: Any?
+    @ObservationIgnored private var endObserver: NSObjectProtocol?
     @ObservationIgnored private var loadedProjectPath: String?
     @ObservationIgnored private var isScrubbing = false
     @ObservationIgnored private var loadGeneration = 0
@@ -88,6 +89,7 @@ final class EditorPlaybackController {
             player.replaceCurrentItem(with: item)
             applyPreviewDuration(playback)
             installTimeObserverIfNeeded()
+            installEndObserver(for: item)
 
             if resumeTime > 0 {
                 currentTime = min(resumeTime, duration)
@@ -195,7 +197,9 @@ final class EditorPlaybackController {
     }
 
     func layerFrames(at seconds: Double) -> [(kind: SceneLayerKind, frame: CGRect)] {
-        guard let playback, renderSize.width > 0, renderSize.height > 0 else { return [] }
+        guard let playback,
+              renderSize.width > 0,
+              renderSize.height > 0 else { return [] }
         let time = CMTime(seconds: clampedTime(seconds), preferredTimescale: 600)
         let renderSegments = playback.renderSegments(hiding: hiddenKinds)
         let segment = renderSegments.first {
@@ -244,6 +248,10 @@ final class EditorPlaybackController {
             player.removeTimeObserver(timeObserver)
             self.timeObserver = nil
         }
+        if let endObserver {
+            NotificationCenter.default.removeObserver(endObserver)
+            self.endObserver = nil
+        }
     }
 
     private func applyVideoComposition(_ playback: EditorPlaybackComposition) {
@@ -283,6 +291,24 @@ final class EditorPlaybackController {
         await withCheckedContinuation { continuation in
             player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero) { _ in
                 continuation.resume()
+            }
+        }
+    }
+
+    private func installEndObserver(for item: AVPlayerItem) {
+        if let endObserver {
+            NotificationCenter.default.removeObserver(endObserver)
+        }
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.player.pause()
+                self.isPlaying = false
+                self.currentTime = self.duration
             }
         }
     }

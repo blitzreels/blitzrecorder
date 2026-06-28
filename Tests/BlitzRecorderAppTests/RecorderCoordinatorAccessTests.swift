@@ -43,6 +43,56 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         XCTAssertFalse(blockers.contains { $0.source == .systemAudio })
     }
 
+    func testDisplayAutoIsNotConcreteScreenSelection() {
+        XCTAssertFalse(ScreenSourceBinding.display(id: nil).isConcreteSelection)
+        XCTAssertTrue(ScreenSourceBinding.display(id: "display-1").isConcreteSelection)
+    }
+
+    func testScreenSourceBlockerSummaryDoesNotCallPickerStatePermissionRequired() {
+        let blockers = [
+            PermissionBlocker(
+                source: .screen,
+                permission: "Screen source",
+                status: "no app or screen picked",
+                recovery: "Pick a screen or app to record."
+            )
+        ]
+
+        XCTAssertEqual(blockers.shortSummary, "Pick a screen or app to record")
+        XCTAssertEqual(
+            blockers.first?.sentence,
+            "Screen blocked by Screen source: no app or screen picked. Pick a screen or app to record."
+        )
+    }
+
+    func testSelectedScreenSourceBlockerSeparatesSelectionFromPermission() {
+        let blocker = PermissionBlocker(
+            source: .screen,
+            permission: "Screen & System Audio Recording",
+            status: "source selected; full-capture access inactive",
+            recovery: "Use Pick Screen for picker-based capture."
+        )
+
+        XCTAssertEqual(
+            blocker.sentence,
+            "Screen source selected; full-capture access is inactive. Use Pick Screen for picker-based capture."
+        )
+    }
+
+    func testSystemAudioBlockerDoesNotBlameScreenSourceSelection() {
+        let blocker = PermissionBlocker(
+            source: .systemAudio,
+            permission: "Screen & System Audio Recording",
+            status: "Mac audio capture needs Screen Recording access",
+            recovery: "Enable Screen Recording, or turn System Audio off."
+        )
+
+        XCTAssertEqual(
+            blocker.sentence,
+            "System Audio needs Screen Recording access. Enable Screen Recording, or turn System Audio off."
+        )
+    }
+
     func testViewModelAppliesSavedOutputAfterStopWarning() {
         let defaults = temporaryDefaults()
         let coordinator = RecorderCoordinator(
@@ -303,6 +353,19 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
             windowID: nil,
             windowTitle: nil
         )
+
+        XCTAssertTrue(RecorderViewModel.canShowScreenWindowFitControls(
+            settings: settings,
+            targetWindowInfo: nil,
+            hasAccessibilityAccess: true,
+            canEditScene: true
+        ))
+    }
+
+    func testScreenWindowFitControlsShowForPickedScreenContentWithAccessibility() {
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen]
+        settings.usesPickedScreenContent = true
 
         XCTAssertTrue(RecorderViewModel.canShowScreenWindowFitControls(
             settings: settings,

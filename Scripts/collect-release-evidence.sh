@@ -64,7 +64,7 @@ under \`build/\` so release evidence stays local unless explicitly packaged.
 
 ## Release Identity
 
-- Version/build: \`0.2.0 / 4\`
+- Version/build: \`0.2.1 / 5\`
 - macOS bundle ID: \`dev.blitzreels.blitzrecorder\`
 - iOS companion bundle ID: \`dev.blitzreels.blitzrecorder.camera\`
 - Pricing: \`free\`

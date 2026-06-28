@@ -194,7 +194,7 @@ struct BlitzGlassMenu<Label: View>: View {
         } label: {
             label()
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.plain)
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             BlitzGlassMenuList(entries: entries, width: menuWidth, maxHeight: adaptivePopoverMaxHeight) {
                 isPresented = false
@@ -249,7 +249,6 @@ private struct BlitzGlassMenuList: View {
         .scrollIndicators(.visible)
         .frame(width: adaptiveWidth)
         .frame(maxHeight: maxHeight)
-        .background(.regularMaterial)
     }
 }
 

@@ -85,6 +85,7 @@ final class RecorderViewModel {
     private let elapsedClock = RecordingElapsedClock()
 
     @ObservationIgnored var onPresentSettings: ((SettingsPane?) -> Void)?
+    @ObservationIgnored var onProjectOpened: (() -> Void)?
     var selectedSource: SourceSelection? = .screen
     var selectedLayer: SceneLayerKind = .camera
     var isBackgroundLayerSelected = false
@@ -293,12 +294,17 @@ final class RecorderViewModel {
         let readiness = recordingReadiness
         var rows = CaptureSource.allCases.map { source in
             let isActive = settings.enabledSources.contains(source)
+            let isSelectedScreenAwaitingFullCaptureAccess = source == .screen
+                && settings.screenSourceBinding?.isConcreteSelection == true
+                && !settings.usesPickedScreenContent
+                && !coordinator.hasScreenCaptureAccess()
+            let isBlocked = readiness.blockers.contains { $0.source == source }
             return PermissionStatusRow(
                 title: source.rawValue,
                 symbol: source.symbolName,
                 status: isActive ? PermissionGate.status(for: source, settings: settings) : "not used by current setup",
                 isActive: isActive,
-                isBlocked: readiness.blockers.contains { $0.source == source },
+                isBlocked: isBlocked && !isSelectedScreenAwaitingFullCaptureAccess,
                 isOptional: false,
                 source: source
             )
@@ -349,8 +355,7 @@ final class RecorderViewModel {
         recordingReadiness.blockers.contains { $0.source == .screen }
             && settings.enabledSources.contains(.screen)
             && !settings.usesPickedScreenContent
-            && settings.screenSourceBinding == nil
-            && !settings.enabledSources.contains(.systemAudio)
+            && settings.screenSourceBinding?.isConcreteSelection != true
     }
 
     var isPersistentScreenCaptureAccessActive: Bool {
@@ -384,6 +389,10 @@ final class RecorderViewModel {
             return false
         }
 
+        if settings.usesPickedScreenContent {
+            return true
+        }
+
         switch settings.screenSourceBinding?.kind {
         case .window:
             return true
@@ -404,7 +413,9 @@ final class RecorderViewModel {
     }
 
     var needsPersistentScreenCaptureAccess: Bool {
-        let needsScreen = settings.enabledSources.contains(.screen) && !settings.usesPickedScreenContent
+        let needsScreen = settings.enabledSources.contains(.screen)
+            && !settings.usesPickedScreenContent
+            && settings.screenSourceBinding?.isConcreteSelection == true
         let needsSystemAudio = settings.enabledSources.contains(.systemAudio)
         return (needsScreen || needsSystemAudio) && !isPersistentScreenCaptureAccessActive
     }
@@ -711,7 +722,6 @@ final class RecorderViewModel {
                     try await coordinator.pickScreenSource()
                     coordinator.applyScenePreset(preset)
                     syncSettingsAfterSceneChange()
-                    refitActiveScreenWindowAfterPresetIfNeeded(preset)
                     detailMessage = "Screen selected for this session."
                 } catch {
                     detailMessage = "Screen picker failed: \(error.localizedDescription)"
@@ -722,7 +732,6 @@ final class RecorderViewModel {
 
         coordinator.applyScenePreset(preset)
         syncSettingsAfterSceneChange()
-        refitActiveScreenWindowAfterPresetIfNeeded(preset)
     }
 
     var screenSplitHeight: Double {
@@ -967,17 +976,6 @@ final class RecorderViewModel {
             screenSourceBinding: settings.screenSourceBinding,
             usesPickedScreenContent: settings.usesPickedScreenContent
         )
-    }
-
-    private func refitActiveScreenWindowAfterPresetIfNeeded(_ preset: ScenePreset) {
-        guard preset == .screenTop50,
-              screenCaptureAreaSelection == .activeWindow,
-              settings.visibleSources.contains(.screen),
-              hasAccessibilityAccessForWindowControls else {
-            return
-        }
-        fitCurrentScreenWindow(zoom: targetWindowZoom)
-        refreshTargetWindow()
     }
 
     private func syncScreenCaptureAreaSelection() {
@@ -1560,7 +1558,9 @@ final class RecorderViewModel {
     func allowAllFromCover() {
         Task {
             let needsScreenGrant =
-                (settings.enabledSources.contains(.screen) && !settings.usesPickedScreenContent)
+                (settings.enabledSources.contains(.screen)
+                    && !settings.usesPickedScreenContent
+                    && settings.screenSourceBinding?.isConcreteSelection == true)
                 || settings.enabledSources.contains(.systemAudio)
             if needsScreenGrant, !isPersistentScreenCaptureAccessActive {
                 let result = await PermissionGate.requestScreenCaptureAccess()
@@ -1603,7 +1603,7 @@ final class RecorderViewModel {
         settings.enabledSources.contains(.screen)
             && !settings.hiddenSources.contains(.screen)
             && !settings.usesPickedScreenContent
-            && settings.screenSourceBinding == nil
+            && settings.screenSourceBinding?.isConcreteSelection != true
             && !coordinator.hasScreenCaptureAccess()
     }
 
@@ -1740,6 +1740,7 @@ final class RecorderViewModel {
             lastExportWarning = nil
             lastRecoveryOutput = nil
             studioMode = .edit
+            onProjectOpened?()
         } catch {
             detailMessage = "Project could not be opened: \(error.localizedDescription)"
         }
@@ -1747,6 +1748,7 @@ final class RecorderViewModel {
 
     func exportLastProject(
         as format: OutputVideoFormat,
+        resolution: OutputResolution? = nil,
         hiddenVideoSources: Set<SceneLayerKind> = [],
         mutedAudioSources: Set<CaptureSource> = []
     ) {
@@ -1757,9 +1759,15 @@ final class RecorderViewModel {
         coordinator.exportProject(
             at: projectURL,
             outputFormat: format,
+            outputResolution: resolution,
             hiddenVideoSources: hiddenVideoSources,
             mutedAudioSources: mutedAudioSources
         )
+    }
+
+    var lastRevealIsExport: Bool {
+        guard let lastExportedURL else { return false }
+        return FileManager.default.fileExists(atPath: lastExportedURL.path)
     }
 
     var canOpenEditor: Bool {

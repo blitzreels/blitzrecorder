@@ -151,6 +151,68 @@ struct RecordingProject: Codable, Equatable {
         }
     }
 
+    struct ChapterSnapshot: Codable, Equatable, Identifiable {
+        let id: UUID
+        let time: Double
+        let endTime: Double?
+        let title: String
+        let summary: String?
+        let confidence: Double?
+
+        init(
+            id: UUID = UUID(),
+            time: Double,
+            endTime: Double? = nil,
+            title: String,
+            summary: String? = nil,
+            confidence: Double? = nil
+        ) {
+            self.id = id
+            self.time = time
+            self.endTime = endTime
+            self.title = title
+            self.summary = summary
+            self.confidence = confidence
+        }
+    }
+
+    struct TimelineSnapshot: Codable, Equatable {
+        struct Track: Codable, Equatable, Identifiable {
+            let id: String
+            let kind: String
+            let title: String
+            let sourceRole: String?
+        }
+
+        struct Clip: Codable, Equatable, Identifiable {
+            let id: String
+            let trackID: String
+            let sourceRole: String?
+            let time: Double
+            let duration: Double?
+            let startOffset: Double
+            let frame: RectValue?
+            let crop: RectValue?
+            let opacity: Double?
+            let layerOrder: Int?
+        }
+
+        struct Keyframe: Codable, Equatable, Identifiable {
+            let id: String
+            let clipID: String
+            let property: String
+            let time: Double
+            let value: Double
+            let easing: String?
+        }
+
+        let tracks: [Track]
+        let clips: [Clip]
+        let keyframes: [Keyframe]
+
+        static let empty = TimelineSnapshot(tracks: [], clips: [], keyframes: [])
+    }
+
     let version: Int
     let id: UUID
     let createdAt: Date
@@ -162,6 +224,71 @@ struct RecordingProject: Codable, Equatable {
     let settings: SettingsSnapshot
     let sources: [SourceFile]
     let sceneEvents: [SceneEventSnapshot]
+    let chapters: [ChapterSnapshot]
+    let editorTimeline: TimelineSnapshot
+
+    enum CodingKeys: String, CodingKey {
+        case version
+        case id
+        case createdAt
+        case updatedAt
+        case title
+        case projectPath
+        case takeDirectoryPath
+        case finalVideoPath
+        case settings
+        case sources
+        case sceneEvents
+        case chapters
+        case editorTimeline = "timeline"
+    }
+
+    init(
+        version: Int,
+        id: UUID,
+        createdAt: Date,
+        updatedAt: Date,
+        title: String,
+        projectPath: String,
+        takeDirectoryPath: String,
+        finalVideoPath: String?,
+        settings: SettingsSnapshot,
+        sources: [SourceFile],
+        sceneEvents: [SceneEventSnapshot],
+        chapters: [ChapterSnapshot] = [],
+        editorTimeline: TimelineSnapshot = .empty
+    ) {
+        self.version = version
+        self.id = id
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.title = title
+        self.projectPath = projectPath
+        self.takeDirectoryPath = takeDirectoryPath
+        self.finalVideoPath = finalVideoPath
+        self.settings = settings
+        self.sources = sources
+        self.sceneEvents = sceneEvents
+        self.chapters = chapters
+        self.editorTimeline = editorTimeline
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.version = try container.decode(Int.self, forKey: .version)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.createdAt = try container.decode(Date.self, forKey: .createdAt)
+        self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        self.title = try container.decode(String.self, forKey: .title)
+        self.projectPath = try container.decode(String.self, forKey: .projectPath)
+        self.takeDirectoryPath = try container.decode(String.self, forKey: .takeDirectoryPath)
+        self.finalVideoPath = try container.decodeIfPresent(String.self, forKey: .finalVideoPath)
+        self.settings = try container.decode(SettingsSnapshot.self, forKey: .settings)
+        self.sources = try container.decode([SourceFile].self, forKey: .sources)
+        self.sceneEvents = try container.decode([SceneEventSnapshot].self, forKey: .sceneEvents)
+        self.chapters = try container.decodeIfPresent([ChapterSnapshot].self, forKey: .chapters) ?? []
+        self.editorTimeline = try container.decodeIfPresent(TimelineSnapshot.self, forKey: .editorTimeline) ?? .empty
+    }
 }
 
 struct RecordingProjectHistory: Codable, Equatable {
@@ -518,7 +645,9 @@ struct TakeFileStore {
         for take: RecordingTake,
         settings: RecordingSettings,
         sceneEvents: [RecordingSceneEvent],
-        finalVideoURL: URL?
+        finalVideoURL: URL?,
+        chapters: [RecordingProject.ChapterSnapshot] = [],
+        editorTimeline: RecordingProject.TimelineSnapshot = .empty
     ) throws {
         let now = Date()
         let projectURL = take.projectURL
@@ -533,7 +662,9 @@ struct TakeFileStore {
             finalVideoPath: finalVideoURL?.path,
             settings: RecordingProject.SettingsSnapshot(settings),
             sources: projectSourceFiles(for: take),
-            sceneEvents: sceneEvents.map(RecordingProject.SceneEventSnapshot.init)
+            sceneEvents: sceneEvents.map(RecordingProject.SceneEventSnapshot.init),
+            chapters: chapters,
+            editorTimeline: editorTimeline
         )
 
         let encoder = JSONEncoder()
@@ -667,7 +798,9 @@ struct TakeFileStore {
             for: take,
             settings: settings,
             sceneEvents: sceneEvents,
-            finalVideoURL: project.finalVideoPath.map(URL.init(fileURLWithPath:))
+            finalVideoURL: project.finalVideoPath.map(URL.init(fileURLWithPath:)),
+            chapters: project.chapters,
+            editorTimeline: project.editorTimeline
         )
         return try loadRecordingProject(at: projectURL)
     }
@@ -704,7 +837,9 @@ struct TakeFileStore {
             for: take,
             settings: settings,
             sceneEvents: sceneEvents,
-            finalVideoURL: project.finalVideoPath.map(URL.init(fileURLWithPath:))
+            finalVideoURL: project.finalVideoPath.map(URL.init(fileURLWithPath:)),
+            chapters: project.chapters,
+            editorTimeline: project.editorTimeline
         )
         return try loadRecordingProject(at: projectURL)
     }
@@ -743,7 +878,9 @@ struct TakeFileStore {
             for: take,
             settings: settings,
             sceneEvents: sceneEvents,
-            finalVideoURL: project.finalVideoPath.map(URL.init(fileURLWithPath:))
+            finalVideoURL: project.finalVideoPath.map(URL.init(fileURLWithPath:)),
+            chapters: project.chapters,
+            editorTimeline: project.editorTimeline
         )
         return try loadRecordingProject(at: projectURL)
     }
@@ -773,7 +910,9 @@ struct TakeFileStore {
             for: take,
             settings: settings,
             sceneEvents: sceneEvents,
-            finalVideoURL: project.finalVideoPath.map(URL.init(fileURLWithPath:))
+            finalVideoURL: project.finalVideoPath.map(URL.init(fileURLWithPath:)),
+            chapters: project.chapters,
+            editorTimeline: project.editorTimeline
         )
         return try loadRecordingProject(at: projectURL)
     }
