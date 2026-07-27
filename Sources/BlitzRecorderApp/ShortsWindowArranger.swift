@@ -9,6 +9,7 @@ enum ShortsWindowArrangerError: LocalizedError {
     case noWindowFound
     case windowListUnavailable
     case windowMoveFailed
+    case windowNotResizable
 
     var errorDescription: String? {
         switch self {
@@ -22,7 +23,24 @@ enum ShortsWindowArrangerError: LocalizedError {
             return "Could not read the visible window list."
         case .windowMoveFailed:
             return "Could not move the target window."
+        case .windowNotResizable:
+            return "This app does not allow window resizing. Use Adjust crop instead."
         }
+    }
+}
+
+enum ScreenWindowFitRetry {
+    static let maximumAttempts = 3
+
+    static func run<Value>(_ operation: () async throws -> Value) async throws -> Value {
+        for attempt in 1...maximumAttempts {
+            do {
+                return try await operation()
+            } catch ShortsWindowArrangerError.windowMoveFailed where attempt < maximumAttempts {
+                try? await Task.sleep(for: .milliseconds(150))
+            }
+        }
+        throw ShortsWindowArrangerError.windowMoveFailed
     }
 }
 
@@ -500,6 +518,16 @@ enum ShortsWindowArranger {
         guard let positionValue = AXValueCreate(.cgPoint, &position),
               let sizeValue = AXValueCreate(.cgSize, &size) else {
             throw ShortsWindowArrangerError.windowMoveFailed
+        }
+
+        var sizeSettable = DarwinBoolean(false)
+        let settableError = AXUIElementIsAttributeSettable(
+            window,
+            kAXSizeAttribute as CFString,
+            &sizeSettable
+        )
+        guard settableError == .success, sizeSettable.boolValue else {
+            throw ShortsWindowArrangerError.windowNotResizable
         }
 
         let sizeError = AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sizeValue)

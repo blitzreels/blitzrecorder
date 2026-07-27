@@ -1401,6 +1401,7 @@ struct RecordingSettings {
     var trustedRemoteCameraServiceIDs: Set<String> = []
     var remoteCameraSettingsByServiceID: [String: RemoteCameraSettings] = [:]
     var screenCrop: CGRect?
+    var screenSourceAspectRatio: CGFloat?
     var screenWindowZoom: CGFloat = 1
     var cameraCropAmount: CGPoint = .zero
     var cameraCropPosition: CGPoint = .zero

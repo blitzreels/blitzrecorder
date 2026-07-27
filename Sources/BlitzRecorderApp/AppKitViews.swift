@@ -85,6 +85,7 @@ final class PreviewStageView: NSView {
     var onScreenLayerFrameChanged: ((CGRect?) -> Void)?
     var onCameraCropChanged: ((CGPoint, CGPoint) -> Void)?
     var onScreenCropChanged: ((CGRect?) -> Void)?
+    var onScreenCropPanRequested: (() -> Void)?
     var renderedCanvasAspectRatio: CGFloat {
         guard canvasFrame.height > 0 else { return 0 }
         return canvasFrame.width / canvasFrame.height
@@ -573,7 +574,7 @@ final class PreviewStageView: NSView {
         let wasSelected = layer == selectedLayer
         selectedLayer = layer
         onLayerSelected?(layer)
-        guard canEditLayerFrame(layer) else {
+        guard canEditLayerFrame(layer) || canBeginScreenCropPan(layer) else {
             dragMode = nil
             needsDisplay = true
             return
@@ -642,6 +643,27 @@ final class PreviewStageView: NSView {
             NSCursor.closedHand.set()
             frame.origin.x += delta.x
             frame.origin.y += delta.y
+            if PreviewStageEditing.shouldBeginConstrainedScreenCropPan(.init(
+                layer: dragMode.layer,
+                contentMode: screenContentMode,
+                startFrame: dragMode.startFrame,
+                proposedFrame: frame
+            )) {
+                onScreenCropPanRequested?()
+                if isScreenCropEditingEnabled {
+                    let cropDragMode = DragMode(
+                        kind: .screenCropMove,
+                        layer: .screen,
+                        startPoint: dragMode.startPoint,
+                        startFrame: screenCropFrame(),
+                        startCropAmount: cameraCropAmount,
+                        startCropPosition: cameraCropPosition
+                    )
+                    self.dragMode = cropDragMode
+                    updateScreenCrop(movingFrom: cropDragMode, to: location)
+                    return
+                }
+            }
         case .resize(let anchor):
             anchor.cursor.set()
             frame = SceneLayerResizing.resized(
@@ -719,7 +741,8 @@ final class PreviewStageView: NSView {
         if let (_, anchor) = resizeHit(at: point) {
             return anchor.cursor
         }
-        if let layer = layer(at: point), canEditLayerFrame(layer) {
+        if let layer = layer(at: point),
+           canEditLayerFrame(layer) || canBeginScreenCropPan(layer) {
             return .openHand
         }
         return .arrow
@@ -942,6 +965,15 @@ final class PreviewStageView: NSView {
             return false
         }
         return enabledSources.contains(.screen) && enabledSources.contains(.camera)
+    }
+
+    private func canBeginScreenCropPan(_ layer: SceneLayerKind) -> Bool {
+        allowsLayerInteraction
+            && layer == .screen
+            && enabledSources.contains(.screen)
+            && screenContentMode == .fill
+            && !isCameraCropEditingEnabled
+            && !isScreenCropEditingEnabled
     }
 
     private func normalizedFrame(for layer: SceneLayerKind) -> CGRect {

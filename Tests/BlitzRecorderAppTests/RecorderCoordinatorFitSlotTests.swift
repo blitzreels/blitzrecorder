@@ -6,6 +6,21 @@ import XCTest
 
 @MainActor
 final class RecorderCoordinatorFitSlotTests: XCTestCase {
+    func testWindowFitRetriesTransientAccessibilityMoveFailure() async throws {
+        var attempts = 0
+
+        let result: Int = try await ScreenWindowFitRetry.run {
+            attempts += 1
+            if attempts < ScreenWindowFitRetry.maximumAttempts {
+                throw ShortsWindowArrangerError.windowMoveFailed
+            }
+            return 42
+        }
+
+        XCTAssertEqual(result, 42)
+        XCTAssertEqual(attempts, ScreenWindowFitRetry.maximumAttempts)
+    }
+
     func testSettingCurrentLayoutDoesNotResetCustomSceneFrames() {
         let defaults = temporaryDefaults()
         var settings = RecordingSettings()
@@ -82,6 +97,49 @@ final class RecorderCoordinatorFitSlotTests: XCTestCase {
         XCTAssertEqual(coordinator.settings.selectedScenePreset, .cameraInset)
         XCTAssertRect(coordinator.settings.sceneLayout.screenFrame, equals: expectedLayout.screenFrame)
         XCTAssertRect(coordinator.settings.sceneLayout.cameraFrame, equals: expectedLayout.cameraFrame)
+    }
+
+    func testSelectingScreenSourceUsesFitFramingByDefault() {
+        let defaults = temporaryDefaults()
+        var settings = RecordingSettings()
+        settings.screenContentMode = .fill
+        RecordingSettingsStore.save(settings, defaults: defaults)
+
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults),
+            defaults: defaults
+        )
+
+        coordinator.setScreenSource(.display(id: "display-2"))
+
+        XCTAssertEqual(coordinator.settings.screenContentMode, .fit)
+        XCTAssertEqual(
+            RecordingSettingsStore.load(defaults: defaults).screenContentMode,
+            .fit
+        )
+    }
+
+    func testDisplayLayoutRefitPreservesExplicitFillFraming() {
+        let defaults = temporaryDefaults()
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen]
+        settings.hiddenSources = []
+        settings.screenSourceBinding = .display(id: "4")
+        settings.screenContentMode = .fill
+        RecordingSettingsStore.save(settings, defaults: defaults)
+
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults),
+            defaults: defaults
+        )
+
+        coordinator.setCanvasPadding(0.04)
+
+        XCTAssertEqual(coordinator.settings.screenContentMode, .fill)
+        XCTAssertEqual(
+            RecordingSettingsStore.load(defaults: defaults).screenContentMode,
+            .fill
+        )
     }
 
     func testLoadingHorizontalLayoutClearsPersistedPortraitScreenCrop() {

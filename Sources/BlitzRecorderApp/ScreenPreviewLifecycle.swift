@@ -6,7 +6,25 @@ enum ScreenPreviewLifecycleAction: Equatable {
     case restart
 }
 
+struct ScreenPreviewSourceAvailabilityRequest {
+    let settings: RecordingSettings
+    let hasPersistentScreenCaptureAccess: Bool
+    let hasActivePickedContent: Bool
+}
+
 enum ScreenPreviewLifecycle {
+    static func sourceIsAvailable(
+        _ request: ScreenPreviewSourceAvailabilityRequest
+    ) -> Bool {
+        if request.settings.usesPickedScreenContent,
+           request.hasActivePickedContent {
+            return true
+        }
+        return request.hasPersistentScreenCaptureAccess
+            && !request.settings.usesPickedScreenContent
+            && request.settings.screenSourceBinding?.isConcreteSelection == true
+    }
+
     static func action(
         settings: RecordingSettings,
         previewIsRunning: Bool,

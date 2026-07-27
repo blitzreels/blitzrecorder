@@ -30,6 +30,7 @@ enum RecordingSettingsStore {
         static let outputDirectoryPath = "recording.outputDirectoryPath"
         static let outputDirectoryBookmark = "recording.outputDirectoryBookmark"
         static let screenCrop = "screen.crop"
+        static let screenSourceAspectRatio = "screen.sourceAspectRatio"
         static let screenWindowZoom = "screen.windowZoom"
         static let cameraCropAmount = "camera.cropAmount"
         static let cameraCropPosition = "camera.cropPosition"
@@ -141,6 +142,10 @@ enum RecordingSettingsStore {
         settings.trustedRemoteCameraServiceIDs = Set(defaults.stringArray(forKey: Key.trustedRemoteCameraServiceIDs) ?? [])
         settings.remoteCameraSettingsByServiceID = remoteCameraSettingsByServiceID(defaults: defaults)
         settings.screenCrop = rect(for: Key.screenCrop, defaults: defaults)
+        if defaults.object(forKey: Key.screenSourceAspectRatio) != nil {
+            let aspectRatio = defaults.double(forKey: Key.screenSourceAspectRatio)
+            settings.screenSourceAspectRatio = aspectRatio > 0 ? aspectRatio : nil
+        }
         if defaults.object(forKey: Key.screenWindowZoom) != nil {
             settings.screenWindowZoom = ScreenSourceZoomGeometry.clamped(
                 CGFloat(defaults.double(forKey: Key.screenWindowZoom))
@@ -316,6 +321,12 @@ enum RecordingSettingsStore {
             defaults.set(string(from: screenCrop), forKey: Key.screenCrop)
         } else {
             defaults.removeObject(forKey: Key.screenCrop)
+        }
+        if let screenSourceAspectRatio = settings.screenSourceAspectRatio,
+           screenSourceAspectRatio > 0 {
+            defaults.set(screenSourceAspectRatio, forKey: Key.screenSourceAspectRatio)
+        } else {
+            defaults.removeObject(forKey: Key.screenSourceAspectRatio)
         }
         defaults.set(
             ScreenSourceZoomGeometry.clamped(settings.screenWindowZoom),

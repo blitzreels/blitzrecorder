@@ -8,6 +8,16 @@ enum TakeRecordingStopOutcome {
     case none
 }
 
+struct PendingRecordingSceneEvent {
+    let time: TimeInterval
+    let scene: RecordingScene
+    let transition: RecordingSceneTransition
+
+    func resolving(scene: RecordingScene) -> PendingRecordingSceneEvent {
+        PendingRecordingSceneEvent(time: time, scene: scene, transition: transition)
+    }
+}
+
 @MainActor
 protocol LiveCompositedRecording: AnyObject {
     var onCameraPreviewSampleBuffer: ((CMSampleBuffer, Int, Int) -> Void)? { get set }
@@ -79,6 +89,7 @@ final class TakeRecordingRuntime {
     func startLiveCompositedTake(
         take: RecordingTake,
         settings: RecordingSettings,
+        initialScene: RecordingScene,
         pickedScreenFilter: SCContentFilter?,
         prerollSeconds: Int,
         prerollHandler: ((Int) -> Void)?
@@ -91,7 +102,7 @@ final class TakeRecordingRuntime {
             prerollHandler: prerollHandler
         )
         mode = .liveCompositor
-        startSceneTimeline(settings: settings)
+        startSceneTimeline(scene: initialScene)
         return DispatchTime.now().uptimeNanoseconds
     }
 
@@ -100,6 +111,7 @@ final class TakeRecordingRuntime {
         take: RecordingTake,
         settings: RecordingSettings,
         sceneTimelineSettings: RecordingSettings? = nil,
+        initialScene: RecordingScene,
         pickedScreenFilter: SCContentFilter?,
         prerollSeconds: Int,
         screenRecorder: ScreenCaptureRecording,
@@ -127,7 +139,7 @@ final class TakeRecordingRuntime {
             prerollSeconds: prerollSeconds,
             prerollHandler: prerollHandler
         )
-        startSceneTimeline(settings: sceneTimelineSettings ?? settings)
+        startSceneTimeline(scene: initialScene)
         return start
     }
 
@@ -243,10 +255,14 @@ final class TakeRecordingRuntime {
     }
 
     func startSceneTimeline(settings: RecordingSettings) {
+        startSceneTimeline(scene: RecordingScene(settings: settings))
+    }
+
+    private func startSceneTimeline(scene: RecordingScene) {
         timelineAccumulatedSeconds = 0
         timelineSegmentStartedAt = Date()
         sceneEvents = [
-            RecordingSceneEvent(time: 0, scene: RecordingScene(settings: settings))
+            RecordingSceneEvent(time: 0, scene: scene)
         ]
     }
 
@@ -272,11 +288,41 @@ final class TakeRecordingRuntime {
         state: RecordingState,
         transition: RecordingSceneTransition = .cut
     ) {
-        guard state == .recording || state == .paused else { return }
-        if sceneEvents.last?.scene == scene { return }
+        let pendingEvent = pendingSceneEvent(scene: scene, transition: transition)
+        appendPendingSceneEvent(pendingEvent, state: state)
+    }
 
-        let eventTime = currentSceneTime()
-        let event = RecordingSceneEvent(time: eventTime, scene: scene, transition: transition)
+    func pendingSceneEvent(
+        scene: RecordingScene,
+        transition: RecordingSceneTransition
+    ) -> PendingRecordingSceneEvent {
+        PendingRecordingSceneEvent(
+            time: currentSceneTime(),
+            scene: scene,
+            transition: transition
+        )
+    }
+
+    func appendPendingSceneEvent(_ pendingEvent: PendingRecordingSceneEvent, state: RecordingState) {
+        guard state == .recording || state == .paused || state == .finishing else { return }
+        let scene = pendingEvent.scene
+        if let last = sceneEvents.last, last.scene == scene {
+            if pendingEvent.time < last.time {
+                sceneEvents[sceneEvents.count - 1] = RecordingSceneEvent(
+                    time: pendingEvent.time,
+                    scene: scene,
+                    transition: pendingEvent.transition
+                )
+            }
+            return
+        }
+
+        let eventTime = pendingEvent.time
+        let event = RecordingSceneEvent(
+            time: eventTime,
+            scene: scene,
+            transition: pendingEvent.transition
+        )
         if let last = sceneEvents.last,
            abs(last.time - eventTime) < 0.05 {
             sceneEvents[sceneEvents.count - 1] = event

@@ -278,10 +278,12 @@ struct RecordingSceneSnapshot: Codable, Equatable {
     var enabledVideoSources: Set<CaptureSource>
     var hiddenVideoSources: Set<CaptureSource>
     var usesPickedScreenContent: Bool
+    var pickedScreenContentSelectionID: UUID?
     var screenSourceBinding: ScreenSourceBinding?
     var selectedDisplayID: String?
     var selectedCameraID: String?
     var screenCrop: CGRect?
+    var screenSourceAspectRatio: CGFloat?
     var cameraCropAmount: CGPoint
     var cameraCropPosition: CGPoint
     var canvasBackgroundStyle: CanvasBackgroundStyle
@@ -300,10 +302,12 @@ struct RecordingSceneSnapshot: Codable, Equatable {
         enabledVideoSources = settings.enabledSources.intersection(Self.videoSources)
         hiddenVideoSources = settings.hiddenSources.intersection(Self.videoSources)
         usesPickedScreenContent = settings.usesPickedScreenContent
+        pickedScreenContentSelectionID = nil
         screenSourceBinding = settings.screenSourceBinding
         selectedDisplayID = settings.selectedDisplayID
         selectedCameraID = settings.selectedCameraID
         screenCrop = settings.screenCrop
+        screenSourceAspectRatio = settings.screenSourceAspectRatio
         cameraCropAmount = settings.cameraCropAmount
         cameraCropPosition = settings.cameraCropPosition
         canvasBackgroundStyle = settings.canvasBackgroundStyle
@@ -324,11 +328,19 @@ struct RecordingSceneSnapshot: Codable, Equatable {
         enabledVideoSources = try container.decode(Set<CaptureSource>.self, forKey: .enabledVideoSources)
         hiddenVideoSources = try container.decode(Set<CaptureSource>.self, forKey: .hiddenVideoSources)
         usesPickedScreenContent = try container.decode(Bool.self, forKey: .usesPickedScreenContent)
+        pickedScreenContentSelectionID = try container.decodeIfPresent(
+            UUID.self,
+            forKey: .pickedScreenContentSelectionID
+        )
         selectedDisplayID = try container.decodeIfPresent(String.self, forKey: .selectedDisplayID)
         screenSourceBinding = try container.decodeIfPresent(ScreenSourceBinding.self, forKey: .screenSourceBinding)
             ?? .display(id: selectedDisplayID)
         selectedCameraID = try container.decodeIfPresent(String.self, forKey: .selectedCameraID)
         screenCrop = try container.decodeIfPresent(CGRect.self, forKey: .screenCrop)
+        screenSourceAspectRatio = try container.decodeIfPresent(
+            CGFloat.self,
+            forKey: .screenSourceAspectRatio
+        )
         cameraCropAmount = try container.decode(CGPoint.self, forKey: .cameraCropAmount)
         cameraCropPosition = try container.decode(CGPoint.self, forKey: .cameraCropPosition)
         canvasBackgroundStyle = try container.decode(CanvasBackgroundStyle.self, forKey: .canvasBackgroundStyle)

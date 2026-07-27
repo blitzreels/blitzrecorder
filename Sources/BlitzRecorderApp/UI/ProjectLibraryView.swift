@@ -11,11 +11,6 @@ struct ProjectTranscriptTitleRequest {
     let transcript: String
 }
 
-struct TranscriptMarkdownCopyRequest {
-    let transcript: RecordingTranscript
-    let title: String
-}
-
 private struct CompactFlowLayout: Layout {
     let spacing: CGFloat
 
@@ -710,17 +705,10 @@ struct ProjectLibraryView: View {
                 Spacer(minLength: 0)
 
                 if let transcript = selectedTranscript {
-                    Button {
-                        copyTranscriptAsMarkdown(TranscriptMarkdownCopyRequest(
-                            transcript: transcript,
-                            title: displayTitle(project)
-                        ))
-                    } label: {
-                        Label("Copy Markdown", systemImage: "doc.on.doc")
-                    }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.white.opacity(0.70))
-                    .help("Copy the full transcript with headings, speakers, and timestamps")
+                    TranscriptCopyButton(.init(
+                        markdown: transcript.markdownText(title: displayTitle(project)),
+                        appearance: .compact
+                    ))
 
                     Button {
                         guard titleGenerationProjectID == nil else { return }
@@ -781,14 +769,6 @@ struct ProjectLibraryView: View {
                 ))
             }
         }
-    }
-
-    private func copyTranscriptAsMarkdown(_ request: TranscriptMarkdownCopyRequest) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(
-            request.transcript.markdownText(title: request.title),
-            forType: .string
-        )
     }
 
     private func speakerLegend(

@@ -63,12 +63,10 @@ struct TranscriptDetailView: View {
                     .frame(minHeight: 40)
             }
 
-            Button {
-                copyTranscript()
-            } label: {
-                Label("Copy Markdown", systemImage: "doc.on.doc")
-                    .frame(minHeight: 40)
-            }
+            TranscriptCopyButton(.init(
+                markdown: transcript.markdownText,
+                appearance: .regular
+            ))
 
             Button("Save") {
                 request.onSave(transcript)
@@ -386,14 +384,6 @@ struct TranscriptDetailView: View {
     private func speakerContext(for speakerID: String) -> String {
         transcript.speakers.first(where: { $0.id == speakerID })?.context
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    }
-
-    private func copyTranscript() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(
-            transcript.markdownText,
-            forType: .string
-        )
     }
 
     private static func duration(_ duration: TimeInterval) -> String {

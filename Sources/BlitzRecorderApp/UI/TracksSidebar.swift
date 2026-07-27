@@ -491,9 +491,8 @@ private struct ScreenSourceInspector: View {
             if enabled && vm.hasActiveScreenPickerSelection {
                 if vm.supportsScreenWindowScaling {
                     ScreenSourceFramingControl(vm: vm, enabled: enabled)
-                } else {
-                    ScreenContentModeControl(vm: vm, enabled: enabled)
                 }
+                ScreenContentModeControl(vm: vm, enabled: enabled)
             }
         }
         .settingsPanelStyle()
@@ -540,23 +539,40 @@ private struct ScreenSourceInspector: View {
     }
 
     private var pickerModel: BlitzSourcePickerModel {
-        let actions = [BlitzSourcePickerItem(
-            title: "Choose Display or Window",
-            subtitle: "Uses the private macOS picker",
-            systemImage: "rectangle.dashed",
-            icon: nil,
-            thumbnail: nil,
-            isSelected: vm.hasActiveScreenPickerSelection
-        ) {
-            vm.pickScreen()
-        }]
+        let actions = [
+            BlitzSourcePickerItem(
+                title: "Choose App Window",
+                subtitle: "Fits the window to this scene automatically",
+                systemImage: "rectangle.dashed",
+                icon: nil,
+                thumbnail: nil,
+                isSelected: vm.activePickedScreenContentKind == .application
+                    || vm.activePickedScreenContentKind == .window
+            ) {
+                vm.pickScreen()
+            },
+            BlitzSourcePickerItem(
+                title: "Pick Full Screen",
+                subtitle: "Records an entire display without resizing apps",
+                systemImage: "display",
+                icon: nil,
+                thumbnail: nil,
+                isSelected: vm.activePickedScreenContentKind == .display
+            ) {
+                vm.pickFullScreen()
+            }
+        ]
 
         return BlitzSourcePickerModel(
             title: captureSourceLabel,
             subtitle: selectedScreenSourceKindLabel,
             systemImage: selectedScreenSourceSystemImage,
             icon: selectedScreenSourceIcon,
-            sections: [],
+            sections: vm.state == .idle ? [
+                screenSourceSection((kind: .display, title: "Displays")),
+                screenSourceSection((kind: .application, title: "Apps")),
+                screenSourceSection((kind: .window, title: "Windows"))
+            ] : [],
             actions: actions,
             layout: .thumbnails,
             enabled: enabled && vm.canAdjustScreenCapture
@@ -614,6 +630,33 @@ struct ScreenContentModeControl: View {
             HStack(spacing: 7) {
                 modeButton(.fill, title: "Fill frame", detail: "Crop edges")
                 modeButton(.fit, title: "Show all", detail: "No crop")
+            }
+
+            if vm.settings.screenContentMode == .fill {
+                Button {
+                    vm.beginScreenCropMode()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "crop")
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Adjust crop")
+                                .font(.system(size: 10.5, weight: .bold))
+                            Text("Choose which part stays visible")
+                                .font(.system(size: 8.5, weight: .medium))
+                                .opacity(0.58)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .foregroundStyle(.white.opacity(0.82))
+                    .padding(.horizontal, 9)
+                    .frame(maxWidth: .infinity, minHeight: 40)
+                    .contentShape(.rect(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+                .background(BlitzUI.controlFill, in: .rect(cornerRadius: 8))
+                .disabled(!enabled || !vm.canEditScene)
+                .pointingHandCursor()
+                .help("Move and resize the visible screen area directly on the canvas")
             }
         }
         .opacity(enabled ? 1 : 0.55)

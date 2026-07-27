@@ -10,11 +10,60 @@ enum ScreenContentPickerPresentationMode {
     }
 }
 
+enum ScreenContentPickerSelectionPolicy {
+    case appWindow
+    case fullScreen
+    case anyScreenContent
+
+    var allowedModes: SCContentSharingPickerMode {
+        switch self {
+        case .appWindow:
+            return .singleWindow
+        case .fullScreen:
+            return .singleDisplay
+        case .anyScreenContent:
+            return [.singleDisplay, .singleWindow]
+        }
+    }
+
+    var fallbackSourceKind: ScreenSourceBinding.Kind? {
+        switch self {
+        case .appWindow:
+            return .window
+        case .fullScreen:
+            return .display
+        case .anyScreenContent:
+            return nil
+        }
+    }
+
+    var shouldAutoFitPickedWindow: Bool {
+        self == .appWindow
+    }
+
+    func accepts(_ kind: ScreenSourceBinding.Kind?) -> Bool {
+        guard let kind else { return true }
+        switch self {
+        case .appWindow:
+            return kind == .application || kind == .window
+        case .fullScreen:
+            return kind == .display
+        case .anyScreenContent:
+            return true
+        }
+    }
+}
+
+struct ScreenContentPickerRequest {
+    let activeStream: SCStream?
+    let selectionPolicy: ScreenContentPickerSelectionPolicy
+}
+
 @MainActor
 final class ScreenContentPicker: NSObject, @preconcurrency SCContentSharingPickerObserver {
     private var continuation: CheckedContinuation<SCContentFilter, Error>?
 
-    func pick(for activeStream: SCStream? = nil) async throws -> SCContentFilter {
+    func pick(_ request: ScreenContentPickerRequest) async throws -> SCContentFilter {
         guard continuation == nil else {
             throw RecorderError.screenSelectionInProgress
         }
@@ -27,7 +76,7 @@ final class ScreenContentPicker: NSObject, @preconcurrency SCContentSharingPicke
 
             let picker = SCContentSharingPicker.shared
             var configuration = SCContentSharingPickerConfiguration()
-            configuration.allowedPickerModes = [.singleDisplay, .singleWindow]
+            configuration.allowedPickerModes = request.selectionPolicy.allowedModes
             configuration.excludedBundleIDs = [Bundle.main.bundleIdentifier].compactMap { $0 }
             configuration.allowsChangingSelectedContent = true
 
@@ -35,11 +84,11 @@ final class ScreenContentPicker: NSObject, @preconcurrency SCContentSharingPicke
             picker.maximumStreamCount = 1
             picker.isActive = true
             picker.add(self)
-            switch ScreenContentPickerPresentationMode.resolve(hasActiveStream: activeStream != nil) {
+            switch ScreenContentPickerPresentationMode.resolve(hasActiveStream: request.activeStream != nil) {
             case .newSelection:
                 picker.present()
             case .updateActiveStream:
-                guard let activeStream else {
+                guard let activeStream = request.activeStream else {
                     picker.present()
                     return
                 }
@@ -59,6 +108,14 @@ final class ScreenContentPicker: NSObject, @preconcurrency SCContentSharingPicke
 
     func contentSharingPickerStartDidFailWithError(_ error: Error) {
         finish(picker: SCContentSharingPicker.shared, result: .failure(error))
+    }
+
+    func cancel() {
+        guard continuation != nil else { return }
+        finish(
+            picker: SCContentSharingPicker.shared,
+            result: .failure(RecorderError.screenSelectionCancelled)
+        )
     }
 
     private func finish(picker: SCContentSharingPicker, result: Result<SCContentFilter, Error>) {

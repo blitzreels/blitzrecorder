@@ -72,6 +72,10 @@ final class RecorderCoordinator {
     private var screenWindowFitRevision = 0
     private var activeScreenCaptureConfigurationRevision = 0
     private var activeScreenCaptureConfigurationTask: Task<Void, Never>?
+    private var activeScreenPickerTransactionTask: Task<Void, Never>?
+    private var activeScreenPickerTransactionID: UUID?
+    private var pickerQueuedScreenCaptureConfigurationRevision = 0
+    private var committedRecordingSettings: RecordingSettings?
     private var localCameraRuntimeState: LocalCameraRuntimeState = .unchecked
 
     private struct ScreenSourceActionContext: Equatable {
@@ -199,7 +203,6 @@ final class RecorderCoordinator {
         var previewSettings = settings
         if isEditingScreenCrop {
             previewSettings.screenCrop = nil
-            previewSettings.usesPickedScreenContent = false
         }
         try await screenPreviewer.start(
             settings: previewSettings,
@@ -222,6 +225,18 @@ final class RecorderCoordinator {
 
     var hasActivePickedScreenContent: Bool {
         screenSourceSelection.hasActivePickedContent
+    }
+
+    var activePickedScreenContentKind: ScreenSourceBinding.Kind? {
+        screenSourceSelection.activePickedContentKind(for: settings)
+    }
+
+    var hasActiveScreenSourceSelection: Bool {
+        ScreenPreviewLifecycle.sourceIsAvailable(.init(
+            settings: settings,
+            hasPersistentScreenCaptureAccess: permissionGate.hasScreenCaptureAccess,
+            hasActivePickedContent: screenSourceSelection.hasActivePickedContent
+        ))
     }
 
     func stopScreenPreview() async {
@@ -292,6 +307,7 @@ final class RecorderCoordinator {
         if state == .idle {
             onCameraConfigurationChanged?()
         }
+        autoFitSelectedScreenWindowToSceneSlot()
     }
 
     func createSceneFromCurrentSettings(named name: String? = nil) {
@@ -300,7 +316,7 @@ final class RecorderCoordinator {
             return
         }
         saveCurrentSceneSnapshotIfNeeded()
-        let snapshot = RecordingSceneSnapshot(settings: settings)
+        let snapshot = currentRecordingSceneSnapshot()
         let scene = sceneLibrary.createScene(
             layout: settings.layout,
             name: name ?? RecordingSceneDefinition.defaultName(for: settings),
@@ -311,6 +327,7 @@ final class RecorderCoordinator {
         persistSettings(saveSceneSnapshot: false)
         onScreenCaptureConfigurationChanged?()
         onCameraConfigurationChanged?()
+        autoFitSelectedScreenWindowToSceneSlot()
     }
 
     func duplicateSelectedScene() {
@@ -328,6 +345,7 @@ final class RecorderCoordinator {
         persistSettings(saveSceneSnapshot: false)
         onScreenCaptureConfigurationChanged?()
         onCameraConfigurationChanged?()
+        autoFitSelectedScreenWindowToSceneSlot()
     }
 
     func renameScene(id: UUID, to name: String) {
@@ -403,6 +421,7 @@ final class RecorderCoordinator {
         persistSettings(saveSceneSnapshot: false)
         onScreenCaptureConfigurationChanged?()
         onCameraConfigurationChanged?()
+        autoFitSelectedScreenWindowToSceneSlot()
     }
 
     @discardableResult
@@ -622,6 +641,10 @@ final class RecorderCoordinator {
     }
 
     func setDisplay(id: String?) {
+        guard state == .idle else {
+            onMessage?("Use the recording Screen control to switch sources mid-recording.")
+            return
+        }
         settings = screenSourceSelection.selectDisplay(
             ScreenSourceSelection.DisplayRequest(id: id, settings: settings)
         )
@@ -632,6 +655,10 @@ final class RecorderCoordinator {
     }
 
     func setScreenSource(_ binding: ScreenSourceBinding, autoFitWindowZoom: CGFloat? = nil) {
+        guard state == .idle else {
+            onMessage?("Use the recording Screen control to switch sources mid-recording.")
+            return
+        }
         cancelPendingScreenWindowFits()
         settings = screenSourceSelection.selectBinding(
             ScreenSourceSelection.BindingRequest(binding: binding, settings: settings)
@@ -639,6 +666,9 @@ final class RecorderCoordinator {
         currentPickedScreenSourceAspectRatio = nil
         settings.enabledSources.insert(.screen)
         settings.hiddenSources.remove(.screen)
+        if state == .idle {
+            settings.screenContentMode = .fit
+        }
         persistSettings()
         updateRecordingSceneIfNeeded()
         refreshAudioLevelMonitoring()
@@ -724,6 +754,7 @@ final class RecorderCoordinator {
         settings.canvasPadding = clampedCanvasPadding(padding)
         persistSettings()
         updateRecordingSceneIfNeeded()
+        autoFitSelectedScreenWindowToSceneSlot()
     }
 
     func setCameraContentMode(_ mode: CameraContentMode) {
@@ -793,6 +824,7 @@ final class RecorderCoordinator {
         persistSettings()
         updateRecordingSceneIfNeeded(transition: .sceneSwitch)
         onScreenCaptureConfigurationChanged?()
+        autoFitSelectedScreenWindowToSceneSlot()
     }
 
     func applyScenePreset(_ preset: ScenePreset) {
@@ -829,6 +861,7 @@ final class RecorderCoordinator {
         if cameraWasVisible != cameraIsVisible {
             onCameraConfigurationChanged?()
         }
+        autoFitSelectedScreenWindowToSceneSlot()
     }
 
     func setScreenSplitHeight(_ height: CGFloat) {
@@ -852,6 +885,7 @@ final class RecorderCoordinator {
         if !cameraWasVisible {
             onCameraConfigurationChanged?()
         }
+        autoFitSelectedScreenWindowToSceneSlot()
     }
 
     func setCameraInset(
@@ -897,6 +931,7 @@ final class RecorderCoordinator {
         if !cameraWasVisible {
             onCameraConfigurationChanged?()
         }
+        autoFitSelectedScreenWindowToSceneSlot()
     }
 
     func targetWindowInfo() throws -> TargetWindowInfo {
@@ -1042,11 +1077,13 @@ final class RecorderCoordinator {
         Task { [weak self, binding] in
             guard let self else { return }
             do {
-                guard let arrangement = try await self.screenSourceWindowArrangement(
-                    for: binding,
-                    zoom: zoom,
-                    revision: revision
-                ) else { return }
+                guard let arrangement = try await ScreenWindowFitRetry.run({
+                    try await self.screenSourceWindowArrangement(
+                        for: binding,
+                        zoom: zoom,
+                        revision: revision
+                    )
+                }) else { return }
                 self.applyFittedScreenWindowArrangement(arrangement, shouldUpdateCapture: true)
                 self.onMessage?(arrangement.resizedMessage)
             } catch {
@@ -1054,6 +1091,27 @@ final class RecorderCoordinator {
                 self.onMessage?(error.localizedDescription)
             }
         }
+    }
+
+    private func autoFitSelectedScreenWindowToSceneSlot() {
+        guard settings.visibleSources.contains(.screen) else { return }
+        guard permissionGate.hasAccessibilityAccess else { return }
+
+        if settings.usesPickedScreenContent {
+            guard let binding = settings.screenSourceBinding,
+                  binding.kind == .application || binding.kind == .window,
+                  let filter = screenSourceSelection.pickedContentFilter else {
+                return
+            }
+            autoFitPickedScreenWindow(filter)
+            return
+        }
+
+        guard let binding = settings.screenSourceBinding,
+              binding.kind != .display else {
+            return
+        }
+        autoFitScreenSourceWindow(binding, zoom: settings.screenWindowZoom)
     }
 
     private func screenSourceWindowArrangement(
@@ -1383,7 +1441,6 @@ final class RecorderCoordinator {
 
     func setScreenCrop(_ crop: CGRect?) {
         guard sceneChangeIsAllowed() else { return }
-        settings = screenSourceSelection.clearPickedContent(in: settings)
         if let crop {
             let clampedCrop = clampedNormalizedRect(crop)
             settings.screenCrop = isEffectivelyFullDisplayCrop(clampedCrop) ? nil : clampedCrop
@@ -1463,7 +1520,6 @@ final class RecorderCoordinator {
             throw ScreenCropPickerError.selectionTooSmall
         }
 
-        settings = screenSourceSelection.clearPickedContent(in: settings)
         let clampedCrop = clampedNormalizedRect(crop)
         settings.screenCrop = isEffectivelyFullDisplayCrop(clampedCrop) ? nil : clampedCrop
         persistSettings()
@@ -1506,7 +1562,113 @@ final class RecorderCoordinator {
     }
 
     func availableScreenSources() async -> [ScreenSourceOption] {
-        []
+        guard permissionGate.hasScreenCaptureAccess,
+              let content = try? await SCShareableContent.current else {
+            return []
+        }
+
+        let ownProcessID = getpid()
+        let displayOptions = content.displays.enumerated().map { index, display in
+            ScreenSourceOption(
+                binding: .display(id: String(display.displayID)),
+                title: "Display \(index + 1)",
+                subtitle: "\(display.width) × \(display.height)",
+                systemImage: "display",
+                icon: nil
+            )
+        }
+        var applicationKeys: Set<String> = []
+        let applicationOptions = content.applications.compactMap { application -> ScreenSourceOption? in
+            let applicationName = Self.readableScreenApplicationName(application.applicationName)
+            guard application.processID != ownProcessID,
+                  !Self.isIgnoredScreenApplication(
+                    bundleIdentifier: application.bundleIdentifier,
+                    applicationName: applicationName
+                  ),
+                  let applicationName else {
+                return nil
+            }
+            let key = Self.screenApplicationKey(
+                bundleIdentifier: application.bundleIdentifier,
+                processID: application.processID,
+                applicationName: applicationName
+            )
+            guard applicationKeys.insert(key).inserted else { return nil }
+            let primaryWindow = content.windows
+                .filter {
+                    $0.isOnScreen
+                        && $0.frame.width > 0
+                        && $0.frame.height > 0
+                        && $0.owningApplication?.processID == application.processID
+                }
+                .max {
+                    $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height
+                }
+            return ScreenSourceOption(
+                binding: ScreenSourceBinding(
+                    kind: .application,
+                    displayID: primaryWindow.flatMap {
+                        displayID(for: $0, displays: content.displays)
+                    },
+                    bundleIdentifier: application.bundleIdentifier,
+                    applicationName: applicationName,
+                    processID: application.processID,
+                    windowID: nil,
+                    windowTitle: nil
+                ),
+                title: applicationName,
+                subtitle: "Main window",
+                systemImage: "macwindow.on.rectangle",
+                icon: Self.appIcon(
+                    bundleIdentifier: application.bundleIdentifier,
+                    processID: application.processID
+                )
+            )
+        }
+        .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+
+        let windowOptions = content.windows.compactMap { window -> ScreenSourceOption? in
+            let application = window.owningApplication
+            let applicationName = Self.readableScreenApplicationName(application?.applicationName)
+            guard window.isOnScreen,
+                  window.frame.width >= 240,
+                  window.frame.height >= 160,
+                  application?.processID != ownProcessID,
+                  !Self.isIgnoredScreenWindow(
+                    bundleIdentifier: application?.bundleIdentifier,
+                    applicationName: applicationName,
+                    title: window.title
+                  ) else {
+                return nil
+            }
+            let windowTitle = Self.readableScreenWindowTitle(window.title)
+            let title = windowTitle ?? applicationName.map { "\($0) window" } ?? "Window"
+            return ScreenSourceOption(
+                binding: ScreenSourceBinding(
+                    kind: .window,
+                    displayID: displayID(for: window, displays: content.displays),
+                    bundleIdentifier: application?.bundleIdentifier,
+                    applicationName: applicationName,
+                    processID: application?.processID,
+                    windowID: window.windowID,
+                    windowTitle: window.title
+                ),
+                title: title,
+                subtitle: applicationName ?? "Window",
+                systemImage: "app.window",
+                icon: Self.appIcon(
+                    bundleIdentifier: application?.bundleIdentifier,
+                    processID: application?.processID
+                )
+            )
+        }
+        .sorted { lhs, rhs in
+            let lhsLabel = "\(lhs.subtitle) \(lhs.title)"
+            let rhsLabel = "\(rhs.subtitle) \(rhs.title)"
+            return lhsLabel.localizedCaseInsensitiveCompare(rhsLabel) == .orderedAscending
+        }
+
+        return displayOptions + applicationOptions + windowOptions
     }
 
     func screenSourceThumbnails(for bindings: [ScreenSourceBinding]) async -> [String: NSImage] {
@@ -1729,9 +1891,14 @@ final class RecorderCoordinator {
 
     func recordingReadiness() -> RecordingReadiness {
         var readiness = permissionGate.readiness(for: settings)
-        let needsPicker = settings.enabledSources.contains(.screen)
-            || settings.enabledSources.contains(.systemAudio)
-        if needsPicker, !screenSourceSelection.hasActivePickedContent {
+        let needsPicker = (
+            settings.enabledSources.contains(.screen)
+                && !hasActiveScreenSourceSelection
+        ) || (
+            settings.enabledSources.contains(.systemAudio)
+                && !hasActiveScreenSourceSelection
+        )
+        if needsPicker {
             let source: CaptureSource = settings.enabledSources.contains(.screen) ? .screen : .systemAudio
             let blocker = PermissionBlocker(
                 source: source,
@@ -1774,24 +1941,79 @@ final class RecorderCoordinator {
     }
 
     func pickScreenContent() async throws {
-        try await pickScreenContent(activatingScreenSource: false)
+        try await pickScreenContent(.init(
+            activatesScreenSource: false,
+            selectionPolicy: .anyScreenContent
+        ))
     }
 
     func pickScreenSource() async throws {
-        try await pickScreenContent(activatingScreenSource: true)
+        try await pickScreenContent(.init(
+            activatesScreenSource: true,
+            selectionPolicy: .appWindow
+        ))
     }
 
-    private func pickScreenContent(activatingScreenSource: Bool) async throws {
-        let pickedFilter = try await screenContentPicker.pick(
-            for: takeRecording.activeScreenCaptureStream
-        )
+    func pickFullScreenSource() async throws {
+        try await pickScreenContent(.init(
+            activatesScreenSource: true,
+            selectionPolicy: .fullScreen
+        ))
+    }
+
+    private struct PickScreenContentRequest {
+        let activatesScreenSource: Bool
+        let selectionPolicy: ScreenContentPickerSelectionPolicy
+    }
+
+    private func pickScreenContent(_ request: PickScreenContentRequest) async throws {
+        let previousPickerTransactionTask = activeScreenPickerTransactionTask
+        let pendingConfigurationTask: Task<Void, Never>?
+        if state == .recording || state == .paused {
+            pendingConfigurationTask = activeScreenCaptureConfigurationTask
+        } else {
+            pendingConfigurationTask = nil
+        }
+
+        let transactionID = UUID()
+        let transactionTask = Task { @MainActor [weak self] in
+            await previousPickerTransactionTask?.value
+            await pendingConfigurationTask?.value
+            guard let self else { return }
+            try await self.performScreenContentPick(request)
+        }
+        let barrierTask = Task { @MainActor in
+            _ = try? await transactionTask.value
+        }
+        activeScreenPickerTransactionID = transactionID
+        activeScreenPickerTransactionTask = barrierTask
+        defer {
+            if activeScreenPickerTransactionID == transactionID {
+                activeScreenPickerTransactionID = nil
+                activeScreenPickerTransactionTask = nil
+            }
+        }
+        try await transactionTask.value
+    }
+
+    private func performScreenContentPick(_ request: PickScreenContentRequest) async throws {
+        let pickedFilter = try await screenContentPicker.pick(.init(
+            activeStream: takeRecording.activeScreenCaptureStream,
+            selectionPolicy: request.selectionPolicy
+        ))
         let persistentBinding = await ScreenCaptureGeometry.persistentBinding(forPickedContent: pickedFilter)
+        guard request.selectionPolicy.accepts(persistentBinding?.kind) else {
+            throw RecorderError.screenWindowRequired
+        }
         let filter = ScreenCaptureGeometry.normalizedPickedFilter(pickedFilter)
         let pickedAspectRatio = ScreenCaptureGeometry.pickedContentAspectRatio(for: filter)
+        let previousSettings = settings
+        let previousSelectionState = screenSourceSelection.runtimeState()
+        let previousPickedScreenSourceAspectRatio = currentPickedScreenSourceAspectRatio
         cancelPendingScreenWindowFits()
         screenContentSelectionRevision += 1
         settings.screenCrop = nil
-        if activatingScreenSource {
+        if request.activatesScreenSource {
             settings.enabledSources.insert(.screen)
             settings.hiddenSources.remove(.screen)
         }
@@ -1800,15 +2022,67 @@ final class RecorderCoordinator {
             ScreenSourceSelection.PickedContentRequest(
                 filter: filter,
                 persistentBinding: persistentBinding,
+                fallbackSourceKind: request.selectionPolicy.fallbackSourceKind,
                 settings: settings
             )
         )
+        settings.screenSourceAspectRatio = pickedAspectRatio
         currentPickedScreenSourceAspectRatio = pickedAspectRatio
+        if request.activatesScreenSource, state == .idle {
+            settings.screenContentMode = .fit
+        }
+
+        let updatesActiveRecording = state == .recording || state == .paused
+        if updatesActiveRecording {
+            do {
+                let localSettings = localCaptureSettings(
+                    usesRemoteCamera: settings.enabledSources.contains(.camera) && isRemoteCameraSelected
+                )
+                try await takeRecording.updateScreenCapture(
+                    settings: localSettings,
+                    pickedScreenFilter: filter
+                )
+                committedRecordingSettings = settings
+            } catch {
+                settings = previousSettings
+                screenSourceSelection.restoreRuntimeState(previousSelectionState)
+                currentPickedScreenSourceAspectRatio = previousPickedScreenSourceAspectRatio
+                if let retargetFailure = error as? CaptureSourceRetargetFailure,
+                   retargetFailure.rollbackFailed {
+                    stop()
+                    onRequestForeground?()
+                    onMessage?("Source switch failed. Recording stopped to protect the take.")
+                }
+                throw error
+            }
+        }
 
         persistSettings()
-        updateRecordingSceneIfNeeded()
+        if updatesActiveRecording {
+            updateRecordingSceneTimeline(transition: .cut)
+        } else {
+            updateRecordingSceneIfNeeded()
+        }
         onScreenCaptureConfigurationChanged?()
         onRequestForeground?()
+        if request.selectionPolicy.shouldAutoFitPickedWindow,
+           persistentBinding != nil {
+            autoFitPickedScreenWindow(filter)
+        }
+    }
+
+    private func autoFitPickedScreenWindow(_ filter: SCContentFilter) {
+        guard permissionGate.hasAccessibilityAccess else { return }
+        let revision = beginScreenWindowFit()
+        Task { [weak self, filter] in
+            guard let self else { return }
+            _ = await self.fitPickedScreenWindow(
+                filter,
+                zoom: self.settings.screenWindowZoom,
+                shouldUpdateCapture: true,
+                revision: revision
+            )
+        }
     }
 
     @discardableResult
@@ -1823,67 +2097,69 @@ final class RecorderCoordinator {
         }
 
         do {
-            let arrangement: ShortsWindowArrangement
-            if let binding = settings.screenSourceBinding,
-               let processID = binding.processID,
-               binding.kind == .window {
-                arrangement = try ShortsWindowArranger.fitWindow(
-                    ownerPID: processID,
-                    bounds: filter.contentRect,
-                    title: binding.windowTitle,
-                    appName: binding.applicationName ?? "Application",
-                    displayID: binding.displayID ?? settings.selectedDisplayID,
-                    captureLayout: settings.layout,
-                    sceneLayout: settings.sceneLayout,
-                    enabledSources: settings.enabledSources,
-                    canvasPadding: settings.canvasPadding,
-                    zoom: zoom
-                )
-            } else if let binding = settings.screenSourceBinding,
-                      let processID = binding.processID,
-                      binding.kind == .application {
-                arrangement = try ShortsWindowArranger.fitAppWindow(
-                    ownerPID: processID,
-                    appName: binding.applicationName ?? "Application",
-                    displayID: binding.displayID ?? settings.selectedDisplayID,
-                    captureLayout: settings.layout,
-                    sceneLayout: settings.sceneLayout,
-                    enabledSources: settings.enabledSources,
-                    canvasPadding: settings.canvasPadding,
-                    zoom: zoom
-                )
-            } else if let target = await ScreenCaptureGeometry.pickedWindowTarget(for: filter) {
-                arrangement = try ShortsWindowArranger.fitWindow(
+            let arrangement = try await ScreenWindowFitRetry.run {
+                guard self.isCurrentPickedScreenWindowFit(revision) else {
+                    throw CancellationError()
+                }
+                if let binding = self.settings.screenSourceBinding,
+                   let processID = binding.processID,
+                   binding.kind == .window {
+                    return try ShortsWindowArranger.fitWindow(
+                        ownerPID: processID,
+                        bounds: filter.contentRect,
+                        title: binding.windowTitle,
+                        appName: binding.applicationName ?? "Application",
+                        displayID: binding.displayID ?? self.settings.selectedDisplayID,
+                        captureLayout: self.settings.layout,
+                        sceneLayout: self.settings.sceneLayout,
+                        enabledSources: self.settings.enabledSources,
+                        canvasPadding: self.settings.canvasPadding,
+                        zoom: zoom
+                    )
+                }
+                if let binding = self.settings.screenSourceBinding,
+                   let processID = binding.processID,
+                   binding.kind == .application {
+                    return try ShortsWindowArranger.fitAppWindow(
+                        ownerPID: processID,
+                        appName: binding.applicationName ?? "Application",
+                        displayID: binding.displayID ?? self.settings.selectedDisplayID,
+                        captureLayout: self.settings.layout,
+                        sceneLayout: self.settings.sceneLayout,
+                        enabledSources: self.settings.enabledSources,
+                        canvasPadding: self.settings.canvasPadding,
+                        zoom: zoom
+                    )
+                }
+                guard let target = await ScreenCaptureGeometry.pickedWindowTarget(for: filter) else {
+                    throw ShortsWindowArrangerError.noWindowFound
+                }
+                return try ShortsWindowArranger.fitWindow(
                     ownerPID: target.pid,
                     bounds: target.bounds,
                     title: target.title,
                     appName: target.appName ?? "",
-                    displayID: target.displayID ?? settings.selectedDisplayID,
-                    captureLayout: settings.layout,
-                    sceneLayout: settings.sceneLayout,
-                    enabledSources: settings.enabledSources,
-                    canvasPadding: settings.canvasPadding,
+                    displayID: target.displayID ?? self.settings.selectedDisplayID,
+                    captureLayout: self.settings.layout,
+                    sceneLayout: self.settings.sceneLayout,
+                    enabledSources: self.settings.enabledSources,
+                    canvasPadding: self.settings.canvasPadding,
                     zoom: zoom
                 )
-            } else {
-                if shouldUpdateCapture {
-                    onMessage?("Picked content is not a resizable window.")
-                }
-                return false
             }
             guard isCurrentPickedScreenWindowFit(revision) else {
                 return false
             }
             applyFittedScreenWindowArrangement(arrangement, shouldUpdateCapture: false)
             if shouldUpdateCapture {
-                settings = screenSourceSelection.markPickedContentActive(in: settings)
-                persistSettings()
-                updateRecordingSceneIfNeeded()
                 onScreenCaptureConfigurationChanged?()
                 onMessage?(arrangement.resizedMessage)
             }
             return true
         } catch {
+            guard isCurrentPickedScreenWindowFit(revision) else {
+                return false
+            }
             if shouldUpdateCapture {
                 onMessage?(error.localizedDescription)
             }
@@ -1897,7 +2173,10 @@ final class RecorderCoordinator {
     ) {
         screenWindowGeometryRevision += 1
         if arrangement.frame.width > 0, arrangement.frame.height > 0 {
-            noteScreenSourceAspectRatio(arrangement.frame.width / arrangement.frame.height)
+            let aspectRatio = arrangement.frame.width / arrangement.frame.height
+            settings.screenSourceAspectRatio = aspectRatio
+            noteScreenSourceAspectRatio(aspectRatio)
+            persistSettings()
         }
         updateRecordingSceneIfNeeded()
         if shouldUpdateCapture {
@@ -2004,7 +2283,13 @@ final class RecorderCoordinator {
                 guard !settings.enabledSources.isEmpty else {
                     throw RecorderError.noSourcesSelected
                 }
+                await prepareScreenSourceWindowForRecording()
                 let recordingSettings = effectiveRecordingSettingsForStart()
+                let recordingScreenFilter = try await resolvedScreenFilter(for: recordingSettings)
+                let initialRecordingScene = recordingScene(
+                    settings: recordingSettings,
+                    screenFilter: recordingScreenFilter
+                )
                 let skippedSystemAudio = settings.enabledSources.contains(.systemAudio)
                     && !recordingSettings.enabledSources.contains(.systemAudio)
                 let startPlan = TakeStartPlan.make(settings: recordingSettings, isRemoteCameraSelected: isRemoteCameraSelected)
@@ -2054,7 +2339,8 @@ final class RecorderCoordinator {
                     let hostStartTime = try await takeRecording.startLiveCompositedTake(
                         take: take,
                         settings: recordingSettings,
-                        pickedScreenFilter: pickedScreenFilter(for: recordingSettings),
+                        initialScene: initialRecordingScene,
+                        pickedScreenFilter: recordingScreenFilter,
                         prerollSeconds: 0
                     ) { [weak self] remaining in
                         self?.onMessage?(Self.recordingPrerollMessage(remaining: remaining))
@@ -2069,6 +2355,7 @@ final class RecorderCoordinator {
                         )
                     }
                     recordingSession.markRecordingStarted()
+                    committedRecordingSettings = settings
                     onMessage?(skippedSystemAudio
                         ? "Recording - Mac audio off (needs Screen Recording)"
                         : "Recording with live compositor...")
@@ -2083,7 +2370,8 @@ final class RecorderCoordinator {
                     take: take,
                     settings: startPlan.localCaptureSettings,
                     sceneTimelineSettings: startPlan.sceneTimelineSettings,
-                    pickedScreenFilter: pickedScreenFilter(for: recordingSettings),
+                    initialScene: initialRecordingScene,
+                    pickedScreenFilter: recordingScreenFilter,
                     prerollSeconds: 0,
                     screenRecorder: screenRecorder,
                     cameraRecorder: cameraRecorder,
@@ -2094,6 +2382,7 @@ final class RecorderCoordinator {
                     self?.onMessage?(Self.recordingPrerollMessage(remaining: remaining))
                 }
                 recordingSession.markRecordingStarted()
+                committedRecordingSettings = settings
                 onMessage?(skippedSystemAudio
                     ? "Recording - Mac audio off (needs Screen Recording)"
                     : "Recording...")
@@ -2110,9 +2399,52 @@ final class RecorderCoordinator {
                     takeFileStore.cleanupIntermediateFiles(for: createdTake, settings: settings)
                 }
                 recordingSession.failPreparation()
+                committedRecordingSettings = nil
                 refreshAudioLevelMonitoring()
                 onMessage?(startFailedMessage(for: error))
             }
+        }
+    }
+
+    private func prepareScreenSourceWindowForRecording() async {
+        guard settings.visibleSources.contains(.screen),
+              permissionGate.hasAccessibilityAccess else {
+            return
+        }
+
+        if settings.usesPickedScreenContent {
+            guard let filter = screenSourceSelection.pickedContentFilter,
+                  let binding = settings.screenSourceBinding,
+                  binding.kind != .display else {
+                return
+            }
+            let revision = beginScreenWindowFit()
+            _ = await fitPickedScreenWindow(
+                filter,
+                zoom: settings.screenWindowZoom,
+                shouldUpdateCapture: false,
+                revision: revision
+            )
+            return
+        }
+
+        guard let binding = settings.screenSourceBinding,
+              binding.kind != .display else {
+            return
+        }
+        let revision = beginScreenWindowFit()
+        do {
+            guard let arrangement = try await screenSourceWindowArrangement(
+                for: binding,
+                zoom: settings.screenWindowZoom,
+                revision: revision
+            ) else {
+                return
+            }
+            applyFittedScreenWindowArrangement(arrangement, shouldUpdateCapture: false)
+        } catch {
+            guard isCurrentScreenSourceWindowFit(revision, binding: binding) else { return }
+            onMessage?("Window fit skipped: \(error.localizedDescription)")
         }
     }
 
@@ -2232,15 +2564,20 @@ final class RecorderCoordinator {
     }
 
     func stop() {
+        screenContentPicker.cancel()
+        let pendingScreenPickerTransactionTask = activeScreenPickerTransactionTask
+        let pendingScreenCaptureConfigurationTask = activeScreenCaptureConfigurationTask
         guard let stopContext = recordingSession.beginFinishing() else { return }
         takeRecording.pauseSceneTimeline()
-        cancelPendingActiveScreenCaptureConfigurationUpdate()
-        let sceneEventsForFinalization = takeRecording.sceneEvents
         onRenderProgress?(0)
         onMessage?("Stopping recording...")
 
         Task {
             do {
+                await pendingScreenPickerTransactionTask?.value
+                await pendingScreenCaptureConfigurationTask?.value
+                let sceneEventsForFinalization = takeRecording.sceneEvents
+                committedRecordingSettings = nil
                 let takeToFinalize = stopContext.take
                 let takeSettings = stopContext.settings ?? settings
                 let stopOutcome = try await takeRecording.stop()
@@ -2632,39 +2969,135 @@ final class RecorderCoordinator {
     }
 
     private func updateRecordingSceneIfNeeded(transition: RecordingSceneTransition = .cut) {
-        let scene = RecordingScene(settings: settings)
+        let screenFilter = settings.usesPickedScreenContent
+            ? screenSourceSelection.pickedContentFilter
+            : nil
+        let scene = recordingScene(settings: settings, screenFilter: screenFilter)
         takeRecording.updateScene(scene, transition: transition)
-        takeRecording.appendSceneEventIfNeeded(scene, state: state, transition: transition)
-        updateActiveScreenCaptureConfigurationIfNeeded()
+        if (state == .recording || state == .paused),
+           settings.enabledSources.contains(.screen) {
+            let pendingEvent = takeRecording.pendingSceneEvent(
+                scene: scene,
+                transition: transition
+            )
+            updateActiveScreenCaptureConfigurationIfNeeded(pendingEvent: pendingEvent)
+        } else {
+            takeRecording.appendSceneEventIfNeeded(scene, state: state, transition: transition)
+            if state == .recording || state == .paused {
+                committedRecordingSettings = settings
+            }
+        }
         synchronizeActiveCaptureSourcesIfNeeded()
     }
 
-    private func updateActiveScreenCaptureConfigurationIfNeeded() {
+    @discardableResult
+    private func updateRecordingSceneTimeline(transition: RecordingSceneTransition) -> RecordingScene {
+        let screenFilter = settings.usesPickedScreenContent
+            ? screenSourceSelection.pickedContentFilter
+            : nil
+        let scene = recordingScene(
+            settings: settings,
+            screenFilter: screenFilter
+        )
+        takeRecording.updateScene(scene, transition: transition)
+        takeRecording.appendSceneEventIfNeeded(scene, state: state, transition: transition)
+        return scene
+    }
+
+    private func recordingScene(
+        settings: RecordingSettings,
+        screenFilter: SCContentFilter?
+    ) -> RecordingScene {
+        var scene = RecordingScene(settings: settings)
+        guard settings.enabledSources.contains(.screen), let screenFilter else {
+            return scene
+        }
+        var geometry = ScreenCaptureGeometry.screenSourceGeometry(
+            for: settings,
+            pickedFilter: screenFilter
+        )
+        geometry.usesPickedContent = settings.usesPickedScreenContent
+        geometry.fillsSceneFrame = ScreenSourceGeometry.fillsSceneFrame(for: settings)
+        scene.screenSourceGeometry = geometry
+        return scene
+    }
+
+    private func updateActiveScreenCaptureConfigurationIfNeeded(
+        pendingEvent: PendingRecordingSceneEvent
+    ) {
         guard state == .recording || state == .paused,
               settings.enabledSources.contains(.screen) else {
             return
         }
 
-        let settings = localCaptureSettings(
-            usesRemoteCamera: settings.enabledSources.contains(.camera) && isRemoteCameraSelected
-        )
-        let pickedScreenFilter = pickedScreenFilter(for: settings)
-        activeScreenCaptureConfigurationRevision += 1
-        let revision = activeScreenCaptureConfigurationRevision
+        let requestedSettings = settings
+        let generation = activeScreenCaptureConfigurationRevision
         let previousTask = activeScreenCaptureConfigurationTask
-        let task = Task { [weak self, previousTask, settings, pickedScreenFilter, revision] in
+        let pickerTransactionTask = activeScreenPickerTransactionTask
+        let pickerQueuedRevision: Int?
+        if pickerTransactionTask == nil {
+            pickerQueuedRevision = nil
+        } else {
+            pickerQueuedScreenCaptureConfigurationRevision += 1
+            pickerQueuedRevision = pickerQueuedScreenCaptureConfigurationRevision
+        }
+        let task = Task {
+            [
+                weak self,
+                previousTask,
+                pickerTransactionTask,
+                generation,
+                pendingEvent,
+                pickerQueuedRevision,
+                requestedSettings
+            ] in
+            await pickerTransactionTask?.value
             await previousTask?.value
             guard let self,
-                  self.shouldApplyActiveScreenCaptureConfiguration(revision: revision) else {
+                  self.shouldApplyActiveScreenCaptureConfiguration(generation: generation) else {
                 return
             }
+            if let pickerQueuedRevision,
+               pickerQueuedRevision != self.pickerQueuedScreenCaptureConfigurationRevision {
+                return
+            }
+            let effectiveSettings = pickerTransactionTask == nil
+                ? requestedSettings
+                : self.settings
+            let effectiveEvent: PendingRecordingSceneEvent
+            if pickerTransactionTask == nil {
+                effectiveEvent = pendingEvent
+            } else {
+                let currentFilter = effectiveSettings.usesPickedScreenContent
+                    ? self.screenSourceSelection.pickedContentFilter
+                    : nil
+                let currentScene = self.recordingScene(
+                    settings: effectiveSettings,
+                    screenFilter: currentFilter
+                )
+                effectiveEvent = pendingEvent.resolving(scene: currentScene)
+            }
+            let captureSettings = self.localCaptureSettings(
+                usesRemoteCamera: effectiveSettings.enabledSources.contains(.camera)
+                    && self.isRemoteCameraSelected
+            )
             do {
+                let pickedScreenFilter = try await self.resolvedScreenFilter(for: captureSettings)
                 try await self.takeRecording.updateScreenCapture(
-                    settings: settings,
+                    settings: captureSettings,
                     pickedScreenFilter: pickedScreenFilter
                 )
+                let resolvedScene = self.recordingScene(
+                    settings: effectiveSettings,
+                    screenFilter: pickedScreenFilter
+                )
+                self.takeRecording.appendPendingSceneEvent(
+                    effectiveEvent.resolving(scene: resolvedScene),
+                    state: self.state
+                )
+                self.committedRecordingSettings = effectiveSettings
             } catch {
-                self.reportActiveScreenCaptureConfigurationFailure(error, revision: revision)
+                self.reportActiveScreenCaptureConfigurationFailure(error, generation: generation)
             }
         }
         activeScreenCaptureConfigurationTask = task
@@ -2676,14 +3109,31 @@ final class RecorderCoordinator {
         activeScreenCaptureConfigurationTask = nil
     }
 
-    private func shouldApplyActiveScreenCaptureConfiguration(revision: Int) -> Bool {
+    private func shouldApplyActiveScreenCaptureConfiguration(generation: Int) -> Bool {
         !Task.isCancelled
-            && activeScreenCaptureConfigurationRevision == revision
-            && (state == .recording || state == .paused)
+            && activeScreenCaptureConfigurationRevision == generation
+            && (state == .recording || state == .paused || state == .finishing)
     }
 
-    private func reportActiveScreenCaptureConfigurationFailure(_ error: Error, revision: Int) {
-        guard activeScreenCaptureConfigurationRevision == revision else { return }
+    private func reportActiveScreenCaptureConfigurationFailure(_ error: Error, generation: Int) {
+        if let retargetFailure = error as? CaptureSourceRetargetFailure,
+           retargetFailure.rollbackFailed {
+            cancelPendingActiveScreenCaptureConfigurationUpdate()
+            stop()
+            onRequestForeground?()
+            onMessage?("Screen capture update failed. Recording stopped to protect the take.")
+            return
+        }
+        guard activeScreenCaptureConfigurationRevision == generation else { return }
+        cancelPendingActiveScreenCaptureConfigurationUpdate()
+        if let committedRecordingSettings {
+            settings = committedRecordingSettings
+            persistSettings()
+            if let committedScene = takeRecording.sceneEvents.last?.scene {
+                takeRecording.updateScene(committedScene, transition: .cut)
+            }
+            onScreenCaptureConfigurationChanged?()
+        }
         onMessage?("Screen capture update failed: \(error.recorderFailureDescription)")
     }
 
@@ -2701,9 +3151,9 @@ final class RecorderCoordinator {
         let localSettings = localCaptureSettings(
             usesRemoteCamera: settings.enabledSources.contains(.camera) && isRemoteCameraSelected
         )
-        let pickedScreenFilter = pickedScreenFilter(for: localSettings)
-        Task { [weak self, localSettings, pickedScreenFilter] in
+        Task { [weak self, localSettings] in
             do {
+                let pickedScreenFilter = try await self?.resolvedScreenFilter(for: localSettings)
                 try await self?.takeRecording.startEnabledSources(
                     settings: localSettings,
                     pickedScreenFilter: pickedScreenFilter
@@ -2718,6 +3168,22 @@ final class RecorderCoordinator {
         screenSourceSelection.activeFilter(for: settings)
     }
 
+    private func resolvedScreenFilter(for settings: RecordingSettings) async throws -> SCContentFilter? {
+        guard settings.enabledSources.contains(.screen)
+                || settings.enabledSources.contains(.systemAudio) else {
+            return nil
+        }
+        if let pickedFilter = pickedScreenFilter(for: settings) {
+            return pickedFilter
+        }
+        guard permissionGate.hasScreenCaptureAccess,
+              settings.screenSourceBinding?.isConcreteSelection == true else {
+            return nil
+        }
+        let content = try await SCShareableContent.current
+        return try ScreenCaptureGeometry.screenSource(for: settings, content: content).filter
+    }
+
     private func persistSettings(saveSceneSnapshot: Bool = true) {
         if saveSceneSnapshot {
             saveCurrentSceneSnapshotIfNeeded()
@@ -2729,7 +3195,7 @@ final class RecorderCoordinator {
         guard state == .idle else { return }
         sceneLibrary.updateSelectedScene(
             layout: settings.layout,
-            snapshot: RecordingSceneSnapshot(settings: settings)
+            snapshot: currentRecordingSceneSnapshot()
         )
         SceneLibraryStore.save(sceneLibrary, defaults: defaults)
     }
@@ -2761,16 +3227,26 @@ final class RecorderCoordinator {
                     usesPickedContent: snapshot.usesPickedScreenContent,
                     binding: snapshot.screenSourceBinding,
                     selectedDisplayID: snapshot.selectedDisplayID,
-                    crop: snapshot.screenCrop
+                    crop: snapshot.screenCrop,
+                    pickedContentSelectionID: snapshot.pickedScreenContentSelectionID
                 ),
                 settings: settings
             )
         )
+        settings.screenSourceAspectRatio = snapshot.screenSourceAspectRatio
         refitCameraInsetFrameForCurrentSource()
     }
 
     private func currentScreenSourceSelection() -> ScreenSourceSelectionSnapshot {
         screenSourceSelection.snapshot(from: settings)
+    }
+
+    private func currentRecordingSceneSnapshot() -> RecordingSceneSnapshot {
+        var snapshot = RecordingSceneSnapshot(settings: settings)
+        snapshot.pickedScreenContentSelectionID = settings.usesPickedScreenContent
+            ? screenSourceSelection.pickedContentSelectionID
+            : nil
+        return snapshot
     }
 
     private func restoreScreenSourceSelection(_ selection: ScreenSourceSelectionSnapshot) {
@@ -2941,7 +3417,7 @@ final class RecorderCoordinator {
         }
 
         if settings.enabledSources.contains(.systemAudio) {
-            let pickedScreenFilter = pickedScreenFilter(for: settings)
+            let pickedScreenFilter = try? await resolvedScreenFilter(for: settings)
             guard pickedScreenFilter != nil else {
                 try? await systemAudioLevelMonitor.stop()
                 onAudioLevel?(.systemAudio, 0)

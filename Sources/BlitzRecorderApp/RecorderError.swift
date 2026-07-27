@@ -19,6 +19,7 @@ enum RecorderError: LocalizedError {
     case screenSourceUnavailable(String)
     case screenSelectionCancelled
     case screenSelectionInProgress
+    case screenWindowRequired
     case backgroundRemovalUnavailable
     case remoteCameraPreviewUnavailable
     case remoteCameraRecordingUnavailable
@@ -64,6 +65,8 @@ enum RecorderError: LocalizedError {
             "Screen selection was cancelled."
         case .screenSelectionInProgress:
             "Screen selection is already open."
+        case .screenWindowRequired:
+            "Choose an app window for automatic fitting. Use Display mode for full-screen capture."
         case .backgroundRemovalUnavailable:
             "Webcam background removal could not process the camera recording."
         case .remoteCameraPreviewUnavailable:

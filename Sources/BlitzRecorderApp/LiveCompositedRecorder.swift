@@ -111,15 +111,52 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
     func updateScreenCapture(settings: RecordingSettings, filter pickedFilter: SCContentFilter?) async throws {
         guard let screenStream else {
             self.settings = settings
+            self.pickedScreenFilter = pickedFilter
             return
         }
-        self.settings = settings
-        self.pickedScreenFilter = pickedFilter
+
+        let previousSettings = self.settings
+        let previousFilter = self.pickedScreenFilter
+        do {
+            let result = try await applyScreenCaptureUpdate(
+                settings: settings,
+                pickedFilter: pickedFilter,
+                screenStream: screenStream
+            )
+            self.settings = settings
+            self.pickedScreenFilter = pickedFilter
+            screenDisplay = result.display
+            updateRecordingSceneScreenGeometry(result.geometry)
+        } catch {
+            guard let previousSettings else {
+                throw CaptureSourceRetargetFailure(rollbackFailed: true, underlyingError: error)
+            }
+            do {
+                let rollback = try await applyScreenCaptureUpdate(
+                    settings: previousSettings,
+                    pickedFilter: previousFilter,
+                    screenStream: screenStream
+                )
+                screenDisplay = rollback.display
+                updateRecordingSceneScreenGeometry(rollback.geometry)
+            } catch {
+                throw CaptureSourceRetargetFailure(rollbackFailed: true, underlyingError: error)
+            }
+            throw CaptureSourceRetargetFailure(rollbackFailed: false, underlyingError: error)
+        }
+    }
+
+    private func applyScreenCaptureUpdate(
+        settings: RecordingSettings,
+        pickedFilter: SCContentFilter?,
+        screenStream: SCStream
+    ) async throws -> (display: SCDisplay?, geometry: ScreenSourceGeometry) {
 
         let configuration: SCStreamConfiguration
         let screenSourceGeometry: ScreenSourceGeometry
+        let display: SCDisplay?
         if let pickedFilter {
-            screenDisplay = nil
+            display = nil
             screenSourceGeometry = ScreenCaptureGeometry.screenSourceGeometry(for: settings, pickedFilter: pickedFilter)
             configuration = screenStreamConfiguration(
                 settings: settings,
@@ -133,7 +170,7 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
         } else {
             let content = try await SCShareableContent.current
             let source = try ScreenCaptureGeometry.screenSource(for: settings, content: content)
-            screenDisplay = source.display
+            display = source.display
             screenSourceGeometry = source.geometry
             configuration = screenStreamConfiguration(
                 settings: settings,
@@ -144,7 +181,7 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
         }
 
         try await screenStream.updateConfiguration(configuration)
-        updateRecordingSceneScreenGeometry(screenSourceGeometry)
+        return (display, screenSourceGeometry)
     }
 
     private func updateRecordingSceneScreenGeometry(_ screenSourceGeometry: ScreenSourceGeometry) {

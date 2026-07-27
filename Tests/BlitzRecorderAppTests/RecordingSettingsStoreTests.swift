@@ -4,6 +4,21 @@ import BlitzRecorderCore
 import XCTest
 
 final class RecordingSettingsStoreTests: XCTestCase {
+    func testActualFittedScreenAspectRatioRoundTrips() throws {
+        let defaults = temporaryDefaults()
+        var settings = RecordingSettings()
+        settings.screenSourceAspectRatio = 4.0 / 3.0
+
+        RecordingSettingsStore.save(settings, defaults: defaults)
+        let restored = RecordingSettingsStore.load(defaults: defaults)
+
+        XCTAssertEqual(
+            try XCTUnwrap(restored.screenSourceAspectRatio),
+            4.0 / 3.0,
+            accuracy: 0.0001
+        )
+    }
+
     func testSocialExportBitratesStayLightweight() {
         var settings = RecordingSettings()
 

@@ -75,6 +75,16 @@ private struct RecordingActionRow: View {
                 PauseButton(vm: vm)
                 TransportDivider()
                 ElapsedTimeText(isPaused: vm.state == .paused, elapsed: vm.formattedElapsed)
+                if vm.settings.visibleSources.contains(.screen) {
+                    TransportDivider()
+                    DockActionButton(
+                        title: "Screen",
+                        systemImage: "rectangle.on.rectangle",
+                        help: "Change the recorded display or window without stopping"
+                    ) {
+                        vm.switchRecordedScreenContent()
+                    }
+                }
                 RecordButton(vm: vm)
             case .finishing:
                 FinishingProgressStatus(

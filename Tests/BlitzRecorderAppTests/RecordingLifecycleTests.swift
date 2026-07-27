@@ -1255,6 +1255,67 @@ final class RecordingLifecycleTests: XCTestCase {
     }
 
     @MainActor
+    func testCaptureSourceRunRetargetsScreenAndSystemAudioTogether() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .systemAudio]
+
+        let take = try TakeFileStore().createTake(settings: settings)
+        let screenRecorder = SpyScreenCaptureRecorder(stopCompletion: .wrote(take.screenURL))
+        let systemAudioRecorder = SpySystemAudioCaptureRecorder()
+        let run = CaptureSourceRun(
+            take: take,
+            settings: settings,
+            pickedScreenFilter: nil,
+            screenRecorder: screenRecorder,
+            cameraRecorder: FailingCameraCaptureRecorder(error: RecorderError.noCamera),
+            audioRecorder: SpyMicrophoneCaptureRecorder(),
+            systemAudioRecorder: systemAudioRecorder
+        )
+
+        try await run.start()
+        try await run.updateScreenCapture(settings: settings, pickedScreenFilter: nil)
+
+        XCTAssertEqual(screenRecorder.updateCount, 1)
+        XCTAssertEqual(systemAudioRecorder.updateCount, 1)
+        _ = await run.stop()
+    }
+
+    @MainActor
+    func testCaptureSourceRunRollsBackBothStreamsWhenRetargetFails() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .systemAudio]
+
+        let take = try TakeFileStore().createTake(settings: settings)
+        let screenRecorder = SpyScreenCaptureRecorder(stopCompletion: .wrote(take.screenURL))
+        let systemAudioRecorder = SpySystemAudioCaptureRecorder(failOnUpdateCount: 1)
+        let run = CaptureSourceRun(
+            take: take,
+            settings: settings,
+            pickedScreenFilter: nil,
+            screenRecorder: screenRecorder,
+            cameraRecorder: FailingCameraCaptureRecorder(error: RecorderError.noCamera),
+            audioRecorder: SpyMicrophoneCaptureRecorder(),
+            systemAudioRecorder: systemAudioRecorder
+        )
+
+        try await run.start()
+        var updatedSettings = settings
+        updatedSettings.screenCrop = CGRect(x: 0.2, y: 0.1, width: 0.6, height: 0.8)
+
+        do {
+            try await run.updateScreenCapture(settings: updatedSettings, pickedScreenFilter: nil)
+            XCTFail("Expected the system-audio retarget to fail")
+        } catch {}
+
+        XCTAssertEqual(screenRecorder.updateCount, 2)
+        XCTAssertNil(screenRecorder.updatedSettings?.screenCrop)
+        XCTAssertEqual(systemAudioRecorder.updateCount, 2)
+        _ = await run.stop()
+    }
+
+    @MainActor
     func testCaptureSourceRunPausesScreenSourceAddedWhilePaused() async throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
@@ -3942,6 +4003,26 @@ private final class FailingStopMicrophoneCaptureRecorder: MicrophoneCaptureRecor
 
 private final class NoopSystemAudioCaptureRecorder: SystemAudioCaptureRecording {
     func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) async throws {}
+    func pause() {}
+    func resume() {}
+    func stop() async throws -> MediaWriterCompletion { .empty() }
+}
+
+private final class SpySystemAudioCaptureRecorder: SystemAudioCaptureRecording {
+    private(set) var updateCount = 0
+    private let failOnUpdateCount: Int?
+
+    init(failOnUpdateCount: Int? = nil) {
+        self.failOnUpdateCount = failOnUpdateCount
+    }
+
+    func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) async throws {}
+    func update(filter pickedScreenFilter: SCContentFilter?) async throws {
+        updateCount += 1
+        if updateCount == failOnUpdateCount {
+            throw RecorderError.screenSourceUnavailable("System audio test source")
+        }
+    }
     func pause() {}
     func resume() {}
     func stop() async throws -> MediaWriterCompletion { .empty() }

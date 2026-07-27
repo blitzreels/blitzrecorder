@@ -215,7 +215,7 @@ final class RecorderViewModel {
     var selectedScreenSourceDisplayName: String {
         let needsPicker = settings.enabledSources.contains(.screen)
             || settings.enabledSources.contains(.systemAudio)
-        if needsPicker, !coordinator.hasActivePickedScreenContent {
+        if needsPicker, !coordinator.hasActiveScreenSourceSelection {
             return "Choose screen source"
         }
         if settings.usesPickedScreenContent {
@@ -485,7 +485,11 @@ final class RecorderViewModel {
     }
 
     var hasActiveScreenPickerSelection: Bool {
-        coordinator.hasActivePickedScreenContent
+        coordinator.hasActiveScreenSourceSelection
+    }
+
+    var activePickedScreenContentKind: ScreenSourceBinding.Kind? {
+        coordinator.activePickedScreenContentKind
     }
 
     struct ScreenWindowScalingSupportRequest {
@@ -494,7 +498,10 @@ final class RecorderViewModel {
     }
 
     var supportsScreenWindowScaling: Bool {
-        Self.supportsScreenWindowScaling(ScreenWindowScalingSupportRequest(
+        if activePickedScreenContentKind == .display {
+            return false
+        }
+        return Self.supportsScreenWindowScaling(ScreenWindowScalingSupportRequest(
             settings: settings,
             hasActivePickerSelection: hasActiveScreenPickerSelection
         ))
@@ -631,6 +638,9 @@ final class RecorderViewModel {
             self.previewStage.screenCrop = self.coordinator.settings.screenCrop
             self.isScreenCropModeEnabled = false
             self.screenCaptureAreaSelection = self.settings.screenCrop == nil ? .fullDisplay : .manualCrop
+        }
+        previewStage.onScreenCropPanRequested = { [weak self] in
+            self?.beginScreenCropMode()
         }
     }
 
@@ -804,7 +814,7 @@ final class RecorderViewModel {
         }
         if source == .systemAudio,
            !isSourceConfigured(.systemAudio),
-           !coordinator.hasActivePickedScreenContent {
+           !coordinator.hasActiveScreenSourceSelection {
             pickAndEnableSystemAudioSource()
             return
         }
@@ -823,13 +833,13 @@ final class RecorderViewModel {
     func setSourceVisible(_ source: CaptureSource, visible: Bool) {
         if source == .screen,
            visible,
-           (!isSourceConfigured(.screen) || !coordinator.hasActivePickedScreenContent) {
+           (!isSourceConfigured(.screen) || !coordinator.hasActiveScreenSourceSelection) {
             pickAndEnableScreenSource()
             return
         }
         if source == .systemAudio,
            visible,
-           !coordinator.hasActivePickedScreenContent {
+           !coordinator.hasActiveScreenSourceSelection {
             pickAndEnableSystemAudioSource()
             return
         }
@@ -916,7 +926,7 @@ final class RecorderViewModel {
     func setScenePreset(_ preset: ScenePreset) {
         if preset.enablesScreenSource,
            !isSourceConfigured(.screen),
-           !coordinator.hasActivePickedScreenContent {
+           !coordinator.hasActiveScreenSourceSelection {
             Task {
                 do {
                     try await coordinator.pickScreenSource()
@@ -1022,7 +1032,7 @@ final class RecorderViewModel {
         size: CGFloat
     ) {
         if !isSourceConfigured(.screen),
-           !coordinator.hasActivePickedScreenContent {
+           !coordinator.hasActiveScreenSourceSelection {
             Task {
                 do {
                     try await coordinator.pickScreenSource()
@@ -1469,8 +1479,8 @@ final class RecorderViewModel {
         if binding.kind == .application {
             lastApplicationScreenSourceBinding = binding
         }
-        let liveWindowZoom = state == .recording || state == .paused ? targetWindowZoom : nil
-        coordinator.setScreenSource(binding, autoFitWindowZoom: liveWindowZoom)
+        let autoFitWindowZoom = binding.kind == .display ? nil : targetWindowZoom
+        coordinator.setScreenSource(binding, autoFitWindowZoom: autoFitWindowZoom)
         syncSettings()
         screenCaptureAreaSelection = binding.kind == .display ? .fullDisplay : .activeWindow
         detailMessage = "Screen source set to \(binding.displayName)."
@@ -1771,6 +1781,33 @@ final class RecorderViewModel {
         pickAndEnableScreenSource()
     }
 
+    func pickFullScreen() {
+        Task {
+            do {
+                try await coordinator.pickFullScreenSource()
+                syncSettings()
+                selectLayer(.screen)
+                screenCaptureAreaSelection = .fullDisplay
+                detailMessage = "Full screen selected for this session."
+            } catch {
+                detailMessage = "Screen picker failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func switchRecordedScreenContent() {
+        Task {
+            do {
+                try await coordinator.pickScreenContent()
+                syncSettings()
+                selectLayer(.screen)
+                detailMessage = "Recorded screen source changed."
+            } catch {
+                detailMessage = "Screen picker failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
     func dismissFirstRunOnboarding() {
         UserDefaults.standard.set(true, forKey: Self.firstRunOnboardingKey)
         showsFirstRunOnboarding = false
@@ -1863,11 +1900,11 @@ final class RecorderViewModel {
     var screenNeedsPicking: Bool {
         settings.enabledSources.contains(.screen)
             && !settings.hiddenSources.contains(.screen)
-            && !coordinator.hasActivePickedScreenContent
+            && !coordinator.hasActiveScreenSourceSelection
     }
 
     var screenPickActionTitle: String {
-        "Choose Screen"
+        "Choose App Window"
     }
 
     private func pickAndEnableScreenSource() {

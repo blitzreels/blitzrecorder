@@ -77,6 +77,12 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
         writer?.pause()
     }
 
+    func update(filter pickedScreenFilter: SCContentFilter?) async throws {
+        guard let stream else { return }
+        let filter = try SystemAudioStreamConfiguration.contentFilter(pickedScreenFilter)
+        try await stream.updateContentFilter(filter)
+    }
+
     func resume() {
         writer?.resume()
     }

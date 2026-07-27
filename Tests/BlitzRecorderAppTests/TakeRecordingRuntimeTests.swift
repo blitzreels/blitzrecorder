@@ -42,6 +42,7 @@ final class TakeRecordingRuntimeTests: XCTestCase {
         try await runtime.startLiveCompositedTake(
             take: take,
             settings: settings,
+            initialScene: RecordingScene(settings: settings),
             pickedScreenFilter: nil,
             prerollSeconds: 0,
             prerollHandler: nil
@@ -53,6 +54,32 @@ final class TakeRecordingRuntimeTests: XCTestCase {
         }
         XCTAssertEqual(completion, .wrote(take.finalVideoURL))
         XCTAssertTrue(warning?.contains("display went away") == true)
+    }
+
+    func testLiveCompositorSeedsTimelineWithResolvedInitialScene() async throws {
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen]
+        var initialScene = RecordingScene(settings: settings)
+        initialScene.screenSourceGeometry.sourceAspectRatio = 9.0 / 16.0
+        let take = makeTake()
+        let recorder = StopFailureLiveCompositedRecorder(
+            completion: .wrote(take.finalVideoURL),
+            error: RecorderError.captureStreamStopped("test complete")
+        )
+        let runtime = TakeRecordingRuntime(liveCompositedRecorder: recorder)
+
+        try await runtime.startLiveCompositedTake(
+            take: take,
+            settings: settings,
+            initialScene: initialScene,
+            pickedScreenFilter: nil,
+            prerollSeconds: 0,
+            prerollHandler: nil
+        )
+
+        XCTAssertEqual(runtime.sceneEvents.first?.time, 0)
+        XCTAssertEqual(runtime.sceneEvents.first?.scene, initialScene)
+        _ = try await runtime.stop()
     }
 
     func testTakeStartPlanSelectsRemoteCameraCapturePath() {
@@ -80,6 +107,7 @@ final class TakeRecordingRuntimeTests: XCTestCase {
             take: take,
             settings: plan.localCaptureSettings,
             sceneTimelineSettings: plan.sceneTimelineSettings,
+            initialScene: RecordingScene(settings: plan.sceneTimelineSettings),
             pickedScreenFilter: nil,
             prerollSeconds: 0,
             screenRecorder: NoopScreenCaptureRecorder(),
@@ -110,6 +138,7 @@ final class TakeRecordingRuntimeTests: XCTestCase {
         _ = try await runtime.startSourceFileTake(
             take: take,
             settings: settings,
+            initialScene: RecordingScene(settings: settings),
             pickedScreenFilter: nil,
             prerollSeconds: 0,
             screenRecorder: NoopScreenCaptureRecorder(),
@@ -154,6 +183,49 @@ final class TakeRecordingRuntimeTests: XCTestCase {
             transition: .sceneSwitch
         )
 
+        XCTAssertEqual(runtime.sceneEvents.last?.transition, .sceneSwitch)
+    }
+
+    func testResolvedSceneGeometryCommitsAtRequestedTiming() {
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen]
+        let runtime = TakeRecordingRuntime()
+        runtime.startSceneTimeline(settings: settings)
+        let unresolvedScene = RecordingScene(settings: settings)
+        var resolvedScene = unresolvedScene
+        resolvedScene.screenSourceGeometry.sourceAspectRatio = 16.0 / 9.0
+        let pendingEvent = runtime.pendingSceneEvent(
+            scene: unresolvedScene,
+            transition: .sceneSwitch
+        )
+
+        runtime.appendPendingSceneEvent(
+            pendingEvent.resolving(scene: resolvedScene),
+            state: .recording
+        )
+
+        XCTAssertEqual(runtime.sceneEvents.last?.time, pendingEvent.time)
+        XCTAssertEqual(runtime.sceneEvents.last?.transition, .sceneSwitch)
+        XCTAssertEqual(runtime.sceneEvents.last?.scene, resolvedScene)
+    }
+
+    func testEarlierEquivalentPendingEventMovesExistingCommitToRequestedTime() {
+        var settings = RecordingSettings()
+        let runtime = TakeRecordingRuntime()
+        runtime.startSceneTimeline(settings: settings)
+        settings.canvasBackgroundStyle = .aurora
+        let scene = RecordingScene(settings: settings)
+        runtime.appendPendingSceneEvent(
+            PendingRecordingSceneEvent(time: 2, scene: scene, transition: .cut),
+            state: .recording
+        )
+
+        runtime.appendPendingSceneEvent(
+            PendingRecordingSceneEvent(time: 1, scene: scene, transition: .sceneSwitch),
+            state: .recording
+        )
+
+        XCTAssertEqual(runtime.sceneEvents.last?.time, 1)
         XCTAssertEqual(runtime.sceneEvents.last?.transition, .sceneSwitch)
     }
 

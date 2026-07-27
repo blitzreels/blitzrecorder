@@ -6,6 +6,7 @@ struct ScreenSourceSelectionSnapshot: Equatable {
     let binding: ScreenSourceBinding?
     let selectedDisplayID: String?
     let crop: CGRect?
+    let pickedContentSelectionID: UUID?
 }
 
 struct ScreenSourceSelectionResult {
@@ -28,6 +29,7 @@ final class ScreenSourceSelection {
     struct PickedContentRequest {
         let filter: SCContentFilter
         let persistentBinding: ScreenSourceBinding?
+        let fallbackSourceKind: ScreenSourceBinding.Kind?
         let settings: RecordingSettings
     }
 
@@ -41,7 +43,22 @@ final class ScreenSourceSelection {
         let settings: RecordingSettings
     }
 
+    struct PickedContentRestoreRequest {
+        let snapshotUsesPickedContent: Bool
+        let hasActiveFilter: Bool
+        let activeSelectionID: UUID?
+        let snapshotSelectionID: UUID?
+    }
+
+    struct RuntimeState {
+        let pickedContentFilter: SCContentFilter?
+        let pickedContentKind: ScreenSourceBinding.Kind?
+        let pickedContentSelectionID: UUID?
+    }
+
     private(set) var pickedContentFilter: SCContentFilter?
+    private(set) var pickedContentKind: ScreenSourceBinding.Kind?
+    private(set) var pickedContentSelectionID: UUID?
 
     var hasActivePickedContent: Bool {
         pickedContentFilter != nil
@@ -53,7 +70,10 @@ final class ScreenSourceSelection {
         settings.screenSourceBinding = .display(id: request.id)
         settings.usesPickedScreenContent = false
         settings.screenCrop = nil
+        settings.screenSourceAspectRatio = nil
         pickedContentFilter = nil
+        pickedContentKind = nil
+        pickedContentSelectionID = nil
         return settings
     }
 
@@ -65,21 +85,27 @@ final class ScreenSourceSelection {
         }
         settings.usesPickedScreenContent = false
         settings.screenCrop = nil
+        settings.screenSourceAspectRatio = nil
         pickedContentFilter = nil
+        pickedContentKind = nil
+        pickedContentSelectionID = nil
         return settings
     }
 
     func selectPickedContent(_ request: PickedContentRequest) -> RecordingSettings {
         var settings = request.settings
+        settings.screenSourceBinding = request.persistentBinding
         if let binding = request.persistentBinding {
-            settings.screenSourceBinding = binding
             if binding.kind == .display {
                 settings.selectedDisplayID = binding.displayID
             }
         }
         settings.usesPickedScreenContent = true
         settings.screenCrop = nil
+        settings.screenSourceAspectRatio = nil
         pickedContentFilter = request.filter
+        pickedContentKind = request.persistentBinding?.kind ?? request.fallbackSourceKind
+        pickedContentSelectionID = UUID()
         return settings
     }
 
@@ -87,6 +113,8 @@ final class ScreenSourceSelection {
         var settings = currentSettings
         settings.usesPickedScreenContent = false
         pickedContentFilter = nil
+        pickedContentKind = nil
+        pickedContentSelectionID = nil
         return settings
     }
 
@@ -107,7 +135,8 @@ final class ScreenSourceSelection {
             usesPickedContent: settings.usesPickedScreenContent,
             binding: settings.screenSourceBinding,
             selectedDisplayID: settings.selectedDisplayID,
-            crop: settings.screenCrop
+            crop: settings.screenCrop,
+            pickedContentSelectionID: settings.usesPickedScreenContent ? pickedContentSelectionID : nil
         )
     }
 
@@ -115,12 +144,42 @@ final class ScreenSourceSelection {
         var settings = request.settings
         settings.selectedDisplayID = request.snapshot.selectedDisplayID
         settings.screenSourceBinding = request.snapshot.binding
-        settings.usesPickedScreenContent = pickedContentFilter != nil && request.snapshot.usesPickedContent
-        settings.screenCrop = request.snapshot.binding?.kind == .display ? request.snapshot.crop : nil
+        settings.usesPickedScreenContent = Self.canRestorePickedContent(.init(
+            snapshotUsesPickedContent: request.snapshot.usesPickedContent,
+            hasActiveFilter: pickedContentFilter != nil,
+            activeSelectionID: pickedContentSelectionID,
+            snapshotSelectionID: request.snapshot.pickedContentSelectionID
+        ))
+        settings.screenCrop = request.snapshot.crop
         return settings
+    }
+
+    static func canRestorePickedContent(_ request: PickedContentRestoreRequest) -> Bool {
+        request.snapshotUsesPickedContent
+            && request.hasActiveFilter
+            && request.activeSelectionID != nil
+            && request.activeSelectionID == request.snapshotSelectionID
     }
 
     func activeFilter(for settings: RecordingSettings) -> SCContentFilter? {
         settings.usesPickedScreenContent ? pickedContentFilter : nil
+    }
+
+    func runtimeState() -> RuntimeState {
+        RuntimeState(
+            pickedContentFilter: pickedContentFilter,
+            pickedContentKind: pickedContentKind,
+            pickedContentSelectionID: pickedContentSelectionID
+        )
+    }
+
+    func restoreRuntimeState(_ state: RuntimeState) {
+        pickedContentFilter = state.pickedContentFilter
+        pickedContentKind = state.pickedContentKind
+        pickedContentSelectionID = state.pickedContentSelectionID
+    }
+
+    func activePickedContentKind(for settings: RecordingSettings) -> ScreenSourceBinding.Kind? {
+        settings.usesPickedScreenContent ? pickedContentKind : nil
     }
 }

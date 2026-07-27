@@ -520,7 +520,6 @@ final class EditorPlaybackController {
                 let seconds = time.seconds.isFinite ? time.seconds : 0
                 self.currentTime = self.clampedTime(seconds)
                 self.isPlaying = (self.masterPlayer?.rate ?? 0) != 0
-                self.correctDrift(masterTime: seconds)
             }
         }
         if let masterItem = masterPlayer.currentItem {
@@ -539,18 +538,4 @@ final class EditorPlaybackController {
         }
     }
 
-    private func correctDrift(masterTime: Double) {
-        guard isPlaying else { return }
-        for player in allPlayers where player !== masterPlayer {
-            let t = player.currentTime().seconds
-            guard t.isFinite else { continue }
-            if abs(t - masterTime) > 0.08 {
-                player.seek(
-                    to: CMTime(seconds: itemClampedTime(masterTime, for: player), preferredTimescale: 600),
-                    toleranceBefore: CMTime(seconds: 0.03, preferredTimescale: 600),
-                    toleranceAfter: CMTime(seconds: 0.03, preferredTimescale: 600)
-                )
-            }
-        }
-    }
 }

@@ -42,6 +42,7 @@ protocol SystemAudioCaptureRecording: AnyObject {
     var recordingTimelineOffset: CMTime { get }
     func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) async throws
     func start(_ request: SystemAudioCaptureStartRequest) async throws
+    func update(filter pickedScreenFilter: SCContentFilter?) async throws
     func pause()
     func resume()
     func stop() async throws -> MediaWriterCompletion
@@ -68,6 +69,8 @@ extension SystemAudioCaptureRecording {
             timelineStartTime: request.timelineStartTime
         )
     }
+
+    func update(filter pickedScreenFilter: SCContentFilter?) async throws {}
 }
 
 struct CaptureSourceRunSummary {
@@ -141,6 +144,11 @@ struct CaptureSourceStopFailure: Error {
     let underlyingError: Error
 }
 
+struct CaptureSourceRetargetFailure: Error {
+    let rollbackFailed: Bool
+    let underlyingError: Error
+}
+
 struct CaptureSourceRunStartResult: Equatable {
     let hostTimelineStartTime: UInt64
     let timelineStartTime: CMTime
@@ -157,6 +165,8 @@ final class CaptureSourceRun {
 
     private var settings: RecordingSettings
     private var pickedScreenFilter: SCContentFilter?
+    private var committedScreenCaptureSettings: RecordingSettings
+    private var committedScreenCaptureFilter: SCContentFilter?
     private let screenRecorder: ScreenCaptureRecording
     private var timelineStartTime: CMTime?
     private var hostTimelineStartTime: UInt64?
@@ -191,6 +201,8 @@ final class CaptureSourceRun {
         self.take = take
         self.settings = settings
         self.pickedScreenFilter = pickedScreenFilter
+        committedScreenCaptureSettings = settings
+        committedScreenCaptureFilter = pickedScreenFilter
         self.screenRecorder = screenRecorder
         self.timelineStartTime = timelineStartTime
         self.sourceAdapters = Self.makeSourceAdapters(
@@ -284,20 +296,55 @@ final class CaptureSourceRun {
                 adapter.pause()
             }
         }
+
+        if sourcesToStart.contains(.screen) || sourcesToStart.contains(.systemAudio) {
+            committedScreenCaptureSettings = settings
+            committedScreenCaptureFilter = pickedScreenFilter
+        }
     }
 
     func updateScreenCapture(
         settings: RecordingSettings,
         pickedScreenFilter: SCContentFilter?
     ) async throws {
+        let previousSettings = committedScreenCaptureSettings
+        let previousFilter = committedScreenCaptureFilter
+        var attemptedSources: [CaptureSource] = []
+        var firstError: Error?
+        for source in [CaptureSource.screen, .systemAudio] {
+            guard activeSources.contains(source),
+                  settings.enabledSources.contains(source),
+                  let adapter = sourceAdapters[source] else {
+                continue
+            }
+            attemptedSources.append(source)
+            do {
+                try await adapter.update(settings, pickedScreenFilter)
+            } catch {
+                if firstError == nil {
+                    firstError = error
+                }
+            }
+        }
+        if let firstError {
+            var rollbackFailed = false
+            for source in attemptedSources.reversed() {
+                guard let adapter = sourceAdapters[source] else { continue }
+                do {
+                    try await adapter.update(previousSettings, previousFilter)
+                } catch {
+                    rollbackFailed = true
+                }
+            }
+            throw CaptureSourceRetargetFailure(
+                rollbackFailed: rollbackFailed,
+                underlyingError: firstError
+            )
+        }
         self.settings = settings
         self.pickedScreenFilter = pickedScreenFilter
-        guard activeSources.contains(.screen),
-              settings.enabledSources.contains(.screen),
-              let adapter = sourceAdapters[.screen] else {
-            return
-        }
-        try await adapter.update(settings, pickedScreenFilter)
+        committedScreenCaptureSettings = settings
+        committedScreenCaptureFilter = pickedScreenFilter
     }
 
     func pause() {
@@ -456,7 +503,9 @@ final class CaptureSourceRun {
                         timelineStartTime: timeline.timelineStartTime
                     ))
                 },
-                update: { _, _ in },
+                update: { _, pickedScreenFilter in
+                    try await systemAudioRecorder.update(filter: pickedScreenFilter)
+                },
                 pause: { systemAudioRecorder.pause() },
                 resume: { systemAudioRecorder.resume() },
                 stop: { _ in try await systemAudioRecorder.stop() },

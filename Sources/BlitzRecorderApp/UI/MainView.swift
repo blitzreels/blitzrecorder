@@ -250,7 +250,7 @@ private struct ScreenPickPrompt: View {
 
     var body: some View {
         Button {
-            vm.applyScreenRecordingPermission()
+            vm.pickScreen()
         } label: {
             Text(vm.screenPickActionTitle)
                 .font(.system(size: 13, weight: .semibold))
@@ -267,7 +267,7 @@ private struct ScreenPickPrompt: View {
         }
         .buttonStyle(.plain)
         .pointingHandCursor()
-        .help("Allow BlitzRecorder to detect screens, apps, and windows")
+        .help("Choose an app window and fit it to the current scene")
     }
 }
 
@@ -1497,23 +1497,40 @@ private struct SceneWorkspaceInspector: View {
     }
 
     private var screenSourcePickerModel: BlitzSourcePickerModel {
-        let actions = [BlitzSourcePickerItem(
-            title: "Choose Display or Window",
-            subtitle: "Uses the private macOS picker",
-            systemImage: "rectangle.dashed",
-            icon: nil,
-            thumbnail: nil,
-            isSelected: vm.hasActiveScreenPickerSelection
-        ) {
-            vm.pickScreen()
-        }]
+        let actions = [
+            BlitzSourcePickerItem(
+                title: "Choose App Window",
+                subtitle: "Fits the window to this scene automatically",
+                systemImage: "rectangle.dashed",
+                icon: nil,
+                thumbnail: nil,
+                isSelected: vm.activePickedScreenContentKind == .application
+                    || vm.activePickedScreenContentKind == .window
+            ) {
+                vm.pickScreen()
+            },
+            BlitzSourcePickerItem(
+                title: "Pick Full Screen",
+                subtitle: "Records an entire display without resizing apps",
+                systemImage: "display",
+                icon: nil,
+                thumbnail: nil,
+                isSelected: vm.activePickedScreenContentKind == .display
+            ) {
+                vm.pickFullScreen()
+            }
+        ]
 
         return BlitzSourcePickerModel(
             title: vm.selectedScreenSourceDisplayName,
             subtitle: selectedScreenSourceKindLabel,
             systemImage: screenSourceIcon,
             icon: selectedScreenSourceOption?.icon,
-            sections: [],
+            sections: vm.state == .idle ? [
+                screenSourcePickerSection((kind: .display, title: "Displays")),
+                screenSourcePickerSection((kind: .application, title: "Apps")),
+                screenSourcePickerSection((kind: .window, title: "Windows"))
+            ] : [],
             actions: actions,
             layout: .thumbnails,
             enabled: vm.canAdjustScreenCapture

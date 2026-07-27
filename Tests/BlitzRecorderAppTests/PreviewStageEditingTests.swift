@@ -3,6 +3,33 @@ import CoreGraphics
 import XCTest
 
 final class PreviewStageEditingTests: XCTestCase {
+    func testConstrainedFullScreenDragBeginsCropPanInFillMode() {
+        XCTAssertTrue(PreviewStageEditing.shouldBeginConstrainedScreenCropPan(.init(
+            layer: .screen,
+            contentMode: .fill,
+            startFrame: CGRect(x: 0, y: 0, width: 1, height: 1),
+            proposedFrame: CGRect(x: 0.1, y: 0, width: 1, height: 1)
+        )))
+    }
+
+    func testMovableScreenLayerDragRemainsLayerMove() {
+        XCTAssertFalse(PreviewStageEditing.shouldBeginConstrainedScreenCropPan(.init(
+            layer: .screen,
+            contentMode: .fill,
+            startFrame: CGRect(x: 0, y: 0, width: 0.6, height: 1),
+            proposedFrame: CGRect(x: 0.1, y: 0, width: 0.6, height: 1)
+        )))
+    }
+
+    func testConstrainedScreenDragDoesNotCropPanInFitMode() {
+        XCTAssertFalse(PreviewStageEditing.shouldBeginConstrainedScreenCropPan(.init(
+            layer: .screen,
+            contentMode: .fit,
+            startFrame: CGRect(x: 0, y: 0, width: 1, height: 1),
+            proposedFrame: CGRect(x: 0.1, y: 0, width: 1, height: 1)
+        )))
+    }
+
     func testHitTestingUsesFrontToBackSceneOrder() {
         var layout = SceneLayout()
         layout.screenFrame = CGRect(x: 0, y: 0, width: 1, height: 1)

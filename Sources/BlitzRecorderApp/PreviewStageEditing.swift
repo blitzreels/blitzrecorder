@@ -1,6 +1,25 @@
 import CoreGraphics
 
 enum PreviewStageEditing {
+    struct ConstrainedScreenCropPanRequest {
+        let layer: SceneLayerKind
+        let contentMode: CameraContentMode
+        let startFrame: CGRect
+        let proposedFrame: CGRect
+    }
+
+    static func shouldBeginConstrainedScreenCropPan(
+        _ request: ConstrainedScreenCropPanRequest
+    ) -> Bool {
+        guard request.layer == .screen,
+              request.contentMode == .fill,
+              request.proposedFrame.origin != request.startFrame.origin else {
+            return false
+        }
+        return SceneLayerResizing.clamped(request.proposedFrame)
+            == SceneLayerResizing.clamped(request.startFrame)
+    }
+
     static func layer(
         at point: CGPoint,
         sceneLayout: SceneLayout,

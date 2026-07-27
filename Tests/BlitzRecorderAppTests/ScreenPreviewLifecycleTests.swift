@@ -2,6 +2,82 @@
 import XCTest
 
 final class ScreenPreviewLifecycleTests: XCTestCase {
+    func testPersistentDisplayBindingIsAvailableWithoutPickerSession() {
+        var settings = RecordingSettings()
+        settings.usesPickedScreenContent = false
+        settings.screenSourceBinding = .display(id: "4")
+
+        XCTAssertTrue(ScreenPreviewLifecycle.sourceIsAvailable(.init(
+            settings: settings,
+            hasPersistentScreenCaptureAccess: true,
+            hasActivePickedContent: false
+        )))
+    }
+
+    func testSavedDisplayBindingWithoutCaptureAccessIsUnavailable() {
+        var settings = RecordingSettings()
+        settings.usesPickedScreenContent = false
+        settings.screenSourceBinding = .display(id: "4")
+
+        XCTAssertFalse(ScreenPreviewLifecycle.sourceIsAvailable(.init(
+            settings: settings,
+            hasPersistentScreenCaptureAccess: false,
+            hasActivePickedContent: false
+        )))
+    }
+
+    func testActivePickerSessionIsAvailableWithoutPersistentAccess() {
+        var settings = RecordingSettings()
+        settings.usesPickedScreenContent = true
+
+        XCTAssertTrue(ScreenPreviewLifecycle.sourceIsAvailable(.init(
+            settings: settings,
+            hasPersistentScreenCaptureAccess: false,
+            hasActivePickedContent: true
+        )))
+    }
+
+    func testRetainedPickerFilterDoesNotConfigurePersistentScene() {
+        var settings = RecordingSettings()
+        settings.usesPickedScreenContent = false
+
+        XCTAssertFalse(ScreenPreviewLifecycle.sourceIsAvailable(.init(
+            settings: settings,
+            hasPersistentScreenCaptureAccess: true,
+            hasActivePickedContent: true
+        )))
+    }
+
+    @MainActor
+    func testSceneRestoresOnlyItsExactPickerSelection() {
+        let selectionID = UUID()
+
+        XCTAssertTrue(ScreenSourceSelection.canRestorePickedContent(.init(
+            snapshotUsesPickedContent: true,
+            hasActiveFilter: true,
+            activeSelectionID: selectionID,
+            snapshotSelectionID: selectionID
+        )))
+        XCTAssertFalse(ScreenSourceSelection.canRestorePickedContent(.init(
+            snapshotUsesPickedContent: true,
+            hasActiveFilter: true,
+            activeSelectionID: selectionID,
+            snapshotSelectionID: UUID()
+        )))
+    }
+
+    @MainActor
+    func testSceneCannotRestoreStalePickerFlagWithoutActiveFilter() {
+        let selectionID = UUID()
+
+        XCTAssertFalse(ScreenSourceSelection.canRestorePickedContent(.init(
+            snapshotUsesPickedContent: true,
+            hasActiveFilter: false,
+            activeSelectionID: selectionID,
+            snapshotSelectionID: selectionID
+        )))
+    }
+
     func testHiddenConfiguredScreenPreservesRunningPreviewStream() {
         var settings = RecordingSettings()
         settings.enabledSources = [.camera]

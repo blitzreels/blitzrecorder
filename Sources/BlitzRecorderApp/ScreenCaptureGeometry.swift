@@ -124,7 +124,8 @@ enum ScreenCaptureGeometry {
         let sourceAspectRatio: CGFloat
         switch settings.screenSourceBinding?.kind {
         case .application, .window:
-            sourceAspectRatio = TargetWindowFitting.sourceAspectRatio(for: settings)
+            sourceAspectRatio = settings.screenSourceAspectRatio
+                ?? TargetWindowFitting.sourceAspectRatio(for: settings)
         case .display, nil:
             sourceAspectRatio = fallback
         }

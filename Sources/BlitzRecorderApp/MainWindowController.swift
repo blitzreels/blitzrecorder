@@ -573,7 +573,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             return
         }
 
-        guard coordinator.hasActivePickedScreenContent else {
+        guard coordinator.hasActiveScreenSourceSelection else {
             screenPreviewStartRevision += 1
             previewStage.screenPreview.setMessage("")
             viewModel.applyMessage("Choose a screen, app, or window to preview.")
