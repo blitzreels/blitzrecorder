@@ -79,6 +79,7 @@ final class PreviewStageView: NSView {
     }
     var onLayerFrameChanged: ((SceneLayerKind, CGRect) -> Void)?
     var onSceneLayoutChanged: ((SceneLayout) -> Void)?
+    var onLayerResizeEnded: ((SceneLayerKind) -> Void)?
     var onLayerSelected: ((SceneLayerKind) -> Void)?
     var onBackgroundSelected: (() -> Void)?
     var onCropToolbarFrameChanged: ((CGRect?) -> Void)?
@@ -423,7 +424,7 @@ final class PreviewStageView: NSView {
                 addCursorRect(moveRect, cursor: .openHand)
             }
             guard layer == selectedLayer else { continue }
-            for (anchor, rect) in cornerResizeTargets(for: selectionFrame(for: layer)) {
+            for (anchor, rect) in resizeTargets(for: selectionFrame(for: layer)) {
                 addCursorRect(rect, cursor: anchor.cursor)
             }
         }
@@ -581,7 +582,7 @@ final class PreviewStageView: NSView {
         }
         let frame = selectionFrame(for: layer)
         let mode: DragMode.Kind
-        if wasSelected, let anchor = cornerResizeAnchor(at: location, in: frame) {
+        if wasSelected, let anchor = resizeAnchor(at: location, in: frame) {
             mode = .resize(anchor)
             anchor.cursor.set()
         } else {
@@ -670,7 +671,9 @@ final class PreviewStageView: NSView {
                 frame,
                 delta: delta,
                 anchor: anchor,
-                aspectRatio: dragMode.startFrame.width / max(0.01, dragMode.startFrame.height)
+                aspectRatio: anchor.keepsAspectRatio
+                    ? dragMode.startFrame.width / max(0.01, dragMode.startFrame.height)
+                    : nil
             )
         case .cropMove:
             NSCursor.closedHand.set()
@@ -700,8 +703,17 @@ final class PreviewStageView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        let resizedLayer: SceneLayerKind?
+        if case .resize = dragMode?.kind {
+            resizedLayer = dragMode?.layer
+        } else {
+            resizedLayer = nil
+        }
         dragMode = nil
         invalidateResizeCursorRects()
+        if let resizedLayer {
+            onLayerResizeEnded?(resizedLayer)
+        }
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -719,7 +731,7 @@ final class PreviewStageView: NSView {
 
     private func resizeHit(at point: CGPoint) -> (SceneLayerKind, ResizeAnchor)? {
         guard canEditLayerFrame(selectedLayer),
-              let anchor = cornerResizeAnchor(at: point, in: selectionFrame(for: selectedLayer)) else {
+              let anchor = resizeAnchor(at: point, in: selectionFrame(for: selectedLayer)) else {
             return nil
         }
         return (selectedLayer, anchor)
@@ -1052,20 +1064,12 @@ final class PreviewStageView: NSView {
         PreviewStageEditing.resizeAnchor(at: point, in: frame)
     }
 
-    private func cornerResizeAnchor(at point: CGPoint, in frame: NSRect) -> ResizeAnchor? {
-        PreviewStageEditing.cornerResizeAnchor(at: point, in: frame)
-    }
-
     private func resizeHandles(for frame: NSRect, constrainedTo constraint: NSRect? = nil) -> [ResizeAnchor: NSRect] {
         PreviewStageEditing.resizeHandles(for: frame, constrainedTo: constraint)
     }
 
     private func resizeTargets(for frame: NSRect, constrainedTo constraint: NSRect? = nil) -> [(ResizeAnchor, NSRect)] {
         PreviewStageEditing.resizeTargets(for: frame, constrainedTo: constraint)
-    }
-
-    private func cornerResizeTargets(for frame: NSRect, constrainedTo constraint: NSRect? = nil) -> [(ResizeAnchor, NSRect)] {
-        PreviewStageEditing.cornerResizeTargets(for: frame, constrainedTo: constraint)
     }
 
     private func edgeGrips(for frame: NSRect, constrainedTo constraint: NSRect? = nil) -> [ResizeAnchor: NSRect] {
@@ -1692,7 +1696,7 @@ private final class SceneSelectionOverlayView: NSView {
 
         strokeColor.setFill()
         let handleConstraint = isCropMode ? sourceFrame : nil
-        if isCropMode {
+        if showsResizeHandles {
             for grip in edgeGrips(for: frame, constrainedTo: handleConstraint).values {
                 NSBezierPath(roundedRect: grip, xRadius: 2.5, yRadius: 2.5).fill()
             }

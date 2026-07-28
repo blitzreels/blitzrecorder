@@ -17,6 +17,7 @@ final class RecorderCoordinator {
     private let screenRecorder = ScreenRecorder()
     private let screenPreviewer = ScreenPreviewer()
     private let screenContentPicker = ScreenContentPicker()
+    private let screenSourcePickerRecents: ScreenSourcePickerRecents
     private let screenCropPicker = ScreenCropPicker()
     private let cameraRecorder = CameraRecorder()
     private let cameraCutoutPreviewer = CameraCutoutPreviewer()
@@ -126,6 +127,7 @@ final class RecorderCoordinator {
         self.accessController = accessController
         permissionGate = PermissionGate()
         self.defaults = defaults
+        screenSourcePickerRecents = ScreenSourcePickerRecents(defaults: defaults ?? .standard)
         settings = RecordingSettingsStore.load(defaults: defaults)
         sceneLibrary = SceneLibraryStore.load(defaults: defaults, currentSettings: settings)
         if let selectedScene = sceneLibrary.selectedScene(layout: settings.layout) {
@@ -139,6 +141,7 @@ final class RecorderCoordinator {
             persistSettings()
         }
         reconcilePersistentScreenAccessIfNeeded()
+        screenSourcePickerRecents.record(settings.screenSourceBinding)
         audioRecorder.failureHandler = { [weak self] error in
             Task { @MainActor [weak self] in
                 self?.handleActiveMicrophoneCaptureFailure(error)
@@ -666,6 +669,7 @@ final class RecorderCoordinator {
         currentPickedScreenSourceAspectRatio = nil
         settings.enabledSources.insert(.screen)
         settings.hiddenSources.remove(.screen)
+        screenSourcePickerRecents.record(binding)
         if state == .idle {
             settings.screenContentMode = .fit
         }
@@ -1579,6 +1583,7 @@ final class RecorderCoordinator {
                 icon: nil
             )
         }
+        let recentBundleIdentifiers = screenSourcePickerRecents.bundleIdentifiers()
         var applicationKeys: Set<String> = []
         let applicationOptions = content.applications.compactMap { application -> ScreenSourceOption? in
             let applicationName = Self.readableScreenApplicationName(application.applicationName)
@@ -1606,28 +1611,35 @@ final class RecorderCoordinator {
                 .max {
                     $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height
                 }
+            let binding = ScreenSourceBinding(
+                kind: .application,
+                displayID: primaryWindow.flatMap {
+                    displayID(for: $0, displays: content.displays)
+                },
+                bundleIdentifier: application.bundleIdentifier,
+                applicationName: applicationName,
+                processID: application.processID,
+                windowID: nil,
+                windowTitle: nil
+            )
             return ScreenSourceOption(
-                binding: ScreenSourceBinding(
-                    kind: .application,
-                    displayID: primaryWindow.flatMap {
-                        displayID(for: $0, displays: content.displays)
-                    },
-                    bundleIdentifier: application.bundleIdentifier,
-                    applicationName: applicationName,
-                    processID: application.processID,
-                    windowID: nil,
-                    windowTitle: nil
-                ),
+                binding: binding,
                 title: applicationName,
                 subtitle: "Main window",
                 systemImage: "macwindow.on.rectangle",
                 icon: Self.appIcon(
                     bundleIdentifier: application.bundleIdentifier,
                     processID: application.processID
+                ),
+                pickerPlacement: ScreenSourcePickerOrganization.placement(
+                    ScreenSourcePickerPlacementRequest(
+                        binding: binding,
+                        recentBundleIdentifiers: recentBundleIdentifiers
+                    )
                 )
             )
         }
-        .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        let sortedApplicationOptions = ScreenSourcePickerOrganization.sorted(applicationOptions)
 
         let windowOptions = content.windows.compactMap { window -> ScreenSourceOption? in
             let application = window.owningApplication
@@ -1645,22 +1657,29 @@ final class RecorderCoordinator {
             }
             let windowTitle = Self.readableScreenWindowTitle(window.title)
             let title = windowTitle ?? applicationName.map { "\($0) window" } ?? "Window"
+            let binding = ScreenSourceBinding(
+                kind: .window,
+                displayID: displayID(for: window, displays: content.displays),
+                bundleIdentifier: application?.bundleIdentifier,
+                applicationName: applicationName,
+                processID: application?.processID,
+                windowID: window.windowID,
+                windowTitle: window.title
+            )
             return ScreenSourceOption(
-                binding: ScreenSourceBinding(
-                    kind: .window,
-                    displayID: displayID(for: window, displays: content.displays),
-                    bundleIdentifier: application?.bundleIdentifier,
-                    applicationName: applicationName,
-                    processID: application?.processID,
-                    windowID: window.windowID,
-                    windowTitle: window.title
-                ),
+                binding: binding,
                 title: title,
                 subtitle: applicationName ?? "Window",
                 systemImage: "app.window",
                 icon: Self.appIcon(
                     bundleIdentifier: application?.bundleIdentifier,
                     processID: application?.processID
+                ),
+                pickerPlacement: ScreenSourcePickerOrganization.placement(
+                    ScreenSourcePickerPlacementRequest(
+                        binding: binding,
+                        recentBundleIdentifiers: recentBundleIdentifiers
+                    )
                 )
             )
         }
@@ -1670,7 +1689,7 @@ final class RecorderCoordinator {
             return lhsLabel.localizedCaseInsensitiveCompare(rhsLabel) == .orderedAscending
         }
 
-        return displayOptions + applicationOptions + windowOptions
+        return displayOptions + sortedApplicationOptions + windowOptions
     }
 
     func screenSourceThumbnails(for bindings: [ScreenSourceBinding]) async -> [String: NSImage] {
@@ -2007,6 +2026,7 @@ final class RecorderCoordinator {
             selectionPolicy: request.selectionPolicy
         ))
         let persistentBinding = await ScreenCaptureGeometry.persistentBinding(forPickedContent: pickedFilter)
+        screenSourcePickerRecents.record(persistentBinding)
         guard state.allowsScreenContentPickerPresentation else {
             throw RecorderError.screenSelectionCancelled
         }

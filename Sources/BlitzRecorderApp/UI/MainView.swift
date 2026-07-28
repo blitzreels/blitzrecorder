@@ -1357,7 +1357,7 @@ private struct SceneWorkspaceInspector: View {
     private var screenWindowZoomControl: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Text("UI scale")
+                Text("App UI scale")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.58))
                 Spacer(minLength: 0)
@@ -1393,7 +1393,7 @@ private struct SceneWorkspaceInspector: View {
             }
 
             HStack {
-                Text("100%")
+                Text("50%")
                 Spacer(minLength: 0)
                 Text("200%")
             }
@@ -1499,8 +1499,8 @@ private struct SceneWorkspaceInspector: View {
     private var screenSourcePickerModel: BlitzSourcePickerModel {
         let actions = [
             BlitzSourcePickerItem(
-                title: "Choose App Window",
-                subtitle: "Fits the window to this scene automatically",
+                title: "More App Windows…",
+                subtitle: "Open the macOS picker for another window",
                 systemImage: "rectangle.dashed",
                 icon: nil,
                 thumbnail: nil,
@@ -1527,20 +1527,32 @@ private struct SceneWorkspaceInspector: View {
             systemImage: screenSourceIcon,
             icon: selectedScreenSourceOption?.icon,
             sections: vm.state == .idle ? [
-                screenSourcePickerSection((kind: .display, title: "Displays")),
-                screenSourcePickerSection((kind: .application, title: "Apps")),
-                screenSourcePickerSection((kind: .window, title: "Windows"))
+                screenSourcePickerSection((kind: .display, title: "Displays", group: .all)),
+                screenSourcePickerSection((kind: .application, title: "Suggested apps", group: .suggested)),
+                screenSourcePickerSection((kind: .application, title: "Apps", group: .standard)),
+                screenSourcePickerSection((kind: .window, title: "Windows", group: .standard))
             ] : [],
             actions: actions,
             layout: .thumbnails,
-            enabled: vm.canAdjustScreenCapture
+            enabled: vm.canAdjustScreenCapture,
+            hiddenSections: vm.state == .idle ? [
+                screenSourcePickerSection((kind: .application, title: "Private apps", group: .sensitive)),
+                screenSourcePickerSection((kind: .window, title: "Private app windows", group: .sensitive))
+            ] : []
         )
     }
 
     private func screenSourcePickerSection(
-        _ request: (kind: ScreenSourceBinding.Kind, title: String)
+        _ request: (
+            kind: ScreenSourceBinding.Kind,
+            title: String,
+            group: ScreenSourcePickerGroup
+        )
     ) -> BlitzSourcePickerSection {
-        let options = vm.availableScreenSources.filter { $0.binding.kind == request.kind }
+        let options = vm.availableScreenSources.filter {
+            $0.binding.kind == request.kind
+                && (request.group == .all || $0.pickerPlacement.group == request.group)
+        }
         return BlitzSourcePickerSection(
             title: request.title,
             items: options.map { option in

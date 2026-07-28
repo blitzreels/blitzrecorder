@@ -227,6 +227,35 @@ final class PreviewStageViewTests: XCTestCase {
         XCTAssertEqual(resizedFrame.width / resizedFrame.height, originalAspectRatio, accuracy: 0.0001)
     }
 
+    func testNormalScreenLayerTopEdgeResizeChangesHeightWithoutChangingWidth() {
+        let view = PreviewStageView()
+        let window = hostInWindow(view)
+        view.captureLayout = .vertical
+        view.enabledSources = [.screen, .camera]
+        view.selectedLayer = .screen
+        var layout = SceneLayout()
+        layout.screenFrame = CGRect(x: 0, y: 0.62, width: 1, height: 0.24)
+        layout.cameraFrame = CGRect(x: 0, y: 0, width: 1, height: 0.5)
+        view.sceneLayout = layout
+        view.layoutSubtreeIfNeeded()
+        var resizedLayer: SceneLayerKind?
+        view.onLayerResizeEnded = { resizedLayer = $0 }
+
+        let originalFrame = view.sceneLayout.screenFrame
+        let screenFrame = view.renderedScreenFrameForTesting
+        let start = CGPoint(x: screenFrame.midX, y: screenFrame.maxY)
+        let end = CGPoint(x: screenFrame.midX, y: screenFrame.maxY + 50)
+        view.mouseDown(with: mouseEvent(.leftMouseDown, at: start, in: window))
+        view.mouseDragged(with: mouseEvent(.leftMouseDragged, at: end, in: window))
+        view.mouseUp(with: mouseEvent(.leftMouseUp, at: end, in: window))
+
+        let resizedFrame = view.sceneLayout.screenFrame
+        XCTAssertEqual(resizedFrame.width, originalFrame.width, accuracy: 0.0001)
+        XCTAssertGreaterThan(resizedFrame.height, originalFrame.height)
+        XCTAssertEqual(resizedFrame.minY, originalFrame.minY, accuracy: 0.0001)
+        XCTAssertEqual(resizedLayer, .screen)
+    }
+
     func testLayerInteractionLockStillAllowsCameraCropEditing() {
         let view = PreviewStageView()
         view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)

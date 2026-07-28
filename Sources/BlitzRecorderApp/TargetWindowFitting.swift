@@ -77,9 +77,8 @@ enum TargetWindowFitting {
             in: canvasFrame,
             padding: canvasPadding
         )
-        let fittedFrame = ScreenWindowFramingPolicy.compactedPhysicalFrame(unscaledFrame)
         let windowFrame = clamped(
-            frame: WindowZoomGeometry.sourceFrame(for: fittedFrame, zoom: zoom),
+            frame: WindowZoomGeometry.sourceFrame(for: unscaledFrame, zoom: zoom),
             in: visibleFrame
         )
         return TargetWindowFittingPlan(

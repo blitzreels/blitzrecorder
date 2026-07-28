@@ -172,7 +172,7 @@ final class SceneSlotGeometryTests: XCTestCase {
         )
         XCTAssertRect(
             plan.windowFrame,
-            equals: CGRect(x: 640, y: 90, width: 853.3333333333, height: 720)
+            equals: CGRect(x: 533.3333333333, y: 0, width: 1066.6666666667, height: 900)
         )
         XCTAssertEqual(plan.windowFrame.width / plan.windowFrame.height, 32.0 / 27.0, accuracy: 0.000001)
     }

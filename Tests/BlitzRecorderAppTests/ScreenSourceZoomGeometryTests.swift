@@ -18,17 +18,17 @@ final class ScreenSourceZoomGeometryTests: XCTestCase {
         XCTAssertEqual(ScreenCaptureGeometry.effectiveCrop(for: settings), settings.screenCrop)
     }
 
-    func testTwoXCanvasZoomKeepsPhysicalWindowAt720Points() {
+    func testFitFullWindowUsesEntireAvailableSceneSlotHeight() {
         let plan = TargetWindowFitting.plan(
             screenFrame: CGRect(x: 0, y: 0, width: 1920, height: 1080),
             visibleFrame: CGRect(x: 0, y: 30, width: 1920, height: 1050),
             captureLayout: .horizontal,
             screenSlot: CGRect(x: 1.0 / 3.0, y: 0, width: 2.0 / 3.0, height: 1),
             canvasPadding: 0,
-            zoom: ScreenWindowFramingPolicy.physicalWindowScale
+            zoom: 1
         )
 
-        XCTAssertEqual(plan.windowFrame.height, 720, accuracy: 0.0001)
+        XCTAssertEqual(plan.windowFrame.height, 1050, accuracy: 0.0001)
         XCTAssertEqual(ScreenSourceZoomGeometry.clamped(2), 2)
     }
 
@@ -40,6 +40,10 @@ final class ScreenSourceZoomGeometryTests: XCTestCase {
 
         XCTAssertEqual(frame.width, 640, accuracy: 0.0001)
         XCTAssertEqual(frame.height, 360, accuracy: 0.0001)
+    }
+
+    func testHalfUiScaleIsAccepted() {
+        XCTAssertEqual(ScreenSourceZoomGeometry.clamped(0.5), 0.5, accuracy: 0.0001)
     }
 
     func testCropScalesInsideExistingSourceRect() {

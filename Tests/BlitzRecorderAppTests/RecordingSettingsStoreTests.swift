@@ -181,6 +181,13 @@ final class RecordingSettingsStoreTests: XCTestCase {
             accuracy: 0.0001
         )
 
+        defaults.set(0.5, forKey: "screen.windowZoom")
+        XCTAssertEqual(
+            RecordingSettingsStore.load(defaults: defaults).screenWindowZoom,
+            0.5,
+            accuracy: 0.0001
+        )
+
         defaults.set(4, forKey: "screen.windowZoom")
         XCTAssertEqual(
             RecordingSettingsStore.load(defaults: defaults).screenWindowZoom,

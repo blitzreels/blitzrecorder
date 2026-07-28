@@ -439,6 +439,7 @@ struct BlitzSourcePickerModel {
     let actions: [BlitzSourcePickerItem]
     let layout: Layout
     let enabled: Bool
+    var hiddenSections: [BlitzSourcePickerSection] = []
 }
 
 struct BlitzSourcePicker: View {
@@ -528,6 +529,8 @@ private struct BlitzSourcePickerPopover: View {
     let model: BlitzSourcePickerModel
     let dismiss: () -> Void
 
+    @State private var showsHiddenSections = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 3) {
@@ -547,10 +550,14 @@ private struct BlitzSourcePickerPopover: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    ForEach(Array(model.sections.enumerated()), id: \.offset) { _, section in
+                    ForEach(Array(visibleSections.enumerated()), id: \.offset) { _, section in
                         if !section.items.isEmpty {
                             sourceSection(section)
                         }
+                    }
+
+                    if !model.hiddenSections.isEmpty {
+                        hiddenSectionsButton
                     }
                 }
                 .padding(10)
@@ -571,6 +578,33 @@ private struct BlitzSourcePickerPopover: View {
             }
         }
         .frame(width: model.layout == .thumbnails ? 520 : 330)
+    }
+
+    private var visibleSections: [BlitzSourcePickerSection] {
+        model.sections + (showsHiddenSections ? model.hiddenSections : [])
+    }
+
+    private var hiddenSectionsButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.16)) {
+                showsHiddenSections.toggle()
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: showsHiddenSections ? "eye.slash" : "eye")
+                Text(showsHiddenSections ? "Hide private apps" : "Show all apps")
+                Spacer(minLength: 0)
+                Image(systemName: showsHiddenSections ? "chevron.up" : "chevron.down")
+            }
+            .font(.system(size: 10.5, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.62))
+            .padding(.horizontal, 9)
+            .frame(minHeight: 36)
+            .background(Color.white.opacity(0.035), in: .rect(cornerRadius: 8))
+            .contentShape(.rect(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor()
     }
 
     private func sourceSection(_ section: BlitzSourcePickerSection) -> some View {

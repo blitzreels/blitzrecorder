@@ -43,7 +43,7 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         }
     }
 
-    func testScreenCaptureAdjustmentsRemainAvailableDuringRecordingAndPause() {
+    func testScreenCaptureAndSceneAdjustmentsRemainAvailableDuringRecordingAndPause() {
         let defaults = temporaryDefaults()
         let viewModel = RecorderViewModel(
             coordinator: RecorderCoordinator(
@@ -55,15 +55,18 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
 
         viewModel.applyState(.recording)
         XCTAssertTrue(viewModel.canAdjustScreenCapture)
+        XCTAssertTrue(viewModel.canEditScene)
         let liveDisplay = ScreenSourceBinding.display(id: "live-display")
         viewModel.setScreenSource(liveDisplay)
         XCTAssertEqual(viewModel.settings.screenSourceBinding, liveDisplay)
 
         viewModel.applyState(.paused)
         XCTAssertTrue(viewModel.canAdjustScreenCapture)
+        XCTAssertTrue(viewModel.canEditScene)
 
         viewModel.applyState(.finishing)
         XCTAssertFalse(viewModel.canAdjustScreenCapture)
+        XCTAssertFalse(viewModel.canEditScene)
     }
 
     func testRecordingStartIsNotBlockedByLegacyExportCount() {

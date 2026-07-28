@@ -541,8 +541,8 @@ private struct ScreenSourceInspector: View {
     private var pickerModel: BlitzSourcePickerModel {
         let actions = [
             BlitzSourcePickerItem(
-                title: "Choose App Window",
-                subtitle: "Fits the window to this scene automatically",
+                title: "More App Windows…",
+                subtitle: "Open the macOS picker for another window",
                 systemImage: "rectangle.dashed",
                 icon: nil,
                 thumbnail: nil,
@@ -569,20 +569,32 @@ private struct ScreenSourceInspector: View {
             systemImage: selectedScreenSourceSystemImage,
             icon: selectedScreenSourceIcon,
             sections: vm.state == .idle ? [
-                screenSourceSection((kind: .display, title: "Displays")),
-                screenSourceSection((kind: .application, title: "Apps")),
-                screenSourceSection((kind: .window, title: "Windows"))
+                screenSourceSection((kind: .display, title: "Displays", group: .all)),
+                screenSourceSection((kind: .application, title: "Suggested apps", group: .suggested)),
+                screenSourceSection((kind: .application, title: "Apps", group: .standard)),
+                screenSourceSection((kind: .window, title: "Windows", group: .standard))
             ] : [],
             actions: actions,
             layout: .thumbnails,
-            enabled: enabled && vm.canAdjustScreenCapture
+            enabled: enabled && vm.canAdjustScreenCapture,
+            hiddenSections: vm.state == .idle ? [
+                screenSourceSection((kind: .application, title: "Private apps", group: .sensitive)),
+                screenSourceSection((kind: .window, title: "Private app windows", group: .sensitive))
+            ] : []
         )
     }
 
     private func screenSourceSection(
-        _ request: (kind: ScreenSourceBinding.Kind, title: String)
+        _ request: (
+            kind: ScreenSourceBinding.Kind,
+            title: String,
+            group: ScreenSourcePickerGroup
+        )
     ) -> BlitzSourcePickerSection {
-        let options = vm.availableScreenSources.filter { $0.binding.kind == request.kind }
+        let options = vm.availableScreenSources.filter {
+            $0.binding.kind == request.kind
+                && (request.group == .all || $0.pickerPlacement.group == request.group)
+        }
         return BlitzSourcePickerSection(
             title: request.title,
             items: options.map { option in
@@ -719,7 +731,7 @@ private struct ScreenSourceFramingControl: View {
         if vm.supportsScreenWindowScaling {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    Text("Make UI larger")
+                    Text("App UI scale")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.white.opacity(enabled ? 0.82 : 0.38))
 
@@ -747,15 +759,15 @@ private struct ScreenSourceFramingControl: View {
                 .controlSize(.small)
                 .tint(BlitzUI.mint)
                 .disabled(!canUseWindowControls)
-                .help("Resize and reflow the source window while keeping its complete UI visible")
+                .help("Use a larger window below 100% to show more content, or enlarge the UI above 100%")
 
                 HStack(spacing: 8) {
-                    Text("Normal")
+                    Text("50% · More content")
                     Spacer(minLength: 0)
                     Button {
                         vm.resetTargetWindowZoom()
                     } label: {
-                        Label("Reset", systemImage: "arrow.counterclockwise")
+                        Label("100%", systemImage: "arrow.counterclockwise")
                             .font(.system(size: 10, weight: .bold))
                             .padding(.horizontal, 9)
                             .frame(minHeight: 26)
@@ -771,7 +783,7 @@ private struct ScreenSourceFramingControl: View {
                     .disabled(!canUseWindowControls || abs(vm.targetWindowZoom - 1) < 0.001)
                     .pointingHandCursor()
                     Spacer(minLength: 0)
-                    Text("2× larger")
+                    Text("200% · Larger UI")
                 }
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(.white.opacity(enabled ? 0.4 : 0.22))

@@ -12,9 +12,6 @@ struct BottomDock: View {
                 if let recovery = vm.lastRecoveryOutput {
                     RecoveryAvailableView(vm: vm, recovery: recovery)
                         .floatingRecordingNotice()
-                } else if !vm.canStartRecording {
-                    ReadinessIssueView(vm: vm)
-                        .floatingRecordingNotice()
                 }
             }
 
@@ -652,63 +649,6 @@ private struct RecordingFileMetadata {
             return String(format: "%d:%02d:%02d", hours, minutes, seconds)
         }
         return String(format: "%d:%02d", minutes, seconds)
-    }
-}
-
-private struct ReadinessIssueView: View {
-    @Bindable var vm: RecorderViewModel
-
-    var body: some View {
-        HStack(spacing: 9) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(BlitzUI.warning)
-
-            Text(message)
-                .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(.white.opacity(0.74))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .help(fullExplanation)
-
-            Spacer(minLength: 12)
-
-            DetailsLink { vm.openReadinessDetails() }
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private var message: String {
-        if !vm.accessController.canRenderExport {
-            return "Recording unavailable"
-        }
-        let blockers = vm.recordingReadiness.blockers
-        return blockers.isEmpty ? vm.recordingReadiness.detail : blockers.shortSummary
-    }
-
-    private var fullExplanation: String {
-        let sentences = vm.recordingReadiness.blockers.map(\.sentence)
-        return sentences.isEmpty ? message : sentences.joined(separator: "\n")
-    }
-}
-
-private struct DetailsLink: View {
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 3) {
-                Text("Details")
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 8, weight: .bold))
-            }
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.white.opacity(hovering ? 1 : 0.78))
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .pointingHandCursor()
     }
 }
 

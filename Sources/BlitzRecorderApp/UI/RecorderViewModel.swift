@@ -317,7 +317,12 @@ final class RecorderViewModel {
     }
 
     var canEditScene: Bool {
-        state == .idle
+        switch state {
+        case .idle, .recording, .paused:
+            true
+        case .starting, .finishing:
+            false
+        }
     }
 
     var canAdjustScreenCapture: Bool {
@@ -621,6 +626,9 @@ final class RecorderViewModel {
             self.coordinator.setSceneLayout(layout)
             self.settings = self.coordinator.settings
             self.previewStage.sceneLayout = self.coordinator.settings.sceneLayout
+        }
+        previewStage.onLayerResizeEnded = { [weak self] layer in
+            self?.finishSceneLayerResize(layer)
         }
         previewStage.onCameraCropChanged = { [weak self] amount, position in
             guard let self else { return }
@@ -1282,6 +1290,11 @@ final class RecorderViewModel {
     func fitSelectedLayer(scale: CGFloat) {
         coordinator.fitSceneLayer(selectedLayer, scale: scale)
         syncSettings()
+    }
+
+    private func finishSceneLayerResize(_ layer: SceneLayerKind) {
+        guard layer == .screen, supportsScreenWindowScaling else { return }
+        scheduleTargetWindowFit()
     }
 
     func setCameraCropAmount(_ amount: CGPoint) {
