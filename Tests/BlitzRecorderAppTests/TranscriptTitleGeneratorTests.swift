@@ -26,4 +26,12 @@ final class TranscriptTitleGeneratorTests: XCTestCase {
         XCTAssertTrue(condensed.contains(String(repeating: "C", count: 200)))
         XCTAssertLessThan(condensed.count, transcript.count)
     }
+
+    func testFallbackTitleUsesMeaningfulTranscriptWords() {
+        let title = TitleGenerator.fallbackTitle(
+            from: "Today we are building a responsive project library for large displays."
+        )
+
+        XCTAssertEqual(title, "Building responsive project library large displays")
+    }
 }

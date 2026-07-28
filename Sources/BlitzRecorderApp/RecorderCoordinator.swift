@@ -2819,6 +2819,13 @@ final class RecorderCoordinator {
             }
             do {
                 let project = try takeFileStore.loadRecordingProject(at: request.projectURL)
+                let captureOutputFormat = OutputVideoFormat(rawValue: project.settings.outputVideoFormat)
+                    ?? settings.outputVideoFormat
+                let captureSettings = takeFileStore.recordingSettings(
+                    from: project,
+                    baseSettings: settings,
+                    outputFormat: captureOutputFormat
+                )
                 let exportSettings = takeFileStore.recordingSettings(
                     from: project,
                     baseSettings: settings,
@@ -2877,16 +2884,30 @@ final class RecorderCoordinator {
 
                 try takeFileStore.writeSourceTakeManifest(
                     for: take,
-                    settings: renderSettings,
+                    settings: captureSettings,
                     finalVideoURL: url
+                )
+                let resourceValues = try? url.resourceValues(forKeys: [.fileSizeKey])
+                let fileSizeBytes = resourceValues?.fileSize.map(Int64.init)
+                let exportRecord = RecordingProject.ExportRecord(
+                    id: UUID(),
+                    createdAt: Date(),
+                    path: url.path,
+                    format: request.outputFormat.rawValue,
+                    resolution: renderSettings.outputResolution.rawValue,
+                    framesPerSecond: renderSettings.framesPerSecond,
+                    quality: request.performanceProfile.videoQuality.rawValue,
+                    fileSizeBytes: fileSizeBytes
                 )
                 try takeFileStore.writeRecordingProject(
                     for: take,
-                    settings: renderSettings,
+                    settings: captureSettings,
                     sceneEvents: sceneEvents,
                     finalVideoURL: url,
                     chapters: project.chapters,
-                    editorTimeline: project.editorTimeline
+                    editorTimeline: project.editorTimeline,
+                    editorState: project.editorState,
+                    exportRecord: exportRecord
                 )
                 accessController.recordSuccessfulExportIfNeeded()
                 onRenderProgress?(1)
@@ -2961,6 +2982,24 @@ final class RecorderCoordinator {
             eventIndex: eventIndex,
             baseSettings: settings
         )
+    }
+
+    func restoreProjectSceneTimeline(
+        _ request: RecordingProjectSceneRestoreRequest
+    ) throws -> RecordingProject {
+        guard state == .idle else {
+            throw RecorderError.mediaWriteFailed("Wait for the current recording task to finish before editing the project.")
+        }
+        return try takeFileStore.restoreProjectSceneTimeline(request)
+    }
+
+    func updateProjectEditorState(
+        _ request: RecordingProjectEditorStateUpdateRequest
+    ) throws -> RecordingProject {
+        guard state == .idle else {
+            throw RecorderError.mediaWriteFailed("Wait for the current recording task to finish before editing the project.")
+        }
+        return try takeFileStore.updateProjectEditorState(request)
     }
 
     func zoomIn() {

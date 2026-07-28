@@ -229,6 +229,43 @@ struct RecordingProject: Codable, Equatable {
         static let empty = TimelineSnapshot(tracks: [], clips: [], keyframes: [])
     }
 
+    struct ExportRecipeSnapshot: Codable, Equatable {
+        let preset: String
+        let format: String
+        let resolution: String
+        let framesPerSecond: Int
+        let quality: String
+    }
+
+    struct EditorStateSnapshot: Codable, Equatable {
+        let hiddenVideoSources: [String]
+        let mutedAudioSources: [String]
+        let backgroundMusicPath: String?
+        let backgroundMusicBookmarkData: Data?
+        let backgroundMusicVolume: Double?
+        let exportRecipe: ExportRecipeSnapshot?
+
+        static let empty = EditorStateSnapshot(
+            hiddenVideoSources: [],
+            mutedAudioSources: [],
+            backgroundMusicPath: nil,
+            backgroundMusicBookmarkData: nil,
+            backgroundMusicVolume: nil,
+            exportRecipe: nil
+        )
+    }
+
+    struct ExportRecord: Codable, Equatable, Identifiable {
+        let id: UUID
+        let createdAt: Date
+        let path: String
+        let format: String
+        let resolution: String
+        let framesPerSecond: Int
+        let quality: String
+        let fileSizeBytes: Int64?
+    }
+
     let version: Int
     let id: UUID
     let createdAt: Date
@@ -244,6 +281,8 @@ struct RecordingProject: Codable, Equatable {
     let sceneEvents: [SceneEventSnapshot]
     let chapters: [ChapterSnapshot]
     let editorTimeline: TimelineSnapshot
+    let editorState: EditorStateSnapshot
+    let exports: [ExportRecord]
 
     enum CodingKeys: String, CodingKey {
         case version
@@ -261,6 +300,8 @@ struct RecordingProject: Codable, Equatable {
         case sceneEvents
         case chapters
         case editorTimeline = "timeline"
+        case editorState
+        case exports
     }
 
     init(
@@ -277,6 +318,8 @@ struct RecordingProject: Codable, Equatable {
         sceneEvents: [SceneEventSnapshot],
         chapters: [ChapterSnapshot] = [],
         editorTimeline: TimelineSnapshot = .empty,
+        editorState: EditorStateSnapshot = .empty,
+        exports: [ExportRecord] = [],
         timelineTrimOffsetSeconds: Double = 0,
         sourceTimelineOffsetSeconds: [String: Double] = [:]
     ) {
@@ -295,6 +338,8 @@ struct RecordingProject: Codable, Equatable {
         self.sceneEvents = sceneEvents
         self.chapters = chapters
         self.editorTimeline = editorTimeline
+        self.editorState = editorState
+        self.exports = exports
     }
 
     init(from decoder: Decoder) throws {
@@ -320,6 +365,8 @@ struct RecordingProject: Codable, Equatable {
         self.sceneEvents = try container.decode([SceneEventSnapshot].self, forKey: .sceneEvents)
         self.chapters = try container.decodeIfPresent([ChapterSnapshot].self, forKey: .chapters) ?? []
         self.editorTimeline = try container.decodeIfPresent(TimelineSnapshot.self, forKey: .editorTimeline) ?? .empty
+        self.editorState = try container.decodeIfPresent(EditorStateSnapshot.self, forKey: .editorState) ?? .empty
+        self.exports = try container.decodeIfPresent([ExportRecord].self, forKey: .exports) ?? []
     }
 }
 
@@ -330,11 +377,46 @@ struct RecordingProjectHistory: Codable, Equatable {
         let projectPath: String
         let takeDirectoryPath: String
         let finalVideoPath: String?
+        let createdAt: Date?
         let updatedAt: Date
+        let exports: [RecordingProject.ExportRecord]?
     }
 
     let version: Int
     var entries: [Entry]
+}
+
+enum RecordingProjectDisplayTitle {
+    static func isUntitled(_ rawTitle: String) -> Bool {
+        timestampDate(from: rawTitle) != nil
+    }
+
+    static func make(rawTitle: String, createdAt: Date) -> String {
+        guard isUntitled(rawTitle) else { return rawTitle }
+        return "Recording at \(createdAt.formatted(date: .omitted, time: .shortened))"
+    }
+
+    static func timestampDate(from rawTitle: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd-HH-mm-ss"
+        return formatter.date(from: String(rawTitle.prefix(19)))
+    }
+}
+
+extension RecordingProject {
+    var displayTitle: String {
+        RecordingProjectDisplayTitle.make(rawTitle: title, createdAt: createdAt)
+    }
+}
+
+extension RecordingProjectHistory.Entry {
+    var displayTitle: String {
+        let recordingDate = createdAt
+            ?? RecordingProjectDisplayTitle.timestampDate(from: title)
+            ?? updatedAt
+        return RecordingProjectDisplayTitle.make(rawTitle: title, createdAt: recordingDate)
+    }
 }
 
 enum RecordingProjectDeletionDisposition {
@@ -354,6 +436,18 @@ struct RecordingProjectRenameRequest {
     let settings: RecordingSettings
 }
 
+struct RecordingProjectSceneRestoreRequest {
+    let projectURL: URL
+    let snapshot: RecordingProject
+    let baseSettings: RecordingSettings
+}
+
+struct RecordingProjectEditorStateUpdateRequest {
+    let projectURL: URL
+    let editorState: RecordingProject.EditorStateSnapshot
+    let baseSettings: RecordingSettings
+}
+
 private struct ProjectHistoryWriteRequest {
     let history: RecordingProjectHistory
     let settings: RecordingSettings
@@ -369,9 +463,9 @@ enum RecordingProjectSceneCorrection: String, CaseIterable {
         case .screenOnly:
             return "Screen"
         case .cameraOnly:
-            return "Webcam"
+            return "Camera"
         case .screenAndCamera:
-            return "Screen + Webcam"
+            return "Screen + Camera"
         }
     }
 
@@ -710,10 +804,19 @@ struct TakeFileStore {
         sceneEvents: [RecordingSceneEvent],
         finalVideoURL: URL?,
         chapters: [RecordingProject.ChapterSnapshot] = [],
-        editorTimeline: RecordingProject.TimelineSnapshot = .empty
+        editorTimeline: RecordingProject.TimelineSnapshot = .empty,
+        editorState: RecordingProject.EditorStateSnapshot? = nil,
+        exportRecord: RecordingProject.ExportRecord? = nil
     ) throws {
         let now = Date()
         let projectURL = take.projectURL
+        let existingProject = try? loadRecordingProject(at: projectURL)
+        var exports = existingProject?.exports ?? []
+        if let exportRecord {
+            exports.removeAll { $0.path == exportRecord.path }
+            exports.append(exportRecord)
+            exports.sort { $0.createdAt < $1.createdAt }
+        }
         let project = RecordingProject(
             version: 1,
             id: projectID(for: take, projectURL: projectURL),
@@ -728,6 +831,8 @@ struct TakeFileStore {
             sceneEvents: sceneEvents.map(RecordingProject.SceneEventSnapshot.init),
             chapters: chapters,
             editorTimeline: editorTimeline,
+            editorState: editorState ?? existingProject?.editorState ?? .empty,
+            exports: exports,
             timelineTrimOffsetSeconds: max(0, take.timelineTrimOffset.seconds),
             sourceTimelineOffsetSeconds: Dictionary(uniqueKeysWithValues: take.sourceTimelineOffsets.map {
                 ($0.key.rawValue, max(0, $0.value.seconds))
@@ -783,6 +888,8 @@ struct TakeFileStore {
             sceneEvents: project.sceneEvents,
             chapters: project.chapters,
             editorTimeline: project.editorTimeline,
+            editorState: project.editorState,
+            exports: project.exports,
             timelineTrimOffsetSeconds: project.timelineTrimOffsetSeconds,
             sourceTimelineOffsetSeconds: project.sourceTimelineOffsetSeconds
         )
@@ -1091,6 +1198,62 @@ struct TakeFileStore {
         return try loadRecordingProject(at: projectURL)
     }
 
+    func restoreProjectSceneTimeline(
+        _ request: RecordingProjectSceneRestoreRequest
+    ) throws -> RecordingProject {
+        let currentProject = try loadRecordingProject(at: request.projectURL)
+        guard currentProject.id == request.snapshot.id else {
+            throw RecorderError.mediaWriteFailed("The undo history belongs to another project.")
+        }
+        let outputFormat = OutputVideoFormat(rawValue: currentProject.settings.outputVideoFormat)
+            ?? request.baseSettings.outputVideoFormat
+        var settings = recordingSettings(
+            from: currentProject,
+            baseSettings: request.baseSettings,
+            outputFormat: outputFormat
+        )
+        let sceneEvents = sceneEvents(from: request.snapshot)
+        guard !sceneEvents.isEmpty else {
+            throw RecorderError.mediaWriteFailed("The undo state has no scene timeline.")
+        }
+        settings = settingsBySyncingEnabledVideoSources(settings, sceneEvents: sceneEvents)
+        let take = recordingTake(from: currentProject, settings: settings, outputFormat: outputFormat)
+        try writeRecordingProject(
+            for: take,
+            settings: settings,
+            sceneEvents: sceneEvents,
+            finalVideoURL: currentProject.finalVideoPath.map(URL.init(fileURLWithPath:)),
+            chapters: currentProject.chapters,
+            editorTimeline: currentProject.editorTimeline,
+            editorState: request.snapshot.editorState
+        )
+        return try loadRecordingProject(at: request.projectURL)
+    }
+
+    func updateProjectEditorState(
+        _ request: RecordingProjectEditorStateUpdateRequest
+    ) throws -> RecordingProject {
+        let project = try loadRecordingProject(at: request.projectURL)
+        let outputFormat = OutputVideoFormat(rawValue: project.settings.outputVideoFormat)
+            ?? request.baseSettings.outputVideoFormat
+        let settings = recordingSettings(
+            from: project,
+            baseSettings: request.baseSettings,
+            outputFormat: outputFormat
+        )
+        let take = recordingTake(from: project, settings: settings, outputFormat: outputFormat)
+        try writeRecordingProject(
+            for: take,
+            settings: settings,
+            sceneEvents: sceneEvents(from: project),
+            finalVideoURL: project.finalVideoPath.map(URL.init(fileURLWithPath:)),
+            chapters: project.chapters,
+            editorTimeline: project.editorTimeline,
+            editorState: request.editorState
+        )
+        return try loadRecordingProject(at: request.projectURL)
+    }
+
     private func settingsBySyncingEnabledVideoSources(
         _ settings: RecordingSettings,
         sceneEvents: [RecordingSceneEvent]
@@ -1228,7 +1391,9 @@ struct TakeFileStore {
                 projectPath: project.projectPath,
                 takeDirectoryPath: project.takeDirectoryPath,
                 finalVideoPath: project.finalVideoPath,
-                updatedAt: project.updatedAt
+                createdAt: project.createdAt,
+                updatedAt: project.updatedAt,
+                exports: project.exports
             ),
             at: 0
         )

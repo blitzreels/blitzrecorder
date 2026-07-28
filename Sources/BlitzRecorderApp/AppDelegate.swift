@@ -42,6 +42,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
 
         let windowController = MainWindowController(coordinator: coordinator)
         self.windowController = windowController
+        windowController.onEditorHistoryChanged = { [weak self] in
+            self?.mainMenuBuilder?.rebuild()
+        }
 
         coordinator.onStateChanged = { [weak self] state in
             self?.windowController?.update(for: state)
@@ -372,6 +375,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
 
     @objc func showAbout() {
         AppSupportActions.showAboutPanel()
+    }
+
+    var canUndoEditor: Bool { windowController?.canUndoEditor ?? false }
+    var canRedoEditor: Bool { windowController?.canRedoEditor ?? false }
+    var editorUndoTitle: String { windowController?.editorUndoTitle ?? "Undo" }
+    var editorRedoTitle: String { windowController?.editorRedoTitle ?? "Redo" }
+
+    @objc func undoEditor() {
+        windowController?.undoEditor()
+    }
+
+    @objc func redoEditor() {
+        windowController?.redoEditor()
     }
 
     @objc func checkForUpdates() {

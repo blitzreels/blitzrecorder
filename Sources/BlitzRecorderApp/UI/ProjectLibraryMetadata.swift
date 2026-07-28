@@ -4,16 +4,59 @@ import Foundation
 
 struct ProjectLibraryMetadata {
     let thumbnail: NSImage?
-    let durationLabel: String?
+    let durationSeconds: TimeInterval?
     let sourceSummary: String
-    let sizeLabel: String?
+    let sizeBytes: Int64?
+
+    var durationLabel: String? {
+        durationSeconds.map(Self.durationLabel)
+    }
+
+    var sizeLabel: String? {
+        sizeBytes.map {
+            ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)
+        }
+    }
 
     static let empty = ProjectLibraryMetadata(
         thumbnail: nil,
-        durationLabel: nil,
+        durationSeconds: nil,
         sourceSummary: "Editable project",
-        sizeLabel: nil
+        sizeBytes: nil
     )
+
+    static func durationLabel(_ durationSeconds: TimeInterval) -> String {
+        let totalSeconds = Int(durationSeconds.rounded())
+        let hours = totalSeconds / 3_600
+        let minutes = (totalSeconds % 3_600) / 60
+        let seconds = totalSeconds % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        }
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+struct ProjectLibrarySelectionSummary {
+    let durationSeconds: TimeInterval?
+    let sizeBytes: Int64?
+
+    init(_ metadata: [ProjectLibraryMetadata]) {
+        let durations = metadata.compactMap(\.durationSeconds)
+        let sizes = metadata.compactMap(\.sizeBytes)
+        durationSeconds = durations.isEmpty ? nil : durations.reduce(0, +)
+        sizeBytes = sizes.isEmpty ? nil : sizes.reduce(0, +)
+    }
+
+    var durationLabel: String {
+        durationSeconds.map(ProjectLibraryMetadata.durationLabel) ?? "—"
+    }
+
+    var sizeLabel: String {
+        sizeBytes.map {
+            ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)
+        } ?? "—"
+    }
 }
 
 enum ProjectLibraryMetadataLoader {
@@ -38,13 +81,13 @@ enum ProjectLibraryMetadataLoader {
         ))
 
         async let thumbnail = thumbnail(for: previewURL)
-        async let durationLabel = durationLabel(for: previewURL)
+        async let durationSeconds = durationSeconds(for: previewURL)
 
         return await ProjectLibraryMetadata(
             thumbnail: thumbnail,
-            durationLabel: durationLabel,
+            durationSeconds: durationSeconds,
             sourceSummary: sourceSummary(existingSources),
-            sizeLabel: sizeLabel(existingSources)
+            sizeBytes: sizeBytes(existingSources)
         )
     }
 
@@ -87,7 +130,7 @@ enum ProjectLibraryMetadataLoader {
         )
     }
 
-    private static func durationLabel(for url: URL?) async -> String? {
+    private static func durationSeconds(for url: URL?) async -> TimeInterval? {
         guard let url else { return nil }
         let asset = AVURLAsset(url: url)
         guard let duration = try? await asset.load(.duration),
@@ -95,15 +138,7 @@ enum ProjectLibraryMetadataLoader {
               duration.seconds > 0 else {
             return nil
         }
-
-        let totalSeconds = Int(duration.seconds.rounded())
-        let hours = totalSeconds / 3_600
-        let minutes = (totalSeconds % 3_600) / 60
-        let seconds = totalSeconds % 60
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
-        }
-        return String(format: "%d:%02d", minutes, seconds)
+        return duration.seconds
     }
 
     private static func sourceSummary(
@@ -125,9 +160,9 @@ enum ProjectLibraryMetadataLoader {
         return labels.isEmpty ? "Editable project" : labels.joined(separator: " + ")
     }
 
-    private static func sizeLabel(
+    private static func sizeBytes(
         _ sources: [RecordingProject.SourceFile]
-    ) -> String? {
+    ) -> Int64? {
         let totalBytes = sources.reduce(into: Int64(0)) { result, source in
             guard let attributes = try? FileManager.default.attributesOfItem(
                 atPath: source.path
@@ -138,6 +173,6 @@ enum ProjectLibraryMetadataLoader {
             result += size.int64Value
         }
         guard totalBytes > 0 else { return nil }
-        return ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)
+        return totalBytes
     }
 }

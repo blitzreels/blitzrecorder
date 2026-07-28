@@ -356,6 +356,69 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         }
     }
 
+    func testViewModelKeepsEditorOpenAfterProjectExport() throws {
+        let defaults = temporaryDefaults()
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults),
+            defaults: defaults
+        )
+        let viewModel = RecorderViewModel(coordinator: coordinator, previewStage: PreviewStageView())
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.savesSourceFiles = true
+        let take = try TakeFileStore().createTake(settings: settings)
+        let outputURL = take.scratchDirectory.appendingPathComponent("editor-export.mov")
+        viewModel.studioMode = .edit
+
+        viewModel.applySavedRecordingOutput(
+            SavedRecordingOutput(url: outputURL, sourceDirectory: take.scratchDirectory, warning: nil)
+        )
+
+        XCTAssertEqual(viewModel.studioMode, .edit)
+        XCTAssertEqual(viewModel.lastExportSucceededURL, outputURL)
+    }
+
+    func testEditorSceneCorrectionSupportsUndoAndRedo() throws {
+        let defaults = temporaryDefaults()
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults),
+            defaults: defaults
+        )
+        let viewModel = RecorderViewModel(coordinator: coordinator, previewStage: PreviewStageView())
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .camera, .microphone]
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try Data().write(to: take.screenURL)
+        try Data().write(to: take.cameraURL)
+        let project = try XCTUnwrap(store.loadProjectHistory(settings: settings).entries.first)
+        viewModel.openProject(project)
+
+        XCTAssertTrue(viewModel.applyProjectSceneCorrection(.init(eventIndex: 0, correction: .cameraOnly)))
+        XCTAssertTrue(viewModel.canUndoEditor)
+        XCTAssertEqual(
+            Set(try XCTUnwrap(viewModel.lastExportedProject?.sceneEvents.first).scene.enabledSources),
+            ["Camera", "Microphone"]
+        )
+
+        viewModel.undoEditor()
+
+        XCTAssertTrue(viewModel.canRedoEditor)
+        XCTAssertEqual(
+            Set(try XCTUnwrap(viewModel.lastExportedProject?.sceneEvents.first).scene.enabledSources),
+            ["Camera", "Microphone", "Screen"]
+        )
+
+        viewModel.redoEditor()
+
+        XCTAssertTrue(viewModel.canUndoEditor)
+        XCTAssertEqual(
+            Set(try XCTUnwrap(viewModel.lastExportedProject?.sceneEvents.first).scene.enabledSources),
+            ["Camera", "Microphone"]
+        )
+    }
+
     func testViewModelAppliesRecoveryOutputAndClearsSavedOutput() {
         let defaults = temporaryDefaults()
         let coordinator = RecorderCoordinator(

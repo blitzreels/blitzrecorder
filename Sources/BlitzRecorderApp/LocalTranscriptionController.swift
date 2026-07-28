@@ -66,6 +66,11 @@ struct PresentedTranscript: Identifiable {
     let locations: TranscriptArtifactStore.Locations
 }
 
+struct CompletedTranscription {
+    let source: TranscriptionMediaSource
+    let transcript: RecordingTranscript
+}
+
 @Observable
 @MainActor
 final class LocalTranscriptionController {
@@ -100,6 +105,7 @@ final class LocalTranscriptionController {
     var modelState: TranscriptionModelState
     var jobStatuses: [String: TranscriptionJobStatus] = [:]
     var presentedTranscript: PresentedTranscript?
+    @ObservationIgnored var onTranscriptionCompleted: ((CompletedTranscription) -> Void)?
     var isAutomaticEnabled: Bool {
         didSet {
             defaults.set(isAutomaticEnabled, forKey: Self.automaticKey)
@@ -265,7 +271,7 @@ final class LocalTranscriptionController {
         tasks[source.key] = Task { [weak self] in
             guard let self else { return }
             do {
-                _ = try await engine.transcribe(
+                let transcript = try await engine.transcribe(
                     LocalTranscriptionEngine.TranscribeRequest(
                         source: source,
                         onUpdate: { [weak self] update in
@@ -279,6 +285,10 @@ final class LocalTranscriptionController {
                     )
                 )
                 markReady(source)
+                onTranscriptionCompleted?(CompletedTranscription(
+                    source: source,
+                    transcript: transcript
+                ))
             } catch {
                 jobStatuses[source.key] = .failed(error.localizedDescription)
             }

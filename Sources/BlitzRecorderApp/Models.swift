@@ -541,15 +541,15 @@ enum ScenePreset: String, CaseIterable {
         case .screenFocus:
             return "Screen crop"
         case .cameraInset:
-            return "Cam corner"
+            return "Camera inset"
         case .cameraFocus:
             return "Speaker main"
         case .webcamLeft:
-            return "Webcam left"
+            return "Camera left"
         case .screenFullscreen:
             return "Screen 100%"
         case .webcamFullscreen:
-            return "Webcam 100%"
+            return "Camera 100%"
         }
     }
 }

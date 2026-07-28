@@ -195,7 +195,7 @@ private struct TransparentWebcamToggle: View {
             vm.setCameraBackgroundRemovalAfterRecording(!vm.settings.removesCameraBackgroundAfterRecording)
         }
         .pointingHandCursor()
-        .help("Remove webcam background after recording")
+        .help("Remove camera background after recording")
     }
 
     private var iconOpacity: Double {

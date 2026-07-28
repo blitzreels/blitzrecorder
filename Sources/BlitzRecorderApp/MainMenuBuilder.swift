@@ -79,9 +79,22 @@ final class MainMenuBuilder {
     private func editMenuItem() -> NSMenuItem {
         let item = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
         let submenu = NSMenu(title: "Edit")
-        // Undo/Redo are intentionally omitted: the app has no undo manager, so they only ever
-        // applied inside the transient iPhone pairing-code field and were disabled everywhere else.
-        // Cut/Copy/Paste/Select All stay so ⌘X/⌘C/⌘V keep working in that field.
+        let undo = menuItem(
+            target?.editorUndoTitle ?? "Undo",
+            action: #selector(MenuActionsTarget.undoEditor),
+            keyEquivalent: "z"
+        )
+        undo.isEnabled = target?.canUndoEditor ?? false
+        submenu.addItem(undo)
+        let redo = menuItem(
+            target?.editorRedoTitle ?? "Redo",
+            action: #selector(MenuActionsTarget.redoEditor),
+            keyEquivalent: "z"
+        )
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        redo.isEnabled = target?.canRedoEditor ?? false
+        submenu.addItem(redo)
+        submenu.addItem(.separator())
         submenu.addItem(menuItem("Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x", usesResponderChain: true))
         submenu.addItem(menuItem("Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c", usesResponderChain: true))
         submenu.addItem(menuItem("Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v", usesResponderChain: true))
@@ -262,6 +275,12 @@ final class MainMenuBuilder {
 @MainActor
 @objc protocol MenuActionsTarget: AnyObject {
     func showAbout()
+    var canUndoEditor: Bool { get }
+    var canRedoEditor: Bool { get }
+    var editorUndoTitle: String { get }
+    var editorRedoTitle: String { get }
+    func undoEditor()
+    func redoEditor()
     var updateMenuItemTitle: String { get }
     var canCheckForUpdates: Bool { get }
     func startRecording()

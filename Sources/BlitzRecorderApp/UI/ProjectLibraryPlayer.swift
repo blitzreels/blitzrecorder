@@ -12,6 +12,26 @@ struct ProjectLibraryPlayerLayout {
     let transportWidth: CGFloat
 }
 
+struct ProjectLibraryOverviewSizeRequest {
+    let viewportSize: CGSize
+}
+
+struct ProjectLibraryOverviewLayout {
+    let contentWidth: CGFloat
+    let playerMaximumSize: CGSize
+}
+
+enum ProjectLibraryOverviewSizing {
+    static func layout(_ request: ProjectLibraryOverviewSizeRequest) -> ProjectLibraryOverviewLayout {
+        let contentWidth = min(1_080, max(320, request.viewportSize.width - 68))
+        let playerHeight = min(640, max(240, request.viewportSize.height - 150))
+        return ProjectLibraryOverviewLayout(
+            contentWidth: contentWidth,
+            playerMaximumSize: CGSize(width: contentWidth, height: playerHeight)
+        )
+    }
+}
+
 enum ProjectLibraryPlayerSizing {
     static func layout(_ request: ProjectLibraryPlayerSizeRequest) -> ProjectLibraryPlayerLayout {
         guard request.contentSize.width > 0,
@@ -97,21 +117,27 @@ enum ProjectSpeechWaveform {
 
 @MainActor
 struct ProjectLibraryPlayerSurface: View {
-    let controller: EditorPlaybackController
-    let isCurrentProject: Bool
-    let fallbackThumbnail: NSImage?
-    let waveformSamples: [Float]
-    let loadError: String?
+    struct Configuration {
+        let controller: EditorPlaybackController
+        let isCurrentProject: Bool
+        let fallbackThumbnail: NSImage?
+        let waveformSamples: [Float]
+        let loadError: String?
+        let maximumSize: CGSize
+    }
+
+    let configuration: Configuration
 
     private var isPlaybackReady: Bool {
-        isCurrentProject && controller.isReady
+        configuration.isCurrentProject && configuration.controller.isReady
     }
 
     private var playerLayout: ProjectLibraryPlayerLayout {
         let contentSize: CGSize
-        if controller.renderSize.width > 0, controller.renderSize.height > 0 {
-            contentSize = controller.renderSize
-        } else if let fallbackThumbnail,
+        if configuration.controller.renderSize.width > 0,
+           configuration.controller.renderSize.height > 0 {
+            contentSize = configuration.controller.renderSize
+        } else if let fallbackThumbnail = configuration.fallbackThumbnail,
                   fallbackThumbnail.size.width > 0,
                   fallbackThumbnail.size.height > 0 {
             contentSize = fallbackThumbnail.size
@@ -120,7 +146,7 @@ struct ProjectLibraryPlayerSurface: View {
         }
         return ProjectLibraryPlayerSizing.layout(.init(
             contentSize: contentSize,
-            maximumSize: CGSize(width: 720, height: 420)
+            maximumSize: configuration.maximumSize
         ))
     }
 
@@ -149,9 +175,9 @@ struct ProjectLibraryPlayerSurface: View {
 
             if isPlaybackReady {
                 EditorCompositedPlayer(
-                    controller: controller,
-                    renderSize: controller.renderSize,
-                    previewSceneRevision: controller.previewSceneRevision
+                    controller: configuration.controller,
+                    renderSize: configuration.controller.renderSize,
+                    previewSceneRevision: configuration.controller.previewSceneRevision
                 )
                 .allowsHitTesting(false)
                 .transition(.opacity)
@@ -169,7 +195,7 @@ struct ProjectLibraryPlayerSurface: View {
 
     @ViewBuilder
     private var fallback: some View {
-        if let fallbackThumbnail {
+        if let fallbackThumbnail = configuration.fallbackThumbnail {
             Image(nsImage: fallbackThumbnail)
                 .resizable()
                 .scaledToFill()
@@ -179,7 +205,7 @@ struct ProjectLibraryPlayerSurface: View {
         }
 
         VStack(spacing: 10) {
-            if let loadError {
+            if let loadError = configuration.loadError {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 22, weight: .semibold))
                     .symbolRenderingMode(.hierarchical)
@@ -212,12 +238,12 @@ struct ProjectLibraryPlayerSurface: View {
     private var transportControls: some View {
         HStack(spacing: 10) {
             Button {
-                controller.togglePlayback()
+                configuration.controller.togglePlayback()
             } label: {
-                Image(systemName: controller.isPlaying ? "pause.fill" : "play.fill")
+                Image(systemName: configuration.controller.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(.white.opacity(0.92))
-                    .offset(x: controller.isPlaying ? 0 : 1)
+                    .offset(x: configuration.controller.isPlaying ? 0 : 1)
                     .frame(width: 38, height: 38)
                     .background(.white.opacity(0.10), in: .circle)
                     .contentShape(.circle)
@@ -225,26 +251,26 @@ struct ProjectLibraryPlayerSurface: View {
             .buttonStyle(ProjectPlayerPressButtonStyle())
             .keyboardShortcut(.space, modifiers: [])
             .pointingHandCursor()
-            .help(controller.isPlaying ? "Pause" : "Play")
+            .help(configuration.controller.isPlaying ? "Pause" : "Play")
 
-            Text(timeLabel(controller.currentTime))
+            Text(timeLabel(configuration.controller.currentTime))
                 .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
                 .monospacedDigit()
                 .foregroundStyle(.white.opacity(0.66))
                 .frame(width: 34, alignment: .trailing)
 
             ProjectPlaybackWaveform(
-                samples: waveformSamples,
-                currentTime: controller.currentTime,
-                duration: controller.duration,
+                samples: configuration.waveformSamples,
+                currentTime: configuration.controller.currentTime,
+                duration: configuration.controller.duration,
                 onScrub: { time in
-                    controller.scrub(to: time)
+                    configuration.controller.scrub(to: time)
                 },
-                onScrubEnd: controller.endScrub
+                onScrubEnd: configuration.controller.endScrub
             )
             .frame(height: 30)
 
-            Text(timeLabel(controller.duration))
+            Text(timeLabel(configuration.controller.duration))
                 .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
                 .monospacedDigit()
                 .foregroundStyle(.white.opacity(0.66))

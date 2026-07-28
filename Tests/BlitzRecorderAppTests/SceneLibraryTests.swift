@@ -15,7 +15,7 @@ final class SceneLibraryTests: XCTestCase {
         let library = SceneLibrary.defaultLibrary(currentSettings: settings)
         let selected = library.selectedScene(layout: .vertical)
 
-        XCTAssertEqual(selected?.name, "Screen + Cam")
+        XCTAssertEqual(selected?.name, "Screen + Camera")
         XCTAssertEqual(selected?.snapshot.canvasBackgroundAnimated, true)
         XCTAssertEqual(selected?.snapshot.sceneLayout.screenFrame, settings.sceneLayout.screenFrame)
         XCTAssertEqual(selected?.snapshot.sceneLayout.cameraFrame, settings.sceneLayout.cameraFrame)
@@ -205,6 +205,20 @@ final class SceneLibraryTests: XCTestCase {
 
         XCTAssertFalse(library.deleteScene(id: library.scenes(for: .horizontal)[0].id, layout: .horizontal))
         XCTAssertEqual(library.scenes(for: .horizontal).count, 1)
+    }
+
+    func testSceneLibraryMigratesLegacyCameraNames() {
+        var library = SceneLibrary.defaultLibrary()
+        library.scenesByLayout[.vertical]?[0].name = "Screen + Cam"
+        library.scenesByLayout[.vertical]?[2].name = "Cam Only"
+        library.scenesByLayout[.vertical]?[3].name = "Cam Corner"
+
+        XCTAssertTrue(library.migrateCanonicalCameraNames())
+        XCTAssertEqual(
+            library.scenes(for: .vertical).map(\.name),
+            ["Screen + Camera", "Screen Only", "Camera Only", "Camera Inset"]
+        )
+        XCTAssertFalse(library.migrateCanonicalCameraNames())
     }
 
     private func temporaryDefaults() -> UserDefaults {

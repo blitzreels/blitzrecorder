@@ -201,6 +201,8 @@ struct ProjectLibraryView: View {
     @State private var playbackProjectPath: String?
     @State private var playbackWaveformSamples: [Float] = []
     @State private var playbackLoadError: String?
+    @State private var hoveredSidebarProjectID: UUID?
+    @State private var hoveredBulkProjectID: UUID?
 
     private struct ThumbnailConfiguration {
         let metadata: ProjectLibraryMetadata
@@ -243,7 +245,7 @@ struct ProjectLibraryView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
                 .padding(.bottom, 12)
-                .background(.bar)
+                .background(BlitzUI.projectLibraryBackground)
                 .overlay(alignment: .bottom) {
                     Rectangle()
                         .fill(.white.opacity(0.08))
@@ -260,6 +262,7 @@ struct ProjectLibraryView: View {
                 projectDetail
             }
         }
+        .background(BlitzUI.projectLibraryBackground)
         .task {
             vm.refreshRecentProjects()
             selectFirstProjectIfNeeded()
@@ -395,6 +398,8 @@ struct ProjectLibraryView: View {
                 }
             }
             .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
+            .background(BlitzUI.projectLibraryBackground)
             .contextMenu(forSelectionType: UUID.self) { selection in
                 projectContextMenu(selection)
             } primaryAction: { selection in
@@ -405,10 +410,12 @@ struct ProjectLibraryView: View {
             }
         }
         .frame(width: 310)
+        .background(BlitzUI.projectLibraryBackground)
     }
 
     private func sidebarRow(_ project: RecordingProjectHistory.Entry) -> some View {
         let metadata = metadataByProjectID[project.id] ?? .empty
+        let isHovering = hoveredSidebarProjectID == project.id
         return HStack(spacing: 10) {
             projectThumbnail(ThumbnailConfiguration(
                 metadata: metadata,
@@ -431,9 +438,29 @@ struct ProjectLibraryView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
+
+            Spacer(minLength: 0)
         }
+        .padding(.horizontal, 6)
         .padding(.vertical, 4)
+        .background(
+            isHovering ? Color.white.opacity(0.07) : .clear,
+            in: .rect(cornerRadius: 8)
+        )
         .contentShape(.rect)
+        .onContinuousHover { phase in
+            switch phase {
+            case .active:
+                hoveredSidebarProjectID = project.id
+                NSCursor.pointingHand.set()
+            case .ended:
+                if hoveredSidebarProjectID == project.id {
+                    hoveredSidebarProjectID = nil
+                    NSCursor.arrow.set()
+                }
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: isHovering)
     }
 
     @ViewBuilder
@@ -496,15 +523,28 @@ struct ProjectLibraryView: View {
 
                 Divider()
 
-                ScrollView {
-                    selectedProjectDetail(project)
-                        .frame(maxWidth: 720, alignment: .leading)
+                GeometryReader { proxy in
+                    let overviewLayout = ProjectLibraryOverviewSizing.layout(.init(
+                        viewportSize: proxy.size
+                    ))
+                    ScrollView {
+                        selectedProjectDetail(
+                            project,
+                            overviewLayout: overviewLayout
+                        )
+                        .frame(
+                            maxWidth: selectedDetailTab == .overview
+                                ? overviewLayout.contentWidth
+                                : 720,
+                            alignment: .leading
+                        )
                         .frame(maxWidth: .infinity, alignment: .top)
                         .padding(.horizontal, 34)
                         .padding(.vertical, 28)
+                    }
                 }
             }
-            .background(BlitzUI.canvasBackground)
+            .background(BlitzUI.projectLibraryBackground)
         } else {
             detailEmptyState
         }
@@ -545,12 +585,13 @@ struct ProjectLibraryView: View {
 
     @ViewBuilder
     private func selectedProjectDetail(
-        _ project: RecordingProjectHistory.Entry
+        _ project: RecordingProjectHistory.Entry,
+        overviewLayout: ProjectLibraryOverviewLayout
     ) -> some View {
         switch selectedDetailTab {
         case .overview:
             VStack(alignment: .leading, spacing: 24) {
-                detailPreview(project)
+                detailPreview(project, overviewLayout: overviewLayout)
                 detailMetadata(project)
             }
         case .transcript:
@@ -562,23 +603,49 @@ struct ProjectLibraryView: View {
 
     private var bulkSelectionDetail: some View {
         let projects = projects(for: selectedProjectIDs)
+        let summary = ProjectLibrarySelectionSummary(
+            projects.map { metadataByProjectID[$0.id] ?? .empty }
+        )
         return VStack(spacing: 18) {
-            Image(systemName: "rectangle.stack.badge.checkmark")
-                .font(.system(size: 32, weight: .semibold))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(BlitzUI.mint)
-                .frame(width: 64, height: 64)
-                .background(BlitzUI.mint.opacity(0.10), in: .circle)
+            HStack(alignment: .center, spacing: 24) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("\(projects.count) projects selected")
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.94))
 
-            VStack(spacing: 6) {
-                Text("\(projects.count) projects selected")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.94))
+                    Text("Choose a project below to view its details.")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.44))
+                }
 
-                Text("Command-click to add or remove projects. Shift-click selects a range.")
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.46))
+                Spacer(minLength: 16)
+
+                HStack(spacing: 8) {
+                    bulkMetric(.init(
+                        title: "Duration",
+                        value: summary.durationLabel,
+                        systemImage: "clock"
+                    ))
+                    bulkMetric(.init(
+                        title: "Size",
+                        value: summary.sizeLabel,
+                        systemImage: "externaldrive"
+                    ))
+                }
             }
+
+            ScrollView {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 280), spacing: 14)],
+                    spacing: 14
+                ) {
+                    ForEach(projects, id: \.id) { project in
+                        bulkProjectCard(project)
+                    }
+                }
+                .padding(1)
+            }
+            .frame(maxHeight: 520)
 
             HStack(spacing: 10) {
                 ProjectLibraryActionButton(configuration: .init(
@@ -607,23 +674,158 @@ struct ProjectLibraryView: View {
                 .pointingHandCursor()
             }
         }
+        .padding(.horizontal, 36)
+        .padding(.vertical, 30)
+        .frame(maxWidth: 1_040)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(BlitzUI.canvasBackground)
+        .background(BlitzUI.projectLibraryBackground)
+    }
+
+    private struct BulkMetricConfiguration {
+        let title: String
+        let value: String
+        let systemImage: String
+    }
+
+    private func bulkMetric(
+        _ configuration: BulkMetricConfiguration
+    ) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: configuration.systemImage)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(BlitzUI.mint)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(configuration.title)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.40))
+                Text(configuration.value)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.84))
+                    .monospacedDigit()
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(minWidth: 138, minHeight: 52, alignment: .leading)
+        .background(.white.opacity(0.04), in: .rect(cornerRadius: 11))
+        .overlay {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .stroke(.white.opacity(0.07), lineWidth: 1)
+        }
+    }
+
+    private func bulkProjectCard(
+        _ project: RecordingProjectHistory.Entry
+    ) -> some View {
+        let metadata = metadataByProjectID[project.id] ?? .empty
+        let isHovering = hoveredBulkProjectID == project.id
+        return Button {
+            selectedProjectIDs = [project.id]
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                GeometryReader { proxy in
+                    ZStack(alignment: .topTrailing) {
+                        projectThumbnail(.init(
+                            metadata: metadata,
+                            width: proxy.size.width,
+                            height: proxy.size.height,
+                            cornerRadius: 10,
+                            showsDuration: true
+                        ))
+
+                        Label("View project", systemImage: "arrow.up.right")
+                            .font(.system(size: 10.5, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.94))
+                            .padding(.horizontal, 10)
+                            .frame(height: 28)
+                            .background(.black.opacity(0.72), in: .capsule)
+                            .padding(10)
+                            .opacity(isHovering ? 1 : 0)
+                            .offset(y: isHovering ? 0 : -4)
+                    }
+                }
+                .frame(height: 146)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(displayTitle(project))
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white.opacity(isHovering ? 0.96 : 0.88))
+                        .lineLimit(1)
+
+                    HStack(spacing: 7) {
+                        Label(
+                            metadata.durationLabel ?? "—",
+                            systemImage: "clock"
+                        )
+                        Text("·")
+                        Text(metadata.sizeLabel ?? "Size unavailable")
+                        Spacer(minLength: 0)
+                    }
+                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.52))
+                    .lineLimit(1)
+
+                    Text(project.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.36))
+                        .lineLimit(1)
+                }
+                .padding(13)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                .white.opacity(isHovering ? 0.075 : 0.035),
+                in: .rect(cornerRadius: 13)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .stroke(
+                        isHovering
+                            ? BlitzUI.mint.opacity(0.38)
+                            : .white.opacity(0.065),
+                        lineWidth: 1
+                    )
+            }
+            .shadow(
+                color: .black.opacity(isHovering ? 0.30 : 0.12),
+                radius: isHovering ? 14 : 5,
+                y: isHovering ? 7 : 2
+            )
+            .scaleEffect(isHovering ? 1.012 : 1)
+            .contentShape(.rect(cornerRadius: 13))
+        }
+        .buttonStyle(ProjectLibraryPressButtonStyle())
+        .onContinuousHover { phase in
+            switch phase {
+            case .active:
+                hoveredBulkProjectID = project.id
+                NSCursor.pointingHand.set()
+            case .ended:
+                if hoveredBulkProjectID == project.id {
+                    hoveredBulkProjectID = nil
+                }
+                NSCursor.arrow.set()
+            }
+        }
+        .animation(.easeOut(duration: 0.16), value: isHovering)
+        .help("View \(displayTitle(project))")
     }
 
     private func detailPreview(
-        _ project: RecordingProjectHistory.Entry
+        _ project: RecordingProjectHistory.Entry,
+        overviewLayout: ProjectLibraryOverviewLayout
     ) -> some View {
         let metadata = metadataByProjectID[project.id] ?? .empty
         return HStack(spacing: 0) {
             Spacer(minLength: 0)
-            ProjectLibraryPlayerSurface(
+            ProjectLibraryPlayerSurface(configuration: .init(
                 controller: projectPlayback,
                 isCurrentProject: playbackProjectID == project.id,
                 fallbackThumbnail: metadata.thumbnail,
                 waveformSamples: playbackWaveformSamples,
-                loadError: playbackLoadError ?? projectPlayback.loadError
-            )
+                loadError: playbackLoadError ?? projectPlayback.loadError,
+                maximumSize: overviewLayout.playerMaximumSize
+            ))
             Spacer(minLength: 0)
         }
     }
@@ -632,6 +834,9 @@ struct ProjectLibraryView: View {
         _ project: RecordingProjectHistory.Entry
     ) -> some View {
         let status = vm.transcriptionController.status(for: project)
+        let recordedAt = project.createdAt
+            ?? RecordingProjectDisplayTitle.timestampDate(from: project.title)
+            ?? project.updatedAt
         return HStack(alignment: .center, spacing: 20) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(displayTitle(project))
@@ -640,7 +845,11 @@ struct ProjectLibraryView: View {
                     .lineLimit(2)
 
                 HStack(spacing: 8) {
-                    Text(project.updatedAt.formatted(date: .long, time: .shortened))
+                    Text("Recorded \(recordedAt.formatted(date: .long, time: .shortened))")
+                    if abs(project.updatedAt.timeIntervalSince(recordedAt)) > 1 {
+                        Text("·")
+                        Text("Edited \(project.updatedAt.formatted(date: .omitted, time: .shortened))")
+                    }
                     Text("·")
                     Text(transcriptStatusLabel(status))
                         .foregroundStyle(transcriptStatusColor(status))
@@ -948,7 +1157,17 @@ struct ProjectLibraryView: View {
                 path: project.projectPath
             ))
 
-            if let finalVideoPath = project.finalVideoPath {
+            if let exports = project.exports, !exports.isEmpty {
+                ForEach(Array(exports.reversed())) { export in
+                    fileLocation(FileLocationRequest(
+                        systemImage: "film",
+                        title: "Export · \(export.framesPerSecond) fps",
+                        detail: "\(export.format.uppercased()) · \(export.resolution) · "
+                            + export.createdAt.formatted(date: .abbreviated, time: .shortened),
+                        path: export.path
+                    ))
+                }
+            } else if let finalVideoPath = project.finalVideoPath {
                 fileLocation(FileLocationRequest(
                     systemImage: "film",
                     title: "Exported video",
@@ -1028,7 +1247,7 @@ struct ProjectLibraryView: View {
             .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(BlitzUI.canvasBackground)
+        .background(BlitzUI.projectLibraryBackground)
     }
 
     private func projectThumbnail(
@@ -1195,13 +1414,7 @@ struct ProjectLibraryView: View {
     private func displayTitle(
         _ project: RecordingProjectHistory.Entry
     ) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd-HH-mm-ss"
-        let prefix = String(project.title.prefix(19))
-        if formatter.date(from: prefix) != nil {
-            return "Recording at \(project.updatedAt.formatted(date: .omitted, time: .shortened))"
-        }
-        return project.title
+        project.displayTitle
     }
 
     private func sidebarDetail(_ request: SidebarDetailRequest) -> String {

@@ -165,7 +165,7 @@ final class TakeFinalizer {
                     settings: finalizationSettings,
                     sceneEvents: sceneEvents
                 )
-                return .recoveryFiles(processedTake, reason: "Transparent webcam save failed: \(error.recorderFailureDescription)")
+                return .recoveryFiles(processedTake, reason: "Transparent camera save failed: \(error.recorderFailureDescription)")
             }
         case .recoverNoVideo(let reason):
             onRenderProgress?(0)
@@ -370,7 +370,7 @@ final class TakeFinalizer {
         }
 
         do {
-            onMessage?("Removing webcam background...")
+            onMessage?("Removing camera background...")
             onRenderProgress?(0)
             let baseName = take.cameraURL.deletingPathExtension().lastPathComponent
             let processedURL = take.cameraURL
@@ -386,14 +386,14 @@ final class TakeFinalizer {
             onRenderProgress?(1)
             return replaceCameraURL(in: take, with: outputURL)
         } catch {
-            onMessage?("Webcam background removal skipped: \(error.recorderFailureDescription)")
+            onMessage?("Camera background removal skipped: \(error.recorderFailureDescription)")
             onRenderProgress?(0)
             return take
         }
     }
 
     private func saveTransparentCameraOnly(take: RecordingTake, settings: RecordingSettings) throws -> URL {
-        onMessage?("Saving transparent webcam video...")
+        onMessage?("Saving transparent camera video...")
         try FileManager.default.createDirectory(
             at: settings.outputDirectory,
             withIntermediateDirectories: true

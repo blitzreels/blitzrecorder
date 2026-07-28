@@ -29,6 +29,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var currentRecordingState: RecordingState = .idle
     private var idlePreviewRestartTask: Task<Void, Never>?
     private var studioModeCaptureResourceTask: Task<Void, Never>?
+    var onEditorHistoryChanged: (() -> Void)? {
+        didSet {
+            viewModel.onEditorHistoryChanged = onEditorHistoryChanged
+        }
+    }
+
+    var canUndoEditor: Bool { viewModel.canUndoEditor }
+    var canRedoEditor: Bool { viewModel.canRedoEditor }
+    var editorUndoTitle: String { viewModel.editorUndoTitle }
+    var editorRedoTitle: String { viewModel.editorRedoTitle }
 
     init(coordinator: RecorderCoordinator) {
         self.coordinator = coordinator
@@ -342,6 +352,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func applyExportFailure(_ message: String?) {
         viewModel.applyExportFailure(message)
+    }
+
+    func undoEditor() {
+        viewModel.undoEditor()
+    }
+
+    func redoEditor() {
+        viewModel.redoEditor()
     }
 
     func updateRenderProgress(_ progress: Double) {

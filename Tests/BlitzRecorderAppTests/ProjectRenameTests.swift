@@ -3,6 +3,35 @@ import XCTest
 @testable import BlitzRecorderApp
 
 final class ProjectRenameTests: XCTestCase {
+    func testOnlyTimestampTitlesAreEligibleForAutomaticRename() {
+        XCTAssertTrue(RecordingProjectDisplayTitle.isUntitled("2026-07-28-15-57-24"))
+        XCTAssertFalse(RecordingProjectDisplayTitle.isUntitled("Building an AI Video Editor"))
+    }
+
+    func testTimestampProjectDisplayTitleUsesRecordingDateInsteadOfEditDate() {
+        let createdAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let updatedAt = createdAt.addingTimeInterval(3_600)
+        let entry = RecordingProjectHistory.Entry(
+            id: UUID(),
+            title: "2026-07-28-15-57-24",
+            projectPath: "/tmp/project.json",
+            takeDirectoryPath: "/tmp/take",
+            finalVideoPath: nil,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            exports: nil
+        )
+
+        XCTAssertEqual(
+            entry.displayTitle,
+            "Recording at \(createdAt.formatted(date: .omitted, time: .shortened))"
+        )
+        XCTAssertNotEqual(
+            entry.displayTitle,
+            "Recording at \(updatedAt.formatted(date: .omitted, time: .shortened))"
+        )
+    }
+
     func testRenamePersistsProjectTitleAndHistory() throws {
         let outputDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

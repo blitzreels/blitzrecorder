@@ -51,6 +51,27 @@ struct SceneLibrary: Codable, Equatable {
         }
     }
 
+    @discardableResult
+    mutating func migrateCanonicalCameraNames() -> Bool {
+        let replacements = [
+            "Screen + Cam": "Screen + Camera",
+            "Cam Only": "Camera Only",
+            "Cam Corner": "Camera Inset",
+            "Cam Left": "Camera Left"
+        ]
+        var changed = false
+        for layout in CaptureLayout.allCases {
+            guard var scenes = scenesByLayout[layout] else { continue }
+            for index in scenes.indices {
+                guard let replacement = replacements[scenes[index].name] else { continue }
+                scenes[index].name = replacement
+                changed = true
+            }
+            scenesByLayout[layout] = scenes
+        }
+        return changed
+    }
+
     func scenes(for layout: CaptureLayout) -> [RecordingSceneDefinition] {
         scenesByLayout[layout] ?? []
     }
@@ -180,17 +201,17 @@ struct SceneLibrary: Codable, Equatable {
         switch layout {
         case .vertical:
             return [
-                makeScene(name: "Screen + Cam", layout: .vertical, preset: .screenTop50),
+                makeScene(name: "Screen + Camera", layout: .vertical, preset: .screenTop50),
                 makeScene(name: "Screen Only", layout: .vertical, preset: .screenFullscreen),
-                makeScene(name: "Cam Only", layout: .vertical, preset: .webcamFullscreen),
-                makeScene(name: "Cam Corner", layout: .vertical, preset: .cameraInset)
+                makeScene(name: "Camera Only", layout: .vertical, preset: .webcamFullscreen),
+                makeScene(name: "Camera Inset", layout: .vertical, preset: .cameraInset)
             ]
         case .horizontal:
             return [
-                makeScene(name: "Screen + Cam", layout: .horizontal, preset: .cameraInset),
+                makeScene(name: "Screen + Camera", layout: .horizontal, preset: .cameraInset),
                 makeScene(name: "Screen Only", layout: .horizontal, preset: .screenFullscreen),
-                makeScene(name: "Cam Only", layout: .horizontal, preset: .webcamFullscreen),
-                makeScene(name: "Cam Left", layout: .horizontal, preset: .webcamLeft)
+                makeScene(name: "Camera Only", layout: .horizontal, preset: .webcamFullscreen),
+                makeScene(name: "Camera Left", layout: .horizontal, preset: .webcamLeft)
             ]
         }
     }
@@ -262,13 +283,13 @@ struct RecordingSceneDefinition: Identifiable, Codable, Equatable {
     static func defaultName(for settings: RecordingSettings) -> String {
         let visible = settings.visibleSources
         if visible.contains(.screen), visible.contains(.camera) {
-            return "Screen + Cam"
+            return "Screen + Camera"
         }
         if visible.contains(.screen) {
             return "Screen Only"
         }
         if visible.contains(.camera) {
-            return "Cam Only"
+            return "Camera Only"
         }
         return "Scene"
     }
@@ -371,6 +392,9 @@ enum SceneLibraryStore {
         }
         for layout in CaptureLayout.allCases {
             library.ensureScenes(for: layout)
+        }
+        if library.migrateCanonicalCameraNames() {
+            save(library, defaults: defaults)
         }
         return library
     }

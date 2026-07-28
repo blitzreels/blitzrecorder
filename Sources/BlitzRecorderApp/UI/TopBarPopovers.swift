@@ -335,7 +335,7 @@ private struct LocalTranscriptionSettings: View {
                 .foregroundStyle(.white.opacity(0.52))
 
             Toggle(
-                "Automatically transcribe finished recordings",
+                "Automatically transcribe and title recordings",
                 isOn: $controller.isAutomaticEnabled
             )
             .font(.system(size: 10, weight: .semibold))

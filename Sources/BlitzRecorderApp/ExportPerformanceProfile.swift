@@ -9,13 +9,26 @@ enum ExportPerformancePreset: String, CaseIterable {
     var displayName: String {
         switch self {
         case .fast:
-            "Fast"
+            "Smaller"
         case .balanced:
-            "Balanced"
+            "Recommended"
         case .maximum:
-            "Maximum"
+            "Best"
         case .custom:
             "Custom"
+        }
+    }
+
+    var plainDescription: String {
+        switch self {
+        case .fast:
+            "1080p · up to 30 fps · standard quality"
+        case .balanced:
+            "1080p · source fps · high quality"
+        case .maximum:
+            "Source resolution and fps · maximum quality"
+        case .custom:
+            "Uses the format, resolution, frame rate, and quality below"
         }
     }
 }
@@ -90,10 +103,13 @@ struct ExportPerformanceProfile: Equatable {
     }
 
     var reducesExpensiveEffects: Bool {
-        preset == .fast
+        false
     }
 
     private static func normalizedFramesPerSecond(_ value: Int) -> Int {
-        value <= 30 ? 30 : 60
+        if RecordingSettings.supportedFrameRates.contains(value) {
+            return value
+        }
+        return value < 60 ? 30 : 60
     }
 }

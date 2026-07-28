@@ -45,6 +45,37 @@ enum EditorPlaybackClockSelection {
     }
 }
 
+enum EditorPlaybackRate: Float, CaseIterable, Equatable {
+    case normal = 1
+    case oneAndAHalf = 1.5
+    case double = 2
+    case twoAndAHalf = 2.5
+
+    var displayName: String {
+        switch self {
+        case .normal:
+            "1×"
+        case .oneAndAHalf:
+            "1.5×"
+        case .double:
+            "2×"
+        case .twoAndAHalf:
+            "2.5×"
+        }
+    }
+
+    var nextFaster: EditorPlaybackRate {
+        switch self {
+        case .normal:
+            .oneAndAHalf
+        case .oneAndAHalf:
+            .double
+        case .double, .twoAndAHalf:
+            .twoAndAHalf
+        }
+    }
+}
+
 private struct EditorPlaybackMediaSignature: Equatable {
     let version: Int
     let id: UUID
@@ -87,6 +118,7 @@ final class EditorPlaybackController {
     private(set) var hiddenKinds: Set<SceneLayerKind> = []
     private(set) var mutedSources: Set<CaptureSource> = []
     private(set) var previewSceneRevision = 0
+    private(set) var playbackRate = EditorPlaybackRate.normal
 
     @ObservationIgnored private var playback: EditorPlaybackComposition?
     @ObservationIgnored private var videoPlayers: [SceneLayerKind: AVPlayer] = [:]
@@ -163,13 +195,7 @@ final class EditorPlaybackController {
             renderSize = playback.renderSize
             previewSceneOverride = nil
             previewSceneRevision &+= 1
-            if isSameProject {
-                hiddenKinds.formIntersection(Set(playback.videoKinds))
-                mutedSources.formIntersection(Set(playback.audioInputs.map(\.source)))
-            } else {
-                hiddenKinds = []
-                mutedSources = []
-            }
+            applyEditorState(project.editorState)
 
             try await buildPlayers(playback: playback)
             playbackClockPlayer = await selectPlaybackClockPlayer()
@@ -235,6 +261,7 @@ final class EditorPlaybackController {
         for kind in playback.videoKinds {
             guard let asset = playback.videoAsset(for: kind) else { continue }
             let item = AVPlayerItem(asset: asset)
+            item.audioTimePitchAlgorithm = .timeDomain
             let player = AVPlayer(playerItem: item)
             player.automaticallyWaitsToMinimizeStalling = false
             player.isMuted = true
@@ -262,6 +289,7 @@ final class EditorPlaybackController {
         audioComposition = composition
         audioMixTracks = mixTracks
         let item = AVPlayerItem(asset: composition)
+        item.audioTimePitchAlgorithm = .timeDomain
         item.audioMix = audioMix()
         let player = AVPlayer(playerItem: item)
         player.automaticallyWaitsToMinimizeStalling = false
@@ -330,12 +358,36 @@ final class EditorPlaybackController {
         isPlaying = true
     }
 
+    func setPlaybackRate(_ rate: EditorPlaybackRate) {
+        guard playbackRate != rate else { return }
+        playbackRate = rate
+        guard isPlaying else { return }
+        if let seconds = masterPlayer?.currentTime().seconds, seconds.isFinite {
+            currentTime = clampedTime(seconds)
+        }
+        playAll()
+    }
+
+    func playForwardOrIncreaseRate() {
+        guard isReady, masterPlayer != nil else { return }
+        if !isPlaying {
+            playbackRate = .normal
+            togglePlayback()
+            return
+        }
+        setPlaybackRate(playbackRate.nextFaster)
+    }
+
     private func playAll() {
         let now = CMClockGetTime(CMClockGetHostTimeClock())
         let hostTime = CMTimeAdd(now, CMTime(seconds: 0.06, preferredTimescale: 600))
         for player in allPlayers {
             let clamped = itemClampedTime(currentTime, for: player)
-            player.setRate(1, time: CMTime(seconds: clamped, preferredTimescale: 600), atHostTime: hostTime)
+            player.setRate(
+                playbackRate.rawValue,
+                time: CMTime(seconds: clamped, preferredTimescale: 600),
+                atHostTime: hostTime
+            )
         }
     }
 
@@ -423,6 +475,15 @@ final class EditorPlaybackController {
     func setMuted(_ muted: Bool, source: CaptureSource) {
         guard playback != nil else { return }
         if muted { mutedSources.insert(source) } else { mutedSources.remove(source) }
+        audioPlayer?.currentItem?.audioMix = audioMix()
+    }
+
+    func applyEditorState(_ state: RecordingProject.EditorStateSnapshot) {
+        hiddenKinds = Set(state.hiddenVideoSources.compactMap(SceneLayerKind.init(rawValue:)))
+        mutedSources = Set(state.mutedAudioSources.compactMap(CaptureSource.init(rawValue:)))
+        hiddenKinds.formIntersection(hideableKinds)
+        mutedSources.formIntersection(muteableSources)
+        applyPreviewDuration()
         audioPlayer?.currentItem?.audioMix = audioMix()
     }
 

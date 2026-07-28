@@ -149,8 +149,8 @@ struct RecordingSettingsPage: View {
                 )
             ) {
                 rowLabel(RowLabelConfiguration(
-                    title: "Automatic transcription",
-                    detail: "Transcribe finished recordings locally on this Mac."
+                    title: "Automatic transcript and title",
+                    detail: "Transcribe finished recordings and rename them from their content."
                 ))
             }
             .toggleStyle(.switch)

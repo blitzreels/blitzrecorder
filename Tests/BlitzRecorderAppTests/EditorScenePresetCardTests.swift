@@ -4,6 +4,12 @@ import XCTest
 @testable import BlitzRecorderApp
 
 final class EditorScenePresetCardTests: XCTestCase {
+    func testFullscreenPresetsSelectTheMatchingVideoSource() {
+        XCTAssertEqual(EditorScenePresetSourceCorrection.correction(for: .screenFullscreen), .screenOnly)
+        XCTAssertEqual(EditorScenePresetSourceCorrection.correction(for: .webcamFullscreen), .cameraOnly)
+        XCTAssertNil(EditorScenePresetSourceCorrection.correction(for: .cameraInset))
+    }
+
     @MainActor
     func testEntireVisibleSplitCardSurfaceAppliesPreset() throws {
         var pressCount = 0

@@ -79,9 +79,29 @@ enum ScreenCaptureAreaSelection: Equatable {
     case manualCrop
 }
 
+struct EditorProjectSceneCorrectionRequest {
+    let eventIndex: Int
+    let correction: RecordingProjectSceneCorrection
+}
+
+struct EditorProjectStateUpdateRequest {
+    let editorState: RecordingProject.EditorStateSnapshot
+    let actionName: String
+}
+
 @Observable
 @MainActor
 final class RecorderViewModel {
+    private struct EditorHistoryEntry {
+        let project: RecordingProject
+        let actionName: String
+    }
+
+    private struct EditorMutationRegistration {
+        let previousProject: RecordingProject?
+        let actionName: String
+    }
+
     struct WindowSourceSelectionContext {
         let currentSource: ScreenSourceBinding
         let targetWindow: TargetWindowInfo?
@@ -149,6 +169,11 @@ final class RecorderViewModel {
     @ObservationIgnored var onProjectOpened: (() -> Void)?
     @ObservationIgnored var onFillEditorWindow: (() -> Void)?
     @ObservationIgnored var onStudioModeChanged: ((StudioMode) -> Void)?
+    @ObservationIgnored var onEditorHistoryChanged: (() -> Void)?
+    @ObservationIgnored private var automaticTitleTasks: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored private var editorUndoStack: [EditorHistoryEntry] = []
+    @ObservationIgnored private var editorRedoStack: [EditorHistoryEntry] = []
+    private var editorHistoryRevision = 0
     var inspectorSelection: RecorderInspectorSelection = .canvas
     var isCameraCropModeEnabled = false
     var isScreenCropModeEnabled = false
@@ -169,6 +194,26 @@ final class RecorderViewModel {
 
     var selectedSource: SourceSelection? {
         inspectorSelection.source.map(SourceSelection.init(source:))
+    }
+
+    var canUndoEditor: Bool {
+        _ = editorHistoryRevision
+        return studioMode == .edit && !editorUndoStack.isEmpty
+    }
+
+    var canRedoEditor: Bool {
+        _ = editorHistoryRevision
+        return studioMode == .edit && !editorRedoStack.isEmpty
+    }
+
+    var editorUndoTitle: String {
+        guard let actionName = editorUndoStack.last?.actionName else { return "Undo" }
+        return "Undo \(actionName)"
+    }
+
+    var editorRedoTitle: String {
+        guard let actionName = editorRedoStack.last?.actionName else { return "Redo" }
+        return "Redo \(actionName)"
     }
 
     var selectedLayer: SceneLayerKind {
@@ -594,6 +639,9 @@ final class RecorderViewModel {
         self.targetWindowZoom = coordinator.settings.screenWindowZoom
         self.showsFirstRunOnboarding = ProcessInfo.processInfo.environment["BLITZRECORDER_FORCE_ONBOARDING"] == "1"
             || !UserDefaults.standard.bool(forKey: Self.firstRunOnboardingKey)
+        transcriptionController.onTranscriptionCompleted = { [weak self] completion in
+            self?.generateAutomaticProjectTitle(completion)
+        }
         refreshRecentProjects()
         syncScreenCaptureAreaSelection()
         elapsedClock.onElapsedSecondsChanged = { [weak self] elapsedSeconds in
@@ -666,6 +714,7 @@ final class RecorderViewModel {
             lastExportWarning = nil
             lastExportedProject = nil
             lastPostRecordingProjectOutput = nil
+            clearEditorHistory()
             studioMode = .record
             lastRecoveryOutput = nil
         case .recording:
@@ -686,6 +735,7 @@ final class RecorderViewModel {
     }
 
     func applySavedRecordingOutput(_ output: SavedRecordingOutput) {
+        let keepsEditorOpen = studioMode == .edit
         lastExportError = nil
         lastExportSucceededURL = output.url
         lastExportedURL = output.url
@@ -695,7 +745,10 @@ final class RecorderViewModel {
         lastPostRecordingProjectOutput = nil
         refreshRecentProjects()
         refreshLastExportedProject()
-        studioMode = .record
+        if !keepsEditorOpen {
+            clearEditorHistory()
+            studioMode = .record
+        }
     }
 
     func applyPostRecordingProjectOutput(_ output: PostRecordingProjectOutput) {
@@ -707,6 +760,7 @@ final class RecorderViewModel {
         refreshRecentProjects()
         refreshLastExportedProject()
         transcriptionController.enqueueProject(output.projectURL)
+        clearEditorHistory()
         studioMode = .record
     }
 
@@ -717,6 +771,7 @@ final class RecorderViewModel {
         lastExportWarning = nil
         lastPostRecordingProjectOutput = nil
         lastExportedProject = nil
+        clearEditorHistory()
         studioMode = .record
         refreshRecentProjects()
     }
@@ -2055,11 +2110,13 @@ final class RecorderViewModel {
     }
 
     func showRecorder() {
+        clearEditorHistory()
         studioMode = .record
     }
 
     func showProjects() {
         guard state == .idle else { return }
+        clearEditorHistory()
         refreshRecentProjects()
         guard !recentProjects.isEmpty else {
             studioMode = .record
@@ -2118,6 +2175,46 @@ final class RecorderViewModel {
         }
     }
 
+    private func generateAutomaticProjectTitle(
+        _ completion: CompletedTranscription
+    ) {
+        guard transcriptionController.isAutomaticEnabled,
+              case .project(let projectURL) = completion.source,
+              automaticTitleTasks[projectURL.path] == nil else {
+            return
+        }
+        automaticTitleTasks[projectURL.path] = Task { [weak self] in
+            guard let self else { return }
+            defer { automaticTitleTasks[projectURL.path] = nil }
+            do {
+                let fileStore = TakeFileStore()
+                let project = try fileStore.loadRecordingProject(at: projectURL)
+                guard RecordingProjectDisplayTitle.isUntitled(project.title) else { return }
+                let title = try await TitleGenerator().title(
+                    TitleGenerator.TranscriptTitleRequest(
+                        transcript: completion.transcript.text
+                    )
+                )
+                let currentProject = try fileStore.loadRecordingProject(at: projectURL)
+                guard RecordingProjectDisplayTitle.isUntitled(currentProject.title) else { return }
+                let renamedProject = try fileStore.renameProject(
+                    RecordingProjectRenameRequest(
+                        projectURL: projectURL,
+                        title: title,
+                        settings: settings
+                    )
+                )
+                if lastExportedProject?.id == renamedProject.id {
+                    lastExportedProject = renamedProject
+                }
+                refreshRecentProjects()
+                detailMessage = "Transcript ready · Renamed to \(title)"
+            } catch {
+                detailMessage = "Transcript ready · Automatic title skipped: \(error.localizedDescription)"
+            }
+        }
+    }
+
     func openProject(_ project: RecordingProjectHistory.Entry) {
         let projectURL = URL(fileURLWithPath: project.projectPath)
         let sourceDirectory = URL(fileURLWithPath: project.takeDirectoryPath, isDirectory: true)
@@ -2132,6 +2229,7 @@ final class RecorderViewModel {
             lastExportedSourceTakeURL = sourceDirectory
             lastExportWarning = nil
             lastRecoveryOutput = nil
+            clearEditorHistory()
             studioMode = .edit
             onProjectOpened?()
         } catch {
@@ -2167,6 +2265,7 @@ final class RecorderViewModel {
                 lastRecoveryOutput = nil
                 lastPostRecordingProjectOutput = nil
                 lastExportedProject = nil
+                clearEditorHistory()
             }
             refreshRecentProjects()
             studioMode = canShowProjects ? .projects : .record
@@ -2181,12 +2280,7 @@ final class RecorderViewModel {
             detailMessage = "No editable project is available for this recording."
             return
         }
-        let rawTitle = project.title
-            .replacingOccurrences(of: "/", with: "-")
-            .replacingOccurrences(of: ":", with: "-")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let safeTitle = rawTitle.isEmpty ? "BlitzRecorder export" : rawTitle
-        let baseName = (safeTitle as NSString).deletingPathExtension
+        let baseName = ProjectExportFilename.slug(from: project.title)
         let destinationURL = coordinator.uniqueOutputURL(
             settings.outputDirectory
                 .appendingPathComponent(baseName)
@@ -2236,6 +2330,7 @@ final class RecorderViewModel {
     }
 
     func openEditor() {
+        clearEditorHistory()
         refreshLastExportedProject()
         if lastExportedProject == nil {
             detailMessage = "This take's project file could not be opened."
@@ -2244,24 +2339,30 @@ final class RecorderViewModel {
     }
 
     func closeEditor() {
+        clearEditorHistory()
         studioMode = .record
     }
 
-    func applyProjectSceneCorrection(eventIndex: Int, correction: RecordingProjectSceneCorrection) {
+    @discardableResult
+    func applyProjectSceneCorrection(_ request: EditorProjectSceneCorrectionRequest) -> Bool {
         guard let projectURL = lastExportedProjectURL else {
             detailMessage = "No editable project is available for this recording."
-            return
+            return false
         }
+        let previousProject = lastExportedProject
         do {
             lastExportedProject = try coordinator.updateProjectScene(
                 at: projectURL,
-                eventIndex: eventIndex,
-                correction: correction
+                eventIndex: request.eventIndex,
+                correction: request.correction
             )
             refreshRecentProjects()
             detailMessage = "Updated project segment. Export again to render the correction."
+            recordEditorMutation(.init(previousProject: previousProject, actionName: "Change Scene"))
+            return true
         } catch {
             detailMessage = error.localizedDescription
+            return false
         }
     }
 
@@ -2271,12 +2372,40 @@ final class RecorderViewModel {
             detailMessage = "No editable project is available for this recording."
             return false
         }
+        let previousProject = lastExportedProject
         do {
             lastExportedProject = try coordinator.updateProjectScene(
                 at: projectURL,
                 eventIndex: eventIndex,
                 mutate: mutate
             )
+            recordEditorMutation(.init(previousProject: previousProject, actionName: "Edit Scene"))
+            return true
+        } catch {
+            detailMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    @discardableResult
+    func applyProjectEditorState(_ request: EditorProjectStateUpdateRequest) -> Bool {
+        guard let projectURL = lastExportedProjectURL else {
+            detailMessage = "No editable project is available for this recording."
+            return false
+        }
+        guard lastExportedProject?.editorState != request.editorState else { return true }
+        let previousProject = lastExportedProject
+        do {
+            lastExportedProject = try coordinator.updateProjectEditorState(.init(
+                projectURL: projectURL,
+                editorState: request.editorState,
+                baseSettings: settings
+            ))
+            refreshRecentProjects()
+            recordEditorMutation(.init(
+                previousProject: previousProject,
+                actionName: request.actionName
+            ))
             return true
         } catch {
             detailMessage = error.localizedDescription
@@ -2294,6 +2423,7 @@ final class RecorderViewModel {
             detailMessage = "Move the playhead before the end before splitting."
             return false
         }
+        let previousProject = lastExportedProject
         do {
             lastExportedProject = try coordinator.insertProjectSceneEvent(
                 at: projectURL,
@@ -2301,6 +2431,7 @@ final class RecorderViewModel {
             )
             refreshRecentProjects()
             detailMessage = "Split scene at \(formatProjectEditTime(time))."
+            recordEditorMutation(.init(previousProject: previousProject, actionName: "Split Scene"))
             return true
         } catch {
             detailMessage = error.localizedDescription
@@ -2314,6 +2445,7 @@ final class RecorderViewModel {
             detailMessage = "No editable project is available for this recording."
             return false
         }
+        let previousProject = lastExportedProject
         do {
             lastExportedProject = try coordinator.removeProjectSceneEvent(
                 at: projectURL,
@@ -2321,11 +2453,75 @@ final class RecorderViewModel {
             )
             refreshRecentProjects()
             detailMessage = "Deleted scene change."
+            recordEditorMutation(.init(previousProject: previousProject, actionName: "Delete Scene Change"))
             return true
         } catch {
             detailMessage = error.localizedDescription
             return false
         }
+    }
+
+    func undoEditor() {
+        guard canUndoEditor,
+              let entry = editorUndoStack.popLast(),
+              let currentProject = lastExportedProject else { return }
+        do {
+            lastExportedProject = try restoreEditorProject(entry.project)
+            editorRedoStack.append(.init(project: currentProject, actionName: entry.actionName))
+            detailMessage = "Undid \(entry.actionName.lowercased())."
+            notifyEditorHistoryChanged()
+        } catch {
+            editorUndoStack.append(entry)
+            detailMessage = error.localizedDescription
+            notifyEditorHistoryChanged()
+        }
+    }
+
+    func redoEditor() {
+        guard canRedoEditor,
+              let entry = editorRedoStack.popLast(),
+              let currentProject = lastExportedProject else { return }
+        do {
+            lastExportedProject = try restoreEditorProject(entry.project)
+            editorUndoStack.append(.init(project: currentProject, actionName: entry.actionName))
+            detailMessage = "Redid \(entry.actionName.lowercased())."
+            notifyEditorHistoryChanged()
+        } catch {
+            editorRedoStack.append(entry)
+            detailMessage = error.localizedDescription
+            notifyEditorHistoryChanged()
+        }
+    }
+
+    private func restoreEditorProject(_ snapshot: RecordingProject) throws -> RecordingProject {
+        try coordinator.restoreProjectSceneTimeline(.init(
+            projectURL: URL(fileURLWithPath: snapshot.projectPath),
+            snapshot: snapshot,
+            baseSettings: settings
+        ))
+    }
+
+    private func recordEditorMutation(_ registration: EditorMutationRegistration) {
+        guard let previousProject = registration.previousProject,
+              previousProject != lastExportedProject else { return }
+        editorUndoStack.append(.init(project: previousProject, actionName: registration.actionName))
+        if editorUndoStack.count > 100 {
+            editorUndoStack.removeFirst(editorUndoStack.count - 100)
+        }
+        editorRedoStack.removeAll()
+        notifyEditorHistoryChanged()
+    }
+
+    private func clearEditorHistory() {
+        guard !editorUndoStack.isEmpty || !editorRedoStack.isEmpty else { return }
+        editorUndoStack.removeAll()
+        editorRedoStack.removeAll()
+        notifyEditorHistoryChanged()
+    }
+
+    private func notifyEditorHistoryChanged() {
+        editorHistoryRevision &+= 1
+        onEditorHistoryChanged?()
     }
 
     func revealLastSourceTracks() {
@@ -2380,6 +2576,7 @@ final class RecorderViewModel {
         lastRecoveryOutput = nil
         lastPostRecordingProjectOutput = nil
         lastExportedProject = nil
+        clearEditorHistory()
         studioMode = .record
         detailMessage = ""
     }

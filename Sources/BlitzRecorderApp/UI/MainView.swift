@@ -1696,7 +1696,7 @@ private struct SceneWorkspaceInspector: View {
         case .cameraInset:
             return "Inset: full screen with the camera in a corner bubble."
         case .webcamLeft:
-            return "Left Cam: camera on the left, screen on the right."
+            return "Camera Left: camera on the left, screen on the right."
         case .screenFullscreen:
             return "Screen: screen fills the frame, camera hidden."
         case .webcamFullscreen:

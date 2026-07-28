@@ -2,7 +2,7 @@
 import XCTest
 
 final class ExportPerformanceProfileTests: XCTestCase {
-    func testFastProfileUses1080p30AndDisablesShadows() {
+    func testSmallerProfileUses1080p30AndPreservesCreativeEffects() {
         let profile = profile(.fast)
         var settings = RecordingSettings()
         settings.screenShadowEnabled = true
@@ -13,10 +13,10 @@ final class ExportPerformanceProfileTests: XCTestCase {
         XCTAssertEqual(profile.resolution, .p1080)
         XCTAssertEqual(profile.framesPerSecond, 30)
         XCTAssertEqual(profile.videoQuality, .standard)
-        XCTAssertFalse(appliedSettings.screenShadowEnabled)
-        XCTAssertFalse(appliedSettings.cameraShadowEnabled)
-        XCTAssertFalse(appliedScene.screenShadowEnabled)
-        XCTAssertFalse(appliedScene.cameraShadowEnabled)
+        XCTAssertTrue(appliedSettings.screenShadowEnabled)
+        XCTAssertTrue(appliedSettings.cameraShadowEnabled)
+        XCTAssertTrue(appliedScene.screenShadowEnabled)
+        XCTAssertTrue(appliedScene.cameraShadowEnabled)
     }
 
     func testBalancedProfileUses1080pAtSourceFrameRate() {
@@ -35,7 +35,7 @@ final class ExportPerformanceProfileTests: XCTestCase {
         XCTAssertEqual(profile.videoQuality, .maximum)
     }
 
-    func testCustomProfileNormalizesFrameRateAndAppliesBitrateAfterResolution() {
+    func testCustomProfilePreserves24FPSAndAppliesBitrateAfterResolution() {
         let profile = ExportPerformanceProfile.resolved(
             preset: .custom,
             sourceResolution: .p2160,
@@ -46,10 +46,23 @@ final class ExportPerformanceProfileTests: XCTestCase {
         )
         let settings = profile.applying(to: RecordingSettings())
 
-        XCTAssertEqual(profile.framesPerSecond, 30)
+        XCTAssertEqual(profile.framesPerSecond, 24)
         XCTAssertEqual(settings.outputResolution, .p1440)
-        XCTAssertEqual(settings.framesPerSecond, 30)
+        XCTAssertEqual(settings.framesPerSecond, 24)
         XCTAssertEqual(settings.finalVideoBitrate, settings.autoVideoBitrate)
+    }
+
+    func testBalancedProfilePreserves24FPSSource() {
+        let profile = ExportPerformanceProfile.resolved(
+            preset: .balanced,
+            sourceResolution: .p1080,
+            sourceFramesPerSecond: 24,
+            customResolution: .p1080,
+            customFramesPerSecond: 30,
+            customVideoQuality: .high
+        )
+
+        XCTAssertEqual(profile.framesPerSecond, 24)
     }
 
     private func profile(_ preset: ExportPerformancePreset) -> ExportPerformanceProfile {

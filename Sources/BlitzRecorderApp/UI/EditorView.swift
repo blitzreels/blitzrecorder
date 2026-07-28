@@ -14,6 +14,28 @@ private struct EditorToolbarPressButtonStyle: ButtonStyle {
     }
 }
 
+private struct EditorExportOptionButtonStyle: ButtonStyle {
+    let isSelected: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(isSelected ? BlitzUI.mint : Color.white.opacity(0.68))
+            .background(
+                isSelected ? BlitzUI.mint.opacity(0.13) : Color.white.opacity(configuration.isPressed ? 0.08 : 0.045),
+                in: .rect(cornerRadius: 8)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(
+                        isSelected ? BlitzUI.mint.opacity(0.42) : Color.white.opacity(0.055),
+                        lineWidth: 1
+                    )
+            }
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
 private enum EditorInspectorTab: String, CaseIterable {
     case layout = "Layout"
     case canvas = "Canvas"
@@ -33,6 +55,19 @@ private struct EditorExportPresetRequest {
     let project: RecordingProject
 }
 
+enum EditorScenePresetSourceCorrection {
+    static func correction(for preset: ScenePreset) -> RecordingProjectSceneCorrection? {
+        switch preset {
+        case .screenFullscreen:
+            return .screenOnly
+        case .webcamFullscreen:
+            return .cameraOnly
+        default:
+            return nil
+        }
+    }
+}
+
 struct EditorView: View {
     @Bindable var vm: RecorderViewModel
     @State private var library = EditorMediaLibrary()
@@ -45,11 +80,13 @@ struct EditorView: View {
     @State private var selectedExportQuality: ExportVideoQuality = .high
     @State private var selectedExportPreset: ExportPerformancePreset = .balanced
     @State private var backgroundMusic: ExportBackgroundMusic?
+    @State private var backgroundMusicBookmarkData: Data?
     @State private var isExportPopoverPresented = false
     @State private var reloadTask: Task<Void, Never>?
     @State private var sceneEvents: [RecordingSceneEvent] = []
     @State private var layoutDraft: EditorLayoutDraft?
     @State private var screenZoomDraft: Double?
+    @State private var cameraZoomDraft: Double?
     @State private var canvasSceneDraft: RecordingScene?
     @State private var canvasCommitTask: Task<Void, Never>?
     @State private var preservesCanvasPreviewOnNextProjectRefresh = false
@@ -99,9 +136,14 @@ struct EditorView: View {
                 playbackTime: playback.currentTime,
                 liveTime: { playback.displayTime() },
                 isPlaying: playback.isPlaying,
+                playbackRate: playback.playbackRate,
                 selection: $selection,
                 onSeek: { playback.scrub(to: $0) },
                 onSeekEnded: { playback.endScrub() },
+                onPrevious: { playback.seek(to: previousBoundary()) },
+                onTogglePlayback: { playback.togglePlayback() },
+                onNext: { playback.seek(to: nextBoundary()) },
+                onPlaybackRateChange: { playback.setPlaybackRate($0) },
                 isInteractive: playback.isReady,
                 hiddenAssetIDs: hiddenAssetIDs,
                 mutedAssetIDs: mutedAssetIDs,
@@ -116,7 +158,6 @@ struct EditorView: View {
             .background(Color.white.opacity(0.018))
         }
         .task(id: vm.lastExportedSourceTakeURL) {
-            backgroundMusic = nil
             vm.refreshLastExportedProject()
             reloadTask?.cancel()
             let task = Task { await reloadProject() }
@@ -134,6 +175,7 @@ struct EditorView: View {
                 guard !Task.isCancelled else { return }
                 layoutDraft = nil
                 screenZoomDraft = nil
+                cameraZoomDraft = nil
                 canvasSceneDraft = nil
             }
             reloadTask = task
@@ -176,12 +218,7 @@ struct EditorView: View {
             return
         }
         sceneEvents = TakeFileStore().sceneEvents(from: project)
-        if let raw = OutputVideoFormat(rawValue: project.settings.outputVideoFormat) {
-            selectedFormat = raw
-        } else {
-            selectedFormat = vm.settings.outputVideoFormat
-        }
-        applyExportPreset(EditorExportPresetRequest(preset: .balanced, project: project))
+        applyEditorState(project)
         assets = EditorAsset.assets(project: project, finalVideoURL: vm.lastExportedURL)
         async let media: Void = library.loadAssets(assets)
         await playback.load(project: project, baseSettings: vm.settings)
@@ -195,12 +232,7 @@ struct EditorView: View {
             return
         }
         sceneEvents = TakeFileStore().sceneEvents(from: project)
-        if let raw = OutputVideoFormat(rawValue: project.settings.outputVideoFormat) {
-            selectedFormat = raw
-        } else {
-            selectedFormat = vm.settings.outputVideoFormat
-        }
-        applyExportPreset(EditorExportPresetRequest(preset: .balanced, project: project))
+        applyEditorState(project)
         assets = EditorAsset.assets(project: project, finalVideoURL: vm.lastExportedURL)
 
         let refreshed = playback.refreshSceneTimeline(EditorPlaybackSceneTimelineUpdate(
@@ -210,6 +242,8 @@ struct EditorView: View {
         ))
         if !refreshed {
             await reloadProject()
+        } else {
+            playback.applyEditorState(project.editorState)
         }
     }
 
@@ -309,8 +343,10 @@ struct EditorView: View {
     private func toggleTrack(_ asset: EditorAsset) {
         if let kind = layerKind(for: asset) {
             playback.setHidden(!playback.hiddenKinds.contains(kind), kind: kind)
+            persistEditorState("Change Export Track")
         } else if let source = audioSource(for: asset) {
             playback.setMuted(!playback.mutedSources.contains(source), source: source)
+            persistEditorState("Change Export Track")
         }
     }
 
@@ -353,7 +389,7 @@ struct EditorView: View {
                 .padding(.leading, 4)
                 .padding(.trailing, 16)
 
-            Text(project?.title ?? "Last recording")
+            Text(project?.displayTitle ?? "Last recording")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.92))
                 .lineLimit(1)
@@ -374,6 +410,76 @@ struct EditorView: View {
 
     private func sourceResolution(for project: RecordingProject) -> OutputResolution {
         OutputResolution(rawValue: project.settings.outputResolution) ?? .p1080
+    }
+
+    private func applyEditorState(_ project: RecordingProject) {
+        if let recipe = project.editorState.exportRecipe,
+           let preset = ExportPerformancePreset(rawValue: recipe.preset),
+           let format = OutputVideoFormat(rawValue: recipe.format),
+           let resolution = OutputResolution(rawValue: recipe.resolution),
+           let quality = ExportVideoQuality(rawValue: recipe.quality) {
+            selectedExportPreset = preset
+            selectedFormat = format
+            selectedResolution = resolution
+            selectedExportFramesPerSecond = recipe.framesPerSecond
+            selectedExportQuality = quality
+        } else {
+            selectedFormat = OutputVideoFormat(rawValue: project.settings.outputVideoFormat)
+                ?? vm.settings.outputVideoFormat
+            applyExportPreset(EditorExportPresetRequest(preset: .balanced, project: project))
+        }
+        backgroundMusicBookmarkData = project.editorState.backgroundMusicBookmarkData
+        backgroundMusic = resolvedBackgroundMusic(project.editorState)
+    }
+
+    private func resolvedBackgroundMusic(
+        _ state: RecordingProject.EditorStateSnapshot
+    ) -> ExportBackgroundMusic? {
+        guard let path = state.backgroundMusicPath else { return nil }
+        var url = URL(fileURLWithPath: path)
+        if let bookmarkData = state.backgroundMusicBookmarkData {
+            var isStale = false
+            if let resolvedURL = try? URL(
+                resolvingBookmarkData: bookmarkData,
+                options: [.withSecurityScope],
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ) {
+                url = resolvedURL
+                if isStale {
+                    backgroundMusicBookmarkData = RecordingSettingsStore.bookmarkData(for: resolvedURL)
+                }
+            }
+        }
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return ExportBackgroundMusic(url: url, volume: state.backgroundMusicVolume ?? 0.18)
+    }
+
+    private var editorStateSnapshot: RecordingProject.EditorStateSnapshot {
+        RecordingProject.EditorStateSnapshot(
+            hiddenVideoSources: playback.hiddenKinds.map(\.rawValue).sorted(),
+            mutedAudioSources: playback.mutedSources.map(\.rawValue).sorted(),
+            backgroundMusicPath: backgroundMusic?.url.path,
+            backgroundMusicBookmarkData: backgroundMusicBookmarkData,
+            backgroundMusicVolume: backgroundMusic?.volume,
+            exportRecipe: RecordingProject.ExportRecipeSnapshot(
+                preset: selectedExportPreset.rawValue,
+                format: selectedFormat.rawValue,
+                resolution: selectedResolution.rawValue,
+                framesPerSecond: selectedExportFramesPerSecond,
+                quality: selectedExportQuality.rawValue
+            )
+        )
+    }
+
+    private func persistEditorState(_ actionName: String) {
+        guard vm.applyProjectEditorState(.init(
+            editorState: editorStateSnapshot,
+            actionName: actionName
+        )) else {
+            editErrorMessage = vm.detailMessage
+            return
+        }
     }
 
     private var exportButton: some View {
@@ -404,70 +510,100 @@ struct EditorView: View {
     }
 
     private var exportPopover: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 10) {
                 Image(systemName: "square.and.arrow.up.fill")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(BlitzUI.mint)
-                    .frame(width: 36, height: 36)
-                    .background(BlitzUI.mint.opacity(0.13), in: .rect(cornerRadius: 9))
+                    .frame(width: 32, height: 32)
+                    .background(BlitzUI.mint.opacity(0.11), in: .rect(cornerRadius: 9))
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Export video")
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.white.opacity(0.95))
-                    Text("Choose the finished file settings.")
-                        .font(.system(size: 11.5, weight: .medium))
+                    Text("Choose the quality and file type.")
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.white.opacity(0.52))
                 }
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                exportSectionLabel("PERFORMANCE")
-                HStack(spacing: 6) {
-                    ForEach(ExportPerformancePreset.allCases, id: \.rawValue) { preset in
-                        exportPerformancePresetButton(preset)
+            VStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 10) {
+                        exportRowLabel("Preset")
+                        HStack(spacing: 6) {
+                            ForEach(ExportPerformancePreset.allCases, id: \.rawValue) { preset in
+                                exportPerformancePresetButton(preset)
+                            }
+                        }
+                    }
+
+                    Text(selectedExportPreset.plainDescription)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.48))
+                        .padding(.leading, 76)
+                }
+                .padding(12)
+
+                exportSettingsDivider
+
+                HStack(spacing: 10) {
+                    exportRowLabel("Format")
+                    HStack(spacing: 6) {
+                        ForEach(OutputVideoFormat.allCases, id: \.rawValue) { format in
+                            exportFormatButton(format)
+                        }
                     }
                 }
+                .padding(12)
+
+                exportSettingsDivider
+
+                HStack(spacing: 10) {
+                    exportRowLabel("Resolution")
+                    HStack(spacing: 6) {
+                        ForEach(OutputResolution.allCases, id: \.rawValue) { resolution in
+                            exportResolutionButton(resolution)
+                        }
+                    }
+                }
+                .padding(12)
+
+                exportSettingsDivider
+
+                HStack(spacing: 10) {
+                    exportRowLabel("Frame rate")
+                    HStack(spacing: 6) {
+                        ForEach(RecordingSettings.supportedFrameRates, id: \.self) { framesPerSecond in
+                            exportFrameRateButton(framesPerSecond)
+                        }
+                    }
+                }
+                .padding(12)
+
+                exportSettingsDivider
+
+                VStack(alignment: .leading, spacing: 7) {
+                    HStack(spacing: 10) {
+                        exportRowLabel("Quality")
+                        HStack(spacing: 6) {
+                            ForEach(ExportVideoQuality.allCases, id: \.rawValue) { quality in
+                                exportQualityButton(quality)
+                            }
+                        }
+                    }
+
+                    Text(selectedExportQuality.plainDescription)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.42))
+                        .padding(.leading, 76)
+                }
+                .padding(12)
             }
-
-            VStack(alignment: .leading, spacing: 8) {
-                exportSectionLabel("FORMAT")
-                HStack(spacing: 6) {
-                    ForEach(OutputVideoFormat.allCases, id: \.rawValue) { format in
-                        exportFormatButton(format)
-                    }
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                exportSectionLabel("RESOLUTION")
-                HStack(spacing: 6) {
-                    ForEach(OutputResolution.allCases, id: \.rawValue) { resolution in
-                        exportResolutionButton(resolution)
-                    }
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                exportSectionLabel("FRAME RATE")
-                HStack(spacing: 6) {
-                    ForEach([30, 60], id: \.self) { framesPerSecond in
-                        exportFrameRateButton(framesPerSecond)
-                    }
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                exportSectionLabel("QUALITY")
-                HStack(spacing: 6) {
-                    ForEach(ExportVideoQuality.allCases, id: \.rawValue) { quality in
-                        exportQualityButton(quality)
-                    }
-                }
-
-                Text(selectedExportQuality.plainDescription)
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.46))
+            .background(Color.black.opacity(0.16), in: .rect(cornerRadius: 12))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.075), lineWidth: 1)
             }
 
             if let backgroundMusic {
@@ -485,17 +621,17 @@ struct EditorView: View {
                 .background(Color.white.opacity(0.045), in: .rect(cornerRadius: 8))
             }
 
-            HStack(spacing: 8) {
-                Image(systemName: "info.circle.fill")
-                    .foregroundStyle(BlitzUI.mint.opacity(0.82))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("READY TO EXPORT")
+                    .font(.system(size: 9, weight: .heavy))
+                    .tracking(0.6)
+                    .foregroundStyle(.white.opacity(0.36))
                 Text(exportSummary)
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.62))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.7))
                     .lineLimit(1)
             }
-            .padding(.horizontal, 10)
-            .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
-            .background(Color.white.opacity(0.045), in: .rect(cornerRadius: 8))
+            .padding(.horizontal, 2)
 
             Button {
                 exportVideo()
@@ -513,34 +649,37 @@ struct EditorView: View {
             .pointingHandCursor()
             .help("Save to \(vm.settings.outputDirectory.path)")
         }
-        .padding(18)
-        .frame(width: 390)
+        .padding(16)
+        .frame(width: 420)
         .background(Color(nsColor: .windowBackgroundColor))
         .preferredColorScheme(.dark)
     }
 
-    private func exportSectionLabel(_ title: String) -> some View {
+    private func exportRowLabel(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 9.5, weight: .heavy))
-            .tracking(0.7)
-            .foregroundStyle(.white.opacity(0.42))
+            .font(.system(size: 10.5, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.52))
+            .frame(width: 66, alignment: .leading)
+    }
+
+    private var exportSettingsDivider: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.065))
+            .frame(height: 1)
+            .padding(.leading, 88)
     }
 
     private func exportFormatButton(_ format: OutputVideoFormat) -> some View {
         let selected = format == selectedFormat
         return Button {
             selectedFormat = format
+            persistEditorState("Change Export Format")
         } label: {
             Text(format.displayName)
                 .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(selected ? Color.black.opacity(0.84) : Color.white.opacity(0.66))
-                .frame(maxWidth: .infinity, minHeight: 36)
-                .background(
-                    selected ? BlitzUI.mint : Color.white.opacity(0.055),
-                    in: .rect(cornerRadius: 7)
-                )
+                .frame(maxWidth: .infinity, minHeight: 32)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(EditorExportOptionButtonStyle(isSelected: selected))
         .pointingHandCursor()
     }
 
@@ -555,17 +694,15 @@ struct EditorView: View {
                 return
             }
             applyExportPreset(EditorExportPresetRequest(preset: preset, project: project))
+            persistEditorState("Change Export Preset")
         } label: {
             Text(preset.displayName)
                 .font(.system(size: 10.5, weight: .bold))
-                .foregroundStyle(selected ? Color.black.opacity(0.84) : Color.white.opacity(0.66))
-                .frame(maxWidth: .infinity, minHeight: 36)
-                .background(
-                    selected ? BlitzUI.mint : Color.white.opacity(0.055),
-                    in: .rect(cornerRadius: 7)
-                )
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+                .frame(maxWidth: .infinity, minHeight: 32)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(EditorExportOptionButtonStyle(isSelected: selected))
         .pointingHandCursor()
     }
 
@@ -579,6 +716,7 @@ struct EditorView: View {
             }
             selectedResolution = resolution
             selectedExportPreset = .custom
+            persistEditorState("Change Export Resolution")
         } label: {
             HStack(spacing: 4) {
                 if locked {
@@ -588,14 +726,9 @@ struct EditorView: View {
                 Text(resolution.displayName)
                     .font(.system(size: 11, weight: .bold))
             }
-            .foregroundStyle(selected ? Color.black.opacity(0.84) : Color.white.opacity(0.66))
-            .frame(maxWidth: .infinity, minHeight: 36)
-            .background(
-                selected ? BlitzUI.mint : Color.white.opacity(0.055),
-                in: .rect(cornerRadius: 7)
-            )
+            .frame(maxWidth: .infinity, minHeight: 32)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(EditorExportOptionButtonStyle(isSelected: selected))
         .pointingHandCursor()
     }
 
@@ -604,17 +737,13 @@ struct EditorView: View {
         return Button {
             selectedExportFramesPerSecond = framesPerSecond
             selectedExportPreset = .custom
+            persistEditorState("Change Export Frame Rate")
         } label: {
             Text("\(framesPerSecond) fps")
                 .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(selected ? Color.black.opacity(0.84) : Color.white.opacity(0.66))
-                .frame(maxWidth: .infinity, minHeight: 36)
-                .background(
-                    selected ? BlitzUI.mint : Color.white.opacity(0.055),
-                    in: .rect(cornerRadius: 7)
-                )
+                .frame(maxWidth: .infinity, minHeight: 32)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(EditorExportOptionButtonStyle(isSelected: selected))
         .pointingHandCursor()
     }
 
@@ -623,17 +752,13 @@ struct EditorView: View {
         return Button {
             selectedExportQuality = quality
             selectedExportPreset = .custom
+            persistEditorState("Change Export Quality")
         } label: {
             Text(quality.displayName)
                 .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(selected ? Color.black.opacity(0.84) : Color.white.opacity(0.66))
-                .frame(maxWidth: .infinity, minHeight: 36)
-                .background(
-                    selected ? BlitzUI.mint : Color.white.opacity(0.055),
-                    in: .rect(cornerRadius: 7)
-                )
+                .frame(maxWidth: .infinity, minHeight: 32)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(EditorExportOptionButtonStyle(isSelected: selected))
         .pointingHandCursor()
     }
 
@@ -766,7 +891,7 @@ struct EditorView: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(.white.opacity(0.6))
-                    .frame(width: 22, height: 22)
+                    .frame(width: 40, height: 40)
             }
             .buttonStyle(.plain)
             .help("Dismiss")
@@ -804,7 +929,7 @@ struct EditorView: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(.white.opacity(0.6))
-                    .frame(width: 22, height: 22)
+                    .frame(width: 40, height: 40)
             }
             .buttonStyle(.plain)
             .help("Dismiss")
@@ -816,12 +941,8 @@ struct EditorView: View {
 
 
     private var playerColumn: some View {
-        VStack(spacing: 10) {
-            canvasStage
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            transportBar
-        }
+        canvasStage
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(14)
     }
 
@@ -907,78 +1028,6 @@ struct EditorView: View {
             }
         }
     }
-
-    private var transportBar: some View {
-        HStack(spacing: 12) {
-            Text("\(formatTime(playback.currentTime)) / \(formatTime(timelineDuration))")
-                .font(.system(size: 10.5, weight: .bold, design: .monospaced))
-                .monospacedDigit()
-                .foregroundStyle(.white.opacity(0.62))
-                .frame(minWidth: 92, alignment: .leading)
-
-            Spacer(minLength: 0)
-
-            transportButton("backward.end.fill", help: "Previous segment") {
-                playback.seek(to: previousBoundary())
-            }
-
-            playPauseButton
-
-            transportButton("forward.end.fill", help: "Next segment") {
-                playback.seek(to: nextBoundary())
-            }
-
-            Spacer(minLength: 0)
-
-            Color.clear
-                .frame(minWidth: 92, maxWidth: 92, maxHeight: 1)
-        }
-    }
-
-    @ViewBuilder
-    private var playPauseButton: some View {
-        let button = Button {
-            playback.togglePlayback()
-        } label: {
-            Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.white.opacity(playback.isReady ? 0.95 : 0.35))
-                .frame(width: 38, height: 30)
-                .background(BlitzUI.selectedFill, in: .rect(cornerRadius: 8))
-                .contentShape(.rect(cornerRadius: 8))
-        }
-        .buttonStyle(.plain)
-        .disabled(!playback.isReady)
-        .help(playback.isPlaying ? "Pause" : "Play")
-
-        if playback.isReady {
-            button.pointingHandCursor()
-        } else {
-            button
-        }
-    }
-
-    @ViewBuilder
-    private func transportButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
-        let button = Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 10.5, weight: .bold))
-                .foregroundStyle(.white.opacity(playback.isReady ? 0.7 : 0.3))
-                .frame(width: 30, height: 26)
-                .background(BlitzUI.controlFill, in: .rect(cornerRadius: 7))
-                .contentShape(.rect(cornerRadius: 7))
-        }
-        .buttonStyle(.plain)
-        .disabled(!playback.isReady)
-        .help(help)
-
-        if playback.isReady {
-            button.pointingHandCursor()
-        } else {
-            button
-        }
-    }
-
 
     private var currentEventIndex: Int {
         let time = playback.currentTime
@@ -1195,6 +1244,9 @@ struct EditorView: View {
             return true
         case "h", "m":
             return toggleSelectedAsset()
+        case "l":
+            playback.playForwardOrIncreaseRate()
+            return true
         default:
             return false
         }
@@ -1272,6 +1324,7 @@ struct EditorView: View {
                 screenZoomSection
             case .camera:
                 cameraFrameSection
+                cameraZoomSection
             }
         } else {
             sceneControlsSection
@@ -1320,20 +1373,23 @@ struct EditorView: View {
                 }
 
                 LazyVGrid(columns: scenePresetColumns, spacing: 8) {
-                    ForEach(ScenePreset.allCases, id: \.self) { preset in
+                    ForEach(
+                        ScenePreset.allCases.filter { $0.supports(captureLayout ?? .horizontal) },
+                        id: \.self
+                    ) { preset in
                         let layout = editorLayout(for: preset)
                         BlitzScenePresetCard(
                             preset: preset,
                             layout: captureLayout ?? .horizontal,
                             isSelected: scene.sceneLayout == layout,
-                            isEnabled: true
+                            isEnabled: preset.supports(captureLayout ?? .horizontal)
                         ) {
                             applyScenePreset(preset)
                         }
                     }
                 }
 
-                Text("Drag a source on the canvas to reposition it. The edit applies to the current segment.")
+                Text("Drag a source to reposition it. Scene choices apply to this segment only.")
                     .font(.system(size: 9.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.42))
                     .fixedSize(horizontal: false, vertical: true)
@@ -1429,6 +1485,15 @@ struct EditorView: View {
 
     private func applyScenePreset(_ preset: ScenePreset) {
         let index = currentEventIndex
+        if let correction = EditorScenePresetSourceCorrection.correction(for: preset) {
+            playback.pauseForEditing()
+            guard vm.applyProjectSceneCorrection(.init(eventIndex: index, correction: correction)) else {
+                editErrorMessage = vm.detailMessage
+                return
+            }
+            selection = .segment(index)
+            return
+        }
         let layout = editorLayout(for: preset)
         playback.pauseForEditing()
         guard vm.applyProjectSceneEdit(eventIndex: index, { scene in
@@ -1478,6 +1543,56 @@ struct EditorView: View {
             scene.screenCropAmount = CGPoint(x: zoom, y: zoom)
         }
         screenZoomDraft = nil
+        if !succeeded {
+            playback.setPreviewSceneOverride(nil, at: playback.currentTime)
+            editErrorMessage = vm.detailMessage
+        }
+    }
+
+    private var cameraZoomValue: Double {
+        if let cameraZoomDraft {
+            return cameraZoomDraft
+        }
+        guard let scene = currentEventScene else { return 0 }
+        return Double(max(scene.cameraCropAmount.x, scene.cameraCropAmount.y))
+    }
+
+    private var cameraZoomBinding: Binding<Double> {
+        Binding(
+            get: { cameraZoomValue },
+            set: { previewCameraZoom($0) }
+        )
+    }
+
+    private var cameraZoomLabel: String {
+        let visibleFraction = max(0.25, 1 - cameraZoomValue)
+        return "\(Int((100 / visibleFraction).rounded()))%"
+    }
+
+    private func previewCameraZoom(_ zoom: Double) {
+        guard var scene = currentEventScene else { return }
+        let clamped = min(0.75, max(0, zoom))
+        if cameraZoomDraft == nil {
+            playback.pauseForEditing()
+        }
+        cameraZoomDraft = clamped
+        scene.cameraCropAmount = CGPoint(x: clamped, y: clamped)
+        if clamped < 0.001 {
+            scene.cameraCropPosition = .zero
+        }
+        playback.setPreviewSceneOverride(scene, at: playback.currentTime)
+    }
+
+    private func commitCameraZoom() {
+        guard let zoom = cameraZoomDraft else { return }
+        let index = currentEventIndex
+        let succeeded = vm.applyProjectSceneEdit(eventIndex: index) { scene in
+            scene.cameraCropAmount = CGPoint(x: zoom, y: zoom)
+            if zoom < 0.001 {
+                scene.cameraCropPosition = .zero
+            }
+        }
+        cameraZoomDraft = nil
         if !succeeded {
             playback.setPreviewSceneOverride(nil, at: playback.currentTime)
             editErrorMessage = vm.detailMessage
@@ -1749,7 +1864,7 @@ struct EditorView: View {
                         } label: {
                             Image(systemName: isMuted ? "speaker.slash" : "speaker.wave.2")
                                 .font(.system(size: 10, weight: .semibold))
-                                .frame(width: 28, height: 26)
+                                .frame(width: 40, height: 40)
                         }
                         .buttonStyle(.plain)
                         .background(BlitzUI.controlFill, in: .rect(cornerRadius: 7))
@@ -1781,11 +1896,13 @@ struct EditorView: View {
                         chooseBackgroundMusic()
                     } else {
                         backgroundMusic = nil
+                        backgroundMusicBookmarkData = nil
+                        persistEditorState("Remove Background Music")
                     }
                 } label: {
                     Image(systemName: backgroundMusic == nil ? "plus" : "xmark")
                         .font(.system(size: 10, weight: .semibold))
-                        .frame(width: 28, height: 26)
+                        .frame(width: 40, height: 40)
                 }
                 .buttonStyle(.plain)
                 .background(BlitzUI.controlFill, in: .rect(cornerRadius: 7))
@@ -1798,7 +1915,16 @@ struct EditorView: View {
                     Image(systemName: "speaker.wave.1")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.52))
-                    Slider(value: backgroundMusicVolumeBinding, in: 0...1, step: 0.01)
+                    Slider(
+                        value: backgroundMusicVolumeBinding,
+                        in: 0...1,
+                        step: 0.01,
+                        onEditingChanged: { isEditing in
+                            if !isEditing {
+                                persistEditorState("Change Music Volume")
+                            }
+                        }
+                    )
                         .controlSize(.small)
                         .tint(BlitzUI.mint)
                     Text(musicVolumeLabel)
@@ -1844,6 +1970,8 @@ struct EditorView: View {
         panel.message = "Choose background music to loop under this export."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         backgroundMusic = ExportBackgroundMusic(url: url, volume: 0.18)
+        backgroundMusicBookmarkData = RecordingSettingsStore.bookmarkData(for: url)
+        persistEditorState("Add Background Music")
     }
 
     private var canDeleteSelectedCut: Bool {
@@ -1858,11 +1986,14 @@ struct EditorView: View {
             BlitzUI.sectionLabel("Details", icon: "info.circle")
 
             VStack(alignment: .leading, spacing: 7) {
-                detailRow("Name", project?.title ?? "—")
+                detailRow("Name", project?.displayTitle ?? "—")
                 detailRow("Saved", project?.takeDirectoryPath ?? "—", monospaced: true)
                 detailRow("Resolution", resolutionLabel)
                 detailRow("Ratio", ratioLabel)
-                detailRow("FPS", "\(project?.settings.framesPerSecond ?? 0)")
+                detailRow("Source FPS", "\(project?.settings.framesPerSecond ?? 0)")
+                if let export = project?.exports.last {
+                    detailRow("Last export", "\(export.framesPerSecond) fps · \(export.resolution)")
+                }
                 detailRow("Duration", timelineDuration > 0 ? formatTime(timelineDuration) : "—")
                 detailRow("Sources", "\(project?.sources.filter(\.exists).count ?? 0)")
             }
@@ -1905,7 +2036,7 @@ struct EditorView: View {
                             correction,
                             isSelected: correction == selectedCorrection(for: event)
                         ) {
-                            vm.applyProjectSceneCorrection(eventIndex: index, correction: correction)
+                            vm.applyProjectSceneCorrection(.init(eventIndex: index, correction: correction))
                         }
                     }
                 }
@@ -2049,6 +2180,54 @@ struct EditorView: View {
             Text("Drag the camera in the canvas to move it; drag a corner to resize.")
                 .font(.system(size: 9.5, weight: .medium))
                 .foregroundStyle(.white.opacity(0.42))
+        }
+    }
+
+    @ViewBuilder
+    private var cameraZoomSection: some View {
+        if currentEventScene?.enabledSources.contains(.camera) == true {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Label("Source crop", systemImage: "crop")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.72))
+                    Spacer(minLength: 0)
+                    Text(cameraZoomLabel)
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .monospacedDigit()
+                        .foregroundStyle(.white.opacity(0.62))
+                }
+
+                HStack(spacing: 8) {
+                    Slider(
+                        value: cameraZoomBinding,
+                        in: 0...0.75,
+                        onEditingChanged: { isEditing in
+                            if !isEditing {
+                                commitCameraZoom()
+                            }
+                        }
+                    )
+                    .controlSize(.small)
+                    .tint(BlitzUI.mint)
+
+                    Button {
+                        previewCameraZoom(0)
+                        commitCameraZoom()
+                    } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 10, weight: .bold))
+                            .frame(width: 28, height: 24)
+                    }
+                    .buttonStyle(.plain)
+                    .background(BlitzUI.controlFill, in: .rect(cornerRadius: 7))
+                    .disabled(cameraZoomValue < 0.001)
+                    .pointingHandCursor()
+                    .help("Reset camera source crop")
+                }
+            }
+            .padding(10)
+            .background(BlitzUI.quietFill, in: .rect(cornerRadius: 10))
         }
     }
 

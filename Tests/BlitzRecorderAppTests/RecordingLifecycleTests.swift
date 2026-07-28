@@ -207,6 +207,74 @@ final class RecordingLifecycleTests: XCTestCase {
         XCTAssertEqual(project.editorTimeline, timeline)
     }
 
+    func testRecordingProjectPersistsEditorStateAndExportHistoryWithoutChangingCaptureFPS() throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.framesPerSecond = 30
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        let editorState = RecordingProject.EditorStateSnapshot(
+            hiddenVideoSources: [SceneLayerKind.camera.rawValue],
+            mutedAudioSources: [CaptureSource.microphone.rawValue],
+            backgroundMusicPath: "/tmp/music.m4a",
+            backgroundMusicBookmarkData: nil,
+            backgroundMusicVolume: 0.24,
+            exportRecipe: .init(
+                preset: ExportPerformancePreset.custom.rawValue,
+                format: OutputVideoFormat.mov.rawValue,
+                resolution: OutputResolution.p1080.rawValue,
+                framesPerSecond: 24,
+                quality: ExportVideoQuality.high.rawValue
+            )
+        )
+        let export = RecordingProject.ExportRecord(
+            id: UUID(),
+            createdAt: Date(timeIntervalSince1970: 1_800_000_000),
+            path: settings.outputDirectory.appendingPathComponent("finished.mov").path,
+            format: OutputVideoFormat.mov.rawValue,
+            resolution: OutputResolution.p1080.rawValue,
+            framesPerSecond: 24,
+            quality: ExportVideoQuality.high.rawValue,
+            fileSizeBytes: 1_024
+        )
+
+        try store.writeRecordingProject(
+            for: take,
+            settings: settings,
+            sceneEvents: [RecordingSceneEvent(time: 0, scene: RecordingScene(settings: settings))],
+            finalVideoURL: URL(fileURLWithPath: export.path),
+            editorState: editorState,
+            exportRecord: export
+        )
+        let project = try store.loadRecordingProject(at: take.projectURL)
+        let historyEntry = try XCTUnwrap(store.loadProjectHistory(settings: settings).entries.first)
+
+        XCTAssertEqual(project.settings.framesPerSecond, 30)
+        XCTAssertEqual(project.editorState, editorState)
+        XCTAssertEqual(project.exports, [export])
+        XCTAssertEqual(historyEntry.createdAt, project.createdAt)
+        XCTAssertEqual(historyEntry.exports, [export])
+
+        let updatedState = RecordingProject.EditorStateSnapshot(
+            hiddenVideoSources: [],
+            mutedAudioSources: [],
+            backgroundMusicPath: nil,
+            backgroundMusicBookmarkData: nil,
+            backgroundMusicVolume: nil,
+            exportRecipe: editorState.exportRecipe
+        )
+        let updatedProject = try store.updateProjectEditorState(.init(
+            projectURL: take.projectURL,
+            editorState: updatedState,
+            baseSettings: settings
+        ))
+
+        XCTAssertEqual(updatedProject.editorState, updatedState)
+        XCTAssertEqual(updatedProject.exports, [export])
+        XCTAssertEqual(updatedProject.settings.framesPerSecond, 30)
+    }
+
     func testRecordingProjectPersistsCaptureTimelineSync() throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
@@ -257,6 +325,8 @@ final class RecordingLifecycleTests: XCTestCase {
         XCTAssertTrue(project.editorTimeline.tracks.isEmpty)
         XCTAssertTrue(project.editorTimeline.clips.isEmpty)
         XCTAssertTrue(project.editorTimeline.keyframes.isEmpty)
+        XCTAssertEqual(project.editorState, .empty)
+        XCTAssertTrue(project.exports.isEmpty)
     }
 
     func testTakeFileStoreRehydratesRecoverableProjectForExport() throws {

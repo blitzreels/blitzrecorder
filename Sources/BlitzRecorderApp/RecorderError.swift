@@ -68,7 +68,7 @@ enum RecorderError: LocalizedError {
         case .screenWindowRequired:
             "Choose an app window for automatic fitting. Use Display mode for full-screen capture."
         case .backgroundRemovalUnavailable:
-            "Webcam background removal could not process the camera recording."
+            "Camera background removal could not process the camera recording."
         case .remoteCameraPreviewUnavailable:
             "Waiting for iPhone video."
         case .remoteCameraRecordingUnavailable:

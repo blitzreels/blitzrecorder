@@ -5,6 +5,19 @@ struct ProjectExportPlacementRequest {
     let destinationURL: URL
 }
 
+enum ProjectExportFilename {
+    static func slug(from title: String) -> String {
+        let parts = title
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+        let slug = parts.joined(separator: "-")
+        let limitedSlug = String(slug.prefix(96))
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return limitedSlug.isEmpty ? "blitzrecorder-export" : limitedSlug
+    }
+}
+
 enum ProjectExportPlacement {
     static func place(_ request: ProjectExportPlacementRequest) throws -> URL {
         let fileManager = FileManager.default

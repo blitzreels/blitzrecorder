@@ -47,4 +47,16 @@ final class EditorProjectRefreshPolicyTests: XCTestCase {
 
         XCTAssertEqual(index, 1)
     }
+
+    func testPlaybackRatesExposeExpectedEditorChoices() {
+        XCTAssertEqual(EditorPlaybackRate.allCases.map(\.displayName), ["1×", "1.5×", "2×", "2.5×"])
+        XCTAssertEqual(EditorPlaybackRate.allCases.map(\.rawValue), [1, 1.5, 2, 2.5])
+    }
+
+    func testPlaybackRateIncrementStopsAtTwoAndAHalfSpeed() {
+        XCTAssertEqual(EditorPlaybackRate.normal.nextFaster, .oneAndAHalf)
+        XCTAssertEqual(EditorPlaybackRate.oneAndAHalf.nextFaster, .double)
+        XCTAssertEqual(EditorPlaybackRate.double.nextFaster, .twoAndAHalf)
+        XCTAssertEqual(EditorPlaybackRate.twoAndAHalf.nextFaster, .twoAndAHalf)
+    }
 }

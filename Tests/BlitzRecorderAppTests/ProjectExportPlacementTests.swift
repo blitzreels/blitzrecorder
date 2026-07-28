@@ -2,6 +2,19 @@
 import XCTest
 
 final class ProjectExportPlacementTests: XCTestCase {
+    func testTranscriptTitleBecomesExportFilenameSlug() {
+        XCTAssertEqual(
+            ProjectExportFilename.slug(
+                from: "Testing Transcription & Title Generation on Large Screens"
+            ),
+            "testing-transcription-title-generation-on-large-screens"
+        )
+    }
+
+    func testEmptyTitleUsesExportFallback() {
+        XCTAssertEqual(ProjectExportFilename.slug(from: "---"), "blitzrecorder-export")
+    }
+
     func testPlacesExportAtChosenDestination() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

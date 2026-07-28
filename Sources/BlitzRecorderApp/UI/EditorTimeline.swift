@@ -1,7 +1,7 @@
 import SwiftUI
 
 private let timelineContentSpace = "EditorTimelineContent"
-private let layoutSegmentFill = Color(red: 0.055, green: 0.235, blue: 0.255)
+private let layoutSegmentFill = Color(red: 0.045, green: 0.12, blue: 0.13)
 
 struct EditorTimelineTrackDuration {
     struct Request {
@@ -31,9 +31,14 @@ struct EditorTimelineView: View {
     let playbackTime: Double
     let liveTime: () -> Double
     let isPlaying: Bool
+    let playbackRate: EditorPlaybackRate
     @Binding var selection: EditorSelection?
     let onSeek: (Double) -> Void
     let onSeekEnded: () -> Void
+    let onPrevious: () -> Void
+    let onTogglePlayback: () -> Void
+    let onNext: () -> Void
+    let onPlaybackRateChange: (EditorPlaybackRate) -> Void
     let isInteractive: Bool
     let hiddenAssetIDs: Set<String>
     let mutedAssetIDs: Set<String>
@@ -45,12 +50,12 @@ struct EditorTimelineView: View {
 
     @State private var zoomLevel: Double = 1
 
-    private let gutterWidth: CGFloat = 128
+    private let gutterWidth: CGFloat = 136
     private let rulerHeight: CGFloat = 26
     private let chaptersRowHeight: CGFloat = 32
     private let segmentsRowHeight: CGFloat = 42
     private let videoRowHeight: CGFloat = 48
-    private let audioRowHeight: CGFloat = 36
+    private let audioRowHeight: CGFloat = 44
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -68,69 +73,97 @@ struct EditorTimelineView: View {
             }
             .padding(12)
         }
-        .background(Color.white.opacity(0.035), in: .rect(cornerRadius: 12))
+        .background(Color.black.opacity(0.22), in: .rect(cornerRadius: 14))
         .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.white.opacity(0.09), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
                 .allowsHitTesting(false)
         }
+        .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
     }
 
 
     private var header: some View {
-        HStack(spacing: 8) {
-            TimelineActionButton(
-                title: "Split scene",
-                systemName: "scissors",
-                isDisabled: !isInteractive,
-                action: onSplit
-            )
+        ZStack {
+            HStack(spacing: 8) {
+                TimelineActionButton(
+                    title: "Split",
+                    systemName: "scissors",
+                    isDisabled: !isInteractive,
+                    action: onSplit
+                )
 
-            TimelineActionButton(
-                title: "Delete scene change",
-                systemName: "trash",
-                isDisabled: !canDeleteCut,
-                action: onDeleteCut
-            )
+                TimelineActionButton(
+                    title: "Delete",
+                    systemName: "trash",
+                    isDisabled: !canDeleteCut,
+                    action: onDeleteCut
+                )
 
-            TimelineActionButton(
-                title: "Fit",
-                systemName: "arrow.left.and.right.square",
-                isDisabled: zoomLevel == 1
-            ) {
-                zoomLevel = 1
+                TimelineActionButton(
+                    title: "Fit",
+                    systemName: "arrow.left.and.right.square",
+                    isDisabled: zoomLevel == 1
+                ) {
+                    zoomLevel = 1
+                }
+
+                Spacer(minLength: 420)
+
+                HStack(spacing: 7) {
+                    Image(systemName: "minus.magnifyingglass")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.45))
+                    Slider(value: $zoomLevel, in: 1...12)
+                        .controlSize(.mini)
+                        .frame(width: 104)
+                        .help("Timeline zoom")
+                    Image(systemName: "plus.magnifyingglass")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.45))
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 40)
+                .background(Color.white.opacity(0.035), in: .rect(cornerRadius: 9))
             }
-
-            Rectangle()
-                .fill(Color.white.opacity(0.08))
-                .frame(width: 1, height: 20)
-                .padding(.horizontal, 3)
-
-            Text("\(formatTime(playbackTime)) / \(formatTime(duration))")
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .monospacedDigit()
-                .foregroundStyle(.white.opacity(0.72))
-                .padding(.horizontal, 8)
-                .frame(height: 24)
-                .background(Color.black.opacity(0.28), in: .rect(cornerRadius: 6))
-
-            Spacer(minLength: 0)
 
             HStack(spacing: 6) {
-                Image(systemName: "minus.magnifyingglass")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.45))
-                Slider(value: $zoomLevel, in: 1...12)
-                    .controlSize(.mini)
-                    .frame(width: 110)
-                    .help("Timeline zoom")
-                Image(systemName: "plus.magnifyingglass")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.45))
+                TimelineTransportControls(
+                    isPlaying: isPlaying,
+                    isDisabled: !isInteractive,
+                    onPrevious: onPrevious,
+                    onTogglePlayback: onTogglePlayback,
+                    onNext: onNext
+                )
+
+                TimelineControlDivider()
+
+                Text("\(formatTime(playbackTime)) / \(formatTime(duration))")
+                    .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                    .monospacedDigit()
+                    .foregroundStyle(.white.opacity(0.8))
+                    .frame(width: 102, height: 40)
+
+                TimelineControlDivider()
+
+                TimelinePlaybackRateSelector(
+                    playbackRate: playbackRate,
+                    isDisabled: !isInteractive,
+                    onSelect: onPlaybackRateChange
+                )
             }
+            .padding(4)
+            .background(Color.black.opacity(0.38), in: .rect(cornerRadius: 13))
+            .overlay {
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .stroke(Color.white.opacity(0.07), lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+            .shadow(color: .black.opacity(0.2), radius: 5, y: 2)
         }
         .padding(.horizontal, 14)
-        .frame(height: 48)
+        .frame(height: 58)
+        .background(Color.white.opacity(0.018))
     }
 
 
@@ -217,7 +250,13 @@ struct EditorTimelineView: View {
                 }
                 .padding(.leading, 2)
                 .frame(width: gutterWidth, height: row.height)
-                .background(Color.white.opacity(0.025), in: .rect(cornerRadius: 5))
+                .background(Color.white.opacity(0.035), in: .rect(cornerRadius: 7))
+                .overlay(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                        .fill(row.asset?.tint.opacity(0.72) ?? Color.white.opacity(0.2))
+                        .frame(width: 3, height: max(12, row.height - 16))
+                        .padding(.leading, 2)
+                }
             }
         }
         .frame(width: gutterWidth)
@@ -236,12 +275,12 @@ struct EditorTimelineView: View {
                 .font(.system(size: 9, weight: .semibold))
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(.white.opacity(isOff ? 0.9 : 0.5))
-                .frame(width: 28, height: 28)
+                .frame(width: 40, height: 40)
                 .contentShape(.rect(cornerRadius: 5))
         }
         .buttonStyle(.plain)
         .pointingHandCursor()
-        .help("\(verb) \(asset.title)")
+        .help("\(verb) \(asset.title) for the entire export")
     }
 
     private var emptyHint: some View {
@@ -427,6 +466,11 @@ struct EditorTimelineView: View {
             clipLabel(asset.title, isSelected: isSelected)
         }
         .clipShape(shape)
+        .overlay {
+            shape
+                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                .allowsHitTesting(false)
+        }
         .contentShape(shape)
         .modifier(TimelineClipHover(cornerRadius: 5))
         .onTapGesture { selection = .asset(asset.id) }
@@ -434,9 +478,10 @@ struct EditorTimelineView: View {
         .frame(width: width, height: rowHeight)
         .frame(width: contentWidth, height: rowHeight, alignment: .topLeading)
         .background(
-            Rectangle()
-                .fill(Color.white.opacity(0.025))
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.white.opacity(0.022))
         )
+        .animation(.easeOut(duration: 0.14), value: isSelected)
         .task(id: filmstripTaskID) {
             guard asset.isVideo, frames.count < requestedFrameCount else { return }
             await library.loadFilmstrip(request: EditorFilmstripLoadRequest(
@@ -517,7 +562,7 @@ struct EditorTimelineView: View {
                     .fill(BlitzUI.mint)
                     .frame(width: 2)
                     .frame(maxHeight: .infinity)
-                    .shadow(color: Color.black.opacity(0.65), radius: 1, x: 1, y: 0)
+                    .shadow(color: BlitzUI.mint.opacity(0.38), radius: 3)
 
                 PlayheadHandle()
                     .fill(BlitzUI.mint)
@@ -680,15 +725,28 @@ private struct EditorSceneTimelineItem: View {
             .padding(4)
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
         }
-        .background(shape.fill(layoutSegmentFill.opacity(isActive ? 1 : 0.78)))
+        .background(shape.fill(layoutSegmentFill.opacity(isActive ? 1 : 0.68)))
         .overlay {
             shape.strokeBorder(
-                isSelected ? BlitzUI.mint : Color.white.opacity(isActive ? 0.22 : 0.08),
+                isSelected ? BlitzUI.mint : Color.white.opacity(isActive ? 0.16 : 0.07),
                 lineWidth: isSelected ? 2 : 1
             )
             .allowsHitTesting(false)
         }
+        .overlay(alignment: .leading) {
+            if isActive {
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(BlitzUI.mint)
+                    .frame(width: 3)
+                    .padding(.vertical, 5)
+                    .padding(.leading, 2)
+                    .allowsHitTesting(false)
+            }
+        }
         .clipShape(shape)
+        .shadow(color: isSelected ? BlitzUI.mint.opacity(0.14) : .clear, radius: 5)
+        .animation(.easeOut(duration: 0.14), value: isSelected)
+        .animation(.easeOut(duration: 0.14), value: isActive)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(EditorSceneTimelineItemPresentation.make(scene: scene).title)
     }
@@ -775,18 +833,167 @@ private struct TimelineActionButton: View {
             Label(title, systemImage: systemName)
                 .font(.system(size: 10.5, weight: .semibold))
                 .foregroundStyle(.white.opacity(isDisabled ? 0.24 : (isHovering ? 0.94 : 0.68)))
-                .padding(.horizontal, 9)
-                .frame(height: 28)
+                .padding(.horizontal, 11)
+                .frame(height: 40)
                 .background(
                     Color.white.opacity(isHovering && !isDisabled ? 0.075 : 0.035),
-                    in: .rect(cornerRadius: 7)
+                    in: .rect(cornerRadius: 9)
                 )
-                .contentShape(.rect(cornerRadius: 7))
+                .contentShape(.rect(cornerRadius: 9))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(TimelinePressButtonStyle())
         .disabled(isDisabled)
         .onHover { isHovering = $0 && !isDisabled }
+        .animation(.easeOut(duration: 0.12), value: isHovering)
         .pointingHandCursor()
+    }
+}
+
+private struct TimelineTransportControls: View {
+    let isPlaying: Bool
+    let isDisabled: Bool
+    let onPrevious: () -> Void
+    let onTogglePlayback: () -> Void
+    let onNext: () -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            TimelineTransportButton(
+                systemName: "backward.end.fill",
+                help: "Previous segment",
+                isDisabled: isDisabled,
+                action: onPrevious
+            )
+
+            TimelinePlayPauseButton(
+                isPlaying: isPlaying,
+                isDisabled: isDisabled,
+                action: onTogglePlayback
+            )
+
+            TimelineTransportButton(
+                systemName: "forward.end.fill",
+                help: "Next segment",
+                isDisabled: isDisabled,
+                action: onNext
+            )
+        }
+    }
+}
+
+private struct TimelineTransportButton: View {
+    let systemName: String
+    let help: String
+    let isDisabled: Bool
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 10.5, weight: .bold))
+                .foregroundStyle(.white.opacity(isDisabled ? 0.24 : (isHovering ? 0.94 : 0.62)))
+                .frame(width: 40, height: 40)
+                .background(
+                    Color.white.opacity(isHovering && !isDisabled ? 0.08 : 0),
+                    in: .rect(cornerRadius: 9)
+                )
+                .contentShape(.rect(cornerRadius: 9))
+        }
+        .buttonStyle(TimelinePressButtonStyle())
+        .disabled(isDisabled)
+        .onHover { isHovering = $0 && !isDisabled }
+        .animation(.easeOut(duration: 0.12), value: isHovering)
+        .pointingHandCursor()
+        .help(help)
+    }
+}
+
+private struct TimelinePlayPauseButton: View {
+    let isPlaying: Bool
+    let isDisabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                Image(systemName: "play.fill")
+                    .offset(x: 1)
+                    .opacity(isPlaying ? 0 : 1)
+                    .scaleEffect(isPlaying ? 0.25 : 1)
+                    .blur(radius: isPlaying ? 4 : 0)
+
+                Image(systemName: "pause.fill")
+                    .opacity(isPlaying ? 1 : 0)
+                    .scaleEffect(isPlaying ? 1 : 0.25)
+                    .blur(radius: isPlaying ? 0 : 4)
+            }
+            .font(.system(size: 12.5, weight: .bold))
+            .foregroundStyle(.white.opacity(isDisabled ? 0.3 : 0.94))
+            .frame(width: 42, height: 40)
+            .background(BlitzUI.selectedFill, in: .rect(cornerRadius: 9))
+            .contentShape(.rect(cornerRadius: 9))
+        }
+        .buttonStyle(TimelinePressButtonStyle())
+        .disabled(isDisabled)
+        .animation(.easeOut(duration: 0.16), value: isPlaying)
+        .pointingHandCursor()
+        .help(isPlaying ? "Pause (Space)" : "Play (Space or L)")
+    }
+}
+
+private struct TimelinePlaybackRateSelector: View {
+    let playbackRate: EditorPlaybackRate
+    let isDisabled: Bool
+    let onSelect: (EditorPlaybackRate) -> Void
+
+    var body: some View {
+        HStack(spacing: 1) {
+            ForEach(EditorPlaybackRate.allCases, id: \.rawValue) { rate in
+                Button {
+                    onSelect(rate)
+                } label: {
+                    Text(rate.displayName)
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundStyle(
+                            playbackRate == rate
+                                ? BlitzUI.mint
+                                : Color.white.opacity(isDisabled ? 0.24 : 0.56)
+                        )
+                        .frame(width: 42, height: 40)
+                        .background(
+                            playbackRate == rate ? BlitzUI.mint.opacity(0.13) : Color.clear,
+                            in: .rect(cornerRadius: 9)
+                        )
+                        .contentShape(.rect(cornerRadius: 9))
+                }
+                .buttonStyle(TimelinePressButtonStyle())
+                .disabled(isDisabled)
+                .pointingHandCursor()
+                .help("Play at \(rate.displayName)")
+            }
+        }
+        .animation(.easeOut(duration: 0.14), value: playbackRate)
+        .help("Playback speed (L)")
+    }
+}
+
+private struct TimelineControlDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.08))
+            .frame(width: 1, height: 20)
+            .padding(.horizontal, 2)
+    }
+}
+
+private struct TimelinePressButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .opacity(configuration.isPressed ? 0.82 : 1)
+            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
     }
 }
 
@@ -882,13 +1089,12 @@ private struct TimelineClipHover: ViewModifier {
     func body(content: Content) -> some View {
         content
             .overlay {
-                if isHovering {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(Color.white.opacity(0.35), lineWidth: 1)
-                        .allowsHitTesting(false)
-                }
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(Color.white.opacity(isHovering ? 0.32 : 0), lineWidth: 1)
+                    .allowsHitTesting(false)
             }
             .onHover { isHovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: isHovering)
             .pointingHandCursor()
     }
 }

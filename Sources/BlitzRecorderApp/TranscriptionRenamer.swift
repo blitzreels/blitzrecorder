@@ -98,6 +98,10 @@ struct TitleGenerator {
             }
         }
 
+        if let fallbackTitle = Self.fallbackTitle(from: transcript) {
+            return fallbackTitle
+        }
+
         if let lastError {
             throw lastError
         }
@@ -238,6 +242,25 @@ struct TitleGenerator {
         )
         let middle = String(transcript[middleStart..<middleEnd])
         return "\(head)\n\n[Middle]\n\(middle)\n\n[End]\n\(tail)"
+    }
+
+    static func fallbackTitle(
+        from transcript: String
+    ) -> String? {
+        let stopWords: Set<String> = [
+            "about", "after", "again", "also", "and", "are", "because", "but",
+            "for", "from", "have", "how", "into", "just", "like", "that", "the",
+            "this", "today", "using", "was", "were", "with", "you", "your"
+        ]
+        let words = transcript
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { word in
+                word.count > 2 && !stopWords.contains(word.lowercased())
+            }
+            .prefix(7)
+        guard words.count >= 3 else { return nil }
+        let title = words.joined(separator: " ")
+        return title.prefix(1).uppercased() + title.dropFirst()
     }
 
     private static func titlePrompt(

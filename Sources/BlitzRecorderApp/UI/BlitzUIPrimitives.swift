@@ -8,6 +8,7 @@ enum BlitzUI {
     static let warning = Color(red: 1.0, green: 0.72, blue: 0.22)
     static let panelStroke = Color.white.opacity(0.10)
     static let canvasBackground = Color(red: 0.035, green: 0.035, blue: 0.043)
+    static let projectLibraryBackground = Color(red: 0.055, green: 0.055, blue: 0.063)
     static let quietFill = Color.white.opacity(0.045)
     static let selectedFill = Color.white.opacity(0.16)
     static let controlFill = Color.white.opacity(0.055)
@@ -109,7 +110,7 @@ struct BlitzScenePresetCard: View {
         .disabled(!isEnabled)
         .opacity(isEnabled || isSelected ? 1 : 0.5)
         .pointingHandCursor()
-        .help(preset.rawValue)
+        .help(preset.compactTitle)
     }
 
     private var visibleSources: Set<CaptureSource> {
@@ -254,13 +255,13 @@ extension ScenePreset {
         case .screenTop50:
             return "Split"
         case .cameraInset:
-            return "Inset"
+            return "Picture in picture"
         case .webcamLeft:
-            return "Left Cam"
+            return "Side by side"
         case .screenFullscreen:
-            return "Screen"
+            return "Screen only"
         case .webcamFullscreen:
-            return "Camera"
+            return "Camera only"
         default:
             return detail
         }
