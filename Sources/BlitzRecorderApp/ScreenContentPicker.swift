@@ -10,6 +10,17 @@ enum ScreenContentPickerPresentationMode {
     }
 }
 
+extension RecordingState {
+    var allowsScreenContentPickerPresentation: Bool {
+        switch self {
+        case .idle, .recording, .paused:
+            return true
+        case .starting, .finishing:
+            return false
+        }
+    }
+}
+
 enum ScreenContentPickerSelectionPolicy {
     case appWindow
     case fullScreen

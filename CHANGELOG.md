@@ -6,6 +6,13 @@ This project uses GitHub Releases for downloadable macOS builds. Release tags us
 
 ## Unreleased
 
+## 0.9.0 - 2026-07-28
+
+- Improved recording start and stop reliability when the macOS screen picker is open or changing sources.
+- Coalesced rapid screen-capture configuration changes to reduce redundant work and keep the latest settings.
+- Made selected-window fitting reliable across supported macOS versions without requesting broader screen access.
+- Prevented stale window-fit operations from resizing the wrong window after recording state changes.
+
 ## 0.7.0 - 2026-07-24
 
 - Faster exports: new Metal-based export compositor with hardware video encoding when available.

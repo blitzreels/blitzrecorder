@@ -1098,12 +1098,14 @@ final class RecorderCoordinator {
         guard permissionGate.hasAccessibilityAccess else { return }
 
         if settings.usesPickedScreenContent {
-            guard let binding = settings.screenSourceBinding,
-                  binding.kind == .application || binding.kind == .window,
-                  let filter = screenSourceSelection.pickedContentFilter else {
+            guard let filter = screenSourceSelection.pickedContentFilter,
+                  let sourceKind = activePickedScreenContentKind,
+                  sourceKind == .application || sourceKind == .window else {
                 return
             }
-            autoFitPickedScreenWindow(filter)
+            Task { [weak self, filter] in
+                await self?.autoFitPickedScreenWindow(filter)
+            }
             return
         }
 
@@ -1979,7 +1981,10 @@ final class RecorderCoordinator {
         let transactionTask = Task { @MainActor [weak self] in
             await previousPickerTransactionTask?.value
             await pendingConfigurationTask?.value
-            guard let self else { return }
+            guard let self,
+                  self.state.allowsScreenContentPickerPresentation else {
+                throw RecorderError.screenSelectionCancelled
+            }
             try await self.performScreenContentPick(request)
         }
         let barrierTask = Task { @MainActor in
@@ -2002,6 +2007,9 @@ final class RecorderCoordinator {
             selectionPolicy: request.selectionPolicy
         ))
         let persistentBinding = await ScreenCaptureGeometry.persistentBinding(forPickedContent: pickedFilter)
+        guard state.allowsScreenContentPickerPresentation else {
+            throw RecorderError.screenSelectionCancelled
+        }
         guard request.selectionPolicy.accepts(persistentBinding?.kind) else {
             throw RecorderError.screenWindowRequired
         }
@@ -2065,24 +2073,23 @@ final class RecorderCoordinator {
         }
         onScreenCaptureConfigurationChanged?()
         onRequestForeground?()
-        if request.selectionPolicy.shouldAutoFitPickedWindow,
-           persistentBinding != nil {
-            autoFitPickedScreenWindow(filter)
+        if request.selectionPolicy.shouldAutoFitPickedWindow {
+            await autoFitPickedScreenWindow(filter)
         }
     }
 
-    private func autoFitPickedScreenWindow(_ filter: SCContentFilter) {
-        guard permissionGate.hasAccessibilityAccess else { return }
-        let revision = beginScreenWindowFit()
-        Task { [weak self, filter] in
-            guard let self else { return }
-            _ = await self.fitPickedScreenWindow(
-                filter,
-                zoom: self.settings.screenWindowZoom,
-                shouldUpdateCapture: true,
-                revision: revision
-            )
+    private func autoFitPickedScreenWindow(_ filter: SCContentFilter) async {
+        guard state.allowsScreenContentPickerPresentation,
+              permissionGate.hasAccessibilityAccess else {
+            return
         }
+        let revision = beginScreenWindowFit()
+        _ = await fitPickedScreenWindow(
+            filter,
+            zoom: settings.screenWindowZoom,
+            shouldUpdateCapture: true,
+            revision: revision
+        )
     }
 
     @discardableResult
@@ -2133,6 +2140,9 @@ final class RecorderCoordinator {
                 }
                 guard let target = await ScreenCaptureGeometry.pickedWindowTarget(for: filter) else {
                     throw ShortsWindowArrangerError.noWindowFound
+                }
+                guard self.isCurrentPickedScreenWindowFit(revision) else {
+                    throw CancellationError()
                 }
                 return try ShortsWindowArranger.fitWindow(
                     ownerPID: target.pid,
@@ -2261,6 +2271,8 @@ final class RecorderCoordinator {
             onMessage?(startBlockedMessage(readiness))
             return
         }
+        screenContentPicker.cancel()
+        cancelPendingScreenWindowFits()
         do {
             let outputDirectoryAccess = try takeFileStore.prepareOutputDirectory(settings: settings)
             guard recordingSession.beginPreparation(
@@ -2414,8 +2426,8 @@ final class RecorderCoordinator {
 
         if settings.usesPickedScreenContent {
             guard let filter = screenSourceSelection.pickedContentFilter,
-                  let binding = settings.screenSourceBinding,
-                  binding.kind != .display else {
+                  let sourceKind = activePickedScreenContentKind,
+                  sourceKind == .application || sourceKind == .window else {
                 return
             }
             let revision = beginScreenWindowFit()
@@ -2564,10 +2576,11 @@ final class RecorderCoordinator {
     }
 
     func stop() {
+        guard let stopContext = recordingSession.beginFinishing() else { return }
         screenContentPicker.cancel()
+        cancelPendingScreenWindowFits()
         let pendingScreenPickerTransactionTask = activeScreenPickerTransactionTask
         let pendingScreenCaptureConfigurationTask = activeScreenCaptureConfigurationTask
-        guard let stopContext = recordingSession.beginFinishing() else { return }
         takeRecording.pauseSceneTimeline()
         onRenderProgress?(0)
         onMessage?("Stopping recording...")
@@ -3031,6 +3044,7 @@ final class RecorderCoordinator {
         }
 
         let requestedSettings = settings
+        activeScreenCaptureConfigurationRevision += 1
         let generation = activeScreenCaptureConfigurationRevision
         let previousTask = activeScreenCaptureConfigurationTask
         let pickerTransactionTask = activeScreenPickerTransactionTask

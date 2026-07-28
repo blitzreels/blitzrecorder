@@ -422,8 +422,11 @@ enum ScreenCaptureGeometry {
 
     static func pickedWindowTarget(for filter: SCContentFilter) async -> PickedWindowTarget? {
         let contentRect = SCShareableContent.info(for: filter).contentRect
-        guard contentRect.width > 0, contentRect.height > 0,
-              let content = try? await SCShareableContent.current else {
+        guard contentRect.width > 0, contentRect.height > 0 else {
+            return nil
+        }
+
+        guard let content = try? await SCShareableContent.currentProcess else {
             return nil
         }
 

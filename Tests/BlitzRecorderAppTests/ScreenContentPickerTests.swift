@@ -3,6 +3,14 @@ import ScreenCaptureKit
 import XCTest
 
 final class ScreenContentPickerTests: XCTestCase {
+    func testPickerPresentationIsRejectedDuringStartAndFinalization() {
+        XCTAssertTrue(RecordingState.idle.allowsScreenContentPickerPresentation)
+        XCTAssertTrue(RecordingState.recording.allowsScreenContentPickerPresentation)
+        XCTAssertTrue(RecordingState.paused.allowsScreenContentPickerPresentation)
+        XCTAssertFalse(RecordingState.starting.allowsScreenContentPickerPresentation)
+        XCTAssertFalse(RecordingState.finishing.allowsScreenContentPickerPresentation)
+    }
+
     func testAutomaticFitPickerOnlyAllowsWindowSelection() {
         XCTAssertEqual(
             ScreenContentPickerSelectionPolicy.appWindow.allowedModes,
