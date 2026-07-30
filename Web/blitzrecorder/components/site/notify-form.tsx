@@ -26,7 +26,9 @@ export function NotifyForm({
   className?: string;
 }) {
   const [email, setEmail] = useState("");
-  const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [state, setState] = useState<"idle" | "loading" | "done" | "error">(
+    "idle",
+  );
   const [error, setError] = useState<string | null>(null);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -40,7 +42,10 @@ export function NotifyForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, source, os }),
       });
-      const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      const data = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+      } | null;
       if (!res.ok || !data?.ok) {
         setError(data?.error ?? "Something went wrong. Please try again.");
         setState("error");
@@ -60,7 +65,12 @@ export function NotifyForm({
 
   if (state === "done") {
     return (
-      <p className={"inline-flex items-center gap-2 text-sm font-medium text-primary " + (className ?? "")}>
+      <p
+        className={
+          "inline-flex items-center gap-2 text-sm font-medium text-primary " +
+          (className ?? "")
+        }
+      >
         <Check className="size-4" />
         {success}
       </p>
@@ -69,17 +79,27 @@ export function NotifyForm({
 
   return (
     <div className={"w-full max-w-md " + (className ?? "")}>
-      <form onSubmit={onSubmit} className="flex flex-col gap-2 sm:flex-row">
+      <form
+        onSubmit={onSubmit}
+        className="flex w-full flex-col items-stretch gap-2 sm:flex-row"
+      >
         <input
           type="email"
+          name="email"
           required
+          autoComplete="email"
+          inputMode="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder={placeholder}
           aria-label="Email address"
-          className="h-11 flex-1 rounded-full border border-border bg-background/70 px-4 text-sm text-foreground outline-none transition-colors placeholder:text-faint focus:border-primary/60"
+          className="h-12 min-h-12 w-full rounded-full border border-border bg-background/70 px-4 text-base text-foreground outline-none transition-colors placeholder:text-faint focus:border-primary/60 sm:flex-1 sm:text-sm"
         />
-        <Button type="submit" disabled={state === "loading"} className="h-11 rounded-full px-5">
+        <Button
+          type="submit"
+          disabled={state === "loading"}
+          className="h-12 min-h-12 w-full rounded-full px-5 text-base sm:w-auto sm:text-sm"
+        >
           {state === "loading" ? "Sending..." : cta}
           {state !== "loading" ? <ArrowUpRight className="size-4" /> : null}
         </Button>
