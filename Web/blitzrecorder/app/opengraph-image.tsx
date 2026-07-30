@@ -41,8 +41,6 @@ export default async function OpengraphImage() {
   ]);
   const icon = `data:image/png;base64,${iconData.toString("base64")}`;
   const screen = `data:image/png;base64,${screenData.toString("base64")}`;
-  const fontFamily = font ? "Schibsted Grotesk" : undefined;
-
   return new ImageResponse(
     (
       <div
@@ -52,7 +50,7 @@ export default async function OpengraphImage() {
           display: "flex",
           position: "relative",
           background: "#060709",
-          fontFamily,
+          ...(font ? { fontFamily: "Schibsted Grotesk" } : {}),
         }}
       >
         {/* mint spotlight behind the screenshot */}
