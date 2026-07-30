@@ -76,8 +76,12 @@ export function WatchFilm() {
             />
             <Play className="relative ml-0.5 size-3.5" />
           </span>
-          <span className="text-sm font-semibold text-foreground">Watch the film</span>
-          <span className="-ml-1 font-mono text-xs text-muted-foreground">0:39</span>
+          <span className="text-sm font-semibold text-foreground">
+            Watch the film
+          </span>
+          <span className="-ml-1 font-mono text-xs text-muted-foreground">
+            0:39
+          </span>
         </span>
       </button>
 
@@ -86,9 +90,19 @@ export function WatchFilm() {
         onClose={() => videoRef.current?.pause()}
         // Close when the backdrop (the dialog element itself) is clicked.
         onClick={(e) => e.target === e.currentTarget && close()}
-        className="m-auto w-[min(1080px,94vw)] overflow-visible bg-transparent p-0 backdrop:bg-black/85 backdrop:backdrop-blur-sm open:animate-in open:fade-in open:zoom-in-95 open:duration-300"
+        className="m-auto w-[min(1080px,94vw)] max-h-[94svh] overflow-visible bg-transparent p-0 backdrop:bg-black/85 backdrop:backdrop-blur-sm open:animate-in open:fade-in open:zoom-in-95 open:duration-300"
       >
-        <div className="relative">
+        <div className="flex max-h-[94svh] -translate-y-12 flex-col gap-3 sm:translate-y-0">
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={close}
+              aria-label="Close video"
+              className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-full bg-white/10 px-3 text-sm font-medium text-foreground shadow-[0_12px_30px_-18px_rgba(0,0,0,0.9)] ring-1 ring-white/15 backdrop-blur-md transition-colors hover:bg-white/20"
+            >
+              <Close className="size-4" />
+            </button>
+          </div>
           <video
             ref={videoRef}
             src={FILM_SRC}
@@ -96,16 +110,8 @@ export function WatchFilm() {
             playsInline
             preload="none"
             onEnded={trackEnded}
-            className="aspect-video w-full rounded-xl bg-black ring-1 ring-white/10"
+            className="aspect-video max-h-[calc(94svh-48px)] w-full rounded-xl bg-black object-contain ring-1 ring-white/10"
           />
-          <button
-            type="button"
-            onClick={close}
-            aria-label="Close video"
-            className="absolute -top-12 right-0 grid size-9 cursor-pointer place-items-center rounded-full bg-white/10 text-foreground transition-colors hover:bg-white/20"
-          >
-            <Close className="size-4" />
-          </button>
         </div>
       </dialog>
     </>
