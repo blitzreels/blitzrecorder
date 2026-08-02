@@ -3,6 +3,14 @@ import CoreMedia
 import Foundation
 import VideoToolbox
 
+struct OptimizedVideoSettingsRequest {
+    let width: Int
+    let height: Int
+    let bitrate: Int
+    let framesPerSecond: Int
+    let hardwareEncoderAvailable: Bool
+}
+
 enum OptimizedCompositionExporter {
     static func export(
         composition: AVComposition,
@@ -51,23 +59,15 @@ enum OptimizedCompositionExporter {
                 codecType: kCMVideoCodecType_HEVC
             )
         )
-        var videoSettings: [String: Any] = [
-            AVVideoCodecKey: AVVideoCodecType.hevc,
-            AVVideoWidthKey: width,
-            AVVideoHeightKey: height,
-            AVVideoCompressionPropertiesKey: [
-                AVVideoAverageBitRateKey: settings.finalVideoBitrate,
-                AVVideoExpectedSourceFrameRateKey: settings.framesPerSecond,
-                AVVideoAllowFrameReorderingKey: false,
-                AVVideoProfileLevelKey: kVTProfileLevel_HEVC_Main_AutoLevel as String,
-                kVTCompressionPropertyKey_RealTime as String: false
-            ]
-        ]
-        if hardwareEncoderStatus.isAvailable {
-            videoSettings[AVVideoEncoderSpecificationKey] = [
-                kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder as String: true
-            ]
-        }
+        let videoSettings = videoOutputSettings(
+            for: OptimizedVideoSettingsRequest(
+                width: width,
+                height: height,
+                bitrate: settings.finalVideoBitrate,
+                framesPerSecond: settings.framesPerSecond,
+                hardwareEncoderAvailable: hardwareEncoderStatus.isAvailable
+            )
+        )
         let videoInput = AVAssetWriterInput(
             mediaType: .video,
             outputSettings: videoSettings
@@ -138,6 +138,32 @@ enum OptimizedCompositionExporter {
             progressHandler: progressHandler
         )
         _ = performanceMonitor.finish(outputURL: outputURL)
+    }
+
+    static func videoOutputSettings(for request: OptimizedVideoSettingsRequest) -> [String: Any] {
+        var outputSettings: [String: Any] = [
+            AVVideoCodecKey: AVVideoCodecType.hevc,
+            AVVideoWidthKey: request.width,
+            AVVideoHeightKey: request.height,
+            AVVideoColorPropertiesKey: [
+                AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+                AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2
+            ],
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: request.bitrate,
+                AVVideoExpectedSourceFrameRateKey: request.framesPerSecond,
+                AVVideoAllowFrameReorderingKey: true,
+                AVVideoProfileLevelKey: kVTProfileLevel_HEVC_Main_AutoLevel as String,
+                kVTCompressionPropertyKey_RealTime as String: false
+            ]
+        ]
+        if request.hardwareEncoderAvailable {
+            outputSettings[AVVideoEncoderSpecificationKey] = [
+                kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder as String: true
+            ]
+        }
+        return outputSettings
     }
 
     private static func run(

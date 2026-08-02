@@ -29,6 +29,29 @@ final class ProjectLibraryPlaybackPresentationTests: XCTestCase {
         XCTAssertEqual(ProjectLibraryDetailTab.media.systemImage, "film.stack")
     }
 
+    func testMediaInventorySummaryCountsEveryCaptureType() {
+        let summary = ProjectMediaInventorySummary(
+            screenCaptureCount: 2,
+            cameraCaptureCount: 1,
+            audioTrackCount: 2
+        )
+
+        XCTAssertEqual(
+            summary.label,
+            "2 Screen captures · 1 Camera capture · 2 audio tracks"
+        )
+    }
+
+    func testEmptyMediaInventoryExplainsMissingCaptureFiles() {
+        let summary = ProjectMediaInventorySummary(
+            screenCaptureCount: 0,
+            cameraCaptureCount: 0,
+            audioTrackCount: 0
+        )
+
+        XCTAssertEqual(summary.label, "No original capture files available")
+    }
+
     func testPortraitVideoUsesPortraitSurface() {
         let layout = ProjectLibraryPlayerSizing.layout(.init(
             contentSize: CGSize(width: 1080, height: 1920),

@@ -448,10 +448,12 @@ private struct RecordingQualityShortcut: View {
     var body: some View {
         BlitzGlassMenu(entries: qualityEntries, menuWidth: 252) {
             HStack(spacing: 7) {
-                Text("\(vm.settings.outputResolution.displayName) · \(vm.settings.framesPerSecond) FPS")
+                Text(qualityPresentation.compactLabel)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.90))
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(.white.opacity(0.42))
@@ -462,11 +464,11 @@ private struct RecordingQualityShortcut: View {
         .blitzGlassButton()
         .disabled(vm.state != .idle)
         .pointingHandCursor()
-        .help("Choose recording resolution and frame rate")
+        .help("Choose recording resolution and Source FPS")
     }
 
     private var qualityEntries: [BlitzMenuEntry] {
-        var entries: [BlitzMenuEntry] = [.section("Resolution")]
+        var entries: [BlitzMenuEntry] = [.section("Recording resolution")]
         entries += OutputResolution.allCases.map { resolution in
             .item(BlitzMenuItem(
                 title: resolution.displayName,
@@ -478,7 +480,7 @@ private struct RecordingQualityShortcut: View {
             })
         }
         entries.append(.divider)
-        entries.append(.section("Frame rate"))
+        entries.append(.section("Source FPS"))
         entries += RecordingSettings.supportedFrameRates.map { fps in
             .item(BlitzMenuItem(
                 title: "\(fps) FPS",
@@ -490,6 +492,10 @@ private struct RecordingQualityShortcut: View {
             })
         }
         return entries
+    }
+
+    private var qualityPresentation: RecordingQualityPresentation {
+        RecordingQualityPresentation(settings: vm.settings)
     }
 
     private func resolutionDimensions(_ resolution: OutputResolution) -> String {
@@ -767,6 +773,20 @@ private struct SceneEditorHeader: View {
         vm.canEditScene && vm.currentScenes.count > 1
     }
 
+    private var selectedSceneIndex: Int? {
+        guard let id = vm.selectedSceneID else { return nil }
+        return vm.currentScenes.firstIndex(where: { $0.id == id })
+    }
+
+    private var canMoveEarlier: Bool {
+        vm.canEditScene && (selectedSceneIndex ?? 0) > 0
+    }
+
+    private var canMoveLater: Bool {
+        guard vm.canEditScene, let selectedSceneIndex else { return false }
+        return selectedSceneIndex < vm.currentScenes.count - 1
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             BlitzUI.sectionLabel("Editing", icon: "slider.horizontal.3")
@@ -782,6 +802,10 @@ private struct SceneEditorHeader: View {
                     Spacer(minLength: 0)
                     deleteButton
                 }
+            }
+
+            if !isEditing {
+                sceneActions
             }
 
             if vm.isSourceVisible(.camera) {
@@ -878,6 +902,60 @@ private struct SceneEditorHeader: View {
             Spacer(minLength: 0)
         }
         .help("Camera source: \(vm.selectedCameraDisplayName). Switch cameras in Devices on the left.")
+    }
+
+    private var sceneActions: some View {
+        HStack(spacing: 6) {
+            Text(vm.settings.selectedScenePreset?.compactTitle ?? "Custom layout")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.white.opacity(0.52))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(BlitzUI.quietFill, in: .capsule)
+
+            Spacer(minLength: 0)
+
+            Button {
+                vm.duplicateSelectedScene()
+            } label: {
+                Image(systemName: "plus.square.on.square")
+                    .font(.system(size: 10, weight: .semibold))
+                    .frame(width: 23, height: 23)
+            }
+            .blitzGlassButton()
+            .controlSize(.small)
+            .disabled(!vm.canEditScene)
+            .pointingHandCursor()
+            .help("Duplicate this scene")
+
+            Button {
+                guard let id = vm.selectedSceneID else { return }
+                vm.moveScene(id, direction: .up)
+            } label: {
+                Image(systemName: "arrow.left")
+                    .font(.system(size: 10, weight: .semibold))
+                    .frame(width: 23, height: 23)
+            }
+            .blitzGlassButton()
+            .controlSize(.small)
+            .disabled(!canMoveEarlier)
+            .pointingHandCursor()
+            .help("Move this scene earlier")
+
+            Button {
+                guard let id = vm.selectedSceneID else { return }
+                vm.moveScene(id, direction: .down)
+            } label: {
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .frame(width: 23, height: 23)
+            }
+            .blitzGlassButton()
+            .controlSize(.small)
+            .disabled(!canMoveLater)
+            .pointingHandCursor()
+            .help("Move this scene later")
+        }
     }
 
     private var renameButton: some View {

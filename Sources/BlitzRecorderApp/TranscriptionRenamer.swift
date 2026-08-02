@@ -57,6 +57,17 @@ struct TitleGenerator {
         let prompt: String
     }
 
+    private struct OllamaTitleRequest {
+        let model: String
+        let transcript: String
+    }
+
+    struct TopicBriefPromptRequest {
+        let chunk: String
+        let index: Int
+        let total: Int
+    }
+
     func title(
         _ request: TranscriptTitleRequest
     ) async throws -> String {
@@ -84,10 +95,10 @@ struct TitleGenerator {
 
         for model in ["qwen2.5:0.5b", "llama3.2:1b", "gemma3:1b"] {
             do {
-                let generated = try await ollamaGenerate(
-                    OllamaGenerationRequest(
+                let generated = try await ollamaTitle(
+                    OllamaTitleRequest(
                         model: model,
-                        prompt: Self.titlePrompt(for: transcript)
+                        transcript: transcript
                     )
                 )
                 if let title = Self.sanitizeGeneratedTitle(generated) {
@@ -114,29 +125,43 @@ struct TitleGenerator {
             return nil
         }
 
-        for model in ["qwen2.5:0.5b", "llama3.2:1b", "gemma3:1b"] {
-            let prompt = """
-            Create a short YouTube filename slug from this transcript.
-            Rules:
-            - 3 to 8 words
-            - lowercase
-            - hyphen-separated
-            - no quotes
-            - no extension
-
-            Transcript:
-            \(String(trimmed.prefix(2_800)))
-            """
-            if let generated = try? await ollamaGenerate(
-                OllamaGenerationRequest(model: model, prompt: prompt)
-            ),
-               let slug = Self.sanitizeSlug(generated),
-               Self.hasUsableTitleSignal(slug) {
-                return slug
-            }
+        if let generatedTitle = try? await title(
+            TranscriptTitleRequest(transcript: trimmed)
+        ),
+           let slug = Self.sanitizeSlug(generatedTitle),
+           Self.hasUsableTitleSignal(slug) {
+            return slug
         }
 
-        return fallbackSlug(from: trimmed)
+        return Self.fallbackSlug(from: trimmed)
+    }
+
+    private func ollamaTitle(
+        _ request: OllamaTitleRequest
+    ) async throws -> String {
+        let chunks = Self.transcriptChunks(request.transcript)
+        guard chunks.count > 1 else {
+            return try await ollamaGenerate(OllamaGenerationRequest(
+                model: request.model,
+                prompt: Self.titlePrompt(for: request.transcript)
+            ))
+        }
+
+        var briefs: [String] = []
+        for (index, chunk) in chunks.enumerated() {
+            briefs.append(try await ollamaGenerate(OllamaGenerationRequest(
+                model: request.model,
+                prompt: Self.topicBriefPrompt(TopicBriefPromptRequest(
+                    chunk: chunk,
+                    index: index,
+                    total: chunks.count
+                ))
+            )))
+        }
+        return try await ollamaGenerate(OllamaGenerationRequest(
+            model: request.model,
+            prompt: Self.titleFromBriefsPrompt(briefs)
+        ))
     }
 
     private func ollamaGenerate(
@@ -165,22 +190,6 @@ struct TitleGenerator {
         }
 
         return generated
-    }
-
-    private func fallbackSlug(from transcript: String) -> String? {
-        let stopWords: Set<String> = [
-            "about", "after", "again", "also", "and", "because", "but", "for", "from",
-            "have", "into", "just", "like", "that", "the", "this", "with", "you", "your"
-        ]
-        let words = transcript
-            .lowercased()
-            .components(separatedBy: CharacterSet.alphanumerics.inverted)
-            .filter { $0.count > 2 && !stopWords.contains($0) }
-
-        guard words.count >= 3 else {
-            return nil
-        }
-        return Self.sanitizeSlug(words.prefix(7).joined(separator: "-"))
     }
 
     static func sanitizeGeneratedTitle(
@@ -221,27 +230,26 @@ struct TitleGenerator {
         return title
     }
 
-    static func condensedTranscript(
+    static func transcriptChunks(
         _ transcript: String
-    ) -> String {
-        let limit = 6_000
-        guard transcript.count > limit else { return transcript }
+    ) -> [String] {
+        let maximumChunkCharacters = 10_000
+        guard transcript.count > maximumChunkCharacters else { return [transcript] }
 
-        let head = String(transcript.prefix(3_000))
-        let tail = String(transcript.suffix(1_500))
-        let middleStart = transcript.index(
-            transcript.startIndex,
-            offsetBy: max(0, transcript.count / 2 - 750)
-        )
-        let middleEnd = transcript.index(
-            middleStart,
-            offsetBy: min(1_500, transcript.distance(
-                from: middleStart,
-                to: transcript.endIndex
-            ))
-        )
-        let middle = String(transcript[middleStart..<middleEnd])
-        return "\(head)\n\n[Middle]\n\(middle)\n\n[End]\n\(tail)"
+        var chunks: [String] = []
+        var start = transcript.startIndex
+        while start < transcript.endIndex {
+            let end = transcript.index(
+                start,
+                offsetBy: min(
+                    maximumChunkCharacters,
+                    transcript.distance(from: start, to: transcript.endIndex)
+                )
+            )
+            chunks.append(String(transcript[start..<end]))
+            start = end
+        }
+        return chunks
     }
 
     static func fallbackTitle(
@@ -252,15 +260,70 @@ struct TitleGenerator {
             "for", "from", "have", "how", "into", "just", "like", "that", "the",
             "this", "today", "using", "was", "were", "with", "you", "your"
         ]
-        let words = transcript
+        var counts: [String: Int] = [:]
+        var firstPositions: [String: Int] = [:]
+        let candidates = transcript
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { word in
                 word.count > 2 && !stopWords.contains(word.lowercased())
             }
-            .prefix(7)
+        for (index, word) in candidates.enumerated() {
+            let normalized = word.lowercased()
+            counts[normalized, default: 0] += 1
+            if firstPositions[normalized] == nil {
+                firstPositions[normalized] = index
+            }
+        }
+        let words = counts.keys.sorted { lhs, rhs in
+            let lhsCount = counts[lhs, default: 0]
+            let rhsCount = counts[rhs, default: 0]
+            if lhsCount != rhsCount {
+                return lhsCount > rhsCount
+            }
+            return firstPositions[lhs, default: 0] < firstPositions[rhs, default: 0]
+        }.prefix(7)
         guard words.count >= 3 else { return nil }
         let title = words.joined(separator: " ")
         return title.prefix(1).uppercased() + title.dropFirst()
+    }
+
+    static func fallbackSlug(
+        from transcript: String
+    ) -> String? {
+        guard let title = fallbackTitle(from: transcript) else { return nil }
+        return sanitizeSlug(title)
+    }
+
+    static func topicBriefPrompt(
+        _ request: TopicBriefPromptRequest
+    ) -> String {
+        """
+        This is part \(request.index + 1) of \(request.total) from one recording transcript.
+        Identify the concrete subjects, decisions, and repeated themes in this part.
+        Return a compact factual brief in the transcript's language.
+
+        Transcript part:
+        \(request.chunk)
+        """
+    }
+
+    static func titleFromBriefsPrompt(
+        _ briefs: [String]
+    ) -> String {
+        let joinedBriefs = briefs.enumerated().map { index, brief in
+            "[Part \(index + 1)]\n\(brief)"
+        }.joined(separator: "\n\n")
+        return """
+        These briefs cover every consecutive part of one recording transcript.
+        Identify the main subject across the complete recording.
+        Return one concise, specific video title in the transcript's language.
+        Use 4 to 10 words.
+        Do not use quotes, markdown, a filename slug, or generic phrases.
+        Return only the title.
+
+        Full-recording briefs:
+        \(joinedBriefs)
+        """
     }
 
     private static func titlePrompt(
@@ -274,7 +337,7 @@ struct TitleGenerator {
         Return only the title.
 
         Transcript:
-        \(condensedTranscript(transcript))
+        \(transcript)
         """
     }
 
@@ -316,18 +379,50 @@ struct TitleGenerator {
         guard model.availability == .available else {
             throw TranscriptTitleGenerationError.modelUnavailable
         }
-        let session = LanguageModelSession(
+
+        let chunks = Self.transcriptChunks(transcript)
+        guard chunks.count > 1 else {
+            let session = LanguageModelSession(
+                model: model,
+                instructions: Self.titleInstructions
+            )
+            return try await session.respond(
+                to: Self.titlePrompt(for: transcript)
+            ).content
+        }
+
+        var briefs: [String] = []
+        for (index, chunk) in chunks.enumerated() {
+            let session = LanguageModelSession(
+                model: model,
+                instructions: """
+                Extract a compact factual topic brief from one transcript part.
+                Preserve the transcript's language and use at most 80 words.
+                """
+            )
+            briefs.append(try await session.respond(
+                to: Self.topicBriefPrompt(TopicBriefPromptRequest(
+                    chunk: chunk,
+                    index: index,
+                    total: chunks.count
+                ))
+            ).content)
+        }
+
+        let finalSession = LanguageModelSession(
             model: model,
-            instructions: """
-            You create concise, accurate titles for screen recordings.
-            Base the title on the main subject discussed throughout the transcript.
-            Preserve the transcript's language.
-            """
+            instructions: Self.titleInstructions
         )
-        return try await session.respond(
-            to: Self.titlePrompt(for: transcript)
+        return try await finalSession.respond(
+            to: Self.titleFromBriefsPrompt(briefs)
         ).content
     }
+
+    private static let titleInstructions = """
+    You create concise, accurate titles for screen recordings.
+    Base the title on the main subject discussed throughout the complete transcript.
+    Preserve the transcript's language.
+    """
     #endif
 }
 

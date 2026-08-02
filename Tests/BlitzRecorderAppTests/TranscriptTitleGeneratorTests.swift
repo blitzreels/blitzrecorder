@@ -14,17 +14,27 @@ final class TranscriptTitleGeneratorTests: XCTestCase {
         XCTAssertNil(TitleGenerator.sanitizeGeneratedTitle("Okay yeah thanks"))
     }
 
-    func testCondensedTranscriptKeepsBeginningMiddleAndEnd() {
-        let transcript = String(repeating: "A", count: 3_000)
-            + String(repeating: "B", count: 3_000)
-            + String(repeating: "C", count: 3_000)
+    func testTranscriptChunksCoverEveryCharacterInOrder() {
+        let transcript = String(repeating: "A", count: 8_000)
+            + String(repeating: "B", count: 8_000)
+            + String(repeating: "C", count: 8_000)
 
-        let condensed = TitleGenerator.condensedTranscript(transcript)
+        let chunks = TitleGenerator.transcriptChunks(transcript)
 
-        XCTAssertTrue(condensed.contains(String(repeating: "A", count: 200)))
-        XCTAssertTrue(condensed.contains(String(repeating: "B", count: 200)))
-        XCTAssertTrue(condensed.contains(String(repeating: "C", count: 200)))
-        XCTAssertLessThan(condensed.count, transcript.count)
+        XCTAssertEqual(chunks.count, 3)
+        XCTAssertEqual(chunks.joined(), transcript)
+    }
+
+    func testTitleSynthesisIncludesEveryChunkBrief() {
+        let prompt = TitleGenerator.titleFromBriefsPrompt([
+            "Opening context",
+            "Pricing decision",
+            "Retention plan"
+        ])
+
+        XCTAssertTrue(prompt.contains("Opening context"))
+        XCTAssertTrue(prompt.contains("Pricing decision"))
+        XCTAssertTrue(prompt.contains("Retention plan"))
     }
 
     func testFallbackTitleUsesMeaningfulTranscriptWords() {
@@ -33,5 +43,14 @@ final class TranscriptTitleGeneratorTests: XCTestCase {
         )
 
         XCTAssertEqual(title, "Building responsive project library large displays")
+    }
+
+    func testFallbackTitleUsesRecurringTopicAcrossWholeCall() {
+        let transcript = "Welcome everyone. "
+            + String(repeating: "We discussed retention onboarding activation. ", count: 6)
+
+        let title = TitleGenerator.fallbackTitle(from: transcript)
+
+        XCTAssertEqual(title, "Discussed retention onboarding activation welcome everyone")
     }
 }

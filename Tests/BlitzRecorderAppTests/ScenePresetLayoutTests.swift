@@ -148,6 +148,11 @@ final class ScenePresetLayoutTests: XCTestCase {
         XCTAssertEqual(SceneLayout.maximumCameraInsetSize(for: .vertical), 0.93, accuracy: 0.0001)
     }
 
+    func testCameraInsetIsAvailableInBothCanvasOrientations() {
+        XCTAssertTrue(ScenePreset.cameraInset.supports(.vertical))
+        XCTAssertTrue(ScenePreset.cameraInset.supports(.horizontal))
+    }
+
     func testCameraInsetCanUseBottomLeftPortraitFrame() {
         let frame = SceneLayout.cameraInsetFrame(
             for: .horizontal,

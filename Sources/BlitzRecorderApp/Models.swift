@@ -1352,7 +1352,7 @@ extension ScenePreset {
         case .screenTop70:
             return [.vertical]
         case .cameraInset:
-            return [.horizontal]
+            return [.vertical, .horizontal]
         case .screenFocus:
             return [.vertical, .horizontal]
         case .screenFullscreen, .webcamFullscreen:

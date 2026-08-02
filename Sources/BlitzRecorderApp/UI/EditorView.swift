@@ -521,16 +521,17 @@ struct EditorView: View {
                     Text("Export video")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.white.opacity(0.95))
-                    Text("Choose the quality and file type.")
+                    Text("Compress the final composed video. Recorded sources stay unchanged.")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.white.opacity(0.52))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
             VStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 10) {
-                        exportRowLabel("Preset")
+                        exportRowLabel("Export preset")
                         HStack(spacing: 6) {
                             ForEach(ExportPerformancePreset.allCases, id: \.rawValue) { preset in
                                 exportPerformancePresetButton(preset)
@@ -541,14 +542,14 @@ struct EditorView: View {
                     Text(selectedExportPreset.plainDescription)
                         .font(.system(size: 10.5, weight: .medium))
                         .foregroundStyle(.white.opacity(0.48))
-                        .padding(.leading, 76)
+                        .padding(.leading, 102)
                 }
                 .padding(12)
 
                 exportSettingsDivider
 
                 HStack(spacing: 10) {
-                    exportRowLabel("Format")
+                    exportRowLabel("Export format")
                     HStack(spacing: 6) {
                         ForEach(OutputVideoFormat.allCases, id: \.rawValue) { format in
                             exportFormatButton(format)
@@ -560,7 +561,7 @@ struct EditorView: View {
                 exportSettingsDivider
 
                 HStack(spacing: 10) {
-                    exportRowLabel("Resolution")
+                    exportRowLabel("Export resolution")
                     HStack(spacing: 6) {
                         ForEach(OutputResolution.allCases, id: \.rawValue) { resolution in
                             exportResolutionButton(resolution)
@@ -572,7 +573,7 @@ struct EditorView: View {
                 exportSettingsDivider
 
                 HStack(spacing: 10) {
-                    exportRowLabel("Frame rate")
+                    exportRowLabel("Export FPS")
                     HStack(spacing: 6) {
                         ForEach(RecordingSettings.supportedFrameRates, id: \.self) { framesPerSecond in
                             exportFrameRateButton(framesPerSecond)
@@ -585,7 +586,7 @@ struct EditorView: View {
 
                 VStack(alignment: .leading, spacing: 7) {
                     HStack(spacing: 10) {
-                        exportRowLabel("Quality")
+                        exportRowLabel("Export quality")
                         HStack(spacing: 6) {
                             ForEach(ExportVideoQuality.allCases, id: \.rawValue) { quality in
                                 exportQualityButton(quality)
@@ -593,10 +594,10 @@ struct EditorView: View {
                         }
                     }
 
-                    Text(selectedExportQuality.plainDescription)
+                    Text("\(selectedExportQuality.plainDescription) · Final video only")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.white.opacity(0.42))
-                        .padding(.leading, 76)
+                        .padding(.leading, 102)
                 }
                 .padding(12)
             }
@@ -659,14 +660,16 @@ struct EditorView: View {
         Text(title)
             .font(.system(size: 10.5, weight: .semibold))
             .foregroundStyle(.white.opacity(0.52))
-            .frame(width: 66, alignment: .leading)
+            .lineLimit(1)
+            .minimumScaleFactor(0.78)
+            .frame(width: 92, alignment: .leading)
     }
 
     private var exportSettingsDivider: some View {
         Rectangle()
             .fill(Color.white.opacity(0.065))
             .frame(height: 1)
-            .padding(.leading, 88)
+            .padding(.leading, 114)
     }
 
     private func exportFormatButton(_ format: OutputVideoFormat) -> some View {
@@ -793,7 +796,7 @@ struct EditorView: View {
         let estimatedBytes = Int64(max(0, timelineDuration) * Double(exportBitrate + 192_000) / 8)
         let estimatedSize = ByteCountFormatter.string(fromByteCount: estimatedBytes, countStyle: .file)
         let bitrateLabel = String(format: "%.1f", bitrate)
-        return "\(dimensions.width) × \(dimensions.height) · \(exportFrameRate) fps · "
+        return "\(dimensions.width) × \(dimensions.height) · Export FPS \(exportFrameRate) · "
             + "HEVC · \(bitrateLabel) Mbps · ~\(estimatedSize)"
     }
 

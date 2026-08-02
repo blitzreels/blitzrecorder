@@ -93,6 +93,15 @@ struct EditorAsset: Identifiable, Equatable {
         return assets
     }
 
+    static func output(url: URL) -> EditorAsset {
+        EditorAsset(
+            url: url,
+            kind: .output,
+            role: "output",
+            exists: FileManager.default.fileExists(atPath: url.path)
+        )
+    }
+
     private static func shouldShowSource(
         _ source: RecordingProject.SourceFile,
         enabledSources: Set<CaptureSource>
@@ -132,6 +141,11 @@ struct EditorAsset: Identifiable, Equatable {
     }
 }
 
+struct EditorMediaTechnicalMetadata: Equatable, Sendable {
+    let format: String
+    let quality: String
+}
+
 private struct EditorLoadedMedia: Sendable {
     let id: String
     let duration: Double
@@ -139,6 +153,7 @@ private struct EditorLoadedMedia: Sendable {
     let poster: CGImage?
     let filmstrip: [CGImage]
     let waveform: [Float]
+    let technicalMetadata: EditorMediaTechnicalMetadata
 }
 
 struct EditorFilmstripLoadRequest: Sendable {
@@ -155,13 +170,17 @@ final class EditorMediaLibrary {
     private(set) var waveforms: [String: [Float]] = [:]
     private(set) var durations: [String: Double] = [:]
     private(set) var fileSizes: [String: String] = [:]
+    private(set) var technicalMetadata: [String: EditorMediaTechnicalMetadata] = [:]
 
     @ObservationIgnored private var loadingIDs: Set<String> = []
     @ObservationIgnored private var filmstripLoadingCounts: [String: Int] = [:]
 
     func loadAssets(_ assets: [EditorAsset]) async {
         let pending = assets.filter {
-            $0.exists && $0.isPlayable && durations[$0.id] == nil && !loadingIDs.contains($0.id)
+            $0.exists
+                && $0.isPlayable
+                && (durations[$0.id] == nil || technicalMetadata[$0.id] == nil)
+                && !loadingIDs.contains($0.id)
         }
         guard !pending.isEmpty else { return }
         loadingIDs.formUnion(pending.map(\.id))
@@ -177,6 +196,7 @@ final class EditorMediaLibrary {
                 guard let loaded else { continue }
                 durations[loaded.id] = loaded.duration
                 fileSizes[loaded.id] = loaded.fileSize
+                technicalMetadata[loaded.id] = loaded.technicalMetadata
                 if let poster = loaded.poster {
                     posters[loaded.id] = poster
                 }
@@ -226,6 +246,7 @@ final class EditorMediaLibrary {
         var poster: CGImage?
         var filmstrip: [CGImage] = []
         var waveform: [Float] = []
+        let technicalMetadata = await technicalMetadata(asset)
 
         if asset.isVideo {
             let generator = AVAssetImageGenerator(asset: avAsset)
@@ -259,8 +280,118 @@ final class EditorMediaLibrary {
             fileSize: fileSize,
             poster: poster,
             filmstrip: filmstrip,
-            waveform: waveform
+            waveform: waveform,
+            technicalMetadata: technicalMetadata
         )
+    }
+
+    nonisolated private static func technicalMetadata(
+        _ asset: EditorAsset
+    ) async -> EditorMediaTechnicalMetadata {
+        let avAsset = AVURLAsset(url: asset.url)
+        let container = asset.url.pathExtension.uppercased()
+        if asset.isVideo,
+           let track = try? await avAsset.loadTracks(withMediaType: .video).first {
+            let naturalSize = (try? await track.load(.naturalSize)) ?? .zero
+            let transform = (try? await track.load(.preferredTransform)) ?? .identity
+            let orientedRect = CGRect(origin: .zero, size: naturalSize).applying(transform)
+            let width = Int(abs(orientedRect.width).rounded())
+            let height = Int(abs(orientedRect.height).rounded())
+            let frameRate = (try? await track.load(.nominalFrameRate)) ?? 0
+            let dataRate = (try? await track.load(.estimatedDataRate)) ?? 0
+            let descriptions = try? await track.load(.formatDescriptions)
+            let codec = descriptions?.first.map {
+                videoCodecLabel(CMFormatDescriptionGetMediaSubType($0))
+            } ?? "Video"
+            var quality = width > 0 && height > 0 ? ["\(width) × \(height)"] : []
+            if frameRate > 0 {
+                quality.append("\(Int(frameRate.rounded())) fps")
+            }
+            if dataRate > 0 {
+                quality.append(String(format: "%.1f Mbps", dataRate / 1_000_000))
+            }
+            return EditorMediaTechnicalMetadata(
+                format: [container, codec].filter { !$0.isEmpty }.joined(separator: " · "),
+                quality: quality.isEmpty ? "Video quality unavailable" : quality.joined(separator: " · ")
+            )
+        }
+
+        if asset.isAudio,
+           let track = try? await avAsset.loadTracks(withMediaType: .audio).first {
+            let descriptions = try? await track.load(.formatDescriptions)
+            let formatDescription = descriptions?.first
+            let codec = formatDescription.map {
+                audioCodecLabel(CMFormatDescriptionGetMediaSubType($0))
+            } ?? "Audio"
+            let basicDescription = formatDescription.flatMap {
+                CMAudioFormatDescriptionGetStreamBasicDescription($0)?.pointee
+            }
+            let dataRate = (try? await track.load(.estimatedDataRate)) ?? 0
+            var quality: [String] = []
+            if let sampleRate = basicDescription?.mSampleRate, sampleRate > 0 {
+                quality.append("\(Int((sampleRate / 1_000).rounded())) kHz")
+            }
+            if let channelCount = basicDescription?.mChannelsPerFrame {
+                if channelCount == 1 {
+                    quality.append("Mono")
+                } else if channelCount == 2 {
+                    quality.append("Stereo")
+                } else {
+                    quality.append("\(channelCount) channels")
+                }
+            }
+            if dataRate > 0 {
+                quality.append("\(Int((dataRate / 1_000).rounded())) kbps")
+            }
+            return EditorMediaTechnicalMetadata(
+                format: [container, codec].filter { !$0.isEmpty }.joined(separator: " · "),
+                quality: quality.isEmpty ? "Audio quality unavailable" : quality.joined(separator: " · ")
+            )
+        }
+
+        return EditorMediaTechnicalMetadata(
+            format: container.isEmpty ? "Unknown format" : container,
+            quality: "Media details unavailable"
+        )
+    }
+
+    nonisolated private static func videoCodecLabel(
+        _ codec: FourCharCode
+    ) -> String {
+        switch codec {
+        case kCMVideoCodecType_HEVC: return "HEVC"
+        case kCMVideoCodecType_H264: return "H.264"
+        case kCMVideoCodecType_AppleProRes422: return "ProRes 422"
+        case kCMVideoCodecType_AppleProRes4444: return "ProRes 4444"
+        default: return fourCharacterCode(codec)
+        }
+    }
+
+    nonisolated private static func audioCodecLabel(
+        _ codec: FourCharCode
+    ) -> String {
+        switch codec {
+        case kAudioFormatMPEG4AAC: return "AAC"
+        case kAudioFormatLinearPCM: return "PCM"
+        case kAudioFormatMPEGLayer3: return "MP3"
+        case kAudioFormatAppleLossless: return "Apple Lossless"
+        default: return fourCharacterCode(codec)
+        }
+    }
+
+    nonisolated private static func fourCharacterCode(
+        _ value: FourCharCode
+    ) -> String {
+        let characters = [
+            UInt8((value >> 24) & 0xff),
+            UInt8((value >> 16) & 0xff),
+            UInt8((value >> 8) & 0xff),
+            UInt8(value & 0xff)
+        ]
+        let label = String(bytes: characters, encoding: .ascii)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? ""
+        return label.isEmpty ? "Unknown codec" : label
     }
 
     nonisolated private static func loadFilmstripFrames(

@@ -411,11 +411,31 @@ extension RecordingProject {
 }
 
 extension RecordingProjectHistory.Entry {
-    var displayTitle: String {
-        let recordingDate = createdAt
+    var recordedAt: Date {
+        createdAt
             ?? RecordingProjectDisplayTitle.timestampDate(from: title)
+            ?? RecordingProjectDisplayTitle.timestampDate(
+                from: URL(fileURLWithPath: takeDirectoryPath).lastPathComponent
+            )
             ?? updatedAt
-        return RecordingProjectDisplayTitle.make(rawTitle: title, createdAt: recordingDate)
+    }
+
+    var displayTitle: String {
+        RecordingProjectDisplayTitle.make(rawTitle: title, createdAt: recordedAt)
+    }
+}
+
+extension RecordingProjectHistory {
+    mutating func sortByRecordedDate() {
+        entries.sort { lhs, rhs in
+            if lhs.recordedAt != rhs.recordedAt {
+                return lhs.recordedAt > rhs.recordedAt
+            }
+            if lhs.updatedAt != rhs.updatedAt {
+                return lhs.updatedAt > rhs.updatedAt
+            }
+            return lhs.id.uuidString < rhs.id.uuidString
+        }
     }
 }
 
@@ -854,8 +874,11 @@ struct TakeFileStore {
         }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return (try? decoder.decode(RecordingProjectHistory.self, from: data))
-            ?? RecordingProjectHistory(version: 1, entries: [])
+        guard var history = try? decoder.decode(RecordingProjectHistory.self, from: data) else {
+            return RecordingProjectHistory(version: 1, entries: [])
+        }
+        history.sortByRecordedDate()
+        return history
     }
 
     func loadRecordingProject(at url: URL) throws -> RecordingProject {
@@ -1397,7 +1420,7 @@ struct TakeFileStore {
             ),
             at: 0
         )
-        history.entries.sort { $0.updatedAt > $1.updatedAt }
+        history.sortByRecordedDate()
         try writeProjectHistory(ProjectHistoryWriteRequest(
             history: history,
             settings: settings

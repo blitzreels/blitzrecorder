@@ -19,6 +19,7 @@ struct RecordingSettingsPage: View {
 
             Form {
                 videoSection
+                exportDefaultsSection
                 storageSection
                 transcriptionSection
                 advancedSection
@@ -35,7 +36,7 @@ struct RecordingSettingsPage: View {
                 .font(.system(size: 26, weight: .bold))
                 .foregroundStyle(.primary)
 
-            Text("Defaults for new recordings and exports.")
+            Text("Source recording defaults. Export settings can be changed later in the editor.")
                 .font(.system(size: 12, weight: .regular))
                 .foregroundStyle(.secondary)
 
@@ -50,7 +51,7 @@ struct RecordingSettingsPage: View {
     }
 
     private var videoSection: some View {
-        Section("Video") {
+        Section("Recording quality") {
             LabeledContent {
                 Picker("", selection: resolutionBinding) {
                     ForEach(OutputResolution.allCases, id: \.self) { resolution in
@@ -64,7 +65,7 @@ struct RecordingSettingsPage: View {
                 .disabled(!canEdit)
             } label: {
                 rowLabel(RowLabelConfiguration(
-                    title: "Resolution",
+                    title: "Recording resolution",
                     detail: resolutionDetail
                 ))
             }
@@ -82,11 +83,27 @@ struct RecordingSettingsPage: View {
                 .disabled(!canEdit)
             } label: {
                 rowLabel(RowLabelConfiguration(
-                    title: "Frame rate",
+                    title: "Source FPS",
                     detail: "30 fps is the best default for most recordings."
                 ))
             }
 
+            LabeledContent {
+                Text(qualityPresentation.sourceEncodingSummary)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            } label: {
+                rowLabel(RowLabelConfiguration(
+                    title: "Recorded source files",
+                    detail: "Separate HEVC masters set the maximum quality available to exports."
+                ))
+            }
+        }
+    }
+
+    private var exportDefaultsSection: some View {
+        Section("Export defaults") {
             LabeledContent {
                 Picker("", selection: formatBinding) {
                     ForEach(OutputVideoFormat.allCases, id: \.self) { format in
@@ -99,8 +116,8 @@ struct RecordingSettingsPage: View {
                 .disabled(!canEdit)
             } label: {
                 rowLabel(RowLabelConfiguration(
-                    title: "Video format",
-                    detail: vm.settings.outputVideoFormat.plainDescription
+                    title: "Default export format",
+                    detail: "\(vm.settings.outputVideoFormat.plainDescription). Change it per export in the editor."
                 ))
             }
         }
@@ -219,8 +236,8 @@ struct RecordingSettingsPage: View {
                         .disabled(!canEdit)
                     } label: {
                         rowLabel(RowLabelConfiguration(
-                            title: "Video bitrate",
-                            detail: bitrateDetail
+                            title: "Video detail override",
+                            detail: qualityPresentation.bitrateOverrideDetail
                         ))
                     }
 
@@ -270,9 +287,7 @@ struct RecordingSettingsPage: View {
     }
 
     private var profileSummary: String {
-        "\(vm.settings.outputResolution.displayName) · "
-            + "\(vm.settings.framesPerSecond) fps · "
-            + vm.settings.outputVideoFormat.displayName
+        qualityPresentation.profileSummary
     }
 
     private var resolutionDetail: String {
@@ -280,10 +295,8 @@ struct RecordingSettingsPage: View {
         return "\(dimensions.width) × \(dimensions.height) · \(vm.settings.layout.shortLabel)"
     }
 
-    private var bitrateDetail: String {
-        let bitrate = Double(vm.settings.finalVideoBitrate) / 1_000_000
-        let mode = vm.settings.customVideoBitrate == nil ? "Automatic" : "Custom"
-        return "\(mode) · \(Int(bitrate.rounded())) Mbps"
+    private var qualityPresentation: RecordingQualityPresentation {
+        RecordingQualityPresentation(settings: vm.settings)
     }
 
     private var transcriptionModelDetail: String {

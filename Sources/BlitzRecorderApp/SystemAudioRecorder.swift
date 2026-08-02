@@ -2,9 +2,32 @@ import CoreMedia
 import Foundation
 import ScreenCaptureKit
 
+struct SystemAudioStreamOutputRequest {
+    let output: any SCStreamOutput
+    let sampleHandlerQueue: DispatchQueue
+}
+
+protocol SystemAudioStreaming: AnyObject {
+    func attachAudioOutput(_ request: SystemAudioStreamOutputRequest) throws
+    func startCapture() async throws
+    func stopCapture() async throws
+    func updateContentFilter(_ contentFilter: SCContentFilter) async throws
+}
+
+extension SCStream: SystemAudioStreaming {
+    func attachAudioOutput(_ request: SystemAudioStreamOutputRequest) throws {
+        try addStreamOutput(
+            request.output,
+            type: .audio,
+            sampleHandlerQueue: request.sampleHandlerQueue
+        )
+    }
+}
+
 final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     private let queue = DispatchQueue(label: "blitzrecorder.system-audio")
-    private var stream: SCStream?
+    private var stream: (any SystemAudioStreaming)?
+    private var prewarmedStream: (any SystemAudioStreaming)?
     private var writer: AudioSampleFileWriter?
     private let levelPublisher = AudioLevelPublisher()
     var levelHandler: ((Float) -> Void)? {
@@ -12,7 +35,7 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
         set { levelPublisher.levelHandler = newValue }
     }
     private var streamError: Error?
-    private var intentionallyStoppedStream: SCStream?
+    private var intentionallyStoppedStreamID: ObjectIdentifier?
     private var startupContinuation: CheckedContinuation<Void, Error>?
     private var startupTimeoutTask: Task<Void, Never>?
     private var hasProducedStartupSample = false
@@ -42,7 +65,7 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
 
     func start(_ request: SystemAudioCaptureStartRequest) async throws {
         streamError = nil
-        intentionallyStoppedStream = nil
+        intentionallyStoppedStreamID = nil
         self.timelineStartTime = request.timelineStartTime
         firstSampleTime = nil
         hasProducedStartupSample = false
@@ -64,13 +87,25 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
         }
         self.writer = writer
 
+        if let prewarmedStream {
+            self.prewarmedStream = nil
+            try prewarmedStream.attachAudioOutput(.init(output: self, sampleHandlerQueue: queue))
+            stream = prewarmedStream
+            try await waitForFirstAudioSample()
+            return
+        }
+
         let filter = try SystemAudioStreamConfiguration.contentFilter(request.pickedScreenFilter)
         let configuration = SystemAudioStreamConfiguration.configuration(streamName: "BlitzRecorder System Audio")
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
-        try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
+        try stream.attachAudioOutput(.init(output: self, sampleHandlerQueue: queue))
         try await stream.startCapture()
         self.stream = stream
         try await waitForFirstAudioSample()
+    }
+
+    func adoptMonitoringStream(_ stream: any SystemAudioStreaming) {
+        prewarmedStream = stream
     }
 
     func pause() {
@@ -92,10 +127,15 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
         let writerToFinish = writer
         writer = nil
         if let stream {
-            intentionallyStoppedStream = stream
+            intentionallyStoppedStreamID = ObjectIdentifier(stream)
             try? await stream.stopCapture()
         }
         stream = nil
+        if let prewarmedStream {
+            intentionallyStoppedStreamID = ObjectIdentifier(prewarmedStream)
+            try? await prewarmedStream.stopCapture()
+        }
+        prewarmedStream = nil
         let completion = try await writerToFinish?.finish() ?? .empty()
         levelPublisher.reset()
         if let streamError {
@@ -113,6 +153,10 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
         guard type == .audio, sampleBuffer.isValid else {
             return
         }
+        receiveAudioSample(sampleBuffer)
+    }
+
+    func receiveAudioSample(_ sampleBuffer: CMSampleBuffer) {
         if firstSampleTime == nil {
             let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
             if presentationTime.isValid {
@@ -124,7 +168,7 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
-        guard stream !== intentionallyStoppedStream else { return }
+        guard ObjectIdentifier(stream) != intentionallyStoppedStreamID else { return }
         NSLog("System audio stream stopped: \(error.localizedDescription)")
         streamError = error
         completeStartup(.failure(RecorderError.captureStreamStopped(error.localizedDescription)))

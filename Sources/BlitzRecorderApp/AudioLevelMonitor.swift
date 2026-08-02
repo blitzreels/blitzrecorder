@@ -92,6 +92,14 @@ final class SystemAudioLevelMonitor: NSObject, SCStreamOutput, SCStreamDelegate 
         levelPublisher.reset()
     }
 
+    func detachStreamForRecording() throws -> SCStream? {
+        guard let stream else { return nil }
+        try stream.removeStreamOutput(self, type: .audio)
+        self.stream = nil
+        levelPublisher.reset()
+        return stream
+    }
+
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .audio, sampleBuffer.isValid else {
             return

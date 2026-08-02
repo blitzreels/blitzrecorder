@@ -59,6 +59,34 @@ struct ProjectLibrarySelectionSummary {
     }
 }
 
+struct ProjectMediaInventorySummary: Equatable {
+    let screenCaptureCount: Int
+    let cameraCaptureCount: Int
+    let audioTrackCount: Int
+
+    var label: String {
+        var parts: [String] = []
+        if screenCaptureCount > 0 {
+            parts.append(
+                "\(screenCaptureCount) Screen capture\(screenCaptureCount == 1 ? "" : "s")"
+            )
+        }
+        if cameraCaptureCount > 0 {
+            parts.append(
+                "\(cameraCaptureCount) Camera capture\(cameraCaptureCount == 1 ? "" : "s")"
+            )
+        }
+        if audioTrackCount > 0 {
+            parts.append(
+                "\(audioTrackCount) audio track\(audioTrackCount == 1 ? "" : "s")"
+            )
+        }
+        return parts.isEmpty
+            ? "No original capture files available"
+            : parts.joined(separator: " · ")
+    }
+}
+
 enum ProjectLibraryMetadataLoader {
     private struct PreviewURLRequest {
         let project: RecordingProject

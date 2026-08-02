@@ -3,17 +3,33 @@ import CoreMedia
 import Foundation
 import ScreenCaptureKit
 
+struct AudioLevelUpdateThrottle {
+    static let minimumIntervalNanoseconds: UInt64 = 66_666_667
+
+    private var lastUpdateNanoseconds: UInt64?
+
+    mutating func shouldPublish(at nowNanoseconds: UInt64) -> Bool {
+        guard let lastUpdateNanoseconds else {
+            self.lastUpdateNanoseconds = nowNanoseconds
+            return true
+        }
+        guard nowNanoseconds - lastUpdateNanoseconds >= Self.minimumIntervalNanoseconds else {
+            return false
+        }
+        self.lastUpdateNanoseconds = nowNanoseconds
+        return true
+    }
+}
+
 final class AudioLevelPublisher: @unchecked Sendable {
     var levelHandler: ((Float) -> Void)?
-    private var lastLevelTime = DispatchTime(uptimeNanoseconds: 0)
+    private var updateThrottle = AudioLevelUpdateThrottle()
 
     func publish(from sampleBuffer: CMSampleBuffer) {
-        let now = DispatchTime.now()
-        guard now.uptimeNanoseconds - lastLevelTime.uptimeNanoseconds > 33_000_000,
+        guard updateThrottle.shouldPublish(at: DispatchTime.now().uptimeNanoseconds),
               let level = AudioLevelMeter.level(from: sampleBuffer) else {
             return
         }
-        lastLevelTime = now
 
         Task { @MainActor [levelHandler] in
             levelHandler?(level)

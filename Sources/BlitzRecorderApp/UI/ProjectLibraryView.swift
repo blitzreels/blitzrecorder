@@ -201,6 +201,9 @@ struct ProjectLibraryView: View {
     @State private var playbackProjectPath: String?
     @State private var playbackWaveformSamples: [Float] = []
     @State private var playbackLoadError: String?
+    @State private var mediaAssets: [EditorAsset] = []
+    @State private var mediaAssetsProjectID: UUID?
+    @State private var isLoadingMediaAssets = false
     @State private var hoveredSidebarProjectID: UUID?
     @State private var hoveredBulkProjectID: UUID?
 
@@ -232,11 +235,9 @@ struct ProjectLibraryView: View {
         let status: TranscriptionJobStatus
     }
 
-    private struct FileLocationRequest {
-        let systemImage: String
-        let title: String
-        let detail: String
-        let path: String
+    private struct MediaWaveformRequest {
+        let values: [Float]
+        let tint: Color
     }
 
     var body: some View {
@@ -275,6 +276,9 @@ struct ProjectLibraryView: View {
         }
         .task(id: playbackTaskID) {
             await loadSelectedPlayback()
+        }
+        .task(id: mediaTaskID) {
+            await loadSelectedMediaAssets()
         }
         .onChange(of: filteredProjects.map(\.id)) {
             selectFirstProjectIfNeeded()
@@ -533,9 +537,9 @@ struct ProjectLibraryView: View {
                             overviewLayout: overviewLayout
                         )
                         .frame(
-                            maxWidth: selectedDetailTab == .overview
-                                ? overviewLayout.contentWidth
-                                : 720,
+                            maxWidth: selectedDetailTab == .transcript
+                                ? 720
+                                : overviewLayout.contentWidth,
                             alignment: .leading
                         )
                         .frame(maxWidth: .infinity, alignment: .top)
@@ -765,7 +769,7 @@ struct ProjectLibraryView: View {
                     .foregroundStyle(.white.opacity(0.52))
                     .lineLimit(1)
 
-                    Text(project.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                    Text(project.recordedAt.formatted(date: .abbreviated, time: .shortened))
                         .font(.system(size: 10.5, weight: .medium))
                         .foregroundStyle(.white.opacity(0.36))
                         .lineLimit(1)
@@ -834,9 +838,7 @@ struct ProjectLibraryView: View {
         _ project: RecordingProjectHistory.Entry
     ) -> some View {
         let status = vm.transcriptionController.status(for: project)
-        let recordedAt = project.createdAt
-            ?? RecordingProjectDisplayTitle.timestampDate(from: project.title)
-            ?? project.updatedAt
+        let recordedAt = project.recordedAt
         return HStack(alignment: .center, spacing: 20) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(displayTitle(project))
@@ -1130,108 +1132,267 @@ struct ProjectLibraryView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    @ViewBuilder
     private func projectMedia(
         _ project: RecordingProjectHistory.Entry
     ) -> some View {
+        let captureAssets = mediaAssets.filter { $0.kind != .output }
+        let outputAssets = mediaAssets.filter { $0.kind == .output }
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Recording media")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(.white.opacity(0.92))
 
-                Text("Original captures, edit data, and finished exports for this recording.")
+                Text(mediaCaptureSummary(captureAssets))
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.44))
             }
 
-            fileLocation(FileLocationRequest(
-                systemImage: "tray.full",
-                title: "Original captures",
-                detail: "Screen, camera, microphone, and system audio recorded for this take.",
-                path: project.takeDirectoryPath
-            ))
-            fileLocation(FileLocationRequest(
-                systemImage: "doc.text",
-                title: "Edit project",
-                detail: "Scene layout, timing, and editing settings used by BlitzRecorder.",
-                path: project.projectPath
-            ))
+            if isLoadingMediaAssets, mediaAssetsProjectID != project.id {
+                ProgressView("Inspecting recorded media…")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.54))
+                    .frame(maxWidth: .infinity, minHeight: 160)
+            } else if captureAssets.isEmpty {
+                Text("No original capture files are available for this recording.")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.48))
+                    .frame(maxWidth: .infinity, minHeight: 120, alignment: .center)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Original captures")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.72))
 
-            if let exports = project.exports, !exports.isEmpty {
-                ForEach(Array(exports.reversed())) { export in
-                    fileLocation(FileLocationRequest(
-                        systemImage: "film",
-                        title: "Export · \(export.framesPerSecond) fps",
-                        detail: "\(export.format.uppercased()) · \(export.resolution) · "
-                            + export.createdAt.formatted(date: .abbreviated, time: .shortened),
-                        path: export.path
-                    ))
+                    ForEach(captureAssets) { asset in
+                        mediaAssetCard(asset)
+                    }
                 }
-            } else if let finalVideoPath = project.finalVideoPath {
-                fileLocation(FileLocationRequest(
-                    systemImage: "film",
-                    title: "Exported video",
-                    detail: "Finished video ready to play, share, or publish.",
-                    path: finalVideoPath
-                ))
             }
 
-            ProjectLibraryActionButton(configuration: .init(
-                title: "Open media folder",
-                systemImage: "folder",
-                tone: .secondary,
-                isLoading: false,
-                action: { vm.revealProject(project) }
-            ))
+            if !outputAssets.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Finished exports")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.72))
+
+                    ForEach(outputAssets) { asset in
+                        mediaAssetCard(asset)
+                    }
+                }
+            }
+
+            Button("Show all files in Finder") {
+                vm.revealProject(project)
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 11.5, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.72))
+            .padding(.horizontal, 14)
+            .frame(height: 38)
+            .background(.white.opacity(0.055), in: .rect(cornerRadius: 9))
+            .overlay {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .stroke(.white.opacity(0.08), lineWidth: 1)
+            }
+            .pointingHandCursor()
         }
     }
 
-    private func fileLocation(
-        _ request: FileLocationRequest
+    private func mediaAssetCard(
+        _ asset: EditorAsset
     ) -> some View {
-        HStack(alignment: .top, spacing: 13) {
-            Image(systemName: request.systemImage)
-                .font(.system(size: 15, weight: .semibold))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(BlitzUI.mint)
-                .frame(width: 40, height: 40)
-                .background(BlitzUI.mint.opacity(0.09), in: .rect(cornerRadius: 10))
+        let details = projectWaveformLibrary.technicalMetadata[asset.id]
+        let duration = asset.exists
+            ? projectWaveformLibrary.durations[asset.id]
+                .map(ProjectLibraryMetadata.durationLabel) ?? "Reading duration…"
+            : "Unavailable"
+        let fileSize = asset.exists
+            ? projectWaveformLibrary.fileSizes[asset.id] ?? "Reading size…"
+            : "Unavailable"
+        let format = asset.exists
+            ? details?.format ?? "Reading format…"
+            : asset.url.pathExtension.uppercased()
+        let quality = asset.exists
+            ? details?.quality ?? "Reading quality…"
+            : "Capture file unavailable"
+        return HStack(spacing: 16) {
+            mediaAssetVisual(asset)
+                .frame(width: 248, height: 124)
+                .background(.black.opacity(0.28), in: .rect(cornerRadius: 9))
+                .clipShape(.rect(cornerRadius: 9))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(.white.opacity(0.09), lineWidth: 1)
+                }
 
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text(request.title)
-                        .font(.system(size: 12.5, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.86))
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(mediaAssetTitle(asset))
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.90))
+
+                    if !asset.exists {
+                        Text("Missing")
+                            .font(.system(size: 9.5, weight: .bold))
+                            .foregroundStyle(.red.opacity(0.88))
+                    }
 
                     Spacer(minLength: 0)
 
-                    Text(URL(fileURLWithPath: request.path).lastPathComponent)
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.44))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    Text(duration)
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.white.opacity(0.58))
                 }
 
-                Text(request.detail)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.50))
-                    .fixedSize(horizontal: false, vertical: true)
+                Text(format)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(BlitzUI.mint.opacity(0.86))
 
-                Text(request.path)
-                    .font(.system(size: 9.5, weight: .regular, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.28))
-                    .textSelection(.enabled)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                Text(quality)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.58))
+
+                Spacer(minLength: 0)
+
+                HStack(spacing: 8) {
+                    Text(fileSize)
+                    Text("·")
+                    Text(asset.url.lastPathComponent)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+
+                    Spacer(minLength: 8)
+
+                    Button("Show in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting([asset.url])
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.white.opacity(0.68))
+                    .pointingHandCursor()
+                }
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.white.opacity(0.36))
             }
         }
-        .padding(14)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white.opacity(0.035), in: .rect(cornerRadius: 12))
+        .background(.white.opacity(0.032), in: .rect(cornerRadius: 12))
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(.white.opacity(0.065), lineWidth: 1)
         }
+    }
+
+    @ViewBuilder
+    private func mediaAssetVisual(
+        _ asset: EditorAsset
+    ) -> some View {
+        if asset.isVideo {
+            let frames = projectWaveformLibrary.filmstrips[asset.id] ?? []
+            if frames.isEmpty {
+                Text(asset.exists ? "Generating thumbnails…" : "Capture unavailable")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.34))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                GeometryReader { proxy in
+                    let visibleFrames = Array(frames.prefix(5))
+                    HStack(spacing: 1) {
+                        ForEach(Array(visibleFrames.enumerated()), id: \.offset) { _, frame in
+                            Image(decorative: frame, scale: 1)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(
+                                    width: proxy.size.width / CGFloat(visibleFrames.count),
+                                    height: proxy.size.height
+                                )
+                                .clipped()
+                        }
+                    }
+                }
+            }
+        } else if asset.isAudio {
+            mediaWaveform(MediaWaveformRequest(
+                values: projectWaveformLibrary.waveforms[asset.id] ?? [],
+                tint: asset.tint
+            ))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 14)
+        }
+    }
+
+    private func mediaWaveform(
+        _ request: MediaWaveformRequest
+    ) -> some View {
+        Canvas { context, size in
+            guard !request.values.isEmpty else {
+                let line = CGRect(
+                    x: 0,
+                    y: size.height / 2 - 0.75,
+                    width: size.width,
+                    height: 1.5
+                )
+                context.fill(
+                    Path(roundedRect: line, cornerRadius: 0.75),
+                    with: .color(request.tint.opacity(0.38))
+                )
+                return
+            }
+            let slot = size.width / CGFloat(request.values.count)
+            let barWidth = max(1, slot - 1)
+            let maximumHeight = size.height - 8
+            for (index, value) in request.values.enumerated() {
+                let height = max(1.5, CGFloat(value) * maximumHeight)
+                let bar = CGRect(
+                    x: CGFloat(index) * slot + (slot - barWidth) / 2,
+                    y: (size.height - height) / 2,
+                    width: barWidth,
+                    height: height
+                )
+                context.fill(
+                    Path(roundedRect: bar, cornerRadius: barWidth / 2),
+                    with: .color(request.tint.opacity(0.84))
+                )
+            }
+        }
+    }
+
+    private func mediaCaptureSummary(
+        _ assets: [EditorAsset]
+    ) -> String {
+        let screenCount = assets.filter { $0.kind == .screen && $0.exists }.count
+        let cameraCount = assets.filter { $0.kind == .camera && $0.exists }.count
+        let audioCount = assets.filter {
+            ($0.kind == .microphone || $0.kind == .systemAudio) && $0.exists
+        }.count
+        return ProjectMediaInventorySummary(
+            screenCaptureCount: screenCount,
+            cameraCaptureCount: cameraCount,
+            audioTrackCount: audioCount
+        ).label
+    }
+
+    private func mediaAssetTitle(
+        _ asset: EditorAsset
+    ) -> String {
+        let baseTitle: String
+        switch asset.kind {
+        case .output: baseTitle = "Finished export"
+        case .screen: baseTitle = "Screen capture"
+        case .camera: baseTitle = "Camera capture"
+        case .microphone: baseTitle = "Microphone"
+        case .systemAudio: baseTitle = "System audio"
+        case .other: baseTitle = asset.title
+        }
+        let matchingAssets = mediaAssets.filter { $0.kind == asset.kind }
+        guard matchingAssets.count > 1,
+              let index = matchingAssets.firstIndex(where: { $0.id == asset.id }) else {
+            return baseTitle
+        }
+        return "\(baseTitle) \(index + 1)"
     }
 
     private var detailEmptyState: some View {
@@ -1419,7 +1580,7 @@ struct ProjectLibraryView: View {
 
     private func sidebarDetail(_ request: SidebarDetailRequest) -> String {
         var parts = [
-            request.project.updatedAt.formatted(date: .abbreviated, time: .omitted)
+            request.project.recordedAt.formatted(date: .abbreviated, time: .omitted)
         ]
         if let durationLabel = request.metadata.durationLabel {
             parts.append(durationLabel)
@@ -1551,6 +1712,55 @@ struct ProjectLibraryView: View {
         }
     }
 
+    private func loadSelectedMediaAssets() async {
+        guard selectedDetailTab == .media,
+              let projectEntry = selectedProject else {
+            mediaAssets = []
+            mediaAssetsProjectID = nil
+            isLoadingMediaAssets = false
+            return
+        }
+
+        let projectID = projectEntry.id
+        isLoadingMediaAssets = true
+        do {
+            let recordingProject = try TakeFileStore().loadRecordingProject(
+                at: URL(fileURLWithPath: projectEntry.projectPath)
+            )
+            var loadedAssets = EditorAsset.assets(
+                project: recordingProject,
+                finalVideoURL: nil
+            ).filter(\.isPlayable)
+            var knownPaths = Set(loadedAssets.map { $0.url.standardizedFileURL.path })
+            for export in recordingProject.exports.reversed() {
+                let url = URL(fileURLWithPath: export.path)
+                let path = url.standardizedFileURL.path
+                guard !knownPaths.contains(path) else { continue }
+                loadedAssets.append(EditorAsset.output(url: url))
+                knownPaths.insert(path)
+            }
+            guard !Task.isCancelled,
+                  selectedDetailTab == .media,
+                  selectedProject?.id == projectID else {
+                return
+            }
+            mediaAssets = loadedAssets
+            mediaAssetsProjectID = projectID
+            await projectWaveformLibrary.loadAssets(loadedAssets)
+            guard !Task.isCancelled,
+                  selectedDetailTab == .media,
+                  selectedProject?.id == projectID else {
+                return
+            }
+            isLoadingMediaAssets = false
+        } catch {
+            guard selectedProject?.id == projectID else { return }
+            mediaAssets = []
+            mediaAssetsProjectID = projectID
+            isLoadingMediaAssets = false
+        }
+    }
+
     private func projectTranscript(
         _ project: RecordingProject
     ) -> RecordingTranscript? {
@@ -1597,6 +1807,14 @@ struct ProjectLibraryView: View {
 
     private var playbackTaskID: String {
         selectedProject?.projectPath ?? "none"
+    }
+
+    private var mediaTaskID: String {
+        guard selectedDetailTab == .media,
+              let selectedProject else {
+            return "inactive"
+        }
+        return selectedProject.projectPath
     }
 
     private var projectCountLabel: String {

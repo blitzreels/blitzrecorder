@@ -21,10 +21,16 @@ struct SourcesSidebar: View {
     }
 
     private var devicesHeader: some View {
-        Text("Sources")
-            .font(.system(size: 18, weight: .bold))
-            .foregroundStyle(.white.opacity(0.94))
-            .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Sources")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(.white.opacity(0.94))
+            Text("Enabled sources record separately. Scene visibility only changes the composed video.")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.white.opacity(0.42))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 2)
     }
 
@@ -369,6 +375,11 @@ private struct DeviceCard: View {
                             .foregroundStyle(.white.opacity(0.5))
                             .lineLimit(1)
                             .truncationMode(.tail)
+
+                        Text(detailLabel)
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(detailColor)
+                            .lineLimit(1)
                     }
 
                     Spacer(minLength: 0)
@@ -404,8 +415,20 @@ private struct DeviceCard: View {
         .padding(.leading, 10)
         .padding(.trailing, 6)
         .padding(.vertical, 5)
-        .frame(minHeight: 52)
+        .frame(minHeight: 60)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var detailLabel: String {
+        guard isEnabled, source == .screen || source == .camera else {
+            return status.label
+        }
+        let sceneState = vm.isSourceVisible(source) ? "Visible in scene" : "Hidden from scene"
+        return "\(status.label) · \(sceneState)"
+    }
+
+    private var detailColor: Color {
+        status.tone == .warning ? BlitzUI.warning : .white.opacity(0.42)
     }
 
     @ViewBuilder

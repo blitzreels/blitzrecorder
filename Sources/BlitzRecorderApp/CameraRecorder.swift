@@ -6,6 +6,8 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     private let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "recorder.camera")
     private var writer: VideoFileWriter?
+    private var frameNormalizer: CameraFrameNormalizer?
+    private var pendingStartupSamples: [CMSampleBuffer] = []
     private var pendingRecording: PendingRecording?
     private var isConfigured = false
     private var configuredDeviceID: String?
@@ -36,6 +38,8 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             try configureSession(settings: settings)
             pendingRecording = PendingRecording(url: url, settings: settings, timelineStartTime: timelineStartTime)
             writer = nil
+            frameNormalizer = nil
+            pendingStartupSamples = []
             startSessionIfNeededOnQueue()
         }
 
@@ -57,6 +61,8 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
                 self.pendingRecording = nil
                 let writer = self.writer
                 self.writer = nil
+                self.frameNormalizer = nil
+                self.pendingStartupSamples = []
                 continuation.resume(returning: writer)
             }
         }
@@ -80,17 +86,56 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         from connection: AVCaptureConnection
     ) {
         if writer == nil, let pendingRecording {
+            pendingStartupSamples.append(sampleBuffer)
             do {
-                writer = try makeWriter(for: sampleBuffer, recording: pendingRecording)
+                guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer) else {
+                    throw RecorderError.writerNotReady
+                }
+                let dimensions = CMVideoFormatDescriptionGetDimensions(formatDescription)
+                let normalizationPlan = CMSampleBufferGetImageBuffer(sampleBuffer).flatMap {
+                    CameraFrameLetterboxDetector.normalizationPlan(.init(pixelBuffer: $0))
+                }
+                let decision = CameraFrameNormalizationStartupPolicy.decision(.init(
+                    sourceSize: CGSize(
+                        width: Int(dimensions.width),
+                        height: Int(dimensions.height)
+                    ),
+                    bufferedSampleCount: pendingStartupSamples.count,
+                    normalizationPlan: normalizationPlan
+                ))
+                guard case .start(let selectedPlan) = decision else {
+                    return
+                }
+                let setup = try makeWriter(.init(
+                    sampleBuffers: pendingStartupSamples,
+                    recording: pendingRecording,
+                    normalizationPlan: selectedPlan
+                ))
+                writer = setup.writer
+                frameNormalizer = setup.frameNormalizer
+                pendingStartupSamples = []
+                for startupSampleBuffer in setup.startupSampleBuffers {
+                    writer?.append(startupSampleBuffer)
+                }
+                completeStartup(.success(()))
             } catch {
                 NSLog("Camera writer failed: \(error.localizedDescription)")
                 self.pendingRecording = nil
+                pendingStartupSamples = []
                 completeStartup(.failure(error))
-                return
             }
+            return
         }
 
-        writer?.append(sampleBuffer)
+        if let frameNormalizer {
+            guard let normalizedSampleBuffer = frameNormalizer.normalize(sampleBuffer) else {
+                NSLog("Camera frame normalization skipped an unreadable frame")
+                return
+            }
+            writer?.append(normalizedSampleBuffer)
+        } else {
+            writer?.append(sampleBuffer)
+        }
         completeStartup(.success(()))
     }
 
@@ -153,24 +198,48 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         LocalCameraSessionConfiguration.selectedCamera(settings: settings)
     }
 
-    private func makeWriter(for sampleBuffer: CMSampleBuffer, recording: PendingRecording) throws -> VideoFileWriter {
-        guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer) else {
+    private func makeWriter(
+        _ request: CameraWriterRequest
+    ) throws -> CameraWriterSetup {
+        guard let firstSampleBuffer = request.sampleBuffers.first,
+              let formatDescription = CMSampleBufferGetFormatDescription(firstSampleBuffer) else {
             throw RecorderError.writerNotReady
         }
 
         let dimensions = CMVideoFormatDescriptionGetDimensions(formatDescription)
-        let width = max(2, Int(dimensions.width))
-        let height = max(2, Int(dimensions.height))
+        let width = request.normalizationPlan.map { Int($0.outputSize.width) }
+            ?? max(2, Int(dimensions.width))
+        let height = request.normalizationPlan.map { Int($0.outputSize.height) }
+            ?? max(2, Int(dimensions.height))
+        let frameNormalizer = request.normalizationPlan.map(CameraFrameNormalizer.init)
+        let startupSampleBuffers: [CMSampleBuffer]
+        if let frameNormalizer {
+            let normalizedSampleBuffers = request.sampleBuffers.compactMap(frameNormalizer.normalize)
+            guard normalizedSampleBuffers.count == request.sampleBuffers.count else {
+                throw RecorderError.writerNotReady
+            }
+            startupSampleBuffers = normalizedSampleBuffers
+            NSLog(
+                "Camera input normalized from \(dimensions.width)x\(dimensions.height) to \(width)x\(height)"
+            )
+        } else {
+            startupSampleBuffers = request.sampleBuffers
+        }
 
         NSLog("Camera writer starting at \(width)x\(height)")
-        return try VideoFileWriter(
-            url: recording.url,
+        let writer = try VideoFileWriter(
+            url: request.recording.url,
             width: width,
             height: height,
-            bitrate: recording.settings.cameraBitrate,
-            fps: recording.settings.framesPerSecond,
-            outputFormat: recording.settings.sourceVideoFormat,
-            timelineStartTime: recording.timelineStartTime
+            bitrate: request.recording.settings.cameraBitrate,
+            fps: request.recording.settings.framesPerSecond,
+            outputFormat: request.recording.settings.sourceVideoFormat,
+            timelineStartTime: request.recording.timelineStartTime
+        )
+        return CameraWriterSetup(
+            writer: writer,
+            frameNormalizer: frameNormalizer,
+            startupSampleBuffers: startupSampleBuffers
         )
     }
 
@@ -212,4 +281,16 @@ private struct PendingRecording {
     let url: URL
     let settings: RecordingSettings
     let timelineStartTime: CMTime?
+}
+
+private struct CameraWriterRequest {
+    let sampleBuffers: [CMSampleBuffer]
+    let recording: PendingRecording
+    let normalizationPlan: CameraFrameNormalizationPlan?
+}
+
+private struct CameraWriterSetup {
+    let writer: VideoFileWriter
+    let frameNormalizer: CameraFrameNormalizer?
+    let startupSampleBuffers: [CMSampleBuffer]
 }

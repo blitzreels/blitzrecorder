@@ -2311,7 +2311,7 @@ final class RecorderCoordinator {
             var createdTake: RecordingTake?
             var remoteStartCommandSent = false
             do {
-                await stopAudioLevelMonitoring()
+                await prepareAudioLevelMonitoringForRecording()
                 guard !settings.enabledSources.isEmpty else {
                     throw RecorderError.noSourcesSelected
                 }
@@ -3519,6 +3519,22 @@ final class RecorderCoordinator {
     private func stopAudioLevelMonitoring() async {
         microphoneLevelMonitor.stop()
         try? await systemAudioLevelMonitor.stop()
+    }
+
+    private func prepareAudioLevelMonitoringForRecording() async {
+        microphoneLevelMonitor.stop()
+        guard settings.enabledSources.contains(.systemAudio) else {
+            try? await systemAudioLevelMonitor.stop()
+            return
+        }
+        do {
+            if let stream = try systemAudioLevelMonitor.detachStreamForRecording() {
+                systemAudioRecorder.adoptMonitoringStream(stream)
+                return
+            }
+        } catch {
+            try? await systemAudioLevelMonitor.stop()
+        }
     }
 
     private func clampedSceneFrame(_ frame: CGRect) -> CGRect {

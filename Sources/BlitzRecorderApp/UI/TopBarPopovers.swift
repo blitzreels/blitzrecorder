@@ -404,11 +404,11 @@ private struct RecordingSettingsControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            optionSection("Quality") {
+            optionSection("Recording resolution") {
                 resolutionPicker
             }
 
-            optionSection("Smoothness") {
+            optionSection("Source FPS") {
                 HStack(spacing: 8) {
                     ForEach(RecordingSettings.supportedFrameRates, id: \.self) { fps in
                         pillButton(
@@ -422,7 +422,9 @@ private struct RecordingSettingsControls: View {
                 }
             }
 
-            optionSection("File type") {
+            sourceQualitySummary
+
+            optionSection("Default export format") {
                 VStack(spacing: 8) {
                     ForEach(OutputVideoFormat.allCases, id: \.self) { format in
                         formatRow(
@@ -434,7 +436,7 @@ private struct RecordingSettingsControls: View {
                         }
                     }
                 }
-                Text("All three keep the same crisp video quality.")
+                Text("Editable video sources remain HEVC MOV. Change this format per export in the editor.")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.white.opacity(0.42))
             }
@@ -448,6 +450,26 @@ private struct RecordingSettingsControls: View {
             }
         }
         .opacity(canEdit ? 1 : 0.62)
+    }
+
+    private var sourceQualitySummary: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("RECORDED SOURCE FILES")
+                .font(.system(size: 9, weight: .heavy))
+                .tracking(0.6)
+                .foregroundStyle(.white.opacity(0.4))
+            Text(qualityPresentation.sourceEncodingSummary)
+                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.72))
+                .monospacedDigit()
+            Text("These HEVC masters set the maximum quality available to exports.")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.white.opacity(0.42))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.045), in: .rect(cornerRadius: 9))
     }
 
     @ViewBuilder
@@ -520,7 +542,7 @@ private struct RecordingSettingsControls: View {
 
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Text("Video detail")
+                Text("Video detail override")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(.white.opacity(0.78))
                 Spacer(minLength: 0)
@@ -546,8 +568,8 @@ private struct RecordingSettingsControls: View {
 
             HStack(spacing: 8) {
                 Text(isAuto
-                    ? "Auto picks a good size for you."
-                    : "Higher keeps more detail but makes bigger files.")
+                    ? "Auto balances recorded sources and the default export."
+                    : "Custom changes recorded sources and the default export.")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.white.opacity(0.46))
                     .fixedSize(horizontal: false, vertical: true)
@@ -695,6 +717,10 @@ private struct RecordingSettingsControls: View {
     private var selectedResolutionDimensions: String {
         let dimensions = vm.settings.outputResolution.dimensions(for: vm.settings.layout)
         return "\(dimensions.width) × \(dimensions.height)"
+    }
+
+    private var qualityPresentation: RecordingQualityPresentation {
+        RecordingQualityPresentation(settings: vm.settings)
     }
 
     private func pillButton(
