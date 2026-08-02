@@ -13,12 +13,18 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     private var recordingResult: Result<MediaWriterCompletion, Error>?
     private var finishContinuation: CheckedContinuation<MediaWriterCompletion, Error>?
     private var didRequestRecording = false
+    private var clockRateEstimator = CaptureClockRateEstimator()
+    private var normalizationFormat: SourceAudioFormat = .aac
+    private var normalizationBitrate = 192_000
+    private var pendingClockNormalization: AudioClockNormalizationRequest?
+    private var hasEmittedSyncWarning = false
     private let levelPublisher = AudioLevelPublisher()
     var levelHandler: ((Float) -> Void)? {
         get { levelPublisher.levelHandler }
         set { levelPublisher.levelHandler = newValue }
     }
     var failureHandler: ((Error) -> Void)?
+    var syncWarningHandler: ((String) -> Void)?
     private var startupContinuation: CheckedContinuation<Void, Error>?
     private var startupTimeoutTask: Task<Void, Never>?
     private var hasProducedStartupSample = false
@@ -51,6 +57,11 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
                 recordingResult = nil
                 finishContinuation = nil
                 didRequestRecording = false
+                clockRateEstimator.reset()
+                normalizationFormat = settings.effectiveSourceAudioFormat
+                normalizationBitrate = settings.finalAudioBitrate
+                pendingClockNormalization = nil
+                hasEmittedSyncWarning = false
                 self.timelineStartTime = timelineStartTime
                 firstSampleTime = nil
                 hasProducedStartupSample = false
@@ -114,6 +125,7 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         queue.async {
             guard self.fileOutput?.isRecording == true else { return }
             self.fileOutput?.pauseRecording()
+            self.clockRateEstimator.pause()
         }
     }
 
@@ -121,14 +133,47 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         queue.async {
             guard self.fileOutput?.isRecordingPaused == true else { return }
             self.fileOutput?.resumeRecording()
+            self.clockRateEstimator.resume()
         }
     }
 
     func stop() async throws -> MediaWriterCompletion {
         let completion = try await stopFileOutput()
+        queue.sync {
+            guard completion.wroteMedia,
+                  let url = completion.url,
+                  let measurement = clockRateEstimator.measurement else {
+                pendingClockNormalization = nil
+                return
+            }
+            pendingClockNormalization = AudioClockNormalizationRequest(
+                url: url,
+                format: normalizationFormat,
+                bitrate: normalizationBitrate,
+                measurement: measurement
+            )
+        }
         await tearDownSession()
         levelPublisher.reset()
         return completion
+    }
+
+    func finalizeSynchronization() async throws {
+        guard let request = queue.sync(execute: {
+            let request = pendingClockNormalization
+            pendingClockNormalization = nil
+            return request
+        }) else {
+            return
+        }
+        let result = try await AudioClockNormalizer.normalize(request)
+        if result.didCorrect {
+            NSLog(
+                "Microphone clock corrected by %.3fs at rate %.9f",
+                result.accumulatedDrift.seconds,
+                request.measurement.masterTimePerSourceTime
+            )
+        }
     }
 
     func captureOutput(
@@ -138,6 +183,15 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     ) {
         queue.async {
             self.levelPublisher.publish(from: sampleBuffer)
+            if self.fileOutput?.isRecording == true,
+               self.fileOutput?.isRecordingPaused == false,
+               let sampleDuration = Self.sampleDuration(of: sampleBuffer) {
+                self.clockRateEstimator.observe(.init(
+                    sampleDuration: sampleDuration,
+                    masterTime: CMClockGetTime(CMClockGetHostTimeClock())
+                ))
+                self.emitSyncWarningIfNeeded()
+            }
             if self.firstSampleTime == nil {
                 let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
                 if presentationTime.isValid {
@@ -198,6 +252,7 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
                     return
                 }
                 self.finishContinuation = continuation
+                self.clockRateEstimator.pause()
                 output.stopRecording()
             }
         }
@@ -282,6 +337,34 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
               let size = attributes[.size] as? NSNumber else { return false }
         return size.int64Value > 0
+    }
+
+    private static func sampleDuration(of sampleBuffer: CMSampleBuffer) -> CMTime? {
+        guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
+              let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(
+                formatDescription
+              )?.pointee,
+              streamDescription.mSampleRate > 0 else {
+            return nil
+        }
+        let sampleCount = CMSampleBufferGetNumSamples(sampleBuffer)
+        guard sampleCount > 0 else { return nil }
+        return CMTime(
+            seconds: Double(sampleCount) / streamDescription.mSampleRate,
+            preferredTimescale: 1_000_000_000
+        )
+    }
+
+    private func emitSyncWarningIfNeeded() {
+        guard !hasEmittedSyncWarning,
+              let measurement = clockRateEstimator.measurement,
+              measurement.sourceDuration.seconds >= 30 else {
+            return
+        }
+        let rate = measurement.masterTimePerSourceTime
+        guard rate < 0.98 || rate > 1.02 else { return }
+        hasEmittedSyncWarning = true
+        syncWarningHandler?("Microphone synchronization is unstable. Recording continues with automatic correction.")
     }
 }
 

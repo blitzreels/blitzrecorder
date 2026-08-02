@@ -147,6 +147,11 @@ final class RecorderCoordinator {
                 self?.handleActiveMicrophoneCaptureFailure(error)
             }
         }
+        audioRecorder.syncWarningHandler = { [weak self] message in
+            Task { @MainActor [weak self] in
+                self?.onMessage?(message)
+            }
+        }
         remoteCamera.onMessage = { [weak self] message in
             self?.onMessage?(message)
         }

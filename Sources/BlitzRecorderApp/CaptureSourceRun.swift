@@ -36,6 +36,7 @@ protocol MicrophoneCaptureRecording: AnyObject {
     func pause()
     func resume()
     func stop() async throws -> MediaWriterCompletion
+    func finalizeSynchronization() async throws
 }
 
 protocol SystemAudioCaptureRecording: AnyObject {
@@ -57,6 +58,7 @@ struct SystemAudioCaptureStartRequest {
 
 extension MicrophoneCaptureRecording {
     var recordingTimelineOffset: CMTime { .zero }
+    func finalizeSynchronization() async throws {}
 }
 
 extension SystemAudioCaptureRecording {
@@ -76,17 +78,20 @@ extension SystemAudioCaptureRecording {
 struct CaptureSourceRunSummary {
     let completions: [CaptureSource: MediaWriterCompletion]
     let stopFailures: [CaptureSource: String]
+    let synchronizationFailures: Set<CaptureSource>
     let timelineTrimOffset: CMTime
     let sourceTimelineOffsets: [CaptureSource: CMTime]
 
     init(
         completions: [CaptureSource: MediaWriterCompletion],
         stopFailures: [CaptureSource: String] = [:],
+        synchronizationFailures: Set<CaptureSource> = [],
         timelineTrimOffset: CMTime = .zero,
         sourceTimelineOffsets: [CaptureSource: CMTime] = [:]
     ) {
         self.completions = completions
         self.stopFailures = stopFailures
+        self.synchronizationFailures = synchronizationFailures
         self.timelineTrimOffset = timelineTrimOffset
         self.sourceTimelineOffsets = sourceTimelineOffsets
     }
@@ -102,6 +107,14 @@ struct CaptureSourceRunSummary {
     var savedRecordingStopWarning: String? {
         if let videoWarning = stopFailureWarning(for: [.screen, .camera]) {
             return videoWarning
+        }
+
+        let synchronizationFailureNames = [CaptureSource.microphone, .systemAudio]
+            .filter { synchronizationFailures.contains($0) }
+            .map(\.rawValue)
+            .joined(separator: " and ")
+        if !synchronizationFailureNames.isEmpty {
+            return "\(synchronizationFailureNames) timing could not be corrected. Saved video is intact, but that audio may drift."
         }
 
         let failedAudioSources = [CaptureSource.microphone, .systemAudio].filter {
@@ -184,6 +197,7 @@ final class CaptureSourceRun {
         let pause: () -> Void
         let resume: () -> Void
         let stop: (RecordingSettings) async throws -> MediaWriterCompletion
+        let finalize: () async throws -> Void
         let timelineOffset: () -> CMTime
     }
 
@@ -370,22 +384,42 @@ final class CaptureSourceRun {
     private func stopSources(_ sourcesToStop: [CaptureSource], settings: RecordingSettings) async -> CaptureSourceRunSummary {
         var completions: [CaptureSource: MediaWriterCompletion] = [:]
         var stopFailures: [CaptureSource: String] = [:]
+        var synchronizationFailures: Set<CaptureSource> = []
+        var stopTasks: [(source: CaptureSource, task: Task<MediaWriterCompletion, Error>)] = []
 
         for source in sourcesToStop {
             guard let adapter = sourceAdapters[source] else { continue }
             activeSources.remove(source)
+            let task = Task { @MainActor in
+                try await adapter.stop(settings)
+            }
+            stopTasks.append((source, task))
+        }
+
+        for stopTask in stopTasks {
             do {
-                completions[source] = try await adapter.stop(settings)
+                completions[stopTask.source] = try await stopTask.task.value
             } catch let stopFailure as CaptureSourceStopFailure {
-                completions[source] = stopFailure.completion
-                stopFailures[source] = Self.sourceStopFailureDescription(stopFailure.underlyingError)
+                completions[stopTask.source] = stopFailure.completion
+                stopFailures[stopTask.source] = Self.sourceStopFailureDescription(stopFailure.underlyingError)
+            } catch {
+                stopFailures[stopTask.source] = Self.sourceStopFailureDescription(error)
+            }
+        }
+
+        for source in sourcesToStop {
+            guard let adapter = sourceAdapters[source] else { continue }
+            do {
+                try await adapter.finalize()
             } catch {
                 stopFailures[source] = Self.sourceStopFailureDescription(error)
+                synchronizationFailures.insert(source)
             }
         }
         return CaptureSourceRunSummary(
             completions: completions,
             stopFailures: stopFailures,
+            synchronizationFailures: synchronizationFailures,
             timelineTrimOffset: timelineTrimOffset,
             sourceTimelineOffsets: sourceTimelineOffsets
         )
@@ -442,6 +476,7 @@ final class CaptureSourceRun {
                 stop: { settings in
                     try await remoteCameraRecorder.stopRemoteCamera(take: take, settings: settings)
                 },
+                finalize: {},
                 timelineOffset: { .zero }
             )
         } else {
@@ -457,6 +492,7 @@ final class CaptureSourceRun {
                 pause: { cameraRecorder.pause() },
                 resume: { cameraRecorder.resume() },
                 stop: { _ in try await cameraRecorder.stop() },
+                finalize: {},
                 timelineOffset: { .zero }
             )
         }
@@ -477,6 +513,7 @@ final class CaptureSourceRun {
                 pause: { screenRecorder.pause() },
                 resume: { screenRecorder.resume() },
                 stop: { _ in try await screenRecorder.stop() },
+                finalize: {},
                 timelineOffset: { .zero }
             ),
             .camera: cameraAdapter,
@@ -492,6 +529,7 @@ final class CaptureSourceRun {
                 pause: { audioRecorder.pause() },
                 resume: { audioRecorder.resume() },
                 stop: { _ in try await audioRecorder.stop() },
+                finalize: { try await audioRecorder.finalizeSynchronization() },
                 timelineOffset: { audioRecorder.recordingTimelineOffset }
             ),
             .systemAudio: CaptureSourceRunAdapter(
@@ -509,6 +547,7 @@ final class CaptureSourceRun {
                 pause: { systemAudioRecorder.pause() },
                 resume: { systemAudioRecorder.resume() },
                 stop: { _ in try await systemAudioRecorder.stop() },
+                finalize: {},
                 timelineOffset: { systemAudioRecorder.recordingTimelineOffset }
             )
         ]

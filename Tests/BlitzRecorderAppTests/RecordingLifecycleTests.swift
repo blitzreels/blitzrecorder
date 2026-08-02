@@ -1547,6 +1547,39 @@ final class RecordingLifecycleTests: XCTestCase {
         XCTAssertNil(summary.savedRecordingStopWarning)
     }
 
+    @MainActor
+    func testCaptureSourceRunWarnsWhenMicrophoneSynchronizationFails() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .microphone]
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        let microphoneRecorder = FailingSynchronizationMicrophoneCaptureRecorder(
+            completion: .wrote(take.audioURL),
+            error: RecorderError.mediaWriteFailed("timing correction failed")
+        )
+        let run = CaptureSourceRun(
+            take: take,
+            settings: settings,
+            pickedScreenFilter: nil,
+            screenRecorder: SpyScreenCaptureRecorder(stopCompletion: .wrote(take.screenURL)),
+            cameraRecorder: FailingCameraCaptureRecorder(error: RecorderError.noCamera),
+            audioRecorder: microphoneRecorder,
+            systemAudioRecorder: NoopSystemAudioCaptureRecorder()
+        )
+
+        try await run.start()
+        let summary = await run.stop()
+
+        XCTAssertEqual(summary.completions[.microphone], .wrote(take.audioURL))
+        XCTAssertEqual(summary.synchronizationFailures, [.microphone])
+        XCTAssertEqual(
+            summary.savedRecordingStopWarning,
+            "Microphone timing could not be corrected. Saved video is intact, but that audio may drift."
+        )
+    }
+
     func testDirectMovieWriterRetimesAudioAgainstHostClock() async throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
@@ -4069,6 +4102,22 @@ private final class FailingStopMicrophoneCaptureRecorder: MicrophoneCaptureRecor
         stopCount += 1
         throw error
     }
+}
+
+private final class FailingSynchronizationMicrophoneCaptureRecorder: MicrophoneCaptureRecording {
+    let completion: MediaWriterCompletion
+    let error: Error
+
+    init(completion: MediaWriterCompletion, error: Error) {
+        self.completion = completion
+        self.error = error
+    }
+
+    func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) async throws {}
+    func pause() {}
+    func resume() {}
+    func stop() async throws -> MediaWriterCompletion { completion }
+    func finalizeSynchronization() async throws { throw error }
 }
 
 private final class NoopSystemAudioCaptureRecorder: SystemAudioCaptureRecording {
