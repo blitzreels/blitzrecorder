@@ -55,6 +55,12 @@ private struct EditorExportPresetRequest {
     let project: RecordingProject
 }
 
+private enum EditorCameraInsetControlChange {
+    case alignment(CameraInsetAlignment)
+    case shape(CameraInsetShape)
+    case size(CGFloat)
+}
+
 enum EditorScenePresetSourceCorrection {
     static func correction(for preset: ScenePreset) -> RecordingProjectSceneCorrection? {
         switch preset {
@@ -87,6 +93,7 @@ struct EditorView: View {
     @State private var layoutDraft: EditorLayoutDraft?
     @State private var screenZoomDraft: Double?
     @State private var cameraZoomDraft: Double?
+    @State private var cameraCropDraft: EditorCameraCropDraft?
     @State private var canvasSceneDraft: RecordingScene?
     @State private var canvasCommitTask: Task<Void, Never>?
     @State private var preservesCanvasPreviewOnNextProjectRefresh = false
@@ -176,6 +183,7 @@ struct EditorView: View {
                 layoutDraft = nil
                 screenZoomDraft = nil
                 cameraZoomDraft = nil
+                cameraCropDraft = nil
                 canvasSceneDraft = nil
             }
             reloadTask = task
@@ -958,14 +966,26 @@ struct EditorView: View {
                 EditorCompositedPlayer(
                     controller: playback,
                     renderSize: playback.renderSize,
-                    previewSceneRevision: playback.previewSceneRevision
+                    previewSceneRevision: playback.previewSceneRevision,
+                    cameraCropEditingScene: cameraCropDraft?.scene
                 )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipShape(.rect(cornerRadius: 12))
                     .allowsHitTesting(false)
             }
 
-            if playback.isReady {
+            if playback.isReady, let cameraCropDraft,
+               let sourceAspectRatio = playback.sourceAspectRatios[.camera] {
+                EditorCameraCropOverlay(configuration: .init(
+                    scene: cameraCropDraft.scene,
+                    renderSize: playback.renderSize,
+                    sourceAspectRatio: sourceAspectRatio,
+                    onChange: updateEditorCameraCrop,
+                    onDone: applyEditorCameraCrop,
+                    onReset: resetEditorCameraCrop,
+                    onCancel: cancelEditorCameraCrop
+                ))
+            } else if playback.isReady {
                 EditorCanvasLayerOverlay(
                     layers: displayedCanvasLayers,
                     onSelect: { layer in
@@ -1320,14 +1340,13 @@ struct EditorView: View {
     @ViewBuilder
     private var layoutInspectorContent: some View {
         if let kind = selectedVideoLayerKind {
-            frameAspectSection(kind)
             switch kind {
             case .screen:
+                frameAspectSection(kind)
                 screenFrameSection
                 screenZoomSection
             case .camera:
-                cameraFrameSection
-                cameraZoomSection
+                cameraControlsSection
             }
         } else {
             sceneControlsSection
@@ -1567,11 +1586,6 @@ struct EditorView: View {
         )
     }
 
-    private var cameraZoomLabel: String {
-        let visibleFraction = max(0.25, 1 - cameraZoomValue)
-        return "\(Int((100 / visibleFraction).rounded()))%"
-    }
-
     private func previewCameraZoom(_ zoom: Double) {
         guard var scene = currentEventScene else { return }
         let clamped = min(0.75, max(0, zoom))
@@ -1600,6 +1614,87 @@ struct EditorView: View {
             playback.setPreviewSceneOverride(nil, at: playback.currentTime)
             editErrorMessage = vm.detailMessage
         }
+    }
+
+    private func beginEditorCameraCrop() {
+        let index = currentEventIndex
+        guard sceneEvents.indices.contains(index),
+              sceneEvents[index].scene.enabledSources.contains(.camera) else {
+            return
+        }
+        playback.pauseForEditing()
+        let scene = sceneEvents[index].scene
+        cameraZoomDraft = nil
+        cameraCropDraft = EditorCameraCropDraft(
+            eventIndex: index,
+            originalScene: scene,
+            scene: scene
+        )
+        if let camera = asset(for: .camera) {
+            selection = .asset(camera.id)
+        }
+    }
+
+    private func updateEditorCameraCrop(_ change: EditorCameraCropInteractionChange) {
+        guard var draft = cameraCropDraft,
+              let sourceAspectRatio = playback.sourceAspectRatios[.camera],
+              playback.renderSize.width > 0,
+              playback.renderSize.height > 0 else {
+            return
+        }
+        let renderGeometry = SceneRenderGeometry(
+            canvas: CGRect(origin: .zero, size: playback.renderSize),
+            scene: draft.scene,
+            origin: .upperLeft
+        )
+        let cropGeometry = CameraCropGeometry(
+            renderGeometry: renderGeometry,
+            sourceAspectRatio: sourceAspectRatio
+        )
+        let startCrop = cropGeometry.cropFrame(
+            amount: change.startControl.amount,
+            position: change.startControl.position
+        )
+        let crop: CGRect
+        switch change.kind {
+        case .move:
+            crop = cropGeometry.movedCropFrame(startCrop, delta: change.delta)
+        case .resize(let anchor):
+            crop = cropGeometry.resizedCropFrame(startCrop, delta: change.delta, anchor: anchor)
+        }
+        guard let control = cropGeometry.control(for: crop) else { return }
+        draft.scene.cameraCropAmount = control.amount
+        draft.scene.cameraCropPosition = control.position
+        cameraCropDraft = draft
+    }
+
+    private func applyEditorCameraCrop() {
+        guard let draft = cameraCropDraft else { return }
+        let amount = draft.scene.cameraCropAmount
+        let position = draft.scene.cameraCropPosition
+        let succeeded = vm.applyProjectSceneEdit(eventIndex: draft.eventIndex) { scene in
+            scene.cameraCropAmount = amount
+            scene.cameraCropPosition = position
+        }
+        cameraCropDraft = nil
+        if !succeeded {
+            editErrorMessage = vm.detailMessage
+        }
+    }
+
+    private func resetEditorCameraCrop() {
+        if var draft = cameraCropDraft {
+            draft.scene.cameraCropAmount = .zero
+            draft.scene.cameraCropPosition = .zero
+            cameraCropDraft = draft
+            return
+        }
+        previewCameraZoom(0)
+        commitCameraZoom()
+    }
+
+    private func cancelEditorCameraCrop() {
+        cameraCropDraft = nil
     }
 
     private func setCanvasBackground(_ style: CanvasBackgroundStyle) {
@@ -2143,95 +2238,103 @@ struct EditorView: View {
             }
 
             if asset.kind == .camera, currentEventScene != nil {
-                cameraFrameSection
+                cameraControlsSection
             }
         }
     }
 
     @ViewBuilder
-    private var cameraFrameSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            BlitzUI.sectionLabel("Camera frame", icon: "video")
-
-            if sceneEvents.count > 1 {
-                Text("Applies to segment \(currentEventIndex + 1)")
-                    .font(.system(size: 9.5, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.42))
-            }
-
-            CameraInspectorRow(title: "Image") {
-                Picker("Image", selection: segmentSceneBinding(\.cameraContentMode, fallback: .fill)) {
-                    ForEach(CameraContentMode.allCases, id: \.self) { mode in
-                        Text(mode.displayName).tag(mode)
-                    }
+    private var cameraControlsSection: some View {
+        if let scene = currentEventScene, scene.enabledSources.contains(.camera) {
+            VStack(alignment: .leading, spacing: 14) {
+                if cameraCropDraft == nil,
+                   SceneLayout.isCameraInsetFrame(scene.sceneLayout.cameraFrame) {
+                    CameraInsetFrameControlPanel(configuration: editorCameraInsetConfiguration)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .controlSize(.small)
-            }
-            .help("Fill the frame edge to edge, or fit the whole camera image")
 
-            Toggle(isOn: segmentSceneBinding(\.cameraShadowEnabled, fallback: false)) {
-                Label("Shadow", systemImage: "square.stack.3d.down.right")
-                    .font(.system(size: 12, weight: .semibold))
+                CameraImageControls(configuration: editorCameraImageConfiguration)
             }
-            .toggleStyle(.switch)
-            .controlSize(.mini)
-            .tint(BlitzUI.mint)
-            .help("Add a soft shadow under the camera")
-
-            Text("Drag the camera in the canvas to move it; drag a corner to resize.")
-                .font(.system(size: 9.5, weight: .medium))
-                .foregroundStyle(.white.opacity(0.42))
         }
     }
 
-    @ViewBuilder
-    private var cameraZoomSection: some View {
-        if currentEventScene?.enabledSources.contains(.camera) == true {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    Label("Source crop", systemImage: "crop")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.72))
-                    Spacer(minLength: 0)
-                    Text(cameraZoomLabel)
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .monospacedDigit()
-                        .foregroundStyle(.white.opacity(0.62))
-                }
+    private var editorCameraInsetConfiguration: CameraInsetFrameControlsConfiguration {
+        let layout = captureLayout ?? .horizontal
+        let frame = currentEventScene?.sceneLayout.cameraFrame ?? .zero
+        return CameraInsetFrameControlsConfiguration(
+            alignment: Binding(
+                get: { SceneLayout.cameraInsetAlignment(for: frame) },
+                set: { applyEditorCameraInsetChange(.alignment($0)) }
+            ),
+            shape: Binding(
+                get: { SceneLayout.cameraInsetShape(for: frame, in: layout) },
+                set: { applyEditorCameraInsetChange(.shape($0)) }
+            ),
+            size: Binding(
+                get: { Double(SceneLayout.cameraInsetSize(for: frame, in: layout)) },
+                set: { applyEditorCameraInsetChange(.size(CGFloat($0))) }
+            ),
+            sizeRange: Double(SceneLayout.minimumCameraInsetSize)...Double(
+                SceneLayout.maximumCameraInsetSize(for: layout)
+            )
+        )
+    }
 
-                HStack(spacing: 8) {
-                    Slider(
-                        value: cameraZoomBinding,
-                        in: 0...0.75,
-                        onEditingChanged: { isEditing in
-                            if !isEditing {
-                                commitCameraZoom()
-                            }
-                        }
-                    )
-                    .controlSize(.small)
-                    .tint(BlitzUI.mint)
+    private func applyEditorCameraInsetChange(_ change: EditorCameraInsetControlChange) {
+        guard let scene = currentEventScene, let layout = captureLayout else { return }
+        let frame = scene.sceneLayout.cameraFrame
+        var alignment = SceneLayout.cameraInsetAlignment(for: frame)
+        var shape = SceneLayout.cameraInsetShape(for: frame, in: layout)
+        var size = SceneLayout.cameraInsetSize(for: frame, in: layout)
 
-                    Button {
-                        previewCameraZoom(0)
-                        commitCameraZoom()
-                    } label: {
-                        Image(systemName: "arrow.counterclockwise")
-                            .font(.system(size: 10, weight: .bold))
-                            .frame(width: 28, height: 24)
-                    }
-                    .buttonStyle(.plain)
-                    .background(BlitzUI.controlFill, in: .rect(cornerRadius: 7))
-                    .disabled(cameraZoomValue < 0.001)
-                    .pointingHandCursor()
-                    .help("Reset camera source crop")
-                }
-            }
-            .padding(10)
-            .background(BlitzUI.quietFill, in: .rect(cornerRadius: 10))
+        switch change {
+        case .alignment(let value):
+            alignment = value
+        case .shape(let value):
+            shape = value
+        case .size(let value):
+            size = value
         }
+
+        let sourceAspectRatio = playback.sourceAspectRatios[.camera] ?? SceneLayout.cameraAspectRatio
+        let nextFrame = SceneLayout.cameraInsetFrame(
+            for: layout,
+            alignment: alignment,
+            shape: shape,
+            size: size,
+            sourceAspectRatio: sourceAspectRatio
+        )
+        playback.pauseForEditing()
+        guard vm.applyProjectSceneEdit(eventIndex: currentEventIndex, { editedScene in
+            editedScene.sceneLayout.cameraFrame = nextFrame
+        }) else {
+            editErrorMessage = vm.detailMessage
+            return
+        }
+    }
+
+    private var editorCameraImageConfiguration: CameraImageControlsConfiguration {
+        let scene = cameraCropDraft?.scene ?? currentEventScene
+        let position = scene?.cameraCropPosition ?? .zero
+        let amount = scene?.cameraCropAmount ?? .zero
+        let isCentered = max(amount.x, amount.y) < 0.001
+            && abs(position.x) < 0.001
+            && abs(position.y) < 0.001
+        let showsShadow = scene.map { SceneLayout.isCameraInsetFrame($0.sceneLayout.cameraFrame) } ?? false
+        return CameraImageControlsConfiguration(
+            contentMode: segmentSceneBinding(\.cameraContentMode, fallback: .fill),
+            cropZoom: cameraZoomBinding,
+            shadowEnabled: segmentSceneBinding(\.cameraShadowEnabled, fallback: false),
+            isCropModeEnabled: cameraCropDraft != nil,
+            showsShadow: showsShadow,
+            isResetDisabled: isCentered,
+            onCropZoomEditingChanged: { isEditing in
+                if !isEditing {
+                    commitCameraZoom()
+                }
+            },
+            onBeginCrop: beginEditorCameraCrop,
+            onResetCrop: resetEditorCameraCrop
+        )
     }
 
     @ViewBuilder
@@ -2482,6 +2585,249 @@ private struct EditorCanvasLayer: Identifiable {
 }
 
 private let editorCanvasSpace = "EditorCanvasOverlay"
+
+enum EditorCameraCropInteractionKind: Equatable {
+    case move
+    case resize(ResizeAnchor)
+}
+
+struct EditorCameraCropInteractionChange {
+    let kind: EditorCameraCropInteractionKind
+    let delta: CGPoint
+    let startControl: CameraCropControl
+}
+
+private struct EditorCameraCropOverlayConfiguration {
+    let scene: RecordingScene
+    let renderSize: CGSize
+    let sourceAspectRatio: CGFloat
+    let onChange: (EditorCameraCropInteractionChange) -> Void
+    let onDone: () -> Void
+    let onReset: () -> Void
+    let onCancel: () -> Void
+}
+
+private struct EditorCameraCropOverlay: View {
+    let configuration: EditorCameraCropOverlayConfiguration
+
+    var body: some View {
+        GeometryReader { proxy in
+            if let presentation = EditorCameraCropPresentation.make(.init(
+                containerSize: proxy.size,
+                renderSize: configuration.renderSize,
+                scene: configuration.scene,
+                sourceAspectRatio: configuration.sourceAspectRatio
+            )) {
+                EditorCameraCropSelectionOverlay(presentation: presentation)
+
+                EditorCameraCropInteractionView(configuration: .init(
+                    presentation: presentation,
+                    control: CameraCropControl(
+                        amount: configuration.scene.cameraCropAmount,
+                        position: configuration.scene.cameraCropPosition
+                    ),
+                    onChange: configuration.onChange
+                ))
+            }
+        }
+        .overlay(alignment: .bottom) {
+            CropFloatingToolbar(configuration: .init(
+                onDone: configuration.onDone,
+                onReset: configuration.onReset,
+                onCancel: configuration.onCancel
+            ))
+            .fixedSize()
+            .padding(.bottom, 12)
+        }
+    }
+}
+
+private struct EditorCameraCropSelectionOverlay: View {
+    let presentation: EditorCameraCropPresentation
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Path { path in
+                path.addRect(presentation.sourceFrame)
+                path.addRect(presentation.cropFrame)
+            }
+            .fill(.black.opacity(0.48), style: FillStyle(eoFill: true))
+
+            Rectangle()
+                .stroke(.white.opacity(0.34), lineWidth: 1)
+                .frame(width: presentation.sourceFrame.width, height: presentation.sourceFrame.height)
+                .offset(x: presentation.sourceFrame.minX, y: presentation.sourceFrame.minY)
+
+            Rectangle()
+                .stroke(BlitzUI.mint, lineWidth: 2)
+                .frame(width: presentation.cropFrame.width, height: presentation.cropFrame.height)
+                .overlay { cropHandles }
+                .offset(x: presentation.cropFrame.minX, y: presentation.cropFrame.minY)
+        }
+        .allowsHitTesting(false)
+    }
+
+    private var cropHandles: some View {
+        ZStack {
+            cropHandle(alignment: .topLeading)
+            cropHandle(alignment: .topTrailing)
+            cropHandle(alignment: .bottomLeading)
+            cropHandle(alignment: .bottomTrailing)
+        }
+    }
+
+    private func cropHandle(alignment: Alignment) -> some View {
+        RoundedRectangle(cornerRadius: 3, style: .continuous)
+            .fill(BlitzUI.mint)
+            .frame(width: 12, height: 12)
+            .overlay {
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .stroke(.black.opacity(0.9), lineWidth: 1)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+            .offset(
+                x: alignment.horizontal == .leading ? -6 : 6,
+                y: alignment.vertical == .top ? -6 : 6
+            )
+    }
+}
+
+private struct EditorCameraCropInteractionConfiguration {
+    let presentation: EditorCameraCropPresentation
+    let control: CameraCropControl
+    let onChange: (EditorCameraCropInteractionChange) -> Void
+}
+
+private struct EditorCameraCropInteractionView: NSViewRepresentable {
+    let configuration: EditorCameraCropInteractionConfiguration
+
+    func makeNSView(context: Context) -> InteractionView {
+        let view = InteractionView()
+        update(view)
+        return view
+    }
+
+    func updateNSView(_ nsView: InteractionView, context: Context) {
+        update(nsView)
+    }
+
+    private func update(_ view: InteractionView) {
+        view.presentation = configuration.presentation
+        view.control = configuration.control
+        view.onChange = configuration.onChange
+    }
+
+    final class InteractionView: NSView {
+        private struct ResizeAnchorRequest {
+            let point: CGPoint
+            let frame: CGRect
+        }
+
+        var presentation: EditorCameraCropPresentation?
+        var control = CameraCropControl(amount: .zero, position: .zero)
+        var onChange: ((EditorCameraCropInteractionChange) -> Void)?
+        private var trackingArea: NSTrackingArea?
+        private var dragKind: EditorCameraCropInteractionKind?
+        private var dragStart = CGPoint.zero
+        private var dragStartControl = CameraCropControl(amount: .zero, position: .zero)
+
+        override var isFlipped: Bool { true }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            if let trackingArea {
+                removeTrackingArea(trackingArea)
+            }
+            let area = NSTrackingArea(
+                rect: bounds,
+                options: [.activeInKeyWindow, .mouseMoved, .mouseEnteredAndExited, .inVisibleRect],
+                owner: self
+            )
+            trackingArea = area
+            addTrackingArea(area)
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            guard let presentation else { return }
+            let point = convert(event.locationInWindow, from: nil)
+            let kind: EditorCameraCropInteractionKind?
+            if let anchor = resizeAnchor(.init(point: point, frame: presentation.cropFrame)) {
+                kind = .resize(anchor)
+                anchor.cursor.set()
+            } else if presentation.cropFrame.contains(point) {
+                kind = .move
+                NSCursor.closedHand.set()
+            } else {
+                kind = nil
+            }
+            dragKind = kind
+            dragStart = point
+            dragStartControl = control
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            sendChange(event)
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            sendChange(event)
+            dragKind = nil
+            updateCursor(event)
+        }
+
+        override func mouseMoved(with event: NSEvent) {
+            guard dragKind == nil else { return }
+            updateCursor(event)
+        }
+
+        override func mouseExited(with event: NSEvent) {
+            guard dragKind == nil else { return }
+            NSCursor.arrow.set()
+        }
+
+        private func sendChange(_ event: NSEvent) {
+            guard let dragKind, let presentation else { return }
+            let point = convert(event.locationInWindow, from: nil)
+            let scale = max(0.0001, presentation.pointsPerRenderUnit)
+            onChange?(EditorCameraCropInteractionChange(
+                kind: dragKind,
+                delta: CGPoint(
+                    x: (point.x - dragStart.x) / scale,
+                    y: (point.y - dragStart.y) / scale
+                ),
+                startControl: dragStartControl
+            ))
+        }
+
+        private func updateCursor(_ event: NSEvent) {
+            guard let presentation else {
+                NSCursor.arrow.set()
+                return
+            }
+            let point = convert(event.locationInWindow, from: nil)
+            if let anchor = resizeAnchor(.init(point: point, frame: presentation.cropFrame)) {
+                anchor.cursor.set()
+            } else if presentation.cropFrame.contains(point) {
+                NSCursor.openHand.set()
+            } else {
+                NSCursor.arrow.set()
+            }
+        }
+
+        private func resizeAnchor(_ request: ResizeAnchorRequest) -> ResizeAnchor? {
+            let size: CGFloat = 18
+            let half = size / 2
+            let frame = request.frame
+            let targets: [(ResizeAnchor, CGRect)] = [
+                (.topLeft, CGRect(x: frame.minX - half, y: frame.minY - half, width: size, height: size)),
+                (.topRight, CGRect(x: frame.maxX - half, y: frame.minY - half, width: size, height: size)),
+                (.bottomLeft, CGRect(x: frame.minX - half, y: frame.maxY - half, width: size, height: size)),
+                (.bottomRight, CGRect(x: frame.maxX - half, y: frame.maxY - half, width: size, height: size))
+            ]
+            return targets.first(where: { $0.1.contains(request.point) })?.0
+        }
+    }
+}
 
 private struct EditorCanvasLayerOverlay: View {
     let layers: [EditorCanvasLayer]

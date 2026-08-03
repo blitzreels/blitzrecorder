@@ -82,13 +82,16 @@ final class CameraCutoutPreviewer: NSObject, AVCaptureVideoDataOutputSampleBuffe
         guard let device = selectedCamera(settings: settings) else {
             throw RecorderError.noCamera
         }
+        let cameraIsRunningSomewhere = LocalCameraUsage.isRunningSomewhere(device)
 
         session.beginConfiguration()
         session.sessionPreset = session.canSetSessionPreset(.hd1280x720) ? .hd1280x720 : .high
         session.inputs.forEach { session.removeInput($0) }
         session.outputs.forEach { session.removeOutput($0) }
 
-        try configure(device: device)
+        if !cameraIsRunningSomewhere {
+            try configure(device: device)
+        }
 
         let input = try AVCaptureDeviceInput(device: device)
         guard session.canAddInput(input) else {

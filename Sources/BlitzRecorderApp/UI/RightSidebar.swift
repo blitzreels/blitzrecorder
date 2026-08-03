@@ -1,37 +1,35 @@
 import BlitzRecorderCore
 import SwiftUI
 
-struct CameraCropControls: View {
-    @Bindable var vm: RecorderViewModel
+struct CameraImageControlsConfiguration {
+    let contentMode: Binding<CameraContentMode>
+    let cropZoom: Binding<Double>
+    let shadowEnabled: Binding<Bool>
+    let isCropModeEnabled: Bool
+    let showsShadow: Bool
+    let isResetDisabled: Bool
+    let onCropZoomEditingChanged: (Bool) -> Void
+    let onBeginCrop: () -> Void
+    let onResetCrop: () -> Void
+}
+
+struct CameraImageControls: View {
+    let configuration: CameraImageControlsConfiguration
 
     private let mint = BlitzUI.mint
 
-    private var disabled: Bool {
-        !vm.isSourceConfigured(.camera) || !vm.canEditCameraCrop
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if vm.isCameraCropModeEnabled {
-                cropActiveNotice
-            } else {
-                if vm.isRemoteCameraSelected {
-                    RemoteCameraOrientationControl(vm: vm)
-                }
-
-                if vm.isCameraInsetLayout {
-                    CameraInsetFrameControls(vm: vm)
-                }
-
+        if configuration.isCropModeEnabled {
+            cropActiveNotice
+        } else {
+            VStack(alignment: .leading, spacing: 14) {
                 cameraImageGroup
 
-                if vm.isCameraInsetLayout {
+                if configuration.showsShadow {
                     styleGroup
                 }
             }
         }
-        .disabled(disabled)
-        .opacity(disabled ? 0.6 : 1)
     }
 
     private var cameraImageGroup: some View {
@@ -40,7 +38,7 @@ struct CameraCropControls: View {
 
             CameraDiagramPicker(
                 options: CameraContentMode.allCases,
-                selection: contentModeSelection,
+                selection: configuration.contentMode,
                 label: { $0.displayName },
                 draw: framingDraw
             )
@@ -48,11 +46,9 @@ struct CameraCropControls: View {
 
             CameraInspectorSliderRow(
                 title: "Camera crop",
-                value: Binding(
-                    get: { cropZoom },
-                    set: { vm.setCameraCropZoom(CGFloat($0)) }
-                ),
-                range: 0...0.75
+                value: configuration.cropZoom,
+                range: 0...0.75,
+                onEditingChanged: configuration.onCropZoomEditingChanged
             )
             .help("Crop into the camera image")
 
@@ -63,7 +59,7 @@ struct CameraCropControls: View {
     private var styleGroup: some View {
         VStack(alignment: .leading, spacing: 8) {
             BlitzUI.sectionLabel("Style", icon: "wand.and.stars")
-            Toggle(isOn: shadowSelection) {
+            Toggle(isOn: configuration.shadowEnabled) {
                 Label("Shadow", systemImage: "square.stack.3d.down.right")
                     .font(.system(size: 12, weight: .semibold))
             }
@@ -72,20 +68,6 @@ struct CameraCropControls: View {
             .tint(BlitzUI.mint)
             .help("Add a soft shadow under the camera")
         }
-    }
-
-    private var contentModeSelection: Binding<CameraContentMode> {
-        Binding(
-            get: { vm.settings.cameraContentMode },
-            set: { vm.setCameraContentMode($0) }
-        )
-    }
-
-    private var shadowSelection: Binding<Bool> {
-        Binding(
-            get: { vm.settings.cameraShadowEnabled },
-            set: { vm.setCameraShadowEnabled($0) }
-        )
     }
 
     private var cropActiveNotice: some View {
@@ -105,9 +87,7 @@ struct CameraCropControls: View {
 
     private var cropActions: some View {
         HStack(spacing: 8) {
-            Button {
-                vm.beginCameraCropMode()
-            } label: {
+            Button(action: configuration.onBeginCrop) {
                 Label("Free crop", systemImage: "viewfinder")
                     .font(.system(size: 11, weight: .semibold))
                     .frame(maxWidth: .infinity)
@@ -118,19 +98,72 @@ struct CameraCropControls: View {
             .pointingHandCursor()
             .help("Edit the camera crop on the live canvas")
 
-            Button {
-                vm.resetCameraCrop()
-            } label: {
+            Button(action: configuration.onResetCrop) {
                 Image(systemName: "arrow.counterclockwise")
                     .font(.system(size: 10, weight: .bold))
                     .frame(width: 24, height: 24)
             }
             .blitzGlassButton()
             .controlSize(.small)
-            .disabled(isCentered)
+            .disabled(configuration.isResetDisabled)
             .pointingHandCursor()
             .help("Reset camera crop")
         }
+    }
+}
+
+struct CameraCropControls: View {
+    @Bindable var vm: RecorderViewModel
+
+    private var disabled: Bool {
+        !vm.isSourceConfigured(.camera) || !vm.canEditCameraCrop
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if vm.isRemoteCameraSelected && !vm.isCameraCropModeEnabled {
+                RemoteCameraOrientationControl(vm: vm)
+            }
+
+            if vm.isCameraInsetLayout && !vm.isCameraCropModeEnabled {
+                CameraInsetFrameControls(vm: vm)
+            }
+
+            CameraImageControls(configuration: cameraImageConfiguration)
+        }
+        .disabled(disabled)
+        .opacity(disabled ? 0.6 : 1)
+    }
+
+    private var cameraImageConfiguration: CameraImageControlsConfiguration {
+        CameraImageControlsConfiguration(
+            contentMode: contentModeSelection,
+            cropZoom: Binding(
+                get: { cropZoom },
+                set: { vm.setCameraCropZoom(CGFloat($0)) }
+            ),
+            shadowEnabled: shadowSelection,
+            isCropModeEnabled: vm.isCameraCropModeEnabled,
+            showsShadow: vm.isCameraInsetLayout,
+            isResetDisabled: isCentered,
+            onCropZoomEditingChanged: { _ in },
+            onBeginCrop: vm.beginCameraCropMode,
+            onResetCrop: vm.resetCameraCrop
+        )
+    }
+
+    private var contentModeSelection: Binding<CameraContentMode> {
+        Binding(
+            get: { vm.settings.cameraContentMode },
+            set: { vm.setCameraContentMode($0) }
+        )
+    }
+
+    private var shadowSelection: Binding<Bool> {
+        Binding(
+            get: { vm.settings.cameraShadowEnabled },
+            set: { vm.setCameraShadowEnabled($0) }
+        )
     }
 
     private var isCentered: Bool {
@@ -143,12 +176,15 @@ struct CameraCropControls: View {
     }
 }
 
-struct CameraInsetFrameControls: View {
-    @Bindable var vm: RecorderViewModel
+struct CameraInsetFrameControlsConfiguration {
+    let alignment: Binding<CameraInsetAlignment>
+    let shape: Binding<CameraInsetShape>
+    let size: Binding<Double>
+    let sizeRange: ClosedRange<Double>
+}
 
-    private var disabled: Bool {
-        !vm.isSourceConfigured(.camera) || !vm.canEditScene
-    }
+struct CameraInsetFrameControlPanel: View {
+    let configuration: CameraInsetFrameControlsConfiguration
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -156,7 +192,7 @@ struct CameraInsetFrameControls: View {
                 title: "Placement",
                 icon: "rectangle.inset.bottomleft.filled",
                 options: CameraInsetAlignment.allCases,
-                selection: alignmentSelection,
+                selection: configuration.alignment,
                 label: { $0.displayName },
                 draw: positionDraw
             )
@@ -167,7 +203,7 @@ struct CameraInsetFrameControls: View {
                     title: "Frame",
                     icon: "rectangle.portrait",
                     options: CameraInsetShape.allCases,
-                    selection: shapeSelection,
+                    selection: configuration.shape,
                     label: { $0.displayName },
                     draw: shapeDraw
                 )
@@ -175,18 +211,39 @@ struct CameraInsetFrameControls: View {
 
                 CameraInspectorSliderRow(
                     title: "Size",
-                    value: Binding(
-                        get: { vm.cameraInsetSize },
-                        set: { vm.setCameraInsetSize($0) }
-                    ),
-                    range: vm.cameraInsetSizeRange,
+                    value: configuration.size,
+                    range: configuration.sizeRange,
                     step: 0.005
                 )
                 .help("Camera frame size — the frame keeps the camera's real aspect ratio")
             }
         }
+    }
+}
+
+struct CameraInsetFrameControls: View {
+    @Bindable var vm: RecorderViewModel
+
+    private var disabled: Bool {
+        !vm.isSourceConfigured(.camera) || !vm.canEditScene
+    }
+
+    var body: some View {
+        CameraInsetFrameControlPanel(configuration: configuration)
         .disabled(disabled)
         .opacity(disabled ? 0.6 : 1)
+    }
+
+    private var configuration: CameraInsetFrameControlsConfiguration {
+        CameraInsetFrameControlsConfiguration(
+            alignment: alignmentSelection,
+            shape: shapeSelection,
+            size: Binding(
+                get: { vm.cameraInsetSize },
+                set: { vm.setCameraInsetSize($0) }
+            ),
+            sizeRange: vm.cameraInsetSizeRange
+        )
     }
 
     private var alignmentSelection: Binding<CameraInsetAlignment> {
@@ -224,14 +281,15 @@ struct CameraInspectorSliderRow: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
     var step: Double?
+    var onEditingChanged: (Bool) -> Void = { _ in }
 
     var body: some View {
         CameraInspectorRow(title: title) {
             Group {
                 if let step {
-                    Slider(value: $value, in: range, step: step)
+                    Slider(value: $value, in: range, step: step, onEditingChanged: onEditingChanged)
                 } else {
-                    Slider(value: $value, in: range)
+                    Slider(value: $value, in: range, onEditingChanged: onEditingChanged)
                 }
             }
             .controlSize(.small)

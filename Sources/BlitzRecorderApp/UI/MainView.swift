@@ -216,7 +216,7 @@ struct CropToolbarOverlay: View {
         GeometryReader { proxy in
             if let frame = vm.cropToolbarFrame,
                vm.isScreenCropModeEnabled || vm.isCameraCropModeEnabled {
-                CropFloatingToolbar(vm: vm)
+                CropFloatingToolbar(configuration: cropToolbarConfiguration)
                     .fixedSize()
                     .position(
                         x: frame.midX,
@@ -224,6 +224,32 @@ struct CropToolbarOverlay: View {
                     )
             }
         }
+    }
+
+    private var cropToolbarConfiguration: CropFloatingToolbarConfiguration {
+        CropFloatingToolbarConfiguration(
+            onDone: {
+                if vm.isCameraCropModeEnabled {
+                    vm.applyCameraCropMode()
+                } else {
+                    vm.applyScreenCropMode()
+                }
+            },
+            onReset: {
+                if vm.isCameraCropModeEnabled {
+                    vm.resetCameraCrop()
+                } else {
+                    vm.resetScreenCropMode()
+                }
+            },
+            onCancel: {
+                if vm.isCameraCropModeEnabled {
+                    vm.cancelCameraCropMode()
+                } else {
+                    vm.cancelScreenCropMode()
+                }
+            }
+        )
     }
 }
 
@@ -271,21 +297,20 @@ private struct ScreenPickPrompt: View {
     }
 }
 
-private struct CropFloatingToolbar: View {
-    @Bindable var vm: RecorderViewModel
+struct CropFloatingToolbarConfiguration {
+    let onDone: () -> Void
+    let onReset: () -> Void
+    let onCancel: () -> Void
+}
+
+struct CropFloatingToolbar: View {
+    let configuration: CropFloatingToolbarConfiguration
 
     private let accent = BlitzUI.mint
-    private var isCameraCrop: Bool { vm.isCameraCropModeEnabled }
 
     var body: some View {
         HStack(spacing: 8) {
-            Button {
-                if isCameraCrop {
-                    vm.applyCameraCropMode()
-                } else {
-                    vm.applyScreenCropMode()
-                }
-            } label: {
+            Button(action: configuration.onDone) {
                 Label("Done cropping", systemImage: "checkmark")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(.black.opacity(0.88))
@@ -296,13 +321,7 @@ private struct CropFloatingToolbar: View {
             .buttonStyle(.plain)
             .pointingHandCursor()
 
-            Button {
-                if isCameraCrop {
-                    vm.resetCameraCrop()
-                } else {
-                    vm.resetScreenCropMode()
-                }
-            } label: {
+            Button(action: configuration.onReset) {
                 Image(systemName: "arrow.counterclockwise")
                     .font(.system(size: 11, weight: .bold))
                     .frame(width: 28, height: 28)
@@ -311,13 +330,7 @@ private struct CropFloatingToolbar: View {
             .controlSize(.small)
             .pointingHandCursor()
 
-            Button {
-                if isCameraCrop {
-                    vm.cancelCameraCropMode()
-                } else {
-                    vm.cancelScreenCropMode()
-                }
-            } label: {
+            Button(action: configuration.onCancel) {
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .bold))
                     .frame(width: 28, height: 28)

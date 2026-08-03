@@ -177,7 +177,8 @@ struct ProjectLibraryPlayerSurface: View {
                 EditorCompositedPlayer(
                     controller: configuration.controller,
                     renderSize: configuration.controller.renderSize,
-                    previewSceneRevision: configuration.controller.previewSceneRevision
+                    previewSceneRevision: configuration.controller.previewSceneRevision,
+                    cameraCropEditingScene: nil
                 )
                 .allowsHitTesting(false)
                 .transition(.opacity)

@@ -14,15 +14,22 @@ enum EditorDisplayLinkPolicy {
     }
 }
 
+private struct EditorCameraCropCanvasFrameRequest {
+    let scene: RecordingScene
+    let aspectRatios: [SceneLayerKind: CGFloat]
+}
+
 @MainActor
 struct EditorCompositedPlayer: NSViewRepresentable {
     let controller: EditorPlaybackController
     let renderSize: CGSize
     let previewSceneRevision: Int
+    let cameraCropEditingScene: RecordingScene?
 
     func makeNSView(context: Context) -> EditorCompositedPlayerView {
         let view = EditorCompositedPlayerView()
         view.controller = controller
+        view.cameraCropEditingScene = cameraCropEditingScene
         view.configure(renderSize: renderSize)
         return view
     }
@@ -30,6 +37,7 @@ struct EditorCompositedPlayer: NSViewRepresentable {
     func updateNSView(_ nsView: EditorCompositedPlayerView, context: Context) {
         nsView.controller = controller
         nsView.previewSceneRevision = previewSceneRevision
+        nsView.cameraCropEditingScene = cameraCropEditingScene
         nsView.configure(renderSize: renderSize)
         nsView.refresh()
         nsView.synchronizeDisplayLink()
@@ -51,6 +59,7 @@ final class EditorCompositedPlayerView: NSView {
     private var renderSize: CGSize = .zero
     private var renderedBackgroundKey: (style: CanvasBackgroundStyle, width: Int, height: Int)?
     var previewSceneRevision = 0
+    var cameraCropEditingScene: RecordingScene?
 
     weak var controller: EditorPlaybackController?
     private var displayLink: CADisplayLink?
@@ -139,12 +148,15 @@ final class EditorCompositedPlayerView: NSView {
 
     func refresh() {
         guard let controller, controller.isReady, renderSize.width > 0, renderSize.height > 0 else { return }
-        let canvasFrame = aspectFitCanvasFrame()
+        let time = controller.displayTime()
+        guard let playbackScene = controller.scene(at: time) else { return }
+        let scene = cameraCropEditingScene ?? playbackScene
+        let canvasFrame = cameraCropCanvasFrame(.init(
+            scene: scene,
+            aspectRatios: controller.sourceAspectRatios
+        ))
         guard canvasFrame.width > 0 else { return }
         let scale = canvasFrame.width / renderSize.width
-
-        let time = controller.displayTime()
-        guard let scene = controller.scene(at: time) else { return }
         let geometry = SceneRenderGeometry(
             canvas: CGRect(origin: .zero, size: renderSize),
             scene: scene,
@@ -176,9 +188,31 @@ final class EditorCompositedPlayerView: NSView {
                 layers.shadowHost.isHidden = false
                 layers.shadowHost.zPosition = zIndex
                 zIndex += 1
-                layoutSource(kind: kind, layers: layers, geometry: geometry, aspectRatios: aspectRatios, scale: scale, scene: scene)
+                layoutSource(
+                    kind: kind,
+                    layers: layers,
+                    geometry: geometry,
+                    aspectRatios: aspectRatios,
+                    scale: scale,
+                    scene: scene,
+                    isCameraCropEditing: kind == .camera && cameraCropEditingScene != nil
+                )
             }
         }
+    }
+
+    private func cameraCropCanvasFrame(_ request: EditorCameraCropCanvasFrameRequest) -> CGRect {
+        guard cameraCropEditingScene != nil,
+              let sourceAspectRatio = request.aspectRatios[.camera],
+              let presentation = EditorCameraCropPresentation.make(.init(
+                containerSize: bounds.size,
+                renderSize: renderSize,
+                scene: request.scene,
+                sourceAspectRatio: sourceAspectRatio
+              )) else {
+            return aspectFitCanvasFrame()
+        }
+        return presentation.canvasFrame
     }
 
     private func makeSourceLayers(for kind: SceneLayerKind, player: AVPlayer) -> SourceLayers {
@@ -204,10 +238,26 @@ final class EditorCompositedPlayerView: NSView {
         geometry: SceneRenderGeometry,
         aspectRatios: [SceneLayerKind: CGFloat],
         scale: CGFloat,
-        scene: RecordingScene
+        scene: RecordingScene,
+        isCameraCropEditing: Bool
     ) {
         let targetRect = geometry.targetRect(for: kind)
         let aspect = aspectRatios[kind] ?? (targetRect.height > 0 ? targetRect.width / targetRect.height : 1)
+        if isCameraCropEditing {
+            let sourceFrame = geometry.cameraCropSourceFrame(sourceAspectRatio: aspect)
+            let displayedFrame = CGRect(
+                x: sourceFrame.minX * scale,
+                y: sourceFrame.minY * scale,
+                width: sourceFrame.width * scale,
+                height: sourceFrame.height * scale
+            )
+            layers.shadowHost.frame = displayedFrame
+            layers.shadowHost.shadowOpacity = 0
+            layers.clip.frame = CGRect(origin: .zero, size: displayedFrame.size)
+            layers.clip.cornerRadius = 0
+            layers.playerLayer.frame = layers.clip.bounds
+            return
+        }
         let sourceFrame = geometry.sourceFrame(
             for: kind,
             sourceAspectRatio: aspect,

@@ -2,6 +2,13 @@ import AVFoundation
 import CoreMedia
 import Foundation
 
+struct LocalCameraDeviceConfigurationRequest {
+    let device: AVCaptureDevice
+    let fps: Int
+    let logPrefix: String
+    let cameraIsRunningSomewhere: Bool
+}
+
 enum LocalCameraSessionConfiguration {
     static func configurePreset(on session: AVCaptureSession) {
         if session.canSetSessionPreset(.hd1920x1080) {
@@ -32,13 +39,16 @@ enum LocalCameraSessionConfiguration {
         return fallback
     }
 
-    static func configure(device: AVCaptureDevice, fps: Int, logPrefix: String) {
+    static func configure(_ request: LocalCameraDeviceConfigurationRequest) {
+        guard !request.cameraIsRunningSomewhere else { return }
         do {
-            try device.lockForConfiguration()
-            defer { device.unlockForConfiguration() }
+            try request.device.lockForConfiguration()
+            defer { request.device.unlockForConfiguration() }
 
-            let compatibleFormats = device.formats.filter { format in
-                format.videoSupportedFrameRateRanges.contains { $0.maxFrameRate >= Double(fps) }
+            let compatibleFormats = request.device.formats.filter { format in
+                format.videoSupportedFrameRateRanges.contains {
+                    $0.maxFrameRate >= Double(request.fps)
+                }
             }
             let fourKFormats = compatibleFormats.filter { format in
                 let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
@@ -47,17 +57,19 @@ enum LocalCameraSessionConfiguration {
             let candidates = fourKFormats.isEmpty ? compatibleFormats : fourKFormats
 
             if let format = candidates.sorted(by: { cameraFormatSortKey($0) < cameraFormatSortKey($1) }).first {
-                device.activeFormat = format
+                request.device.activeFormat = format
             }
 
-            let frameDuration = CMTime(value: 1, timescale: CMTimeScale(fps))
-            if shouldForceFrameDuration(for: device),
-               device.activeFormat.videoSupportedFrameRateRanges.contains(where: { $0.maxFrameRate >= Double(fps) }) {
-                device.activeVideoMinFrameDuration = frameDuration
-                device.activeVideoMaxFrameDuration = frameDuration
+            let frameDuration = CMTime(value: 1, timescale: CMTimeScale(request.fps))
+            if shouldForceFrameDuration(for: request.device),
+               request.device.activeFormat.videoSupportedFrameRateRanges.contains(where: {
+                   $0.maxFrameRate >= Double(request.fps)
+               }) {
+                request.device.activeVideoMinFrameDuration = frameDuration
+                request.device.activeVideoMaxFrameDuration = frameDuration
             }
         } catch {
-            NSLog("\(logPrefix) camera configuration failed: \(error.localizedDescription)")
+            NSLog("\(request.logPrefix) camera configuration failed: \(error.localizedDescription)")
         }
     }
 

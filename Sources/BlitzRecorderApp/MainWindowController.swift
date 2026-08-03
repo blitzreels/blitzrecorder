@@ -22,6 +22,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var cameraDeviceObservers: [NSObjectProtocol] = []
     private var isStartingCameraPreview = false
     private var cameraPreviewDeviceID: String?
+    private var cameraPreviewStartRevision = 0
+    private var initialSupportingCaptureResourcesTask: Task<Void, Never>?
+    private var initialSupportingCaptureResourcesStarted = false
     private var preservedHiddenScreenPreviewSelectionRevision: Int?
     private var lastStartedScreenCaptureSignature: ScreenCaptureSignature?
     private var screenPreviewStartRevision = 0
@@ -170,9 +173,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.startCameraDeviceMonitoring()
-            self.refreshStartupState()
-            self.startScreenPreview()
+            if LocalDevelopmentRuntime.disablesIdleCapture() {
+                self.viewModel.syncSettings()
+                self.refreshPermissionGate()
+                return
+            }
             self.startCameraPreview()
+            self.scheduleInitialSupportingCaptureResources(after: .seconds(4))
         }
     }
 
@@ -190,12 +197,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        idlePreviewRestartTask?.cancel()
-        idlePreviewRestartTask = nil
-        studioModeCaptureResourceTask?.cancel()
-        studioModeCaptureResourceTask = Task { [coordinator] in
-            await coordinator.suspendIdleCaptureResources()
-        }
+        suspendIdleCaptureResources(keepingCameraPreviewActive: true)
         viewModel.prepareForWindowClose()
     }
 
@@ -223,6 +225,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     deinit {
         idlePreviewRestartTask?.cancel()
+        initialSupportingCaptureResourcesTask?.cancel()
         for observer in cameraDeviceObservers {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -410,23 +413,54 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func syncIdleCaptureResources(for mode: RecorderViewModel.StudioMode) {
+        if mode.keepsIdleCaptureResourcesActive {
+            resumeIdleCaptureResources()
+        } else {
+            suspendIdleCaptureResources(keepingCameraPreviewActive: false)
+        }
+    }
+
+    private func resumeIdleCaptureResources() {
+        guard !LocalDevelopmentRuntime.disablesIdleCapture() else { return }
         let previousTask = studioModeCaptureResourceTask
         studioModeCaptureResourceTask = Task { @MainActor [weak self] in
             _ = await previousTask?.result
-            guard let self, self.viewModel.studioMode == mode else { return }
-
-            if mode.keepsIdleCaptureResourcesActive {
-                await coordinator.resumeIdleAudioLevelMonitoring()
-                guard viewModel.studioMode == mode else { return }
-                startScreenPreview()
-                startCameraPreview()
-            } else {
-                cancelScheduledIdlePreviewRestart()
-                screenPreviewStartRevision += 1
-                lastStartedScreenCaptureSignature = nil
-                await coordinator.suspendIdleCaptureResources()
-            }
+            guard let self,
+                  NSApp.isActive,
+                  self.window?.isVisible == true,
+                  self.coordinator.state == .idle,
+                  self.viewModel.studioMode.keepsIdleCaptureResourcesActive else { return }
+            await coordinator.resumeIdleAudioLevelMonitoring()
+            guard NSApp.isActive,
+                  self.window?.isVisible == true,
+                  self.viewModel.studioMode.keepsIdleCaptureResourcesActive else { return }
+            startScreenPreview()
+            startCameraPreview()
         }
+    }
+
+    private func suspendIdleCaptureResources(keepingCameraPreviewActive: Bool) {
+        guard coordinator.state == .idle else { return }
+        cancelScheduledIdlePreviewRestart()
+        screenPreviewStartRevision += 1
+        lastStartedScreenCaptureSignature = nil
+        if !keepingCameraPreviewActive {
+            invalidateCameraPreviewStart()
+        }
+        let previousTask = studioModeCaptureResourceTask
+        studioModeCaptureResourceTask = Task { [weak self] in
+            _ = await previousTask?.result
+            guard let self, self.coordinator.state == .idle else { return }
+            await coordinator.suspendIdleCaptureResources(
+                keepingCameraPreviewActive: keepingCameraPreviewActive
+            )
+        }
+    }
+
+    private func invalidateCameraPreviewStart() {
+        cameraPreviewStartRevision += 1
+        isStartingCameraPreview = false
+        cameraPreviewDeviceID = nil
     }
 
     func writeScreenshot(to url: URL) throws {
@@ -522,7 +556,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             startCameraPreview()
             return
         }
-        cameraPreviewDeviceID = nil
+        invalidateCameraPreviewStart()
         previewStage.cameraPreview.setMessage("Restarting camera")
         Task {
             await coordinator.stopCameraPreview()
@@ -537,6 +571,26 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             viewModel.syncSettings()
             refreshPermissionGate()
         }
+    }
+
+    private func scheduleInitialSupportingCaptureResources(after delay: Duration) {
+        guard !initialSupportingCaptureResourcesStarted else { return }
+        initialSupportingCaptureResourcesTask?.cancel()
+        initialSupportingCaptureResourcesTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self else { return }
+            initialSupportingCaptureResourcesTask = nil
+            startInitialSupportingCaptureResources()
+        }
+    }
+
+    private func startInitialSupportingCaptureResources() {
+        guard !initialSupportingCaptureResourcesStarted else { return }
+        initialSupportingCaptureResourcesStarted = true
+        initialSupportingCaptureResourcesTask?.cancel()
+        initialSupportingCaptureResourcesTask = nil
+        refreshStartupState()
+        startScreenPreview()
     }
 
     private func refreshPermissionGate() {
@@ -573,6 +627,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func startScreenPreview() {
+        guard !LocalDevelopmentRuntime.disablesIdleCapture() else { return }
         guard viewModel.studioMode.keepsIdleCaptureResourcesActive else { return }
         if coordinator.settings.hiddenSources.contains(.screen) {
             screenPreviewStartRevision += 1
@@ -631,7 +686,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func startCameraPreview() {
-        guard viewModel.studioMode.keepsIdleCaptureResourcesActive else { return }
+        guard !LocalDevelopmentRuntime.disablesIdleCapture() else { return }
+        let request = IdleCameraPreviewRequest(
+            appIsActive: NSApp.isActive,
+            windowIsVisible: window?.isVisible == true,
+            keepsIdleCaptureResourcesActive: viewModel.studioMode.keepsIdleCaptureResourcesActive,
+            cameraIsRunningSomewhere: false
+        )
+        guard IdleCameraPreviewPolicy.shouldStart(request) else { return }
         if coordinator.settings.hiddenSources.contains(.camera) {
             coordinator.setLocalCameraRuntimeState(.unchecked)
             Task { await coordinator.stopCameraPreview() }
@@ -732,6 +794,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         previewStage.cameraPreview.isHidden = false
         cameraPreviewDeviceID = selectedID
         isStartingCameraPreview = true
+        cameraPreviewStartRevision += 1
+        let startRevision = cameraPreviewStartRevision
         coordinator.setLocalCameraRuntimeState(.starting)
         refreshPermissionGate()
         if !previewStage.cameraPreview.hasPreviewContent {
@@ -750,7 +814,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                     }
                 } else {
                     let layer = try await coordinator.cameraPreviewLayer()
-                    guard viewModel.studioMode.keepsIdleCaptureResourcesActive,
+                    let completionRequest = IdleCameraPreviewRequest(
+                        appIsActive: NSApp.isActive,
+                        windowIsVisible: window?.isVisible == true,
+                        keepsIdleCaptureResourcesActive: viewModel.studioMode.keepsIdleCaptureResourcesActive,
+                        cameraIsRunningSomewhere: false
+                    )
+                    guard cameraPreviewStartRevision == startRevision,
+                          IdleCameraPreviewPolicy.shouldStart(completionRequest),
                           coordinator.settings.visibleSources.contains(.camera) else {
                         await coordinator.stopCameraPreview()
                         previewStage.cameraPreview.setMessage("Camera source off")
@@ -764,6 +835,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 isStartingCameraPreview = false
                 cameraPreviewDeviceID = coordinator.settings.selectedCameraID
                 coordinator.setLocalCameraRuntimeState(.ready)
+                scheduleInitialSupportingCaptureResources(after: .seconds(1))
                 refreshPermissionGate()
             } catch {
                 isStartingCameraPreview = false
@@ -814,8 +886,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let center = NotificationCenter.default
         let names = [
             AVCaptureDevice.wasConnectedNotification,
-            AVCaptureDevice.wasDisconnectedNotification,
-            NSApplication.didBecomeActiveNotification
+            AVCaptureDevice.wasDisconnectedNotification
         ]
 
         cameraDeviceObservers = names.map { name in
@@ -829,5 +900,23 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 }
             }
         }
+        cameraDeviceObservers.append(center.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.resumeIdleCaptureResources()
+            }
+        })
+        cameraDeviceObservers.append(center.addObserver(
+            forName: NSApplication.willResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.suspendIdleCaptureResources(keepingCameraPreviewActive: true)
+            }
+        })
     }
 }

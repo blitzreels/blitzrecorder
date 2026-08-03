@@ -39,6 +39,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
         accessController.configure()
         NSApp.setActivationPolicy(.regular)
         applyDevIconBadgeIfNeeded()
+        if !LocalDevelopmentRuntime.disablesIdleCapture() {
+            coordinator.prewarmLocalCameraPreviewIfAuthorized()
+        }
 
         let windowController = MainWindowController(coordinator: coordinator)
         self.windowController = windowController
@@ -95,10 +98,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
 
         buildStatusItem()
         updateStatusItem(for: coordinator.state)
-        presentMainWindow()
-        updateController.start()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            self?.presentMainWindow()
+        if !LocalDevelopmentRuntime.isNoninteractiveVerification() {
+            presentMainWindow()
+            updateController.start()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                self?.presentMainWindow()
+            }
         }
         writeScreenshotIfRequested()
     }
@@ -108,6 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard !LocalDevelopmentRuntime.isNoninteractiveVerification() else { return true }
         presentMainWindow()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             self?.presentMainWindow()
@@ -120,6 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        guard !LocalDevelopmentRuntime.isNoninteractiveVerification() else { return }
         if windowController?.window?.isVisible != true {
             presentMainWindow()
         }

@@ -428,11 +428,12 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
         session.beginConfiguration()
         LocalCameraSessionConfiguration.configurePreset(on: session)
 
-        LocalCameraSessionConfiguration.configure(
+        LocalCameraSessionConfiguration.configure(.init(
             device: device,
             fps: settings.framesPerSecond,
-            logPrefix: "Live compositor"
-        )
+            logPrefix: "Live compositor",
+            cameraIsRunningSomewhere: LocalCameraUsage.isRunningSomewhere(device)
+        ))
         let input = try AVCaptureDeviceInput(device: device)
         guard session.canAddInput(input) else {
             throw RecorderError.noCamera

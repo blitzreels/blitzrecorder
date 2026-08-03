@@ -206,6 +206,15 @@ final class RecorderCoordinator {
         return try await cameraRecorder.makePreviewLayer(settings: settings)
     }
 
+    func prewarmLocalCameraPreviewIfAuthorized() {
+        guard permissionGate.cameraAuthorizationStatus == .authorized,
+              settings.enabledSources.contains(.camera),
+              !settings.hiddenSources.contains(.camera),
+              !settings.removesCameraBackgroundAfterRecording,
+              !isRemoteCameraSelected else { return }
+        cameraRecorder.prewarmPreview(settings: settings)
+    }
+
     func startScreenPreview(frameHandler: @escaping ScreenPreviewer.FrameHandler) async throws {
         guard state != .idle || idleCaptureResourcesEnabled else { return }
         var previewSettings = settings
@@ -256,10 +265,12 @@ final class RecorderCoordinator {
         await cameraCutoutPreviewer.stop()
     }
 
-    func suspendIdleCaptureResources() async {
+    func suspendIdleCaptureResources(keepingCameraPreviewActive: Bool) async {
         idleCaptureResourcesEnabled = false
         await stopScreenPreview()
-        await stopCameraPreview()
+        if !keepingCameraPreviewActive {
+            await stopCameraPreview()
+        }
         await stopAudioLevelMonitoring()
     }
 

@@ -15,6 +15,17 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     private var startupContinuation: CheckedContinuation<Void, Error>?
     private var startupTimeoutTask: Task<Void, Never>?
 
+    func prewarmPreview(settings: RecordingSettings) {
+        queue.async {
+            do {
+                try self.configureSession(settings: settings)
+                self.startSessionIfNeededOnQueue()
+            } catch {
+                NSLog("Camera prewarm failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
     func makePreviewLayer(settings: RecordingSettings) async throws -> AVCaptureVideoPreviewLayer {
         let session = try await withCheckedThrowingContinuation { continuation in
             queue.async {
@@ -154,17 +165,19 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         guard let device = selectedCamera(settings: settings) else {
             throw RecorderError.noCamera
         }
+        let cameraIsRunningSomewhere = LocalCameraUsage.isRunningSomewhere(device)
 
         session.beginConfiguration()
         LocalCameraSessionConfiguration.configurePreset(on: session)
         session.inputs.forEach { session.removeInput($0) }
         session.outputs.forEach { session.removeOutput($0) }
 
-        LocalCameraSessionConfiguration.configure(
+        LocalCameraSessionConfiguration.configure(.init(
             device: device,
             fps: settings.framesPerSecond,
-            logPrefix: "Camera"
-        )
+            logPrefix: "Camera",
+            cameraIsRunningSomewhere: cameraIsRunningSomewhere
+        ))
 
         let input = try AVCaptureDeviceInput(device: device)
         if session.canAddInput(input) {
