@@ -8,6 +8,11 @@ enum TakeRecordingStopOutcome {
     case none
 }
 
+struct ActiveCaptureFailure {
+    let source: CaptureSource
+    let error: Error
+}
+
 struct PendingRecordingSceneEvent {
     let time: TimeInterval
     let scene: RecordingScene
@@ -36,10 +41,16 @@ protocol LiveCompositedRecording: AnyObject {
     func stop() async throws -> MediaWriterCompletion
     func updateScene(_ scene: RecordingScene, transition: RecordingSceneTransition)
     func updateScreenCapture(settings: RecordingSettings, filter pickedFilter: SCContentFilter?) async throws
+    func switchMicrophone(to deviceID: String) async throws
+    func setCaptureFailureHandler(_ handler: @escaping @MainActor (ActiveCaptureFailure) -> Void)
 }
 
 extension LiveCompositedRecording {
     var activeScreenCaptureStream: SCStream? { nil }
+    func switchMicrophone(to deviceID: String) async throws {
+        throw RecorderError.microphoneUnavailable
+    }
+    func setCaptureFailureHandler(_ handler: @escaping @MainActor (ActiveCaptureFailure) -> Void) {}
 }
 
 @MainActor
@@ -85,6 +96,10 @@ final class TakeRecordingRuntime {
         liveCompositedRecorder.onScreenPreviewFrame = handler
     }
 
+    func setCaptureFailureHandler(_ handler: @escaping @MainActor (ActiveCaptureFailure) -> Void) {
+        liveCompositedRecorder.setCaptureFailureHandler(handler)
+    }
+
     @discardableResult
     func startLiveCompositedTake(
         take: RecordingTake,
@@ -94,14 +109,20 @@ final class TakeRecordingRuntime {
         prerollSeconds: Int,
         prerollHandler: ((Int) -> Void)?
     ) async throws -> UInt64 {
-        try await liveCompositedRecorder.start(
-            take: take,
-            settings: settings,
-            filter: pickedScreenFilter,
-            prerollSeconds: prerollSeconds,
-            prerollHandler: prerollHandler
-        )
         mode = .liveCompositor
+        do {
+            try await liveCompositedRecorder.start(
+                take: take,
+                settings: settings,
+                filter: pickedScreenFilter,
+                prerollSeconds: prerollSeconds,
+                prerollHandler: prerollHandler
+            )
+        } catch {
+            _ = try? await liveCompositedRecorder.stop()
+            mode = .idle
+            throw error
+        }
         startSceneTimeline(scene: initialScene)
         return DispatchTime.now().uptimeNanoseconds
     }
@@ -243,6 +264,17 @@ final class TakeRecordingRuntime {
             )
         case .idle:
             break
+        }
+    }
+
+    func switchMicrophone(to deviceID: String) async throws {
+        switch mode {
+        case .liveCompositor:
+            try await liveCompositedRecorder.switchMicrophone(to: deviceID)
+        case .captureRun(let captureRun):
+            try await captureRun.switchMicrophone(to: deviceID)
+        case .idle:
+            throw RecorderError.microphoneUnavailable
         }
     }
 

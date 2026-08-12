@@ -6,6 +6,7 @@ final class RecordingQualityPresentationTests: XCTestCase {
         let presentation = RecordingQualityPresentation(settings: RecordingSettings())
 
         XCTAssertEqual(presentation.compactLabel, "Recording · 1080p · 30 Source FPS")
+        XCTAssertEqual(presentation.controlLabel, "1080p · 30 FPS")
         XCTAssertEqual(presentation.profileSummary, "1080p · 30 Source FPS · HEVC sources")
         XCTAssertEqual(presentation.sourceEncodingSummary, "HEVC · Screen 7.2 Mbps · Camera 6 Mbps")
     }

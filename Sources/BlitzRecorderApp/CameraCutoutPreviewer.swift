@@ -116,21 +116,7 @@ final class CameraCutoutPreviewer: NSObject, AVCaptureVideoDataOutputSampleBuffe
     }
 
     private func selectedCamera(settings: RecordingSettings) -> AVCaptureDevice? {
-        if let selectedCameraID = settings.selectedCameraID,
-           let device = AVCaptureDevice(uniqueID: selectedCameraID) {
-            return device
-        }
-
-        return AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInWideAngleCamera, .continuityCamera, .deskViewCamera, .external],
-            mediaType: .video,
-            position: .unspecified
-        ).devices
-            .filter { $0.isConnected && !$0.isSuspended }
-            .sorted { lhs, rhs in cameraSortKey(lhs) < cameraSortKey(rhs) }
-            .first
-            ?? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .unspecified)
-            ?? AVCaptureDevice.default(for: .video)
+        LocalCameraSessionConfiguration.selectedCamera(settings: settings)
     }
 
     private func configure(device: AVCaptureDevice) throws {
@@ -145,20 +131,6 @@ final class CameraCutoutPreviewer: NSObject, AVCaptureVideoDataOutputSampleBuffe
         if let format = candidates.sorted(by: { cameraFormatSortKey($0) < cameraFormatSortKey($1) }).first {
             device.activeFormat = format
         }
-    }
-
-    private func cameraSortKey(_ device: AVCaptureDevice) -> String {
-        let priority: String
-        if device.isContinuityCamera {
-            priority = "0"
-        } else if device.deviceType == .external {
-            priority = "1"
-        } else if device.deviceType == .deskViewCamera {
-            priority = "2"
-        } else {
-            priority = "3"
-        }
-        return "\(priority)-\(device.localizedName)"
     }
 
     private func cameraFormatSortKey(_ format: AVCaptureDevice.Format) -> String {

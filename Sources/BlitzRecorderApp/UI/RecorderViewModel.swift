@@ -671,6 +671,10 @@ final class RecorderViewModel {
                 self.previewStage.sceneLayout = self.coordinator.settings.sceneLayout
                 return
             }
+            self.coordinator.previewSceneLayout(layout)
+        }
+        previewStage.onSceneLayoutEditingEnded = { [weak self] layout in
+            guard let self, self.canManipulateCanvasItems else { return }
             self.coordinator.setSceneLayout(layout)
             self.settings = self.coordinator.settings
             self.previewStage.sceneLayout = self.coordinator.settings.sceneLayout
@@ -805,6 +809,8 @@ final class RecorderViewModel {
         previewStage.sceneLayout = coordinator.settings.sceneLayout
         previewStage.enabledSources = coordinator.settings.visibleSources
         previewStage.screenSourceAspectRatio = coordinator.currentScreenSourceAspectRatio()
+        previewStage.screenResizeUsesTargetAspectRatio = supportsScreenWindowScaling
+            && coordinator.permissionGate.hasAccessibilityAccess
         previewStage.screenFillsSceneFrame = ScreenSourceGeometry.fillsSceneFrame(for: coordinator.settings)
         previewStage.screenCrop = coordinator.settings.screenCrop
         previewStage.cameraCropAmount = coordinator.settings.cameraCropAmount

@@ -22,11 +22,19 @@ private let noResizeActions: [String: any CAAction] = [
 
 @MainActor
 final class PreviewStageView: NSView {
+    private struct BackgroundRenderKey: Equatable {
+        let style: CanvasBackgroundStyle
+        let width: Int
+        let height: Int
+    }
+
     let screenPreview = ScreenPreviewView()
     let cameraPreview = CameraPreviewView()
     private let cameraShadowLayer = CALayer()
     private let canvasBackgroundLayer = CALayer()
-    private var renderedBackgroundKey: (style: CanvasBackgroundStyle, width: Int, height: Int)?
+    private var renderedBackgroundKey: BackgroundRenderKey?
+    private var requestedBackgroundKey: BackgroundRenderKey?
+    private var backgroundRenderTimer: Timer?
     private var backgroundAnimationTimer: Timer?
     private let backgroundAnimationQueue = DispatchQueue(label: "blitzrecorder.preview-background", qos: .userInitiated)
     private var backgroundAnimationStart: CFTimeInterval = 0
@@ -42,6 +50,7 @@ final class PreviewStageView: NSView {
     private var cameraCropDraftAmount: CGPoint?
     private var cameraCropDraftPosition: CGPoint?
     private var screenCropDraft: CGRect?
+    private var screenResizeAspectRatioOverride: CGFloat?
     private let resizeHandleOutset: CGFloat = 14
     override var mouseDownCanMoveWindow: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -79,6 +88,7 @@ final class PreviewStageView: NSView {
     }
     var onLayerFrameChanged: ((SceneLayerKind, CGRect) -> Void)?
     var onSceneLayoutChanged: ((SceneLayout) -> Void)?
+    var onSceneLayoutEditingEnded: ((SceneLayout) -> Void)?
     var onLayerResizeEnded: ((SceneLayerKind) -> Void)?
     var onLayerSelected: ((SceneLayerKind) -> Void)?
     var onBackgroundSelected: (() -> Void)?
@@ -141,9 +151,18 @@ final class PreviewStageView: NSView {
     var screenSourceAspectRatio: CGFloat = SceneLayout.defaultScreenAspectRatio {
         didSet {
             if oldValue != screenSourceAspectRatio {
+                screenResizeAspectRatioOverride = nil
                 needsLayout = true
                 needsDisplay = true
             }
+        }
+    }
+
+    var screenResizeUsesTargetAspectRatio = false {
+        didSet {
+            guard oldValue != screenResizeUsesTargetAspectRatio,
+                  !screenResizeUsesTargetAspectRatio else { return }
+            screenResizeAspectRatioOverride = nil
         }
     }
 
@@ -186,7 +205,7 @@ final class PreviewStageView: NSView {
     var canvasBackgroundStyle: CanvasBackgroundStyle = .black {
         didSet {
             guard oldValue != canvasBackgroundStyle else { return }
-            renderedBackgroundKey = nil
+            invalidateCanvasBackgroundRender()
             refreshCanvasBackground()
         }
     }
@@ -194,6 +213,7 @@ final class PreviewStageView: NSView {
     var canvasBackgroundAnimated: Bool = false {
         didSet {
             guard oldValue != canvasBackgroundAnimated else { return }
+            invalidateCanvasBackgroundRender()
             updateBackgroundAnimation()
         }
     }
@@ -376,6 +396,12 @@ final class PreviewStageView: NSView {
         if canvasBackgroundAnimated {
             updateBackgroundAnimation()
         }
+        invalidateResizeCursorRects()
+    }
+
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        refreshCanvasBackground()
         invalidateResizeCursorRects()
     }
 
@@ -703,14 +729,23 @@ final class PreviewStageView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        let completedDragMode = dragMode
         let resizedLayer: SceneLayerKind?
-        if case .resize = dragMode?.kind {
-            resizedLayer = dragMode?.layer
+        if case .resize = completedDragMode?.kind {
+            resizedLayer = completedDragMode?.layer
         } else {
             resizedLayer = nil
         }
         dragMode = nil
         invalidateResizeCursorRects()
+        if let completedDragMode {
+            switch completedDragMode.kind {
+            case .move, .resize:
+                onSceneLayoutEditingEnded?(sceneLayout)
+            case .cropMove, .cropResize, .screenCropMove, .screenCropResize:
+                break
+            }
+        }
         if let resizedLayer {
             onLayerResizeEnded?(resizedLayer)
         }
@@ -814,6 +849,7 @@ final class PreviewStageView: NSView {
             switch layer {
             case .screen:
                 sceneLayout.screenFrame = frame
+                updateScreenResizeAspectRatioOverride()
                 screenPreview.frame = projectedFrame(for: .screen, in: canvasFrame)
                 applyCanvasMask(to: screenPreview)
                 applySourceShape(to: screenPreview)
@@ -831,6 +867,7 @@ final class PreviewStageView: NSView {
     }
 
     private func invalidateResizeCursorRects() {
+        guard !inLiveResize else { return }
         window?.invalidateCursorRects(for: self)
     }
 
@@ -1003,7 +1040,7 @@ final class PreviewStageView: NSView {
            !isScreenCropEditingEnabled {
             return geometry.sourceFrame(
                 for: .screen,
-                sourceAspectRatio: screenSourceAspectRatio
+                sourceAspectRatio: effectiveScreenSourceAspectRatio
             )
         }
         guard layer == .camera,
@@ -1028,7 +1065,7 @@ final class PreviewStageView: NSView {
                 screenSourceGeometry: ScreenSourceGeometry(
                     fillsSceneFrame: screenFillsSceneFrame,
                     normalizedCrop: screenCrop,
-                    sourceAspectRatio: screenSourceAspectRatio
+                    sourceAspectRatio: effectiveScreenSourceAspectRatio
                 ),
                 cameraCropAmount: cameraCropAmount,
                 cameraCropPosition: cameraCropPosition,
@@ -1045,6 +1082,20 @@ final class PreviewStageView: NSView {
 
     private var isFullscreenCameraPreview: Bool {
         renderGeometry(in: canvasFrame).isFullCanvasFrame(for: .camera)
+    }
+
+    private var effectiveScreenSourceAspectRatio: CGFloat {
+        screenResizeAspectRatioOverride ?? screenSourceAspectRatio
+    }
+
+    private func updateScreenResizeAspectRatioOverride() {
+        guard screenResizeUsesTargetAspectRatio,
+              screenContentMode == .fit,
+              dragMode?.layer == .screen,
+              case .resize = dragMode?.kind else { return }
+        let target = renderGeometry(in: canvasFrame).targetRect(for: .screen)
+        guard target.width > 0, target.height > 0 else { return }
+        screenResizeAspectRatioOverride = target.width / target.height
     }
 
     private var isFullWidthCameraPreview: Bool {
@@ -1091,17 +1142,50 @@ final class PreviewStageView: NSView {
         let width = Int((canvasBackgroundLayer.bounds.width * scale).rounded(.up))
         let height = Int((canvasBackgroundLayer.bounds.height * scale).rounded(.up))
         guard width > 0, height > 0 else { return }
-        if let key = renderedBackgroundKey,
-           key.style == canvasBackgroundStyle, key.width == width, key.height == height {
+        let key = BackgroundRenderKey(style: canvasBackgroundStyle, width: width, height: height)
+        if renderedBackgroundKey == key {
             return
         }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         let appearance = canvasBackgroundStyle.appearance
         canvasBackgroundLayer.backgroundColor = appearance.solidCGColor
-        canvasBackgroundLayer.contents = appearance.renderCGImage(pixelWidth: width, pixelHeight: height)
         CATransaction.commit()
-        renderedBackgroundKey = (canvasBackgroundStyle, width, height)
+        guard requestedBackgroundKey != key else { return }
+        requestedBackgroundKey = key
+        backgroundRenderTimer?.invalidate()
+        let timer = Timer(timeInterval: 0.15, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.renderCanvasBackground(key)
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        backgroundRenderTimer = timer
+    }
+
+    private func renderCanvasBackground(_ key: BackgroundRenderKey) {
+        guard requestedBackgroundKey == key,
+              !canvasBackgroundAnimated || !canvasBackgroundStyle.supportsBackgroundAnimation else { return }
+        backgroundRenderTimer = nil
+        backgroundAnimationQueue.async {
+            let image = key.style.appearance.renderCGImage(pixelWidth: key.width, pixelHeight: key.height)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.requestedBackgroundKey == key else { return }
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                self.canvasBackgroundLayer.contents = image
+                CATransaction.commit()
+                self.renderedBackgroundKey = key
+                self.requestedBackgroundKey = nil
+            }
+        }
+    }
+
+    private func invalidateCanvasBackgroundRender() {
+        backgroundRenderTimer?.invalidate()
+        backgroundRenderTimer = nil
+        requestedBackgroundKey = nil
+        renderedBackgroundKey = nil
     }
 
 

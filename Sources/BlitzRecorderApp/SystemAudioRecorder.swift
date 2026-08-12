@@ -39,8 +39,10 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
     private var startupContinuation: CheckedContinuation<Void, Error>?
     private var startupTimeoutTask: Task<Void, Never>?
     private var hasProducedStartupSample = false
+    private var hasReportedActiveFailure = false
     private var timelineStartTime: CMTime?
     private var firstSampleTime: CMTime?
+    var failureHandler: (@MainActor (Error) -> Void)?
 
     var recordingTimelineOffset: CMTime {
         queue.sync {
@@ -69,6 +71,7 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
         self.timelineStartTime = request.timelineStartTime
         firstSampleTime = nil
         hasProducedStartupSample = false
+        hasReportedActiveFailure = false
         let writer = try AudioSampleFileWriter(
             url: request.url,
             timelineStartTime: request.timelineStartTime,
@@ -83,6 +86,7 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
         writer.onFailure = { [weak self] error in
             self?.queue.async {
                 self?.completeStartup(.failure(error))
+                self?.reportActiveFailureIfNeeded(error)
             }
         }
         self.writer = writer
@@ -171,7 +175,9 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
         guard ObjectIdentifier(stream) != intentionallyStoppedStreamID else { return }
         NSLog("System audio stream stopped: \(error.localizedDescription)")
         streamError = error
-        completeStartup(.failure(RecorderError.captureStreamStopped(error.localizedDescription)))
+        let recorderError = RecorderError.captureStreamStopped(error.localizedDescription)
+        completeStartup(.failure(recorderError))
+        reportActiveFailureIfNeeded(recorderError)
     }
 
     private func waitForFirstAudioSample() async throws {
@@ -202,5 +208,14 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
         startupTimeoutTask?.cancel()
         startupTimeoutTask = nil
         continuation.resume(with: result)
+    }
+
+    private func reportActiveFailureIfNeeded(_ error: Error) {
+        guard hasProducedStartupSample, !hasReportedActiveFailure else { return }
+        hasReportedActiveFailure = true
+        let failureHandler = failureHandler
+        Task { @MainActor in
+            failureHandler?(error)
+        }
     }
 }

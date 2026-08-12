@@ -56,6 +56,26 @@ final class TakeRecordingRuntimeTests: XCTestCase {
         XCTAssertTrue(warning?.contains("display went away") == true)
     }
 
+    func testLiveCompositorStartFailureStopsPartiallyStartedCapture() async {
+        let recorder = FailingStartLiveCompositedRecorder()
+        let runtime = TakeRecordingRuntime(liveCompositedRecorder: recorder)
+        let settings = RecordingSettings()
+
+        do {
+            _ = try await runtime.startLiveCompositedTake(
+                take: makeTake(),
+                settings: settings,
+                initialScene: RecordingScene(settings: settings),
+                pickedScreenFilter: nil,
+                prerollSeconds: 0,
+                prerollHandler: nil
+            )
+            XCTFail("Expected live compositor startup to fail")
+        } catch {
+            XCTAssertEqual(recorder.stopCount, 1)
+        }
+    }
+
     func testLiveCompositorSeedsTimelineWithResolvedInitialScene() async throws {
         var settings = RecordingSettings()
         settings.enabledSources = [.screen]
@@ -332,6 +352,31 @@ private final class StopFailureLiveCompositedRecorder: LiveCompositedRecording {
         throw CaptureSourceStopFailure(completion: completion, underlyingError: error)
     }
 
+    func updateScene(_ scene: RecordingScene, transition: RecordingSceneTransition) {}
+    func updateScreenCapture(settings: RecordingSettings, filter pickedFilter: SCContentFilter?) async throws {}
+}
+
+private final class FailingStartLiveCompositedRecorder: LiveCompositedRecording {
+    var onCameraPreviewSampleBuffer: ((CMSampleBuffer, Int, Int) -> Void)?
+    var onScreenPreviewFrame: ScreenPreviewer.FrameHandler?
+    private(set) var stopCount = 0
+
+    func start(
+        take: RecordingTake,
+        settings: RecordingSettings,
+        filter pickedFilter: SCContentFilter?,
+        prerollSeconds: Int,
+        prerollHandler: (@MainActor (Int) -> Void)?
+    ) async throws {
+        throw RecorderError.cameraDidNotStart
+    }
+
+    func pause() {}
+    func resume() {}
+    func stop() async throws -> MediaWriterCompletion {
+        stopCount += 1
+        return .empty()
+    }
     func updateScene(_ scene: RecordingScene, transition: RecordingSceneTransition) {}
     func updateScreenCapture(settings: RecordingSettings, filter pickedFilter: SCContentFilter?) async throws {}
 }

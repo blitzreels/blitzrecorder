@@ -6,6 +6,7 @@ enum SettingsPane: Int, CaseIterable, Identifiable {
     case recording
     case devices
     case permissions
+    case agents
     case account
 
     var id: Int { rawValue }
@@ -15,6 +16,7 @@ enum SettingsPane: Int, CaseIterable, Identifiable {
         case .recording: return "Recording"
         case .devices: return "Devices"
         case .permissions: return "Access"
+        case .agents: return "Agents"
         case .account: return "Account"
         }
     }
@@ -25,10 +27,17 @@ enum SettingsPane: Int, CaseIterable, Identifiable {
 @Observable
 private final class SettingsNavigation {
     let viewModel: RecorderViewModel
+    let mcpServer: BlitzRecorderMCPServer
     var selectedPane: SettingsPane = .recording
 
-    init(viewModel: RecorderViewModel) {
-        self.viewModel = viewModel
+    struct Configuration {
+        let viewModel: RecorderViewModel
+        let mcpServer: BlitzRecorderMCPServer
+    }
+
+    init(_ configuration: Configuration) {
+        viewModel = configuration.viewModel
+        mcpServer = configuration.mcpServer
     }
 }
 
@@ -36,8 +45,16 @@ private final class SettingsNavigation {
 final class SettingsWindowController: NSWindowController {
     private let navigation: SettingsNavigation
 
-    init(viewModel: RecorderViewModel) {
-        navigation = SettingsNavigation(viewModel: viewModel)
+    struct Configuration {
+        let viewModel: RecorderViewModel
+        let mcpServer: BlitzRecorderMCPServer
+    }
+
+    init(_ configuration: Configuration) {
+        navigation = SettingsNavigation(.init(
+            viewModel: configuration.viewModel,
+            mcpServer: configuration.mcpServer
+        ))
         let rootView = SettingsRootView(navigation: navigation)
             .preferredColorScheme(.dark)
         let window = NSWindow(contentViewController: NSHostingController(rootView: rootView))
@@ -127,6 +144,8 @@ private struct SettingsRootView: View {
                 PermissionsPage(vm: navigation.viewModel)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
             }
+        case .agents:
+            AgentsSettingsPage(mcpServer: navigation.mcpServer)
         case .account:
             BlitzReelsCreatorPage(access: navigation.viewModel.accessController)
         }

@@ -78,6 +78,9 @@ final class RecorderCoordinator {
     private var pickerQueuedScreenCaptureConfigurationRevision = 0
     private var committedRecordingSettings: RecordingSettings?
     private var localCameraRuntimeState: LocalCameraRuntimeState = .unchecked
+    private var activeMicrophoneDeviceID: String?
+    private var activeLocalCameraDeviceID: String?
+    private var captureDeviceObservers: [NSObjectProtocol] = []
 
     private struct ScreenSourceActionContext: Equatable {
         let screenWindowFitRevision: Int
@@ -142,6 +145,23 @@ final class RecorderCoordinator {
         }
         reconcilePersistentScreenAccessIfNeeded()
         screenSourcePickerRecents.record(settings.screenSourceBinding)
+        screenPreviewer.failureHandler = { [weak self] error in
+            guard let self,
+                  self.state == .idle,
+                  self.idleCaptureResourcesEnabled,
+                  self.settings.visibleSources.contains(.screen) else { return }
+            self.onMessage?("Screen preview interrupted. Restarting: \(error.localizedDescription)")
+            self.onScreenCaptureConfigurationChanged?()
+        }
+        screenRecorder.failureHandler = { [weak self] error in
+            self?.handleActiveCaptureFailure(ActiveCaptureFailure(source: .screen, error: error))
+        }
+        systemAudioRecorder.failureHandler = { [weak self] error in
+            self?.handleActiveCaptureFailure(ActiveCaptureFailure(source: .systemAudio, error: error))
+        }
+        cameraRecorder.failureHandler = { [weak self] error in
+            self?.handleActiveCaptureFailure(ActiveCaptureFailure(source: .camera, error: error))
+        }
         audioRecorder.failureHandler = { [weak self] error in
             Task { @MainActor [weak self] in
                 self?.handleActiveMicrophoneCaptureFailure(error)
@@ -171,6 +191,10 @@ final class RecorderCoordinator {
         remoteCamera.onPairingCodeRequested = { [weak self] deviceName in
             self?.onRemoteCameraPairingCodeRequested?(deviceName)
         }
+        takeRecording.setCaptureFailureHandler { [weak self] failure in
+            self?.handleActiveCaptureFailure(failure)
+        }
+        startCaptureDeviceMonitoring()
         takeRecording.setLiveCompositorCameraPreviewHandler { [weak self] sampleBuffer, width, height in
             guard let self,
                   self.state == .starting || self.state == .recording || self.state == .paused,
@@ -263,6 +287,30 @@ final class RecorderCoordinator {
     func stopCameraPreview() async {
         await cameraRecorder.stopSession()
         await cameraCutoutPreviewer.stop()
+    }
+
+    func shutdown() async {
+        captureDeviceObservers.forEach(NotificationCenter.default.removeObserver)
+        captureDeviceObservers.removeAll()
+        if state == .recording || state == .paused {
+            stop()
+        }
+        for _ in 0..<600 {
+            if state == .idle { break }
+            if state == .recording || state == .paused {
+                stop()
+            }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        if state != .idle {
+            await takeRecording.stopAnyActiveRecording()
+        }
+        idleCaptureResourcesEnabled = false
+        await stopScreenPreview()
+        await stopCameraPreview()
+        await stopAudioLevelMonitoring()
+        remoteCamera.shutdown()
+        clearActiveCaptureDevices()
     }
 
     func suspendIdleCaptureResources(keepingCameraPreviewActive: Bool) async {
@@ -707,9 +755,38 @@ final class RecorderCoordinator {
     }
 
     func setMicrophone(id: String?) {
-        settings.selectedMicrophoneID = id
-        persistSettings()
-        refreshAudioLevelMonitoring()
+        guard state == .recording || state == .paused else {
+            settings.selectedMicrophoneID = id
+            persistSettings()
+            refreshAudioLevelMonitoring()
+            return
+        }
+        guard settings.enabledSources.contains(.microphone) else {
+            settings.selectedMicrophoneID = id
+            persistSettings()
+            return
+        }
+        let device = id.flatMap { MicrophoneDeviceSelection.microphone(id: $0) }
+            ?? MicrophoneDeviceSelection.fallbackMicrophone()
+        guard let device else {
+            onMessage?("Microphone unavailable. Recording continues with the current microphone.")
+            return
+        }
+        Task {
+            do {
+                try await takeRecording.switchMicrophone(to: device.uniqueID)
+                guard state == .recording || state == .paused else { return }
+                settings.selectedMicrophoneID = id
+                activeMicrophoneDeviceID = device.uniqueID
+                persistSettings()
+                onMessage?("Microphone switched to \(device.localizedName). Recording continues.")
+            } catch {
+                onMessage?(
+                    "Could not switch microphone. Recording continues with the current microphone: "
+                        + error.recorderFailureDescription
+                )
+            }
+        }
     }
 
     func setSceneLayer(
@@ -831,6 +908,22 @@ final class RecorderCoordinator {
         if screenCaptureConfigurationChanged {
             onScreenCaptureConfigurationChanged?()
         }
+    }
+
+    func previewSceneLayout(_ sceneLayout: SceneLayout) {
+        guard sceneChangeIsAllowed(), state == .recording || state == .paused else { return }
+        var previewSettings = settings
+        previewSettings.selectedScenePreset = nil
+        previewSettings.sceneLayout.screenFrame = clampedSceneFrame(sceneLayout.screenFrame)
+        previewSettings.sceneLayout.cameraFrame = clampedSceneFrame(sceneLayout.cameraFrame)
+        previewSettings.sceneLayout.layerOrder = sceneLayout.layerOrder
+        let screenFilter = previewSettings.usesPickedScreenContent
+            ? screenSourceSelection.pickedContentFilter
+            : nil
+        takeRecording.updateScene(
+            recordingScene(settings: previewSettings, screenFilter: screenFilter),
+            transition: .cut
+        )
     }
 
     func resetSceneLayout() {
@@ -2403,6 +2496,7 @@ final class RecorderCoordinator {
                         )
                     }
                     recordingSession.markRecordingStarted()
+                    noteActiveCaptureDevices(settings: recordingSettings)
                     committedRecordingSettings = settings
                     onMessage?(skippedSystemAudio
                         ? "Recording - Mac audio off (needs Screen Recording)"
@@ -2430,6 +2524,7 @@ final class RecorderCoordinator {
                     self?.onMessage?(Self.recordingPrerollMessage(remaining: remaining))
                 }
                 recordingSession.markRecordingStarted()
+                noteActiveCaptureDevices(settings: recordingSettings)
                 committedRecordingSettings = settings
                 onMessage?(skippedSystemAudio
                     ? "Recording - Mac audio off (needs Screen Recording)"
@@ -2448,6 +2543,7 @@ final class RecorderCoordinator {
                 }
                 recordingSession.failPreparation()
                 committedRecordingSettings = nil
+                clearActiveCaptureDevices()
                 refreshAudioLevelMonitoring()
                 onMessage?(startFailedMessage(for: error))
             }
@@ -2613,6 +2709,7 @@ final class RecorderCoordinator {
 
     func stop() {
         guard let stopContext = recordingSession.beginFinishing() else { return }
+        clearActiveCaptureDevices()
         screenContentPicker.cancel()
         cancelPendingScreenWindowFits()
         let pendingScreenPickerTransactionTask = activeScreenPickerTransactionTask
@@ -2738,13 +2835,110 @@ final class RecorderCoordinator {
     }
 
     private func handleActiveMicrophoneCaptureFailure(_ error: Error) {
+        handleActiveCaptureFailure(ActiveCaptureFailure(source: .microphone, error: error))
+    }
+
+    private func handleActiveCaptureFailure(_ failure: ActiveCaptureFailure) {
         guard state == .recording || state == .paused else { return }
         stop()
         onRequestForeground?()
         onMessage?(
-            "Microphone capture failed. Recording stopped to protect the take: "
-                + error.recorderFailureDescription
+            "\(failure.source.rawValue) capture failed. Recording stopped to protect the take: "
+                + failure.error.recorderFailureDescription
         )
+    }
+
+    private func noteActiveCaptureDevices(settings: RecordingSettings) {
+        activeMicrophoneDeviceID = settings.enabledSources.contains(.microphone)
+            ? MicrophoneDeviceSelection.selectedMicrophone(settings: settings)?.uniqueID
+            : nil
+        activeLocalCameraDeviceID = settings.enabledSources.contains(.camera)
+            && !RemoteCameraProviderID.isRemote(settings.selectedCameraID)
+            ? LocalCameraSessionConfiguration.selectedCamera(settings: settings)?.uniqueID
+            : nil
+    }
+
+    private func clearActiveCaptureDevices() {
+        activeMicrophoneDeviceID = nil
+        activeLocalCameraDeviceID = nil
+    }
+
+    private func startCaptureDeviceMonitoring() {
+        let center = NotificationCenter.default
+        captureDeviceObservers = [
+            center.addObserver(
+                forName: AVCaptureDevice.wasConnectedNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                guard let device = notification.object as? AVCaptureDevice else { return }
+                Task { @MainActor [weak self] in
+                    self?.handleCaptureDeviceConnected(device)
+                }
+            },
+            center.addObserver(
+                forName: AVCaptureDevice.wasDisconnectedNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                guard let device = notification.object as? AVCaptureDevice else { return }
+                Task { @MainActor [weak self] in
+                    self?.handleCaptureDeviceDisconnected(device)
+                }
+            }
+        ]
+    }
+
+    private func handleCaptureDeviceConnected(_ device: AVCaptureDevice) {
+        guard state == .idle else { return }
+        if device.hasMediaType(.audio) {
+            refreshAudioLevelMonitoring()
+        }
+        if device.hasMediaType(.video) {
+            onCameraConfigurationChanged?()
+        }
+    }
+
+    private func handleCaptureDeviceDisconnected(_ device: AVCaptureDevice) {
+        if device.hasMediaType(.audio), activeMicrophoneDeviceID == device.uniqueID {
+            recoverDisconnectedMicrophone(device)
+        }
+        if device.hasMediaType(.video), activeLocalCameraDeviceID == device.uniqueID {
+            handleActiveCaptureFailure(ActiveCaptureFailure(
+                source: .camera,
+                error: RecorderError.mediaWriteFailed("The selected camera disconnected.")
+            ))
+        }
+        if state == .idle {
+            refreshAudioLevelMonitoring()
+        }
+    }
+
+    private func recoverDisconnectedMicrophone(_ disconnectedDevice: AVCaptureDevice) {
+        guard state == .recording || state == .paused else { return }
+        guard let fallback = MicrophoneDeviceSelection.fallbackMicrophone(
+            excluding: disconnectedDevice.uniqueID
+        ) else {
+            handleActiveCaptureFailure(ActiveCaptureFailure(
+                source: .microphone,
+                error: RecorderError.microphoneUnavailable
+            ))
+            return
+        }
+        Task {
+            do {
+                try await takeRecording.switchMicrophone(to: fallback.uniqueID)
+                guard state == .recording || state == .paused else { return }
+                activeMicrophoneDeviceID = fallback.uniqueID
+                settings.selectedMicrophoneID = nil
+                persistSettings()
+                onMessage?(
+                    "Microphone disconnected. Switched to \(fallback.localizedName); recording continues."
+                )
+            } catch {
+                handleActiveCaptureFailure(ActiveCaptureFailure(source: .microphone, error: error))
+            }
+        }
     }
 
     func refreshAudioLevelMonitoring() {
@@ -2809,139 +3003,153 @@ final class RecorderCoordinator {
     }
 
     func exportProject(_ request: ProjectExportRequest) {
+        Task {
+            try? await exportProjectForAgent(request)
+        }
+    }
+
+    func exportProjectForAgent(_ request: ProjectExportRequest) async throws -> SavedRecordingOutput {
         guard accessController.canRenderExport else {
             onMessage?("Export is unavailable.")
-            return
+            throw RecorderError.mediaWriteFailed("Export is unavailable.")
         }
         guard recordingSession.beginExport() else {
-            onMessage?("Wait for the current recording task to finish before exporting.")
-            return
+            let message = "Wait for the current recording task to finish before exporting."
+            onMessage?(message)
+            throw RecorderError.mediaWriteFailed(message)
         }
 
         onRenderProgress?(0)
         onExportFailure?(nil)
         onMessage?("Exporting \(request.outputFormat.displayName)...")
 
-        Task {
-            let destinationAccessStarted = request.destinationURL.startAccessingSecurityScopedResource()
-            let musicAccessStarted = request.backgroundMusic?.url.startAccessingSecurityScopedResource() ?? false
-            defer {
-                if destinationAccessStarted {
-                    request.destinationURL.stopAccessingSecurityScopedResource()
-                }
-                if musicAccessStarted {
-                    request.backgroundMusic?.url.stopAccessingSecurityScopedResource()
-                }
-            }
-            do {
-                let project = try takeFileStore.loadRecordingProject(at: request.projectURL)
-                let captureOutputFormat = OutputVideoFormat(rawValue: project.settings.outputVideoFormat)
-                    ?? settings.outputVideoFormat
-                let captureSettings = takeFileStore.recordingSettings(
-                    from: project,
-                    baseSettings: settings,
-                    outputFormat: captureOutputFormat
-                )
-                let exportSettings = takeFileStore.recordingSettings(
-                    from: project,
-                    baseSettings: settings,
-                    outputFormat: request.outputFormat
-                )
-                let outputAccess = try takeFileStore.prepareOutputDirectory(settings: exportSettings)
-                defer { outputAccess.stop() }
-
-                let take = takeFileStore.recordingTake(
-                    from: project,
-                    settings: exportSettings,
-                    outputFormat: request.outputFormat
-                )
-                let sceneEvents = takeFileStore.sceneEvents(from: project)
-
-                var renderSettings = request.performanceProfile.applying(to: exportSettings)
-                if request.mutedAudioSources.contains(.microphone) {
-                    renderSettings.microphoneGain = 0
-                }
-                if request.mutedAudioSources.contains(.systemAudio) {
-                    renderSettings.systemAudioGain = 0
-                }
-                let hiddenCaptureSources = Set(request.hiddenVideoSources.map(\.source))
-                var renderSceneEvents = sceneEvents
-                if !hiddenCaptureSources.isEmpty {
-                    renderSettings.enabledSources.subtract(hiddenCaptureSources)
-                    renderSceneEvents = sceneEvents.map { event in
-                        var scene = event.scene
-                        scene.enabledSources.subtract(hiddenCaptureSources)
-                        return RecordingSceneEvent(
-                            time: event.time,
-                            scene: scene,
-                            transition: event.transition
-                        )
-                    }
-                }
-                renderSceneEvents = renderSceneEvents.map { event in
-                    RecordingSceneEvent(
-                        time: event.time,
-                        scene: request.performanceProfile.applying(to: event.scene),
-                        transition: event.transition
-                    )
-                }
-
-                let renderedURL = try await Merger.exportFinalVideo(FinalVideoExportRequest(
-                    take: take,
-                    settings: renderSettings,
-                    sceneEvents: renderSceneEvents,
-                    backgroundMusic: request.backgroundMusic,
-                    destinationURL: request.destinationURL,
-                    progressHandler: { [weak self] progress in
-                        self?.onRenderProgress?(progress)
-                    }
-                ))
-                let url = renderedURL
-
-                try takeFileStore.writeSourceTakeManifest(
-                    for: take,
-                    settings: captureSettings,
-                    finalVideoURL: url
-                )
-                let resourceValues = try? url.resourceValues(forKeys: [.fileSizeKey])
-                let fileSizeBytes = resourceValues?.fileSize.map(Int64.init)
-                let exportRecord = RecordingProject.ExportRecord(
-                    id: UUID(),
-                    createdAt: Date(),
-                    path: url.path,
-                    format: request.outputFormat.rawValue,
-                    resolution: renderSettings.outputResolution.rawValue,
-                    framesPerSecond: renderSettings.framesPerSecond,
-                    quality: request.performanceProfile.videoQuality.rawValue,
-                    fileSizeBytes: fileSizeBytes
-                )
-                try takeFileStore.writeRecordingProject(
-                    for: take,
-                    settings: captureSettings,
-                    sceneEvents: sceneEvents,
-                    finalVideoURL: url,
-                    chapters: project.chapters,
-                    editorTimeline: project.editorTimeline,
-                    editorState: project.editorState,
-                    exportRecord: exportRecord
-                )
-                accessController.recordSuccessfulExportIfNeeded()
-                onRenderProgress?(1)
-                let savedOutput = SavedRecordingOutput(
-                    url: url,
-                    sourceDirectory: take.scratchDirectory,
-                    warning: nil
-                )
-                onSavedRecording?(savedOutput)
-                onMessage?(savedOutput.userMessage)
-            } catch {
-                exportLog.error("Project export failed (destination \(request.destinationURL.path, privacy: .public)): \(error.recorderFailureDescription, privacy: .public) | \(String(describing: error), privacy: .public)")
-                onMessage?("Project export failed: \(error.recorderFailureDescription)")
-                onExportFailure?(error.recorderFailureDescription)
-            }
+        defer {
             recordingSession.finishExport()
             refreshAudioLevelMonitoring()
         }
+
+        do {
+            let savedOutput = try await performProjectExport(request)
+            accessController.recordSuccessfulExportIfNeeded()
+            onRenderProgress?(1)
+            onSavedRecording?(savedOutput)
+            onMessage?(savedOutput.userMessage)
+            return savedOutput
+        } catch {
+            exportLog.error("Project export failed (destination \(request.destinationURL.path, privacy: .public)): \(error.recorderFailureDescription, privacy: .public) | \(String(describing: error), privacy: .public)")
+            onMessage?("Project export failed: \(error.recorderFailureDescription)")
+            onExportFailure?(error.recorderFailureDescription)
+            throw error
+        }
+    }
+
+    private func performProjectExport(_ request: ProjectExportRequest) async throws -> SavedRecordingOutput {
+        let destinationAccessStarted = request.destinationURL.startAccessingSecurityScopedResource()
+        let musicAccessStarted = request.backgroundMusic?.url.startAccessingSecurityScopedResource() ?? false
+        defer {
+            if destinationAccessStarted {
+                request.destinationURL.stopAccessingSecurityScopedResource()
+            }
+            if musicAccessStarted {
+                request.backgroundMusic?.url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        let project = try takeFileStore.loadRecordingProject(at: request.projectURL)
+        let captureOutputFormat = OutputVideoFormat(rawValue: project.settings.outputVideoFormat)
+            ?? settings.outputVideoFormat
+        let captureSettings = takeFileStore.recordingSettings(
+            from: project,
+            baseSettings: settings,
+            outputFormat: captureOutputFormat
+        )
+        let exportSettings = takeFileStore.recordingSettings(
+            from: project,
+            baseSettings: settings,
+            outputFormat: request.outputFormat
+        )
+        let outputAccess = try takeFileStore.prepareOutputDirectory(settings: exportSettings)
+        defer { outputAccess.stop() }
+
+        let take = takeFileStore.recordingTake(
+            from: project,
+            settings: exportSettings,
+            outputFormat: request.outputFormat
+        )
+        let sceneEvents = takeFileStore.sceneEvents(from: project)
+
+        var renderSettings = request.performanceProfile.applying(to: exportSettings)
+        if request.mutedAudioSources.contains(.microphone) {
+            renderSettings.microphoneGain = 0
+        }
+        if request.mutedAudioSources.contains(.systemAudio) {
+            renderSettings.systemAudioGain = 0
+        }
+        let hiddenCaptureSources = Set(request.hiddenVideoSources.map(\.source))
+        var renderSceneEvents = sceneEvents
+        if !hiddenCaptureSources.isEmpty {
+            renderSettings.enabledSources.subtract(hiddenCaptureSources)
+            renderSceneEvents = sceneEvents.map { event in
+                var scene = event.scene
+                scene.enabledSources.subtract(hiddenCaptureSources)
+                return RecordingSceneEvent(
+                    time: event.time,
+                    scene: scene,
+                    transition: event.transition
+                )
+            }
+        }
+        renderSceneEvents = renderSceneEvents.map { event in
+            RecordingSceneEvent(
+                time: event.time,
+                scene: request.performanceProfile.applying(to: event.scene),
+                transition: event.transition
+            )
+        }
+
+        let url = try await Merger.exportFinalVideo(FinalVideoExportRequest(
+            take: take,
+            settings: renderSettings,
+            sceneEvents: renderSceneEvents,
+            backgroundMusic: request.backgroundMusic,
+            destinationURL: request.destinationURL,
+            progressHandler: { [weak self] progress in
+                self?.onRenderProgress?(progress)
+            }
+        ))
+
+        try takeFileStore.writeSourceTakeManifest(
+            for: take,
+            settings: captureSettings,
+            finalVideoURL: url
+        )
+        let resourceValues = try? url.resourceValues(forKeys: [.fileSizeKey])
+        let fileSizeBytes = resourceValues?.fileSize.map(Int64.init)
+        let exportRecord = RecordingProject.ExportRecord(
+            id: UUID(),
+            createdAt: Date(),
+            path: url.path,
+            format: request.outputFormat.rawValue,
+            resolution: renderSettings.outputResolution.rawValue,
+            framesPerSecond: renderSettings.framesPerSecond,
+            quality: request.performanceProfile.videoQuality.rawValue,
+            fileSizeBytes: fileSizeBytes
+        )
+        try takeFileStore.writeRecordingProject(
+            for: take,
+            settings: captureSettings,
+            sceneEvents: sceneEvents,
+            finalVideoURL: url,
+            chapters: project.chapters,
+            editorTimeline: project.editorTimeline,
+            editorState: project.editorState,
+            exportRecord: exportRecord
+        )
+        return SavedRecordingOutput(
+            url: url,
+            sourceDirectory: take.scratchDirectory,
+            warning: nil
+        )
     }
 
     func updateProjectScene(

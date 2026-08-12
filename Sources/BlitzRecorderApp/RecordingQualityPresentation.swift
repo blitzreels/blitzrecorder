@@ -7,6 +7,10 @@ struct RecordingQualityPresentation {
         "Recording · \(settings.outputResolution.displayName) · \(settings.framesPerSecond) Source FPS"
     }
 
+    var controlLabel: String {
+        "\(settings.outputResolution.displayName) · \(settings.framesPerSecond) FPS"
+    }
+
     var profileSummary: String {
         "\(settings.outputResolution.displayName) · \(settings.framesPerSecond) Source FPS · HEVC sources"
     }

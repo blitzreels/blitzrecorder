@@ -457,25 +457,51 @@ private enum WorkflowStage: Int, CaseIterable {
 
 private struct RecordingQualityShortcut: View {
     @Bindable var vm: RecorderViewModel
+    @State private var isHovering = false
 
     var body: some View {
         BlitzGlassMenu(entries: qualityEntries, menuWidth: 252) {
-            HStack(spacing: 7) {
-                Text(qualityPresentation.compactLabel)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.90))
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
+            HStack(spacing: 10) {
+                Image(systemName: "video.badge.waveform")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(BlitzUI.mint)
+                    .frame(width: 20)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Recording quality")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.48))
+
+                    Text(qualityPresentation.controlLabel)
+                        .font(.system(size: 11.5, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.92))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 4)
+
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.42))
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.72))
+                    .frame(width: 24, height: 24)
+                    .background(Color.white.opacity(0.08), in: .circle)
             }
-            .padding(.horizontal, 12)
-            .frame(height: 36)
+            .padding(.horizontal, 10)
+            .frame(width: 222, height: 44)
+            .background(
+                isHovering ? Color.white.opacity(0.11) : Color.white.opacity(0.065),
+                in: .rect(cornerRadius: 10)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(.white.opacity(isHovering ? 0.20 : 0.11), lineWidth: 1)
+            }
+            .contentShape(.rect(cornerRadius: 10))
         }
-        .blitzGlassButton()
         .disabled(vm.state != .idle)
+        .opacity(vm.state == .idle ? 1 : 0.5)
+        .onHover { isHovering = $0 }
         .pointingHandCursor()
         .help("Choose recording resolution and Source FPS")
     }

@@ -6,6 +6,7 @@ import ScreenCaptureKit
 
 final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     private let queue = DispatchQueue(label: "recorder.screen")
+    private let failureLock = NSLock()
     private var stream: SCStream?
     private var writer: VideoFileWriter?
     private var settings: RecordingSettings?
@@ -20,6 +21,8 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
     private var startupContinuation: CheckedContinuation<Void, Error>?
     private var startupTimeoutTask: Task<Void, Never>?
     private var hasProducedStartupFrame = false
+    private var hasReportedActiveFailure = false
+    var failureHandler: (@MainActor (Error) -> Void)?
 
     var activeScreenCaptureStream: SCStream? {
         stream
@@ -35,7 +38,10 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         currentZoom = 1.0
         streamError = nil
         intentionallyStoppedStream = nil
-        hasProducedStartupFrame = false
+        failureLock.withLock {
+            hasProducedStartupFrame = false
+            hasReportedActiveFailure = false
+        }
 
         let filter: SCContentFilter
         let configuration: SCStreamConfiguration
@@ -78,6 +84,9 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
             outputFormat: settings.sourceVideoFormat,
             timelineStartTime: timelineStartTime
         )
+        writer?.onFailure = { [weak self] error in
+            self?.reportActiveFailureIfNeeded(error)
+        }
 
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
@@ -173,13 +182,15 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         guard stream !== intentionallyStoppedStream else { return }
         NSLog("Screen stream stopped: \(error.localizedDescription)")
         streamError = error
-        completeStartup(.failure(RecorderError.captureStreamStopped(error.localizedDescription)))
+        let recorderError = RecorderError.captureStreamStopped(error.localizedDescription)
+        completeStartup(.failure(recorderError))
+        reportActiveFailureIfNeeded(recorderError)
     }
 
     private func waitForFirstScreenFrame() async throws {
         try await withCheckedThrowingContinuation { continuation in
             queue.async {
-                if self.hasProducedStartupFrame {
+                if self.failureLock.withLock({ self.hasProducedStartupFrame }) {
                     continuation.resume()
                     return
                 }
@@ -197,7 +208,9 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
 
     private func completeStartup(_ result: Result<Void, Error>) {
         if case .success = result {
-            hasProducedStartupFrame = true
+            failureLock.withLock {
+                hasProducedStartupFrame = true
+            }
         }
         guard let continuation = startupContinuation else { return }
         startupContinuation = nil
@@ -209,6 +222,20 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
             continuation.resume()
         case .failure(let error):
             continuation.resume(throwing: error)
+        }
+    }
+
+    private func reportActiveFailureIfNeeded(_ error: Error) {
+        failureLock.lock()
+        guard hasProducedStartupFrame, !hasReportedActiveFailure else {
+            failureLock.unlock()
+            return
+        }
+        hasReportedActiveFailure = true
+        failureLock.unlock()
+        let failureHandler = failureHandler
+        Task { @MainActor in
+            failureHandler?(error)
         }
     }
 

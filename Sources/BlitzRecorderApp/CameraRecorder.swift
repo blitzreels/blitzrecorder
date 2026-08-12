@@ -14,6 +14,34 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     private var configuredFPS: Int?
     private var startupContinuation: CheckedContinuation<Void, Error>?
     private var startupTimeoutTask: Task<Void, Never>?
+    private var sessionObservers: [NSObjectProtocol] = []
+    private var hasReportedActiveFailure = false
+    var failureHandler: (@MainActor (Error) -> Void)?
+
+    override init() {
+        super.init()
+        let center = NotificationCenter.default
+        sessionObservers = [
+            center.addObserver(
+                forName: AVCaptureSession.runtimeErrorNotification,
+                object: session,
+                queue: nil
+            ) { [weak self] notification in
+                let error = notification.userInfo?[AVCaptureSessionErrorKey] as? Error
+                    ?? RecorderError.mediaWriteFailed("Camera session failed.")
+                self?.reportActiveFailureIfNeeded(error)
+            },
+            center.addObserver(
+                forName: AVCaptureSession.wasInterruptedNotification,
+                object: session,
+                queue: nil
+            ) { [weak self] _ in
+                self?.reportActiveFailureIfNeeded(
+                    RecorderError.mediaWriteFailed("Camera capture was interrupted.")
+                )
+            }
+        ]
+    }
 
     func prewarmPreview(settings: RecordingSettings) {
         queue.async {
@@ -51,6 +79,7 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             writer = nil
             frameNormalizer = nil
             pendingStartupSamples = []
+            hasReportedActiveFailure = false
             startSessionIfNeededOnQueue()
         }
 
@@ -151,7 +180,10 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     }
 
     private func configureSession(settings: RecordingSettings) throws {
-        let selectedDeviceID = settings.selectedCameraID
+        guard let device = selectedCamera(settings: settings) else {
+            throw RecorderError.noCamera
+        }
+        let selectedDeviceID = device.uniqueID
         if isConfigured,
            configuredDeviceID == selectedDeviceID,
            configuredFPS == settings.framesPerSecond {
@@ -162,9 +194,6 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             session.stopRunning()
         }
 
-        guard let device = selectedCamera(settings: settings) else {
-            throw RecorderError.noCamera
-        }
         let cameraIsRunningSomewhere = LocalCameraUsage.isRunningSomewhere(device)
 
         session.beginConfiguration()
@@ -249,6 +278,9 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             outputFormat: request.recording.settings.sourceVideoFormat,
             timelineStartTime: request.recording.timelineStartTime
         )
+        writer.onFailure = { [weak self] error in
+            self?.reportActiveFailureIfNeeded(error)
+        }
         return CameraWriterSetup(
             writer: writer,
             frameNormalizer: frameNormalizer,
@@ -286,6 +318,17 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             continuation.resume()
         case .failure(let error):
             continuation.resume(throwing: error)
+        }
+    }
+
+    private func reportActiveFailureIfNeeded(_ error: Error) {
+        queue.async {
+            guard self.pendingRecording != nil, !self.hasReportedActiveFailure else { return }
+            self.hasReportedActiveFailure = true
+            let failureHandler = self.failureHandler
+            Task { @MainActor in
+                failureHandler?(error)
+            }
         }
     }
 }

@@ -35,6 +35,7 @@ protocol MicrophoneCaptureRecording: AnyObject {
     func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) async throws
     func pause()
     func resume()
+    func switchMicrophone(to deviceID: String) async throws
     func stop() async throws -> MediaWriterCompletion
     func finalizeSynchronization() async throws
 }
@@ -58,6 +59,9 @@ struct SystemAudioCaptureStartRequest {
 
 extension MicrophoneCaptureRecording {
     var recordingTimelineOffset: CMTime { .zero }
+    func switchMicrophone(to deviceID: String) async throws {
+        throw RecorderError.microphoneUnavailable
+    }
     func finalizeSynchronization() async throws {}
 }
 
@@ -181,6 +185,7 @@ final class CaptureSourceRun {
     private var committedScreenCaptureSettings: RecordingSettings
     private var committedScreenCaptureFilter: SCContentFilter?
     private let screenRecorder: ScreenCaptureRecording
+    private let microphoneRecorder: MicrophoneCaptureRecording
     private var timelineStartTime: CMTime?
     private var hostTimelineStartTime: UInt64?
     private var timelineTrimOffset = CMTime.zero
@@ -218,6 +223,7 @@ final class CaptureSourceRun {
         committedScreenCaptureSettings = settings
         committedScreenCaptureFilter = pickedScreenFilter
         self.screenRecorder = screenRecorder
+        microphoneRecorder = audioRecorder
         self.timelineStartTime = timelineStartTime
         self.sourceAdapters = Self.makeSourceAdapters(
             take: take,
@@ -361,6 +367,13 @@ final class CaptureSourceRun {
         committedScreenCaptureFilter = pickedScreenFilter
     }
 
+    func switchMicrophone(to deviceID: String) async throws {
+        guard activeSources.contains(.microphone) else {
+            throw RecorderError.microphoneUnavailable
+        }
+        try await microphoneRecorder.switchMicrophone(to: deviceID)
+    }
+
     func pause() {
         isPaused = true
         for source in sourceOrder where activeSources.contains(source) {
@@ -385,25 +398,17 @@ final class CaptureSourceRun {
         var completions: [CaptureSource: MediaWriterCompletion] = [:]
         var stopFailures: [CaptureSource: String] = [:]
         var synchronizationFailures: Set<CaptureSource> = []
-        var stopTasks: [(source: CaptureSource, task: Task<MediaWriterCompletion, Error>)] = []
 
         for source in sourcesToStop {
             guard let adapter = sourceAdapters[source] else { continue }
             activeSources.remove(source)
-            let task = Task { @MainActor in
-                try await adapter.stop(settings)
-            }
-            stopTasks.append((source, task))
-        }
-
-        for stopTask in stopTasks {
             do {
-                completions[stopTask.source] = try await stopTask.task.value
+                completions[source] = try await adapter.stop(settings)
             } catch let stopFailure as CaptureSourceStopFailure {
-                completions[stopTask.source] = stopFailure.completion
-                stopFailures[stopTask.source] = Self.sourceStopFailureDescription(stopFailure.underlyingError)
+                completions[source] = stopFailure.completion
+                stopFailures[source] = Self.sourceStopFailureDescription(stopFailure.underlyingError)
             } catch {
-                stopFailures[stopTask.source] = Self.sourceStopFailureDescription(error)
+                stopFailures[source] = Self.sourceStopFailureDescription(error)
             }
         }
 

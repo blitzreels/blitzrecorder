@@ -12,15 +12,18 @@ struct ScreenPreviewFrame {
 
 final class ScreenPreviewer: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     typealias FrameHandler = @MainActor (ScreenPreviewFrame) -> Void
+    typealias FailureHandler = @MainActor (Error) -> Void
 
     private let queue = DispatchQueue(label: "recorder.screen-preview")
+    private let stateLock = NSLock()
     private var stream: SCStream?
     private var frameHandler: FrameHandler?
     private var sourceAspectRatio = SceneLayout.defaultScreenAspectRatio
     private var lastFrameTime = DispatchTime(uptimeNanoseconds: 0)
+    var failureHandler: FailureHandler?
 
     var isRunning: Bool {
-        stream != nil
+        stateLock.withLock { stream != nil }
     }
 
     func start(settings: RecordingSettings, filter pickedFilter: SCContentFilter?, frameHandler: @escaping FrameHandler) async throws {
@@ -70,15 +73,37 @@ final class ScreenPreviewer: NSObject, SCStreamOutput, SCStreamDelegate, @unchec
 
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
-        try await stream.startCapture()
-        self.stream = stream
+        stateLock.withLock {
+            self.stream = stream
+        }
+        do {
+            try await stream.startCapture()
+        } catch {
+            stateLock.withLock {
+                if self.stream === stream {
+                    self.stream = nil
+                }
+            }
+            self.frameHandler = nil
+            throw error
+        }
+        let startWasCancelled = stateLock.withLock { self.stream !== stream }
+        if startWasCancelled {
+            try? await stream.stopCapture()
+            throw CancellationError()
+        }
     }
 
     func stop() async throws {
+        let stream = stateLock.withLock {
+            let stream = self.stream
+            self.stream = nil
+            return stream
+        }
+        frameHandler = nil
         if let stream {
             try? await stream.stopCapture()
         }
-        stream = nil
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
@@ -110,7 +135,18 @@ final class ScreenPreviewer: NSObject, SCStreamOutput, SCStreamDelegate, @unchec
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
+        let stoppedActiveStream = stateLock.withLock {
+            guard self.stream === stream else { return false }
+            self.stream = nil
+            return true
+        }
+        guard stoppedActiveStream else { return }
+        frameHandler = nil
         NSLog("Screen preview stopped: \(error.localizedDescription)")
+        let failureHandler = failureHandler
+        Task { @MainActor in
+            failureHandler?(error)
+        }
     }
 
     private func frameStatus(for sampleBuffer: CMSampleBuffer) -> SCFrameStatus {

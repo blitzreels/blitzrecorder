@@ -16,6 +16,7 @@ enum Brand {
 @MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let coordinator: RecorderCoordinator
+    private let mcpServer: BlitzRecorderMCPServer
     private let previewStage = PreviewStageView()
     private let viewModel: RecorderViewModel
 
@@ -25,9 +26,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var cameraPreviewStartRevision = 0
     private var initialSupportingCaptureResourcesTask: Task<Void, Never>?
     private var initialSupportingCaptureResourcesStarted = false
-    private var preservedHiddenScreenPreviewSelectionRevision: Int?
     private var lastStartedScreenCaptureSignature: ScreenCaptureSignature?
     private var screenPreviewStartRevision = 0
+    private var screenPreviewWatchdogTask: Task<Void, Never>?
+    private var screenPreviewRecoverySignature: ScreenCaptureSignature?
+    private var screenPreviewRecoveryAttempts = 0
     private var settingsWindowController: SettingsWindowController?
     private var currentRecordingState: RecordingState = .idle
     private var idlePreviewRestartTask: Task<Void, Never>?
@@ -43,8 +46,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var editorUndoTitle: String { viewModel.editorUndoTitle }
     var editorRedoTitle: String { viewModel.editorRedoTitle }
 
-    init(coordinator: RecorderCoordinator) {
+    struct Configuration {
+        let coordinator: RecorderCoordinator
+        let mcpServer: BlitzRecorderMCPServer
+    }
+
+    init(_ configuration: Configuration) {
+        let coordinator = configuration.coordinator
         self.coordinator = coordinator
+        self.mcpServer = configuration.mcpServer
         self.viewModel = RecorderViewModel(
             coordinator: coordinator,
             previewStage: previewStage
@@ -226,6 +236,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     deinit {
         idlePreviewRestartTask?.cancel()
         initialSupportingCaptureResourcesTask?.cancel()
+        screenPreviewWatchdogTask?.cancel()
         for observer in cameraDeviceObservers {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -375,7 +386,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func presentSettings(selecting pane: SettingsPane? = nil) {
         if settingsWindowController == nil {
-            settingsWindowController = SettingsWindowController(viewModel: viewModel)
+            settingsWindowController = SettingsWindowController(.init(
+                viewModel: viewModel,
+                mcpServer: mcpServer
+            ))
         }
         if let pane {
             settingsWindowController?.select(pane)
@@ -443,6 +457,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         guard coordinator.state == .idle else { return }
         cancelScheduledIdlePreviewRestart()
         screenPreviewStartRevision += 1
+        screenPreviewWatchdogTask?.cancel()
+        screenPreviewWatchdogTask = nil
         lastStartedScreenCaptureSignature = nil
         if !keepingCameraPreviewActive {
             invalidateCameraPreviewStart()
@@ -496,6 +512,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let isEditingCrop: Bool
     }
 
+    private struct ScreenPreviewWatchdogRequest {
+        let startRevision: Int
+    }
+
     private func currentScreenCaptureSignature() -> ScreenCaptureSignature {
         let settings = coordinator.settings
         return ScreenCaptureSignature(
@@ -516,30 +536,21 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         guard coordinator.state == .idle,
               viewModel.studioMode.keepsIdleCaptureResourcesActive else { return }
 
-        if coordinator.isScreenPreviewRunning,
-           coordinator.settings.enabledSources.contains(.screen),
-           !coordinator.settings.hiddenSources.contains(.screen),
-           currentScreenCaptureSignature() == lastStartedScreenCaptureSignature {
+        if ScreenPreviewLifecycle.shouldReuse(.init(
+            isRunning: coordinator.isScreenPreviewRunning,
+            hasPreviewContent: previewStage.screenPreview.hasPreviewContent,
+            screenEnabled: coordinator.settings.enabledSources.contains(.screen),
+            screenHidden: coordinator.settings.hiddenSources.contains(.screen),
+            captureSignatureMatches: currentScreenCaptureSignature() == lastStartedScreenCaptureSignature
+        )) {
             refreshPermissionGate()
             return
         }
 
-        switch ScreenPreviewLifecycle.action(
-            settings: coordinator.settings,
-            previewIsRunning: coordinator.isScreenPreviewRunning,
-            preservedSelectionRevision: preservedHiddenScreenPreviewSelectionRevision,
-            currentSelectionRevision: coordinator.screenContentSelectionRevision
-        ) {
+        switch ScreenPreviewLifecycle.action(settings: coordinator.settings) {
         case .preserveHidden:
-            preservedHiddenScreenPreviewSelectionRevision = coordinator.isScreenPreviewRunning
-                ? coordinator.screenContentSelectionRevision
-                : nil
             startScreenPreview()
-        case .reusePreserved:
-            preservedHiddenScreenPreviewSelectionRevision = nil
-            refreshPermissionGate()
         case .restart:
-            preservedHiddenScreenPreviewSelectionRevision = nil
             Task {
                 await coordinator.stopScreenPreview()
                 guard viewModel.studioMode.keepsIdleCaptureResourcesActive else { return }
@@ -630,15 +641,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         guard !LocalDevelopmentRuntime.disablesIdleCapture() else { return }
         guard viewModel.studioMode.keepsIdleCaptureResourcesActive else { return }
         if coordinator.settings.hiddenSources.contains(.screen) {
-            screenPreviewStartRevision += 1
-            previewStage.screenPreview.setMessage("Screen source hidden")
-            lastStartedScreenCaptureSignature = nil
+            screenPreviewWatchdogTask?.cancel()
+            screenPreviewWatchdogTask = nil
             refreshPermissionGate()
             return
         }
 
         guard coordinator.settings.enabledSources.contains(.screen) else {
             screenPreviewStartRevision += 1
+            screenPreviewWatchdogTask?.cancel()
+            screenPreviewWatchdogTask = nil
             Task { await coordinator.stopScreenPreview() }
             previewStage.screenPreview.setMessage("Screen source off")
             lastStartedScreenCaptureSignature = nil
@@ -648,6 +660,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         guard coordinator.hasActiveScreenSourceSelection else {
             screenPreviewStartRevision += 1
+            screenPreviewWatchdogTask?.cancel()
+            screenPreviewWatchdogTask = nil
             previewStage.screenPreview.setMessage("")
             viewModel.applyMessage("Choose a screen, app, or window to preview.")
             lastStartedScreenCaptureSignature = nil
@@ -658,15 +672,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if !previewStage.screenPreview.hasPreviewContent {
             previewStage.screenPreview.setMessage("Starting screen preview")
         }
-        lastStartedScreenCaptureSignature = currentScreenCaptureSignature()
+        let captureSignature = currentScreenCaptureSignature()
+        if screenPreviewRecoverySignature != captureSignature {
+            screenPreviewRecoverySignature = captureSignature
+            screenPreviewRecoveryAttempts = 0
+        }
+        lastStartedScreenCaptureSignature = captureSignature
         screenPreviewStartRevision += 1
         let previewStartRevision = screenPreviewStartRevision
         let previewSettings = coordinator.settings
+        scheduleScreenPreviewWatchdog(.init(startRevision: previewStartRevision))
         Task { [weak self] in
             guard let self else { return }
             do {
                 try await coordinator.startScreenPreview { [weak self] frame in
                     guard let self, self.screenPreviewStartRevision == previewStartRevision else { return }
+                    self.screenPreviewRecoveryAttempts = 0
+                    self.screenPreviewWatchdogTask?.cancel()
+                    self.screenPreviewWatchdogTask = nil
                     self.previewStage.screenSourceAspectRatio = frame.sourceAspectRatio
                     self.previewStage.screenPreview.enqueuePreviewSampleBuffer(frame.sampleBuffer)
                 }
@@ -682,6 +705,40 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 lastStartedScreenCaptureSignature = nil
                 refreshPermissionGate()
             }
+        }
+    }
+
+    private func scheduleScreenPreviewWatchdog(_ request: ScreenPreviewWatchdogRequest) {
+        screenPreviewWatchdogTask?.cancel()
+        screenPreviewWatchdogTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard let self,
+                  !Task.isCancelled,
+                  self.screenPreviewStartRevision == request.startRevision,
+                  self.coordinator.state == .idle,
+                  self.viewModel.studioMode.keepsIdleCaptureResourcesActive,
+                  self.coordinator.settings.visibleSources.contains(.screen),
+                  !self.previewStage.screenPreview.hasPreviewContent else { return }
+
+            self.screenPreviewStartRevision += 1
+            self.lastStartedScreenCaptureSignature = nil
+            if self.screenPreviewRecoveryAttempts >= 2 {
+                self.previewStage.screenPreview.setMessage("Screen preview unavailable")
+                self.viewModel.applyMessage(
+                    "Screen preview stopped responding. Re-select the screen source to reconnect."
+                )
+                self.screenPreviewWatchdogTask = nil
+                return
+            }
+
+            self.screenPreviewRecoveryAttempts += 1
+            self.previewStage.screenPreview.setMessage("Restarting screen preview")
+            await self.coordinator.stopScreenPreview()
+            try? await Task.sleep(for: .milliseconds(250))
+            guard self.coordinator.state == .idle,
+                  self.viewModel.studioMode.keepsIdleCaptureResourcesActive,
+                  self.coordinator.settings.visibleSources.contains(.screen) else { return }
+            self.startScreenPreview()
         }
     }
 
@@ -891,10 +948,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         cameraDeviceObservers = names.map { name in
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
-                if let device = notification.object as? AVCaptureDevice,
-                   !device.hasMediaType(.video) {
+                guard let device = notification.object as? AVCaptureDevice else { return }
+                if device.hasMediaType(.audio) {
+                    Task { @MainActor [weak self] in
+                        await self?.viewModel.refreshSources()
+                    }
                     return
                 }
+                guard device.hasMediaType(.video) else { return }
                 Task { @MainActor [weak self] in
                     self?.refreshCameraPicker()
                 }

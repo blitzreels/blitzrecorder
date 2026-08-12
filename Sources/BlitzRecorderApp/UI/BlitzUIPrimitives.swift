@@ -392,9 +392,10 @@ struct BlitzGlassMenu<Label: View>: View {
 
     var body: some View {
         Button {
-            isPresented.toggle()
+            isPresented = true
         } label: {
             label()
+                .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {

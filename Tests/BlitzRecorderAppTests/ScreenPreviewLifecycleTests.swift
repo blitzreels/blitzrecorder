@@ -83,12 +83,7 @@ final class ScreenPreviewLifecycleTests: XCTestCase {
         settings.enabledSources = [.camera]
         settings.hiddenSources = [.screen]
 
-        let action = ScreenPreviewLifecycle.action(
-            settings: settings,
-            previewIsRunning: true,
-            preservedSelectionRevision: nil,
-            currentSelectionRevision: 4
-        )
+        let action = ScreenPreviewLifecycle.action(settings: settings)
 
         XCTAssertEqual(action, .preserveHidden)
     }
@@ -98,29 +93,39 @@ final class ScreenPreviewLifecycleTests: XCTestCase {
         settings.enabledSources = [.camera]
         settings.hiddenSources = []
 
-        let action = ScreenPreviewLifecycle.action(
-            settings: settings,
-            previewIsRunning: true,
-            preservedSelectionRevision: 4,
-            currentSelectionRevision: 4
-        )
+        let action = ScreenPreviewLifecycle.action(settings: settings)
 
         XCTAssertEqual(action, .restart)
     }
 
-    func testReenabledScreenReusesPreservedPreviewWhenSelectionDidNotChange() {
+    func testReenabledScreenFallsBackToRestartWhenPreviewCannotBeReused() {
         var settings = RecordingSettings()
         settings.enabledSources = [.screen]
         settings.hiddenSources = [.camera]
 
-        let action = ScreenPreviewLifecycle.action(
-            settings: settings,
-            previewIsRunning: true,
-            preservedSelectionRevision: 4,
-            currentSelectionRevision: 4
-        )
+        let action = ScreenPreviewLifecycle.action(settings: settings)
 
-        XCTAssertEqual(action, .reusePreserved)
+        XCTAssertEqual(action, .restart)
+    }
+
+    func testReenabledScreenReusesHealthyRunningPreview() {
+        XCTAssertTrue(ScreenPreviewLifecycle.shouldReuse(.init(
+            isRunning: true,
+            hasPreviewContent: true,
+            screenEnabled: true,
+            screenHidden: false,
+            captureSignatureMatches: true
+        )))
+    }
+
+    func testReenabledScreenRestartsStalledRunningPreview() {
+        XCTAssertFalse(ScreenPreviewLifecycle.shouldReuse(.init(
+            isRunning: true,
+            hasPreviewContent: false,
+            screenEnabled: true,
+            screenHidden: false,
+            captureSignatureMatches: true
+        )))
     }
 
     func testReenabledScreenRestartsWhenSelectionChangedWhileHidden() {
@@ -128,12 +133,7 @@ final class ScreenPreviewLifecycleTests: XCTestCase {
         settings.enabledSources = [.screen]
         settings.hiddenSources = [.camera]
 
-        let action = ScreenPreviewLifecycle.action(
-            settings: settings,
-            previewIsRunning: true,
-            preservedSelectionRevision: 4,
-            currentSelectionRevision: 5
-        )
+        let action = ScreenPreviewLifecycle.action(settings: settings)
 
         XCTAssertEqual(action, .restart)
     }

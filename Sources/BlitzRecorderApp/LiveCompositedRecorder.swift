@@ -10,7 +10,12 @@ private struct LiveRecordingSceneTransition {
     let startedAt: Date
 }
 
-final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDataOutputSampleBufferDelegate {
+private struct CaptureSessionObservationRequest {
+    let session: AVCaptureSession
+    let source: CaptureSource
+}
+
+final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
     private let renderQueue = DispatchQueue(label: "blitzrecorder.live-compositor")
     private let screenQueue = DispatchQueue(label: "blitzrecorder.live-compositor.screen")
     private let cameraQueue = DispatchQueue(label: "blitzrecorder.live-compositor.camera")
@@ -37,6 +42,9 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
     private var lastScreenPreviewFrameTime = DispatchTime(uptimeNanoseconds: 0)
     var onCameraPreviewSampleBuffer: ((CMSampleBuffer, Int, Int) -> Void)?
     var onScreenPreviewFrame: ScreenPreviewer.FrameHandler?
+    private var captureFailureHandler: (@MainActor (ActiveCaptureFailure) -> Void)?
+    private var hasReportedCaptureFailure = false
+    private var captureSessionObservers: [NSObjectProtocol] = []
 
     var activeScreenCaptureStream: SCStream? {
         screenStream
@@ -59,6 +67,7 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
         intentionallyStoppedScreenStream = nil
         lastScreenPreviewFrameTime = DispatchTime(uptimeNanoseconds: 0)
         hasProducedMicrophoneStartupSample = false
+        hasReportedCaptureFailure = false
         writer = nil
 
         if settings.enabledSources.contains(.screen) || settings.enabledSources.contains(.systemAudio) {
@@ -78,6 +87,10 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
         try await waitForRequiredMicrophoneSample(settings: settings)
         try await runPreroll(seconds: prerollSeconds, handler: prerollHandler)
         writer = try DirectMovieWriter(take: take, settings: settings)
+        writer?.onFailure = { [weak self] error in
+            let source: CaptureSource = settings.enabledSources.contains(.screen) ? .screen : .camera
+            self?.reportCaptureFailure(ActiveCaptureFailure(source: source, error: error))
+        }
         startFrameTimer(fps: settings.framesPerSecond)
     }
 
@@ -87,6 +100,39 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
 
     func resume() {
         writer?.resume()
+    }
+
+    func setCaptureFailureHandler(_ handler: @escaping @MainActor (ActiveCaptureFailure) -> Void) {
+        captureFailureHandler = handler
+    }
+
+    func switchMicrophone(to deviceID: String) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            microphoneQueue.async {
+                do {
+                    guard let session = self.microphoneSession,
+                          let device = MicrophoneDeviceSelection.microphone(id: deviceID) else {
+                        throw RecorderError.microphoneUnavailable
+                    }
+                    let input = try AVCaptureDeviceInput(device: device)
+                    let previousInputs = session.inputs
+                    session.beginConfiguration()
+                    previousInputs.forEach { session.removeInput($0) }
+                    guard session.canAddInput(input) else {
+                        previousInputs.filter { session.canAddInput($0) }.forEach {
+                            session.addInput($0)
+                        }
+                        session.commitConfiguration()
+                        throw RecorderError.microphoneUnavailable
+                    }
+                    session.addInput(input)
+                    session.commitConfiguration()
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
     }
 
     func updateScene(_ scene: RecordingScene, transition: RecordingSceneTransition = .cut) {
@@ -240,6 +286,8 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
     }
 
     private func tearDownVideoAndMicrophoneSessions() {
+        captureSessionObservers.forEach(NotificationCenter.default.removeObserver)
+        captureSessionObservers.removeAll()
         cameraSession?.stopRunning()
         cameraSession = nil
 
@@ -276,6 +324,11 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
         guard stream !== intentionallyStoppedScreenStream else { return }
         NSLog("Live compositor screen stream stopped: \(error.localizedDescription)")
         streamError = error
+        let recorderError = RecorderError.captureStreamStopped(error.localizedDescription)
+        let source: CaptureSource = settings?.enabledSources.contains(.screen) == true
+            ? .screen
+            : .systemAudio
+        reportCaptureFailure(ActiveCaptureFailure(source: source, error: recorderError))
     }
 
     private func publishScreenPreviewFrame(_ sampleBuffer: CMSampleBuffer, imageBuffer: CVPixelBuffer) {
@@ -453,6 +506,7 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
         session.commitConfiguration()
 
         cameraSession = session
+        observeCaptureSession(.init(session: session, source: .camera))
         cameraQueue.async {
             session.startRunning()
         }
@@ -651,6 +705,43 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
 
     private func selectedCamera(settings: RecordingSettings) -> AVCaptureDevice? {
         LocalCameraSessionConfiguration.selectedCamera(settings: settings)
+    }
+
+    private func observeCaptureSession(_ request: CaptureSessionObservationRequest) {
+        let center = NotificationCenter.default
+        captureSessionObservers.append(center.addObserver(
+            forName: AVCaptureSession.runtimeErrorNotification,
+            object: request.session,
+            queue: nil
+        ) { [weak self] notification in
+            let error = notification.userInfo?[AVCaptureSessionErrorKey] as? Error
+                ?? RecorderError.mediaWriteFailed("\(request.source.rawValue) session failed.")
+            self?.reportCaptureFailure(ActiveCaptureFailure(source: request.source, error: error))
+        })
+        captureSessionObservers.append(center.addObserver(
+            forName: AVCaptureSession.wasInterruptedNotification,
+            object: request.session,
+            queue: nil
+        ) { [weak self] _ in
+            self?.reportCaptureFailure(ActiveCaptureFailure(
+                source: request.source,
+                error: RecorderError.mediaWriteFailed("\(request.source.rawValue) capture was interrupted.")
+            ))
+        })
+    }
+
+    private func reportCaptureFailure(_ failure: ActiveCaptureFailure) {
+        lock.lock()
+        guard !hasReportedCaptureFailure else {
+            lock.unlock()
+            return
+        }
+        hasReportedCaptureFailure = true
+        lock.unlock()
+        let failureHandler = captureFailureHandler
+        Task { @MainActor in
+            failureHandler?(failure)
+        }
     }
 
     private func frameStatus(for sampleBuffer: CMSampleBuffer) -> SCFrameStatus {

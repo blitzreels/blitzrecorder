@@ -189,6 +189,14 @@ final class RemoteIPhoneCameraSession {
         browser.start()
     }
 
+    func shutdown() {
+        reconnectTasks.values.forEach { $0.cancel() }
+        reconnectTasks.removeAll()
+        settingsSendTasks.values.forEach { $0.cancel() }
+        settingsSendTasks.removeAll()
+        controlClient.disconnect()
+    }
+
     func requireConnection() async throws {
         let settings = readSettings()
         guard let selectedServiceID = RemoteCameraProviderID.serviceID(from: settings.selectedCameraID) else {

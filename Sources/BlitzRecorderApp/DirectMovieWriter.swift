@@ -19,6 +19,8 @@ final class DirectMovieWriter: @unchecked Sendable {
     private var finished = false
     private var wroteVideo = false
     private var writeError: Error?
+    private var hasReportedFailure = false
+    var onFailure: (@MainActor (Error) -> Void)?
 
     init(take: RecordingTake, settings: RecordingSettings) throws {
         finalURL = take.finalVideoURL
@@ -204,6 +206,12 @@ final class DirectMovieWriter: @unchecked Sendable {
         finished = true
         writer.cancelWriting()
         try? FileManager.default.removeItem(at: temporaryURL)
+        guard !hasReportedFailure else { return }
+        hasReportedFailure = true
+        let onFailure = onFailure
+        Task { @MainActor in
+            onFailure?(error)
+        }
     }
 
     private func presentationTime(for sourceTime: CMTime) -> CMTime {

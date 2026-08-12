@@ -2,7 +2,6 @@ import Foundation
 
 enum ScreenPreviewLifecycleAction: Equatable {
     case preserveHidden
-    case reusePreserved
     case restart
 }
 
@@ -12,7 +11,23 @@ struct ScreenPreviewSourceAvailabilityRequest {
     let hasActivePickedContent: Bool
 }
 
+struct ScreenPreviewReuseRequest {
+    let isRunning: Bool
+    let hasPreviewContent: Bool
+    let screenEnabled: Bool
+    let screenHidden: Bool
+    let captureSignatureMatches: Bool
+}
+
 enum ScreenPreviewLifecycle {
+    static func shouldReuse(_ request: ScreenPreviewReuseRequest) -> Bool {
+        request.isRunning
+            && request.hasPreviewContent
+            && request.screenEnabled
+            && !request.screenHidden
+            && request.captureSignatureMatches
+    }
+
     static func sourceIsAvailable(
         _ request: ScreenPreviewSourceAvailabilityRequest
     ) -> Bool {
@@ -25,23 +40,11 @@ enum ScreenPreviewLifecycle {
             && request.settings.screenSourceBinding?.isConcreteSelection == true
     }
 
-    static func action(
-        settings: RecordingSettings,
-        previewIsRunning: Bool,
-        preservedSelectionRevision: Int?,
-        currentSelectionRevision: Int
-    ) -> ScreenPreviewLifecycleAction {
-        let screenEnabled = settings.enabledSources.contains(.screen)
+    static func action(settings: RecordingSettings) -> ScreenPreviewLifecycleAction {
         let screenHidden = settings.hiddenSources.contains(.screen)
 
         if screenHidden {
             return .preserveHidden
-        }
-
-        if screenEnabled,
-           previewIsRunning,
-           preservedSelectionRevision == currentSelectionRevision {
-            return .reusePreserved
         }
 
         return .restart

@@ -137,6 +137,35 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         }
     }
 
+    func switchMicrophone(to deviceID: String) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async {
+                do {
+                    guard let device = MicrophoneDeviceSelection.microphone(id: deviceID),
+                          self.fileOutput?.isRecording == true else {
+                        throw RecorderError.microphoneUnavailable
+                    }
+                    let input = try AVCaptureDeviceInput(device: device)
+                    let previousInputs = self.session.inputs
+                    self.session.beginConfiguration()
+                    previousInputs.forEach { self.session.removeInput($0) }
+                    guard self.session.canAddInput(input) else {
+                        previousInputs.filter { self.session.canAddInput($0) }.forEach {
+                            self.session.addInput($0)
+                        }
+                        self.session.commitConfiguration()
+                        throw RecorderError.microphoneUnavailable
+                    }
+                    self.session.addInput(input)
+                    self.session.commitConfiguration()
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
     func stop() async throws -> MediaWriterCompletion {
         let completion = try await stopFileOutput()
         queue.sync {

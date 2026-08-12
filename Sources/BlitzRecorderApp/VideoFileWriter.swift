@@ -18,6 +18,8 @@ final class VideoFileWriter: @unchecked Sendable {
     private var finished = false
     private var wroteSample = false
     private var writeError: Error?
+    private var hasReportedFailure = false
+    var onFailure: (@MainActor (Error) -> Void)?
     private static let maximumTrustedTimelineOffsetSeconds: Double = 30
 
     init(
@@ -160,6 +162,12 @@ final class VideoFileWriter: @unchecked Sendable {
         finished = true
         writer.cancelWriting()
         try? FileManager.default.removeItem(at: url)
+        guard !hasReportedFailure else { return }
+        hasReportedFailure = true
+        let onFailure = onFailure
+        Task { @MainActor in
+            onFailure?(error)
+        }
     }
 
     private func copy(_ sampleBuffer: CMSampleBuffer, relativeTo presentationTime: CMTime) -> CMSampleBuffer? {

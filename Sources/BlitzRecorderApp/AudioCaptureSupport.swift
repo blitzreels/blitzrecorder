@@ -46,10 +46,34 @@ final class AudioLevelPublisher: @unchecked Sendable {
 enum MicrophoneDeviceSelection {
     static func selectedMicrophone(settings: RecordingSettings) -> AVCaptureDevice? {
         if let selectedMicrophoneID = settings.selectedMicrophoneID,
-           let device = AVCaptureDevice(uniqueID: selectedMicrophoneID) {
+           let device = microphone(id: selectedMicrophoneID) {
             return device
         }
-        return AVCaptureDevice.default(for: .audio)
+        return fallbackMicrophone()
+    }
+
+    static func microphone(id: String) -> AVCaptureDevice? {
+        guard let device = AVCaptureDevice(uniqueID: id),
+              device.isConnected,
+              !device.isSuspended,
+              device.hasMediaType(.audio) else { return nil }
+        return device
+    }
+
+    static func fallbackMicrophone(excluding excludedID: String? = nil) -> AVCaptureDevice? {
+        if let device = AVCaptureDevice.default(for: .audio),
+           device.uniqueID != excludedID,
+           device.isConnected,
+           !device.isSuspended {
+            return device
+        }
+        return AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.microphone, .external],
+            mediaType: .audio,
+            position: .unspecified
+        ).devices.first {
+            $0.uniqueID != excludedID && $0.isConnected && !$0.isSuspended
+        }
     }
 }
 

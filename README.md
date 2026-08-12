@@ -88,6 +88,29 @@ swift test --package-path Packages/BlitzRecorderCore
 swift test --package-path Packages/BlitzRecorderTransport
 ```
 
+### Local MCP server
+
+The running Mac app exposes a Streamable HTTP MCP server on the local machine:
+
+```txt
+http://127.0.0.1:18473/mcp
+```
+
+Open **Settings > Agents** to enable or disable the server, check its status, test the connection,
+and copy setup details for Codex or an Agent Plugin 1.0-compatible client.
+
+Add it to Codex, then restart the Codex task so it discovers the tools:
+
+```bash
+codex mcp add blitzrecorder --url http://127.0.0.1:18473/mcp
+```
+
+The server can filter recent projects, inspect source readiness and prior exports, read saved transcripts,
+queue one or many MP4 exports, and report export status with pending and completed project IDs.
+Exports use the saved editor state and recipe, force MP4 output, and run sequentially inside BlitzRecorder.
+`projects_export_as_is` accepts an optional absolute `outputDirectory`; when omitted, BlitzRecorder uses its
+configured export folder. For sandbox-safe access, an override must be that folder or one of its subfolders.
+
 Build the website:
 
 ```bash

@@ -1042,7 +1042,7 @@ private struct MicrophoneSourceMenu: View {
             BlitzMenuSelectorLabel(title: vm.selectedMicrophoneDisplayName, icon: "mic", enabled: enabled)
         }
         .controlSize(.small)
-        .disabled(vm.state != .idle)
+        .disabled(vm.state == .starting || vm.state == .finishing)
         .pointingHandCursor()
         .help("Choose microphone source")
     }

@@ -1450,6 +1450,32 @@ final class RecordingLifecycleTests: XCTestCase {
     }
 
     @MainActor
+    func testCaptureSourceRunSwitchesMicrophoneWithoutStoppingOtherSources() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .microphone]
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        let microphone = SpyMicrophoneCaptureRecorder()
+        let screen = OrderedScreenCaptureRecorder(order: OrderedCaptureEvents())
+        let run = CaptureSourceRun(
+            take: take,
+            settings: settings,
+            pickedScreenFilter: nil,
+            screenRecorder: screen,
+            cameraRecorder: FailingCameraCaptureRecorder(error: RecorderError.noCamera),
+            audioRecorder: microphone,
+            systemAudioRecorder: NoopSystemAudioCaptureRecorder()
+        )
+
+        _ = try await run.start()
+        try await run.switchMicrophone(to: "replacement-microphone")
+
+        XCTAssertEqual(microphone.switchedDeviceIDs, ["replacement-microphone"])
+        _ = await run.stop()
+    }
+
+    @MainActor
     func testCaptureSourceRunCanUseRemoteCameraAdapterForCameraSource() async throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
@@ -4054,6 +4080,7 @@ private final class SpyRemoteCameraCaptureRecorder: RemoteCameraCaptureRecording
 private final class SpyMicrophoneCaptureRecorder: MicrophoneCaptureRecording {
     private(set) var startCount = 0
     private(set) var capturedTimelineStartTime: CMTime?
+    private(set) var switchedDeviceIDs: [String] = []
 
     func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) async throws {
         startCount += 1
@@ -4062,6 +4089,9 @@ private final class SpyMicrophoneCaptureRecorder: MicrophoneCaptureRecording {
 
     func pause() {}
     func resume() {}
+    func switchMicrophone(to deviceID: String) async throws {
+        switchedDeviceIDs.append(deviceID)
+    }
     func stop() async throws -> MediaWriterCompletion { .empty() }
 }
 

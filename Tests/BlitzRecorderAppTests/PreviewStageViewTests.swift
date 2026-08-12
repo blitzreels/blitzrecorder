@@ -227,6 +227,33 @@ final class PreviewStageViewTests: XCTestCase {
         XCTAssertEqual(resizedFrame.width / resizedFrame.height, originalAspectRatio, accuracy: 0.0001)
     }
 
+    func testLayerMovePublishesDraftsDuringDragAndCommitsOnceOnMouseUp() {
+        let view = PreviewStageView()
+        let window = hostInWindow(view)
+        view.captureLayout = .vertical
+        view.enabledSources = [.screen, .camera]
+        view.sceneLayout = SceneLayout.presetLayout(.stackedHalves, for: .vertical)
+        view.layoutSubtreeIfNeeded()
+        view.selectedLayer = .camera
+
+        var draftCount = 0
+        var committedLayouts: [SceneLayout] = []
+        view.onSceneLayoutChanged = { _ in draftCount += 1 }
+        view.onSceneLayoutEditingEnded = { committedLayouts.append($0) }
+
+        let cameraFrame = view.renderedCameraFrameForTesting
+        let start = CGPoint(x: cameraFrame.midX, y: cameraFrame.midY)
+        let first = CGPoint(x: start.x + 20, y: start.y + 10)
+        let second = CGPoint(x: start.x + 40, y: start.y + 20)
+        view.mouseDown(with: mouseEvent(.leftMouseDown, at: start, in: window))
+        view.mouseDragged(with: mouseEvent(.leftMouseDragged, at: first, in: window))
+        view.mouseDragged(with: mouseEvent(.leftMouseDragged, at: second, in: window))
+        view.mouseUp(with: mouseEvent(.leftMouseUp, at: second, in: window))
+
+        XCTAssertEqual(draftCount, 2)
+        XCTAssertEqual(committedLayouts, [view.sceneLayout])
+    }
+
     func testNormalScreenLayerTopEdgeResizeChangesHeightWithoutChangingWidth() {
         let view = PreviewStageView()
         let window = hostInWindow(view)
@@ -254,6 +281,33 @@ final class PreviewStageViewTests: XCTestCase {
         XCTAssertGreaterThan(resizedFrame.height, originalFrame.height)
         XCTAssertEqual(resizedFrame.minY, originalFrame.minY, accuracy: 0.0001)
         XCTAssertEqual(resizedLayer, .screen)
+    }
+
+    func testWindowBackedScreenResizeKeepsVisibleSourceAttachedToDraggedTopEdge() {
+        let view = PreviewStageView()
+        let window = hostInWindow(view)
+        view.captureLayout = .vertical
+        view.enabledSources = [.screen, .camera]
+        view.selectedLayer = .screen
+        view.screenContentMode = .fit
+        view.screenResizeUsesTargetAspectRatio = true
+        var layout = SceneLayout()
+        layout.screenFrame = CGRect(x: 0.08, y: 0.58, width: 0.84, height: 0.24)
+        layout.cameraFrame = CGRect(x: 0, y: 0, width: 1, height: 0.5)
+        view.sceneLayout = layout
+        view.layoutSubtreeIfNeeded()
+
+        let initialFrame = view.renderedScreenFrameForTesting
+        let start = CGPoint(x: initialFrame.midX, y: initialFrame.maxY)
+        let end = CGPoint(x: start.x, y: start.y + 60)
+        view.mouseDown(with: mouseEvent(.leftMouseDown, at: start, in: window))
+        view.mouseDragged(with: mouseEvent(.leftMouseDragged, at: end, in: window))
+        view.mouseUp(with: mouseEvent(.leftMouseUp, at: end, in: window))
+
+        let resizedFrame = view.renderedScreenFrameForTesting
+        XCTAssertEqual(resizedFrame.width, initialFrame.width, accuracy: 0.5)
+        XCTAssertEqual(resizedFrame.minY, initialFrame.minY, accuracy: 0.5)
+        XCTAssertEqual(resizedFrame.maxY, end.y, accuracy: 0.5)
     }
 
     func testLayerInteractionLockStillAllowsCameraCropEditing() {

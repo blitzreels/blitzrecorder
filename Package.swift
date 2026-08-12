@@ -7,6 +7,8 @@ let directDistribution = ProcessInfo.processInfo.environment["DIRECT_DISTRIBUTIO
 var packageDependencies: [Package.Dependency] = [
     .package(path: "Packages/BlitzRecorderCore"),
     .package(path: "Packages/BlitzRecorderTransport"),
+    .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", exact: "0.12.1"),
+    .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
     .package(
         url: "https://github.com/FluidInference/FluidAudio.git",
         exact: "0.15.5"
@@ -16,6 +18,10 @@ var packageDependencies: [Package.Dependency] = [
 var appDependencies: [Target.Dependency] = [
     .product(name: "BlitzRecorderCore", package: "BlitzRecorderCore"),
     .product(name: "BlitzRecorderTransport", package: "BlitzRecorderTransport"),
+    .product(name: "MCP", package: "swift-sdk"),
+    .product(name: "NIOCore", package: "swift-nio"),
+    .product(name: "NIOHTTP1", package: "swift-nio"),
+    .product(name: "NIOPosix", package: "swift-nio"),
     .product(name: "FluidAudio", package: "FluidAudio")
 ]
 

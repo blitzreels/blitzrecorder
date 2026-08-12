@@ -18,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
     private var blinkOn = false
     private var mainMenuBuilder: MainMenuBuilder?
     private lazy var updateController = AppUpdateController()
+    private lazy var mcpServer = BlitzRecorderMCPServer(coordinator: coordinator)
+    private var terminationTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         launchIfNeeded()
@@ -43,7 +45,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
             coordinator.prewarmLocalCameraPreviewIfAuthorized()
         }
 
-        let windowController = MainWindowController(coordinator: coordinator)
+        let windowController = MainWindowController(.init(
+            coordinator: coordinator,
+            mcpServer: mcpServer
+        ))
         self.windowController = windowController
         windowController.onEditorHistoryChanged = { [weak self] in
             self?.mainMenuBuilder?.rebuild()
@@ -98,6 +103,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
 
         buildStatusItem()
         updateStatusItem(for: coordinator.state)
+        Task {
+            await mcpServer.start()
+        }
         if !LocalDevelopmentRuntime.isNoninteractiveVerification() {
             presentMainWindow()
             updateController.start()
@@ -110,6 +118,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard terminationTask == nil else { return .terminateLater }
+        terminationTask = Task { [weak self, weak sender] in
+            guard let self else {
+                sender?.reply(toApplicationShouldTerminate: true)
+                return
+            }
+            await coordinator.shutdown()
+            await mcpServer.stop()
+            sender?.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

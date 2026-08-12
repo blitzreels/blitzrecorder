@@ -26,17 +26,15 @@ enum LocalCameraSessionConfiguration {
             return device
         }
 
-        if let discovered = discoveredCameras().first {
-            return discovered
+        let fallback = AVCaptureDevice.default(for: .video)
+            ?? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .unspecified)
+        if fallbackToDefault,
+           fallback?.isConnected == true,
+           fallback?.isSuspended == false {
+            return fallback
         }
 
-        guard fallbackToDefault else { return nil }
-        let fallback = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .unspecified)
-            ?? AVCaptureDevice.default(for: .video)
-        guard fallback?.isConnected == true, fallback?.isSuspended == false else {
-            return nil
-        }
-        return fallback
+        return discoveredCameras().first
     }
 
     static func configure(_ request: LocalCameraDeviceConfigurationRequest) {
@@ -75,14 +73,16 @@ enum LocalCameraSessionConfiguration {
 
     static func cameraSortKey(_ device: AVCaptureDevice) -> String {
         let priority: String
-        if device.isContinuityCamera {
+        if device.deviceType == .external, !device.isContinuityCamera {
             priority = "0"
-        } else if device.deviceType == .external {
+        } else if device.deviceType == .builtInWideAngleCamera {
             priority = "1"
         } else if device.deviceType == .deskViewCamera {
             priority = "2"
-        } else {
+        } else if device.isContinuityCamera {
             priority = "3"
+        } else {
+            priority = "4"
         }
         return "\(priority)-\(device.localizedName)"
     }

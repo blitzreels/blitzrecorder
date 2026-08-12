@@ -12,6 +12,34 @@ FluidAudio includes FastClusterWrapper under its upstream BSD-style license and
 VBx components under the Apache License 2.0. Their license texts are distributed
 with the FluidAudio source package.
 
+## Model Context Protocol Swift SDK
+
+BlitzRecorder uses the official Model Context Protocol Swift SDK under its
+Apache License 2.0 and MIT licensing transition terms.
+
+Source and license:
+https://github.com/modelcontextprotocol/swift-sdk
+
+## SwiftNIO and Swift server libraries
+
+The local MCP server uses SwiftNIO, SwiftLog, Swift System, Swift Atomics, and
+Swift Collections under the Apache License 2.0.
+
+Sources and licenses:
+https://github.com/apple/swift-nio
+https://github.com/apple/swift-log
+https://github.com/apple/swift-system
+https://github.com/apple/swift-atomics
+https://github.com/apple/swift-collections
+
+## EventSource
+
+The Model Context Protocol Swift SDK includes EventSource by Mattt under the
+MIT License.
+
+Source and license:
+https://github.com/mattt/eventsource
+
 ## Parakeet TDT v3
 
 The optional transcription download uses the
