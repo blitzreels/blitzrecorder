@@ -42,7 +42,7 @@ type GitHubRelease = {
 export async function getLatestRelease(): Promise<Release | null> {
   try {
     const res = await fetch(
-      `https://api.github.com/repos/${OWNER}/${REPO}/releases/latest`,
+      `https://api.github.com/repos/${OWNER}/${REPO}/releases/latest?expected=${encodeURIComponent(FALLBACK_VERSION)}`,
       {
         headers: {
           Accept: "application/vnd.github+json",
