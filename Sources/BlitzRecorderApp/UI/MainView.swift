@@ -2040,24 +2040,20 @@ struct RemoteCameraPage: View {
                 setupStepsCard
                 nearbyDevicesCard
             }
-            .frame(maxWidth: 560, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            .padding(.horizontal, 28)
-            .padding(.vertical, 28)
+            .settingsPageContent()
         }
+        .background(BlitzUI.projectLibraryBackground)
         .foregroundStyle(.white)
     }
 
     private var onboardingHeader: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Film with your iPhone")
-                .font(.system(size: 24, weight: .bold))
-                .foregroundStyle(.white)
-            Text("Your iPhone has a better camera than a webcam. It records the video while your Mac shows it live.")
-                .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(.white.opacity(0.6))
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        SettingsPageHeader(.init(
+            title: "Devices",
+            detail: "Pair an iPhone for higher-quality video while the Mac keeps a responsive preview.",
+            systemImage: "iphone.gen3",
+            status: vm.remoteCameraDeviceSummaries.isEmpty ? "Searching" : "iPhone found"
+        ))
+        .padding(.bottom, 4)
     }
 
     private var setupStepsCard: some View {
@@ -2299,6 +2295,13 @@ struct RemoteCameraPage: View {
 
     private var connectedLayout: some View {
         VStack(alignment: .leading, spacing: 16) {
+            SettingsPageHeader(.init(
+                title: "Devices",
+                detail: "Control the paired iPhone camera and monitor its recording connection.",
+                systemImage: "iphone.gen3.radiowaves.left.and.right",
+                status: "Connected"
+            ))
+
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(vm.selectedRemoteCameraDeviceDescription)
@@ -2317,8 +2320,11 @@ struct RemoteCameraPage: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 20)
+        .padding(.horizontal, 34)
+        .padding(.top, 34)
+        .padding(.bottom, 24)
+        .background(BlitzUI.projectLibraryBackground)
+        .foregroundStyle(.white)
     }
 
     private var previewColumn: some View {

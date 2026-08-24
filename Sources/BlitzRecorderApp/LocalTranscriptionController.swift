@@ -2,6 +2,21 @@ import AppKit
 import Foundation
 import Observation
 
+protocol LocalTranscriptionEngineServing: Sendable {
+    func downloadModels(
+        _ request: LocalTranscriptionEngine.DownloadRequest
+    ) async throws
+    func transcribe(
+        _ request: LocalTranscriptionEngine.TranscribeRequest
+    ) async throws -> RecordingTranscript
+    func removeModels() async throws
+}
+
+protocol LocalTranscriptionModelStoring: Sendable {
+    var isInstalled: Bool { get }
+    var installedSize: Int64 { get }
+}
+
 enum TranscriptionModelState: Equatable {
     case notDownloaded
     case downloading(progress: Double, phase: String)
@@ -75,8 +90,8 @@ struct CompletedTranscription {
 @MainActor
 final class LocalTranscriptionController {
     struct Dependencies {
-        let engine: LocalTranscriptionEngine
-        let modelStore: LocalTranscriptionModelStore
+        let engine: any LocalTranscriptionEngineServing
+        let modelStore: any LocalTranscriptionModelStoring
         let artifactStore: TranscriptArtifactStore
         let fileStore: TakeFileStore
         let defaults: UserDefaults
@@ -115,12 +130,13 @@ final class LocalTranscriptionController {
         }
     }
 
-    @ObservationIgnored private let engine: LocalTranscriptionEngine
-    @ObservationIgnored private let modelStore: LocalTranscriptionModelStore
+    @ObservationIgnored private let engine: any LocalTranscriptionEngineServing
+    @ObservationIgnored private let modelStore: any LocalTranscriptionModelStoring
     @ObservationIgnored private let artifactStore: TranscriptArtifactStore
     @ObservationIgnored private let fileStore: TakeFileStore
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var knownSources: [String: TranscriptionMediaSource] = [:]
+    @ObservationIgnored private var pendingManualSources: [String: TranscriptionMediaSource] = [:]
     @ObservationIgnored private var tasks: [String: Task<Void, Never>] = [:]
 
     init(_ dependencies: Dependencies = .live) {
@@ -141,6 +157,9 @@ final class LocalTranscriptionController {
 
     func downloadModels() {
         guard !modelState.isReady else { return }
+        if case .downloading = modelState {
+            return
+        }
         modelState = .downloading(progress: 0, phase: "Starting")
         Task {
             do {
@@ -148,15 +167,13 @@ final class LocalTranscriptionController {
                     LocalTranscriptionEngine.DownloadRequest(
                         onUpdate: { [weak self] update in
                             Task { @MainActor in
-                                self?.modelState = .downloading(
-                                    progress: update.fractionCompleted,
-                                    phase: update.phase
-                                )
+                                self?.applyModelDownloadUpdate(update)
                             }
                         }
                     )
                 )
                 modelState = .ready(size: modelStore.installedSize)
+                enqueuePendingManualSources()
                 enqueueKnownSources()
             } catch {
                 modelState = .failed(error.localizedDescription)
@@ -263,10 +280,15 @@ final class LocalTranscriptionController {
         guard isAutomaticEnabled || request.force else { return }
         guard modelState.isReady else {
             jobStatuses[source.key] = .waitingForModel
+            if request.force {
+                pendingManualSources[source.key] = source
+                downloadModels()
+            }
             return
         }
         guard tasks[source.key] == nil else { return }
 
+        pendingManualSources[source.key] = nil
         jobStatuses[source.key] = .queued
         tasks[source.key] = Task { [weak self] in
             guard let self else { return }
@@ -300,6 +322,23 @@ final class LocalTranscriptionController {
         for source in knownSources.values {
             enqueue(EnqueueRequest(source: source, force: false))
         }
+    }
+
+    private func enqueuePendingManualSources() {
+        let sources = Array(pendingManualSources.values)
+        for source in sources {
+            enqueue(EnqueueRequest(source: source, force: true))
+        }
+    }
+
+    private func applyModelDownloadUpdate(
+        _ update: TranscriptionModelDownloadUpdate
+    ) {
+        guard case .downloading = modelState else { return }
+        modelState = .downloading(
+            progress: update.fractionCompleted,
+            phase: update.phase
+        )
     }
 
     private func refreshStatus(_ source: TranscriptionMediaSource) {

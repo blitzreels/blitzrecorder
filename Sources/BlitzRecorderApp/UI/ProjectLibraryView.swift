@@ -1054,7 +1054,18 @@ struct ProjectLibraryView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    @ViewBuilder
     private func transcriptUnavailableState(
+        _ request: TranscriptUnavailableRequest
+    ) -> some View {
+        if request.status == .waitingForModel {
+            transcriptionModelState(request.project)
+        } else {
+            transcriptJobState(request)
+        }
+    }
+
+    private func transcriptJobState(
         _ request: TranscriptUnavailableRequest
     ) -> some View {
         HStack(spacing: 12) {
@@ -1089,6 +1100,129 @@ struct ProjectLibraryView: View {
         }
         .padding(14)
         .background(.white.opacity(0.025), in: .rect(cornerRadius: 10))
+    }
+
+    @ViewBuilder
+    private func transcriptionModelState(
+        _ project: RecordingProjectHistory.Entry
+    ) -> some View {
+        switch vm.transcriptionController.modelState {
+        case .notDownloaded:
+            transcriptionModelCard(.init(
+                title: "Local speech model required",
+                detail: "Download it once to generate timed transcripts and detect speakers on this Mac.",
+                systemImage: "arrow.down.circle",
+                errorMessage: nil,
+                progress: nil,
+                progressLabel: nil,
+                actionTitle: "Download and Generate",
+                action: { requestTranscript(project) }
+            ))
+        case .downloading(let progress, let phase):
+            transcriptionModelCard(.init(
+                title: "Downloading speech model",
+                detail: "Keep BlitzRecorder open. Transcription starts when the model is ready.",
+                systemImage: "arrow.down.circle.fill",
+                errorMessage: nil,
+                progress: progress,
+                progressLabel: "\(phase) · \(Int((progress * 100).rounded()))%",
+                actionTitle: nil,
+                action: nil
+            ))
+        case .failed(let message):
+            transcriptionModelCard(.init(
+                title: "Model download failed",
+                detail: "The model is stored locally and can be downloaded again.",
+                systemImage: "exclamationmark.triangle.fill",
+                errorMessage: message,
+                progress: nil,
+                progressLabel: nil,
+                actionTitle: "Retry Download",
+                action: { requestTranscript(project) }
+            ))
+        case .ready:
+            transcriptJobState(TranscriptUnavailableRequest(
+                project: project,
+                status: .queued
+            ))
+        }
+    }
+
+    private struct TranscriptionModelCardConfiguration {
+        let title: String
+        let detail: String
+        let systemImage: String
+        let errorMessage: String?
+        let progress: Double?
+        let progressLabel: String?
+        let actionTitle: String?
+        let action: (() -> Void)?
+    }
+
+    private func transcriptionModelCard(
+        _ configuration: TranscriptionModelCardConfiguration
+    ) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: configuration.systemImage)
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(
+                    configuration.errorMessage == nil
+                        ? BlitzUI.mint
+                        : BlitzUI.warning
+                )
+                .frame(width: 26, height: 26)
+
+            VStack(alignment: .leading, spacing: 7) {
+                Text(configuration.title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.80))
+
+                Text(configuration.detail)
+                    .font(.system(size: 10, weight: .regular))
+                    .foregroundStyle(.white.opacity(0.42))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let progress = configuration.progress {
+                    ProgressView(value: progress)
+                        .tint(BlitzUI.mint)
+                        .frame(maxWidth: 360)
+                }
+
+                if let progressLabel = configuration.progressLabel {
+                    Text(progressLabel)
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .monospacedDigit()
+                        .foregroundStyle(.white.opacity(0.46))
+                }
+
+                if let errorMessage = configuration.errorMessage {
+                    Text(errorMessage)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(BlitzUI.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Spacer(minLength: 12)
+
+            if let actionTitle = configuration.actionTitle,
+               let action = configuration.action {
+                Button(actionTitle, action: action)
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.78))
+                    .padding(.horizontal, 14)
+                    .frame(height: 40)
+                    .background(.white.opacity(0.07), in: .rect(cornerRadius: 9))
+                    .pointingHandCursor()
+            }
+        }
+        .padding(16)
+        .background(.white.opacity(0.035), in: .rect(cornerRadius: 11))
+        .overlay {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .stroke(.white.opacity(0.07), lineWidth: 1)
+        }
     }
 
     private func detailMetadata(
@@ -1470,10 +1604,18 @@ struct ProjectLibraryView: View {
                 URL(fileURLWithPath: project.projectPath)
             ))
         case .waitingForModel:
-            vm.transcriptionController.downloadModels()
+            requestTranscript(project)
         case .queued, .preparingAudio, .transcribing, .diarizing, .saving:
             break
         }
+    }
+
+    private func requestTranscript(
+        _ project: RecordingProjectHistory.Entry
+    ) {
+        vm.transcriptionController.retry(.project(
+            URL(fileURLWithPath: project.projectPath)
+        ))
     }
 
     private func transcriptActionTitle(

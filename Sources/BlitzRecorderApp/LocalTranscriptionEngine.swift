@@ -17,7 +17,7 @@ struct TranscriptionEngineUpdate: Sendable {
     let stage: Stage
 }
 
-actor LocalTranscriptionEngine {
+actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
     struct DownloadRequest: Sendable {
         let onUpdate: @Sendable (TranscriptionModelDownloadUpdate) -> Void
     }
@@ -119,7 +119,7 @@ actor LocalTranscriptionEngine {
         return transcript
     }
 
-    func removeModels() throws {
+    func removeModels() async throws {
         asrManager = nil
         diarizerManager = nil
         try modelStore.removeModels()
@@ -244,7 +244,7 @@ enum LocalTranscriptionError: LocalizedError {
     }
 }
 
-struct LocalTranscriptionModelStore {
+struct LocalTranscriptionModelStore: LocalTranscriptionModelStoring {
     private struct Marker: Codable {
         let version: Int
         let installedAt: Date

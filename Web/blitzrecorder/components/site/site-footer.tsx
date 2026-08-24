@@ -14,6 +14,7 @@ const productLinks: FooterLink[] = [
   { label: "macOS app", href: "/macos" },
   { label: "iOS camera app", href: "/ios" },
   { label: "Pricing", href: "/#pricing" },
+  { label: "BlitzReels", href: "https://www.blitzreels.com", external: true },
 ];
 
 const resourceLinks: FooterLink[] = [
@@ -48,12 +49,12 @@ export function SiteFooter() {
 
             <div className="mt-7 flex flex-col gap-3">
               <a
-                href={ALGOMAX_URL}
+                href="https://www.blitzreels.com"
                 target="_blank"
                 rel="noopener"
                 className="group inline-flex items-center gap-1.5 text-sm text-faint transition-colors hover:text-foreground"
               >
-                Built by Algomax
+                A BlitzReels.com product
                 <ArrowUpRight className="size-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
               </a>
             </div>

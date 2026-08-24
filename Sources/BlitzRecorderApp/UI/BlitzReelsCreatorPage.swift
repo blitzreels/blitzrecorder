@@ -18,24 +18,20 @@ struct BlitzReelsCreatorPage: View {
 
                 footerLinks
             }
-            .frame(maxWidth: 560, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            .padding(.horizontal, 28)
-            .padding(.vertical, 28)
+            .settingsPageContent()
         }
+        .background(BlitzUI.projectLibraryBackground)
         .foregroundStyle(.white)
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("BlitzRecorder")
-                .font(.system(size: 24, weight: .bold))
-                .foregroundStyle(.white)
-            Text("Free for local 1080p recording. Early Price unlocks iPhone camera, 4K export, and 60 fps.")
-                .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(.white.opacity(0.6))
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        SettingsPageHeader(.init(
+            title: "Account",
+            detail: "Manage the local license, product access, and open-source information.",
+            systemImage: "person.crop.circle",
+            status: access.hasActiveLicense ? "License active" : "Free edition"
+        ))
+        .padding(.bottom, 4)
     }
 
     private var accessCard: some View {

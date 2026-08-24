@@ -21,6 +21,25 @@ enum SettingsPane: Int, CaseIterable, Identifiable {
         }
     }
 
+    var subtitle: String {
+        switch self {
+        case .recording: return "Quality, files, and transcripts"
+        case .devices: return "iPhone camera and pairing"
+        case .permissions: return "macOS capture permissions"
+        case .agents: return "Local MCP connections"
+        case .account: return "License and open source"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .recording: return "record.circle"
+        case .devices: return "iphone.gen3"
+        case .permissions: return "lock.shield"
+        case .agents: return "terminal"
+        case .account: return "person.crop.circle"
+        }
+    }
 }
 
 @MainActor
@@ -62,8 +81,12 @@ final class SettingsWindowController: NSWindowController {
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
         window.appearance = NSAppearance(named: .darkAqua)
+        window.styleMask.insert(.fullSizeContentView)
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.backgroundColor = .black
         window.setContentSize(SettingsRootView.contentSize)
-        window.minSize = NSSize(width: 840, height: 600)
+        window.minSize = NSSize(width: 940, height: 640)
         window.center()
         super.init(window: window)
     }
@@ -78,58 +101,127 @@ final class SettingsWindowController: NSWindowController {
 }
 
 private struct SettingsRootView: View {
-    static let contentSize = NSSize(width: 1_020, height: 720)
+    static let contentSize = NSSize(width: 1_120, height: 760)
 
     @Bindable var navigation: SettingsNavigation
 
     var body: some View {
-        NavigationSplitView {
-            List(selection: selectedPaneBinding) {
-                Section("Settings") {
-                    ForEach(SettingsPane.allCases) { pane in
-                        sidebarRow(pane)
-                            .tag(pane)
-                    }
+        HStack(spacing: 0) {
+            sidebar
+
+            Rectangle()
+                .fill(BlitzUI.separator)
+                .frame(width: 1)
+
+            detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(BlitzUI.projectLibraryBackground)
+        .tint(BlitzUI.mint)
+        .frame(minWidth: 940, minHeight: 640)
+    }
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 11) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(BlitzUI.mint.opacity(0.13))
+                    Image(systemName: "record.circle.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(BlitzUI.mint)
+                }
+                .frame(width: 34, height: 34)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("BlitzRecorder")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.90))
+                    Text("Settings")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.38))
                 }
             }
-            .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 178, ideal: 196, max: 220)
-            .safeAreaInset(edge: .bottom) {
-                Text("Changes save automatically")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.tertiary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.bar)
+            .padding(.horizontal, 18)
+            .padding(.top, 48)
+            .padding(.bottom, 16)
+
+            VStack(spacing: 5) {
+                ForEach(SettingsPane.allCases) { pane in
+                    sidebarRow(pane)
+                }
             }
-        } detail: {
-            detail
+            .padding(.horizontal, 10)
+
+            Spacer(minLength: 20)
+
+            HStack(spacing: 8) {
+                BlitzStatusDot(tone: .ready, diameter: 6)
+                Text("Changes save automatically")
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.34))
+            }
+            .padding(.horizontal, 18)
+            .padding(.bottom, 18)
         }
-        .navigationSplitViewStyle(.balanced)
-        .frame(width: Self.contentSize.width, height: Self.contentSize.height)
+        .frame(width: 238)
+        .background(Color.black.opacity(0.18))
     }
 
     private func sidebarRow(_ pane: SettingsPane) -> some View {
         let issueCount = pane == .permissions
             ? navigation.viewModel.recordingReadiness.blockers.count
             : 0
+        let isSelected = navigation.selectedPane == pane
 
-        return HStack(spacing: 8) {
-            Text(pane.title)
-                .font(.system(size: 12, weight: .medium))
+        return Button {
+            navigation.selectedPane = pane
+        } label: {
+            HStack(spacing: 11) {
+                BlitzIconTile(
+                    symbolName: pane.systemImage,
+                    isSelected: isSelected,
+                    size: 31
+                )
 
-            Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(pane.title)
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(.white.opacity(isSelected ? 0.92 : 0.62))
+                    Text(pane.subtitle)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.white.opacity(isSelected ? 0.46 : 0.28))
+                        .lineLimit(1)
+                }
 
-            if issueCount > 0 {
-                Text("\(issueCount)")
-                    .font(.system(size: 9, weight: .bold, design: .rounded))
-                    .foregroundStyle(.black.opacity(0.8))
-                    .frame(minWidth: 17, minHeight: 17)
-                    .background(BlitzUI.warning, in: .circle)
+                Spacer(minLength: 0)
+
+                if issueCount > 0 {
+                    Text("\(issueCount)")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundStyle(.black.opacity(0.82))
+                        .frame(minWidth: 18, minHeight: 18)
+                        .background(BlitzUI.warning, in: .circle)
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 52)
+            .contentShape(.rect(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .background(
+            isSelected ? Color.white.opacity(0.085) : Color.clear,
+            in: .rect(cornerRadius: 10)
+        )
+        .overlay(alignment: .leading) {
+            if isSelected {
+                Capsule()
+                    .fill(BlitzUI.mint)
+                    .frame(width: 3, height: 24)
+                    .offset(x: -1)
             }
         }
-        .frame(minHeight: 28)
+        .pointingHandCursor()
     }
 
     @ViewBuilder
@@ -140,10 +232,7 @@ private struct SettingsRootView: View {
         case .devices:
             RemoteCameraPage(vm: navigation.viewModel)
         case .permissions:
-            ScrollView {
-                PermissionsPage(vm: navigation.viewModel)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-            }
+            PermissionsPage(vm: navigation.viewModel)
         case .agents:
             AgentsSettingsPage(mcpServer: navigation.mcpServer)
         case .account:
@@ -151,14 +240,4 @@ private struct SettingsRootView: View {
         }
     }
 
-    private var selectedPaneBinding: Binding<SettingsPane?> {
-        Binding(
-            get: { navigation.selectedPane },
-            set: { selectedPane in
-                if let selectedPane {
-                    navigation.selectedPane = selectedPane
-                }
-            }
-        )
-    }
 }

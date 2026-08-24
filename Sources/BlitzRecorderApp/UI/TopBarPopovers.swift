@@ -803,38 +803,38 @@ struct PermissionsPage: View {
     @Bindable var vm: RecorderViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Access")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(.white)
-                Text("See what this app can use and what the current recording still needs.")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.55))
-            }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                SettingsPageHeader(.init(
+                    title: "Access",
+                    detail: "Review what BlitzRecorder can use and resolve anything blocking capture.",
+                    systemImage: "lock.shield",
+                    status: vm.recordingReadiness.isReady ? "Ready" : "Needs attention"
+                ))
+                .padding(.bottom, 4)
 
-            PermissionSetupCard(vm: vm)
-                .frame(width: 600, alignment: .leading)
+                PermissionSetupCard(vm: vm)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-            VStack(spacing: 0) {
-                ForEach(Array(vm.permissionStatusRows.enumerated()), id: \.element.id) { index, row in
-                    if index > 0 {
-                        Divider()
-                            .background(.white.opacity(0.08))
-                            .padding(.horizontal, 16)
-                    }
-                    PermissionStatusRowView(row: row) {
-                        handleTap(row)
+                VStack(spacing: 0) {
+                    ForEach(Array(vm.permissionStatusRows.enumerated()), id: \.element.id) { index, row in
+                        if index > 0 {
+                            Divider()
+                                .background(.white.opacity(0.08))
+                                .padding(.horizontal, 16)
+                        }
+                        PermissionStatusRowView(row: row) {
+                            handleTap(row)
+                        }
                     }
                 }
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .blitzGlassSurface(cornerRadius: 16)
             }
-            .padding(.vertical, 4)
-            .frame(width: 600, alignment: .leading)
-            .blitzGlassSurface(cornerRadius: 16)
+            .settingsPageContent()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.horizontal, 28)
-        .padding(.top, 28)
+        .background(BlitzUI.projectLibraryBackground)
         .foregroundStyle(.white)
         .onAppear {
             vm.refreshPermissionStatus()

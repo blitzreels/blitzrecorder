@@ -4,55 +4,43 @@ struct RecordingSettingsPage: View {
     @Bindable var vm: RecorderViewModel
     @State private var showsAdvanced = false
 
-    private struct RowLabelConfiguration {
-        let title: String
-        let detail: String
-    }
-
     private var canEdit: Bool {
         vm.state == .idle
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                SettingsPageHeader(.init(
+                    title: "Recording",
+                    detail: "Choose capture quality, file storage, export defaults, and local transcription.",
+                    systemImage: "record.circle",
+                    status: profileSummary
+                ))
+                .padding(.bottom, 4)
 
-            Form {
                 videoSection
                 exportDefaultsSection
                 storageSection
                 transcriptionSection
                 advancedSection
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
+            .settingsPageContent()
         }
-        .background(.background)
-    }
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Recording")
-                .font(.system(size: 26, weight: .bold))
-                .foregroundStyle(.primary)
-
-            Text("Source recording defaults. Export settings can be changed later in the editor.")
-                .font(.system(size: 12, weight: .regular))
-                .foregroundStyle(.secondary)
-
-            Text(profileSummary)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(BlitzUI.mint.opacity(0.82))
-                .padding(.top, 3)
-        }
-        .padding(.horizontal, 30)
-        .padding(.top, 28)
-        .padding(.bottom, 10)
+        .background(BlitzUI.projectLibraryBackground)
+        .foregroundStyle(.white)
     }
 
     private var videoSection: some View {
-        Section("Recording quality") {
-            LabeledContent {
+        VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 18) {
+                SettingsRowLabel(.init(
+                    title: "Recording resolution",
+                    detail: resolutionDetail
+                ))
+
+                Spacer(minLength: 16)
+
                 Picker("", selection: resolutionBinding) {
                     ForEach(OutputResolution.allCases, id: \.self) { resolution in
                         Text(resolution.displayName)
@@ -63,14 +51,19 @@ struct RecordingSettingsPage: View {
                 .pickerStyle(.segmented)
                 .frame(width: 300)
                 .disabled(!canEdit)
-            } label: {
-                rowLabel(RowLabelConfiguration(
-                    title: "Recording resolution",
-                    detail: resolutionDetail
-                ))
             }
+            .settingsRow()
 
-            LabeledContent {
+            SettingsCardDivider()
+
+            HStack(alignment: .center, spacing: 18) {
+                SettingsRowLabel(.init(
+                    title: "Source FPS",
+                    detail: "30 fps is the best default for most recordings."
+                ))
+
+                Spacer(minLength: 16)
+
                 Picker("", selection: frameRateBinding) {
                     ForEach(RecordingSettings.supportedFrameRates, id: \.self) { frameRate in
                         Text("\(frameRate)")
@@ -81,30 +74,45 @@ struct RecordingSettingsPage: View {
                 .pickerStyle(.segmented)
                 .frame(width: 220)
                 .disabled(!canEdit)
-            } label: {
-                rowLabel(RowLabelConfiguration(
-                    title: "Source FPS",
-                    detail: "30 fps is the best default for most recordings."
-                ))
             }
+            .settingsRow()
 
-            LabeledContent {
-                Text(qualityPresentation.sourceEncodingSummary)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            } label: {
-                rowLabel(RowLabelConfiguration(
+            SettingsCardDivider()
+
+            HStack(alignment: .center, spacing: 18) {
+                SettingsRowLabel(.init(
                     title: "Recorded source files",
-                    detail: "Separate HEVC masters set the maximum quality available to exports."
+                    detail: "Separate HEVC masters preserve the best quality for later exports."
                 ))
+
+                Spacer(minLength: 16)
+
+                Text(qualityPresentation.sourceEncodingSummary)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.56))
+                    .monospacedDigit()
+                    .padding(.horizontal, 10)
+                    .frame(height: 28)
+                    .background(.white.opacity(0.05), in: .capsule)
             }
+            .settingsRow()
         }
+        .settingsCard(.init(
+            title: "Recording quality",
+            detail: "Applied to new source recordings",
+            systemImage: "video.badge.checkmark"
+        ))
     }
 
     private var exportDefaultsSection: some View {
-        Section("Export defaults") {
-            LabeledContent {
+        HStack(alignment: .center, spacing: 18) {
+            SettingsRowLabel(.init(
+                title: "Default export format",
+                detail: "\(vm.settings.outputVideoFormat.plainDescription). Change it per export in the editor."
+            ))
+
+            Spacer(minLength: 16)
+
                 Picker("", selection: formatBinding) {
                     ForEach(OutputVideoFormat.allCases, id: \.self) { format in
                         Text(format.displayName)
@@ -114,28 +122,35 @@ struct RecordingSettingsPage: View {
                 .labelsHidden()
                 .frame(width: 150)
                 .disabled(!canEdit)
-            } label: {
-                rowLabel(RowLabelConfiguration(
-                    title: "Default export format",
-                    detail: "\(vm.settings.outputVideoFormat.plainDescription). Change it per export in the editor."
-                ))
-            }
         }
+        .settingsRow()
+        .settingsCard(.init(
+            title: "Export default",
+            detail: "The editor can override this per export",
+            systemImage: "square.and.arrow.up"
+        ))
     }
 
     private var storageSection: some View {
-        Section("Storage") {
-            LabeledContent {
-                Button("Choose…") {
-                    vm.chooseOutputFolder()
-                }
-                .disabled(!canEdit)
-            } label: {
-                rowLabel(RowLabelConfiguration(
+        VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 18) {
+                SettingsRowLabel(.init(
                     title: "Save recordings to",
                     detail: vm.settings.outputDirectory.path
                 ))
+
+                Spacer(minLength: 16)
+
+                Button("Choose…") {
+                    vm.chooseOutputFolder()
+                }
+                .blitzGlassButton()
+                .pointingHandCursor()
+                .disabled(!canEdit)
             }
+            .settingsRow()
+
+            SettingsCardDivider()
 
             Toggle(
                 isOn: Binding(
@@ -143,18 +158,24 @@ struct RecordingSettingsPage: View {
                     set: { vm.setSourceFilesSaved($0) }
                 )
             ) {
-                rowLabel(RowLabelConfiguration(
+                SettingsRowLabel(.init(
                     title: "Keep editable projects",
                     detail: "Save separate screen, camera, microphone, and system-audio tracks."
                 ))
             }
             .toggleStyle(.switch)
+            .settingsRow()
             .disabled(!canEdit)
         }
+        .settingsCard(.init(
+            title: "Storage",
+            detail: "Files stay on this Mac",
+            systemImage: "internaldrive"
+        ))
     }
 
     private var transcriptionSection: some View {
-        Section("Transcription") {
+        VStack(spacing: 0) {
             Toggle(
                 isOn: Binding(
                     get: {
@@ -165,21 +186,27 @@ struct RecordingSettingsPage: View {
                     }
                 )
             ) {
-                rowLabel(RowLabelConfiguration(
+                SettingsRowLabel(.init(
                     title: "Automatic transcript and title",
                     detail: "Transcribe finished recordings and rename them from their content."
                 ))
             }
             .toggleStyle(.switch)
+            .settingsRow()
 
-            LabeledContent {
-                transcriptionModelAction
-            } label: {
-                rowLabel(RowLabelConfiguration(
+            SettingsCardDivider()
+
+            HStack(alignment: .center, spacing: 18) {
+                SettingsRowLabel(.init(
                     title: "Local speech model",
                     detail: transcriptionModelDetail
                 ))
+
+                Spacer(minLength: 16)
+
+                transcriptionModelAction
             }
+            .settingsRow()
 
             if case .downloading(let progress, let phase) = vm.transcriptionController.modelState {
                 VStack(alignment: .leading, spacing: 6) {
@@ -187,35 +214,53 @@ struct RecordingSettingsPage: View {
                         .tint(BlitzUI.mint)
                     Text(phase)
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.white.opacity(0.44))
                 }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 14)
             }
         }
+        .settingsCard(.init(
+            title: "Local transcription",
+            detail: "Audio and model files never leave this Mac",
+            systemImage: "waveform.badge.mic"
+        ))
     }
 
     @ViewBuilder
     private var transcriptionModelAction: some View {
         switch vm.transcriptionController.modelState {
         case .notDownloaded, .failed:
-            Button("Download") {
+            Button("Download model") {
                 vm.transcriptionController.downloadModels()
             }
+            .blitzGlassButton()
+            .pointingHandCursor()
         case .downloading:
-            ProgressView()
-                .controlSize(.small)
-                .frame(width: 40, height: 40)
+            Text("Downloading")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(BlitzUI.mint.opacity(0.72))
         case .ready:
-            Button("Remove") {
+            Button("Remove model") {
                 vm.transcriptionController.removeModels()
             }
+            .blitzGlassButton()
+            .pointingHandCursor()
         }
     }
 
     private var advancedSection: some View {
-        Section {
+        VStack(spacing: 0) {
             DisclosureGroup("Advanced encoding", isExpanded: $showsAdvanced) {
                 VStack(spacing: 14) {
-                    LabeledContent {
+                    HStack(alignment: .center, spacing: 18) {
+                        SettingsRowLabel(.init(
+                            title: "Video detail override",
+                            detail: qualityPresentation.bitrateOverrideDetail
+                        ))
+
+                        Spacer(minLength: 16)
+
                         HStack(spacing: 10) {
                             Slider(
                                 value: bitrateBinding,
@@ -234,16 +279,18 @@ struct RecordingSettingsPage: View {
                             }
                         }
                         .disabled(!canEdit)
-                    } label: {
-                        rowLabel(RowLabelConfiguration(
-                            title: "Video detail override",
-                            detail: qualityPresentation.bitrateOverrideDetail
-                        ))
                     }
 
-                    Divider()
+                    SettingsCardDivider()
 
-                    LabeledContent {
+                    HStack(alignment: .center, spacing: 18) {
+                        SettingsRowLabel(.init(
+                            title: "Audio quality",
+                            detail: vm.settings.audioQuality.plainDescription
+                        ))
+
+                        Spacer(minLength: 16)
+
                         Picker("", selection: audioQualityBinding) {
                             ForEach(AudioQuality.allCases, id: \.self) { quality in
                                 Text(quality.displayName)
@@ -253,17 +300,19 @@ struct RecordingSettingsPage: View {
                         .labelsHidden()
                         .frame(width: 150)
                         .disabled(!canEdit)
-                    } label: {
-                        rowLabel(RowLabelConfiguration(
-                            title: "Audio quality",
-                            detail: vm.settings.audioQuality.plainDescription
-                        ))
                     }
 
                     if vm.settings.savesSourceFiles {
-                        Divider()
+                        SettingsCardDivider()
 
-                        LabeledContent {
+                        HStack(alignment: .center, spacing: 18) {
+                            SettingsRowLabel(.init(
+                                title: "Source audio format",
+                                detail: vm.settings.sourceAudioFormat.plainDescription
+                            ))
+
+                            Spacer(minLength: 16)
+
                             Picker("", selection: sourceAudioBinding) {
                                 ForEach(SourceAudioFormat.allCases, id: \.self) { format in
                                     Text(format.displayName)
@@ -273,17 +322,20 @@ struct RecordingSettingsPage: View {
                             .labelsHidden()
                             .frame(width: 150)
                             .disabled(!canEdit)
-                        } label: {
-                            rowLabel(RowLabelConfiguration(
-                                title: "Source audio format",
-                                detail: vm.settings.sourceAudioFormat.plainDescription
-                            ))
                         }
                     }
                 }
-                .padding(.top, 10)
+                .padding(.top, 14)
             }
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.72))
+            .settingsRow()
         }
+        .settingsCard(.init(
+            title: "Advanced",
+            detail: "Encoding controls for specialist workflows",
+            systemImage: "slider.horizontal.3"
+        ))
     }
 
     private var profileSummary: String {
@@ -361,18 +413,4 @@ struct RecordingSettingsPage: View {
         )
     }
 
-    private func rowLabel(
-        _ configuration: RowLabelConfiguration
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(configuration.title)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.primary)
-            Text(configuration.detail)
-                .font(.system(size: 10.5, weight: .regular))
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .truncationMode(.middle)
-        }
-    }
 }

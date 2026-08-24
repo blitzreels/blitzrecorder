@@ -2,11 +2,6 @@ import AppKit
 import SwiftUI
 
 struct AgentsSettingsPage: View {
-    private struct RowLabelConfiguration {
-        let title: String
-        let detail: String
-    }
-
     private struct Capability: Identifiable {
         let id: String
         let title: String
@@ -45,52 +40,48 @@ struct AgentsSettingsPage: View {
     @State private var copiedValue: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                SettingsPageHeader(.init(
+                    title: "Agents",
+                    detail: "Connect local AI agents to projects, transcripts, and MP4 exports.",
+                    systemImage: "terminal",
+                    status: statusTitle
+                ))
+                .padding(.bottom, 4)
 
-            Form {
                 serverSection
                 capabilitiesSection
                 connectSection
                 securitySection
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
+            .settingsPageContent()
         }
-        .background(.background)
-    }
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Agents")
-                .font(.system(size: 26, weight: .bold))
-                .foregroundStyle(.primary)
-
-            Text("Connect local AI agents to your projects, transcripts, and MP4 exports.")
-                .font(.system(size: 12, weight: .regular))
-                .foregroundStyle(.secondary)
-
-            Text("BlitzRecorder must remain open while an agent is connected.")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(BlitzUI.mint.opacity(0.82))
-                .padding(.top, 3)
-        }
-        .padding(.horizontal, 30)
-        .padding(.top, 28)
-        .padding(.bottom, 10)
+        .background(BlitzUI.projectLibraryBackground)
+        .foregroundStyle(.white)
     }
 
     private var serverSection: some View {
-        Section("Local agent server") {
+        VStack(spacing: 0) {
             Toggle(isOn: enabledBinding) {
-                rowLabel(.init(
+                SettingsRowLabel(.init(
                     title: "Allow local agents",
                     detail: "Start the MCP server automatically while BlitzRecorder is open."
                 ))
             }
             .toggleStyle(.switch)
+            .settingsRow()
 
-            LabeledContent {
+            SettingsCardDivider()
+
+            HStack(alignment: .center, spacing: 16) {
+                SettingsRowLabel(.init(
+                    title: "Server status",
+                    detail: statusDetail
+                ))
+
+                Spacer(minLength: 16)
+
                 HStack(spacing: 8) {
                     Circle()
                         .fill(statusColor)
@@ -98,41 +89,57 @@ struct AgentsSettingsPage: View {
                     Text(statusTitle)
                         .font(.system(size: 12, weight: .semibold))
                 }
-            } label: {
-                rowLabel(.init(
-                    title: "Server status",
-                    detail: statusDetail
-                ))
             }
+            .settingsRow()
 
-            LabeledContent {
-                copyableValue(BlitzRecorderMCPServer.endpointURL.absoluteString)
-            } label: {
-                rowLabel(.init(
+            SettingsCardDivider()
+
+            HStack(alignment: .center, spacing: 16) {
+                SettingsRowLabel(.init(
                     title: "Local endpoint",
                     detail: "Streamable HTTP on this Mac only."
                 ))
-            }
 
-            LabeledContent {
+                Spacer(minLength: 16)
+
+                copyableValue(BlitzRecorderMCPServer.endpointURL.absoluteString)
+            }
+            .settingsRow()
+
+            SettingsCardDivider()
+
+            HStack(alignment: .center, spacing: 16) {
+                SettingsRowLabel(.init(
+                    title: "Connection test",
+                    detail: connectionTestDetail
+                ))
+
+                Spacer(minLength: 16)
+
                 Button(connectionTestButtonTitle) {
                     Task {
                         await mcpServer.testConnection()
                     }
                 }
+                .blitzGlassButton()
+                .pointingHandCursor()
                 .disabled(mcpServer.status != .running || isTestingConnection)
-            } label: {
-                rowLabel(.init(
-                    title: "Connection test",
-                    detail: connectionTestDetail
-                ))
             }
+            .settingsRow()
         }
+        .settingsCard(.init(
+            title: "Local agent server",
+            detail: "BlitzRecorder must remain open while an agent is connected",
+            systemImage: "antenna.radiowaves.left.and.right"
+        ))
     }
 
     private var capabilitiesSection: some View {
-        Section("What agents can do") {
-            ForEach(Self.capabilities) { capability in
+        VStack(spacing: 0) {
+            ForEach(Array(Self.capabilities.enumerated()), id: \.element.id) { index, capability in
+                if index > 0 {
+                    SettingsCardDivider()
+                }
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: capability.icon)
                         .font(.system(size: 13, weight: .semibold))
@@ -147,13 +154,18 @@ struct AgentsSettingsPage: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .padding(.vertical, 2)
+                .settingsRow()
             }
         }
+        .settingsCard(.init(
+            title: "Agent capabilities",
+            detail: "A narrow local surface for safe project work",
+            systemImage: "sparkles.rectangle.stack"
+        ))
     }
 
     private var connectSection: some View {
-        Section("Connect an agent") {
+        VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Codex")
                     .font(.system(size: 12, weight: .semibold))
@@ -162,7 +174,9 @@ struct AgentsSettingsPage: View {
                     .foregroundStyle(.secondary)
                 copyableCode(BlitzRecorderMCPServer.codexSetupCommand)
             }
-            .padding(.vertical, 3)
+            .settingsRow()
+
+            SettingsCardDivider()
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -180,12 +194,17 @@ struct AgentsSettingsPage: View {
                     .foregroundStyle(.secondary)
                 copyableCode(BlitzRecorderMCPServer.agentPluginConfiguration)
             }
-            .padding(.vertical, 3)
+            .settingsRow()
         }
+        .settingsCard(.init(
+            title: "Connect an agent",
+            detail: "Copy one setup command into your local agent",
+            systemImage: "link"
+        ))
     }
 
     private var securitySection: some View {
-        Section("Privacy and control") {
+        VStack(alignment: .leading, spacing: 0) {
             Label {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Local access only")
@@ -201,6 +220,9 @@ struct AgentsSettingsPage: View {
                 Image(systemName: "lock.shield")
                     .foregroundStyle(BlitzUI.mint)
             }
+            .settingsRow()
+
+            SettingsCardDivider()
 
             Text(
                 "Agent exports create normal project export records. "
@@ -208,7 +230,13 @@ struct AgentsSettingsPage: View {
             )
             .font(.system(size: 11))
             .foregroundStyle(.secondary)
+            .settingsRow()
         }
+        .settingsCard(.init(
+            title: "Privacy and control",
+            detail: "Local access with normal project export records",
+            systemImage: "hand.raised"
+        ))
     }
 
     private var enabledBinding: Binding<Bool> {
@@ -274,17 +302,6 @@ struct AgentsSettingsPage: View {
             "Connected at \(date.formatted(date: .omitted, time: .shortened))."
         case .failed(let message):
             message
-        }
-    }
-
-    private func rowLabel(_ configuration: RowLabelConfiguration) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(configuration.title)
-                .font(.system(size: 12, weight: .semibold))
-            Text(configuration.detail)
-                .font(.system(size: 10.5))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
