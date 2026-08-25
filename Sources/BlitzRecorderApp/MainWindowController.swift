@@ -206,8 +206,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         )
     }
 
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard currentRecordingState.allowsWindowClose else {
+            viewModel.applyMessage("Stop the recording before closing BlitzRecorder.")
+            return false
+        }
+        return true
+    }
+
     func windowWillClose(_ notification: Notification) {
-        suspendIdleCaptureResources(keepingCameraPreviewActive: true)
+        suspendIdleCaptureResources()
         viewModel.prepareForWindowClose()
     }
 
@@ -430,7 +438,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if mode.keepsIdleCaptureResourcesActive {
             resumeIdleCaptureResources()
         } else {
-            suspendIdleCaptureResources(keepingCameraPreviewActive: false)
+            suspendIdleCaptureResources()
         }
     }
 
@@ -453,23 +461,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    private func suspendIdleCaptureResources(keepingCameraPreviewActive: Bool) {
+    private func suspendIdleCaptureResources() {
         guard coordinator.state == .idle else { return }
         cancelScheduledIdlePreviewRestart()
         screenPreviewStartRevision += 1
         screenPreviewWatchdogTask?.cancel()
         screenPreviewWatchdogTask = nil
         lastStartedScreenCaptureSignature = nil
-        if !keepingCameraPreviewActive {
-            invalidateCameraPreviewStart()
-        }
+        invalidateCameraPreviewStart()
         let previousTask = studioModeCaptureResourceTask
         studioModeCaptureResourceTask = Task { [weak self] in
             _ = await previousTask?.result
             guard let self, self.coordinator.state == .idle else { return }
-            await coordinator.suspendIdleCaptureResources(
-                keepingCameraPreviewActive: keepingCameraPreviewActive
-            )
+            await coordinator.suspendIdleCaptureResources()
         }
     }
 
@@ -976,7 +980,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.suspendIdleCaptureResources(keepingCameraPreviewActive: true)
+                self?.suspendIdleCaptureResources()
             }
         })
     }

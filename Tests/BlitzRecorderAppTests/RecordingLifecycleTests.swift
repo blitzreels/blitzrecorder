@@ -9,6 +9,14 @@ import XCTest
 @testable import BlitzRecorderApp
 
 final class RecordingLifecycleTests: XCTestCase {
+    func testRecorderWindowCanOnlyCloseWhileIdle() {
+        XCTAssertTrue(RecordingState.idle.allowsWindowClose)
+        XCTAssertFalse(RecordingState.starting.allowsWindowClose)
+        XCTAssertFalse(RecordingState.recording.allowsWindowClose)
+        XCTAssertFalse(RecordingState.paused.allowsWindowClose)
+        XCTAssertFalse(RecordingState.finishing.allowsWindowClose)
+    }
+
     func testCaptureSourceRunSummaryRequiresVideoMedia() {
         let audioOnly = CaptureSourceRunSummary(completions: [
             .microphone: .wrote(URL(fileURLWithPath: "/tmp/audio.m4a"))

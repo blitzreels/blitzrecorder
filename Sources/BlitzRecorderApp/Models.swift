@@ -10,6 +10,10 @@ enum RecordingState: Equatable {
     case recording
     case paused
     case finishing
+
+    var allowsWindowClose: Bool {
+        self == .idle
+    }
 }
 
 enum CaptureLayout: String, CaseIterable {

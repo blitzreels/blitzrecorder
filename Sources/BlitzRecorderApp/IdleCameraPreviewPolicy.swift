@@ -7,6 +7,8 @@ struct IdleCameraPreviewRequest {
 
 enum IdleCameraPreviewPolicy {
     static func shouldStart(_ request: IdleCameraPreviewRequest) -> Bool {
-        request.keepsIdleCaptureResourcesActive
+        request.appIsActive
+            && request.windowIsVisible
+            && request.keepsIdleCaptureResourcesActive
     }
 }

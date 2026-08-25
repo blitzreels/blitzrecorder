@@ -313,12 +313,10 @@ final class RecorderCoordinator {
         clearActiveCaptureDevices()
     }
 
-    func suspendIdleCaptureResources(keepingCameraPreviewActive: Bool) async {
+    func suspendIdleCaptureResources() async {
         idleCaptureResourcesEnabled = false
         await stopScreenPreview()
-        if !keepingCameraPreviewActive {
-            await stopCameraPreview()
-        }
+        await stopCameraPreview()
         await stopAudioLevelMonitoring()
     }
 

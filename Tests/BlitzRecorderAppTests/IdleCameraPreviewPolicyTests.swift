@@ -11,10 +11,19 @@ final class IdleCameraPreviewPolicyTests: XCTestCase {
         )))
     }
 
-    func testIdlePreviewRemainsActiveWhileApplicationIsInactive() {
-        XCTAssertTrue(IdleCameraPreviewPolicy.shouldStart(.init(
+    func testIdlePreviewStopsWhileApplicationIsInactive() {
+        XCTAssertFalse(IdleCameraPreviewPolicy.shouldStart(.init(
             appIsActive: false,
             windowIsVisible: true,
+            keepsIdleCaptureResourcesActive: true,
+            cameraIsRunningSomewhere: false
+        )))
+    }
+
+    func testIdlePreviewStopsWhenRecorderWindowIsHidden() {
+        XCTAssertFalse(IdleCameraPreviewPolicy.shouldStart(.init(
+            appIsActive: true,
+            windowIsVisible: false,
             keepsIdleCaptureResourcesActive: true,
             cameraIsRunningSomewhere: false
         )))
