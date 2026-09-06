@@ -3,6 +3,7 @@ import CoreGraphics
 struct TargetWindowFittingPlan: Equatable {
     let screenSlot: CGRect
     let canvasFrame: CGRect
+    let unscaledWindowFrame: CGRect
     let windowFrame: CGRect
     let screenCrop: CGRect
 }
@@ -17,7 +18,7 @@ enum TargetWindowFitting {
         )
         let slot = SceneSlotGeometry.targetWindowSlot(
             in: settings.sceneLayout,
-            enabledSources: settings.enabledSources
+            enabledSources: settings.visibleSources
         )
         let frame = SceneLayoutProjection.padded(
             SceneLayoutProjection.denormalized(
@@ -77,15 +78,43 @@ enum TargetWindowFitting {
             in: canvasFrame,
             padding: canvasPadding
         )
-        let windowFrame = clamped(
-            frame: WindowZoomGeometry.sourceFrame(for: unscaledFrame, zoom: zoom),
-            in: visibleFrame
-        )
+        let windowFrame = fittedFrame(.init(
+            requested: WindowZoomGeometry.sourceFrame(for: unscaledFrame, zoom: zoom),
+            minimumSize: .zero,
+            available: visibleFrame
+        ))
         return TargetWindowFittingPlan(
             screenSlot: screenSlot,
             canvasFrame: canvasFrame,
+            unscaledWindowFrame: unscaledFrame,
             windowFrame: windowFrame,
             screenCrop: screenCrop(for: windowFrame, in: screenFrame)
+        )
+    }
+
+    struct FrameRequest {
+        let requested: CGRect
+        let minimumSize: CGSize
+        let available: CGRect
+    }
+
+    static func fittedFrame(_ request: FrameRequest) -> CGRect {
+        let desired = request.requested
+        let available = request.available
+        guard desired.width > 0, desired.height > 0,
+              available.width > 0, available.height > 0 else { return available }
+        let minimumScale = max(
+            1,
+            request.minimumSize.width / desired.width,
+            request.minimumSize.height / desired.height
+        )
+        let maximumScale = min(available.width / desired.width, available.height / desired.height)
+        let scale = min(minimumScale, maximumScale)
+        let width = max(request.minimumSize.width, desired.width * scale)
+        let height = max(request.minimumSize.height, desired.height * scale)
+        return clamped(
+            frame: CGRect(x: desired.midX - width / 2, y: desired.midY - height / 2, width: width, height: height),
+            in: available
         )
     }
 

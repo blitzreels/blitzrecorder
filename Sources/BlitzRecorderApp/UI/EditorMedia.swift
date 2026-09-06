@@ -32,10 +32,10 @@ struct EditorAsset: Identifiable, Equatable {
     var systemImage: String {
         switch kind {
         case .output: return "film"
-        case .screen: return "display"
-        case .camera: return "video"
-        case .microphone: return "mic"
-        case .systemAudio: return "speaker.wave.2"
+        case .screen: return BlitzSymbols.screen
+        case .camera: return BlitzSymbols.camera
+        case .microphone: return BlitzSymbols.microphone
+        case .systemAudio: return BlitzSymbols.systemAudio
         case .other: return "doc"
         }
     }

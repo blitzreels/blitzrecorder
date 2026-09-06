@@ -96,6 +96,16 @@ The running Mac app exposes a Streamable HTTP MCP server on the local machine:
 http://127.0.0.1:18473/mcp
 ```
 
+It also serves a local WebMCP workspace while BlitzRecorder is open:
+
+```txt
+http://127.0.0.1:18473/webmcp
+```
+
+Open **Settings > Agents > Open workspace**, then open that page in ChatGPT's built-in browser or a
+compatible WebMCP browser. The page registers the same project, transcript, and export tools exposed by
+the MCP server. The page and API remain bound to `127.0.0.1`; recordings are not uploaded.
+
 Open **Settings > Agents** to enable or disable the server, check its status, test the connection,
 and copy setup details for Codex or an Agent Plugin 1.0-compatible client.
 

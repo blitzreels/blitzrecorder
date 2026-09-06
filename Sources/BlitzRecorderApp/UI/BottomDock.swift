@@ -69,20 +69,22 @@ private struct RecordingActionRow: View {
                     .frame(width: 40, height: 40)
                 SessionStatusText(title: vm.sessionProgressTitle, detail: vm.sessionProgressDetail)
             case .recording, .paused:
-                PauseButton(vm: vm)
-                TransportDivider()
-                ElapsedTimeText(isPaused: vm.state == .paused, elapsed: vm.formattedElapsed)
-                if vm.settings.visibleSources.contains(.screen) {
-                    TransportDivider()
-                    DockActionButton(
-                        title: "Screen",
-                        systemImage: "rectangle.on.rectangle",
-                        help: "Change the recorded display or window without stopping"
-                    ) {
-                        vm.switchRecordedScreenContent()
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        transportStatus
+                        screenSwitchButton
+                        RecordButton(vm: vm)
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+
+                    VStack(spacing: 8) {
+                        HStack(spacing: 8) {
+                            transportStatus
+                            RecordButton(vm: vm)
+                        }
+                        screenSwitchButton
                     }
                 }
-                RecordButton(vm: vm)
             case .finishing:
                 FinishingProgressStatus(
                     title: vm.sessionProgressTitle,
@@ -92,18 +94,28 @@ private struct RecordingActionRow: View {
                 )
             }
         }
-        .padding(6)
-        .background {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(.black.opacity(0.80))
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(.ultraThinMaterial)
+        .frame(minHeight: 44)
+    }
+
+    private var transportStatus: some View {
+        HStack(spacing: 8) {
+            PauseButton(vm: vm)
+            TransportDivider()
+            ElapsedTimeText(isPaused: vm.state == .paused, elapsed: vm.formattedElapsed)
         }
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(.white.opacity(0.12), lineWidth: 1)
+    }
+
+    @ViewBuilder
+    private var screenSwitchButton: some View {
+        if vm.settings.visibleSources.contains(.screen) {
+            DockActionButton(
+                title: "Screen",
+                systemImage: BlitzSymbols.screen,
+                help: "Change the recorded display or window without stopping"
+            ) {
+                vm.switchRecordedScreenContent()
+            }
         }
-        .shadow(color: .black.opacity(0.38), radius: 22, y: 10)
     }
 
     private var savedExportURL: URL? {
@@ -124,34 +136,6 @@ private struct TransportDivider: View {
     }
 }
 
-private struct RecordingSettingsShortcut: View {
-    @Bindable var vm: RecorderViewModel
-    @State private var hovering = false
-
-    var body: some View {
-        Button {
-            vm.onPresentSettings?(.recording)
-        } label: {
-            Image(systemName: "gearshape")
-                .font(.system(size: 14, weight: .semibold))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.white.opacity(hovering ? 0.92 : 0.58))
-                .frame(width: 40, height: 40)
-                .background(hovering ? BlitzUI.controlFill : .clear, in: .circle)
-                .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: hovering)
-        .pointingHandCursor()
-        .help("Recording settings — \(settingsSummary)")
-    }
-
-    private var settingsSummary: String {
-        "\(vm.settings.outputResolution.displayName) · \(vm.settings.framesPerSecond) FPS"
-    }
-}
-
 private struct DockActionButton: View {
     let title: String
     let systemImage: String
@@ -161,7 +145,7 @@ private struct DockActionButton: View {
     var body: some View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
-                .font(.system(size: 10, weight: .bold))
+                .font(.system(size: 11, weight: .medium))
                 .fixedSize()
                 .padding(.horizontal, 9)
                 .padding(.vertical, 6)
@@ -197,13 +181,14 @@ private struct ProjectReadyChip: View {
             .frame(height: 40)
             .background(
                 BlitzUI.mint.opacity(hovering ? 0.18 : 0.11),
-                in: .rect(cornerRadius: 12)
+                in: .rect(cornerRadius: BlitzUI.controlRadius)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(BlitzUI.mint.opacity(hovering ? 0.42 : 0.24), lineWidth: 1)
+                RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous)
+                    .strokeBorder(BlitzUI.mint.opacity(hovering ? 0.42 : 0.24), lineWidth: 1)
+                    .allowsHitTesting(false)
             }
-            .contentShape(.rect(cornerRadius: 12))
+            .contentShape(.rect(cornerRadius: BlitzUI.controlRadius))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -374,7 +359,6 @@ private struct ElapsedTimeText: View {
             Circle()
                 .fill(isPaused ? BlitzUI.warning : BlitzUI.recordRed)
                 .frame(width: 7, height: 7)
-                .shadow(color: (isPaused ? BlitzUI.warning : BlitzUI.recordRed).opacity(0.45), radius: 5)
 
             Text(elapsed)
                 .font(.system(size: 16, weight: .semibold, design: .monospaced))
@@ -661,20 +645,21 @@ private struct PauseButton: View {
             vm.togglePause()
         } label: {
             ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous)
                     .fill(.white.opacity(hovering ? 0.14 : 0.08))
                 Image(systemName: symbol)
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white.opacity(0.92))
             }
             .frame(width: 44, height: 44)
-            .contentShape(.rect(cornerRadius: 12))
+            .contentShape(.rect(cornerRadius: BlitzUI.controlRadius))
         }
         .buttonStyle(RecordButtonPressStyle())
         .disabled(!isEnabled)
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
         .pointingHandCursor()
+        .accessibilityLabel(helpText)
         .help(helpText)
     }
 
@@ -694,7 +679,7 @@ private struct PauseButton: View {
 private struct RecordButtonPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .opacity(configuration.isPressed ? 0.72 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
@@ -711,17 +696,18 @@ private struct RecordButton: View {
             HStack(spacing: 9) {
                 recordGlyph
                 Text(actionTitle)
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.96))
             }
             .padding(.horizontal, 16)
             .frame(minWidth: vm.state == .idle ? 112 : 94, minHeight: 44)
-            .background(buttonFill, in: .rect(cornerRadius: 12))
+            .background(buttonFill, in: .rect(cornerRadius: BlitzUI.controlRadius))
             .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous)
                     .strokeBorder(BlitzUI.recordRed.opacity(isHovering ? 0.65 : 0.38), lineWidth: 1)
+                    .allowsHitTesting(false)
             }
-            .contentShape(.rect(cornerRadius: 12))
+            .contentShape(.rect(cornerRadius: BlitzUI.controlRadius))
         }
         .buttonStyle(RecordButtonPressStyle())
         .opacity(dimmed ? 0.5 : 1)
@@ -738,7 +724,6 @@ private struct RecordButton: View {
             Circle()
                 .fill(BlitzUI.recordRed)
                 .frame(width: 12, height: 12)
-                .shadow(color: BlitzUI.recordRed.opacity(0.55), radius: 5)
         case .recording, .paused:
             RoundedRectangle(cornerRadius: 3, style: .continuous)
                 .fill(.white.opacity(0.96))
@@ -806,6 +791,26 @@ private func bottomDockPreviewModel(warning: String? = nil) -> RecorderViewModel
     vm.lastExportedSourceTakeURL = URL(fileURLWithPath: "/Volumes/harddrive/recordings/sources/video-exa")
     vm.lastExportWarning = warning
     return vm
+}
+
+#Preview("Recording controls - compact") {
+    let vm = bottomDockPreviewModel()
+    vm.state = .recording
+    return RecordingActionRow(vm: vm)
+        .frame(width: 320)
+        .padding(16)
+        .background(BlitzUI.canvasBackground)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("Paused controls - compact") {
+    let vm = bottomDockPreviewModel()
+    vm.state = .paused
+    return RecordingActionRow(vm: vm)
+        .frame(width: 320)
+        .padding(16)
+        .background(BlitzUI.canvasBackground)
+        .preferredColorScheme(.dark)
 }
 
 #Preview("Dock — recording saved") {

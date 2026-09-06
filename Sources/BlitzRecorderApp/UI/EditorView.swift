@@ -8,30 +8,7 @@ import UniformTypeIdentifiers
 private struct EditorToolbarPressButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .opacity(configuration.isPressed ? 0.82 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-    }
-}
-
-private struct EditorExportOptionButtonStyle: ButtonStyle {
-    let isSelected: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(isSelected ? BlitzUI.mint : Color.white.opacity(0.68))
-            .background(
-                isSelected ? BlitzUI.mint.opacity(0.13) : Color.white.opacity(configuration.isPressed ? 0.08 : 0.045),
-                in: .rect(cornerRadius: 8)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(
-                        isSelected ? BlitzUI.mint.opacity(0.42) : Color.white.opacity(0.055),
-                        lineWidth: 1
-                    )
-            }
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
@@ -43,8 +20,8 @@ private enum EditorInspectorTab: String, CaseIterable {
 
     var systemImage: String {
         switch self {
-        case .layout: return "rectangle.3.group"
-        case .canvas: return "paintpalette"
+        case .layout: return BlitzSymbols.layout
+        case .canvas: return BlitzSymbols.canvas
         case .audio: return "waveform"
         }
     }
@@ -290,18 +267,6 @@ struct EditorView: View {
         }
     }
 
-    private var resolutionLabel: String {
-        guard let project,
-              let resolution = OutputResolution(rawValue: project.settings.outputResolution) else {
-            return "—"
-        }
-        if let captureLayout {
-            let size = resolution.dimensions(for: captureLayout)
-            return "\(size.width) × \(size.height)"
-        }
-        return resolution.displayName
-    }
-
     private var segmentBoundaries: [Double] {
         (project?.sceneEvents.map(\.time) ?? []).sorted()
     }
@@ -498,16 +463,12 @@ struct EditorView: View {
                 Image(systemName: vm.state == .finishing ? "hourglass" : "square.and.arrow.up")
                     .font(.system(size: 12.5, weight: .semibold))
                 Text(vm.state == .finishing ? "Exporting" : "Export")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: 13, weight: .semibold))
             }
-            .foregroundStyle(.black.opacity(0.82))
-            .padding(.leading, 15)
-            .padding(.trailing, 17)
-            .frame(height: 40)
-            .background(BlitzUI.mint, in: .rect(cornerRadius: 10))
-            .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+            .padding(.horizontal, 8)
+            .frame(height: 28)
         }
-        .buttonStyle(EditorToolbarPressButtonStyle())
+        .blitzProminentGlassButton()
         .pointingHandCursor()
         .disabled(project == nil || vm.state != .idle)
         .opacity(project == nil ? 0.45 : 1)
@@ -520,14 +481,13 @@ struct EditorView: View {
     private var exportPopover: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 10) {
-                Image(systemName: "square.and.arrow.up.fill")
-                    .font(.system(size: 14, weight: .bold))
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(BlitzUI.mint)
                     .frame(width: 32, height: 32)
-                    .background(BlitzUI.mint.opacity(0.11), in: .rect(cornerRadius: 9))
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Export video")
-                        .font(.system(size: 15, weight: .bold))
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(.white.opacity(0.95))
                     Text("Compress the final composed video. Recorded sources stay unchanged.")
                         .font(.system(size: 11, weight: .medium))
@@ -609,7 +569,7 @@ struct EditorView: View {
                 }
                 .padding(12)
             }
-            .background(Color.black.opacity(0.16), in: .rect(cornerRadius: 12))
+            .background(BlitzUI.cardFill, in: .rect(cornerRadius: BlitzUI.cardRadius))
             .overlay {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(Color.white.opacity(0.075), lineWidth: 1)
@@ -631,9 +591,8 @@ struct EditorView: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("READY TO EXPORT")
-                    .font(.system(size: 9, weight: .heavy))
-                    .tracking(0.6)
+                Text("Ready to export")
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.white.opacity(0.36))
                 Text(exportSummary)
                     .font(.system(size: 11, weight: .semibold))
@@ -646,15 +605,13 @@ struct EditorView: View {
                 exportVideo()
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "square.and.arrow.up.fill")
+                    Image(systemName: "square.and.arrow.up")
                     Text("Export video")
                 }
-                .font(.system(size: 12.5, weight: .bold))
-                .foregroundStyle(.black.opacity(0.84))
-                .frame(maxWidth: .infinity, minHeight: 42)
-                .background(BlitzUI.mint, in: .rect(cornerRadius: 9))
+                .font(.system(size: 12.5, weight: .medium))
+                .frame(maxWidth: .infinity, minHeight: 30)
             }
-            .buttonStyle(.plain)
+            .blitzProminentGlassButton()
             .pointingHandCursor()
             .help("Save to \(vm.settings.outputDirectory.path)")
         }
@@ -687,10 +644,10 @@ struct EditorView: View {
             persistEditorState("Change Export Format")
         } label: {
             Text(format.displayName)
-                .font(.system(size: 11, weight: .bold))
+                .font(.system(size: 11, weight: .medium))
                 .frame(maxWidth: .infinity, minHeight: 32)
         }
-        .buttonStyle(EditorExportOptionButtonStyle(isSelected: selected))
+        .buttonStyle(BlitzSelectionButtonStyle(isSelected: selected))
         .pointingHandCursor()
     }
 
@@ -708,12 +665,12 @@ struct EditorView: View {
             persistEditorState("Change Export Preset")
         } label: {
             Text(preset.displayName)
-                .font(.system(size: 10.5, weight: .bold))
+                .font(.system(size: 10.5, weight: .medium))
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
                 .frame(maxWidth: .infinity, minHeight: 32)
         }
-        .buttonStyle(EditorExportOptionButtonStyle(isSelected: selected))
+        .buttonStyle(BlitzSelectionButtonStyle(isSelected: selected))
         .pointingHandCursor()
     }
 
@@ -732,14 +689,14 @@ struct EditorView: View {
             HStack(spacing: 4) {
                 if locked {
                     Image(systemName: "lock.fill")
-                        .font(.system(size: 8, weight: .bold))
+                        .font(.system(size: 8, weight: .medium))
                 }
                 Text(resolution.displayName)
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: 11, weight: .medium))
             }
             .frame(maxWidth: .infinity, minHeight: 32)
         }
-        .buttonStyle(EditorExportOptionButtonStyle(isSelected: selected))
+        .buttonStyle(BlitzSelectionButtonStyle(isSelected: selected))
         .pointingHandCursor()
     }
 
@@ -751,10 +708,10 @@ struct EditorView: View {
             persistEditorState("Change Export Frame Rate")
         } label: {
             Text("\(framesPerSecond) fps")
-                .font(.system(size: 11, weight: .bold))
+                .font(.system(size: 11, weight: .medium))
                 .frame(maxWidth: .infinity, minHeight: 32)
         }
-        .buttonStyle(EditorExportOptionButtonStyle(isSelected: selected))
+        .buttonStyle(BlitzSelectionButtonStyle(isSelected: selected))
         .pointingHandCursor()
     }
 
@@ -766,10 +723,10 @@ struct EditorView: View {
             persistEditorState("Change Export Quality")
         } label: {
             Text(quality.displayName)
-                .font(.system(size: 11, weight: .bold))
+                .font(.system(size: 11, weight: .medium))
                 .frame(maxWidth: .infinity, minHeight: 32)
         }
-        .buttonStyle(EditorExportOptionButtonStyle(isSelected: selected))
+        .buttonStyle(BlitzSelectionButtonStyle(isSelected: selected))
         .pointingHandCursor()
     }
 
@@ -893,7 +850,7 @@ struct EditorView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Button("Reveal in Finder") { vm.revealLastExportOrSource() }
-                .buttonStyle(.borderedProminent)
+                .blitzProminentGlassButton()
                 .controlSize(.small)
                 .tint(BlitzUI.mint)
             Button {
@@ -931,7 +888,7 @@ struct EditorView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Button("Try again") { exportVideo() }
-                .buttonStyle(.borderedProminent)
+                .blitzProminentGlassButton()
                 .controlSize(.small)
                 .tint(BlitzUI.mint)
             Button {
@@ -1073,10 +1030,7 @@ struct EditorView: View {
     private var displayedCanvasLayers: [EditorCanvasLayer] {
         let frames: [(kind: SceneLayerKind, frame: CGRect)]
         let editable: Bool
-        let draftScene = EditorCanvasOverlaySceneResolver.scene(request: .init(
-            layoutDraftScene: layoutDraft?.scene,
-            canvasDraftScene: canvasSceneDraft
-        ))
+        let draftScene = layoutDraft?.scene ?? canvasSceneDraft
         if let draftScene {
             frames = playback.layerFrames(for: draftScene)
             editable = true
@@ -1358,28 +1312,19 @@ struct EditorView: View {
     }
 
     private var inspectorTabBar: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 2) {
             ForEach(EditorInspectorTab.allCases, id: \.self) { tab in
-                Button {
-                    inspectorTab = tab
-                } label: {
-                    VStack(spacing: 7) {
-                        Label(tab.rawValue, systemImage: tab.systemImage)
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(inspectorTab == tab ? .white.opacity(0.94) : .white.opacity(0.48))
-                        Rectangle()
-                            .fill(inspectorTab == tab ? BlitzUI.mint : Color.clear)
-                            .frame(height: 2)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .pointingHandCursor()
+                BlitzTab(configuration: .init(
+                    title: tab.rawValue,
+                    symbolName: tab.systemImage,
+                    isSelected: inspectorTab == tab,
+                    expands: true,
+                    action: { inspectorTab = tab }
+                ))
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.top, 12)
+        .blitzTabGroup()
+        .padding(10)
     }
 
     @ViewBuilder
@@ -1387,7 +1332,7 @@ struct EditorView: View {
         if let scene = currentEventScene, captureLayout != nil {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
-                    BlitzUI.sectionLabel("Scene", icon: "rectangle.3.group")
+                    BlitzUI.sectionLabel("Scene", icon: BlitzSymbols.scenes)
                     Spacer(minLength: 0)
                     Text(sceneEvents.count > 1 ? "Segment \(currentEventIndex + 1)" : "Full video")
                         .font(.system(size: 9.5, weight: .bold))
@@ -1430,17 +1375,7 @@ struct EditorView: View {
                     .foregroundStyle(.white.opacity(0.42))
             }
 
-            CameraInspectorRow(title: "Image") {
-                Picker("Image", selection: segmentSceneBinding(\.screenContentMode, fallback: .fill)) {
-                    ForEach(CameraContentMode.allCases, id: \.self) { mode in
-                        Text(mode.displayName).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .controlSize(.small)
-            }
-            .help("Fill crops the screen to the frame. Fit shows the whole recording with background around it.")
+            SourceFramingPicker(selection: segmentSceneBinding(\.screenContentMode, fallback: .fill))
         }
     }
 
@@ -1784,7 +1719,7 @@ struct EditorView: View {
         if let scene = displayedCanvasScene, scene.renderedSources.contains(.screen) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
-                    BlitzUI.sectionLabel("Screen", icon: "display")
+                    BlitzUI.sectionLabel("Screen", icon: BlitzSymbols.screen)
                     Spacer(minLength: 0)
                     Text("\(Int((screenCornerRadiusValue * 100).rounded()))% corners")
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
@@ -1905,7 +1840,7 @@ struct EditorView: View {
     private var canvasControlsSection: some View {
         if let scene = displayedCanvasScene {
             VStack(alignment: .leading, spacing: 10) {
-                BlitzUI.sectionLabel("Background", icon: "paintpalette")
+                BlitzUI.sectionLabel("Background", icon: BlitzSymbols.canvas)
 
                 LazyVGrid(columns: scenePresetColumns, spacing: 8) {
                     ForEach(CanvasBackgroundStyle.allCases, id: \.self) { style in
@@ -1914,7 +1849,7 @@ struct EditorView: View {
                             setCanvasBackground(style)
                         } label: {
                             VStack(alignment: .leading, spacing: 7) {
-                                EditorCanvasBackgroundView(style: style)
+                                Color(cgColor: style.appearance.solidCGColor)
                                     .frame(height: 38)
                                     .clipShape(.rect(cornerRadius: 6))
                                 Text(style.displayName)
@@ -2079,43 +2014,6 @@ struct EditorView: View {
         return false
     }
 
-    private var detailsSection: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            BlitzUI.sectionLabel("Details", icon: "info.circle")
-
-            VStack(alignment: .leading, spacing: 7) {
-                detailRow("Name", project?.displayTitle ?? "—")
-                detailRow("Saved", project?.takeDirectoryPath ?? "—", monospaced: true)
-                detailRow("Resolution", resolutionLabel)
-                detailRow("Ratio", ratioLabel)
-                detailRow("Source FPS", "\(project?.settings.framesPerSecond ?? 0)")
-                if let export = project?.exports.last {
-                    detailRow("Last export", "\(export.framesPerSecond) fps · \(export.resolution)")
-                }
-                detailRow("Duration", timelineDuration > 0 ? formatTime(timelineDuration) : "—")
-                detailRow("Sources", "\(project?.sources.filter(\.exists).count ?? 0)")
-            }
-            .padding(10)
-            .background(BlitzUI.quietFill, in: .rect(cornerRadius: 9))
-        }
-    }
-
-    private func detailRow(_ label: String, _ value: String, monospaced: Bool = false) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(label)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.45))
-                .frame(width: 66, alignment: .leading)
-            Text(value)
-                .font(.system(size: monospaced ? 9.5 : 11, weight: .semibold, design: monospaced ? .monospaced : .default))
-                .foregroundStyle(.white.opacity(0.85))
-                .lineLimit(monospaced ? 2 : 1)
-                .truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .help(value)
-        }
-    }
-
     private func segmentSection(index: Int) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             BlitzUI.sectionLabel("Segment \(index + 1)", icon: "rectangle.on.rectangle")
@@ -2152,9 +2050,7 @@ struct EditorView: View {
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 7) {
-                Image(systemName: correction.symbolName)
-                    .font(.system(size: 11, weight: .semibold))
-                    .symbolRenderingMode(.hierarchical)
+                BlitzSymbol(configuration: .init(name: correction.symbolName, size: 16))
                     .foregroundStyle(isSelected ? BlitzUI.mint : .white.opacity(0.56))
                     .frame(width: 16, height: 16)
                 Text(correctionTitle(correction))
@@ -2193,53 +2089,6 @@ struct EditorView: View {
         case (true, false): return .screenOnly
         case (false, true): return .cameraOnly
         default: return .screenAndCamera
-        }
-    }
-
-    private func assetSection(_ asset: EditorAsset) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            BlitzUI.sectionLabel(asset.title, icon: asset.systemImage)
-
-            VStack(alignment: .leading, spacing: 7) {
-                detailRow("File", asset.url.lastPathComponent, monospaced: true)
-                detailRow("Size", asset.exists ? (library.fileSizes[asset.id] ?? "—") : "Missing")
-                detailRow("Length", library.durations[asset.id].map(formatTime) ?? "—")
-            }
-            .padding(10)
-            .background(BlitzUI.quietFill, in: .rect(cornerRadius: 9))
-
-            HStack(spacing: 7) {
-                if toggleableAssetIDs.contains(asset.id) {
-                    let isOff = hiddenAssetIDs.contains(asset.id) || mutedAssetIDs.contains(asset.id)
-                    Button {
-                        toggleTrack(asset)
-                    } label: {
-                        Label(
-                            asset.isVideo ? (isOff ? "Show" : "Hide") : (isOff ? "Unmute" : "Mute"),
-                            systemImage: asset.isVideo
-                                ? (isOff ? "eye" : "eye.slash")
-                                : (isOff ? "speaker.wave.2" : "speaker.slash")
-                        )
-                        .font(.system(size: 11, weight: .semibold))
-                    }
-                    .buttonStyle(.bordered)
-                    .pointingHandCursor()
-                }
-                if asset.exists {
-                    Button {
-                        NSWorkspace.shared.activateFileViewerSelecting([asset.url])
-                    } label: {
-                        Label("Show in Finder", systemImage: "folder")
-                            .font(.system(size: 11, weight: .semibold))
-                    }
-                    .buttonStyle(.bordered)
-                    .pointingHandCursor()
-                }
-            }
-
-            if asset.kind == .camera, currentEventScene != nil {
-                cameraControlsSection
-            }
         }
     }
 
@@ -2876,83 +2725,6 @@ private struct EditorCanvasLayerOverlay: View {
     }
 }
 
-private struct EditorCanvasSourcePreviewOverlay: View {
-    let scene: RecordingScene
-    let assetsByID: [String: EditorAsset]
-    let previewImages: [String: CGImage]
-    let library: EditorMediaLibrary
-
-    var body: some View {
-        GeometryReader { proxy in
-            let canvas = CGRect(origin: .zero, size: proxy.size)
-            let geometry = SceneRenderGeometry(canvas: canvas, scene: scene, origin: .upperLeft)
-
-            EditorCanvasBackgroundView(style: scene.canvasBackgroundStyle)
-                .frame(width: proxy.size.width, height: proxy.size.height)
-
-            ForEach(geometry.activeLayerOrder, id: \.self) { kind in
-                if let asset = asset(for: kind), let image = image(for: asset) {
-                    sourceView(kind: kind, image: image, geometry: geometry)
-                }
-            }
-        }
-    }
-
-    private func asset(for kind: SceneLayerKind) -> EditorAsset? {
-        switch kind {
-        case .screen:
-            return assetsByID.values.first { $0.kind == .screen }
-        case .camera:
-            return assetsByID.values.first { $0.kind == .camera }
-        }
-    }
-
-    private func image(for asset: EditorAsset) -> CGImage? {
-        previewImages[asset.id] ?? library.posters[asset.id]
-    }
-
-    private func sourceView(kind: SceneLayerKind, image: CGImage, geometry: SceneRenderGeometry) -> some View {
-        let placement = geometry.videoPlacement(for: kind)
-        let target = placement.targetRect
-        let aspectRatio = CGFloat(image.width) / max(1, CGFloat(image.height))
-        let sourceFrame = placement.sourceFrame(sourceAspectRatio: aspectRatio)
-        let radius = geometry.sourceCornerRadius(for: kind)
-        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-
-        return ZStack(alignment: .topLeading) {
-            Image(decorative: image, scale: 1)
-                .resizable()
-                .frame(width: sourceFrame.width, height: sourceFrame.height)
-                .offset(x: sourceFrame.minX - target.minX, y: sourceFrame.minY - target.minY)
-        }
-        .frame(width: target.width, height: target.height, alignment: .topLeading)
-        .clipShape(shape)
-        .shadow(
-            color: sourceShadowEnabled(for: kind) ? .black.opacity(0.38) : .clear,
-            radius: sourceShadowEnabled(for: kind) ? min(18, max(5, min(target.width, target.height) * 0.04)) : 0,
-            y: sourceShadowEnabled(for: kind) ? 5 : 0
-        )
-        .offset(x: target.minX, y: target.minY)
-    }
-
-    private func sourceShadowEnabled(for kind: SceneLayerKind) -> Bool {
-        switch kind {
-        case .screen:
-            return scene.screenShadowEnabled
-        case .camera:
-            return scene.cameraShadowEnabled
-        }
-    }
-}
-
-private struct EditorCanvasBackgroundView: View {
-    let style: CanvasBackgroundStyle
-
-    var body: some View {
-        Color(cgColor: style.appearance.solidCGColor)
-    }
-}
-
 private struct EditorCanvasLayerView: View {
     let layer: EditorCanvasLayer
     let isHovering: Bool
@@ -3256,260 +3028,6 @@ private struct EditorCanvasInteractionView: NSViewRepresentable {
             hoveredLayerID = id
             onHover?(id)
         }
-    }
-}
-
-private struct EditorWaveformBadge: View {
-    let samples: [Float]
-    let tint: Color
-
-    var body: some View {
-        Canvas { context, size in
-            let values = samples.isEmpty ? Array(repeating: Float(0.25), count: 48) : samples
-            let barCount = min(values.count, 64)
-            let stride = max(1, values.count / barCount)
-            let slot = size.width / CGFloat(barCount)
-            let barWidth = max(1, slot - 1)
-            let centerY = size.height / 2
-            for index in 0..<barCount {
-                let value = CGFloat(values[min(index * stride, values.count - 1)])
-                let height = max(1.5, value * size.height)
-                let rect = CGRect(x: CGFloat(index) * slot, y: centerY - height / 2, width: barWidth, height: height)
-                context.fill(
-                    Path(roundedRect: rect, cornerRadius: barWidth / 2),
-                    with: .color(tint.opacity(samples.isEmpty ? 0.3 : 0.85))
-                )
-            }
-        }
-    }
-}
-
-private struct EditorPlayerView: NSViewRepresentable {
-    let player: AVPlayer
-    let redrawID: Int
-
-    func makeNSView(context: Context) -> EditorPlayerLayerHostView {
-        let view = EditorPlayerLayerHostView()
-        view.player = player
-        view.redrawID = redrawID
-        return view
-    }
-
-    func updateNSView(_ nsView: EditorPlayerLayerHostView, context: Context) {
-        if nsView.player !== player {
-            nsView.player = player
-        }
-        if nsView.redrawID != redrawID {
-            nsView.redrawID = redrawID
-            nsView.invalidateFallbackFrame()
-        }
-    }
-
-    static func dismantleNSView(_ nsView: EditorPlayerLayerHostView, coordinator: ()) {
-        nsView.player = nil
-    }
-}
-
-private final class EditorPlayerLayerHostView: NSView {
-    private let playerLayer = AVPlayerLayer()
-    private let fallbackLayer = CALayer()
-    private let ciContext = CIContext()
-    private var videoOutput: AVPlayerItemVideoOutput?
-    private weak var attachedFallbackItem: AVPlayerItem?
-    private var currentItemObservation: NSKeyValueObservation?
-    private var videoCompositionObservation: NSKeyValueObservation?
-    private var fallbackTimer: Timer?
-    private var fallbackImageTask: Task<Void, Never>?
-    private var fallbackNeedsRerender = false
-    private var fallbackGeneration = 0
-    private var fallbackImageTime: CMTime?
-    var redrawID = 0
-
-    var player: AVPlayer? {
-        get { playerLayer.player }
-        set {
-            guard playerLayer.player !== newValue else { return }
-            currentItemObservation = nil
-            playerLayer.player = newValue
-            attachFallbackOutput(to: newValue?.currentItem)
-            currentItemObservation = newValue?.observe(\.currentItem, options: [.new]) { [weak self] _, change in
-                Task { @MainActor in
-                    self?.attachFallbackOutput(to: change.newValue ?? nil)
-                }
-            }
-            updateFallbackTimer()
-        }
-    }
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layerContentsRedrawPolicy = .onSetNeedsDisplay
-        playerLayer.videoGravity = .resizeAspect
-        playerLayer.backgroundColor = NSColor.black.cgColor
-        fallbackLayer.contentsGravity = .resizeAspect
-        fallbackLayer.backgroundColor = NSColor.black.cgColor
-        fallbackLayer.isHidden = true
-        playerLayer.addSublayer(fallbackLayer)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        nil
-    }
-
-    override var acceptsFirstResponder: Bool { false }
-
-    override func makeBackingLayer() -> CALayer {
-        playerLayer
-    }
-
-    override func layout() {
-        super.layout()
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        fallbackLayer.frame = bounds
-        CATransaction.commit()
-    }
-
-    deinit {
-        fallbackTimer?.invalidate()
-        fallbackImageTask?.cancel()
-    }
-
-    private func attachFallbackOutput(to item: AVPlayerItem?) {
-        fallbackGeneration += 1
-        fallbackImageTask?.cancel()
-        fallbackImageTask = nil
-        fallbackNeedsRerender = false
-        fallbackImageTime = nil
-        videoCompositionObservation = nil
-        if let videoOutput {
-            attachedFallbackItem?.remove(videoOutput)
-        }
-        attachedFallbackItem = nil
-        guard let item else {
-            videoOutput = nil
-            fallbackLayer.contents = nil
-            fallbackLayer.isHidden = true
-            updateFallbackTimer()
-            return
-        }
-        let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
-        ])
-        item.add(output)
-        videoOutput = output
-        attachedFallbackItem = item
-        videoCompositionObservation = item.observe(\.videoComposition, options: [.new]) { [weak self] _, _ in
-            Task { @MainActor in
-                self?.invalidateFallbackFrame()
-            }
-        }
-        updateFallbackTimer()
-        renderFallbackFrame()
-    }
-
-    func invalidateFallbackFrame() {
-        fallbackGeneration += 1
-        fallbackImageTask?.cancel()
-        fallbackImageTask = nil
-        fallbackNeedsRerender = false
-        fallbackImageTime = nil
-        renderFallbackFrame()
-    }
-
-    private func updateFallbackTimer() {
-        fallbackTimer?.invalidate()
-        guard playerLayer.player != nil else {
-            fallbackTimer = nil
-            return
-        }
-        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
-            self?.renderFallbackFrame()
-        }
-        fallbackTimer = timer
-        RunLoop.main.add(timer, forMode: .common)
-    }
-
-    private func renderFallbackFrame() {
-        guard let player = playerLayer.player,
-              let output = videoOutput else { return }
-        let itemTime = player.rate != 0
-            ? output.itemTime(forHostTime: CACurrentMediaTime())
-            : player.currentTime()
-        let pixelBuffer = output.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: nil)
-        switch EditorFallbackFramePolicy.decision(isPlaying: player.rate != 0, hasPixelBuffer: pixelBuffer != nil) {
-        case .renderPixelBuffer:
-            break
-        case .renderStillFrame:
-            renderFallbackStillFrame(from: player.currentItem, at: itemTime)
-            return
-        case .hideFallback:
-            fallbackLayer.isHidden = true
-            return
-        }
-        guard let pixelBuffer else { return }
-        let image = CIImage(cvPixelBuffer: pixelBuffer)
-        guard let cgImage = ciContext.createCGImage(image, from: image.extent) else { return }
-        fallbackLayer.contents = cgImage
-        fallbackLayer.isHidden = false
-    }
-
-    private func renderFallbackStillFrame(from item: AVPlayerItem?, at time: CMTime) {
-        guard let item else { return }
-        guard fallbackImageTask == nil else {
-            fallbackNeedsRerender = true
-            return
-        }
-        let requestedTime = time.seconds.isFinite && time.seconds >= 0 ? time : .zero
-        if let fallbackImageTime,
-           fallbackLayer.contents != nil,
-           abs(fallbackImageTime.seconds - requestedTime.seconds) < 0.03 {
-            return
-        }
-        fallbackImageTime = requestedTime
-        let generation = fallbackGeneration
-        let asset = item.asset
-        let videoComposition = item.videoComposition
-        fallbackImageTask = Task { [weak self] in
-            let generator = AVAssetImageGenerator(asset: asset)
-            generator.videoComposition = videoComposition
-            generator.requestedTimeToleranceBefore = CMTime(value: 1, timescale: 30)
-            generator.requestedTimeToleranceAfter = CMTime(value: 1, timescale: 30)
-            let image = try? await generator.image(at: requestedTime).image
-            await MainActor.run {
-                guard let self else { return }
-                self.fallbackImageTask = nil
-                if generation == self.fallbackGeneration, let image {
-                    self.fallbackLayer.contents = image
-                    self.fallbackLayer.isHidden = false
-                }
-                if self.fallbackNeedsRerender {
-                    self.fallbackNeedsRerender = false
-                    self.fallbackImageTime = nil
-                    self.renderFallbackFrame()
-                }
-            }
-        }
-    }
-}
-
-enum EditorFallbackFrameDecision: Equatable {
-    case renderPixelBuffer
-    case renderStillFrame
-    case hideFallback
-}
-
-enum EditorFallbackFramePolicy {
-    static func decision(isPlaying: Bool, hasPixelBuffer: Bool) -> EditorFallbackFrameDecision {
-        if hasPixelBuffer {
-            return .renderPixelBuffer
-        }
-        if isPlaying {
-            return .hideFallback
-        }
-        return .renderStillFrame
     }
 }
 

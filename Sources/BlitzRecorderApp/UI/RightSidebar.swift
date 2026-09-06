@@ -34,15 +34,9 @@ struct CameraImageControls: View {
 
     private var cameraImageGroup: some View {
         VStack(alignment: .leading, spacing: 8) {
-            BlitzUI.sectionLabel("Camera image", icon: "camera")
+            BlitzUI.sectionLabel("Framing", icon: "crop")
 
-            CameraDiagramPicker(
-                options: CameraContentMode.allCases,
-                selection: configuration.contentMode,
-                label: { $0.displayName },
-                draw: framingDraw
-            )
-            .help("Fill crops the camera edge to edge. Fit keeps the whole camera image.")
+            SourceFramingPicker(selection: configuration.contentMode)
 
             CameraInspectorSliderRow(
                 title: "Camera crop",
@@ -88,7 +82,7 @@ struct CameraImageControls: View {
     private var cropActions: some View {
         HStack(spacing: 8) {
             Button(action: configuration.onBeginCrop) {
-                Label("Free crop", systemImage: "viewfinder")
+                Label("Adjust crop", systemImage: "crop")
                     .font(.system(size: 11, weight: .semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 4)
@@ -107,6 +101,7 @@ struct CameraImageControls: View {
             .controlSize(.small)
             .disabled(configuration.isResetDisabled)
             .pointingHandCursor()
+            .accessibilityLabel("Reset camera crop")
             .help("Reset camera crop")
         }
     }
@@ -261,21 +256,6 @@ struct CameraInsetFrameControls: View {
     }
 }
 
-struct CameraInspectorRow<Content: View>: View {
-    let title: String
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.58))
-                .frame(width: 50, alignment: .leading)
-            content
-        }
-    }
-}
-
 struct CameraInspectorSliderRow: View {
     let title: String
     @Binding var value: Double
@@ -284,7 +264,18 @@ struct CameraInspectorSliderRow: View {
     var onEditingChanged: (Bool) -> Void = { _ in }
 
     var body: some View {
-        CameraInspectorRow(title: title) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(BlitzUI.secondaryText)
+                Spacer(minLength: 8)
+                Text("\(Int((value * 100).rounded()))%")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .monospacedDigit()
+                    .foregroundStyle(BlitzUI.primaryText)
+            }
+
             Group {
                 if let step {
                     Slider(value: $value, in: range, step: step, onEditingChanged: onEditingChanged)
@@ -294,12 +285,8 @@ struct CameraInspectorSliderRow: View {
             }
             .controlSize(.small)
             .tint(BlitzUI.mint)
-
-            Text("\(Int((value * 100).rounded()))%")
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .monospacedDigit()
-                .foregroundStyle(.white.opacity(0.68))
-                .frame(width: 34, alignment: .trailing)
+            .accessibilityLabel(title)
+            .accessibilityValue("\(Int((value * 100).rounded())) percent")
         }
     }
 }
@@ -311,23 +298,18 @@ struct CameraDiagramPicker<Value: Hashable>: View {
     let draw: (Value, inout GraphicsContext, CGSize, Bool) -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 2) {
             ForEach(options, id: \.self) { value in
                 let isSelected = value == selection
                 Button {
                     selection = value
                 } label: {
-                    VStack(spacing: 8) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .fill(isSelected ? BlitzUI.mint.opacity(0.16) : BlitzUI.controlFill)
-                            Canvas { ctx, size in
-                                var c = ctx
-                                draw(value, &c, size, isSelected)
-                            }
-                            .frame(width: 30, height: 30)
+                    VStack(spacing: 4) {
+                        Canvas { ctx, size in
+                            var c = ctx
+                            draw(value, &c, size, isSelected)
                         }
-                        .frame(width: 30, height: 30)
+                        .frame(width: 28, height: 28)
 
                         Text(label(value))
                             .font(.system(size: 10, weight: .semibold))
@@ -335,14 +317,15 @@ struct CameraDiagramPicker<Value: Hashable>: View {
                             .lineLimit(1)
                             .minimumScaleFactor(0.82)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 62)
+                    .frame(maxWidth: .infinity, minHeight: 56)
                     .contentShape(.rect)
                 }
-                .buttonStyle(.plain)
-                .blitzSelectedSurface(isSelected: isSelected)
+                .buttonStyle(BlitzSelectionButtonStyle(isSelected: isSelected))
+                .accessibilityAddTraits(isSelected ? [.isSelected] : [])
                 .pointingHandCursor()
             }
         }
+        .blitzTabGroup()
     }
 }
 
@@ -368,7 +351,6 @@ struct CameraDiagramRow<Value: Hashable>: View {
 }
 
 private enum CamDiagram {
-    /// The recording canvas is portrait 9:16 (shorts). Every diagram draws this phone-shaped frame.
     static func canvasRect(_ s: CGSize) -> CGRect {
         let h = s.height - 8
         let w = h * 9 / 16
@@ -410,22 +392,29 @@ private func shapeDraw(_ v: CameraInsetShape, _ c: inout GraphicsContext, _ s: C
     CamDiagram.fill(c, chip, 2, sel ? BlitzUI.mint : .white.opacity(0.42))
 }
 
-private func framingDraw(_ v: CameraContentMode, _ c: inout GraphicsContext, _ s: CGSize, _ sel: Bool) {
-    let frame = CamDiagram.canvasRect(s)
-    CamDiagram.fill(c, frame, 3, .white.opacity(0.05))
-    CamDiagram.stroke(c, frame, 3, .white.opacity(sel ? 0.4 : 0.2))
+struct SourceFramingPicker: View {
+    @Binding var selection: CameraContentMode
+    var fitTitle = "Show all"
 
-    let color = sel ? BlitzUI.mint : .white.opacity(0.42)
-    let content: CGRect
-    switch v {
-    case .fill:
-        content = frame.insetBy(dx: 2, dy: 2)
-    case .fit:
-        let width = frame.width - 4
-        let height = width * 9 / 16
-        content = CGRect(x: frame.midX - width / 2, y: frame.midY - height / 2, width: width, height: height)
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(CameraContentMode.allCases, id: \.self) { mode in
+                BlitzTab(configuration: .init(
+                    title: mode == .fill ? "Fill frame" : fitTitle,
+                    symbolName: nil,
+                    isSelected: selection == mode,
+                    expands: true,
+                    action: { selection = mode }
+                ))
+                .help(mode == .fill
+                    ? "Fill the frame, cropping the source edges."
+                    : "Keep the entire source visible without cropping.")
+            }
+        }
+        .blitzTabGroup()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Source framing")
     }
-    CamDiagram.fill(c, content, 2, color)
 }
 
 struct RemoteCameraOrientationControl: View {
@@ -537,151 +526,6 @@ struct RemoteCameraOrientationControl: View {
     }
 }
 
-struct OverlayToggleRow: View {
-    let symbol: String
-    let title: String
-    @Binding var isOn: Bool
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white.opacity(isOn ? 0.85 : 0.45))
-                .frame(width: 18, height: 18)
-            Text(title)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white.opacity(isOn ? 0.95 : 0.55))
-            Spacer(minLength: 0)
-            Toggle("", isOn: $isOn)
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .labelsHidden()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .contentShape(.rect)
-        .onTapGesture { isOn.toggle() }
-        .pointingHandCursor()
-    }
-}
-
-struct SafeZonePickerRow: View {
-    @Binding var selected: SocialVideoSafeZone
-    let disabled: Bool
-
-    @State private var popoverOpen = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                Image(systemName: "rectangle.inset.filled")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(selected == .none ? 0.45 : 0.85))
-                    .frame(width: 18, height: 18)
-                Text("Safe zone")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white.opacity(selected == .none ? 0.55 : 0.95))
-                Spacer(minLength: 0)
-            }
-
-            Button {
-                popoverOpen.toggle()
-            } label: {
-                HStack(spacing: 8) {
-                    Text(disabled ? "Portrait only" : selected.displayName)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.55))
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .blitzGlassButton()
-            .controlSize(.small)
-            .disabled(disabled)
-            .pointingHandCursor()
-            .popover(isPresented: $popoverOpen, arrowEdge: .top) {
-                SafeZonePopover(selected: $selected, isOpen: $popoverOpen)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .opacity(disabled ? 0.62 : 1)
-    }
-}
-
-private struct SafeZonePopover: View {
-    @Binding var selected: SocialVideoSafeZone
-    @Binding var isOpen: Bool
-
-    private let mint = BlitzUI.mint
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("SAFE ZONE PRESET")
-                .font(.system(size: 10, weight: .heavy))
-                .tracking(0.8)
-                .foregroundStyle(.white.opacity(0.55))
-
-            VStack(spacing: 4) {
-                ForEach(SocialVideoSafeZone.allCases, id: \.self) { zone in
-                    row(for: zone)
-                }
-            }
-        }
-        .padding(14)
-        .frame(width: 260)
-        .foregroundStyle(.white)
-    }
-
-    private func row(for zone: SocialVideoSafeZone) -> some View {
-        let isSelected = selected == zone
-        return Button {
-            selected = zone
-            isOpen = false
-        } label: {
-            HStack(spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(.white.opacity(0.06))
-                        .frame(width: 28, height: 28)
-                    Image(systemName: zone.iconName)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(isSelected ? mint : .white.opacity(0.85))
-                }
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(zone.displayName)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
-                    Text(zone.subtitle)
-                        .font(.system(size: 9.5, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.55))
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 0)
-
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(mint)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-        }
-        .blitzGlassButton()
-        .tint(isSelected ? mint.opacity(0.22) : .clear)
-        .pointingHandCursor()
-    }
-}
-
 #Preview("Camera diagram tiles") {
     struct DiagramPreview: View {
         @State private var alignment: CameraInsetAlignment = .bottomRight
@@ -712,4 +556,17 @@ private struct SafeZonePopover: View {
         }
     }
     return DiagramPreview().preferredColorScheme(.dark)
+}
+
+#Preview("Source framing states") {
+    VStack(alignment: .leading, spacing: 16) {
+        SourceFramingPicker(selection: .constant(.fill))
+        SourceFramingPicker(selection: .constant(.fit))
+        SourceFramingPicker(selection: .constant(.fill))
+            .disabled(true)
+    }
+    .padding(16)
+    .frame(width: 280)
+    .background(BlitzUI.canvasBackground)
+    .preferredColorScheme(.dark)
 }

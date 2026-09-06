@@ -48,7 +48,8 @@ let package = Package(
             dependencies: appDependencies,
             resources: [
                 .copy("PrivacyInfo.xcprivacy"),
-                .copy("ThirdPartyNotices.md")
+                .copy("ThirdPartyNotices.md"),
+                .copy("Resources/WebMCPWorkspace.html")
             ],
             swiftSettings: appSwiftSettings,
             linkerSettings: [

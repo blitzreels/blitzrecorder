@@ -26,15 +26,17 @@ final class ScreenPreviewer: NSObject, SCStreamOutput, SCStreamDelegate, @unchec
         stateLock.withLock { stream != nil }
     }
 
-    func start(settings: RecordingSettings, filter pickedFilter: SCContentFilter?, frameHandler: @escaping FrameHandler) async throws {
+    func start(settings: RecordingSettings, filter pickedFilter: SCContentFilter?, frameHandler: @escaping FrameHandler) async throws -> ScreenSourceBinding? {
         try? await stop()
         self.frameHandler = frameHandler
 
         let configuration = SCStreamConfiguration()
         let filter: SCContentFilter
+        let resolvedBinding: ScreenSourceBinding?
 
         if let pickedFilter {
             filter = pickedFilter
+            resolvedBinding = await ScreenCaptureGeometry.persistentBinding(forPickedContent: pickedFilter)
             let screenSourceGeometry = ScreenCaptureGeometry.screenSourceGeometry(for: settings, pickedFilter: pickedFilter)
             sourceAspectRatio = screenSourceGeometry.aspectRatio()
             let dimensions = ScreenCaptureGeometry.previewDimensions(
@@ -52,6 +54,7 @@ final class ScreenPreviewer: NSObject, SCStreamOutput, SCStreamDelegate, @unchec
             let content = try await SCShareableContent.current
             let source = try ScreenCaptureGeometry.screenSource(for: settings, content: content)
             filter = source.filter
+            resolvedBinding = source.binding
             let screenSourceGeometry = source.geometry
             sourceAspectRatio = screenSourceGeometry.aspectRatio()
             let dimensions = ScreenCaptureGeometry.previewDimensions(forSourceAspectRatio: sourceAspectRatio)
@@ -92,6 +95,7 @@ final class ScreenPreviewer: NSObject, SCStreamOutput, SCStreamDelegate, @unchec
             try? await stream.stopCapture()
             throw CancellationError()
         }
+        return resolvedBinding
     }
 
     func stop() async throws {

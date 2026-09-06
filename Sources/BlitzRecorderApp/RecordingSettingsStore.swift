@@ -15,7 +15,6 @@ enum RecordingSettingsStore {
         static let systemAudioGain = "recording.systemAudioGain"
         static let removesCameraBackgroundAfterRecording = "recording.removesCameraBackgroundAfterRecording"
         static let savesSourceFiles = "recording.savesSourceFiles"
-        static let renamesRecordingsFromSpeech = "recording.renamesRecordingsFromSpeech"
         static let showsRuleOfThirdsOverlay = "recording.showsRuleOfThirdsOverlay"
         static let socialSafeZoneOverlay = "recording.socialSafeZoneOverlay"
         static let includeCursor = "recording.includeCursor"
@@ -103,9 +102,6 @@ enum RecordingSettingsStore {
             settings.removesCameraBackgroundAfterRecording = defaults.bool(forKey: Key.removesCameraBackgroundAfterRecording)
         }
 
-        if defaults.object(forKey: Key.renamesRecordingsFromSpeech) != nil {
-            settings.renamesRecordingsFromSpeech = defaults.bool(forKey: Key.renamesRecordingsFromSpeech)
-        }
 
         if defaults.object(forKey: Key.showsRuleOfThirdsOverlay) != nil {
             settings.showsRuleOfThirdsOverlay = defaults.bool(forKey: Key.showsRuleOfThirdsOverlay)
@@ -290,7 +286,6 @@ enum RecordingSettingsStore {
         defaults.set(settings.systemAudioGain, forKey: Key.systemAudioGain)
         defaults.set(settings.removesCameraBackgroundAfterRecording, forKey: Key.removesCameraBackgroundAfterRecording)
         defaults.set(true, forKey: Key.savesSourceFiles)
-        defaults.set(settings.renamesRecordingsFromSpeech, forKey: Key.renamesRecordingsFromSpeech)
         defaults.set(settings.showsRuleOfThirdsOverlay, forKey: Key.showsRuleOfThirdsOverlay)
         defaults.set(settings.socialSafeZoneOverlay.rawValue, forKey: Key.socialSafeZoneOverlay)
         defaults.set(settings.includeCursor, forKey: Key.includeCursor)

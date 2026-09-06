@@ -122,10 +122,6 @@ function ensureSchema(): Promise<void> {
  * conflict update deliberately leaves `status`/`revoked_reason` untouched, so
  * post-validation backfills cannot undo a manual or webhook revocation.
  */
-export async function upsertLicense(payload: LicensePayload): Promise<void> {
-  return upsertLicenseWithContext(payload);
-}
-
 export async function upsertLicenseWithContext(
   payload: LicensePayload,
   context: LicenseStoreContext = {},
@@ -265,18 +261,6 @@ export async function revokeLicenseByPaymentIntent(
      SET status = 'revoked', revoked_reason = $2, updated_at = now()
      WHERE stripe_payment_intent_id = $1 AND status <> 'revoked'`,
     [paymentIntentId, reason],
-  );
-  return result.rowCount ?? 0;
-}
-
-/** Manual ops helper: revoke a single license by its id. */
-export async function revokeLicenseById(licenseId: string, reason: string): Promise<number> {
-  await ensureSchema();
-  const result = await getPool().query(
-    `UPDATE blitzrecorder_licenses
-     SET status = 'revoked', revoked_reason = $2, updated_at = now()
-     WHERE license_id = $1 AND status <> 'revoked'`,
-    [licenseId, reason],
   );
   return result.rowCount ?? 0;
 }

@@ -11,6 +11,7 @@ struct PickedWindowTarget {
 }
 
 struct ResolvedScreenSource {
+    let binding: ScreenSourceBinding
     let filter: SCContentFilter
     let geometry: ScreenSourceGeometry
     let sourceRect: CGRect?
@@ -38,6 +39,7 @@ enum ScreenCaptureGeometry {
             }
             let filter = SCContentFilter(desktopIndependentWindow: window)
             return ResolvedScreenSource(
+                binding: windowBinding(.init(window: window, displays: content.displays)),
                 filter: filter,
                 geometry: screenSourceGeometry(for: settings, pickedFilter: filter),
                 sourceRect: nil,
@@ -61,6 +63,7 @@ enum ScreenCaptureGeometry {
             }
             let filter = SCContentFilter(desktopIndependentWindow: window)
             return ResolvedScreenSource(
+                binding: windowBinding(.init(window: window, displays: content.displays)),
                 filter: filter,
                 geometry: screenSourceGeometry(for: settings, pickedFilter: filter),
                 sourceRect: nil,
@@ -81,12 +84,31 @@ enum ScreenCaptureGeometry {
             )
             let geometry = screenSourceGeometry(for: settings, display: display)
             return ResolvedScreenSource(
+                binding: .display(id: String(display.displayID)),
                 filter: filter,
                 geometry: geometry,
                 sourceRect: geometry.sourceRect(in: CGRect(x: 0, y: 0, width: display.width, height: display.height)),
                 display: display
             )
         }
+    }
+
+    private struct WindowBindingRequest {
+        let window: SCWindow
+        let displays: [SCDisplay]
+    }
+
+    private static func windowBinding(_ request: WindowBindingRequest) -> ScreenSourceBinding {
+        let window = request.window
+        return ScreenSourceBinding(
+            kind: .window,
+            displayID: displayID(for: window, displays: request.displays),
+            bundleIdentifier: window.owningApplication?.bundleIdentifier,
+            applicationName: window.owningApplication?.applicationName,
+            processID: window.owningApplication?.processID,
+            windowID: window.windowID,
+            windowTitle: window.title
+        )
     }
 
     static func screenSourceGeometry(for settings: RecordingSettings) -> ScreenSourceGeometry {
@@ -124,8 +146,7 @@ enum ScreenCaptureGeometry {
         let sourceAspectRatio: CGFloat
         switch settings.screenSourceBinding?.kind {
         case .application, .window:
-            sourceAspectRatio = settings.screenSourceAspectRatio
-                ?? TargetWindowFitting.sourceAspectRatio(for: settings)
+            sourceAspectRatio = settings.screenSourceAspectRatio ?? fallback
         case .display, nil:
             sourceAspectRatio = fallback
         }
@@ -163,17 +184,6 @@ enum ScreenCaptureGeometry {
     static func display(from displays: [SCDisplay], id: String?) -> SCDisplay? {
         guard let id, let numericID = UInt32(id) else { return nil }
         return displays.first(where: { $0.displayID == numericID })
-    }
-
-    private static func pickedDisplay(for contentRect: CGRect, displays: [SCDisplay]) -> SCDisplay? {
-        displays
-            .filter { display in
-                abs(display.frame.width - contentRect.width) < 2
-                    && abs(display.frame.height - contentRect.height) < 2
-            }
-            .max {
-                overlapArea($0.frame, contentRect) < overlapArea($1.frame, contentRect)
-            }
     }
 
     static func outputDimensions(for settings: RecordingSettings) -> (width: Int, height: Int) {

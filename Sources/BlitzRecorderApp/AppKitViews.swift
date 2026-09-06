@@ -44,13 +44,17 @@ final class PreviewStageView: NSView {
     private let outlineOverlay = SourceOutlineView()
     private let screenCanvasMask = CAShapeLayer()
     private let cameraCanvasMask = CAShapeLayer()
-    private var canvasFrame = NSRect.zero
+    private var canvasFrame = NSRect.zero {
+        didSet {
+            guard oldValue != canvasFrame else { return }
+            onCanvasFrameChanged?(canvasFrame)
+        }
+    }
     private var dragMode: DragMode?
     private var trackingArea: NSTrackingArea?
     private var cameraCropDraftAmount: CGPoint?
     private var cameraCropDraftPosition: CGPoint?
     private var screenCropDraft: CGRect?
-    private var screenResizeAspectRatioOverride: CGFloat?
     private let resizeHandleOutset: CGFloat = 14
     override var mouseDownCanMoveWindow: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -94,6 +98,7 @@ final class PreviewStageView: NSView {
     var onBackgroundSelected: (() -> Void)?
     var onCropToolbarFrameChanged: ((CGRect?) -> Void)?
     var onScreenLayerFrameChanged: ((CGRect?) -> Void)?
+    var onCanvasFrameChanged: ((CGRect) -> Void)?
     var onCameraCropChanged: ((CGPoint, CGPoint) -> Void)?
     var onScreenCropChanged: ((CGRect?) -> Void)?
     var onScreenCropPanRequested: (() -> Void)?
@@ -151,18 +156,9 @@ final class PreviewStageView: NSView {
     var screenSourceAspectRatio: CGFloat = SceneLayout.defaultScreenAspectRatio {
         didSet {
             if oldValue != screenSourceAspectRatio {
-                screenResizeAspectRatioOverride = nil
                 needsLayout = true
                 needsDisplay = true
             }
-        }
-    }
-
-    var screenResizeUsesTargetAspectRatio = false {
-        didSet {
-            guard oldValue != screenResizeUsesTargetAspectRatio,
-                  !screenResizeUsesTargetAspectRatio else { return }
-            screenResizeAspectRatioOverride = nil
         }
     }
 
@@ -849,7 +845,6 @@ final class PreviewStageView: NSView {
             switch layer {
             case .screen:
                 sceneLayout.screenFrame = frame
-                updateScreenResizeAspectRatioOverride()
                 screenPreview.frame = projectedFrame(for: .screen, in: canvasFrame)
                 applyCanvasMask(to: screenPreview)
                 applySourceShape(to: screenPreview)
@@ -1085,17 +1080,7 @@ final class PreviewStageView: NSView {
     }
 
     private var effectiveScreenSourceAspectRatio: CGFloat {
-        screenResizeAspectRatioOverride ?? screenSourceAspectRatio
-    }
-
-    private func updateScreenResizeAspectRatioOverride() {
-        guard screenResizeUsesTargetAspectRatio,
-              screenContentMode == .fit,
-              dragMode?.layer == .screen,
-              case .resize = dragMode?.kind else { return }
-        let target = renderGeometry(in: canvasFrame).targetRect(for: .screen)
-        guard target.width > 0, target.height > 0 else { return }
-        screenResizeAspectRatioOverride = target.width / target.height
+        screenSourceAspectRatio
     }
 
     private var isFullWidthCameraPreview: Bool {

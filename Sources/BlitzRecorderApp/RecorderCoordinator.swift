@@ -26,8 +26,6 @@ final class RecorderCoordinator {
     private let takeRecording = TakeRecordingRuntime()
     private let microphoneLevelMonitor = MicrophoneLevelMonitor()
     private let systemAudioLevelMonitor = SystemAudioLevelMonitor()
-    private let speechTranscriber = SpeechTranscriber()
-    private let titleGenerator = TitleGenerator()
     private let takeFileStore = TakeFileStore()
     private let screenSourceSelection = ScreenSourceSelection()
     private let recordingSession = RecordingSession()
@@ -48,11 +46,7 @@ final class RecorderCoordinator {
         }
     )
     private lazy var takeFinalizer: TakeFinalizer = {
-        let finalizer = TakeFinalizer(
-            speechTranscriber: speechTranscriber,
-            titleGenerator: titleGenerator,
-            fileStore: takeFileStore
-        )
+        let finalizer = TakeFinalizer()
         finalizer.onMessage = { [weak self] message in
             self?.onMessage?(message)
         }
@@ -143,7 +137,6 @@ final class RecorderCoordinator {
         if clearIncompatibleScreenCropForCurrentLayout() {
             persistSettings()
         }
-        reconcilePersistentScreenAccessIfNeeded()
         screenSourcePickerRecents.record(settings.screenSourceBinding)
         screenPreviewer.failureHandler = { [weak self] error in
             guard let self,
@@ -245,7 +238,8 @@ final class RecorderCoordinator {
         if isEditingScreenCrop {
             previewSettings.screenCrop = nil
         }
-        try await screenPreviewer.start(
+        let sourceBinding = previewSettings.screenSourceBinding
+        let resolvedBinding = try await screenPreviewer.start(
             settings: previewSettings,
             filter: pickedScreenFilter(for: previewSettings),
             frameHandler: { [weak self] frame in
@@ -253,6 +247,13 @@ final class RecorderCoordinator {
                 frameHandler(frame)
             }
         )
+        if !previewSettings.usesPickedScreenContent,
+           sourceBinding?.kind == .application,
+           settings.screenSourceBinding == sourceBinding,
+           let resolvedBinding, resolvedBinding.kind == .window {
+            settings.screenSourceBinding = resolvedBinding
+            persistSettings()
+        }
     }
 
     func noteScreenSourceAspectRatio(_ aspectRatio: CGFloat) {
@@ -613,11 +614,6 @@ final class RecorderCoordinator {
 
     func setSourceFilesSaved(_: Bool) {
         settings.savesSourceFiles = true
-        persistSettings()
-    }
-
-    func setSpeechRenameEnabled(_ enabled: Bool) {
-        settings.renamesRecordingsFromSpeech = enabled
         persistSettings()
     }
 
@@ -1089,26 +1085,30 @@ final class RecorderCoordinator {
 
     func fitFrontWindowForShorts(zoom: CGFloat) {
         guard sceneChangeIsAllowed() else { return }
-
-        cancelPendingScreenWindowFits()
+        let revision = beginScreenWindowFit()
         guard ensureAccessibilityForWindowControls() else { return }
 
-        do {
-            let arrangement = try ShortsWindowArranger.fitFrontWindow(
-                displayID: settings.selectedDisplayID,
-                captureLayout: settings.layout,
-                sceneLayout: settings.sceneLayout,
-                enabledSources: settings.enabledSources,
-                canvasPadding: settings.canvasPadding,
-                zoom: zoom
-            )
-            settings.screenCrop = clampedNormalizedRect(arrangement.screenCrop)
-            persistSettings()
-            updateRecordingSceneIfNeeded()
-            onScreenCaptureConfigurationChanged?()
-            onMessage?(arrangement.message)
-        } catch {
-            onMessage?(error.localizedDescription)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let arrangement = try await ShortsWindowArranger.fitFrontWindow(
+                    displayID: settings.selectedDisplayID,
+                    captureLayout: settings.layout,
+                    sceneLayout: settings.sceneLayout,
+                    enabledSources: settings.visibleSources,
+                    canvasPadding: settings.canvasPadding,
+                    zoom: zoom
+                )
+                guard self.screenWindowFitRevision == revision else { return }
+                settings.screenCrop = clampedNormalizedRect(arrangement.screenCrop)
+                persistSettings()
+                updateRecordingSceneIfNeeded()
+                onScreenCaptureConfigurationChanged?()
+                onMessage?(arrangement.message)
+            } catch {
+                guard self.screenWindowFitRevision == revision else { return }
+                onMessage?(error.localizedDescription)
+            }
         }
     }
 
@@ -1125,6 +1125,7 @@ final class RecorderCoordinator {
                     zoom: zoom,
                     revision: revision
                 ) else { return }
+                guard self.isCurrentScreenSourceWindowFit(revision, binding: binding) else { return }
                 self.applyFittedScreenWindowArrangement(arrangement, shouldUpdateCapture: true)
                 self.onMessage?(arrangement.resizedMessage)
             } catch {
@@ -1195,6 +1196,7 @@ final class RecorderCoordinator {
                         revision: revision
                     )
                 }) else { return }
+                guard self.isCurrentScreenSourceWindowFit(revision, binding: binding) else { return }
                 self.applyFittedScreenWindowArrangement(arrangement, shouldUpdateCapture: true)
                 self.onMessage?(arrangement.resizedMessage)
             } catch {
@@ -1238,7 +1240,7 @@ final class RecorderCoordinator {
                 guard isCurrentScreenSourceWindowFit(revision, binding: binding) else {
                     return nil
                 }
-                return try ShortsWindowArranger.fitWindow(
+                return try await ShortsWindowArranger.fitWindow(
                     ownerPID: target.pid,
                     bounds: target.bounds,
                     title: target.title,
@@ -1246,7 +1248,7 @@ final class RecorderCoordinator {
                     displayID: target.displayID ?? displayID,
                     captureLayout: settings.layout,
                     sceneLayout: settings.sceneLayout,
-                    enabledSources: settings.enabledSources,
+                    enabledSources: settings.visibleSources,
                     canvasPadding: settings.canvasPadding,
                     zoom: zoom
                 )
@@ -1256,13 +1258,13 @@ final class RecorderCoordinator {
                 guard isCurrentScreenSourceWindowFit(revision, binding: binding) else {
                     return nil
                 }
-                return try ShortsWindowArranger.fitAppWindow(
+                return try await ShortsWindowArranger.fitAppWindow(
                     ownerPID: processID,
                     appName: binding.applicationName ?? "Application",
                     displayID: displayID,
                     captureLayout: settings.layout,
                     sceneLayout: settings.sceneLayout,
-                    enabledSources: settings.enabledSources,
+                    enabledSources: settings.visibleSources,
                     canvasPadding: settings.canvasPadding,
                     zoom: zoom
                 )
@@ -1276,7 +1278,7 @@ final class RecorderCoordinator {
             return nil
         }
 
-        return try ShortsWindowArranger.fitWindow(
+        return try await ShortsWindowArranger.fitWindow(
             ownerPID: target.pid,
             bounds: target.bounds,
             title: target.title,
@@ -1284,18 +1286,20 @@ final class RecorderCoordinator {
             displayID: target.displayID ?? displayID,
             captureLayout: settings.layout,
             sceneLayout: settings.sceneLayout,
-            enabledSources: settings.enabledSources,
+            enabledSources: settings.visibleSources,
             canvasPadding: settings.canvasPadding,
             zoom: zoom
         )
     }
 
     private func beginScreenWindowFit() -> Int {
+        ShortsWindowArranger.cancelPendingFits()
         screenWindowFitRevision += 1
         return screenWindowFitRevision
     }
 
     private func cancelPendingScreenWindowFits() {
+        ShortsWindowArranger.cancelPendingFits()
         screenWindowFitRevision += 1
     }
 
@@ -1571,10 +1575,6 @@ final class RecorderCoordinator {
         guard abs(settings.screenWindowZoom - zoom) > 0.0001 else { return }
         settings.screenWindowZoom = zoom
         persistSettings()
-    }
-
-    func setScreenSourceZoom(_ zoom: CGFloat) {
-        setScreenWindowZoom(zoom)
     }
 
     func currentCameraSourceAspectRatio() -> CGFloat {
@@ -1994,29 +1994,6 @@ final class RecorderCoordinator {
         permissionGate.hasScreenCaptureAccess
     }
 
-    @discardableResult
-    func reconcilePersistentScreenAccessIfNeeded() -> Bool {
-        let result = screenSourceSelection.reconcile(
-            ScreenSourceSelection.ReconciliationRequest(
-                settings: settings,
-                hasPersistentAccess: permissionGate.hasScreenCaptureAccess
-            )
-        )
-        guard result.changed else { return false }
-        settings = result.settings
-        persistSettings()
-        onScreenCaptureConfigurationChanged?()
-        return true
-    }
-
-    func hasRequiredPermissions() -> Bool {
-        recordingReadiness().isReady
-    }
-
-    func missingPermissionNames() -> [String] {
-        recordingReadiness().blockers.map(\.permission)
-    }
-
     func recordingReadiness() -> RecordingReadiness {
         var readiness = permissionGate.readiness(for: settings)
         let needsPicker = (
@@ -2238,7 +2215,7 @@ final class RecorderCoordinator {
                 if let binding = self.settings.screenSourceBinding,
                    let processID = binding.processID,
                    binding.kind == .window {
-                    return try ShortsWindowArranger.fitWindow(
+                    return try await ShortsWindowArranger.fitWindow(
                         ownerPID: processID,
                         bounds: filter.contentRect,
                         title: binding.windowTitle,
@@ -2246,7 +2223,7 @@ final class RecorderCoordinator {
                         displayID: binding.displayID ?? self.settings.selectedDisplayID,
                         captureLayout: self.settings.layout,
                         sceneLayout: self.settings.sceneLayout,
-                        enabledSources: self.settings.enabledSources,
+                        enabledSources: self.settings.visibleSources,
                         canvasPadding: self.settings.canvasPadding,
                         zoom: zoom
                     )
@@ -2254,13 +2231,13 @@ final class RecorderCoordinator {
                 if let binding = self.settings.screenSourceBinding,
                    let processID = binding.processID,
                    binding.kind == .application {
-                    return try ShortsWindowArranger.fitAppWindow(
+                    return try await ShortsWindowArranger.fitAppWindow(
                         ownerPID: processID,
                         appName: binding.applicationName ?? "Application",
                         displayID: binding.displayID ?? self.settings.selectedDisplayID,
                         captureLayout: self.settings.layout,
                         sceneLayout: self.settings.sceneLayout,
-                        enabledSources: self.settings.enabledSources,
+                        enabledSources: self.settings.visibleSources,
                         canvasPadding: self.settings.canvasPadding,
                         zoom: zoom
                     )
@@ -2271,7 +2248,7 @@ final class RecorderCoordinator {
                 guard self.isCurrentPickedScreenWindowFit(revision) else {
                     throw CancellationError()
                 }
-                return try ShortsWindowArranger.fitWindow(
+                return try await ShortsWindowArranger.fitWindow(
                     ownerPID: target.pid,
                     bounds: target.bounds,
                     title: target.title,
@@ -2279,7 +2256,7 @@ final class RecorderCoordinator {
                     displayID: target.displayID ?? self.settings.selectedDisplayID,
                     captureLayout: self.settings.layout,
                     sceneLayout: self.settings.sceneLayout,
-                    enabledSources: self.settings.enabledSources,
+                    enabledSources: self.settings.visibleSources,
                     canvasPadding: self.settings.canvasPadding,
                     zoom: zoom
                 )
@@ -2309,6 +2286,9 @@ final class RecorderCoordinator {
         shouldUpdateCapture: Bool
     ) {
         screenWindowGeometryRevision += 1
+        if let fittedZoom = arrangement.fittedZoom {
+            settings.screenWindowZoom = ScreenSourceZoomGeometry.clamped(fittedZoom)
+        }
         if arrangement.frame.width > 0, arrangement.frame.height > 0 {
             let aspectRatio = arrangement.frame.width / arrangement.frame.height
             settings.screenSourceAspectRatio = aspectRatio
@@ -2611,83 +2591,6 @@ final class RecorderCoordinator {
             recordingSettings.enabledSources.remove(.systemAudio)
         }
         return recordingSettings
-    }
-
-    private func renameLiveCompositedOutputIfPossible(
-        outputURL: URL,
-        take: RecordingTake,
-        settings: RecordingSettings
-    ) async -> URL {
-        guard settings.enabledSources.contains(.microphone),
-              settings.renamesRecordingsFromSpeech else {
-            return outputURL
-        }
-
-        do {
-            onMessage?("Transcribing audio...")
-            try await extractAudioForTranscription(from: outputURL, to: take.audioURL)
-            let transcript = try await speechTranscriber.transcribe(audioURL: take.audioURL)
-            let slug = await titleGenerator.titleSlug(for: transcript)
-            let datedSlug = takeFileStore.datedSlug(for: take, slug: slug)
-            let transcriptURL = take.scratchDirectory.appendingPathComponent("\(datedSlug)-transcript.txt")
-            try transcript.write(to: transcriptURL, atomically: true, encoding: .utf8)
-
-            guard let slug, !slug.isEmpty else {
-                onMessage?("Renamed: \(datedSlug)")
-                return outputURL
-            }
-
-            let targetURL = takeFileStore.finalVideoURL(
-                slug: datedSlug,
-                settings: settings,
-                outputFormat: take.outputVideoFormat
-            )
-            guard targetURL.path != outputURL.path else {
-                onMessage?("Renamed: \(datedSlug)")
-                return outputURL
-            }
-
-            let renamedURL = takeFileStore.uniqueFileURL(targetURL)
-            try FileManager.default.moveItem(at: outputURL, to: renamedURL)
-            onMessage?("Renamed: \(datedSlug)")
-            return renamedURL
-        } catch {
-            onMessage?("Rename skipped: \(error.recorderFailureDescription)")
-            return outputURL
-        }
-    }
-
-    private func extractAudioForTranscription(from videoURL: URL, to audioURL: URL) async throws {
-        try? FileManager.default.removeItem(at: audioURL)
-        let asset = AVURLAsset(url: videoURL)
-        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
-        guard !audioTracks.isEmpty else {
-            throw RecorderError.speechUnavailable
-        }
-
-        let duration = try await asset.load(.duration)
-        let composition = AVMutableComposition()
-        for track in audioTracks {
-            guard let compositionTrack = composition.addMutableTrack(
-                withMediaType: .audio,
-                preferredTrackID: kCMPersistentTrackID_Invalid
-            ) else {
-                throw RecorderError.exportUnavailable
-            }
-            try compositionTrack.insertTimeRange(
-                CMTimeRange(start: .zero, duration: duration),
-                of: track,
-                at: .zero
-            )
-        }
-
-        guard let exporter = AVAssetExportSession(
-            asset: composition,
-            presetName: AVAssetExportPresetAppleM4A
-        ) else {
-            throw RecorderError.exportUnavailable
-        }
-        try await exporter.export(to: audioURL, as: .m4a)
     }
 
     private static func recordingPrerollMessage(remaining: Int) -> String {
@@ -3509,6 +3412,7 @@ final class RecorderCoordinator {
         settings.screenCornerRadius = snapshot.screenCornerRadius
         settings.screenShadowEnabled = snapshot.screenShadowEnabled
         settings.screenContentMode = snapshot.screenContentMode
+        settings.screenWindowZoom = snapshot.screenWindowZoom
         settings.cameraContentMode = snapshot.cameraContentMode
         settings.cameraFramePadding = 0
         settings.cameraShadowEnabled = snapshot.cameraShadowEnabled

@@ -56,25 +56,8 @@ struct SceneRenderGeometry {
         placementPolicy.cornerRadius(for: kind)
     }
 
-    func sourceMaskPath(sourceAspectRatios: [SceneLayerKind: CGFloat] = [:]) -> CGPath? {
-        let path = CGMutablePath()
-        var hasRoundedSource = false
-        for kind in activeLayerOrder {
-            let rect = visibleSourceRect(for: kind, sourceAspectRatio: sourceAspectRatios[kind])
-            let radius = sourceCornerRadius(for: kind)
-            guard radius > 0 else { continue }
-            path.addRoundedRect(in: rect, cornerWidth: radius, cornerHeight: radius)
-            hasRoundedSource = true
-        }
-        return hasRoundedSource ? path : nil
-    }
-
     func isFullCanvasFrame(for kind: SceneLayerKind) -> Bool {
         normalizedFrame(for: kind).isAlmostFullCanvasFrame
-    }
-
-    func isFullCanvasTarget(for kind: SceneLayerKind) -> Bool {
-        targetRect(for: kind).standardized.isAlmostEqual(to: canvas.standardized)
     }
 
     func isVisibleSourceFullCanvas(for kind: SceneLayerKind, sourceAspectRatio: CGFloat?) -> Bool {

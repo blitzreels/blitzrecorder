@@ -2,7 +2,7 @@ import SwiftUI
 
 struct RecordingSettingsPage: View {
     @Bindable var vm: RecorderViewModel
-    @State private var showsAdvanced = false
+    @State private var showsAdvancedEncoding = false
 
     private var canEdit: Bool {
         vm.state == .idle
@@ -10,125 +10,31 @@ struct RecordingSettingsPage: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 28) {
                 SettingsPageHeader(.init(
-                    title: "Recording",
-                    detail: "Choose capture quality, file storage, export defaults, and local transcription.",
-                    systemImage: "record.circle",
-                    status: profileSummary
+                    title: "General",
+                    detail: "Storage, editable projects, and local transcription.",
+                    systemImage: "gearshape",
+                    status: nil
                 ))
                 .padding(.bottom, 4)
 
-                videoSection
-                exportDefaultsSection
                 storageSection
                 transcriptionSection
-                advancedSection
+
+                DisclosureGroup(isExpanded: $showsAdvancedEncoding) {
+                    advancedSection
+                        .padding(.top, 12)
+                } label: {
+                    Text("Advanced encoding")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(BlitzUI.secondaryText)
+                }
             }
             .settingsPageContent()
         }
         .background(BlitzUI.projectLibraryBackground)
         .foregroundStyle(.white)
-    }
-
-    private var videoSection: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: 18) {
-                SettingsRowLabel(.init(
-                    title: "Recording resolution",
-                    detail: resolutionDetail
-                ))
-
-                Spacer(minLength: 16)
-
-                Picker("", selection: resolutionBinding) {
-                    ForEach(OutputResolution.allCases, id: \.self) { resolution in
-                        Text(resolution.displayName)
-                            .tag(resolution)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: 300)
-                .disabled(!canEdit)
-            }
-            .settingsRow()
-
-            SettingsCardDivider()
-
-            HStack(alignment: .center, spacing: 18) {
-                SettingsRowLabel(.init(
-                    title: "Source FPS",
-                    detail: "30 fps is the best default for most recordings."
-                ))
-
-                Spacer(minLength: 16)
-
-                Picker("", selection: frameRateBinding) {
-                    ForEach(RecordingSettings.supportedFrameRates, id: \.self) { frameRate in
-                        Text("\(frameRate)")
-                            .tag(frameRate)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: 220)
-                .disabled(!canEdit)
-            }
-            .settingsRow()
-
-            SettingsCardDivider()
-
-            HStack(alignment: .center, spacing: 18) {
-                SettingsRowLabel(.init(
-                    title: "Recorded source files",
-                    detail: "Separate HEVC masters preserve the best quality for later exports."
-                ))
-
-                Spacer(minLength: 16)
-
-                Text(qualityPresentation.sourceEncodingSummary)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.56))
-                    .monospacedDigit()
-                    .padding(.horizontal, 10)
-                    .frame(height: 28)
-                    .background(.white.opacity(0.05), in: .capsule)
-            }
-            .settingsRow()
-        }
-        .settingsCard(.init(
-            title: "Recording quality",
-            detail: "Applied to new source recordings",
-            systemImage: "video.badge.checkmark"
-        ))
-    }
-
-    private var exportDefaultsSection: some View {
-        HStack(alignment: .center, spacing: 18) {
-            SettingsRowLabel(.init(
-                title: "Default export format",
-                detail: "\(vm.settings.outputVideoFormat.plainDescription). Change it per export in the editor."
-            ))
-
-            Spacer(minLength: 16)
-
-                Picker("", selection: formatBinding) {
-                    ForEach(OutputVideoFormat.allCases, id: \.self) { format in
-                        Text(format.displayName)
-                            .tag(format)
-                    }
-                }
-                .labelsHidden()
-                .frame(width: 150)
-                .disabled(!canEdit)
-        }
-        .settingsRow()
-        .settingsCard(.init(
-            title: "Export default",
-            detail: "The editor can override this per export",
-            systemImage: "square.and.arrow.up"
-        ))
     }
 
     private var storageSection: some View {
@@ -150,7 +56,7 @@ struct RecordingSettingsPage: View {
             }
             .settingsRow()
 
-            SettingsCardDivider()
+            SettingsRowDivider()
 
             Toggle(
                 isOn: Binding(
@@ -167,7 +73,7 @@ struct RecordingSettingsPage: View {
             .settingsRow()
             .disabled(!canEdit)
         }
-        .settingsCard(.init(
+        .settingsSection(.init(
             title: "Storage",
             detail: "Files stay on this Mac",
             systemImage: "internaldrive"
@@ -194,7 +100,7 @@ struct RecordingSettingsPage: View {
             .toggleStyle(.switch)
             .settingsRow()
 
-            SettingsCardDivider()
+            SettingsRowDivider()
 
             HStack(alignment: .center, spacing: 18) {
                 SettingsRowLabel(.init(
@@ -220,7 +126,7 @@ struct RecordingSettingsPage: View {
                 .padding(.bottom, 14)
             }
         }
-        .settingsCard(.init(
+        .settingsSection(.init(
             title: "Local transcription",
             detail: "Audio and model files never leave this Mac",
             systemImage: "waveform.badge.mic"
@@ -250,101 +156,83 @@ struct RecordingSettingsPage: View {
     }
 
     private var advancedSection: some View {
-        VStack(spacing: 0) {
-            DisclosureGroup("Advanced encoding", isExpanded: $showsAdvanced) {
-                VStack(spacing: 14) {
-                    HStack(alignment: .center, spacing: 18) {
-                        SettingsRowLabel(.init(
-                            title: "Video detail override",
-                            detail: qualityPresentation.bitrateOverrideDetail
-                        ))
+        VStack(spacing: 14) {
+            HStack(alignment: .center, spacing: 18) {
+                SettingsRowLabel(.init(
+                    title: "Video detail override",
+                    detail: qualityPresentation.bitrateOverrideDetail
+                ))
 
-                        Spacer(minLength: 16)
+                Spacer(minLength: 16)
 
-                        HStack(spacing: 10) {
-                            Slider(
-                                value: bitrateBinding,
-                                in: Double(RecordingSettings.minCustomVideoBitrate / 1_000_000)
-                                    ... Double(RecordingSettings.maxCustomVideoBitrate / 1_000_000),
-                                step: 1
-                            )
-                            .frame(width: 170)
+                HStack(spacing: 10) {
+                    Slider(
+                        value: bitrateBinding,
+                        in: Double(RecordingSettings.minCustomVideoBitrate / 1_000_000)
+                            ... Double(RecordingSettings.maxCustomVideoBitrate / 1_000_000),
+                        step: 1
+                    )
+                    .frame(width: 170)
 
-                            Button(vm.settings.customVideoBitrate == nil ? "Custom" : "Auto") {
-                                if vm.settings.customVideoBitrate == nil {
-                                    vm.setCustomVideoBitrate(vm.settings.autoVideoBitrate)
-                                } else {
-                                    vm.setCustomVideoBitrate(nil)
-                                }
-                            }
-                        }
-                        .disabled(!canEdit)
-                    }
-
-                    SettingsCardDivider()
-
-                    HStack(alignment: .center, spacing: 18) {
-                        SettingsRowLabel(.init(
-                            title: "Audio quality",
-                            detail: vm.settings.audioQuality.plainDescription
-                        ))
-
-                        Spacer(minLength: 16)
-
-                        Picker("", selection: audioQualityBinding) {
-                            ForEach(AudioQuality.allCases, id: \.self) { quality in
-                                Text(quality.displayName)
-                                    .tag(quality)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 150)
-                        .disabled(!canEdit)
-                    }
-
-                    if vm.settings.savesSourceFiles {
-                        SettingsCardDivider()
-
-                        HStack(alignment: .center, spacing: 18) {
-                            SettingsRowLabel(.init(
-                                title: "Source audio format",
-                                detail: vm.settings.sourceAudioFormat.plainDescription
-                            ))
-
-                            Spacer(minLength: 16)
-
-                            Picker("", selection: sourceAudioBinding) {
-                                ForEach(SourceAudioFormat.allCases, id: \.self) { format in
-                                    Text(format.displayName)
-                                        .tag(format)
-                                }
-                            }
-                            .labelsHidden()
-                            .frame(width: 150)
-                            .disabled(!canEdit)
+                    Button(vm.settings.customVideoBitrate == nil ? "Custom" : "Auto") {
+                        if vm.settings.customVideoBitrate == nil {
+                            vm.setCustomVideoBitrate(vm.settings.autoVideoBitrate)
+                        } else {
+                            vm.setCustomVideoBitrate(nil)
                         }
                     }
                 }
-                .padding(.top, 14)
+                .disabled(!canEdit)
             }
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(.white.opacity(0.72))
-            .settingsRow()
+
+            SettingsRowDivider()
+
+            HStack(alignment: .center, spacing: 18) {
+                SettingsRowLabel(.init(
+                    title: "Audio quality",
+                    detail: vm.settings.audioQuality.plainDescription
+                ))
+
+                Spacer(minLength: 16)
+
+                Picker("", selection: audioQualityBinding) {
+                    ForEach(AudioQuality.allCases, id: \.self) { quality in
+                        Text(quality.displayName)
+                            .tag(quality)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 150)
+                .disabled(!canEdit)
+            }
+
+            if vm.settings.savesSourceFiles {
+                SettingsRowDivider()
+
+                HStack(alignment: .center, spacing: 18) {
+                    SettingsRowLabel(.init(
+                        title: "Source audio format",
+                        detail: vm.settings.sourceAudioFormat.plainDescription
+                    ))
+
+                    Spacer(minLength: 16)
+
+                    Picker("", selection: sourceAudioBinding) {
+                        ForEach(SourceAudioFormat.allCases, id: \.self) { format in
+                            Text(format.displayName)
+                                .tag(format)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 150)
+                    .disabled(!canEdit)
+                }
+            }
         }
-        .settingsCard(.init(
-            title: "Advanced",
-            detail: "Encoding controls for specialist workflows",
-            systemImage: "slider.horizontal.3"
-        ))
-    }
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(.white.opacity(0.72))
+        .settingsRow()
 
-    private var profileSummary: String {
-        qualityPresentation.profileSummary
-    }
-
-    private var resolutionDetail: String {
-        let dimensions = vm.settings.outputResolution.dimensions(for: vm.settings.layout)
-        return "\(dimensions.width) × \(dimensions.height) · \(vm.settings.layout.shortLabel)"
     }
 
     private var qualityPresentation: RecordingQualityPresentation {
@@ -362,27 +250,6 @@ struct RecordingSettingsPage: View {
         case .failed(let message):
             return message
         }
-    }
-
-    private var resolutionBinding: Binding<OutputResolution> {
-        Binding(
-            get: { vm.settings.outputResolution },
-            set: { vm.setResolution($0) }
-        )
-    }
-
-    private var frameRateBinding: Binding<Int> {
-        Binding(
-            get: { vm.settings.framesPerSecond },
-            set: { vm.setFrameRate($0) }
-        )
-    }
-
-    private var formatBinding: Binding<OutputVideoFormat> {
-        Binding(
-            get: { vm.settings.outputVideoFormat },
-            set: { vm.setFormat($0) }
-        )
     }
 
     private var audioQualityBinding: Binding<AudioQuality> {

@@ -1393,7 +1393,6 @@ struct RecordingSettings {
     var systemAudioGain: Double = 1.0
     var removesCameraBackgroundAfterRecording: Bool = false
     var savesSourceFiles: Bool = true
-    var renamesRecordingsFromSpeech: Bool = false
     var showsRuleOfThirdsOverlay: Bool = false
     var socialSafeZoneOverlay: SocialVideoSafeZone = .none
     var includeCursor: Bool = true

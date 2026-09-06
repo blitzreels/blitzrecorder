@@ -10,28 +10,34 @@ struct SourcesSidebar: View {
                 devicesHeader
 
                 devicesSection
+
+                Rectangle()
+                    .fill(BlitzUI.separator)
+                    .frame(height: 1)
+
+                CaptureScenePicker(vm: vm)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 12)
         }
-        .scrollIndicators(.hidden)
-        .frame(minWidth: 236, idealWidth: 276, maxWidth: 276)
+        .scrollIndicators(.automatic)
+        .frame(minWidth: 216, idealWidth: 232, maxWidth: 232)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(.regularMaterial)
+        .background(BlitzUI.panelBackground)
     }
 
     private var devicesHeader: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        HStack {
             Text("Sources")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(.white.opacity(0.94))
-            Text("Enabled sources record separately. Scene visibility only changes the composed video.")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(BlitzUI.primaryText)
+            Spacer(minLength: 0)
+            Text("Record")
                 .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.white.opacity(0.42))
-                .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(BlitzUI.secondaryText)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 2)
+        .help("Enabled sources are recorded separately, even when hidden in a scene.")
     }
 
     private var devicesSection: some View {
@@ -55,7 +61,6 @@ struct SourcesSidebar: View {
                 title: "Screen",
                 subtitle: vm.selectedScreenSourceDisplayName,
                 status: sourceStatus(for: .screen),
-                sourceIcon: selectedScreenSourceOption?.icon,
                 vm: vm
             )
         case .camera:
@@ -85,14 +90,6 @@ struct SourcesSidebar: View {
                 vm: vm
             )
         }
-    }
-
-    private var selectedScreenSourceOption: ScreenSourceOption? {
-        guard !vm.settings.usesPickedScreenContent,
-              let binding = vm.settings.screenSourceBinding else {
-            return nil
-        }
-        return vm.availableScreenSources.first { $0.binding == binding }
     }
 
     private func sourceStatus(for source: CaptureSource) -> SourceRowStatus {
@@ -236,7 +233,7 @@ private struct WebcamSourceMenu: View {
     }
 
     private var selectedIcon: String {
-        vm.isRemoteCameraSelected ? "iphone.gen3" : "video"
+        vm.isRemoteCameraSelected ? "iphone.gen3" : BlitzSymbols.camera
     }
 
     private var pickerModel: BlitzSourcePickerModel {
@@ -268,7 +265,7 @@ private struct WebcamSourceMenu: View {
             BlitzSourcePickerItem(
                 title: "Default camera",
                 subtitle: "Follow the macOS default",
-                systemImage: "video",
+                systemImage: BlitzSymbols.camera,
                 icon: nil,
                 thumbnail: nil,
                 isSelected: vm.settings.selectedCameraID == nil
@@ -280,7 +277,7 @@ private struct WebcamSourceMenu: View {
             BlitzSourcePickerItem(
                 title: option.name,
                 subtitle: "Connected to this Mac",
-                systemImage: "video",
+                systemImage: BlitzSymbols.camera,
                 icon: nil,
                 thumbnail: nil,
                 isSelected: vm.settings.selectedCameraID == option.id
@@ -309,47 +306,26 @@ private struct WebcamSourceMenu: View {
     }
 }
 
-private struct BlitzMenuSelectorLabel: View {
-    let title: String
-    let icon: String
-    let enabled: Bool
-
-    var body: some View {
-        HStack(spacing: 7) {
-            Image(systemName: icon)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.white.opacity(enabled ? 0.55 : 0.3))
-            Text(title)
-                .font(.system(size: 10, weight: .medium))
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: 4)
-            Image(systemName: "chevron.down")
-                .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(.white.opacity(enabled ? 0.42 : 0.24))
-        }
-        .foregroundStyle(.white.opacity(enabled ? 0.62 : 0.3))
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
 private struct DeviceCard: View {
     let source: CaptureSource
     let title: String
     let subtitle: String
     let status: SourceRowStatus
-    var sourceIcon: NSImage?
     var levels: TrackLevels?
     @Bindable var vm: RecorderViewModel
+    @State private var isHovering = false
 
     private var isSelected: Bool { vm.selectedSource?.source == source }
     private var isEnabled: Bool { vm.isSourceConfigured(source) }
 
     var body: some View {
         header
-        .blitzCard(cornerRadius: 10, selected: isSelected && isEnabled)
-        .opacity(isEnabled ? 1 : 0.62)
-        .pointingHandCursor()
+            .background(
+                isSelected && isEnabled ? BlitzUI.selectedFill : (isHovering ? BlitzUI.quietFill : .clear),
+                in: .rect(cornerRadius: BlitzUI.controlRadius)
+            )
+            .opacity(isEnabled ? 1 : 0.62)
+            .onHover { isHovering = $0 }
     }
 
     private var header: some View {
@@ -361,46 +337,46 @@ private struct DeviceCard: View {
                     sourceIdentity
 
                     VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 6) {
-                            Text(title)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.white.opacity(0.95))
-                                .lineLimit(1)
+                        Text(title)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(BlitzUI.primaryText)
+                            .lineLimit(1)
 
-                            BlitzStatusDot(tone: status.tone.statusTone)
+                        HStack(spacing: 6) {
+                            Text(subtitle)
+                                .font(.system(size: 11, weight: .regular))
+                                .foregroundStyle(BlitzUI.secondaryText)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+
+                            if let levels {
+                                Spacer(minLength: 0)
+                                BlitzLevelMeter(levels: levels, active: status.tone == .active)
+                                    .frame(width: 24, height: 10)
+                                    .accessibilityHidden(true)
+                            }
                         }
 
-                        Text(subtitle)
-                            .font(.system(size: 9.5, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.5))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-
-                        Text(detailLabel)
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(detailColor)
-                            .lineLimit(1)
+                        if let noticeLabel {
+                            Text(noticeLabel)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(detailColor)
+                                .lineLimit(1)
+                        }
                     }
-
-                    Spacer(minLength: 0)
-
-                    if let levels {
-                        BlitzLevelMeter(levels: levels, active: status.tone == .active)
-                            .frame(width: 28, height: 14)
-                    }
-
-                    if isSelected && isEnabled {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(.white.opacity(0.34))
-                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .contentShape(.rect(cornerRadius: 8))
             }
             .buttonStyle(.plain)
             .disabled(!isEnabled)
+            .accessibilityLabel("\(title), \(subtitle)")
+            .accessibilityValue(detailLabel)
+            .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+            .help("\(title): \(subtitle). \(detailLabel)")
+            .pointingHandCursor()
 
-            Toggle("", isOn: Binding(
+            Toggle("Record \(title)", isOn: Binding(
                 get: { isEnabled },
                 set: { _ in vm.toggleSource(source) }
             ))
@@ -415,7 +391,7 @@ private struct DeviceCard: View {
         .padding(.leading, 10)
         .padding(.trailing, 6)
         .padding(.vertical, 5)
-        .frame(minHeight: 60)
+        .frame(minHeight: 52)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -427,25 +403,22 @@ private struct DeviceCard: View {
         return "\(status.label) · \(sceneState)"
     }
 
+    private var noticeLabel: String? {
+        if status.tone == .warning { return status.label }
+        if isEnabled, source == .screen || source == .camera, !vm.isSourceVisible(source) {
+            return "Hidden in scene"
+        }
+        return nil
+    }
+
     private var detailColor: Color {
         status.tone == .warning ? BlitzUI.warning : .white.opacity(0.42)
     }
 
-    @ViewBuilder
     private var sourceIdentity: some View {
-        if let sourceIcon {
-            Image(nsImage: sourceIcon)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 20, height: 20)
-                .clipShape(.rect(cornerRadius: 5))
-        } else {
-            Image(systemName: source.symbolName)
-                .font(.system(size: 14, weight: .medium))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.white.opacity(isSelected ? 0.82 : 0.48))
-                .frame(width: 20, height: 20)
-        }
+        BlitzSymbol(configuration: .init(name: source.symbolName, size: 22))
+            .foregroundStyle(isSelected && isEnabled ? BlitzUI.mint : BlitzUI.secondaryText)
+            .frame(width: 28, height: 32)
     }
 }
 
@@ -458,14 +431,6 @@ private enum SourceRowStatusTone: Equatable {
     case active
     case muted
     case warning
-
-    var statusTone: BlitzStatusTone {
-        switch self {
-        case .active: return .live
-        case .muted: return .muted
-        case .warning: return .warning
-        }
-    }
 }
 
 struct SelectedSourceInspector: View {
@@ -514,17 +479,21 @@ private struct ScreenSourceInspector: View {
             if enabled && vm.hasActiveScreenPickerSelection {
                 if vm.supportsScreenWindowScaling {
                     ScreenSourceFramingControl(vm: vm, enabled: enabled)
+                } else {
+                    Button(action: vm.pickScreen) {
+                        Label("Choose a window for vertical video", systemImage: "macwindow")
+                            .font(.system(size: 11, weight: .medium))
+                            .frame(maxWidth: .infinity, minHeight: 30)
+                    }
+                    .blitzGlassButton()
+                    ScreenContentModeControl(vm: vm, enabled: enabled)
                 }
-                ScreenContentModeControl(vm: vm, enabled: enabled)
             }
         }
-        .settingsPanelStyle()
     }
 
     private var captureSourceRow: some View {
         VStack(alignment: .leading, spacing: 8) {
-            inspectorLabel("Source", enabled: enabled)
-
             BlitzSourcePicker(model: pickerModel)
             .help("Choose a display or window")
         }
@@ -577,7 +546,7 @@ private struct ScreenSourceInspector: View {
             BlitzSourcePickerItem(
                 title: "Pick Full Screen",
                 subtitle: "Records an entire display without resizing apps",
-                systemImage: "display",
+                systemImage: BlitzSymbols.screen,
                 icon: nil,
                 thumbnail: nil,
                 isSelected: vm.activePickedScreenContentKind == .display
@@ -659,36 +628,25 @@ struct ScreenContentModeControl: View {
     let enabled: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            inspectorLabel("Screen framing", enabled: enabled)
+        VStack(alignment: .leading, spacing: 8) {
+            BlitzUI.sectionLabel("Framing", icon: "crop")
 
-            HStack(spacing: 7) {
-                modeButton(.fill, title: "Fill frame", detail: "Crop edges")
-                modeButton(.fit, title: "Show all", detail: "No crop")
-            }
+            SourceFramingPicker(selection: Binding(
+                get: { vm.settings.screenContentMode },
+                set: { vm.setScreenContentMode($0) }
+            ), fitTitle: "Full display")
+            .disabled(!enabled || !vm.canEditScene)
 
             if vm.settings.screenContentMode == .fill {
                 Button {
                     vm.beginScreenCropMode()
                 } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "crop")
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("Adjust crop")
-                                .font(.system(size: 10.5, weight: .bold))
-                            Text("Choose which part stays visible")
-                                .font(.system(size: 8.5, weight: .medium))
-                                .opacity(0.58)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .foregroundStyle(.white.opacity(0.82))
-                    .padding(.horizontal, 9)
-                    .frame(maxWidth: .infinity, minHeight: 40)
-                    .contentShape(.rect(cornerRadius: 8))
+                    Label("Adjust crop", systemImage: "crop")
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(maxWidth: .infinity, minHeight: 24)
                 }
-                .buttonStyle(.plain)
-                .background(BlitzUI.controlFill, in: .rect(cornerRadius: 8))
+                .blitzGlassButton()
+                .controlSize(.small)
                 .disabled(!enabled || !vm.canEditScene)
                 .pointingHandCursor()
                 .help("Move and resize the visible screen area directly on the canvas")
@@ -696,191 +654,71 @@ struct ScreenContentModeControl: View {
         }
         .opacity(enabled ? 1 : 0.55)
     }
-
-    private func modeButton(
-        _ mode: CameraContentMode,
-        title: String,
-        detail: String
-    ) -> some View {
-        let selected = vm.settings.screenContentMode == mode
-        return Button {
-            vm.setScreenContentMode(mode)
-        } label: {
-            HStack(spacing: 7) {
-                Image(systemName: mode.symbolName)
-                    .font(.system(size: 11, weight: .bold))
-                    .frame(width: 17)
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title)
-                        .font(.system(size: 10.5, weight: .bold))
-                    Text(detail)
-                        .font(.system(size: 8.5, weight: .medium))
-                        .opacity(0.58)
-                }
-
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(selected ? BlitzUI.mint : .white.opacity(0.78))
-            .padding(.horizontal, 9)
-            .frame(maxWidth: .infinity, minHeight: 43)
-            .contentShape(.rect(cornerRadius: 8))
-        }
-        .buttonStyle(.plain)
-        .background(
-            selected ? BlitzUI.mint.opacity(0.12) : BlitzUI.controlFill,
-            in: .rect(cornerRadius: 8)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(selected ? BlitzUI.mint.opacity(0.72) : .white.opacity(0.08), lineWidth: 1)
-        }
-        .disabled(!enabled || !vm.canEditScene)
-        .pointingHandCursor()
-        .accessibilityLabel(title)
-        .accessibilityValue(selected ? "Selected" : "Not selected")
-        .help(mode == .fill
-            ? "Fill the entire frame. Source edges can be cropped."
-            : "Keep the entire source visible without cropping.")
-    }
 }
 
 private struct ScreenSourceFramingControl: View {
     @Bindable var vm: RecorderViewModel
     let enabled: Bool
 
-    @ViewBuilder
     var body: some View {
-        if vm.supportsScreenWindowScaling {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    Text("App UI scale")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white.opacity(enabled ? 0.82 : 0.38))
-
-                    Spacer(minLength: 0)
-
-                    Text("\(Int((vm.targetWindowZoom * 100).rounded()))%")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .monospacedDigit()
-                        .foregroundStyle(.white.opacity(enabled ? 0.7 : 0.32))
-                }
-
-                Slider(
-                    value: Binding(
-                        get: { Double(vm.targetWindowZoom) },
-                        set: { vm.setTargetWindowZoom(CGFloat($0)) }
-                    ),
-                    in: ScreenSourceZoomGeometry.minimumZoom...ScreenSourceZoomGeometry.maximumZoom,
-                    step: 0.05,
-                    onEditingChanged: { editing in
-                        if !editing {
-                            vm.applyTargetWindowZoom()
-                        }
-                    }
-                )
-                .controlSize(.small)
-                .tint(BlitzUI.mint)
-                .disabled(!canUseWindowControls)
-                .help("Use a larger window below 100% to show more content, or enlarge the UI above 100%")
-
-                HStack(spacing: 8) {
-                    Text("50% · More content")
-                    Spacer(minLength: 0)
-                    Button {
-                        vm.resetTargetWindowZoom()
-                    } label: {
-                        Label("100%", systemImage: "arrow.counterclockwise")
-                            .font(.system(size: 10, weight: .bold))
-                            .padding(.horizontal, 9)
-                            .frame(minHeight: 26)
-                            .contentShape(.rect(cornerRadius: 7))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.white.opacity(canUseWindowControls ? 0.78 : 0.3))
-                    .background(BlitzUI.controlFill, in: .rect(cornerRadius: 7))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .stroke(.white.opacity(0.09), lineWidth: 1)
-                    }
-                    .disabled(!canUseWindowControls || abs(vm.targetWindowZoom - 1) < 0.001)
-                    .pointingHandCursor()
-                    Spacer(minLength: 0)
-                    Text("200% · Larger UI")
-                }
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(.white.opacity(enabled ? 0.4 : 0.22))
-
-                if vm.canShowScreenWindowFitControls {
-                    windowFitControl
-                } else {
-                    enableWindowFitButton
-                }
-            }
-            .opacity(enabled ? 1 : 0.55)
-        }
-    }
-
-    private var windowFitControl: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 12) {
             Button {
-                vm.fitCurrentScreenWindowToSlot()
-            } label: {
-                HStack(spacing: 9) {
-                    Image(systemName: "rectangle.arrowtriangle.2.inward")
-                        .font(.system(size: 13, weight: .semibold))
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Fit full window")
-                            .font(.system(size: 11, weight: .bold))
-                        Text("Full width + height, no crop")
-                            .font(.system(size: 9, weight: .medium))
-                            .opacity(0.58)
-                    }
-                    Spacer(minLength: 0)
+                if vm.hasAccessibilityAccessForWindowControls {
+                    vm.fitCurrentScreenWindowToSlot()
+                } else {
+                    vm.requestAccessibilityForWindowControls()
                 }
-                .foregroundStyle(.white.opacity(0.86))
-                .padding(.horizontal, 11)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .contentShape(.rect(cornerRadius: 9))
+            } label: {
+                Label("Fit window to scene", systemImage: "rectangle.arrowtriangle.2.inward")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(maxWidth: .infinity, minHeight: 30)
             }
-            .buttonStyle(.plain)
-            .background(BlitzUI.mint.opacity(0.12), in: .rect(cornerRadius: 9))
-            .overlay {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .stroke(BlitzUI.mint.opacity(0.48), lineWidth: 1)
-            }
-            .disabled(!canUseWindowControls)
-            .pointingHandCursor()
-            .help("Resize and reflow the complete source window inside its canvas frame")
-        }
-    }
+            .blitzGlassButton()
+            .help("Resize the selected window to this scene. Keep its full width and height visible.")
 
-    private var enableWindowFitButton: some View {
-        Button {
-            vm.requestAccessibilityForWindowControls()
-        } label: {
-            HStack(spacing: 7) {
-                Image(systemName: "lock.open")
-                    .font(.system(size: 9, weight: .semibold))
-                Text("Enable window fit")
-                    .font(.system(size: 10, weight: .semibold))
+            Text("Keeps the whole window visible.")
+                .font(.system(size: 10))
+                .foregroundStyle(BlitzUI.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                Text("Screen size")
                 Spacer(minLength: 0)
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: 8, weight: .bold))
+                Text("\(Int((vm.targetWindowZoom * 100).rounded()))%")
+                    .monospacedDigit()
+                Button(action: vm.resetTargetWindowZoom) {
+                    Image(systemName: "arrow.counterclockwise")
+                }
+                .blitzGlassButton()
+                .accessibilityLabel("Reset screen size")
+                .disabled(abs(vm.targetWindowZoom - 1) < 0.001)
             }
-            .foregroundStyle(BlitzUI.mint.opacity(enabled ? 0.82 : 0.3))
-            .padding(.horizontal, 10)
-            .frame(minHeight: 40)
-            .frame(maxWidth: .infinity)
-            .contentShape(.rect(cornerRadius: 9))
-        }
-        .blitzGlassButton()
-        .disabled(!enabled || !vm.canAdjustScreenCapture)
-        .help("Open the Accessibility guide for window fitting")
-    }
+            .font(.system(size: 11, weight: .medium))
 
-    private var canUseWindowControls: Bool {
-        enabled && vm.canAdjustScreenCapture && vm.canShowScreenWindowFitControls
+            Slider(
+                value: Binding(
+                    get: { Double(vm.targetWindowZoom) },
+                    set: { vm.setTargetWindowZoom(CGFloat($0)) }
+                ),
+                in: 0.5...2,
+                step: 0.05,
+                onEditingChanged: { if !$0 { vm.applyTargetWindowZoom() } }
+            )
+            .controlSize(.small)
+            .tint(BlitzUI.mint)
+            .disabled(!vm.canShowScreenWindowFitControls)
+            .accessibilityLabel("Screen size")
+            .help("Resize the selected window. Larger content uses a smaller window, keeping the full window visible.")
+
+            HStack {
+                Text("More content")
+                Spacer(minLength: 0)
+                Text("Larger content")
+            }
+            .font(.system(size: 10))
+            .foregroundStyle(BlitzUI.secondaryText)
+        }
+        .disabled(!enabled || !vm.canEditScene || vm.isScreenCropModeEnabled)
     }
 }
 
@@ -896,7 +734,6 @@ private struct CameraSourceInspector: View {
             }
             TransparentWebcamToggle(vm: vm, enabled: enabled)
         }
-        .settingsPanelStyle()
     }
 
     private var remoteCameraSettingsShortcut: some View {
@@ -948,72 +785,50 @@ private struct AudioSourceInspector: View {
     private var gainLabel: String { "\(Int((gain * 100).rounded()))%" }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Text(title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(enabled ? 0.82 : 0.38))
-                    .lineLimit(1)
-
-                Spacer(minLength: 0)
-
-                Text(gainLabel)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.55))
-                    .monospacedDigit()
-            }
-
+        VStack(alignment: .leading, spacing: 14) {
             if source == .microphone {
                 MicrophoneSourceMenu(vm: vm, enabled: enabled)
             } else {
-                InspectorMetricRow(
-                    icon: "speaker.wave.2",
-                    title: "Selected",
-                    value: "Mac audio",
-                    enabled: enabled
-                )
+                HStack(spacing: 8) {
+                    BlitzSymbol(configuration: .init(name: BlitzSymbols.systemAudio, size: 18))
+                    Text("Mac audio")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .foregroundStyle(BlitzUI.secondaryText)
             }
 
-            TrackLevelGraph(levels: levels, active: enabled)
-                .frame(height: 22)
-                .opacity(enabled ? 1 : 0.3)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 10) {
+                    Text(title)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(BlitzUI.secondaryText)
+                        .lineLimit(1)
 
-            HStack(spacing: 6) {
-                Image(systemName: "speaker.fill")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.4))
-                Slider(value: $gain, in: 0...2)
-                    .controlSize(.mini)
-                    .disabled(vm.state != .idle || !enabled)
-                Image(systemName: "speaker.wave.3.fill")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.4))
+                    Spacer(minLength: 0)
+
+                    Text(gainLabel)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(BlitzUI.primaryText)
+                        .monospacedDigit()
+                }
+
+                TrackLevelGraph(levels: levels, active: enabled)
+                    .frame(height: 22)
+                    .opacity(enabled ? 1 : 0.3)
+                    .accessibilityHidden(true)
+
+                HStack(spacing: 7) {
+                    BlitzSymbol(configuration: .init(name: "speaker", size: 16))
+                    Slider(value: $gain, in: 0...2)
+                        .controlSize(.small)
+                        .tint(BlitzUI.mint)
+                        .disabled(vm.state != .idle || !enabled)
+                        .accessibilityLabel(source == .microphone ? "Microphone volume" : "System audio volume")
+                        .accessibilityValue(gainLabel)
+                    BlitzSymbol(configuration: .init(name: BlitzSymbols.systemAudio, size: 16))
+                }
+                .foregroundStyle(BlitzUI.secondaryText)
             }
-        }
-        .settingsPanelStyle()
-    }
-}
-
-private struct InspectorMetricRow: View {
-    let icon: String
-    let title: String
-    let value: String
-    let enabled: Bool
-
-    var body: some View {
-        HStack(spacing: 8) {
-            inspectorIcon(icon, enabled: enabled)
-
-            VStack(alignment: .leading, spacing: 1) {
-                inspectorLabel(title, enabled: enabled)
-                Text(value)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(enabled ? 0.76 : 0.38))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-
-            Spacer(minLength: 0)
         }
     }
 }
@@ -1027,9 +842,8 @@ private func inspectorIcon(_ icon: String, enabled: Bool) -> some View {
 }
 
 private func inspectorLabel(_ title: String, enabled: Bool) -> some View {
-    Text(title.uppercased())
-        .font(.system(size: 9, weight: .heavy))
-        .tracking(0.5)
+    Text(title)
+        .font(.system(size: 10, weight: .medium))
         .foregroundStyle(.white.opacity(enabled ? 0.38 : 0.24))
 }
 
@@ -1038,60 +852,46 @@ private struct MicrophoneSourceMenu: View {
     let enabled: Bool
 
     var body: some View {
-        BlitzGlassMenu(entries: entries, menuWidth: 260) {
-            BlitzMenuSelectorLabel(title: vm.selectedMicrophoneDisplayName, icon: "mic", enabled: enabled)
-        }
-        .controlSize(.small)
-        .disabled(vm.state == .starting || vm.state == .finishing)
-        .pointingHandCursor()
-        .help("Choose microphone source")
+        BlitzSourcePicker(model: pickerModel)
+            .help("Choose microphone source")
     }
 
-    private var entries: [BlitzMenuEntry] {
-        var entries: [BlitzMenuEntry] = [
-            .item(BlitzMenuItem(
-                title: "Default microphone",
-                systemImage: "mic",
-                isSelected: vm.settings.selectedMicrophoneID == nil
-            ) {
-                vm.setMicrophone(nil)
-            })
-        ]
+    private var pickerModel: BlitzSourcePickerModel {
+        BlitzSourcePickerModel(
+            title: vm.selectedMicrophoneDisplayName,
+            subtitle: "Microphone input",
+            systemImage: BlitzSymbols.microphone,
+            icon: nil,
+            sections: [BlitzSourcePickerSection(title: "Microphones", items: microphoneItems)],
+            actions: [],
+            layout: .list,
+            enabled: enabled && vm.state != .starting && vm.state != .finishing
+        )
+    }
 
-        if !vm.availableMicrophones.isEmpty {
-            entries.append(.divider)
-            for option in vm.availableMicrophones {
-                entries.append(.item(BlitzMenuItem(
-                    title: option.name,
-                    systemImage: "mic",
-                    isSelected: vm.settings.selectedMicrophoneID == option.id
-                ) {
-                    vm.setMicrophone(option.id)
-                }))
+    private var microphoneItems: [BlitzSourcePickerItem] {
+        let defaultItem = BlitzSourcePickerItem(
+            title: "Default microphone",
+            subtitle: "Follow the macOS default",
+            systemImage: BlitzSymbols.microphone,
+            icon: nil,
+            thumbnail: nil,
+            isSelected: vm.settings.selectedMicrophoneID == nil
+        ) {
+            vm.setMicrophone(nil)
+        }
+        return [defaultItem] + vm.availableMicrophones.map { option in
+            BlitzSourcePickerItem(
+                title: option.name,
+                subtitle: nil,
+                systemImage: BlitzSymbols.microphone,
+                icon: nil,
+                thumbnail: nil,
+                isSelected: vm.settings.selectedMicrophoneID == option.id
+            ) {
+                vm.setMicrophone(option.id)
             }
         }
-
-        return entries
-    }
-}
-
-private extension View {
-    func settingsPanelStyle() -> some View {
-        self
-    }
-}
-
-private struct EmptySourceHint: View {
-    let title: String
-
-    var body: some View {
-        Text(title)
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.white.opacity(0.38))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(Color.white.opacity(0.04), in: .rect(cornerRadius: 10))
     }
 }
 

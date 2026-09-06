@@ -10,7 +10,7 @@ struct BlitzReelsCreatorPage: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 28) {
                 header
 
                 accessCard
@@ -36,13 +36,8 @@ struct BlitzReelsCreatorPage: View {
 
     private var accessCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("ACCESS")
-                .font(.system(size: 10, weight: .heavy))
-                .tracking(0.7)
-                .foregroundStyle(.white.opacity(0.52))
-
             infoRow(
-                symbol: access.hasActiveLicense ? "checkmark.seal.fill" : "lock.fill",
+                symbol: access.hasActiveLicense ? "checkmark.seal" : "lock",
                 color: BlitzUI.mint,
                 title: access.hasActiveLicense ? access.accessLabel : access.upgradeTitle,
                 detail: access.hasActiveLicense
@@ -61,15 +56,13 @@ struct BlitzReelsCreatorPage: View {
 
             activationForm
         }
-        .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .blitzGlassSurface(cornerRadius: 16)
     }
 
     private var activationForm: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 10) {
-                Label("License", systemImage: "key.horizontal.fill")
+                Label("License", systemImage: "key.horizontal")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(.white.opacity(0.86))
 
@@ -86,8 +79,7 @@ struct BlitzReelsCreatorPage: View {
 
             licenseFeedback
         }
-        .padding(14)
-        .background(BlitzUI.quietFill, in: .rect(cornerRadius: 10))
+        .padding(.top, 12)
     }
 
     private var licenseEntryPanel: some View {
@@ -114,7 +106,7 @@ struct BlitzReelsCreatorPage: View {
                 } label: {
                     Label("Paste key", systemImage: "doc.on.clipboard")
                 }
-                .buttonStyle(.bordered)
+                .blitzGlassButton()
                 .disabled(access.isValidatingLicense)
 
                 Button {
@@ -123,10 +115,10 @@ struct BlitzReelsCreatorPage: View {
                     if access.isValidatingLicense {
                         Label("Checking license", systemImage: "arrow.triangle.2.circlepath")
                     } else {
-                        Label("Activate license", systemImage: "checkmark.seal.fill")
+                        Label("Activate license", systemImage: "checkmark.seal")
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .blitzProminentGlassButton()
                 .tint(BlitzUI.mint)
                 .keyboardShortcut(.return, modifiers: [])
                 .disabled(access.isValidatingLicense || licenseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -136,9 +128,9 @@ struct BlitzReelsCreatorPage: View {
                 Button {
                     access.beginPurchase()
                 } label: {
-                    Label("Buy license", systemImage: "creditcard.fill")
+                    Label("Buy license", systemImage: "creditcard")
                 }
-                .buttonStyle(.bordered)
+                .blitzGlassButton()
             }
             .controlSize(.small)
         }
@@ -153,7 +145,7 @@ struct BlitzReelsCreatorPage: View {
     private var activeLicensePanel: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "checkmark.seal.fill")
+                Image(systemName: "checkmark.seal")
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(BlitzUI.mint)
                     .frame(width: 22)
@@ -186,7 +178,7 @@ struct BlitzReelsCreatorPage: View {
                 } label: {
                     Label("Refresh license", systemImage: "arrow.clockwise")
                 }
-                .buttonStyle(.bordered)
+                .blitzGlassButton()
                 .disabled(access.isValidatingLicense)
 
                 Button(role: .destructive) {
@@ -196,7 +188,7 @@ struct BlitzReelsCreatorPage: View {
                 } label: {
                     Label("Remove license", systemImage: "trash")
                 }
-                .buttonStyle(.bordered)
+                .blitzGlassButton()
             }
             .controlSize(.small)
         }
@@ -205,7 +197,7 @@ struct BlitzReelsCreatorPage: View {
     private func licenseFeatureChip(_ title: String) -> some View {
         HStack(spacing: 5) {
             Image(systemName: "checkmark")
-                .font(.system(size: 8, weight: .heavy))
+                .font(.system(size: 8, weight: .semibold))
             Text(title)
                 .font(.system(size: 10, weight: .semibold))
         }
@@ -308,13 +300,12 @@ struct BlitzReelsCreatorPage: View {
 
     private var communityCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("OPEN SOURCE")
-                .font(.system(size: 10, weight: .heavy))
-                .tracking(0.7)
+            Text("Open source")
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.52))
 
             infoRow(
-                symbol: "curlybraces.square.fill",
+                symbol: "curlybraces.square",
                 color: .white.opacity(0.72),
                 title: "Source available",
                 detail: "Source code is AGPL. Official signed builds use the paid license."
@@ -334,9 +325,7 @@ struct BlitzReelsCreatorPage: View {
             }
             .blitzGlassButton()
         }
-        .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .blitzGlassSurface(cornerRadius: 16)
     }
 
     private var footerLinks: some View {
@@ -373,13 +362,7 @@ struct BlitzReelsCreatorPage: View {
 
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 12)
-        .background(Color.white.opacity(0.055), in: .rect(cornerRadius: 10))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
-        }
+        .padding(.vertical, 8)
     }
 
 }

@@ -492,11 +492,11 @@ enum RecordingProjectSceneCorrection: String, CaseIterable {
     var symbolName: String {
         switch self {
         case .screenOnly:
-            return "display"
+            return BlitzSymbols.screen
         case .cameraOnly:
-            return "video"
+            return BlitzSymbols.camera
         case .screenAndCamera:
-            return "pip"
+            return BlitzSymbols.pictureInPicture
         }
     }
 }

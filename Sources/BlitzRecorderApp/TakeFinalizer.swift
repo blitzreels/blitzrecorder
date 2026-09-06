@@ -112,22 +112,7 @@ final class TakeFinalizer {
     var onMessage: ((String) -> Void)?
     var onRenderProgress: ((Double) -> Void)?
 
-    private let speechTranscriber: SpeechTranscriber
-    private let titleGenerator: TitleGenerator
-    private let fileStore: TakeFileStore
-    private let finalVideoExporter: FinalVideoExporting
-
-    init(
-        speechTranscriber: SpeechTranscriber,
-        titleGenerator: TitleGenerator,
-        fileStore: TakeFileStore = TakeFileStore(),
-        finalVideoExporter: FinalVideoExporting = MergerFinalVideoExporter()
-    ) {
-        self.speechTranscriber = speechTranscriber
-        self.titleGenerator = titleGenerator
-        self.fileStore = fileStore
-        self.finalVideoExporter = finalVideoExporter
-    }
+    private let fileStore = TakeFileStore()
 
     func finalize(
         take: RecordingTake,
@@ -139,8 +124,7 @@ final class TakeFinalizer {
         var synchronizedTake = take
         synchronizedTake.timelineTrimOffset = captureSummary.timelineTrimOffset
         synchronizedTake.sourceTimelineOffsets = captureSummary.sourceTimelineOffsets
-        let renamedTake = synchronizedTake
-        let processedTake = await removeCameraBackgroundIfNeeded(from: renamedTake, settings: finalizationSettings)
+        let processedTake = await removeCameraBackgroundIfNeeded(from: synchronizedTake, settings: finalizationSettings)
         let plan = TakeFinalizationPlan(
             take: processedTake,
             settings: finalizationSettings,
@@ -276,7 +260,7 @@ final class TakeFinalizer {
         do {
             onMessage?("Exporting final video...")
             onRenderProgress?(0)
-            let url = try await finalVideoExporter.exportFinalVideo(
+            let url = try await Merger.exportFinalVideo(
                 take: take,
                 settings: settings,
                 sceneEvents: sceneEvents,
@@ -342,26 +326,6 @@ final class TakeFinalizer {
         )
     }
 
-    private func renameFromTranscriptIfPossible(take: RecordingTake, settings: RecordingSettings) async -> RecordingTake {
-        guard settings.enabledSources.contains(.microphone),
-              settings.renamesRecordingsFromSpeech,
-              FileManager.default.fileExists(atPath: take.audioURL.path) else {
-            return take
-        }
-
-        do {
-            onMessage?("Transcribing audio...")
-            let transcript = try await speechTranscriber.transcribe(audioURL: take.audioURL)
-            let slug = await titleGenerator.titleSlug(for: transcript)
-            let renamedTake = try rename(take: take, slug: slug, transcript: transcript, settings: settings)
-            onMessage?("Renamed: \(renamedTake.titleSlug ?? fileStore.defaultSlug(for: renamedTake))")
-            return renamedTake
-        } catch {
-            onMessage?("Rename skipped: \(error.recorderFailureDescription)")
-            return take
-        }
-    }
-
     private func removeCameraBackgroundIfNeeded(from take: RecordingTake, settings: RecordingSettings) async -> RecordingTake {
         guard settings.removesCameraBackgroundAfterRecording,
               settings.enabledSources.contains(.camera),
@@ -406,63 +370,6 @@ final class TakeFinalizer {
         return outputURL
     }
 
-    private func rename(take: RecordingTake, slug: String?, transcript: String, settings: RecordingSettings) throws -> RecordingTake {
-        let datedSlug = fileStore.datedSlug(for: take, slug: slug)
-        let fileManager = FileManager.default
-        let parentDirectory = take.scratchDirectory.deletingLastPathComponent()
-        let requestedDirectory = parentDirectory.appendingPathComponent(datedSlug, isDirectory: true)
-        let renamedDirectory: URL
-        if requestedDirectory.path == take.scratchDirectory.path {
-            renamedDirectory = take.scratchDirectory
-        } else {
-            renamedDirectory = uniqueDirectory(requestedDirectory)
-            try fileManager.moveItem(at: take.scratchDirectory, to: renamedDirectory)
-        }
-
-        let currentScreenURL = renamedDirectory.appendingPathComponent(take.screenURL.lastPathComponent)
-        let currentCameraURL = renamedDirectory.appendingPathComponent(take.cameraURL.lastPathComponent)
-        let currentAudioURL = renamedDirectory.appendingPathComponent(take.audioURL.lastPathComponent)
-        let currentSystemAudioURL = renamedDirectory.appendingPathComponent(take.systemAudioURL.lastPathComponent)
-
-        let screenExtension = take.screenURL.pathExtension.isEmpty ? "mov" : take.screenURL.pathExtension
-        let cameraExtension = take.cameraURL.pathExtension.isEmpty ? "mov" : take.cameraURL.pathExtension
-        let renamedScreenURL = renamedDirectory.appendingPathComponent("\(datedSlug)-screen.\(screenExtension)")
-        let renamedCameraURL = renamedDirectory.appendingPathComponent("\(datedSlug)-camera.\(cameraExtension)")
-        let audioExtension = take.audioURL.pathExtension.isEmpty ? "m4a" : take.audioURL.pathExtension
-        let systemAudioExtension = take.systemAudioURL.pathExtension.isEmpty ? "m4a" : take.systemAudioURL.pathExtension
-        let renamedAudioURL = renamedDirectory.appendingPathComponent("\(datedSlug)-audio.\(audioExtension)")
-        let renamedSystemAudioURL = renamedDirectory.appendingPathComponent("\(datedSlug)-system-audio.\(systemAudioExtension)")
-        let renamedTranscriptURL = renamedDirectory.appendingPathComponent("\(datedSlug)-transcript.txt")
-        let currentRemoteCameraManifestURL = currentCameraURL
-            .deletingPathExtension()
-            .appendingPathExtension("remote-camera-manifest.json")
-        let renamedRemoteCameraManifestURL = renamedCameraURL
-            .deletingPathExtension()
-            .appendingPathExtension("remote-camera-manifest.json")
-
-        try moveIfPresent(from: currentScreenURL, to: renamedScreenURL)
-        try moveIfPresent(from: currentCameraURL, to: renamedCameraURL)
-        try moveIfPresent(from: currentRemoteCameraManifestURL, to: renamedRemoteCameraManifestURL)
-        try moveIfPresent(from: currentAudioURL, to: renamedAudioURL)
-        try moveIfPresent(from: currentSystemAudioURL, to: renamedSystemAudioURL)
-        try transcript.write(to: renamedTranscriptURL, atomically: true, encoding: .utf8)
-
-        var renamedTake = RecordingTake(
-            scratchDirectory: renamedDirectory,
-            screenURL: renamedScreenURL,
-            cameraURL: renamedCameraURL,
-            audioURL: renamedAudioURL,
-            systemAudioURL: renamedSystemAudioURL,
-            transcriptURL: renamedTranscriptURL,
-            finalVideoURL: fileStore.finalVideoURL(slug: datedSlug, settings: settings, outputFormat: take.outputVideoFormat),
-            outputVideoFormat: take.outputVideoFormat,
-            titleSlug: datedSlug
-        )
-        renamedTake.timelineTrimOffset = take.timelineTrimOffset
-        renamedTake.sourceTimelineOffsets = take.sourceTimelineOffsets
-        return renamedTake
-    }
-
     private func replaceCameraURL(in take: RecordingTake, with cameraURL: URL) -> RecordingTake {
         var updatedTake = RecordingTake(
             scratchDirectory: take.scratchDirectory,
@@ -480,20 +387,4 @@ final class TakeFinalizer {
         return updatedTake
     }
 
-    private func moveIfPresent(from source: URL, to destination: URL) throws {
-        guard FileManager.default.fileExists(atPath: source.path) else { return }
-        try? FileManager.default.removeItem(at: destination)
-        try FileManager.default.moveItem(at: source, to: destination)
-    }
-
-    private func uniqueDirectory(_ url: URL) -> URL {
-        var candidate = url
-        var index = 2
-        while FileManager.default.fileExists(atPath: candidate.path) {
-            candidate = url.deletingLastPathComponent()
-                .appendingPathComponent("\(url.lastPathComponent)-\(index)", isDirectory: true)
-            index += 1
-        }
-        return candidate
-    }
 }

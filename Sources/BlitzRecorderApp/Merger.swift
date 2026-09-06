@@ -2,7 +2,6 @@ import AVFoundation
 import BlitzRecorderCore
 import CoreGraphics
 import Foundation
-import QuartzCore
 
 struct FinalVideoExportRequest {
     let take: RecordingTake
@@ -33,6 +32,7 @@ enum Merger {
     static func exportFinalVideo(
         _ request: FinalVideoExportRequest
     ) async throws -> URL {
+        try Task.checkCancellation()
         let take = request.take
         let settings = request.settings
         let sceneEvents = request.sceneEvents
@@ -42,7 +42,7 @@ enum Merger {
             at: take.finalVideoURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        let outputURL = request.destinationURL ?? uniqueFileURL(take.finalVideoURL)
+        let outputURL = request.destinationURL ?? TakeFileStore().uniqueFileURL(take.finalVideoURL)
         let outputDirectory = outputURL.deletingLastPathComponent()
         try fileManager.createDirectory(
             at: outputDirectory,
@@ -135,6 +135,7 @@ enum Merger {
         }
 
         do {
+            try Task.checkCancellation()
             await progressHandler?(0)
             if exportPlan.engine == .assetExportSession {
                 try await exportWithAssetExportSession(
@@ -163,13 +164,15 @@ enum Merger {
                 in: temporaryOutputURL,
                 expectedAudioSources: expectedAudioSources
             )
+            try Task.checkCancellation()
             await progressHandler?(1)
+            try Task.checkCancellation()
+            try fileManager.moveItem(at: temporaryOutputURL, to: outputURL)
         } catch {
             try? fileManager.removeItem(at: temporaryOutputURL)
             throw error
         }
 
-        try fileManager.moveItem(at: temporaryOutputURL, to: outputURL)
         return outputURL
     }
 
@@ -205,32 +208,18 @@ enum Merger {
             }
         }
         do {
-            try await exporter.export(to: outputURL, as: outputFileType)
+            try await withTaskCancellationHandler {
+                try Task.checkCancellation()
+                try await exporter.export(to: outputURL, as: outputFileType)
+            } onCancel: {
+                exporter.cancelExport()
+            }
             progressTask.cancel()
             await progressTask.value
         } catch {
             progressTask.cancel()
             await progressTask.value
             throw error
-        }
-    }
-
-    private static func uniqueFileURL(_ url: URL) -> URL {
-        let fileManager = FileManager.default
-        guard fileManager.fileExists(atPath: url.path) else {
-            return url
-        }
-
-        let directory = url.deletingLastPathComponent()
-        let baseName = url.deletingPathExtension().lastPathComponent
-        let pathExtension = url.pathExtension
-        var index = 2
-        while true {
-            let candidate = directory.appendingPathComponent("\(baseName)-\(index).\(pathExtension)")
-            if !fileManager.fileExists(atPath: candidate.path) {
-                return candidate
-            }
-            index += 1
         }
     }
 
@@ -445,436 +434,6 @@ enum Merger {
     private static func paddedFullCanvasTargetRect(renderSize: CGSize, settings: RecordingSettings) -> CGRect {
         let canvas = CGRect(origin: .zero, size: renderSize)
         return SceneLayoutProjection.padded(canvas, in: canvas, padding: settings.canvasPadding)
-    }
-
-    private static func applyCanvasBackground(
-        to videoComposition: AVMutableVideoComposition,
-        renderSize: CGSize,
-        settings: RecordingSettings,
-        sceneEvents: [RecordingSceneEvent],
-        duration: CMTime,
-        renderSegments: [FinalExportRenderSegment],
-        sourceAspectRatios: [SceneLayerKind: CGFloat]
-    ) {
-        let frame = CGRect(origin: .zero, size: renderSize)
-        let parentLayer = CALayer()
-        parentLayer.frame = frame
-
-        let videoLayer = CALayer()
-        videoLayer.frame = frame
-
-        let fallbackScene = RecordingScene(settings: settings)
-        let segments = RecordingSceneTimeline.segments(
-            sceneEvents: sceneEvents,
-            fallbackScene: fallbackScene,
-            duration: duration,
-            transitionSampleInterval: FinalExportPlanning.transitionSampleInterval(for: settings)
-        )
-        addCanvasBackgroundLayers(to: parentLayer, frame: frame, segments: segments, duration: duration)
-        applyRoundedSourceMask(
-            to: videoLayer,
-            frame: frame,
-            segments: segments,
-            duration: duration,
-            sourceAspectRatios: sourceAspectRatios
-        )
-        parentLayer.addSublayer(videoLayer)
-        addSourceShadowLayer(SourceShadowLayerRequest(
-            parentLayer: parentLayer,
-            frame: frame,
-            renderSegments: renderSegments,
-            duration: duration,
-            sourceAspectRatios: sourceAspectRatios,
-            kind: .screen
-        ))
-        addSourceShadowLayer(SourceShadowLayerRequest(
-            parentLayer: parentLayer,
-            frame: frame,
-            renderSegments: renderSegments,
-            duration: duration,
-            sourceAspectRatios: sourceAspectRatios,
-            kind: .camera
-        ))
-        videoComposition.animationTool = AVVideoCompositionCoreAnimationTool(
-            postProcessingAsVideoLayer: videoLayer,
-            in: parentLayer
-        )
-    }
-
-    private static func addCanvasBackgroundLayers(
-        to parentLayer: CALayer,
-        frame: CGRect,
-        segments: [RecordingSceneSegment],
-        duration: CMTime
-    ) {
-        guard !segments.isEmpty else { return }
-        let durationSeconds = max(0, duration.seconds)
-        if segments.count == 1 || durationSeconds <= 0 {
-            let scene = segments[0].scene
-            parentLayer.addSublayer(canvasBackgroundLayer(
-                style: scene.canvasBackgroundStyle,
-                animated: scene.canvasBackgroundAnimated,
-                frame: frame
-            ))
-            return
-        }
-
-        for segment in segments {
-            let layer = canvasBackgroundLayer(
-                style: segment.scene.canvasBackgroundStyle,
-                animated: segment.scene.canvasBackgroundAnimated,
-                frame: frame
-            )
-            layer.opacity = CMTimeCompare(segment.timeRange.start, .zero) == 0 ? 1 : 0
-            let start = max(0, min(1, segment.timeRange.start.seconds / durationSeconds))
-            let end = max(start, min(1, CMTimeGetSeconds(CMTimeRangeGetEnd(segment.timeRange)) / durationSeconds))
-            let animation = CAKeyframeAnimation(keyPath: "opacity")
-            animation.beginTime = AVCoreAnimationBeginTimeAtZero
-            animation.duration = durationSeconds
-            animation.keyTimes = opacityKeyTimes(start: start, end: end)
-            animation.values = opacityValues(start: start, end: end)
-            animation.calculationMode = .discrete
-            animation.isRemovedOnCompletion = false
-            animation.fillMode = .both
-            layer.add(animation, forKey: "scene-opacity")
-            parentLayer.addSublayer(layer)
-        }
-    }
-
-    private static func applyRoundedSourceMask(
-        to videoLayer: CALayer,
-        frame: CGRect,
-        segments: [RecordingSceneSegment],
-        duration: CMTime,
-        sourceAspectRatios: [SceneLayerKind: CGFloat]
-    ) {
-        guard !segments.isEmpty else { return }
-        var hasRoundedSegment = false
-        let maskPaths = segments.map { segment in
-            if let path = roundedSourceMaskPath(
-                for: segment.scene,
-                frame: frame,
-                sourceAspectRatios: sourceAspectRatios
-            ) {
-                hasRoundedSegment = true
-                return path
-            }
-            return CGPath(rect: frame, transform: nil)
-        }
-        guard hasRoundedSegment else { return }
-
-        let maskLayer = CAShapeLayer()
-        maskLayer.frame = frame
-        maskLayer.fillColor = CGColor(gray: 1, alpha: 1)
-        maskLayer.path = maskPaths[0]
-
-        let durationSeconds = max(0, duration.seconds)
-        if segments.count > 1, durationSeconds > 0 {
-            let animation = CAKeyframeAnimation(keyPath: "path")
-            animation.beginTime = AVCoreAnimationBeginTimeAtZero
-            animation.duration = durationSeconds
-            animation.keyTimes = pathKeyTimes(for: segments, durationSeconds: durationSeconds)
-            animation.values = pathValues(maskPaths, for: segments)
-            animation.calculationMode = .discrete
-            animation.isRemovedOnCompletion = false
-            animation.fillMode = .both
-            maskLayer.add(animation, forKey: "scene-path")
-        }
-
-        videoLayer.mask = maskLayer
-    }
-
-    private struct SourceShadowLayerRequest {
-        let parentLayer: CALayer
-        let frame: CGRect
-        let renderSegments: [FinalExportRenderSegment]
-        let duration: CMTime
-        let sourceAspectRatios: [SceneLayerKind: CGFloat]
-        let kind: SceneLayerKind
-    }
-
-    private struct SourceShadowGeometryRequest {
-        let segment: FinalExportRenderSegment
-        let frame: CGRect
-        let sourceAspectRatios: [SceneLayerKind: CGFloat]
-        let kind: SceneLayerKind
-    }
-
-    private static func addSourceShadowLayer(_ request: SourceShadowLayerRequest) {
-        guard !request.renderSegments.isEmpty else { return }
-        let geometryRequests = request.renderSegments.map { segment in
-            SourceShadowGeometryRequest(
-                segment: segment,
-                frame: request.frame,
-                sourceAspectRatios: request.sourceAspectRatios,
-                kind: request.kind
-            )
-        }
-        let shadowPaths = geometryRequests.map(sourceShadowPath)
-        let clipPaths = geometryRequests.map(sourceShadowClipPath)
-        let shadowOpacities = geometryRequests.map(sourceShadowOpacity)
-        guard shadowOpacities.contains(where: { $0 > 0.001 }) else { return }
-
-        let shadowLayer = CALayer()
-        shadowLayer.frame = request.frame
-        shadowLayer.shadowColor = CGColor(gray: 0, alpha: 1)
-        shadowLayer.shadowRadius = 18
-        shadowLayer.shadowOffset = CGSize(width: 0, height: -8)
-        shadowLayer.shadowPath = shadowPaths[0]
-        shadowLayer.shadowOpacity = shadowOpacities[0]
-
-        let clipLayer = CAShapeLayer()
-        clipLayer.frame = request.frame
-        clipLayer.fillColor = CGColor(gray: 1, alpha: 1)
-        clipLayer.fillRule = .evenOdd
-        clipLayer.path = clipPaths[0]
-        shadowLayer.mask = clipLayer
-
-        let durationSeconds = max(0, request.duration.seconds)
-        if request.renderSegments.count > 1, durationSeconds > 0 {
-            let keyTimes = pathKeyTimes(for: request.renderSegments, durationSeconds: durationSeconds)
-            let pathAnimation = CAKeyframeAnimation(keyPath: "shadowPath")
-            pathAnimation.beginTime = AVCoreAnimationBeginTimeAtZero
-            pathAnimation.duration = durationSeconds
-            pathAnimation.keyTimes = keyTimes
-            pathAnimation.values = pathValues(shadowPaths, for: request.renderSegments)
-            pathAnimation.calculationMode = .discrete
-            pathAnimation.isRemovedOnCompletion = false
-            pathAnimation.fillMode = .both
-            shadowLayer.add(pathAnimation, forKey: "\(request.kind.rawValue)-shadow-path")
-
-            let clipAnimation = CAKeyframeAnimation(keyPath: "path")
-            clipAnimation.beginTime = AVCoreAnimationBeginTimeAtZero
-            clipAnimation.duration = durationSeconds
-            clipAnimation.keyTimes = keyTimes
-            clipAnimation.values = pathValues(clipPaths, for: request.renderSegments)
-            clipAnimation.calculationMode = .discrete
-            clipAnimation.isRemovedOnCompletion = false
-            clipAnimation.fillMode = .both
-            clipLayer.add(clipAnimation, forKey: "\(request.kind.rawValue)-shadow-clip-path")
-
-            let opacityAnimation = CAKeyframeAnimation(keyPath: "shadowOpacity")
-            opacityAnimation.beginTime = AVCoreAnimationBeginTimeAtZero
-            opacityAnimation.duration = durationSeconds
-            opacityAnimation.keyTimes = keyTimes
-            opacityAnimation.values = opacityValues(shadowOpacities, for: request.renderSegments)
-            opacityAnimation.calculationMode = .discrete
-            opacityAnimation.isRemovedOnCompletion = false
-            opacityAnimation.fillMode = .both
-            shadowLayer.add(opacityAnimation, forKey: "\(request.kind.rawValue)-shadow-opacity")
-        }
-
-        request.parentLayer.addSublayer(shadowLayer)
-    }
-
-    private static func shadowScene(for segment: FinalExportRenderSegment) -> RecordingScene {
-        var scene = segment.scene
-        scene.enabledSources = Set(segment.activeLayerOrder.map(\.source))
-        return scene
-    }
-
-    private static func sourceShadowPath(_ request: SourceShadowGeometryRequest) -> CGPath {
-        let scene = shadowScene(for: request.segment)
-        let geometry = SceneRenderGeometry(canvas: request.frame, scene: scene, origin: .upperLeft)
-        let rect = geometry.visibleSourceRect(
-            for: request.kind,
-            sourceAspectRatio: request.sourceAspectRatios[request.kind]
-        )
-        let radius = geometry.sourceCornerRadius(for: request.kind)
-        guard rect.width > 0, rect.height > 0 else {
-            return CGPath(rect: .zero, transform: nil)
-        }
-        return CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
-    }
-
-    private static func sourceShadowClipPath(_ request: SourceShadowGeometryRequest) -> CGPath {
-        let scene = shadowScene(for: request.segment)
-        let geometry = SceneRenderGeometry(canvas: request.frame, scene: scene, origin: .upperLeft)
-        let rect = geometry.visibleSourceRect(
-            for: request.kind,
-            sourceAspectRatio: request.sourceAspectRatios[request.kind]
-        )
-        let radius = geometry.sourceCornerRadius(for: request.kind)
-        let path = CGMutablePath()
-        path.addRect(request.frame)
-        if rect.width > 0, rect.height > 0 {
-            path.addRoundedRect(in: rect, cornerWidth: radius, cornerHeight: radius)
-        }
-        return path
-    }
-
-    private static func sourceShadowOpacity(_ request: SourceShadowGeometryRequest) -> Float {
-        let scene = shadowScene(for: request.segment)
-        let isEnabled = request.kind == .screen ? scene.screenShadowEnabled : scene.cameraShadowEnabled
-        let isLayerEligible = request.kind == .screen || request.segment.activeLayerOrder.last == .camera
-        guard isEnabled,
-              scene.renderedSources.contains(request.kind.source),
-              isLayerEligible,
-              scene.sourceOpacity(for: request.kind.source) > 0.001 else {
-            return 0
-        }
-        let geometry = SceneRenderGeometry(canvas: request.frame, scene: scene, origin: .upperLeft)
-        guard !geometry.isVisibleSourceFullCanvas(
-            for: request.kind,
-            sourceAspectRatio: request.sourceAspectRatios[request.kind]
-        ) else {
-            return 0
-        }
-        return Float(0.38 * scene.sourceOpacity(for: request.kind.source))
-    }
-
-    private static func roundedSourceMaskPath(
-        for scene: RecordingScene,
-        frame: CGRect,
-        sourceAspectRatios: [SceneLayerKind: CGFloat]
-    ) -> CGPath? {
-        SceneRenderGeometry(
-            canvas: frame,
-            scene: scene,
-            origin: .upperLeft
-        )
-        .sourceMaskPath(sourceAspectRatios: sourceAspectRatios)
-    }
-
-    private static func pathKeyTimes(
-        for segments: [RecordingSceneSegment],
-        durationSeconds: Double
-    ) -> [NSNumber] {
-        var keyTimes = [NSNumber(value: 0)]
-        for segment in segments {
-            let start = max(0, min(1, segment.timeRange.start.seconds / durationSeconds))
-            let end = max(start, min(1, CMTimeGetSeconds(CMTimeRangeGetEnd(segment.timeRange)) / durationSeconds))
-            keyTimes.append(NSNumber(value: start))
-            keyTimes.append(NSNumber(value: end))
-        }
-        keyTimes.append(NSNumber(value: 1))
-        return keyTimes
-    }
-
-    private static func pathKeyTimes(
-        for segments: [FinalExportRenderSegment],
-        durationSeconds: Double
-    ) -> [NSNumber] {
-        var keyTimes = [NSNumber(value: 0)]
-        for segment in segments {
-            let start = max(0, min(1, segment.timeRange.start.seconds / durationSeconds))
-            let end = max(start, min(1, CMTimeGetSeconds(CMTimeRangeGetEnd(segment.timeRange)) / durationSeconds))
-            keyTimes.append(NSNumber(value: start))
-            keyTimes.append(NSNumber(value: end))
-        }
-        keyTimes.append(NSNumber(value: 1))
-        return keyTimes
-    }
-
-    private static func pathValues(
-        _ paths: [CGPath],
-        for segments: [RecordingSceneSegment]
-    ) -> [CGPath] {
-        var values = [paths[0]]
-        for (index, _) in segments.enumerated() {
-            values.append(paths[index])
-            values.append(paths[index])
-        }
-        values.append(paths.last ?? paths[0])
-        return values
-    }
-
-    private static func pathValues(
-        _ paths: [CGPath],
-        for segments: [FinalExportRenderSegment]
-    ) -> [CGPath] {
-        var values = [paths[0]]
-        for (index, _) in segments.enumerated() {
-            values.append(paths[index])
-            values.append(paths[index])
-        }
-        values.append(paths.last ?? paths[0])
-        return values
-    }
-
-    private static func canvasBackgroundLayer(style: CanvasBackgroundStyle, animated: Bool, frame: CGRect) -> CALayer {
-        guard animated && style.supportsBackgroundAnimation else {
-            return style.appearance.backgroundLayer(frame: frame, scale: 1)
-        }
-        let layer = CALayer()
-        layer.frame = frame
-        layer.contentsGravity = .resize
-        layer.masksToBounds = true
-        layer.backgroundColor = style.appearance.solidCGColor
-        attachBackgroundDriftAnimation(to: layer, style: style, frame: frame)
-        return layer
-    }
-
-    private static func attachBackgroundDriftAnimation(to layer: CALayer, style: CanvasBackgroundStyle, frame: CGRect) {
-        let frameCount = 48
-        let cap: CGFloat = 1024
-        let longEdge = max(frame.width, frame.height)
-        let scale = longEdge > cap ? cap / longEdge : 1
-        let width = max(1, Int((frame.width * scale).rounded(.up)))
-        let height = max(1, Int((frame.height * scale).rounded(.up)))
-        let frames = style.appearance.animationFrames(pixelWidth: width, pixelHeight: height, count: frameCount)
-        guard frames.count == frameCount else {
-            layer.contents = frames.first ?? style.appearance.renderCGImage(pixelWidth: width, pixelHeight: height)
-            return
-        }
-
-        layer.contents = frames[0]
-        let animation = CAKeyframeAnimation(keyPath: "contents")
-        animation.values = frames
-        animation.keyTimes = (0..<frameCount).map { NSNumber(value: Double($0) / Double(frameCount)) }
-        animation.calculationMode = .discrete
-        animation.duration = CanvasAppearance.animationLoopDuration
-        animation.repeatCount = .greatestFiniteMagnitude
-        animation.beginTime = AVCoreAnimationBeginTimeAtZero
-        animation.isRemovedOnCompletion = false
-        animation.fillMode = .both
-        layer.add(animation, forKey: "background-drift")
-    }
-
-    private static func opacityKeyTimes(start: Double, end: Double) -> [NSNumber] {
-        if start <= 0 {
-            return [NSNumber(value: 0), NSNumber(value: end), NSNumber(value: 1)]
-        }
-        if end >= 1 {
-            return [NSNumber(value: 0), NSNumber(value: start), NSNumber(value: 1)]
-        }
-        return [NSNumber(value: 0), NSNumber(value: start), NSNumber(value: end), NSNumber(value: 1)]
-    }
-
-    private static func opacityValues(start: Double, end: Double) -> [Float] {
-        if start <= 0 {
-            return [1, 0, 0]
-        }
-        if end >= 1 {
-            return [0, 1, 1]
-        }
-        return [0, 1, 0, 0]
-    }
-
-    private static func opacityValues(
-        _ opacities: [Float],
-        for segments: [RecordingSceneSegment]
-    ) -> [Float] {
-        var values = [opacities[0]]
-        for (index, _) in segments.enumerated() {
-            values.append(opacities[index])
-            values.append(opacities[index])
-        }
-        values.append(opacities.last ?? opacities[0])
-        return values
-    }
-
-    private static func opacityValues(
-        _ opacities: [Float],
-        for segments: [FinalExportRenderSegment]
-    ) -> [Float] {
-        var values = [opacities[0]]
-        for (index, _) in segments.enumerated() {
-            values.append(opacities[index])
-            values.append(opacities[index])
-        }
-        values.append(opacities.last ?? opacities[0])
-        return values
     }
 
     private static func expectedAudioSources(for take: RecordingTake, settings: RecordingSettings) -> [ExpectedAudioSource] {

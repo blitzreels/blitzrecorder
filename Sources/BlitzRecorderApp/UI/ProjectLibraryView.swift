@@ -11,85 +11,12 @@ struct ProjectTranscriptTitleRequest {
     let transcript: String
 }
 
-private struct CompactFlowLayout: Layout {
-    let spacing: CGFloat
-
-    func sizeThatFits(
-        proposal: ProposedViewSize,
-        subviews: Subviews,
-        cache: inout ()
-    ) -> CGSize {
-        layout(proposal: proposal, subviews: subviews).size
-    }
-
-    func placeSubviews(
-        in bounds: CGRect,
-        proposal: ProposedViewSize,
-        subviews: Subviews,
-        cache: inout ()
-    ) {
-        let result = layout(
-            proposal: ProposedViewSize(width: bounds.width, height: proposal.height),
-            subviews: subviews
-        )
-        for placement in result.placements {
-            subviews[placement.index].place(
-                at: CGPoint(
-                    x: bounds.minX + placement.origin.x,
-                    y: bounds.minY + placement.origin.y
-                ),
-                proposal: ProposedViewSize(placement.size)
-            )
-        }
-    }
-
-    private func layout(
-        proposal: ProposedViewSize,
-        subviews: Subviews
-    ) -> Result {
-        let availableWidth = proposal.width ?? .infinity
-        var placements: [Placement] = []
-        var cursor = CGPoint.zero
-        var rowHeight: CGFloat = 0
-        var measuredWidth: CGFloat = 0
-
-        for index in subviews.indices {
-            let size = subviews[index].sizeThatFits(.unspecified)
-            if cursor.x > 0, cursor.x + size.width > availableWidth {
-                cursor.x = 0
-                cursor.y += rowHeight + spacing
-                rowHeight = 0
-            }
-            placements.append(Placement(index: index, origin: cursor, size: size))
-            cursor.x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-            measuredWidth = max(measuredWidth, cursor.x - spacing)
-        }
-
-        return Result(
-            size: CGSize(width: measuredWidth, height: cursor.y + rowHeight),
-            placements: placements
-        )
-    }
-
-    private struct Placement {
-        let index: Int
-        let origin: CGPoint
-        let size: CGSize
-    }
-
-    private struct Result {
-        let size: CGSize
-        let placements: [Placement]
-    }
-}
-
 enum ProjectLibrarySymbols {
     static let editRecording = "scissors"
     static let media = "film.stack"
 }
 
-enum ProjectLibraryDetailTab: CaseIterable {
+enum ProjectLibraryDetailTab: CaseIterable, Equatable {
     case overview
     case transcript
     case media
@@ -111,83 +38,36 @@ enum ProjectLibraryDetailTab: CaseIterable {
     }
 }
 
-struct StudioSectionTabs: View {
-    @Bindable var vm: RecorderViewModel
+struct ProjectLibraryNavigationState: Equatable {
+    var selectedProjectIDs: Set<UUID> = []
+    var selectedDetailTab: ProjectLibraryDetailTab = .overview
+    var searchText = ""
 
-    private struct TabConfiguration {
-        let title: String
-        let isSelected: Bool
-        let isEnabled: Bool
-        let action: () -> Void
-    }
-
-    var body: some View {
-        HStack(spacing: 2) {
-            tab(TabConfiguration(
-                title: "Record",
-                isSelected: vm.studioMode == .record,
-                isEnabled: true,
-                action: vm.showRecorder
-            ))
-
-            tab(TabConfiguration(
-                title: "Projects",
-                isSelected: vm.studioMode == .projects,
-                isEnabled: vm.canShowProjects,
-                action: vm.showProjects
-            ))
-        }
-        .padding(3)
-        .background(.white.opacity(0.035), in: .rect(cornerRadius: 9))
-        .overlay {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .stroke(.white.opacity(0.055), lineWidth: 1)
-        }
-    }
-
-    private func tab(_ configuration: TabConfiguration) -> some View {
-        Button(action: configuration.action) {
-            Text(configuration.title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(
-                    configuration.isSelected
-                        ? .white.opacity(0.94)
-                        : .white.opacity(configuration.isEnabled ? 0.48 : 0.22)
-                )
-                .padding(.horizontal, 18)
-                .frame(height: 30)
-                .background(
-                    configuration.isSelected
-                        ? Color.white.opacity(0.095)
-                        : Color.clear,
-                    in: .rect(cornerRadius: 7)
-                )
-                .overlay(alignment: .bottom) {
-                    if configuration.isSelected {
-                        Capsule()
-                            .fill(BlitzUI.mint)
-                            .frame(width: 18, height: 2)
-                            .offset(y: -2)
-                    }
-                }
-                .contentShape(.rect(cornerRadius: 7))
-        }
-        .buttonStyle(ProjectLibraryPressButtonStyle())
-        .disabled(!configuration.isEnabled)
-        .help(
-            configuration.isEnabled
-                ? configuration.title
-                : "Record a project to unlock Projects."
-        )
-        .pointingHandCursor(enabled: configuration.isEnabled)
+    mutating func reconcileSelection(availableProjectIDs: [UUID]) {
+        let validSelection = selectedProjectIDs.intersection(availableProjectIDs)
+        let nextSelection = validSelection.isEmpty
+            ? Set(availableProjectIDs.prefix(1))
+            : validSelection
+        guard nextSelection != selectedProjectIDs else { return }
+        selectedProjectIDs = nextSelection
+        selectedDetailTab = .overview
     }
 }
 
 struct ProjectLibraryView: View {
+    private func speakerColor(_ index: Int) -> Color {
+        let colors: [Color] = [
+            BlitzUI.mint,
+            .blue,
+            .purple,
+            .orange,
+            .pink,
+            .teal,
+        ]
+        return colors[index % colors.count]
+    }
+
     @Bindable var vm: RecorderViewModel
-    @State private var selectedProjectIDs: Set<UUID> = []
-    @State private var selectedDetailTab: ProjectLibraryDetailTab = .overview
-    @State private var searchText = ""
     @State private var openingProjectID: UUID?
     @State private var projectsPendingDeletion: [RecordingProjectHistory.Entry] = []
     @State private var projectPendingRename: RecordingProjectHistory.Entry?
@@ -228,6 +108,7 @@ struct ProjectLibraryView: View {
     private struct TranscriptRowRequest {
         let segment: RecordingTranscript.Segment
         let transcript: RecordingTranscript
+        let showsSpeaker: Bool
     }
 
     private struct TranscriptUnavailableRequest {
@@ -243,15 +124,7 @@ struct ProjectLibraryView: View {
     var body: some View {
         VStack(spacing: 0) {
             commandBar
-                .padding(.horizontal, 20)
-                .padding(.top, 12)
-                .padding(.bottom, 12)
-                .background(BlitzUI.projectLibraryBackground)
-                .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(.white.opacity(0.08))
-                        .frame(height: 1)
-                }
+                .blitzWorkspaceToolbar()
 
             HStack(spacing: 0) {
                 projectSidebar
@@ -264,6 +137,10 @@ struct ProjectLibraryView: View {
             }
         }
         .background(BlitzUI.projectLibraryBackground)
+        .transaction { transaction in
+            transaction.animation = nil
+            transaction.disablesAnimations = true
+        }
         .task {
             vm.refreshRecentProjects()
             selectFirstProjectIfNeeded()
@@ -283,8 +160,8 @@ struct ProjectLibraryView: View {
         .onChange(of: filteredProjects.map(\.id)) {
             selectFirstProjectIfNeeded()
         }
-        .onChange(of: selectedProjectIDs) {
-            selectedDetailTab = .overview
+        .onChange(of: vm.projectLibraryNavigation.selectedProjectIDs) {
+            vm.projectLibraryNavigation.selectedDetailTab = .overview
         }
         .onDisappear {
             projectPlayback.teardown()
@@ -336,35 +213,30 @@ struct ProjectLibraryView: View {
 
     private var commandBar: some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Projects")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.94))
-                    .lineLimit(1)
+            Text("Projects")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(BlitzUI.primaryText)
+            Text(projectCountLabel)
+                .font(.system(size: 11, weight: .regular))
+                .foregroundStyle(BlitzUI.secondaryText)
 
-                Text(projectCountLabel)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.38))
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer(minLength: 16)
 
-            StudioSectionTabs(vm: vm)
-                .frame(maxWidth: .infinity)
+            BlitzToolbarButton(configuration: .init(
+                title: "New recording",
+                symbolName: "plus",
+                showsTitle: true,
+                action: vm.showRecorder
+            ))
+            .help("Open the recorder")
 
-            HStack {
-                Button {
-                    vm.onPresentSettings?(nil)
-                } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 32, height: 32)
-                }
-                .blitzGlassButton()
-                .controlSize(.small)
-                .pointingHandCursor()
-                .help("Open Settings (Cmd+,)")
-            }
-            .frame(maxWidth: .infinity, alignment: .trailing)
+            BlitzToolbarButton(configuration: .init(
+                title: "Settings",
+                symbolName: "gearshape",
+                showsTitle: false,
+                action: { vm.onPresentSettings?(nil) }
+            ))
+            .help("Open Settings (Cmd+,)")
         }
     }
 
@@ -375,7 +247,7 @@ struct ProjectLibraryView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
 
-                TextField("Search projects", text: $searchText)
+                TextField("Search projects", text: $vm.projectLibraryNavigation.searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
             }
@@ -391,14 +263,10 @@ struct ProjectLibraryView: View {
 
             Divider()
 
-            List(selection: $selectedProjectIDs) {
-                Section {
-                    ForEach(filteredProjects, id: \.id) { project in
-                        sidebarRow(project)
-                            .tag(project.id)
-                    }
-                } header: {
-                    Text("Project Library")
+            List(selection: $vm.projectLibraryNavigation.selectedProjectIDs) {
+                ForEach(filteredProjects, id: \.id) { project in
+                    sidebarRow(project)
+                        .tag(project.id)
                 }
             }
             .listStyle(.sidebar)
@@ -464,7 +332,6 @@ struct ProjectLibraryView: View {
                 }
             }
         }
-        .animation(.easeOut(duration: 0.12), value: isHovering)
     }
 
     @ViewBuilder
@@ -514,14 +381,14 @@ struct ProjectLibraryView: View {
 
     @ViewBuilder
     private var projectDetail: some View {
-        if selectedProjectIDs.count > 1 {
+        if vm.projectLibraryNavigation.selectedProjectIDs.count > 1 {
             bulkSelectionDetail
         } else if let project = selectedProject {
             VStack(spacing: 0) {
                 detailHeader(project)
                     .padding(.horizontal, 34)
                     .padding(.top, 24)
-                    .padding(.bottom, 18)
+                    .padding(.bottom, 16)
 
                 projectDetailTabBar
 
@@ -537,14 +404,34 @@ struct ProjectLibraryView: View {
                             overviewLayout: overviewLayout
                         )
                         .frame(
-                            maxWidth: selectedDetailTab == .transcript
+                            maxWidth: vm.projectLibraryNavigation.selectedDetailTab == .transcript
                                 ? 720
                                 : overviewLayout.contentWidth,
                             alignment: .leading
                         )
-                        .frame(maxWidth: .infinity, alignment: .top)
+                        .frame(
+                            maxWidth: .infinity,
+                            alignment: vm.projectLibraryNavigation.selectedDetailTab == .transcript
+                                ? .topLeading : .top
+                        )
                         .padding(.horizontal, 34)
-                        .padding(.vertical, 28)
+                        .padding(.vertical, 24)
+                    }
+                }
+
+                if vm.projectLibraryNavigation.selectedDetailTab == .transcript,
+                   playbackProjectID == project.id,
+                   projectPlayback.isReady {
+                    ProjectLibraryPlaybackControls(configuration: .init(
+                        controller: projectPlayback,
+                        waveformSamples: playbackWaveformSamples
+                    ))
+                    .padding(.horizontal, 34)
+                    .padding(.vertical, 12)
+                    .overlay(alignment: .top) {
+                        Rectangle()
+                            .fill(BlitzUI.separator)
+                            .frame(height: 1)
                     }
                 }
             }
@@ -555,36 +442,21 @@ struct ProjectLibraryView: View {
     }
 
     private var projectDetailTabBar: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             ForEach(ProjectLibraryDetailTab.allCases, id: \.self) { tab in
-                Button {
-                    selectedDetailTab = tab
-                } label: {
-                    Label(tab.title, systemImage: tab.systemImage)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(
-                            selectedDetailTab == tab
-                                ? .white.opacity(0.94)
-                                : .white.opacity(0.48)
-                        )
-                        .padding(.horizontal, 14)
-                        .frame(minHeight: 40)
-                        .contentShape(.rect(cornerRadius: 8))
-                }
-                .buttonStyle(.plain)
-                .background(
-                    selectedDetailTab == tab
-                        ? BlitzUI.selectedFill
-                        : Color.clear,
-                    in: .rect(cornerRadius: 8)
-                )
-                .pointingHandCursor()
+                BlitzTab(configuration: .init(
+                    title: tab.title,
+                    symbolName: tab.systemImage,
+                    isSelected: vm.projectLibraryNavigation.selectedDetailTab == tab,
+                    expands: false,
+                    action: { vm.projectLibraryNavigation.selectedDetailTab = tab }
+                ))
             }
-
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 30)
-        .padding(.bottom, 10)
+        .blitzTabGroup()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 34)
+        .padding(.bottom, 16)
     }
 
     @ViewBuilder
@@ -592,9 +464,9 @@ struct ProjectLibraryView: View {
         _ project: RecordingProjectHistory.Entry,
         overviewLayout: ProjectLibraryOverviewLayout
     ) -> some View {
-        switch selectedDetailTab {
+        switch vm.projectLibraryNavigation.selectedDetailTab {
         case .overview:
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 18) {
                 detailPreview(project, overviewLayout: overviewLayout)
                 detailMetadata(project)
             }
@@ -606,7 +478,7 @@ struct ProjectLibraryView: View {
     }
 
     private var bulkSelectionDetail: some View {
-        let projects = projects(for: selectedProjectIDs)
+        let projects = projects(for: vm.projectLibraryNavigation.selectedProjectIDs)
         let summary = ProjectLibrarySelectionSummary(
             projects.map { metadataByProjectID[$0.id] ?? .empty }
         )
@@ -724,7 +596,7 @@ struct ProjectLibraryView: View {
         let metadata = metadataByProjectID[project.id] ?? .empty
         let isHovering = hoveredBulkProjectID == project.id
         return Button {
-            selectedProjectIDs = [project.id]
+            vm.projectLibraryNavigation.selectedProjectIDs = [project.id]
         } label: {
             VStack(alignment: .leading, spacing: 0) {
                 GeometryReader { proxy in
@@ -745,7 +617,6 @@ struct ProjectLibraryView: View {
                             .background(.black.opacity(0.72), in: .capsule)
                             .padding(10)
                             .opacity(isHovering ? 1 : 0)
-                            .offset(y: isHovering ? 0 : -4)
                     }
                 }
                 .frame(height: 146)
@@ -783,19 +654,13 @@ struct ProjectLibraryView: View {
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .stroke(
+                    .strokeBorder(
                         isHovering
-                            ? BlitzUI.mint.opacity(0.38)
-                            : .white.opacity(0.065),
+                            ? Color.white.opacity(0.18)
+                            : BlitzUI.separator,
                         lineWidth: 1
                     )
             }
-            .shadow(
-                color: .black.opacity(isHovering ? 0.30 : 0.12),
-                radius: isHovering ? 14 : 5,
-                y: isHovering ? 7 : 2
-            )
-            .scaleEffect(isHovering ? 1.012 : 1)
             .contentShape(.rect(cornerRadius: 13))
         }
         .buttonStyle(ProjectLibraryPressButtonStyle())
@@ -811,7 +676,6 @@ struct ProjectLibraryView: View {
                 NSCursor.arrow.set()
             }
         }
-        .animation(.easeOut(duration: 0.16), value: isHovering)
         .help("View \(displayTitle(project))")
     }
 
@@ -840,29 +704,27 @@ struct ProjectLibraryView: View {
         let status = vm.transcriptionController.status(for: project)
         let recordedAt = project.recordedAt
         return HStack(alignment: .center, spacing: 20) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(displayTitle(project))
-                    .font(.system(size: 26, weight: .bold))
+                    .font(.system(size: 23, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.95))
                     .lineLimit(2)
 
                 HStack(spacing: 8) {
-                    Text("Recorded \(recordedAt.formatted(date: .long, time: .shortened))")
-                    if abs(project.updatedAt.timeIntervalSince(recordedAt)) > 1 {
-                        Text("·")
-                        Text("Edited \(project.updatedAt.formatted(date: .omitted, time: .shortened))")
-                    }
+                    Text(recordedAt.formatted(date: .abbreviated, time: .shortened))
+                        .help("Recorded \(recordedAt.formatted(date: .long, time: .shortened))")
                     Text("·")
                     Text(transcriptStatusLabel(status))
                         .foregroundStyle(transcriptStatusColor(status))
                 }
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white.opacity(0.48))
+                .font(.system(size: 11, weight: .regular))
+                .foregroundStyle(BlitzUI.secondaryText)
             }
 
             Spacer(minLength: 0)
 
             detailActions(project)
+                .fixedSize()
         }
     }
 
@@ -887,13 +749,6 @@ struct ProjectLibraryView: View {
             ))
 
             ProjectLibraryIconActionButton(configuration: .init(
-                title: "View recording media",
-                systemImage: ProjectLibrarySymbols.media,
-                tone: .secondary,
-                action: { selectedDetailTab = .media }
-            ))
-
-            ProjectLibraryIconActionButton(configuration: .init(
                 title: "Move project to Trash",
                 systemImage: "trash",
                 tone: .destructive,
@@ -907,19 +762,14 @@ struct ProjectLibraryView: View {
         _ project: RecordingProjectHistory.Entry
     ) -> some View {
         let status = vm.transcriptionController.status(for: project)
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Transcript")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.82))
+        VStack(alignment: .leading, spacing: 24) {
+            if let transcript = selectedTranscript {
+                HStack(spacing: 8) {
+                    Text(transcriptSummaryLabel(transcript))
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(BlitzUI.secondaryText)
 
-                Spacer(minLength: 0)
-
-                if let transcript = selectedTranscript {
-                    TranscriptCopyButton(.init(
-                        markdown: transcript.markdownText(title: displayTitle(project)),
-                        appearance: .compact
-                    ))
+                    Spacer(minLength: 12)
 
                     Button {
                         guard titleGenerationProjectID == nil else { return }
@@ -941,36 +791,24 @@ struct ProjectLibraryView: View {
                             Label("Generate title", systemImage: "sparkles")
                         }
                     }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(BlitzUI.mint)
+                    .buttonStyle(BlitzControlButtonStyle(isProminent: false))
                     .disabled(titleGenerationProjectID != nil)
                     .help("Generate a title from the transcript using the local AI model")
 
-                    Text(transcriptSummaryLabel(transcript))
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.36))
-                }
-            }
-
-            if let transcript = selectedTranscript {
-                if transcript.speakerCount > 1 {
-                    speakerLegend(transcript)
+                    TranscriptCopyButton(.init(
+                        markdown: transcript.markdownText(title: displayTitle(project)),
+                        appearance: .compact
+                    ))
                 }
 
-                LazyVStack(spacing: 0) {
-                    ForEach(transcript.segments) { segment in
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(transcript.segments.enumerated()), id: \.element.id) { index, segment in
                         inlineTranscriptRow(TranscriptRowRequest(
                             segment: segment,
-                            transcript: transcript
+                            transcript: transcript,
+                            showsSpeaker: transcript.speakerCount > 1
+                                && (index == 0 || transcript.segments[index - 1].speakerID != segment.speakerID)
                         ))
-
-                        if segment.id != transcript.segments.last?.id {
-                            Divider()
-                                .padding(
-                                    .leading,
-                                    transcript.speakerCount == 1 ? 66 : 60
-                                )
-                        }
                     }
                 }
             } else {
@@ -982,75 +820,48 @@ struct ProjectLibraryView: View {
         }
     }
 
-    private func speakerLegend(
-        _ transcript: RecordingTranscript
-    ) -> some View {
-        CompactFlowLayout(spacing: 8) {
-            ForEach(Array(transcript.speakers.enumerated()), id: \.element.id) { index, speaker in
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(TranscriptDetailView.speakerColor(index))
-                        .frame(width: 8, height: 8)
-                    Text(speaker.displayName)
-                        .font(.system(size: 10, weight: .semibold))
-                    Text(durationLabel(transcript.speakingDuration(for: speaker.id)))
-                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        .monospacedDigit()
-                        .foregroundStyle(.white.opacity(0.34))
-                }
-                .foregroundStyle(.white.opacity(0.68))
-                .padding(.horizontal, 10)
-                .frame(height: 30)
-                .background(.white.opacity(0.045), in: .capsule)
-                .fixedSize()
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
     private func inlineTranscriptRow(
         _ request: TranscriptRowRequest
     ) -> some View {
         let speakerIndex = request.transcript.speakers.firstIndex {
             $0.id == request.segment.speakerID
         } ?? 0
-        return HStack(alignment: .top, spacing: 14) {
+        return HStack(alignment: .top, spacing: 18) {
             TranscriptTimestampButton(
                 timestamp: durationLabel(request.segment.startTime),
-                isEnabled: playbackProjectID == selectedProject?.id
-                    && projectPlayback.isReady,
+                isEnabled: playbackProjectID == selectedProject?.id && projectPlayback.isReady,
+                isActive: projectPlayback.isPlaying
+                    && projectPlayback.currentTime >= request.segment.startTime
+                    && projectPlayback.currentTime < request.segment.endTime,
                 action: {
                     projectPlayback.play(from: request.segment.startTime)
                 }
             )
 
-            if request.transcript.speakerCount == 1 {
+            VStack(alignment: .leading, spacing: 6) {
+                if request.showsSpeaker {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(speakerColor(speakerIndex).opacity(0.75))
+                            .frame(width: 5, height: 5)
+                        Text(request.transcript.speakerName(for: request.segment.speakerID))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(BlitzUI.secondaryText)
+                    }
+                    .padding(.top, 4)
+                }
+
                 Text(request.segment.text)
                     .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(.white.opacity(0.84))
-                    .lineSpacing(4)
+                    .foregroundStyle(BlitzUI.primaryText)
+                    .lineSpacing(5)
                     .textSelection(.enabled)
-                    .padding(.top, 8)
-            } else {
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 7) {
-                        Circle()
-                            .fill(TranscriptDetailView.speakerColor(speakerIndex))
-                            .frame(width: 8, height: 8)
-                        Text(request.transcript.speakerName(for: request.segment.speakerID))
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.70))
-                    }
-
-                    Text(request.segment.text)
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.82))
-                        .lineSpacing(3)
-                        .textSelection(.enabled)
-                }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, request.showsSpeaker ? 0 : 3)
             }
         }
-        .padding(.vertical, request.transcript.speakerCount == 1 ? 9 : 13)
+        .padding(.top, request.showsSpeaker ? 18 : 6)
+        .padding(.bottom, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -1089,17 +900,11 @@ struct ProjectLibraryView: View {
                 Button(transcriptActionTitle(request.status)) {
                     performTranscriptAction(request.project)
                 }
-                .buttonStyle(.plain)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.72))
-                .padding(.horizontal, 14)
-                .frame(height: 40)
-                .background(.white.opacity(0.055), in: .rect(cornerRadius: 9))
+                .buttonStyle(BlitzControlButtonStyle(isProminent: false))
                 .pointingHandCursor()
             }
         }
-        .padding(14)
-        .background(.white.opacity(0.025), in: .rect(cornerRadius: 10))
+        .padding(.vertical, 12)
     }
 
     @ViewBuilder
@@ -1208,21 +1013,11 @@ struct ProjectLibraryView: View {
             if let actionTitle = configuration.actionTitle,
                let action = configuration.action {
                 Button(actionTitle, action: action)
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.78))
-                    .padding(.horizontal, 14)
-                    .frame(height: 40)
-                    .background(.white.opacity(0.07), in: .rect(cornerRadius: 9))
+                    .buttonStyle(BlitzControlButtonStyle(isProminent: false))
                     .pointingHandCursor()
             }
         }
-        .padding(16)
-        .background(.white.opacity(0.035), in: .rect(cornerRadius: 11))
-        .overlay {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .stroke(.white.opacity(0.07), lineWidth: 1)
-        }
+        .padding(.vertical, 12)
     }
 
     private func detailMetadata(
@@ -1230,11 +1025,11 @@ struct ProjectLibraryView: View {
     ) -> some View {
         let metadata = metadataByProjectID[project.id] ?? .empty
         return VStack(alignment: .leading, spacing: 16) {
-            Text("Project details")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.82))
+            Rectangle()
+                .fill(BlitzUI.separator)
+                .frame(height: 1)
 
-            HStack(alignment: .top, spacing: 44) {
+            HStack(alignment: .top, spacing: 24) {
                 metadataBlock(MetadataBlockConfiguration(
                     title: "Duration",
                     value: metadata.durationLabel ?? "—"
@@ -1272,189 +1067,146 @@ struct ProjectLibraryView: View {
     ) -> some View {
         let captureAssets = mediaAssets.filter { $0.kind != .output }
         let outputAssets = mediaAssets.filter { $0.kind == .output }
-        VStack(alignment: .leading, spacing: 20) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Recording media")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.92))
-
+        VStack(alignment: .leading, spacing: 24) {
+            HStack(spacing: 16) {
                 Text(mediaCaptureSummary(captureAssets))
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.44))
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(BlitzUI.secondaryText)
+
+                Spacer(minLength: 12)
+
+                Button {
+                    vm.revealProject(project)
+                } label: {
+                    Label("Show in Finder", systemImage: "folder")
+                }
+                .buttonStyle(BlitzControlButtonStyle(isProminent: false))
+                .pointingHandCursor()
             }
 
             if isLoadingMediaAssets, mediaAssetsProjectID != project.id {
-                ProgressView("Inspecting recorded media…")
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.54))
-                    .frame(maxWidth: .infinity, minHeight: 160)
+                ProgressView("Loading media…")
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(BlitzUI.secondaryText)
+                    .frame(maxWidth: .infinity, minHeight: 120)
             } else if captureAssets.isEmpty {
                 Text("No original capture files are available for this recording.")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.48))
-                    .frame(maxWidth: .infinity, minHeight: 120, alignment: .center)
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(BlitzUI.secondaryText)
+                    .padding(.vertical, 24)
             } else {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Original captures")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.72))
-
-                    ForEach(captureAssets) { asset in
-                        mediaAssetCard(asset)
-                    }
-                }
+                mediaAssetList(.init(title: "Original captures", assets: captureAssets))
             }
 
             if !outputAssets.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Finished exports")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.72))
-
-                    ForEach(outputAssets) { asset in
-                        mediaAssetCard(asset)
-                    }
-                }
+                mediaAssetList(.init(title: "Exports", assets: outputAssets))
             }
-
-            Button("Show all files in Finder") {
-                vm.revealProject(project)
-            }
-            .buttonStyle(.plain)
-            .font(.system(size: 11.5, weight: .semibold))
-            .foregroundStyle(.white.opacity(0.72))
-            .padding(.horizontal, 14)
-            .frame(height: 38)
-            .background(.white.opacity(0.055), in: .rect(cornerRadius: 9))
-            .overlay {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .stroke(.white.opacity(0.08), lineWidth: 1)
-            }
-            .pointingHandCursor()
         }
     }
 
-    private func mediaAssetCard(
-        _ asset: EditorAsset
-    ) -> some View {
+    private struct MediaAssetListConfiguration {
+        let title: String
+        let assets: [EditorAsset]
+    }
+
+    private func mediaAssetList(_ configuration: MediaAssetListConfiguration) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(configuration.title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(BlitzUI.primaryText)
+                .padding(.bottom, 4)
+
+            ForEach(configuration.assets) { asset in
+                mediaAssetRow(asset)
+
+                if asset.id != configuration.assets.last?.id {
+                    Rectangle()
+                        .fill(BlitzUI.separator)
+                        .frame(height: 1)
+                }
+            }
+        }
+    }
+
+    private func mediaAssetRow(_ asset: EditorAsset) -> some View {
         let details = projectWaveformLibrary.technicalMetadata[asset.id]
-        let duration = asset.exists
-            ? projectWaveformLibrary.durations[asset.id]
-                .map(ProjectLibraryMetadata.durationLabel) ?? "Reading duration…"
-            : "Unavailable"
-        let fileSize = asset.exists
-            ? projectWaveformLibrary.fileSizes[asset.id] ?? "Reading size…"
-            : "Unavailable"
-        let format = asset.exists
-            ? details?.format ?? "Reading format…"
-            : asset.url.pathExtension.uppercased()
-        let quality = asset.exists
-            ? details?.quality ?? "Reading quality…"
-            : "Capture file unavailable"
+        let duration = projectWaveformLibrary.durations[asset.id]
+            .map(ProjectLibraryMetadata.durationLabel) ?? "—"
+        let fileSize = projectWaveformLibrary.fileSizes[asset.id] ?? "—"
+        let format = details?.format ?? asset.url.pathExtension.uppercased()
         return HStack(spacing: 16) {
             mediaAssetVisual(asset)
-                .frame(width: 248, height: 124)
-                .background(.black.opacity(0.28), in: .rect(cornerRadius: 9))
-                .clipShape(.rect(cornerRadius: 9))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .stroke(.white.opacity(0.09), lineWidth: 1)
-                }
+                .frame(width: 144, height: 81)
+                .background(BlitzUI.quietFill, in: .rect(cornerRadius: BlitzUI.controlRadius))
+                .clipShape(.rect(cornerRadius: BlitzUI.controlRadius))
 
-            VStack(alignment: .leading, spacing: 7) {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
                     Text(mediaAssetTitle(asset))
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.90))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(BlitzUI.primaryText)
 
                     if !asset.exists {
-                        Text("Missing")
-                            .font(.system(size: 9.5, weight: .bold))
-                            .foregroundStyle(.red.opacity(0.88))
+                        Text("Missing file")
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundStyle(BlitzUI.warning)
                     }
-
-                    Spacer(minLength: 0)
-
-                    Text(duration)
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(.white.opacity(0.58))
-                }
-
-                Text(format)
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(BlitzUI.mint.opacity(0.86))
-
-                Text(quality)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.58))
-
-                Spacer(minLength: 0)
-
-                HStack(spacing: 8) {
-                    Text(fileSize)
-                    Text("·")
-                    Text(asset.url.lastPathComponent)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
 
                     Spacer(minLength: 8)
 
-                    Button("Show in Finder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([asset.url])
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.white.opacity(0.68))
-                    .pointingHandCursor()
+                    Text(duration)
+                        .font(.system(size: 11, weight: .regular, design: .monospaced))
+                        .foregroundStyle(BlitzUI.secondaryText)
                 }
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.white.opacity(0.36))
+
+                if let details {
+                    Text(details.quality)
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(BlitzUI.secondaryText)
+                        .lineLimit(2)
+                }
+
+                Text("\(format) · \(fileSize) · \(asset.url.lastPathComponent)")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(BlitzUI.secondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(asset.url.lastPathComponent)
             }
+
+            Button {
+                NSWorkspace.shared.activateFileViewerSelecting([asset.url])
+            } label: {
+                BlitzSymbol(configuration: .init(name: "folder", size: 16))
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(BlitzSelectionButtonStyle(isSelected: false))
+            .disabled(!asset.exists)
+            .pointingHandCursor(enabled: asset.exists)
+            .accessibilityLabel("Show \(mediaAssetTitle(asset)) in Finder")
+            .help("Show \(asset.url.lastPathComponent) in Finder")
         }
-        .padding(12)
+        .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white.opacity(0.032), in: .rect(cornerRadius: 12))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(.white.opacity(0.065), lineWidth: 1)
-        }
     }
 
     @ViewBuilder
-    private func mediaAssetVisual(
-        _ asset: EditorAsset
-    ) -> some View {
-        if asset.isVideo {
-            let frames = projectWaveformLibrary.filmstrips[asset.id] ?? []
-            if frames.isEmpty {
-                Text(asset.exists ? "Generating thumbnails…" : "Capture unavailable")
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.34))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                GeometryReader { proxy in
-                    let visibleFrames = Array(frames.prefix(5))
-                    HStack(spacing: 1) {
-                        ForEach(Array(visibleFrames.enumerated()), id: \.offset) { _, frame in
-                            Image(decorative: frame, scale: 1)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(
-                                    width: proxy.size.width / CGFloat(visibleFrames.count),
-                                    height: proxy.size.height
-                                )
-                                .clipped()
-                        }
-                    }
-                }
-            }
-        } else if asset.isAudio {
+    private func mediaAssetVisual(_ asset: EditorAsset) -> some View {
+        if asset.isVideo, let frame = projectWaveformLibrary.filmstrips[asset.id]?.first {
+            Image(decorative: frame, scale: 1)
+                .resizable()
+                .scaledToFit()
+        } else if asset.isAudio, asset.exists {
             mediaWaveform(MediaWaveformRequest(
                 values: projectWaveformLibrary.waveforms[asset.id] ?? [],
-                tint: asset.tint
+                tint: BlitzUI.secondaryText
             ))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 14)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 22)
+        } else {
+            BlitzSymbol(configuration: .init(name: asset.systemImage, size: 24))
+                .foregroundStyle(BlitzUI.secondaryText)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -1731,18 +1483,7 @@ struct ProjectLibraryView: View {
     }
 
     private func selectFirstProjectIfNeeded() {
-        guard !filteredProjects.isEmpty else {
-            selectedProjectIDs = []
-            return
-        }
-        let validSelection = selectedProjectIDs.intersection(
-            Set(filteredProjects.map(\.id))
-        )
-        if validSelection.isEmpty, let firstProjectID = filteredProjects.first?.id {
-            selectedProjectIDs = [firstProjectID]
-        } else if validSelection != selectedProjectIDs {
-            selectedProjectIDs = validSelection
-        }
+        vm.projectLibraryNavigation.reconcileSelection(availableProjectIDs: filteredProjects.map(\.id))
     }
 
     private func loadMetadata() async {
@@ -1777,7 +1518,7 @@ struct ProjectLibraryView: View {
     }
 
     private func loadSelectedTranscript() {
-        guard selectedDetailTab == .transcript,
+        guard vm.projectLibraryNavigation.selectedDetailTab == .transcript,
               let project = selectedProject,
               case .ready = vm.transcriptionController.status(for: project) else {
             return
@@ -1855,7 +1596,7 @@ struct ProjectLibraryView: View {
     }
 
     private func loadSelectedMediaAssets() async {
-        guard selectedDetailTab == .media,
+        guard vm.projectLibraryNavigation.selectedDetailTab == .media,
               let projectEntry = selectedProject else {
             mediaAssets = []
             mediaAssetsProjectID = nil
@@ -1882,7 +1623,7 @@ struct ProjectLibraryView: View {
                 knownPaths.insert(path)
             }
             guard !Task.isCancelled,
-                  selectedDetailTab == .media,
+                  vm.projectLibraryNavigation.selectedDetailTab == .media,
                   selectedProject?.id == projectID else {
                 return
             }
@@ -1890,7 +1631,7 @@ struct ProjectLibraryView: View {
             mediaAssetsProjectID = projectID
             await projectWaveformLibrary.loadAssets(loadedAssets)
             guard !Task.isCancelled,
-                  selectedDetailTab == .media,
+                  vm.projectLibraryNavigation.selectedDetailTab == .media,
                   selectedProject?.id == projectID else {
                 return
             }
@@ -1920,7 +1661,7 @@ struct ProjectLibraryView: View {
     }
 
     private var filteredProjects: [RecordingProjectHistory.Entry] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = vm.projectLibraryNavigation.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return vm.recentProjects }
         return vm.recentProjects.filter {
             $0.title.localizedCaseInsensitiveContains(query)
@@ -1929,8 +1670,8 @@ struct ProjectLibraryView: View {
     }
 
     private var selectedProject: RecordingProjectHistory.Entry? {
-        guard selectedProjectIDs.count == 1,
-              let selectedProjectID = selectedProjectIDs.first else {
+        guard vm.projectLibraryNavigation.selectedProjectIDs.count == 1,
+              let selectedProjectID = vm.projectLibraryNavigation.selectedProjectIDs.first else {
             return nil
         }
         return filteredProjects.first { $0.id == selectedProjectID }
@@ -1944,7 +1685,7 @@ struct ProjectLibraryView: View {
     private var transcriptTaskID: String {
         guard let project = selectedProject else { return "none" }
         let status = vm.transcriptionController.status(for: project)
-        return "\(selectedDetailTab.title)-\(project.id.uuidString)-\(status.label)"
+        return "\(vm.projectLibraryNavigation.selectedDetailTab.title)-\(project.id.uuidString)-\(status.label)"
     }
 
     private var playbackTaskID: String {
@@ -1952,7 +1693,7 @@ struct ProjectLibraryView: View {
     }
 
     private var mediaTaskID: String {
-        guard selectedDetailTab == .media,
+        guard vm.projectLibraryNavigation.selectedDetailTab == .media,
               let selectedProject else {
             return "inactive"
         }
@@ -2005,7 +1746,7 @@ struct ProjectLibraryView: View {
     private func applySelectionAfterDeletion() {
         let deletedIDs = Set(projectsPendingDeletion.map(\.id))
         let remaining = filteredProjects.filter { !deletedIDs.contains($0.id) }
-        selectedProjectIDs = remaining.first.map { [$0.id] } ?? []
+        vm.projectLibraryNavigation.selectedProjectIDs = remaining.first.map { [$0.id] } ?? []
     }
 
     private var projectErrorBinding: Binding<Bool> {
@@ -2042,47 +1783,27 @@ struct ProjectLibraryView: View {
 private struct ProjectLibraryPressButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .opacity(configuration.isPressed ? 0.72 : 1)
     }
 }
 
 private struct TranscriptTimestampButton: View {
     let timestamp: String
     let isEnabled: Bool
+    let isActive: Bool
     let action: () -> Void
-    @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
-                Image(systemName: "play.fill")
-                    .font(.system(size: 7, weight: .bold))
-                    .foregroundStyle(BlitzUI.mint)
-                    .opacity(isHovering && isEnabled ? 1 : 0)
-
-                Text(timestamp)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .monospacedDigit()
-                    .foregroundStyle(
-                        isHovering && isEnabled
-                            ? BlitzUI.mint
-                            : .white.opacity(0.38)
-                    )
-            }
-            .frame(width: 52, height: 40, alignment: .leading)
-            .background(
-                isHovering && isEnabled
-                    ? BlitzUI.mint.opacity(0.08)
-                    : .clear,
-                in: .rect(cornerRadius: 8)
-            )
-            .contentShape(.rect)
+            Text(timestamp)
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .monospacedDigit()
+                .foregroundStyle(isActive ? BlitzUI.mint : BlitzUI.secondaryText)
+                .frame(width: 52, height: 24, alignment: .leading)
         }
-        .buttonStyle(ProjectLibraryPressButtonStyle())
+        .buttonStyle(BlitzSelectionButtonStyle(isSelected: false))
         .disabled(!isEnabled)
-        .onHover { isHovering = $0 }
-        .pointingHandCursor()
+        .pointingHandCursor(enabled: isEnabled)
         .help("Play from \(timestamp)")
         .accessibilityLabel("Play transcript from \(timestamp)")
     }

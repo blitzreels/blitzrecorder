@@ -1,51 +1,8 @@
 import Foundation
-import Speech
 
 #if canImport(FoundationModels)
 import FoundationModels
 #endif
-
-final class SpeechTranscriber {
-    func transcribe(audioURL: URL) async throws -> String {
-        let authorizationStatus = await withCheckedContinuation { continuation in
-            SFSpeechRecognizer.requestAuthorization { status in
-                continuation.resume(returning: status)
-            }
-        }
-
-        guard authorizationStatus == .authorized,
-              let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en_US")),
-              recognizer.isAvailable else {
-            throw RecorderError.speechUnavailable
-        }
-
-        let request = SFSpeechURLRecognitionRequest(url: audioURL)
-        request.shouldReportPartialResults = false
-
-        return try await withCheckedThrowingContinuation { continuation in
-            var didResume = false
-            let task = recognizer.recognitionTask(with: request) { result, error in
-                guard !didResume else { return }
-
-                if let result, result.isFinal {
-                    didResume = true
-                    continuation.resume(returning: result.bestTranscription.formattedString)
-                    return
-                }
-
-                if let error {
-                    didResume = true
-                    continuation.resume(throwing: error)
-                }
-            }
-
-            if task.isCancelled, !didResume {
-                didResume = true
-                continuation.resume(throwing: RecorderError.speechUnavailable)
-            }
-        }
-    }
-}
 
 struct TitleGenerator {
     struct TranscriptTitleRequest {
@@ -117,23 +74,6 @@ struct TitleGenerator {
             throw lastError
         }
         throw TranscriptTitleGenerationError.modelUnavailable
-    }
-
-    func titleSlug(for transcript: String) async -> String? {
-        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard Self.hasUsableTitleSignal(trimmed) else {
-            return nil
-        }
-
-        if let generatedTitle = try? await title(
-            TranscriptTitleRequest(transcript: trimmed)
-        ),
-           let slug = Self.sanitizeSlug(generatedTitle),
-           Self.hasUsableTitleSignal(slug) {
-            return slug
-        }
-
-        return Self.fallbackSlug(from: trimmed)
     }
 
     private func ollamaTitle(
@@ -287,13 +227,6 @@ struct TitleGenerator {
         return title.prefix(1).uppercased() + title.dropFirst()
     }
 
-    static func fallbackSlug(
-        from transcript: String
-    ) -> String? {
-        guard let title = fallbackTitle(from: transcript) else { return nil }
-        return sanitizeSlug(title)
-    }
-
     static func topicBriefPrompt(
         _ request: TopicBriefPromptRequest
     ) -> String {
@@ -339,21 +272,6 @@ struct TitleGenerator {
         Transcript:
         \(transcript)
         """
-    }
-
-    private static func sanitizeSlug(
-        _ value: String
-    ) -> String? {
-        let lowercased = value.lowercased()
-        let parts = lowercased
-            .components(separatedBy: CharacterSet.alphanumerics.inverted)
-            .filter { !$0.isEmpty }
-
-        let slug = parts.joined(separator: "-")
-        if slug.isEmpty {
-            return nil
-        }
-        return String(slug.prefix(72)).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
     }
 
     private static func hasUsableTitleSignal(_ value: String) -> Bool {

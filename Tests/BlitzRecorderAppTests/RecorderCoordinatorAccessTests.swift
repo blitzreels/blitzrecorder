@@ -139,43 +139,6 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         XCTAssertNil(selection.pickedContentFilter)
     }
 
-    func testScreenSourceSelectionKeepsExpiredPickerStateUntilUserPicksAgain() {
-        var settings = RecordingSettings()
-        settings.usesPickedScreenContent = true
-        settings.screenSourceBinding = .display(id: "display-2")
-        let selection = ScreenSourceSelection()
-
-        let result = selection.reconcile(
-            ScreenSourceSelection.ReconciliationRequest(
-                settings: settings,
-                hasPersistentAccess: true
-            )
-        )
-
-        XCTAssertFalse(result.changed)
-        XCTAssertTrue(result.settings.usesPickedScreenContent)
-        XCTAssertNil(result.settings.selectedDisplayID)
-    }
-
-    func testScreenSourceSelectionDoesNotActivateSavedScreenBinding() {
-        var settings = RecordingSettings()
-        settings.enabledSources = [.screen]
-        settings.screenSourceBinding = .display(id: "display-2")
-        let selection = ScreenSourceSelection()
-
-        let result = selection.reconcile(
-            ScreenSourceSelection.ReconciliationRequest(
-                settings: settings,
-                hasPersistentAccess: true
-            )
-        )
-
-        XCTAssertFalse(result.changed)
-        XCTAssertFalse(result.settings.usesPickedScreenContent)
-        XCTAssertEqual(result.settings.screenSourceBinding, .display(id: "display-2"))
-        XCTAssertFalse(selection.hasActivePickedContent)
-    }
-
     func testPermissionGateRequestsScreenAccessOnlyOncePerSession() {
         let system = TestRecordingPermissionSystem()
         system.screenCaptureAccess = false

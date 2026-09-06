@@ -9,11 +9,6 @@ struct ScreenSourceSelectionSnapshot: Equatable {
     let pickedContentSelectionID: UUID?
 }
 
-struct ScreenSourceSelectionResult {
-    let settings: RecordingSettings
-    let changed: Bool
-}
-
 @MainActor
 final class ScreenSourceSelection {
     struct DisplayRequest {
@@ -31,11 +26,6 @@ final class ScreenSourceSelection {
         let persistentBinding: ScreenSourceBinding?
         let fallbackSourceKind: ScreenSourceBinding.Kind?
         let settings: RecordingSettings
-    }
-
-    struct ReconciliationRequest {
-        let settings: RecordingSettings
-        let hasPersistentAccess: Bool
     }
 
     struct RestoreRequest {
@@ -107,27 +97,6 @@ final class ScreenSourceSelection {
         pickedContentKind = request.persistentBinding?.kind ?? request.fallbackSourceKind
         pickedContentSelectionID = UUID()
         return settings
-    }
-
-    func clearPickedContent(in currentSettings: RecordingSettings) -> RecordingSettings {
-        var settings = currentSettings
-        settings.usesPickedScreenContent = false
-        pickedContentFilter = nil
-        pickedContentKind = nil
-        pickedContentSelectionID = nil
-        return settings
-    }
-
-    func markPickedContentActive(in currentSettings: RecordingSettings) -> RecordingSettings {
-        guard pickedContentFilter != nil else { return currentSettings }
-        var settings = currentSettings
-        settings.usesPickedScreenContent = true
-        settings.screenCrop = nil
-        return settings
-    }
-
-    func reconcile(_ request: ReconciliationRequest) -> ScreenSourceSelectionResult {
-        ScreenSourceSelectionResult(settings: request.settings, changed: false)
     }
 
     func snapshot(from settings: RecordingSettings) -> ScreenSourceSelectionSnapshot {

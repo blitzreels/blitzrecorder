@@ -200,15 +200,12 @@ final class RecordingSettingsStoreTests: XCTestCase {
         let defaults = temporaryDefaults()
 
         XCTAssertTrue(RecordingSettingsStore.load(defaults: defaults).savesSourceFiles)
-        XCTAssertFalse(RecordingSettingsStore.load(defaults: defaults).renamesRecordingsFromSpeech)
 
         var settings = RecordingSettings()
         settings.savesSourceFiles = false
-        settings.renamesRecordingsFromSpeech = true
         RecordingSettingsStore.save(settings, defaults: defaults)
 
         XCTAssertTrue(RecordingSettingsStore.load(defaults: defaults).savesSourceFiles)
-        XCTAssertTrue(RecordingSettingsStore.load(defaults: defaults).renamesRecordingsFromSpeech)
     }
 
     func testPersistsCameraCropAmount() {

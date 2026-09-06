@@ -25,7 +25,11 @@ enum BlitzRecorderMCPConnectionTestStatus: Equatable {
 final class BlitzRecorderMCPServer {
     nonisolated static let port = 18_473
     nonisolated static let endpoint = "/mcp"
+    nonisolated static let workspaceEndpoint = "/webmcp"
     nonisolated static let endpointURL = URL(string: "http://127.0.0.1:\(port)\(endpoint)")!
+    nonisolated static let workspaceURL = URL(
+        string: "http://127.0.0.1:\(port)\(workspaceEndpoint)"
+    )!
     nonisolated static let codexSetupCommand = "codex mcp add blitzrecorder --url \(endpointURL.absoluteString)"
     nonisolated static let agentPluginConfiguration = """
     {
@@ -116,6 +120,8 @@ final class BlitzRecorderMCPServer {
             host: "127.0.0.1",
             port: Self.port,
             endpoint: Self.endpoint,
+            workspaceEndpoint: Self.workspaceEndpoint,
+            workspaceData: Self.workspaceData,
             transport: transport
         ))
 
@@ -315,6 +321,24 @@ final class BlitzRecorderMCPServer {
             )
         ),
     ]
+
+    nonisolated private static var workspaceData: Data {
+        if let url = Bundle.main.url(
+            forResource: "WebMCPWorkspace",
+            withExtension: "html"
+        ), let data = try? Data(contentsOf: url) {
+            return data
+        }
+        #if SWIFT_PACKAGE
+        if let url = Bundle.module.url(
+            forResource: "WebMCPWorkspace",
+            withExtension: "html"
+        ), let data = try? Data(contentsOf: url) {
+            return data
+        }
+        #endif
+        return Data("BlitzRecorder WebMCP workspace is unavailable.".utf8)
+    }
 
     private struct UUIDArgumentRequest {
         let key: String

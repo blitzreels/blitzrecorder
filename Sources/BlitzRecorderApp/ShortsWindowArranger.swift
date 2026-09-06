@@ -44,11 +44,38 @@ enum ScreenWindowFitRetry {
     }
 }
 
+
+@MainActor
+enum WindowFrameWriter {
+    enum Change {
+        case size(CGSize)
+        case position(CGPoint)
+    }
+
+    struct Request {
+        let frame: CGRect
+        let write: (Change) throws -> Void
+        let settle: () async throws -> Void
+        let read: () throws -> CGRect
+    }
+
+    static func apply(_ request: Request) async throws -> CGRect {
+        try request.write(.size(request.frame.size))
+        try await request.settle()
+        try request.write(.position(request.frame.origin))
+        try await request.settle()
+        try request.write(.size(request.frame.size))
+        try await request.settle()
+        return try request.read()
+    }
+}
+
 struct ShortsWindowArrangement {
     let appName: String
     let windowTitle: String?
     let frame: CGRect
     let screenCrop: CGRect
+    var fittedZoom: CGFloat? = nil
 
     var message: String {
         let name = windowTitle?.isEmpty == false ? "\(appName) - \(windowTitle!)" : appName
@@ -104,12 +131,12 @@ enum ShortsWindowArranger {
         )
     }
 
-    static func fitFrontWindow(displayID: String?) throws -> ShortsWindowArrangement {
-        try fitFrontWindow(displayID: displayID, zoom: 1)
+    static func fitFrontWindow(displayID: String?) async throws -> ShortsWindowArrangement {
+        try await fitFrontWindow(displayID: displayID, zoom: 1)
     }
 
-    static func fitFrontWindow(displayID: String?, zoom: CGFloat) throws -> ShortsWindowArrangement {
-        try fitFrontWindow(
+    static func fitFrontWindow(displayID: String?, zoom: CGFloat) async throws -> ShortsWindowArrangement {
+        try await fitFrontWindow(
             displayID: displayID,
             captureLayout: .vertical,
             screenSlot: SceneSlotGeometry.shortsTopHalfSlot,
@@ -124,8 +151,8 @@ enum ShortsWindowArranger {
         enabledSources: Set<CaptureSource>,
         canvasPadding: CGFloat = 0,
         zoom: CGFloat
-    ) throws -> ShortsWindowArrangement {
-        try fitFrontWindow(
+    ) async throws -> ShortsWindowArrangement {
+        try await fitFrontWindow(
             displayID: displayID,
             fittingPlan: { screen in
                 TargetWindowFitting.plan(
@@ -147,8 +174,8 @@ enum ShortsWindowArranger {
         screenSlot: CGRect,
         canvasPadding: CGFloat = 0,
         zoom: CGFloat
-    ) throws -> ShortsWindowArrangement {
-        try fitFrontWindow(
+    ) async throws -> ShortsWindowArrangement {
+        try await fitFrontWindow(
             displayID: displayID,
             fittingPlan: { screen in
                 TargetWindowFitting.plan(
@@ -166,7 +193,7 @@ enum ShortsWindowArranger {
     private static func fitFrontWindow(
         displayID: String?,
         fittingPlan: (NSScreen) -> TargetWindowFittingPlan
-    ) throws -> ShortsWindowArrangement {
+    ) async throws -> ShortsWindowArrangement {
         guard accessibilityTrusted(prompt: true) else {
             throw ShortsWindowArrangerError.accessibilityPermissionRequired
         }
@@ -178,14 +205,19 @@ enum ShortsWindowArranger {
         let candidate = try frontmostCandidate(on: screen)
         let window = try accessibilityWindow(for: candidate)
 
-        let appliedAXFrame = try set(window: window, frame: targetAXFrame)
+        let appliedAXFrame = try await setFittedWindow(.init(
+            window: window,
+            requested: targetAXFrame,
+            available: accessibilityFrame(for: screen.visibleFrame, on: screen)
+        ))
         let appliedFrame = appKitFrame(for: appliedAXFrame, on: screen)
 
         return ShortsWindowArrangement(
             appName: candidate.ownerName,
             windowTitle: candidate.title,
             frame: appliedFrame,
-            screenCrop: TargetWindowFitting.screenCrop(for: appliedFrame, in: screen.frame)
+            screenCrop: TargetWindowFitting.screenCrop(for: appliedFrame, in: screen.frame),
+            fittedZoom: plan.unscaledWindowFrame.width / max(1, appliedFrame.width)
         )
     }
 
@@ -284,7 +316,7 @@ enum ShortsWindowArranger {
         enabledSources: Set<CaptureSource>,
         canvasPadding: CGFloat = 0,
         zoom: CGFloat = 1
-    ) throws -> ShortsWindowArrangement {
+    ) async throws -> ShortsWindowArrangement {
         guard accessibilityTrusted(prompt: false) else {
             throw ShortsWindowArrangerError.accessibilityPermissionRequired
         }
@@ -301,14 +333,19 @@ enum ShortsWindowArranger {
         )
         let candidate = WindowCandidate(ownerPID: ownerPID, ownerName: appName, title: title, bounds: bounds)
         let window = try accessibilityWindow(for: candidate)
-        let appliedAXFrame = try set(window: window, frame: accessibilityFrame(for: plan.windowFrame, on: screen))
+        let appliedAXFrame = try await setFittedWindow(.init(
+            window: window,
+            requested: accessibilityFrame(for: plan.windowFrame, on: screen),
+            available: accessibilityFrame(for: screen.visibleFrame, on: screen)
+        ))
         let appliedFrame = appKitFrame(for: appliedAXFrame, on: screen)
 
         return ShortsWindowArrangement(
             appName: appName,
             windowTitle: title,
             frame: appliedFrame,
-            screenCrop: TargetWindowFitting.screenCrop(for: appliedFrame, in: screen.frame)
+            screenCrop: TargetWindowFitting.screenCrop(for: appliedFrame, in: screen.frame),
+            fittedZoom: plan.unscaledWindowFrame.width / max(1, appliedFrame.width)
         )
     }
 
@@ -322,7 +359,7 @@ enum ShortsWindowArranger {
         enabledSources: Set<CaptureSource>,
         canvasPadding: CGFloat = 0,
         zoom: CGFloat = 1
-    ) throws -> ShortsWindowArrangement {
+    ) async throws -> ShortsWindowArrangement {
         guard accessibilityTrusted(prompt: false) else {
             throw ShortsWindowArrangerError.accessibilityPermissionRequired
         }
@@ -338,14 +375,19 @@ enum ShortsWindowArranger {
             zoom: zoom
         )
         let window = try primaryAccessibilityWindow(ownerPID: ownerPID, on: screen)
-        let appliedAXFrame = try set(window: window, frame: accessibilityFrame(for: plan.windowFrame, on: screen))
+        let appliedAXFrame = try await setFittedWindow(.init(
+            window: window,
+            requested: accessibilityFrame(for: plan.windowFrame, on: screen),
+            available: accessibilityFrame(for: screen.visibleFrame, on: screen)
+        ))
         let appliedFrame = appKitFrame(for: appliedAXFrame, on: screen)
 
         return ShortsWindowArrangement(
             appName: appName,
             windowTitle: title(of: window),
             frame: appliedFrame,
-            screenCrop: TargetWindowFitting.screenCrop(for: appliedFrame, in: screen.frame)
+            screenCrop: TargetWindowFitting.screenCrop(for: appliedFrame, in: screen.frame),
+            fittedZoom: plan.unscaledWindowFrame.width / max(1, appliedFrame.width)
         )
     }
 
@@ -411,26 +453,18 @@ enum ShortsWindowArranger {
 
     private static func accessibilityWindow(for candidate: WindowCandidate) throws -> AXUIElement {
         let app = AXUIElementCreateApplication(candidate.ownerPID)
-
-        if let focused = copyAttribute(kAXFocusedWindowAttribute, from: app) {
-            let focusedWindow = focused as! AXUIElement
-            if window(focusedWindow, matches: candidate) {
-                return focusedWindow
-            }
-        }
-
-        guard let windowsValue = copyAttribute(kAXWindowsAttribute, from: app) else {
+        guard let windowsValue = copyAttribute(kAXWindowsAttribute, from: app),
+              let windows = windowsValue as? [AXUIElement] else {
             throw ShortsWindowArrangerError.noWindowFound
         }
-
-        let windows = windowsValue as? [AXUIElement] ?? []
-        if let matched = windows.first(where: { window($0, matches: candidate) }) {
+        let movable = windows.filter { isMovableWindow($0) }
+        if let matched = movable.first(where: { window($0, matches: candidate) }) {
             return matched
         }
-        if let firstMovable = windows.first(where: { isMovableWindow($0) }) {
-            return firstMovable
+        let titleMatches = movable.filter { title(of: $0) == candidate.title && candidate.title?.isEmpty == false }
+        if titleMatches.count == 1, let match = titleMatches.first {
+            return match
         }
-
         throw ShortsWindowArrangerError.noWindowFound
     }
 
@@ -483,13 +517,6 @@ enum ShortsWindowArranger {
             return false
         }
 
-        if let title = title(of: window),
-           let candidateTitle = candidate.title,
-           !candidateTitle.isEmpty,
-           title == candidateTitle {
-            return true
-        }
-
         return abs(frame.minX - candidate.bounds.minX) < 4
             && abs(frame.minY - candidate.bounds.minY) < 4
             && abs(frame.width - candidate.bounds.width) < 8
@@ -507,8 +534,75 @@ enum ShortsWindowArranger {
         stringAttribute(kAXSubroleAttribute, from: window) == kAXStandardWindowSubrole as String
     }
 
-    private static func windowArea(_ window: AXUIElement) -> CGFloat {
-        frame(of: window)?.area ?? 0
+    private struct FittedWindowRequest {
+        let window: AXUIElement
+        let requested: CGRect
+        let available: CGRect
+    }
+
+    private static var fitRevision = 0
+
+    static func cancelPendingFits() {
+        fitRevision += 1
+    }
+
+    private static func setFittedWindow(_ request: FittedWindowRequest) async throws -> CGRect {
+        fitRevision += 1
+        let revision = fitRevision
+        let applied = try await applyWindowFrame(.init(window: request.window, frame: request.requested, revision: revision))
+        let constrained = TargetWindowFitting.fittedFrame(.init(
+            requested: request.requested,
+            minimumSize: CGSize(
+                width: applied.width > request.requested.width + 2 ? applied.width : 0,
+                height: applied.height > request.requested.height + 2 ? applied.height : 0
+            ),
+            available: request.available
+        ))
+        guard abs(constrained.width - applied.width) > 2
+            || abs(constrained.height - applied.height) > 2
+            || abs(constrained.minX - applied.minX) > 2
+            || abs(constrained.minY - applied.minY) > 2 else { return applied }
+        return try await applyWindowFrame(.init(window: request.window, frame: constrained, revision: revision))
+    }
+
+    private struct WindowFrameRequest {
+        let window: AXUIElement
+        let frame: CGRect
+        let revision: Int
+    }
+
+    private static func applyWindowFrame(_ request: WindowFrameRequest) async throws -> CGRect {
+        var sizeSettable = DarwinBoolean(false)
+        guard AXUIElementIsAttributeSettable(request.window, kAXSizeAttribute as CFString, &sizeSettable) == .success,
+              sizeSettable.boolValue else { throw ShortsWindowArrangerError.windowNotResizable }
+        return try await WindowFrameWriter.apply(.init(
+            frame: request.frame,
+            write: { change in
+                guard fitRevision == request.revision else { throw CancellationError() }
+                let attribute: CFString
+                let value: AXValue?
+                switch change {
+                case .size(var size):
+                    attribute = kAXSizeAttribute as CFString
+                    value = AXValueCreate(.cgSize, &size)
+                case .position(var position):
+                    attribute = kAXPositionAttribute as CFString
+                    value = AXValueCreate(.cgPoint, &position)
+                }
+                guard let value,
+                      AXUIElementSetAttributeValue(request.window, attribute, value) == .success else {
+                    throw ShortsWindowArrangerError.windowMoveFailed
+                }
+            },
+            settle: {
+                try await Task.sleep(for: .milliseconds(120))
+                guard fitRevision == request.revision else { throw CancellationError() }
+            },
+            read: {
+                guard let frame = frame(of: request.window) else { throw ShortsWindowArrangerError.noWindowFound }
+                return frame
+            }
+        ))
     }
 
     private static func set(window: AXUIElement, frame targetFrame: CGRect) throws -> CGRect {

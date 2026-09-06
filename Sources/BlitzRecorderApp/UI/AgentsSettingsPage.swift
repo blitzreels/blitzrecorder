@@ -41,7 +41,7 @@ struct AgentsSettingsPage: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 28) {
                 SettingsPageHeader(.init(
                     title: "Agents",
                     detail: "Connect local AI agents to projects, transcripts, and MP4 exports.",
@@ -72,7 +72,26 @@ struct AgentsSettingsPage: View {
             .toggleStyle(.switch)
             .settingsRow()
 
-            SettingsCardDivider()
+            SettingsRowDivider()
+
+            HStack(alignment: .center, spacing: 16) {
+                SettingsRowLabel(.init(
+                    title: "WebMCP workspace",
+                    detail: "Review local projects with ChatGPT or Codex in the browser."
+                ))
+
+                Spacer(minLength: 16)
+
+                Button("Open workspace") {
+                    NSWorkspace.shared.open(BlitzRecorderMCPServer.workspaceURL)
+                }
+                .blitzGlassButton()
+                .pointingHandCursor()
+                .disabled(mcpServer.status != .running)
+            }
+            .settingsRow()
+
+            SettingsRowDivider()
 
             HStack(alignment: .center, spacing: 16) {
                 SettingsRowLabel(.init(
@@ -92,7 +111,7 @@ struct AgentsSettingsPage: View {
             }
             .settingsRow()
 
-            SettingsCardDivider()
+            SettingsRowDivider()
 
             HStack(alignment: .center, spacing: 16) {
                 SettingsRowLabel(.init(
@@ -106,7 +125,7 @@ struct AgentsSettingsPage: View {
             }
             .settingsRow()
 
-            SettingsCardDivider()
+            SettingsRowDivider()
 
             HStack(alignment: .center, spacing: 16) {
                 SettingsRowLabel(.init(
@@ -127,7 +146,7 @@ struct AgentsSettingsPage: View {
             }
             .settingsRow()
         }
-        .settingsCard(.init(
+        .settingsSection(.init(
             title: "Local agent server",
             detail: "BlitzRecorder must remain open while an agent is connected",
             systemImage: "antenna.radiowaves.left.and.right"
@@ -138,11 +157,10 @@ struct AgentsSettingsPage: View {
         VStack(spacing: 0) {
             ForEach(Array(Self.capabilities.enumerated()), id: \.element.id) { index, capability in
                 if index > 0 {
-                    SettingsCardDivider()
+                    SettingsRowDivider()
                 }
                 HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: capability.icon)
-                        .font(.system(size: 13, weight: .semibold))
+                    BlitzSymbol(configuration: .init(name: capability.icon, size: 18))
                         .foregroundStyle(BlitzUI.mint)
                         .frame(width: 18, height: 18)
 
@@ -157,7 +175,7 @@ struct AgentsSettingsPage: View {
                 .settingsRow()
             }
         }
-        .settingsCard(.init(
+        .settingsSection(.init(
             title: "Agent capabilities",
             detail: "A narrow local surface for safe project work",
             systemImage: "sparkles.rectangle.stack"
@@ -176,7 +194,7 @@ struct AgentsSettingsPage: View {
             }
             .settingsRow()
 
-            SettingsCardDivider()
+            SettingsRowDivider()
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -196,7 +214,7 @@ struct AgentsSettingsPage: View {
             }
             .settingsRow()
         }
-        .settingsCard(.init(
+        .settingsSection(.init(
             title: "Connect an agent",
             detail: "Copy one setup command into your local agent",
             systemImage: "link"
@@ -222,7 +240,7 @@ struct AgentsSettingsPage: View {
             }
             .settingsRow()
 
-            SettingsCardDivider()
+            SettingsRowDivider()
 
             Text(
                 "Agent exports create normal project export records. "
@@ -232,7 +250,7 @@ struct AgentsSettingsPage: View {
             .foregroundStyle(.secondary)
             .settingsRow()
         }
-        .settingsCard(.init(
+        .settingsSection(.init(
             title: "Privacy and control",
             detail: "Local access with normal project export records",
             systemImage: "hand.raised"
@@ -313,6 +331,7 @@ struct AgentsSettingsPage: View {
             Button(copiedValue == value ? "Copied" : "Copy") {
                 copy(value)
             }
+            .blitzGlassButton()
         }
     }
 
@@ -330,6 +349,7 @@ struct AgentsSettingsPage: View {
             Button(copiedValue == value ? "Copied" : "Copy") {
                 copy(value)
             }
+            .blitzGlassButton()
             .padding(.top, 5)
         }
     }

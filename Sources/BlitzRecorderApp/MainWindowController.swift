@@ -751,8 +751,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let request = IdleCameraPreviewRequest(
             appIsActive: NSApp.isActive,
             windowIsVisible: window?.isVisible == true,
-            keepsIdleCaptureResourcesActive: viewModel.studioMode.keepsIdleCaptureResourcesActive,
-            cameraIsRunningSomewhere: false
+            keepsIdleCaptureResourcesActive: viewModel.studioMode.keepsIdleCaptureResourcesActive
         )
         guard IdleCameraPreviewPolicy.shouldStart(request) else { return }
         if coordinator.settings.hiddenSources.contains(.camera) {
@@ -878,8 +877,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                     let completionRequest = IdleCameraPreviewRequest(
                         appIsActive: NSApp.isActive,
                         windowIsVisible: window?.isVisible == true,
-                        keepsIdleCaptureResourcesActive: viewModel.studioMode.keepsIdleCaptureResourcesActive,
-                        cameraIsRunningSomewhere: false
+                        keepsIdleCaptureResourcesActive: viewModel.studioMode.keepsIdleCaptureResourcesActive
                     )
                     guard cameraPreviewStartRevision == startRevision,
                           IdleCameraPreviewPolicy.shouldStart(completionRequest),

@@ -151,17 +151,18 @@ struct ProjectLibraryPlayerSurface: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             videoSurface
 
             if isPlaybackReady {
-                transportControls
-                    .frame(width: playerLayout.transportWidth)
-                    .transition(.opacity)
+                ProjectLibraryPlaybackControls(configuration: .init(
+                    controller: configuration.controller,
+                    waveformSamples: configuration.waveformSamples
+                ))
+                .frame(width: playerLayout.transportWidth)
             }
         }
         .frame(width: playerLayout.transportWidth)
-        .animation(.easeOut(duration: 0.18), value: isPlaybackReady)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Project playback")
     }
@@ -181,17 +182,15 @@ struct ProjectLibraryPlayerSurface: View {
                     cameraCropEditingScene: nil
                 )
                 .allowsHitTesting(false)
-                .transition(.opacity)
             }
 
         }
         .frame(width: playerLayout.videoSize.width, height: playerLayout.videoSize.height)
-        .clipShape(.rect(cornerRadius: 16))
+        .clipShape(.rect(cornerRadius: BlitzUI.controlRadius))
         .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(.white.opacity(0.10), lineWidth: 1)
+            RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous)
+                .strokeBorder(BlitzUI.separator, lineWidth: 1)
         }
-        .shadow(color: .black.opacity(0.44), radius: 28, y: 14)
     }
 
     @ViewBuilder
@@ -236,29 +235,39 @@ struct ProjectLibraryPlayerSurface: View {
         .background(.black.opacity(0.62), in: .rect(cornerRadius: 12))
     }
 
-    private var transportControls: some View {
+}
+
+@MainActor
+struct ProjectLibraryPlaybackControls: View {
+    struct Configuration {
+        let controller: EditorPlaybackController
+        let waveformSamples: [Float]
+    }
+
+    let configuration: Configuration
+
+    var body: some View {
         HStack(spacing: 10) {
             Button {
                 configuration.controller.togglePlayback()
             } label: {
                 Image(systemName: configuration.controller.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.92))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(BlitzUI.primaryText)
                     .offset(x: configuration.controller.isPlaying ? 0 : 1)
-                    .frame(width: 38, height: 38)
-                    .background(.white.opacity(0.10), in: .circle)
-                    .contentShape(.circle)
+                    .frame(width: 18, height: 24)
             }
-            .buttonStyle(ProjectPlayerPressButtonStyle())
+            .buttonStyle(BlitzControlButtonStyle(isProminent: false))
             .keyboardShortcut(.space, modifiers: [])
             .pointingHandCursor()
+            .accessibilityLabel(configuration.controller.isPlaying ? "Pause" : "Play")
             .help(configuration.controller.isPlaying ? "Pause" : "Play")
 
             Text(timeLabel(configuration.controller.currentTime))
-                .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
                 .monospacedDigit()
                 .foregroundStyle(.white.opacity(0.66))
-                .frame(width: 34, alignment: .trailing)
+                .fixedSize()
 
             ProjectPlaybackWaveform(
                 samples: configuration.waveformSamples,
@@ -272,19 +281,37 @@ struct ProjectLibraryPlayerSurface: View {
             .frame(height: 30)
 
             Text(timeLabel(configuration.controller.duration))
-                .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
                 .monospacedDigit()
                 .foregroundStyle(.white.opacity(0.66))
-                .frame(width: 34, alignment: .leading)
+                .fixedSize()
+
+            Rectangle()
+                .fill(BlitzUI.separator)
+                .frame(width: 1, height: 20)
+                .padding(.horizontal, 2)
+
+            Button {
+                configuration.controller.setPlaybackRate(nextPlaybackRate)
+            } label: {
+                Text(configuration.controller.playbackRate.displayName)
+                    .monospacedDigit()
+                    .frame(width: 32, height: 24)
+            }
+            .buttonStyle(BlitzSelectionButtonStyle(isSelected: false))
+            .pointingHandCursor()
+            .accessibilityLabel("Playback speed")
+            .accessibilityValue(configuration.controller.playbackRate.displayName)
+            .help("Playback speed · Click for \(nextPlaybackRate.displayName)")
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(.black.opacity(0.76), in: .rect(cornerRadius: 12))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(.white.opacity(0.09), lineWidth: 1)
+    }
+
+    private var nextPlaybackRate: EditorPlaybackRate {
+        switch configuration.controller.playbackRate {
+        case .normal: .oneAndAHalf
+        case .oneAndAHalf: .double
+        case .double, .twoAndAHalf: .normal
         }
-        .shadow(color: .black.opacity(0.24), radius: 12, y: 5)
     }
 
     private func timeLabel(_ duration: TimeInterval) -> String {
@@ -422,88 +449,25 @@ struct ProjectLibraryActionButtonConfiguration {
 
 struct ProjectLibraryActionButton: View {
     let configuration: ProjectLibraryActionButtonConfiguration
-    @State private var isHovering = false
 
     var body: some View {
         Button(action: configuration.action) {
-            HStack(spacing: 9) {
+            HStack(spacing: 7) {
                 if configuration.isLoading {
                     ProgressView()
                         .controlSize(.small)
                 } else {
-                    Image(systemName: configuration.systemImage)
-                        .font(.system(size: 12, weight: .bold))
+                    BlitzSymbol(configuration: .init(name: configuration.systemImage, size: 16))
                 }
 
                 Text(configuration.title)
-                    .font(.system(size: 12, weight: .bold))
-
-                if configuration.tone == .primary {
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 10, weight: .heavy))
-                        .opacity(isHovering ? 0.92 : 0.62)
-                        .offset(x: isHovering ? 2 : 0)
-                }
+                    .lineLimit(1)
             }
-            .foregroundStyle(foregroundStyle)
-            .padding(.leading, 16)
-            .padding(.trailing, configuration.tone == .primary ? 14 : 16)
-            .frame(height: 44)
-            .background(backgroundStyle, in: .rect(cornerRadius: 11))
-            .overlay {
-                if configuration.tone == .secondary {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .stroke(.white.opacity(isHovering ? 0.13 : 0.08), lineWidth: 1)
-                }
-            }
-            .shadow(
-                color: shadowColor,
-                radius: isHovering ? 14 : 8,
-                y: isHovering ? 6 : 3
-            )
-            .contentShape(.rect(cornerRadius: 11))
+            .padding(.horizontal, 4)
         }
-        .buttonStyle(ProjectPlayerPressButtonStyle())
+        .buttonStyle(BlitzControlButtonStyle(isProminent: configuration.tone == .primary))
         .disabled(configuration.isLoading)
-        .onHover { isHovering = $0 }
-        .animation(.easeOut(duration: 0.15), value: isHovering)
         .pointingHandCursor()
-    }
-
-    private var foregroundStyle: Color {
-        switch configuration.tone {
-        case .primary:
-            return .black.opacity(0.86)
-        case .secondary:
-            return .white.opacity(isHovering ? 0.90 : 0.72)
-        }
-    }
-
-    private var backgroundStyle: AnyShapeStyle {
-        switch configuration.tone {
-        case .primary:
-            return AnyShapeStyle(
-                LinearGradient(
-                    colors: [
-                        BlitzUI.mint,
-                        BlitzUI.mint.opacity(isHovering ? 0.88 : 0.78)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-        case .secondary:
-            return AnyShapeStyle(.white.opacity(isHovering ? 0.085 : 0.055))
-        }
-    }
-
-    private var shadowColor: Color {
-        switch configuration.tone {
-        case .primary:
-            return BlitzUI.mint.opacity(isHovering ? 0.22 : 0.10)
-        case .secondary:
-            return .black.opacity(isHovering ? 0.24 : 0.14)
-        }
     }
 }
 
@@ -521,66 +485,17 @@ struct ProjectLibraryIconActionButtonConfiguration {
 
 struct ProjectLibraryIconActionButton: View {
     let configuration: ProjectLibraryIconActionButtonConfiguration
-    @State private var isHovering = false
 
     var body: some View {
-        Button(action: configuration.action) {
-            Image(systemName: configuration.systemImage)
-                .font(.system(size: 12.5, weight: .semibold))
-                .foregroundStyle(foregroundStyle)
-                .frame(width: 42, height: 42)
-                .background(backgroundStyle, in: .rect(cornerRadius: 11))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .stroke(outlineStyle, lineWidth: 1)
-                }
-                .shadow(
-                    color: .black.opacity(isHovering ? 0.24 : 0.12),
-                    radius: isHovering ? 10 : 5,
-                    y: isHovering ? 5 : 2
-                )
-                .contentShape(.rect(cornerRadius: 11))
+        Button(
+            role: configuration.tone == .destructive ? .destructive : nil,
+            action: configuration.action
+        ) {
+            BlitzSymbol(configuration: .init(name: configuration.systemImage, size: 16))
         }
-        .buttonStyle(ProjectPlayerPressButtonStyle())
-        .onHover { isHovering = $0 }
-        .animation(.easeOut(duration: 0.15), value: isHovering)
+        .buttonStyle(BlitzControlButtonStyle(isProminent: false))
         .pointingHandCursor()
         .help(configuration.title)
         .accessibilityLabel(configuration.title)
-    }
-
-    private var foregroundStyle: Color {
-        switch configuration.tone {
-        case .secondary:
-            return .white.opacity(isHovering ? 0.92 : 0.70)
-        case .destructive:
-            return .red.opacity(isHovering ? 0.96 : 0.76)
-        }
-    }
-
-    private var backgroundStyle: Color {
-        switch configuration.tone {
-        case .secondary:
-            return .white.opacity(isHovering ? 0.085 : 0.050)
-        case .destructive:
-            return .red.opacity(isHovering ? 0.13 : 0.075)
-        }
-    }
-
-    private var outlineStyle: Color {
-        switch configuration.tone {
-        case .secondary:
-            return .white.opacity(isHovering ? 0.13 : 0.075)
-        case .destructive:
-            return .red.opacity(isHovering ? 0.24 : 0.14)
-        }
-    }
-}
-
-private struct ProjectPlayerPressButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }

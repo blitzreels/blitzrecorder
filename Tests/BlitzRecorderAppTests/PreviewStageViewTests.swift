@@ -283,14 +283,13 @@ final class PreviewStageViewTests: XCTestCase {
         XCTAssertEqual(resizedLayer, .screen)
     }
 
-    func testWindowBackedScreenResizeKeepsVisibleSourceAttachedToDraggedTopEdge() {
+    func testWindowBackedScreenResizeKeepsOutlineOnActualVideoUntilWindowChanges() {
         let view = PreviewStageView()
         let window = hostInWindow(view)
         view.captureLayout = .vertical
         view.enabledSources = [.screen, .camera]
         view.selectedLayer = .screen
         view.screenContentMode = .fit
-        view.screenResizeUsesTargetAspectRatio = true
         var layout = SceneLayout()
         layout.screenFrame = CGRect(x: 0.08, y: 0.58, width: 0.84, height: 0.24)
         layout.cameraFrame = CGRect(x: 0, y: 0, width: 1, height: 0.5)
@@ -306,8 +305,13 @@ final class PreviewStageViewTests: XCTestCase {
 
         let resizedFrame = view.renderedScreenFrameForTesting
         XCTAssertEqual(resizedFrame.width, initialFrame.width, accuracy: 0.5)
-        XCTAssertEqual(resizedFrame.minY, initialFrame.minY, accuracy: 0.5)
-        XCTAssertEqual(resizedFrame.maxY, end.y, accuracy: 0.5)
+        XCTAssertEqual(resizedFrame.width / resizedFrame.height, view.screenSourceAspectRatio, accuracy: 0.001)
+        XCTAssertRect(view.renderedSelectionFrameForTesting ?? .zero, equals: resizedFrame)
+        view.screenSourceAspectRatio = 0.75
+        view.layoutSubtreeIfNeeded()
+        let actual = view.renderedScreenFrameForTesting
+        XCTAssertEqual(actual.width / actual.height, 0.75, accuracy: 0.001)
+        XCTAssertRect(view.renderedSelectionFrameForTesting ?? .zero, equals: actual)
     }
 
     func testLayerInteractionLockStillAllowsCameraCropEditing() {

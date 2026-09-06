@@ -29,14 +29,18 @@ struct RemoteCameraControlsPane: View {
     }
 
     private var tabPicker: some View {
-        Picker("", selection: $selectedTab) {
+        HStack(spacing: 2) {
             ForEach(RemoteCameraControlsTab.allCases, id: \.self) { tab in
-                Label(tab.title, systemImage: tab.symbolName).tag(tab)
+                BlitzTab(configuration: .init(
+                    title: tab.title,
+                    symbolName: tab.symbolName,
+                    isSelected: selectedTab == tab,
+                    expands: true,
+                    action: { selectedTab = tab }
+                ))
             }
         }
-        .labelsHidden()
-        .pickerStyle(.segmented)
-        .controlSize(.small)
+        .blitzTabGroup()
     }
 
     @ViewBuilder
@@ -124,10 +128,9 @@ struct RemoteCameraControlsPane: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(title.uppercased())
+            Text(title)
                 .font(.system(size: 11, weight: .medium))
-                .tracking(0.8)
-                .foregroundStyle(.secondary)
+                    .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 10) {
                 content()

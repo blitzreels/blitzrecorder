@@ -42,6 +42,10 @@ struct EditorCompositedPlayer: NSViewRepresentable {
         nsView.refresh()
         nsView.synchronizeDisplayLink()
     }
+
+    static func dismantleNSView(_ nsView: EditorCompositedPlayerView, coordinator: ()) {
+        nsView.teardown()
+    }
 }
 
 @MainActor
@@ -55,7 +59,20 @@ final class EditorCompositedPlayerView: NSView {
         let playerLayer = AVPlayerLayer()
     }
 
+    private struct RenderState: Equatable {
+        let scene: RecordingScene
+        let canvasFrame: CGRect
+        let renderSize: CGSize
+        let backingScaleFactor: CGFloat
+        let aspectRatios: [SceneLayerKind: CGFloat]
+        let hiddenKinds: Set<SceneLayerKind>
+        let isCameraCropEditing: Bool
+        let screenPlayer: ObjectIdentifier?
+        let cameraPlayer: ObjectIdentifier?
+    }
+
     private var sourceLayers: [SceneLayerKind: SourceLayers] = [:]
+    private var renderedState: RenderState?
     private var renderSize: CGSize = .zero
     private var renderedBackgroundKey: (style: CanvasBackgroundStyle, width: Int, height: Int)?
     var previewSceneRevision = 0
@@ -89,6 +106,7 @@ final class EditorCompositedPlayerView: NSView {
     }
 
     func configure(renderSize: CGSize) {
+        guard self.renderSize != renderSize else { return }
         self.renderSize = renderSize
         needsLayout = true
     }
@@ -156,14 +174,26 @@ final class EditorCompositedPlayerView: NSView {
             aspectRatios: controller.sourceAspectRatios
         ))
         guard canvasFrame.width > 0 else { return }
+        let aspectRatios = controller.sourceAspectRatios
+        let hidden = controller.hiddenKinds
+        let state = RenderState(
+            scene: scene,
+            canvasFrame: canvasFrame,
+            renderSize: renderSize,
+            backingScaleFactor: window?.backingScaleFactor ?? 2,
+            aspectRatios: aspectRatios,
+            hiddenKinds: hidden,
+            isCameraCropEditing: cameraCropEditingScene != nil,
+            screenPlayer: controller.videoPlayer(for: .screen).map(ObjectIdentifier.init),
+            cameraPlayer: controller.videoPlayer(for: .camera).map(ObjectIdentifier.init)
+        )
+        guard renderedState != state else { return }
         let scale = canvasFrame.width / renderSize.width
         let geometry = SceneRenderGeometry(
             canvas: CGRect(origin: .zero, size: renderSize),
             scene: scene,
             origin: .upperLeft
         )
-        let aspectRatios = controller.sourceAspectRatios
-        let hidden = controller.hiddenKinds
         let activeOrder = geometry.activeLayerOrder.filter { !hidden.contains($0) }
 
         performWithoutUIAnimation {
@@ -171,7 +201,6 @@ final class EditorCompositedPlayerView: NSView {
             canvasLayer.bounds = CGRect(origin: .zero, size: canvasFrame.size)
             updateBackground(scene: scene, canvasSize: canvasFrame.size)
 
-            var zIndex: CGFloat = 1
             for kind in [SceneLayerKind.screen, .camera] {
                 guard let player = controller.videoPlayer(for: kind) else {
                     sourceLayers[kind]?.shadowHost.isHidden = true
@@ -181,13 +210,12 @@ final class EditorCompositedPlayerView: NSView {
                 if layers.playerLayer.player !== player {
                     layers.playerLayer.player = player
                 }
-                guard activeOrder.contains(kind) else {
+                guard let zIndex = activeOrder.firstIndex(of: kind) else {
                     layers.shadowHost.isHidden = true
                     continue
                 }
                 layers.shadowHost.isHidden = false
-                layers.shadowHost.zPosition = zIndex
-                zIndex += 1
+                layers.shadowHost.zPosition = CGFloat(zIndex + 1)
                 layoutSource(
                     kind: kind,
                     layers: layers,
@@ -199,6 +227,7 @@ final class EditorCompositedPlayerView: NSView {
                 )
             }
         }
+        renderedState = state
     }
 
     private func cameraCropCanvasFrame(_ request: EditorCameraCropCanvasFrameRequest) -> CGRect {
@@ -316,6 +345,7 @@ final class EditorCompositedPlayerView: NSView {
 
     func teardown() {
         stopDisplayLink()
+        renderedState = nil
         for layers in sourceLayers.values {
             layers.playerLayer.player = nil
         }

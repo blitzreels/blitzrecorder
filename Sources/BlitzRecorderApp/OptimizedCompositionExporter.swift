@@ -23,6 +23,7 @@ enum OptimizedCompositionExporter {
         duration: CMTime,
         progressHandler: (@MainActor (Double) -> Void)? = nil
     ) async throws {
+        try Task.checkCancellation()
         try? FileManager.default.removeItem(at: outputURL)
 
         let reader = try AVAssetReader(asset: composition)
@@ -177,41 +178,44 @@ enum OptimizedCompositionExporter {
         performanceMonitor: ExportPerformanceMonitor,
         progressHandler: (@MainActor (Double) -> Void)?
     ) async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            let state = ExportState(
-                reader: reader,
-                writer: writer,
-                hasAudio: audioOutput != nil,
-                performanceMonitor: performanceMonitor,
-                continuation: continuation
-            )
-            let videoPump = ExportSamplePump(
-                output: videoOutput,
-                input: videoInput,
-                writer: writer,
-                state: state,
-                durationSeconds: max(0.001, duration.seconds),
-                performanceMonitor: performanceMonitor,
-                progressHandler: progressHandler
-            )
+        let state = ExportState((
+            reader: reader, writer: writer, hasAudio: audioOutput != nil,
+            performanceMonitor: performanceMonitor
+        ))
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                state.attach(continuation)
+                guard !state.isCompleted else { return }
+                let videoPump = ExportSamplePump(
+                    output: videoOutput,
+                    input: videoInput,
+                    writer: writer,
+                    state: state,
+                    durationSeconds: max(0.001, duration.seconds),
+                    performanceMonitor: performanceMonitor,
+                    progressHandler: progressHandler
+                )
 
-            videoInput.requestMediaDataWhenReady(on: DispatchQueue(label: "blitzrecorder.optimized-export.video")) {
-                videoPump.pumpVideo()
-            }
+                videoInput.requestMediaDataWhenReady(on: DispatchQueue(label: "blitzrecorder.optimized-export.video")) {
+                    videoPump.pumpVideo()
+                }
 
-            guard let audioOutput, let audioInput else { return }
-            let audioPump = ExportSamplePump(
-                output: audioOutput,
-                input: audioInput,
-                writer: writer,
-                state: state,
-                durationSeconds: max(0.001, duration.seconds),
-                performanceMonitor: performanceMonitor,
-                progressHandler: nil
-            )
-            audioInput.requestMediaDataWhenReady(on: DispatchQueue(label: "blitzrecorder.optimized-export.audio")) {
-                audioPump.pumpAudio()
+                guard let audioOutput, let audioInput else { return }
+                let audioPump = ExportSamplePump(
+                    output: audioOutput,
+                    input: audioInput,
+                    writer: writer,
+                    state: state,
+                    durationSeconds: max(0.001, duration.seconds),
+                    performanceMonitor: performanceMonitor,
+                    progressHandler: nil
+                )
+                audioInput.requestMediaDataWhenReady(on: DispatchQueue(label: "blitzrecorder.optimized-export.audio")) {
+                    audioPump.pumpAudio()
+                }
             }
+        } onCancel: {
+            state.fail(CancellationError())
         }
     }
 }
@@ -305,25 +309,41 @@ private final class ExportSamplePump: @unchecked Sendable {
 private final class ExportState: @unchecked Sendable {
     private let reader: AVAssetReader
     private let writer: AVAssetWriter
-    private let continuation: CheckedContinuation<Void, Error>
+    private var continuation: CheckedContinuation<Void, Error>?
+    private var result: Result<Void, Error>?
     private let performanceMonitor: ExportPerformanceMonitor
     private let lock = DispatchQueue(label: "blitzrecorder.optimized-export.state")
     private var videoFinished = false
     private var audioFinished: Bool
     private var completed = false
 
-    init(
+    init(_ configuration: (
         reader: AVAssetReader,
         writer: AVAssetWriter,
         hasAudio: Bool,
-        performanceMonitor: ExportPerformanceMonitor,
-        continuation: CheckedContinuation<Void, Error>
-    ) {
-        self.reader = reader
-        self.writer = writer
-        self.performanceMonitor = performanceMonitor
-        self.continuation = continuation
-        audioFinished = !hasAudio
+        performanceMonitor: ExportPerformanceMonitor
+    )) {
+        reader = configuration.reader
+        writer = configuration.writer
+        performanceMonitor = configuration.performanceMonitor
+        audioFinished = !configuration.hasAudio
+    }
+
+    func attach(_ continuation: CheckedContinuation<Void, Error>) {
+        lock.sync {
+            if let result {
+                continuation.resume(with: result)
+            } else {
+                self.continuation = continuation
+            }
+        }
+    }
+
+    private func resolve(_ result: Result<Void, Error>) {
+        guard self.result == nil else { return }
+        self.result = result
+        continuation?.resume(with: result)
+        continuation = nil
     }
 
     var isCompleted: Bool {
@@ -350,7 +370,7 @@ private final class ExportState: @unchecked Sendable {
             self.completed = true
             self.reader.cancelReading()
             self.writer.cancelWriting()
-            self.continuation.resume(throwing: error)
+            self.resolve(.failure(error))
         }
     }
 
@@ -359,7 +379,7 @@ private final class ExportState: @unchecked Sendable {
         completed = true
         if reader.status == .failed {
             writer.cancelWriting()
-            continuation.resume(throwing: reader.error ?? RecorderError.exportUnavailable)
+            resolve(.failure(reader.error ?? RecorderError.exportUnavailable))
             return
         }
         let finalizationStartedAt = ProcessInfo.processInfo.systemUptime
@@ -367,10 +387,12 @@ private final class ExportState: @unchecked Sendable {
             performanceMonitor.recordWriterFinalization(
                 duration: ProcessInfo.processInfo.systemUptime - finalizationStartedAt
             )
-            if self.writer.status == .completed {
-                self.continuation.resume()
-            } else {
-                self.continuation.resume(throwing: self.writer.error ?? RecorderError.writerNotReady)
+            lock.async {
+                if self.writer.status == .completed {
+                    self.resolve(.success(()))
+                } else {
+                    self.resolve(.failure(self.writer.error ?? RecorderError.writerNotReady))
+                }
             }
         }
     }

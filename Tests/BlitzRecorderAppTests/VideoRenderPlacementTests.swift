@@ -314,22 +314,7 @@ final class VideoRenderPlacementTests: XCTestCase {
         )
     }
 
-    func testCanvasPaddingDoesNotCreateSourceMask() {
-        var settings = RecordingSettings()
-        settings.enabledSources = [.camera]
-        settings.cameraContentMode = .fit
-        settings.canvasPadding = 0.1
-        settings.sceneLayout.cameraFrame = CGRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8)
-        let geometry = SceneRenderGeometry(
-            canvas: CGRect(x: 0, y: 0, width: 100, height: 200),
-            scene: RecordingScene(settings: settings),
-            origin: .upperLeft
-        )
-
-        XCTAssertNil(geometry.sourceMaskPath(sourceAspectRatios: [.camera: 16.0 / 9.0]))
-    }
-
-    func testScreenCornerRadiusCreatesMaskIndependentlyFromPadding() {
+    func testScreenCornerRadiusIsIndependentFromPadding() {
         var settings = RecordingSettings()
         settings.enabledSources = [.screen]
         settings.canvasPadding = 0
@@ -341,7 +326,6 @@ final class VideoRenderPlacementTests: XCTestCase {
         )
 
         XCTAssertEqual(geometry.sourceCornerRadius(for: .screen), 8, accuracy: 0.0001)
-        XCTAssertNotNil(geometry.sourceMaskPath())
     }
 
     func testHiddenLayerFramesReflowRemainingSourceLikeExport() {

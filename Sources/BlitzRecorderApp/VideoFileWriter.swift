@@ -15,6 +15,7 @@ final class VideoFileWriter: @unchecked Sendable {
     private var pauseStartedAt: CMTime?
     private var pauseOffset = CMTime.zero
     private var paused = false
+    private let finalization = MediaWriterFinalization()
     private var finished = false
     private var wroteSample = false
     private var writeError: Error?
@@ -128,29 +129,28 @@ final class VideoFileWriter: @unchecked Sendable {
     func finish() async throws -> MediaWriterCompletion {
         try await withCheckedThrowingContinuation { continuation in
             queue.async {
-                guard !self.finished else {
-                    if let writeError = self.writeError {
-                        try? FileManager.default.removeItem(at: self.url)
-                        continuation.resume(throwing: writeError)
-                    } else {
-                        continuation.resume(returning: self.wroteSample ? .wrote(self.url) : .empty(self.url))
-                    }
+                guard self.finalization.begin(continuation) else { return }
+                self.finished = true
+                if let writeError = self.writeError {
+                    try? FileManager.default.removeItem(at: self.url)
+                    self.finalization.complete(.failure(writeError))
                     return
                 }
-                self.finished = true
                 guard self.wroteSample else {
                     self.writer.cancelWriting()
                     try? FileManager.default.removeItem(at: self.url)
-                    continuation.resume(returning: .empty(self.url))
+                    self.finalization.complete(.success(.empty(self.url)))
                     return
                 }
                 self.input.markAsFinished()
                 self.writer.finishWriting {
-                    if let error = self.writer.error {
-                        try? FileManager.default.removeItem(at: self.url)
-                        continuation.resume(throwing: error)
-                    } else {
-                        continuation.resume(returning: .wrote(self.url))
+                    self.queue.async {
+                        guard self.writer.status == .completed else {
+                            try? FileManager.default.removeItem(at: self.url)
+                            self.finalization.complete(.failure(self.writer.error ?? RecorderError.writerNotReady))
+                            return
+                        }
+                        self.finalization.complete(.success(.wrote(self.url)))
                     }
                 }
             }

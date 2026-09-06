@@ -1,0 +1,88 @@
+name: Recording Resilience
+
+on:
+  pull_request:
+    paths:
+      - "**/*.swift"
+      - "**/Package.resolved"
+      - "Scripts/run-resilience.py"
+      - ".github/workflows/resilience.yml"
+  push:
+    branches: [main]
+    paths:
+      - "**/*.swift"
+      - "**/Package.resolved"
+      - "Scripts/run-resilience.py"
+      - ".github/workflows/resilience.yml"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Check to run
+        type: choice
+        options: [quick, thread, address, disk, benchmark, soak]
+        default: quick
+      seconds:
+        description: Real-time synthetic soak duration, 10–10800 seconds
+        type: number
+        default: 60
+
+permissions:
+  contents: read
+
+concurrency:
+  group: resilience-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ inputs.mode }}
+  cancel-in-progress: true
+
+jobs:
+  safeguards:
+    if: github.event_name != 'workflow_dispatch'
+    name: ${{ matrix.mode }}
+    runs-on: macos-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        mode: [thread, address, disk]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Run resilience checks
+        env:
+          RESILIENCE_MODE: ${{ matrix.mode }}
+        run: python3 Scripts/run-resilience.py "$RESILIENCE_MODE"
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resilience-${{ matrix.mode }}
+          path: build/resilience/
+          if-no-files-found: error
+          retention-days: 14
+
+  workload:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Run requested workload
+        env:
+          RESILIENCE_MODE: ${{ inputs.mode }}
+          RESILIENCE_SECONDS: ${{ inputs.seconds }}
+        run: python3 Scripts/run-resilience.py "$RESILIENCE_MODE" --seconds "$RESILIENCE_SECONDS"
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resilience-${{ inputs.mode }}
+          path: build/resilience/
+          if-no-files-found: error
+          retention-days: 14

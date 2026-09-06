@@ -95,28 +95,3 @@ struct TakeFinalizationPlan: Equatable {
         }
     }
 }
-
-protocol FinalVideoExporting {
-    func exportFinalVideo(
-        take: RecordingTake,
-        settings: RecordingSettings,
-        sceneEvents: [RecordingSceneEvent],
-        progressHandler: (@MainActor (Double) -> Void)?
-    ) async throws -> URL
-}
-
-struct MergerFinalVideoExporter: FinalVideoExporting {
-    func exportFinalVideo(
-        take: RecordingTake,
-        settings: RecordingSettings,
-        sceneEvents: [RecordingSceneEvent],
-        progressHandler: (@MainActor (Double) -> Void)?
-    ) async throws -> URL {
-        try await Merger.exportFinalVideo(
-            take: take,
-            settings: settings,
-            sceneEvents: sceneEvents,
-            progressHandler: progressHandler
-        )
-    }
-}

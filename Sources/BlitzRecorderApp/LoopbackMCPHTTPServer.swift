@@ -9,6 +9,8 @@ final class LoopbackMCPHTTPServer: @unchecked Sendable {
         let host: String
         let port: Int
         let endpoint: String
+        let workspaceEndpoint: String
+        let workspaceData: Data
         let transport: StatelessHTTPServerTransport
     }
 
@@ -32,7 +34,9 @@ final class LoopbackMCPHTTPServer: @unchecked Sendable {
                 channel.pipeline.configureHTTPServerPipeline().flatMap {
                     channel.pipeline.addHandler(MCPHTTPChannelHandler(.init(
                         transport: transport,
-                        endpoint: endpoint
+                        endpoint: endpoint,
+                        workspaceEndpoint: self.configuration.workspaceEndpoint,
+                        workspaceData: self.configuration.workspaceData
                     )))
                 }
             }
@@ -58,6 +62,8 @@ private final class MCPHTTPChannelHandler: ChannelInboundHandler, @unchecked Sen
     struct Configuration {
         let transport: StatelessHTTPServerTransport
         let endpoint: String
+        let workspaceEndpoint: String
+        let workspaceData: Data
     }
 
     private struct RequestState {
@@ -98,6 +104,22 @@ private final class MCPHTTPChannelHandler: ChannelInboundHandler, @unchecked Sen
 
     private func handle(_ request: HandleRequest) async {
         let path = String(request.state.head.uri.split(separator: "?").first ?? "")
+        if request.state.head.method == .GET,
+           path == configuration.workspaceEndpoint || path == "\(configuration.workspaceEndpoint)/" {
+            write(.init(
+                response: .data(
+                    configuration.workspaceData,
+                    headers: [
+                        "Cache-Control": "no-store",
+                        "Content-Type": "text/html; charset=utf-8",
+                        "Content-Security-Policy": "default-src 'self'; connect-src 'self'; img-src 'self' data:; script-src 'unsafe-inline'; style-src 'unsafe-inline'",
+                    ]
+                ),
+                version: request.state.head.version,
+                context: request.context
+            ))
+            return
+        }
         guard path == configuration.endpoint else {
             write(.init(
                 response: .error(statusCode: 404, .invalidRequest("Not Found")),

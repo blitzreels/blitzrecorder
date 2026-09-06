@@ -146,6 +146,7 @@ if [[ "$DIRECT_DISTRIBUTION" == "1" ]]; then
 fi
 
 cp "$ROOT/Sources/BlitzRecorderApp/PrivacyInfo.xcprivacy" "$APP/Contents/Resources/PrivacyInfo.xcprivacy"
+cp "$ROOT/Sources/BlitzRecorderApp/Resources/WebMCPWorkspace.html" "$APP/Contents/Resources/WebMCPWorkspace.html"
 cp "$ROOT/Resources/CompanionAppIcon.png" "$APP/Contents/Resources/CompanionAppIcon.png"
 cp "$ROOT/Resources/BlitzReelsWordmarkWhite.png" "$APP/Contents/Resources/BlitzReelsWordmarkWhite.png"
 if [[ -f "$ROOT/Resources/BlitzRecorder.icns" ]]; then

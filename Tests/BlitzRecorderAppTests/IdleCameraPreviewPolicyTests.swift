@@ -2,21 +2,11 @@ import XCTest
 @testable import BlitzRecorderApp
 
 final class IdleCameraPreviewPolicyTests: XCTestCase {
-    func testIdlePreviewStartsWhileAnotherApplicationUsesCamera() {
-        XCTAssertTrue(IdleCameraPreviewPolicy.shouldStart(.init(
-            appIsActive: true,
-            windowIsVisible: true,
-            keepsIdleCaptureResourcesActive: true,
-            cameraIsRunningSomewhere: true
-        )))
-    }
-
     func testIdlePreviewStopsWhileApplicationIsInactive() {
         XCTAssertFalse(IdleCameraPreviewPolicy.shouldStart(.init(
             appIsActive: false,
             windowIsVisible: true,
-            keepsIdleCaptureResourcesActive: true,
-            cameraIsRunningSomewhere: false
+            keepsIdleCaptureResourcesActive: true
         )))
     }
 
@@ -24,8 +14,7 @@ final class IdleCameraPreviewPolicyTests: XCTestCase {
         XCTAssertFalse(IdleCameraPreviewPolicy.shouldStart(.init(
             appIsActive: true,
             windowIsVisible: false,
-            keepsIdleCaptureResourcesActive: true,
-            cameraIsRunningSomewhere: false
+            keepsIdleCaptureResourcesActive: true
         )))
     }
 
@@ -33,8 +22,7 @@ final class IdleCameraPreviewPolicyTests: XCTestCase {
         XCTAssertTrue(IdleCameraPreviewPolicy.shouldStart(.init(
             appIsActive: true,
             windowIsVisible: true,
-            keepsIdleCaptureResourcesActive: true,
-            cameraIsRunningSomewhere: false
+            keepsIdleCaptureResourcesActive: true
         )))
     }
 
@@ -42,8 +30,7 @@ final class IdleCameraPreviewPolicyTests: XCTestCase {
         XCTAssertFalse(IdleCameraPreviewPolicy.shouldStart(.init(
             appIsActive: true,
             windowIsVisible: true,
-            keepsIdleCaptureResourcesActive: false,
-            cameraIsRunningSomewhere: true
+            keepsIdleCaptureResourcesActive: false
         )))
     }
 }

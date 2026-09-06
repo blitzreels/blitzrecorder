@@ -16,6 +16,7 @@ final class DirectMovieWriter: @unchecked Sendable {
     private var pauseStartedAt: CMTime?
     private var pauseOffset = CMTime.zero
     private var paused = false
+    private let finalization = MediaWriterFinalization()
     private var finished = false
     private var wroteVideo = false
     private var writeError: Error?
@@ -154,47 +155,39 @@ final class DirectMovieWriter: @unchecked Sendable {
     func finish() async throws -> MediaWriterCompletion {
         try await withCheckedThrowingContinuation { continuation in
             queue.async {
-                guard !self.finished else {
-                    if let writeError = self.writeError {
-                        try? FileManager.default.removeItem(at: self.temporaryURL)
-                        continuation.resume(throwing: writeError)
-                    } else {
-                        continuation.resume(returning: self.wroteVideo ? .wrote(self.finalURL) : .empty(self.temporaryURL))
-                    }
-                    return
-                }
+                guard self.finalization.begin(continuation) else { return }
                 self.finished = true
                 if let writeError = self.writeError {
                     try? FileManager.default.removeItem(at: self.temporaryURL)
-                    continuation.resume(throwing: writeError)
+                    self.finalization.complete(.failure(writeError))
                     return
                 }
                 guard self.wroteVideo else {
                     self.writer.cancelWriting()
                     try? FileManager.default.removeItem(at: self.temporaryURL)
-                    continuation.resume(returning: .empty(self.temporaryURL))
+                    self.finalization.complete(.success(.empty(self.temporaryURL)))
                     return
                 }
-
                 self.videoInput.markAsFinished()
                 self.audioInputs.values.forEach { $0.markAsFinished() }
                 self.writer.finishWriting {
-                    if let error = self.writer.error {
-                        try? FileManager.default.removeItem(at: self.temporaryURL)
-                        continuation.resume(throwing: error)
-                        return
-                    }
-
-                    do {
-                        try FileManager.default.createDirectory(
-                            at: self.finalURL.deletingLastPathComponent(),
-                            withIntermediateDirectories: true
-                        )
-                        let outputURL = Self.uniqueFileURL(self.finalURL)
-                        try FileManager.default.moveItem(at: self.temporaryURL, to: outputURL)
-                        continuation.resume(returning: .wrote(outputURL))
-                    } catch {
-                        continuation.resume(throwing: error)
+                    self.queue.async {
+                        guard self.writer.status == .completed else {
+                            try? FileManager.default.removeItem(at: self.temporaryURL)
+                            self.finalization.complete(.failure(self.writer.error ?? RecorderError.writerNotReady))
+                            return
+                        }
+                        do {
+                            try FileManager.default.createDirectory(
+                                at: self.finalURL.deletingLastPathComponent(),
+                                withIntermediateDirectories: true
+                            )
+                            let outputURL = Self.uniqueFileURL(self.finalURL)
+                            try FileManager.default.moveItem(at: self.temporaryURL, to: outputURL)
+                            self.finalization.complete(.success(.wrote(outputURL)))
+                        } catch {
+                            self.finalization.complete(.failure(error))
+                        }
                     }
                 }
             }

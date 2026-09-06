@@ -13,7 +13,7 @@ enum SettingsPane: Int, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .recording: return "Recording"
+        case .recording: return "General"
         case .devices: return "Devices"
         case .permissions: return "Access"
         case .agents: return "Agents"
@@ -23,7 +23,7 @@ enum SettingsPane: Int, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .recording: return "Quality, files, and transcripts"
+        case .recording: return "Files and transcripts"
         case .devices: return "iPhone camera and pairing"
         case .permissions: return "macOS capture permissions"
         case .agents: return "Local MCP connections"
@@ -33,7 +33,7 @@ enum SettingsPane: Int, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
-        case .recording: return "record.circle"
+        case .recording: return "gearshape"
         case .devices: return "iphone.gen3"
         case .permissions: return "lock.shield"
         case .agents: return "terminal"
@@ -123,24 +123,13 @@ private struct SettingsRootView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 11) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(BlitzUI.mint.opacity(0.13))
-                    Image(systemName: "record.circle.fill")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(BlitzUI.mint)
-                }
-                .frame(width: 34, height: 34)
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("BlitzRecorder")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.90))
-                    Text("Settings")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.38))
-                }
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Settings")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(BlitzUI.primaryText)
+                Text("BlitzRecorder")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(BlitzUI.secondaryText)
             }
             .padding(.horizontal, 18)
             .padding(.top, 48)
@@ -164,7 +153,7 @@ private struct SettingsRootView: View {
             .padding(.horizontal, 18)
             .padding(.bottom, 18)
         }
-        .frame(width: 238)
+        .frame(width: 216)
         .background(Color.black.opacity(0.18))
     }
 
@@ -178,21 +167,10 @@ private struct SettingsRootView: View {
             navigation.selectedPane = pane
         } label: {
             HStack(spacing: 11) {
-                BlitzIconTile(
-                    symbolName: pane.systemImage,
-                    isSelected: isSelected,
-                    size: 31
-                )
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(pane.title)
-                        .font(.system(size: 11.5, weight: .semibold))
-                        .foregroundStyle(.white.opacity(isSelected ? 0.92 : 0.62))
-                    Text(pane.subtitle)
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.white.opacity(isSelected ? 0.46 : 0.28))
-                        .lineLimit(1)
-                }
+                BlitzSymbol(configuration: .init(name: pane.systemImage, size: 18))
+                    .foregroundStyle(isSelected ? BlitzUI.mint : BlitzUI.secondaryText)
+                Text(pane.title)
+                    .font(.system(size: 12, weight: .medium))
 
                 Spacer(minLength: 0)
 
@@ -205,22 +183,11 @@ private struct SettingsRootView: View {
                 }
             }
             .padding(.horizontal, 10)
-            .frame(height: 52)
+            .frame(height: 42)
             .contentShape(.rect(cornerRadius: 10))
         }
-        .buttonStyle(.plain)
-        .background(
-            isSelected ? Color.white.opacity(0.085) : Color.clear,
-            in: .rect(cornerRadius: 10)
-        )
-        .overlay(alignment: .leading) {
-            if isSelected {
-                Capsule()
-                    .fill(BlitzUI.mint)
-                    .frame(width: 3, height: 24)
-                    .offset(x: -1)
-            }
-        }
+        .buttonStyle(BlitzSelectionButtonStyle(isSelected: isSelected))
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .pointingHandCursor()
     }
 

@@ -79,7 +79,6 @@ struct EditorTimelineView: View {
                 .stroke(Color.white.opacity(0.08), lineWidth: 1)
                 .allowsHitTesting(false)
         }
-        .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
     }
 
 
@@ -159,7 +158,6 @@ struct EditorTimelineView: View {
                     .stroke(Color.white.opacity(0.07), lineWidth: 1)
                     .allowsHitTesting(false)
             }
-            .shadow(color: .black.opacity(0.2), radius: 5, y: 2)
         }
         .padding(.horizontal, 14)
         .frame(height: 58)
@@ -230,9 +228,7 @@ struct EditorTimelineView: View {
 
             ForEach(Array(gutterRows.enumerated()), id: \.offset) { _, row in
                 HStack(spacing: 5) {
-                    Image(systemName: row.icon)
-                .font(.system(size: 10, weight: .semibold))
-                        .symbolRenderingMode(.hierarchical)
+                    BlitzSymbol(configuration: .init(name: row.icon, size: 16))
                         .foregroundStyle(.white.opacity(0.4))
                         .frame(width: 16)
 
@@ -248,7 +244,8 @@ struct EditorTimelineView: View {
                         Color.clear.frame(width: 20)
                     }
                 }
-                .padding(.leading, 2)
+                .padding(.leading, 10)
+                .padding(.trailing, 4)
                 .frame(width: gutterWidth, height: row.height)
                 .background(Color.white.opacity(0.035), in: .rect(cornerRadius: 7))
                 .overlay(alignment: .leading) {
@@ -361,7 +358,7 @@ struct EditorTimelineView: View {
             .fill(BlitzUI.trackCamera.opacity(0.22))
             .overlay(alignment: .leading) {
                 Text(chapter.title)
-                    .font(.system(size: 9, weight: .heavy))
+                    .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.86))
                     .lineLimit(1)
                     .padding(.horizontal, 7)
@@ -542,7 +539,7 @@ struct EditorTimelineView: View {
 
     private func clipLabel(_ title: String, isSelected: Bool) -> some View {
         Text(title)
-            .font(.system(size: 9, weight: .heavy))
+            .font(.system(size: 9, weight: .semibold))
             .foregroundStyle(isSelected ? BlitzUI.mint : .white.opacity(0.85))
             .lineLimit(1)
             .padding(.horizontal, 6)
@@ -645,7 +642,7 @@ struct EditorTimelineView: View {
             rows.append((icon: "text.quote", title: "Chapters", height: chaptersRowHeight, asset: nil))
         }
         if showsSegmentsTrack {
-            rows.append((icon: "rectangle.3.group", title: "Scenes", height: segmentsRowHeight, asset: nil))
+            rows.append((icon: BlitzSymbols.scenes, title: "Scenes", height: segmentsRowHeight, asset: nil))
         }
         for asset in trackAssets {
             rows.append((
@@ -707,7 +704,7 @@ private struct EditorSceneTimelineItem: View {
                 if proxy.size.width >= 86 {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(presentation.title)
-                            .font(.system(size: 8.5, weight: .heavy))
+                            .font(.system(size: 8.5, weight: .semibold))
                             .foregroundStyle(.white.opacity(0.9))
                             .lineLimit(1)
 
@@ -744,7 +741,6 @@ private struct EditorSceneTimelineItem: View {
             }
         }
         .clipShape(shape)
-        .shadow(color: isSelected ? BlitzUI.mint.opacity(0.14) : .clear, radius: 5)
         .animation(.easeOut(duration: 0.14), value: isSelected)
         .animation(.easeOut(duration: 0.14), value: isActive)
         .accessibilityElement(children: .combine)
@@ -791,11 +787,8 @@ private struct EditorSceneTimelineThumbnail: View {
         let shape = RoundedRectangle(cornerRadius: placement.cornerRadius, style: .continuous)
         let isScreen = placement.kind == .screen
         let shadowEnabled = isScreen ? scene.screenShadowEnabled : scene.cameraShadowEnabled
-        return shape
-            .fill(isScreen ? Color.white.opacity(0.82) : BlitzUI.mint.opacity(0.92))
-            .overlay {
-                shape.strokeBorder(Color.black.opacity(isScreen ? 0.18 : 0.24), lineWidth: 0.5)
-            }
+        return BlitzSceneThumbnailLayer(kind: placement.kind)
+            .clipShape(shape)
             .shadow(color: shadowEnabled ? .black.opacity(0.55) : .clear, radius: 1.5, y: 1)
             .frame(width: placement.targetRect.width, height: placement.targetRect.height)
             .offset(x: placement.targetRect.minX, y: placement.targetRect.minY)
@@ -826,25 +819,16 @@ private struct TimelineActionButton: View {
     let isDisabled: Bool
     let action: () -> Void
 
-    @State private var isHovering = false
-
     var body: some View {
         Button(action: action) {
-            Label(title, systemImage: systemName)
-                .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(.white.opacity(isDisabled ? 0.24 : (isHovering ? 0.94 : 0.68)))
-                .padding(.horizontal, 11)
-                .frame(height: 40)
-                .background(
-                    Color.white.opacity(isHovering && !isDisabled ? 0.075 : 0.035),
-                    in: .rect(cornerRadius: 9)
-                )
-                .contentShape(.rect(cornerRadius: 9))
+            HStack(spacing: 6) {
+                BlitzSymbol(configuration: .init(name: systemName, size: 16))
+                Text(title)
+            }
+            .frame(height: 28)
         }
-        .buttonStyle(TimelinePressButtonStyle())
+        .blitzGlassButton()
         .disabled(isDisabled)
-        .onHover { isHovering = $0 && !isDisabled }
-        .animation(.easeOut(duration: 0.12), value: isHovering)
         .pointingHandCursor()
     }
 }
@@ -955,25 +939,23 @@ private struct TimelinePlaybackRateSelector: View {
                     onSelect(rate)
                 } label: {
                     Text(rate.displayName)
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
                         .foregroundStyle(
                             playbackRate == rate
-                                ? BlitzUI.mint
+                                ? BlitzUI.primaryText
                                 : Color.white.opacity(isDisabled ? 0.24 : 0.56)
                         )
-                        .frame(width: 42, height: 40)
-                        .background(
-                            playbackRate == rate ? BlitzUI.mint.opacity(0.13) : Color.clear,
-                            in: .rect(cornerRadius: 9)
-                        )
+                        .frame(width: 38, height: 32)
                         .contentShape(.rect(cornerRadius: 9))
                 }
-                .buttonStyle(TimelinePressButtonStyle())
+                .buttonStyle(BlitzSelectionButtonStyle(isSelected: playbackRate == rate))
+                .accessibilityAddTraits(playbackRate == rate ? [.isSelected] : [])
                 .disabled(isDisabled)
                 .pointingHandCursor()
                 .help("Play at \(rate.displayName)")
             }
         }
+        .blitzTabGroup()
         .animation(.easeOut(duration: 0.14), value: playbackRate)
         .help("Playback speed (L)")
     }
@@ -991,7 +973,6 @@ private struct TimelineControlDivider: View {
 private struct TimelinePressButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .opacity(configuration.isPressed ? 0.82 : 1)
             .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
     }

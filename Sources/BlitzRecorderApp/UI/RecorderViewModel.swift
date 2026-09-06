@@ -38,8 +38,7 @@ enum SourceSelection: CaseIterable, Equatable {
     }
 }
 
-enum RecorderInspectorSelection: Equatable {
-    case scene
+enum RecorderInspectorSelection: Hashable {
     case source(CaptureSource)
     case canvas
 
@@ -175,6 +174,9 @@ final class RecorderViewModel {
     @ObservationIgnored private var editorRedoStack: [EditorHistoryEntry] = []
     private var editorHistoryRevision = 0
     var inspectorSelection: RecorderInspectorSelection = .canvas
+    var projectLibraryNavigation = ProjectLibraryNavigationState()
+    private(set) var screenSplitPreviewHeight: Double?
+    var previewCanvasFrame: CGRect = .zero
     var isCameraCropModeEnabled = false
     var isScreenCropModeEnabled = false
     private var sceneLibraryRevision = 0
@@ -665,6 +667,9 @@ final class RecorderViewModel {
         previewStage.onScreenLayerFrameChanged = { [weak self] frame in
             self?.screenLayerFrame = frame
         }
+        previewStage.onCanvasFrameChanged = { [weak self] frame in
+            self?.previewCanvasFrame = frame
+        }
         previewStage.onSceneLayoutChanged = { [weak self] layout in
             guard let self else { return }
             guard self.canManipulateCanvasItems else {
@@ -806,11 +811,11 @@ final class RecorderViewModel {
         syncSelectedSource()
         syncPreviewInteractionState()
         previewStage.captureLayout = coordinator.settings.layout
-        previewStage.sceneLayout = coordinator.settings.sceneLayout
+        previewStage.sceneLayout = screenSplitPreviewHeight.map {
+            SceneLayout.screenSplitLayout(screenHeight: CGFloat($0))
+        } ?? coordinator.settings.sceneLayout
         previewStage.enabledSources = coordinator.settings.visibleSources
         previewStage.screenSourceAspectRatio = coordinator.currentScreenSourceAspectRatio()
-        previewStage.screenResizeUsesTargetAspectRatio = supportsScreenWindowScaling
-            && coordinator.permissionGate.hasAccessibilityAccess
         previewStage.screenFillsSceneFrame = ScreenSourceGeometry.fillsSceneFrame(for: coordinator.settings)
         previewStage.screenCrop = coordinator.settings.screenCrop
         previewStage.cameraCropAmount = coordinator.settings.cameraCropAmount
@@ -931,38 +936,39 @@ final class RecorderViewModel {
     }
 
     func setLayout(_ layout: CaptureLayout) {
+        cancelScreenSplitPreview()
         coordinator.setLayout(layout)
         sceneLibraryRevision += 1
         syncSettingsAfterSceneChange()
     }
 
     func selectScene(_ id: UUID) {
+        cancelScreenSplitPreview()
         coordinator.selectScene(id: id)
-        selectSceneInspector()
         sceneLibraryRevision += 1
         syncSettingsAfterSceneChange()
     }
 
     func selectSceneAcrossLayouts(_ id: UUID) {
+        cancelScreenSplitPreview()
         if let target = coordinator.layout(ofSceneID: id), target != settings.layout {
             coordinator.setLayout(target)
         }
         coordinator.selectScene(id: id)
-        selectSceneInspector()
         sceneLibraryRevision += 1
         syncSettingsAfterSceneChange()
     }
 
     func createScene() {
+        cancelScreenSplitPreview()
         coordinator.createSceneFromCurrentSettings()
-        selectSceneInspector()
         sceneLibraryRevision += 1
         syncSettingsAfterSceneChange()
     }
 
     func duplicateSelectedScene() {
+        cancelScreenSplitPreview()
         coordinator.duplicateSelectedScene()
-        selectSceneInspector()
         sceneLibraryRevision += 1
         syncSettingsAfterSceneChange()
     }
@@ -993,6 +999,7 @@ final class RecorderViewModel {
     }
 
     func setScenePreset(_ preset: ScenePreset) {
+        cancelScreenSplitPreview()
         if preset.enablesScreenSource,
            !isSourceConfigured(.screen),
            !coordinator.hasActiveScreenSourceSelection {
@@ -1014,7 +1021,26 @@ final class RecorderViewModel {
     }
 
     var screenSplitHeight: Double {
-        Double(settings.sceneLayout.screenSplitHeight ?? SceneLayout.defaultScreenSplitHeight)
+        screenSplitPreviewHeight
+            ?? Double(settings.sceneLayout.screenSplitHeight ?? inferredScreenSplitHeight ?? SceneLayout.defaultScreenSplitHeight)
+    }
+
+    private var inferredScreenSplitHeight: CGFloat? {
+        let camera = settings.sceneLayout.cameraFrame.standardized
+        let screen = settings.sceneLayout.screenFrame.standardized
+        let screenHeight = 1 - camera.maxY
+        guard abs(camera.minX) < 0.005,
+              abs(camera.minY) < 0.005,
+              abs(camera.width - 1) < 0.005,
+              screen.midY > camera.maxY,
+              (SceneLayout.minimumScreenSplitHeight...SceneLayout.maximumScreenSplitHeight).contains(screenHeight) else {
+            return nil
+        }
+        return screenHeight
+    }
+
+    var activeScenePreset: ScenePreset? {
+        showsScreenSplitControl ? .screenTop50 : settings.selectedScenePreset
     }
 
     var isCameraInsetLayout: Bool {
@@ -1038,17 +1064,46 @@ final class RecorderViewModel {
     }
 
     var showsScreenSplitControl: Bool {
-        settings.sceneLayout.screenSplitHeight != nil || settings.selectedScenePreset == .screenTop50
+        guard settings.layout == .vertical,
+              settings.visibleSources.isSuperset(of: [.screen, .camera]) else { return false }
+        return settings.sceneLayout.screenSplitHeight != nil
+            || inferredScreenSplitHeight != nil
+            || settings.selectedScenePreset == .screenTop50
     }
 
     func isScenePresetActive(_ preset: ScenePreset) -> Bool {
-        if settings.selectedScenePreset == preset { return true }
-        return preset == .screenTop50 && settings.sceneLayout.screenSplitHeight != nil
+        activeScenePreset == preset
     }
 
     func setScreenSplitHeight(_ height: Double) {
+        screenSplitPreviewHeight = nil
         coordinator.setScreenSplitHeight(CGFloat(height))
         syncSettingsAfterSceneChange()
+    }
+
+    func previewScreenSplitHeight(_ height: Double) {
+        guard canEditScene, showsScreenSplitControl else { return }
+        let height = Double(SceneLayout.clampedScreenSplitHeight(CGFloat(height)))
+        screenSplitPreviewHeight = height
+        let layout = SceneLayout.screenSplitLayout(screenHeight: CGFloat(height))
+        previewStage.sceneLayout = layout
+        coordinator.previewSceneLayout(layout)
+    }
+
+    func commitScreenSplitPreview() {
+        guard let height = screenSplitPreviewHeight else { return }
+        guard canEditScene, showsScreenSplitControl else {
+            cancelScreenSplitPreview()
+            return
+        }
+        setScreenSplitHeight(height)
+    }
+
+    func cancelScreenSplitPreview() {
+        guard screenSplitPreviewHeight != nil else { return }
+        screenSplitPreviewHeight = nil
+        previewStage.sceneLayout = coordinator.settings.sceneLayout
+        coordinator.previewSceneLayout(coordinator.settings.sceneLayout)
     }
 
     func setCameraContentMode(_ mode: CameraContentMode) {
@@ -1170,6 +1225,7 @@ final class RecorderViewModel {
 
     func fitCurrentScreenWindowToSlot() {
         cancelScheduledTargetWindowFit()
+        coordinator.setScreenCrop(nil)
         coordinator.setScreenContentMode(.fit)
         applyCurrentScreenWindowZoom(targetWindowZoom)
     }
@@ -1318,17 +1374,6 @@ final class RecorderViewModel {
         previewStage.isBackgroundLayerSelected = true
     }
 
-    func selectSceneInspector() {
-        inspectorSelection = .scene
-        previewStage.isBackgroundLayerSelected = false
-    }
-
-    func selectPreferredSource() {
-        if let source = RecorderInspectorSelection.initial(settings: settings).source {
-            selectSource(source)
-        }
-    }
-
     func selectSource(_ source: CaptureSource) {
         guard isSourceConfigured(source) else { return }
         inspectorSelection = .source(source)
@@ -1388,6 +1433,7 @@ final class RecorderViewModel {
 
     func beginCameraCropMode() {
         guard canEditCameraCrop else { return }
+        cancelScreenSplitPreview()
         cancelScreenCropMode()
         selectLayer(.camera)
         previewStage.beginCameraCropEditing()
@@ -1419,6 +1465,7 @@ final class RecorderViewModel {
 
     func beginScreenCropMode() {
         guard canEditScene, isSourceConfigured(.screen) else { return }
+        cancelScreenSplitPreview()
         cancelCameraCropMode()
         selectLayer(.screen)
         screenCaptureAreaSelection = .manualCrop
@@ -1887,16 +1934,6 @@ final class RecorderViewModel {
         showsFirstRunOnboarding = false
     }
 
-    func chooseScreenFromOnboarding() {
-        dismissFirstRunOnboarding()
-        pickScreen()
-    }
-
-    func openAccessFromOnboarding() {
-        dismissFirstRunOnboarding()
-        onPresentSettings?(.permissions)
-    }
-
     func startFromCover() {
         dismissFirstRunOnboarding()
     }
@@ -2061,9 +2098,6 @@ final class RecorderViewModel {
         if let message {
             detailMessage = message
         }
-        if coordinator.reconcilePersistentScreenAccessIfNeeded() {
-            syncSettings()
-        }
         permissionRefreshToken += 1
     }
 
@@ -2101,10 +2135,6 @@ final class RecorderViewModel {
             self.syncSettings()
             self.refreshRecentProjects()
         }
-    }
-
-    func revealOutputFolder() {
-        NSWorkspace.shared.open(settings.outputDirectory)
     }
 
     func refreshRecentProjects() {
@@ -2610,11 +2640,6 @@ final class RecorderViewModel {
         }
     }
 
-    func setSpeechRenameEnabled(_ enabled: Bool) {
-        coordinator.setSpeechRenameEnabled(enabled)
-        syncSettings()
-    }
-
     func primaryAction() {
         switch state {
         case .idle:
@@ -2853,10 +2878,10 @@ enum PermissionStatusLevel: Equatable {
 extension CaptureSource {
     var symbolName: String {
         switch self {
-        case .screen: return "rectangle.on.rectangle"
-        case .camera: return "video.fill"
-        case .systemAudio: return "speaker.wave.2.fill"
-        case .microphone: return "mic.fill"
+        case .screen: return BlitzSymbols.screen
+        case .camera: return BlitzSymbols.camera
+        case .systemAudio: return BlitzSymbols.systemAudio
+        case .microphone: return BlitzSymbols.microphone
         }
     }
 
@@ -2872,7 +2897,7 @@ extension CaptureSource {
     var onboardingPurpose: String {
         switch self {
         case .screen: return "Capture what's on your display."
-        case .camera: return "Add your face cam to the recording."
+        case .camera: return "Add your camera to the recording."
         case .systemAudio: return "Record sound playing on your Mac."
         case .microphone: return "Record your voice."
         }
@@ -2939,15 +2964,15 @@ extension CaptureLayout {
 extension ScenePreset {
     var symbolName: String {
         switch self {
-        case .stackedHalves: return "rectangle.split.1x2"
-        case .screenTop50: return "rectangle.split.1x2"
-        case .screenTop70: return "rectangle.split.1x2"
+        case .stackedHalves: return BlitzSymbols.split
+        case .screenTop50: return BlitzSymbols.split
+        case .screenTop70: return BlitzSymbols.split
         case .screenFocus: return "rectangle.inset.filled"
-        case .cameraInset: return "pip"
+        case .cameraInset: return BlitzSymbols.pictureInPicture
         case .cameraFocus: return "person.crop.rectangle"
-        case .webcamLeft: return "rectangle.leadingthird.inset.filled"
-        case .screenFullscreen: return "rectangle.fill"
-        case .webcamFullscreen: return "video.fill"
+        case .webcamLeft: return BlitzSymbols.layout
+        case .screenFullscreen: return BlitzSymbols.screen
+        case .webcamFullscreen: return BlitzSymbols.camera
         }
     }
 }

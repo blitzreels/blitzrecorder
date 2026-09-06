@@ -1,7 +1,6 @@
 import AppKit
 import CoreImage
 import ImageIO
-import QuartzCore
 import SwiftUI
 
 /// A single soft radial color blob, the building block of the mesh-style canvas
@@ -54,15 +53,6 @@ struct CanvasAppearance {
             x: base.x + CGFloat(amplitudeX * cos(angle)),
             y: base.y + CGFloat(amplitudeY * sin(angle))
         )
-    }
-
-    /// Render `count` evenly-spaced frames of one animation loop. Used to prebake
-    /// the export (Merger) `contents` keyframe animation.
-    func animationFrames(pixelWidth: Int, pixelHeight: Int, count: Int) -> [CGImage] {
-        guard count > 0 else { return [] }
-        return (0..<count).compactMap { index in
-            renderCGImage(pixelWidth: pixelWidth, pixelHeight: pixelHeight, animationPhase: Double(index) / Double(count))
-        }
     }
 
     /// Render the background to a CGImage in a top-left origin space. Pure and
@@ -176,22 +166,6 @@ struct CanvasAppearance {
         return CIImage(cgImage: cgImage)
             .transformed(by: CGAffineTransform(translationX: rect.minX, y: rect.minY))
             .cropped(to: rect)
-    }
-
-    /// A CALayer whose contents are the rendered background, for the live
-    /// preview and the export (Core Animation) layer tree. `scale` is the pixel
-    /// density: pass the backing scale for the on-screen preview, and `1` for
-    /// the export merger whose frame is already in output pixels.
-    func backgroundLayer(frame: CGRect, scale: CGFloat) -> CALayer {
-        let layer = CALayer()
-        layer.frame = frame
-        layer.contentsGravity = .resize
-        layer.masksToBounds = true
-        layer.backgroundColor = solidCGColor
-        let pixelWidth = max(1, Int((frame.width * scale).rounded(.up)))
-        let pixelHeight = max(1, Int((frame.height * scale).rounded(.up)))
-        layer.contents = renderCGImage(pixelWidth: pixelWidth, pixelHeight: pixelHeight)
-        return layer
     }
 
     /// 128×128 white-noise tile, generated once and shared read-only across the

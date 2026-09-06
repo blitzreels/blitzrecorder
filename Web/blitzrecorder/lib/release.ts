@@ -8,11 +8,10 @@ const REPO = "blitzrecorder";
 
 export const GITHUB_REPO_URL = `https://github.com/${OWNER}/${REPO}`;
 export const RELEASES_URL = `${GITHUB_REPO_URL}/releases`;
-export const CHANGELOG_URL = `${GITHUB_REPO_URL}/blob/main/CHANGELOG.md`;
 /** GitHub redirects this to the newest release (or the releases list if none). */
 export const LATEST_RELEASE_URL = `${RELEASES_URL}/latest`;
 /** Shown when no release is published yet; kept in sync by Scripts/set-version.py. */
-export const FALLBACK_VERSION = "0.12.1";
+export const FALLBACK_VERSION = "0.13.0";
 
 export type Release = {
   /** Semver without the leading "v", e.g. "0.1.0". */

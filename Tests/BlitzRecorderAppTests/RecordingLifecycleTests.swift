@@ -647,7 +647,98 @@ final class RecordingLifecycleTests: XCTestCase {
         XCTAssertEqual(controller.scene(at: 0)?.screenShadowEnabled, true)
 
         XCTAssertTrue(controller.isReady)
+
+        let view = EditorCompositedPlayerView(frame: CGRect(x: 0, y: 0, width: 640, height: 360))
+        view.controller = controller
+        view.configure(renderSize: controller.renderSize)
+        view.refresh()
+        let canvas = try XCTUnwrap(view.layer?.sublayers?.first)
+        let source = try XCTUnwrap(canvas.sublayers?.last)
+        let clip = try XCTUnwrap(source.sublayers?.first)
+        let playerLayer = try XCTUnwrap(clip.sublayers?.first as? AVPlayerLayer)
+        let initialShadow = try XCTUnwrap(source.shadowPath)
+        let initialFrame = source.frame
+        view.refresh()
+        XCTAssertTrue(source.shadowPath === initialShadow)
+
+        livePreviewScene.canvasPadding = 0.2
+        controller.setPreviewSceneOverride(livePreviewScene, at: 0)
+        view.refresh()
+        XCTAssertNotEqual(source.frame, initialFrame)
+
+        let editedFrame = source.frame
+        view.setFrameSize(CGSize(width: 320, height: 180))
+        view.refresh()
+        XCTAssertEqual(source.frame.width, editedFrame.width / 2, accuracy: 0.01)
+
+        controller.setHidden(true, kind: .screen)
+        view.refresh()
+        XCTAssertTrue(source.isHidden)
+        controller.setHidden(false, kind: .screen)
+        view.refresh()
+        XCTAssertFalse(source.isHidden)
+
+        await controller.load(project: canvasProject, baseSettings: settings)
+        view.refresh()
+        XCTAssertFalse(initialPlayer === playerLayer.player)
+        XCTAssertTrue(playerLayer.player === controller.videoPlayer(for: .screen))
+
+        EditorCompositedPlayer.dismantleNSView(view, coordinator: ())
+        XCTAssertNil(playerLayer.player)
+        view.refresh()
+        XCTAssertTrue(playerLayer.player === controller.videoPlayer(for: .screen))
+        view.teardown()
         controller.teardown()
+    }
+
+    @MainActor
+    func testEditorCanvasUsesSceneLayerOrder() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .camera]
+        settings.layout = .horizontal
+        settings.outputResolution = .p720
+        settings.sceneLayout.layerOrder = [.camera, .screen]
+
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        for url in [take.screenURL, take.cameraURL] {
+            try writeTestMovie(
+                url: url,
+                codec: .h264,
+                color: (blue: 255, green: 0, red: 0, alpha: 255),
+                frameCount: 30
+            )
+        }
+        let project = try store.loadRecordingProject(at: take.projectURL)
+        let controller = EditorPlaybackController()
+        await controller.load(project: project, baseSettings: settings)
+        let view = EditorCompositedPlayerView(frame: CGRect(x: 0, y: 0, width: 640, height: 360))
+        defer {
+            view.teardown()
+            controller.teardown()
+        }
+        view.controller = controller
+        view.configure(renderSize: controller.renderSize)
+        view.refresh()
+
+        let canvas = try XCTUnwrap(view.layer?.sublayers?.first)
+        let sources = try XCTUnwrap(canvas.sublayers?.filter {
+            $0.sublayers?.first?.sublayers?.first is AVPlayerLayer
+        })
+        let screen = try XCTUnwrap(sources.first {
+            ($0.sublayers?.first?.sublayers?.first as? AVPlayerLayer)?.player === controller.videoPlayer(for: .screen)
+        })
+        let camera = try XCTUnwrap(sources.first {
+            ($0.sublayers?.first?.sublayers?.first as? AVPlayerLayer)?.player === controller.videoPlayer(for: .camera)
+        })
+        XCTAssertGreaterThan(screen.zPosition, camera.zPosition)
+
+        var scene = try XCTUnwrap(controller.scene(at: 0))
+        scene.sceneLayout.layerOrder = [.screen, .camera]
+        controller.setPreviewSceneOverride(scene, at: 0)
+        view.refresh()
+        XCTAssertGreaterThan(camera.zPosition, screen.zPosition)
     }
 
     func testEditorPlaybackPlayerItemProducesVideoOutputFrame() async throws {
@@ -936,21 +1027,6 @@ final class RecordingLifecycleTests: XCTestCase {
         XCTAssertTrue(center.red > 40 || center.green > 40 || center.blue > 40)
     }
 
-    func testEditorFallbackFramePolicyRendersAvailablePixelBufferDuringPlayback() {
-        XCTAssertEqual(
-            EditorFallbackFramePolicy.decision(isPlaying: true, hasPixelBuffer: false),
-            .hideFallback
-        )
-        XCTAssertEqual(
-            EditorFallbackFramePolicy.decision(isPlaying: true, hasPixelBuffer: true),
-            .renderPixelBuffer
-        )
-        XCTAssertEqual(
-            EditorFallbackFramePolicy.decision(isPlaying: false, hasPixelBuffer: false),
-            .renderStillFrame
-        )
-    }
-
     func testEditorPlaybackCompositionPlaysAudioOnlyProject() async throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
@@ -1067,10 +1143,14 @@ final class RecordingLifecycleTests: XCTestCase {
         )
     }
 
-    func testTitleGeneratorReturnsNilForLowSignalTranscript() async {
-        let slug = await TitleGenerator().titleSlug(for: "Um. Yeah. Thank you.")
-
-        XCTAssertNil(slug)
+    func testTitleGeneratorRejectsLowSignalTranscript() async {
+        do {
+            _ = try await TitleGenerator().title(.init(transcript: "Um. Yeah. Thank you."))
+            XCTFail("Expected a low-signal transcript to be rejected")
+        } catch TranscriptTitleGenerationError.transcriptTooShort {
+        } catch {
+            XCTFail("Unexpected title generation error: \(error)")
+        }
     }
 
     func testOutputDirectoryPreflightRequiresWritableExportFolder() throws {
@@ -2837,11 +2917,7 @@ final class RecordingLifecycleTests: XCTestCase {
 
         let store = TakeFileStore()
         let take = try store.createTake(settings: settings)
-        let finalizer = TakeFinalizer(
-            speechTranscriber: SpeechTranscriber(),
-            titleGenerator: TitleGenerator(),
-            fileStore: store
-        )
+        let finalizer = TakeFinalizer()
 
         let outcome = await finalizer.finalize(
             take: take,
@@ -2882,11 +2958,7 @@ final class RecordingLifecycleTests: XCTestCase {
             color: (blue: 255, green: 0, red: 0, alpha: 255)
         )
 
-        let finalizer = TakeFinalizer(
-            speechTranscriber: SpeechTranscriber(),
-            titleGenerator: TitleGenerator(),
-            fileStore: store
-        )
+        let finalizer = TakeFinalizer()
         var changedSettings = settings
         changedSettings.sceneLayout.cameraFrame = CGRect(x: 0.1, y: 0.1, width: 0.3, height: 0.3)
         let sceneEvents = [
@@ -2956,11 +3028,7 @@ final class RecordingLifecycleTests: XCTestCase {
             includeAudio: true
         )
 
-        let finalizer = TakeFinalizer(
-            speechTranscriber: SpeechTranscriber(),
-            titleGenerator: TitleGenerator(),
-            fileStore: store
-        )
+        let finalizer = TakeFinalizer()
         let outcome = await finalizer.finalize(
             take: take,
             settings: settings,
@@ -3009,11 +3077,7 @@ final class RecordingLifecycleTests: XCTestCase {
             includeAudio: true
         )
 
-        let finalizer = TakeFinalizer(
-            speechTranscriber: SpeechTranscriber(),
-            titleGenerator: TitleGenerator(),
-            fileStore: store
-        )
+        let finalizer = TakeFinalizer()
         let outcome = await finalizer.finalize(
             take: take,
             settings: settings,
@@ -3054,11 +3118,7 @@ final class RecordingLifecycleTests: XCTestCase {
             color: (blue: 255, green: 0, red: 0, alpha: 255)
         )
 
-        let finalizer = TakeFinalizer(
-            speechTranscriber: SpeechTranscriber(),
-            titleGenerator: TitleGenerator(),
-            fileStore: store
-        )
+        let finalizer = TakeFinalizer()
         let outcome = await finalizer.finalize(
             take: take,
             settings: settings,
@@ -3102,11 +3162,7 @@ final class RecordingLifecycleTests: XCTestCase {
             color: (blue: 255, green: 0, red: 0, alpha: 255)
         )
 
-        let finalizer = TakeFinalizer(
-            speechTranscriber: SpeechTranscriber(),
-            titleGenerator: TitleGenerator(),
-            fileStore: store
-        )
+        let finalizer = TakeFinalizer()
         let outcome = await finalizer.finalize(
             take: take,
             settings: settings,
@@ -3145,11 +3201,7 @@ final class RecordingLifecycleTests: XCTestCase {
         )
         try writeSilentAudioFile(url: take.systemAudioURL)
 
-        let finalizer = TakeFinalizer(
-            speechTranscriber: SpeechTranscriber(),
-            titleGenerator: TitleGenerator(),
-            fileStore: store
-        )
+        let finalizer = TakeFinalizer()
         let outcome = await finalizer.finalize(
             take: take,
             settings: settings,
@@ -3187,11 +3239,7 @@ final class RecordingLifecycleTests: XCTestCase {
         )
         try writeSilentAudioFile(url: take.systemAudioURL)
 
-        let finalizer = TakeFinalizer(
-            speechTranscriber: SpeechTranscriber(),
-            titleGenerator: TitleGenerator(),
-            fileStore: store
-        )
+        let finalizer = TakeFinalizer()
         let outcome = await finalizer.finalize(
             take: take,
             settings: settings,
@@ -3232,11 +3280,7 @@ final class RecordingLifecycleTests: XCTestCase {
             color: (blue: 255, green: 0, red: 0, alpha: 255)
         )
 
-        let finalizer = TakeFinalizer(
-            speechTranscriber: SpeechTranscriber(),
-            titleGenerator: TitleGenerator(),
-            fileStore: store
-        )
+        let finalizer = TakeFinalizer()
         let outcome = await finalizer.finalize(
             take: take,
             settings: settings,
@@ -3274,11 +3318,7 @@ final class RecordingLifecycleTests: XCTestCase {
             includeAudio: true
         )
 
-        let finalizer = TakeFinalizer(
-            speechTranscriber: SpeechTranscriber(),
-            titleGenerator: TitleGenerator(),
-            fileStore: store
-        )
+        let finalizer = TakeFinalizer()
         let outcome = await finalizer.finalize(
             take: take,
             settings: settings,

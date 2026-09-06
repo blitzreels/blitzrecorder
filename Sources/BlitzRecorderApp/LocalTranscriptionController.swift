@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import Observation
 
@@ -75,12 +74,6 @@ enum TranscriptionJobStatus: Equatable {
     }
 }
 
-struct PresentedTranscript: Identifiable {
-    let id: URL
-    var transcript: RecordingTranscript
-    let locations: TranscriptArtifactStore.Locations
-}
-
 struct CompletedTranscription {
     let source: TranscriptionMediaSource
     let transcript: RecordingTranscript
@@ -119,7 +112,6 @@ final class LocalTranscriptionController {
 
     var modelState: TranscriptionModelState
     var jobStatuses: [String: TranscriptionJobStatus] = [:]
-    var presentedTranscript: PresentedTranscript?
     @ObservationIgnored var onTranscriptionCompleted: ((CompletedTranscription) -> Void)?
     var isAutomaticEnabled: Bool {
         didSet {
@@ -215,60 +207,12 @@ final class LocalTranscriptionController {
         enqueue(EnqueueRequest(source: .project(projectURL), force: false))
     }
 
-    func enqueueRecording(_ recordingURL: URL) {
-        enqueue(EnqueueRequest(source: .recording(recordingURL), force: false))
-    }
-
     func retry(_ source: TranscriptionMediaSource) {
         enqueue(EnqueueRequest(source: source, force: true))
     }
 
     func status(for project: RecordingProjectHistory.Entry) -> TranscriptionJobStatus {
         jobStatuses[project.projectPath] ?? .notGenerated
-    }
-
-    func presentTranscript(for project: RecordingProjectHistory.Entry) {
-        do {
-            let recordingProject = try fileStore.loadRecordingProject(
-                at: URL(fileURLWithPath: project.projectPath)
-            )
-            let locations = artifactStore.locations(for: recordingProject)
-            presentedTranscript = PresentedTranscript(
-                id: locations.jsonURL,
-                transcript: try artifactStore.load(from: locations.jsonURL),
-                locations: locations
-            )
-        } catch {
-            jobStatuses[project.projectPath] = .failed(error.localizedDescription)
-        }
-    }
-
-    func savePresentedTranscript(_ transcript: RecordingTranscript) {
-        guard let presentedTranscript else { return }
-        do {
-            try artifactStore.save(TranscriptArtifactStore.SaveRequest(
-                transcript: transcript,
-                locations: presentedTranscript.locations
-            ))
-            self.presentedTranscript = PresentedTranscript(
-                id: presentedTranscript.id,
-                transcript: transcript,
-                locations: presentedTranscript.locations
-            )
-        } catch {
-            jobStatuses[transcript.mediaPath] = .failed(error.localizedDescription)
-        }
-    }
-
-    func revealPresentedTranscript() {
-        guard let presentedTranscript else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([
-            presentedTranscript.locations.textURL
-        ])
-    }
-
-    func dismissPresentedTranscript() {
-        presentedTranscript = nil
     }
 
     private func enqueue(_ request: EnqueueRequest) {

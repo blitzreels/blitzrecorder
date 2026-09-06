@@ -12,16 +12,6 @@ final class CanvasAppearanceTests: XCTestCase {
         XCTAssertEqual(image?.height, 80)
     }
 
-    func testBackgroundLayerCarriesRenderedContents() {
-        let appearance = CanvasBackgroundStyle.midnight.appearance
-        let frame = CGRect(x: 0, y: 0, width: 120, height: 80)
-        let layer = appearance.backgroundLayer(frame: frame, scale: 1)
-
-        XCTAssertEqual(layer.frame, frame)
-        XCTAssertNotNil(layer.contents)
-        XCTAssertNotNil(layer.backgroundColor)
-    }
-
     func testEveryStyleProducesADescriptor() {
         for style in CanvasBackgroundStyle.allCases {
             let descriptor = style.descriptor
@@ -68,11 +58,6 @@ final class CanvasAppearanceTests: XCTestCase {
             XCTAssertEqual(start.x, end.x, accuracy: 0.0001)
             XCTAssertEqual(start.y, end.y, accuracy: 0.0001)
         }
-    }
-
-    func testAnimationFramesRenderRequestedCount() {
-        let frames = CanvasBackgroundStyle.aurora.appearance.animationFrames(pixelWidth: 24, pixelHeight: 24, count: 8)
-        XCTAssertEqual(frames.count, 8)
     }
 
     func testAnimatedFrameDiffersFromStatic() {

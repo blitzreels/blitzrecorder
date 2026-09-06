@@ -197,8 +197,11 @@ final class EditorPlaybackController {
             previewSceneRevision &+= 1
             applyEditorState(project.editorState)
 
-            try await buildPlayers(playback: playback)
-            playbackClockPlayer = await selectPlaybackClockPlayer()
+            buildPlayers(playback: playback)
+            guard try await waitForPlayersReady((players: allPlayers, generation: generation)) else { return }
+            let clockPlayer = await selectPlaybackClockPlayer()
+            guard generation == loadGeneration, !Task.isCancelled else { return }
+            playbackClockPlayer = clockPlayer
             duration = max(0, playback.duration.seconds)
             installObservers()
 
@@ -208,7 +211,7 @@ final class EditorPlaybackController {
 
             guard generation == loadGeneration, !Task.isCancelled else { return }
             isReady = true
-            if wasPlaying { playAll() }
+            if wasPlaying { isPlaying = playAll() }
         } catch {
             guard generation == loadGeneration, !Task.isCancelled else { return }
             teardownPlayers()
@@ -257,7 +260,7 @@ final class EditorPlaybackController {
         return true
     }
 
-    private func buildPlayers(playback: EditorPlaybackComposition) async throws {
+    private func buildPlayers(playback: EditorPlaybackComposition) {
         for kind in playback.videoKinds {
             guard let asset = playback.videoAsset(for: kind) else { continue }
             let item = AVPlayerItem(asset: asset)
@@ -267,10 +270,10 @@ final class EditorPlaybackController {
             player.isMuted = true
             videoPlayers[kind] = player
         }
-        try await buildAudioPlayer(playback: playback)
+        buildAudioPlayer(playback: playback)
     }
 
-    private func buildAudioPlayer(playback: EditorPlaybackComposition) async throws {
+    private func buildAudioPlayer(playback: EditorPlaybackComposition) {
         let inputs = playback.audioInputs
         guard !inputs.isEmpty else { return }
         let composition = AVMutableComposition()
@@ -294,6 +297,20 @@ final class EditorPlaybackController {
         let player = AVPlayer(playerItem: item)
         player.automaticallyWaitsToMinimizeStalling = false
         audioPlayer = player
+    }
+
+    private func waitForPlayersReady(_ request: (players: [AVPlayer], generation: Int)) async throws -> Bool {
+        let deadline = ProcessInfo.processInfo.systemUptime + 10
+        while true {
+            guard request.generation == loadGeneration else { return false }
+            try Task.checkCancellation()
+            if let failed = request.players.first(where: { $0.status == .failed }) {
+                throw failed.error ?? RecorderError.playbackNotReady
+            }
+            if !request.players.isEmpty, request.players.allSatisfy({ $0.status == .readyToPlay }) { return true }
+            guard ProcessInfo.processInfo.systemUptime < deadline else { throw RecorderError.playbackNotReady }
+            try await Task.sleep(for: .milliseconds(20))
+        }
     }
 
     private func selectPlaybackClockPlayer() async -> AVPlayer? {
@@ -345,8 +362,7 @@ final class EditorPlaybackController {
                 currentTime = 0
                 seekAll(to: 0, precise: true)
             }
-            playAll()
-            isPlaying = true
+            isPlaying = playAll()
         }
     }
 
@@ -354,8 +370,7 @@ final class EditorPlaybackController {
         guard isReady, masterPlayer != nil else { return }
         currentTime = clampedTime(seconds)
         isScrubbing = false
-        playAll()
-        isPlaying = true
+        isPlaying = playAll()
     }
 
     func setPlaybackRate(_ rate: EditorPlaybackRate) {
@@ -365,7 +380,7 @@ final class EditorPlaybackController {
         if let seconds = masterPlayer?.currentTime().seconds, seconds.isFinite {
             currentTime = clampedTime(seconds)
         }
-        playAll()
+        isPlaying = playAll()
     }
 
     func playForwardOrIncreaseRate() {
@@ -378,10 +393,17 @@ final class EditorPlaybackController {
         setPlaybackRate(playbackRate.nextFaster)
     }
 
-    private func playAll() {
+    private func playAll() -> Bool {
+        let players = allPlayers
+        guard !players.isEmpty, players.allSatisfy({ $0.status == .readyToPlay }) else {
+            pauseAll()
+            isReady = false
+            loadError = RecorderError.playbackNotReady.localizedDescription
+            return false
+        }
         let now = CMClockGetTime(CMClockGetHostTimeClock())
         let hostTime = CMTimeAdd(now, CMTime(seconds: 0.06, preferredTimescale: 600))
-        for player in allPlayers {
+        for player in players {
             let clamped = itemClampedTime(currentTime, for: player)
             player.setRate(
                 playbackRate.rawValue,
@@ -389,6 +411,7 @@ final class EditorPlaybackController {
                 atHostTime: hostTime
             )
         }
+        return true
     }
 
     private func pauseAll() {

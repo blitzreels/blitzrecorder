@@ -7,6 +7,7 @@ enum RecorderError: LocalizedError {
     case mediaWriteFailed(String)
     case captureStreamStopped(String)
     case exportUnavailable
+    case playbackNotReady
     case microphoneUnavailable
     case cameraDidNotStart
     case screenDidNotStart
@@ -41,6 +42,8 @@ enum RecorderError: LocalizedError {
             "Capture stream stopped: \(reason)"
         case .exportUnavailable:
             "The HEVC export session could not be created."
+        case .playbackNotReady:
+            "Playback could not start. Reopen the recording and try again."
         case .microphoneUnavailable:
             "Microphone access is unavailable."
         case .cameraDidNotStart:
