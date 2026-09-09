@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { ImageResponse } from "next/og";
 
 export const alt =
-  "BlitzRecorder — short video, studio quality. Your iPhone is the studio camera for your Mac.";
+  "BlitzRecorder. Mac screen recording for short-form. Open source. Completely free.";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -53,19 +53,6 @@ export default async function OpengraphImage() {
           ...(font ? { fontFamily: "Schibsted Grotesk" } : {}),
         }}
       >
-        {/* mint spotlight behind the screenshot */}
-        <div
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            width: "100%",
-            height: "100%",
-            background:
-              "radial-gradient(ellipse 55% 60% at 78% 45%, rgba(94,242,175,0.20), rgba(94,242,175,0))",
-          }}
-        />
-
         {/* Mac screenshot in a dark bezel, bleeding off the right edge */}
         <div
           style={{
@@ -113,8 +100,8 @@ export default async function OpengraphImage() {
               color: "#fff",
             }}
           >
-            <span>Short video,</span>
-            <span style={{ color: MINT }}>studio quality.</span>
+            <span>Record the screen.</span>
+            <span style={{ color: MINT }}>Cut the short.</span>
           </div>
           <div
             style={{
@@ -126,8 +113,8 @@ export default async function OpengraphImage() {
               color: "rgba(232,242,238,0.74)",
             }}
           >
-            <span>Your iPhone is the studio camera</span>
-            <span>for your Mac.</span>
+            <span>Mac screen recorder for short-form.</span>
+            <span>Open source. Completely free.</span>
           </div>
         </div>
       </div>

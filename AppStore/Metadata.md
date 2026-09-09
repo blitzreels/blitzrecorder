@@ -1,7 +1,7 @@
 # BlitzRecorder App Store Metadata Index
 
 > Direct-download launch note: macOS App Store submission is paused while the
-> product uses Stripe license keys, Sparkle updates, and a paid direct-download
+> product uses website license keys, Sparkle updates, and a free direct-download
 > unlock. The current launch artifact is the Developer ID signed/notarized DMG.
 > Rework these App Store files before submitting a Mac App Store build.
 
@@ -21,9 +21,9 @@ Use these platform-specific files when filling App Store Connect:
 
 Direct-download launch product details:
 
-- Free behavior: screen, Mac camera, microphone, scenes, and 1080p export
-- Paid behavior: $39 Early Lifetime License unlocks iPhone camera, 4K export, and 60 fps export
-- Checkout: Stripe on `blitzrecorder.com`, followed by license key claim/activation
+- Free behavior: screen, Mac camera, microphone, scenes, timeline editor, and 1080p export
+- License behavior: a free key from blitzrecorder.com unlocks iPhone camera, 4K export, and 60 fps export
+- License claim: email on `blitzrecorder.com`, then paste the key in the Mac app
 - App Store status: paused for macOS direct-download launch
 - Marketing URL: `https://blitzrecorder.com`
 - Support URL: `https://blitzrecorder.com/support`

@@ -113,9 +113,11 @@ struct BlitzToolbarButton: View {
 }
 
 private struct BlitzWorkspaceToolbarModifier: ViewModifier {
+    @Environment(\.controlSize) private var controlSize
+
     func body(content: Content) -> some View {
         content
-            .frame(height: 36)
+            .frame(height: controlSize == .large || controlSize == .extraLarge ? 56 : 36)
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
             .background(BlitzUI.projectLibraryBackground)
@@ -138,6 +140,7 @@ struct BlitzTab: View {
     }
 
     let configuration: Configuration
+    @Environment(\.controlSize) private var controlSize
 
     var body: some View {
         Button(action: configuration.action) {
@@ -147,12 +150,12 @@ struct BlitzTab: View {
                         .foregroundStyle(configuration.isSelected ? BlitzUI.mint : BlitzUI.secondaryText)
                 }
                 Text(configuration.title)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: controlSize == .large ? 12 : 11, weight: .medium))
                     .lineLimit(1)
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, controlSize == .mini || controlSize == .large ? 6 : 10)
             .frame(maxWidth: configuration.expands ? .infinity : nil)
-            .frame(height: 32)
+            .frame(height: controlSize == .large ? 40 : 32)
         }
         .buttonStyle(BlitzSelectionButtonStyle(isSelected: configuration.isSelected))
         .accessibilityAddTraits(configuration.isSelected ? [.isSelected] : [])

@@ -68,12 +68,7 @@ export function WatchFilm() {
         {/* one dark frosted capsule: play disc · label · duration */}
         {/* nudged left on phones so the duration clears the floating iPhone */}
         <span className="ring-gradient relative inline-flex -translate-x-6 items-center gap-3 rounded-full bg-black/55 py-2 pr-5 pl-2 shadow-[0_24px_70px_-20px_rgba(0,0,0,0.85)] backdrop-blur-xl transition-transform duration-300 ease-out group-hover/play:scale-[1.04] sm:translate-x-0">
-          <span className="relative grid size-9 place-items-center rounded-full bg-primary text-primary-foreground shadow-[0_10px_30px_-8px_rgba(94,242,175,0.9)]">
-            <span
-              aria-hidden
-              className="absolute inset-0 rounded-full bg-primary/50"
-              style={{ animation: "br-pulse 2.8s ease-out infinite" }}
-            />
+          <span className="relative grid size-9 place-items-center rounded-full bg-primary text-primary-foreground">
             <Play className="relative ml-0.5 size-3.5" />
           </span>
           <span className="text-sm font-semibold text-foreground">

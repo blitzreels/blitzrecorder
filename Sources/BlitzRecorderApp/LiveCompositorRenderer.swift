@@ -22,6 +22,7 @@ struct LiveCompositorImageRenderRequest {
     let settings: RecordingSettings
     let backgroundPhase: Double?
     let outputBuffer: CVPixelBuffer
+    var overlays: [CIImage] = []
 }
 
 final class LiveCompositorRenderer: @unchecked Sendable {
@@ -131,6 +132,7 @@ final class LiveCompositorRenderer: @unchecked Sendable {
             }
         }
 
+        for overlay in request.overlays { image = overlay.composited(over: image) }
         ciContext.render(
             image,
             to: request.outputBuffer,

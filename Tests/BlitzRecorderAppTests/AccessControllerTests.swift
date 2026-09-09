@@ -88,7 +88,7 @@ final class AccessControllerTests: XCTestCase {
         XCTAssertTrue(access.canRenderExport)
         XCTAssertFalse(access.hasBlitzReelsEntitlement)
         XCTAssertEqual(checker.requestedTokens, [])
-        XCTAssertEqual(access.accessMessage, "BlitzRecorder has a free 1080p tier. Early Price unlocks iPhone camera, 4K, and 60 fps.")
+        XCTAssertEqual(access.accessMessage, "BlitzRecorder has a free 1080p tier. A free license unlocks iPhone camera, 4K, and 60 fps.")
     }
 
     func testValidLicenseActivatesPaidFeatures() async {
@@ -115,7 +115,7 @@ final class AccessControllerTests: XCTestCase {
         XCTAssertTrue(access.canUseIPhoneCamera)
         XCTAssertTrue(access.canUse4KExport)
         XCTAssertTrue(access.canUse60FPSExport)
-        XCTAssertEqual(access.accessLabel, "Early Price license active")
+        XCTAssertEqual(access.accessLabel, "License active")
         XCTAssertEqual(access.licenseEmail, "buyer@example.com")
         XCTAssertEqual(access.licenseID, "br_test")
         XCTAssertEqual(access.accessMessage, "License activated for buyer@example.com.")
@@ -219,7 +219,7 @@ final class AccessControllerTests: XCTestCase {
         XCTAssertEqual(access.upgradeTitle, "Unlock iPhone camera")
         XCTAssertEqual(
             access.accessMessage,
-            "iPhone camera is locked. Get Early Price, then paste your key here to unlock it."
+            "iPhone camera is locked. Get a free license, then paste your key here to unlock it."
         )
     }
 

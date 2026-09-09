@@ -71,6 +71,7 @@ final class EditorCompositedPlayerView: NSView {
         let cameraPlayer: ObjectIdentifier?
     }
 
+    private var textLayers: [UUID: CALayer] = [:]
     private var sourceLayers: [SceneLayerKind: SourceLayers] = [:]
     private var renderedState: RenderState?
     private var renderSize: CGSize = .zero
@@ -187,6 +188,24 @@ final class EditorCompositedPlayerView: NSView {
             screenPlayer: controller.videoPlayer(for: .screen).map(ObjectIdentifier.init),
             cameraPlayer: controller.videoPlayer(for: .camera).map(ObjectIdentifier.init)
         )
+        performWithoutUIAnimation {
+            let visibleIDs = Set(controller.edits.textOverlays.map(\.id))
+            for id in Array(textLayers.keys) where !visibleIDs.contains(id) {
+                textLayers.removeValue(forKey: id)?.removeFromSuperlayer()
+            }
+            for overlay in controller.edits.textOverlays {
+                let textLayer = textLayers[overlay.id] ?? CALayer()
+                if textLayers[overlay.id] == nil {
+                    textLayer.actions = disabledActions
+                    textLayer.zPosition = 100
+                    textLayers[overlay.id] = textLayer
+                    canvasLayer.addSublayer(textLayer)
+                }
+                textLayer.frame = CGRect(origin: .zero, size: canvasFrame.size)
+                textLayer.contents = TimelineOverlayRenderer.image(.init(overlay: overlay, size: renderSize))
+                textLayer.opacity = Float(overlay.opacity(at: time))
+            }
+        }
         guard renderedState != state else { return }
         let scale = canvasFrame.width / renderSize.width
         let geometry = SceneRenderGeometry(

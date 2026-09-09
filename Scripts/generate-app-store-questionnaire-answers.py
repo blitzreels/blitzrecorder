@@ -26,7 +26,7 @@ REQUIRED_SOURCE_SNIPPETS = [
     "iOS companion has no in-app purchases and no paywall; App Review notes must explain",
     "Mac app has auto-renewable subscriptions: No",
     "Free behavior: 1080p Mac recording/export",
-    "Paid behavior: direct-download Early Lifetime License unlocks iPhone camera, 4K export, and 60 fps export",
+    "License behavior: a free key from blitzrecorder.com unlocks iPhone camera, 4K export, and 60 fps export",
 ]
 
 
@@ -107,7 +107,7 @@ def build_payload() -> dict[str, Any]:
             "annualProductId": None,
             "annualPrice": "$0",
             "freeBehavior": "1080p Mac recording and export",
-            "paidBehavior": "direct-download Early Lifetime License unlocks iPhone camera, 4K export, and 60 fps export",
+            "paidBehavior": "a free website license unlocks iPhone camera, 4K export, and 60 fps export",
             "iosCompanionHasInAppPurchases": False,
             "iosCompanionHasPaywall": False,
         },

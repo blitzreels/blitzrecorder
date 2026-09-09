@@ -2,14 +2,14 @@
 
 Use this as the source for App Store Connect review notes only after App Store
 strategy is revisited. The current launch is a direct-download Mac DMG with
-Stripe license keys and Sparkle updates.
+Stripe leftover for historical keys, Sparkle updates.
 
 ## macOS App
 
 App name: BlitzRecorder
 Bundle ID: `dev.blitzreels.blitzrecorder`
 
-Do not submit the current macOS direct-download build to App Store review. It records the Mac screen, Mac camera, microphone, and system audio in the free 1080p tier, then uses a Stripe-backed Early Lifetime License to unlock iPhone camera, 4K export, and 60 fps export.
+Do not submit the current macOS direct-download build to App Store review. It records the Mac screen, Mac camera, microphone, and system audio in the free 1080p tier, then uses a free website license key to unlock iPhone camera, 4K export, and 60 fps export.
 
 Review path:
 
@@ -49,4 +49,4 @@ The iOS companion app does not initiate purchases and does not include a paywall
 - Recordings are stored locally by default.
 - The iOS app requires camera access and local network access.
 - The iOS app declares microphone permission for optional source camera audio.
-- The direct-download Mac app does not use StoreKit or BlitzReels entitlement checks. It validates BlitzRecorder license keys for iPhone camera, 4K, and 60 fps.
+- The direct-download Mac app does not use StoreKit or BlitzReels entitlement checks. It validates BlitzRecorder license keys for iPhone camera, 4K, and 60 fps. New keys are free from blitzrecorder.com. Older paid Stripe keys still work.

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { BuyButton } from "@/components/site/buy-button";
+import { LicenseButton } from "@/components/site/buy-button";
+import { BlitzReelsLink } from "@/components/site/blitzreels-link";
 import { JourneyPageView } from "@/components/site/journey-markers";
 import { SiteBackground } from "@/components/site/site-background";
 import { SiteFooter } from "@/components/site/site-footer";
@@ -11,7 +12,7 @@ import { Heading, Paragraph } from "@/components/ui/typography";
 export const metadata: Metadata = {
   title: "License",
   description:
-    "Buy the BlitzRecorder lifetime license. Stripe redirects you to a private claim page with your key.",
+    "Get a free BlitzRecorder license. Enter your email, copy the key, unlock 4K, 60 fps, and optional iPhone camera.",
 };
 
 export default function LicensePage() {
@@ -29,18 +30,30 @@ export default function LicensePage() {
           <Card className="glass ring-gradient w-full ring-0">
             <CardContent className="p-8 sm:p-10">
               <Heading level={1} className="text-4xl leading-[1.02] sm:text-5xl">
-                BlitzRecorder license
+                Free BlitzRecorder license
               </Heading>
               <Paragraph className="mt-4">
-                Buy the $39 beta lifetime license. Stripe sends the receipt, then returns you here to activate
-                BlitzRecorder.
+                Enter your email. Copy the key. Paste it in Account. Unlocks 4K,
+                60 fps, and optional iPhone camera. Same email always returns
+                the same key.
               </Paragraph>
-              <BuyButton
-                label="Buy Lifetime License"
+              <LicenseButton
+                label="Get free license"
                 source="license_page"
                 formClassName="mt-7"
                 className="h-11 rounded-full px-5"
               />
+              <Paragraph tone="faint" size="sm" className="mt-6">
+                A{" "}
+                <BlitzReelsLink
+                  content="license_page"
+                  className="font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                >
+                  BlitzReels
+                </BlitzReelsLink>{" "}
+                company product. Recorder stays on your Mac. Clips and captions
+                live in BlitzReels.
+              </Paragraph>
             </CardContent>
           </Card>
         </Section>

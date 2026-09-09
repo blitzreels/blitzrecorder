@@ -20,7 +20,7 @@ export function LicenseCopy({
       eventName: "license_claimed",
       area: "license",
       payload: {
-        plan: "early_lifetime",
+        plan: "free",
         license_id: licenseId,
       },
     });
@@ -33,7 +33,7 @@ export function LicenseCopy({
       eventName: "license_key_copied",
       area: "license",
       payload: {
-        plan: "early_lifetime",
+        plan: "free",
         license_id: licenseId,
       },
     });
@@ -45,7 +45,7 @@ export function LicenseCopy({
       eventName: "license_activation_deeplink_clicked",
       area: "license",
       payload: {
-        plan: "early_lifetime",
+        plan: "free",
         license_id: licenseId,
       },
     });

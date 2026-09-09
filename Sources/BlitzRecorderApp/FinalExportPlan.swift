@@ -23,6 +23,21 @@ struct FinalExportSourceInput: Equatable {
         self.timelineOffset = timelineOffset
         self.sourceStartOffset = sourceStartOffset
     }
+
+    var activeTakeStart: CMTime {
+        CMTimeCompare(timelineOffset, .zero) > 0 ? timelineOffset : .zero
+    }
+
+    var sourceTimeAtActiveStart: CMTime {
+        let offsetSourceStart = CMTimeCompare(timelineOffset, .zero) < 0
+            ? CMTimeMultiplyByFloat64(timelineOffset, multiplier: -1)
+            : .zero
+        return CMTimeAdd(offsetSourceStart, sourceStartOffset)
+    }
+
+    var activeTakeEnd: CMTime {
+        CMTimeAdd(activeTakeStart, CMTimeSubtract(duration, sourceTimeAtActiveStart))
+    }
 }
 
 struct FinalExportSourceInsertion: Equatable {
@@ -66,6 +81,23 @@ struct FinalExportPlan: Equatable {
     let engine: FinalExportEngine
     let sourceInsertions: [FinalExportSourceInsertion]
     let renderSegments: [FinalExportRenderSegment]
+    let timeMap: TimelineTimeMap
+
+    init(
+        duration: CMTime,
+        renderSize: CGSize,
+        engine: FinalExportEngine,
+        sourceInsertions: [FinalExportSourceInsertion],
+        renderSegments: [FinalExportRenderSegment],
+        timeMap: TimelineTimeMap? = nil
+    ) {
+        self.duration = duration
+        self.renderSize = renderSize
+        self.engine = engine
+        self.sourceInsertions = sourceInsertions
+        self.renderSegments = renderSegments
+        self.timeMap = timeMap ?? .identity(takeDuration: duration)
+    }
 
     static func == (lhs: FinalExportPlan, rhs: FinalExportPlan) -> Bool {
         CMTimeCompare(lhs.duration, rhs.duration) == 0
@@ -73,10 +105,19 @@ struct FinalExportPlan: Equatable {
             && lhs.engine == rhs.engine
             && lhs.sourceInsertions == rhs.sourceInsertions
             && lhs.renderSegments == rhs.renderSegments
+            && lhs.timeMap == rhs.timeMap
+    }
+
+    var takeDuration: CMTime {
+        timeMap.takeDuration
     }
 
     func insertion(for kind: SceneLayerKind) -> FinalExportSourceInsertion? {
         sourceInsertions.first { $0.kind == kind }
+    }
+
+    func insertions(for kind: SceneLayerKind) -> [FinalExportSourceInsertion] {
+        sourceInsertions.filter { $0.kind == kind }
     }
 }
 
@@ -84,6 +125,13 @@ enum FinalExportPlanning {
     struct TimelineTrimRequest {
         let sources: [FinalExportSourceInput]
         let offset: CMTime
+    }
+
+    struct PlanRequest {
+        let settings: RecordingSettings
+        let sceneEvents: [RecordingSceneEvent]
+        let sources: [FinalExportSourceInput]
+        let cuts: [TimelineCut]
     }
 
     static func applyingTimelineTrim(_ request: TimelineTrimRequest) -> [FinalExportSourceInput] {
@@ -110,41 +158,50 @@ enum FinalExportPlanning {
     static func plan(
         settings: RecordingSettings,
         sceneEvents: [RecordingSceneEvent],
-        sources: [FinalExportSourceInput]
+        sources: [FinalExportSourceInput],
+        cuts: [TimelineCut] = []
     ) throws -> FinalExportPlan {
-        guard !sources.isEmpty else {
+        try plan(PlanRequest(settings: settings, sceneEvents: sceneEvents, sources: sources, cuts: cuts))
+    }
+
+    static func plan(_ request: PlanRequest) throws -> FinalExportPlan {
+        let settings = request.settings
+        let sceneEvents = request.sceneEvents
+        guard !request.sources.isEmpty else {
             throw RecorderError.exportUnavailable
         }
 
-        let durationSources = visibleTimelineSources(sources, settings: settings, sceneEvents: sceneEvents)
+        let durationSources = visibleTimelineSources(request.sources, settings: settings, sceneEvents: sceneEvents)
         guard !durationSources.isEmpty else {
             throw RecorderError.exportUnavailable
         }
 
-        let duration = durationSources
+        let takeDuration = durationSources
             .map { CMTimeAdd($0.timelineOffset, $0.duration) }
             .reduce(CMTimeAdd(durationSources[0].timelineOffset, durationSources[0].duration)) { CMTimeMinimum($0, $1) }
+        let timeMap = TimelineTimeMap(takeDuration: takeDuration, cuts: request.cuts)
+        let duration = timeMap.outputDuration
         let dimensions = ScreenCaptureGeometry.outputDimensions(for: settings)
         let renderSize = CGSize(width: dimensions.width, height: dimensions.height)
-        let sourceInsertions: [FinalExportSourceInsertion] = durationSources.compactMap { source in
-            let insertion = sourceInsertion(for: source, compositionDuration: duration)
-            guard CMTimeCompare(insertion.duration, .zero) > 0 else { return nil }
-            return insertion
+        let insertions = durationSources.flatMap { source in
+            Self.sourceInsertions(for: source, timeMap: timeMap)
         }
 
         return FinalExportPlan(
             duration: duration,
             renderSize: renderSize,
             engine: engine(settings: settings, sceneEvents: sceneEvents),
-            sourceInsertions: sourceInsertions,
-            renderSegments: renderSegments(
+            sourceInsertions: insertions,
+            renderSegments: renderSegments(RenderSegmentRequest(
                 settings: settings,
                 sceneEvents: sceneEvents,
-                duration: duration,
+                timeMap: timeMap,
                 renderSize: renderSize,
-                sourceInsertions: sourceInsertions,
+                sources: durationSources,
+                sourceInsertions: insertions,
                 transitionSampleInterval: transitionSampleInterval(for: settings)
-            )
+            )),
+            timeMap: timeMap
         )
     }
 
@@ -167,6 +224,25 @@ enum FinalExportPlanning {
         )
     }
 
+    static func sourceInsertions(
+        for source: FinalExportSourceInput,
+        timeMap: TimelineTimeMap
+    ) -> [FinalExportSourceInsertion] {
+        timeMap.mediaInsertions(TimelineMediaInsertionRequest(
+            activeTakeStart: source.activeTakeStart,
+            sourceTimeAtActiveStart: source.sourceTimeAtActiveStart,
+            sourceEnd: source.duration
+        )).compactMap { insertion in
+            guard CMTimeCompare(insertion.duration, .zero) > 0 else { return nil }
+            return FinalExportSourceInsertion(
+                kind: source.kind,
+                sourceStart: insertion.sourceStart,
+                compositionStart: insertion.compositionStart,
+                duration: insertion.duration
+            )
+        }
+    }
+
     private static func visibleTimelineSources(
         _ sources: [FinalExportSourceInput],
         settings: RecordingSettings,
@@ -179,37 +255,77 @@ enum FinalExportPlanning {
         return sources.filter { visibleSources.contains($0.kind.source) }
     }
 
-    private static func renderSegments(
-        settings: RecordingSettings,
-        sceneEvents: [RecordingSceneEvent],
-        duration: CMTime,
-        renderSize: CGSize,
-        sourceInsertions: [FinalExportSourceInsertion],
-        transitionSampleInterval: TimeInterval
-    ) -> [FinalExportRenderSegment] {
-        let fallbackScene = RecordingScene(settings: settings)
-        let insertionByKind = Dictionary(uniqueKeysWithValues: sourceInsertions.map { ($0.kind, $0) })
-        let segments = RecordingSceneTimeline.segments(
-            sceneEvents: sceneEvents,
-            fallbackScene: fallbackScene,
-            duration: duration,
-            sourceTimeRanges: sourceInsertions.map(\.timeRange),
-            transitionSampleInterval: transitionSampleInterval
+    private struct RenderSegmentRequest {
+        let settings: RecordingSettings
+        let sceneEvents: [RecordingSceneEvent]
+        let timeMap: TimelineTimeMap
+        let renderSize: CGSize
+        let sources: [FinalExportSourceInput]
+        let sourceInsertions: [FinalExportSourceInsertion]
+        let transitionSampleInterval: TimeInterval
+    }
+
+    private static func renderSegments(_ request: RenderSegmentRequest) -> [FinalExportRenderSegment] {
+        let fallbackScene = RecordingScene(settings: request.settings)
+        let timeMap = request.timeMap
+        var insertionsByKind: [SceneLayerKind: [FinalExportSourceInsertion]] = [:]
+        for insertion in request.sourceInsertions {
+            insertionsByKind[insertion.kind, default: []].append(insertion)
+        }
+        let sourceTakeRanges = request.sources.map { source in
+            CMTimeRange(start: source.activeTakeStart, end: CMTimeMinimum(source.activeTakeEnd, timeMap.takeDuration))
+        }
+        let takeBoundaries = RecordingSceneTimeline.takeBoundaries(RecordingSceneTimeline.BoundaryRequest(
+            sceneEvents: request.sceneEvents,
+            duration: timeMap.takeDuration,
+            sourceTimeRanges: sourceTakeRanges,
+            transitionSampleInterval: request.transitionSampleInterval
+        ))
+        var outputBoundaries = takeBoundaries.map { timeMap.outputTime(forTake: $0) }
+        for range in timeMap.keptRanges {
+            outputBoundaries.append(range.outputStart)
+            outputBoundaries.append(range.outputEnd)
+        }
+        outputBoundaries.append(.zero)
+        outputBoundaries.append(timeMap.outputDuration)
+        let uniqueBoundaries = RecordingSceneTimeline.sortedUniqueBoundaries(
+            outputBoundaries,
+            duration: timeMap.outputDuration
         )
-        return segments.enumerated().map { index, segment in
-            let endScene = segments.indices.contains(index + 1)
-                ? segments[index + 1].scene
-                : segment.scene
+
+        var scenes: [RecordingScene] = []
+        var ranges: [CMTimeRange] = []
+        if uniqueBoundaries.count >= 2 {
+            for index in 0..<(uniqueBoundaries.count - 1) {
+                let start = uniqueBoundaries[index]
+                let end = uniqueBoundaries[index + 1]
+                guard CMTimeCompare(end, start) > 0 else { continue }
+                let takeTime = timeMap.takeTime(forOutput: start)
+                scenes.append(RecordingSceneTimeline.scene(
+                    at: takeTime.seconds,
+                    sceneEvents: request.sceneEvents,
+                    fallbackScene: fallbackScene
+                ))
+                ranges.append(CMTimeRange(start: start, duration: CMTimeSubtract(end, start)))
+            }
+        }
+        if ranges.isEmpty {
+            scenes = [fallbackScene]
+            ranges = [CMTimeRange(start: .zero, duration: timeMap.outputDuration)]
+        }
+
+        return ranges.indices.map { index in
+            let endScene = scenes.indices.contains(index + 1) ? scenes[index + 1] : scenes[index]
             let activeLayerOrder = activeLayerOrder(
-                startScene: segment.scene,
+                startScene: scenes[index],
                 endScene: endScene,
-                insertionByKind: insertionByKind,
-                timeRange: segment.timeRange,
-                renderSize: renderSize
+                insertionsByKind: insertionsByKind,
+                timeRange: ranges[index],
+                renderSize: request.renderSize
             )
             return FinalExportRenderSegment(
-                timeRange: segment.timeRange,
-                scene: segment.scene,
+                timeRange: ranges[index],
+                scene: scenes[index],
                 activeLayerOrder: activeLayerOrder
             )
         }
@@ -218,7 +334,7 @@ enum FinalExportPlanning {
     private static func activeLayerOrder(
         startScene: RecordingScene,
         endScene: RecordingScene,
-        insertionByKind: [SceneLayerKind: FinalExportSourceInsertion],
+        insertionsByKind: [SceneLayerKind: [FinalExportSourceInsertion]],
         timeRange: CMTimeRange,
         renderSize: CGSize
     ) -> [SceneLayerKind] {
@@ -231,7 +347,7 @@ enum FinalExportPlanning {
             orderedKinds.append(kind)
         }
         return orderedKinds.filter { kind in
-            insertionByKind[kind].map { sourceIsActive($0, during: timeRange) } ?? false
+            (insertionsByKind[kind] ?? []).contains { sourceIsActive($0, during: timeRange) }
         }
     }
 

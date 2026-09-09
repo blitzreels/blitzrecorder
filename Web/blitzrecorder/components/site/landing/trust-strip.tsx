@@ -2,11 +2,10 @@ import { Check } from "@/components/site/icons";
 import { Section } from "@/components/ui/layout";
 
 const trustItems = [
-  "No account, ever",
-  "Recordings stay on your Mac",
-  "Pay once, no subscription",
-  "30-day money-back guarantee",
-  "From the makers of BlitzReels",
+  "No account",
+  "Files stay on your Mac",
+  "Completely free",
+  "Open source",
 ];
 
 export function TrustStrip() {

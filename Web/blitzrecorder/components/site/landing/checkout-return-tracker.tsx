@@ -16,7 +16,7 @@ export function CheckoutReturnTracker() {
       area: "checkout",
       payload: {
         result: "cancel",
-        destination: "#pricing",
+        destination: "#license",
       },
     });
   }, []);

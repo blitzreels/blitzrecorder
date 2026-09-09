@@ -7,14 +7,11 @@ import { JourneyPageView } from "@/components/site/journey-markers";
 import { useReveal } from "@/components/site/use-reveal";
 import { CheckoutReturnTracker } from "@/components/site/landing/checkout-return-tracker";
 import { ClosingCTA } from "@/components/site/landing/closing-cta";
-import { Comparison } from "@/components/site/landing/comparison";
+import { Company } from "@/components/site/landing/company";
 import { Faq } from "@/components/site/landing/faq";
 import { Features } from "@/components/site/landing/features";
 import { Hero } from "@/components/site/landing/hero";
-import { HowToStart } from "@/components/site/landing/how-to-start";
-import { IphoneCompanion } from "@/components/site/landing/iphone-companion";
 import { Pricing } from "@/components/site/landing/pricing";
-import { Setups } from "@/components/site/landing/setups";
 import { TrustStrip } from "@/components/site/landing/trust-strip";
 
 export function Landing() {
@@ -37,11 +34,8 @@ export function Landing() {
         <Hero />
         <TrustStrip />
         <Features />
-        <IphoneCompanion />
-        <Setups />
-        <Comparison />
         <Pricing />
-        <HowToStart />
+        <Company />
         <Faq />
         <ClosingCTA />
       </main>

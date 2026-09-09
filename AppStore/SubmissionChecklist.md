@@ -3,7 +3,7 @@
 ## Product Positioning
 
 - Product name: BlitzRecorder
-- Direct-download launch: free 1080p tier + $39 Early Lifetime License
+- Direct-download launch: free 1080p tier + free website license
 - In-app purchases: none for the direct-download launch
 - Subscription: none
 - Export quota: none
@@ -28,7 +28,7 @@ Use these files as the source of truth:
 - Questionnaire answers: `AppStore/AppStoreQuestionnaires.md`
 - Machine-readable fields: `AppStore/AppStoreConnectFields.generated.json`
 
-Do not submit the current macOS direct-download build to the Mac App Store while it uses Stripe license keys and Sparkle. A future Mac App Store release needs a StoreKit model.
+Do not submit the current macOS direct-download build to the Mac App Store while it uses website license keys and Sparkle. A future Mac App Store release needs a StoreKit model.
 
 ## QA
 
@@ -36,7 +36,7 @@ Do not submit the current macOS direct-download build to the Mac App Store while
 - Export does not decrement a quota.
 - 1080p export does not show purchase, restore, subscription management, or BlitzReels entitlement UI.
 - iPhone companion pairs over the local network and transfers a local camera recording back to the Mac.
-- Direct-download screenshots show the free 1080p tier and Early Lifetime License honestly.
+- Direct-download screenshots show the free 1080p tier and free website license honestly.
 
 ## Commands
 

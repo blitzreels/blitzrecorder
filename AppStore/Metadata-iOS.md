@@ -24,7 +24,7 @@ Pair your iPhone with the Mac app over your local network using a 6-digit code. 
 
 The iPhone records the master camera file locally for quality, then transfers it back to the paired Mac so BlitzRecorder can include it in the final export.
 
-BlitzRecorder Camera requires BlitzRecorder for Mac. The Mac app has a free 1080p tier; the direct-download Early Lifetime License unlocks iPhone camera recording, 4K export, and 60 fps export. The iPhone companion itself has no checkout or paywall.
+BlitzRecorder Camera requires BlitzRecorder for Mac. The Mac app has a free 1080p tier; a free license from blitzrecorder.com unlocks iPhone camera recording, 4K export, and 60 fps export. The iPhone companion itself has no checkout or paywall.
 
 Features:
 
@@ -61,7 +61,7 @@ BlitzRecorder Camera is a companion app for BlitzRecorder on Mac. It does not fu
 
 To test it, install BlitzRecorder on a Mac and BlitzRecorder Camera on an iPhone or iPad connected to the same local network. Open the iPhone app, note the 6-digit pairing code, then choose the iPhone camera source in the Mac app and enter the code. After pairing, the Mac app shows monitor preview, sends camera controls, starts and stops a local iPhone camera recording, and imports the finished camera file back to the Mac take.
 
-The iOS companion app does not initiate purchases and does not include a paywall. The current Mac launch uses Stripe license keys on blitzrecorder.com for iPhone camera access, so coordinate App Review notes before submitting this iOS companion.
+The iOS companion app does not initiate purchases and does not include a paywall. The current Mac launch uses a free license key from blitzrecorder.com for iPhone camera access.
 
 ## Privacy Summary
 

@@ -4,35 +4,60 @@ import { JourneyPageView } from "@/components/site/journey-markers";
 import { SiteBackground } from "@/components/site/site-background";
 import { SiteFooter } from "@/components/site/site-footer";
 import { SiteNav } from "@/components/site/site-nav";
+import { BlitzReelsLink } from "@/components/site/blitzreels-link";
 import { TrackedLinkButton } from "@/components/site/tracked-link-button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Section } from "@/components/ui/layout";
 import { Heading, Paragraph } from "@/components/ui/typography";
-import { claimLicenseForCheckoutSession } from "@/lib/licenses";
+import {
+  claimLicenseForCheckoutSession,
+  emailFromFreeLicenseGrant,
+  issueFreeLicense,
+} from "@/lib/licenses";
 import { LicenseCopy } from "./license-copy";
 
 export const runtime = "nodejs";
 
-// Private post-checkout page: keep it out of search results.
 export const metadata: Metadata = {
   title: "Claim your license",
-  description: "Reveal the BlitzRecorder license key from your checkout.",
+  description: "Reveal the BlitzRecorder license key.",
   robots: { index: false, follow: false },
 };
 
 export default async function ClaimLicensePage({
   searchParams,
 }: {
-  searchParams: Promise<{ session_id?: string }>;
+  searchParams: Promise<{ session_id?: string; grant?: string }>;
 }) {
-  const { session_id: sessionId } = await searchParams;
+  const { session_id: sessionId, grant } = await searchParams;
   let result:
     | { kind: "missing" }
     | { kind: "claimed"; licenseId: string; email: string; licenseKey: string }
     | { kind: "error"; message: string };
 
-  if (!sessionId) {
+  if (grant) {
+    try {
+      const email = emailFromFreeLicenseGrant(grant);
+      const license = await issueFreeLicense(email);
+      result = {
+        kind: "claimed",
+        licenseId: license.licenseId,
+        email: license.email,
+        licenseKey: license.licenseKey,
+      };
+    } catch (error) {
+      result = {
+        kind: "error",
+        message: error instanceof Error ? error.message : "Unable to claim license",
+      };
+    }
+  } else if (!sessionId) {
     result = { kind: "missing" };
+  } else if (sessionId.startsWith("free_")) {
+    result = {
+      kind: "error",
+      message: "Open the license page and enter your email again.",
+    };
   } else {
     try {
       const license = await claimLicenseForCheckoutSession(sessionId);
@@ -58,6 +83,7 @@ export default async function ClaimLicensePage({
         payload={{
           result: result.kind,
           has_session_id: Boolean(sessionId),
+          has_grant: Boolean(grant),
         }}
       />
       <SiteBackground />
@@ -70,11 +96,11 @@ export default async function ClaimLicensePage({
                 <>
                   <Heading level={1}>License claimed.</Heading>
                   <Paragraph className="mt-4">
-                    This lifetime license is assigned to{" "}
+                    This license is assigned to{" "}
                     <span className="font-semibold text-foreground">{result.email}</span>.
                   </Paragraph>
                   <Paragraph tone="faint" size="sm" className="mt-3">
-                    Stripe is sending the payment receipt there. Keep this key for activation.
+                    Keep this key for activation. The same email always returns the same key.
                   </Paragraph>
                   <Paragraph tone="faint" size="sm" className="mt-3 font-mono">
                     {result.licenseId}
@@ -90,21 +116,30 @@ export default async function ClaimLicensePage({
                     </Link>
                     , then paste your key in Account.
                   </Paragraph>
+                  <Paragraph tone="faint" size="sm" className="mt-4">
+                    Recorder is free. When you want clips and captions,{" "}
+                    <BlitzReelsLink
+                      content="license_claim"
+                      className="font-medium text-primary underline-offset-4 hover:underline"
+                    >
+                      open BlitzReels
+                    </BlitzReelsLink>
+                    .
+                  </Paragraph>
                 </>
               ) : result.kind === "missing" ? (
                 <>
                   <Heading level={1}>Claim your license.</Heading>
                   <Paragraph className="mt-4">
-                    Complete checkout first. Stripe will send a receipt and bring you back here to activate
-                    BlitzRecorder.
+                    Enter your email on the license page. We issue a key and bring you back here.
                   </Paragraph>
                   <TrackedLinkButton
-                    href="/#pricing"
-                    label="View Lifetime License"
+                    href="/license"
+                    label="Get a free license"
                     className="mt-7 h-11 rounded-full px-5"
                     area="license"
                     eventName="license_claim_cta_clicked"
-                    payload={{ result: result.kind, cta: "view_lifetime_license" }}
+                    payload={{ result: result.kind, cta: "get_free_license" }}
                   />
                 </>
               ) : (
@@ -112,12 +147,12 @@ export default async function ClaimLicensePage({
                   <Heading level={1}>License not ready.</Heading>
                   <Paragraph className="mt-4">{result.message}</Paragraph>
                   <TrackedLinkButton
-                    href="/#pricing"
-                    label="Back to pricing"
+                    href="/license"
+                    label="Back to license"
                     className="mt-7 h-11 rounded-full px-5"
                     area="license"
                     eventName="license_claim_cta_clicked"
-                    payload={{ result: result.kind, cta: "back_to_pricing" }}
+                    payload={{ result: result.kind, cta: "back_to_license" }}
                   />
                 </>
               )}

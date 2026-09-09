@@ -1,13 +1,13 @@
 # BlitzRecorder App Store Connect Manual Setup
 
-Use this worksheet only after App Store strategy is revisited. The current launch is a direct-download Mac DMG with Stripe license keys and Sparkle updates.
+Use this worksheet only after App Store strategy is revisited. The current launch is a direct-download Mac DMG with website license keys and Sparkle updates.
 
 ## Records
 
 - macOS app: `dev.blitzreels.blitzrecorder`
 - iOS companion app: `dev.blitzreels.blitzrecorder.camera`
 - Category: Photo & Video
-- Direct-download launch price: free 1080p tier + $39 Early Lifetime License
+- Direct-download launch price: free 1080p tier + free website license
 - In-app purchases: none
 - Subscriptions: none
 
@@ -42,7 +42,7 @@ Current model:
 
 1. Fresh install the Mac app.
 2. Verify 1080p recording/export works without sign-in.
-3. Verify the direct-download build is not submitted to the Mac App Store while it uses Stripe license keys or Sparkle.
+3. Verify the direct-download build is not submitted to the Mac App Store while it uses website license keys or Sparkle.
 4. Pair BlitzRecorder Camera over the local network.
 5. Verify iPhone monitor preview, remote camera controls, local iPhone recording, transfer, and Mac export.
 

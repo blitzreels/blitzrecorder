@@ -46,8 +46,8 @@ struct BlitzReelsCreatorPage: View {
             )
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Free: screen, Mac camera, mic, scenes, and 1080p export.")
-                Text("Paid: iPhone camera, 4K export, 60 fps export, and updates through beta and v1.")
+                Text("Free: screen, Mac camera, mic, scenes, timeline, and 1080p export.")
+                Text("License: iPhone camera, 4K export, and 60 fps export.")
                 Text("No export limit, no account, no subscription.")
             }
             .font(.system(size: 10, weight: .medium))
@@ -128,7 +128,7 @@ struct BlitzReelsCreatorPage: View {
                 Button {
                     access.beginPurchase()
                 } label: {
-                    Label("Buy license", systemImage: "creditcard")
+                    Label("Get free license", systemImage: "key")
                 }
                 .blitzGlassButton()
             }
@@ -308,7 +308,7 @@ struct BlitzReelsCreatorPage: View {
                 symbol: "curlybraces.square",
                 color: .white.opacity(0.72),
                 title: "Source available",
-                detail: "Source code is AGPL. Official signed builds use the paid license."
+                detail: "Source code is AGPL. Official signed builds use a free license from blitzrecorder.com."
             )
 
             Text("BlitzRecorder records locally and does not require a cloud account.")

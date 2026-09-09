@@ -145,7 +145,7 @@ final class RecorderViewModel {
     var projectLibraryError: String?
 
     var canShowProjects: Bool {
-        state == .idle && !recentProjects.isEmpty
+        state == .idle && (!recentProjects.isEmpty || projectTrash.canRestore)
     }
 
     var availableDisplays: [SourceOption] = []
@@ -175,6 +175,7 @@ final class RecorderViewModel {
     private var editorHistoryRevision = 0
     var inspectorSelection: RecorderInspectorSelection = .canvas
     var projectLibraryNavigation = ProjectLibraryNavigationState()
+    let projectTrash = ProjectLibraryTrashController(operations: .live)
     private(set) var screenSplitPreviewHeight: Double?
     var previewCanvasFrame: CGRect = .zero
     var isCameraCropModeEnabled = false
@@ -2140,12 +2141,14 @@ final class RecorderViewModel {
     func refreshRecentProjects() {
         recentProjects = TakeFileStore().loadProjectHistory(settings: settings).entries
         transcriptionController.syncProjects(recentProjects)
-        if recentProjects.isEmpty, studioMode == .projects {
+        if recentProjects.isEmpty, studioMode == .projects,
+            projectTrash.status == nil, !projectTrash.canRestore, !projectTrash.isWorking {
             studioMode = .record
         }
     }
 
     func showRecorder() {
+        guard !projectTrash.isWorking else { return }
         clearEditorHistory()
         studioMode = .record
     }
@@ -2154,7 +2157,7 @@ final class RecorderViewModel {
         guard state == .idle else { return }
         clearEditorHistory()
         refreshRecentProjects()
-        guard !recentProjects.isEmpty else {
+        guard !recentProjects.isEmpty || projectTrash.canRestore else {
             studioMode = .record
             return
         }
@@ -2252,6 +2255,7 @@ final class RecorderViewModel {
     }
 
     func openProject(_ project: RecordingProjectHistory.Entry) {
+        guard !projectTrash.isWorking else { return }
         let projectURL = URL(fileURLWithPath: project.projectPath)
         let sourceDirectory = URL(fileURLWithPath: project.takeDirectoryPath, isDirectory: true)
         do {
@@ -2273,42 +2277,65 @@ final class RecorderViewModel {
         }
     }
 
-    func deleteProject(_ project: RecordingProjectHistory.Entry) {
-        deleteProjects([project])
+    func deleteProject(_ project: RecordingProjectHistory.Entry) async {
+        await deleteProjects([project])
     }
 
-    func deleteProjects(_ projects: [RecordingProjectHistory.Entry]) {
-        guard !projects.isEmpty else { return }
-        let deletesOpenProject = projects.contains { project in
-            lastExportedProject?.id == project.id
-                || lastExportedSourceTakeURL?.standardizedFileURL.path
-                    == URL(fileURLWithPath: project.takeDirectoryPath, isDirectory: true)
-                        .standardizedFileURL.path
+    func deleteProjects(_ projects: [RecordingProjectHistory.Entry]) async {
+        guard !projects.isEmpty, !projectTrash.isWorking, state == .idle else { return }
+        projectLibraryError = nil
+        let previousOrder = filteredLibraryProjects.map(\.id)
+        let query = projectLibraryNavigation.searchText
+        let outcome = await projectTrash.trash(.init(projects: projects, settings: settings))
+        if projects.contains(where: { entry in
+            outcome.completedIDs.contains(entry.id)
+                && (lastExportedProject?.id == entry.id || lastExportedSourceTakeURL?.path == entry.takeDirectoryPath)
+        }) {
+            lastExportedURL = nil
+            lastExportedSourceTakeURL = nil
+            lastExportWarning = nil
+            lastRecoveryOutput = nil
+            lastPostRecordingProjectOutput = nil
+            lastExportedProject = nil
+            clearEditorHistory()
         }
-        do {
-            let store = TakeFileStore()
-            for project in projects {
-                try store.deleteProject(RecordingProjectDeletionRequest(
-                    project: project,
-                    settings: settings,
-                    disposition: .trash
-                ))
-            }
-            if deletesOpenProject {
-                lastExportedURL = nil
-                lastExportedSourceTakeURL = nil
-                lastExportWarning = nil
-                lastRecoveryOutput = nil
-                lastPostRecordingProjectOutput = nil
-                lastExportedProject = nil
-                clearEditorHistory()
-            }
-            refreshRecentProjects()
-            studioMode = canShowProjects ? .projects : .record
-        } catch {
-            refreshRecentProjects()
-            projectLibraryError = error.localizedDescription
+        refreshRecentProjects()
+        if query == projectLibraryNavigation.searchText {
+            projectLibraryNavigation.reconcileAfterRemoval(.init(
+                previousOrder: previousOrder, removedIDs: outcome.completedIDs,
+                availableIDs: filteredLibraryProjects.map(\.id)
+            ))
+        } else {
+            projectLibraryNavigation.reconcileSelection(availableProjectIDs: filteredLibraryProjects.map(\.id))
         }
+        studioMode = .projects
+        reportProjectTrashFailures(outcome.failures)
+    }
+
+    func restoreTrashedProjects() async {
+        guard projectTrash.canRestore, state == .idle else { return }
+        projectLibraryError = nil
+        let outcome = await projectTrash.restoreLastBatch()
+        refreshRecentProjects()
+        if !outcome.completedIDs.isEmpty {
+            projectLibraryNavigation.searchText = ""
+            projectLibraryNavigation.selectedProjectIDs = outcome.completedIDs
+        }
+        reportProjectTrashFailures(outcome.failures)
+    }
+
+    var filteredLibraryProjects: [RecordingProjectHistory.Entry] {
+        let query = projectLibraryNavigation.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return recentProjects }
+        return recentProjects.filter {
+            $0.title.localizedCaseInsensitiveContains(query) || $0.takeDirectoryPath.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    private func reportProjectTrashFailures(_ failures: [String]) {
+        guard !failures.isEmpty else { return }
+        let remaining = failures.count > 3 ? "\n…and \(failures.count - 3) more." : ""
+        projectLibraryError = failures.prefix(3).joined(separator: "\n\n") + remaining
     }
 
     func exportLastProject(_ request: EditorExportRequest) {
@@ -2442,6 +2469,24 @@ final class RecorderViewModel {
                 previousProject: previousProject,
                 actionName: request.actionName
             ))
+            return true
+        } catch {
+            detailMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    @discardableResult
+    func applyTimelineEdits(_ request: EditorTimelineEditsChange) -> Bool {
+        guard let projectURL = lastExportedProjectURL else { return false }
+        guard lastExportedProject?.edits != request.edits else { return true }
+        let previousProject = lastExportedProject
+        do {
+            lastExportedProject = try TakeFileStore().updateProjectTimelineEdits(.init(
+                projectURL: projectURL, edits: request.edits, baseSettings: settings
+            ))
+            refreshRecentProjects()
+            recordEditorMutation(.init(previousProject: previousProject, actionName: request.actionName))
             return true
         } catch {
             detailMessage = error.localizedDescription
@@ -2975,4 +3020,9 @@ extension ScenePreset {
         case .webcamFullscreen: return BlitzSymbols.camera
         }
     }
+}
+
+struct EditorTimelineEditsChange {
+    let edits: TimelineEdits
+    let actionName: String
 }

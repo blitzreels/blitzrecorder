@@ -19,7 +19,7 @@ app/
   support/                  Support page.
   terms/                    Terms page.
   upgrade/                  Upgrade route.
-  api/                      Server routes for checkout, notify, Stripe, and licenses.
+  api/                      Server routes for license issue, notify, Stripe (legacy keys), and licenses.
 
 components/
   site/                     Site-specific UI and feature components.
@@ -31,10 +31,11 @@ components/
       iphone-companion.tsx  iPhone camera companion section.
       setups.tsx            Recording setup cards.
       comparison.tsx        Product comparison table.
-      pricing.tsx           Pricing cards and plan CTAs.
+      editor.tsx             Timeline / silence / edit section.
+      pricing.tsx           Free license claim.
       how-to-start.tsx      Three-step getting started section.
       faq.tsx               FAQ accordion section.
-      closing-cta.tsx       Final purchase CTA.
+      closing-cta.tsx       Final license CTA.
       tracking.ts           Landing CTA tracking helper.
       reveal.ts             Reveal animation delay helper.
       eyebrow.tsx           Shared landing eyebrow label.
@@ -46,7 +47,7 @@ components/
     site-background.tsx     Shared page background treatment.
     watch-film.tsx          Hero video lightbox.
     download-button.tsx     Download CTA and version metadata.
-    buy-button.tsx          Checkout CTA.
+    buy-button.tsx          Free license email form.
     notify-form.tsx         Waitlist form.
     journey-markers.tsx     Page and section analytics markers.
     icons.tsx               Site icon components.
@@ -59,11 +60,12 @@ components/
 
 lib/
   assets.ts                 Static image asset imports.
-  content.ts                Site copy, product data, pricing, FAQs, and comparison content.
+  content.ts                Site copy, product data, license, FAQs, and comparison content.
   journey-events.ts         Analytics event helper.
   release.ts                Release/download metadata helpers.
   payments.ts               Stripe/payment helpers.
   licenses.ts               License business logic.
+  license-issue.ts          Free license HTTP issue helper.
   license-store.ts          License persistence helpers.
   notify-store.ts           Waitlist/notification persistence helpers.
   utils.ts                  Shared utility helpers.
@@ -90,7 +92,7 @@ The home page is intentionally split by section under `components/site/landing/`
 - site background, navigation, footer
 - section composition
 
-Each visible section lives in its own file, such as `hero.tsx`, `features.tsx`, `pricing.tsx`, and `faq.tsx`. Shared landing-only helpers also stay in this folder so they do not leak into broader site components unless needed elsewhere.
+Each visible section lives in its own file, such as `hero.tsx`, `features.tsx`, `editor.tsx`, `pricing.tsx`, and `faq.tsx`. Shared landing-only helpers also stay in this folder so they do not leak into broader site components unless needed elsewhere.
 
 ## Common Commands
 

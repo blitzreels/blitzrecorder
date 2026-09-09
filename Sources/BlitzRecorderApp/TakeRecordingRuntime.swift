@@ -63,6 +63,7 @@ final class TakeRecordingRuntime {
 
     private let liveCompositedRecorder: LiveCompositedRecording
 
+    private let cursorTracker = RecordingCursorTracker()
     private var mode: Mode = .idle
     private(set) var sceneEvents: [RecordingSceneEvent] = []
     private var timelineSegmentStartedAt: Date?
@@ -161,6 +162,12 @@ final class TakeRecordingRuntime {
             prerollHandler: prerollHandler
         )
         startSceneTimeline(scene: initialScene)
+        cursorTracker.start(.init(directory: take.screenURL.deletingLastPathComponent(),
+            configuration: .init(settings: settings, filter: pickedScreenFilter),
+            time: { [weak self] in
+                guard let self, self.timelineSegmentStartedAt != nil else { return nil }
+                return self.currentSceneTime()
+            }))
         return start
     }
 
@@ -189,6 +196,7 @@ final class TakeRecordingRuntime {
     }
 
     func stop() async throws -> TakeRecordingStopOutcome {
+        cursorTracker.stop()
         pauseSceneTimeline()
         switch mode {
         case .liveCompositor:
@@ -227,6 +235,7 @@ final class TakeRecordingRuntime {
     }
 
     func stopAnyActiveRecording() async {
+        cursorTracker.stop()
         switch mode {
         case .liveCompositor:
             _ = try? await liveCompositedRecorder.stop()
@@ -240,6 +249,7 @@ final class TakeRecordingRuntime {
     }
 
     func reset() {
+        cursorTracker.stop()
         mode = .idle
         resetSceneTimeline()
     }

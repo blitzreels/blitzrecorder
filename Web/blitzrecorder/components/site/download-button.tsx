@@ -121,7 +121,7 @@ export function DownloadMeta({
           "text-balance text-faint" + (compact ? " hidden sm:block" : "")
         }
       >
-        {macCompatibility} · v{version}
+        {compact ? macCompatibility : `${macCompatibility} · v${version}`}
       </p>
       {hint ? (
         <p className="mt-3 text-balance text-foreground/90 text-base font-medium leading-6 ">

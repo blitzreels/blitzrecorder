@@ -9,6 +9,48 @@ import XCTest
 @testable import BlitzRecorderApp
 
 final class RecordingLifecycleTests: XCTestCase {
+    @MainActor
+    func testTimelineCutsPersistReloadPlaybackAndExportTheSameDuration() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.enabledSources = [.screen, .microphone]
+        settings.outputResolution = .p720
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try writeTestMovie(url: take.screenURL, codec: .h264,
+                           color: (blue: 255, green: 0, red: 0, alpha: 255), frameCount: 12)
+        try writeSilentAudioFile(url: take.audioURL)
+        let original = try store.loadRecordingProject(at: take.projectURL)
+        let controller = EditorPlaybackController()
+        await controller.load(project: original, baseSettings: settings)
+        defer { controller.teardown() }
+        let edits = TimelineEdits(cuts: [.init(start: 0.1, end: 0.2, kind: .manual, source: .user)],
+            textOverlays: [.init(start: 0, end: 1, text: "Title", frame: TextOverlay.defaultFrame(for: .title), style: .title)], zoom: .empty)
+        let uncutDuration = controller.outputDuration
+        await controller.load(.init(project: original, baseSettings: settings, previewCuts: edits.enabledCuts))
+        XCTAssertTrue(controller.isReady, controller.loadError ?? "")
+        XCTAssertEqual(controller.outputDuration, uncutDuration - 0.1, accuracy: 0.01)
+        XCTAssertEqual(try store.loadRecordingProject(at: take.projectURL).edits, .empty)
+        await controller.load(.init(project: original, baseSettings: settings, previewCuts: []))
+        XCTAssertEqual(controller.outputDuration, uncutDuration, accuracy: 0.01)
+        let edited = try store.updateProjectTimelineEdits(.init(projectURL: take.projectURL, edits: edits, baseSettings: settings))
+        XCTAssertEqual(edited.edits, edits)
+        XCTAssertFalse(controller.refreshSceneTimeline(.init(project: edited, baseSettings: settings, preservesPreviewSceneOverride: false)))
+        await controller.load(project: edited, baseSettings: settings)
+        XCTAssertTrue(controller.isReady, controller.loadError ?? "")
+        let playback = try await Merger.editorPlaybackComposition(take: take, settings: settings,
+            sceneEvents: store.sceneEvents(from: edited), cuts: edits.enabledCuts)
+        let audio = try XCTUnwrap(playback.audioInputs.first)
+        XCTAssertEqual(audio.track.segments.filter { !$0.isEmpty }.count, 2)
+        let result = try await Merger.exportFinalVideo(.init(take: take, settings: settings,
+            sceneEvents: store.sceneEvents(from: edited), backgroundMusic: nil, destinationURL: nil,
+            progressHandler: nil, timelineEdits: edits))
+        let duration = try await AVURLAsset(url: result).load(.duration)
+        XCTAssertEqual(duration.seconds, playback.duration.seconds, accuracy: 0.05)
+        let restored = try store.restoreProjectSceneTimeline(.init(projectURL: take.projectURL, snapshot: original, baseSettings: settings))
+        XCTAssertEqual(restored.edits, .empty)
+    }
+
     func testRecorderWindowCanOnlyCloseWhileIdle() {
         XCTAssertTrue(RecordingState.idle.allowsWindowClose)
         XCTAssertFalse(RecordingState.starting.allowsWindowClose)

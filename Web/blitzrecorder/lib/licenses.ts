@@ -8,12 +8,18 @@ import {
   upsertLicenseWithContext,
 } from "@/lib/license-store";
 
+export const FREE_LICENSE_PRICE_ID = "free";
+const FREE_LICENSE_EPOCH = 1_757_376_000;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export type LicensePlan = "early_lifetime_2026" | "free_2026";
+
 export type LicensePayload = {
   version: 1;
   app: "blitzrecorder";
   licenseId: string;
   kind: "early_lifetime";
-  plan: "early_lifetime_2026";
+  plan: LicensePlan;
   maxDevices: null;
   grandfathered: true;
   email: string;
@@ -78,15 +84,95 @@ function signPayload(payload: LicensePayload): string {
   return `BRL1.${body}.${signature}`;
 }
 
-function isManualSignedLicense(payload: LicensePayload): boolean {
+function isOfflineIssuedLicense(payload: LicensePayload): boolean {
+  const session = payload.stripeSessionId;
+  const offlineSession = session.startsWith("manual_") || session.startsWith("free_");
   return (
     payload.kind === "early_lifetime" &&
-    payload.plan === "early_lifetime_2026" &&
     payload.grandfathered === true &&
-    payload.stripeSessionId.startsWith("manual_") &&
+    offlineSession &&
     payload.stripeCustomerId === null &&
     payload.stripePaymentIntentId === null
   );
+}
+
+export function normalizeLicenseEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+export function isValidLicenseEmail(email: string): boolean {
+  return EMAIL_RE.test(normalizeLicenseEmail(email));
+}
+
+export function createFreeLicenseGrant(email: string): string {
+  const normalized = normalizeLicenseEmail(email);
+  const body = base64url(normalized);
+  return `BRG1.${body}.${hmac(`grant:${normalized}`)}`;
+}
+
+export function emailFromFreeLicenseGrant(grant: string): string {
+  const key = grant.trim();
+  const parts = key.split(".");
+  if (parts.length !== 3 || parts[0] !== "BRG1" || !parts[1] || !parts[2]) {
+    throw new Error("License grant is invalid");
+  }
+  const email = normalizeLicenseEmail(unbase64url(parts[1]));
+  const expected = hmac(`grant:${email}`);
+  const given = Buffer.from(parts[2]);
+  const wanted = Buffer.from(expected);
+  if (given.length !== wanted.length || !crypto.timingSafeEqual(given, wanted)) {
+    throw new Error("License grant is invalid");
+  }
+  if (!isValidLicenseEmail(email)) {
+    throw new Error("License grant email is invalid");
+  }
+  return email;
+}
+
+function freeSessionId(email: string): string {
+  return `free_${hmac(`session:${normalizeLicenseEmail(email)}`).slice(0, 32)}`;
+}
+
+export async function issueFreeLicense(
+  email: string,
+  attribution: Record<string, string> = {},
+): Promise<ClaimedLicense> {
+  const normalized = normalizeLicenseEmail(email);
+  if (!isValidLicenseEmail(normalized)) {
+    throw new Error("Enter a valid email address.");
+  }
+
+  const sessionId = freeSessionId(normalized);
+  const payload: LicensePayload = {
+    version: 1,
+    app: "blitzrecorder",
+    licenseId: stableLicenseId(sessionId),
+    kind: "early_lifetime",
+    plan: "free_2026",
+    maxDevices: null,
+    grandfathered: true,
+    email: normalized,
+    stripeSessionId: sessionId,
+    stripeCustomerId: null,
+    stripePaymentIntentId: null,
+    stripePriceId: FREE_LICENSE_PRICE_ID,
+    issuedAt: FREE_LICENSE_EPOCH,
+  };
+
+  if (isLicenseStoreConfigured()) {
+    await upsertLicenseWithContext(payload, {
+      stripeLivemode: false,
+      stripeAccountId: null,
+      attribution,
+    }).catch(() => {});
+  }
+
+  return {
+    licenseId: payload.licenseId,
+    email: normalized,
+    licenseKey: signPayload(payload),
+    payload,
+  };
 }
 
 export function decodeLicenseKey(licenseKey: string): LicensePayload {
@@ -284,8 +370,19 @@ export async function validateLicenseKey(licenseKey: string): Promise<LicenseVal
     };
   }
 
-  if (payload.stripePriceId !== getBlitzRecorderEarlyPriceId()) {
-    return { ok: false, status: "wrong_product", reason: "License is for a different Stripe price" };
+  const offline = isOfflineIssuedLicense(payload);
+  if (!offline) {
+    try {
+      if (payload.stripePriceId !== getBlitzRecorderEarlyPriceId()) {
+        return { ok: false, status: "wrong_product", reason: "License is for a different Stripe price" };
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        status: "invalid",
+        reason: error instanceof Error ? error.message : "License is invalid",
+      };
+    }
   }
 
   // Revocation lives in the license store (refund/dispute webhooks or manual
@@ -314,7 +411,7 @@ export async function validateLicenseKey(licenseKey: string): Promise<LicenseVal
     }
   }
 
-  if (isManualSignedLicense(payload)) {
+  if (offline) {
     return { ok: true, status: "active", payload };
   }
 

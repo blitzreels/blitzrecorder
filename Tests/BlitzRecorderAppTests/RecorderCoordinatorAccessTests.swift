@@ -1181,8 +1181,8 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         XCTAssertEqual(
             messages,
             [
-                "4K export is locked. Get Early Price, then paste your key in Account.",
-                "60 fps export is locked. Get Early Price, then paste your key in Account."
+                "4K export is locked. Get a free license, then paste your key in Account.",
+                "60 fps export is locked. Get a free license, then paste your key in Account."
             ]
         )
     }
@@ -1197,7 +1197,7 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         coordinator.setCamera(id: RemoteCameraProviderID.make(for: "iphone-15-pro"))
 
         XCTAssertNil(coordinator.settings.selectedCameraID)
-        XCTAssertEqual(messages, ["iPhone camera is locked. Get Early Price, then paste your key in Account."])
+        XCTAssertEqual(messages, ["iPhone camera is locked. Get a free license, then paste your key in Account."])
     }
 
     func testFreeAccessBlocksDirectRemoteCameraConnection() {
@@ -1210,7 +1210,7 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         coordinator.connectDirectRemoteCamera(host: "127.0.0.1", portString: "49152")
 
         XCTAssertNil(coordinator.settings.selectedCameraID)
-        XCTAssertEqual(messages, ["iPhone camera is locked. Get Early Price, then paste your key in Account."])
+        XCTAssertEqual(messages, ["iPhone camera is locked. Get a free license, then paste your key in Account."])
     }
 
     func testFreeAccessDowngradesPersistedPaidSettingsOnLaunch() {

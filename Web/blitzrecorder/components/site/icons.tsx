@@ -87,6 +87,16 @@ export function CreditCard(props: IconProps) {
   );
 }
 
+export function Key(props: IconProps) {
+  return (
+    <LineIcon {...props}>
+      <circle cx="8" cy="15" r="4" />
+      <path d="M11.5 12.5 21 3" />
+      <path d="M17 3h4v4" />
+    </LineIcon>
+  );
+}
+
 export function Copy(props: IconProps) {
   return (
     <LineIcon {...props}>
@@ -147,6 +157,26 @@ const featurePaths: Record<FeatureIconKey, ReactNode> = {
     <>
       <rect x="3.5" y="3.5" width="11.5" height="15" rx="2" />
       <rect x="9" y="7" width="11.5" height="15" rx="2" />
+    </>
+  ),
+  // A playhead on a track: the timeline editor after the take.
+  timeline: (
+    <>
+      <path d="M3 8h18" />
+      <path d="M3 16h18" />
+      <path d="M8 5v14" />
+      <path d="M8 5 11 8 8 11" />
+    </>
+  ),
+  // A waveform with a gap: silence cuts.
+  silence: (
+    <>
+      <path d="M4 12v4" />
+      <path d="M7 8v8" />
+      <path d="M10 10v4" />
+      <path d="M14 7v10" />
+      <path d="M17 9v6" />
+      <path d="M20 11v2" />
     </>
   ),
 };

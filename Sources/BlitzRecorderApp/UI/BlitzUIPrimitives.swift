@@ -215,11 +215,18 @@ struct BlitzIconTile: View {
     }
 }
 
+struct BlitzScenePreview {
+    let screen: CGImage?
+    let camera: CGImage?
+    let background: CanvasBackgroundStyle
+}
+
 struct BlitzScenePresetCard: View {
     let preset: ScenePreset
     let layout: CaptureLayout
     let isSelected: Bool
     let isEnabled: Bool
+    var preview: BlitzScenePreview? = nil
     let action: () -> Void
 
     var body: some View {
@@ -228,23 +235,25 @@ struct BlitzScenePresetCard: View {
                 BlitzSceneLayoutThumbnail(
                     layout: layout,
                     sceneLayout: SceneLayout.presetLayout(preset, for: layout),
-                    visibleSources: visibleSources
+                    visibleSources: visibleSources,
+                    preview: preview
                 )
-                .frame(height: 46)
+                .frame(height: preview == nil ? 46 : 58)
                 .padding(.horizontal, 4)
 
                 Text(preset.compactTitle)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.white.opacity(isSelected ? 0.96 : 0.72))
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
             }
             .padding(8)
-            .frame(maxWidth: .infinity, minHeight: 82)
+            .frame(maxWidth: .infinity, minHeight: preview == nil ? 82 : 94)
             .contentShape(.rect)
         }
         .buttonStyle(BlitzScenePresetButtonStyle(isSelected: isSelected))
         .disabled(!isEnabled)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .opacity(isEnabled || isSelected ? 1 : 0.5)
         .pointingHandCursor()
         .help(preset.compactTitle)
@@ -293,6 +302,7 @@ struct BlitzSceneLayoutThumbnail: View {
     let layout: CaptureLayout
     let sceneLayout: SceneLayout
     let visibleSources: Set<CaptureSource>
+    var preview: BlitzScenePreview? = nil
 
     var body: some View {
         GeometryReader { proxy in
@@ -307,17 +317,28 @@ struct BlitzSceneLayoutThumbnail: View {
             let radius: CGFloat = 5
 
             ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .fill(BlitzUI.scenePreviewFill)
+                if let preview {
+                    CanvasBackgroundSwatchCache.image(preview.background)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: canvas.width, height: canvas.height)
+                        .clipped()
+                } else {
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .fill(BlitzUI.scenePreviewFill)
+                }
 
                 ForEach(items, id: \.kind) { item in
                     let frame = item.normalizedFrame.standardized.intersection(
                         CGRect(x: 0, y: 0, width: 1, height: 1)
                     )
                     if !frame.isNull, !frame.isEmpty {
-                        BlitzSceneThumbnailLayer(kind: item.kind)
-                            .padding(0.75)
-                            .frame(
+                        BlitzSceneThumbnailLayer(
+                            kind: item.kind,
+                            image: item.kind == .screen ? preview?.screen : preview?.camera
+                        )
+                        .padding(0.75)
+                        .frame(
                                 width: frame.width * contentSize.width,
                                 height: frame.height * contentSize.height
                             )
@@ -359,11 +380,27 @@ struct BlitzSceneLayoutThumbnail: View {
 
 struct BlitzSceneThumbnailLayer: View {
     let kind: SceneLayerKind
+    var image: CGImage? = nil
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 2, style: .continuous)
-            .fill(kind == .screen ? BlitzUI.screenPreviewFill : BlitzUI.cameraPreviewFill)
-            .accessibilityHidden(true)
+        GeometryReader { proxy in
+            if let image {
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .clipped()
+            } else {
+                BlitzUI.screenPreviewFill
+                    .overlay {
+                        if kind == .camera {
+                            BlitzUI.cameraPreviewFill
+                        }
+                    }
+            }
+        }
+        .clipShape(.rect(cornerRadius: 2))
+        .accessibilityHidden(true)
     }
 }
 

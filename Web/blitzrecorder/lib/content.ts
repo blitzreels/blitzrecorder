@@ -17,55 +17,26 @@ export type FeatureIconKey =
   | "background"
   | "remote"
   | "aspect"
-  | "sources";
+  | "sources"
+  | "timeline"
+  | "silence";
 
-export type FeatureItem = { icon: FeatureIconKey; title: string; body: string };
-
-export const features: FeatureItem[] = [
+export const studioBeats: { title: string; body: string }[] = [
   {
-    icon: "composite",
-    title: "Screen and camera together",
-    body: "Composite your screen and camera into one frame.",
+    title: "Screen, window, or area",
+    body: "Mic and system audio in the same take.",
   },
   {
-    icon: "scenes",
-    title: "Live scene switching",
-    body: "Cut or dissolve between layouts while you record.",
+    title: "Timeline in the same app",
+    body: "Waveforms, cuts, and layout after you stop.",
   },
   {
-    icon: "background",
-    title: "Replace your background",
-    body: "Drop in a clean backdrop instead of your room.",
+    title: "Silence cuts",
+    body: "Drop the pauses so the take is short-form ready.",
   },
   {
-    icon: "remote",
-    title: "Control the iPhone from your Mac",
-    body: "Frame and adjust the camera without touching the phone.",
-  },
-  {
-    icon: "aspect",
-    title: "Vertical or horizontal",
-    body: "9:16 for Shorts, 16:9 for long-form. Set it before you record.",
-  },
-  {
-    icon: "sources",
-    title: "Keep the source files",
-    body: "Save screen, camera, and audio as separate files.",
-  },
-];
-
-export type Setup = { title: string; image: StaticImageData; body: string };
-
-export const setups: Setup[] = [
-  {
-    title: "Camera only",
-    image: assets.macPlan,
-    body: "Talk straight to camera for a clean face-cam take.",
-  },
-  {
-    title: "Screen and camera",
-    image: assets.macRecorder,
-    body: "Stack your screen over your camera for tutorials and demos.",
+    title: "Local files",
+    body: "Keep the recording on your Mac. AGPL source.",
   },
 ];
 
@@ -73,109 +44,30 @@ export type FaqItem = { q: string; a: string };
 
 export const faqs: FaqItem[] = [
   {
-    q: "Why not just use Continuity Camera?",
-    a: "Continuity Camera sends a live video stream to your Mac, so the quality drops and depends on your connection. BlitzRecorder records on the iPhone at full quality and sends the finished file to your Mac when you stop, so your video looks sharper. You also get scenes, layouts, and screen capture in the same app.",
+    q: "Why a license if it is free?",
+    a: "Screen recording and the editor work with no key. Email gets you a key for 4K, 60 fps, and an optional iPhone camera. Same email always returns the same key.",
   },
   {
-    q: "What does the paid license include?",
-    a: "A $39 beta lifetime license, planned to become $79 after launch. It unlocks the iPhone camera, 4K export, and 60 fps export in the Mac app. You get free updates through v1, and the app stays yours forever.",
-  },
-  {
-    q: "What does the free app do?",
-    a: "Record your screen, Mac camera, and mic with scenes, layouts, and backgrounds, and export in 1080p. There is no account, card, watermark, or subscription requirement.",
-  },
-  {
-    q: "Do I need an account?",
-    a: "No app account is required. Checkout is handled by Stripe, then you claim a license key for the Mac app.",
-  },
-  {
-    q: "What if it does not work for me?",
-    a: "Every license comes with a 30-day money-back guarantee. If BlitzRecorder is not right for you, email support@blitzreels.com within 30 days and we will refund you, no questions asked.",
-  },
-  {
-    q: "Does it run on Intel Macs?",
-    a: "Yes. It is a universal build for Apple silicon and Intel, on macOS 15 Sequoia or later.",
-  },
-  {
-    q: "Do I have to plug in my iPhone?",
-    a: "No. The iPhone pairs with your Mac over your local network. It needs iOS 18 or later.",
+    q: "Is it open source?",
+    a: "Yes. AGPL. Download the Mac app from this site. No account, card, watermark, or subscription.",
   },
   {
     q: "Is my footage private?",
-    a: "Yes. Recording happens on your own devices and saves to a folder you choose. The native apps do not include an analytics SDK, and recordings are not uploaded.",
+    a: "Yes. Recording stays on your Mac, in a folder you choose. The native apps do not include an analytics SDK.",
   },
   {
-    q: "Where do I get the apps?",
-    a: "Download the Mac app from blitzrecorder.com. The iPhone app is the companion camera and needs the Mac app to do useful recording work.",
+    q: "What's BlitzReels?",
+    a: "Clips, captions, and publish, from the same company. Recorder is the local Mac studio for the take.",
   },
 ];
 
-export type Plan = {
-  name: string;
-  price: string;
-  regularPrice?: string;
-  suffix?: string;
-  subline?: string;
-  save?: string;
-  note: string;
-  features: string[];
-  cta: "buy" | "download";
-  ctaLabel: string;
-};
-
-export const pricing: { free: Plan; early: Plan } = {
-  free: {
-    name: "Free",
-    price: "$0",
-    note: "The Mac app",
-    features: [
-      "Record your screen, camera, and mic",
-      "Scenes, layouts, and backgrounds",
-      "1080p export",
-      "No account, no card",
-    ],
-    cta: "download",
-    ctaLabel: "Download for Mac",
-  },
-  early: {
-    name: "Lifetime License",
-    price: "$39",
-    regularPrice: "$79",
-    suffix: " lifetime",
-    subline: "Beta price before $79 launch pricing",
-    save: "Save $40",
-    note: "Unlocks the full studio",
-    features: [
-      "Use your iPhone as the camera",
-      "4K export",
-      "60 fps export",
-      "One license for all your personal Macs",
-      "Free updates through v1, yours to keep forever",
-      "30-day money-back guarantee",
-    ],
-    cta: "buy",
-    ctaLabel: "Buy Lifetime License",
-  },
-};
-
-export type CompareCol = "blitz" | "continuity" | "subscription";
-export type CompareRow = { label: string } & Record<CompareCol, boolean>;
-
-/** Honest side-by-side. The point that pops: full-quality local recording,
- *  scenes/layouts, screen+camera, and keeping the raw files. */
-export const comparison: { columns: { key: CompareCol; label: string }[]; rows: CompareRow[] } = {
-  columns: [
-    { key: "blitz", label: "BlitzRecorder" },
-    { key: "continuity", label: "Continuity Camera" },
-    { key: "subscription", label: "Subscription recorders" },
-  ],
-  rows: [
-    { label: "Records in full quality, not a live stream", blitz: true, continuity: false, subscription: false },
-    { label: "Screen and camera in one frame", blitz: true, continuity: false, subscription: true },
-    { label: "Scenes and layouts while you record", blitz: true, continuity: false, subscription: false },
-    { label: "Keep the raw screen, camera, and audio files", blitz: true, continuity: false, subscription: false },
-    { label: "Use the iPhone you already own", blitz: true, continuity: true, subscription: false },
-    { label: "Pay once, no subscription", blitz: true, continuity: true, subscription: false },
+export const license = {
+  features: [
+    "4K export",
+    "60 fps export",
+    "Optional iPhone camera",
+    "Same key on every personal Mac",
+    "Same email always returns the same key",
   ],
 };
 
@@ -251,18 +143,18 @@ export const pages: Record<"ios" | "macos", ProductPageData> = {
     key: "macos",
     eyebrow: "Mac app",
     appName: "BlitzRecorder",
-    tagline: "Studio recording for Mac",
-    hero: "Record Mac videos with scenes, screen capture, and iPhone camera support.",
+    tagline: "Studio recording and editing for Mac",
+    hero: "Record screen and camera, then cut the take on a timeline. iPhone camera, silence removal, local files.",
     icon: assets.macIcon,
     previewKind: "desktop",
     preview: assets.macRecorder,
-    copyTitle: "Set up the shot, then record it.",
+    copyTitle: "Record the take. Cut it here.",
     copy:
-      "Set up your shot, pick tall or wide, and hit record. You can keep the raw screen, camera, and audio files to use later.",
+      "Set up the shot, pick tall or wide, and hit record. Then open the take: timeline, waveforms, silence cuts, scene layouts. Raw screen, camera, and audio files stay on your Mac.",
     bullets: [
       "Record your screen, camera, mic, and Mac sound.",
       "Use your iPhone as the camera.",
-      "Set up tall or wide videos before you record.",
+      "Cut silence and layouts on a timeline.",
       "Keep the raw screen, camera, and audio files.",
     ],
     requirement: requirements.macos,
@@ -308,7 +200,7 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
       {
         title: "License",
         body:
-          "The Mac app is free to download and use, including 1080p export. The paid lifetime license is handled through Stripe checkout and unlocks the iPhone camera, 4K export, and 60 fps export. After payment, Stripe redirects you to a claim page where your license key is created.",
+          "The Mac app is free to download. A free license key from blitzrecorder.com unlocks the iPhone camera, 4K export, and 60 fps export. Enter your email to get the key, then paste it in the Mac app. Older paid Stripe keys still work. The open-source code stays AGPL.",
       },
       {
         title: "User content",
@@ -346,7 +238,7 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
       {
         title: "License checks",
         body:
-          "Checkout is handled by Stripe. BlitzRecorder license validation checks the license key you provide and may verify the associated Stripe payment status. The app does not need a BlitzReels account to record.",
+          "A free license is issued when you enter your email on blitzrecorder.com. BlitzRecorder validates the license key you paste in the app. Older paid keys may still be checked against Stripe payment status. The app does not need a BlitzReels account to record.",
       },
       {
         title: "Permissions",
@@ -356,12 +248,12 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
       {
         title: "Data sharing",
         body:
-          "We do not sell your personal information. Recordings stay on your devices unless you choose to share them. Stripe handles checkout and payment records for license purchases.",
+          "We do not sell your personal information. Recordings stay on your devices unless you choose to share them. If you claim a license, we store the email you entered and the license record. Historical Stripe purchases keep their payment records at Stripe.",
       },
       {
         title: "Website analytics",
         body:
-          "The BlitzRecorder website uses DataFast to measure page visits, checkout starts, license claims, and basic conversion metadata. The native Mac and iPhone apps do not include a DataFast or analytics SDK.",
+          "The BlitzRecorder website uses DataFast to measure page visits, license claims, and basic conversion metadata. The native Mac and iPhone apps do not include a DataFast or analytics SDK.",
       },
       {
         title: "Diagnostics and feedback",
@@ -388,7 +280,7 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
       {
         title: "License",
         body:
-          "After buying a lifetime license, Stripe redirects you to a claim page with your license key. Enter that key in the Mac app to unlock the iPhone camera, 4K export, and 60 fps export. If an export fails, check macOS permissions, available disk space, and whether the source media still exists.",
+          "Open blitzrecorder.com/license, enter your email, and copy the key. Paste it in the Mac app under Account to unlock the iPhone camera, 4K export, and 60 fps export. The same email always returns the same key. If an export fails, check macOS permissions, available disk space, and whether the source media still exists.",
       },
       {
         title: "Permissions",

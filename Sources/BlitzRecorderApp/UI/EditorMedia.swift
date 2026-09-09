@@ -7,6 +7,7 @@ import SwiftUI
 enum EditorSelection: Equatable {
     case segment(Int)
     case asset(String)
+    case range(EditorTimeRange)
 }
 
 struct EditorAsset: Identifiable, Equatable {
@@ -152,7 +153,7 @@ private struct EditorLoadedMedia: Sendable {
     let fileSize: String
     let poster: CGImage?
     let filmstrip: [CGImage]
-    let waveform: [Float]
+    let waveform: EditorAudioWaveform?
     let technicalMetadata: EditorMediaTechnicalMetadata
 }
 
@@ -168,6 +169,7 @@ final class EditorMediaLibrary {
     private(set) var posters: [String: CGImage] = [:]
     private(set) var filmstrips: [String: [CGImage]] = [:]
     private(set) var waveforms: [String: [Float]] = [:]
+    private(set) var timelineWaveforms: [String: EditorAudioWaveform] = [:]
     private(set) var durations: [String: Double] = [:]
     private(set) var fileSizes: [String: String] = [:]
     private(set) var technicalMetadata: [String: EditorMediaTechnicalMetadata] = [:]
@@ -203,8 +205,9 @@ final class EditorMediaLibrary {
                 if loaded.filmstrip.count > (filmstrips[loaded.id]?.count ?? 0) {
                     filmstrips[loaded.id] = loaded.filmstrip
                 }
-                if !loaded.waveform.isEmpty {
-                    waveforms[loaded.id] = loaded.waveform
+                if let waveform = loaded.waveform {
+                    waveforms[loaded.id] = waveform.overview
+                    timelineWaveforms[loaded.id] = waveform
                 }
             }
         }
@@ -245,7 +248,7 @@ final class EditorMediaLibrary {
 
         var poster: CGImage?
         var filmstrip: [CGImage] = []
-        var waveform: [Float] = []
+        var waveform: EditorAudioWaveform?
         let technicalMetadata = await technicalMetadata(asset)
 
         if asset.isVideo {
@@ -271,7 +274,7 @@ final class EditorMediaLibrary {
                 }
             }
         } else if asset.isAudio {
-            waveform = await Self.waveform(for: avAsset, duration: seconds)
+            waveform = await EditorAudioWaveform.load(.init(asset: avAsset, duration: seconds))
         }
 
         return EditorLoadedMedia(
@@ -417,107 +420,20 @@ final class EditorMediaLibrary {
                 preferredTimescale: 600
             )
         }
-        var generated: [(time: Double, image: CGImage)] = []
-        for await result in generator.images(for: times) {
-            guard !Task.isCancelled else { return [] }
-            if case let .success(requestedTime, image, _) = result {
-                generated.append((time: requestedTime.seconds, image: image))
-            }
-        }
-        return generated
-            .sorted { $0.time < $1.time }
-            .map(\.image)
-    }
-
-    nonisolated private static func waveform(for avAsset: AVURLAsset, duration: Double) async -> [Float] {
-        guard duration > 0,
-              let track = try? await avAsset.loadTracks(withMediaType: .audio).first else {
-            return []
-        }
-
-        var sampleRate = 44_100.0
-        var channelCount = 1
-        if let descriptions = try? await track.load(.formatDescriptions),
-           let description = descriptions.first,
-           let basicDescription = CMAudioFormatDescriptionGetStreamBasicDescription(description)?.pointee {
-            if basicDescription.mSampleRate > 0 {
-                sampleRate = basicDescription.mSampleRate
-            }
-            channelCount = max(1, Int(basicDescription.mChannelsPerFrame))
-        }
-
-        guard let reader = try? AVAssetReader(asset: avAsset) else { return [] }
-        let outputSettings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatLinearPCM,
-            AVLinearPCMBitDepthKey: 32,
-            AVLinearPCMIsFloatKey: true,
-            AVLinearPCMIsBigEndianKey: false,
-            AVLinearPCMIsNonInterleaved: false
-        ]
-        let output = AVAssetReaderTrackOutput(track: track, outputSettings: outputSettings)
-        output.alwaysCopiesSampleData = false
-        guard reader.canAdd(output) else { return [] }
-        reader.add(output)
-        guard reader.startReading() else { return [] }
-
-        let bucketCount = 240
-        var buckets = [Float](repeating: 0, count: bucketCount)
-        let totalFrames = max(1, Int(duration * sampleRate))
-        let frameStride = min(
-            max(1, Int(sampleRate / 100)),
-            max(1, totalFrames / (bucketCount * 12))
-        )
-        var frameIndex = 0
-
-        while reader.status == .reading, let sampleBuffer = output.copyNextSampleBuffer() {
-            if Task.isCancelled {
-                reader.cancelReading()
-                return []
-            }
-            guard let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else { continue }
-            let length = CMBlockBufferGetDataLength(blockBuffer)
-            let sampleCount = length / MemoryLayout<Float>.size
-            guard sampleCount > 0 else { continue }
-
-            var samples = [Float](repeating: 0, count: sampleCount)
-            let status = samples.withUnsafeMutableBytes { destination in
-                CMBlockBufferCopyDataBytes(
-                    blockBuffer,
-                    atOffset: 0,
-                    dataLength: sampleCount * MemoryLayout<Float>.size,
-                    destination: destination.baseAddress!
-                )
-            }
-            guard status == kCMBlockBufferNoErr else { continue }
-
-            let bufferFrameCount = sampleCount / channelCount
-            for frame in stride(from: 0, to: bufferFrameCount, by: frameStride) {
-                var peak: Float = 0
-                for channel in 0..<channelCount {
-                    let sample = abs(samples[frame * channelCount + channel])
-                    if sample > peak {
-                        peak = sample
-                    }
-                }
-                let absoluteFrameIndex = frameIndex + frame
-                let bucket = min(
-                    bucketCount - 1,
-                    max(0, absoluteFrameIndex * bucketCount / totalFrames)
-                )
-                if peak > buckets[bucket] {
-                    buckets[bucket] = peak
+        return await withTaskCancellationHandler {
+            var generated: [(time: Double, image: CGImage)] = []
+            for await result in generator.images(for: times) {
+                guard !Task.isCancelled else { return [] }
+                if case let .success(requestedTime, image, _) = result {
+                    generated.append((time: requestedTime.seconds, image: image))
                 }
             }
-            frameIndex += bufferFrameCount
+            return generated
+                .sorted { $0.time < $1.time }
+                .map(\.image)
+        } onCancel: {
+            generator.cancelAllCGImageGeneration()
         }
-
-        guard reader.status == .completed else { return [] }
-
-        if let maxValue = buckets.max(), maxValue > 0 {
-            for index in buckets.indices {
-                buckets[index] /= maxValue
-            }
-        }
-        return buckets
     }
+
 }

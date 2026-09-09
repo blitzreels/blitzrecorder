@@ -52,6 +52,27 @@ struct ProjectLibraryNavigationState: Equatable {
         selectedProjectIDs = nextSelection
         selectedDetailTab = .overview
     }
+
+    struct Removal {
+        let previousOrder: [UUID]
+        let removedIDs: Set<UUID>
+        let availableIDs: [UUID]
+    }
+
+    mutating func reconcileAfterRemoval(_ request: Removal) {
+        let remaining = selectedProjectIDs.subtracting(request.removedIDs).intersection(request.availableIDs)
+        if !remaining.isEmpty {
+            selectedProjectIDs = remaining
+            return
+        }
+        let anchor = request.previousOrder.firstIndex { selectedProjectIDs.contains($0) } ?? 0
+        let available = Set(request.availableIDs)
+        let next = request.previousOrder.dropFirst(anchor).first { available.contains($0) }
+            ?? request.previousOrder.prefix(anchor).last { available.contains($0) }
+            ?? request.availableIDs.first
+        selectedProjectIDs = next.map { [$0] } ?? []
+        selectedDetailTab = .overview
+    }
 }
 
 struct ProjectLibraryView: View {
@@ -125,6 +146,7 @@ struct ProjectLibraryView: View {
         VStack(spacing: 0) {
             commandBar
                 .blitzWorkspaceToolbar()
+            trashStatusBar
 
             HStack(spacing: 0) {
                 projectSidebar
@@ -158,7 +180,7 @@ struct ProjectLibraryView: View {
             await loadSelectedMediaAssets()
         }
         .onChange(of: filteredProjects.map(\.id)) {
-            selectFirstProjectIfNeeded()
+            if !vm.projectTrash.isWorking { selectFirstProjectIfNeeded() }
         }
         .onChange(of: vm.projectLibraryNavigation.selectedProjectIDs) {
             vm.projectLibraryNavigation.selectedDetailTab = .overview
@@ -166,17 +188,17 @@ struct ProjectLibraryView: View {
         .onDisappear {
             projectPlayback.teardown()
         }
-        .alert(deletionAlertTitle, isPresented: deletionConfirmationBinding) {
+        .alert(deletionAlertTitle, isPresented: deletionConfirmationBinding, presenting: projectsPendingDeletion) { projects in
             Button("Cancel", role: .cancel) {
                 projectsPendingDeletion = []
             }
             Button("Move to Trash", role: .destructive) {
-                applySelectionAfterDeletion()
-                vm.deleteProjects(projectsPendingDeletion)
                 projectsPendingDeletion = []
+                projectPlayback.pauseForEditing()
+                Task { await vm.deleteProjects(projects) }
             }
-        } message: {
-            Text(deletionAlertMessage)
+        } message: { projects in
+            Text(deletionAlertMessage(projects))
         }
         .alert(
             "Rename recording",
@@ -229,6 +251,7 @@ struct ProjectLibraryView: View {
                 action: vm.showRecorder
             ))
             .help("Open the recorder")
+            .disabled(vm.projectTrash.isWorking)
 
             BlitzToolbarButton(configuration: .init(
                 title: "Settings",
@@ -272,11 +295,14 @@ struct ProjectLibraryView: View {
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
             .background(BlitzUI.projectLibraryBackground)
+            .onDeleteCommand {
+                queueDeletion(projects(for: vm.projectLibraryNavigation.selectedProjectIDs))
+            }
             .contextMenu(forSelectionType: UUID.self) { selection in
                 projectContextMenu(selection)
             } primaryAction: { selection in
                 let projects = projects(for: selection)
-                if projects.count == 1, let project = projects.first {
+                if !vm.projectTrash.isWorking, projects.count == 1, let project = projects.first {
                     vm.openProject(project)
                 }
             }
@@ -340,42 +366,77 @@ struct ProjectLibraryView: View {
     ) -> some View {
         let projects = projects(for: selection)
 
-        if projects.count == 1, let project = projects.first {
-            Button {
-                vm.openProject(project)
-            } label: {
-                Label("Open in Editor", systemImage: ProjectLibrarySymbols.editRecording)
+        Group {
+            if projects.count == 1, let project = projects.first {
+                Button {
+                    vm.openProject(project)
+                } label: {
+                    Label("Open in Editor", systemImage: ProjectLibrarySymbols.editRecording)
+                }
+
+                Button {
+                    beginRename(project)
+                } label: {
+                    Label("Rename", systemImage: "pencil")
+                }
             }
 
-            Button {
-                beginRename(project)
-            } label: {
-                Label("Rename", systemImage: "pencil")
+            if !projects.isEmpty {
+                Button {
+                    vm.revealProjects(projects)
+                } label: {
+                    Label(
+                        projects.count == 1 ? "Show in Finder" : "Show Selected in Finder",
+                        systemImage: "folder"
+                    )
+                }
+
+                Divider()
+
+                Button(role: .destructive) {
+                    queueDeletion(projects)
+                } label: {
+                    Label(
+                        projects.count == 1
+                            ? "Move to Trash"
+                            : "Move \(projects.count) Projects to Trash",
+                        systemImage: "trash"
+                    )
+                }
             }
         }
+        .disabled(vm.projectTrash.isWorking)
+    }
 
-        if !projects.isEmpty {
-            Button {
-                vm.revealProjects(projects)
-            } label: {
-                Label(
-                    projects.count == 1 ? "Show in Finder" : "Show Selected in Finder",
-                    systemImage: "folder"
-                )
+    @ViewBuilder
+    private var trashStatusBar: some View {
+        if vm.projectTrash.status != nil || vm.projectTrash.canRestore {
+            HStack(spacing: 12) {
+                if vm.projectTrash.isWorking {
+                    ProgressView().controlSize(.small)
+                } else {
+                    BlitzSymbol(configuration: .init(name: "trash", size: 16))
+                }
+                Text(vm.projectTrash.status ?? "Projects in Trash")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(BlitzUI.secondaryText)
+                    .accessibilityAddTraits(.updatesFrequently)
+                Spacer(minLength: 8)
+                if vm.projectTrash.restorableCount > 0 {
+                    Button(vm.projectTrash.restorableCount == 1 ? "Restore project" : "Restore \(vm.projectTrash.restorableCount) projects") {
+                        Task { await vm.restoreTrashedProjects() }
+                    }
+                    .blitzGlassButton()
+                    .disabled(!vm.projectTrash.canRestore)
+                }
+                if !vm.projectTrash.isWorking && !vm.projectTrash.canRestore {
+                    BlitzToolbarButton(configuration: .init(
+                        title: "Dismiss", symbolName: "xmark", showsTitle: false,
+                        action: vm.projectTrash.dismissStatus
+                    ))
+                }
             }
-
-            Divider()
-
-            Button(role: .destructive) {
-                queueDeletion(projects)
-            } label: {
-                Label(
-                    projects.count == 1
-                        ? "Move to Trash"
-                        : "Move \(projects.count) Projects to Trash",
-                    systemImage: "trash"
-                )
-            }
+            .blitzWorkspaceToolbar()
         }
     }
 
@@ -535,18 +596,10 @@ struct ProjectLibraryView: View {
                 Button(role: .destructive) {
                     queueDeletion(projects)
                 } label: {
-                    Label("Move to Trash", systemImage: "trash")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.red.opacity(0.88))
-                        .padding(.horizontal, 16)
-                        .frame(height: 44)
-                        .background(.red.opacity(0.08), in: .rect(cornerRadius: 11))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                .stroke(.red.opacity(0.15), lineWidth: 1)
-                        }
+                    Label("Move \(projects.count) projects to Trash", systemImage: "trash")
                 }
-                .buttonStyle(ProjectLibraryPressButtonStyle())
+                .blitzGlassButton()
+                .disabled(vm.projectTrash.isWorking)
                 .pointingHandCursor()
             }
         }
@@ -677,6 +730,7 @@ struct ProjectLibraryView: View {
             }
         }
         .help("View \(displayTitle(project))")
+        .contextMenu { projectContextMenu(vm.projectLibraryNavigation.selectedProjectIDs) }
     }
 
     private func detailPreview(
@@ -726,6 +780,7 @@ struct ProjectLibraryView: View {
             detailActions(project)
                 .fixedSize()
         }
+        .contextMenu { projectContextMenu([project.id]) }
     }
 
     private func detailActions(
@@ -748,13 +803,12 @@ struct ProjectLibraryView: View {
                 }
             ))
 
-            ProjectLibraryIconActionButton(configuration: .init(
-                title: "Move project to Trash",
-                systemImage: "trash",
-                tone: .destructive,
-                action: { queueDeletion([project]) }
-            ))
+            Button(role: .destructive) { queueDeletion([project]) } label: {
+                Label("Move to Trash", systemImage: "trash")
+            }
+            .blitzGlassButton()
         }
+        .disabled(vm.projectTrash.isWorking)
     }
 
     @ViewBuilder
@@ -1283,12 +1337,12 @@ struct ProjectLibraryView: View {
 
     private var detailEmptyState: some View {
         VStack(spacing: 8) {
-            Text(filteredProjects.isEmpty ? "No projects found" : "Select a project")
+            Text(vm.recentProjects.isEmpty ? "No projects yet" : (filteredProjects.isEmpty ? "No projects found" : "Select a project"))
                 .font(.system(size: 18, weight: .semibold))
             Text(
-                filteredProjects.isEmpty
-                    ? "Try a different search."
-                    : "Choose a recording from the library."
+                vm.recentProjects.isEmpty
+                    ? (vm.projectTrash.canRestore ? "Restore a project above or start a new recording." : "Start a new recording to create your first project.")
+                    : (filteredProjects.isEmpty ? "Try a different search." : "Choose a recording from the library.")
             )
             .font(.system(size: 12, weight: .regular))
             .foregroundStyle(.secondary)
@@ -1661,12 +1715,7 @@ struct ProjectLibraryView: View {
     }
 
     private var filteredProjects: [RecordingProjectHistory.Entry] {
-        let query = vm.projectLibraryNavigation.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return vm.recentProjects }
-        return vm.recentProjects.filter {
-            $0.title.localizedCaseInsensitiveContains(query)
-                || $0.takeDirectoryPath.localizedCaseInsensitiveContains(query)
-        }
+        vm.filteredLibraryProjects
     }
 
     private var selectedProject: RecordingProjectHistory.Entry? {
@@ -1721,14 +1770,11 @@ struct ProjectLibraryView: View {
             : "Move \(projectsPendingDeletion.count) projects to Trash?"
     }
 
-    private var deletionAlertMessage: String {
-        if projectsPendingDeletion.count == 1,
-           let project = projectsPendingDeletion.first {
-            return "\"\(displayTitle(project))\" and its editable source files will move to Trash. "
-                + "Exported videos stay in the output folder."
-        }
-        return "The selected projects and their editable source files will move to Trash. "
-            + "Exported videos stay in the output folder."
+    private func deletionAlertMessage(_ projects: [RecordingProjectHistory.Entry]) -> String {
+        let names = projects.prefix(3).map { "“\(displayTitle($0))”" }.joined(separator: "\n")
+        let remaining = projects.count > 3 ? "\n…and \(projects.count - 3) more" : ""
+        return names + remaining + "\n\nSources and saved edits move to Trash. "
+            + "Exported videos in the output folder stay in place. You can restore these projects afterward."
     }
 
     private func projects(
@@ -1740,13 +1786,8 @@ struct ProjectLibraryView: View {
     private func queueDeletion(
         _ projects: [RecordingProjectHistory.Entry]
     ) {
+        guard !vm.projectTrash.isWorking, !projects.isEmpty else { return }
         projectsPendingDeletion = projects
-    }
-
-    private func applySelectionAfterDeletion() {
-        let deletedIDs = Set(projectsPendingDeletion.map(\.id))
-        let remaining = filteredProjects.filter { !deletedIDs.contains($0.id) }
-        vm.projectLibraryNavigation.selectedProjectIDs = remaining.first.map { [$0.id] } ?? []
     }
 
     private var projectErrorBinding: Binding<Bool> {

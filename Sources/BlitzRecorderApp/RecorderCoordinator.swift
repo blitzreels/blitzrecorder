@@ -535,7 +535,7 @@ final class RecorderCoordinator {
 
     func setOutputResolution(_ outputResolution: OutputResolution) {
         guard outputResolution != .p2160 || accessController.requirePaidFeature("4K export") else {
-            onMessage?("4K export is locked. Get Early Price, then paste your key in Account.")
+            onMessage?("4K export is locked. Get a free license, then paste your key in Account.")
             return
         }
         settings.outputResolution = outputResolution
@@ -550,7 +550,7 @@ final class RecorderCoordinator {
     func setFramesPerSecond(_ framesPerSecond: Int) {
         guard RecordingSettings.supportedFrameRates.contains(framesPerSecond) else { return }
         guard framesPerSecond < 60 || accessController.requirePaidFeature("60 fps export") else {
-            onMessage?("60 fps export is locked. Get Early Price, then paste your key in Account.")
+            onMessage?("60 fps export is locked. Get a free license, then paste your key in Account.")
             return
         }
         settings.framesPerSecond = framesPerSecond
@@ -742,7 +742,7 @@ final class RecorderCoordinator {
 
     func setCamera(id: String?) {
         guard id.map(RemoteCameraProviderID.isRemote) != true || accessController.requirePaidFeature("iPhone camera") else {
-            onMessage?("iPhone camera is locked. Get Early Price, then paste your key in Account.")
+            onMessage?("iPhone camera is locked. Get a free license, then paste your key in Account.")
             return
         }
         remoteCamera.selectCamera(id: id)
@@ -878,7 +878,7 @@ final class RecorderCoordinator {
 
     func connectDirectRemoteCamera(host: String, portString: String) {
         guard accessController.requirePaidFeature("iPhone camera") else {
-            onMessage?("iPhone camera is locked. Get Early Price, then paste your key in Account.")
+            onMessage?("iPhone camera is locked. Get a free license, then paste your key in Account.")
             return
         }
         remoteCamera.connectDirect(host: host, portString: portString)
@@ -3016,7 +3016,8 @@ final class RecorderCoordinator {
             destinationURL: request.destinationURL,
             progressHandler: { [weak self] progress in
                 self?.onRenderProgress?(progress)
-            }
+            },
+            timelineEdits: project.edits
         ))
 
         try takeFileStore.writeSourceTakeManifest(

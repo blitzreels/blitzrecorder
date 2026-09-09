@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { CreditCard } from "@/components/site/icons";
+import { Key } from "@/components/site/icons";
 import { Button } from "@/components/ui/button";
 import { trackJourneyEvent } from "@/lib/journey-events";
 import { cn } from "@/lib/utils";
@@ -52,10 +52,10 @@ function writeAttributionInputs(form: HTMLFormElement) {
   }
 }
 
-export function BuyButton({
+export function LicenseButton({
   className,
   formClassName,
-  label = "Buy Lifetime License",
+  label = "Get free license",
   source = "unknown",
 }: {
   className?: string;
@@ -69,41 +69,44 @@ export function BuyButton({
     writeAttributionInputs(event.currentTarget);
     setIsSubmitting(true);
     trackJourneyEvent({
-      eventName: "checkout_started",
-      area: "checkout",
+      eventName: "license_started",
+      area: "license",
       payload: {
-        plan: "early_lifetime",
+        plan: "free",
         source,
-        price: 39,
+        price: 0,
       },
     });
   }
 
   return (
     <form
-      action="/api/checkout"
+      action="/api/licenses/issue"
       method="POST"
       onSubmit={handleSubmit}
       className={cn("flex flex-col gap-3", formClassName)}
     >
       <input type="hidden" name="source" value={source} />
-      <label className="sr-only" htmlFor={`checkout-email-${source}`}>
-        Email for receipt and license
+      <label className="sr-only" htmlFor={`license-email-${source}`}>
+        Email for your license key
       </label>
       <input
-        id={`checkout-email-${source}`}
+        id={`license-email-${source}`}
         type="email"
         name="email"
         required
         autoComplete="email"
         inputMode="email"
-        placeholder="Email for receipt and license"
+        placeholder="Email for your license key"
         className="h-12 w-full rounded-full border border-border bg-background/75 px-4 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus:border-primary/70 focus:ring-3 focus:ring-primary/20"
       />
       <Button type="submit" disabled={isSubmitting} className={className}>
-        <CreditCard className="size-4" />
-        {isSubmitting ? "Opening checkout..." : label}
+        <Key className="size-4" />
+        {isSubmitting ? "Issuing license..." : label}
       </Button>
     </form>
   );
 }
+
+/** @deprecated Use LicenseButton. Kept so older imports still compile. */
+export const BuyButton = LicenseButton;

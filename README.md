@@ -6,7 +6,7 @@
 
 <p align="center">
   A native Mac recording studio with an iPhone camera companion. By <a href="https://blitzreels.com?utm_source=github&utm_medium=readme&utm_campaign=blitzrecorder-oss&utm_content=header-byline">BlitzReels</a>.<br>
-  Record your screen and a studio-quality camera in one take.
+  Record your screen and a studio-quality camera in one take, then cut it.
 </p>
 
 <p align="center">
@@ -35,6 +35,7 @@ Use it for product demos, tutorials, walkthroughs, talking-head videos, and shor
 
 - **You start recording in seconds.** Your camera, your screen, and the record button all sit in one window, so you don't dig through tabs and menus to get going.
 - **You look good on camera without buying one.** Your iPhone shoots better video than any webcam. Connect it once with a 6-digit code, then aim it and set the focus and light right from your Mac.
+- **You can cut the take in the same app.** Timeline, waveforms, silence detection, scene layouts after you stop.
 - **Bad Wi-Fi won't wreck your video.** Your iPhone saves the video at full quality on the phone, then sends it to your Mac when you stop. A weak signal can't turn your take into a blurry mess.
 - **Your video comes out ready to post.** You pick a tall or wide shape and place your screen and camera before you record. What you see is what you get, so there is nothing to fix later.
 - **You won't lose a recording.** BlitzRecorder keeps your raw files, so one failed save doesn't wipe out your work. You can reopen, rename, move, or redo any take later.
@@ -53,9 +54,9 @@ Pair once, record on the phone at full quality, and the take lands on your Mac b
 
 ## Get started
 
-1. Download BlitzRecorder for macOS from [blitzrecorder.com](https://blitzrecorder.com?utm_source=github&utm_medium=readme&utm_campaign=blitzrecorder-oss&utm_content=getstarted-website). The free version records and exports 1080p.
+1. Download BlitzRecorder for macOS from [blitzrecorder.com](https://blitzrecorder.com?utm_source=github&utm_medium=readme&utm_campaign=blitzrecorder-oss&utm_content=getstarted-website). The app is free. Without a license key it records and exports 1080p.
 2. Get the iPhone companion from [blitzrecorder.com/ios](https://blitzrecorder.com/ios?utm_source=github&utm_medium=readme&utm_campaign=blitzrecorder-oss&utm_content=getstarted-ios).
-3. The [Early Lifetime License](https://blitzrecorder.com/license?utm_source=github&utm_medium=readme&utm_campaign=blitzrecorder-oss&utm_content=getstarted-license) unlocks iPhone camera recording, 4K export, and 60 fps export in the official signed build.
+3. Get a [free license](https://blitzrecorder.com/license?utm_source=github&utm_medium=readme&utm_campaign=blitzrecorder-oss&utm_content=getstarted-license) from the website to unlock iPhone camera recording, 4K export, and 60 fps export in the official signed build.
 
 ## Local development
 
@@ -153,7 +154,7 @@ Release notes are tracked in [CHANGELOG.md](CHANGELOG.md) and GitHub Releases.
 BlitzRecorder uses a dual-license model:
 
 - Open source under the GNU Affero General Public License v3.0 only. See [LICENSE](LICENSE).
-- The direct-download Early Lifetime License unlocks paid app features in the official signed build.
+- A free license from [blitzrecorder.com/license](https://blitzrecorder.com/license) unlocks iPhone camera recording, 4K export, and 60 fps export in the official signed build.
 - Commercial licenses are available for organizations that need non-AGPL terms. See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
 
 ---

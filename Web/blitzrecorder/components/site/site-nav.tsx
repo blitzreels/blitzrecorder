@@ -9,6 +9,7 @@ import {
   GitHubLink,
 } from "@/components/site/download-button";
 import { assets } from "@/lib/assets";
+import { BlitzReelsLink } from "@/components/site/blitzreels-link";
 
 export function SiteNav() {
   const [scrolled, setScrolled] = useState(false);
@@ -36,7 +37,7 @@ export function SiteNav() {
             width={32}
             height={32}
             alt=""
-            className="rounded-[22%] shadow-[0_0_24px_-8px_rgba(94,242,175,0.9)] transition-shadow group-hover:shadow-[0_0_30px_-6px_rgba(94,242,175,1)]"
+            className="rounded-[22%]"
           />
           {/* Below 360px the CTA would overlap the wordmark — keep the icon only. */}
           <span className="hidden font-display text-[17px] tracking-tight min-[360px]:inline">
@@ -48,7 +49,13 @@ export function SiteNav() {
           aria-label="Sections"
         >
           <Link className="transition-colors hover:text-foreground" href="/#how">How it works</Link>
-          <Link className="transition-colors hover:text-foreground" href="/#pricing">Pricing</Link>
+          <Link className="transition-colors hover:text-foreground" href="/#license">License</Link>
+          <BlitzReelsLink
+            content="nav"
+            className="transition-colors hover:text-foreground"
+          >
+            BlitzReels
+          </BlitzReelsLink>
         </nav>
         <div className="ml-auto flex items-center gap-2.5 md:ml-8">
           <GitHubLink className="hidden text-muted-foreground transition-colors hover:text-foreground sm:inline-flex" />
@@ -56,7 +63,7 @@ export function SiteNav() {
           <DownloadButton
             label="Download"
             source="nav"
-            className="h-9 rounded-full px-4 shadow-[0_14px_40px_-22px_rgba(94,242,175,0.95)]"
+            className="h-9 rounded-full px-4"
           />
         </div>
       </div>

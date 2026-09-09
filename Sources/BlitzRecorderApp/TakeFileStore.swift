@@ -58,6 +58,10 @@ struct RecordingProject: Codable, Equatable {
             self.width = Double(rect.width)
             self.height = Double(rect.height)
         }
+
+        var rect: CGRect {
+            CGRect(x: x, y: y, width: width, height: height)
+        }
     }
 
     struct PointValue: Codable, Equatable {
@@ -67,6 +71,10 @@ struct RecordingProject: Codable, Equatable {
         init(_ point: CGPoint) {
             self.x = Double(point.x)
             self.y = Double(point.y)
+        }
+
+        var point: CGPoint {
+            CGPoint(x: x, y: y)
         }
     }
 
@@ -237,6 +245,213 @@ struct RecordingProject: Codable, Equatable {
         let quality: String
     }
 
+    struct CutSnapshot: Codable, Equatable, Identifiable {
+        let id: UUID
+        let start: Double
+        let end: Double
+        let kind: String
+        let source: String
+        let enabled: Bool
+
+        init(_ cut: TimelineCut) {
+            id = cut.id
+            start = cut.start
+            end = cut.end
+            kind = cut.kind.rawValue
+            source = cut.source.rawValue
+            enabled = cut.isEnabled
+        }
+
+        var cut: TimelineCut {
+            TimelineCut(
+                id: id,
+                start: start,
+                end: end,
+                kind: TimelineCutKind(rawValue: kind) ?? .manual,
+                source: TimelineCutSource(rawValue: source) ?? .user,
+                isEnabled: enabled
+            )
+        }
+    }
+
+    struct TextOverlayStyleSnapshot: Codable, Equatable {
+        let preset: String
+        let size: Double
+        let weight: String
+        let color: String
+        let background: String
+        let alignment: String
+
+        init(_ style: TextOverlayStyle) {
+            preset = style.preset.rawValue
+            size = style.size
+            weight = style.weight.rawValue
+            color = style.colorHex
+            background = style.background.rawValue
+            alignment = style.alignment.rawValue
+        }
+
+        var style: TextOverlayStyle {
+            let resolvedPreset = TextOverlayPreset(rawValue: preset) ?? .caption
+            let base = TextOverlayStyle.preset(resolvedPreset)
+            return TextOverlayStyle(
+                preset: resolvedPreset,
+                size: size,
+                weight: TextOverlayWeight(rawValue: weight) ?? base.weight,
+                colorHex: color,
+                background: TextOverlayBackground(rawValue: background) ?? base.background,
+                alignment: TextOverlayAlignment(rawValue: alignment) ?? base.alignment
+            )
+        }
+    }
+
+    struct TextOverlaySnapshot: Codable, Equatable, Identifiable {
+        let id: UUID
+        let start: Double
+        let end: Double
+        let text: String
+        let frame: RectValue
+        let style: TextOverlayStyleSnapshot
+        let fadeSeconds: Double
+
+        init(_ overlay: TextOverlay) {
+            id = overlay.id
+            start = overlay.start
+            end = overlay.end
+            text = overlay.text
+            frame = RectValue(overlay.frame)
+            style = TextOverlayStyleSnapshot(overlay.style)
+            fadeSeconds = overlay.fadeSeconds
+        }
+
+        var overlay: TextOverlay {
+            TextOverlay(
+                id: id,
+                start: start,
+                end: end,
+                text: text,
+                frame: frame.rect,
+                style: style.style,
+                fadeSeconds: fadeSeconds
+            )
+        }
+    }
+
+    struct ZoomTrackSnapshot: Codable, Equatable {
+        struct Keyframe: Codable, Equatable, Identifiable {
+            let id: UUID
+            let time: Double
+            let amount: Double
+            let position: PointValue
+            let easing: String
+
+            init(_ keyframe: ScreenZoomKeyframe) {
+                id = keyframe.id
+                time = keyframe.time
+                amount = keyframe.amount
+                position = PointValue(keyframe.position)
+                easing = keyframe.easing.rawValue
+            }
+
+            var keyframe: ScreenZoomKeyframe {
+                ScreenZoomKeyframe(
+                    id: id,
+                    time: time,
+                    amount: amount,
+                    position: position.point,
+                    easing: ScreenZoomEasing(rawValue: easing) ?? .easeInOut
+                )
+            }
+        }
+
+        let keyframes: [Keyframe]
+        let generatedFromCursor: Bool
+        let intensity: Double
+
+        static let empty = ZoomTrackSnapshot(keyframes: [], generatedFromCursor: false, intensity: 2)
+
+        init(keyframes: [Keyframe], generatedFromCursor: Bool, intensity: Double) {
+            self.keyframes = keyframes
+            self.generatedFromCursor = generatedFromCursor
+            self.intensity = intensity
+        }
+
+        init(_ track: ScreenZoomTrack) {
+            keyframes = track.keyframes.map(Keyframe.init)
+            generatedFromCursor = track.generatedFromCursor
+            intensity = track.intensity
+        }
+
+        var track: ScreenZoomTrack {
+            ScreenZoomTrack(
+                keyframes: keyframes.map(\.keyframe),
+                generatedFromCursor: generatedFromCursor,
+                intensity: intensity
+            )
+        }
+    }
+
+    struct TimelineEditsSnapshot: Codable, Equatable {
+        let cuts: [CutSnapshot]
+        let textOverlays: [TextOverlaySnapshot]
+        let zoom: ZoomTrackSnapshot
+
+        static let empty = TimelineEditsSnapshot(cuts: [], textOverlays: [], zoom: .empty)
+
+        init(cuts: [CutSnapshot], textOverlays: [TextOverlaySnapshot], zoom: ZoomTrackSnapshot) {
+            self.cuts = cuts
+            self.textOverlays = textOverlays
+            self.zoom = zoom
+        }
+
+        init(_ edits: TimelineEdits) {
+            cuts = edits.cuts.map(CutSnapshot.init)
+            textOverlays = edits.textOverlays.map(TextOverlaySnapshot.init)
+            zoom = ZoomTrackSnapshot(edits.zoom)
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            cuts = try container.decodeIfPresent([CutSnapshot].self, forKey: .cuts) ?? []
+            textOverlays = try container.decodeIfPresent([TextOverlaySnapshot].self, forKey: .textOverlays) ?? []
+            zoom = try container.decodeIfPresent(ZoomTrackSnapshot.self, forKey: .zoom) ?? .empty
+        }
+
+        var edits: TimelineEdits {
+            TimelineEdits(
+                cuts: cuts.map(\.cut),
+                textOverlays: textOverlays.map(\.overlay),
+                zoom: zoom.track
+            )
+        }
+
+        var isEmpty: Bool {
+            cuts.isEmpty && textOverlays.isEmpty && zoom.keyframes.isEmpty
+        }
+    }
+
+    struct AnalysisSnapshot: Codable, Equatable {
+        let cursorTrackPath: String?
+        let silenceAnalysisPath: String?
+
+        static let empty = AnalysisSnapshot(cursorTrackPath: nil, silenceAnalysisPath: nil)
+
+        init(cursorTrackPath: String?, silenceAnalysisPath: String?) {
+            self.cursorTrackPath = cursorTrackPath
+            self.silenceAnalysisPath = silenceAnalysisPath
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            cursorTrackPath = try container.decodeIfPresent(String.self, forKey: .cursorTrackPath)
+            silenceAnalysisPath = try container.decodeIfPresent(String.self, forKey: .silenceAnalysisPath)
+        }
+
+        var isEmpty: Bool {
+            cursorTrackPath == nil && silenceAnalysisPath == nil
+        }
+    }
+
     struct EditorStateSnapshot: Codable, Equatable {
         let hiddenVideoSources: [String]
         let mutedAudioSources: [String]
@@ -283,6 +498,8 @@ struct RecordingProject: Codable, Equatable {
     let editorTimeline: TimelineSnapshot
     let editorState: EditorStateSnapshot
     let exports: [ExportRecord]
+    let timelineEdits: TimelineEditsSnapshot
+    let analysis: AnalysisSnapshot
 
     enum CodingKeys: String, CodingKey {
         case version
@@ -302,6 +519,8 @@ struct RecordingProject: Codable, Equatable {
         case editorTimeline = "timeline"
         case editorState
         case exports
+        case timelineEdits
+        case analysis
     }
 
     init(
@@ -321,8 +540,12 @@ struct RecordingProject: Codable, Equatable {
         editorState: EditorStateSnapshot = .empty,
         exports: [ExportRecord] = [],
         timelineTrimOffsetSeconds: Double = 0,
-        sourceTimelineOffsetSeconds: [String: Double] = [:]
+        sourceTimelineOffsetSeconds: [String: Double] = [:],
+        timelineEdits: TimelineEditsSnapshot = .empty,
+        analysis: AnalysisSnapshot = .empty
     ) {
+        self.timelineEdits = timelineEdits
+        self.analysis = analysis
         self.version = version
         self.id = id
         self.createdAt = createdAt
@@ -367,6 +590,39 @@ struct RecordingProject: Codable, Equatable {
         self.editorTimeline = try container.decodeIfPresent(TimelineSnapshot.self, forKey: .editorTimeline) ?? .empty
         self.editorState = try container.decodeIfPresent(EditorStateSnapshot.self, forKey: .editorState) ?? .empty
         self.exports = try container.decodeIfPresent([ExportRecord].self, forKey: .exports) ?? []
+        self.timelineEdits = try container.decodeIfPresent(TimelineEditsSnapshot.self, forKey: .timelineEdits) ?? .empty
+        self.analysis = try container.decodeIfPresent(AnalysisSnapshot.self, forKey: .analysis) ?? .empty
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(version, forKey: .version)
+        try container.encode(id, forKey: .id)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encode(title, forKey: .title)
+        try container.encode(projectPath, forKey: .projectPath)
+        try container.encode(takeDirectoryPath, forKey: .takeDirectoryPath)
+        try container.encodeIfPresent(finalVideoPath, forKey: .finalVideoPath)
+        try container.encode(timelineTrimOffsetSeconds, forKey: .timelineTrimOffsetSeconds)
+        try container.encode(sourceTimelineOffsetSeconds, forKey: .sourceTimelineOffsetSeconds)
+        try container.encode(settings, forKey: .settings)
+        try container.encode(sources, forKey: .sources)
+        try container.encode(sceneEvents, forKey: .sceneEvents)
+        try container.encode(chapters, forKey: .chapters)
+        try container.encode(editorTimeline, forKey: .editorTimeline)
+        try container.encode(editorState, forKey: .editorState)
+        try container.encode(exports, forKey: .exports)
+        if !timelineEdits.isEmpty {
+            try container.encode(timelineEdits, forKey: .timelineEdits)
+        }
+        if !analysis.isEmpty {
+            try container.encode(analysis, forKey: .analysis)
+        }
+    }
+
+    var edits: TimelineEdits {
+        timelineEdits.edits
     }
 }
 
@@ -450,6 +706,16 @@ struct RecordingProjectDeletionRequest {
     let disposition: RecordingProjectDeletionDisposition
 }
 
+struct RecordingProjectTrashReceipt: Equatable {
+    let project: RecordingProjectHistory.Entry
+    let trashedDirectory: URL
+}
+
+struct RecordingProjectRestorationRequest {
+    let receipt: RecordingProjectTrashReceipt
+    let settings: RecordingSettings
+}
+
 struct RecordingProjectRenameRequest {
     let projectURL: URL
     let title: String
@@ -465,6 +731,18 @@ struct RecordingProjectSceneRestoreRequest {
 struct RecordingProjectEditorStateUpdateRequest {
     let projectURL: URL
     let editorState: RecordingProject.EditorStateSnapshot
+    let baseSettings: RecordingSettings
+}
+
+struct RecordingProjectTimelineEditsUpdateRequest {
+    let projectURL: URL
+    let edits: TimelineEdits
+    let baseSettings: RecordingSettings
+}
+
+struct RecordingProjectAnalysisUpdateRequest {
+    let projectURL: URL
+    let analysis: RecordingProject.AnalysisSnapshot
     let baseSettings: RecordingSettings
 }
 
@@ -648,6 +926,7 @@ final class OutputDirectoryAccess {
 }
 
 struct TakeFileStore {
+    private static let projectHistoryLock = NSRecursiveLock()
     static let minimumAvailableCapacityBytes: Int64 = 512 * 1024 * 1024
 
     func prepareOutputDirectory(settings: RecordingSettings) throws -> OutputDirectoryAccess {
@@ -826,7 +1105,9 @@ struct TakeFileStore {
         chapters: [RecordingProject.ChapterSnapshot] = [],
         editorTimeline: RecordingProject.TimelineSnapshot = .empty,
         editorState: RecordingProject.EditorStateSnapshot? = nil,
-        exportRecord: RecordingProject.ExportRecord? = nil
+        exportRecord: RecordingProject.ExportRecord? = nil,
+        timelineEdits: RecordingProject.TimelineEditsSnapshot? = nil,
+        analysis: RecordingProject.AnalysisSnapshot? = nil
     ) throws {
         let now = Date()
         let projectURL = take.projectURL
@@ -856,7 +1137,9 @@ struct TakeFileStore {
             timelineTrimOffsetSeconds: max(0, take.timelineTrimOffset.seconds),
             sourceTimelineOffsetSeconds: Dictionary(uniqueKeysWithValues: take.sourceTimelineOffsets.map {
                 ($0.key.rawValue, max(0, $0.value.seconds))
-            })
+            }),
+            timelineEdits: timelineEdits ?? existingProject?.timelineEdits ?? .empty,
+            analysis: analysis ?? existingProject?.analysis ?? .empty
         )
 
         let encoder = JSONEncoder()
@@ -914,7 +1197,9 @@ struct TakeFileStore {
             editorState: project.editorState,
             exports: project.exports,
             timelineTrimOffsetSeconds: project.timelineTrimOffsetSeconds,
-            sourceTimelineOffsetSeconds: project.sourceTimelineOffsetSeconds
+            sourceTimelineOffsetSeconds: project.sourceTimelineOffsetSeconds,
+            timelineEdits: project.timelineEdits,
+            analysis: project.analysis
         )
 
         let encoder = JSONEncoder()
@@ -928,7 +1213,8 @@ struct TakeFileStore {
         return renamedProject
     }
 
-    func deleteProject(_ request: RecordingProjectDeletionRequest) throws {
+    @discardableResult
+    func deleteProject(_ request: RecordingProjectDeletionRequest) throws -> RecordingProjectTrashReceipt? {
         let fileManager = FileManager.default
         let outputDirectoryAccess = OutputDirectoryAccess(
             url: request.settings.outputDirectory,
@@ -948,34 +1234,85 @@ struct TakeFileStore {
             fileURLWithPath: request.project.takeDirectoryPath,
             isDirectory: true
         ).standardizedFileURL
-        let projectsRoot = scratchRoot(for: request.settings).standardizedFileURL
-        let projectsRootPrefix = projectsRoot.path.hasSuffix("/")
-            ? projectsRoot.path
-            : projectsRoot.path + "/"
+        try validateProjectDeletionTarget(request)
 
-        guard projectDirectory.path.hasPrefix(projectsRootPrefix) else {
-            throw RecorderError.mediaWriteFailed(
-                "This project is outside the BlitzRecorder source projects folder."
-            )
-        }
-
+        var receipt: RecordingProjectTrashReceipt?
         if fileManager.fileExists(atPath: projectDirectory.path) {
             switch request.disposition {
             case .trash:
-                try fileManager.trashItem(at: projectDirectory, resultingItemURL: nil)
+                var trashedURL: NSURL?
+                try fileManager.trashItem(at: projectDirectory, resultingItemURL: &trashedURL)
+                if let trashedURL {
+                    receipt = RecordingProjectTrashReceipt(project: request.project, trashedDirectory: trashedURL as URL)
+                }
             case .permanent:
                 try fileManager.removeItem(at: projectDirectory)
             }
         }
 
+        Self.projectHistoryLock.lock()
+        defer { Self.projectHistoryLock.unlock() }
         var history = loadProjectHistory(settings: request.settings)
         history.entries.removeAll {
             $0.id == request.project.id || $0.projectPath == request.project.projectPath
         }
-        try writeProjectHistory(ProjectHistoryWriteRequest(
-            history: history,
-            settings: request.settings
-        ))
+        do {
+            try writeProjectHistory(ProjectHistoryWriteRequest(history: history, settings: request.settings))
+        } catch {
+            if let receipt {
+                try fileManager.moveItem(at: receipt.trashedDirectory, to: projectDirectory)
+            }
+            throw error
+        }
+        return receipt
+    }
+
+    func restoreProjectFromTrash(_ request: RecordingProjectRestorationRequest) throws {
+        let receipt = request.receipt
+        let fileManager = FileManager.default
+        let access = OutputDirectoryAccess(
+            url: request.settings.outputDirectory,
+            usesSecurityScopedBookmark: request.settings.outputDirectoryBookmarkData != nil
+        )
+        defer { access.stop() }
+        guard access.hasSecurityScopedAccess else {
+            throw RecorderError.outputDirectoryUnavailable(Self.permissionRecoveryMessage(for: request.settings.outputDirectory))
+        }
+        try validateProjectDeletionTarget(.init(project: receipt.project, settings: request.settings, disposition: .trash))
+        let original = URL(fileURLWithPath: receipt.project.takeDirectoryPath, isDirectory: true)
+        guard !fileManager.fileExists(atPath: original.path) else {
+            throw RecorderError.mediaWriteFailed("A folder already exists for \"\(receipt.project.displayTitle)\". Nothing was replaced.")
+        }
+        let project = try loadRecordingProject(at: receipt.trashedDirectory.appendingPathComponent("project.blitzrecorder.json"))
+        guard project.id == receipt.project.id else {
+            throw RecorderError.mediaWriteFailed("The project in Trash no longer matches this recording.")
+        }
+        try fileManager.createDirectory(at: original.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fileManager.moveItem(at: receipt.trashedDirectory, to: original)
+        do {
+            try upsertProjectHistory(project, settings: request.settings)
+        } catch {
+            try fileManager.moveItem(at: original, to: receipt.trashedDirectory)
+            throw error
+        }
+    }
+
+    private func validateProjectDeletionTarget(_ request: RecordingProjectDeletionRequest) throws {
+        let directory = URL(fileURLWithPath: request.project.takeDirectoryPath, isDirectory: true)
+            .standardizedFileURL.resolvingSymlinksInPath()
+        let root = scratchRoot(for: request.settings).standardizedFileURL.resolvingSymlinksInPath()
+        let metadata = URL(fileURLWithPath: request.project.projectPath).standardizedFileURL.resolvingSymlinksInPath()
+        guard directory.deletingLastPathComponent() == root,
+            metadata.deletingLastPathComponent() == directory,
+            metadata.lastPathComponent == "project.blitzrecorder.json"
+        else {
+            throw RecorderError.mediaWriteFailed("This project is outside the BlitzRecorder source projects folder.")
+        }
+        if FileManager.default.fileExists(atPath: metadata.path) {
+            guard try loadRecordingProject(at: metadata).id == request.project.id else {
+                throw RecorderError.mediaWriteFailed("The project folder belongs to a different recording.")
+            }
+        }
     }
 
     func recordingTake(
@@ -1248,7 +1585,59 @@ struct TakeFileStore {
             finalVideoURL: currentProject.finalVideoPath.map(URL.init(fileURLWithPath:)),
             chapters: currentProject.chapters,
             editorTimeline: currentProject.editorTimeline,
-            editorState: request.snapshot.editorState
+            editorState: request.snapshot.editorState,
+            timelineEdits: request.snapshot.timelineEdits
+        )
+        return try loadRecordingProject(at: request.projectURL)
+    }
+
+    func updateProjectTimelineEdits(
+        _ request: RecordingProjectTimelineEditsUpdateRequest
+    ) throws -> RecordingProject {
+        let project = try loadRecordingProject(at: request.projectURL)
+        let outputFormat = OutputVideoFormat(rawValue: project.settings.outputVideoFormat)
+            ?? request.baseSettings.outputVideoFormat
+        let settings = recordingSettings(
+            from: project,
+            baseSettings: request.baseSettings,
+            outputFormat: outputFormat
+        )
+        let take = recordingTake(from: project, settings: settings, outputFormat: outputFormat)
+        try writeRecordingProject(
+            for: take,
+            settings: settings,
+            sceneEvents: sceneEvents(from: project),
+            finalVideoURL: project.finalVideoPath.map(URL.init(fileURLWithPath:)),
+            chapters: project.chapters,
+            editorTimeline: project.editorTimeline,
+            editorState: project.editorState,
+            timelineEdits: RecordingProject.TimelineEditsSnapshot(request.edits)
+        )
+        return try loadRecordingProject(at: request.projectURL)
+    }
+
+    func updateProjectAnalysis(
+        _ request: RecordingProjectAnalysisUpdateRequest
+    ) throws -> RecordingProject {
+        let project = try loadRecordingProject(at: request.projectURL)
+        let outputFormat = OutputVideoFormat(rawValue: project.settings.outputVideoFormat)
+            ?? request.baseSettings.outputVideoFormat
+        let settings = recordingSettings(
+            from: project,
+            baseSettings: request.baseSettings,
+            outputFormat: outputFormat
+        )
+        let take = recordingTake(from: project, settings: settings, outputFormat: outputFormat)
+        try writeRecordingProject(
+            for: take,
+            settings: settings,
+            sceneEvents: sceneEvents(from: project),
+            finalVideoURL: project.finalVideoPath.map(URL.init(fileURLWithPath:)),
+            chapters: project.chapters,
+            editorTimeline: project.editorTimeline,
+            editorState: project.editorState,
+            timelineEdits: project.timelineEdits,
+            analysis: request.analysis
         )
         return try loadRecordingProject(at: request.projectURL)
     }
@@ -1405,6 +1794,8 @@ struct TakeFileStore {
     }
 
     private func upsertProjectHistory(_ project: RecordingProject, settings: RecordingSettings) throws {
+        Self.projectHistoryLock.lock()
+        defer { Self.projectHistoryLock.unlock() }
         var history = loadProjectHistory(settings: settings)
         history.entries.removeAll { $0.id == project.id || $0.projectPath == project.projectPath }
         history.entries.insert(

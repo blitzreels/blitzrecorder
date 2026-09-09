@@ -1803,7 +1803,7 @@ private extension MainView {
                     Text("No account, card, watermark, or subscription.")
                         .font(.system(size: 11))
                         .foregroundStyle(.white.opacity(0.62))
-                    Text("$39 unlocks iPhone camera, 4K, and 60 fps.")
+                    Text("A free license unlocks iPhone camera, 4K, and 60 fps.")
                         .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(0.54))
 

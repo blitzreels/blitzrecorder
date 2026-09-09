@@ -16,6 +16,8 @@ struct MetalExportInstructionRequest {
     let settings: RecordingSettings
     let activeLayerOrder: [SceneLayerKind]
     let sourceDescriptors: [MetalExportSourceDescriptor]
+    var edits: TimelineEdits = .empty
+    var timeMap: TimelineTimeMap = .identity(takeDuration: .zero)
 }
 
 final class MetalExportInstruction: NSObject, AVVideoCompositionInstructionProtocol, @unchecked Sendable {
@@ -28,11 +30,16 @@ final class MetalExportInstruction: NSObject, AVVideoCompositionInstructionProto
     let settings: RecordingSettings
     let sourceDescriptors: [MetalExportSourceDescriptor]
 
+    let edits: TimelineEdits
+    let timeMap: TimelineTimeMap
+
     init(_ request: MetalExportInstructionRequest) {
+        edits = request.edits
+        timeMap = request.timeMap
         timeRange = request.timeRange
         scene = request.scene
         settings = request.settings
-        containsTweening = request.scene.canvasBackgroundAnimated
+        containsTweening = request.scene.canvasBackgroundAnimated || !request.edits.zoom.isEmpty || !request.edits.textOverlays.isEmpty
         sourceDescriptors = request.activeLayerOrder.compactMap { kind in
             request.sourceDescriptors.first { $0.kind == kind }
         }
@@ -130,13 +137,24 @@ final class MetalExportVideoCompositor: NSObject, AVVideoCompositing, @unchecked
             ? (request.compositionTime.seconds / CanvasAppearance.animationLoopDuration)
                 .truncatingRemainder(dividingBy: 1)
             : nil
+        let takeTime = instruction.timeMap.takeSeconds(forOutputSeconds: request.compositionTime.seconds)
+        let scene = TimelineOverlayRenderer.scene(.init(scene: instruction.scene, edits: instruction.edits, time: takeTime))
+        let size = request.renderContext.size
+        let overlays = instruction.edits.textOverlays.compactMap { overlay -> CIImage? in
+            guard overlay.opacity(at: takeTime) > 0,
+                  let image = TimelineOverlayRenderer.image(.init(overlay: overlay, size: size)) else { return nil }
+            return CIImage(cgImage: image).applyingFilter("CIColorMatrix", parameters: [
+                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: overlay.opacity(at: takeTime))
+            ])
+        }
         let rendered = renderer.render(LiveCompositorImageRenderRequest(
             screenFrame: screenFrame,
             cameraFrame: cameraFrame,
-            scene: instruction.scene,
+            scene: scene,
             settings: instruction.settings,
             backgroundPhase: phase,
-            outputBuffer: outputBuffer
+            outputBuffer: outputBuffer,
+            overlays: overlays
         ))
         if rendered {
             request.finish(withComposedVideoFrame: outputBuffer)

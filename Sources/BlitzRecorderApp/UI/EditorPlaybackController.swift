@@ -3,6 +3,12 @@ import Foundation
 import Observation
 import SwiftUI
 
+struct EditorPlaybackLoadRequest {
+    let project: RecordingProject
+    let baseSettings: RecordingSettings
+    let previewCuts: [TimelineCut]?
+}
+
 enum EditorProjectRefreshKind: Equatable {
     case fullPlayback
     case sceneTimeline
@@ -46,6 +52,7 @@ enum EditorPlaybackClockSelection {
 }
 
 enum EditorPlaybackRate: Float, CaseIterable, Equatable {
+    case half = 0.5
     case normal = 1
     case oneAndAHalf = 1.5
     case double = 2
@@ -53,6 +60,8 @@ enum EditorPlaybackRate: Float, CaseIterable, Equatable {
 
     var displayName: String {
         switch self {
+        case .half:
+            "0.5×"
         case .normal:
             "1×"
         case .oneAndAHalf:
@@ -66,6 +75,8 @@ enum EditorPlaybackRate: Float, CaseIterable, Equatable {
 
     var nextFaster: EditorPlaybackRate {
         switch self {
+        case .half:
+            .normal
         case .normal:
             .oneAndAHalf
         case .oneAndAHalf:
@@ -86,6 +97,7 @@ private struct EditorPlaybackMediaSignature: Equatable {
     let sourceTimelineOffsetSeconds: [String: Double]
     let settings: RecordingProject.SettingsSnapshot
     let sources: [RecordingProject.SourceFile]
+    let cuts: [TimelineCut]
 
     init(project: RecordingProject) {
         version = project.version
@@ -97,6 +109,7 @@ private struct EditorPlaybackMediaSignature: Equatable {
         sourceTimelineOffsetSeconds = project.sourceTimelineOffsetSeconds
         settings = project.settings
         sources = project.sources
+        cuts = project.edits.enabledCuts
     }
 }
 
@@ -119,6 +132,10 @@ final class EditorPlaybackController {
     private(set) var mutedSources: Set<CaptureSource> = []
     private(set) var previewSceneRevision = 0
     private(set) var playbackRate = EditorPlaybackRate.normal
+    private(set) var playbackVolume: Double = 1
+    private(set) var edits = TimelineEdits.empty
+    var outputDuration: Double { playback?.timeMap.outputDuration.seconds ?? 0 }
+    private var timeMap: TimelineTimeMap { playback?.timeMap ?? .identity(takeDuration: .zero) }
 
     @ObservationIgnored private var playback: EditorPlaybackComposition?
     @ObservationIgnored private var videoPlayers: [SceneLayerKind: AVPlayer] = [:]
@@ -132,6 +149,7 @@ final class EditorPlaybackController {
     @ObservationIgnored private var loadedProjectPath: String?
     @ObservationIgnored private var loadedMediaSignature: EditorPlaybackMediaSignature?
     @ObservationIgnored private var isScrubbing = false
+    @ObservationIgnored private var lastAudiblePlaybackVolume: Double = 1
     @ObservationIgnored private var loadGeneration = 0
     @ObservationIgnored private var previewSceneOverride: (scene: RecordingScene, time: Double)?
 
@@ -162,6 +180,12 @@ final class EditorPlaybackController {
     }
 
     func load(project: RecordingProject, baseSettings: RecordingSettings) async {
+        await load(.init(project: project, baseSettings: baseSettings, previewCuts: nil))
+    }
+
+    func load(_ request: EditorPlaybackLoadRequest) async {
+        let project = request.project
+        let baseSettings = request.baseSettings
         loadGeneration += 1
         let generation = loadGeneration
 
@@ -185,13 +209,15 @@ final class EditorPlaybackController {
             let playback = try await Merger.editorPlaybackComposition(
                 take: take,
                 settings: settings,
-                sceneEvents: sceneEvents
+                sceneEvents: sceneEvents,
+                cuts: request.previewCuts ?? project.edits.enabledCuts
             )
             guard generation == loadGeneration, !Task.isCancelled else { return }
             teardownPlayers()
             self.playback = playback
+            edits = project.edits
             loadedProjectPath = project.projectPath
-            loadedMediaSignature = EditorPlaybackMediaSignature(project: project)
+            loadedMediaSignature = request.previewCuts == nil ? EditorPlaybackMediaSignature(project: project) : nil
             renderSize = playback.renderSize
             previewSceneOverride = nil
             previewSceneRevision &+= 1
@@ -202,7 +228,7 @@ final class EditorPlaybackController {
             let clockPlayer = await selectPlaybackClockPlayer()
             guard generation == loadGeneration, !Task.isCancelled else { return }
             playbackClockPlayer = clockPlayer
-            duration = max(0, playback.duration.seconds)
+            duration = max(0, playback.timeMap.takeDuration.seconds)
             installObservers()
 
             let startTime = resumeTime > 0 ? min(resumeTime, duration) : 0
@@ -250,6 +276,7 @@ final class EditorPlaybackController {
         }
 
         self.playback = refreshedPlayback
+        edits = update.project.edits
         loadedMediaSignature = incomingSignature
         if !update.preservesPreviewSceneOverride {
             previewSceneOverride = nil
@@ -295,6 +322,7 @@ final class EditorPlaybackController {
         item.audioTimePitchAlgorithm = .timeDomain
         item.audioMix = audioMix()
         let player = AVPlayer(playerItem: item)
+        player.volume = Float(playbackVolume)
         player.automaticallyWaitsToMinimizeStalling = false
         audioPlayer = player
     }
@@ -342,14 +370,14 @@ final class EditorPlaybackController {
             segments = playback.renderSegments(
                 hiding: hiddenKinds,
                 overriding: previewSceneOverride.scene,
-                at: CMTime(seconds: previewSceneOverride.time, preferredTimescale: 600)
+                at: timeMap.outputTime(forTake: TimelineTimeMap.time(previewSceneOverride.time))
             )
         } else {
             segments = playback.renderSegments(hiding: hiddenKinds)
         }
-        let time = CMTime(seconds: clampedTime(seconds), preferredTimescale: 600)
+        let time = timeMap.outputTime(forTake: TimelineTimeMap.time(clampedTime(seconds)))
         let segment = segments.first { CMTimeRangeContainsTime($0.timeRange, time: time) } ?? segments.last
-        return segment?.scene
+        return segment.map { TimelineOverlayRenderer.scene(.init(scene: $0.scene, edits: edits, time: seconds)) }
     }
 
     func togglePlayback() {
@@ -378,7 +406,7 @@ final class EditorPlaybackController {
         playbackRate = rate
         guard isPlaying else { return }
         if let seconds = masterPlayer?.currentTime().seconds, seconds.isFinite {
-            currentTime = clampedTime(seconds)
+            currentTime = clampedTime(timeMap.takeSeconds(forOutputSeconds: seconds))
         }
         isPlaying = playAll()
     }
@@ -421,7 +449,7 @@ final class EditorPlaybackController {
     private func itemClampedTime(_ seconds: Double, for player: AVPlayer) -> Double {
         let itemDuration = player.currentItem?.duration.seconds ?? duration
         let limit = itemDuration.isFinite ? itemDuration : duration
-        return min(max(0, seconds), max(limit, 0))
+        return min(timeMap.outputSeconds(forTakeSeconds: max(0, seconds)), max(limit, 0))
     }
 
     func scrub(to seconds: Double) {
@@ -501,6 +529,19 @@ final class EditorPlaybackController {
         audioPlayer?.currentItem?.audioMix = audioMix()
     }
 
+    func setPlaybackVolume(_ volume: Double) {
+        guard volume.isFinite else { return }
+        playbackVolume = min(1, max(0, volume))
+        if playbackVolume > 0 {
+            lastAudiblePlaybackVolume = playbackVolume
+        }
+        audioPlayer?.volume = Float(playbackVolume)
+    }
+
+    func togglePlaybackMute() {
+        setPlaybackVolume(playbackVolume > 0 ? 0 : lastAudiblePlaybackVolume)
+    }
+
     func applyEditorState(_ state: RecordingProject.EditorStateSnapshot) {
         hiddenKinds = Set(state.hiddenVideoSources.compactMap(SceneLayerKind.init(rawValue:)))
         mutedSources = Set(state.mutedAudioSources.compactMap(CaptureSource.init(rawValue:)))
@@ -518,7 +559,7 @@ final class EditorPlaybackController {
 
     func layerFrames(at seconds: Double) -> [(kind: SceneLayerKind, frame: CGRect)] {
         guard let playback, renderSize.width > 0, renderSize.height > 0 else { return [] }
-        let time = CMTime(seconds: clampedTime(seconds), preferredTimescale: 600)
+        let time = timeMap.outputTime(forTake: TimelineTimeMap.time(clampedTime(seconds)))
         let renderSegments = playback.renderSegments(hiding: hiddenKinds)
         let segment = renderSegments.first {
             CMTimeRangeContainsTime($0.timeRange, time: time)
@@ -541,14 +582,14 @@ final class EditorPlaybackController {
         pauseAll()
         isPlaying = false
         if let seconds = masterPlayer?.currentTime().seconds, seconds.isFinite {
-            currentTime = clampedTime(seconds)
+            currentTime = clampedTime(timeMap.takeSeconds(forOutputSeconds: seconds))
         }
     }
 
     func displayTime() -> Double {
         guard isReady, isPlaying, !isScrubbing else { return currentTime }
         guard let seconds = masterPlayer?.currentTime().seconds, seconds.isFinite else { return currentTime }
-        return clampedTime(seconds)
+        return clampedTime(timeMap.takeSeconds(forOutputSeconds: seconds))
     }
 
     func teardown() {
@@ -584,8 +625,7 @@ final class EditorPlaybackController {
 
     private func applyPreviewDuration() {
         guard let playback else { return }
-        let previewDuration = playback.duration(hiding: hiddenKinds)
-        duration = max(0, previewDuration.seconds)
+        duration = max(0, playback.timeMap.takeDuration.seconds)
         if currentTime > duration { seek(to: duration) }
     }
 
@@ -595,14 +635,15 @@ final class EditorPlaybackController {
 
     private func installObservers() {
         guard let masterPlayer else { return }
+        let generation = loadGeneration
         timeObserver = masterPlayer.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: 0.05, preferredTimescale: 600),
             queue: .main
         ) { [weak self] time in
             MainActor.assumeIsolated {
-                guard let self, !self.isScrubbing else { return }
+                guard let self, self.loadGeneration == generation, self.isReady, !self.isScrubbing else { return }
                 let seconds = time.seconds.isFinite ? time.seconds : 0
-                self.currentTime = self.clampedTime(seconds)
+                self.currentTime = self.clampedTime(self.timeMap.takeSeconds(forOutputSeconds: seconds))
                 self.isPlaying = (self.masterPlayer?.rate ?? 0) != 0
             }
         }
@@ -613,7 +654,7 @@ final class EditorPlaybackController {
                 queue: .main
             ) { [weak self] _ in
                 MainActor.assumeIsolated {
-                    guard let self else { return }
+                    guard let self, self.loadGeneration == generation, self.isReady else { return }
                     self.pauseAll()
                     self.isPlaying = false
                     self.currentTime = self.duration

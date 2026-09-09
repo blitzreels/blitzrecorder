@@ -93,7 +93,7 @@ Recommended answer:
 Rationale:
 
 - BlitzRecorder is a creator/productivity recording tool, not a child-directed app.
-- The direct-download product has no subscription purchase flow. It uses a one-time Stripe license outside the Mac App Store.
+- The direct-download product has no subscription purchase flow. It uses a free website license outside the Mac App Store.
 
 ## Sign-In Requirement
 
@@ -113,8 +113,8 @@ Recommended answer:
 - Annual product ID: none
 - Annual price: `$0`
 - Free behavior: 1080p Mac recording/export
-- Paid behavior: direct-download Early Lifetime License unlocks iPhone camera, 4K export, and 60 fps export
-- iOS companion has no in-app purchases and no paywall; App Review notes must explain that the Mac app license is sold on blitzrecorder.com for the direct-download launch.
+- License behavior: a free key from blitzrecorder.com unlocks iPhone camera, 4K export, and 60 fps export
+- iOS companion has no in-app purchases and no paywall; App Review notes must explain that the Mac app license is claimed on blitzrecorder.com for the direct-download launch.
 
 ## Review Before Submission
 

@@ -308,6 +308,7 @@ struct ProjectLibraryPlaybackControls: View {
 
     private var nextPlaybackRate: EditorPlaybackRate {
         switch configuration.controller.playbackRate {
+        case .half: .normal
         case .normal: .oneAndAHalf
         case .oneAndAHalf: .double
         case .double, .twoAndAHalf: .normal

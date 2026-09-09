@@ -1,47 +1,50 @@
-import { FeatureIcon } from "@/components/site/icons";
+import Image from "next/image";
+import { CheckItem } from "@/components/site/check-item";
 import { JourneySectionView } from "@/components/site/journey-markers";
-import { Card, CardContent } from "@/components/ui/card";
 import { Section } from "@/components/ui/layout";
 import { Heading, Paragraph } from "@/components/ui/typography";
-import { features } from "@/lib/content";
+import { assets } from "@/lib/assets";
+import { studioBeats } from "@/lib/content";
 import { Eyebrow } from "@/components/site/landing/eyebrow";
-import { revealDelay } from "@/components/site/landing/reveal";
 
 export function Features() {
   return (
-    <Section id="how" className="scroll-mt-24 py-28">
+    <Section
+      id="how"
+      className="grid scroll-mt-24 items-center gap-12 py-24 lg:grid-cols-[1.1fr_0.9fr] lg:gap-20"
+    >
       <JourneySectionView
         area="landing"
         section="features"
         payload={{ page: "home" }}
       />
-      <div data-reveal className="flex justify-center">
-        <Eyebrow center>One recorder</Eyebrow>
+      <div>
+        <div data-reveal>
+          <Eyebrow>The app</Eyebrow>
+        </div>
+        <Heading level={2} data-reveal className="mt-5 sm:text-5xl">
+          Capture, cut, export.
+        </Heading>
+        <Paragraph data-reveal className="mt-6 max-w-xl">
+          Screen, mic, and system audio into a take. Then a timeline in the same
+          app so the cut is short-form ready.
+        </Paragraph>
+        <ul data-reveal className="mt-8 flex flex-col gap-5">
+          {studioBeats.map((beat) => (
+            <CheckItem key={beat.title}>
+              <span className="font-semibold text-foreground">{beat.title}.</span>{" "}
+              <span className="text-muted-foreground">{beat.body}</span>
+            </CheckItem>
+          ))}
+        </ul>
       </div>
-      <Heading level={2} data-reveal className="mx-auto mt-5 max-w-3xl text-center">
-        Every source, <span className="text-gradient">one recorder.</span>
-      </Heading>
-      <Paragraph data-reveal className="mx-auto mt-6 max-w-2xl text-center">
-        Capture your screen, camera, microphone, and system audio into a single
-        composed frame. Arrange the shot once, then record start to finish.
-      </Paragraph>
-      <div className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {features.map((feat, i) => (
-          <Card
-            key={feat.title}
-            data-reveal
-            style={revealDelay(`${(i % 3) * 90}ms`)}
-            className="glass ring-gradient gap-0 py-0 ring-0"
-          >
-            <CardContent className="flex flex-col gap-3 p-6">
-              <span className="inline-flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20">
-                <FeatureIcon name={feat.icon} className="size-5" />
-              </span>
-              <Heading level={3}>{feat.title}</Heading>
-              <Paragraph size="base">{feat.body}</Paragraph>
-            </CardContent>
-          </Card>
-        ))}
+      <div data-reveal className="relative mx-auto w-full max-w-lg">
+        <Image
+          src={assets.macPlan}
+          alt="BlitzRecorder studio on macOS"
+          sizes="(min-width: 1024px) 480px, 100vw"
+          className="h-auto w-full rounded-xl ring-1 ring-white/10 shadow-[0_40px_90px_-40px_rgba(0,0,0,0.9)]"
+        />
       </div>
     </Section>
   );

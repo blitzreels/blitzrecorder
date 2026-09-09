@@ -6,7 +6,7 @@ Use this checklist before uploading App Store builds. It covers workflows that c
 
 - Fresh install can record and export 1080p without sign-in.
 - Successful exports do not decrement a quota.
-- Account panel says the app has a free 1080p tier and Early Lifetime License.
+- Account panel says the app has a free 1080p tier and a free website license.
 - 1080p export does not require account, card, watermark, or subscription.
 - iPhone camera, 4K export, and 60 fps export require an active BlitzRecorder license key.
 

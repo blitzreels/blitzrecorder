@@ -25,7 +25,7 @@ Record clean creator videos on Mac, then upgrade the direct-download build for i
 
 BlitzRecorder is an open-source Mac recorder for creators who need clean screen, camera, and audio recordings without a heavy production setup.
 
-The free direct-download Mac tier captures your Mac screen, microphone, system audio, and Mac camera into 1080p takes that are ready to export. The paid Early Lifetime License unlocks iPhone camera recording, 4K export, and 60 fps export.
+The free direct-download Mac tier captures your Mac screen, microphone, system audio, and Mac camera into 1080p takes that are ready to export. A free license from blitzrecorder.com unlocks iPhone camera recording, 4K export, and 60 fps export.
 
 Pair BlitzRecorder Camera on iPhone to use your phone as a remote camera source with live monitor preview, lens selection, zoom, focus, exposure, white balance, stabilization, and torch controls where supported by the device.
 
@@ -37,12 +37,12 @@ Features:
 
 - Mac screen, camera, microphone, and system audio recording
 - Free 1080p screen, Mac camera, microphone, and system audio recording
-- Paid iPhone companion camera pairing over the local network
+- iPhone companion camera pairing over the local network
 - Live iPhone monitor preview on the Mac
 - Remote camera controls for supported iPhone hardware
 - Local iPhone master recording with transfer back to the Mac take
 - Scene layout and picture-in-picture export
-- 4K and 60 fps export with the paid direct-download license
+- 4K and 60 fps export with the free website license
 - AGPL source code
 
 Terms: https://blitzrecorder.com/terms

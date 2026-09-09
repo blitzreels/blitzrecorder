@@ -12,6 +12,33 @@ struct RecordingSceneSegment: Equatable {
 enum RecordingSceneTimeline {
     private static let defaultTransitionSampleInterval = 1.0 / 60.0
 
+    struct BoundaryRequest {
+        let sceneEvents: [RecordingSceneEvent]
+        let duration: CMTime
+        let sourceTimeRanges: [CMTimeRange]
+        let transitionSampleInterval: TimeInterval
+    }
+
+    static func takeBoundaries(_ request: BoundaryRequest) -> [CMTime] {
+        let duration = request.duration
+        var boundaries = [.zero, duration].filter { $0.isValid && CMTimeCompare($0, .zero) >= 0 }
+        boundaries.append(contentsOf: request.sceneEvents
+            .map(\.time)
+            .filter { $0.isFinite }
+            .map { CMTime(seconds: min(max(0, $0), max(0, duration.seconds)), preferredTimescale: 600) })
+
+        for sourceTimeRange in request.sourceTimeRanges {
+            boundaries.append(sourceTimeRange.start)
+            boundaries.append(CMTimeRangeGetEnd(sourceTimeRange))
+        }
+        boundaries.append(contentsOf: transitionBoundaries(
+            sceneEvents: request.sceneEvents,
+            duration: duration,
+            transitionSampleInterval: request.transitionSampleInterval
+        ))
+        return sortedUniqueBoundaries(boundaries, duration: duration)
+    }
+
     static func segments(
         sceneEvents: [RecordingSceneEvent],
         fallbackScene: RecordingScene,
@@ -19,23 +46,12 @@ enum RecordingSceneTimeline {
         sourceTimeRanges: [CMTimeRange] = [],
         transitionSampleInterval: TimeInterval = defaultTransitionSampleInterval
     ) -> [RecordingSceneSegment] {
-        var boundaries = [.zero, duration].filter { $0.isValid && CMTimeCompare($0, .zero) >= 0 }
-        boundaries.append(contentsOf: sceneEvents
-            .map(\.time)
-            .filter { $0.isFinite }
-            .map { CMTime(seconds: min(max(0, $0), max(0, duration.seconds)), preferredTimescale: 600) })
-
-        for sourceTimeRange in sourceTimeRanges {
-            boundaries.append(sourceTimeRange.start)
-            boundaries.append(CMTimeRangeGetEnd(sourceTimeRange))
-        }
-        boundaries.append(contentsOf: transitionBoundaries(
+        let uniqueBoundaries = takeBoundaries(BoundaryRequest(
             sceneEvents: sceneEvents,
             duration: duration,
+            sourceTimeRanges: sourceTimeRanges,
             transitionSampleInterval: transitionSampleInterval
         ))
-
-        let uniqueBoundaries = sortedUniqueBoundaries(boundaries, duration: duration)
 
         var segments: [RecordingSceneSegment] = []
         for index in 0..<(uniqueBoundaries.count - 1) {
@@ -118,7 +134,7 @@ enum RecordingSceneTimeline {
         return sceneEvents.contains { $0.scene.requiresCanvasAwareRendering }
     }
 
-    private static func sortedUniqueBoundaries(_ boundaries: [CMTime], duration: CMTime) -> [CMTime] {
+    static func sortedUniqueBoundaries(_ boundaries: [CMTime], duration: CMTime) -> [CMTime] {
         let sortedBoundaries = boundaries
             .filter { $0.isValid && $0.isNumeric }
             .map { CMTimeMaximum(.zero, CMTimeMinimum($0, duration)) }

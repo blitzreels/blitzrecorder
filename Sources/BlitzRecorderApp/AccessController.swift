@@ -829,7 +829,7 @@ final class AccessController {
     }
 
     var accessLabel: String {
-        hasActiveLicense ? "Early Price license active" : "Free"
+        hasActiveLicense ? "License active" : "Free"
     }
 
     var upgradeTitle: String {
@@ -841,9 +841,9 @@ final class AccessController {
 
     var upgradeDetail: String {
         if let lockedFeatureName {
-            return "\(lockedFeatureName) is included in Early Price with iPhone camera recording, 4K export, and 60 fps export."
+            return "\(lockedFeatureName) is included in the free license with iPhone camera recording, 4K export, and 60 fps export."
         }
-        return "Early Price unlocks iPhone camera recording, 4K export, and 60 fps export."
+        return "A free license unlocks iPhone camera recording, 4K export, and 60 fps export."
     }
 
     func configure() {
@@ -864,9 +864,9 @@ final class AccessController {
 
     func beginPurchase() {
         if let lockedFeatureName {
-            accessMessage = "Opening checkout for \(lockedFeatureName). After payment, claim your key and paste it here."
+            accessMessage = "Opening the license page for \(lockedFeatureName). Enter your email, then paste the key here."
         } else {
-            accessMessage = "Opening checkout. After payment, claim your key and paste it here."
+            accessMessage = "Opening the license page. Enter your email, then paste the key here."
         }
         NSWorkspace.shared.open(ProductConfiguration.upgradeURL(feature: lockedFeatureName))
     }
@@ -946,7 +946,7 @@ final class AccessController {
     func requirePaidFeature(_ featureName: String) -> Bool {
         guard hasActiveLicense else {
             lockedFeatureName = featureName
-            accessMessage = "\(featureName) is locked. Get Early Price, then paste your key here to unlock it."
+            accessMessage = "\(featureName) is locked. Get a free license, then paste your key here to unlock it."
             return false
         }
         return true
@@ -1068,7 +1068,7 @@ final class AccessController {
 
     func refreshBlitzReelsEntitlement() async {
         clearBlitzReelsEntitlement()
-        accessMessage = "BlitzRecorder has a free 1080p tier. Early Price unlocks iPhone camera, 4K, and 60 fps."
+        accessMessage = "BlitzRecorder has a free 1080p tier. A free license unlocks iPhone camera, 4K, and 60 fps."
     }
 
     func refreshBlitzReelsEntitlementIfNeeded() async {

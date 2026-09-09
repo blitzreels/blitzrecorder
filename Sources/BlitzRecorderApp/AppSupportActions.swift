@@ -148,7 +148,7 @@ enum AppDiagnostics {
         - Output folder writable: \(Self.yesNo(FileManager.default.isWritableFile(atPath: settings.outputDirectory.path)))
 
         Access
-        - Model: free 1080p tier + Early Lifetime License
+        - Model: free 1080p tier + free website license
         - Can render export: \(Self.yesNo(accessController.canRenderExport))
 
         Privacy

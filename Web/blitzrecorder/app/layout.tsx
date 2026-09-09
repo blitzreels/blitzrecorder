@@ -60,15 +60,16 @@ const mono = JetBrains_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL("https://blitzrecorder.com"),
   title: {
-    default: "BlitzRecorder: your iPhone is your studio camera",
+    default: "BlitzRecorder: Mac screen recording for short-form",
     template: "%s · BlitzRecorder",
   },
   description:
-    "BlitzRecorder turns your iPhone into a studio camera for your Mac. It records in full quality, so your videos look better than Continuity Camera.",
+    "Native macOS screen recorder for short-form video. Timeline, silence cuts, local files. Open source. Completely free.",
   openGraph: {
     title: "BlitzRecorder",
     siteName: "BlitzRecorder",
-    description: "Your iPhone is your studio camera. It looks better than Continuity Camera.",
+    description:
+      "Mac screen recording for short-form. Open source. Completely free.",
     type: "website",
     url: "https://blitzrecorder.com",
   },

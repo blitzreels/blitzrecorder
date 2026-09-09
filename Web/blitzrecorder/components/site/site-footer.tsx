@@ -6,15 +6,16 @@ import { Paragraph } from "@/components/ui/typography";
 import { VersionTag } from "@/components/site/download-button";
 import { assets } from "@/lib/assets";
 import { ALGOMAX_URL } from "@/lib/content";
+import { BlitzReelsLink } from "@/components/site/blitzreels-link";
 import { GITHUB_REPO_URL } from "@/lib/release";
 
-type FooterLink = { label: string; href: string; external?: boolean };
+type FooterLink = { label: string; href?: string; external?: boolean; blitzreels?: string };
 
 const productLinks: FooterLink[] = [
   { label: "macOS app", href: "/macos" },
   { label: "iOS camera app", href: "/ios" },
-  { label: "Pricing", href: "/#pricing" },
-  { label: "BlitzReels", href: "https://www.blitzreels.com", external: true },
+  { label: "License", href: "/#license" },
+  { label: "BlitzReels", blitzreels: "footer_nav" },
 ];
 
 const resourceLinks: FooterLink[] = [
@@ -32,7 +33,7 @@ export function SiteFooter() {
         className="pointer-events-none absolute inset-x-0 top-0 h-px"
         style={{
           background:
-            "linear-gradient(to right, transparent, rgba(94,242,175,0.45), transparent)",
+            "linear-gradient(to right, transparent, rgba(94,242,175,0.16), transparent)",
         }}
       />
       <Container>
@@ -43,20 +44,18 @@ export function SiteFooter() {
               <span className="font-display text-lg font-bold tracking-tight">BlitzRecorder</span>
             </Link>
             <Paragraph tone="faint" size="sm" className="mt-4">
-              Turn your iPhone into a camera for your Mac. Record locally on the phone and edit later
-              without filming again.
+              Native Mac screen recorder for short-form. Open source.
+              Completely free.
             </Paragraph>
 
             <div className="mt-7 flex flex-col gap-3">
-              <a
-                href="https://www.blitzreels.com"
-                target="_blank"
-                rel="noopener"
+              <BlitzReelsLink
+                content="footer_byline"
                 className="group inline-flex items-center gap-1.5 text-sm text-faint transition-colors hover:text-foreground"
               >
                 A BlitzReels.com product
                 <ArrowUpRight className="size-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
-              </a>
+              </BlitzReelsLink>
             </div>
           </div>
 
@@ -108,8 +107,15 @@ function FooterNav({ title, links }: { title: string; links: FooterLink[] }) {
       <p className="font-display font-bold">{title}</p>
       <ul className="mt-4 flex flex-col gap-3 text-muted-foreground">
         {links.map((link) => (
-          <li key={link.href}>
-            {link.external ? (
+          <li key={link.blitzreels ?? link.href}>
+            {link.blitzreels ? (
+              <BlitzReelsLink
+                content={link.blitzreels}
+                className="transition-colors hover:text-foreground"
+              >
+                {link.label}
+              </BlitzReelsLink>
+            ) : link.external ? (
               <a
                 className="transition-colors hover:text-foreground"
                 href={link.href}
@@ -119,7 +125,7 @@ function FooterNav({ title, links }: { title: string; links: FooterLink[] }) {
                 {link.label}
               </a>
             ) : (
-              <Link className="transition-colors hover:text-foreground" href={link.href}>
+              <Link className="transition-colors hover:text-foreground" href={link.href!}>
                 {link.label}
               </Link>
             )}
