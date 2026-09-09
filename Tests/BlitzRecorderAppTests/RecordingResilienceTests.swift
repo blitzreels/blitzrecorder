@@ -98,7 +98,7 @@ final class RecordingResilienceTests: XCTestCase {
             XCTAssertEqual(try Data(contentsOf: fixture.take.screenURL), original)
             XCTAssertEqual(try Data(contentsOf: fixture.take.finalVideoURL), existing)
             let files = try FileManager.default.contentsOfDirectory(atPath: fixture.take.finalVideoURL.deletingLastPathComponent().path)
-            XCTAssertFalse(files.contains { $0.hasPrefix(".blitzrecorder-export-") })
+            XCTAssertFalse(files.contains { $0.hasPrefix(".blitzrecorder-export-") }, "Remaining export files: \(files)")
         }
     }
 
@@ -114,6 +114,22 @@ final class RecordingResilienceTests: XCTestCase {
                 progressHandler: { progress in
                     if progress > 0, progress < 1, !reportedStart {
                         reportedStart = true
+                        do {
+                            let directory = fixture.take.finalVideoURL.deletingLastPathComponent()
+                            let temporary = try XCTUnwrap(
+                                FileManager.default.contentsOfDirectory(
+                                    at: directory,
+                                    includingPropertiesForKeys: [.isDirectoryKey]
+                                ).first { $0.lastPathComponent.hasPrefix(".blitzrecorder-export-") }
+                            )
+                            let isDirectory = try temporary.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true
+                            let auxiliary = isDirectory
+                                ? temporary.appendingPathComponent("encoder.sidecar")
+                                : temporary.appendingPathExtension("sidecar")
+                            try Data("encoder scratch".utf8).write(to: auxiliary)
+                        } catch {
+                            XCTFail("Unable to create auxiliary export file: \(error)")
+                        }
                         started.fulfill()
                     }
                 }
@@ -127,7 +143,7 @@ final class RecordingResilienceTests: XCTestCase {
         } catch {
             XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.take.finalVideoURL.path))
             let files = try FileManager.default.contentsOfDirectory(atPath: fixture.take.finalVideoURL.deletingLastPathComponent().path)
-            XCTAssertFalse(files.contains { $0.hasPrefix(".blitzrecorder-export-") })
+            XCTAssertFalse(files.contains { $0.hasPrefix(".blitzrecorder-export-") }, "Remaining export files: \(files)")
             let inspection = try await SyntheticRecording.inspectVideo(fixture.take.screenURL)
             XCTAssertEqual(inspection.frames, 300)
         }

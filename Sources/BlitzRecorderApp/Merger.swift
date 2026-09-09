@@ -67,8 +67,14 @@ enum Merger {
             at: outputDirectory,
             withIntermediateDirectories: true
         )
-        let temporaryOutputURL = outputDirectory.appendingPathComponent(
-            ".blitzrecorder-export-\(UUID().uuidString).\(take.outputVideoFormat.fileExtension)"
+        let temporaryDirectory = outputDirectory.appendingPathComponent(
+            ".blitzrecorder-export-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try fileManager.createDirectory(at: temporaryDirectory, withIntermediateDirectories: false)
+        defer { try? fileManager.removeItem(at: temporaryDirectory) }
+        let temporaryOutputURL = temporaryDirectory.appendingPathComponent(
+            "recording.\(take.outputVideoFormat.fileExtension)"
         )
 
         let videoSources = try await availableVideoSources(for: take, settings: settings)
@@ -162,44 +168,39 @@ enum Merger {
             audioMix = nil
         }
 
-        do {
-            try Task.checkCancellation()
-            await progressHandler?(0)
-            if exportPlan.engine == .assetExportSession {
-                try await exportWithAssetExportSession(
-                    composition: composition,
-                    videoComposition: videoComposition,
-                    audioMix: audioMix,
-                    outputURL: temporaryOutputURL,
-                    outputFileType: outputFileType,
-                    settings: settings,
-                    progressHandler: progressHandler
-                )
-            } else {
-                try await OptimizedCompositionExporter.export(
-                    composition: composition,
-                    videoComposition: videoComposition,
-                    audioMix: audioMix,
-                    outputURL: temporaryOutputURL,
-                    outputFileType: outputFileType,
-                    renderSize: renderSize,
-                    settings: settings,
-                    duration: duration,
-                    progressHandler: progressHandler
-                )
-            }
-            try await validateExpectedAudio(
-                in: temporaryOutputURL,
-                expectedAudioSources: expectedAudioSources
+        try Task.checkCancellation()
+        await progressHandler?(0)
+        if exportPlan.engine == .assetExportSession {
+            try await exportWithAssetExportSession(
+                composition: composition,
+                videoComposition: videoComposition,
+                audioMix: audioMix,
+                outputURL: temporaryOutputURL,
+                outputFileType: outputFileType,
+                settings: settings,
+                progressHandler: progressHandler
             )
-            try Task.checkCancellation()
-            await progressHandler?(1)
-            try Task.checkCancellation()
-            try fileManager.moveItem(at: temporaryOutputURL, to: outputURL)
-        } catch {
-            try? fileManager.removeItem(at: temporaryOutputURL)
-            throw error
+        } else {
+            try await OptimizedCompositionExporter.export(
+                composition: composition,
+                videoComposition: videoComposition,
+                audioMix: audioMix,
+                outputURL: temporaryOutputURL,
+                outputFileType: outputFileType,
+                renderSize: renderSize,
+                settings: settings,
+                duration: duration,
+                progressHandler: progressHandler
+            )
         }
+        try await validateExpectedAudio(
+            in: temporaryOutputURL,
+            expectedAudioSources: expectedAudioSources
+        )
+        try Task.checkCancellation()
+        await progressHandler?(1)
+        try Task.checkCancellation()
+        try fileManager.moveItem(at: temporaryOutputURL, to: outputURL)
 
         return outputURL
     }

@@ -1051,14 +1051,19 @@ final class RecordingLifecycleTests: XCTestCase {
         let targetTime = CMTime(seconds: 1, preferredTimescale: 600)
         await player.seek(to: targetTime, toleranceBefore: .zero, toleranceAfter: .zero)
         player.play()
-        try await Task.sleep(for: .milliseconds(350))
-        player.pause()
-
-        let itemTime = player.currentTime()
-        let pixelBuffer = output.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: nil)
-            ?? output.copyPixelBuffer(forItemTime: targetTime, itemTimeForDisplay: nil)
+        defer { player.pause() }
+        let deadline = ProcessInfo.processInfo.systemUptime + 5
+        var pixelBuffer: CVPixelBuffer?
+        while ProcessInfo.processInfo.systemUptime < deadline {
+            pixelBuffer = output.copyPixelBuffer(forItemTime: player.currentTime(), itemTimeForDisplay: nil)
+                ?? output.copyPixelBuffer(forItemTime: targetTime, itemTimeForDisplay: nil)
+            if pixelBuffer != nil || item.status == .failed {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(25))
+        }
         guard let pixelBuffer else {
-            return XCTFail("Editor AVPlayerItem produced no transparent-camera video frame")
+            return XCTFail("Editor AVPlayerItem produced no transparent-camera video frame; status=\(item.status.rawValue)")
         }
         let center = samplePixelColor(
             in: pixelBuffer,
