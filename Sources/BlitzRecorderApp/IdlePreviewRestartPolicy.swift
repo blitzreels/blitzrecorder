@@ -1,7 +1,7 @@
 import Foundation
 
 enum IdlePreviewRestartPolicy {
-    static let postFinishingDelayNanoseconds: UInt64 = 500_000_000
+    static let postFinishingDelayNanoseconds: UInt64 = 0
 
     static func delayNanoseconds(
         previousState: RecordingState,

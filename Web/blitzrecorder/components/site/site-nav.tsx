@@ -49,7 +49,7 @@ export function SiteNav() {
           aria-label="Sections"
         >
           <Link className="transition-colors hover:text-foreground" href="/#how">How it works</Link>
-          <Link className="transition-colors hover:text-foreground" href="/#license">License</Link>
+          <Link className="transition-colors hover:text-foreground" href="/#license">Free app</Link>
           <BlitzReelsLink
             content="nav"
             className="transition-colors hover:text-foreground"

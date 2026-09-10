@@ -2,7 +2,7 @@ import AppKit
 import CoreImage
 import CoreText
 
-struct TimelineOverlayImageRequest {
+struct TimelineOverlayImageRequest: Equatable {
     let overlay: TextOverlay
     let size: CGSize
 }
@@ -17,11 +17,14 @@ enum TimelineOverlayRenderer {
     private static let images = NSCache<NSString, CGImage>()
 
     static func scene(_ request: TimelineSceneRequest) -> RecordingScene {
-        guard !request.edits.zoom.isEmpty else { return request.scene }
+        guard request.edits.zoom.isActive else { return request.scene }
         var scene = request.scene
         let zoom = request.edits.zoom.sample(at: request.time)
         scene.screenCropAmount = CGPoint(x: zoom.amount, y: zoom.amount)
         scene.screenCropPosition = zoom.position
+        if request.edits.cameraFollowsZoom {
+            scene = CameraZoomMotion.scene(.init(scene: scene, zoom: zoom, intensity: request.edits.zoom.intensity))
+        }
         return scene
     }
 

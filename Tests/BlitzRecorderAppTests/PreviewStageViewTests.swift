@@ -254,6 +254,68 @@ final class PreviewStageViewTests: XCTestCase {
         XCTAssertEqual(committedLayouts, [view.sceneLayout])
     }
 
+    func testSceneSwitchDuringDragDiscardsOldGesture() {
+        let view = PreviewStageView()
+        let window = hostInWindow(view)
+        view.sceneID = UUID()
+        view.enabledSources = [.screen, .camera]
+        view.sceneLayout = SceneLayout.presetLayout(.stackedHalves, for: .vertical)
+        view.layoutSubtreeIfNeeded()
+        view.selectedLayer = .camera
+        var commits = 0
+        view.onSceneLayoutEditingEnded = { _ in commits += 1 }
+        let frame = view.renderedCameraFrameForTesting
+        let start = CGPoint(x: frame.midX, y: frame.midY)
+        let end = CGPoint(x: start.x + 30, y: start.y + 20)
+        view.mouseDown(with: mouseEvent(.leftMouseDown, at: start, in: window))
+        view.mouseDragged(with: mouseEvent(.leftMouseDragged, at: end, in: window))
+        view.sceneID = UUID()
+        let newLayout = SceneLayout.presetLayout(.webcamFullscreen, for: .vertical)
+        view.sceneLayout = newLayout
+        view.mouseDragged(with: mouseEvent(.leftMouseDragged, at: end, in: window))
+        view.mouseUp(with: mouseEvent(.leftMouseUp, at: end, in: window))
+        XCTAssertEqual(view.sceneLayout, newLayout)
+        XCTAssertEqual(commits, 0)
+    }
+
+    func testRemovingDraggedSourcePreventsCommit() {
+        let view = PreviewStageView()
+        let window = hostInWindow(view)
+        view.enabledSources = [.screen, .camera]
+        view.sceneLayout = SceneLayout.presetLayout(.stackedHalves, for: .vertical)
+        view.layoutSubtreeIfNeeded()
+        view.selectedLayer = .camera
+        var commits = 0
+        view.onSceneLayoutEditingEnded = { _ in commits += 1 }
+        let frame = view.renderedCameraFrameForTesting
+        let start = CGPoint(x: frame.midX, y: frame.midY)
+        view.mouseDown(with: mouseEvent(.leftMouseDown, at: start, in: window))
+        view.enabledSources = [.screen]
+        let layout = view.sceneLayout
+        let end = CGPoint(x: start.x + 30, y: start.y + 20)
+        view.mouseDragged(with: mouseEvent(.leftMouseDragged, at: end, in: window))
+        view.mouseUp(with: mouseEvent(.leftMouseUp, at: end, in: window))
+        XCTAssertEqual(view.sceneLayout, layout)
+        XCTAssertEqual(commits, 0)
+    }
+
+    func testSceneSwitchDiscardsCropDraft() {
+        let view = PreviewStageView()
+        view.frame = CGRect(x: 0, y: 0, width: 1000, height: 700)
+        view.sceneID = UUID()
+        view.enabledSources = [.camera]
+        view.layoutSubtreeIfNeeded()
+        var commits = 0
+        view.onCameraCropChanged = { _, _ in commits += 1 }
+        view.beginCameraCropEditing()
+        view.updateCameraCropDraft(amount: CGPoint(x: 0.1, y: 0.1))
+        view.sceneID = UUID()
+        view.commitCameraCropEditing()
+        XCTAssertFalse(view.isCameraCropEditingEnabled)
+        XCTAssertEqual(commits, 0)
+        XCTAssertEqual(view.cameraCropAmount, .zero)
+    }
+
     func testNormalScreenLayerTopEdgeResizeChangesHeightWithoutChangingWidth() {
         let view = PreviewStageView()
         let window = hostInWindow(view)

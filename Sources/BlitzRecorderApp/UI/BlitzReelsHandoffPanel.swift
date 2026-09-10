@@ -75,11 +75,11 @@ struct BlitzReelsHandoffPanel: View {
                     Button("Cancel upload") { handoff.cancel() }
                 } else if let url = currentResult {
                     Link("Open in BlitzReels", destination: url)
-                        .buttonStyle(BlitzControlButtonStyle(isProminent: true))
+                        .buttonStyle(BlitzButtonStyle(.accent))
                     Button("Send selected", action: send).disabled(selection == nil)
                 } else {
                     Button(handoff.hasKey ? "Send recording" : "Connect and send", action: send)
-                        .buttonStyle(BlitzControlButtonStyle(isProminent: true)).disabled(selection == nil)
+                        .buttonStyle(BlitzButtonStyle(.accent)).disabled(selection == nil)
                 }
                 if handoff.hasKey {
                     Button("Disconnect") { handoff.disconnect() }.disabled(handoff.isWorking)
@@ -87,7 +87,7 @@ struct BlitzReelsHandoffPanel: View {
             }.frame(maxWidth: .infinity).padding(14)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(BlitzUI.projectLibraryBackground).foregroundStyle(BlitzUI.primaryText)
-            .buttonStyle(BlitzControlButtonStyle(isProminent: false))
+            .buttonStyle(BlitzButtonStyle(.secondary))
             .onAppear { selection = files.first?.url }
     }
 

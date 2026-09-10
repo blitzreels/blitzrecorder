@@ -5,7 +5,7 @@ import SwiftUI
 private let showMainWindowNotification = Notification.Name("dev.blitzreels.blitzrecorder.show-main-window")
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuActionsTarget {
     private let accessController = AccessController()
     private lazy var coordinator = RecorderCoordinator(accessController: accessController)
     private var windowController: MainWindowController?
@@ -38,7 +38,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
             object: nil
         )
 
-        accessController.configure()
         NSApp.setActivationPolicy(.regular)
         applyDevIconBadgeIfNeeded()
         if !LocalDevelopmentRuntime.disablesIdleCapture() {
@@ -55,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
         }
 
         coordinator.onStateChanged = { [weak self] state in
+            if state == .starting { NowPlayingController.shared.suspendForRecording() }
             self?.windowController?.update(for: state)
             self?.updateStatusItem(for: state)
             self?.rebuildMenu()
@@ -171,6 +171,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
 
     private func rebuildMenu() {
         let menu = NSMenu()
+        menu.delegate = self
+        populateStatusMenu(menu)
+        statusItem?.menu = menu
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        populateStatusMenu(menu)
+    }
+
+    private func populateStatusMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        menu.autoenablesItems = false
+
+        if NowPlayingController.shared.hasMedia, coordinator.state == .idle {
+            let playbackItem = NSMenuItem()
+            let view = NSHostingView(rootView: NowPlayingMenuView(playback: .shared))
+            view.setFrameSize(view.fittingSize)
+            playbackItem.view = view
+            menu.addItem(playbackItem)
+            menu.addItem(.separator())
+        }
 
         let recordingStatusItem = NSMenuItem(
             title: recordingStatusTitle(),
@@ -180,6 +201,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
         recordingStatusItem.isEnabled = false
         recordingStatusMenuItem = recordingStatusItem
         menu.addItem(recordingStatusItem)
+
+        switch coordinator.state {
+        case .idle:
+            menu.addItem(withTitle: "Start Recording", action: #selector(startRecording), keyEquivalent: "")
+        case .recording:
+            menu.addItem(withTitle: "Pause Recording", action: #selector(pauseRecording), keyEquivalent: "")
+            menu.addItem(withTitle: "Stop Recording", action: #selector(stopRecording), keyEquivalent: "")
+        case .paused:
+            menu.addItem(withTitle: "Resume Recording", action: #selector(resumeRecording), keyEquivalent: "")
+            menu.addItem(withTitle: "Stop Recording", action: #selector(stopRecording), keyEquivalent: "")
+        case .starting, .finishing:
+            break
+        }
+        menu.addItem(withTitle: "Show BlitzRecorder", action: #selector(showWindow), keyEquivalent: "")
         menu.addItem(.separator())
 
         let heading = NSMenuItem(title: "Recent Projects", action: nil, keyEquivalent: "")
@@ -208,10 +243,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MenuActionsTarget {
             }
         }
 
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Open Recordings Folder", action: #selector(openRecordingsFolder), keyEquivalent: "")
+        menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Quit BlitzRecorder", action: #selector(quitApplication), keyEquivalent: "q")
+
         for item in menu.items {
             item.target = self
         }
-        statusItem?.menu = menu
+    }
+
+    @objc private func openRecordingsFolder() {
+        NSWorkspace.shared.open(coordinator.settings.outputDirectory)
+    }
+
+    @objc private func quitApplication() {
+        NSApp.terminate(nil)
     }
 
     private func recordingStatusTitle() -> String {

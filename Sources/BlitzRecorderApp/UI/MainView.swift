@@ -3,7 +3,18 @@ import BlitzRecorderCore
 import SwiftUI
 
 struct MainView: View {
+    struct Configuration {
+        let viewModel: RecorderViewModel
+        let mcpServer: BlitzRecorderMCPServer
+    }
+
     @Bindable var vm: RecorderViewModel
+    private let mcpServer: BlitzRecorderMCPServer
+
+    init(configuration: Configuration) {
+        vm = configuration.viewModel
+        mcpServer = configuration.mcpServer
+    }
 
     var body: some View {
         let screenshotVariant = ScreenshotVariant.current
@@ -12,6 +23,14 @@ struct MainView: View {
             backgroundLayer
 
             recorderContent(screenshotVariant: screenshotVariant)
+                .opacity(vm.isShowingSettings ? 0 : 1)
+                .disabled(vm.isShowingSettings)
+                .allowsHitTesting(!vm.isShowingSettings)
+                .accessibilityHidden(vm.isShowingSettings)
+
+            if vm.isShowingSettings {
+                SettingsView(configuration: .init(viewModel: vm, mcpServer: mcpServer))
+            }
         }
         .overlay(alignment: .topTrailing) {
             screenshotOverlay
@@ -19,7 +38,7 @@ struct MainView: View {
                 .padding(.trailing, 22)
         }
         .overlay {
-            if vm.showsFirstRunOnboarding {
+            if vm.showsFirstRunOnboarding && !vm.isShowingSettings {
                 RecordingAccessCover(vm: vm)
             }
         }
@@ -238,7 +257,7 @@ private struct CanvasSelectionButton: View {
             .frame(minHeight: 32)
             .contentShape(.rect(cornerRadius: 8))
         }
-        .buttonStyle(CanvasSelectionButtonStyle())
+        .buttonStyle(BlitzPressButtonStyle())
         .background(buttonFill, in: .rect(cornerRadius: 10))
         .onHover { isHovering = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovering)
@@ -255,13 +274,6 @@ private struct CanvasSelectionButton: View {
     }
 }
 
-private struct CanvasSelectionButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-    }
-}
 
 private struct ProductIconImage: View {
     let image: NSImage?
@@ -420,7 +432,7 @@ struct CropFloatingToolbar: View {
                     .font(.system(size: 11, weight: .bold))
                     .frame(width: 28, height: 28)
             }
-            .blitzGlassButton()
+            .blitzButton(.secondary)
             .controlSize(.small)
             .pointingHandCursor()
 
@@ -429,7 +441,7 @@ struct CropFloatingToolbar: View {
                     .font(.system(size: 11, weight: .bold))
                     .frame(width: 28, height: 28)
             }
-            .blitzGlassButton()
+            .blitzButton(.secondary)
             .controlSize(.small)
             .pointingHandCursor()
         }
@@ -446,7 +458,6 @@ struct CropFloatingToolbar: View {
 
 private struct RecordingQualityShortcut: View {
     @Bindable var vm: RecorderViewModel
-    @State private var isHovering = false
     @State private var isPresented = false
 
     var body: some View {
@@ -465,30 +476,20 @@ private struct RecordingQualityShortcut: View {
                 Text("\(vm.settings.framesPerSecond) FPS")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(BlitzUI.secondaryText)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(BlitzUI.secondaryText)
-                    .rotationEffect(.degrees(isPresented ? 180 : 0))
+                BlitzMenuChevron()
             }
             .monospacedDigit()
             .lineLimit(1)
             .padding(.horizontal, 12)
             .frame(height: 36)
-            .background(isHovering || isPresented ? BlitzUI.hoverFill : BlitzUI.controlFill, in: .rect(cornerRadius: 8))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(BlitzUI.panelStroke, lineWidth: 1)
-                    .allowsHitTesting(false)
-            }
-            .contentShape(.rect(cornerRadius: 8))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(BlitzMenuTriggerStyle(isPresented: isPresented))
         .accessibilityLabel("Recording quality, \(qualityPresentation.controlLabel)")
         .disabled(vm.state != .idle)
-        .opacity(vm.state == .idle ? 1 : 0.5)
-        .onHover { isHovering = $0 }
-        .pointingHandCursor()
         .help("Choose recording resolution and Source FPS")
+        .onChange(of: vm.state) {
+            if vm.state != .idle { isPresented = false }
+        }
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             qualityPopover
         }
@@ -735,7 +736,7 @@ struct CaptureScenePicker: View {
             Label("New scene", systemImage: "plus")
                 .frame(maxWidth: .infinity, minHeight: 24)
         }
-        .blitzGlassButton()
+        .blitzButton(.secondary)
         .controlSize(.small)
         .disabled(!vm.canEditScene)
         .pointingHandCursor()
@@ -852,7 +853,7 @@ private struct SceneEditorHeader: View {
                 .foregroundStyle(BlitzUI.mint)
                 .frame(width: 24, height: 24)
         }
-        .blitzGlassButton()
+        .blitzButton(.secondary)
         .controlSize(.small)
         .pointingHandCursor()
         .accessibilityLabel("Save scene name")
@@ -868,7 +869,7 @@ private struct SceneEditorHeader: View {
                 .foregroundStyle(.white.opacity(0.72))
                 .frame(width: 24, height: 24)
         }
-        .blitzGlassButton()
+        .blitzButton(.secondary)
         .controlSize(.small)
         .pointingHandCursor()
         .accessibilityLabel("Cancel rename")
@@ -995,13 +996,11 @@ private struct SceneWorkspaceInspector: View {
                 Text(vm.activeScenePreset?.compactTitle ?? "Custom")
                     .foregroundStyle(BlitzUI.primaryText)
                     .lineLimit(1)
-                BlitzSymbol(configuration: .init(name: "chevron.down", size: 12))
-                    .foregroundStyle(BlitzUI.secondaryText)
+                BlitzMenuChevron()
             }
             .font(.system(size: 12, weight: .medium))
             .padding(.horizontal, 10)
-            .frame(height: 36)
-            .background(BlitzUI.controlFill, in: .rect(cornerRadius: BlitzUI.controlRadius))
+            .frame(height: BlitzControlMetrics.height(.regular))
         }
         .disabled(!vm.canEditScene)
         .accessibilityLabel("Layout, \(vm.activeScenePreset?.compactTitle ?? "Custom")")
@@ -1106,8 +1105,7 @@ private struct SceneWorkspaceInspector: View {
                 Label("Rule of thirds", systemImage: "grid")
                     .font(.system(size: 12, weight: .semibold))
             }
-            .toggleStyle(.switch)
-            .controlSize(.mini)
+            .toggleStyle(.blitzSwitch)
             .disabled(!vm.canEditScene)
 
             if vm.settings.canvasBackgroundStyle.supportsBackgroundAnimation {
@@ -1118,8 +1116,7 @@ private struct SceneWorkspaceInspector: View {
                     Label("Animate", systemImage: "sparkles")
                         .font(.system(size: 12, weight: .semibold))
                 }
-                .toggleStyle(.switch)
-                .controlSize(.mini)
+                .toggleStyle(.blitzSwitch)
                 .tint(BlitzUI.mint)
                 .disabled(!vm.canEditScene)
                 .help("Slowly drift the background colors")
@@ -1255,536 +1252,6 @@ private struct SceneWorkspaceThumbnail: View {
     }
 }
 
-struct RemoteCameraPage: View {
-    @Bindable var vm: RecorderViewModel
-
-    private let accent = BlitzUI.mint
-
-	var body: some View {
-		Group {
-			if vm.isRemoteCameraSelected {
-				connectedLayout
-			} else {
-				disconnectedLayout
-			}
-		}
-		.onAppear {
-			vm.startRemoteCameraDiscovery()
-		}
-	}
-
-    private var disconnectedLayout: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                onboardingHeader
-                setupStepsCard
-                nearbyDevicesCard
-            }
-            .settingsPageContent()
-        }
-        .background(BlitzUI.projectLibraryBackground)
-        .foregroundStyle(.white)
-    }
-
-    private var onboardingHeader: some View {
-        SettingsPageHeader(.init(
-            title: "Devices",
-            detail: "Pair an iPhone for higher-quality video while the Mac keeps a responsive preview.",
-            systemImage: "iphone.gen3",
-            status: vm.remoteCameraDeviceSummaries.isEmpty ? "Searching" : "iPhone found"
-        ))
-        .padding(.bottom, 4)
-    }
-
-    private var setupStepsCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Set up your iPhone")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.52))
-
-            VStack(alignment: .leading, spacing: 16) {
-                downloadStep
-                stepRow(
-                    2,
-                    title: "Open it",
-                    detail: "Open the app. Use the same Wi-Fi as this Mac."
-                )
-                stepRow(
-                    3,
-                    title: "Connect them",
-                    detail: "Your iPhone shows up below. Click it, then type the 6 numbers it shows you."
-                )
-                stepRow(
-                    4,
-                    title: "Hit record",
-                    detail: "Pick your iPhone in Devices and press record."
-                )
-            }
-        }
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var downloadStep: some View {
-        HStack(alignment: .top, spacing: 12) {
-            stepBadge(1)
-            VStack(alignment: .leading, spacing: 8) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Get the app")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.95))
-                    Text("Put BlitzRecorder Camera on your iPhone.")
-                        .font(.system(size: 12, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.55))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                companionAppLink
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
-    private func stepRow(_ number: Int, title: String, detail: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            stepBadge(number)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.95))
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(detail)
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(.white.opacity(0.55))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
-    private func stepBadge(_ number: Int) -> some View {
-        ZStack {
-            Circle()
-                .fill(accent.opacity(0.16))
-            Circle()
-                .stroke(accent.opacity(0.45), lineWidth: 1)
-            Text("\(number)")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(accent)
-        }
-        .frame(width: 24, height: 24)
-    }
-
-    private var nearbyDevicesCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 8) {
-                Text("Nearby iPhones")
-                    .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.52))
-                Spacer(minLength: 0)
-                if vm.remoteCameraDeviceSummaries.isEmpty {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-            }
-
-            if vm.remoteCameraDeviceSummaries.isEmpty {
-                searchingRow
-                directConnectionRow
-            } else {
-                VStack(spacing: 8) {
-                    ForEach(vm.remoteCameraDeviceSummaries) { device in
-                        remoteCameraDeviceRow(device)
-                    }
-                }
-            }
-        }
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var searchingRow: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "wifi")
-                .font(.system(size: 14, weight: .semibold))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.white.opacity(0.62))
-                .frame(width: 34, height: 34)
-                .background(Color.white.opacity(0.06), in: .rect(cornerRadius: 8))
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Looking for your iPhone…")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.92))
-                Text("Open the app on your iPhone. Use the same Wi-Fi as this Mac.")
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(.white.opacity(0.55))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.04), in: .rect(cornerRadius: 10))
-    }
-
-    private var directConnectionRow: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Image(systemName: "network")
-                    .font(.system(size: 14, weight: .semibold))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.white.opacity(0.62))
-                    .frame(width: 34, height: 34)
-                    .background(Color.white.opacity(0.06), in: .rect(cornerRadius: 8))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Connect by address")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.92))
-                    Text("Use the address and port shown on the iPhone when it does not appear automatically.")
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.55))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer(minLength: 0)
-            }
-
-            HStack(spacing: 8) {
-                TextField("iPhone address", text: $vm.directRemoteCameraHost)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(.white.opacity(0.92))
-                    .padding(.horizontal, 10)
-                    .frame(height: 32)
-                    .background(Color.white.opacity(0.06), in: .rect(cornerRadius: 8))
-
-                TextField("Port", text: $vm.directRemoteCameraPort)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(.white.opacity(0.92))
-                    .padding(.horizontal, 10)
-                    .frame(width: 76, height: 32)
-                    .background(Color.white.opacity(0.06), in: .rect(cornerRadius: 8))
-
-                Button {
-                    vm.connectDirectRemoteCamera()
-                } label: {
-                    Label("Connect", systemImage: "arrow.right")
-                        .font(.system(size: 12, weight: .semibold))
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 11)
-                .frame(height: 32)
-                .background(accent.opacity(0.18), in: .rect(cornerRadius: 8))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(accent.opacity(0.38), lineWidth: 1)
-                }
-                .disabled(
-                    vm.directRemoteCameraHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        || vm.directRemoteCameraPort.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                )
-            }
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.04), in: .rect(cornerRadius: 10))
-    }
-
-    private var companionAppLink: some View {
-        Link(destination: BlitzRecorderProductIdentity.companionInstallURL) {
-            HStack(spacing: 12) {
-                ProductIconImage(
-                    image: Bundle.main.blitzRecorderCameraIcon,
-                    fallbackSystemImage: "iphone.gen3",
-                    size: 42,
-                    cornerRadius: 9
-                )
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(BlitzRecorderProductIdentity.companionDisplayName)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.92))
-                        .lineLimit(1)
-                    Text("iPhone app")
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.55))
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 8)
-
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.52))
-            }
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white.opacity(0.055), in: .rect(cornerRadius: 10))
-        }
-        .buttonStyle(.plain)
-        .pointingHandCursor()
-        .help("Open \(BlitzRecorderProductIdentity.companionDisplayName)")
-    }
-
-    private var connectedLayout: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            SettingsPageHeader(.init(
-                title: "Devices",
-                detail: "Control the paired iPhone camera and monitor its recording connection.",
-                systemImage: "iphone.gen3.radiowaves.left.and.right",
-                status: "Connected"
-            ))
-
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(vm.selectedRemoteCameraDeviceDescription)
-                        .font(.system(size: 20, weight: .semibold))
-                    Text("The iPhone records the sharp video. The Mac shows a quick preview.")
-                        .font(.system(size: 12, weight: .regular))
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: 0)
-            }
-
-            HSplitView {
-                previewColumn
-                settingsColumn
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .padding(.horizontal, 34)
-        .padding(.top, 34)
-        .padding(.bottom, 24)
-        .background(BlitzUI.projectLibraryBackground)
-        .foregroundStyle(.white)
-    }
-
-    private var previewColumn: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            remotePreview
-
-            previewLegend
-
-            if vm.isRemoteCameraSelected {
-                RemoteCameraOrientationControl(vm: vm, usesPanelBackground: true)
-                    .frame(maxWidth: 420)
-            }
-
-            remoteStatusDetails
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .padding(.trailing, 20)
-    }
-
-    private var settingsColumn: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                pairingSection
-                RemoteCameraControlsPane(vm: vm)
-            }
-            .padding(.leading, 20)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .frame(minWidth: 320, idealWidth: 360, maxWidth: 420)
-        .frame(maxHeight: .infinity)
-        .scrollIndicators(.visible)
-    }
-
-    @ViewBuilder
-    private var remotePreview: some View {
-        GeometryReader { proxy in
-            let previewSize = fittedRemotePreviewSize(in: proxy.size)
-
-            ZStack(alignment: .topLeading) {
-                Rectangle()
-                    .fill(.black)
-
-                CameraPreviewRepresentable(view: vm.remoteCameraPreviewSurface)
-                    .frame(width: previewSize.width, height: previewSize.height)
-                    .clipped()
-
-                if !vm.hasRemoteCameraPreviewImage {
-                    VStack(spacing: 8) {
-                        Image(systemName: vm.isRemoteCameraSelected ? "iphone.gen3.radiowaves.left.and.right" : "iphone.gen3")
-                            .font(.system(size: 32, weight: .regular))
-                            .foregroundStyle(.tertiary)
-                        Text(previewEmptyTitle)
-                            .font(.system(size: 14, weight: .medium))
-                        Text(previewEmptyDetail)
-                            .font(.system(size: 12, weight: .regular))
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
-                    }
-                    .frame(maxWidth: 320)
-                    .frame(width: previewSize.width, height: previewSize.height)
-                    .background(.black.opacity(0.82))
-                }
-
-            }
-            .frame(width: previewSize.width, height: previewSize.height)
-            .border(Color(nsColor: .separatorColor).opacity(0.3), width: 1)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var previewLegend: some View {
-        Label("Source records on iPhone", systemImage: "iphone.gen3.radiowaves.left.and.right")
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .center)
-            .allowsHitTesting(false)
-    }
-
-    private var pairingSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Pairing")
-
-            if vm.remoteCameraDeviceSummaries.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    Label("Open BlitzRecorder Camera on your iPhone", systemImage: "iphone.gen3")
-                        .font(.system(size: 12, weight: .regular))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            } else {
-                VStack(spacing: 8) {
-                    ForEach(vm.remoteCameraDeviceSummaries) { device in
-                        remoteCameraDeviceRow(device)
-                    }
-                }
-            }
-        }
-    }
-
-    private func remoteCameraDeviceRow(_ device: RemoteCameraDeviceSummary) -> some View {
-        Button {
-            vm.setCamera(device.cameraID)
-        } label: {
-            HStack(spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(device.isSelected ? Color.white.opacity(0.16) : Color.white.opacity(0.08))
-                    Image(systemName: device.isReady ? "iphone.gen3.radiowaves.left.and.right" : "iphone.gen3")
-                        .font(.system(size: 14, weight: .semibold))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(device.isSelected ? .white : .white.opacity(0.72))
-                }
-                .frame(width: 34, height: 34)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(device.name)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.92))
-                        .lineLimit(1)
-                    Text(device.detail)
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.55))
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 0)
-
-                HStack(spacing: 8) {
-                    if let lensCount = device.lensCount, lensCount > 0 {
-                        lensDots(count: lensCount)
-                            .help("\(lensCount) camera lenses available")
-                    }
-
-                    Text(device.status)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(device.isSelected ? .black.opacity(0.78) : .white.opacity(0.6))
-                        .lineLimit(1)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(device.isSelected ? Color.white : Color.white.opacity(0.08), in: .capsule)
-                }
-            }
-            .padding(8)
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .disabled(vm.state != .idle)
-        .opacity(vm.state == .idle || device.isSelected ? 1 : 0.48)
-        .background(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(device.isSelected ? Color.white.opacity(0.16) : Color.white.opacity(0.04))
-        )
-        .pointingHandCursor()
-        .help("Use \(device.name) as the iPhone camera")
-    }
-
-    private func lensDots(count: Int) -> some View {
-        HStack(spacing: 3) {
-            ForEach(0..<min(count, 4), id: \.self) { _ in
-                Circle()
-                    .fill(.white.opacity(0.42))
-                    .frame(width: 4, height: 4)
-            }
-        }
-        .frame(width: 24, alignment: .trailing)
-    }
-
-    private var remoteStatusDetails: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("iPhone")
-            statusRow("Device", value: vm.selectedRemoteCameraDeviceDescription)
-            statusRow("Status", value: vm.selectedRemoteCameraStatus ?? (vm.isRemoteCameraSelected ? "Waiting" : "No iPhone selected"))
-            statusRow("Video", value: vm.selectedRemoteCameraReviewStatus)
-            statusRow("Controls", value: vm.selectedRemoteCameraCapabilities == nil ? "Waiting" : "Ready")
-        }
-        .frame(maxWidth: 460, alignment: .leading)
-    }
-
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.secondary)
-    }
-
-    private func statusRow(_ title: String, value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(title)
-                .font(.system(size: 12, weight: .regular))
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 0)
-            Text(value)
-                .font(.system(size: 12, weight: .regular))
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-        }
-    }
-
-    private var previewEmptyTitle: String {
-        vm.isRemoteCameraSelected ? "Waiting for iPhone video" : "No iPhone selected"
-    }
-
-    private var previewEmptyDetail: String {
-        vm.isRemoteCameraSelected
-            ? "Keep the iPhone app open. The good video records on the iPhone."
-            : "Choose a nearby iPhone from Pairing."
-    }
-
-    private func fittedRemotePreviewSize(in availableSize: CGSize) -> CGSize {
-        let aspectRatio = max(0.1, vm.remoteCameraPreviewAspectRatio)
-        let availableWidth = max(1, availableSize.width)
-        let availableHeight = max(1, availableSize.height)
-        let widthFittedToHeight = availableHeight * aspectRatio
-
-        if widthFittedToHeight <= availableWidth {
-            return CGSize(width: widthFittedToHeight, height: availableHeight)
-        }
-
-        return CGSize(width: availableWidth, height: availableWidth / aspectRatio)
-    }
-}
-
 private extension MainView {
     var backgroundLayer: some View {
         BlitzUI.canvasBackground
@@ -1798,12 +1265,12 @@ private extension MainView {
             ScreenshotCard(width: 320) {
                 VStack(alignment: .leading, spacing: 12) {
                     screenshotEyebrow("ACCESS")
-                    Text("Free 1080p tier")
+                    Text("Free. All features included.")
                         .font(.system(size: 16, weight: .bold))
                     Text("No account, card, watermark, or subscription.")
                         .font(.system(size: 11))
                         .foregroundStyle(.white.opacity(0.62))
-                    Text("A free license unlocks iPhone camera, 4K, and 60 fps.")
+                    Text("iPhone camera, 4K, and 60 fps included. No license key.")
                         .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(0.54))
 

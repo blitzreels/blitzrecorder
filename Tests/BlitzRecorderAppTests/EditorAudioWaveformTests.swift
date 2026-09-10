@@ -4,6 +4,21 @@ import XCTest
 @testable import BlitzRecorderApp
 
 final class EditorAudioWaveformTests: XCTestCase {
+    func testCachedPyramidMatchesNormalizedPeaksAndRejectsInvalidValues() throws {
+        for count in [0, 1, 2, 3, 127, 4_097] {
+            let values = (0..<count).map { Float(($0 * 37) % 101) }
+            let waveform = EditorAudioWaveform(.init(peaks: values))
+            let cached = try XCTUnwrap(EditorAudioWaveform(cachedPeaks: waveform.levels[0]))
+            XCTAssertEqual(cached.levels, waveform.levels)
+            XCTAssertEqual(cached.levels.last, waveform.levels[0].max().map { [$0] } ?? [])
+        }
+        for invalid: Float in [.nan, .infinity, -.infinity, -0.1, 1.1] {
+            XCTAssertNil(EditorAudioWaveform(cachedPeaks: [0, invalid, 1]))
+        }
+        let cleaned = EditorAudioWaveform(.init(peaks: [.nan, .infinity, -1, 2, 1]))
+        XCTAssertEqual(cleaned.levels[0], [0, 0, 0, 1, 0.5])
+    }
+
     func testDecoderPreservesSingleSampleTransientsInBothChannels() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".wav")
         defer { try? FileManager.default.removeItem(at: url) }

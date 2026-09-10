@@ -53,14 +53,9 @@ struct CameraImageControls: View {
     private var styleGroup: some View {
         VStack(alignment: .leading, spacing: 8) {
             BlitzUI.sectionLabel("Style", icon: "wand.and.stars")
-            Toggle(isOn: configuration.shadowEnabled) {
-                Label("Shadow", systemImage: "square.stack.3d.down.right")
-                    .font(.system(size: 12, weight: .semibold))
-            }
-            .toggleStyle(.switch)
-            .controlSize(.mini)
-            .tint(BlitzUI.mint)
-            .help("Add a soft shadow under the camera")
+            Toggle("Shadow", isOn: configuration.shadowEnabled)
+                .toggleStyle(.blitzSwitch)
+                .help("Add a soft shadow under the camera")
         }
     }
 
@@ -87,7 +82,7 @@ struct CameraImageControls: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 4)
             }
-            .blitzGlassButton()
+            .blitzButton(.secondary)
             .controlSize(.small)
             .pointingHandCursor()
             .help("Edit the camera crop on the live canvas")
@@ -97,7 +92,7 @@ struct CameraImageControls: View {
                     .font(.system(size: 10, weight: .bold))
                     .frame(width: 24, height: 24)
             }
-            .blitzGlassButton()
+            .blitzButton(.secondary)
             .controlSize(.small)
             .disabled(configuration.isResetDisabled)
             .pointingHandCursor()
@@ -497,7 +492,7 @@ struct RemoteCameraOrientationControl: View {
                 .minimumScaleFactor(0.82)
                 .frame(maxWidth: .infinity, minHeight: 26)
         }
-        .blitzGlassButton()
+        .blitzButton(.secondary)
         .controlSize(.small)
         .pointingHandCursor()
         .help("\(title) iPhone feed")

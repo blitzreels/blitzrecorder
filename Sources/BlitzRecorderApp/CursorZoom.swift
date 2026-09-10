@@ -6,11 +6,45 @@ struct RecordingCursorSample: Codable, Sendable {
     let x: Double
     let y: Double
     let clicked: Bool
+    var visible: Bool = true
+    var rendered: Bool = false
+    var segment: Int = 0
+}
+
+extension RecordingCursorSample {
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        time = try values.decode(Double.self, forKey: .time)
+        x = try values.decode(Double.self, forKey: .x)
+        y = try values.decode(Double.self, forKey: .y)
+        clicked = try values.decode(Bool.self, forKey: .clicked)
+        visible = try values.decodeIfPresent(Bool.self, forKey: .visible) ?? true
+        rendered = try values.decodeIfPresent(Bool.self, forKey: .rendered) ?? false
+        segment = try values.decodeIfPresent(Int.self, forKey: .segment) ?? 0
+    }
 }
 
 struct RecordingCursorTrack: Codable, Sendable {
     let version: Int
     let samples: [RecordingCursorSample]
+
+    var supportsPresentation: Bool { version == 2 && samples.contains(where: \.rendered) }
+}
+
+enum CursorCapturePolicy {
+    struct Request {
+        let settings: RecordingSettings
+        let filter: SCContentFilter?
+    }
+
+    static func rendersCursor(_ request: Request) -> Bool {
+        guard request.settings.savesSourceFiles, request.settings.includeCursor else { return false }
+        if let filter = request.filter {
+            if #available(macOS 15.2, *) { return filter.style == .display }
+            return false
+        }
+        return request.settings.screenSourceBinding == nil || request.settings.screenSourceBinding?.kind == .display
+    }
 }
 
 @MainActor
@@ -24,49 +58,63 @@ final class RecordingCursorTracker {
     private var timer: Timer?
     private var directory: URL?
     private var wasPressed = false
+    private var segment = 0
+    private var captureFrameProvider: (@MainActor () -> CGRect?)?
 
     struct StartRequest {
         let directory: URL
         let configuration: Configuration
+        let captureFrame: @MainActor () -> CGRect?
         let time: @MainActor () -> Double?
     }
     func start(_ request: StartRequest) {
         stop()
         directory = request.directory
         configuration = request.configuration
+        captureFrameProvider = request.captureFrame
         samples = []
-        timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+        segment = 0
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, let time = request.time() else { return }
                 self.sample(time)
             }
         }
+        if let timer { RunLoop.main.add(timer, forMode: .common) }
     }
-    func update(_ configuration: Configuration) { self.configuration = configuration }
+    func update(_ configuration: Configuration) {
+        self.configuration = configuration
+        segment += 1
+    }
     func stop() {
         timer?.invalidate()
         timer = nil
         if let directory, !samples.isEmpty, FileManager.default.fileExists(atPath: directory.path) {
-            try? JSONEncoder().encode(RecordingCursorTrack(version: 1, samples: samples))
+            try? JSONEncoder().encode(RecordingCursorTrack(version: 2, samples: samples))
                 .write(to: directory.appendingPathComponent("cursor-track.json"), options: .atomic)
         }
         directory = nil
         samples = []
         wasPressed = false
+        captureFrameProvider = nil
     }
     private func sample(_ time: Double) {
+        let sourceFrame = captureFrameProvider?()
         guard let config = configuration, config.settings.enabledSources.contains(.screen),
-              let frame = captureFrame(config), frame.width > 0, frame.height > 0,
+              let frame = sourceFrame ?? captureFrame(config), frame.width > 0, frame.height > 0,
               let location = CGEvent(source: nil)?.location else { return }
         let pressed = CGEventSource.buttonState(.combinedSessionState, button: .left)
         defer { wasPressed = pressed }
-        guard frame.contains(location) else { return }
-        let crop = config.settings.screenCrop ?? CGRect(x: 0, y: 0, width: 1, height: 1)
+        let crop = sourceFrame == nil ? ScreenCaptureGeometry.effectiveCrop(for: config.settings)
+            ?? CGRect(x: 0, y: 0, width: 1, height: 1) : CGRect(x: 0, y: 0, width: 1, height: 1)
         guard crop.width > 0, crop.height > 0 else { return }
         let x = ((location.x - frame.minX) / frame.width - crop.minX) / crop.width
         let y = ((location.y - frame.minY) / frame.height - crop.minY) / crop.height
-        guard (0...1).contains(x), (0...1).contains(y) else { return }
-        samples.append(.init(time: time, x: x, y: y, clicked: pressed && !wasPressed))
+        let visible = frame.contains(location) && (0...1).contains(x) && (0...1).contains(y)
+        samples.append(.init(time: time, x: x, y: y, clicked: visible && pressed && !wasPressed,
+            visible: visible && config.settings.includeCursor,
+            rendered: CursorCapturePolicy.rendersCursor(.init(settings: config.settings, filter: config.filter)),
+            segment: segment))
     }
     private func captureFrame(_ config: Configuration) -> CGRect? {
         var windowID = config.settings.screenSourceBinding?.windowID
@@ -101,7 +149,7 @@ enum CursorZoomPlanning {
         let map = TimelineTimeMap(takeDuration: TimelineTimeMap.time(request.duration), cuts: request.cuts)
         var keyframes: [ScreenZoomKeyframe] = [.init(time: 0, amount: 0, position: .zero)]
         var lastEnd = 0.0
-        let samples = request.samples.filter { $0.time.isFinite && $0.x.isFinite && $0.y.isFinite }
+        let samples = request.samples.filter { $0.visible && $0.time.isFinite && $0.x.isFinite && $0.y.isFinite }
         for sample in samples where sample.clicked {
             let time = sample.time - request.trimOffset
             guard time >= lastEnd + 0.5, time < request.duration - 0.6, !map.isRemoved(takeTime: time) else { continue }

@@ -80,7 +80,7 @@ struct TranscriptCopyButton: View {
             }
             .foregroundStyle(foregroundColor)
         }
-        .buttonStyle(BlitzControlButtonStyle(isProminent: false))
+        .buttonStyle(BlitzButtonStyle(.secondary))
         .disabled(feedback == .copying)
         .pointingHandCursor(enabled: feedback != .copying)
         .help(feedback.help)

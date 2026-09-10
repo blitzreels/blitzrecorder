@@ -92,13 +92,7 @@ final class LiveCompositorRenderer: @unchecked Sendable {
                     .settingOpacity(opacity)
                     .composited(over: image)
                 }
-                image = fill(
-                    screenFrame.image,
-                    into: placement.targetRect,
-                    sourceCrop: { placement.videoPlacement.sourceCropRectangle(sourceExtent: $0) },
-                    contentMode: placement.videoPlacement.contentMode,
-                    cornerRadius: placement.cornerRadius
-                )
+                image = screenImage(.init(image: screenFrame.image, placement: placement))
                 .settingOpacity(opacity)
                 .composited(over: image)
             case .camera:
@@ -218,6 +212,31 @@ final class LiveCompositorRenderer: @unchecked Sendable {
         }
         let sourceImage = contentMode == .aspectFill ? image.cropped(to: sourceCrop(source)) : image
         return fill(sourceImage, into: target, contentMode: contentMode, cornerRadius: cornerRadius)
+    }
+
+    private struct ScreenImageRequest {
+        let image: CIImage
+        let placement: SceneRenderLayerPlacement
+    }
+
+    private func screenImage(_ request: ScreenImageRequest) -> CIImage {
+        let placement = request.placement
+        let video = placement.videoPlacement
+        guard video.contentMode == .aspectFit,
+              max(video.sourceCropAmount.x, video.sourceCropAmount.y) > 0 else {
+            return fill(request.image, into: placement.targetRect,
+                sourceCrop: { video.sourceCropRectangle(sourceExtent: $0) },
+                contentMode: video.contentMode, cornerRadius: placement.cornerRadius)
+        }
+        let source = request.image.extent
+        guard source.width > 0, source.height > 0 else { return request.image }
+        let frame = video.sourceFrame(sourceAspectRatio: source.width / source.height)
+        return request.image
+            .transformed(by: CGAffineTransform(translationX: -source.minX, y: -source.minY))
+            .transformed(by: CGAffineTransform(scaleX: frame.width / source.width, y: frame.height / source.height))
+            .transformed(by: CGAffineTransform(translationX: frame.minX, y: frame.minY))
+            .cropped(to: placement.targetRect)
+            .rounded(to: placement.targetRect, radius: placement.cornerRadius)
     }
 
     private func fill(_ image: CIImage, into target: CGRect, cornerRadius: CGFloat = 0) -> CIImage {

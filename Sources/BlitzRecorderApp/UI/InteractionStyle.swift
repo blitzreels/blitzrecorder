@@ -21,50 +21,6 @@ private struct BlitzCardModifier: ViewModifier {
     }
 }
 
-struct BlitzControlButtonStyle: ButtonStyle {
-    let isProminent: Bool
-    @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.controlSize) private var controlSize
-    @State private var isHovering = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 11, weight: .medium))
-            .symbolRenderingMode(.monochrome)
-            .symbolVariant(.none)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .frame(minHeight: minimumHeight)
-            .foregroundStyle(
-                isProminent
-                    ? Color.black.opacity(0.88)
-                    : (configuration.role == .destructive ? BlitzUI.recordRed : BlitzUI.primaryText)
-            )
-            .background(
-                isProminent ? BlitzUI.mint : (isHovering ? BlitzUI.hoverFill : BlitzUI.controlFill),
-                in: .rect(cornerRadius: BlitzUI.controlRadius)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: BlitzUI.controlRadius)
-                    .strokeBorder(isProminent ? Color.clear : BlitzUI.panelStroke, lineWidth: 1)
-                    .allowsHitTesting(false)
-            }
-            .opacity(isEnabled ? (configuration.isPressed ? 0.72 : 1) : 0.38)
-            .contentShape(.rect(cornerRadius: BlitzUI.controlRadius))
-            .onHover { isHovering = $0 }
-            .animation(.easeOut(duration: 0.12), value: isHovering)
-    }
-
-    private var minimumHeight: CGFloat {
-        switch controlSize {
-        case .mini: return 24
-        case .small: return 28
-        case .large, .extraLarge: return 36
-        default: return 32
-        }
-    }
-}
-
 struct BlitzSelectionButtonStyle: ButtonStyle {
     let isSelected: Bool
     @Environment(\.isEnabled) private var isEnabled
@@ -74,7 +30,7 @@ struct BlitzSelectionButtonStyle: ButtonStyle {
         configuration.label
             .foregroundStyle(isSelected ? BlitzUI.primaryText : BlitzUI.secondaryText)
             .background(
-                isSelected ? BlitzUI.selectedFill : (isHovering ? BlitzUI.quietFill : Color.clear),
+                isSelected ? BlitzUI.selectedFill : (isEnabled && isHovering ? BlitzUI.quietFill : Color.clear),
                 in: .rect(cornerRadius: BlitzUI.controlRadius)
             )
             .contentShape(.rect(cornerRadius: BlitzUI.controlRadius))
@@ -103,12 +59,9 @@ struct BlitzToolbarButton: View {
                         .font(.system(size: 12, weight: .medium))
                 }
             }
-            .padding(.horizontal, 8)
-            .frame(height: 34)
         }
-        .buttonStyle(BlitzSelectionButtonStyle(isSelected: false))
+        .blitzButton(.quiet)
         .accessibilityLabel(configuration.title)
-        .pointingHandCursor()
     }
 }
 
@@ -169,6 +122,7 @@ struct BlitzSegmentedPicker<Value: Hashable>: View {
         let options: [Value]
         let selection: Binding<Value>
         let label: (Value) -> String
+        var isOptionEnabled: (Value) -> Bool = { _ in true }
     }
 
     let configuration: Configuration
@@ -183,6 +137,7 @@ struct BlitzSegmentedPicker<Value: Hashable>: View {
                     expands: true,
                     action: { configuration.selection.wrappedValue = value }
                 ))
+                .disabled(!configuration.isOptionEnabled(value))
             }
         }
         .blitzTabGroup()
@@ -196,37 +151,6 @@ private struct BlitzTabGroupModifier: ViewModifier {
         content
             .padding(3)
             .background(BlitzUI.quietFill, in: .rect(cornerRadius: 10))
-    }
-}
-
-private struct PointingHandCursorModifier: ViewModifier {
-    let isEnabled: Bool
-    @State private var isHovering = false
-
-    func body(content: Content) -> some View {
-        content
-            .onHover { hovering in
-                guard isEnabled else { return }
-                guard hovering != isHovering else { return }
-                isHovering = hovering
-                if hovering {
-                    NSCursor.pointingHand.push()
-                } else {
-                    NSCursor.pop()
-                }
-            }
-            .onChange(of: isEnabled) {
-                if !isEnabled, isHovering {
-                    NSCursor.pop()
-                    isHovering = false
-                }
-            }
-            .onDisappear {
-                if isHovering {
-                    NSCursor.pop()
-                    isHovering = false
-                }
-            }
     }
 }
 
@@ -247,17 +171,4 @@ extension View {
         modifier(BlitzCardModifier(cornerRadius: cornerRadius, selected: selected))
     }
 
-    @ViewBuilder
-    func blitzGlassButton() -> some View {
-        self.buttonStyle(BlitzControlButtonStyle(isProminent: false))
-    }
-
-    @ViewBuilder
-    func blitzProminentGlassButton() -> some View {
-        self.buttonStyle(BlitzControlButtonStyle(isProminent: true))
-    }
-
-    func pointingHandCursor(enabled: Bool = true) -> some View {
-        modifier(PointingHandCursorModifier(isEnabled: enabled))
-    }
 }

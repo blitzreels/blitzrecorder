@@ -8,6 +8,23 @@ enum EditorSelection: Equatable {
     case segment(Int)
     case asset(String)
     case range(EditorTimeRange)
+    case silenceRange(EditorTimeRange)
+    case silenceRanges(SilenceSegmentSelection)
+
+    var timeRange: EditorTimeRange? {
+        switch self {
+        case .range(let range), .silenceRange(let range): return range
+        case .silenceRanges(let selection): return selection.ranges.count == 1 ? selection.ranges.first : nil
+        default: return nil
+        }
+    }
+    var silenceSelection: SilenceSegmentSelection? {
+        switch self {
+        case .silenceRange(let range): return SilenceSegmentSelection(range)
+        case .silenceRanges(let selection): return selection
+        default: return nil
+        }
+    }
 }
 
 struct EditorAsset: Identifiable, Equatable {
@@ -152,7 +169,6 @@ private struct EditorLoadedMedia: Sendable {
     let duration: Double
     let fileSize: String
     let poster: CGImage?
-    let filmstrip: [CGImage]
     let waveform: EditorAudioWaveform?
     let technicalMetadata: EditorMediaTechnicalMetadata
 }
@@ -178,6 +194,7 @@ final class EditorMediaLibrary {
     @ObservationIgnored private var filmstripLoadingCounts: [String: Int] = [:]
 
     func loadAssets(_ assets: [EditorAsset]) async {
+        guard !Task.isCancelled else { return }
         let pending = assets.filter {
             $0.exists
                 && $0.isPlayable
@@ -193,17 +210,20 @@ final class EditorMediaLibrary {
                 group.addTask {
                     await Self.load(asset: asset)
                 }
+                if asset.isVideo {
+                    group.addTask {
+                        await self.loadFilmstrip(request: .init(assetID: asset.id, url: asset.url, frameCount: 16))
+                        return nil
+                    }
+                }
             }
             for await loaded in group {
-                guard let loaded else { continue }
+                guard !Task.isCancelled, let loaded else { continue }
                 durations[loaded.id] = loaded.duration
                 fileSizes[loaded.id] = loaded.fileSize
                 technicalMetadata[loaded.id] = loaded.technicalMetadata
                 if let poster = loaded.poster {
                     posters[loaded.id] = poster
-                }
-                if loaded.filmstrip.count > (filmstrips[loaded.id]?.count ?? 0) {
-                    filmstrips[loaded.id] = loaded.filmstrip
                 }
                 if let waveform = loaded.waveform {
                     waveforms[loaded.id] = waveform.overview
@@ -214,6 +234,7 @@ final class EditorMediaLibrary {
     }
 
     func loadFilmstrip(request: EditorFilmstripLoadRequest) async {
+        guard !Task.isCancelled else { return }
         let loadedCount = filmstrips[request.assetID]?.count ?? 0
         let loadingCount = filmstripLoadingCounts[request.assetID] ?? 0
         guard request.frameCount > max(loadedCount, loadingCount) else { return }
@@ -247,7 +268,6 @@ final class EditorMediaLibrary {
         }
 
         var poster: CGImage?
-        var filmstrip: [CGImage] = []
         var waveform: EditorAudioWaveform?
         let technicalMetadata = await technicalMetadata(asset)
 
@@ -260,19 +280,6 @@ final class EditorMediaLibrary {
 
             let posterTime = CMTime(seconds: min(0.1, seconds), preferredTimescale: 600)
             poster = try? await generator.image(at: posterTime).image
-
-            if seconds > 0 {
-                let frameCount = 16
-                for index in 0..<frameCount {
-                    let time = CMTime(
-                        seconds: seconds * (Double(index) + 0.5) / Double(frameCount),
-                        preferredTimescale: 600
-                    )
-                    if let frame = try? await generator.image(at: time).image {
-                        filmstrip.append(frame)
-                    }
-                }
-            }
         } else if asset.isAudio {
             waveform = await EditorAudioWaveform.load(.init(asset: avAsset, duration: seconds))
         }
@@ -282,7 +289,6 @@ final class EditorMediaLibrary {
             duration: seconds,
             fileSize: fileSize,
             poster: poster,
-            filmstrip: filmstrip,
             waveform: waveform,
             technicalMetadata: technicalMetadata
         )

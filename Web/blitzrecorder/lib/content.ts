@@ -44,8 +44,8 @@ export type FaqItem = { q: string; a: string };
 
 export const faqs: FaqItem[] = [
   {
-    q: "Why a license if it is free?",
-    a: "Screen recording and the editor work with no key. Email gets you a key for 4K, 60 fps, and an optional iPhone camera. Same email always returns the same key.",
+    q: "Do I need an account or license key?",
+    a: "No. BlitzRecorder 0.15 and later includes recording, editing, 4K export, 60 fps export, and iPhone camera support without an account, email, or license key. Capture options depend on your hardware.",
   },
   {
     q: "Is it open source?",
@@ -66,8 +66,8 @@ export const license = {
     "4K export",
     "60 fps export",
     "Optional iPhone camera",
-    "Same key on every personal Mac",
-    "Same email always returns the same key",
+    "No account or license key",
+    "No watermark or subscription",
   ],
 };
 
@@ -200,7 +200,7 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
       {
         title: "License",
         body:
-          "The Mac app is free to download. A free license key from blitzrecorder.com unlocks the iPhone camera, 4K export, and 60 fps export. Enter your email to get the key, then paste it in the Mac app. Older paid Stripe keys still work. The open-source code stays AGPL.",
+          "The Mac app is free. Version 0.15 and later includes all features without an account or app license key. The source is available under AGPL-3.0-only. Separate commercial source licenses are available by written agreement with the copyright holder.",
       },
       {
         title: "User content",
@@ -238,7 +238,7 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
       {
         title: "License checks",
         body:
-          "A free license is issued when you enter your email on blitzrecorder.com. BlitzRecorder validates the license key you paste in the app. Older paid keys may still be checked against Stripe payment status. The app does not need a BlitzReels account to record.",
+          "BlitzRecorder 0.15 and later does not issue or validate app license keys. If you use an older version and request a legacy key on this website, we store your email and license record. Older paid keys may still be checked against Stripe payment status. A BlitzReels account is only used when you choose its upload integration.",
       },
       {
         title: "Permissions",
@@ -280,7 +280,7 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
       {
         title: "License",
         body:
-          "Open blitzrecorder.com/license, enter your email, and copy the key. Paste it in the Mac app under Account to unlock the iPhone camera, 4K export, and 60 fps export. The same email always returns the same key. If an export fails, check macOS permissions, available disk space, and whether the source media still exists.",
+          "Update to BlitzRecorder 0.15 or later to use every feature without a key. The /license page can still provide keys for older versions. If an export fails, check macOS permissions, available disk space, and whether the source media still exists.",
       },
       {
         title: "Permissions",

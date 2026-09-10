@@ -52,18 +52,8 @@ struct BlitzPaneDivider: View {
                     configuration.onCommit()
                 }
         )
-        .onHover { hovering in
-            guard isHovering != hovering else { return }
-            isHovering = hovering
-            if hovering {
-                (adjustsWidth ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).push()
-            } else {
-                NSCursor.pop()
-            }
-        }
-        .onDisappear {
-            if isHovering { NSCursor.pop() }
-        }
+        .onHover { isHovering = $0 }
+        .blitzCursor(adjustsWidth ? .resizeLeftRight : .resizeUpDown)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(configuration.label)
         .accessibilityValue("\(Int(configuration.value.wrappedValue.rounded())) points")

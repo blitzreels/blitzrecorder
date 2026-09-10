@@ -23,8 +23,7 @@ final class ProjectLibraryPlaybackPresentationTests: XCTestCase {
         XCTAssertEqual(summary.sizeBytes, 3_000_000)
     }
 
-    func testProjectLibraryUsesEditingAndMediaLanguage() {
-        XCTAssertEqual(ProjectLibrarySymbols.editRecording, "scissors")
+    func testMediaTabUsesMediaLanguage() {
         XCTAssertEqual(ProjectLibraryDetailTab.media.title, "Media")
         XCTAssertEqual(ProjectLibraryDetailTab.media.systemImage, "film.stack")
     }

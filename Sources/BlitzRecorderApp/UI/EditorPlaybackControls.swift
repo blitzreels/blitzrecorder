@@ -77,7 +77,7 @@ struct EditorPlaybackControls: View {
                     .offset(x: configuration.isPlaying ? 0 : 1)
                     .frame(width: 28, height: 36)
                 }
-                .blitzProminentGlassButton()
+                .blitzButton(.accent)
                 .accessibilityLabel(configuration.isPlaying ? "Pause" : "Play")
                 .help(configuration.isPlaying ? "Pause (Space)" : "Play (Space or L)")
                 .pointingHandCursor()
@@ -143,7 +143,7 @@ struct EditorPlaybackControls: View {
                         .onSubmit(jumpToPosition)
                         .accessibilityLabel("Time to jump to")
                     Button("Go", action: jumpToPosition)
-                        .blitzProminentGlassButton()
+                        .blitzButton(.accent)
                         .disabled(parsedPosition == nil)
                 }
                 Text(
@@ -172,29 +172,18 @@ struct EditorPlaybackControls: View {
     }
 
     private var speed: some View {
-        BlitzGlassMenu(
-            entries: EditorPlaybackRate.allCases.map { rate in
-                .item(
-                    BlitzMenuItem(
-                        title: rate.displayName,
-                        systemImage: "speedometer",
-                        isSelected: configuration.rate == rate,
-                        action: { configuration.onRateChange(rate) }
-                    ))
-            }, menuWidth: 160
-        ) {
-            HStack(spacing: 7) {
-                Text(configuration.rate.displayName)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                BlitzSymbol(configuration: .init(name: "chevron.down", size: 9))
-            }
-            .foregroundStyle(BlitzUI.primaryText)
-            .frame(width: 58, height: 36)
-            .blitzSelectedSurface(isSelected: false, cornerRadius: BlitzUI.controlRadius)
-        }
-        .accessibilityLabel("Playback speed")
-        .accessibilityValue(configuration.rate.displayName)
-        .pointingHandCursor()
-        .help("Playback speed (L)")
+        BlitzDropdown(configuration: .init(
+            title: "Playback speed",
+            selection: Binding(
+                get: { configuration.rate },
+                set: { configuration.onRateChange($0) }
+            ),
+            options: EditorPlaybackRate.allCases.map {
+                .init(value: $0, title: $0.displayName, detail: nil)
+            },
+            menuWidth: 200,
+            width: .content
+        ))
+        .help("Playback speed: \(configuration.rate.displayName) (L)")
     }
 }

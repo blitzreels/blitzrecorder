@@ -126,7 +126,6 @@ enum MCPProjectServiceError: LocalizedError {
     case transcriptNotFound(UUID)
     case exportAlreadyRunning
     case exportJobNotFound(UUID)
-    case unavailable4KExport(UUID)
     case outputDirectoryNotAuthorized(requested: String, configured: String)
 
     var errorDescription: String? {
@@ -141,8 +140,6 @@ enum MCPProjectServiceError: LocalizedError {
             return "A BlitzRecorder MCP export job is already running."
         case .exportJobNotFound(let id):
             return "Export job not found: \(id.uuidString)."
-        case .unavailable4KExport(let id):
-            return "Project \(id.uuidString) requires 4K export access."
         case .outputDirectoryNotAuthorized(let requested, let configured):
             return "Output directory \(requested) is not authorized. Choose \(configured) or one of its subfolders."
         }
@@ -373,9 +370,6 @@ final class MCPProjectService {
             project: project,
             sourceResolution: sourceResolution
         ))
-        if profile.resolution == .p2160, !coordinator.accessController.canUse4KExport {
-            throw MCPProjectServiceError.unavailable4KExport(project.id)
-        }
         let destinationURL = coordinator.uniqueOutputURL(
             request.outputDirectory
                 .appendingPathComponent(ProjectExportFilename.slug(from: project.title))

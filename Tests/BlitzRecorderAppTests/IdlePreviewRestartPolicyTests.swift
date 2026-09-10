@@ -2,10 +2,10 @@
 import XCTest
 
 final class IdlePreviewRestartPolicyTests: XCTestCase {
-    func testFinishingToIdleDelaysPreviewRestart() {
+    func testCompletedRecordingRestartsPreviewWithoutAnExtraCooldown() {
         XCTAssertEqual(
             IdlePreviewRestartPolicy.delayNanoseconds(previousState: .finishing, newState: .idle),
-            IdlePreviewRestartPolicy.postFinishingDelayNanoseconds
+            0
         )
     }
 

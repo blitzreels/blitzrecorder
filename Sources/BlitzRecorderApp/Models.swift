@@ -653,6 +653,7 @@ enum CanvasBackgroundStyle: String, CaseIterable {
 struct SourceOption: Equatable {
     let id: String
     let name: String
+    var cameraKind: CameraSourceKind? = nil
 }
 
 struct ScreenSourceBinding: Codable, Equatable, Identifiable {

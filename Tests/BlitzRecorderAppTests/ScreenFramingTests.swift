@@ -4,6 +4,69 @@ import XCTest
 
 final class ScreenFramingTests: XCTestCase {
     @MainActor
+    func testResponsiveWindowFitDoesNotWaitForSettling() async throws {
+        var current = CGRect(x: 200, y: 200, width: 1324, height: 960)
+        let target = CGRect(x: 800, y: 30, width: 600, height: 1067)
+        var waits = 0
+        let applied = try await WindowFrameWriter.apply(.init(
+            frame: target,
+            write: { change in
+                switch change {
+                case .size(let size): current.size = size
+                case .position(let position): current.origin = position
+                }
+            },
+            settle: { waits += 1 },
+            read: { current }
+        ))
+        XCTAssertEqual(applied, target)
+        XCTAssertEqual(waits, 0)
+    }
+
+    @MainActor
+    func testAlreadyFittedWindowDoesNotWriteOrWait() async throws {
+        let target = CGRect(x: 800, y: 30, width: 600, height: 1067)
+        let applied = try await WindowFrameWriter.apply(.init(
+            frame: target,
+            write: { _ in XCTFail("An already fitted window needs no writes") },
+            settle: { XCTFail("An already fitted window needs no settling") },
+            read: { target }
+        ))
+        XCTAssertEqual(applied, target)
+    }
+
+    @MainActor
+    func testNativeResizePollsUntilDeferredUpdateArrives() async throws {
+        var current = CGRect(x: 200, y: 200, width: 1324, height: 960)
+        var pending: CGRect?
+        var remainingPolls = 0
+        var waits = 0
+        let target = CGRect(x: 800, y: 30, width: 600, height: 1067)
+        let applied = try await WindowFrameWriter.apply(.init(
+            frame: target,
+            write: { change in
+                var next = current
+                switch change {
+                case .size(let size): next.size = size
+                case .position(let position): next.origin = position
+                }
+                pending = next
+                remainingPolls = 3
+            },
+            settle: {
+                waits += 1
+                remainingPolls -= 1
+                if remainingPolls == 0, let pending {
+                    current = pending
+                }
+            },
+            read: { current }
+        ))
+        XCTAssertEqual(applied, target)
+        XCTAssertEqual(waits, 6)
+    }
+
+    @MainActor
     func testNativeResizeWaitsForDeferredWindowUpdates() async throws {
         var current = CGRect(x: 200, y: 200, width: 1324, height: 960)
         var pending: CGRect?

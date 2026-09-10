@@ -1,6 +1,11 @@
 import CoreMedia
 import Foundation
 
+struct EditorProjectSegmentDeletion {
+    let index: Int
+    let duration: Double
+}
+
 struct EditorTimeRange: Equatable {
     struct Request {
         let anchor: Double
@@ -13,6 +18,19 @@ struct EditorTimeRange: Equatable {
 
     var duration: Double { end - start }
     var canCut: Bool { duration >= 1.0 / 600 }
+
+    struct SegmentRequest {
+        let eventTimes: [Double]
+        let index: Int
+        let duration: Double
+    }
+
+    static func segment(_ request: SegmentRequest) -> Self? {
+        guard request.eventTimes.indices.contains(request.index) else { return nil }
+        let end = request.index + 1 < request.eventTimes.count
+            ? request.eventTimes[request.index + 1] : request.duration
+        return resolve(.init(anchor: request.eventTimes[request.index], head: end, duration: request.duration))
+    }
 
     static func resolve(_ request: Request) -> Self? {
         guard request.anchor.isFinite, request.head.isFinite,

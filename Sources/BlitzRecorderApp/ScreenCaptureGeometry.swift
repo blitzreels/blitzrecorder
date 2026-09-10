@@ -545,28 +545,14 @@ enum ScreenCaptureGeometry {
     }
 
     private static func window(matching binding: ScreenSourceBinding?, in content: SCShareableContent) -> SCWindow? {
-        guard let binding else { return nil }
-        let windows = content.windows.filter { $0.isOnScreen && $0.frame.width > 0 && $0.frame.height > 0 }
-        if let windowID = binding.windowID,
-           let window = windows.first(where: { $0.windowID == windowID }) {
-            return window
-        }
-        let matchingWindows = windows.filter { window in
-            let bundleMatches = binding.bundleIdentifier == nil
-                || window.owningApplication?.bundleIdentifier == binding.bundleIdentifier
-            let titleMatches = binding.windowTitle == nil || window.title == binding.windowTitle
-            return bundleMatches && titleMatches
-        }
-
-        if let processID = binding.processID,
-           let processMatch = matchingWindows
-            .filter({ $0.owningApplication?.processID == processID })
-            .max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }) {
-            return processMatch
-        }
-
-        return matchingWindows.max {
-            $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height
+        guard let binding, let identity = ScreenWindowIdentity(binding) else { return nil }
+        return content.windows.first { window in
+            guard window.isOnScreen, window.frame.width > 0, window.frame.height > 0 else { return false }
+            return identity.matches(.init(
+                windowID: window.windowID,
+                processID: window.owningApplication?.processID,
+                bundleIdentifier: window.owningApplication?.bundleIdentifier
+            ))
         }
     }
 

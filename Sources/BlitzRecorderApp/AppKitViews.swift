@@ -51,6 +51,12 @@ final class PreviewStageView: NSView {
         }
     }
     private var dragMode: DragMode?
+    var sceneID: UUID? {
+        didSet {
+            guard oldValue != sceneID else { return }
+            cancelCanvasInteraction()
+        }
+    }
     private var trackingArea: NSTrackingArea?
     private var cameraCropDraftAmount: CGPoint?
     private var cameraCropDraftPosition: CGPoint?
@@ -61,6 +67,7 @@ final class PreviewStageView: NSView {
 
     var selectedLayer: SceneLayerKind = .camera {
         didSet {
+            guard oldValue != selectedLayer else { return }
             updateSelectionOverlay()
             invalidateResizeCursorRects()
         }
@@ -147,6 +154,7 @@ final class PreviewStageView: NSView {
     var captureLayout: CaptureLayout = .vertical {
         didSet {
             guard oldValue != captureLayout else { return }
+            cancelCanvasInteraction()
             safeZoneOverlay.captureLayout = captureLayout
             updateSafeZoneOverlayVisibility()
             relayoutCanvasImmediately()
@@ -173,6 +181,7 @@ final class PreviewStageView: NSView {
 
     var screenCrop: CGRect? {
         didSet {
+            guard oldValue != screenCrop else { return }
             if !isScreenCropEditingEnabled {
                 screenCropDraft = screenCrop
             }
@@ -182,6 +191,7 @@ final class PreviewStageView: NSView {
 
     var cameraCropAmount: CGPoint = .zero {
         didSet {
+            guard oldValue != cameraCropAmount else { return }
             if !isCameraCropEditingEnabled {
                 cameraPreview.sourceCropAmount = cameraCropAmount
             }
@@ -191,6 +201,7 @@ final class PreviewStageView: NSView {
 
     var cameraCropPosition: CGPoint = .zero {
         didSet {
+            guard oldValue != cameraCropPosition else { return }
             if !isCameraCropEditingEnabled {
                 cameraPreview.sourceCropPosition = cameraCropPosition
             }
@@ -224,6 +235,7 @@ final class PreviewStageView: NSView {
 
     var canvasPadding: CGFloat = 0 {
         didSet {
+            guard oldValue != canvasPadding else { return }
             if !canvasFrame.isEmpty {
                 applySceneFrames()
             }
@@ -233,6 +245,7 @@ final class PreviewStageView: NSView {
 
     var screenContentMode: CameraContentMode = .fill {
         didSet {
+            guard oldValue != screenContentMode else { return }
             if !canvasFrame.isEmpty {
                 applySceneFrames()
             }
@@ -241,6 +254,7 @@ final class PreviewStageView: NSView {
 
     var cameraContentMode: CameraContentMode = .fill {
         didSet {
+            guard oldValue != cameraContentMode else { return }
             cameraPreview.contentMode = cameraContentMode.renderContentMode
             if !canvasFrame.isEmpty {
                 applySceneFrames()
@@ -250,6 +264,7 @@ final class PreviewStageView: NSView {
 
     var cameraFramePadding: CGFloat = 0 {
         didSet {
+            guard oldValue != cameraFramePadding else { return }
             if !canvasFrame.isEmpty {
                 applySceneFrames()
             }
@@ -259,6 +274,7 @@ final class PreviewStageView: NSView {
 
     var cameraShadowEnabled: Bool = false {
         didSet {
+            guard oldValue != cameraShadowEnabled else { return }
             if !canvasFrame.isEmpty {
                 applySceneFrames()
             }
@@ -267,6 +283,7 @@ final class PreviewStageView: NSView {
 
     var showsRuleOfThirdsOverlay: Bool = false {
         didSet {
+            guard oldValue != showsRuleOfThirdsOverlay else { return }
             safeZoneOverlay.showsRuleOfThirdsOverlay = showsRuleOfThirdsOverlay
             updateSafeZoneOverlayVisibility()
             safeZoneOverlay.needsDisplay = true
@@ -275,6 +292,7 @@ final class PreviewStageView: NSView {
 
     var socialSafeZoneOverlay: SocialVideoSafeZone = .none {
         didSet {
+            guard oldValue != socialSafeZoneOverlay else { return }
             safeZoneOverlay.socialSafeZoneOverlay = socialSafeZoneOverlay
             updateSafeZoneOverlayVisibility()
             safeZoneOverlay.needsDisplay = true
@@ -283,6 +301,10 @@ final class PreviewStageView: NSView {
 
     var enabledSources: Set<CaptureSource> = [] {
         didSet {
+            guard oldValue != enabledSources else { return }
+            if let dragMode, !enabledSources.contains(dragMode.layer.source) {
+                cancelCanvasInteraction()
+            }
             if !enabledSources.contains(selectedLayer.source),
                let firstLayer = SceneLayoutProjection.topLayer(in: sceneLayout, enabledSources: enabledSources) {
                 selectedLayer = firstLayer
@@ -294,10 +316,14 @@ final class PreviewStageView: NSView {
 
     var sceneLayout = SceneLayout() {
         didSet {
+            guard oldValue != sceneLayout else { return }
+            if oldValue.layerOrder != sceneLayout.layerOrder { applyLayerOrder() }
             if !canvasFrame.isEmpty {
                 applySceneFrames()
+            } else {
+                needsLayout = true
             }
-            needsLayout = true
+            if isCameraCropEditingEnabled { needsLayout = true }
             needsDisplay = true
             invalidateResizeCursorRects()
         }
@@ -715,7 +741,7 @@ final class PreviewStageView: NSView {
             return
         }
 
-        setLocalFrame(frame, for: dragMode.layer)
+        setLocalFrame(.init(frame: frame, layer: dragMode.layer))
 
         if let onSceneLayoutChanged {
             onSceneLayoutChanged(sceneLayout)
@@ -839,26 +865,26 @@ final class PreviewStageView: NSView {
         }
     }
 
-    private func setLocalFrame(_ frame: CGRect, for layer: SceneLayerKind) {
-        let frame = clamped(frame)
-        performWithoutUIAnimation {
-            switch layer {
-            case .screen:
-                sceneLayout.screenFrame = frame
-                screenPreview.frame = projectedFrame(for: .screen, in: canvasFrame)
-                applyCanvasMask(to: screenPreview)
-                applySourceShape(to: screenPreview)
-            case .camera:
-                sceneLayout.cameraFrame = frame
-                cameraPreview.frame = projectedFrame(for: .camera, in: canvasFrame)
-                applyCanvasMask(to: cameraPreview)
-                applySourceShape(to: cameraPreview)
-            }
-            updateOutlineOverlay()
-            updateSelectionOverlay()
+    private struct LayerFrameUpdate {
+        let frame: CGRect
+        let layer: SceneLayerKind
+    }
+
+    private func setLocalFrame(_ update: LayerFrameUpdate) {
+        let frame = clamped(update.frame)
+        switch update.layer {
+        case .screen:
+            sceneLayout.screenFrame = frame
+        case .camera:
+            sceneLayout.cameraFrame = frame
         }
-        invalidateResizeCursorRects()
-        needsDisplay = true
+    }
+
+    func cancelCanvasInteraction() {
+        dragMode = nil
+        NSCursor.arrow.set()
+        if isCameraCropEditingEnabled { cancelCameraCropEditing() }
+        if isScreenCropEditingEnabled { cancelScreenCropEditing() }
     }
 
     private func invalidateResizeCursorRects() {

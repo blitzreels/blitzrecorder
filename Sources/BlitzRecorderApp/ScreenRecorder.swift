@@ -28,6 +28,17 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         stream
     }
 
+    var cursorCaptureFrame: CGRect? {
+        guard let display = currentDisplay, currentPickedFilter == nil,
+              display.width > 0, display.height > 0, !currentSourceRect.isEmpty else { return nil }
+        let frame = display.frame
+        return CGRect(
+            x: frame.minX + currentSourceRect.minX / CGFloat(display.width) * frame.width,
+            y: frame.minY + currentSourceRect.minY / CGFloat(display.height) * frame.height,
+            width: currentSourceRect.width / CGFloat(display.width) * frame.width,
+            height: currentSourceRect.height / CGFloat(display.height) * frame.height)
+    }
+
     func start(
         url: URL,
         settings: RecordingSettings,
@@ -302,8 +313,9 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         configuration.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
         configuration.queueDepth = 6
         configuration.showsCursor = settings.includeCursor
+            && !CursorCapturePolicy.rendersCursor(.init(settings: settings, filter: nil))
         if #available(macOS 15.0, *) {
-            configuration.showMouseClicks = true
+            configuration.showMouseClicks = configuration.showsCursor
         }
         configuration.capturesAudio = false
         if let sourceRect {
@@ -335,8 +347,9 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         configuration.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
         configuration.queueDepth = 6
         configuration.showsCursor = settings.includeCursor
+            && !CursorCapturePolicy.rendersCursor(.init(settings: settings, filter: filter))
         if #available(macOS 15.0, *) {
-            configuration.showMouseClicks = true
+            configuration.showMouseClicks = configuration.showsCursor
         }
         configuration.capturesAudio = false
         if let sourceRect = ScreenCaptureGeometry.pickedSourceRect(request: .init(

@@ -14,12 +14,15 @@ struct EditorShortcutHelp: View {
             }
             Divider()
             VStack(spacing: 8) {
+                row(.init(title: "Add / remove sound or silence segments", keys: "⌘ click"))
+                row(.init(title: "Select consecutive sound / silence segments", keys: "⇧ click / Drag strip"))
                 row(.init(title: "Select a time range", keys: "Drag a track"))
                 row(.init(title: "Set range start / end", keys: "I  O"))
                 row(.init(title: "Clear selection", keys: "Esc"))
-                row(.init(title: "Cut selected range / join selected scene", keys: "Delete"))
+                row(.init(title: "Delete segment / range from all tracks", keys: "Delete"))
+                row(.init(title: "Switch selected sound / silence segments", keys: "Delete"))
                 row(.init(title: "Restore removed footage in range", keys: "⇧ Delete"))
-                row(.init(title: "Split scene at playhead", keys: "⌘ B / S"))
+                row(.init(title: "Split all tracks at playhead", keys: "⌘ B / S"))
                 row(.init(title: "Toggle selected track", keys: "M / H"))
                 row(.init(title: "Undo / redo", keys: "⌘ Z  /  ⇧ ⌘ Z"))
             }
@@ -29,7 +32,7 @@ struct EditorShortcutHelp: View {
                 row(.init(title: "Fit recording", keys: "F"))
                 row(.init(title: "Show shortcuts", keys: "?"))
             }
-            Text("Drag the ruler to scrub. Range cuts apply to all tracks and can be undone.")
+            Text("Split before and after a mistake, select the segment, then press Delete. All tracks stay in sync. Undo with ⌘Z.")
                 .font(.system(size: 11))
                 .foregroundStyle(BlitzUI.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)

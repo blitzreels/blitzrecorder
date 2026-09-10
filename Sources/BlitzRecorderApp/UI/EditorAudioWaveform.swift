@@ -16,17 +16,33 @@ final class EditorAudioWaveform: Sendable {
 
     init(_ request: Request) {
         var peaks = request.peaks.map { $0.isFinite ? max(0, $0) : 0 }
-        if let maximum = peaks.max(), maximum > 0 {
+        if let maximum = peaks.max(), maximum > 0, maximum != 1 {
             for index in peaks.indices { peaks[index] /= maximum }
         }
+        levels = Self.makeLevels(peaks)
+    }
+
+    init?(cachedPeaks: [Float]) {
+        guard cachedPeaks.allSatisfy({ $0.isFinite && $0 >= 0 && $0 <= 1 }) else { return nil }
+        levels = Self.makeLevels(cachedPeaks)
+    }
+
+    private static func makeLevels(_ initial: [Float]) -> [[Float]] {
+        var peaks = initial
         var levels = [peaks]
         while peaks.count > 1 {
-            peaks = stride(from: 0, to: peaks.count, by: 2).map {
-                max(peaks[$0], peaks[min($0 + 1, peaks.count - 1)])
+            var reduced = [Float](repeating: 0, count: (peaks.count + 1) / 2)
+            peaks.withUnsafeBufferPointer { source in
+                reduced.withUnsafeMutableBufferPointer { destination in
+                    vDSP_vmax(source.baseAddress!, 2, source.baseAddress!.advanced(by: 1), 2,
+                              destination.baseAddress!, 1, vDSP_Length(peaks.count / 2))
+                }
             }
+            if !peaks.count.isMultiple(of: 2) { reduced[reduced.count - 1] = peaks[peaks.count - 1] }
+            peaks = reduced
             levels.append(peaks)
         }
-        self.levels = levels
+        return levels
     }
 
     var overview: [Float] {
@@ -85,6 +101,11 @@ final class EditorAudioWaveform: Sendable {
     }
 
     static func load(_ request: LoadRequest) async -> EditorAudioWaveform? {
+        guard !Task.isCancelled, request.duration.isFinite, request.duration > 0 else { return nil }
+        let cacheKey = MediaFileFingerprint(url: request.asset.url).map {
+            EditorWaveformCache.Key(file: $0, duration: request.duration)
+        }
+        if let cacheKey, let waveform = await EditorWaveformCache.shared.load(cacheKey) { return waveform }
         guard request.duration.isFinite, request.duration > 0,
             let track = try? await request.asset.loadTracks(withMediaType: .audio).first,
             let reader = try? AVAssetReader(asset: request.asset)
@@ -132,7 +153,9 @@ final class EditorAudioWaveform: Sendable {
             }
         }
         guard reader.status == .completed, !Task.isCancelled else { return nil }
-        return EditorAudioWaveform(.init(peaks: accumulator.peaks))
+        let waveform = EditorAudioWaveform(.init(peaks: accumulator.peaks))
+        if let cacheKey { await EditorWaveformCache.shared.save(.init(key: cacheKey, waveform: waveform)) }
+        return waveform
     }
 }
 

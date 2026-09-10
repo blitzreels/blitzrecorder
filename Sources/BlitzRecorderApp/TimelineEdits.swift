@@ -12,6 +12,18 @@ enum TimelineCutSource: String, Codable, Equatable, Sendable {
     case user
 }
 
+enum SilenceClassification: String, Codable, Equatable, Sendable {
+    case sound
+    case silence
+}
+
+struct SilenceOverride: Codable, Equatable, Identifiable, Sendable {
+    let id: UUID
+    var start: TimeInterval
+    var end: TimeInterval
+    let classification: SilenceClassification
+}
+
 struct TimelineCut: Equatable, Identifiable, Sendable {
     let id: UUID
     var start: TimeInterval
@@ -192,15 +204,20 @@ struct TimelineTimeMap: Equatable {
 
     func outputTime(forTake takeTime: CMTime) -> CMTime {
         let time = CMTimeConvertScale(takeTime, timescale: Self.timescale, method: .roundHalfAwayFromZero)
-        for range in keptRanges {
-            if CMTimeCompare(time, range.takeStart) < 0 {
-                return range.outputStart
-            }
-            if CMTimeCompare(time, range.takeEnd) < 0 {
-                return CMTimeAdd(range.outputStart, CMTimeSubtract(time, range.takeStart))
+        var lower = 0
+        var upper = keptRanges.count
+        while lower < upper {
+            let middle = lower + (upper - lower) / 2
+            if CMTimeCompare(time, keptRanges[middle].takeEnd) < 0 {
+                upper = middle
+            } else {
+                lower = middle + 1
             }
         }
-        return outputDuration
+        guard lower < keptRanges.count else { return outputDuration }
+        let range = keptRanges[lower]
+        guard CMTimeCompare(time, range.takeStart) >= 0 else { return range.outputStart }
+        return CMTimeAdd(range.outputStart, CMTimeSubtract(time, range.takeStart))
     }
 
     func outputSeconds(forTakeSeconds seconds: TimeInterval) -> TimeInterval {
@@ -209,13 +226,11 @@ struct TimelineTimeMap: Equatable {
 
     func takeTime(forOutput outputTime: CMTime) -> CMTime {
         let time = CMTimeConvertScale(outputTime, timescale: Self.timescale, method: .roundHalfAwayFromZero)
-        for range in keptRanges {
-            if CMTimeCompare(time, range.outputEnd) < 0 {
-                let offset = CMTimeMaximum(.zero, CMTimeSubtract(time, range.outputStart))
-                return CMTimeAdd(range.takeStart, offset)
-            }
-        }
-        return keptRanges.last?.takeEnd ?? takeDuration
+        let index = outputRangeIndex(at: time)
+        guard index < keptRanges.count else { return keptRanges.last?.takeEnd ?? takeDuration }
+        let range = keptRanges[index]
+        let offset = CMTimeMaximum(.zero, CMTimeSubtract(time, range.outputStart))
+        return CMTimeAdd(range.takeStart, offset)
     }
 
     func takeSeconds(forOutputSeconds seconds: TimeInterval) -> TimeInterval {
@@ -227,13 +242,40 @@ struct TimelineTimeMap: Equatable {
     }
 
     func removedRange(containing seconds: TimeInterval) -> RemovedRange? {
-        removedRanges.first { seconds >= $0.start && seconds < $0.end }
+        guard seconds.isFinite else { return nil }
+        var lower = 0
+        var upper = removedRanges.count
+        while lower < upper {
+            let middle = lower + (upper - lower) / 2
+            if seconds < removedRanges[middle].end {
+                upper = middle
+            } else {
+                lower = middle + 1
+            }
+        }
+        guard lower < removedRanges.count, seconds >= removedRanges[lower].start else { return nil }
+        return removedRanges[lower]
     }
 
     func keptRange(containingOutput outputTime: CMTime) -> KeptRange? {
-        keptRanges.first {
-            CMTimeCompare(outputTime, $0.outputStart) >= 0 && CMTimeCompare(outputTime, $0.outputEnd) < 0
+        let index = outputRangeIndex(at: outputTime)
+        guard index < keptRanges.count,
+              CMTimeCompare(outputTime, keptRanges[index].outputStart) >= 0 else { return nil }
+        return keptRanges[index]
+    }
+
+    private func outputRangeIndex(at time: CMTime) -> Int {
+        var lower = 0
+        var upper = keptRanges.count
+        while lower < upper {
+            let middle = lower + (upper - lower) / 2
+            if CMTimeCompare(time, keptRanges[middle].outputEnd) < 0 {
+                upper = middle
+            } else {
+                lower = middle + 1
+            }
         }
+        return lower
     }
 
     func mediaInsertions(_ request: TimelineMediaInsertionRequest) -> [TimelineMediaInsertion] {
@@ -458,6 +500,7 @@ struct ScreenZoomTrack: Equatable, Sendable {
     var keyframes: [ScreenZoomKeyframe]
     var generatedFromCursor: Bool
     var intensity: Double
+    var isEnabled: Bool = true
 
     static let empty = ScreenZoomTrack(keyframes: [], generatedFromCursor: false, intensity: 2)
 
@@ -471,6 +514,10 @@ struct ScreenZoomTrack: Equatable, Sendable {
         keyframes.isEmpty
     }
 
+    var isActive: Bool {
+        isEnabled && !isEmpty
+    }
+
     static func amount(forMagnification magnification: Double) -> Double {
         guard magnification > 1 else { return 0 }
         return min(maximumAmount, max(0, 1 - 1 / magnification))
@@ -482,7 +529,7 @@ struct ScreenZoomTrack: Equatable, Sendable {
     }
 
     func sample(at takeTime: TimeInterval) -> ScreenZoomSample {
-        guard let first = keyframes.first else { return .none }
+        guard isEnabled, let first = keyframes.first else { return .none }
         if takeTime <= first.time {
             return ScreenZoomSample(amount: CGFloat(first.amount), position: first.position)
         }
@@ -516,7 +563,7 @@ struct ScreenZoomTrack: Equatable, Sendable {
     }
 
     func hasVariation(in range: ClosedRange<TimeInterval>) -> Bool {
-        guard !keyframes.isEmpty else { return false }
+        guard isActive else { return false }
         let start = sample(at: range.lowerBound)
         let end = sample(at: range.upperBound)
         if start != end { return true }
@@ -524,7 +571,7 @@ struct ScreenZoomTrack: Equatable, Sendable {
     }
 
     var keyframeTimes: [TimeInterval] {
-        keyframes.map(\.time)
+        isEnabled ? keyframes.map(\.time) : []
     }
 }
 
@@ -532,6 +579,9 @@ struct TimelineEdits: Equatable, Sendable {
     var cuts: [TimelineCut]
     var textOverlays: [TextOverlay]
     var zoom: ScreenZoomTrack
+    var silenceOverrides: [SilenceOverride] = []
+    var cursorStyle: CursorPresentationStyle = .standard
+    var cameraFollowsZoom: Bool = false
 
     static let empty = TimelineEdits(cuts: [], textOverlays: [], zoom: .empty)
 

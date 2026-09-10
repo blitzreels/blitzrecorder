@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 private let timelineContentSpace = "EditorTimelineContent"
@@ -47,8 +48,9 @@ struct EditorTimelineView: View {
     let toggleableAssetIDs: Set<String>
     let onToggleTrack: (EditorAsset) -> Void
     let onSplit: () -> Void
-    let onDeleteCut: () -> Void
-    let canDeleteCut: Bool
+    let onDeleteSegment: () -> Void
+    let canDeleteSegment: Bool
+    let onJoinSegment: () -> Void
     let onCutRange: () -> Void
     let onRestoreRange: () -> Void
     let onMarkIn: () -> Void
@@ -56,11 +58,18 @@ struct EditorTimelineView: View {
     @Binding var zoomLevel: Double
     @Binding var showsShortcuts: Bool
     let silence: SilenceEditingSession
+    let isEditingSilence: Bool
     let onOpenSilence: () -> Void
 
     @State private var projection = EditorTimelineProjection(.init(duration: 0, cuts: []))
     @State private var scrollOffset: CGFloat = 0
     @State private var scrollPosition = ScrollPosition(x: 0)
+    @State private var silenceSegments: [SilenceTimelineSegment] = []
+    @State private var hoveredSilenceRange: EditorTimeRange?
+    @State private var selectionFocusTime: Double?
+    @State private var stripDragSelection: SilenceSegmentSelection?
+    @State private var isDraggingStrip = false
+    @State private var addsDraggedSegments = false
 
     private let gutterWidth: CGFloat = 140
     private let rulerHeight: CGFloat = 30
@@ -68,12 +77,17 @@ struct EditorTimelineView: View {
     private let segmentsRowHeight: CGFloat = 38
     private let videoRowHeight: CGFloat = 54
     private let audioRowHeight: CGFloat = 36
+    private let silenceRowHeight: CGFloat = 38
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            if case .range(let range) = selection, selectedSilenceRange == nil {
+            if let selected = silenceControlSelection {
+                silenceToolbar(selected)
+            } else if let range = selection?.timeRange {
                 rangeToolbar(range)
+            } else if silence.canClassify {
+                silenceToolbar(nil)
             }
             Rectangle()
                 .fill(BlitzUI.separator)
@@ -93,6 +107,10 @@ struct EditorTimelineView: View {
         .onChange(of: EditorTimelineProjection.Request(duration: duration, cuts: project?.edits.cuts ?? []), initial: true) {
             projection = EditorTimelineProjection(.init(duration: duration, cuts: project?.edits.cuts ?? []))
         }
+        .onChange(of: SilenceTimelineSegments.Request(duration: duration, cuts: silence.cuts), initial: true) {
+            silenceSegments = SilenceTimelineSegments.resolve(.init(duration: duration, cuts: silence.cuts))
+            hoveredSilenceRange = nil
+        }
     }
 
     private var header: some View {
@@ -102,18 +120,27 @@ struct EditorTimelineView: View {
                     title: "Split", systemName: "scissors",
                     isDisabled: !isInteractive, action: onSplit
                 )
-                .help("Split this scene at the playhead (⌘B)")
+                .help("Split all tracks together at the playhead (⌘B)")
                 TimelineActionButton(
                     title: "Range", systemName: "rectangle.dashed",
                     isDisabled: !isInteractive, action: onMarkIn
                 )
                 .help("Mark a range from the playhead (I). Drag a track to select a range.")
-                if canDeleteCut {
+                if let selected = silenceControlSelection {
                     TimelineActionButton(
-                        title: "Join", systemName: "rectangle.compress.vertical",
-                        isDisabled: !isInteractive, action: onDeleteCut
+                        title: "Switch", systemName: "arrow.triangle.2.circlepath",
+                        isDisabled: !isInteractive || !silence.canClassify
+                    ) {
+                        silence.toggleRanges(selected.ranges)
+                        selection = .silenceRanges(selected)
+                    }
+                    .help("Switch selected sections between silence and sound (Delete)")
+                } else {
+                    TimelineActionButton(
+                        title: "Delete", systemName: "trash",
+                        isDisabled: !isInteractive || !canDeleteSegment, action: onDeleteSegment
                     )
-                    .help("Join this scene with the previous scene")
+                    .help("Delete this segment from all tracks and close the gap (Delete). Undo with ⌘Z.")
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -198,13 +225,13 @@ struct EditorTimelineView: View {
             ))
             .help("Set range end at the playhead (O)")
             Button(action: onRestoreRange) { Label("Restore range", systemImage: "arrow.uturn.backward") }
-                .blitzGlassButton()
+                .blitzButton(.secondary)
                 .disabled(!isInteractive || !(project?.edits.enabledCuts.contains {
                     $0.start < range.end && $0.end > range.start
                 } ?? false))
                 .help("Keep removed footage inside this range on all tracks (Shift Delete).")
             Button(action: onCutRange) { Label("Cut range", systemImage: "scissors") }
-                .blitzProminentGlassButton()
+                .blitzButton(.accent)
                 .disabled(!isInteractive || !range.canCut)
                 .help("Remove this time range from all tracks in preview and export (Delete). Undo with ⌘Z.")
             BlitzToolbarButton(configuration: .init(
@@ -219,6 +246,159 @@ struct EditorTimelineView: View {
     private func rangeTime(_ time: Double) -> String {
         let hundredths = Int((max(0, time) * 100).rounded())
         return String(format: "%02d:%02d.%02d", hundredths / 6_000, (hundredths / 100) % 60, hundredths % 100)
+    }
+
+    private func silenceToolbar(_ selected: SilenceSegmentSelection?) -> some View {
+        HStack(spacing: 12) {
+            if let selected {
+                silenceSelectionControls(selected)
+            } else {
+                Text("Click to select · ⌘-click to add · Shift-click or drag to select several")
+                    .foregroundStyle(BlitzUI.secondaryText)
+                Spacer(minLength: 4)
+            }
+            SilencePreviewToggle(session: silence)
+                .fixedSize()
+        }
+        .font(.system(size: 11, weight: .medium))
+        .blitzWorkspaceToolbar()
+    }
+
+    private func silenceSelectionControls(_ selected: SilenceSegmentSelection) -> some View {
+        let range = selected.bounds
+        let classification = silence.classification(range)
+        let previous = SilenceTimelineSegments.neighbor(.init(
+            segments: selectableSilenceSegments, selection: range, direction: .previous
+        ))
+        let next = SilenceTimelineSegments.neighbor(.init(
+            segments: selectableSilenceSegments, selection: range, direction: .next
+        ))
+        return Group {
+            HStack(spacing: 0) {
+                Button {
+                    if let previous {
+                        selectSilenceRange(previous.range)
+                        selectionFocusTime = (previous.range.start + previous.range.end) / 2
+                    }
+                } label: { Image(systemName: "chevron.left") }
+                .blitzButton(.quiet)
+                .disabled(previous == nil)
+                .accessibilityLabel("Previous sound or silence segment")
+                .help("Select the previous segment, including very short sections.")
+                Button {
+                    if let next {
+                        selectSilenceRange(next.range)
+                        selectionFocusTime = (next.range.start + next.range.end) / 2
+                    }
+                } label: { Image(systemName: "chevron.right") }
+                .blitzButton(.quiet)
+                .disabled(next == nil)
+                .accessibilityLabel("Next sound or silence segment")
+                .help("Select the next segment, including very short sections.")
+            }
+            if selected.ranges.count > 1 {
+                Label("\(selected.ranges.count) segments", systemImage: "rectangle.stack")
+                    .foregroundStyle(.white)
+                Text(String(format: "%.2f s selected", selected.duration))
+                    .monospacedDigit()
+                    .foregroundStyle(BlitzUI.secondaryText)
+            } else {
+                Label(
+                    classification == .silence ? "Silence · remove" : "Sound · keep",
+                    systemImage: classification == .silence ? "waveform.slash" : "waveform"
+                )
+                .foregroundStyle(classification == .silence ? Color.red : BlitzUI.mint)
+                Text("\(rangeTime(projection.displayTime(range.start))) – \(rangeTime(projection.displayTime(range.end)))")
+                    .monospacedDigit()
+                    .foregroundStyle(BlitzUI.secondaryText)
+            }
+            Button("Mark as sound", systemImage: "waveform") {
+                classifySelectedRanges(.sound)
+            }
+            .blitzButton(.secondary)
+            .help("Keep selected sections and protect them from silence removal. Undo together with ⌘Z.")
+            Button("Mark as silence", systemImage: "waveform.slash") {
+                classifySelectedRanges(.silence)
+            }
+            .blitzButton(.secondary)
+            .help("Include selected sections in silence removal. Undo together with ⌘Z.")
+            Button {
+                let start = projection.displayTime(range.start)
+                let end = projection.displayTime(range.end)
+                selectionFocusTime = (range.start + range.end) / 2
+                zoomLevel = EditorTimelineZoom.clamp(.init(
+                    value: projection.duration / max(1, (end - start) * 2), duration: projection.duration
+                ))
+            } label: { Image(systemName: "viewfinder") }
+            .blitzButton(.quiet)
+            .accessibilityLabel("Zoom to selection")
+            .help("Enlarge the selected sections.")
+            BlitzToolbarButton(configuration: .init(
+                title: "Clear selection", symbolName: "xmark", showsTitle: false, action: { selection = nil }
+            ))
+            Spacer(minLength: 4)
+        }
+        .controlSize(.small)
+        .disabled(!isInteractive || !silence.canClassify)
+    }
+
+    private func classifySelection(_ change: SilenceEditingSession.ClassificationRequest) {
+        if selection?.silenceSelection?.ranges.contains(change.range) == true {
+            classifySelectedRanges(change.classification)
+        } else {
+            silence.classify(change)
+            selection = .silenceRange(change.range)
+        }
+    }
+
+    private func classifySelectedRanges(_ classification: SilenceClassification) {
+        guard let selected = classificationSelection else { return }
+        silence.classifyTogether(selected.ranges.map { .init(range: $0, classification: classification) })
+        selection = .silenceRanges(selected)
+    }
+
+    private func selectSilenceRange(_ range: EditorTimeRange) {
+        selection = .silenceRange(range)
+        onSeek(range.start)
+        onSeekEnded()
+    }
+
+    private func clickSilenceRange(_ range: EditorTimeRange) {
+        let modifiers = NSEvent.modifierFlags
+        let selected = SilenceSegmentSelection.clicking(.init(
+            current: selection?.silenceSelection, target: range, segments: selectableSilenceSegments,
+            extending: modifiers.contains(.shift), toggling: modifiers.contains(.command)
+        ))
+        selection = selected.map(EditorSelection.silenceRanges)
+        if !modifiers.contains(.shift), !modifiers.contains(.command) {
+            onSeek(range.start)
+            onSeekEnded()
+        }
+    }
+
+    private func toggleSilenceRange(_ range: EditorTimeRange) {
+        selection = SilenceSegmentSelection.clicking(.init(
+            current: selection?.silenceSelection, target: range, segments: selectableSilenceSegments,
+            extending: false, toggling: true
+        )).map(EditorSelection.silenceRanges)
+    }
+
+    private var classificationSelection: SilenceSegmentSelection? {
+        selection?.silenceSelection ?? selection?.timeRange.map(SilenceSegmentSelection.init)
+    }
+
+    private var silenceControlSelection: SilenceSegmentSelection? {
+        if let selected = selection?.silenceSelection { return selected }
+        if isEditingSilence, let range = selection?.timeRange { return SilenceSegmentSelection(range) }
+        return nil
+    }
+
+    private var selectedSilenceRanges: [EditorTimeRange] {
+        selection?.silenceSelection?.ranges ?? []
+    }
+
+    private var selectableSilenceSegments: [SilenceTimelineSegment] {
+        silenceSegments.filter { projection.displayTime($0.range.end) > projection.displayTime($0.range.start) }
     }
 
     private func timelineBody(viewportWidth: CGFloat) -> some View {
@@ -240,6 +420,18 @@ struct EditorTimelineView: View {
                         ruler(.init(pxPerSecond: pxPerSecond, width: contentWidth, viewport: viewport))
 
                         if duration > 0 {
+                            if showsSilenceTrack {
+                                SilenceSegmentStrip(configuration: .init(
+                                    segments: selectableSilenceSegments,
+                                    projection: projection, pixelsPerSecond: pxPerSecond, viewport: viewport,
+                                    width: contentWidth, height: silenceRowHeight,
+                                    selections: selectedSilenceRanges, hoveredRange: hoveredSilenceRange,
+                                    onSelect: clickSilenceRange, onToggleSelection: toggleSilenceRange,
+                                    onHover: { hoveredSilenceRange = $0 },
+                                    onClassify: classifySelection
+                                ))
+                                .disabled(!isInteractive || !silence.canClassify)
+                            }
                             if showsChaptersTrack {
                                 chaptersTrack(pxPerSecond: pxPerSecond, contentWidth: contentWidth)
                             }
@@ -264,13 +456,40 @@ struct EditorTimelineView: View {
                                         head: projection.takeTime(Double(value.location.x / pxPerSecond)), duration: duration
                                     ))
                                 else { return }
-                                selection = .range(range)
+                                if showsSilenceTrack, value.startLocation.y < rulerHeight + 6 + silenceRowHeight {
+                                    if !isDraggingStrip {
+                                        stripDragSelection = selection?.silenceSelection
+                                        addsDraggedSegments = NSEvent.modifierFlags.contains(.command)
+                                        isDraggingStrip = true
+                                    }
+                                    selection = SilenceSegmentSelection.dragging(.init(
+                                        current: stripDragSelection,
+                                        anchorTime: projection.takeTime(Double(value.startLocation.x / pxPerSecond)),
+                                        headTime: projection.takeTime(Double(value.location.x / pxPerSecond)),
+                                        segments: selectableSilenceSegments, additive: addsDraggedSegments
+                                    )).map(EditorSelection.silenceRanges)
+                                } else {
+                                    selection = isEditingSilence || isSilenceTrack(at: value.startLocation.y)
+                                        ? .silenceRange(range) : .range(range)
+                                }
+                            }
+                            .onEnded { _ in
+                                isDraggingStrip = false
+                                stripDragSelection = nil
                             },
                         isEnabled: isInteractive
                     )
 
                     if duration > 0 {
-                        if case .range(let range) = selection, selectedSilenceRange == nil {
+                        linkedSegmentOverlay(pxPerSecond)
+                        if let range = hoveredSilenceRange, !selectedSilenceRanges.contains(range) {
+                            hoverOverlay(.init(range: range, pxPerSecond: pxPerSecond))
+                        }
+                        if !selectedSilenceRanges.isEmpty {
+                            ForEach(selectedSilenceRanges, id: \.start) { range in
+                                rangeOverlay(.init(range: range, pxPerSecond: pxPerSecond))
+                            }
+                        } else if let range = selection?.timeRange {
                             rangeOverlay(.init(range: range, pxPerSecond: pxPerSecond))
                         }
                         playhead(pxPerSecond: pxPerSecond)
@@ -281,8 +500,9 @@ struct EditorTimelineView: View {
                 .padding(.horizontal, 8)
             }
             .scrollPosition($scrollPosition)
-            .onChange(of: [zoomLevel, projection.duration]) {
-                let playheadX = CGFloat(projection.displayTime(playbackTime)) * pxPerSecond
+            .onChange(of: [zoomLevel, projection.duration, selectionFocusTime ?? -1]) {
+                let focusTime = selectionFocusTime ?? playbackTime
+                let playheadX = CGFloat(projection.displayTime(focusTime)) * pxPerSecond
                 let offset = min(max(0, contentWidth - trackViewport), max(0, playheadX - trackViewport / 2))
                 scrollPosition.scrollTo(x: offset)
             }
@@ -299,28 +519,70 @@ struct EditorTimelineView: View {
         let pxPerSecond: CGFloat
     }
 
+    private func linkedSegmentOverlay(_ pxPerSecond: CGFloat) -> some View {
+        let top = rulerHeight + 6 + (showsSilenceTrack ? silenceRowHeight + 6 : 0)
+            + (showsChaptersTrack ? chaptersRowHeight + 6 : 0)
+        let height = max(0, contentHeight - top)
+        return Canvas { context, _ in
+            if case .segment(let index) = selection,
+                let range = EditorTimeRange.segment(.init(
+                    eventTimes: sceneEvents.map(\.time), index: index, duration: duration
+                )) {
+                let start = CGFloat(projection.displayTime(range.start)) * pxPerSecond
+                let end = CGFloat(projection.displayTime(range.end)) * pxPerSecond
+                let path = Path(CGRect(x: start, y: top, width: max(0, end - start), height: height))
+                context.fill(path, with: .color(BlitzUI.mint.opacity(0.08)))
+                context.stroke(path, with: .color(BlitzUI.mint), lineWidth: 1.5)
+            }
+            for event in sceneEvents.dropFirst() {
+                let time = projection.displayTime(event.time)
+                guard time > 0, time < projection.duration else { continue }
+                let x = CGFloat(time) * pxPerSecond
+                let gap = Path(CGRect(x: x - 1, y: top, width: 3, height: height))
+                context.fill(gap, with: .color(BlitzUI.projectLibraryBackground))
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private func hoverOverlay(_ request: RangeOverlayRequest) -> some View {
+        let start = CGFloat(projection.displayTime(request.range.start)) * request.pxPerSecond
+        let end = CGFloat(projection.displayTime(request.range.end)) * request.pxPerSecond
+        let top = rulerHeight + 6
+        return Rectangle()
+            .fill(.white.opacity(0.055))
+            .overlay { Rectangle().strokeBorder(.white.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [4, 3])) }
+            .frame(width: max(1, end - start), height: max(0, contentHeight - top))
+            .offset(x: start, y: top)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
     private func rangeOverlay(_ request: RangeOverlayRequest) -> some View {
         let range = request.range
+        let isSilenceSelection = !selectedSilenceRanges.isEmpty
+        let outline = isSilenceSelection ? Color.white : BlitzUI.mint
         let top = rulerHeight + 6
         let height = max(0, contentHeight - top)
         return ZStack(alignment: .topLeading) {
             Rectangle()
-                .fill(BlitzUI.mint.opacity(0.12))
-                .overlay { Rectangle().strokeBorder(BlitzUI.mint.opacity(0.65), lineWidth: 1) }
+                .fill(outline.opacity(isSilenceSelection ? 0.06 : 0.12))
+                .overlay { Rectangle().strokeBorder(.black.opacity(0.65), lineWidth: 4) }
+                .overlay { Rectangle().strokeBorder(outline, lineWidth: 2) }
                 .frame(width: max(1, CGFloat(projection.displayTime(range.end) - projection.displayTime(range.start)) * request.pxPerSecond), height: height)
                 .offset(x: CGFloat(projection.displayTime(range.start)) * request.pxPerSecond, y: top)
                 .allowsHitTesting(false)
-            ForEach([true, false], id: \.self) { isStart in
-                Rectangle()
-                    .fill(BlitzUI.mint)
-                    .frame(width: 3, height: height)
-                    .overlay {
-                        Capsule().fill(BlitzUI.mint)
-                            .frame(width: 8, height: 28)
-                    }
-                    .frame(width: 16)
+            ForEach(selectedSilenceRanges.count > 1 ? [] : [true, false], id: \.self) { isStart in
+                Capsule()
+                    .fill(outline)
+                    .frame(width: 8, height: 28)
+                    .frame(width: 16, height: 40)
                     .contentShape(.rect)
-                    .offset(x: CGFloat(projection.displayTime(isStart ? range.start : range.end)) * request.pxPerSecond - 8, y: top)
+                    .offset(
+                        x: CGFloat(projection.displayTime(isStart ? range.start : range.end)) * request.pxPerSecond - 8,
+                        y: top + max(0, (height - 40) / 2)
+                    )
                     .gesture(
                         DragGesture(minimumDistance: 0, coordinateSpace: .named(timelineContentSpace))
                             .onChanged { value in
@@ -330,7 +592,7 @@ struct EditorTimelineView: View {
                                 if let adjusted = EditorTimeRange.resolve(.init(
                                     anchor: anchor, head: head, duration: duration
                                 )) {
-                                    selection = .range(adjusted)
+                                    selection = isSilenceSelection ? .silenceRange(adjusted) : .range(adjusted)
                                 }
                             },
                         isEnabled: isInteractive
@@ -354,15 +616,36 @@ struct EditorTimelineView: View {
             .padding(.leading, 6)
             .frame(width: gutterWidth, height: rulerHeight)
 
+            if showsSilenceTrack {
+                Button(action: onOpenSilence) {
+                    Label("Sound / silence", systemImage: "waveform")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .blitzButton(.quiet)
+                .controlSize(.small)
+                .frame(width: gutterWidth, height: silenceRowHeight)
+                .help("Open silence detection settings")
+            }
+
             ForEach(Array(gutterRows.enumerated()), id: \.offset) { _, row in
                 let isSelected = row.asset.map { selection == .asset($0.id) } ?? false
                 HStack(spacing: 9) {
-                    BlitzIconTile(symbolName: row.icon, isSelected: isSelected, size: 26)
-                    Text(row.title)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(isSelected ? BlitzUI.primaryText : BlitzUI.secondaryText)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button {
+                        if let asset = row.asset { selection = .asset(asset.id) }
+                    } label: {
+                        HStack(spacing: 9) {
+                            BlitzIconTile(symbolName: row.icon, isSelected: isSelected, size: 26)
+                            Text(row.title)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(isSelected ? BlitzUI.primaryText : BlitzUI.secondaryText)
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(row.asset == nil || !isInteractive)
+                    .accessibilityLabel("Select \(row.title) track")
                     if let asset = row.asset, toggleableAssetIDs.contains(asset.id) {
                         trackToggle(for: asset)
                     } else {
@@ -556,8 +839,23 @@ struct EditorTimelineView: View {
             onSeek(min(duration, request.start + 0.001))
             onSeekEnded()
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Segment \(index + 1)")
+        .accessibilityValue(isSelected ? "Selected, all tracks" : "All tracks")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction {
+            selection = .segment(index)
+            onSeek(min(duration, request.start + 0.001))
+            onSeekEnded()
+        }
+        .help("Select this segment across all tracks. Press Delete to remove it and close the gap.")
         .contextMenu {
-            Button("Select scene range", systemImage: "rectangle.dashed") {
+            Button("Delete segment from all tracks", systemImage: "trash") {
+                selection = .segment(index)
+                onDeleteSegment()
+            }
+            .disabled(!isInteractive)
+            Button("Select segment range", systemImage: "rectangle.dashed") {
                 let end = index + 1 < sceneEvents.count ? sceneEvents[index + 1].time : duration
                 if let range = EditorTimeRange.resolve(.init(
                     anchor: request.start, head: end, duration: duration
@@ -568,7 +866,7 @@ struct EditorTimelineView: View {
             .disabled(!isInteractive)
             Button("Join with previous scene", systemImage: "rectangle.compress.vertical") {
                 selection = .segment(index)
-                onDeleteCut()
+                onJoinSegment()
             }
             .disabled(!isInteractive || index == 0)
             Divider()
@@ -593,13 +891,6 @@ struct EditorTimelineView: View {
         let pxPerSecond: CGFloat
         let contentWidth: CGFloat
         let viewport: EditorTimelineViewport
-    }
-
-    private var selectedSilenceRange: EditorTimeRange? {
-        guard case .range(let range) = selection,
-            silence.cuts.contains(where: { $0.kind == .silence && $0.start == range.start && $0.end == range.end })
-        else { return nil }
-        return range
     }
 
     private func assetTrack(_ request: AssetTrackRequest) -> some View {
@@ -643,7 +934,7 @@ struct EditorTimelineView: View {
             .equatable()
             .padding(.vertical, asset.isVideo ? 3 : 0)
             if showsSilence {
-                SilenceWaveformOverlay(bands: silenceBands, viewport: viewport, selection: selectedSilenceRange)
+                SilenceWaveformOverlay(bands: silenceBands, viewport: viewport, selections: selectedSilenceRanges)
                     .equatable()
             }
         }
@@ -656,29 +947,52 @@ struct EditorTimelineView: View {
         .contentShape(shape)
         .pointingHandCursor()
         .gesture(SpatialTapGesture().onEnded { event in
-            if isInteractive,
-                let range = SilenceTimelineBands.selectedRange(.init(
-                    bands: silenceBands, x: event.location.x - viewport.lowerBound
+            if isInteractive, showsSilence, silence.canClassify,
+                let segment = SilenceTimelineSegments.at(.init(
+                    segments: selectableSilenceSegments,
+                    time: projection.takeTime(Double(event.location.x / request.pxPerSecond))
                 )) {
-                selection = .range(range)
+                clickSilenceRange(segment.range)
+            } else if isInteractive,
+                let index = EditorSceneTimelineActiveIndexResolver.index(request: .init(
+                    eventTimes: sceneEvents.map(\.time),
+                    playbackTime: projection.takeTime(Double(event.location.x / request.pxPerSecond))
+                )) {
+                selection = .segment(index)
             } else {
                 selection = .asset(asset.id)
             }
         })
+        .onContinuousHover { phase in
+            guard showsSilence, isInteractive else { return }
+            switch phase {
+            case .active(let location):
+                hoveredSilenceRange = SilenceTimelineSegments.at(.init(
+                    segments: selectableSilenceSegments,
+                    time: projection.takeTime(Double(location.x / request.pxPerSecond))
+                ))?.range
+            case .ended:
+                hoveredSilenceRange = nil
+            }
+        }
         .opacity(isOff ? 0.3 : 1)
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { selection = .asset(asset.id) }
         .accessibilityLabel("\(asset.title) track")
         .accessibilityValue(isOff ? "Disabled"
-            : showsSilence && selectedSilenceRange != nil ? "Silent section selected"
+            : showsSilence && !selectedSilenceRanges.isEmpty ? "Sound or silence section selected"
             : isSelected ? "Selected" : "Enabled")
         .help(showsSilence
-            ? "Click a highlighted pause to select it. Drag to select a range."
-            : "Select \(asset.title). Drag to select a time range. Drag the ruler to scrub.")
+            ? "Click to select. ⌘-click to add or remove. Shift-click to extend. Drag to select a time range."
+            : "Click to select a segment across all tracks. Drag to select a range. Select the track name for source controls.")
         .contextMenu {
             Button("Select \(asset.title)", systemImage: asset.systemImage) {
                 selection = .asset(asset.id)
+            }
+            if case .segment = selection {
+                Button("Delete segment from all tracks", systemImage: "trash", action: onDeleteSegment)
+                    .disabled(!isInteractive || !canDeleteSegment)
             }
             if toggleableAssetIDs.contains(asset.id) {
                 Button(
@@ -696,9 +1010,11 @@ struct EditorTimelineView: View {
         .blitzCard(cornerRadius: BlitzUI.controlRadius)
         .task(id: filmstripTaskID) {
             guard asset.isVideo, frames.count < requestedFrameCount else { return }
-            do {
-                try await Task.sleep(for: .milliseconds(180))
-            } catch { return }
+            if !frames.isEmpty {
+                do {
+                    try await Task.sleep(for: .milliseconds(180))
+                } catch { return }
+            }
             guard !Task.isCancelled else { return }
             await library.loadFilmstrip(request: EditorFilmstripLoadRequest(
                 assetID: asset.id,
@@ -715,11 +1031,18 @@ struct EditorTimelineView: View {
 
     @ViewBuilder
     private var timelineContextMenu: some View {
-        if case .range(let range) = selection {
-            if silence.cuts.contains(where: { $0.isEnabled && $0.start < range.end && $0.end > range.start }) {
-                Button("Keep silence in selected range", systemImage: "waveform") { silence.keep(range) }
-                    .disabled(silence.loading || silence.calculating)
+        if classificationSelection != nil {
+            Button("Mark as sound", systemImage: "waveform") {
+                classifySelectedRanges(.sound)
             }
+            .disabled(!isInteractive || !silence.canClassify)
+            Button("Mark as silence", systemImage: "waveform.slash") {
+                classifySelectedRanges(.silence)
+            }
+            .disabled(!isInteractive || !silence.canClassify)
+            Divider()
+        }
+        if case .range(let range) = selection {
             Button("Cut selected range", systemImage: "scissors", action: onCutRange)
                 .disabled(!isInteractive || !range.canCut)
             Button("Restore selected range", systemImage: "arrow.uturn.backward", action: onRestoreRange)
@@ -733,7 +1056,7 @@ struct EditorTimelineView: View {
             .disabled(!isInteractive)
         Button("Mark range out at playhead", systemImage: "selection.pin.in.out", action: onMarkOut)
             .disabled(!isInteractive)
-        Button("Split scene at playhead", systemImage: "scissors", action: onSplit)
+        Button("Split all tracks at playhead", systemImage: "scissors", action: onSplit)
             .disabled(!isInteractive)
         Divider()
         Button("Silence settings", systemImage: "waveform", action: onOpenSilence)
@@ -761,8 +1084,7 @@ struct EditorTimelineView: View {
                     }
 
                 Color.clear
-                    .frame(width: 28)
-                    .frame(maxHeight: .infinity)
+                    .frame(width: 28, height: rulerHeight)
                     .contentShape(.rect)
                     .gesture(
                         DragGesture(minimumDistance: 0, coordinateSpace: .named(timelineContentSpace))
@@ -804,6 +1126,10 @@ struct EditorTimelineView: View {
         !sceneEvents.isEmpty
     }
 
+    private var showsSilenceTrack: Bool {
+        !silence.windows.isEmpty
+    }
+
     private var trackAssets: [EditorAsset] {
         var rows = assets.filter { $0.exists && $0.isPlayable && $0.kind != .output }
         if let output = outputAsset, sceneEvents.isEmpty {
@@ -819,7 +1145,7 @@ struct EditorTimelineView: View {
             rows.append((icon: "text.quote", title: "Chapters", height: chaptersRowHeight, asset: nil))
         }
         if showsSegmentsTrack {
-            rows.append((icon: BlitzSymbols.scenes, title: "Scenes", height: segmentsRowHeight, asset: nil))
+            rows.append((icon: BlitzSymbols.scenes, title: "Segments", height: segmentsRowHeight, asset: nil))
         }
         for asset in trackAssets {
             rows.append((
@@ -835,6 +1161,9 @@ struct EditorTimelineView: View {
     private var contentHeight: CGFloat {
         var height = rulerHeight
         if duration > 0 {
+            if showsSilenceTrack {
+                height += 6 + silenceRowHeight
+            }
             if showsChaptersTrack {
                 height += 6 + chaptersRowHeight
             }
@@ -849,6 +1178,21 @@ struct EditorTimelineView: View {
             }
         }
         return height
+    }
+
+    private func isSilenceTrack(at y: CGFloat) -> Bool {
+        var top = rulerHeight + 6
+        if showsSilenceTrack {
+            if y >= top, y < top + silenceRowHeight { return true }
+            top += silenceRowHeight + 6
+        }
+        for row in gutterRows {
+            if y >= top, y < top + row.height, let asset = row.asset {
+                return !asset.isVideo && silence.audioSourcePaths.contains(asset.url.path)
+            }
+            top += row.height + 6
+        }
+        return false
     }
 
 

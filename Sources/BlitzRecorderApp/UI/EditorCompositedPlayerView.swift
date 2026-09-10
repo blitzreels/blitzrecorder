@@ -52,6 +52,7 @@ struct EditorCompositedPlayer: NSViewRepresentable {
 final class EditorCompositedPlayerView: NSView {
     private let canvasLayer = CALayer()
     private let backgroundLayer = CALayer()
+    private let cursorLayer = CALayer()
 
     private struct SourceLayers {
         let clip = CALayer()
@@ -72,6 +73,14 @@ final class EditorCompositedPlayerView: NSView {
     }
 
     private var textLayers: [UUID: CALayer] = [:]
+    private var renderedTextRequests: [UUID: TimelineOverlayImageRequest] = [:]
+    private struct TextRenderState: Equatable {
+        let overlays: [TextOverlay]
+        let opacities: [Float]
+        let canvasSize: CGSize
+        let renderSize: CGSize
+    }
+    private var renderedTextState: TextRenderState?
     private var sourceLayers: [SceneLayerKind: SourceLayers] = [:]
     private var renderedState: RenderState?
     private var renderSize: CGSize = .zero
@@ -188,22 +197,48 @@ final class EditorCompositedPlayerView: NSView {
             screenPlayer: controller.videoPlayer(for: .screen).map(ObjectIdentifier.init),
             cameraPlayer: controller.videoPlayer(for: .camera).map(ObjectIdentifier.init)
         )
-        performWithoutUIAnimation {
-            let visibleIDs = Set(controller.edits.textOverlays.map(\.id))
-            for id in Array(textLayers.keys) where !visibleIDs.contains(id) {
-                textLayers.removeValue(forKey: id)?.removeFromSuperlayer()
-            }
-            for overlay in controller.edits.textOverlays {
-                let textLayer = textLayers[overlay.id] ?? CALayer()
-                if textLayers[overlay.id] == nil {
-                    textLayer.actions = disabledActions
-                    textLayer.zPosition = 100
-                    textLayers[overlay.id] = textLayer
-                    canvasLayer.addSublayer(textLayer)
+        let visibleOverlays = controller.edits.textOverlays.filter { $0.isVisible(at: time) }
+        let textState = TextRenderState(overlays: visibleOverlays,
+            opacities: visibleOverlays.map { Float($0.opacity(at: time)) },
+            canvasSize: canvasFrame.size, renderSize: renderSize)
+        if renderedTextState != textState {
+            performWithoutUIAnimation {
+                let visibleIDs = Set(visibleOverlays.map(\.id))
+                for id in Array(textLayers.keys) where !visibleIDs.contains(id) {
+                    textLayers.removeValue(forKey: id)?.removeFromSuperlayer()
+                    renderedTextRequests.removeValue(forKey: id)
                 }
-                textLayer.frame = CGRect(origin: .zero, size: canvasFrame.size)
-                textLayer.contents = TimelineOverlayRenderer.image(.init(overlay: overlay, size: renderSize))
-                textLayer.opacity = Float(overlay.opacity(at: time))
+                for (index, overlay) in visibleOverlays.enumerated() {
+                    let textLayer = textLayers[overlay.id] ?? CALayer()
+                    if textLayers[overlay.id] == nil {
+                        textLayer.actions = disabledActions
+                        textLayer.zPosition = 100
+                        textLayers[overlay.id] = textLayer
+                        canvasLayer.addSublayer(textLayer)
+                    }
+                    textLayer.frame = CGRect(origin: .zero, size: canvasFrame.size)
+                    let request = TimelineOverlayImageRequest(overlay: overlay, size: renderSize)
+                    if renderedTextRequests[overlay.id] != request {
+                        textLayer.contents = TimelineOverlayRenderer.image(request)
+                        renderedTextRequests[overlay.id] = request
+                    }
+                    textLayer.opacity = textState.opacities[index]
+                }
+                renderedTextState = textState
+            }
+        }
+        defer {
+            if let layers = sourceLayers[.screen],
+               let sample = controller.cursorTrack.sample(.init(time: time, style: controller.edits.cursorStyle)),
+               let sprite = CursorPresentationRenderer.sprite(.init(
+                sample: sample, style: controller.edits.cursorStyle, sourceFrame: layers.playerLayer.frame)) {
+                performWithoutUIAnimation {
+                    cursorLayer.isHidden = false
+                    cursorLayer.contents = sprite.image
+                    cursorLayer.frame = sprite.frame
+                }
+            } else if !cursorLayer.isHidden {
+                performWithoutUIAnimation { cursorLayer.isHidden = true }
             }
         }
         guard renderedState != state else { return }
@@ -274,6 +309,11 @@ final class EditorCompositedPlayerView: NSView {
         layers.playerLayer.videoGravity = .resize
         layers.playerLayer.player = player
         layers.clip.addSublayer(layers.playerLayer)
+        if kind == .screen {
+            cursorLayer.actions = disabledActions
+            cursorLayer.contentsGravity = .resize
+            layers.clip.addSublayer(cursorLayer)
+        }
         layers.shadowHost.addSublayer(layers.clip)
         canvasLayer.addSublayer(layers.shadowHost)
         sourceLayers[kind] = layers
@@ -365,6 +405,11 @@ final class EditorCompositedPlayerView: NSView {
     func teardown() {
         stopDisplayLink()
         renderedState = nil
+        for textLayer in textLayers.values { textLayer.removeFromSuperlayer() }
+        textLayers.removeAll()
+        renderedTextRequests.removeAll()
+        renderedTextState = nil
+        cursorLayer.contents = nil
         for layers in sourceLayers.values {
             layers.playerLayer.player = nil
         }

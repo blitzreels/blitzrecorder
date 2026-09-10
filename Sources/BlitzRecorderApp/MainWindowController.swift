@@ -24,14 +24,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var isStartingCameraPreview = false
     private var cameraPreviewDeviceID: String?
     private var cameraPreviewStartRevision = 0
-    private var initialSupportingCaptureResourcesTask: Task<Void, Never>?
-    private var initialSupportingCaptureResourcesStarted = false
     private var lastStartedScreenCaptureSignature: ScreenCaptureSignature?
     private var screenPreviewStartRevision = 0
     private var screenPreviewWatchdogTask: Task<Void, Never>?
     private var screenPreviewRecoverySignature: ScreenCaptureSignature?
     private var screenPreviewRecoveryAttempts = 0
-    private var settingsWindowController: SettingsWindowController?
     private var currentRecordingState: RecordingState = .idle
     private var idlePreviewRestartTask: Task<Void, Never>?
     private var studioModeCaptureResourceTask: Task<Void, Never>?
@@ -170,7 +167,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         previewStage.canvasBackgroundStyle = coordinator.settings.canvasBackgroundStyle
         previewStage.canvasPadding = coordinator.settings.canvasPadding
 
-        let host = NSHostingView(rootView: MainView(vm: viewModel).preferredColorScheme(.dark))
+        let host = NSHostingView(rootView: MainView(configuration: .init(viewModel: viewModel, mcpServer: mcpServer)).preferredColorScheme(.dark))
         host.sizingOptions = []
         host.translatesAutoresizingMaskIntoConstraints = true
         host.autoresizingMask = [.width, .height]
@@ -189,7 +186,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 return
             }
             self.startCameraPreview()
-            self.scheduleInitialSupportingCaptureResources(after: .seconds(4))
+            self.refreshStartupState()
+            self.startScreenPreview()
         }
     }
 
@@ -243,7 +241,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     deinit {
         idlePreviewRestartTask?.cancel()
-        initialSupportingCaptureResourcesTask?.cancel()
         screenPreviewWatchdogTask?.cancel()
         for observer in cameraDeviceObservers {
             NotificationCenter.default.removeObserver(observer)
@@ -393,30 +390,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func presentSettings(selecting pane: SettingsPane? = nil) {
-        if settingsWindowController == nil {
-            settingsWindowController = SettingsWindowController(.init(
-                viewModel: viewModel,
-                mcpServer: mcpServer
-            ))
-        }
-        if let pane {
-            settingsWindowController?.select(pane)
-        }
-        if #available(macOS 14.0, *) {
-            NSApp.activate()
-        } else {
-            NSApp.activate(ignoringOtherApps: true)
-        }
-        DispatchQueue.main.async { [weak self] in
-            guard let window = self?.settingsWindowController?.window else { return }
-            self?.settingsWindowController?.showWindow(nil)
-            window.makeKeyAndOrderFront(nil)
-            window.orderFrontRegardless()
-        }
+        viewModel.showSettings(pane)
+        guard let window else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        showWindow(nil)
+        window.deminiaturize(nil)
+        window.makeKeyAndOrderFront(nil)
+        window.makeMain()
     }
 
     private func showEditorAfterOpeningProject() {
-        settingsWindowController?.close()
+        viewModel.dismissSettings()
         guard let window else { return }
         NSApp.activate(ignoringOtherApps: true)
         showWindow(nil)
@@ -582,30 +566,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private func refreshStartupState() {
         Task {
+            guard viewModel.studioMode.keepsIdleCaptureResourcesActive else { return }
             coordinator.refreshAudioLevelMonitoring()
             viewModel.syncSettings()
             refreshPermissionGate()
         }
-    }
-
-    private func scheduleInitialSupportingCaptureResources(after delay: Duration) {
-        guard !initialSupportingCaptureResourcesStarted else { return }
-        initialSupportingCaptureResourcesTask?.cancel()
-        initialSupportingCaptureResourcesTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: delay)
-            guard !Task.isCancelled, let self else { return }
-            initialSupportingCaptureResourcesTask = nil
-            startInitialSupportingCaptureResources()
-        }
-    }
-
-    private func startInitialSupportingCaptureResources() {
-        guard !initialSupportingCaptureResourcesStarted else { return }
-        initialSupportingCaptureResourcesStarted = true
-        initialSupportingCaptureResourcesTask?.cancel()
-        initialSupportingCaptureResourcesTask = nil
-        refreshStartupState()
-        startScreenPreview()
     }
 
     private func refreshPermissionGate() {
@@ -894,7 +859,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 isStartingCameraPreview = false
                 cameraPreviewDeviceID = coordinator.settings.selectedCameraID
                 coordinator.setLocalCameraRuntimeState(.ready)
-                scheduleInitialSupportingCaptureResources(after: .seconds(1))
                 refreshPermissionGate()
             } catch {
                 isStartingCameraPreview = false

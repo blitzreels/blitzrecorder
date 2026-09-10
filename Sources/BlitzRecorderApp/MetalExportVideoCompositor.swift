@@ -8,6 +8,7 @@ struct MetalExportSourceDescriptor: @unchecked Sendable {
     let kind: SceneLayerKind
     let trackID: CMPersistentTrackID
     let preferredTransform: CGAffineTransform
+    let leadingFrame: ExportLeadingFrame
 }
 
 struct MetalExportInstructionRequest {
@@ -18,6 +19,7 @@ struct MetalExportInstructionRequest {
     let sourceDescriptors: [MetalExportSourceDescriptor]
     var edits: TimelineEdits = .empty
     var timeMap: TimelineTimeMap = .identity(takeDuration: .zero)
+    var cursorTrack: CursorPresentationTrack = .empty
 }
 
 final class MetalExportInstruction: NSObject, AVVideoCompositionInstructionProtocol, @unchecked Sendable {
@@ -32,14 +34,17 @@ final class MetalExportInstruction: NSObject, AVVideoCompositionInstructionProto
 
     let edits: TimelineEdits
     let timeMap: TimelineTimeMap
+    let cursorTrack: CursorPresentationTrack
 
     init(_ request: MetalExportInstructionRequest) {
         edits = request.edits
         timeMap = request.timeMap
+        cursorTrack = request.cursorTrack
         timeRange = request.timeRange
         scene = request.scene
         settings = request.settings
-        containsTweening = request.scene.canvasBackgroundAnimated || !request.edits.zoom.isEmpty || !request.edits.textOverlays.isEmpty
+        containsTweening = request.scene.canvasBackgroundAnimated || request.edits.zoom.isActive
+            || !request.edits.textOverlays.isEmpty || !request.cursorTrack.isEmpty
         sourceDescriptors = request.activeLayerOrder.compactMap { kind in
             request.sourceDescriptors.first { $0.kind == kind }
         }
@@ -116,7 +121,7 @@ final class MetalExportVideoCompositor: NSObject, AVVideoCompositing, @unchecked
             return
         }
 
-        let screenFrame = sourceFrame(SourceFrameRequest(
+        var screenFrame = sourceFrame(SourceFrameRequest(
             kind: .screen,
             instruction: instruction,
             compositionRequest: request
@@ -127,7 +132,7 @@ final class MetalExportVideoCompositor: NSObject, AVVideoCompositing, @unchecked
             compositionRequest: request
         ))
         guard screenFrame != nil || cameraFrame != nil else {
-            request.finish(with: MetalExportCompositorError.sourceFramesUnavailable)
+            request.finish(with: MetalExportCompositorError.sourceFramesUnavailable(request.compositionTime.seconds))
             return
         }
 
@@ -138,7 +143,13 @@ final class MetalExportVideoCompositor: NSObject, AVVideoCompositing, @unchecked
                 .truncatingRemainder(dividingBy: 1)
             : nil
         let takeTime = instruction.timeMap.takeSeconds(forOutputSeconds: request.compositionTime.seconds)
-        let scene = TimelineOverlayRenderer.scene(.init(scene: instruction.scene, edits: instruction.edits, time: takeTime))
+        if let frame = screenFrame,
+           let sample = instruction.cursorTrack.sample(.init(time: takeTime, style: instruction.edits.cursorStyle)) {
+            screenFrame = LiveCompositorImageFrame(image: CursorPresentationRenderer.composite(.init(
+                image: frame.image, sample: sample, style: instruction.edits.cursorStyle)))
+        }
+        var scene = TimelineOverlayRenderer.scene(.init(scene: instruction.scene, edits: instruction.edits, time: takeTime))
+        if instruction.edits.zoom.isActive { scene.screenCropPosition.y *= -1 }
         let size = request.renderContext.size
         let overlays = instruction.edits.textOverlays.compactMap { overlay -> CIImage? in
             guard overlay.opacity(at: takeTime) > 0,
@@ -164,11 +175,15 @@ final class MetalExportVideoCompositor: NSObject, AVVideoCompositing, @unchecked
     }
 
     private func sourceFrame(_ request: SourceFrameRequest) -> LiveCompositorImageFrame? {
-        guard let descriptor = request.instruction.sourceDescriptor(for: request.kind),
-              let pixelBuffer = request.compositionRequest.sourceFrame(byTrackID: descriptor.trackID) else {
+        guard let descriptor = request.instruction.sourceDescriptor(for: request.kind) else { return nil }
+        var image: CIImage
+        if let pixelBuffer = request.compositionRequest.sourceFrame(byTrackID: descriptor.trackID) {
+            image = CIImage(cvPixelBuffer: pixelBuffer)
+        } else if let first = descriptor.leadingFrame.image(at: request.compositionRequest.compositionTime) {
+            image = CIImage(cgImage: first)
+        } else {
             return nil
         }
-        var image = CIImage(cvPixelBuffer: pixelBuffer)
         if !descriptor.preferredTransform.isIdentity {
             image = image.transformed(by: descriptor.preferredTransform)
         }
@@ -231,7 +246,7 @@ private final class MetalExportRendererPool: @unchecked Sendable {
 private enum MetalExportCompositorError: LocalizedError {
     case invalidInstruction
     case outputBufferUnavailable
-    case sourceFramesUnavailable
+    case sourceFramesUnavailable(Double)
     case renderFailed
 
     var errorDescription: String? {
@@ -240,8 +255,8 @@ private enum MetalExportCompositorError: LocalizedError {
             "The Metal export instruction is invalid."
         case .outputBufferUnavailable:
             "The Metal export buffer pool is unavailable."
-        case .sourceFramesUnavailable:
-            "The Metal exporter couldn't read a source frame."
+        case .sourceFramesUnavailable(let time):
+            "The Metal exporter couldn't read a source frame at \(String(format: "%.3f", time)) seconds."
         case .renderFailed:
             "The Metal exporter couldn't compose a video frame."
         }

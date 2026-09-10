@@ -100,21 +100,21 @@ export default async function ClaimLicensePage({
                     <span className="font-semibold text-foreground">{result.email}</span>.
                   </Paragraph>
                   <Paragraph tone="faint" size="sm" className="mt-3">
-                    Keep this key for activation. The same email always returns the same key.
+                    This key is for versions before 0.15. Current versions include every feature without a key.
                   </Paragraph>
                   <Paragraph tone="faint" size="sm" className="mt-3 font-mono">
                     {result.licenseId}
                   </Paragraph>
                   <LicenseCopy licenseId={result.licenseId} licenseKey={result.licenseKey} />
                   <Paragraph tone="faint" size="sm" className="mt-5">
-                    Open BlitzRecorder to activate automatically, or copy the key and paste it in Account.
+                    On an older version, open BlitzRecorder to activate automatically, or paste the key in Account.
                   </Paragraph>
                   <Paragraph tone="faint" size="sm" className="mt-2">
                     Don&apos;t have the app yet?{" "}
                     <Link href="/macos" className="font-medium text-primary underline-offset-4 hover:underline">
                       Download BlitzRecorder for Mac
                     </Link>
-                    , then paste your key in Account.
+                    . No key is needed in the current version.
                   </Paragraph>
                   <Paragraph tone="faint" size="sm" className="mt-4">
                     Recorder is free. When you want clips and captions,{" "}
@@ -129,9 +129,9 @@ export default async function ClaimLicensePage({
                 </>
               ) : result.kind === "missing" ? (
                 <>
-                  <Heading level={1}>Claim your license.</Heading>
+                  <Heading level={1}>Legacy app license.</Heading>
                   <Paragraph className="mt-4">
-                    Enter your email on the license page. We issue a key and bring you back here.
+                    Current versions need no key. If you use a version before 0.15, the license page can provide a legacy key.
                   </Paragraph>
                   <TrackedLinkButton
                     href="/license"

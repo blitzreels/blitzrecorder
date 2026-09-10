@@ -100,7 +100,7 @@ struct RemoteCameraControlsPane: View {
                 Label("Auto", systemImage: "wand.and.sparkles")
                     .font(.system(size: 11, weight: .medium))
             }
-            .blitzGlassButton()
+            .blitzButton(.secondary)
             .controlSize(.small)
             .disabled(!allowsFormatChanges || vm.selectedRemoteCameraCapabilities == nil)
             .pointingHandCursor()
@@ -144,19 +144,15 @@ struct RemoteCameraControlsPane: View {
     private func lensPicker(capabilities: RemoteCameraCapabilities) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             controlLabel("Lens")
-            Picker(
-                "",
+            BlitzSegmentedPicker(configuration: .init(
+                title: "Lens",
+                options: capabilities.supportedLenses,
                 selection: Binding(
                     get: { vm.selectedRemoteCameraTelemetry?.activeSettings.lens ?? capabilities.supportedLenses.first ?? .wide },
                     set: { vm.setRemoteCameraLens($0) }
-                )
-            ) {
-                ForEach(capabilities.supportedLenses, id: \.self) { lens in
-                    Text(lens.displayName).tag(lens)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.segmented)
+                ),
+                label: { $0.displayName }
+            ))
             .controlSize(.small)
             if cinematicLocksFormatControls {
                 helperText("Turn Cinematic off to change lens.")
@@ -167,19 +163,18 @@ struct RemoteCameraControlsPane: View {
 
     private func qualityPicker(capabilities: RemoteCameraCapabilities) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            modePicker(
+            modePicker(.init(
                 title: "Recording",
+                options: capabilities.supportedCaptureProfiles.map(\.id),
                 selection: Binding(
                     get: { currentRemoteSettings.captureProfileID },
                     set: { vm.setRemoteCameraCaptureProfile($0) }
-                )
-            ) {
-                ForEach(capabilities.supportedCaptureProfiles, id: \.id) { profile in
-                    Text(captureProfileLabel(profile.id))
-                        .tag(profile.id)
-                        .disabled(!profile.isAvailable)
+                ),
+                label: captureProfileLabel,
+                isOptionEnabled: { id in
+                    capabilities.supportedCaptureProfiles.first { $0.id == id }?.isAvailable == true
                 }
-            }
+            ))
             Text(captureProfileHelpText(currentRemoteSettings.captureProfileID))
                 .font(.system(size: 11, weight: .regular))
                 .foregroundStyle(.secondary)
@@ -204,17 +199,15 @@ struct RemoteCameraControlsPane: View {
         let modes = availableColorModes(capabilities)
         return VStack(alignment: .leading, spacing: 5) {
             if modes.count > 1 || currentRemoteSettings.colorMode != .standard {
-                modePicker(
+                modePicker(.init(
                     title: "Color",
+                    options: modes,
                     selection: Binding(
                         get: { currentRemoteSettings.colorMode },
                         set: { vm.setRemoteCameraColorMode($0) }
-                    )
-                ) {
-                    ForEach(modes, id: \.self) { mode in
-                        Text(colorModeLabel(mode)).tag(mode)
-                    }
-                }
+                    ),
+                    label: colorModeLabel
+                ))
                 Text(colorModeHelpText(currentRemoteSettings.colorMode))
                     .font(.system(size: 11, weight: .regular))
                     .foregroundStyle(.secondary)
@@ -226,8 +219,8 @@ struct RemoteCameraControlsPane: View {
     }
 
     private func formatPicker(capabilities: RemoteCameraCapabilities) -> some View {
-        labeledPicker(
-            "Resolution",
+        labeledDropdown(.init(
+            title: "Resolution",
             selection: Binding(
                 get: { currentFormatID(capabilities) },
                 set: { id in
@@ -238,45 +231,36 @@ struct RemoteCameraControlsPane: View {
                         frameRate: frameRates.contains(currentFrameRate) ? currentFrameRate : (frameRates.first ?? currentFrameRate)
                     )
                 }
-            )
-        ) {
-            ForEach(availableRemoteFormats(capabilities), id: \.id) { format in
-                Text("\(format.width)x\(format.height)").tag(format.id)
+            ),
+            options: availableRemoteFormats(capabilities).map { format in
+                .init(value: format.id, title: "\(format.width) × \(format.height)", detail: nil)
             }
-        }
+        ))
         .disabled(!allowsFormatChanges || cinematicLocksFormatControls)
     }
 
     private func frameRatePicker(capabilities: RemoteCameraCapabilities) -> some View {
-        labeledPicker(
-            "FPS",
+        labeledDropdown(.init(
+            title: "Frame rate",
             selection: Binding(
                 get: { currentRemoteSettings.frameRate },
                 set: { vm.setRemoteCameraFormat(id: currentFormatID(capabilities), frameRate: $0) }
-            )
-        ) {
-            ForEach(frameRates(for: currentFormatID(capabilities), capabilities: capabilities), id: \.self) { frameRate in
-                Text("\(frameRate)").tag(frameRate)
+            ),
+            options: frameRates(for: currentFormatID(capabilities), capabilities: capabilities).map { frameRate in
+                .init(value: frameRate, title: "\(frameRate) FPS", detail: nil)
             }
-        }
+        ))
         .disabled(!allowsFormatChanges || cinematicLocksFormatControls || frameRates(for: currentFormatID(capabilities), capabilities: capabilities).isEmpty)
     }
 
     private func cinematicControls(capabilities: RemoteCameraCapabilities) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             if capabilities.supportsCinematicVideo {
-                HStack(spacing: 10) {
-                    Label("Cinematic depth", systemImage: "camera.aperture")
-                        .font(.system(size: 12, weight: .regular))
-                    Spacer(minLength: 0)
-                    Toggle("", isOn: Binding(
-                        get: { currentRemoteSettings.cinematicVideoEnabled },
-                        set: { vm.setRemoteCameraCinematicVideoEnabled($0) }
-                    ))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                }
+                Toggle("Cinematic depth", isOn: Binding(
+                    get: { currentRemoteSettings.cinematicVideoEnabled },
+                    set: { vm.setRemoteCameraCinematicVideoEnabled($0) }
+                ))
+                .toggleStyle(.blitzSwitch)
                 .disabled(!allowsFormatChanges)
 
                 Text("iPhone Cinematic mode with adjustable depth of field.")
@@ -320,23 +304,21 @@ struct RemoteCameraControlsPane: View {
     @ViewBuilder
     private func remoteFocusControls(capabilities: RemoteCameraCapabilities) -> some View {
         if capabilities.supportsManualFocus || capabilities.supportsFocusLock {
-            modePicker(
+            modePicker(.init(
                 title: "Sharpness",
-                selection: Binding(
-                    get: { currentRemoteSettings.focusMode },
-                    set: { vm.setRemoteCameraFocusMode($0) }
-                )
-            ) {
-                ForEach(RemoteCameraFocusMode.allCases.filter { mode in
+                options: RemoteCameraFocusMode.allCases.filter { mode in
                     switch mode {
                     case .continuousAuto: true
                     case .locked: capabilities.supportsFocusLock
                     case .manual: capabilities.supportsManualFocus
                     }
-                }, id: \.self) { mode in
-                    Text(mode.displayName).tag(mode)
-                }
-            }
+                },
+                selection: Binding(
+                    get: { currentRemoteSettings.focusMode },
+                    set: { vm.setRemoteCameraFocusMode($0) }
+                ),
+                label: { $0.displayName }
+            ))
             .disabled(!allowsLiveCameraChanges || currentRemoteSettings.cinematicVideoEnabled)
             helperText(currentRemoteSettings.cinematicVideoEnabled
                 ? "Cinematic controls focus automatically."
@@ -359,23 +341,21 @@ struct RemoteCameraControlsPane: View {
     @ViewBuilder
     private func remoteExposureControls(capabilities: RemoteCameraCapabilities) -> some View {
         if capabilities.supportsManualExposure || capabilities.supportsExposureLock {
-            modePicker(
+            modePicker(.init(
                 title: "Light",
-                selection: Binding(
-                    get: { currentRemoteSettings.exposureMode },
-                    set: { vm.setRemoteCameraExposureMode($0) }
-                )
-            ) {
-                ForEach(RemoteCameraExposureMode.allCases.filter { mode in
+                options: RemoteCameraExposureMode.allCases.filter { mode in
                     switch mode {
                     case .continuousAuto: true
                     case .locked: capabilities.supportsExposureLock
                     case .manual: capabilities.supportsManualExposure
                     }
-                }, id: \.self) { mode in
-                    Text(mode.displayName).tag(mode)
-                }
-            }
+                },
+                selection: Binding(
+                    get: { currentRemoteSettings.exposureMode },
+                    set: { vm.setRemoteCameraExposureMode($0) }
+                ),
+                label: { $0.displayName }
+            ))
             .disabled(!allowsLiveCameraChanges)
             helperText(exposureModeHelpText(currentRemoteSettings.exposureMode))
         }
@@ -398,7 +378,7 @@ struct RemoteCameraControlsPane: View {
                 Label("Reset brightness", systemImage: "sun.max")
                     .font(.system(size: 11, weight: .medium))
             }
-            .blitzGlassButton()
+            .blitzButton(.secondary)
             .controlSize(.small)
             .disabled(vm.selectedRemoteCameraCapabilities == nil)
             .pointingHandCursor()
@@ -437,23 +417,21 @@ struct RemoteCameraControlsPane: View {
     @ViewBuilder
     private func remoteWhiteBalanceControls(capabilities: RemoteCameraCapabilities) -> some View {
         if capabilities.supportsWhiteBalanceLock || capabilities.supportsManualWhiteBalance {
-            modePicker(
+            modePicker(.init(
                 title: "Color",
-                selection: Binding(
-                    get: { currentRemoteSettings.whiteBalanceMode },
-                    set: { vm.setRemoteCameraWhiteBalanceMode($0) }
-                )
-            ) {
-                ForEach(RemoteCameraWhiteBalanceMode.allCases.filter { mode in
+                options: RemoteCameraWhiteBalanceMode.allCases.filter { mode in
                     switch mode {
                     case .continuousAuto: true
                     case .locked: capabilities.supportsWhiteBalanceLock
                     case .manual: capabilities.supportsManualWhiteBalance
                     }
-                }, id: \.self) { mode in
-                    Text(mode.displayName).tag(mode)
-                }
-            }
+                },
+                selection: Binding(
+                    get: { currentRemoteSettings.whiteBalanceMode },
+                    set: { vm.setRemoteCameraWhiteBalanceMode($0) }
+                ),
+                label: { $0.displayName }
+            ))
             .disabled(!allowsLiveCameraChanges)
             helperText(whiteBalanceModeHelpText(currentRemoteSettings.whiteBalanceMode))
 
@@ -483,32 +461,26 @@ struct RemoteCameraControlsPane: View {
     @ViewBuilder
     private func stabilizationPicker(capabilities: RemoteCameraCapabilities) -> some View {
         if !capabilities.supportedStabilizationModes.isEmpty {
-            modePicker(
+            modePicker(.init(
                 title: "Smoother video",
+                options: capabilities.supportedStabilizationModes,
                 selection: Binding(
                     get: { currentRemoteSettings.stabilizationMode },
                     set: { vm.setRemoteCameraStabilizationMode($0) }
-                )
-            ) {
-                ForEach(capabilities.supportedStabilizationModes, id: \.self) { mode in
-                    Text(stabilizationModeLabel(mode)).tag(mode)
-                }
-            }
+                ),
+                label: stabilizationModeLabel
+            ))
             .disabled(!allowsFormatChanges || cinematicLocksFormatControls || capabilities.supportedStabilizationModes.count <= 1)
             helperText(stabilizationModeHelpText(currentRemoteSettings.stabilizationMode))
         }
     }
 
-    private func modePicker<Value: Hashable, Content: View>(
-        title: String,
-        selection: Binding<Value>,
-        @ViewBuilder content: () -> Content
+    private func modePicker<Value: Hashable>(
+        _ configuration: BlitzSegmentedPicker<Value>.Configuration
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            controlLabel(title)
-            Picker("", selection: selection, content: content)
-                .labelsHidden()
-                .pickerStyle(.segmented)
+            controlLabel(configuration.title)
+            BlitzSegmentedPicker(configuration: configuration)
                 .controlSize(.small)
         }
     }
@@ -609,7 +581,7 @@ struct RemoteCameraControlsPane: View {
                 Label("Auto image", systemImage: "sun.max")
                     .font(.system(size: 11, weight: .medium))
             }
-            .blitzGlassButton()
+            .blitzButton(.secondary)
             .controlSize(.small)
             .disabled(vm.selectedRemoteCameraCapabilities == nil)
             .pointingHandCursor()

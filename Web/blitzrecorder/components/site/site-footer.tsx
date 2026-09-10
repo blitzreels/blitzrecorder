@@ -14,12 +14,12 @@ type FooterLink = { label: string; href?: string; external?: boolean; blitzreels
 const productLinks: FooterLink[] = [
   { label: "macOS app", href: "/macos" },
   { label: "iOS camera app", href: "/ios" },
-  { label: "License", href: "/#license" },
+  { label: "Free app", href: "/#license" },
   { label: "BlitzReels", blitzreels: "footer_nav" },
 ];
 
 const resourceLinks: FooterLink[] = [
-  { label: "Claim license", href: "/license" },
+  { label: "Legacy licenses", href: "/license" },
   { label: "Support", href: "/support" },
   { label: "Privacy", href: "/privacy" },
   { label: "Terms", href: "/terms" },

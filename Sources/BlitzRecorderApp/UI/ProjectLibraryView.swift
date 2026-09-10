@@ -12,7 +12,6 @@ struct ProjectTranscriptTitleRequest {
 }
 
 enum ProjectLibrarySymbols {
-    static let editRecording = "scissors"
     static let media = "film.stack"
 }
 
@@ -107,6 +106,7 @@ struct ProjectLibraryView: View {
     @State private var isLoadingMediaAssets = false
     @State private var hoveredSidebarProjectID: UUID?
     @State private var hoveredBulkProjectID: UUID?
+    @FocusState private var isSearchFocused: Bool
 
     private struct ThumbnailConfiguration {
         let metadata: ProjectLibraryMetadata
@@ -146,6 +146,7 @@ struct ProjectLibraryView: View {
         VStack(spacing: 0) {
             commandBar
                 .blitzWorkspaceToolbar()
+                .controlSize(.large)
             trashStatusBar
 
             HStack(spacing: 0) {
@@ -236,30 +237,38 @@ struct ProjectLibraryView: View {
     private var commandBar: some View {
         HStack(spacing: 12) {
             Text("Projects")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 21, weight: .semibold))
                 .foregroundStyle(BlitzUI.primaryText)
             Text(projectCountLabel)
-                .font(.system(size: 11, weight: .regular))
+                .font(.system(size: 12, weight: .regular))
                 .foregroundStyle(BlitzUI.secondaryText)
 
             Spacer(minLength: 16)
 
             BlitzToolbarButton(configuration: .init(
-                title: "New recording",
-                symbolName: "plus",
-                showsTitle: true,
-                action: vm.showRecorder
-            ))
-            .help("Open the recorder")
-            .disabled(vm.projectTrash.isWorking)
-
-            BlitzToolbarButton(configuration: .init(
                 title: "Settings",
                 symbolName: "gearshape",
-                showsTitle: false,
+                showsTitle: true,
                 action: { vm.onPresentSettings?(nil) }
             ))
             .help("Open Settings (Cmd+,)")
+
+            Button(action: vm.showRecorder) {
+                HStack(spacing: 10) {
+                    Label("New recording", systemImage: "record.circle")
+                    Text("⌘N")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.black.opacity(0.5))
+                        .accessibilityHidden(true)
+                }
+            }
+            .blitzButton(.accent)
+            .controlSize(.large)
+            .disabled(vm.projectTrash.isWorking)
+            .keyboardShortcut("n", modifiers: .command)
+            .help("Set up a new recording (⌘N)")
+            .accessibilityLabel("New recording")
+            .pointingHandCursor(enabled: !vm.projectTrash.isWorking)
         }
     }
 
@@ -273,13 +282,29 @@ struct ProjectLibraryView: View {
                 TextField("Search projects", text: $vm.projectLibraryNavigation.searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
+                    .focused($isSearchFocused)
+
+                if !vm.projectLibraryNavigation.searchText.isEmpty {
+                    Button {
+                        vm.projectLibraryNavigation.searchText = ""
+                        isSearchFocused = true
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(BlitzUI.secondaryText)
+                            .frame(width: 22, height: 26)
+                    }
+                    .buttonStyle(.plain)
+                    .pointingHandCursor()
+                    .accessibilityLabel("Clear project search")
+                    .help("Clear search")
+                }
             }
             .padding(.horizontal, 11)
             .frame(height: 34)
             .background(.white.opacity(0.055), in: .rect(cornerRadius: 8))
             .overlay {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(.white.opacity(0.07), lineWidth: 1)
+                    .strokeBorder(isSearchFocused ? BlitzUI.mint.opacity(0.65) : .white.opacity(0.07), lineWidth: 1)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -346,18 +371,14 @@ struct ProjectLibraryView: View {
             in: .rect(cornerRadius: 8)
         )
         .contentShape(.rect)
-        .onContinuousHover { phase in
-            switch phase {
-            case .active:
+        .onHover { hovering in
+            if hovering {
                 hoveredSidebarProjectID = project.id
-                NSCursor.pointingHand.set()
-            case .ended:
-                if hoveredSidebarProjectID == project.id {
-                    hoveredSidebarProjectID = nil
-                    NSCursor.arrow.set()
-                }
+            } else if hoveredSidebarProjectID == project.id {
+                hoveredSidebarProjectID = nil
             }
         }
+        .pointingHandCursor()
     }
 
     @ViewBuilder
@@ -368,10 +389,8 @@ struct ProjectLibraryView: View {
 
         Group {
             if projects.count == 1, let project = projects.first {
-                Button {
+                Button("Edit recording") {
                     vm.openProject(project)
-                } label: {
-                    Label("Open in Editor", systemImage: ProjectLibrarySymbols.editRecording)
                 }
 
                 Button {
@@ -426,7 +445,7 @@ struct ProjectLibraryView: View {
                     Button(vm.projectTrash.restorableCount == 1 ? "Restore project" : "Restore \(vm.projectTrash.restorableCount) projects") {
                         Task { await vm.restoreTrashedProjects() }
                     }
-                    .blitzGlassButton()
+                    .blitzButton(.secondary)
                     .disabled(!vm.projectTrash.canRestore)
                 }
                 if !vm.projectTrash.isWorking && !vm.projectTrash.canRestore {
@@ -598,7 +617,7 @@ struct ProjectLibraryView: View {
                 } label: {
                     Label("Move \(projects.count) projects to Trash", systemImage: "trash")
                 }
-                .blitzGlassButton()
+                .blitzButton(.secondary)
                 .disabled(vm.projectTrash.isWorking)
                 .pointingHandCursor()
             }
@@ -716,19 +735,15 @@ struct ProjectLibraryView: View {
             }
             .contentShape(.rect(cornerRadius: 13))
         }
-        .buttonStyle(ProjectLibraryPressButtonStyle())
-        .onContinuousHover { phase in
-            switch phase {
-            case .active:
+        .buttonStyle(BlitzPressButtonStyle())
+        .onHover { hovering in
+            if hovering {
                 hoveredBulkProjectID = project.id
-                NSCursor.pointingHand.set()
-            case .ended:
-                if hoveredBulkProjectID == project.id {
-                    hoveredBulkProjectID = nil
-                }
-                NSCursor.arrow.set()
+            } else if hoveredBulkProjectID == project.id {
+                hoveredBulkProjectID = nil
             }
         }
+        .pointingHandCursor()
         .help("View \(displayTitle(project))")
         .contextMenu { projectContextMenu(vm.projectLibraryNavigation.selectedProjectIDs) }
     }
@@ -787,12 +802,21 @@ struct ProjectLibraryView: View {
         _ project: RecordingProjectHistory.Entry
     ) -> some View {
         let isOpening = openingProjectID == project.id
-        return HStack(spacing: 8) {
-            ProjectLibraryActionButton(configuration: .init(
+        return HStack(spacing: 12) {
+            Button(role: .destructive) { queueDeletion([project]) } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 14, weight: .regular))
+                    .frame(width: 36, height: 40)
+            }
+            .buttonStyle(BlitzSelectionButtonStyle(isSelected: false))
+            .pointingHandCursor()
+            .accessibilityLabel("Move to Trash")
+            .help("Move this recording to Trash")
+
+            EditRecordingButton(configuration: .init(
                 title: "Edit recording",
-                systemImage: ProjectLibrarySymbols.editRecording,
-                tone: .primary,
                 isLoading: isOpening,
+                help: "Open this recording in the editor",
                 action: {
                     openingProjectID = project.id
                     Task {
@@ -802,11 +826,7 @@ struct ProjectLibraryView: View {
                     }
                 }
             ))
-
-            Button(role: .destructive) { queueDeletion([project]) } label: {
-                Label("Move to Trash", systemImage: "trash")
-            }
-            .blitzGlassButton()
+            .controlSize(.large)
         }
         .disabled(vm.projectTrash.isWorking)
     }
@@ -845,7 +865,7 @@ struct ProjectLibraryView: View {
                             Label("Generate title", systemImage: "sparkles")
                         }
                     }
-                    .buttonStyle(BlitzControlButtonStyle(isProminent: false))
+                    .buttonStyle(BlitzButtonStyle(.secondary))
                     .disabled(titleGenerationProjectID != nil)
                     .help("Generate a title from the transcript using the local AI model")
 
@@ -954,7 +974,7 @@ struct ProjectLibraryView: View {
                 Button(transcriptActionTitle(request.status)) {
                     performTranscriptAction(request.project)
                 }
-                .buttonStyle(BlitzControlButtonStyle(isProminent: false))
+                .buttonStyle(BlitzButtonStyle(.secondary))
                 .pointingHandCursor()
             }
         }
@@ -1067,7 +1087,7 @@ struct ProjectLibraryView: View {
             if let actionTitle = configuration.actionTitle,
                let action = configuration.action {
                 Button(actionTitle, action: action)
-                    .buttonStyle(BlitzControlButtonStyle(isProminent: false))
+                    .buttonStyle(BlitzButtonStyle(.secondary))
                     .pointingHandCursor()
             }
         }
@@ -1134,7 +1154,7 @@ struct ProjectLibraryView: View {
                 } label: {
                     Label("Show in Finder", systemImage: "folder")
                 }
-                .buttonStyle(BlitzControlButtonStyle(isProminent: false))
+                .buttonStyle(BlitzButtonStyle(.secondary))
                 .pointingHandCursor()
             }
 
@@ -1821,12 +1841,6 @@ struct ProjectLibraryView: View {
 
 }
 
-private struct ProjectLibraryPressButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .opacity(configuration.isPressed ? 0.72 : 1)
-    }
-}
 
 private struct TranscriptTimestampButton: View {
     let timestamp: String

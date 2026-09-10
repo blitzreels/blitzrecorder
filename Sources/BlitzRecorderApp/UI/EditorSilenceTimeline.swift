@@ -58,12 +58,42 @@ struct SilenceTimelineBands {
         let x: CGFloat
     }
 
-    static func selectedRange(_ request: SelectionRequest) -> EditorTimeRange? {
-        if let band = request.bands.first(where: { request.x >= $0.x && request.x <= $0.x + $0.width }) {
-            return band.range
+    struct SoundRangeRequest {
+        let cuts: [TimelineCut]
+        let time: Double
+        let duration: Double
+    }
+
+    static func soundRange(_ request: SoundRangeRequest) -> EditorTimeRange? {
+        guard request.time.isFinite, request.duration.isFinite, request.duration > 0,
+            request.time >= 0, request.time <= request.duration else { return nil }
+        let cuts = request.cuts.filter {
+            $0.kind == .silence && $0.start.isFinite && $0.end.isFinite && $0.end > $0.start
         }
-        return request.bands.filter { request.x >= $0.x - 2 && request.x <= $0.x + $0.width + 2 }
-            .min { abs($0.x + $0.width / 2 - request.x) < abs($1.x + $1.width / 2 - request.x) }?.range
+        guard !cuts.contains(where: { request.time >= $0.start && request.time < $0.end }) else { return nil }
+        let start = cuts.filter { $0.end <= request.time }.map(\.end).max() ?? 0
+        let end = cuts.filter { $0.start > request.time }.map(\.start).min() ?? request.duration
+        return EditorTimeRange.resolve(.init(anchor: start, head: end, duration: request.duration))
+    }
+
+    struct ClassificationRequest {
+        let range: EditorTimeRange
+        let cuts: [TimelineCut]
+    }
+
+    static func classification(_ request: ClassificationRequest) -> SilenceClassification {
+        var cursor = request.range.start
+        for cut in request.cuts.filter({ $0.kind == .silence && $0.isEnabled }).sorted(by: { $0.start < $1.start }) {
+            guard cut.end > cursor else { continue }
+            if cut.start > cursor + 1.0 / 600 { return .sound }
+            cursor = cut.end
+            if cursor >= request.range.end - 1.0 / 600 { return .silence }
+        }
+        return .sound
+    }
+
+    static func selectedRange(_ request: SelectionRequest) -> EditorTimeRange? {
+        request.bands.first(where: { request.x >= $0.x && request.x < $0.x + $0.width })?.range
     }
 
     static func visible(_ request: Request) -> [Band] {
@@ -89,13 +119,13 @@ struct SilenceTimelineBands {
 struct SilenceWaveformOverlay: View, Equatable {
     let bands: [SilenceTimelineBands.Band]
     let viewport: EditorTimelineViewport
-    let selection: EditorTimeRange?
+    let selections: [EditorTimeRange]
 
     var body: some View {
         Canvas { context, size in
             for band in bands {
-                let isSelected = selection == band.range
-                let color = isSelected || !band.isEnabled ? BlitzUI.mint : BlitzUI.warning
+                let isSelected = selections.contains(band.range)
+                let color = band.isEnabled ? Color.red : BlitzUI.mint
                 let rect = CGRect(x: band.x, y: 0, width: band.width, height: size.height)
                 context.fill(Path(rect), with: .color(color.opacity(isSelected ? 0.25 : 0.18)))
                 context.stroke(

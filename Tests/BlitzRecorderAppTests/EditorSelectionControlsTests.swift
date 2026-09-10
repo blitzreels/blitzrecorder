@@ -147,4 +147,79 @@ final class EditorSelectionControlsTests: XCTestCase {
     private func command(_ request: EditorKeyboardCommand.Request) -> EditorKeyboardCommand? {
         EditorKeyboardCommand.resolve(request)
     }
+
+    @MainActor
+    func testSplitAndDeleteSegmentKeepsEverySourceInSyncAndPersistsUndoRedo() throws {
+        let suite = "LinkedSegmentTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults), defaults: defaults
+        )
+        let vm = RecorderViewModel(coordinator: coordinator, previewStage: PreviewStageView())
+        var settings = RecordingSettings()
+        settings.outputDirectory = directory
+        settings.enabledSources = [.screen, .camera, .microphone, .systemAudio]
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try Data().write(to: take.screenURL)
+        vm.openProject(try XCTUnwrap(store.loadProjectHistory(settings: settings).entries.first))
+        let original = try XCTUnwrap(vm.lastExportedProject)
+
+        XCTAssertFalse(vm.deleteProjectSegment(.init(index: 0, duration: 10)))
+        XCTAssertFalse(vm.deleteProjectSegment(.init(index: -1, duration: 10)))
+        XCTAssertTrue(vm.splitProjectScene(at: 3, duration: 10))
+        XCTAssertTrue(vm.splitProjectScene(at: 6, duration: 10))
+        let splitEvents = try XCTUnwrap(vm.lastExportedProject?.sceneEvents)
+        XCTAssertTrue(vm.deleteProjectSegment(.init(index: 1, duration: 10)))
+        let deleted = try store.loadRecordingProject(at: take.projectURL)
+        XCTAssertEqual(deleted.sceneEvents, splitEvents)
+        XCTAssertEqual(deleted.settings, original.settings)
+        XCTAssertEqual(deleted.edits.enabledCuts.map(\.start), [3])
+        XCTAssertEqual(deleted.edits.enabledCuts.map(\.end), [6])
+        XCTAssertEqual(vm.editorUndoTitle, "Undo Delete Segment")
+
+        let map = TimelineTimeMap(takeDuration: TimelineTimeMap.time(10), cuts: deleted.edits.cuts)
+        XCTAssertEqual(map.outputDuration.seconds, 7, accuracy: 0.001)
+        for offset in [0.0, 0.25, -0.1, 0.4] {
+            let pieces = map.mediaInsertions(.init(
+                activeTakeStart: TimelineTimeMap.time(max(0, offset)),
+                sourceTimeAtActiveStart: TimelineTimeMap.time(max(0, -offset)),
+                sourceEnd: TimelineTimeMap.time(10 - offset)
+            ))
+            let afterCut = try XCTUnwrap(pieces.last)
+            XCTAssertEqual(pieces.count, 2)
+            XCTAssertEqual(afterCut.compositionStart.seconds, 3, accuracy: 0.001)
+            XCTAssertEqual(afterCut.sourceStart.seconds, 6 - offset, accuracy: 0.001)
+            XCTAssertEqual(afterCut.duration.seconds, 4, accuracy: 0.001)
+        }
+
+        vm.undoEditor()
+        XCTAssertEqual(try store.loadRecordingProject(at: take.projectURL).edits, original.edits)
+        vm.redoEditor()
+        XCTAssertEqual(try store.loadRecordingProject(at: take.projectURL).edits, deleted.edits)
+
+        let projection = EditorTimelineProjection(.init(duration: 10, cuts: deleted.edits.cuts))
+        XCTAssertTrue(vm.splitProjectScene(at: projection.takeTime(4), duration: 10))
+        XCTAssertTrue(vm.deleteProjectSegment(.init(index: 2, duration: 10)))
+        let repeated = try store.loadRecordingProject(at: take.projectURL)
+        let repeatedMap = TimelineTimeMap(takeDuration: TimelineTimeMap.time(10), cuts: repeated.edits.cuts)
+        XCTAssertEqual(repeatedMap.outputDuration.seconds, 6, accuracy: 0.001)
+        XCTAssertEqual(repeatedMap.takeSeconds(forOutputSeconds: 3), 7, accuracy: 0.001)
+        vm.undoEditor()
+        vm.undoEditor()
+
+        XCTAssertTrue(vm.deleteProjectSegment(.init(index: 0, duration: 10)))
+        XCTAssertEqual(vm.lastExportedProject?.edits.enabledCuts.last?.start, 0)
+        XCTAssertEqual(vm.lastExportedProject?.edits.enabledCuts.last?.end, 3)
+        XCTAssertFalse(vm.deleteProjectSegment(.init(index: 2, duration: 10)))
+        vm.undoEditor()
+        XCTAssertTrue(vm.deleteProjectSegment(.init(index: 2, duration: 10)))
+        XCTAssertEqual(vm.lastExportedProject?.edits.enabledCuts.last?.start, 6)
+        XCTAssertEqual(vm.lastExportedProject?.edits.enabledCuts.last?.end, 10)
+    }
 }

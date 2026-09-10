@@ -150,7 +150,7 @@ private struct DockActionButton: View {
                 .padding(.horizontal, 9)
                 .padding(.vertical, 6)
         }
-        .blitzGlassButton()
+        .blitzButton(.secondary)
         .controlSize(.small)
         .pointingHandCursor()
         .help(help ?? title)
@@ -159,44 +159,16 @@ private struct DockActionButton: View {
 
 private struct ProjectReadyChip: View {
     @Bindable var vm: RecorderViewModel
-    @State private var hovering = false
 
     var body: some View {
-        Button {
-            vm.openEditor()
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 13, weight: .semibold))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(BlitzUI.mint)
-                Text("Edit recording")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.94))
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.white.opacity(hovering ? 0.76 : 0.46))
-            }
-            .padding(.horizontal, 14)
-            .frame(height: 40)
-            .background(
-                BlitzUI.mint.opacity(hovering ? 0.18 : 0.11),
-                in: .rect(cornerRadius: BlitzUI.controlRadius)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous)
-                    .strokeBorder(BlitzUI.mint.opacity(hovering ? 0.42 : 0.24), lineWidth: 1)
-                    .allowsHitTesting(false)
-            }
-            .contentShape(.rect(cornerRadius: BlitzUI.controlRadius))
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .pointingHandCursor()
-        .help("Open \(projectDetail) in Edit")
-        .animation(.easeOut(duration: 0.15), value: hovering)
+        EditRecordingButton(configuration: .init(
+            title: "Edit recording",
+            isLoading: false,
+            help: "Open \(projectDetail) in the editor",
+            action: { vm.openEditor() }
+        ))
         .contextMenu {
-            Button("Open in Edit") { vm.openEditor() }
+            Button("Edit recording") { vm.openEditor() }
             Button("Show Source Files") {
                 vm.revealLastSourceTracks()
             }
@@ -243,9 +215,13 @@ private struct SavedRecordingChip: View {
             }
 
             if sourceTakeURL != nil {
-                DockActionButton(title: "Edit", systemImage: "square.and.pencil", help: "Open this take in Edit") {
-                    vm.openEditor()
-                }
+                EditRecordingButton(configuration: .init(
+                    title: "Edit",
+                    isLoading: false,
+                    help: "Open this recording in the editor",
+                    action: { vm.openEditor() }
+                ))
+                .controlSize(.small)
                 .fixedSize()
             }
 
@@ -264,7 +240,7 @@ private struct SavedRecordingChip: View {
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
             Button("Rename…") { vm.renameLastExportedFile() }
             if let sourceTakeURL {
-                Button("Open in Edit") { vm.openEditor() }
+                Button("Edit recording") { vm.openEditor() }
                 Button("Show Source Files") {
                     NSWorkspace.shared.activateFileViewerSelecting([sourceTakeURL])
                 }
@@ -654,7 +630,7 @@ private struct PauseButton: View {
             .frame(width: 44, height: 44)
             .contentShape(.rect(cornerRadius: BlitzUI.controlRadius))
         }
-        .buttonStyle(RecordButtonPressStyle())
+        .buttonStyle(BlitzPressButtonStyle())
         .disabled(!isEnabled)
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
@@ -673,14 +649,6 @@ private struct PauseButton: View {
 
     private var isEnabled: Bool {
         vm.state == .recording || vm.state == .paused
-    }
-}
-
-private struct RecordButtonPressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .opacity(configuration.isPressed ? 0.72 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -709,7 +677,7 @@ private struct RecordButton: View {
             }
             .contentShape(.rect(cornerRadius: BlitzUI.controlRadius))
         }
-        .buttonStyle(RecordButtonPressStyle())
+        .buttonStyle(BlitzPressButtonStyle())
         .opacity(dimmed ? 0.5 : 1)
         .disabled(!enabled)
         .onHover { isHovering = $0 }

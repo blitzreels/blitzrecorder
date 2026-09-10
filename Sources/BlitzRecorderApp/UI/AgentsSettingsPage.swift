@@ -2,40 +2,6 @@ import AppKit
 import SwiftUI
 
 struct AgentsSettingsPage: View {
-    private struct Capability: Identifiable {
-        let id: String
-        let title: String
-        let detail: String
-        let icon: String
-    }
-
-    private static let capabilities = [
-        Capability(
-            id: "projects",
-            title: "Find projects",
-            detail: "List, search, and filter local BlitzRecorder projects.",
-            icon: "rectangle.stack"
-        ),
-        Capability(
-            id: "transcripts",
-            title: "Inspect transcripts",
-            detail: "Read saved transcripts and project details.",
-            icon: "text.quote"
-        ),
-        Capability(
-            id: "export",
-            title: "Export MP4 files",
-            detail: "Use the default folder or an authorized subfolder for each export job.",
-            icon: "square.and.arrow.up"
-        ),
-        Capability(
-            id: "status",
-            title: "Track export jobs",
-            detail: "Monitor pending projects, failures, and completed output paths.",
-            icon: "progress.indicator"
-        ),
-    ]
-
     @Bindable var mcpServer: BlitzRecorderMCPServer
     @State private var copiedValue: String?
 
@@ -43,7 +9,7 @@ struct AgentsSettingsPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 SettingsPageHeader(.init(
-                    title: "Agents",
+                    title: "Integrations",
                     detail: "Connect local AI agents to projects, transcripts, and MP4 exports.",
                     systemImage: "terminal",
                     status: statusTitle
@@ -51,9 +17,7 @@ struct AgentsSettingsPage: View {
                 .padding(.bottom, 4)
 
                 serverSection
-                capabilitiesSection
                 connectSection
-                securitySection
             }
             .settingsPageContent()
         }
@@ -66,10 +30,10 @@ struct AgentsSettingsPage: View {
             Toggle(isOn: enabledBinding) {
                 SettingsRowLabel(.init(
                     title: "Allow local agents",
-                    detail: "Start the MCP server automatically while BlitzRecorder is open."
+                    detail: "Let local agents read projects and transcripts and create exports."
                 ))
             }
-            .toggleStyle(.switch)
+            .toggleStyle(.blitzSwitch)
             .settingsRow()
 
             SettingsRowDivider()
@@ -85,29 +49,9 @@ struct AgentsSettingsPage: View {
                 Button("Open workspace") {
                     NSWorkspace.shared.open(BlitzRecorderMCPServer.workspaceURL)
                 }
-                .blitzGlassButton()
+                .blitzButton(.secondary)
                 .pointingHandCursor()
                 .disabled(mcpServer.status != .running)
-            }
-            .settingsRow()
-
-            SettingsRowDivider()
-
-            HStack(alignment: .center, spacing: 16) {
-                SettingsRowLabel(.init(
-                    title: "Server status",
-                    detail: statusDetail
-                ))
-
-                Spacer(minLength: 16)
-
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 8, height: 8)
-                    Text(statusTitle)
-                        .font(.system(size: 12, weight: .semibold))
-                }
             }
             .settingsRow()
 
@@ -140,7 +84,7 @@ struct AgentsSettingsPage: View {
                         await mcpServer.testConnection()
                     }
                 }
-                .blitzGlassButton()
+                .blitzButton(.secondary)
                 .pointingHandCursor()
                 .disabled(mcpServer.status != .running || isTestingConnection)
             }
@@ -148,37 +92,8 @@ struct AgentsSettingsPage: View {
         }
         .settingsSection(.init(
             title: "Local agent server",
-            detail: "BlitzRecorder must remain open while an agent is connected",
+            detail: statusDetail,
             systemImage: "antenna.radiowaves.left.and.right"
-        ))
-    }
-
-    private var capabilitiesSection: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(Self.capabilities.enumerated()), id: \.element.id) { index, capability in
-                if index > 0 {
-                    SettingsRowDivider()
-                }
-                HStack(alignment: .top, spacing: 12) {
-                    BlitzSymbol(configuration: .init(name: capability.icon, size: 18))
-                        .foregroundStyle(BlitzUI.mint)
-                        .frame(width: 18, height: 18)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(capability.title)
-                            .font(.system(size: 12, weight: .semibold))
-                        Text(capability.detail)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .settingsRow()
-            }
-        }
-        .settingsSection(.init(
-            title: "Agent capabilities",
-            detail: "A narrow local surface for safe project work",
-            systemImage: "sparkles.rectangle.stack"
         ))
     }
 
@@ -221,42 +136,6 @@ struct AgentsSettingsPage: View {
         ))
     }
 
-    private var securitySection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Label {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Local access only")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(
-                        "The server does not accept network connections from other devices. "
-                            + "Any process on this Mac can use it while enabled."
-                    )
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                }
-            } icon: {
-                Image(systemName: "lock.shield")
-                    .foregroundStyle(BlitzUI.mint)
-            }
-            .settingsRow()
-
-            SettingsRowDivider()
-
-            Text(
-                "Agent exports create normal project export records. "
-                    + "They do not rewrite captured source files or saved edits."
-            )
-            .font(.system(size: 11))
-            .foregroundStyle(.secondary)
-            .settingsRow()
-        }
-        .settingsSection(.init(
-            title: "Privacy and control",
-            detail: "Local access with normal project export records",
-            systemImage: "hand.raised"
-        ))
-    }
-
     private var enabledBinding: Binding<Bool> {
         Binding(
             get: { mcpServer.isEnabled },
@@ -293,15 +172,6 @@ struct AgentsSettingsPage: View {
         }
     }
 
-    private var statusColor: Color {
-        switch mcpServer.status {
-        case .running: BlitzUI.mint
-        case .starting: BlitzUI.warning
-        case .failed: .red
-        case .disabled, .stopped: .secondary
-        }
-    }
-
     private var isTestingConnection: Bool {
         mcpServer.connectionTestStatus == .testing
     }
@@ -331,7 +201,7 @@ struct AgentsSettingsPage: View {
             Button(copiedValue == value ? "Copied" : "Copy") {
                 copy(value)
             }
-            .blitzGlassButton()
+            .blitzButton(.secondary)
         }
     }
 
@@ -349,7 +219,7 @@ struct AgentsSettingsPage: View {
             Button(copiedValue == value ? "Copied" : "Copy") {
                 copy(value)
             }
-            .blitzGlassButton()
+            .blitzButton(.secondary)
             .padding(.top, 5)
         }
     }

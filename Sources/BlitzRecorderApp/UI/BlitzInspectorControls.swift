@@ -1,5 +1,74 @@
 import SwiftUI
 
+struct BlitzVisualChoice<Preview: View>: View {
+    struct Configuration {
+        let title: String
+        let help: String
+        let isSelected: Bool
+        let action: () -> Void
+        let preview: () -> Preview
+    }
+
+    let configuration: Configuration
+
+    var body: some View {
+        Button(action: configuration.action) {
+            VStack(spacing: 8) {
+                configuration.preview()
+                    .frame(height: 52)
+                    .clipShape(.rect(cornerRadius: 5))
+                    .accessibilityHidden(true)
+                Text(configuration.title)
+                    .font(.system(size: 11, weight: .medium))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(8)
+        }
+        .buttonStyle(BlitzSelectionButtonStyle(isSelected: configuration.isSelected))
+        .accessibilityLabel(configuration.title)
+        .accessibilityAddTraits(configuration.isSelected ? .isSelected : [])
+        .help(configuration.help)
+        .pointingHandCursor()
+    }
+}
+
+struct BlitzInspectorDisclosure<Content: View>: View {
+    struct Configuration {
+        let title: String
+        let detail: String?
+        let isExpanded: Binding<Bool>
+        let content: () -> Content
+    }
+
+    let configuration: Configuration
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                configuration.isExpanded.wrappedValue.toggle()
+            } label: {
+                HStack(spacing: 8) {
+                    Text(configuration.title)
+                    Spacer(minLength: 0)
+                    if let detail = configuration.detail {
+                        Text(detail).font(.system(size: 10))
+                    }
+                    Image(systemName: configuration.isExpanded.wrappedValue ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .blitzButton(.quiet)
+            .accessibilityLabel(configuration.title)
+            .accessibilityValue(configuration.isExpanded.wrappedValue ? "Expanded" : "Collapsed")
+            if configuration.isExpanded.wrappedValue {
+                configuration.content()
+            }
+        }
+    }
+}
+
 struct BlitzInspectorHeading: View {
     struct Configuration {
         let title: String
@@ -72,6 +141,7 @@ struct BlitzInspectorSlider: View {
 struct BlitzBackgroundPicker: View {
     let configuration: BlitzBackgroundPalette.Configuration
     @State private var isPresented = false
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         Button {
@@ -94,19 +164,19 @@ struct BlitzBackgroundPicker: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
-                BlitzSymbol(configuration: .init(name: "chevron.right", size: 12))
-                    .foregroundStyle(BlitzUI.secondaryText)
+                BlitzMenuChevron()
             }
             .padding(8)
             .frame(maxWidth: .infinity)
             .contentShape(.rect)
         }
-        .buttonStyle(BlitzSelectionButtonStyle(isSelected: isPresented))
-        .background(BlitzUI.quietFill, in: .rect(cornerRadius: BlitzUI.controlRadius))
-        .pointingHandCursor()
+        .buttonStyle(BlitzMenuTriggerStyle(isPresented: isPresented))
         .accessibilityLabel("Canvas background")
         .accessibilityValue(configuration.selection.displayName)
         .help("Choose a canvas background for this segment")
+        .onChange(of: isEnabled) {
+            if !isEnabled { isPresented = false }
+        }
         .popover(isPresented: $isPresented, arrowEdge: .leading) {
             VStack(alignment: .leading, spacing: 14) {
                 BlitzInspectorHeading(configuration: .init(title: "Background", detail: nil))

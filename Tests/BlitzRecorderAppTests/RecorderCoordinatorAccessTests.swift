@@ -72,20 +72,15 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
     func testRecordingStartIsNotBlockedByLegacyExportCount() {
         let defaults = temporaryDefaults()
         let access = AccessController(defaults: defaults)
-        for _ in 0..<ProductConfiguration.freeExportLimit {
-            access.recordSuccessfulExportIfNeeded()
-        }
+        defaults.set(100, forKey: "access.usedFreeExports")
 
         XCTAssertTrue(access.canRenderExport)
-        XCTAssertEqual(access.usedFreeExports, 0)
     }
 
     func testReadinessDetailsOpenPermissionsWhenAccessIsFree() {
         let defaults = temporaryDefaults()
         let access = AccessController(defaults: defaults)
-        for _ in 0..<ProductConfiguration.freeExportLimit {
-            access.recordSuccessfulExportIfNeeded()
-        }
+        defaults.set(100, forKey: "access.usedFreeExports")
 
         let coordinator = RecorderCoordinator(accessController: access, defaults: defaults)
         let viewModel = RecorderViewModel(coordinator: coordinator, previewStage: PreviewStageView())
@@ -1132,6 +1127,30 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         XCTAssertEqual(readiness, ready)
     }
 
+    func testLateCanvasCallbacksCannotEditAnotherScene() {
+        let defaults = temporaryDefaults()
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults), defaults: defaults
+        )
+        let previewStage = PreviewStageView()
+        let viewModel = RecorderViewModel(coordinator: coordinator, previewStage: previewStage)
+        XCTAssertTrue(viewModel.canManipulateCanvasItems)
+        previewStage.sceneID = UUID()
+        let original = coordinator.settings
+        var layout = original.sceneLayout
+        layout.cameraFrame = CGRect(x: 0.2, y: 0.2, width: 0.4, height: 0.4)
+        previewStage.onSceneLayoutChanged?(layout)
+        previewStage.onSceneLayoutEditingEnded?(layout)
+        previewStage.onCameraCropChanged?(CGPoint(x: 0.2, y: 0.2), CGPoint(x: 0.3, y: 0.3))
+        previewStage.onScreenCropChanged?(CGRect(x: 0.2, y: 0.2, width: 0.5, height: 0.5))
+        previewStage.onScreenCropPanRequested?()
+        XCTAssertEqual(coordinator.settings.sceneLayout, original.sceneLayout)
+        XCTAssertEqual(coordinator.settings.cameraCropAmount, original.cameraCropAmount)
+        XCTAssertEqual(coordinator.settings.cameraCropPosition, original.cameraCropPosition)
+        XCTAssertEqual(coordinator.settings.screenCrop, original.screenCrop)
+        XCTAssertFalse(viewModel.isScreenCropModeEnabled)
+    }
+
     func testPreviewLayerSelectionSelectsMatchingSource() {
         let defaults = temporaryDefaults()
         let coordinator = RecorderCoordinator(
@@ -1166,28 +1185,21 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         XCTAssertEqual(messages, ["Start failed: Select at least one source before recording."])
     }
 
-    func testFreeAccessBlocksPaidOutputControls() {
+    func testFreeAccessAllowsAllOutputControls() {
         let defaults = temporaryDefaults()
-        let access = AccessController(defaults: defaults)
-        let coordinator = RecorderCoordinator(accessController: access, defaults: defaults)
+        let coordinator = RecorderCoordinator(accessController: AccessController(defaults: defaults), defaults: defaults)
         var messages: [String] = []
         coordinator.onMessage = { messages.append($0) }
 
         coordinator.setOutputResolution(.p2160)
         coordinator.setFramesPerSecond(60)
 
-        XCTAssertEqual(coordinator.settings.outputResolution, .p1080)
-        XCTAssertEqual(coordinator.settings.framesPerSecond, 30)
-        XCTAssertEqual(
-            messages,
-            [
-                "4K export is locked. Get a free license, then paste your key in Account.",
-                "60 fps export is locked. Get a free license, then paste your key in Account."
-            ]
-        )
+        XCTAssertEqual(coordinator.settings.outputResolution, .p2160)
+        XCTAssertEqual(coordinator.settings.framesPerSecond, 60)
+        XCTAssertTrue(messages.isEmpty)
     }
 
-    func testFreeAccessBlocksRemoteCameraSelection() {
+    func testFreeAccessAllowsRemoteCameraSelection() {
         let defaults = temporaryDefaults()
         let access = AccessController(defaults: defaults)
         let coordinator = RecorderCoordinator(accessController: access, defaults: defaults)
@@ -1196,24 +1208,11 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
 
         coordinator.setCamera(id: RemoteCameraProviderID.make(for: "iphone-15-pro"))
 
-        XCTAssertNil(coordinator.settings.selectedCameraID)
-        XCTAssertEqual(messages, ["iPhone camera is locked. Get a free license, then paste your key in Account."])
+        XCTAssertNotNil(coordinator.settings.selectedCameraID)
+        XCTAssertTrue(messages.allSatisfy { !$0.contains("locked") })
     }
 
-    func testFreeAccessBlocksDirectRemoteCameraConnection() {
-        let defaults = temporaryDefaults()
-        let access = AccessController(defaults: defaults)
-        let coordinator = RecorderCoordinator(accessController: access, defaults: defaults)
-        var messages: [String] = []
-        coordinator.onMessage = { messages.append($0) }
-
-        coordinator.connectDirectRemoteCamera(host: "127.0.0.1", portString: "49152")
-
-        XCTAssertNil(coordinator.settings.selectedCameraID)
-        XCTAssertEqual(messages, ["iPhone camera is locked. Get a free license, then paste your key in Account."])
-    }
-
-    func testFreeAccessDowngradesPersistedPaidSettingsOnLaunch() {
+    func testFreeAccessPreservesAllPersistedSettingsOnLaunch() {
         let defaults = temporaryDefaults()
         var settings = RecordingSettings()
         settings.outputResolution = .p2160
@@ -1226,17 +1225,17 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
             defaults: defaults
         )
 
-        XCTAssertEqual(coordinator.settings.outputResolution, .p1080)
-        XCTAssertEqual(coordinator.settings.framesPerSecond, 30)
-        XCTAssertNil(coordinator.settings.selectedCameraID)
+        XCTAssertEqual(coordinator.settings.outputResolution, .p2160)
+        XCTAssertEqual(coordinator.settings.framesPerSecond, 60)
+        XCTAssertEqual(coordinator.settings.selectedCameraID, settings.selectedCameraID)
 
         let restoredSettings = RecordingSettingsStore.load(defaults: defaults)
-        XCTAssertEqual(restoredSettings.outputResolution, .p1080)
-        XCTAssertEqual(restoredSettings.framesPerSecond, 30)
-        XCTAssertNil(restoredSettings.selectedCameraID)
+        XCTAssertEqual(restoredSettings.outputResolution, .p2160)
+        XCTAssertEqual(restoredSettings.framesPerSecond, 60)
+        XCTAssertEqual(restoredSettings.selectedCameraID, settings.selectedCameraID)
     }
 
-    func testSavedLicenseKeyDefersPaidSettingsDowngradeOnLaunch() {
+    func testLegacyLicenseDoesNotChangeSavedRecordingSettings() {
         let defaults = temporaryDefaults()
         var settings = RecordingSettings()
         settings.outputResolution = .p2160
@@ -1256,22 +1255,6 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
             RemoteCameraProviderID.serviceID(from: coordinator.settings.selectedCameraID),
             "iphone-15-pro"
         )
-    }
-
-    func testActiveLicenseAllowsPaidOutputControls() {
-        let defaults = temporaryDefaults()
-        let access = AccessController(defaults: defaults)
-        access.hasActiveLicense = true
-        let coordinator = RecorderCoordinator(accessController: access, defaults: defaults)
-        var messages: [String] = []
-        coordinator.onMessage = { messages.append($0) }
-
-        coordinator.setOutputResolution(.p2160)
-        coordinator.setFramesPerSecond(60)
-
-        XCTAssertEqual(coordinator.settings.outputResolution, .p2160)
-        XCTAssertEqual(coordinator.settings.framesPerSecond, 60)
-        XCTAssertTrue(messages.isEmpty)
     }
 
     private func temporaryDefaults() -> UserDefaults {

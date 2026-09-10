@@ -4,6 +4,7 @@ enum ScreenSourcePickerPlacement: Equatable {
     case suggested(rank: Int)
     case standard
     case sensitive
+    case utility
 
     var group: ScreenSourcePickerGroup {
         switch self {
@@ -11,6 +12,8 @@ enum ScreenSourcePickerPlacement: Equatable {
             return .suggested
         case .standard:
             return .standard
+        case .utility:
+            return .utility
         case .sensitive:
             return .sensitive
         }
@@ -22,6 +25,8 @@ enum ScreenSourcePickerPlacement: Equatable {
             return rank
         case .standard:
             return 1_000
+        case .utility:
+            return 3_000
         case .sensitive:
             return 2_000
         }
@@ -33,6 +38,7 @@ enum ScreenSourcePickerGroup {
     case suggested
     case standard
     case sensitive
+    case utility
 }
 
 struct ScreenSourcePickerPlacementRequest {
@@ -46,6 +52,50 @@ struct ScreenSourcePickerRecentUpdateRequest {
 }
 
 enum ScreenSourcePickerOrganization {
+    struct SelectionRequest {
+        let selectedBinding: ScreenSourceBinding?
+        let candidate: ScreenSourceBinding
+        let usesPickedContent: Bool
+    }
+
+    static func isSelected(_ request: SelectionRequest) -> Bool {
+        guard !request.usesPickedContent, let selected = request.selectedBinding else { return false }
+        if selected.kind == .window {
+            guard let identity = ScreenWindowIdentity(selected),
+                  let candidate = ScreenWindowIdentity(request.candidate) else { return false }
+            return identity.matches(candidate)
+        }
+        return selected.id == request.candidate.id
+    }
+
+    struct WindowVisibilityRequest {
+        let size: CGSize
+        let layer: Int
+        let isSystemWindow: Bool
+    }
+
+    static func isUtilityWindow(_ request: WindowVisibilityRequest) -> Bool {
+        request.size.width < 100 || request.size.height < 100 || request.layer != 0 || request.isSystemWindow
+    }
+
+    static func visibility(_ option: ScreenSourceOption) -> SourcePickerVisibility {
+        let binding = option.binding
+        let identity: String
+        switch binding.kind {
+        case .display: identity = binding.displayID ?? binding.id
+        case .application: identity = binding.bundleIdentifier ?? binding.applicationName ?? binding.id
+        case .window:
+            identity = "\(binding.bundleIdentifier ?? binding.applicationName ?? "unknown"):\(binding.windowTitle ?? binding.id)"
+        }
+        let reason: String?
+        switch option.pickerPlacement {
+        case .sensitive: reason = "Private app"
+        case .utility: reason = "Small or utility window"
+        case .standard, .suggested: reason = nil
+        }
+        return SourcePickerVisibility(id: "screen:\(binding.kind.rawValue):\(identity)", hiddenReason: reason)
+    }
+
     static let maximumRecentApplicationCount = 5
 
     private static let preferredBundleIdentifiers = [

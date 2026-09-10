@@ -47,9 +47,21 @@ enum ScreenWindowFitRetry {
 
 @MainActor
 enum WindowFrameWriter {
+    static let settlingInterval: Duration = .milliseconds(10)
+    static let maximumSettlingPolls = 12
+
     enum Change {
         case size(CGSize)
         case position(CGPoint)
+
+        func matches(_ frame: CGRect) -> Bool {
+            switch self {
+            case .size(let size):
+                return abs(frame.width - size.width) <= 1 && abs(frame.height - size.height) <= 1
+            case .position(let position):
+                return abs(frame.minX - position.x) <= 1 && abs(frame.minY - position.y) <= 1
+            }
+        }
     }
 
     struct Request {
@@ -60,12 +72,21 @@ enum WindowFrameWriter {
     }
 
     static func apply(_ request: Request) async throws -> CGRect {
-        try request.write(.size(request.frame.size))
-        try await request.settle()
-        try request.write(.position(request.frame.origin))
-        try await request.settle()
-        try request.write(.size(request.frame.size))
-        try await request.settle()
+        let changes: [Change] = [
+            .size(request.frame.size),
+            .position(request.frame.origin),
+            .size(request.frame.size)
+        ]
+        for change in changes {
+            try Task.checkCancellation()
+            if change.matches(try request.read()) { continue }
+            try request.write(change)
+            for _ in 0..<maximumSettlingPolls {
+                if change.matches(try request.read()) { break }
+                try await request.settle()
+                try Task.checkCancellation()
+            }
+        }
         return try request.read()
     }
 }
@@ -595,7 +616,7 @@ enum ShortsWindowArranger {
                 }
             },
             settle: {
-                try await Task.sleep(for: .milliseconds(120))
+                try await Task.sleep(for: WindowFrameWriter.settlingInterval)
                 guard fitRevision == request.revision else { throw CancellationError() }
             },
             read: {

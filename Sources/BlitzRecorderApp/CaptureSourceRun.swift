@@ -4,6 +4,7 @@ import ScreenCaptureKit
 
 protocol ScreenCaptureRecording: AnyObject {
     var activeScreenCaptureStream: SCStream? { get }
+    var cursorCaptureFrame: CGRect? { get }
     func start(url: URL, settings: RecordingSettings, filter pickedFilter: SCContentFilter?, timelineStartTime: CMTime?) async throws
     func update(settings: RecordingSettings, filter pickedFilter: SCContentFilter?) async throws
     func pause()
@@ -13,6 +14,7 @@ protocol ScreenCaptureRecording: AnyObject {
 
 extension ScreenCaptureRecording {
     var activeScreenCaptureStream: SCStream? { nil }
+    var cursorCaptureFrame: CGRect? { nil }
 }
 
 protocol CameraCaptureRecording: AnyObject {

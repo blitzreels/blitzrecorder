@@ -61,7 +61,19 @@ struct VideoRenderPlacement {
 
     func sourceFrame(sourceAspectRatio: CGFloat) -> CGRect {
         if contentMode == .aspectFit {
-            return aspectFitSourceFrame(sourceAspectRatio: sourceAspectRatio)
+            let frame = aspectFitSourceFrame(sourceAspectRatio: sourceAspectRatio)
+            guard kind == .screen else { return frame }
+            let amount = max(SourceCropGeometry.clampedCropAmount(sourceCropAmount.x),
+                             SourceCropGeometry.clampedCropAmount(sourceCropAmount.y))
+            let scale = 1 / (1 - amount)
+            let width = frame.width * scale
+            let height = frame.height * scale
+            return CGRect(
+                x: frame.minX - (width - frame.width) / 2
+                    * (1 + SourceCropGeometry.clampedCropPosition(sourceCropPosition.x)),
+                y: frame.minY - (height - frame.height) / 2
+                    * (1 + SourceCropGeometry.clampedCropPosition(sourceCropPosition.y)),
+                width: width, height: height)
         }
         return SourceCropGeometry.sourceFrame(
             sourceAspectRatio: sourceAspectRatio,

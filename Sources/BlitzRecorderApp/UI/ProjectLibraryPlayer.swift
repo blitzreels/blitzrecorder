@@ -257,7 +257,7 @@ struct ProjectLibraryPlaybackControls: View {
                     .offset(x: configuration.controller.isPlaying ? 0 : 1)
                     .frame(width: 18, height: 24)
             }
-            .buttonStyle(BlitzControlButtonStyle(isProminent: false))
+            .buttonStyle(BlitzButtonStyle(.secondary))
             .keyboardShortcut(.space, modifiers: [])
             .pointingHandCursor()
             .accessibilityLabel(configuration.controller.isPlaying ? "Pause" : "Play")
@@ -291,27 +291,18 @@ struct ProjectLibraryPlaybackControls: View {
                 .frame(width: 1, height: 20)
                 .padding(.horizontal, 2)
 
-            Button {
-                configuration.controller.setPlaybackRate(nextPlaybackRate)
-            } label: {
-                Text(configuration.controller.playbackRate.displayName)
-                    .monospacedDigit()
-                    .frame(width: 32, height: 24)
-            }
-            .buttonStyle(BlitzSelectionButtonStyle(isSelected: false))
-            .pointingHandCursor()
-            .accessibilityLabel("Playback speed")
-            .accessibilityValue(configuration.controller.playbackRate.displayName)
-            .help("Playback speed · Click for \(nextPlaybackRate.displayName)")
-        }
-    }
-
-    private var nextPlaybackRate: EditorPlaybackRate {
-        switch configuration.controller.playbackRate {
-        case .half: .normal
-        case .normal: .oneAndAHalf
-        case .oneAndAHalf: .double
-        case .double, .twoAndAHalf: .normal
+            BlitzDropdown(configuration: .init(
+                title: "Playback speed",
+                selection: Binding(
+                    get: { configuration.controller.playbackRate },
+                    set: { configuration.controller.setPlaybackRate($0) }
+                ),
+                options: EditorPlaybackRate.allCases.map {
+                    .init(value: $0, title: $0.displayName, detail: nil)
+                },
+                menuWidth: 200,
+                width: .content
+            ))
         }
     }
 
@@ -328,6 +319,8 @@ struct ProjectLibraryPlaybackControls: View {
 }
 
 private struct ProjectPlaybackWaveform: View {
+    @State private var hoverX: CGFloat?
+
     private struct SeekRequest {
         let x: CGFloat
         let width: CGFloat
@@ -384,8 +377,38 @@ private struct ProjectPlaybackWaveform: View {
                     Path(roundedRect: playhead, cornerRadius: 0.5),
                     with: .color(.white.opacity(0.88))
                 )
+
+                if let hoverX {
+                    let guide = CGRect(x: hoverX, y: 1, width: 1, height: max(0, size.height - 2))
+                    context.fill(Path(guide), with: .color(BlitzUI.mint.opacity(0.6)))
+                }
             }
             .contentShape(.rect)
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(let location):
+                    hoverX = min(max(0, location.x), proxy.size.width)
+                case .ended:
+                    hoverX = nil
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if let hoverX, duration > 0 {
+                    Text(timeLabel(time(.init(x: hoverX, width: proxy.size.width))))
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(BlitzUI.primaryText)
+                        .frame(width: 56, height: 22)
+                        .background(BlitzUI.controlFill, in: .rect(cornerRadius: 5))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 5)
+                                .strokeBorder(BlitzUI.panelStroke, lineWidth: 1)
+                        }
+                        .offset(x: min(max(0, hoverX - 28), max(0, proxy.size.width - 56)), y: -24)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
+            .blitzCursor(.resizeLeftRight)
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
@@ -466,7 +489,7 @@ struct ProjectLibraryActionButton: View {
             }
             .padding(.horizontal, 4)
         }
-        .buttonStyle(BlitzControlButtonStyle(isProminent: configuration.tone == .primary))
+        .buttonStyle(BlitzButtonStyle(configuration.tone == .primary ? .accent : .secondary))
         .disabled(configuration.isLoading)
         .pointingHandCursor()
     }
@@ -494,7 +517,7 @@ struct ProjectLibraryIconActionButton: View {
         ) {
             BlitzSymbol(configuration: .init(name: configuration.systemImage, size: 16))
         }
-        .buttonStyle(BlitzControlButtonStyle(isProminent: false))
+        .buttonStyle(BlitzButtonStyle(.secondary))
         .pointingHandCursor()
         .help(configuration.title)
         .accessibilityLabel(configuration.title)

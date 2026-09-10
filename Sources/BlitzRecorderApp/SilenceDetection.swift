@@ -10,6 +10,7 @@ struct SilenceDetectionRequest: Sendable {
     var paddingBefore: Double = 0.18
     var paddingAfter: Double = 0.18
     var minimumAudio: Double = 0
+    var overrides: [SilenceOverride] = []
 }
 
 struct SilenceWindow: Sendable {
@@ -126,12 +127,93 @@ enum SilenceDetection {
             let from = max(0, range.0 + config.paddingAfter)
             let to = min(config.takeDuration, range.1 - config.paddingBefore)
             guard range.1 - range.0 >= max(0.1, config.minimumSilence), to - from > 0.02 else { return nil }
-            let wasRestored = config.previousCuts.contains {
-                $0.source == .automatic && !$0.isEnabled && $0.start < to && $0.end > from
+            let wasRestored = config.previousCuts.contains { cut in
+                cut.source == .automatic && !cut.isEnabled && cut.start < to && cut.end > from
+                    && !config.overrides.contains { $0.start <= cut.start && $0.end >= cut.end }
             }
             return TimelineCut(start: from, end: to, kind: .silence, source: .automatic, isEnabled: !wasRestored)
         }
-        return config.previousCuts.filter { $0.source == .user } + detected
+        return applyingOverrides(.init(
+            cuts: config.previousCuts.filter { $0.source == .user } + detected,
+            overrides: config.overrides
+        ))
+    }
+
+    struct OverrideRequest {
+        let cuts: [TimelineCut]
+        let overrides: [SilenceOverride]
+    }
+
+    static func applyingOverrides(_ request: OverrideRequest) -> [TimelineCut] {
+        guard !request.overrides.isEmpty else { return request.cuts }
+        var cuts = request.cuts
+        for override in request.overrides {
+            guard override.start.isFinite, override.end.isFinite, override.end > override.start else { continue }
+            cuts = cuts.flatMap { cut -> [TimelineCut] in
+                guard cut.kind == .silence, cut.start < override.end, cut.end > override.start else { return [cut] }
+                var pieces: [TimelineCut] = []
+                if cut.start < override.start {
+                    var before = cut
+                    before.end = override.start
+                    pieces.append(before)
+                }
+                if cut.end > override.end {
+                    pieces.append(.init(
+                        start: override.end, end: cut.end, kind: cut.kind,
+                        source: cut.source, isEnabled: cut.isEnabled
+                    ))
+                }
+                return pieces
+            }
+            cuts.append(.init(
+                id: override.id, start: override.start, end: override.end, kind: .silence,
+                source: .user, isEnabled: override.classification == .silence
+            ))
+        }
+        return cuts.sorted { $0.start < $1.start }
+    }
+
+    struct ClassificationRequest {
+        let range: EditorTimeRange
+        let classification: SilenceClassification
+        let edits: TimelineEdits
+        let duration: Double
+    }
+
+    static func classifying(_ request: ClassificationRequest) -> TimelineEdits? {
+        guard let range = EditorTimeRange.resolve(.init(
+            anchor: request.range.start, head: request.range.end, duration: request.duration
+        )), range.canCut else { return nil }
+        var edits = request.edits
+        edits.silenceOverrides = edits.silenceOverrides.flatMap { override -> [SilenceOverride] in
+            guard override.start < range.end, override.end > range.start else { return [override] }
+            var pieces: [SilenceOverride] = []
+            if override.start < range.start {
+                var before = override
+                before.end = range.start
+                pieces.append(before)
+            }
+            if override.end > range.end {
+                pieces.append(.init(
+                    id: UUID(), start: range.end, end: override.end, classification: override.classification
+                ))
+            }
+            return pieces
+        }
+        edits.silenceOverrides.append(.init(
+            id: UUID(), start: range.start, end: range.end, classification: request.classification
+        ))
+        edits.silenceOverrides.sort { $0.start < $1.start }
+        if request.classification == .sound {
+            var silenceEdits = edits
+            silenceEdits.cuts = edits.cuts.filter { $0.kind == .silence }
+            if let restored = EditorTimeRange.restoring(.init(
+                range: range, edits: silenceEdits, takeDuration: request.duration
+            )) {
+                edits.cuts = edits.cuts.filter { $0.kind != .silence } + restored.cuts
+            }
+        }
+        return edits
     }
 }
 

@@ -166,7 +166,7 @@ struct RecordingAccessCover: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 44)
             }
-            .blitzProminentGlassButton()
+            .blitzButton(.accent)
             .tint(accent)
             .disabled(!isReady)
             .opacity(isReady ? 1 : 0.45)
@@ -330,7 +330,7 @@ private struct AccessPermissionRow: View {
                 .padding(.horizontal, 12)
                 .frame(height: 30)
         }
-        .blitzGlassButton()
+        .blitzButton(.secondary)
         .pointingHandCursor()
     }
 }

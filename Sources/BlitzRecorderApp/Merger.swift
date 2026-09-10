@@ -147,13 +147,15 @@ enum Merger {
         }
 
         let videoComposition = AVMutableVideoComposition()
-        videoComposition.instructions = metalVideoCompositionInstructions(
+        videoComposition.instructions = metalVideoCompositionInstructions(.init(
             sources: compositedSources,
             renderSegments: exportPlan.renderSegments,
             settings: settings,
             edits: request.timelineEdits,
-            timeMap: exportPlan.timeMap
-        )
+            timeMap: exportPlan.timeMap,
+            cursorTrack: CursorPresentationTrack.load(.init(
+                directory: take.scratchDirectory, trimOffset: take.timelineTrimOffset.seconds))
+        ))
         videoComposition.customVideoCompositorClass = MetalExportVideoCompositor.self
         videoComposition.renderSize = renderSize
         videoComposition.frameDuration = CMTime(value: 1, timescale: CMTimeScale(settings.framesPerSecond))
@@ -681,29 +683,38 @@ enum Merger {
         }
     }
 
-    private static func metalVideoCompositionInstructions(
-        sources: [CompositedVideoSource],
-        renderSegments: [FinalExportRenderSegment],
-        settings: RecordingSettings,
-        edits: TimelineEdits,
-        timeMap: TimelineTimeMap
-    ) -> [MetalExportInstruction] {
-        let sourceDescriptors = sources.map {
+    private struct VideoInstructionsRequest {
+        let sources: [CompositedVideoSource]
+        let renderSegments: [FinalExportRenderSegment]
+        let settings: RecordingSettings
+        let edits: TimelineEdits
+        let timeMap: TimelineTimeMap
+        let cursorTrack: CursorPresentationTrack
+    }
+
+    private static func metalVideoCompositionInstructions(_ request: VideoInstructionsRequest) -> [MetalExportInstruction] {
+        let sourceDescriptors = request.sources.map {
             MetalExportSourceDescriptor(
                 kind: $0.kind,
                 trackID: $0.compositionTrack.trackID,
-                preferredTransform: $0.preferredTransform
+                preferredTransform: $0.preferredTransform,
+                leadingFrame: ExportLeadingFrame(.init(
+                    asset: $0.asset,
+                    sourceStart: $0.sourceStart,
+                    compositionStart: $0.timeRange.start,
+                    frameDuration: CMTime(value: 1, timescale: CMTimeScale(request.settings.framesPerSecond))))
             )
         }
-        return renderSegments.map { segment in
+        return request.renderSegments.map { segment in
             MetalExportInstruction(MetalExportInstructionRequest(
                 timeRange: segment.timeRange,
                 scene: segment.scene,
-                settings: settings,
+                settings: request.settings,
                 activeLayerOrder: segment.activeLayerOrder,
                 sourceDescriptors: sourceDescriptors,
-                edits: edits,
-                timeMap: timeMap
+                edits: request.edits,
+                timeMap: request.timeMap,
+                cursorTrack: request.cursorTrack
             ))
         }
     }
@@ -1383,6 +1394,8 @@ private struct VideoSource {
 
 private struct CompositedVideoSource {
     let kind: SceneLayerKind
+    let asset: AVAsset
+    let sourceStart: CMTime
     let compositionTrack: AVCompositionTrack
     let naturalSize: CGSize
     let preferredTransform: CGAffineTransform
@@ -1390,6 +1403,8 @@ private struct CompositedVideoSource {
 
     init(source: VideoSource, compositionTrack: AVCompositionTrack, timeRange: CMTimeRange) {
         kind = source.kind
+        asset = source.asset
+        sourceStart = compositionTrack.segments.first(where: { !$0.isEmpty })?.timeMapping.source.start ?? .zero
         self.compositionTrack = compositionTrack
         naturalSize = source.naturalSize
         preferredTransform = source.preferredTransform

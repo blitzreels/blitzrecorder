@@ -367,6 +367,7 @@ struct RecordingProject: Codable, Equatable {
         let keyframes: [Keyframe]
         let generatedFromCursor: Bool
         let intensity: Double
+        let isEnabled: Bool
 
         static let empty = ZoomTrackSnapshot(keyframes: [], generatedFromCursor: false, intensity: 2)
 
@@ -374,20 +375,32 @@ struct RecordingProject: Codable, Equatable {
             self.keyframes = keyframes
             self.generatedFromCursor = generatedFromCursor
             self.intensity = intensity
+            self.isEnabled = true
         }
 
         init(_ track: ScreenZoomTrack) {
             keyframes = track.keyframes.map(Keyframe.init)
             generatedFromCursor = track.generatedFromCursor
             intensity = track.intensity
+            isEnabled = track.isEnabled
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            keyframes = try container.decode([Keyframe].self, forKey: .keyframes)
+            generatedFromCursor = try container.decode(Bool.self, forKey: .generatedFromCursor)
+            intensity = try container.decode(Double.self, forKey: .intensity)
+            isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
         }
 
         var track: ScreenZoomTrack {
-            ScreenZoomTrack(
+            var track = ScreenZoomTrack(
                 keyframes: keyframes.map(\.keyframe),
                 generatedFromCursor: generatedFromCursor,
                 intensity: intensity
             )
+            track.isEnabled = isEnabled
+            return track
         }
     }
 
@@ -395,6 +408,9 @@ struct RecordingProject: Codable, Equatable {
         let cuts: [CutSnapshot]
         let textOverlays: [TextOverlaySnapshot]
         let zoom: ZoomTrackSnapshot
+        let silenceOverrides: [SilenceOverride]
+        let cursorStyle: CursorPresentationStyle
+        let cameraFollowsZoom: Bool
 
         static let empty = TimelineEditsSnapshot(cuts: [], textOverlays: [], zoom: .empty)
 
@@ -402,12 +418,18 @@ struct RecordingProject: Codable, Equatable {
             self.cuts = cuts
             self.textOverlays = textOverlays
             self.zoom = zoom
+            self.silenceOverrides = []
+            self.cursorStyle = .standard
+            self.cameraFollowsZoom = false
         }
 
         init(_ edits: TimelineEdits) {
             cuts = edits.cuts.map(CutSnapshot.init)
             textOverlays = edits.textOverlays.map(TextOverlaySnapshot.init)
             zoom = ZoomTrackSnapshot(edits.zoom)
+            silenceOverrides = edits.silenceOverrides
+            cursorStyle = edits.cursorStyle
+            cameraFollowsZoom = edits.cameraFollowsZoom
         }
 
         init(from decoder: Decoder) throws {
@@ -415,18 +437,25 @@ struct RecordingProject: Codable, Equatable {
             cuts = try container.decodeIfPresent([CutSnapshot].self, forKey: .cuts) ?? []
             textOverlays = try container.decodeIfPresent([TextOverlaySnapshot].self, forKey: .textOverlays) ?? []
             zoom = try container.decodeIfPresent(ZoomTrackSnapshot.self, forKey: .zoom) ?? .empty
+            silenceOverrides = try container.decodeIfPresent([SilenceOverride].self, forKey: .silenceOverrides) ?? []
+            cursorStyle = try container.decodeIfPresent(CursorPresentationStyle.self, forKey: .cursorStyle) ?? .standard
+            cameraFollowsZoom = try container.decodeIfPresent(Bool.self, forKey: .cameraFollowsZoom) ?? false
         }
 
         var edits: TimelineEdits {
             TimelineEdits(
                 cuts: cuts.map(\.cut),
                 textOverlays: textOverlays.map(\.overlay),
-                zoom: zoom.track
+                zoom: zoom.track,
+                silenceOverrides: silenceOverrides,
+                cursorStyle: cursorStyle,
+                cameraFollowsZoom: cameraFollowsZoom
             )
         }
 
         var isEmpty: Bool {
-            cuts.isEmpty && textOverlays.isEmpty && zoom.keyframes.isEmpty
+            cuts.isEmpty && textOverlays.isEmpty && zoom.keyframes.isEmpty && silenceOverrides.isEmpty
+                && cursorStyle == .standard && !cameraFollowsZoom
         }
     }
 

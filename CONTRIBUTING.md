@@ -48,10 +48,33 @@ Do not submit code, media, fonts, icons, or other assets unless you have the rig
 
 ## Development
 
-Generate the Xcode project:
+Start with the [README](README.md#build-from-source) for requirements and setup.
+The [architecture guide](ARCHITECTURE.md) maps capture, editing, storage, and integrations to their source files.
+
+Build and open the Mac development app:
+
+```bash
+./script/build_and_run.sh run
+```
+
+Stop any active Dev recording before running the script, since it restarts the app.
+After a Mac app code change, run the launch check before testing the visible behavior:
+
+```bash
+./script/build_and_run.sh --verify
+```
+
+The check builds and launches `/Applications/BlitzRecorder Dev.app`, prints permission diagnostics, and closes the app.
+It uses bundle ID `dev.blitzreels.blitzrecorder.debug` and disables idle capture during verification.
+
+For capture changes, open that Dev build and check `/tmp/BlitzRecorder.permission-state.log` before recording a real take.
+For playback changes, reopen the same project and inspect the visible editor and its audio after the restart.
+
+Generate the Xcode project when changing the project specification or working on the iPhone app:
 
 ```bash
 Scripts/generate-xcode-project.sh
+open BlitzRecorder.xcodeproj
 ```
 
 Run Swift checks:
@@ -61,6 +84,15 @@ swift test
 swift test --package-path Packages/BlitzRecorderCore
 swift test --package-path Packages/BlitzRecorderTransport
 ```
+
+Run public repository checks before a commit or push:
+
+```bash
+Scripts/check-repo-hygiene.sh
+```
+
+For Mac UI changes, also run `Scripts/check-design-system.sh`.
+For release workflow changes, run `Scripts/check-github-release-readiness.sh --local-only`.
 
 Run recording resilience checks on macOS:
 
@@ -98,11 +130,20 @@ Keep unrelated workloads closed when collecting a baseline.
 The Recording Resilience workflow runs sanitizers and disk-full recovery for Swift pull requests and main-branch pushes.
 Its manual action can run benchmarks or endurance checks for up to three hours; results are uploaded as artifacts.
 
-Build the website:
+Work on the website:
 
 ```bash
 cd Web/blitzrecorder
-npm install
+npm ci
+npm run dev
+```
+
+Check website changes:
+
+```bash
+cd Web/blitzrecorder
+npm run lint
+npx tsc --noEmit
 npm run build
 ```
 

@@ -9,6 +9,129 @@ import XCTest
 @testable import BlitzRecorderApp
 
 final class RecordingLifecycleTests: XCTestCase {
+    func testExportPreservesVideoWithSubframeLeadingTimestampGap() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: settings.outputDirectory) }
+        settings.enabledSources = [.screen]
+        settings.outputResolution = .p720
+        let take = try TakeFileStore().createTake(settings: settings)
+        try writeTestMovie(url: take.screenURL, codec: .h264,
+                           color: (blue: 0, green: 0, red: 255, alpha: 255), frameCount: 30,
+                           firstPresentationTime: CMTime(value: 1, timescale: 600))
+        let result = try await Merger.exportFinalVideo(take: take, settings: settings)
+        let pixel = try await samplePixelColors(in: result, normalizedPoints: [CGPoint(x: 0.5, y: 0.5)], at: .zero)[0]
+        XCTAssertGreaterThan(pixel.red, 180)
+        XCTAssertLessThan(pixel.blue, 40)
+        let inspection = try await SyntheticRecording.inspectVideo(result)
+        XCTAssertGreaterThan(inspection.frames, 0)
+        XCTAssertEqual(inspection.duration, 1, accuracy: 0.05)
+    }
+
+    @MainActor
+    func testFullDisplayZoomExportMatchesPreviewGeometry() async throws {
+        for contentMode in [CameraContentMode.fit, .fill] {
+            var settings = RecordingSettings()
+            settings.outputDirectory = temporaryDirectory()
+            settings.layout = .horizontal
+            settings.enabledSources = [.screen]
+            settings.outputResolution = .p720
+            settings.screenContentMode = contentMode
+            settings.sceneLayout = SceneLayout.presetLayout(.screenFullscreen, for: .horizontal)
+            let take = try TakeFileStore().createTake(settings: settings)
+            try writeCoordinateGradientMovie(url: take.screenURL, width: 160, height: 120)
+            var edits = TimelineEdits.empty
+            edits.zoom = .init(keyframes: [.init(time: 0, amount: 0.5, position: CGPoint(x: 0.4, y: -0.5))],
+                               generatedFromCursor: true, intensity: 2)
+            let scene = TimelineOverlayRenderer.scene(.init(
+                scene: RecordingScene(settings: settings), edits: edits, time: 0.1))
+            let canvas = CGRect(x: 0, y: 0, width: 1280, height: 720)
+            let frame = SceneRenderGeometry(canvas: canvas, scene: scene, origin: .upperLeft)
+                .sourceFrame(for: .screen, sourceAspectRatio: 4.0 / 3)
+            let point = CGPoint(x: 0.25, y: 0.3)
+            let expectedX = (point.x * canvas.width - frame.minX) / frame.width
+            let expectedY = (point.y * canvas.height - frame.minY) / frame.height
+            let result = try await Merger.exportFinalVideo(.init(take: take, settings: settings,
+                sceneEvents: [.init(time: 0, scene: RecordingScene(settings: settings))],
+                backgroundMusic: nil, destinationURL: nil, progressHandler: nil, timelineEdits: edits))
+            let pixel = try await samplePixelColors(in: result, normalizedPoints: [point],
+                                                   at: CMTime(seconds: 0.1, preferredTimescale: 600))[0]
+            let expected = try await samplePixelColors(in: take.screenURL,
+                normalizedPoints: [CGPoint(x: expectedX, y: expectedY)],
+                at: CMTime(seconds: 0.1, preferredTimescale: 600))[0]
+            XCTAssertEqual(pixel.red, expected.red, accuracy: 24)
+            XCTAssertEqual(pixel.green, expected.green, accuracy: 24)
+        }
+    }
+
+    @MainActor
+    func testCursorAndCameraMotionPersistPreviewAndExportWithoutChangingSources() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.layout = .horizontal
+        settings.enabledSources = [.screen, .camera]
+        settings.outputResolution = .p720
+        settings.sceneLayout = SceneLayout(
+            screenFrame: CGRect(x: 0, y: 0, width: 1, height: 1),
+            cameraFrame: CGRect(x: 0.7, y: 0.65, width: 0.25, height: 0.3))
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        try writeTestMovie(url: take.screenURL, codec: .h264,
+                           color: (blue: 0, green: 0, red: 255, alpha: 255))
+        try writeTestMovie(url: take.cameraURL, codec: .h264,
+                           color: (blue: 255, green: 0, red: 0, alpha: 255))
+        let sourceData = try Data(contentsOf: take.screenURL)
+        let track = RecordingCursorTrack(version: 2, samples: (0..<30).map { index in
+            .init(time: Double(index) / 60, x: 0.5, y: 0.5, clicked: false, rendered: true)
+        })
+        let trackData = try JSONEncoder().encode(track)
+        let trackURL = take.scratchDirectory.appendingPathComponent("cursor-track.json")
+        try trackData.write(to: trackURL)
+        let original = try store.loadRecordingProject(at: take.projectURL)
+        var edits = TimelineEdits.empty
+        edits.cameraFollowsZoom = true
+        edits.cursorStyle.scale = 3
+        edits.zoom = .init(keyframes: [.init(time: 0, amount: 0.5, position: .zero)],
+                           generatedFromCursor: true, intensity: 2)
+        let edited = try store.updateProjectTimelineEdits(.init(
+            projectURL: take.projectURL, edits: edits, baseSettings: settings))
+        XCTAssertEqual(try store.loadRecordingProject(at: take.projectURL).edits, edits)
+        let controller = EditorPlaybackController()
+        await controller.load(project: edited, baseSettings: settings)
+        defer { controller.teardown() }
+        XCTAssertTrue(controller.isReady, controller.loadError ?? "")
+        let previewScene = try XCTUnwrap(controller.scene(at: 0.1))
+        XCTAssertEqual(previewScene.sceneLayout.cameraFrame.width, 0.1875, accuracy: 0.001)
+        XCTAssertNotNil(controller.cursorTrack.sample(.init(time: 0.1, style: edits.cursorStyle)))
+        let result = try await Merger.exportFinalVideo(.init(take: take, settings: settings,
+            sceneEvents: store.sceneEvents(from: edited), backgroundMusic: nil, destinationURL: nil,
+            progressHandler: nil, timelineEdits: edits))
+        let dimensions = settings.outputResolution.dimensions(for: settings.layout)
+        let canvas = CGRect(x: 0, y: 0, width: dimensions.width, height: dimensions.height)
+        let geometry = SceneRenderGeometry(canvas: canvas, scene: previewScene, origin: .upperLeft)
+        let sourceFrame = geometry.sourceFrame(for: .screen, sourceAspectRatio: 1,
+            sourceCropAmount: previewScene.screenCropAmount, sourceCropPosition: previewScene.screenCropPosition)
+        let sprite = try XCTUnwrap(CursorPresentationRenderer.sprite(.init(
+            sample: .init(position: CGPoint(x: 0.5, y: 0.5), clickAge: 1, rotation: 0),
+            style: edits.cursorStyle, sourceFrame: sourceFrame)))
+        let pixels = try await samplePixelColors(in: result, normalizedPoints: [
+            CGPoint(x: (sprite.frame.midX + sprite.frame.width * 5 / 128) / canvas.width,
+                    y: (sprite.frame.midY + sprite.frame.height * 12 / 128) / canvas.height),
+            CGPoint(x: 0.725, y: 0.15),
+            CGPoint(x: geometry.targetRect(for: .camera).midX / canvas.width,
+                    y: geometry.targetRect(for: .camera).midY / canvas.height)
+        ], at: CMTime(seconds: 0.1, preferredTimescale: 600))
+        XCTAssertLessThan(pixels[0].red, 150)
+        XCTAssertLessThan(pixels[0].blue, 100)
+        XCTAssertGreaterThan(pixels[1].red, 140)
+        XCTAssertGreaterThan(pixels[2].blue, 140)
+        XCTAssertEqual(try Data(contentsOf: take.screenURL), sourceData)
+        XCTAssertEqual(try Data(contentsOf: trackURL), trackData)
+        let restored = try store.restoreProjectSceneTimeline(.init(
+            projectURL: take.projectURL, snapshot: original, baseSettings: settings))
+        XCTAssertEqual(restored.edits, .empty)
+    }
+
     @MainActor
     func testTimelineCutsPersistReloadPlaybackAndExportTheSameDuration() async throws {
         var settings = RecordingSettings()

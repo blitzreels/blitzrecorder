@@ -167,49 +167,17 @@ private struct TransparentWebcamToggle: View {
     let enabled: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "person.crop.square")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white.opacity(iconOpacity))
-                .frame(width: 18, height: 18)
-
+        Toggle(isOn: Binding(
+            get: { vm.settings.removesCameraBackgroundAfterRecording },
+            set: { vm.setCameraBackgroundRemovalAfterRecording($0) }
+        )) {
             Text("Remove background")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white.opacity(textOpacity))
-                .lineLimit(1)
-
-            Spacer(minLength: 0)
-
-            Toggle("", isOn: Binding(
-                get: { vm.settings.removesCameraBackgroundAfterRecording },
-                set: { vm.setCameraBackgroundRemovalAfterRecording($0) }
-            ))
-            .toggleStyle(.switch)
-            .controlSize(.mini)
-            .labelsHidden()
         }
-        .padding(.horizontal, 2)
-        .padding(.vertical, 2)
-        .contentShape(.rect(cornerRadius: 10))
+        .toggleStyle(.blitzSwitch)
         .disabled(vm.state != .idle || !enabled)
-        .opacity(enabled ? 1 : 0.52)
-        .onTapGesture {
-            guard vm.state == .idle, enabled else { return }
-            vm.setCameraBackgroundRemovalAfterRecording(!vm.settings.removesCameraBackgroundAfterRecording)
-        }
-        .pointingHandCursor()
         .help("Remove camera background after recording")
     }
 
-    private var iconOpacity: Double {
-        guard enabled else { return 0.28 }
-        return vm.settings.removesCameraBackgroundAfterRecording ? 0.82 : 0.45
-    }
-
-    private var textOpacity: Double {
-        guard enabled else { return 0.3 }
-        return vm.settings.removesCameraBackgroundAfterRecording ? 0.92 : 0.58
-    }
 }
 
 private struct WebcamSourceMenu: View {
@@ -245,65 +213,80 @@ private struct WebcamSourceMenu: View {
             sections: cameraSections,
             actions: [
                 BlitzSourcePickerItem(
-                    title: "Find an iPhone",
-                    subtitle: "Connect a wireless camera",
+                    id: "camera:manage",
+                    title: "Connect an iPhone…",
+                    subtitle: nil,
                     systemImage: "iphone.radiowaves.left.and.right",
                     icon: nil,
                     thumbnail: nil,
                     isSelected: false
                 ) {
-                    vm.startRemoteCameraDiscovery()
+                    vm.showSettings(.devices)
                 }
             ],
             layout: .list,
-            enabled: enabled && vm.state == .idle
+            enabled: enabled && vm.state == .idle,
+            prompt: "Choose camera",
+            refresh: { await vm.refreshSources() }
         )
     }
 
     private var cameraSections: [BlitzSourcePickerSection] {
-        var localItems = [
-            BlitzSourcePickerItem(
-                title: "Default camera",
-                subtitle: "Follow the macOS default",
-                systemImage: BlitzSymbols.camera,
-                icon: nil,
-                thumbnail: nil,
-                isSelected: vm.settings.selectedCameraID == nil
-            ) {
-                vm.setCamera(nil)
-            }
-        ]
-        localItems += vm.localCameraOptions.map { option in
-            BlitzSourcePickerItem(
-                title: option.name,
-                subtitle: "Connected to this Mac",
-                systemImage: BlitzSymbols.camera,
-                icon: nil,
-                thumbnail: nil,
-                isSelected: vm.settings.selectedCameraID == option.id
-            ) {
-                vm.setCamera(option.id)
-            }
+        let defaultItem = BlitzSourcePickerItem(
+            id: "camera:default",
+            title: "Default camera",
+            subtitle: "Follow the macOS default",
+            systemImage: "camera",
+            icon: nil,
+            thumbnail: nil,
+            isSelected: vm.settings.selectedCameraID == nil,
+            visibility: .init(id: "camera:default", hiddenReason: nil)
+        ) {
+            vm.setCamera(nil)
         }
-
+        let local = vm.localCameraOptions.filter { $0.cameraKind?.hiddenReason == nil }
+        let continuity = vm.localCameraOptions.filter { $0.cameraKind?.hiddenReason != nil }
         let remoteItems = vm.remoteCameraOptions.map { option in
             BlitzSourcePickerItem(
+                id: "camera:\(option.id)",
                 title: option.name,
                 subtitle: "Wireless iPhone camera",
                 systemImage: "iphone.gen3",
                 icon: nil,
                 thumbnail: nil,
-                isSelected: vm.settings.selectedCameraID == option.id
+                isSelected: vm.settings.selectedCameraID == option.id,
+                visibility: .init(id: "camera:\(option.id)", hiddenReason: nil)
             ) {
                 vm.setCamera(option.id)
             }
         }
-
         return [
-            BlitzSourcePickerSection(title: "This Mac", items: localItems),
-            BlitzSourcePickerSection(title: "iPhone cameras", items: remoteItems)
+            BlitzSourcePickerSection(title: "Connected cameras", items: local.map(cameraItem)),
+            BlitzSourcePickerSection(title: "Wireless iPhones", items: remoteItems),
+            BlitzSourcePickerSection(title: "Automatic", items: [defaultItem]),
+            BlitzSourcePickerSection(title: "Continuity & Desk View", items: continuity.map(cameraItem))
         ]
     }
+
+    private func cameraItem(_ option: SourceOption) -> BlitzSourcePickerItem {
+        let kind = option.cameraKind ?? .external
+        let title = option.name
+            .replacingOccurrences(of: " (Continuity)", with: "")
+            .replacingOccurrences(of: " (Desk View)", with: "")
+        return BlitzSourcePickerItem(
+            id: "camera:\(option.id)",
+            title: title,
+            subtitle: kind.subtitle,
+            systemImage: kind.systemImage,
+            icon: nil,
+            thumbnail: nil,
+            isSelected: vm.settings.selectedCameraID == option.id,
+            visibility: .init(id: "camera:\(option.id)", hiddenReason: kind.hiddenReason)
+        ) {
+            vm.setCamera(option.id)
+        }
+    }
+
 }
 
 private struct DeviceCard: View {
@@ -380,9 +363,7 @@ private struct DeviceCard: View {
                 get: { isEnabled },
                 set: { _ in vm.toggleSource(source) }
             ))
-            .toggleStyle(.switch)
-            .controlSize(.mini)
-            .labelsHidden()
+            .toggleStyle(.blitzSwitchOnly)
             .disabled(vm.state != .idle)
             .tint(BlitzUI.mint)
             .frame(minWidth: 40, minHeight: 40)
@@ -485,7 +466,7 @@ private struct ScreenSourceInspector: View {
                             .font(.system(size: 11, weight: .medium))
                             .frame(maxWidth: .infinity, minHeight: 30)
                     }
-                    .blitzGlassButton()
+                    .blitzButton(.secondary)
                     ScreenContentModeControl(vm: vm, enabled: enabled)
                 }
             }
@@ -512,7 +493,11 @@ private struct ScreenSourceInspector: View {
               let binding = vm.settings.screenSourceBinding else {
             return nil
         }
-        return vm.availableScreenSources.first { $0.binding == binding }
+        return vm.availableScreenSources.first {
+            ScreenSourcePickerOrganization.isSelected(.init(
+                selectedBinding: binding, candidate: $0.binding, usesPickedContent: false
+            ))
+        }
     }
 
     private var selectedScreenSourceSystemImage: String {
@@ -533,8 +518,9 @@ private struct ScreenSourceInspector: View {
     private var pickerModel: BlitzSourcePickerModel {
         let actions = [
             BlitzSourcePickerItem(
-                title: "More App Windows…",
-                subtitle: "Open the macOS picker for another window",
+                id: "screen:system-window-picker",
+                title: "Use macOS window picker…",
+                subtitle: nil,
                 systemImage: "rectangle.dashed",
                 icon: nil,
                 thumbnail: nil,
@@ -544,8 +530,9 @@ private struct ScreenSourceInspector: View {
                 vm.pickScreen()
             },
             BlitzSourcePickerItem(
-                title: "Pick Full Screen",
-                subtitle: "Records an entire display without resizing apps",
+                id: "screen:system-display-picker",
+                title: "Use macOS display picker…",
+                subtitle: nil,
                 systemImage: BlitzSymbols.screen,
                 icon: nil,
                 thumbnail: nil,
@@ -571,8 +558,12 @@ private struct ScreenSourceInspector: View {
             enabled: enabled && vm.canAdjustScreenCapture,
             hiddenSections: vm.state == .idle ? [
                 screenSourceSection((kind: .application, title: "Private apps", group: .sensitive)),
-                screenSourceSection((kind: .window, title: "Private app windows", group: .sensitive))
-            ] : []
+                screenSourceSection((kind: .window, title: "Private app windows", group: .sensitive)),
+                screenSourceSection((kind: .application, title: "Utility apps", group: .utility)),
+                screenSourceSection((kind: .window, title: "Small & utility windows", group: .utility))
+            ] : [],
+            prompt: "Choose screen or window",
+            refresh: { await vm.refreshSources() }
         )
     }
 
@@ -591,13 +582,20 @@ private struct ScreenSourceInspector: View {
             title: request.title,
             items: options.map { option in
                 BlitzSourcePickerItem(
+                    id: option.binding.runtimeID,
                     title: option.title,
                     subtitle: option.subtitle,
                     systemImage: option.systemImage,
                     icon: option.icon,
-                    thumbnail: vm.screenSourceThumbnails[option.id],
-                    isSelected: !vm.settings.usesPickedScreenContent
-                        && vm.settings.screenSourceBinding == option.binding
+                    thumbnail: nil,
+                    isSelected: ScreenSourcePickerOrganization.isSelected(.init(
+                        selectedBinding: vm.settings.screenSourceBinding,
+                        candidate: option.binding,
+                        usesPickedContent: vm.settings.usesPickedScreenContent
+                    )),
+                    visibility: ScreenSourcePickerOrganization.visibility(option),
+                    screenKind: option.binding.kind,
+                    loadThumbnail: { await vm.screenSourceThumbnail(option.binding) }
                 ) {
                     vm.setScreenSource(option.binding)
                 }
@@ -645,7 +643,7 @@ struct ScreenContentModeControl: View {
                         .font(.system(size: 11, weight: .semibold))
                         .frame(maxWidth: .infinity, minHeight: 24)
                 }
-                .blitzGlassButton()
+                .blitzButton(.secondary)
                 .controlSize(.small)
                 .disabled(!enabled || !vm.canEditScene)
                 .pointingHandCursor()
@@ -673,7 +671,7 @@ private struct ScreenSourceFramingControl: View {
                     .font(.system(size: 11, weight: .semibold))
                     .frame(maxWidth: .infinity, minHeight: 30)
             }
-            .blitzGlassButton()
+            .blitzButton(.secondary)
             .help("Resize the selected window to this scene. Keep its full width and height visible.")
 
             Text("Keeps the whole window visible.")
@@ -689,7 +687,7 @@ private struct ScreenSourceFramingControl: View {
                 Button(action: vm.resetTargetWindowZoom) {
                     Image(systemName: "arrow.counterclockwise")
                 }
-                .blitzGlassButton()
+                .blitzButton(.secondary)
                 .accessibilityLabel("Reset screen size")
                 .disabled(abs(vm.targetWindowZoom - 1) < 0.001)
             }
@@ -766,7 +764,7 @@ private struct CameraSourceInspector: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(.rect(cornerRadius: 8))
         }
-        .blitzGlassButton()
+        .blitzButton(.secondary)
         .controlSize(.small)
         .disabled(!enabled)
         .pointingHandCursor()
@@ -871,6 +869,7 @@ private struct MicrophoneSourceMenu: View {
 
     private var microphoneItems: [BlitzSourcePickerItem] {
         let defaultItem = BlitzSourcePickerItem(
+            id: "microphone:default",
             title: "Default microphone",
             subtitle: "Follow the macOS default",
             systemImage: BlitzSymbols.microphone,
@@ -882,6 +881,7 @@ private struct MicrophoneSourceMenu: View {
         }
         return [defaultItem] + vm.availableMicrophones.map { option in
             BlitzSourcePickerItem(
+                id: "microphone:\(option.id)",
                 title: option.name,
                 subtitle: nil,
                 systemImage: BlitzSymbols.microphone,

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { LicenseButton } from "@/components/site/buy-button";
+import { DownloadButton } from "@/components/site/download-button";
 import { BlitzReelsLink } from "@/components/site/blitzreels-link";
 import { JourneyPageView } from "@/components/site/journey-markers";
 import { SiteBackground } from "@/components/site/site-background";
@@ -10,9 +11,9 @@ import { Section } from "@/components/ui/layout";
 import { Heading, Paragraph } from "@/components/ui/typography";
 
 export const metadata: Metadata = {
-  title: "License",
+  title: "Free app and legacy licenses",
   description:
-    "Get a free BlitzRecorder license. Enter your email, copy the key, unlock 4K, 60 fps, and optional iPhone camera.",
+    "BlitzRecorder 0.15 and later includes all features without a license key. Download the app or recover a key for an older version.",
 };
 
 export default function LicensePage() {
@@ -30,19 +31,29 @@ export default function LicensePage() {
           <Card className="glass ring-gradient w-full ring-0">
             <CardContent className="p-8 sm:p-10">
               <Heading level={1} className="text-4xl leading-[1.02] sm:text-5xl">
-                Free BlitzRecorder license
+                No license key needed
               </Heading>
               <Paragraph className="mt-4">
-                Enter your email. Copy the key. Paste it in Account. Unlocks 4K,
-                60 fps, and optional iPhone camera. Same email always returns
-                the same key.
+                BlitzRecorder 0.15 and later includes 4K export, 60 fps export,
+                and iPhone camera recording. No account or email required.
               </Paragraph>
-              <LicenseButton
-                label="Get free license"
-                source="license_page"
-                formClassName="mt-7"
-                className="h-11 rounded-full px-5"
+              <DownloadButton
+                source="license_page_download"
+                className="mt-7 h-11 rounded-full px-5"
               />
+              <details className="mt-8 border-t border-border pt-6 text-left">
+                <summary className="cursor-pointer font-medium">Using an older version?</summary>
+                <Paragraph size="sm" className="mt-3">
+                  Versions before 0.15 can still use a free license key. Enter
+                  your email to retrieve it, then paste it in Account in that version.
+                </Paragraph>
+                <LicenseButton
+                  label="Get legacy license"
+                  source="license_page_legacy"
+                  formClassName="mt-4"
+                  className="h-11 rounded-full px-5"
+                />
+              </details>
               <Paragraph tone="faint" size="sm" className="mt-6">
                 A{" "}
                 <BlitzReelsLink

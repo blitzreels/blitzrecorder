@@ -137,10 +137,33 @@ final class RecorderViewModel {
     }
     var studioMode: StudioMode = .record {
         didSet {
+            isShowingSettings = false
             guard oldValue != studioMode else { return }
             onStudioModeChanged?(studioMode)
         }
     }
+    private(set) var isShowingSettings = false
+    var selectedSettingsPane: SettingsPane = .recording
+
+    var settingsReturnTitle: String {
+        switch studioMode {
+        case .record: "Recorder"
+        case .projects: "Projects"
+        case .edit: "Editor"
+        }
+    }
+
+    func showSettings(_ pane: SettingsPane?) {
+        if let pane { selectedSettingsPane = pane }
+        isShowingSettings = true
+        onEditorHistoryChanged?()
+    }
+
+    func dismissSettings() {
+        isShowingSettings = false
+        onEditorHistoryChanged?()
+    }
+
     var recentProjects: [RecordingProjectHistory.Entry] = []
     var projectLibraryError: String?
 
@@ -150,7 +173,6 @@ final class RecorderViewModel {
 
     var availableDisplays: [SourceOption] = []
     var availableScreenSources: [ScreenSourceOption] = []
-    var screenSourceThumbnails: [String: NSImage] = [:]
     var availableCameras: [SourceOption] = []
     var availableMicrophones: [SourceOption] = []
     var directRemoteCameraHost: String = ""
@@ -191,7 +213,6 @@ final class RecorderViewModel {
     var targetWindowStatus: String = "Detecting target..."
     var targetWindowZoom: CGFloat = 1.0
     @ObservationIgnored private var targetWindowZoomTask: Task<Void, Never>?
-    @ObservationIgnored private var screenSourceThumbnailTask: Task<Void, Never>?
     private var permissionRefreshToken = 0
     private var remoteCameraRefreshToken = 0
 
@@ -201,12 +222,12 @@ final class RecorderViewModel {
 
     var canUndoEditor: Bool {
         _ = editorHistoryRevision
-        return studioMode == .edit && !editorUndoStack.isEmpty
+        return studioMode == .edit && !isShowingSettings && !editorUndoStack.isEmpty
     }
 
     var canRedoEditor: Bool {
         _ = editorHistoryRevision
-        return studioMode == .edit && !editorRedoStack.isEmpty
+        return studioMode == .edit && !isShowingSettings && !editorRedoStack.isEmpty
     }
 
     var editorUndoTitle: String {
@@ -386,6 +407,10 @@ final class RecorderViewModel {
         canEditScene
     }
 
+    private var canApplyCanvasEdit: Bool {
+        canManipulateCanvasItems && previewStage.sceneID == coordinator.selectedSceneIDForCurrentLayout()
+    }
+
     var canEditCameraCrop: Bool {
         canEditScene
     }
@@ -490,7 +515,6 @@ final class RecorderViewModel {
 
     var permissionIssueCount: Int {
         recordingReadiness.blockers.count
-            + (accessController.canRenderExport ? 0 : 1)
     }
 
     var permissionSetupSummary: String {
@@ -640,6 +664,7 @@ final class RecorderViewModel {
         self.settings = coordinator.settings
         self.inspectorSelection = RecorderInspectorSelection.initial(settings: coordinator.settings)
         self.targetWindowZoom = coordinator.settings.screenWindowZoom
+        previewStage.sceneID = coordinator.selectedSceneIDForCurrentLayout()
         self.showsFirstRunOnboarding = ProcessInfo.processInfo.environment["BLITZRECORDER_FORCE_ONBOARDING"] == "1"
             || !UserDefaults.standard.bool(forKey: Self.firstRunOnboardingKey)
         transcriptionController.onTranscriptionCompleted = { [weak self] completion in
@@ -673,23 +698,25 @@ final class RecorderViewModel {
         }
         previewStage.onSceneLayoutChanged = { [weak self] layout in
             guard let self else { return }
-            guard self.canManipulateCanvasItems else {
+            guard self.canApplyCanvasEdit else {
+                self.previewStage.cancelCanvasInteraction()
                 self.previewStage.sceneLayout = self.coordinator.settings.sceneLayout
                 return
             }
             self.coordinator.previewSceneLayout(layout)
         }
         previewStage.onSceneLayoutEditingEnded = { [weak self] layout in
-            guard let self, self.canManipulateCanvasItems else { return }
+            guard let self, self.canApplyCanvasEdit else { return }
             self.coordinator.setSceneLayout(layout)
             self.settings = self.coordinator.settings
             self.previewStage.sceneLayout = self.coordinator.settings.sceneLayout
         }
         previewStage.onLayerResizeEnded = { [weak self] layer in
-            self?.finishSceneLayerResize(layer)
+            guard let self, self.canApplyCanvasEdit else { return }
+            self.finishSceneLayerResize(layer)
         }
         previewStage.onCameraCropChanged = { [weak self] amount, position in
-            guard let self else { return }
+            guard let self, self.canApplyCanvasEdit else { return }
             self.coordinator.setCameraCropAmount(amount)
             self.coordinator.setCameraCropPosition(position)
             self.settings = self.coordinator.settings
@@ -697,7 +724,7 @@ final class RecorderViewModel {
             self.previewStage.cameraCropPosition = self.coordinator.settings.cameraCropPosition
         }
         previewStage.onScreenCropChanged = { [weak self] crop in
-            guard let self else { return }
+            guard let self, self.canApplyCanvasEdit else { return }
             self.coordinator.setScreenCrop(crop)
             self.coordinator.endScreenCropEditing()
             self.settings = self.coordinator.settings
@@ -706,7 +733,8 @@ final class RecorderViewModel {
             self.screenCaptureAreaSelection = self.settings.screenCrop == nil ? .fullDisplay : .manualCrop
         }
         previewStage.onScreenCropPanRequested = { [weak self] in
-            self?.beginScreenCropMode()
+            guard let self, self.canApplyCanvasEdit else { return }
+            self.beginScreenCropMode()
         }
     }
 
@@ -807,6 +835,15 @@ final class RecorderViewModel {
 
     func syncSettings() {
         settings = coordinator.settings
+        let sceneID = coordinator.selectedSceneIDForCurrentLayout()
+        if previewStage.sceneID != sceneID || previewStage.captureLayout != settings.layout {
+            isCameraCropModeEnabled = false
+            isScreenCropModeEnabled = false
+            previewStage.cancelCanvasInteraction()
+            previewStage.sceneID = sceneID
+            coordinator.endScreenCropEditing()
+        }
+        previewStage.sceneID = sceneID
         targetWindowZoom = coordinator.settings.screenWindowZoom
         syncScreenCaptureAreaSelection()
         syncSelectedSource()
@@ -844,27 +881,16 @@ final class RecorderViewModel {
     }
 
     func refreshSources() async {
+        availableCameras = coordinator.availableCameras()
+        availableMicrophones = coordinator.availableMicrophones()
         async let displays = coordinator.availableDisplays()
         async let screenSources = coordinator.availableScreenSources()
         availableDisplays = await displays
         availableScreenSources = await screenSources
-        availableCameras = coordinator.availableCameras()
-        availableMicrophones = coordinator.availableMicrophones()
-        refreshScreenSourceThumbnails()
     }
 
-    private func refreshScreenSourceThumbnails() {
-        screenSourceThumbnailTask?.cancel()
-        let bindings = availableScreenSources.map(\.binding)
-        let activeIDs = Set(bindings.map(\.id))
-        screenSourceThumbnails = screenSourceThumbnails.filter { activeIDs.contains($0.key) }
-
-        screenSourceThumbnailTask = Task { [weak self] in
-            guard let self else { return }
-            let thumbnails = await coordinator.screenSourceThumbnails(for: bindings)
-            guard !Task.isCancelled else { return }
-            screenSourceThumbnails.merge(thumbnails) { _, refreshed in refreshed }
-        }
+    func screenSourceThumbnail(_ binding: ScreenSourceBinding) async -> NSImage? {
+        await coordinator.screenSourceThumbnail(binding)
     }
 
     func refreshRemoteCameraState() {
@@ -874,10 +900,6 @@ final class RecorderViewModel {
     }
 
     func startRemoteCameraDiscovery() {
-        guard accessController.requirePaidFeature("iPhone camera") else {
-            onPresentSettings?(.account)
-            return
-        }
         coordinator.startRemoteCameraDiscoveryIfNeeded()
         refreshRemoteCameraState()
     }
@@ -1519,10 +1541,6 @@ final class RecorderViewModel {
     }
 
     func setResolution(_ resolution: OutputResolution) {
-        guard resolution != .p2160 || accessController.requirePaidFeature("4K export") else {
-            onPresentSettings?(.account)
-            return
-        }
         coordinator.setOutputResolution(resolution)
         syncSettings()
     }
@@ -1533,10 +1551,6 @@ final class RecorderViewModel {
     }
 
     func setFrameRate(_ fps: Int) {
-        guard fps < 60 || accessController.requirePaidFeature("60 fps export") else {
-            onPresentSettings?(.account)
-            return
-        }
         coordinator.setFramesPerSecond(fps)
         syncSettings()
     }
@@ -1704,10 +1718,6 @@ final class RecorderViewModel {
     }
 
     func setCamera(_ id: String?) {
-        guard id.map(RemoteCameraProviderID.isRemote) != true || accessController.requirePaidFeature("iPhone camera") else {
-            onPresentSettings?(.account)
-            return
-        }
         coordinator.setCamera(id: id)
         syncSettings()
     }
@@ -2122,6 +2132,7 @@ final class RecorderViewModel {
     }
 
     func chooseOutputFolder() {
+        guard state == .idle else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -2130,11 +2141,16 @@ final class RecorderViewModel {
         panel.directoryURL = settings.outputDirectory
         panel.prompt = "Choose"
         panel.message = "Pick the folder where recordings will be saved."
-        panel.begin { [weak self] response in
-            guard response == .OK, let url = panel.url, let self else { return }
+        let completion: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard response == .OK, let url = panel.url, let self, self.state == .idle else { return }
             self.coordinator.setOutputDirectory(url)
             self.syncSettings()
             self.refreshRecentProjects()
+        }
+        if let window = NSApp.keyWindow {
+            panel.beginSheetModal(for: window, completionHandler: completion)
+        } else {
+            panel.begin(completionHandler: completion)
         }
     }
 
@@ -2511,13 +2527,30 @@ final class RecorderViewModel {
                 time: time
             )
             refreshRecentProjects()
-            detailMessage = "Split scene at \(formatProjectEditTime(time))."
-            recordEditorMutation(.init(previousProject: previousProject, actionName: "Split Scene"))
+            detailMessage = "Split all tracks at \(formatProjectEditTime(time))."
+            recordEditorMutation(.init(previousProject: previousProject, actionName: "Split Segment"))
             return true
         } catch {
             detailMessage = error.localizedDescription
             return false
         }
+    }
+
+    @discardableResult
+    func deleteProjectSegment(_ request: EditorProjectSegmentDeletion) -> Bool {
+        guard let project = lastExportedProject,
+            let range = EditorTimeRange.segment(.init(
+                eventTimes: TakeFileStore().sceneEvents(from: project).map(\.time),
+                index: request.index, duration: request.duration
+            )),
+            let edits = EditorTimeRange.removing(.init(
+                range: range, edits: project.edits, takeDuration: request.duration
+            ))
+        else {
+            detailMessage = "Select a segment to delete and leave at least 0.1 seconds in the recording."
+            return false
+        }
+        return applyTimelineEdits(.init(edits: edits, actionName: "Delete Segment"))
     }
 
     @discardableResult
@@ -2642,11 +2675,6 @@ final class RecorderViewModel {
             detailMessage = "This recovery needs the missing source media before export can be retried."
             return
         }
-        guard accessController.canRenderExport else {
-            detailMessage = "Export is unavailable."
-            onPresentSettings?(.account)
-            return
-        }
         coordinator.mergeLastTake()
     }
 
@@ -2688,10 +2716,6 @@ final class RecorderViewModel {
     func primaryAction() {
         switch state {
         case .idle:
-            guard accessController.canRenderExport else {
-                detailMessage = "Recording is unavailable."
-                return
-            }
             let readiness = coordinator.recordingReadiness()
             guard readiness.isReady else {
                 resolveStartBlockers(readiness)
@@ -2750,17 +2774,14 @@ final class RecorderViewModel {
 
     var canStartRecording: Bool {
         _ = permissionRefreshToken
-        return coordinator.recordingReadiness().isReady && accessController.canRenderExport
+        return coordinator.recordingReadiness().isReady
     }
 
     func openReadinessDetails() {
-        onPresentSettings?(accessController.canRenderExport ? .permissions : .account)
+        onPresentSettings?(.permissions)
     }
 
     var recordingBlockerDetail: String? {
-        if !accessController.canRenderExport {
-            return "Recording is unavailable."
-        }
         let readiness = coordinator.recordingReadiness()
         return readiness.isReady ? nil : readiness.detail
     }

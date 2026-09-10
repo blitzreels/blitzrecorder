@@ -16,6 +16,7 @@ final class RecorderCoordinator {
 
     private let screenRecorder = ScreenRecorder()
     private let screenPreviewer = ScreenPreviewer()
+    private let screenThumbnailProvider = ScreenSourceThumbnailProvider()
     private let screenContentPicker = ScreenContentPicker()
     private let screenSourcePickerRecents: ScreenSourcePickerRecents
     private let screenCropPicker = ScreenCropPicker()
@@ -130,10 +131,6 @@ final class RecorderCoordinator {
         if let selectedScene = sceneLibrary.selectedScene(layout: settings.layout) {
             applySceneSnapshot(selectedScene.snapshot)
         }
-        accessController.onLicenseStateChanged = { [weak self] in
-            self?.reconcileLicenseLimitsForCurrentAccess()
-        }
-        reconcileLicenseLimitsForCurrentAccess()
         if clearIncompatibleScreenCropForCurrentLayout() {
             persistSettings()
         }
@@ -503,41 +500,7 @@ final class RecorderCoordinator {
         return true
     }
 
-    @discardableResult
-    private func enforceLicenseLimits() -> Bool {
-        guard !accessController.hasActiveLicense else { return false }
-        var changed = false
-
-        if settings.outputResolution == .p2160 {
-            settings.outputResolution = .p1080
-            changed = true
-        }
-
-        if settings.framesPerSecond >= 60 {
-            settings.framesPerSecond = 30
-            changed = true
-        }
-
-        if RemoteCameraProviderID.isRemote(settings.selectedCameraID) {
-            settings.selectedCameraID = nil
-            changed = true
-        }
-
-        return changed
-    }
-
-    private func reconcileLicenseLimitsForCurrentAccess() {
-        guard !accessController.hasSavedLicenseKey else { return }
-        guard enforceLicenseLimits() else { return }
-        persistSettings()
-        onCameraConfigurationChanged?()
-    }
-
     func setOutputResolution(_ outputResolution: OutputResolution) {
-        guard outputResolution != .p2160 || accessController.requirePaidFeature("4K export") else {
-            onMessage?("4K export is locked. Get a free license, then paste your key in Account.")
-            return
-        }
         settings.outputResolution = outputResolution
         persistSettings()
     }
@@ -549,10 +512,6 @@ final class RecorderCoordinator {
 
     func setFramesPerSecond(_ framesPerSecond: Int) {
         guard RecordingSettings.supportedFrameRates.contains(framesPerSecond) else { return }
-        guard framesPerSecond < 60 || accessController.requirePaidFeature("60 fps export") else {
-            onMessage?("60 fps export is locked. Get a free license, then paste your key in Account.")
-            return
-        }
         settings.framesPerSecond = framesPerSecond
         persistSettings()
         onCameraConfigurationChanged?()
@@ -741,10 +700,6 @@ final class RecorderCoordinator {
     }
 
     func setCamera(id: String?) {
-        guard id.map(RemoteCameraProviderID.isRemote) != true || accessController.requirePaidFeature("iPhone camera") else {
-            onMessage?("iPhone camera is locked. Get a free license, then paste your key in Account.")
-            return
-        }
         remoteCamera.selectCamera(id: id)
     }
 
@@ -877,10 +832,6 @@ final class RecorderCoordinator {
     }
 
     func connectDirectRemoteCamera(host: String, portString: String) {
-        guard accessController.requirePaidFeature("iPhone camera") else {
-            onMessage?("iPhone camera is locked. Get a free license, then paste your key in Account.")
-            return
-        }
         remoteCamera.connectDirect(host: host, portString: portString)
     }
 
@@ -1679,8 +1630,23 @@ final class RecorderCoordinator {
               let content = try? await SCShareableContent.current else {
             return []
         }
+        screenThumbnailProvider.updateContent(content)
 
         let ownProcessID = getpid()
+        let visibleWindows = content.windows.filter {
+            $0.isOnScreen && $0.frame.width > 0 && $0.frame.height > 0
+        }
+        let primaryWindows = Dictionary(grouping: visibleWindows) { $0.owningApplication?.processID }
+            .compactMapValues { windows in
+                windows.max { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
+            }
+        var applicationIcons: [pid_t: NSImage] = [:]
+        for application in content.applications {
+            guard application.processID != ownProcessID, primaryWindows[application.processID] != nil else { continue }
+            applicationIcons[application.processID] = Self.appIcon(
+                bundleIdentifier: application.bundleIdentifier, processID: application.processID
+            )
+        }
         let displayOptions = content.displays.enumerated().map { index, display in
             ScreenSourceOption(
                 binding: .display(id: String(display.displayID)),
@@ -1695,10 +1661,6 @@ final class RecorderCoordinator {
         let applicationOptions = content.applications.compactMap { application -> ScreenSourceOption? in
             let applicationName = Self.readableScreenApplicationName(application.applicationName)
             guard application.processID != ownProcessID,
-                  !Self.isIgnoredScreenApplication(
-                    bundleIdentifier: application.bundleIdentifier,
-                    applicationName: applicationName
-                  ),
                   let applicationName else {
                 return nil
             }
@@ -1708,21 +1670,18 @@ final class RecorderCoordinator {
                 applicationName: applicationName
             )
             guard applicationKeys.insert(key).inserted else { return nil }
-            let primaryWindow = content.windows
-                .filter {
-                    $0.isOnScreen
-                        && $0.frame.width > 0
-                        && $0.frame.height > 0
-                        && $0.owningApplication?.processID == application.processID
-                }
-                .max {
-                    $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height
-                }
+            guard let primaryWindow = primaryWindows[application.processID] else { return nil }
+            let isUtility = ScreenSourcePickerOrganization.isUtilityWindow(.init(
+                size: primaryWindow.frame.size,
+                layer: primaryWindow.windowLayer,
+                isSystemWindow: Self.isIgnoredScreenWindow(
+                    bundleIdentifier: application.bundleIdentifier,
+                    applicationName: applicationName, title: primaryWindow.title
+                )
+            ))
             let binding = ScreenSourceBinding(
                 kind: .application,
-                displayID: primaryWindow.flatMap {
-                    displayID(for: $0, displays: content.displays)
-                },
+                displayID: displayID(for: primaryWindow, displays: content.displays),
                 bundleIdentifier: application.bundleIdentifier,
                 applicationName: applicationName,
                 processID: application.processID,
@@ -1732,13 +1691,10 @@ final class RecorderCoordinator {
             return ScreenSourceOption(
                 binding: binding,
                 title: applicationName,
-                subtitle: "Main window",
+                subtitle: Self.readableScreenWindowTitle(primaryWindow.title) ?? "Main window",
                 systemImage: "macwindow.on.rectangle",
-                icon: Self.appIcon(
-                    bundleIdentifier: application.bundleIdentifier,
-                    processID: application.processID
-                ),
-                pickerPlacement: ScreenSourcePickerOrganization.placement(
+                icon: applicationIcons[application.processID],
+                pickerPlacement: isUtility ? .utility : ScreenSourcePickerOrganization.placement(
                     ScreenSourcePickerPlacementRequest(
                         binding: binding,
                         recentBundleIdentifiers: recentBundleIdentifiers
@@ -1748,20 +1704,20 @@ final class RecorderCoordinator {
         }
         let sortedApplicationOptions = ScreenSourcePickerOrganization.sorted(applicationOptions)
 
-        let windowOptions = content.windows.compactMap { window -> ScreenSourceOption? in
+        let windowOptions = visibleWindows.compactMap { window -> ScreenSourceOption? in
             let application = window.owningApplication
             let applicationName = Self.readableScreenApplicationName(application?.applicationName)
-            guard window.isOnScreen,
-                  window.frame.width >= 240,
-                  window.frame.height >= 160,
-                  application?.processID != ownProcessID,
-                  !Self.isIgnoredScreenWindow(
-                    bundleIdentifier: application?.bundleIdentifier,
-                    applicationName: applicationName,
-                    title: window.title
-                  ) else {
+            guard application?.processID != ownProcessID else {
                 return nil
             }
+            let isUtility = ScreenSourcePickerOrganization.isUtilityWindow(.init(
+                size: window.frame.size,
+                layer: window.windowLayer,
+                isSystemWindow: Self.isIgnoredScreenWindow(
+                    bundleIdentifier: application?.bundleIdentifier,
+                    applicationName: applicationName, title: window.title
+                )
+            ))
             let windowTitle = Self.readableScreenWindowTitle(window.title)
             let title = windowTitle ?? applicationName.map { "\($0) window" } ?? "Window"
             let binding = ScreenSourceBinding(
@@ -1778,11 +1734,8 @@ final class RecorderCoordinator {
                 title: title,
                 subtitle: applicationName ?? "Window",
                 systemImage: "app.window",
-                icon: Self.appIcon(
-                    bundleIdentifier: application?.bundleIdentifier,
-                    processID: application?.processID
-                ),
-                pickerPlacement: ScreenSourcePickerOrganization.placement(
+                icon: application.flatMap { applicationIcons[$0.processID] },
+                pickerPlacement: isUtility ? .utility : ScreenSourcePickerOrganization.placement(
                     ScreenSourcePickerPlacementRequest(
                         binding: binding,
                         recentBundleIdentifiers: recentBundleIdentifiers
@@ -1799,8 +1752,9 @@ final class RecorderCoordinator {
         return displayOptions + sortedApplicationOptions + windowOptions
     }
 
-    func screenSourceThumbnails(for bindings: [ScreenSourceBinding]) async -> [String: NSImage] {
-        [:]
+    func screenSourceThumbnail(_ binding: ScreenSourceBinding) async -> NSImage? {
+        guard state == .idle, permissionGate.hasScreenCaptureAccess else { return nil }
+        return await screenThumbnailProvider.image(.init(binding: binding, settings: settings))
     }
 
     static func readableScreenApplicationName(_ name: String?) -> String? {
@@ -1932,6 +1886,7 @@ final class RecorderCoordinator {
         }
 
         let ignoredTitleFragments = [
+            "Software Cursor",
             "Display Backstop",
             "Item-0",
             "LifecycleKeepalive",
@@ -2332,7 +2287,14 @@ final class RecorderCoordinator {
             .sorted { lhs, rhs in
                 LocalCameraSessionConfiguration.cameraSortKey(lhs) < LocalCameraSessionConfiguration.cameraSortKey(rhs)
             }
-            .map { SourceOption(id: $0.uniqueID, name: cameraDisplayName(for: $0)) }
+            .map { device in
+                let kind: CameraSourceKind
+                if device.deviceType == .deskViewCamera { kind = .deskView }
+                else if device.isContinuityCamera { kind = .continuity }
+                else if device.deviceType == .builtInWideAngleCamera { kind = .builtIn }
+                else { kind = .external }
+                return SourceOption(id: device.uniqueID, name: cameraDisplayName(for: device), cameraKind: kind)
+            }
         return remoteCameraOptions() + localOptions
     }
 
@@ -2369,10 +2331,6 @@ final class RecorderCoordinator {
 
     func start() {
         guard state == .idle else { return }
-        guard accessController.canRenderExport else {
-            onMessage?("Recording is unavailable.")
-            return
-        }
         let readiness = recordingReadiness()
         guard readiness.isReady else {
             onMessage?(startBlockedMessage(readiness))
@@ -2632,10 +2590,8 @@ final class RecorderCoordinator {
                 case .liveComposited(let completion, let warning):
                     onMessage?("Saving recording...")
                     onRenderProgress?(1)
-                    try? await Task.sleep(for: .milliseconds(250))
                     if completion.wroteMedia, let finalURL = completion.url {
                         let savedURL = finalURL
-                        accessController.recordSuccessfulExportIfNeeded()
                         if let takeToFinalize {
                             takeFileStore.cleanupIntermediateFiles(for: takeToFinalize, settings: takeSettings)
                         }
@@ -2671,7 +2627,6 @@ final class RecorderCoordinator {
                         )
                         let retainedTake: RecordingTake?
                         if case .saved = outcome {
-                            accessController.recordSuccessfulExportIfNeeded()
                             retainedTake = nil
                         } else if case .projectReady(let projectTake) = outcome {
                             retainedTake = projectTake
@@ -2878,10 +2833,6 @@ final class RecorderCoordinator {
             onMessage?("No take to merge yet.")
             return
         }
-        guard accessController.canRenderExport else {
-            onMessage?("Export is unavailable.")
-            return
-        }
 
         onExportFailure?(nil)
         Task {
@@ -2889,7 +2840,6 @@ final class RecorderCoordinator {
                 let outputAccess = try takeFileStore.prepareOutputDirectory(settings: settings)
                 defer { outputAccess.stop() }
                 let url = try await Merger.exportFinalVideo(take: lastTake, settings: settings)
-                accessController.recordSuccessfulExportIfNeeded()
                 let sourceDirectory = lastTake.scratchDirectory
                 self.recordingSession.clearLastTake()
                 let savedOutput = SavedRecordingOutput(url: url, sourceDirectory: sourceDirectory, warning: nil)
@@ -2910,10 +2860,6 @@ final class RecorderCoordinator {
     }
 
     func exportProjectForAgent(_ request: ProjectExportRequest) async throws -> SavedRecordingOutput {
-        guard accessController.canRenderExport else {
-            onMessage?("Export is unavailable.")
-            throw RecorderError.mediaWriteFailed("Export is unavailable.")
-        }
         guard recordingSession.beginExport() else {
             let message = "Wait for the current recording task to finish before exporting."
             onMessage?(message)
@@ -2931,7 +2877,6 @@ final class RecorderCoordinator {
 
         do {
             let savedOutput = try await performProjectExport(request)
-            accessController.recordSuccessfulExportIfNeeded()
             onRenderProgress?(1)
             onSavedRecording?(savedOutput)
             onMessage?(savedOutput.userMessage)

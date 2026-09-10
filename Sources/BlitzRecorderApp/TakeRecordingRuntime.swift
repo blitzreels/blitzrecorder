@@ -164,6 +164,7 @@ final class TakeRecordingRuntime {
         startSceneTimeline(scene: initialScene)
         cursorTracker.start(.init(directory: take.screenURL.deletingLastPathComponent(),
             configuration: .init(settings: settings, filter: pickedScreenFilter),
+            captureFrame: { [weak screenRecorder] in screenRecorder?.cursorCaptureFrame },
             time: { [weak self] in
                 guard let self, self.timelineSegmentStartedAt != nil else { return nil }
                 return self.currentSceneTime()
@@ -272,6 +273,7 @@ final class TakeRecordingRuntime {
                 settings: settings,
                 pickedScreenFilter: pickedScreenFilter
             )
+            cursorTracker.update(.init(settings: settings, filter: pickedScreenFilter))
         case .idle:
             break
         }
@@ -294,6 +296,7 @@ final class TakeRecordingRuntime {
             settings: settings,
             pickedScreenFilter: pickedScreenFilter
         )
+        cursorTracker.update(.init(settings: settings, filter: pickedScreenFilter))
     }
 
     func startSceneTimeline(settings: RecordingSettings) {
