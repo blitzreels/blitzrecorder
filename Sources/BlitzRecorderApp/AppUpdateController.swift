@@ -122,7 +122,16 @@ final class AppUpdateController: NSObject, ObservableObject {
         }
         startIfNeeded(checkAtStartup: false)
         guard driver != nil, hasStarted else {
-#if !DIRECT_DISTRIBUTION
+#if DIRECT_DISTRIBUTION
+            let alert = NSAlert()
+            alert.messageText = "Updates are unavailable in this build"
+            alert.informativeText = status == .unavailable
+                ? "This development build has no signed update feed. Release builds check automatically when BlitzRecorder opens."
+                : detail
+            alert.addButton(withTitle: "View Releases")
+            alert.addButton(withTitle: "Cancel")
+            if alert.runModal() == .alertFirstButtonReturn { openReleaseNotes(nil) }
+#else
             NSWorkspace.shared.open(URL(string: "macappstore://showUpdatesPage")!)
 #endif
             return
