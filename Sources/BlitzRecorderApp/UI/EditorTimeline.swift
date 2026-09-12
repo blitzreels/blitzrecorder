@@ -170,7 +170,7 @@ struct EditorTimelineView: View {
             HStack(spacing: 10) {
                 BlitzPlaybackVolumeControl(configuration: .init(
                     volume: $playbackVolume,
-                    sliderWidth: 60,
+                    sliderWidth: 110,
                     onToggleMute: onTogglePlaybackMute
                 ))
                 .disabled(!isInteractive || !hasPlaybackAudio)
@@ -184,7 +184,7 @@ struct EditorTimelineView: View {
                 )
                     .controlSize(.small)
                     .tint(BlitzUI.mint)
-                    .frame(width: 90)
+                    .frame(width: 150)
                     .accessibilityLabel("Timeline zoom")
                     .accessibilityValue(String(format: "%.2f×", zoomLevel))
                     .help("Timeline zoom (− / +). Fit with F.")
@@ -193,6 +193,7 @@ struct EditorTimelineView: View {
                 ) { zoomLevel = 1 }
                 .help("Fit the full recording in the timeline (F)")
             }
+            .fixedSize(horizontal: true, vertical: false)
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .blitzWorkspaceToolbar()

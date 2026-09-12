@@ -29,8 +29,8 @@ struct SilenceInspectorPane: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    summary
+                VStack(alignment: .leading, spacing: 16) {
+                    detection
                     pacing
                     Divider()
                     BlitzInspectorDisclosure(configuration: .init(
@@ -39,10 +39,18 @@ struct SilenceInspectorPane: View {
                         isExpanded: $showsTuning,
                         content: { tuning }
                     ))
-                    Label("Select a timeline section and press Delete to keep or remove it.", systemImage: "cursorarrow")
-                        .font(.system(size: 11))
-                        .foregroundStyle(BlitzUI.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Divider()
+                    VStack(alignment: .leading, spacing: 8) {
+                        SilencePreviewToggle(session: session)
+                        Text("Listen to the cuts before applying them.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(BlitzUI.secondaryText)
+                    }
+                    if session.hasRemovedSilence {
+                        Button("Restore removed silence") { session.restoreSilence() }
+                            .blitzButton(.secondary)
+                            .disabled(session.loading || session.calculating || session.preparingPreview)
+                    }
                     if let error = session.error {
                         Text(error).font(.system(size: 11)).foregroundStyle(BlitzUI.recordRed)
                             .fixedSize(horizontal: false, vertical: true)
@@ -52,7 +60,7 @@ struct SilenceInspectorPane: View {
             }
             .scrollIndicators(.hidden)
             Divider()
-            footer.padding(14)
+            footer.padding(.horizontal, 14).padding(.vertical, 10)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(BlitzUI.projectLibraryBackground)
@@ -74,23 +82,30 @@ struct SilenceInspectorPane: View {
     }
 
     private var summary: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            BlitzInspectorHeading(configuration: .init(title: "After removal", detail: session.sourceName))
+        HStack(alignment: .center, spacing: 8) {
             if session.loading {
                 Label("Finding pauses…", systemImage: "waveform")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
             } else {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(SilenceTime.label(session.metrics.outputDuration))
-                        .font(.system(size: 28, weight: .medium, design: .rounded))
-                        .monospacedDigit()
-                    Text("from \(SilenceTime.label(session.duration))")
-                        .font(.system(size: 11)).foregroundStyle(BlitzUI.secondaryText)
-                    Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("After removal")
+                        .font(.system(size: 10))
+                        .foregroundStyle(BlitzUI.secondaryText)
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(SilenceTime.label(session.duration))
+                            .font(.system(size: 11))
+                            .foregroundStyle(BlitzUI.secondaryText)
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 9))
+                            .foregroundStyle(BlitzUI.secondaryText)
+                        Text(SilenceTime.label(session.metrics.outputDuration))
+                            .font(.system(size: 20, weight: .medium, design: .rounded))
+                    }
+                    .monospacedDigit()
                 }
-                HStack(spacing: 8) {
+                Spacer(minLength: 0)
+                VStack(alignment: .trailing, spacing: 4) {
                     Text("\(session.metrics.pauseCount) pauses")
-                    Spacer(minLength: 0)
                     Text("Save \(SilenceTime.label(session.metrics.removedDuration))")
                         .foregroundStyle(session.metrics.removedDuration > 0 ? BlitzUI.mint : BlitzUI.secondaryText)
                 }
@@ -99,16 +114,32 @@ struct SilenceInspectorPane: View {
             }
         }
         .opacity(session.calculating ? 0.5 : 1)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(session.loading ? "Finding pauses"
+            : "After removal, \(SilenceTime.label(session.metrics.outputDuration)), from \(SilenceTime.label(session.duration)), \(session.metrics.pauseCount) pauses, save \(SilenceTime.label(session.metrics.removedDuration))")
+    }
+
+    private var detection: some View {
+        Toggle(isOn: Binding(
+            get: { session.suggestsPauses }, set: { session.setSuggestionsEnabled($0) }
+        )) {
+            BlitzIllustratedLabel(configuration: .init(
+                title: "Find pauses",
+                detail: "Detect quiet gaps in your audio.",
+                preview: { _ in
+                    SilencePacingPreview(pacing: .natural)
+                        .opacity(session.suggestsPauses ? 1 : 0.35)
+                }
+            ))
+        }
+        .toggleStyle(.blitzSwitch)
+        .help("Suggest automatic silence cuts. Turning this off keeps your manual selections.")
+        .disabled(session.loading || session.windows.isEmpty)
     }
 
     private var pacing: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Toggle("Find pauses", isOn: Binding(
-                get: { session.suggestsPauses }, set: { session.setSuggestionsEnabled($0) }
-            ))
-            .toggleStyle(.blitzSwitch)
-            .help("Suggest automatic silence cuts. Turning this off keeps your manual selections.")
+            BlitzInspectorHeading(configuration: .init(title: "Pacing", detail: session.sourceName))
             HStack(alignment: .top, spacing: 4) {
                 ForEach(SilencePacing.allCases, id: \.self) { pace in
                     BlitzVisualChoice(configuration: .init(
@@ -174,6 +205,7 @@ struct SilenceInspectorPane: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 10) {
+            summary
             if session.loading || session.calculating || session.preparingPreview {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.mini)
@@ -182,9 +214,6 @@ struct SilenceInspectorPane: View {
                         .font(.system(size: 11)).foregroundStyle(BlitzUI.secondaryText)
                 }
             }
-            SilencePreviewToggle(session: session)
-            Text("Hear the result before applying.")
-                .font(.system(size: 10)).foregroundStyle(BlitzUI.secondaryText)
             if !session.hasRemovedSilence || session.metrics.hasChanges {
                 Button {
                     _ = session.apply()
@@ -196,16 +225,6 @@ struct SilenceInspectorPane: View {
                 .disabled(!session.canApply)
                 .help("Remove silence and close gaps on every track, in playback and export. Undo with ⌘Z.")
             }
-            if session.hasRemovedSilence {
-                Button { session.restoreSilence() } label: {
-                    Text("Restore removed silence").frame(maxWidth: .infinity)
-                }
-                    .blitzButton(.secondary)
-                    .disabled(session.loading || session.calculating || session.preparingPreview)
-            }
-            Text("All tracks stay in sync · ⌘Z to undo")
-                .font(.system(size: 10)).foregroundStyle(BlitzUI.secondaryText)
-                .frame(maxWidth: .infinity)
         }
     }
 

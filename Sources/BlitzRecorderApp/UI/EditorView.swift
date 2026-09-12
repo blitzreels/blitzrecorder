@@ -1075,19 +1075,7 @@ struct EditorView: View {
             divider
             switch inspectorTab {
             case .silence:
-                VStack(spacing: 0) {
-                    HStack(spacing: 10) {
-                        Button {
-                            inspectorTab = .audio
-                        } label: {
-                            Label("Audio", systemImage: "chevron.left")
-                        }
-                        .blitzButton(.secondary)
-                        Text("Silence removal").font(.system(size: 12, weight: .semibold))
-                        Spacer(minLength: 0)
-                    }.padding(.horizontal, 14).padding(.vertical, 8)
-                    SilenceInspectorPane(session: silence)
-                }
+                SilenceInspectorPane(session: silence)
 
             case .text:
                 EditorTextInspector(configuration: .init(
@@ -1115,7 +1103,6 @@ struct EditorView: View {
                         case .layout:
                             layoutInspectorContent
                         case .audio:
-                            silenceRemovalEntry
                             audioControlsSection
                         default: EmptyView()
                         }
@@ -1193,21 +1180,10 @@ struct EditorView: View {
     }
 
     private var inspectorTabBar: some View {
-        HStack(spacing: 2) {
-            ForEach([EditorInspectorTab.layout, .audio, .text, .zoom], id: \.self) { tab in
-                BlitzTab(
-                    configuration: .init(
-                        title: tab.rawValue,
-                        symbolName: tab.systemImage,
-                        isSelected: inspectorTab == tab || (tab == .audio && inspectorTab == .silence),
-                        expands: true,
-                        action: { inspectorTab = tab }
-                    )
-                )
-                .help(
-                    tab == .layout
-                        ? "Scene layout and canvas" : tab == .audio ? "Audio and silence removal" : tab.rawValue)
-            }
+        ViewThatFits(in: .horizontal) {
+            inspectorTabs(showsSymbols: true)
+                .fixedSize(horizontal: true, vertical: false)
+            inspectorTabs(showsSymbols: false)
         }
         .frame(maxWidth: .infinity)
         .controlSize(.large)
@@ -1216,24 +1192,21 @@ struct EditorView: View {
         .accessibilityLabel("Inspector tabs")
     }
 
-    private var silenceRemovalEntry: some View {
-        Button(action: openSilenceInspector) {
-            HStack(spacing: 10) {
-                BlitzSymbol(configuration: .init(name: "waveform.path", size: 20))
-                    .foregroundStyle(BlitzUI.mint)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Remove silence").font(.system(size: 12, weight: .semibold))
-                    Text(silence.loading ? "Finding quiet moments…" : "\(silence.metrics.pauseCount) pauses · \(SilenceTime.label(silence.metrics.removedDuration)) shorter")
-                        .font(.system(size: 11)).foregroundStyle(BlitzUI.secondaryText)
-                }
-                Spacer(minLength: 0)
-                BlitzSymbol(configuration: .init(name: "chevron.right", size: 12))
+    private func inspectorTabs(showsSymbols: Bool) -> some View {
+        HStack(spacing: 2) {
+            ForEach([EditorInspectorTab.layout, .audio, .silence, .text, .zoom], id: \.self) { tab in
+                BlitzTab(configuration: .init(
+                    title: tab.rawValue,
+                    symbolName: showsSymbols ? tab.systemImage : nil,
+                    isSelected: inspectorTab == tab,
+                    expands: true,
+                    action: { inspectorTab = tab }
+                ))
+                .help(tab == .layout ? "Scene layout and canvas"
+                      : tab == .audio ? "Audio tracks and background music"
+                      : tab == .silence ? "Silence removal and pacing" : tab.rawValue)
             }
-            .padding(12)
-            .blitzCard()
         }
-        .buttonStyle(BlitzSelectionButtonStyle(isSelected: false))
-        .help("Review silence cuts in the Audio pane")
     }
 
     private func openSilenceInspector() {
