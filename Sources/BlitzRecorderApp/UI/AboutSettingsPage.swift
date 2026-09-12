@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 struct AboutSettingsPage: View {
+    @EnvironmentObject private var updates: AppUpdateController
     private var version: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
@@ -46,13 +47,23 @@ struct AboutSettingsPage: View {
 
                 VStack(spacing: 0) {
                     HStack {
-                        SettingsRowLabel(.init(title: "App updates", detail: "Check for a newer version of BlitzRecorder."))
-                        Button("Check for Updates…") {
-                            NSApp.sendAction(#selector(AppDelegate.checkForUpdates), to: NSApp.delegate, from: nil)
+                        SettingsRowLabel(.init(title: "App updates", detail: updates.detail))
+                        Button(updates.actionTitle) {
+                            updates.checkForUpdates(nil)
                         }
                         .blitzButton(.secondary)
+                        .disabled(!updates.canCheckForUpdates)
                     }
                     .settingsRow()
+                    if updates.isConfigured {
+                        SettingsRowDivider()
+                        Toggle("Check for updates automatically", isOn: Binding(
+                            get: { updates.automaticChecksEnabled },
+                            set: { updates.setAutomaticChecksEnabled($0) }
+                        ))
+                        .toggleStyle(.blitzSwitch)
+                        .settingsRow()
+                    }
                     SettingsRowDivider()
                     HStack {
                         SettingsRowLabel(.init(title: "What’s new", detail: "See the latest changes and releases."))

@@ -46,7 +46,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
 
         let windowController = MainWindowController(.init(
             coordinator: coordinator,
-            mcpServer: mcpServer
+            mcpServer: mcpServer,
+            updateController: updateController
         ))
         self.windowController = windowController
         windowController.onEditorHistoryChanged = { [weak self] in
@@ -54,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
         }
 
         coordinator.onStateChanged = { [weak self] state in
+            self?.updateController.installationBlockedReason = state == .idle ? nil : "Finish recording before restarting."
             if state == .starting { NowPlayingController.shared.suspendForRecording() }
             self?.windowController?.update(for: state)
             self?.updateStatusItem(for: state)
@@ -472,7 +474,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
     }
 
     var updateMenuItemTitle: String {
-        updateController.isCheckingForUpdates ? "Checking for Updates…" : "Check for Updates…"
+        updateController.actionTitle
     }
 
     var canCheckForUpdates: Bool {

@@ -81,4 +81,20 @@ final class SilenceSegmentSelectionTests: XCTestCase {
         )))
         XCTAssertEqual(shrunk.ranges, Array(segments[3...4].map(\.range)))
     }
+
+    func testCoalescedDisplayRangesMergeAbuttingSegmentsAndKeepGaps() {
+        XCTAssertEqual(
+            SilenceSegmentSelection.coalesced([
+                .init(start: 0, end: 2),
+                .init(start: 2, end: 4),
+                .init(start: 6, end: 8),
+            ]),
+            [.init(start: 0, end: 4), .init(start: 6, end: 8)])
+        XCTAssertEqual(SilenceSegmentSelection.coalesced([]), [])
+        let selection = SilenceSegmentSelection.clicking(.init(
+            current: SilenceSegmentSelection(segments[1].range),
+            target: segments[2].range, segments: segments, extending: true, toggling: false
+        ))
+        XCTAssertEqual(selection?.displayRanges, [.init(start: 2, end: 6)])
+    }
 }

@@ -151,6 +151,19 @@ final class EditorSilenceWorkflowTests: XCTestCase {
                     viewport: .init(lowerBound: 0, upperBound: 500)
                 )
             ).isEmpty)
+        let overlay = SilenceTimelineBands.overlayRuns(
+            .init(
+                cuts: (0..<200_000).map {
+                    TimelineCut(
+                        start: Double($0) * 0.016, end: Double($0) * 0.016 + 0.008,
+                        kind: .silence, source: .automatic)
+                },
+                projection: .init(.init(duration: 3_240, cuts: [])),
+                pixelsPerSecond: 1_200 / 3_240,
+                viewport: .init(lowerBound: 0, upperBound: 1_200)
+            ),
+            selections: [])
+        XCTAssertLessThanOrEqual(overlay.count, 1_200)
     }
 
     @MainActor

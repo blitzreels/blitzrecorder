@@ -65,6 +65,7 @@ struct EditorTimelineView: View {
     @State private var scrollOffset: CGFloat = 0
     @State private var scrollPosition = ScrollPosition(x: 0)
     @State private var silenceSegments: [SilenceTimelineSegment] = []
+    @State private var selectableSilenceSegments: [SilenceTimelineSegment] = []
     @State private var hoveredSilenceRange: EditorTimeRange?
     @State private var selectionFocusTime: Double?
     @State private var stripDragSelection: SilenceSegmentSelection?
@@ -110,6 +111,10 @@ struct EditorTimelineView: View {
         .onChange(of: SilenceTimelineSegments.Request(duration: duration, cuts: silence.cuts), initial: true) {
             silenceSegments = SilenceTimelineSegments.resolve(.init(duration: duration, cuts: silence.cuts))
             hoveredSilenceRange = nil
+        }
+        .onChange(of: SilenceTimelineSegments.SelectableRequest(segments: silenceSegments, projection: projection), initial: true) {
+            selectableSilenceSegments = SilenceTimelineSegments.selectable(
+                .init(segments: silenceSegments, projection: projection))
         }
     }
 
@@ -397,10 +402,6 @@ struct EditorTimelineView: View {
         selection?.silenceSelection?.ranges ?? []
     }
 
-    private var selectableSilenceSegments: [SilenceTimelineSegment] {
-        silenceSegments.filter { projection.displayTime($0.range.end) > projection.displayTime($0.range.start) }
-    }
-
     private func timelineBody(viewportWidth: CGFloat) -> some View {
         let trackViewport = max(viewportWidth - gutterWidth - 24, 40)
         let pxPerSecond = trackViewport / CGFloat(max(projection.duration, 0.5)) * CGFloat(EditorTimelineZoom.clamp(.init(value: zoomLevel, duration: projection.duration)))
@@ -486,7 +487,7 @@ struct EditorTimelineView: View {
                             hoverOverlay(.init(range: range, pxPerSecond: pxPerSecond))
                         }
                         if !selectedSilenceRanges.isEmpty {
-                            ForEach(selectedSilenceRanges, id: \.start) { range in
+                            ForEach(SilenceSegmentSelection.coalesced(selectedSilenceRanges), id: \.start) { range in
                                 rangeOverlay(.init(range: range, pxPerSecond: pxPerSecond))
                             }
                         } else if let range = selection?.timeRange {
@@ -914,9 +915,12 @@ struct EditorTimelineView: View {
             upperBound: min(width, request.viewport.upperBound)
         )
         let showsSilence = !asset.isVideo && silence.audioSourcePaths.contains(asset.url.path)
-        let silenceBands = showsSilence ? SilenceTimelineBands.visible(.init(
-            cuts: silence.cuts, projection: projection, pixelsPerSecond: request.pxPerSecond, viewport: viewport
-        )) : []
+        let silenceRuns = showsSilence ? SilenceTimelineBands.overlayRuns(
+            .init(
+                cuts: silence.cuts, projection: projection, pixelsPerSecond: request.pxPerSecond, viewport: viewport
+            ),
+            selections: selectedSilenceRanges
+        ) : []
 
         return ZStack(alignment: .leading) {
             shape.fill(asset.tint.opacity(asset.isVideo ? 0.1 : 0.12))
@@ -934,7 +938,7 @@ struct EditorTimelineView: View {
             .equatable()
             .padding(.vertical, asset.isVideo ? 3 : 0)
             if showsSilence {
-                SilenceWaveformOverlay(bands: silenceBands, viewport: viewport, selections: selectedSilenceRanges)
+                SilenceWaveformOverlay(runs: silenceRuns, viewport: viewport)
                     .equatable()
             }
         }

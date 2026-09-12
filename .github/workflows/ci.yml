@@ -35,6 +35,7 @@ jobs:
         run: |
           set -euo pipefail
           swift test
+          DIRECT_DISTRIBUTION=1 swift test --filter 'AppUpdate.*Tests'
           swift test --package-path Packages/BlitzRecorderCore
           swift test --package-path Packages/BlitzRecorderTransport
 

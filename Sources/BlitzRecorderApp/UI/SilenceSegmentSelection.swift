@@ -35,6 +35,25 @@ struct SilenceSegmentSelection: Equatable {
 
     var duration: Double { ranges.reduce(0) { $0 + $1.duration } }
 
+    var displayRanges: [EditorTimeRange] {
+        Self.coalesced(ranges)
+    }
+
+    static func coalesced(_ ranges: [EditorTimeRange]) -> [EditorTimeRange] {
+        guard var current = ranges.first else { return [] }
+        var merged: [EditorTimeRange] = []
+        for range in ranges.dropFirst() {
+            if range.start <= current.end + 1.0 / 600 {
+                current = .init(start: current.start, end: max(current.end, range.end))
+            } else {
+                merged.append(current)
+                current = range
+            }
+        }
+        merged.append(current)
+        return merged
+    }
+
     struct Click {
         let current: SilenceSegmentSelection?
         let target: EditorTimeRange
@@ -47,7 +66,11 @@ struct SilenceSegmentSelection: Equatable {
         if request.extending, let current = request.current {
             let start = min(current.anchor.start, request.target.start)
             let end = max(current.anchor.end, request.target.end)
-            let extensionRanges = request.segments.map(\.range).filter { $0.start < end && $0.end > start }
+            let extensionRanges = SilenceTimelineSegments.overlapping(
+                .init(
+                    segments: request.segments, start: start, end: end, includesSegmentStartingAtEnd: false
+                )
+            ).map(\.range)
             return Self(.init(
                 ranges: (request.toggling ? current.ranges : []) + extensionRanges,
                 anchor: current.anchor
@@ -73,7 +96,11 @@ struct SilenceSegmentSelection: Equatable {
     static func dragging(_ request: Drag) -> Self? {
         let start = min(request.anchorTime, request.headTime)
         let end = max(request.anchorTime, request.headTime)
-        let ranges = request.segments.map(\.range).filter { $0.start <= end && $0.end > start }
+        let ranges = SilenceTimelineSegments.overlapping(
+            .init(
+                segments: request.segments, start: start, end: end, includesSegmentStartingAtEnd: true
+            )
+        ).map(\.range)
         guard let anchor = SilenceTimelineSegments.at(.init(
             segments: request.segments, time: request.anchorTime
         ))?.range ?? ranges.first else { return nil }

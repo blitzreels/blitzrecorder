@@ -9,6 +9,7 @@ struct MainView: View {
     }
 
     @Bindable var vm: RecorderViewModel
+    @EnvironmentObject private var updates: AppUpdateController
     private let mcpServer: BlitzRecorderMCPServer
 
     init(configuration: Configuration) {
@@ -30,6 +31,11 @@ struct MainView: View {
 
             if vm.isShowingSettings {
                 SettingsView(configuration: .init(viewModel: vm, mcpServer: mcpServer))
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if updates.updateVersion != nil {
+                AppUpdateBanner()
             }
         }
         .overlay(alignment: .topTrailing) {

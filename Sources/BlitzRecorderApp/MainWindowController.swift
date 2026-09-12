@@ -46,6 +46,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     struct Configuration {
         let coordinator: RecorderCoordinator
         let mcpServer: BlitzRecorderMCPServer
+        let updateController: AppUpdateController
     }
 
     init(_ configuration: Configuration) {
@@ -167,7 +168,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         previewStage.canvasBackgroundStyle = coordinator.settings.canvasBackgroundStyle
         previewStage.canvasPadding = coordinator.settings.canvasPadding
 
-        let host = NSHostingView(rootView: MainView(configuration: .init(viewModel: viewModel, mcpServer: mcpServer)).preferredColorScheme(.dark))
+        let host = NSHostingView(rootView: MainView(configuration: .init(viewModel: viewModel, mcpServer: mcpServer))
+            .environmentObject(configuration.updateController)
+            .preferredColorScheme(.dark))
         host.sizingOptions = []
         host.translatesAutoresizingMaskIntoConstraints = true
         host.autoresizingMask = [.width, .height]
