@@ -111,12 +111,12 @@ struct EditorPlaybackControls: View {
             showsPosition = true
         } label: {
             HStack(spacing: 7) {
-                Text(EditorPlaybackPosition.display(configuration.time).dropLast(3))
+                BlitzTimecode(configuration: .init(time: configuration.time, duration: configuration.duration))
                     .font(.system(size: 14, weight: .semibold, design: .monospaced))
                     .foregroundStyle(BlitzUI.primaryText)
                 Text("/")
                     .foregroundStyle(BlitzUI.secondaryText.opacity(0.5))
-                Text(EditorPlaybackPosition.display(configuration.duration).dropLast(3))
+                BlitzTimecode(configuration: .init(time: configuration.duration, duration: configuration.duration))
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundStyle(BlitzUI.secondaryText)
             }

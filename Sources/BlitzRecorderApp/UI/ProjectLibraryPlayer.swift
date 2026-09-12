@@ -263,7 +263,9 @@ struct ProjectLibraryPlaybackControls: View {
             .accessibilityLabel(configuration.controller.isPlaying ? "Pause" : "Play")
             .help(configuration.controller.isPlaying ? "Pause" : "Play")
 
-            Text(timeLabel(configuration.controller.currentTime))
+            BlitzTimecode(configuration: .init(
+                time: configuration.controller.currentTime, duration: configuration.controller.duration
+            ))
                 .font(.system(size: 11, weight: .regular, design: .monospaced))
                 .monospacedDigit()
                 .foregroundStyle(.white.opacity(0.66))
@@ -280,7 +282,9 @@ struct ProjectLibraryPlaybackControls: View {
             )
             .frame(height: 30)
 
-            Text(timeLabel(configuration.controller.duration))
+            BlitzTimecode(configuration: .init(
+                time: configuration.controller.duration, duration: configuration.controller.duration
+            ))
                 .font(.system(size: 11, weight: .regular, design: .monospaced))
                 .monospacedDigit()
                 .foregroundStyle(.white.opacity(0.66))
@@ -306,16 +310,7 @@ struct ProjectLibraryPlaybackControls: View {
         }
     }
 
-    private func timeLabel(_ duration: TimeInterval) -> String {
-        let totalSeconds = max(0, Int(duration.rounded(.down)))
-        let hours = totalSeconds / 3_600
-        let minutes = (totalSeconds % 3_600) / 60
-        let seconds = totalSeconds % 60
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
-        }
-        return String(format: "%d:%02d", minutes, seconds)
-    }
+
 }
 
 private struct ProjectPlaybackWaveform: View {
@@ -446,15 +441,8 @@ private struct ProjectPlaybackWaveform: View {
         return min(1, max(0, request.x / request.width)) * duration
     }
 
-    private func timeLabel(_ duration: TimeInterval) -> String {
-        let totalSeconds = max(0, Int(duration.rounded(.down)))
-        let hours = totalSeconds / 3_600
-        let minutes = (totalSeconds % 3_600) / 60
-        let seconds = totalSeconds % 60
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
-        }
-        return String(format: "%d:%02d", minutes, seconds)
+    private func timeLabel(_ time: TimeInterval) -> String {
+        MediaTimecode.label(.init(time: time, duration: duration))
     }
 }
 

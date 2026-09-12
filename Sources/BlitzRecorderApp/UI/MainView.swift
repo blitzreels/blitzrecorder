@@ -34,7 +34,7 @@ struct MainView: View {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            if updates.updateVersion != nil {
+            if updates.updateVersion != nil && (vm.studioMode != .projects || vm.isShowingSettings) {
                 AppUpdateBanner()
             }
         }

@@ -2,11 +2,38 @@ import AppKit
 import AVFoundation
 import Foundation
 
+struct ProjectVideoQuality: Equatable {
+    let width: Int
+    let height: Int
+    let framesPerSecond: Double?
+
+    var shortEdge: Int { min(width, height) }
+
+    var resolutionLabel: String {
+        switch shortEdge {
+        case 2160: "4K"
+        case 1440: "1440p"
+        case 1080: "1080p"
+        case 720: "720p"
+        default: "\(width)×\(height)"
+        }
+    }
+
+    var label: String {
+        guard let framesPerSecond else { return resolutionLabel }
+        return "\(resolutionLabel) · \(framesPerSecond.formatted(.number.precision(.fractionLength(0...2)))) fps"
+    }
+
+    var detail: String { "Preview video: \(width) × \(height) pixels · \(label)" }
+}
+
 struct ProjectLibraryMetadata {
     let thumbnail: NSImage?
     let durationSeconds: TimeInterval?
     let sourceSummary: String
     let sizeBytes: Int64?
+    let videoQuality: ProjectVideoQuality?
+    let sourceRoles: Set<String>
 
     var durationLabel: String? {
         durationSeconds.map(Self.durationLabel)
@@ -22,18 +49,13 @@ struct ProjectLibraryMetadata {
         thumbnail: nil,
         durationSeconds: nil,
         sourceSummary: "Editable project",
-        sizeBytes: nil
+        sizeBytes: nil,
+        videoQuality: nil,
+        sourceRoles: []
     )
 
     static func durationLabel(_ durationSeconds: TimeInterval) -> String {
-        let totalSeconds = Int(durationSeconds.rounded())
-        let hours = totalSeconds / 3_600
-        let minutes = (totalSeconds % 3_600) / 60
-        let seconds = totalSeconds % 60
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
-        }
-        return String(format: "%d:%02d", minutes, seconds)
+        MediaTimecode.label(.init(time: durationSeconds, duration: durationSeconds))
     }
 }
 
@@ -109,13 +131,16 @@ enum ProjectLibraryMetadataLoader {
         ))
 
         async let thumbnail = thumbnail(for: previewURL)
-        async let durationSeconds = durationSeconds(for: previewURL)
+        async let videoDetails = videoDetails(for: previewURL)
+        let details = await videoDetails
 
         return await ProjectLibraryMetadata(
             thumbnail: thumbnail,
-            durationSeconds: durationSeconds,
+            durationSeconds: details.duration,
             sourceSummary: sourceSummary(existingSources),
-            sizeBytes: sizeBytes(existingSources)
+            sizeBytes: sizeBytes(existingSources),
+            videoQuality: details.quality,
+            sourceRoles: Set(existingSources.map(\.role))
         )
     }
 
@@ -125,7 +150,7 @@ enum ProjectLibraryMetadataLoader {
             return URL(fileURLWithPath: finalVideoPath)
         }
 
-        let preferredRoles = ["screen", "camera"]
+        let preferredRoles = ["screen", "camera", "microphone", "systemAudio"]
         for role in preferredRoles {
             if let source = request.existingSources.first(where: { $0.role == role }) {
                 return URL(fileURLWithPath: source.path)
@@ -137,36 +162,59 @@ enum ProjectLibraryMetadataLoader {
     private static func thumbnail(for url: URL?) async -> NSImage? {
         guard let url else { return nil }
         let asset = AVURLAsset(url: url)
+        guard let tracks = try? await asset.loadTracks(withMediaType: .video), !tracks.isEmpty else { return nil }
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(width: 960, height: 540)
+        generator.maximumSize = CGSize(width: 640, height: 360)
         generator.requestedTimeToleranceBefore = CMTime(seconds: 0.5, preferredTimescale: 600)
         generator.requestedTimeToleranceAfter = CMTime(seconds: 0.5, preferredTimescale: 600)
 
         let duration = try? await asset.load(.duration)
-        let seconds = duration?.seconds ?? 0
-        let requestedSeconds = seconds.isFinite && seconds > 0
-            ? min(2, max(0.5, seconds * 0.35))
-            : 0
-        let time = CMTime(seconds: requestedSeconds, preferredTimescale: 600)
-        guard let image = try? await generator.image(at: time).image else {
-            return nil
+        var bestImage: CGImage?
+        var bestScore = -Double.infinity
+        for seconds in ProjectThumbnailSampling.times(duration: duration?.seconds ?? 0) {
+            guard !Task.isCancelled else { return nil }
+            let time = CMTime(seconds: seconds, preferredTimescale: 600)
+            guard let image = try? await generator.image(at: time).image else { continue }
+            let score = ProjectThumbnailSampling.detailScore(image)
+            if score > bestScore {
+                bestImage = image
+                bestScore = score
+            }
         }
+        guard let image = bestImage else { return nil }
         return NSImage(
             cgImage: image,
             size: NSSize(width: image.width, height: image.height)
         )
     }
 
-    private static func durationSeconds(for url: URL?) async -> TimeInterval? {
-        guard let url else { return nil }
+    private struct VideoDetails {
+        let duration: Double?
+        let quality: ProjectVideoQuality?
+    }
+
+    private static func videoDetails(for url: URL?) async -> VideoDetails {
+        guard let url else { return .init(duration: nil, quality: nil) }
         let asset = AVURLAsset(url: url)
-        guard let duration = try? await asset.load(.duration),
-              duration.seconds.isFinite,
-              duration.seconds > 0 else {
-            return nil
+        let rawDuration = try? await asset.load(.duration).seconds
+        let duration = rawDuration.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+        guard let track = try? await asset.loadTracks(withMediaType: .video).first,
+              let size = try? await track.load(.naturalSize),
+              let transform = try? await track.load(.preferredTransform) else {
+            return .init(duration: duration, quality: nil)
         }
-        return duration.seconds
+        let dimensions = CGRect(origin: .zero, size: size).applying(transform).size
+        guard dimensions.width.isFinite, dimensions.height.isFinite,
+              abs(dimensions.width) > 0, abs(dimensions.height) > 0 else {
+            return .init(duration: duration, quality: nil)
+        }
+        let fps = try? await track.load(.nominalFrameRate)
+        let quality = ProjectVideoQuality(
+            width: Int(abs(dimensions.width).rounded()), height: Int(abs(dimensions.height).rounded()),
+            framesPerSecond: fps.flatMap { $0.isFinite && $0 > 0 ? Double($0) : nil }
+        )
+        return .init(duration: duration, quality: quality)
     }
 
     private static func sourceSummary(

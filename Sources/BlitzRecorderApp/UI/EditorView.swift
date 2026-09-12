@@ -8,7 +8,6 @@ import UniformTypeIdentifiers
 
 private enum EditorInspectorTab: String, CaseIterable {
     case layout = "Layout"
-    case audio = "Audio"
     case text = "Text"
     case zoom = "Motion"
     case silence = "Silence"
@@ -17,7 +16,6 @@ private enum EditorInspectorTab: String, CaseIterable {
     var systemImage: String {
         switch self {
         case .layout: return BlitzSymbols.layout
-        case .audio: return "waveform"
         case .text: return "textformat"
         case .zoom: return "cursorarrow.motionlines"
         case .silence: return "waveform.path"
@@ -194,24 +192,10 @@ struct EditorView: View {
             playback.teardown()
         }
         .onChange(of: selection) { _, selection in
-            guard [.layout, .audio].contains(inspectorTab) else { return }
-            switch selection {
-            case .segment:
-                inspectorTab = .layout
-            case .asset(let id):
-                if let source = selectedVideoLayerKind {
-                    framingSource = source
-                    showsSourceFraming = true
-                }
-                let kind = assets.first(where: { $0.id == id })?.kind
-                inspectorTab = kind == .microphone || kind == .systemAudio
-                    ? .audio
-                    : .layout
-            case .range, .silenceRange, .silenceRanges:
-                break
-            case nil:
-                inspectorTab = .layout
-            }
+            guard inspectorTab == .layout, case .asset = selection,
+                  let source = selectedVideoLayerKind else { return }
+            framingSource = source
+            showsSourceFraming = true
         }
         .overlay {
             EditorKeyboardShortcutView { event in
@@ -349,8 +333,9 @@ struct EditorView: View {
             playback.setHidden(!playback.hiddenKinds.contains(kind), kind: kind)
             persistEditorState("Change Export Track")
         } else if let source = audioSource(for: asset) {
-            playback.setMuted(!playback.mutedSources.contains(source), source: source)
-            persistEditorState("Change Export Track")
+            let isMuted = !playback.mutedSources.contains(source)
+            playback.setMuted(isMuted, source: source)
+            persistEditorState("\(isMuted ? "Mute" : "Unmute") \(asset.title)")
         }
     }
 
@@ -559,6 +544,7 @@ struct EditorView: View {
             encodingDetail: String(format: "HEVC · %.1f Mbps", Double(exportBitrate) / 1_000_000),
             directory: vm.settings.outputDirectory,
             musicSummary: backgroundMusic.map { "\($0.url.lastPathComponent) · \(musicVolumeLabel)" },
+            musicControls: { backgroundMusicControl },
             canExport: project != nil && vm.state == .idle,
             export: exportVideo,
             showFolder: { NSWorkspace.shared.open(vm.settings.outputDirectory) },
@@ -1102,8 +1088,6 @@ struct EditorView: View {
                         switch inspectorTab {
                         case .layout:
                             layoutInspectorContent
-                        case .audio:
-                            audioControlsSection
                         default: EmptyView()
                         }
                     }
@@ -1194,7 +1178,7 @@ struct EditorView: View {
 
     private func inspectorTabs(showsSymbols: Bool) -> some View {
         HStack(spacing: 2) {
-            ForEach([EditorInspectorTab.layout, .audio, .silence, .text, .zoom], id: \.self) { tab in
+            ForEach([EditorInspectorTab.layout, .silence, .text, .zoom], id: \.self) { tab in
                 BlitzTab(configuration: .init(
                     title: tab.rawValue,
                     symbolName: showsSymbols ? tab.systemImage : nil,
@@ -1203,7 +1187,6 @@ struct EditorView: View {
                     action: { inspectorTab = tab }
                 ))
                 .help(tab == .layout ? "Scene layout and canvas"
-                      : tab == .audio ? "Audio tracks and background music"
                       : tab == .silence ? "Silence removal and pacing" : tab.rawValue)
             }
         }
@@ -1653,43 +1636,6 @@ struct EditorView: View {
         }
     }
 
-    private var audioControlsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            BlitzUI.sectionLabel("Audio tracks", icon: "waveform")
-
-            backgroundMusicControl
-
-            ForEach(assets.filter { $0.kind == .microphone || $0.kind == .systemAudio }) { asset in
-                let isMuted = mutedAssetIDs.contains(asset.id)
-                HStack(spacing: 10) {
-                    BlitzIconTile(symbolName: asset.systemImage, isSelected: !isMuted, size: 30)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(asset.title)
-                            .font(.system(size: 11.5, weight: .bold))
-                        Text(isMuted ? "Muted in export" : "Included in export")
-                            .font(.system(size: 9.5, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.42))
-                    }
-                    Spacer(minLength: 0)
-                    if toggleableAssetIDs.contains(asset.id) {
-                        Button {
-                            toggleTrack(asset)
-                        } label: {
-                            Image(systemName: isMuted ? "speaker.slash" : "speaker.wave.2")
-                                .font(.system(size: 10, weight: .semibold))
-                                .frame(width: 40, height: 40)
-                        }
-                        .buttonStyle(.plain)
-                        .background(BlitzUI.controlFill, in: .rect(cornerRadius: 7))
-                        .pointingHandCursor()
-                    }
-                }
-                .padding(10)
-                .background(BlitzUI.quietFill, in: .rect(cornerRadius: 10))
-            }
-        }
-    }
-
     private var backgroundMusicControl: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
@@ -1713,13 +1659,11 @@ struct EditorView: View {
                         persistEditorState("Remove Background Music")
                     }
                 } label: {
-                    Image(systemName: backgroundMusic == nil ? "plus" : "xmark")
-                        .font(.system(size: 10, weight: .semibold))
-                        .frame(width: 40, height: 40)
+                    Text(backgroundMusic == nil ? "Choose…" : "Remove")
                 }
-                .buttonStyle(.plain)
-                .background(BlitzUI.controlFill, in: .rect(cornerRadius: 7))
-                .pointingHandCursor()
+                .blitzButton(.secondary)
+                .controlSize(.small)
+                .accessibilityLabel(backgroundMusic == nil ? "Choose background music" : "Remove background music")
                 .help(backgroundMusic == nil ? "Choose an audio file" : "Remove background music")
             }
 

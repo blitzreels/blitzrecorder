@@ -5,8 +5,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DERIVED_DATA="$ROOT/build/XcodeDerivedData"
 MAC_APP="$DERIVED_DATA/Build/Products/Release/BlitzRecorder.app"
 IOS_APP="$DERIVED_DATA/Build/Products/Release-iphoneos/BlitzRecorderCamera.app"
-EXPECTED_MARKETING_VERSION="0.15.1"
-EXPECTED_BUILD_NUMBER="26"
+EXPECTED_MARKETING_VERSION="0.16.0"
+EXPECTED_BUILD_NUMBER="27"
 
 cd "$ROOT"
 

@@ -41,6 +41,7 @@ struct ProjectLibraryNavigationState: Equatable {
     var selectedProjectIDs: Set<UUID> = []
     var selectedDetailTab: ProjectLibraryDetailTab = .overview
     var searchText = ""
+    var filters = ProjectLibraryFilters()
 
     mutating func reconcileSelection(availableProjectIDs: [UUID]) {
         let validSelection = selectedProjectIDs.intersection(availableProjectIDs)
@@ -94,6 +95,8 @@ struct ProjectLibraryView: View {
     @State private var projectTitleDraft = ""
     @State private var titleGenerationProjectID: UUID?
     @State private var metadataByProjectID: [UUID: ProjectLibraryMetadata] = [:]
+    @State private var isLoadingMetadata = false
+    @State private var showsFilters = false
     @State private var transcriptByProjectID: [UUID: RecordingTranscript] = [:]
     @State private var projectPlayback = EditorPlaybackController()
     @State private var projectWaveformLibrary = EditorMediaLibrary()
@@ -119,11 +122,6 @@ struct ProjectLibraryView: View {
     private struct MetadataBlockConfiguration {
         let title: String
         let value: String
-    }
-
-    private struct SidebarDetailRequest {
-        let project: RecordingProjectHistory.Entry
-        let metadata: ProjectLibraryMetadata
     }
 
     private struct TranscriptRowRequest {
@@ -245,6 +243,8 @@ struct ProjectLibraryView: View {
 
             Spacer(minLength: 16)
 
+            AppUpdateToolbarButton()
+
             BlitzToolbarButton(configuration: .init(
                 title: "Settings",
                 symbolName: "gearshape",
@@ -309,6 +309,49 @@ struct ProjectLibraryView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
 
+            HStack(spacing: 8) {
+                Button {
+                    showsFilters.toggle()
+                } label: {
+                    Label(
+                        vm.projectLibraryNavigation.filters.activeCount == 0
+                            ? "Filters" : "Filters (\(vm.projectLibraryNavigation.filters.activeCount))",
+                        systemImage: "line.3.horizontal.decrease"
+                    )
+                    .labelStyle(.titleAndIcon)
+                }
+                .blitzButton(.secondary)
+                .fixedSize()
+                .popover(isPresented: $showsFilters) {
+                    ProjectLibraryFiltersView(filters: $vm.projectLibraryNavigation.filters)
+                }
+                BlitzDropdown(configuration: .init(
+                    title: "Sort projects", selection: $vm.projectLibraryNavigation.filters.sort,
+                    options: ProjectLibraryFilters.Sort.allCases.map { .init(value: $0, title: $0.rawValue, detail: nil) },
+                    menuWidth: 220
+                ))
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
+
+            if vm.projectLibraryNavigation.filters.activeCount > 0 || isLoadingMetadata {
+                HStack {
+                    Text(isLoadingMetadata ? "Loading project details…" : "\(filteredProjects.count) matching projects")
+                        .font(.system(size: 10))
+                        .foregroundStyle(BlitzUI.secondaryText)
+                    Spacer()
+                    if vm.projectLibraryNavigation.filters.activeCount > 0 {
+                        Button("Clear filters") {
+                            vm.projectLibraryNavigation.filters = .init(sort: vm.projectLibraryNavigation.filters.sort)
+                        }
+                        .blitzButton(.quiet)
+                        .controlSize(.mini)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
+            }
+
             Divider()
 
             List(selection: $vm.projectLibraryNavigation.selectedProjectIDs) {
@@ -332,7 +375,7 @@ struct ProjectLibraryView: View {
                 }
             }
         }
-        .frame(width: 310)
+        .frame(width: 370)
         .background(BlitzUI.projectLibraryBackground)
     }
 
@@ -342,21 +385,25 @@ struct ProjectLibraryView: View {
         return HStack(spacing: 10) {
             projectThumbnail(ThumbnailConfiguration(
                 metadata: metadata,
-                width: 72,
-                height: 42,
+                width: 104,
+                height: 66,
                 cornerRadius: 6,
-                showsDuration: false
+                showsDuration: true
             ))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(displayTitle(project))
                     .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .frame(height: 30, alignment: .topLeading)
 
-                Text(sidebarDetail(SidebarDetailRequest(
-                    project: project,
-                    metadata: metadata
-                )))
+                Text(metadata.videoQuality?.label ?? (metadataByProjectID[project.id] == nil ? "Loading quality…" : "Quality unavailable"))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(BlitzUI.secondaryText)
+                    .lineLimit(1)
+                    .help(metadata.videoQuality?.detail ?? "No readable video metadata")
+
+                Text(project.recordedAt.formatted(date: .abbreviated, time: .omitted))
                     .font(.system(size: 10, weight: .regular))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -1109,6 +1156,11 @@ struct ProjectLibraryView: View {
                     value: metadata.durationLabel ?? "—"
                 ))
                 metadataBlock(MetadataBlockConfiguration(
+                    title: "Video quality",
+                    value: metadata.videoQuality?.label ?? "—"
+                ))
+                .help(metadata.videoQuality?.detail ?? "No readable video metadata")
+                metadataBlock(MetadataBlockConfiguration(
                     title: "Sources",
                     value: metadata.sourceSummary
                 ))
@@ -1362,10 +1414,16 @@ struct ProjectLibraryView: View {
             Text(
                 vm.recentProjects.isEmpty
                     ? (vm.projectTrash.canRestore ? "Restore a project above or start a new recording." : "Start a new recording to create your first project.")
-                    : (filteredProjects.isEmpty ? "Try a different search." : "Choose a recording from the library.")
+                    : (filteredProjects.isEmpty ? "Try a different search or clear the filters." : "Choose a recording from the library.")
             )
             .font(.system(size: 12, weight: .regular))
             .foregroundStyle(.secondary)
+            if filteredProjects.isEmpty, vm.projectLibraryNavigation.filters.activeCount > 0 {
+                Button("Clear filters") {
+                    vm.projectLibraryNavigation.filters = .init(sort: vm.projectLibraryNavigation.filters.sort)
+                }
+                .blitzButton(.secondary)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(BlitzUI.projectLibraryBackground)
@@ -1375,10 +1433,12 @@ struct ProjectLibraryView: View {
         _ configuration: ThumbnailConfiguration
     ) -> some View {
         ZStack(alignment: .bottomTrailing) {
+            Color.black.opacity(0.3)
             if let thumbnail = configuration.metadata.thumbnail {
                 Image(nsImage: thumbnail)
                     .resizable()
-                    .scaledToFill()
+                    .scaledToFit()
+                    .frame(width: configuration.width, height: configuration.height)
             } else {
                 ZStack {
                     LinearGradient(
@@ -1390,22 +1450,23 @@ struct ProjectLibraryView: View {
                         endPoint: .bottomTrailing
                     )
 
-                    Text("No thumbnail")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.30))
+                    Image(systemName: configuration.metadata.sourceRoles.isDisjoint(with: ["screen", "camera"])
+                        && !configuration.metadata.sourceRoles.isDisjoint(with: ["microphone", "systemAudio"])
+                        ? "waveform" : "film")
+                        .font(.system(size: 20, weight: .light))
+                        .foregroundStyle(BlitzUI.secondaryText)
                 }
             }
 
             if configuration.showsDuration,
-               let durationLabel = configuration.metadata.durationLabel {
-                Text(durationLabel)
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .monospacedDigit()
+               let duration = configuration.metadata.durationSeconds {
+                BlitzTimecode(configuration: .init(time: duration, duration: duration))
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.94))
-                    .padding(.horizontal, 7)
-                    .frame(height: 22)
-                    .background(.black.opacity(0.68), in: .capsule)
-                    .padding(9)
+                    .padding(.horizontal, 4)
+                    .frame(height: 18)
+                    .background(.black.opacity(0.8), in: .rect(cornerRadius: 4))
+                    .padding(4)
             }
         }
         .frame(width: configuration.width, height: configuration.height)
@@ -1546,21 +1607,13 @@ struct ProjectLibraryView: View {
         project.displayTitle
     }
 
-    private func sidebarDetail(_ request: SidebarDetailRequest) -> String {
-        var parts = [
-            request.project.recordedAt.formatted(date: .abbreviated, time: .omitted)
-        ]
-        if let durationLabel = request.metadata.durationLabel {
-            parts.append(durationLabel)
-        }
-        return parts.joined(separator: " · ")
-    }
-
     private func selectFirstProjectIfNeeded() {
         vm.projectLibraryNavigation.reconcileSelection(availableProjectIDs: filteredProjects.map(\.id))
     }
 
     private func loadMetadata() async {
+        isLoadingMetadata = true
+        defer { isLoadingMetadata = false }
         metadataByProjectID = metadataByProjectID.filter { id, _ in
             vm.recentProjects.contains { $0.id == id }
         }
@@ -1735,7 +1788,14 @@ struct ProjectLibraryView: View {
     }
 
     private var filteredProjects: [RecordingProjectHistory.Entry] {
-        vm.filteredLibraryProjects
+        vm.projectLibraryNavigation.filters.apply(.init(
+            projects: vm.filteredLibraryProjects, metadata: metadataByProjectID,
+            transcriptReadyIDs: Set(vm.recentProjects.compactMap { project in
+                if case .ready = vm.transcriptionController.status(for: project) { return project.id }
+                return nil
+            }),
+            now: Date(), calendar: .current
+        ))
     }
 
     private var selectedProject: RecordingProjectHistory.Entry? {

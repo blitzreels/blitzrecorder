@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct EditorExportPopover: View {
+struct EditorExportPopover<MusicControls: View>: View {
     struct Configuration {
         let preset: Binding<ExportPerformancePreset>
         let format: Binding<OutputVideoFormat>
@@ -12,6 +12,7 @@ struct EditorExportPopover: View {
         let encodingDetail: String
         let directory: URL
         let musicSummary: String?
+        let musicControls: () -> MusicControls
         let canExport: Bool
         let export: () -> Void
         let showFolder: () -> Void
@@ -19,6 +20,7 @@ struct EditorExportPopover: View {
     }
 
     let configuration: Configuration
+    @State private var showsMusic = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -88,15 +90,13 @@ struct EditorExportPopover: View {
                 .fixedSize()
             }
 
-            if let musicSummary = configuration.musicSummary {
-                Label(musicSummary, systemImage: "music.note")
-                    .font(.system(size: 11))
-                    .foregroundStyle(BlitzUI.secondaryText)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .padding(.top, 10)
-                    .help(musicSummary)
-            }
+            BlitzInspectorDisclosure(configuration: .init(
+                title: "Background music",
+                detail: configuration.musicSummary ?? "None",
+                isExpanded: $showsMusic,
+                content: configuration.musicControls
+            ))
+            .padding(.top, 12)
 
             Button(action: configuration.showFolder) {
                 HStack(spacing: 7) {

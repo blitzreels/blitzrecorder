@@ -9,13 +9,13 @@ final class ProjectLibraryPlaybackPresentationTests: XCTestCase {
                 thumbnail: nil,
                 durationSeconds: 75,
                 sourceSummary: "Screen",
-                sizeBytes: 1_000_000
+                sizeBytes: 1_000_000, videoQuality: nil, sourceRoles: ["screen"]
             ),
             ProjectLibraryMetadata(
                 thumbnail: nil,
                 durationSeconds: 3_600,
                 sourceSummary: "Camera",
-                sizeBytes: 2_000_000
+                sizeBytes: 2_000_000, videoQuality: nil, sourceRoles: ["camera"]
             )
         ])
 

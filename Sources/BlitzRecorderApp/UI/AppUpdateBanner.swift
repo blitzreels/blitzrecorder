@@ -1,5 +1,38 @@
 import SwiftUI
 
+struct AppUpdateToolbarButton: View {
+    @EnvironmentObject private var updates: AppUpdateController
+
+    var body: some View {
+        if let version = updates.updateVersion {
+            Button {
+                updates.checkForUpdates(nil)
+            } label: {
+                Label {
+                    Text(title)
+                } icon: {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .foregroundStyle(BlitzUI.mint)
+                }
+            }
+            .blitzButton(.secondary)
+            .controlSize(.large)
+            .fixedSize()
+            .disabled(!updates.canCheckForUpdates)
+            .accessibilityValue("Version \(version)")
+            .help(updates.detail)
+        }
+    }
+
+    private var title: String {
+        switch updates.status {
+        case .downloading: "Downloading…"
+        case .readyToInstall: updates.actionTitle
+        default: "New version"
+        }
+    }
+}
+
 struct AppUpdateBanner: View {
     @EnvironmentObject private var updates: AppUpdateController
 

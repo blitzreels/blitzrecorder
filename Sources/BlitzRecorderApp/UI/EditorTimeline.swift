@@ -72,12 +72,12 @@ struct EditorTimelineView: View {
     @State private var isDraggingStrip = false
     @State private var addsDraggedSegments = false
 
-    private let gutterWidth: CGFloat = 140
+    private let gutterWidth: CGFloat = 210
     private let rulerHeight: CGFloat = 30
     private let chaptersRowHeight: CGFloat = 32
     private let segmentsRowHeight: CGFloat = 38
     private let videoRowHeight: CGFloat = 54
-    private let audioRowHeight: CGFloat = 36
+    private let audioRowHeight: CGFloat = 44
     private let silenceRowHeight: CGFloat = 38
 
     var body: some View {
@@ -250,8 +250,9 @@ struct EditorTimelineView: View {
     }
 
     private func rangeTime(_ time: Double) -> String {
-        let hundredths = Int((max(0, time) * 100).rounded())
-        return String(format: "%02d:%02d.%02d", hundredths / 6_000, (hundredths / 100) % 60, hundredths % 100)
+        let value = time.isFinite ? min(projection.duration, max(0, time)) : 0
+        let label = MediaTimecode.label(.init(time: value, duration: projection.duration))
+        return label + String(format: ".%02d", Int((value * 100).rounded(.down)) % 100)
     }
 
     private func silenceToolbar(_ selected: SilenceSegmentSelection?) -> some View {
@@ -637,11 +638,18 @@ struct EditorTimelineView: View {
                     } label: {
                         HStack(spacing: 9) {
                             BlitzIconTile(symbolName: row.icon, isSelected: isSelected, size: 26)
-                            Text(row.title)
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(isSelected ? BlitzUI.primaryText : BlitzUI.secondaryText)
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(row.title)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(isSelected ? BlitzUI.primaryText : BlitzUI.secondaryText)
+                                    .lineLimit(1)
+                                if let asset = row.asset, asset.isAudio {
+                                    Text(mutedAssetIDs.contains(asset.id) ? "Muted" : "Included")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(BlitzUI.secondaryText)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .contentShape(.rect)
                     }
@@ -651,7 +659,7 @@ struct EditorTimelineView: View {
                     if let asset = row.asset, toggleableAssetIDs.contains(asset.id) {
                         trackToggle(for: asset)
                     } else {
-                        Color.clear.frame(width: 26)
+                        Color.clear.frame(width: 32)
                     }
                 }
                 .padding(.horizontal, 5)
@@ -671,17 +679,19 @@ struct EditorTimelineView: View {
         return Button {
             onToggleTrack(asset)
         } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 10, weight: .medium))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.white.opacity(isOff ? 0.9 : 0.5))
-                .frame(width: 26, height: 30)
-                .contentShape(.rect(cornerRadius: 5))
+            if asset.isVideo {
+                Image(systemName: symbol)
+            } else {
+                Label(verb, systemImage: symbol)
+                    .frame(width: 64)
+            }
         }
-        .buttonStyle(BlitzSelectionButtonStyle(isSelected: isOff))
-        .pointingHandCursor()
+        .blitzButton(asset.isVideo ? .quiet : .secondary)
+        .controlSize(.mini)
+        .disabled(!isInteractive)
         .accessibilityLabel("\(verb) \(asset.title)")
-        .help("\(verb) \(asset.title) for the entire export")
+        .accessibilityValue(isOff ? (asset.isVideo ? "Hidden" : "Muted") : "Included")
+        .help("\(verb) \(asset.title) throughout playback and the entire export")
     }
 
     private var emptyHint: some View {
@@ -985,7 +995,7 @@ struct EditorTimelineView: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { selection = .asset(asset.id) }
         .accessibilityLabel("\(asset.title) track")
-        .accessibilityValue(isOff ? "Disabled"
+        .accessibilityValue(isOff ? (asset.isVideo ? "Hidden" : "Muted in playback and export")
             : showsSilence && !selectedSilenceRanges.isEmpty ? "Sound or silence section selected"
             : isSelected ? "Selected" : "Enabled")
         .help(showsSilence

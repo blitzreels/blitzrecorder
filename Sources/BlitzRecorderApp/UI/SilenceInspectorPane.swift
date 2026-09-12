@@ -7,9 +7,9 @@ enum SilencePacing: Int, CaseIterable {
 
     var title: String {
         switch self {
-        case .natural: "Natural"
-        case .tight: "Tight"
-        case .rapid: "Rapid"
+        case .natural: "Gentle"
+        case .tight: "Balanced"
+        case .rapid: "Strong"
         }
     }
 
@@ -17,7 +17,7 @@ enum SilencePacing: Int, CaseIterable {
         switch self {
         case .natural: "Keep breathing room around speech."
         case .tight: "Shorten pauses for a quicker pace."
-        case .rapid: "Keep speech close together."
+        case .rapid: "Leave very little space between phrases."
         }
     }
 }
@@ -123,14 +123,13 @@ struct SilenceInspectorPane: View {
         Toggle(isOn: Binding(
             get: { session.suggestsPauses }, set: { session.setSuggestionsEnabled($0) }
         )) {
-            BlitzIllustratedLabel(configuration: .init(
-                title: "Find pauses",
-                detail: "Detect quiet gaps in your audio.",
-                preview: { _ in
-                    SilencePacingPreview(pacing: .natural)
-                        .opacity(session.suggestsPauses ? 1 : 0.35)
-                }
-            ))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Find pauses")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("Detect quiet gaps in your audio.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(BlitzUI.secondaryText)
+            }
         }
         .toggleStyle(.blitzSwitch)
         .help("Suggest automatic silence cuts. Turning this off keeps your manual selections.")
@@ -139,17 +138,19 @@ struct SilenceInspectorPane: View {
 
     private var pacing: some View {
         VStack(alignment: .leading, spacing: 10) {
-            BlitzInspectorHeading(configuration: .init(title: "Pacing", detail: session.sourceName))
-            HStack(alignment: .top, spacing: 4) {
-                ForEach(SilencePacing.allCases, id: \.self) { pace in
-                    BlitzVisualChoice(configuration: .init(
-                        title: pace.title, help: pace.detail,
-                        isSelected: session.suggestsPauses && !session.customized && Int(session.intensity) == pace.rawValue,
-                        action: { session.selectPacing(pace) },
-                        preview: { SilencePacingPreview(pacing: pace) }
-                    ))
-                }
-            }
+            BlitzInspectorHeading(configuration: .init(title: "Pause removal", detail: session.sourceName))
+            BlitzSegmentedPicker(configuration: .init(
+                title: "Pause removal strength",
+                options: SilencePacing.allCases.map(Optional.some),
+                selection: Binding<SilencePacing?>(
+                    get: {
+                        session.suggestsPauses && !session.customized
+                            ? SilencePacing(rawValue: Int(session.intensity)) : nil
+                    },
+                    set: { if let pace = $0 { session.selectPacing(pace) } }
+                ),
+                label: { $0?.title ?? "" }
+            ))
             Text(!session.suggestsPauses ? "Automatic cuts are off. Manual selections are kept."
                  : session.customized ? "Using your custom pause and speech spacing."
                  : (SilencePacing(rawValue: Int(session.intensity)) ?? .natural).detail)
@@ -254,26 +255,5 @@ struct SilenceInspectorPane: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-    }
-}
-
-struct SilencePacingPreview: View {
-    let pacing: SilencePacing
-
-    var body: some View {
-        Canvas { context, size in
-            let gap = CGFloat(4 - pacing.rawValue) * size.width * 0.055
-            let groupWidth = max(1, (size.width - gap * 2 - 8) / 3)
-            for group in 0..<3 {
-                for bar in 0..<7 {
-                    let height = CGFloat([0.3, 0.6, 0.9, 0.5, 0.75, 0.4, 0.2][bar]) * size.height * 0.65
-                    let x = 4 + CGFloat(group) * (groupWidth + gap) + CGFloat(bar) * groupWidth / 7
-                    let rect = CGRect(x: x, y: (size.height - height) / 2, width: max(1.5, groupWidth / 10), height: height)
-                    context.fill(Path(roundedRect: rect, cornerRadius: 1), with: .color(BlitzUI.mint.opacity(0.8)))
-                }
-            }
-        }
-        .background(BlitzUI.scenePreviewFill)
-        .accessibilityHidden(true)
     }
 }
