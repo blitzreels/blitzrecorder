@@ -46,6 +46,26 @@ final class PreviewStageEditingTests: XCTestCase {
         XCTAssertEqual(hit, .camera)
     }
 
+    func testSingleVisibleScreenLayerCanBeEdited() {
+        XCTAssertTrue(PreviewStageEditing.canEditLayerFrame(
+            .screen,
+            allowsLayerInteraction: true,
+            enabledSources: [.screen],
+            isCameraCropEditingEnabled: false,
+            isScreenCropEditingEnabled: false
+        ))
+    }
+
+    func testDisabledScreenLayerCannotBeEdited() {
+        XCTAssertFalse(PreviewStageEditing.canEditLayerFrame(
+            .screen,
+            allowsLayerInteraction: true,
+            enabledSources: [.camera],
+            isCameraCropEditingEnabled: false,
+            isScreenCropEditingEnabled: false
+        ))
+    }
+
     func testResizeAnchorIncludesEdgeHitAreas() {
         let frame = CGRect(x: 20, y: 30, width: 100, height: 80)
 

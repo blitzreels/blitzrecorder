@@ -87,7 +87,20 @@ struct MainView: View {
                 HStack(spacing: 10) {
                     RecordingOutputPicker(vm: vm)
                     Spacer(minLength: 0)
-                    CanvasSelectionButton(vm: vm)
+                    if vm.showsCaptureInspector {
+                        Button { vm.selectBackgroundLayer() } label: {
+                            Label("Canvas", systemImage: "square.on.circle")
+                        }
+                        .blitzButton(.secondary)
+                        .controlSize(.small)
+                        .disabled(!vm.canEditScene)
+                    }
+                    Button { vm.showsCaptureInspector.toggle() } label: {
+                        Label(vm.showsCaptureInspector ? "Hide customization" : "Customize scene", systemImage: "sidebar.right")
+                    }
+                    .blitzButton(.secondary)
+                    .controlSize(.small)
+                    .accessibilityValue(vm.showsCaptureInspector ? "Expanded" : "Collapsed")
                 }
 
                 ZStack(alignment: .top) {
@@ -114,11 +127,10 @@ struct MainView: View {
             .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
             .background(BlitzUI.canvasBackground)
 
-            Rectangle()
-                .fill(BlitzUI.separator)
-                .frame(width: 1)
-
-            SceneWorkspaceInspector(vm: vm)
+            if vm.showsCaptureInspector {
+                Rectangle().fill(BlitzUI.separator).frame(width: 1)
+                SceneWorkspaceInspector(vm: vm)
+            }
         }
         .frame(maxHeight: .infinity)
     }
@@ -691,7 +703,7 @@ struct CaptureScenePicker: View {
             vm.selectScene(scene.id)
         } label: {
             VStack(spacing: 6) {
-                SceneWorkspaceThumbnail(scene: scene)
+                SceneWorkspaceThumbnail(scene: scene, enabledSources: vm.settings.enabledSources)
                     .frame(width: 68, height: 44)
 
                 Text(scene.name)
@@ -1248,12 +1260,13 @@ private struct SceneBackgroundSwatchRow: View {
 
 private struct SceneWorkspaceThumbnail: View {
     let scene: RecordingSceneDefinition
+    let enabledSources: Set<CaptureSource>
 
     var body: some View {
         BlitzSceneLayoutThumbnail(
             layout: scene.layout,
             sceneLayout: scene.snapshot.sceneLayout,
-            visibleSources: scene.snapshot.enabledVideoSources.subtracting(scene.snapshot.hiddenVideoSources)
+            visibleSources: scene.snapshot.enabledVideoSources.intersection(enabledSources).subtracting(scene.snapshot.hiddenVideoSources)
         )
     }
 }

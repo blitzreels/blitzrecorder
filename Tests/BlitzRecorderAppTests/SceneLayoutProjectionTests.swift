@@ -3,6 +3,28 @@ import CoreGraphics
 import XCTest
 
 final class SceneLayoutProjectionTests: XCTestCase {
+    func testSquareSourcePresetsPreservePhysicalSourceAspectRatios() {
+        for preset in [ScenePreset.screenFocus, .cameraFocus, .webcamFullscreen] {
+            let layout = SceneLayout.presetLayout(
+                preset,
+                for: .square,
+                screenAspectRatio: 4.0 / 3.0,
+                cameraAspectRatio: 16.0 / 9.0
+            )
+            XCTAssertEqual(layout.screenFrame.width / layout.screenFrame.height, 4.0 / 3.0, accuracy: 0.0001)
+            XCTAssertEqual(layout.cameraFrame.width / layout.cameraFrame.height, 16.0 / 9.0, accuracy: 0.0001)
+        }
+    }
+
+    func testSquareLibraryIncludesAllDefaultScenesOnFirstLaunch() {
+        var settings = RecordingSettings()
+        settings.layout = .square
+        let library = SceneLibrary.defaultLibrary(currentSettings: settings)
+
+        XCTAssertEqual(library.scenes(for: .square).count, 4)
+        XCTAssertNotNil(library.selectedScene(layout: .square))
+    }
+
     func testDenormalizedLowerLeftOriginMatchesPreviewStageCanvas() {
         let frame = CGRect(x: 0.25, y: 0.5, width: 0.5, height: 0.25)
         let canvas = CGRect(x: 10, y: 20, width: 200, height: 400)
@@ -128,6 +150,21 @@ final class SceneLayoutProjectionTests: XCTestCase {
 
         XCTAssertRect(frame, equals: CGRect(x: 26, y: 86, width: 32, height: 64))
         XCTAssertEqual(frame.width / frame.height, 0.5, accuracy: 0.0001)
+    }
+
+    func testSceneRenderGeometryKeepsCustomScreenFrameWhenCameraIsHidden() {
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen, .camera]
+        settings.hiddenSources = [.camera]
+        settings.sceneLayout.screenFrame = CGRect(x: 0.1, y: 0.2, width: 0.5, height: 0.4)
+
+        let frame = SceneRenderGeometry(
+            canvas: CGRect(x: 0, y: 0, width: 100, height: 100),
+            scene: RecordingScene(settings: settings),
+            origin: .lowerLeft
+        ).normalizedFrame(for: .screen)
+
+        XCTAssertEqual(frame, CGRect(x: 0.1, y: 0.2, width: 0.5, height: 0.4))
     }
 
 }

@@ -72,6 +72,7 @@ final class EditorCompositedPlayerView: NSView {
         let cameraPlayer: ObjectIdentifier?
     }
 
+    private var privacyLayers: [UUID: CALayer] = [:]
     private var textLayers: [UUID: CALayer] = [:]
     private var renderedTextRequests: [UUID: TimelineOverlayImageRequest] = [:]
     private struct TextRenderState: Equatable {
@@ -177,6 +178,7 @@ final class EditorCompositedPlayerView: NSView {
     func refresh() {
         guard let controller, controller.isReady, renderSize.width > 0, renderSize.height > 0 else { return }
         let time = controller.displayTime()
+        defer { refreshPrivacyMasks(time: time) }
         guard let playbackScene = controller.scene(at: time) else { return }
         let scene = cameraCropEditingScene ?? playbackScene
         let canvasFrame = cameraCropCanvasFrame(.init(
@@ -282,6 +284,47 @@ final class EditorCompositedPlayerView: NSView {
             }
         }
         renderedState = state
+    }
+
+    private func refreshPrivacyMasks(time: Double) {
+        guard let controller else { return }
+        var masks = controller.edits.privacyMasks
+        if let draft = controller.privacyMaskPreview {
+            masks.removeAll { $0.id == draft.id }
+            masks.append(draft)
+        }
+        masks = masks.filter { $0.isVisible(at: time) }
+        let ids = Set(masks.map(\.id))
+        performWithoutUIAnimation {
+            for id in Array(privacyLayers.keys) where !ids.contains(id) {
+                privacyLayers.removeValue(forKey: id)?.removeFromSuperlayer()
+            }
+            for mask in masks {
+                guard let source = sourceLayers[mask.source] else { continue }
+                let layer = privacyLayers[mask.id] ?? CALayer()
+                if layer.superlayer !== source.clip {
+                    layer.removeFromSuperlayer()
+                    layer.actions = disabledActions
+                    layer.zPosition = 200
+                    layer.masksToBounds = true
+                    source.clip.addSublayer(layer)
+                    privacyLayers[mask.id] = layer
+                }
+                let frame = source.playerLayer.frame
+                layer.frame = CGRect(x: frame.minX + mask.frame.minX * frame.width,
+                                     y: frame.minY + (1 - mask.frame.maxY) * frame.height,
+                                     width: mask.frame.width * frame.width, height: mask.frame.height * frame.height)
+                if mask.style == .cover {
+                    layer.backgroundFilters = nil
+                    layer.backgroundColor = NSColor.black.cgColor
+                } else {
+                    let filter = CIFilter(name: "CIGaussianBlur")
+                    filter?.setValue(max(12, frame.width * 0.025), forKey: kCIInputRadiusKey)
+                    layer.backgroundFilters = filter.map { [$0] }
+                    layer.backgroundColor = NSColor.black.withAlphaComponent(0.01).cgColor
+                }
+            }
+        }
     }
 
     private func cameraCropCanvasFrame(_ request: EditorCameraCropCanvasFrameRequest) -> CGRect {

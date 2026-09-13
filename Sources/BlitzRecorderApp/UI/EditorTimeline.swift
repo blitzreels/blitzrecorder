@@ -1,7 +1,31 @@
 import AppKit
+import Observation
 import SwiftUI
 
 private let timelineContentSpace = "EditorTimelineContent"
+
+@MainActor
+@Observable
+private final class EditorTimelineScrollOffset {
+    var value: CGFloat = 0
+}
+
+private struct EditorTimelinePinnedRuler<Content: View>: View {
+    struct Configuration {
+        let scrollOffset: EditorTimelineScrollOffset
+        let viewportWidth: CGFloat
+        let content: Content
+    }
+
+    let configuration: Configuration
+
+    var body: some View {
+        configuration.content
+            .offset(x: -configuration.scrollOffset.value)
+            .frame(width: configuration.viewportWidth, alignment: .leading)
+            .clipped()
+    }
+}
 
 struct EditorTimelineTrackDuration {
     struct Request {
@@ -60,9 +84,13 @@ struct EditorTimelineView: View {
     let silence: SilenceEditingSession
     let isEditingSilence: Bool
     let onOpenSilence: () -> Void
+    let onChangePlacedItem: (EditorPlacedItemEditing.Change) -> Void
+    let onRemovePlacedItem: (EditorPlacedItem.ID) -> Void
 
     @State private var projection = EditorTimelineProjection(.init(duration: 0, cuts: []))
     @State private var scrollOffset: CGFloat = 0
+    @State private var trackScrollWidth: CGFloat = 0
+    @State private var rulerScrollOffset = EditorTimelineScrollOffset()
     @State private var scrollPosition = ScrollPosition(x: 0)
     @State private var silenceSegments: [SilenceTimelineSegment] = []
     @State private var selectableSilenceSegments: [SilenceTimelineSegment] = []
@@ -79,6 +107,24 @@ struct EditorTimelineView: View {
     private let videoRowHeight: CGFloat = 54
     private let audioRowHeight: CGFloat = 44
     private let silenceRowHeight: CGFloat = 38
+    private let placedRowHeight: CGFloat = 38
+
+    private var placedTracks: [EditorPlacedTrack] {
+        var tracks = EditorPlacedTrack.resolve(project?.edits ?? .empty)
+        if let project, let music = EditorPlacedTrack.music(.init(projectID: project.id,
+            path: project.editorState.backgroundMusicPath, duration: duration)) { tracks.append(music) }
+        return tracks
+    }
+    private var selectedPlacedItem: EditorPlacedItem.ID? {
+        if case .placed(let id) = selection { return id }
+        return nil
+    }
+    private var canSplitSelection: Bool {
+        guard let id = selectedPlacedItem else { return true }
+        guard let item = placedTracks.flatMap(\.items).first(where: { $0.id == id }) else { return false }
+        return item.canChangeTiming && !item.isPoint
+            && playbackTime > item.timing.start + 0.05 && playbackTime < item.timing.end - 0.05
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -93,15 +139,11 @@ struct EditorTimelineView: View {
             Rectangle()
                 .fill(BlitzUI.separator)
                 .frame(height: 1)
-            ScrollView(.vertical) {
-                GeometryReader { proxy in
-                    timelineBody(viewportWidth: proxy.size.width)
-                }
-                .frame(height: contentHeight)
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 14)
+            GeometryReader { proxy in
+                timelineBody(viewportWidth: proxy.size.width)
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
             .frame(maxHeight: .infinity, alignment: .top)
         }
         .background(BlitzUI.projectLibraryBackground)
@@ -123,9 +165,10 @@ struct EditorTimelineView: View {
             HStack(spacing: 2) {
                 TimelineActionButton(
                     title: "Split", systemName: "scissors",
-                    isDisabled: !isInteractive, action: onSplit
+                    isDisabled: !isInteractive || !canSplitSelection, action: onSplit
                 )
-                .help("Split all tracks together at the playhead (⌘B)")
+                .help(selectedPlacedItem == nil ? "Split all tracks together at the playhead (⌘B)"
+                      : "Split the selected item at the playhead (⌘B)")
                 TimelineActionButton(
                     title: "Range", systemName: "rectangle.dashed",
                     isDisabled: !isInteractive, action: onMarkIn
@@ -143,9 +186,14 @@ struct EditorTimelineView: View {
                 } else {
                     TimelineActionButton(
                         title: "Delete", systemName: "trash",
-                        isDisabled: !isInteractive || !canDeleteSegment, action: onDeleteSegment
-                    )
-                    .help("Delete this segment from all tracks and close the gap (Delete). Undo with ⌘Z.")
+                        isDisabled: !isInteractive || (!canDeleteSegment && selectedPlacedItem == nil)
+                    ) {
+                        if let id = selectedPlacedItem { onRemovePlacedItem(id) }
+                        else { onDeleteSegment() }
+                    }
+                    .help(selectedPlacedItem == nil
+                          ? "Delete this segment from all tracks and close the gap (Delete). Undo with ⌘Z."
+                          : "Remove the selected item. Undo with ⌘Z.")
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -405,7 +453,7 @@ struct EditorTimelineView: View {
     }
 
     private func timelineBody(viewportWidth: CGFloat) -> some View {
-        let trackViewport = max(viewportWidth - gutterWidth - 24, 40)
+        let trackViewport = max(trackScrollWidth > 0 ? trackScrollWidth - 16 : viewportWidth - gutterWidth - 24, 40)
         let pxPerSecond = trackViewport / CGFloat(max(projection.duration, 0.5)) * CGFloat(EditorTimelineZoom.clamp(.init(value: zoomLevel, duration: projection.duration)))
         let contentWidth = max(CGFloat(projection.duration) * pxPerSecond, trackViewport)
         let viewport = EditorTimelineViewport.resolve(.init(
@@ -414,106 +462,141 @@ struct EditorTimelineView: View {
             contentWidth: contentWidth
         ))
 
-        return HStack(alignment: .top, spacing: 8) {
-            gutterColumn
-
-            ScrollView(.horizontal) {
-                ZStack(alignment: .topLeading) {
-                    VStack(alignment: .leading, spacing: 6) {
+        return VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                gutterHeading
+                EditorTimelinePinnedRuler(configuration: .init(
+                    scrollOffset: rulerScrollOffset,
+                    viewportWidth: trackViewport + 16,
+                    content: ZStack(alignment: .topLeading) {
                         ruler(.init(pxPerSecond: pxPerSecond, width: contentWidth, viewport: viewport))
-
                         if duration > 0 {
-                            if showsSilenceTrack {
-                                SilenceSegmentStrip(configuration: .init(
-                                    segments: selectableSilenceSegments,
-                                    projection: projection, pixelsPerSecond: pxPerSecond, viewport: viewport,
-                                    width: contentWidth, height: silenceRowHeight,
-                                    selections: selectedSilenceRanges, hoveredRange: hoveredSilenceRange,
-                                    onSelect: clickSilenceRange, onToggleSelection: toggleSilenceRange,
-                                    onHover: { hoveredSilenceRange = $0 },
-                                    onClassify: classifySelection
-                                ))
-                                .disabled(!isInteractive || !silence.canClassify)
-                            }
-                            if showsChaptersTrack {
-                                chaptersTrack(pxPerSecond: pxPerSecond, contentWidth: contentWidth)
-                            }
-                            if showsSegmentsTrack {
-                                segmentsTrack(pxPerSecond: pxPerSecond, contentWidth: contentWidth)
-                            }
-                            ForEach(trackAssets) { asset in
-                                assetTrack(.init(asset: asset, pxPerSecond: pxPerSecond, contentWidth: contentWidth, viewport: viewport))
-                            }
-                            if !showsSegmentsTrack && trackAssets.isEmpty {
-                                emptyHint
-                            }
+                            playhead(.init(pxPerSecond: pxPerSecond, showsHandle: true))
                         }
                     }
-                    .contentShape(.rect)
-                    .simultaneousGesture(
-                        DragGesture(minimumDistance: 5, coordinateSpace: .named(timelineContentSpace))
-                            .onChanged { value in
-                                guard value.startLocation.y >= rulerHeight + 6,
-                                    let range = EditorTimeRange.resolve(.init(
-                                        anchor: projection.takeTime(Double(value.startLocation.x / pxPerSecond)),
-                                        head: projection.takeTime(Double(value.location.x / pxPerSecond)), duration: duration
-                                    ))
-                                else { return }
-                                if showsSilenceTrack, value.startLocation.y < rulerHeight + 6 + silenceRowHeight {
-                                    if !isDraggingStrip {
-                                        stripDragSelection = selection?.silenceSelection
-                                        addsDraggedSegments = NSEvent.modifierFlags.contains(.command)
-                                        isDraggingStrip = true
+                    .frame(width: contentWidth, height: rulerHeight, alignment: .topLeading)
+                    .coordinateSpace(name: timelineContentSpace)
+                    .padding(.horizontal, 8)
+                ))
+            }
+            .frame(height: rulerHeight)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            ScrollView(.vertical) {
+                HStack(alignment: .top, spacing: 8) {
+                    gutterColumn
+
+                    ScrollView(.horizontal) {
+                        ZStack(alignment: .topLeading) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                if duration > 0 {
+                                    if showsSilenceTrack {
+                                        SilenceSegmentStrip(configuration: .init(
+                                            segments: selectableSilenceSegments,
+                                            projection: projection, pixelsPerSecond: pxPerSecond, viewport: viewport,
+                                            width: contentWidth, height: silenceRowHeight,
+                                            selections: selectedSilenceRanges, hoveredRange: hoveredSilenceRange,
+                                            onSelect: clickSilenceRange, onToggleSelection: toggleSilenceRange,
+                                            onHover: { hoveredSilenceRange = $0 },
+                                            onClassify: classifySelection
+                                        ))
+                                        .disabled(!isInteractive || !silence.canClassify)
                                     }
-                                    selection = SilenceSegmentSelection.dragging(.init(
-                                        current: stripDragSelection,
-                                        anchorTime: projection.takeTime(Double(value.startLocation.x / pxPerSecond)),
-                                        headTime: projection.takeTime(Double(value.location.x / pxPerSecond)),
-                                        segments: selectableSilenceSegments, additive: addsDraggedSegments
-                                    )).map(EditorSelection.silenceRanges)
-                                } else {
-                                    selection = isEditingSilence || isSilenceTrack(at: value.startLocation.y)
-                                        ? .silenceRange(range) : .range(range)
+                                    if showsChaptersTrack {
+                                        chaptersTrack(pxPerSecond: pxPerSecond, contentWidth: contentWidth)
+                                    }
+                                    if showsSegmentsTrack {
+                                        segmentsTrack(pxPerSecond: pxPerSecond, contentWidth: contentWidth)
+                                    }
+                                    ForEach(placedTracks) { track in
+                                        placedTrack(.init(track: track, pixelsPerSecond: pxPerSecond,
+                                                          contentWidth: contentWidth, viewport: viewport))
+                                    }
+                                    ForEach(trackAssets) { asset in
+                                        assetTrack(.init(asset: asset, pxPerSecond: pxPerSecond, contentWidth: contentWidth, viewport: viewport))
+                                    }
+                                    if !showsSegmentsTrack && trackAssets.isEmpty {
+                                        emptyHint
+                                    }
                                 }
                             }
-                            .onEnded { _ in
-                                isDraggingStrip = false
-                                stripDragSelection = nil
-                            },
-                        isEnabled: isInteractive
-                    )
+                            .contentShape(.rect)
+                            .simultaneousGesture(
+                                DragGesture(minimumDistance: 5, coordinateSpace: .named(timelineContentSpace))
+                                    .onChanged { value in
+                                        guard !isPlacedTrack(at: value.startLocation.y),
+                                            let range = EditorTimeRange.resolve(.init(
+                                                anchor: projection.takeTime(Double(value.startLocation.x / pxPerSecond)),
+                                                head: projection.takeTime(Double(value.location.x / pxPerSecond)), duration: duration
+                                            ))
+                                        else { return }
+                                        if showsSilenceTrack, value.startLocation.y < silenceRowHeight {
+                                            if !isDraggingStrip {
+                                                stripDragSelection = selection?.silenceSelection
+                                                addsDraggedSegments = NSEvent.modifierFlags.contains(.command)
+                                                isDraggingStrip = true
+                                            }
+                                            selection = SilenceSegmentSelection.dragging(.init(
+                                                current: stripDragSelection,
+                                                anchorTime: projection.takeTime(Double(value.startLocation.x / pxPerSecond)),
+                                                headTime: projection.takeTime(Double(value.location.x / pxPerSecond)),
+                                                segments: selectableSilenceSegments, additive: addsDraggedSegments
+                                            )).map(EditorSelection.silenceRanges)
+                                        } else {
+                                            selection = isEditingSilence || isSilenceTrack(at: value.startLocation.y)
+                                                ? .silenceRange(range) : .range(range)
+                                        }
+                                    }
+                                    .onEnded { _ in
+                                        isDraggingStrip = false
+                                        stripDragSelection = nil
+                                    },
+                                isEnabled: isInteractive
+                            )
 
-                    if duration > 0 {
-                        linkedSegmentOverlay(pxPerSecond)
-                        if let range = hoveredSilenceRange, !selectedSilenceRanges.contains(range) {
-                            hoverOverlay(.init(range: range, pxPerSecond: pxPerSecond))
-                        }
-                        if !selectedSilenceRanges.isEmpty {
-                            ForEach(SilenceSegmentSelection.coalesced(selectedSilenceRanges), id: \.start) { range in
-                                rangeOverlay(.init(range: range, pxPerSecond: pxPerSecond))
+                            if duration > 0 {
+                                linkedSegmentOverlay(pxPerSecond)
+                                if let range = hoveredSilenceRange, !selectedSilenceRanges.contains(range) {
+                                    hoverOverlay(.init(range: range, pxPerSecond: pxPerSecond))
+                                }
+                                if !selectedSilenceRanges.isEmpty {
+                                    ForEach(SilenceSegmentSelection.coalesced(selectedSilenceRanges), id: \.start) { range in
+                                        rangeOverlay(.init(range: range, pxPerSecond: pxPerSecond))
+                                    }
+                                } else if let range = selection?.timeRange {
+                                    rangeOverlay(.init(range: range, pxPerSecond: pxPerSecond))
+                                }
+                                playhead(.init(pxPerSecond: pxPerSecond, showsHandle: false))
                             }
-                        } else if let range = selection?.timeRange {
-                            rangeOverlay(.init(range: range, pxPerSecond: pxPerSecond))
                         }
-                        playhead(pxPerSecond: pxPerSecond)
+                        .frame(width: contentWidth, alignment: .topLeading)
+                        .coordinateSpace(name: timelineContentSpace)
+                        .padding(.horizontal, 8)
+                    }
+                    .scrollPosition($scrollPosition)
+                    .onChange(of: [zoomLevel, projection.duration, selectionFocusTime ?? -1]) {
+                        let focusTime = selectionFocusTime ?? playbackTime
+                        let playheadX = CGFloat(projection.displayTime(focusTime)) * pxPerSecond
+                        let offset = min(max(0, contentWidth - trackViewport), max(0, playheadX - trackViewport / 2))
+                        scrollPosition.scrollTo(x: offset)
+                    }
+                    .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                        geometry.contentOffset.x
+                    } action: { _, offset in
+                        rulerScrollOffset.value = offset
+                        scrollOffset = floor(max(0, offset - 8) / 128) * 128
+                    }
+                    .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                        geometry.containerSize.width
+                    } action: { _, width in
+                        trackScrollWidth = width
                     }
                 }
-                .frame(width: contentWidth, alignment: .topLeading)
-                .coordinateSpace(name: timelineContentSpace)
-                .padding(.horizontal, 8)
+                .frame(height: contentHeight)
+                .padding(.top, 6)
+                .padding(.bottom, 14)
             }
-            .scrollPosition($scrollPosition)
-            .onChange(of: [zoomLevel, projection.duration, selectionFocusTime ?? -1]) {
-                let focusTime = selectionFocusTime ?? playbackTime
-                let playheadX = CGFloat(projection.displayTime(focusTime)) * pxPerSecond
-                let offset = min(max(0, contentWidth - trackViewport), max(0, playheadX - trackViewport / 2))
-                scrollPosition.scrollTo(x: offset)
-            }
-            .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                floor(max(0, geometry.contentOffset.x - 8) / 128) * 128
-            } action: { _, offset in
-                scrollOffset = offset
-            }
+            .frame(maxHeight: .infinity, alignment: .top)
         }
     }
 
@@ -522,8 +605,40 @@ struct EditorTimelineView: View {
         let pxPerSecond: CGFloat
     }
 
+    private struct PlacedTrackRequest {
+        let track: EditorPlacedTrack
+        let pixelsPerSecond: CGFloat
+        let contentWidth: CGFloat
+        let viewport: EditorTimelineViewport
+    }
+
+    private func placedTrack(_ request: PlacedTrackRequest) -> some View {
+        ZStack(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 5).fill(.white.opacity(0.025))
+            ForEach(request.track.items.filter { item in
+                let start = CGFloat(projection.displayTime(item.timing.start)) * request.pixelsPerSecond
+                let end = CGFloat(projection.displayTime(item.timing.end)) * request.pixelsPerSecond
+                return end + 16 >= request.viewport.lowerBound && start - 16 <= request.viewport.upperBound
+            }) { item in
+                EditorPlacedItemClip(configuration: .init(
+                    item: item, projection: projection, pixelsPerSecond: request.pixelsPerSecond,
+                    height: placedRowHeight, isSelected: selection == .placed(item.id), isInteractive: isInteractive,
+                    select: { selection = .placed($0) }, change: onChangePlacedItem, remove: onRemovePlacedItem
+                ))
+            }
+        }
+        .frame(width: request.contentWidth, height: placedRowHeight, alignment: .leading)
+    }
+
+    private func isPlacedTrack(at y: CGFloat) -> Bool {
+        let top = (showsSilenceTrack ? silenceRowHeight + 6 : 0)
+            + (showsChaptersTrack ? chaptersRowHeight + 6 : 0)
+            + (showsSegmentsTrack ? segmentsRowHeight + 6 : 0)
+        return y >= top && y < top + CGFloat(placedTracks.count) * (placedRowHeight + 6)
+    }
+
     private func linkedSegmentOverlay(_ pxPerSecond: CGFloat) -> some View {
-        let top = rulerHeight + 6 + (showsSilenceTrack ? silenceRowHeight + 6 : 0)
+        let top = (showsSilenceTrack ? silenceRowHeight + 6 : 0)
             + (showsChaptersTrack ? chaptersRowHeight + 6 : 0)
         let height = max(0, contentHeight - top)
         return Canvas { context, _ in
@@ -552,7 +667,7 @@ struct EditorTimelineView: View {
     private func hoverOverlay(_ request: RangeOverlayRequest) -> some View {
         let start = CGFloat(projection.displayTime(request.range.start)) * request.pxPerSecond
         let end = CGFloat(projection.displayTime(request.range.end)) * request.pxPerSecond
-        let top = rulerHeight + 6
+        let top: CGFloat = 0
         return Rectangle()
             .fill(.white.opacity(0.055))
             .overlay { Rectangle().strokeBorder(.white.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [4, 3])) }
@@ -566,7 +681,7 @@ struct EditorTimelineView: View {
         let range = request.range
         let isSilenceSelection = !selectedSilenceRanges.isEmpty
         let outline = isSilenceSelection ? Color.white : BlitzUI.mint
-        let top = rulerHeight + 6
+        let top: CGFloat = 0
         let height = max(0, contentHeight - top)
         return ZStack(alignment: .topLeading) {
             Rectangle()
@@ -607,18 +722,20 @@ struct EditorTimelineView: View {
         }
     }
 
+    private var gutterHeading: some View {
+        HStack {
+            Text("TRACKS")
+                .font(.system(size: 9, weight: .semibold))
+                .tracking(1.4)
+                .foregroundStyle(.white.opacity(0.28))
+            Spacer()
+        }
+        .padding(.leading, 6)
+        .frame(width: gutterWidth, height: rulerHeight)
+    }
+
     private var gutterColumn: some View {
         VStack(spacing: 6) {
-            HStack {
-                Text("TRACKS")
-                    .font(.system(size: 9, weight: .semibold))
-                    .tracking(1.4)
-                    .foregroundStyle(.white.opacity(0.28))
-                Spacer()
-            }
-            .padding(.leading, 6)
-            .frame(width: gutterWidth, height: rulerHeight)
-
             if showsSilenceTrack {
                 Button(action: onOpenSilence) {
                     Label("Sound / silence", systemImage: "waveform")
@@ -631,10 +748,12 @@ struct EditorTimelineView: View {
             }
 
             ForEach(Array(gutterRows.enumerated()), id: \.offset) { _, row in
-                let isSelected = row.asset.map { selection == .asset($0.id) } ?? false
+                let isSelected = row.item.map { selection == .placed($0) }
+                    ?? row.asset.map { selection == .asset($0.id) } ?? false
                 HStack(spacing: 9) {
                     Button {
-                        if let asset = row.asset { selection = .asset(asset.id) }
+                        if let item = row.item { selection = .placed(item) }
+                        else if let asset = row.asset { selection = .asset(asset.id) }
                     } label: {
                         HStack(spacing: 9) {
                             BlitzIconTile(symbolName: row.icon, isSelected: isSelected, size: 26)
@@ -654,7 +773,7 @@ struct EditorTimelineView: View {
                         .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
-                    .disabled(row.asset == nil || !isInteractive)
+                    .disabled((row.asset == nil && row.item == nil) || !isInteractive)
                     .accessibilityLabel("Select \(row.title) track")
                     if let asset = row.asset, toggleableAssetIDs.contains(asset.id) {
                         trackToggle(for: asset)
@@ -1079,10 +1198,15 @@ struct EditorTimelineView: View {
         Button("Keyboard shortcuts", systemImage: "keyboard") { showsShortcuts = true }
     }
 
-    private func playhead(pxPerSecond: CGFloat) -> some View {
+    private struct PlayheadRequest {
+        let pxPerSecond: CGFloat
+        let showsHandle: Bool
+    }
+
+    private func playhead(_ request: PlayheadRequest) -> some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !isPlaying)) { _ in
             let time = isPlaying ? liveTime() : playbackTime
-            let x = CGFloat(projection.displayTime(time)) * pxPerSecond
+            let x = CGFloat(projection.displayTime(time)) * request.pxPerSecond
 
             ZStack(alignment: .top) {
                 Rectangle()
@@ -1090,28 +1214,31 @@ struct EditorTimelineView: View {
                     .frame(width: 1.5)
                     .frame(maxHeight: .infinity)
 
-                PlayheadHandle()
-                    .fill(BlitzUI.mint)
-                    .frame(width: 11, height: 14)
-                    .overlay {
-                        PlayheadHandle()
-                            .stroke(Color.black.opacity(0.7), lineWidth: 1)
-                    }
+                if request.showsHandle {
+                    PlayheadHandle()
+                        .fill(BlitzUI.mint)
+                        .frame(width: 11, height: 14)
+                        .overlay {
+                            PlayheadHandle()
+                                .stroke(Color.black.opacity(0.7), lineWidth: 1)
+                        }
 
-                Color.clear
-                    .frame(width: 28, height: rulerHeight)
-                    .contentShape(.rect)
-                    .gesture(
-                        DragGesture(minimumDistance: 0, coordinateSpace: .named(timelineContentSpace))
-                            .onChanged { seek(toContentX: $0.location.x, pxPerSecond: pxPerSecond) }
-                            .onEnded { _ in onSeekEnded() },
-                        isEnabled: isInteractive
-                    )
+                    Color.clear
+                        .frame(width: 28, height: rulerHeight)
+                        .contentShape(.rect)
+                        .gesture(
+                            DragGesture(minimumDistance: 0, coordinateSpace: .named(timelineContentSpace))
+                                .onChanged { seek(toContentX: $0.location.x, pxPerSecond: request.pxPerSecond) }
+                                .onEnded { _ in onSeekEnded() },
+                            isEnabled: isInteractive
+                        )
+                }
             }
             .frame(width: 28)
             .frame(maxHeight: .infinity, alignment: .top)
             .offset(x: x - 14)
             .opacity(isInteractive ? 1 : 0.4)
+            .allowsHitTesting(request.showsHandle)
         }
     }
 
@@ -1153,28 +1280,33 @@ struct EditorTimelineView: View {
         return rows
     }
 
-    private var gutterRows: [(icon: String, title: String, height: CGFloat, asset: EditorAsset?)] {
+    private var gutterRows: [(icon: String, title: String, height: CGFloat, asset: EditorAsset?, item: EditorPlacedItem.ID?)] {
         guard duration > 0 else { return [] }
-        var rows: [(icon: String, title: String, height: CGFloat, asset: EditorAsset?)] = []
+        var rows: [(icon: String, title: String, height: CGFloat, asset: EditorAsset?, item: EditorPlacedItem.ID?)] = []
         if showsChaptersTrack {
-            rows.append((icon: "text.quote", title: "Chapters", height: chaptersRowHeight, asset: nil))
+            rows.append((icon: "text.quote", title: "Chapters", height: chaptersRowHeight, asset: nil, item: nil))
         }
         if showsSegmentsTrack {
-            rows.append((icon: BlitzSymbols.scenes, title: "Segments", height: segmentsRowHeight, asset: nil))
+            rows.append((icon: BlitzSymbols.scenes, title: "Segments", height: segmentsRowHeight, asset: nil, item: nil))
+        }
+        for track in placedTracks {
+            rows.append((icon: track.symbol, title: track.title, height: placedRowHeight, asset: nil,
+                         item: track.items.first?.id))
         }
         for asset in trackAssets {
             rows.append((
                 icon: asset.systemImage,
                 title: asset.title,
                 height: asset.isVideo ? videoRowHeight : audioRowHeight,
-                asset: asset
+                asset: asset,
+                item: nil
             ))
         }
         return rows
     }
 
     private var contentHeight: CGFloat {
-        var height = rulerHeight
+        var height: CGFloat = 0
         if duration > 0 {
             if showsSilenceTrack {
                 height += 6 + silenceRowHeight
@@ -1185,6 +1317,7 @@ struct EditorTimelineView: View {
             if showsSegmentsTrack {
                 height += 6 + segmentsRowHeight
             }
+            height += CGFloat(placedTracks.count) * (placedRowHeight + 6)
             for asset in trackAssets {
                 height += 6 + (asset.isVideo ? videoRowHeight : audioRowHeight)
             }
@@ -1192,11 +1325,11 @@ struct EditorTimelineView: View {
                 height += 6 + 56
             }
         }
-        return height
+        return max(0, height - 6)
     }
 
     private func isSilenceTrack(at y: CGFloat) -> Bool {
-        var top = rulerHeight + 6
+        var top: CGFloat = 0
         if showsSilenceTrack {
             if y >= top, y < top + silenceRowHeight { return true }
             top += silenceRowHeight + 6

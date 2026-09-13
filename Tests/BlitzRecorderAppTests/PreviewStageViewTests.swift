@@ -146,7 +146,7 @@ final class PreviewStageViewTests: XCTestCase {
         XCTAssertNil(view.renderedSelectionFrameForTesting)
     }
 
-    func testSingleVisibleScreenShowsSelectionOutlineWithoutResizeHandles() {
+    func testSingleVisibleScreenShowsResizeHandles() {
         let view = PreviewStageView()
         view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
         view.captureLayout = .horizontal
@@ -156,7 +156,37 @@ final class PreviewStageViewTests: XCTestCase {
         view.layoutSubtreeIfNeeded()
 
         XCTAssertNotNil(view.renderedSelectionFrameForTesting)
-        XCTAssertFalse(view.renderedSelectionShowsResizeHandlesForTesting)
+        XCTAssertTrue(view.renderedSelectionShowsResizeHandlesForTesting)
+    }
+
+    func testSingleVisibleScreenCanBeMovedAndResized() {
+        let view = PreviewStageView()
+        let window = hostInWindow(view)
+        view.captureLayout = .horizontal
+        view.enabledSources = [.screen]
+        view.selectedLayer = .screen
+        view.screenContentMode = .fill
+        var layout = SceneLayout()
+        layout.screenFrame = CGRect(x: 0.2, y: 0.2, width: 0.5, height: 0.4)
+        view.sceneLayout = layout
+        view.layoutSubtreeIfNeeded()
+
+        let originalFrame = view.sceneLayout.screenFrame
+        let screenFrame = view.renderedScreenFrameForTesting
+        view.mouseDown(with: mouseEvent(.leftMouseDown, at: CGPoint(x: screenFrame.midX, y: screenFrame.midY), in: window))
+        view.mouseDragged(with: mouseEvent(.leftMouseDragged, at: CGPoint(x: screenFrame.midX + 80, y: screenFrame.midY + 40), in: window))
+        view.mouseUp(with: mouseEvent(.leftMouseUp, at: CGPoint(x: screenFrame.midX + 80, y: screenFrame.midY + 40), in: window))
+
+        XCTAssertNotEqual(view.sceneLayout.screenFrame.origin, originalFrame.origin)
+        XCTAssertEqual(view.sceneLayout.screenFrame.size, originalFrame.size)
+
+        let movedFrame = view.renderedScreenFrameForTesting
+        view.mouseDown(with: mouseEvent(.leftMouseDown, at: CGPoint(x: movedFrame.maxX, y: movedFrame.maxY), in: window))
+        view.mouseDragged(with: mouseEvent(.leftMouseDragged, at: CGPoint(x: movedFrame.maxX + 60, y: movedFrame.maxY + 40), in: window))
+        view.mouseUp(with: mouseEvent(.leftMouseUp, at: CGPoint(x: movedFrame.maxX + 60, y: movedFrame.maxY + 40), in: window))
+
+        XCTAssertGreaterThan(view.sceneLayout.screenFrame.width, originalFrame.width)
+        XCTAssertGreaterThan(view.sceneLayout.screenFrame.height, originalFrame.height)
     }
 
     func testScreenSelectionOverlayAppearsWhenCameraIsAlsoVisible() throws {
@@ -599,13 +629,19 @@ final class PreviewStageViewTests: XCTestCase {
         view.sceneLayout = layout
         view.layoutSubtreeIfNeeded()
 
-        let expectedFrame = SceneLayoutProjection.padded(
-            view.renderedCanvasFrameForTesting,
-            in: view.renderedCanvasFrameForTesting,
-            padding: view.canvasPadding
-        )
+        let canvas = view.renderedCanvasFrameForTesting
+        let expectedFrame = SceneRenderGeometry(
+            canvas: canvas,
+            scene: RecordingScene(
+                enabledSources: [.camera],
+                sceneLayout: layout,
+                canvasPadding: view.canvasPadding
+            ),
+            origin: .lowerLeft
+        ).targetRect(for: .camera)
         XCTAssertRect(view.renderedCameraFrameForTesting, equals: expectedFrame)
-        XCTAssertEqual(view.cameraPreview.layer?.borderWidth, 0)
+        XCTAssertLessThan(expectedFrame.width, canvas.width)
+        XCTAssertEqual(view.cameraPreview.layer?.borderWidth, 1)
     }
 
     func testSwitchingToFullscreenScreenHidesCameraAndFillsCanvas() {

@@ -83,10 +83,16 @@ private struct BlitzWorkspaceToolbarModifier: ViewModifier {
     }
 }
 
+enum BlitzTabSymbolPlacement {
+    case leading
+    case above
+}
+
 struct BlitzTab: View {
     struct Configuration {
         let title: String
         let symbolName: String?
+        var symbolPlacement: BlitzTabSymbolPlacement = .leading
         let isSelected: Bool
         let expands: Bool
         let action: () -> Void
@@ -97,18 +103,20 @@ struct BlitzTab: View {
 
     var body: some View {
         Button(action: configuration.action) {
-            HStack(spacing: 6) {
+            let layout = configuration.symbolPlacement == .above
+                ? AnyLayout(VStackLayout(spacing: 5)) : AnyLayout(HStackLayout(spacing: 6))
+            layout {
                 if let symbolName = configuration.symbolName {
                     BlitzSymbol(configuration: .init(name: symbolName, size: 16))
                         .foregroundStyle(configuration.isSelected ? BlitzUI.mint : BlitzUI.secondaryText)
                 }
                 Text(configuration.title)
-                    .font(.system(size: controlSize == .large ? 12 : 11, weight: .medium))
+                    .font(.system(size: configuration.symbolPlacement == .above ? 10 : controlSize == .large ? 12 : 11, weight: .medium))
                     .lineLimit(1)
             }
             .padding(.horizontal, controlSize == .mini || controlSize == .large ? 6 : 10)
             .frame(maxWidth: configuration.expands ? .infinity : nil)
-            .frame(height: controlSize == .large ? 40 : 32)
+            .frame(height: configuration.symbolPlacement == .above ? 48 : controlSize == .large ? 40 : 32)
         }
         .buttonStyle(BlitzSelectionButtonStyle(isSelected: configuration.isSelected))
         .accessibilityAddTraits(configuration.isSelected ? [.isSelected] : [])
@@ -122,6 +130,7 @@ struct BlitzSegmentedPicker<Value: Hashable>: View {
         let options: [Value]
         let selection: Binding<Value>
         let label: (Value) -> String
+        var symbolName: (Value) -> String? = { _ in nil }
         var isOptionEnabled: (Value) -> Bool = { _ in true }
     }
 
@@ -132,7 +141,7 @@ struct BlitzSegmentedPicker<Value: Hashable>: View {
             ForEach(configuration.options, id: \.self) { value in
                 BlitzTab(configuration: .init(
                     title: configuration.label(value),
-                    symbolName: nil,
+                    symbolName: configuration.symbolName(value),
                     isSelected: configuration.selection.wrappedValue == value,
                     expands: true,
                     action: { configuration.selection.wrappedValue = value }

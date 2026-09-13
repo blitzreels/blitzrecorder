@@ -101,6 +101,7 @@ final class RecorderViewModelWindowFitTests: XCTestCase {
 
         previewStage.onLayerResizeEnded?(.screen)
 
+        XCTAssertEqual(viewModel.screenCaptureAreaSelection, .activeWindow)
         XCTAssertTrue(viewModel.hasScheduledTargetWindowFit)
     }
 
@@ -134,4 +135,51 @@ final class RecorderViewModelWindowFitTests: XCTestCase {
         XCTAssertEqual(viewModel.targetWindowZoom, 0.5, accuracy: 0.0001)
         XCTAssertTrue(viewModel.hasScheduledTargetWindowFit)
     }
+
+    func testScreenSizeSliderScalesCanvasLayerWithoutAccessibility() {
+        let suiteName = "RecorderViewModelWindowFitTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen]
+        settings.sceneLayout.screenFrame = CGRect(x: 0.2, y: 0.2, width: 0.4, height: 0.4)
+        settings.screenSourceBinding = ScreenSourceBinding(
+            kind: .window,
+            displayID: nil,
+            bundleIdentifier: "us.zoom.xos",
+            applicationName: "zoom.us",
+            processID: nil,
+            windowID: 42,
+            windowTitle: "Zoom Meeting"
+        )
+        RecordingSettingsStore.save(settings, defaults: defaults)
+        let viewModel = RecorderViewModel(
+            coordinator: RecorderCoordinator(
+                accessController: AccessController(defaults: defaults),
+                defaults: defaults
+            ),
+            previewStage: PreviewStageView()
+        )
+
+        viewModel.setTargetWindowZoom(2)
+
+        XCTAssertRect(
+            viewModel.settings.sceneLayout.screenFrame,
+            equals: CGRect(x: 0, y: 0, width: 0.8, height: 0.8)
+        )
+        XCTAssertEqual(viewModel.previewStage.sceneLayout.screenFrame, viewModel.settings.sceneLayout.screenFrame)
+    }
+}
+
+private func XCTAssertRect(
+    _ actual: CGRect,
+    equals expected: CGRect,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) {
+    XCTAssertEqual(actual.origin.x, expected.origin.x, accuracy: 0.0001, file: file, line: line)
+    XCTAssertEqual(actual.origin.y, expected.origin.y, accuracy: 0.0001, file: file, line: line)
+    XCTAssertEqual(actual.size.width, expected.size.width, accuracy: 0.0001, file: file, line: line)
+    XCTAssertEqual(actual.size.height, expected.size.height, accuracy: 0.0001, file: file, line: line)
 }

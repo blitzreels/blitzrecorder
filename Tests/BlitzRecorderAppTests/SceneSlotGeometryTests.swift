@@ -3,6 +3,41 @@ import CoreGraphics
 import XCTest
 
 final class SceneSlotGeometryTests: XCTestCase {
+    func testSquareWindowFitUsesVisibleSlotOfOverflowingScreenFrame() {
+        var layout = SceneLayout()
+        layout.screenFrame = CGRect(x: -0.0888889, y: -0.025, width: 1.8666667, height: 1.05)
+        layout.cameraFrame = CGRect(x: 0.1, y: 0.047, width: 0.827, height: 0.465)
+        let plan = TargetWindowFitting.plan(
+            screenFrame: CGRect(x: 0, y: 0, width: 1920, height: 1080),
+            visibleFrame: CGRect(x: 0, y: 0, width: 1920, height: 1080),
+            captureLayout: .square,
+            sceneLayout: layout,
+            enabledSources: [.screen, .camera]
+        )
+
+        XCTAssertRect(plan.screenSlot, equals: CGRect(x: 0, y: 0, width: 1, height: 1))
+        XCTAssertRect(plan.windowFrame, equals: CGRect(x: 420, y: 0, width: 1080, height: 1080))
+    }
+
+    func testSquareWindowFitPreservesResizedScreenSlotWithAndWithoutCamera() {
+        var settings = RecordingSettings()
+        settings.layout = .square
+        settings.sceneLayout.screenFrame = CGRect(x: 0.1, y: 0.2, width: 0.6, height: 0.4)
+        for sources: Set<CaptureSource> in [[.screen], [.screen, .camera]] {
+            settings.enabledSources = sources
+            let plan = TargetWindowFitting.plan(
+                screenFrame: CGRect(x: 0, y: 0, width: 1920, height: 1080),
+                visibleFrame: CGRect(x: 0, y: 0, width: 1920, height: 1080),
+                captureLayout: settings.layout,
+                sceneLayout: settings.sceneLayout,
+                enabledSources: sources
+            )
+
+            XCTAssertRect(plan.windowFrame, equals: CGRect(x: 528, y: 216, width: 648, height: 432))
+            XCTAssertEqual(TargetWindowFitting.sourceAspectRatio(for: settings), 1.5, accuracy: 0.0001)
+        }
+    }
+
     func testNoCameraUsesFullCanvas() {
         var layout = SceneLayout()
         layout.screenFrame = CGRect(x: 0.2, y: 0.3, width: 0.4, height: 0.5)
@@ -114,13 +149,13 @@ final class SceneSlotGeometryTests: XCTestCase {
         }
     }
 
-    func testTargetWindowSlotFillsCanvasWhenScreenIsOnlyVideoSource() {
+    func testTargetWindowSlotPreservesResizedScreenWhenCameraIsHidden() {
         var layout = SceneLayout()
         layout.screenFrame = CGRect(x: 0.2, y: 0.3, width: 0.4, height: 0.5)
 
         let slot = SceneSlotGeometry.targetWindowSlot(in: layout, enabledSources: [.screen])
 
-        XCTAssertRect(slot, equals: CGRect(x: 0, y: 0, width: 1, height: 1))
+        XCTAssertRect(slot, equals: layout.screenFrame)
     }
 
     func testScreenSlotMapsToPhysicalCanvasFrame() {

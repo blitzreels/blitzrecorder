@@ -198,7 +198,12 @@ struct TitleGenerator {
         let stopWords: Set<String> = [
             "about", "after", "again", "also", "and", "are", "because", "but",
             "for", "from", "have", "how", "into", "just", "like", "that", "the",
-            "this", "today", "using", "was", "were", "with", "you", "your"
+            "this", "today", "using", "was", "were", "with", "you", "your",
+            "est", "que", "qui", "quoi", "pas", "mais", "les", "des", "une", "pour", "par", "sur",
+            "dans", "donc", "oui", "non", "tout", "tous", "avec", "vous", "nous", "ils", "elle", "elles",
+            "aux", "ces", "ses", "son", "mon", "ton", "mes", "tes", "ont", "sont", "fait", "alors",
+            "comme", "plus", "bien", "peut", "cette", "ceux", "être", "avoir", "euh", "voilà", "aussi",
+            "speaker", "yeah", "okay", "well", "know", "don", "not", "can", "she", "his", "her", "its"
         ]
         var counts: [String: Int] = [:]
         var firstPositions: [String: Int] = [:]

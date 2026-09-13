@@ -41,7 +41,7 @@ enum ScreenCaptureGeometry {
             return ResolvedScreenSource(
                 binding: windowBinding(.init(window: window, displays: content.displays)),
                 filter: filter,
-                geometry: screenSourceGeometry(for: settings, pickedFilter: filter),
+                geometry: windowSourceGeometry(.init(settings: settings, bounds: window.frame)),
                 sourceRect: nil,
                 display: nil
             )
@@ -65,7 +65,7 @@ enum ScreenCaptureGeometry {
             return ResolvedScreenSource(
                 binding: windowBinding(.init(window: window, displays: content.displays)),
                 filter: filter,
-                geometry: screenSourceGeometry(for: settings, pickedFilter: filter),
+                geometry: windowSourceGeometry(.init(settings: settings, bounds: window.frame)),
                 sourceRect: nil,
                 display: nil
             )
@@ -108,6 +108,28 @@ enum ScreenCaptureGeometry {
             processID: window.owningApplication?.processID,
             windowID: window.windowID,
             windowTitle: window.title
+        )
+    }
+
+    struct WindowGeometryRequest {
+        let settings: RecordingSettings
+        let bounds: CGRect
+    }
+
+    static func windowSourceGeometry(_ request: WindowGeometryRequest) -> ScreenSourceGeometry {
+        var settings = request.settings
+        if request.bounds.width > 0, request.bounds.height > 0 {
+            settings.screenSourceAspectRatio = request.bounds.width / request.bounds.height
+        }
+        return ScreenSourceGeometry(
+            usesPickedContent: true,
+            fillsSceneFrame: true,
+            selectedDisplayID: settings.selectedDisplayID,
+            normalizedCrop: effectiveCrop(for: settings),
+            sourceAspectRatio: pickedScreenSourceAspectRatio(
+                for: settings,
+                fallback: SceneLayout.defaultScreenAspectRatio
+            )
         )
     }
 
@@ -244,6 +266,8 @@ enum ScreenCaptureGeometry {
             return (720, 1280)
         case .horizontal:
             return (1280, 720)
+        case .square:
+            return (720, 720)
         }
     }
 

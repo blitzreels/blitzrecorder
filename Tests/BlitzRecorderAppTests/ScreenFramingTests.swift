@@ -67,6 +67,28 @@ final class ScreenFramingTests: XCTestCase {
     }
 
     @MainActor
+    func testWindowFitWaitsForSlowAspectRatioChangeBeforeReportingGeometry() async throws {
+        let original = CGRect(x: 0, y: 0, width: 1000, height: 1000)
+        let target = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        var current = original
+        var remainingPolls = 0
+        var polls = 0
+        let applied = try await WindowFrameWriter.apply(.init(
+            frame: target,
+            write: { _ in remainingPolls = 24 },
+            settle: {
+                polls += 1
+                remainingPolls -= 1
+                if remainingPolls == 0 { current = target }
+            },
+            read: { current }
+        ))
+
+        XCTAssertEqual(applied, target)
+        XCTAssertEqual(polls, 24)
+    }
+
+    @MainActor
     func testNativeResizeWaitsForDeferredWindowUpdates() async throws {
         var current = CGRect(x: 200, y: 200, width: 1324, height: 960)
         var pending: CGRect?
@@ -150,13 +172,13 @@ final class ScreenFramingTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(frame.minY, 0)
     }
 
-    func testHiddenCameraDoesNotReserveHalfTheBrowserWindow() {
+    func testHiddenCameraPreservesVisibleScreenLayerGeometry() {
         var settings = RecordingSettings()
         settings.enabledSources = [.screen, .camera]
         settings.hiddenSources = [.camera]
         settings.layout = .vertical
         settings.sceneLayout = SceneLayout.presetLayout(.stackedHalves, for: .vertical)
-        XCTAssertEqual(TargetWindowFitting.sourceAspectRatio(for: settings), 9.0 / 16.0, accuracy: 0.001)
+        XCTAssertEqual(TargetWindowFitting.sourceAspectRatio(for: settings), 16.0 / 9.0, accuracy: 0.001)
     }
 
     func testWindowSizeSnapshotRoundTripAndLegacyDefault() throws {

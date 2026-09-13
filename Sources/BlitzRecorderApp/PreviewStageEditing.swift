@@ -8,6 +8,19 @@ enum PreviewStageEditing {
         let proposedFrame: CGRect
     }
 
+    static func canEditLayerFrame(
+        _ layer: SceneLayerKind,
+        allowsLayerInteraction: Bool,
+        enabledSources: Set<CaptureSource>,
+        isCameraCropEditingEnabled: Bool,
+        isScreenCropEditingEnabled: Bool
+    ) -> Bool {
+        allowsLayerInteraction
+            && enabledSources.contains(layer.source)
+            && !isCameraCropEditingEnabled
+            && !isScreenCropEditingEnabled
+    }
+
     static func shouldBeginConstrainedScreenCropPan(
         _ request: ConstrainedScreenCropPanRequest
     ) -> Bool {

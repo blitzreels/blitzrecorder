@@ -704,9 +704,8 @@ private struct ScreenSourceFramingControl: View {
             )
             .controlSize(.small)
             .tint(BlitzUI.mint)
-            .disabled(!vm.canShowScreenWindowFitControls)
             .accessibilityLabel("Screen size")
-            .help("Resize the selected window. Larger content uses a smaller window, keeping the full window visible.")
+            .help("Scale the screen on the canvas. Fit window to scene still resizes the real window.")
 
             HStack {
                 Text("More content")

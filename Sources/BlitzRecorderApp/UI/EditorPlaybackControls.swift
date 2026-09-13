@@ -172,18 +172,17 @@ struct EditorPlaybackControls: View {
     }
 
     private var speed: some View {
-        BlitzDropdown(configuration: .init(
+        BlitzSegmentedPicker(configuration: .init(
             title: "Playback speed",
+            options: EditorPlaybackRate.allCases,
             selection: Binding(
                 get: { configuration.rate },
                 set: { configuration.onRateChange($0) }
             ),
-            options: EditorPlaybackRate.allCases.map {
-                .init(value: $0, title: $0.displayName, detail: nil)
-            },
-            menuWidth: 200,
-            width: .content
+            label: { $0.displayName }
         ))
+        .controlSize(.mini)
+        .fixedSize()
         .help("Playback speed: \(configuration.rate.displayName) (L)")
     }
 }

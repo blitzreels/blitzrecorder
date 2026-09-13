@@ -18,6 +18,7 @@ final class EditorScenePresetCardTests: XCTestCase {
             layout: .horizontal,
             isSelected: false,
             isEnabled: true,
+            availableSources: [.screen, .camera],
             action: { pressCount += 1 }
         ))
         host.frame = CGRect(x: 0, y: 0, width: 130, height: 82)

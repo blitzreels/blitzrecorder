@@ -97,6 +97,9 @@ struct ProjectLibraryView: View {
     @State private var metadataByProjectID: [UUID: ProjectLibraryMetadata] = [:]
     @State private var isLoadingMetadata = false
     @State private var showsFilters = false
+    @State private var transcriptSearch = ProjectTranscriptSearch()
+    @State private var transcriptMatches: [UUID: [ProjectTranscriptMatch]] = [:]
+    @State private var isSearchingTranscripts = false
     @State private var transcriptByProjectID: [UUID: RecordingTranscript] = [:]
     @State private var projectPlayback = EditorPlaybackController()
     @State private var projectWaveformLibrary = EditorMediaLibrary()
@@ -169,6 +172,9 @@ struct ProjectLibraryView: View {
         .task(id: vm.recentProjects.map(\.id)) {
             await loadMetadata()
         }
+        .task(id: transcriptSearchTaskID) {
+            await searchTranscripts()
+        }
         .task(id: transcriptTaskID) {
             loadSelectedTranscript()
         }
@@ -182,7 +188,7 @@ struct ProjectLibraryView: View {
             if !vm.projectTrash.isWorking { selectFirstProjectIfNeeded() }
         }
         .onChange(of: vm.projectLibraryNavigation.selectedProjectIDs) {
-            vm.projectLibraryNavigation.selectedDetailTab = .overview
+            vm.projectLibraryNavigation.selectedDetailTab = vm.projectLibraryNavigation.searchText.isEmpty ? .overview : .transcript
         }
         .onDisappear {
             projectPlayback.teardown()
@@ -279,7 +285,7 @@ struct ProjectLibraryView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
 
-                TextField("Search projects", text: $vm.projectLibraryNavigation.searchText)
+                TextField("Search titles and spoken words", text: $vm.projectLibraryNavigation.searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
                     .focused($isSearchFocused)
@@ -336,7 +342,7 @@ struct ProjectLibraryView: View {
 
             if vm.projectLibraryNavigation.filters.activeCount > 0 || isLoadingMetadata {
                 HStack {
-                    Text(isLoadingMetadata ? "Loading project details…" : "\(filteredProjects.count) matching projects")
+                    Text(isSearchingTranscripts ? "Searching transcripts…" : isLoadingMetadata ? "Loading project details…" : "\(filteredProjects.count) matching projects")
                         .font(.system(size: 10))
                         .foregroundStyle(BlitzUI.secondaryText)
                     Spacer()
@@ -396,6 +402,13 @@ struct ProjectLibraryView: View {
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(2)
                     .frame(height: 30, alignment: .topLeading)
+
+                if let match = transcriptMatches[project.id]?.first {
+                    Text("\(SilenceTime.label(match.time)) · \(match.text)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(BlitzUI.mint)
+                        .lineLimit(2)
+                }
 
                 Text(metadata.videoQuality?.label ?? (metadataByProjectID[project.id] == nil ? "Loading quality…" : "Quality unavailable"))
                     .font(.system(size: 10, weight: .medium))
@@ -922,13 +935,24 @@ struct ProjectLibraryView: View {
                     ))
                 }
 
+                let matches = transcriptMatches[project.id] ?? []
+                let matchIDs = Set(matches.map(\.id))
+                if !matches.isEmpty {
+                    Text("\(matches.count) matching moments · Click a timestamp to play")
+                        .font(.system(size: 12))
+                        .foregroundStyle(BlitzUI.mint)
+                }
+                if transcript.segments.isEmpty {
+                    Text(transcript.text).textSelection(.enabled)
+                }
+                let segments = matches.isEmpty ? transcript.segments : transcript.segments.filter { matchIDs.contains($0.id) }
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(transcript.segments.enumerated()), id: \.element.id) { index, segment in
+                    ForEach(Array(segments.enumerated()), id: \.element.id) { index, segment in
                         inlineTranscriptRow(TranscriptRowRequest(
                             segment: segment,
                             transcript: transcript,
                             showsSpeaker: transcript.speakerCount > 1
-                                && (index == 0 || transcript.segments[index - 1].speakerID != segment.speakerID)
+                                && (index == 0 || segments[index - 1].speakerID != segment.speakerID)
                         ))
                     }
                 }
@@ -1787,9 +1811,40 @@ struct ProjectLibraryView: View {
             ?? assets.first { $0.kind == .systemAudio && $0.isAudio }
     }
 
+    private var transcriptSearchTaskID: String {
+        vm.projectLibraryNavigation.searchText + vm.recentProjects.map {
+            "\($0.id)-\($0.updatedAt)-\(vm.transcriptionController.status(for: $0).label)"
+        }.joined()
+    }
+
+    private func searchTranscripts() async {
+        let query = vm.projectLibraryNavigation.searchText
+        transcriptMatches = [:]
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            isSearchingTranscripts = false
+            return
+        }
+        isSearchingTranscripts = true
+        do {
+            try await Task.sleep(for: .milliseconds(180))
+            let matches = try await transcriptSearch.search(.init(query: query, projects: vm.recentProjects))
+            try Task.checkCancellation()
+            transcriptMatches = matches
+            isSearchingTranscripts = false
+            if let id = vm.projectLibraryNavigation.selectedProjectIDs.first, matches[id] != nil {
+                vm.projectLibraryNavigation.selectedDetailTab = .transcript
+            }
+        } catch {
+            if !Task.isCancelled { isSearchingTranscripts = false }
+        }
+    }
+
     private var filteredProjects: [RecordingProjectHistory.Entry] {
-        vm.projectLibraryNavigation.filters.apply(.init(
-            projects: vm.filteredLibraryProjects, metadata: metadataByProjectID,
+        let titleMatches = Set(vm.filteredLibraryProjects.map(\.id))
+        return vm.projectLibraryNavigation.filters.apply(.init(
+            projects: vm.recentProjects.filter { entry in
+                titleMatches.contains(entry.id) || transcriptMatches[entry.id] != nil
+            }, metadata: metadataByProjectID,
             transcriptReadyIDs: Set(vm.recentProjects.compactMap { project in
                 if case .ready = vm.transcriptionController.status(for: project) { return project.id }
                 return nil

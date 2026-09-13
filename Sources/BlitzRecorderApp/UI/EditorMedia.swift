@@ -5,6 +5,7 @@ import Observation
 import SwiftUI
 
 enum EditorSelection: Equatable {
+    case placed(EditorPlacedItem.ID)
     case segment(Int)
     case asset(String)
     case range(EditorTimeRange)

@@ -127,7 +127,11 @@ enum Merger {
             ))
         }
 
-        let expectedAudioSources = expectedAudioSources(for: take, settings: settings)
+        var expectedAudioSources = expectedAudioSources(for: take, settings: settings)
+        for index in expectedAudioSources.indices where expectedAudioSources[index].source == .microphone {
+            expectedAudioSources[index].url = try await VoiceCleanupProcessor.shared.processed(.init(
+                url: expectedAudioSources[index].url, settings: settings.voiceCleanup))
+        }
         var audioMixParameters: [AVMutableAudioMixInputParameters] = []
         for audioSource in expectedAudioSources {
             let parameters = try await addRequiredAudio(
@@ -143,6 +147,23 @@ enum Merger {
                 composition: composition,
                 duration: duration
             ))
+            if settings.voiceCleanup.ducksMusic {
+                var windows: [[SilenceWindow]] = []
+                let audible = expectedAudioSources.filter { $0.volume > 0 }
+                let microphone = audible.filter { $0.source == .microphone }
+                for source in microphone.isEmpty ? audible : microphone {
+                    let offset = source.activeTakeStart.seconds - source.sourceStart.seconds
+                    let detected = try await SilenceDetection.windows(.init(audioURL: source.url,
+                        takeDuration: exportPlan.takeDuration.seconds, sourceOffset: offset,
+                        minimumSilence: 0.3, thresholdDB: -40, previousCuts: []))
+                    windows.append(detected)
+                }
+                let combined = SilenceDetection.combinedWindows(windows)
+                let ranges = MusicDucking.ranges(.init(windows: combined.sorted { $0.start < $1.start },
+                    threshold: SilenceDetection.suggestedThreshold(combined), timeMap: exportPlan.timeMap))
+                MusicDucking.apply(.init(parameters: parameters, ranges: ranges,
+                    volume: Float(backgroundMusic.volume), duration: duration.seconds))
+            }
             audioMixParameters.append(parameters)
         }
 
@@ -986,6 +1007,7 @@ struct EditorPlaybackComposition {
         guard !hiddenKinds.isEmpty else { return scene }
         var scene = scene
         scene.enabledSources.subtract(Set(hiddenKinds.map(\.source)))
+        scene.fillsCanvasWhenOnlyVideoSource = true
         return scene
     }
 
@@ -1005,6 +1027,7 @@ struct EditorPlaybackComposition {
         let sceneEvents = sceneEvents.map { event in
             var scene = event.scene
             scene.enabledSources.subtract(hiddenSources)
+            scene.fillsCanvasWhenOnlyVideoSource = true
             return RecordingSceneEvent(time: event.time, scene: scene, transition: event.transition)
         }
         return try? FinalExportPlanning.plan(
@@ -1060,7 +1083,7 @@ extension Merger {
         cuts: [TimelineCut] = []
     ) async throws -> EditorPlaybackComposition {
         let videoSources = try await availableVideoSources(for: take, settings: settings)
-        let audioSources = await readablePlaybackAudioSources(for: take, settings: settings)
+        let audioSources = try await readablePlaybackAudioSources(for: take, settings: settings)
         guard !videoSources.isEmpty || !audioSources.isEmpty else {
             throw RecorderError.exportUnavailable
         }
@@ -1168,9 +1191,13 @@ extension Merger {
     private static func readablePlaybackAudioSources(
         for take: RecordingTake,
         settings: RecordingSettings
-    ) async -> [ReadablePlaybackAudioSource] {
+    ) async throws -> [ReadablePlaybackAudioSource] {
         var sources: [ReadablePlaybackAudioSource] = []
-        for audioSource in playbackAudioSources(for: take, settings: settings) {
+        for originalSource in playbackAudioSources(for: take, settings: settings) {
+            var audioSource = originalSource
+            if audioSource.source == .microphone, settings.voiceCleanup.isEnabled {
+                audioSource.url = try await VoiceCleanupProcessor.shared.processed(.init(url: audioSource.url, settings: settings.voiceCleanup))
+            }
             guard FileManager.default.fileExists(atPath: audioSource.url.path) else { continue }
             let asset = AVURLAsset(url: audioSource.url)
             let tracks: [AVAssetTrack]
@@ -1321,7 +1348,7 @@ private struct PlaybackAudioInsertionRequest {
 
 private struct ExpectedAudioSource {
     let source: CaptureSource
-    let url: URL
+    var url: URL
     let volume: Float
     var sourceStart: CMTime = .zero
     var activeTakeStart: CMTime = .zero

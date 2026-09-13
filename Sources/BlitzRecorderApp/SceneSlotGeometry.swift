@@ -26,10 +26,6 @@ enum SceneSlotGeometry {
     }
 
     static func targetWindowSlot(in layout: SceneLayout, enabledSources: Set<CaptureSource>) -> CGRect {
-        guard enabledSources.contains(.camera) else {
-            return CGRect(x: 0, y: 0, width: 1, height: 1)
-        }
-
         let canvas = CGRect(x: 0, y: 0, width: 1, height: 1)
         let visibleScreenFrame = layout.screenFrame.standardized.intersection(canvas)
         guard !visibleScreenFrame.isNull, !visibleScreenFrame.isEmpty else {

@@ -11,6 +11,8 @@ private enum EditorInspectorTab: String, CaseIterable {
     case text = "Text"
     case zoom = "Motion"
     case silence = "Silence"
+    case privacy = "Privacy"
+    case audio = "Audio"
     case blitzReels = "BlitzReels"
 
     var systemImage: String {
@@ -19,6 +21,8 @@ private enum EditorInspectorTab: String, CaseIterable {
         case .text: return "textformat"
         case .zoom: return "cursorarrow.motionlines"
         case .silence: return "waveform.path"
+        case .privacy: return "eye.slash"
+        case .audio: return "waveform"
         case .blitzReels: return "arrow.up.right"
         }
     }
@@ -64,6 +68,8 @@ struct EditorView: View {
     @State private var selectedExportPreset: ExportPerformancePreset = .balanced
     @State private var backgroundMusic: ExportBackgroundMusic?
     @State private var backgroundMusicBookmarkData: Data?
+    @State private var exportLayouts: Set<CaptureLayout> = []
+    @State private var loadedProjectID: UUID?
     @State private var isExportPopoverPresented = false
     @State private var reloadTask: Task<Void, Never>?
     @State private var sceneEvents: [RecordingSceneEvent] = []
@@ -76,6 +82,7 @@ struct EditorView: View {
     @State private var preservesCanvasPreviewOnNextProjectRefresh = false
     @State private var editErrorMessage: String?
     @State private var silence = SilenceEditingSession()
+    @State private var privacy = PrivacyEditingSession()
     @State private var inspectorTab: EditorInspectorTab = .layout
     @State private var showsSourceFraming = false
     @State private var framingSource: SceneLayerKind = .screen
@@ -97,8 +104,17 @@ struct EditorView: View {
                     dismiss: {
                         vm.lastExportSucceededURL = nil
                         vm.lastExportError = nil
+                        vm.variantExportURLs = []
                     }
                 ))
+            }
+
+            if !vm.isExportingVariants, vm.variantExportURLs.count > 1 {
+                Button("Show all \(vm.variantExportURLs.count) exported videos") {
+                    NSWorkspace.shared.activateFileViewerSelecting(vm.variantExportURLs)
+                }
+                .blitzButton(.quiet)
+                .padding(.bottom, 8)
             }
 
             divider
@@ -111,7 +127,7 @@ struct EditorView: View {
                     .background(BlitzUI.panelBackground)
             } timeline: {
             EditorTimelineView(
-                project: vm.lastExportedProject,
+                project: vm.editorProject,
                 assets: assets,
                 library: library,
                 draftScene: layoutDraft?.scene ?? canvasSceneDraft,
@@ -139,7 +155,7 @@ struct EditorView: View {
                 mutedAssetIDs: mutedAssetIDs,
                 toggleableAssetIDs: toggleableAssetIDs,
                 onToggleTrack: { toggleTrack($0) },
-                onSplit: splitAtPlayhead,
+                onSplit: splitTimelineSelection,
                 onDeleteSegment: deleteSelectedSegment,
                 canDeleteSegment: canDeleteSelectedSegment,
                 onJoinSegment: joinSelectedSegment,
@@ -151,7 +167,9 @@ struct EditorView: View {
                 showsShortcuts: $showsTimelineShortcuts,
                 silence: silence,
                 isEditingSilence: inspectorTab == .silence,
-                onOpenSilence: openSilenceInspector
+                onOpenSilence: openSilenceInspector,
+                onChangePlacedItem: changePlacedItem,
+                onRemovePlacedItem: removePlacedItem
             )
             }
         }
@@ -184,6 +202,7 @@ struct EditorView: View {
             reloadTask = task
         }
         .onDisappear {
+            privacy.cancelGesture()
             silence.cancel()
             reloadTask?.cancel()
             reloadTask = nil
@@ -191,11 +210,24 @@ struct EditorView: View {
             canvasCommitTask = nil
             playback.teardown()
         }
+        .onChange(of: inspectorTab) { _, tab in
+            if tab != .privacy { privacy.cancelGesture() }
+        }
         .onChange(of: selection) { _, selection in
+            if case .placed(let id) = selection {
+                selectPlacedItem(id)
+                return
+            }
+            if privacy.selectedID != nil { privacy.select(nil) }
             guard inspectorTab == .layout, case .asset = selection,
                   let source = selectedVideoLayerKind else { return }
             framingSource = source
             showsSourceFraming = true
+        }
+        .onChange(of: privacy.selectedID) { _, id in
+            guard inspectorTab == .privacy else { return }
+            if let id { selection = .placed(.init(kind: .mask, value: id)) }
+            else if case .placed(let selected) = selection, selected.kind == .mask { selection = nil }
         }
         .overlay {
             EditorKeyboardShortcutView { event in
@@ -209,10 +241,15 @@ struct EditorView: View {
 
     private func reloadProject() async {
         guard !Task.isCancelled else { return }
-        guard let project = vm.lastExportedProject else {
+        guard let project = vm.editorProject else {
             assets = []
             sceneEvents = []
             return
+        }
+        if loadedProjectID != project.id {
+            loadedProjectID = project.id
+            privacy.select(nil)
+            exportLayouts = []
         }
         sceneEvents = TakeFileStore().sceneEvents(from: project)
         applyEditorState(project)
@@ -226,7 +263,7 @@ struct EditorView: View {
 
     private func refreshProject(preservesPreviewSceneOverride: Bool) async {
         guard !Task.isCancelled else { return }
-        guard let project = vm.lastExportedProject else {
+        guard let project = vm.editorProject else {
             await reloadProject()
             return
         }
@@ -252,7 +289,7 @@ struct EditorView: View {
     }
 
     private var project: RecordingProject? {
-        vm.lastExportedProject
+        vm.editorProject
     }
 
     private var timelineDuration: Double {
@@ -278,6 +315,7 @@ struct EditorView: View {
         switch captureLayout {
         case .vertical: return "9:16"
         case .horizontal: return "16:9"
+        case .square: return "1:1"
         case nil: return "—"
         }
     }
@@ -387,7 +425,16 @@ struct EditorView: View {
                 .allowsWindowActivationEvents(true)
                 .onTapGesture(count: 2, perform: fillWindow)
 
-            Spacer(minLength: 24)
+            Spacer(minLength: 12)
+            BlitzSegmentedPicker(configuration: .init(title: "Aspect ratio", options: CaptureLayout.allCases, selection: Binding(
+                get: { vm.lastExportedProject?.selectedOutputLayout ?? .horizontal },
+                set: { playback.pauseForEditing(); vm.selectOutputLayout($0) }
+            ), label: { $0.shortLabel }, symbolName: { $0.symbolName }))
+            .controlSize(.small)
+            .fixedSize()
+            .help("Choose the output aspect ratio")
+            .disabled(vm.state != .idle)
+            Spacer(minLength: 12)
                 .contentShape(.rect)
                 .allowsWindowActivationEvents(true)
                 .onTapGesture(count: 2, perform: fillWindow)
@@ -500,6 +547,8 @@ struct EditorView: View {
 
     private var exportPopover: some View {
         EditorExportPopover(configuration: .init(
+            layouts: $exportLayouts,
+            currentLayout: vm.lastExportedProject?.selectedOutputLayout ?? .horizontal,
             preset: Binding(
                 get: { selectedExportPreset },
                 set: { preset in
@@ -545,7 +594,7 @@ struct EditorView: View {
             directory: vm.settings.outputDirectory,
             musicSummary: backgroundMusic.map { "\($0.url.lastPathComponent) · \(musicVolumeLabel)" },
             musicControls: { backgroundMusicControl },
-            canExport: project != nil && vm.state == .idle,
+            canExport: project != nil && vm.state == .idle && !vm.isExportingVariants,
             export: exportVideo,
             showFolder: { NSWorkspace.shared.open(vm.settings.outputDirectory) },
             showBlitzReels: {
@@ -582,24 +631,32 @@ struct EditorView: View {
     private var exportSummary: String {
         let layout = captureLayout ?? vm.settings.layout
         let dimensions = selectedResolution.dimensions(for: layout)
+        if exportLayouts.count > 1 {
+            return "\(exportLayouts.count) videos · \(selectedResolution.displayName) · \(exportFrameRate) fps"
+        }
         return "\(dimensions.width) × \(dimensions.height) · \(exportFrameRate) fps"
     }
 
     private var exportEstimatedSize: String {
-        let estimatedBytes = Int64(max(0, timelineDuration) * Double(exportBitrate + 192_000) / 8)
+        let duration = TimelineTimeMap(takeDuration: TimelineTimeMap.time(timelineDuration),
+            cuts: vm.lastExportedProject?.edits.enabledCuts ?? []).outputDuration.seconds
+        let estimatedBytes = Int64(max(0, duration) * Double(exportBitrate + 192_000) / 8 * Double(max(1, exportLayouts.count)))
         return "≈ " + ByteCountFormatter.string(fromByteCount: estimatedBytes, countStyle: .file)
     }
 
     private func exportVideo() {
         let profile = exportPerformanceProfile
         isExportPopoverPresented = false
-        vm.exportLastProject(EditorExportRequest(
+        let request = EditorExportRequest(
             outputFormat: selectedFormat,
             performanceProfile: profile,
             hiddenVideoSources: playback.hiddenKinds,
             mutedAudioSources: playback.mutedSources,
             backgroundMusic: backgroundMusic
-        ))
+        )
+        let layouts = exportLayouts.isEmpty ? [vm.lastExportedProject?.selectedOutputLayout ?? .horizontal]
+            : CaptureLayout.allCases.filter { exportLayouts.contains($0) }
+        vm.exportOutputVariants(.init(export: request, layouts: layouts))
     }
 
     private func applyExportPreset(_ request: EditorExportPresetRequest) {
@@ -619,6 +676,14 @@ struct EditorView: View {
     }
 
     private var exportStatus: EditorExportStatus? {
+        if vm.isExportingVariants {
+            return .exporting(.init(
+                title: "Exporting format \(vm.variantExportIndex) of \(vm.variantExportTotal)",
+                percentage: vm.sessionProgressLabel,
+                detail: vm.sessionProgressDetail,
+                value: (Double(max(0, vm.variantExportIndex - 1)) + vm.renderProgress) / Double(max(1, vm.variantExportTotal))
+            ))
+        }
         if vm.state == .finishing {
             return .exporting(.init(
                 title: vm.sessionProgressTitle,
@@ -655,7 +720,15 @@ struct EditorView: View {
                     .allowsHitTesting(false)
             }
 
-            if playback.isReady, let cameraCropDraft,
+            if playback.isReady, inspectorTab == .privacy,
+               let scene = playback.scene(at: playback.currentTime) {
+                EditorPrivacyCanvas(configuration: .init(
+                    session: privacy, scene: scene, renderSize: playback.renderSize,
+                    aspectRatios: playback.sourceAspectRatios, hiddenKinds: playback.hiddenKinds,
+                    masks: privacy.displayedMasks.filter { $0.isVisible(at: playback.currentTime) },
+                    selectedID: privacy.selectedID, drawingSource: privacy.isDrawing ? privacy.selected?.source : nil
+                ))
+            } else if playback.isReady, let cameraCropDraft,
                let sourceAspectRatio = playback.sourceAspectRatios[.camera] {
                 EditorCameraCropOverlay(configuration: .init(
                     scene: cameraCropDraft.scene,
@@ -698,7 +771,9 @@ struct EditorView: View {
                         .padding(.horizontal, 24)
                 }
             } else if layoutDraft == nil {
-                Color.clear
+                ProgressView("Preparing preview…")
+                    .font(.system(size: 12))
+                    .foregroundStyle(BlitzUI.secondaryText)
             }
         }
         .aspectRatio(canvasAspectRatio, contentMode: .fit)
@@ -924,9 +999,11 @@ struct EditorView: View {
         case .goToEnd: playback.seek(to: timelineDuration)
         case .previousBoundary: playback.seek(to: previousBoundary())
         case .nextBoundary: playback.seek(to: nextBoundary())
-        case .split: splitAtPlayhead()
+        case .split: splitTimelineSelection()
         case .deleteSelection:
-            if let selected = selection?.silenceSelection { silence.toggleRanges(selected.ranges) }
+            if case .placed(let id) = selection { removePlacedItem(id) }
+            else if inspectorTab == .privacy, privacy.selectedID != nil { privacy.removeSelected() }
+            else if let selected = selection?.silenceSelection { silence.toggleRanges(selected.ranges) }
             else if inspectorTab == .silence, let range = selection?.timeRange {
                 selection = .silenceRange(range)
                 silence.toggle(range)
@@ -938,7 +1015,9 @@ struct EditorView: View {
         case .toggleTrack: return toggleSelectedAsset()
         case .markIn: markRangeIn()
         case .markOut: markRangeOut()
-        case .clearSelection: selection = nil
+        case .clearSelection:
+            if inspectorTab == .privacy { privacy.select(nil) }
+            selection = nil
         case .zoomIn:
             timelineZoom = EditorTimelineZoom.clamp(.init(value: timelineZoom * 1.5, duration: timelineDuration))
         case .zoomOut:
@@ -958,6 +1037,83 @@ struct EditorView: View {
         if let range = EditorTimeRange.resolve(.init(anchor: time, head: end, duration: timelineDuration)) {
             selection = .range(range)
         }
+    }
+
+    private func placedSelection(_ kind: EditorPlacedItem.Kind) -> Binding<UUID?> {
+        Binding(get: {
+            if case .placed(let id) = selection, id.kind == kind { return id.value }
+            return nil
+        }, set: { value in
+            if let value { selection = .placed(.init(kind: kind, value: value)) }
+            else if case .placed(let id) = selection, id.kind == kind { selection = nil }
+        })
+    }
+
+    private func selectPlacedItem(_ id: EditorPlacedItem.ID) {
+        if id.kind != .mask, privacy.selectedID != nil { privacy.select(nil) }
+        if id.kind == .music { inspectorTab = .audio; return }
+        guard let project = vm.editorProject,
+              let item = EditorPlacedTrack.resolve(project.edits).flatMap(\.items).first(where: { $0.id == id }) else { return }
+        switch id.kind {
+        case .music: break
+        case .mask:
+            inspectorTab = .privacy
+            privacy.configure(.init(vm: vm, playback: playback))
+            if privacy.selectedID != id.value { privacy.select(id.value) }
+        case .text: inspectorTab = .text
+        case .zoom: inspectorTab = .zoom
+        }
+        let projection = EditorTimelineProjection(.init(duration: timelineDuration, cuts: project.edits.cuts))
+        playback.pauseForEditing()
+        playback.seek(to: item.timing.previewTime(projection))
+    }
+
+    private func changePlacedItem(_ change: EditorPlacedItemEditing.Change) {
+        guard let edits = placedEdits(change.id.kind),
+              let updated = EditorPlacedItemEditing.changing(.init(edits: edits, change: change)), updated != edits else { return }
+        playback.pauseForEditing()
+        let request = EditorTimelineEditsChange(edits: updated, actionName: "Change Item Timing")
+        let saved = change.id.kind == .text ? vm.applyOutputTextEdits(request) : vm.applyTimelineEdits(request)
+        if saved {
+            let projection = EditorTimelineProjection(.init(duration: timelineDuration, cuts: updated.cuts))
+            pendingRangeCutSeek = change.timing.previewTime(projection)
+        }
+        else { editErrorMessage = vm.detailMessage }
+    }
+
+    private func removePlacedItem(_ id: EditorPlacedItem.ID) {
+        if id.kind == .music {
+            backgroundMusic = nil
+            backgroundMusicBookmarkData = nil
+            persistEditorState("Remove Background Music")
+            selection = nil
+            return
+        }
+        guard let edits = placedEdits(id.kind) else { return }
+        let updated = EditorPlacedItemEditing.removing(.init(edits: edits, id: id))
+        guard updated != edits else { return }
+        playback.pauseForEditing()
+        let request = EditorTimelineEditsChange(edits: updated, actionName: "Remove Timeline Item")
+        let saved = id.kind == .text ? vm.applyOutputTextEdits(request) : vm.applyTimelineEdits(request)
+        if saved {
+            selection = nil
+            if id.kind == .mask { privacy.select(nil) }
+        } else { editErrorMessage = vm.detailMessage }
+    }
+
+    private func placedEdits(_ kind: EditorPlacedItem.Kind) -> TimelineEdits? {
+        kind == .text ? vm.editorProject?.edits : vm.lastExportedProject?.edits
+    }
+
+    private func splitTimelineSelection() {
+        guard case .placed(let id) = selection else { splitAtPlayhead(); return }
+        guard let edits = placedEdits(id.kind), let updated = EditorPlacedItemEditing.splitting(.init(
+            edits: edits, id: id, time: playback.currentTime
+        )) else { return }
+        playback.pauseForEditing()
+        let request = EditorTimelineEditsChange(edits: updated, actionName: "Split Timeline Item")
+        let saved = id.kind == .text ? vm.applyOutputTextEdits(request) : vm.applyTimelineEdits(request)
+        if !saved { editErrorMessage = vm.detailMessage }
     }
 
     private func markRangeOut() {
@@ -1060,6 +1216,14 @@ struct EditorView: View {
             inspectorTabBar
             divider
             switch inspectorTab {
+            case .audio:
+                VStack(spacing: 0) {
+                    EditorAudioInspector(configuration: .init(vm: vm, playback: playback))
+                    divider
+                    backgroundMusicControl.padding(14)
+                }
+            case .privacy:
+                EditorPrivacyInspector(configuration: .init(vm: vm, playback: playback, session: privacy))
             case .silence:
                 SilenceInspectorPane(session: silence)
 
@@ -1067,12 +1231,14 @@ struct EditorView: View {
                 EditorTextInspector(configuration: .init(
                     vm: vm, playback: playback, preview: scenePresetPreview,
                     scene: displayedCanvasScene ?? RecordingScene(settings: vm.settings),
-                    layout: captureLayout ?? vm.settings.layout
+                    layout: captureLayout ?? vm.settings.layout,
+                    selectedID: placedSelection(.text)
                 ))
             case .zoom:
                 TimelineEditingPanel(configuration: .init(
                     vm: vm, playback: playback,
-                    preview: scenePresetPreview
+                    preview: scenePresetPreview,
+                    selectedKeyframeID: placedSelection(.zoom)
                 ))
             case .blitzReels:
                 if let project {
@@ -1164,32 +1330,23 @@ struct EditorView: View {
     }
 
     private var inspectorTabBar: some View {
-        ViewThatFits(in: .horizontal) {
-            inspectorTabs(showsSymbols: true)
-                .fixedSize(horizontal: true, vertical: false)
-            inspectorTabs(showsSymbols: false)
-        }
-        .frame(maxWidth: .infinity)
-        .controlSize(.large)
-        .padding(8)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Inspector tabs")
-    }
-
-    private func inspectorTabs(showsSymbols: Bool) -> some View {
         HStack(spacing: 2) {
-            ForEach([EditorInspectorTab.layout, .silence, .text, .zoom], id: \.self) { tab in
+            ForEach([EditorInspectorTab.layout, .silence, .text, .zoom, .privacy, .audio], id: \.self) { tab in
                 BlitzTab(configuration: .init(
                     title: tab.rawValue,
-                    symbolName: showsSymbols ? tab.systemImage : nil,
+                    symbolName: tab.systemImage,
+                    symbolPlacement: .above,
                     isSelected: inspectorTab == tab,
                     expands: true,
                     action: { inspectorTab = tab }
                 ))
-                .help(tab == .layout ? "Scene layout and canvas"
-                      : tab == .silence ? "Silence removal and pacing" : tab.rawValue)
+                .help(tab == .layout ? "Scene layout and canvas" : tab.rawValue)
             }
         }
+        .controlSize(.mini)
+        .padding(6)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Editor tools")
     }
 
     private func openSilenceInspector() {
@@ -1216,7 +1373,8 @@ struct EditorView: View {
                             layout: captureLayout ?? .horizontal,
                             isSelected: EditorScenePresetSelection.isSelected(
                                 .init(preset: preset, scene: scene, layout: layout)),
-                            isEnabled: preset.supports(captureLayout ?? .horizontal),
+                            isEnabled: preset.requiredVideoSources.isSubset(of: recordedVideoSources),
+                            availableSources: recordedVideoSources,
                             preview: scenePresetPreview
                         ) {
                             applyScenePreset(preset)
@@ -1228,6 +1386,10 @@ struct EditorView: View {
                 }
             }
         }
+    }
+
+    private var recordedVideoSources: Set<CaptureSource> {
+        Set(playback.hideableKinds.map { $0 == .screen ? CaptureSource.screen : .camera })
     }
 
     private var scenePresetPreview: BlitzScenePreview {

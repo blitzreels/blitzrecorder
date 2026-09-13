@@ -71,6 +71,27 @@ final class ScreenCaptureGeometryTests: XCTestCase {
         XCTAssertEqual(geometry.aspectRatio(), 16.0 / 9.0, accuracy: 0.0001)
     }
 
+    func testFreshWindowBoundsOverrideStaleSquareSourceAspectRatio() {
+        var settings = RecordingSettings()
+        settings.layout = .square
+        settings.screenSourceAspectRatio = 1
+        settings.screenSourceBinding = ScreenSourceBinding(
+            kind: .window,
+            displayID: nil,
+            bundleIdentifier: "com.example.App",
+            applicationName: "Example",
+            processID: nil,
+            windowID: 7,
+            windowTitle: "Example"
+        )
+        let geometry = ScreenCaptureGeometry.windowSourceGeometry(.init(
+            settings: settings,
+            bounds: CGRect(x: 0, y: 0, width: 800, height: 1000)
+        ))
+
+        XCTAssertEqual(geometry.aspectRatio(), 0.8, accuracy: 0.0001)
+    }
+
     func testPickedWindowUsesPersistedActualFittedAspectRatio() {
         var settings = RecordingSettings()
         settings.screenSourceBinding = ScreenSourceBinding(

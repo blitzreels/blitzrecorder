@@ -1028,13 +1028,13 @@ final class PreviewStageView: NSView {
     }
 
     private func canEditLayerFrame(_ layer: SceneLayerKind) -> Bool {
-        guard allowsLayerInteraction,
-              enabledSources.contains(layer.source),
-              !isCameraCropEditingEnabled,
-              !isScreenCropEditingEnabled else {
-            return false
-        }
-        return enabledSources.contains(.screen) && enabledSources.contains(.camera)
+        PreviewStageEditing.canEditLayerFrame(
+            layer,
+            allowsLayerInteraction: allowsLayerInteraction,
+            enabledSources: enabledSources,
+            isCameraCropEditingEnabled: isCameraCropEditingEnabled,
+            isScreenCropEditingEnabled: isScreenCropEditingEnabled
+        )
     }
 
     private func canBeginScreenCropPan(_ layer: SceneLayerKind) -> Bool {

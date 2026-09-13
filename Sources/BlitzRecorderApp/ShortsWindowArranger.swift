@@ -48,7 +48,7 @@ enum ScreenWindowFitRetry {
 @MainActor
 enum WindowFrameWriter {
     static let settlingInterval: Duration = .milliseconds(10)
-    static let maximumSettlingPolls = 12
+    static let maximumSettlingPolls = 50
 
     enum Change {
         case size(CGSize)

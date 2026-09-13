@@ -9,7 +9,8 @@ struct SceneLibrary: Codable, Equatable {
         var library = SceneLibrary(
             scenesByLayout: [
                 .vertical: defaultScenes(for: .vertical),
-                .horizontal: defaultScenes(for: .horizontal)
+                .horizontal: defaultScenes(for: .horizontal),
+                .square: defaultScenes(for: .square)
             ],
             selectedSceneIDsByLayout: [:]
         )
@@ -206,12 +207,12 @@ struct SceneLibrary: Codable, Equatable {
                 makeScene(name: "Camera Only", layout: .vertical, preset: .webcamFullscreen),
                 makeScene(name: "Camera Inset", layout: .vertical, preset: .cameraInset)
             ]
-        case .horizontal:
+        case .horizontal, .square:
             return [
-                makeScene(name: "Screen + Camera", layout: .horizontal, preset: .cameraInset),
-                makeScene(name: "Screen Only", layout: .horizontal, preset: .screenFullscreen),
-                makeScene(name: "Camera Only", layout: .horizontal, preset: .webcamFullscreen),
-                makeScene(name: "Camera Left", layout: .horizontal, preset: .webcamLeft)
+                makeScene(name: "Screen + Camera", layout: layout, preset: .cameraInset),
+                makeScene(name: "Screen Only", layout: layout, preset: .screenFullscreen),
+                makeScene(name: "Camera Only", layout: layout, preset: .webcamFullscreen),
+                makeScene(name: "Camera Left", layout: layout, preset: .webcamLeft)
             ]
         }
     }

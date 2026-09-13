@@ -582,6 +582,10 @@ struct TimelineEdits: Equatable, Sendable {
     var silenceOverrides: [SilenceOverride] = []
     var cursorStyle: CursorPresentationStyle = .standard
     var cameraFollowsZoom: Bool = false
+    var privacyMasks: [PrivacyMask] = []
+    var outputVariants: [RecordingOutputVariant] = []
+    var activeOutputLayout: CaptureLayout?
+    var voiceCleanup: VoiceCleanupSettings = .disabled
 
     static let empty = TimelineEdits(cuts: [], textOverlays: [], zoom: .empty)
 

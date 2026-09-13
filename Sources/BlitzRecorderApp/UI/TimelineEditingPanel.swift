@@ -5,11 +5,13 @@ struct TimelineEditingPanel: View {
         let vm: RecorderViewModel
         let playback: EditorPlaybackController
         let preview: BlitzScenePreview
+        let selectedKeyframeID: Binding<UUID?>
     }
 
     @Bindable var vm: RecorderViewModel
     let playback: EditorPlaybackController
     let scenePreview: BlitzScenePreview
+    let selectedKeyframeID: Binding<UUID?>
     @AppStorage(BlitzPreviewPreferences.animatePreviewsKey) private var animatePreviews = true
     @State private var magnification = 1.7
     @State private var cursorScale = 1.5
@@ -21,6 +23,7 @@ struct TimelineEditingPanel: View {
         vm = configuration.vm
         playback = configuration.playback
         scenePreview = configuration.preview
+        selectedKeyframeID = configuration.selectedKeyframeID
     }
 
     private var edits: TimelineEdits { vm.lastExportedProject?.edits ?? .empty }
@@ -30,6 +33,13 @@ struct TimelineEditingPanel: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    if let id = selectedKeyframeID.wrappedValue,
+                       let keyframe = edits.zoom.keyframes.first(where: { $0.id == id }) {
+                        EditorZoomPointInspector(configuration: .init(
+                            vm: vm, playback: playback, point: keyframe, selection: selectedKeyframeID
+                        ))
+                        Divider()
+                    }
                     zoomContent
                 }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
             }

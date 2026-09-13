@@ -44,7 +44,7 @@ final class MetalExportInstruction: NSObject, AVVideoCompositionInstructionProto
         scene = request.scene
         settings = request.settings
         containsTweening = request.scene.canvasBackgroundAnimated || request.edits.zoom.isActive
-            || !request.edits.textOverlays.isEmpty || !request.cursorTrack.isEmpty
+            || !request.edits.privacyMasks.isEmpty || !request.edits.textOverlays.isEmpty || !request.cursorTrack.isEmpty
         sourceDescriptors = request.activeLayerOrder.compactMap { kind in
             request.sourceDescriptors.first { $0.kind == kind }
         }
@@ -126,7 +126,7 @@ final class MetalExportVideoCompositor: NSObject, AVVideoCompositing, @unchecked
             instruction: instruction,
             compositionRequest: request
         ))
-        let cameraFrame = sourceFrame(SourceFrameRequest(
+        var cameraFrame = sourceFrame(SourceFrameRequest(
             kind: .camera,
             instruction: instruction,
             compositionRequest: request
@@ -147,6 +147,14 @@ final class MetalExportVideoCompositor: NSObject, AVVideoCompositing, @unchecked
            let sample = instruction.cursorTrack.sample(.init(time: takeTime, style: instruction.edits.cursorStyle)) {
             screenFrame = LiveCompositorImageFrame(image: CursorPresentationRenderer.composite(.init(
                 image: frame.image, sample: sample, style: instruction.edits.cursorStyle)))
+        }
+        if let frame = screenFrame {
+            screenFrame = LiveCompositorImageFrame(image: PrivacyMaskRenderer.render(.init(
+                image: frame.image, masks: instruction.edits.privacyMasks, source: .screen, time: takeTime)))
+        }
+        if let frame = cameraFrame {
+            cameraFrame = LiveCompositorImageFrame(image: PrivacyMaskRenderer.render(.init(
+                image: frame.image, masks: instruction.edits.privacyMasks, source: .camera, time: takeTime)))
         }
         var scene = TimelineOverlayRenderer.scene(.init(scene: instruction.scene, edits: instruction.edits, time: takeTime))
         if instruction.edits.zoom.isActive { scene.screenCropPosition.y *= -1 }

@@ -226,6 +226,7 @@ struct BlitzScenePresetCard: View {
     let layout: CaptureLayout
     let isSelected: Bool
     let isEnabled: Bool
+    let availableSources: Set<CaptureSource>
     var preview: BlitzScenePreview? = nil
     let action: () -> Void
 
@@ -260,14 +261,7 @@ struct BlitzScenePresetCard: View {
     }
 
     private var visibleSources: Set<CaptureSource> {
-        switch preset {
-        case .screenFullscreen:
-            return [.screen]
-        case .webcamFullscreen:
-            return [.camera]
-        default:
-            return [.screen, .camera]
-        }
+        preset.requiredVideoSources.intersection(availableSources)
     }
 }
 
@@ -309,7 +303,7 @@ struct BlitzSceneLayoutThumbnail: View {
             let canvas = fittedCanvas(in: proxy.size)
             let items = sceneLayout.resolvedItems(
                 enabledSources: visibleSources,
-                fillsCanvasWhenOnlyVideoSource: true
+                fillsCanvasWhenOnlyVideoSource: false
             )
 
             let inset: CGFloat = 2

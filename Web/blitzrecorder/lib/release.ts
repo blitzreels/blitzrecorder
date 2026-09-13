@@ -11,7 +11,7 @@ export const RELEASES_URL = `${GITHUB_REPO_URL}/releases`;
 /** GitHub redirects this to the newest release (or the releases list if none). */
 export const LATEST_RELEASE_URL = `${RELEASES_URL}/latest`;
 /** Shown when no release is published yet; kept in sync by Scripts/set-version.py. */
-export const FALLBACK_VERSION = "0.16.0";
+export const FALLBACK_VERSION = "0.17.0";
 
 export type Release = {
   /** Semver without the leading "v", e.g. "0.1.0". */

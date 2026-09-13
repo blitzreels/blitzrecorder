@@ -98,6 +98,7 @@ private struct EditorPlaybackMediaSignature: Equatable {
     let settings: RecordingProject.SettingsSnapshot
     let sources: [RecordingProject.SourceFile]
     let cuts: [TimelineCut]
+    let voiceCleanup: VoiceCleanupSettings
 
     init(project: RecordingProject) {
         version = project.version
@@ -110,6 +111,7 @@ private struct EditorPlaybackMediaSignature: Equatable {
         settings = project.settings
         sources = project.sources
         cuts = project.edits.enabledCuts
+        voiceCleanup = project.edits.voiceCleanup
     }
 }
 
@@ -130,6 +132,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
         }
     }
     private(set) var isReady = false
+    private(set) var bypassesVoiceCleanup = false
     private(set) var loadError: String?
     private(set) var renderSize: CGSize = .zero
     private(set) var hiddenKinds: Set<SceneLayerKind> = [] {
@@ -142,6 +145,17 @@ final class EditorPlaybackController: NowPlayingPlayback {
     private(set) var playbackRate = EditorPlaybackRate.normal
     private(set) var playbackVolume: Double = 1
     private(set) var edits = TimelineEdits.empty
+    private(set) var privacyMaskPreview: PrivacyMask?
+
+    func setPrivacyMaskPreview(_ mask: PrivacyMask?) {
+        privacyMaskPreview = mask
+        previewSceneRevision &+= 1
+    }
+
+    func finishPrivacyMaskPreview(_ masks: [PrivacyMask]) {
+        edits.privacyMasks = masks
+        setPrivacyMaskPreview(nil)
+    }
     private(set) var cursorTrack = CursorPresentationTrack.empty
     var outputDuration: Double { playback?.timeMap.outputDuration.seconds ?? 0 }
     private var timeMap: TimelineTimeMap { playback?.timeMap ?? .identity(takeDuration: .zero) }
@@ -201,6 +215,19 @@ final class EditorPlaybackController: NowPlayingPlayback {
         return players
     }
 
+    struct VoiceComparison {
+        let bypassed: Bool
+        let project: RecordingProject
+        let settings: RecordingSettings
+    }
+
+    func compareVoiceCleanup(_ request: VoiceComparison) async {
+        bypassesVoiceCleanup = request.bypassed
+        let wasPlaying = isPlaying
+        await load(project: request.project, baseSettings: request.settings)
+        if wasPlaying && isReady { play(from: currentTime) }
+    }
+
     func load(project: RecordingProject, baseSettings: RecordingSettings) async {
         await load(.init(project: project, baseSettings: baseSettings, previewCuts: nil))
     }
@@ -212,6 +239,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
         let generation = loadGeneration
 
         let isSameProject = loadedProjectPath == project.projectPath
+        if !isSameProject { bypassesVoiceCleanup = false }
         let resumeTime = isSameProject ? currentTime : 0
         let wasPlaying = isSameProject && isPlaying
 
@@ -223,7 +251,8 @@ final class EditorPlaybackController: NowPlayingPlayback {
         let store = TakeFileStore()
         let outputFormat = OutputVideoFormat(rawValue: project.settings.outputVideoFormat)
             ?? baseSettings.outputVideoFormat
-        let settings = store.recordingSettings(from: project, baseSettings: baseSettings, outputFormat: outputFormat)
+        var settings = store.recordingSettings(from: project, baseSettings: baseSettings, outputFormat: outputFormat)
+        if bypassesVoiceCleanup { settings.voiceCleanup.isEnabled = false }
         let take = store.recordingTake(from: project, settings: settings, outputFormat: outputFormat)
         let sceneEvents = store.sceneEvents(from: project)
 

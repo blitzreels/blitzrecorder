@@ -16,7 +16,7 @@ struct SceneRenderPlacementPolicy {
     var activeItems: [ResolvedSceneLayoutItem] {
         scene.sceneLayout.resolvedItems(
             enabledSources: scene.renderedSources,
-            fillsCanvasWhenOnlyVideoSource: true
+            fillsCanvasWhenOnlyVideoSource: scene.fillsCanvasWhenOnlyVideoSource
         )
     }
 

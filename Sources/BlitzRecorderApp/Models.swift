@@ -19,6 +19,7 @@ enum RecordingState: Equatable {
 enum CaptureLayout: String, CaseIterable {
     case vertical = "Shorts 9:16"
     case horizontal = "YouTube 16:9"
+    case square = "Square 1:1"
 
     var aspectRatio: CGFloat {
         switch self {
@@ -26,6 +27,8 @@ enum CaptureLayout: String, CaseIterable {
             return 9.0 / 16.0
         case .horizontal:
             return 16.0 / 9.0
+        case .square:
+            return 1
         }
     }
 }
@@ -167,6 +170,8 @@ enum OutputResolution: String, CaseIterable {
             return (height, height * 16 / 9)
         case .horizontal:
             return (height * 16 / 9, height)
+        case .square:
+            return (height, height)
         }
     }
 
@@ -402,6 +407,7 @@ struct EditorExportRequest {
 }
 
 struct ProjectExportRequest {
+    var outputLayout: CaptureLayout? = nil
     let projectURL: URL
     let outputFormat: OutputVideoFormat
     let performanceProfile: ExportPerformanceProfile
@@ -764,8 +770,13 @@ struct SceneLayout: Equatable {
         switch layout {
         case .vertical:
             verticalPresetLayout(preset, screenAspectRatio: screenAspectRatio, cameraAspectRatio: cameraAspectRatio)
-        case .horizontal:
-            horizontalPresetLayout(preset, screenAspectRatio: screenAspectRatio, cameraAspectRatio: cameraAspectRatio)
+        case .horizontal, .square:
+            landscapeStylePresetLayout(.init(
+                preset: preset,
+                layout: layout,
+                screenAspectRatio: screenAspectRatio,
+                cameraAspectRatio: cameraAspectRatio
+            ))
         }
     }
 
@@ -831,12 +842,18 @@ struct SceneLayout: Equatable {
         }
     }
 
-    private static func horizontalPresetLayout(
-        _ preset: ScenePreset,
-        screenAspectRatio: CGFloat,
-        cameraAspectRatio: CGFloat
-    ) -> SceneLayout {
-        let canvasAR = CaptureLayout.horizontal.aspectRatio
+    private struct LandscapeStylePresetRequest {
+        let preset: ScenePreset
+        let layout: CaptureLayout
+        let screenAspectRatio: CGFloat
+        let cameraAspectRatio: CGFloat
+    }
+
+    private static func landscapeStylePresetLayout(_ request: LandscapeStylePresetRequest) -> SceneLayout {
+        let preset = request.preset
+        let screenAspectRatio = request.screenAspectRatio
+        let cameraAspectRatio = request.cameraAspectRatio
+        let canvasAR = request.layout.aspectRatio
         switch preset {
         case .stackedHalves:
             var sceneLayout = SceneLayout()
@@ -844,17 +861,19 @@ struct SceneLayout: Equatable {
             sceneLayout.cameraFrame = CGRect(x: 0, y: 0, width: 1, height: 0.5)
             return sceneLayout
         case .screenTop50:
-            return horizontalPresetLayout(
-                .stackedHalves,
+            return landscapeStylePresetLayout(.init(
+                preset: .stackedHalves,
+                layout: request.layout,
                 screenAspectRatio: screenAspectRatio,
                 cameraAspectRatio: cameraAspectRatio
-            )
+            ))
         case .screenTop70:
-            return horizontalPresetLayout(
-                .stackedHalves,
+            return landscapeStylePresetLayout(.init(
+                preset: .stackedHalves,
+                layout: request.layout,
                 screenAspectRatio: screenAspectRatio,
                 cameraAspectRatio: cameraAspectRatio
-            )
+            ))
         case .screenFocus:
             var sceneLayout = SceneLayout()
             sceneLayout.screenFrame = canvasFillingFrame(sourceAspectRatio: screenAspectRatio, canvasAspectRatio: canvasAR)
@@ -866,7 +885,7 @@ struct SceneLayout: Equatable {
             return sceneLayout
         case .cameraInset:
             return cameraInsetLayout(
-                for: .horizontal,
+                for: request.layout,
                 screenAspectRatio: screenAspectRatio,
                 cameraAspectRatio: cameraAspectRatio
             )
@@ -917,7 +936,7 @@ struct SceneLayout: Equatable {
 
     static func defaultCameraInsetSize(for layout: CaptureLayout) -> CGFloat {
         switch layout {
-        case .horizontal:
+        case .horizontal, .square:
             return defaultCameraInsetSize
         case .vertical:
             return maximumCameraInsetSize(for: layout)
@@ -926,7 +945,7 @@ struct SceneLayout: Equatable {
 
     static func maximumCameraInsetSize(for layout: CaptureLayout) -> CGFloat {
         switch layout {
-        case .horizontal:
+        case .horizontal, .square:
             return maximumCameraInsetSize
         case .vertical:
             return max(minimumCameraInsetSize, 1 - cameraInsetMargin * 2)
@@ -1149,6 +1168,7 @@ struct RecordingScene: Equatable {
     var cameraFramePadding: CGFloat
     var cameraShadowEnabled: Bool
     var sourceOpacities: [CaptureSource: CGFloat]
+    var fillsCanvasWhenOnlyVideoSource: Bool
 
     init(settings: RecordingSettings) {
         self.init(
@@ -1188,7 +1208,8 @@ struct RecordingScene: Equatable {
         cameraContentMode: CameraContentMode = .fill,
         cameraFramePadding: CGFloat = 0,
         cameraShadowEnabled: Bool = false,
-        sourceOpacities: [CaptureSource: CGFloat] = [:]
+        sourceOpacities: [CaptureSource: CGFloat] = [:],
+        fillsCanvasWhenOnlyVideoSource: Bool = false
     ) {
         self.enabledSources = enabledSources
         self.sceneLayout = sceneLayout
@@ -1207,6 +1228,7 @@ struct RecordingScene: Equatable {
         self.cameraFramePadding = 0
         self.cameraShadowEnabled = cameraShadowEnabled
         self.sourceOpacities = sourceOpacities
+        self.fillsCanvasWhenOnlyVideoSource = fillsCanvasWhenOnlyVideoSource
     }
 
     func sourceOpacity(for source: CaptureSource) -> CGFloat {
@@ -1343,7 +1365,7 @@ extension ScenePreset {
         switch layout {
         case .vertical:
             return .screenTop50
-        case .horizontal:
+        case .horizontal, .square:
             return .cameraInset
         }
     }
@@ -1357,13 +1379,13 @@ extension ScenePreset {
         case .screenTop70:
             return [.vertical]
         case .cameraInset:
-            return [.vertical, .horizontal]
+            return [.vertical, .horizontal, .square]
         case .screenFocus:
-            return [.vertical, .horizontal]
+            return [.vertical, .horizontal, .square]
         case .screenFullscreen, .webcamFullscreen:
-            return [.vertical, .horizontal]
+            return [.vertical, .horizontal, .square]
         case .webcamLeft:
-            return [.horizontal]
+            return [.horizontal, .square]
         case .cameraFocus:
             return []
         }
@@ -1379,6 +1401,7 @@ extension ScenePreset {
 }
 
 struct RecordingSettings {
+    var voiceCleanup: VoiceCleanupSettings = .disabled
     static let supportedFrameRates = [24, 30, 60]
     static let minCustomVideoBitrate = 2_000_000
     static let maxCustomVideoBitrate = 80_000_000
@@ -1501,5 +1524,15 @@ struct RecordingTake {
 
     var projectURL: URL {
         scratchDirectory.appendingPathComponent("project.blitzrecorder.json")
+    }
+}
+
+extension ScenePreset {
+    var requiredVideoSources: Set<CaptureSource> {
+        switch self {
+        case .screenFullscreen: [.screen]
+        case .webcamFullscreen: [.camera]
+        default: [.screen, .camera]
+        }
     }
 }

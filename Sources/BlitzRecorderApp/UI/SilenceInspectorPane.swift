@@ -40,12 +40,6 @@ struct SilenceInspectorPane: View {
                         content: { tuning }
                     ))
                     Divider()
-                    VStack(alignment: .leading, spacing: 8) {
-                        SilencePreviewToggle(session: session)
-                        Text("Listen to the cuts before applying them.")
-                            .font(.system(size: 11))
-                            .foregroundStyle(BlitzUI.secondaryText)
-                    }
                     if session.hasRemovedSilence {
                         Button("Restore removed silence") { session.restoreSilence() }
                             .blitzButton(.secondary)
@@ -215,17 +209,7 @@ struct SilenceInspectorPane: View {
                         .font(.system(size: 11)).foregroundStyle(BlitzUI.secondaryText)
                 }
             }
-            if !session.hasRemovedSilence || session.metrics.hasChanges {
-                Button {
-                    _ = session.apply()
-                } label: {
-                    Label(session.hasRemovedSilence ? "Update silence cuts" : "Apply silence cuts", systemImage: "scissors")
-                        .frame(maxWidth: .infinity)
-                }
-                .blitzButton(.accent)
-                .disabled(!session.canApply)
-                .help("Remove silence and close gaps on every track, in playback and export. Undo with ⌘Z.")
-            }
+            SilencePreviewToggle(session: session)
         }
     }
 

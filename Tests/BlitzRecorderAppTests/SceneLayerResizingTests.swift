@@ -75,6 +75,15 @@ final class SceneLayerResizingTests: XCTestCase {
             equals: CGRect(x: 0.32, y: 0.2, width: 0.08, height: 0.3)
         )
     }
+
+    func testScalingAroundCenterGrowsPastCanvas() {
+        let scaled = SceneLayerResizing.scaled(
+            CGRect(x: 0, y: 0, width: 1, height: 1),
+            aroundCenterBy: 2
+        )
+
+        XCTAssertRect(scaled, equals: CGRect(x: -0.5, y: -0.5, width: 2, height: 2))
+    }
 }
 
 private func XCTAssertRect(

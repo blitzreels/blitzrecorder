@@ -7,6 +7,7 @@ struct EditorTextInspector: View {
         let preview: BlitzScenePreview
         let scene: RecordingScene
         let layout: CaptureLayout
+        let selectedID: Binding<UUID?>
     }
 
     let configuration: Configuration
@@ -14,7 +15,7 @@ struct EditorTextInspector: View {
     @State private var error: String?
     @FocusState private var isTextFocused: Bool
 
-    private var edits: TimelineEdits { configuration.vm.lastExportedProject?.edits ?? .empty }
+    private var edits: TimelineEdits { configuration.vm.editorProject?.edits ?? .empty }
     private var duration: Double { configuration.playback.duration }
     private var sortedOverlays: [TextOverlay] { edits.textOverlays.sorted { $0.start < $1.start } }
 
@@ -46,9 +47,12 @@ struct EditorTextInspector: View {
         .foregroundStyle(BlitzUI.primaryText)
         .buttonStyle(BlitzButtonStyle(.secondary))
         .tint(BlitzUI.mint)
-        .task(id: configuration.vm.lastExportedProject?.projectPath) { resetDraft() }
+        .task(id: (configuration.vm.lastExportedProject?.projectPath ?? "") + (configuration.vm.lastExportedProject?.selectedOutputLayout.rawValue ?? "")) { loadSelection() }
+        .onChange(of: configuration.selectedID.wrappedValue) { _, _ in loadSelection() }
         .onChange(of: edits.textOverlays) { _, overlays in
             if let id = draft.original?.id, !overlays.contains(where: { $0.id == id }) { resetDraft() }
+            else if let id = configuration.selectedID.wrappedValue,
+                    let overlay = overlays.first(where: { $0.id == id }) { draft.edit(overlay) }
         }
     }
 
@@ -110,12 +114,15 @@ struct EditorTextInspector: View {
                 timeField(.init(title: "End", value: $draft.endText))
             }
             if let range = draft.range(duration) {
+                let projection = EditorTimelineProjection(.init(duration: duration, cuts: edits.cuts))
                 HStack {
-                    Text("Visible for \(SilenceTime.label(range.duration))")
+                    Text("Visible for \(SilenceTime.label(projection.displayTime(range.end) - projection.displayTime(range.start)))")
                     Spacer(minLength: 0)
                     Text("min:sec")
                 }
                 .font(.system(size: 10)).foregroundStyle(BlitzUI.secondaryText)
+                Text("Start and end refer to the original recording.")
+                    .font(.system(size: 10)).foregroundStyle(BlitzUI.secondaryText)
             } else {
                 Text("Enter a start before the end, within \(EditorPlaybackPosition.display(duration)).")
                     .font(.system(size: 11)).foregroundStyle(BlitzUI.recordRed)
@@ -130,6 +137,7 @@ struct EditorTextInspector: View {
             ForEach(sortedOverlays) { overlay in
                 HStack(spacing: 4) {
                     Button {
+                        configuration.selectedID.wrappedValue = overlay.id
                         draft.edit(overlay)
                         error = nil
                         configuration.playback.pauseForEditing()
@@ -217,14 +225,22 @@ struct EditorTextInspector: View {
     }
 
     private func resetDraft() {
+        configuration.selectedID.wrappedValue = nil
         draft = EditorTextDraft()
         draft.moveToPlayhead(.init(time: configuration.playback.currentTime, duration: duration))
         error = nil
     }
 
+    private func loadSelection() {
+        guard let id = configuration.selectedID.wrappedValue,
+              let overlay = edits.textOverlays.first(where: { $0.id == id }) else { resetDraft(); return }
+        draft.edit(overlay)
+        error = nil
+    }
+
     private func apply(_ change: EditorTimelineEditsChange) -> Bool {
         configuration.playback.pauseForEditing()
-        guard configuration.vm.applyTimelineEdits(change) else {
+        guard configuration.vm.applyOutputTextEdits(change) else {
             error = configuration.vm.detailMessage
             return false
         }

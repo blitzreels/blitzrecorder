@@ -1081,6 +1081,7 @@ final class RecorderCoordinator {
                 self.onMessage?(arrangement.resizedMessage)
             } catch {
                 guard self.isCurrentScreenSourceWindowFit(revision, binding: binding) else { return }
+                self.onScreenCaptureConfigurationChanged?()
                 self.onMessage?(error.localizedDescription)
             }
         }
@@ -2923,8 +2924,10 @@ final class RecorderCoordinator {
             outputFormat: request.outputFormat
         )
         let sceneEvents = takeFileStore.sceneEvents(from: project)
+        let outputProject = project.outputProject(for: request.outputLayout ?? project.selectedOutputLayout)
 
         var renderSettings = request.performanceProfile.applying(to: exportSettings)
+        renderSettings.layout = CaptureLayout(rawValue: outputProject.settings.layout) ?? renderSettings.layout
         if request.mutedAudioSources.contains(.microphone) {
             renderSettings.microphoneGain = 0
         }
@@ -2932,10 +2935,10 @@ final class RecorderCoordinator {
             renderSettings.systemAudioGain = 0
         }
         let hiddenCaptureSources = Set(request.hiddenVideoSources.map(\.source))
-        var renderSceneEvents = sceneEvents
+        var renderSceneEvents = takeFileStore.sceneEvents(from: outputProject)
         if !hiddenCaptureSources.isEmpty {
             renderSettings.enabledSources.subtract(hiddenCaptureSources)
-            renderSceneEvents = sceneEvents.map { event in
+            renderSceneEvents = renderSceneEvents.map { event in
                 var scene = event.scene
                 scene.enabledSources.subtract(hiddenCaptureSources)
                 return RecordingSceneEvent(
@@ -2962,7 +2965,7 @@ final class RecorderCoordinator {
             progressHandler: { [weak self] progress in
                 self?.onRenderProgress?(progress)
             },
-            timelineEdits: project.edits
+            timelineEdits: outputProject.edits
         ))
 
         try takeFileStore.writeSourceTakeManifest(
@@ -2980,7 +2983,10 @@ final class RecorderCoordinator {
             resolution: renderSettings.outputResolution.rawValue,
             framesPerSecond: renderSettings.framesPerSecond,
             quality: request.performanceProfile.videoQuality.rawValue,
-            fileSizeBytes: fileSizeBytes
+            fileSizeBytes: fileSizeBytes,
+            layout: renderSettings.layout.rawValue,
+            width: renderSettings.outputResolution.dimensions(for: renderSettings.layout).width,
+            height: renderSettings.outputResolution.dimensions(for: renderSettings.layout).height
         )
         try takeFileStore.writeRecordingProject(
             for: take,

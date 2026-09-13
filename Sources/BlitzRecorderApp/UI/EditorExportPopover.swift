@@ -2,6 +2,8 @@ import SwiftUI
 
 struct EditorExportPopover<MusicControls: View>: View {
     struct Configuration {
+        let layouts: Binding<Set<CaptureLayout>>
+        let currentLayout: CaptureLayout
         let preset: Binding<ExportPerformancePreset>
         let format: Binding<OutputVideoFormat>
         let resolution: Binding<OutputResolution>
@@ -34,6 +36,24 @@ struct EditorExportPopover<MusicControls: View>: View {
             }
             .padding(.bottom, 20)
 
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Output formats").font(.system(size: 12, weight: .semibold))
+                ForEach(CaptureLayout.allCases, id: \.self) { layout in
+                    Toggle(layout == .square ? "Square · 1:1" : layout == .vertical ? "Vertical · 9:16" : "Landscape · 16:9",
+                        isOn: Binding(get: {
+                            configuration.layouts.wrappedValue.isEmpty ? layout == configuration.currentLayout
+                                : configuration.layouts.wrappedValue.contains(layout)
+                        }, set: { enabled in
+                            var layouts = configuration.layouts.wrappedValue
+                            if layouts.isEmpty { layouts = [configuration.currentLayout] }
+                            if enabled { layouts.insert(layout) } else if layouts.count > 1 { layouts.remove(layout) }
+                            configuration.layouts.wrappedValue = layouts
+                        }))
+                        .toggleStyle(.blitzCheckbox)
+                }
+                Text("Choose a format above the preview to adjust its framing. Exports run one at a time.")
+                    .font(.system(size: 11)).foregroundStyle(BlitzUI.secondaryText)
+            }.padding(.bottom, 16)
             VStack(spacing: 12) {
                 BlitzFormDropdown(configuration: .init(
                     title: "Preset", selection: configuration.preset,

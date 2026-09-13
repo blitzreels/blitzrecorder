@@ -177,6 +177,16 @@ enum SceneLayerResizing {
         return clamped(CGRect(x: x, y: y, width: width, height: height))
     }
 
+    static func scaled(_ frame: CGRect, aroundCenterBy ratio: CGFloat) -> CGRect {
+        guard ratio.isFinite, ratio > 0 else { return clamped(frame) }
+        return clamped(CGRect(
+            x: frame.midX - (frame.width * ratio) / 2,
+            y: frame.midY - (frame.height * ratio) / 2,
+            width: frame.width * ratio,
+            height: frame.height * ratio
+        ))
+    }
+
     static func clamped(_ frame: CGRect) -> CGRect {
         let width = min(maximumSize, max(minimumSize, frame.width))
         let height = min(maximumSize, max(minimumSize, frame.height))

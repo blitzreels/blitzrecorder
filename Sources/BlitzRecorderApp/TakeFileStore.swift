@@ -27,7 +27,7 @@ struct RecordingProject: Codable, Equatable {
     }
 
     struct SettingsSnapshot: Codable, Equatable {
-        let layout: String
+        var layout: String
         let outputResolution: String
         let outputVideoFormat: String
         let framesPerSecond: Int
@@ -410,6 +410,10 @@ struct RecordingProject: Codable, Equatable {
         let zoom: ZoomTrackSnapshot
         let silenceOverrides: [SilenceOverride]
         let cursorStyle: CursorPresentationStyle
+        let voiceCleanup: VoiceCleanupSettings
+        let outputVariants: [RecordingOutputVariant]
+        let activeOutputLayout: CaptureLayout?
+        let privacyMasks: [PrivacyMask]
         let cameraFollowsZoom: Bool
 
         static let empty = TimelineEditsSnapshot(cuts: [], textOverlays: [], zoom: .empty)
@@ -421,6 +425,10 @@ struct RecordingProject: Codable, Equatable {
             self.silenceOverrides = []
             self.cursorStyle = .standard
             self.cameraFollowsZoom = false
+            self.privacyMasks = []
+            self.outputVariants = []
+            self.voiceCleanup = .disabled
+            self.activeOutputLayout = nil
         }
 
         init(_ edits: TimelineEdits) {
@@ -430,6 +438,10 @@ struct RecordingProject: Codable, Equatable {
             silenceOverrides = edits.silenceOverrides
             cursorStyle = edits.cursorStyle
             cameraFollowsZoom = edits.cameraFollowsZoom
+            privacyMasks = edits.privacyMasks
+            outputVariants = edits.outputVariants
+            voiceCleanup = edits.voiceCleanup
+            activeOutputLayout = edits.activeOutputLayout
         }
 
         init(from decoder: Decoder) throws {
@@ -439,6 +451,10 @@ struct RecordingProject: Codable, Equatable {
             zoom = try container.decodeIfPresent(ZoomTrackSnapshot.self, forKey: .zoom) ?? .empty
             silenceOverrides = try container.decodeIfPresent([SilenceOverride].self, forKey: .silenceOverrides) ?? []
             cursorStyle = try container.decodeIfPresent(CursorPresentationStyle.self, forKey: .cursorStyle) ?? .standard
+            voiceCleanup = try container.decodeIfPresent(VoiceCleanupSettings.self, forKey: .voiceCleanup) ?? .disabled
+            outputVariants = try container.decodeIfPresent([RecordingOutputVariant].self, forKey: .outputVariants) ?? []
+            activeOutputLayout = try container.decodeIfPresent(CaptureLayout.self, forKey: .activeOutputLayout)
+            privacyMasks = try container.decodeIfPresent([PrivacyMask].self, forKey: .privacyMasks) ?? []
             cameraFollowsZoom = try container.decodeIfPresent(Bool.self, forKey: .cameraFollowsZoom) ?? false
         }
 
@@ -449,13 +465,17 @@ struct RecordingProject: Codable, Equatable {
                 zoom: zoom.track,
                 silenceOverrides: silenceOverrides,
                 cursorStyle: cursorStyle,
-                cameraFollowsZoom: cameraFollowsZoom
+                cameraFollowsZoom: cameraFollowsZoom,
+                privacyMasks: privacyMasks,
+                outputVariants: outputVariants,
+                activeOutputLayout: activeOutputLayout,
+                voiceCleanup: voiceCleanup
             )
         }
 
         var isEmpty: Bool {
             cuts.isEmpty && textOverlays.isEmpty && zoom.keyframes.isEmpty && silenceOverrides.isEmpty
-                && cursorStyle == .standard && !cameraFollowsZoom
+                && cursorStyle == .standard && !cameraFollowsZoom && privacyMasks.isEmpty && outputVariants.isEmpty && activeOutputLayout == nil && voiceCleanup == .disabled
         }
     }
 
@@ -508,6 +528,9 @@ struct RecordingProject: Codable, Equatable {
         let framesPerSecond: Int
         let quality: String
         let fileSizeBytes: Int64?
+        var layout: String? = nil
+        var width: Int? = nil
+        var height: Int? = nil
     }
 
     let version: Int
@@ -520,14 +543,14 @@ struct RecordingProject: Codable, Equatable {
     let finalVideoPath: String?
     let timelineTrimOffsetSeconds: Double
     let sourceTimelineOffsetSeconds: [String: Double]
-    let settings: SettingsSnapshot
+    var settings: SettingsSnapshot
     let sources: [SourceFile]
-    let sceneEvents: [SceneEventSnapshot]
+    var sceneEvents: [SceneEventSnapshot]
     let chapters: [ChapterSnapshot]
     let editorTimeline: TimelineSnapshot
     let editorState: EditorStateSnapshot
     let exports: [ExportRecord]
-    let timelineEdits: TimelineEditsSnapshot
+    var timelineEdits: TimelineEditsSnapshot
     let analysis: AnalysisSnapshot
 
     enum CodingKeys: String, CodingKey {
@@ -1382,6 +1405,7 @@ struct TakeFileStore {
         outputFormat: OutputVideoFormat
     ) -> RecordingSettings {
         var settings = baseSettings
+        settings.voiceCleanup = project.edits.voiceCleanup
         settings.layout = CaptureLayout(rawValue: project.settings.layout) ?? settings.layout
         settings.outputResolution = OutputResolution(rawValue: project.settings.outputResolution) ?? settings.outputResolution
         settings.outputVideoFormat = outputFormat
