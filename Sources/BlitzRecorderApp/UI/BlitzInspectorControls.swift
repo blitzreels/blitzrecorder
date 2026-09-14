@@ -42,6 +42,7 @@ struct BlitzInspectorDisclosure<Content: View>: View {
     }
 
     let configuration: Configuration
+    @Environment(\.controlSize) private var controlSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -50,12 +51,15 @@ struct BlitzInspectorDisclosure<Content: View>: View {
             } label: {
                 HStack(spacing: 8) {
                     Text(configuration.title)
+                        .foregroundStyle(controlSize == .large ? BlitzUI.primaryText : BlitzUI.secondaryText)
                     Spacer(minLength: 0)
                     if let detail = configuration.detail {
-                        Text(detail).font(.system(size: 10))
+                        Text(detail)
+                            .font(.system(size: controlSize == .large ? 12 : 10))
+                            .foregroundStyle(controlSize == .large ? BlitzUI.supportingText : BlitzUI.secondaryText)
                     }
                     Image(systemName: configuration.isExpanded.wrappedValue ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(size: controlSize == .large ? 11 : 9, weight: .semibold))
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -76,16 +80,17 @@ struct BlitzInspectorHeading: View {
     }
 
     let configuration: Configuration
+    @Environment(\.controlSize) private var controlSize
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(configuration.title)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: controlSize == .large ? 14 : 12, weight: .semibold))
                 .foregroundStyle(BlitzUI.primaryText)
             Spacer(minLength: 0)
             if let detail = configuration.detail {
                 Text(detail)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: controlSize == .large ? 12 : 10, weight: .medium))
                     .foregroundStyle(BlitzUI.secondaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -106,13 +111,14 @@ struct BlitzInspectorSlider: View {
     }
 
     let configuration: Configuration
+    @Environment(\.controlSize) private var controlSize
 
     var body: some View {
         HStack(spacing: 12) {
             Text(configuration.title)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(BlitzUI.secondaryText)
-                .frame(width: 64, alignment: .leading)
+                .font(.system(size: controlSize == .large ? 13 : 11, weight: .medium))
+                .foregroundStyle(controlSize == .large ? BlitzUI.supportingText : BlitzUI.secondaryText)
+                .frame(width: controlSize == .large ? 70 : 64, alignment: .leading)
             Slider(
                 value: configuration.value,
                 in: configuration.range,
@@ -125,10 +131,10 @@ struct BlitzInspectorSlider: View {
             .accessibilityValue(configuration.valueLabel)
             .accessibilityAction(named: "Reset", configuration.onReset)
             Text(configuration.valueLabel)
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .font(.system(size: controlSize == .large ? 12 : 10, weight: .medium, design: .monospaced))
                 .foregroundStyle(BlitzUI.primaryText)
                 .monospacedDigit()
-                .frame(width: 38, alignment: .trailing)
+                .frame(width: controlSize == .large ? 48 : 38, alignment: .trailing)
                 .accessibilityHidden(true)
         }
         .frame(minHeight: 28)

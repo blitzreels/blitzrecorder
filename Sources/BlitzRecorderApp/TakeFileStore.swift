@@ -408,6 +408,8 @@ struct RecordingProject: Codable, Equatable {
         let cuts: [CutSnapshot]
         let textOverlays: [TextOverlaySnapshot]
         let zoom: ZoomTrackSnapshot
+        let videoSplits: [Double]
+        let silenceRemovalApplied: Bool
         let silenceOverrides: [SilenceOverride]
         let cursorStyle: CursorPresentationStyle
         let voiceCleanup: VoiceCleanupSettings
@@ -422,6 +424,8 @@ struct RecordingProject: Codable, Equatable {
             self.cuts = cuts
             self.textOverlays = textOverlays
             self.zoom = zoom
+            self.videoSplits = []
+            self.silenceRemovalApplied = false
             self.silenceOverrides = []
             self.cursorStyle = .standard
             self.cameraFollowsZoom = false
@@ -435,6 +439,8 @@ struct RecordingProject: Codable, Equatable {
             cuts = edits.cuts.map(CutSnapshot.init)
             textOverlays = edits.textOverlays.map(TextOverlaySnapshot.init)
             zoom = ZoomTrackSnapshot(edits.zoom)
+            videoSplits = edits.videoSplits
+            silenceRemovalApplied = edits.silenceRemovalApplied
             silenceOverrides = edits.silenceOverrides
             cursorStyle = edits.cursorStyle
             cameraFollowsZoom = edits.cameraFollowsZoom
@@ -449,6 +455,9 @@ struct RecordingProject: Codable, Equatable {
             cuts = try container.decodeIfPresent([CutSnapshot].self, forKey: .cuts) ?? []
             textOverlays = try container.decodeIfPresent([TextOverlaySnapshot].self, forKey: .textOverlays) ?? []
             zoom = try container.decodeIfPresent(ZoomTrackSnapshot.self, forKey: .zoom) ?? .empty
+            videoSplits = try container.decodeIfPresent([Double].self, forKey: .videoSplits) ?? []
+            silenceRemovalApplied = try container.decodeIfPresent(Bool.self, forKey: .silenceRemovalApplied)
+                ?? cuts.contains { $0.cut.kind == .silence && $0.cut.isEnabled }
             silenceOverrides = try container.decodeIfPresent([SilenceOverride].self, forKey: .silenceOverrides) ?? []
             cursorStyle = try container.decodeIfPresent(CursorPresentationStyle.self, forKey: .cursorStyle) ?? .standard
             voiceCleanup = try container.decodeIfPresent(VoiceCleanupSettings.self, forKey: .voiceCleanup) ?? .disabled
@@ -469,12 +478,14 @@ struct RecordingProject: Codable, Equatable {
                 privacyMasks: privacyMasks,
                 outputVariants: outputVariants,
                 activeOutputLayout: activeOutputLayout,
-                voiceCleanup: voiceCleanup
+                voiceCleanup: voiceCleanup,
+                videoSplits: videoSplits,
+                silenceRemovalApplied: silenceRemovalApplied
             )
         }
 
         var isEmpty: Bool {
-            cuts.isEmpty && textOverlays.isEmpty && zoom.keyframes.isEmpty && silenceOverrides.isEmpty
+            videoSplits.isEmpty && !silenceRemovalApplied && cuts.isEmpty && textOverlays.isEmpty && zoom.keyframes.isEmpty && silenceOverrides.isEmpty
                 && cursorStyle == .standard && !cameraFollowsZoom && privacyMasks.isEmpty && outputVariants.isEmpty && activeOutputLayout == nil && voiceCleanup == .disabled
         }
     }

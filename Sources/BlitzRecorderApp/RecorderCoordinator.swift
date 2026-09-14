@@ -363,7 +363,11 @@ final class RecorderCoordinator {
         saveCurrentSceneSnapshotIfNeeded()
         guard let scene = sceneLibrary.selectScene(id: id, layout: settings.layout) else { return }
         SceneLibraryStore.save(sceneLibrary, defaults: defaults)
+        let screenSelection = currentScreenSourceSelection()
+        let screenAspectRatio = settings.screenSourceAspectRatio
         applySceneSnapshot(scene.snapshot)
+        restoreScreenSourceSelection(screenSelection)
+        settings.screenSourceAspectRatio = screenAspectRatio
         persistSettings(saveSceneSnapshot: false)
         updateRecordingSceneIfNeeded(transition: .sceneSwitch)
         onScreenCaptureConfigurationChanged?()
@@ -675,8 +679,9 @@ final class RecorderCoordinator {
     }
 
     func setScreenSource(_ binding: ScreenSourceBinding, autoFitWindowZoom: CGFloat? = nil) {
-        guard state == .idle else {
-            onMessage?("Use the recording Screen control to switch sources mid-recording.")
+        guard state.allowsScreenContentPickerPresentation else { return }
+        if state == .recording || state == .paused {
+            switchRecordingScreenSource(binding)
             return
         }
         cancelPendingScreenWindowFits()
@@ -696,6 +701,58 @@ final class RecorderCoordinator {
         onScreenCaptureConfigurationChanged?()
         if let autoFitWindowZoom, binding.kind != .display {
             autoFitScreenSourceWindow(binding, zoom: autoFitWindowZoom)
+        }
+    }
+
+    private func switchRecordingScreenSource(_ binding: ScreenSourceBinding) {
+        let previousTransaction = activeScreenPickerTransactionTask
+        let previousConfiguration = activeScreenCaptureConfigurationTask
+        let transactionID = UUID()
+        activeScreenPickerTransactionID = transactionID
+        activeScreenPickerTransactionTask = Task { @MainActor [weak self] in
+            await previousTransaction?.value
+            await previousConfiguration?.value
+            guard let self else { return }
+            defer {
+                if activeScreenPickerTransactionID == transactionID {
+                    activeScreenPickerTransactionID = nil
+                    activeScreenPickerTransactionTask = nil
+                }
+            }
+            guard state == .recording || state == .paused else { return }
+            let previousSettings = settings
+            let previousSelection = screenSourceSelection.runtimeState()
+            let previousAspectRatio = currentPickedScreenSourceAspectRatio
+            cancelPendingScreenWindowFits()
+            settings = screenSourceSelection.selectBinding(.init(binding: binding, settings: settings))
+            settings.enabledSources.insert(.screen)
+            settings.hiddenSources.remove(.screen)
+            currentPickedScreenSourceAspectRatio = nil
+            do {
+                let captureSettings = localCaptureSettings(
+                    usesRemoteCamera: settings.enabledSources.contains(.camera) && isRemoteCameraSelected
+                )
+                let filter = try await resolvedScreenFilter(for: captureSettings)
+                try await takeRecording.updateScreenCapture(settings: captureSettings, pickedScreenFilter: filter)
+                committedRecordingSettings = settings
+                screenSourcePickerRecents.record(binding)
+                persistSettings()
+                updateRecordingSceneTimeline(transition: .cut)
+                onScreenCaptureConfigurationChanged?()
+                onMessage?("Screen switched to \(binding.displayName). Recording continues.")
+            } catch {
+                settings = previousSettings
+                screenSourceSelection.restoreRuntimeState(previousSelection)
+                currentPickedScreenSourceAspectRatio = previousAspectRatio
+                onScreenCaptureConfigurationChanged?()
+                if let failure = error as? CaptureSourceRetargetFailure, failure.rollbackFailed {
+                    stop()
+                    onMessage?("Source switch failed. Recording stopped to protect the take.")
+                } else {
+                    onMessage?("Could not switch screen. Recording continues with the previous source: "
+                        + error.recorderFailureDescription)
+                }
+            }
         }
     }
 
@@ -1754,7 +1811,7 @@ final class RecorderCoordinator {
     }
 
     func screenSourceThumbnail(_ binding: ScreenSourceBinding) async -> NSImage? {
-        guard state == .idle, permissionGate.hasScreenCaptureAccess else { return nil }
+        guard state.allowsScreenContentPickerPresentation, permissionGate.hasScreenCaptureAccess else { return nil }
         return await screenThumbnailProvider.image(.init(binding: binding, settings: settings))
     }
 
@@ -3372,19 +3429,21 @@ final class RecorderCoordinator {
         settings.cameraCropAmount = snapshot.cameraCropAmount
         settings.cameraCropPosition = snapshot.cameraCropPosition
         settings.selectedCameraID = snapshot.selectedCameraID
-        settings = screenSourceSelection.restore(
-            ScreenSourceSelection.RestoreRequest(
-                snapshot: ScreenSourceSelectionSnapshot(
-                    usesPickedContent: snapshot.usesPickedScreenContent,
-                    binding: snapshot.screenSourceBinding,
-                    selectedDisplayID: snapshot.selectedDisplayID,
-                    crop: snapshot.screenCrop,
-                    pickedContentSelectionID: snapshot.pickedScreenContentSelectionID
-                ),
-                settings: settings
+        if snapshot.screenSourceBinding?.isConcreteSelection == true || snapshot.usesPickedScreenContent {
+            settings = screenSourceSelection.restore(
+                ScreenSourceSelection.RestoreRequest(
+                    snapshot: ScreenSourceSelectionSnapshot(
+                        usesPickedContent: snapshot.usesPickedScreenContent,
+                        binding: snapshot.screenSourceBinding,
+                        selectedDisplayID: snapshot.selectedDisplayID,
+                        crop: snapshot.screenCrop,
+                        pickedContentSelectionID: snapshot.pickedScreenContentSelectionID
+                    ),
+                    settings: settings
+                )
             )
-        )
-        settings.screenSourceAspectRatio = snapshot.screenSourceAspectRatio
+            settings.screenSourceAspectRatio = snapshot.screenSourceAspectRatio
+        }
         refitCameraInsetFrameForCurrentSource()
     }
 

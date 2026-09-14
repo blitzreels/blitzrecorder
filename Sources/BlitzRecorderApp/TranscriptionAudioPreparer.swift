@@ -18,6 +18,7 @@ enum TranscriptionMediaSource: Equatable, Sendable {
 struct PreparedTranscriptionAudio: Sendable {
     let mediaPath: String
     let audioURL: URL
+    let duration: TimeInterval
     let artifactLocations: TranscriptArtifactStore.Locations
     let temporaryURL: URL
 }
@@ -27,6 +28,7 @@ struct TranscriptionAudioPreparer {
         let url: URL
         let trackIndex: Int
         let sourceStart: CMTime
+        let timelineStart: CMTime
         let volume: Float
     }
 
@@ -51,6 +53,7 @@ struct TranscriptionAudioPreparer {
             return PreparedTranscriptionAudio(
                 mediaPath: project.finalVideoPath ?? project.projectPath,
                 audioURL: outputURL,
+                duration: try audioDuration(outputURL),
                 artifactLocations: artifactStore.locations(for: project),
                 temporaryURL: outputURL
             )
@@ -63,6 +66,7 @@ struct TranscriptionAudioPreparer {
             return PreparedTranscriptionAudio(
                 mediaPath: recordingURL.path,
                 audioURL: outputURL,
+                duration: try audioDuration(outputURL),
                 artifactLocations: artifactStore.locations(for: recordingURL),
                 temporaryURL: outputURL
             )
@@ -95,6 +99,8 @@ struct TranscriptionAudioPreparer {
                 url: url,
                 trackIndex: 0,
                 sourceStart: CMTime(seconds: sourceStart, preferredTimescale: 600),
+                timelineStart: CMTime(seconds: max(0, sourceTimelineOffset - project.timelineTrimOffsetSeconds),
+                                     preferredTimescale: 600),
                 volume: max(0, min(2, volume))
             )
         }
@@ -110,6 +116,7 @@ struct TranscriptionAudioPreparer {
                 url: url,
                 trackIndex: index,
                 sourceStart: timeRange.start,
+                timelineStart: timeRange.start,
                 volume: 1
             ))
         }
@@ -137,25 +144,72 @@ struct TranscriptionAudioPreparer {
             try compositionTrack.insertTimeRange(
                 CMTimeRange(start: input.sourceStart, duration: sourceDuration),
                 of: sourceTrack,
-                at: .zero
+                at: input.timelineStart
             )
             let parameters = AVMutableAudioMixInputParameters(track: compositionTrack)
-            parameters.setVolume(input.volume, at: .zero)
+            let headroom = max(1, request.inputs.reduce(Float.zero) { $0 + $1.volume })
+            parameters.setVolume(input.volume / headroom, at: .zero)
             mixParameters.append(parameters)
         }
 
-        guard !composition.tracks(withMediaType: .audio).isEmpty,
-              let exporter = AVAssetExportSession(
-                asset: composition,
-                presetName: AVAssetExportPresetAppleM4A
-              ) else {
+        let tracks = composition.tracks(withMediaType: .audio)
+        guard !tracks.isEmpty else {
             throw RecorderError.speechUnavailable
         }
-
         let audioMix = AVMutableAudioMix()
         audioMix.inputParameters = mixParameters
-        exporter.audioMix = audioMix
-        try await exporter.export(to: request.outputURL, as: .m4a)
+        let reader = try AVAssetReader(asset: composition)
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM, AVLinearPCMIsFloatKey: true,
+            AVLinearPCMBitDepthKey: 32, AVLinearPCMIsNonInterleaved: false,
+            AVSampleRateKey: 16_000, AVNumberOfChannelsKey: 1
+        ]
+        let output = AVAssetReaderAudioMixOutput(audioTracks: tracks, audioSettings: settings)
+        output.audioMix = audioMix
+        guard reader.canAdd(output) else { throw RecorderError.speechUnavailable }
+        reader.add(output)
+        guard reader.startReading(), let format = AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1) else {
+            throw reader.error ?? RecorderError.speechUnavailable
+        }
+        defer { reader.cancelReading() }
+        do {
+            let file = try AVAudioFile(forWriting: request.outputURL, settings: settings,
+                                       commonFormat: .pcmFormatFloat32, interleaved: false)
+            while let sample = output.copyNextSampleBuffer() {
+                try Task.checkCancellation()
+                guard let data = CMSampleBufferGetDataBuffer(sample) else { throw RecorderError.speechUnavailable }
+                let count = CMBlockBufferGetDataLength(data) / MemoryLayout<Float>.size
+                guard count > 0 else { continue }
+                guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(count)),
+                      let samples = buffer.floatChannelData?[0] else { throw RecorderError.speechUnavailable }
+                buffer.frameLength = AVAudioFrameCount(count)
+                let status = CMBlockBufferCopyDataBytes(data, atOffset: 0,
+                    dataLength: count * MemoryLayout<Float>.size, destination: samples)
+                guard status == kCMBlockBufferNoErr else { throw RecorderError.speechUnavailable }
+                let sampleTime = CMSampleBufferGetPresentationTimeStamp(sample).seconds
+                guard sampleTime.isFinite, sampleTime >= 0 else { throw RecorderError.speechUnavailable }
+                let targetFrame = AVAudioFramePosition((sampleTime * 16_000).rounded())
+                while file.framePosition < targetFrame {
+                    let gap = AVAudioFrameCount(min(4096, targetFrame - file.framePosition))
+                    guard let silence = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: gap) else {
+                        throw RecorderError.speechUnavailable
+                    }
+                    silence.frameLength = gap
+                    silence.floatChannelData?[0].initialize(repeating: 0, count: Int(gap))
+                    try file.write(from: silence)
+                }
+                try file.write(from: buffer)
+            }
+            guard reader.status == .completed else { throw reader.error ?? RecorderError.speechUnavailable }
+        } catch {
+            try? FileManager.default.removeItem(at: request.outputURL)
+            throw error
+        }
+    }
+
+    private func audioDuration(_ url: URL) throws -> TimeInterval {
+        let file = try AVAudioFile(forReading: url)
+        return Double(file.length) / file.processingFormat.sampleRate
     }
 
     private func temporaryAudioURL() throws -> URL {
@@ -167,6 +221,6 @@ struct TranscriptionAudioPreparer {
         )
         return directory
             .appendingPathComponent(UUID().uuidString)
-            .appendingPathExtension("m4a")
+            .appendingPathExtension("caf")
     }
 }

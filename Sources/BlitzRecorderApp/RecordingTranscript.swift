@@ -31,6 +31,13 @@ struct RecordingTranscript: Codable, Equatable, Identifiable, Sendable {
     let suggestedTitle: String?
     var speakers: [Speaker]
     let segments: [Segment]
+    var words: [TranscriptWord]? = nil
+    var speechRanges: [SpeechRange]? = nil
+
+    struct SpeechRange: Codable, Equatable, Sendable {
+        let startTime: Double
+        let endTime: Double
+    }
 
     var wordCount: Int {
         text.split(whereSeparator: \.isWhitespace).count
@@ -102,7 +109,9 @@ struct RecordingTranscript: Codable, Equatable, Identifiable, Sendable {
             text: text,
             suggestedTitle: suggestedTitle,
             speakers: speakers.filter { $0.id != request.sourceSpeakerID },
-            segments: Self.coalesced(relabeledSegments)
+            segments: Self.coalesced(relabeledSegments),
+            words: words,
+            speechRanges: speechRanges
         )
     }
 
@@ -219,7 +228,7 @@ struct TranscriptSpeakerMergeRequest {
     let targetSpeakerID: String
 }
 
-struct TranscriptWord: Equatable, Sendable {
+struct TranscriptWord: Codable, Equatable, Sendable {
     let text: String
     let startTime: TimeInterval
     let endTime: TimeInterval
@@ -287,7 +296,7 @@ enum RecordingTranscriptAssembler {
             .map { RecordingTranscript.Speaker(id: $0, name: "", context: "") }
 
         return RecordingTranscript(
-            version: 1,
+            version: 2,
             id: UUID(),
             mediaPath: request.mediaPath,
             generatedAt: request.generatedAt,
@@ -296,7 +305,11 @@ enum RecordingTranscriptAssembler {
             text: request.text,
             suggestedTitle: request.suggestedTitle,
             speakers: speakers,
-            segments: segments
+            segments: segments,
+            words: sortedWords,
+            speechRanges: request.diarizedIntervals.map {
+                .init(startTime: $0.startTime, endTime: $0.endTime)
+            }
         )
     }
 

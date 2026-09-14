@@ -47,6 +47,9 @@ struct EditorTimelineTrackDuration {
 @MainActor
 struct EditorTimelineView: View {
     let project: RecordingProject?
+    let transcript: RecordingTranscript?
+    let transcriptionStatus: TranscriptionJobStatus
+    let onGenerateTranscript: () -> Void
     let assets: [EditorAsset]
     let library: EditorMediaLibrary
     let draftScene: RecordingScene?
@@ -87,6 +90,7 @@ struct EditorTimelineView: View {
     let onChangePlacedItem: (EditorPlacedItemEditing.Change) -> Void
     let onRemovePlacedItem: (EditorPlacedItem.ID) -> Void
 
+    @State private var transcriptItems: [EditorTranscriptItem] = []
     @State private var projection = EditorTimelineProjection(.init(duration: 0, cuts: []))
     @State private var scrollOffset: CGFloat = 0
     @State private var trackScrollWidth: CGFloat = 0
@@ -147,6 +151,10 @@ struct EditorTimelineView: View {
             .frame(maxHeight: .infinity, alignment: .top)
         }
         .background(BlitzUI.projectLibraryBackground)
+        .onChange(of: transcript, initial: true) { updateTranscriptItems() }
+        .onChange(of: silence.windows) { updateTranscriptItems() }
+        .onChange(of: silence.threshold) { updateTranscriptItems() }
+        .onChange(of: duration) { updateTranscriptItems() }
         .onChange(of: EditorTimelineProjection.Request(duration: duration, cuts: project?.edits.cuts ?? []), initial: true) {
             projection = EditorTimelineProjection(.init(duration: duration, cuts: project?.edits.cuts ?? []))
         }
@@ -161,95 +169,116 @@ struct EditorTimelineView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 20) {
-            HStack(spacing: 2) {
-                TimelineActionButton(
-                    title: "Split", systemName: "scissors",
-                    isDisabled: !isInteractive || !canSplitSelection, action: onSplit
-                )
-                .help(selectedPlacedItem == nil ? "Split all tracks together at the playhead (⌘B)"
-                      : "Split the selected item at the playhead (⌘B)")
-                TimelineActionButton(
-                    title: "Range", systemName: "rectangle.dashed",
-                    isDisabled: !isInteractive, action: onMarkIn
-                )
-                .help("Mark a range from the playhead (I). Drag a track to select a range.")
-                if let selected = silenceControlSelection {
-                    TimelineActionButton(
-                        title: "Switch", systemName: "arrow.triangle.2.circlepath",
-                        isDisabled: !isInteractive || !silence.canClassify
-                    ) {
-                        silence.toggleRanges(selected.ranges)
-                        selection = .silenceRanges(selected)
-                    }
-                    .help("Switch selected sections between silence and sound (Delete)")
-                } else {
-                    TimelineActionButton(
-                        title: "Delete", systemName: "trash",
-                        isDisabled: !isInteractive || (!canDeleteSegment && selectedPlacedItem == nil)
-                    ) {
-                        if let id = selectedPlacedItem { onRemovePlacedItem(id) }
-                        else { onDeleteSegment() }
-                    }
-                    .help(selectedPlacedItem == nil
-                          ? "Delete this segment from all tracks and close the gap (Delete). Undo with ⌘Z."
-                          : "Remove the selected item. Undo with ⌘Z.")
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 16) {
+                editActions
+                Spacer(minLength: 0)
+                playbackControls
+                Spacer(minLength: 0)
+                listeningAndZoomControls
+            }
+            .blitzWorkspaceToolbar()
+            VStack(spacing: 0) {
+                HStack {
+                    editActions
+                    Spacer(minLength: 0)
+                    listeningAndZoomControls
                 }
+                .blitzWorkspaceToolbar()
+                playbackControls
+                    .frame(maxWidth: .infinity)
+                    .blitzWorkspaceToolbar()
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
 
-            EditorPlaybackControls(configuration: .init(
-                time: projection.displayTime(playbackTime),
-                duration: projection.duration,
-                isPlaying: isPlaying,
-                isEnabled: isInteractive,
-                rate: playbackRate,
-                onSeek: {
-                    onSeek(projection.takeTime($0))
-                    onSeekEnded()
-                },
-                onTogglePlayback: onTogglePlayback,
-                onPreviousScene: onPrevious,
-                onNextScene: onNext,
-                onRateChange: onPlaybackRateChange
-            ))
-            .fixedSize()
-
-            HStack(spacing: 10) {
-                BlitzPlaybackVolumeControl(configuration: .init(
-                    volume: $playbackVolume,
-                    sliderWidth: 110,
-                    onToggleMute: onTogglePlaybackMute
-                ))
-                .disabled(!isInteractive || !hasPlaybackAudio)
-                Rectangle().fill(BlitzUI.separator).frame(width: 1, height: 24)
-                    .padding(.horizontal, 4)
-                BlitzSymbol(configuration: .init(name: "plus.magnifyingglass", size: 14))
-                    .foregroundStyle(BlitzUI.secondaryText)
-                Slider(
-                    value: logarithmicZoom,
-                    in: log2(EditorTimelineZoom.minimum)...log2(EditorTimelineZoom.maximum(for: projection.duration))
-                )
-                    .controlSize(.small)
-                    .tint(BlitzUI.mint)
-                    .frame(width: 150)
-                    .accessibilityLabel("Timeline zoom")
-                    .accessibilityValue(String(format: "%.2f×", zoomLevel))
-                    .help("Timeline zoom (− / +). Fit with F.")
+    private var editActions: some View {
+        HStack(spacing: 2) {
+            TimelineActionButton(
+                title: "Split", systemName: "scissors",
+                isDisabled: !isInteractive || !canSplitSelection, action: onSplit
+            )
+            .help(selectedPlacedItem == nil ? "Split the video at the playhead, keeping audio in sync (⌘B)"
+                  : "Split the selected item at the playhead (⌘B)")
+            TimelineActionButton(
+                title: "Range", systemName: "rectangle.dashed",
+                isDisabled: !isInteractive, action: onMarkIn
+            )
+            .help("Mark a range from the playhead (I). Drag a track to select a range.")
+            if let selected = silenceControlSelection {
                 TimelineActionButton(
-                    title: "Fit", systemName: "arrow.left.and.right", isDisabled: zoomLevel == 1
-                ) { zoomLevel = 1 }
-                .help("Fit the full recording in the timeline (F)")
+                    title: "Switch", systemName: "arrow.triangle.2.circlepath",
+                    isDisabled: !isInteractive || !silence.canClassify
+                ) {
+                    silence.toggleRanges(selected.ranges)
+                    selection = .silenceRanges(selected)
+                }
+                .help("Switch selected sections between silence and sound (Delete)")
+            } else {
+                TimelineActionButton(
+                    title: "Delete", systemName: "trash",
+                    isDisabled: !isInteractive || (!canDeleteSegment && selectedPlacedItem == nil && selection?.timeRange == nil)
+                ) {
+                    if let id = selectedPlacedItem { onRemovePlacedItem(id) }
+                    else if selection?.timeRange != nil { onCutRange() }
+                    else { onDeleteSegment() }
+                }
+                .help(selectedPlacedItem == nil
+                      ? "Delete this segment from all tracks and close the gap (Delete). Undo with ⌘Z."
+                      : "Remove the selected item. Undo with ⌘Z.")
             }
-            .fixedSize(horizontal: true, vertical: false)
-            .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .blitzWorkspaceToolbar()
-        .controlSize(.large)
-        .contextMenu { timelineContextMenu }
-        .popover(isPresented: $showsShortcuts, arrowEdge: .bottom) {
-            EditorShortcutHelp()
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var playbackControls: some View {
+        EditorPlaybackControls(configuration: .init(
+            time: projection.displayTime(playbackTime),
+            duration: projection.duration,
+            isPlaying: isPlaying,
+            isEnabled: isInteractive,
+            rate: playbackRate,
+            onSeek: {
+                onSeek(projection.takeTime($0))
+                onSeekEnded()
+            },
+            onTogglePlayback: onTogglePlayback,
+            onPreviousScene: onPrevious,
+            onNextScene: onNext,
+            onRateChange: onPlaybackRateChange
+        ))
+        .fixedSize()
+    }
+
+    private var listeningAndZoomControls: some View {
+        HStack(spacing: 10) {
+            BlitzPlaybackVolumeControl(configuration: .init(
+                volume: $playbackVolume,
+                sliderWidth: 110,
+                onToggleMute: onTogglePlaybackMute
+            ))
+            .disabled(!isInteractive || !hasPlaybackAudio)
+            Rectangle().fill(BlitzUI.separator).frame(width: 1, height: 24)
+                .padding(.horizontal, 4)
+            BlitzSymbol(configuration: .init(name: "plus.magnifyingglass", size: 14))
+                .foregroundStyle(BlitzUI.secondaryText)
+            Slider(
+                value: logarithmicZoom,
+                in: log2(EditorTimelineZoom.minimum)...log2(EditorTimelineZoom.maximum(for: projection.duration))
+            )
+                .controlSize(.small)
+                .tint(BlitzUI.mint)
+                .frame(width: 150)
+                .accessibilityLabel("Timeline zoom")
+                .accessibilityValue(String(format: "%.2f×", zoomLevel))
+                .help("Timeline zoom (− / +). Fit with F.")
+            TimelineActionButton(
+                title: "Fit", systemName: "arrow.left.and.right", isDisabled: zoomLevel == 1
+            ) { zoomLevel = 1 }
+            .help("Fit the full recording in the timeline (F)")
         }
+        .fixedSize(horizontal: true, vertical: false)
+
     }
 
     private var logarithmicZoom: Binding<Double> {
@@ -312,7 +341,7 @@ struct EditorTimelineView: View {
                     .foregroundStyle(BlitzUI.secondaryText)
                 Spacer(minLength: 4)
             }
-            SilencePreviewToggle(session: silence)
+            SilencePreviewToggle(configuration: .init(session: silence, presentation: .inline))
                 .fixedSize()
         }
         .font(.system(size: 11, weight: .medium))
@@ -444,7 +473,6 @@ struct EditorTimelineView: View {
 
     private var silenceControlSelection: SilenceSegmentSelection? {
         if let selected = selection?.silenceSelection { return selected }
-        if isEditingSilence, let range = selection?.timeRange { return SilenceSegmentSelection(range) }
         return nil
     }
 
@@ -502,6 +530,7 @@ struct EditorTimelineView: View {
                                         ))
                                         .disabled(!isInteractive || !silence.canClassify)
                                     }
+                                    transcriptTrack(.init(pixelsPerSecond: pxPerSecond, contentWidth: contentWidth, viewport: viewport))
                                     if showsChaptersTrack {
                                         chaptersTrack(pxPerSecond: pxPerSecond, contentWidth: contentWidth)
                                     }
@@ -631,14 +660,14 @@ struct EditorTimelineView: View {
     }
 
     private func isPlacedTrack(at y: CGFloat) -> Bool {
-        let top = (showsSilenceTrack ? silenceRowHeight + 6 : 0)
+        let top = (showsSilenceTrack ? silenceRowHeight + 6 : 0) + silenceRowHeight + 6
             + (showsChaptersTrack ? chaptersRowHeight + 6 : 0)
             + (showsSegmentsTrack ? segmentsRowHeight + 6 : 0)
         return y >= top && y < top + CGFloat(placedTracks.count) * (placedRowHeight + 6)
     }
 
     private func linkedSegmentOverlay(_ pxPerSecond: CGFloat) -> some View {
-        let top = (showsSilenceTrack ? silenceRowHeight + 6 : 0)
+        let top = (showsSilenceTrack ? silenceRowHeight + 6 : 0) + silenceRowHeight + 6
             + (showsChaptersTrack ? chaptersRowHeight + 6 : 0)
         let height = max(0, contentHeight - top)
         return Canvas { context, _ in
@@ -775,7 +804,16 @@ struct EditorTimelineView: View {
                     .buttonStyle(.plain)
                     .disabled((row.asset == nil && row.item == nil) || !isInteractive)
                     .accessibilityLabel("Select \(row.title) track")
-                    if let asset = row.asset, toggleableAssetIDs.contains(asset.id) {
+                    if row.title == "Transcript", transcript != nil,
+                        transcript?.words == nil || transcriptionStatus.isRunning {
+                        Button(transcriptionStatus.isRunning ? "Working…" : "Words", action: onGenerateTranscript)
+                            .blitzButton(.secondary)
+                            .controlSize(.mini)
+                            .disabled(transcriptionStatus.isRunning)
+                            .accessibilityLabel("Generate word timings")
+                            .help(transcriptionStatus.isRunning ? transcriptionStatus.label
+                                : "Generate precise word timings for this older transcript.")
+                    } else if let asset = row.asset, toggleableAssetIDs.contains(asset.id) {
                         trackToggle(for: asset)
                     } else {
                         Color.clear.frame(width: 32)
@@ -1067,6 +1105,19 @@ struct EditorTimelineView: View {
             )
             .equatable()
             .padding(.vertical, asset.isVideo ? 3 : 0)
+            Canvas { context, size in
+                for time in project?.edits.videoSplits ?? [] {
+                    let x = CGFloat(projection.displayTime(time)) * request.pxPerSecond - viewport.lowerBound
+                    guard x >= 0, x <= size.width else { continue }
+                    context.fill(Path(CGRect(x: x - 2, y: 0, width: 5, height: size.height)),
+                                 with: .color(BlitzUI.projectLibraryBackground))
+                    context.fill(Path(CGRect(x: x, y: 0, width: 1, height: size.height)),
+                                 with: .color(BlitzUI.mint))
+                }
+            }
+            .frame(width: viewport.width)
+            .offset(x: viewport.lowerBound)
+            .allowsHitTesting(false)
             if showsSilence {
                 SilenceWaveformOverlay(runs: silenceRuns, viewport: viewport)
                     .equatable()
@@ -1087,12 +1138,11 @@ struct EditorTimelineView: View {
                     time: projection.takeTime(Double(event.location.x / request.pxPerSecond))
                 )) {
                 clickSilenceRange(segment.range)
-            } else if isInteractive,
-                let index = EditorSceneTimelineActiveIndexResolver.index(request: .init(
-                    eventTimes: sceneEvents.map(\.time),
-                    playbackTime: projection.takeTime(Double(event.location.x / request.pxPerSecond))
-                )) {
-                selection = .segment(index)
+            } else if isInteractive, let range = EditorVideoCuts.range(.init(
+                edits: project?.edits ?? .empty,
+                time: projection.takeTime(Double(event.location.x / request.pxPerSecond)), duration: duration
+            )) {
+                selection = .range(range)
             } else {
                 selection = .asset(asset.id)
             }
@@ -1116,10 +1166,10 @@ struct EditorTimelineView: View {
         .accessibilityLabel("\(asset.title) track")
         .accessibilityValue(isOff ? (asset.isVideo ? "Hidden" : "Muted in playback and export")
             : showsSilence && !selectedSilenceRanges.isEmpty ? "Sound or silence section selected"
-            : isSelected ? "Selected" : "Enabled")
+            : isSelected ? "Selected" : "Enabled, \(project?.edits.videoSplits.count ?? 0) video cuts")
         .help(showsSilence
             ? "Click to select. ⌘-click to add or remove. Shift-click to extend. Drag to select a time range."
-            : "Click to select a segment across all tracks. Drag to select a range. Select the track name for source controls.")
+            : "Click to select a video clip. Drag to select a range. Delete removes it with audio kept in sync.")
         .contextMenu {
             Button("Select \(asset.title)", systemImage: asset.systemImage) {
                 selection = .asset(asset.id)
@@ -1190,7 +1240,7 @@ struct EditorTimelineView: View {
             .disabled(!isInteractive)
         Button("Mark range out at playhead", systemImage: "selection.pin.in.out", action: onMarkOut)
             .disabled(!isInteractive)
-        Button("Split all tracks at playhead", systemImage: "scissors", action: onSplit)
+        Button("Split video at playhead", systemImage: "scissors", action: onSplit)
             .disabled(!isInteractive)
         Divider()
         Button("Silence settings", systemImage: "waveform", action: onOpenSilence)
@@ -1243,6 +1293,58 @@ struct EditorTimelineView: View {
     }
 
 
+    private func updateTranscriptItems() {
+        transcriptItems = transcript.map {
+            EditorTranscriptTimeline.items(.init(
+                transcript: $0, windows: silence.windows, threshold: silence.threshold, duration: duration
+            ))
+        } ?? []
+    }
+
+    private var transcriptionFailureDetail: String {
+        if case .failed(let message) = transcriptionStatus { return message }
+        return "Generate a local transcript to select and cut spoken words."
+    }
+
+    private struct TranscriptTrackRequest {
+        let pixelsPerSecond: CGFloat
+        let contentWidth: CGFloat
+        let viewport: EditorTimelineViewport
+    }
+
+    @ViewBuilder
+    private func transcriptTrack(_ request: TranscriptTrackRequest) -> some View {
+        if transcriptItems.isEmpty {
+            HStack(spacing: 8) {
+                Text(transcriptionStatus.label)
+                    .font(.system(size: 11))
+                    .foregroundStyle(BlitzUI.secondaryText)
+                Button("Generate transcript", action: onGenerateTranscript)
+                    .blitzButton(.secondary)
+                    .controlSize(.mini)
+                    .disabled(transcriptionStatus.isRunning)
+            }
+            .frame(width: request.contentWidth, height: silenceRowHeight, alignment: .leading)
+            .help(transcriptionFailureDetail)
+        } else {
+            EditorTranscriptStrip(configuration: .init(
+                items: transcriptItems, projection: projection, viewport: request.viewport,
+                pixelsPerSecond: request.pixelsPerSecond, width: request.contentWidth, height: silenceRowHeight,
+                selection: selection?.timeRange, onSelect: { range in
+                    selection = .range(range)
+                    onSeek(range.start)
+                    onSeekEnded()
+                }
+            ))
+            .disabled(!isInteractive)
+            .contextMenu {
+                Button(transcript?.words?.isEmpty == false ? "Regenerate transcript" : "Generate word timings",
+                       action: onGenerateTranscript)
+                    .disabled(transcriptionStatus.isRunning)
+            }
+        }
+    }
+
     private var sceneEvents: [RecordingProject.SceneEventSnapshot] {
         project?.sceneEvents ?? []
     }
@@ -1283,11 +1385,12 @@ struct EditorTimelineView: View {
     private var gutterRows: [(icon: String, title: String, height: CGFloat, asset: EditorAsset?, item: EditorPlacedItem.ID?)] {
         guard duration > 0 else { return [] }
         var rows: [(icon: String, title: String, height: CGFloat, asset: EditorAsset?, item: EditorPlacedItem.ID?)] = []
+        rows.append((icon: "text.quote", title: "Transcript", height: silenceRowHeight, asset: nil, item: nil))
         if showsChaptersTrack {
             rows.append((icon: "text.quote", title: "Chapters", height: chaptersRowHeight, asset: nil, item: nil))
         }
         if showsSegmentsTrack {
-            rows.append((icon: BlitzSymbols.scenes, title: "Segments", height: segmentsRowHeight, asset: nil, item: nil))
+            rows.append((icon: BlitzSymbols.scenes, title: "Scenes", height: segmentsRowHeight, asset: nil, item: nil))
         }
         for track in placedTracks {
             rows.append((icon: track.symbol, title: track.title, height: placedRowHeight, asset: nil,
@@ -1308,6 +1411,7 @@ struct EditorTimelineView: View {
     private var contentHeight: CGFloat {
         var height: CGFloat = 0
         if duration > 0 {
+            height += silenceRowHeight + 6
             if showsSilenceTrack {
                 height += 6 + silenceRowHeight
             }

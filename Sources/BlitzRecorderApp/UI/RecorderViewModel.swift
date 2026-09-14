@@ -1649,7 +1649,7 @@ final class RecorderViewModel {
         coordinator.setScreenSource(binding, autoFitWindowZoom: autoFitWindowZoom)
         syncSettings()
         screenCaptureAreaSelection = binding.kind == .display ? .fullDisplay : .activeWindow
-        detailMessage = "Screen source set to \(binding.displayName)."
+        detailMessage = state == .idle ? "Screen source set to \(binding.displayName)." : "Switching screen source…"
     }
 
     var canUseAppOnlyCapture: Bool {

@@ -13,7 +13,7 @@ struct SilenceDetectionRequest: Sendable {
     var overrides: [SilenceOverride] = []
 }
 
-struct SilenceWindow: Sendable {
+struct SilenceWindow: Equatable, Sendable {
     let start: Double
     let end: Double
     let decibels: Double
@@ -212,6 +212,12 @@ enum SilenceDetection {
             )) {
                 edits.cuts = edits.cuts.filter { $0.kind != .silence } + restored.cuts
             }
+        }
+        if request.edits.silenceRemovalApplied || request.edits.enabledCuts.contains(where: { $0.kind == .silence }) {
+            edits.silenceRemovalApplied = true
+            edits.cuts = applyingOverrides(.init(cuts: edits.cuts, overrides: edits.silenceOverrides))
+            let map = TimelineTimeMap(takeDuration: TimelineTimeMap.time(request.duration), cuts: edits.cuts)
+            guard map.outputDuration.seconds >= 0.1 else { return nil }
         }
         return edits
     }

@@ -3,6 +3,19 @@ import ScreenCaptureKit
 import XCTest
 
 final class ScreenContentPickerTests: XCTestCase {
+    @MainActor
+    func testCompletingOrCancellingPickerKeepsSharingSessionActive() {
+        let picker = SCContentSharingPicker.shared
+        let wasActive = picker.isActive
+        picker.isActive = true
+        defer { picker.isActive = wasActive }
+        let observer = ScreenContentPicker()
+        observer.contentSharingPicker(picker, didCancelFor: nil)
+        XCTAssertTrue(picker.isActive)
+        observer.contentSharingPickerStartDidFailWithError(RecorderError.screenSelectionCancelled)
+        XCTAssertTrue(picker.isActive)
+    }
+
     func testPickerPresentationIsRejectedDuringStartAndFinalization() {
         XCTAssertTrue(RecordingState.idle.allowsScreenContentPickerPresentation)
         XCTAssertTrue(RecordingState.recording.allowsScreenContentPickerPresentation)

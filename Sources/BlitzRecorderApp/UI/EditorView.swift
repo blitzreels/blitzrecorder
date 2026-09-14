@@ -58,6 +58,7 @@ struct EditorView: View {
     @State private var playback = EditorPlaybackController()
     @State private var assets: [EditorAsset] = []
     @State private var selection: EditorSelection?
+    @State private var transcript: RecordingTranscript?
     @State private var timelineZoom: Double = 1
     @State private var showsTimelineShortcuts = false
     @State private var pendingRangeCutSeek: Double?
@@ -128,6 +129,12 @@ struct EditorView: View {
             } timeline: {
             EditorTimelineView(
                 project: vm.editorProject,
+                transcript: transcript,
+                transcriptionStatus: vm.transcriptionController.jobStatuses[project?.projectPath ?? ""] ?? .notGenerated,
+                onGenerateTranscript: {
+                    guard let project else { return }
+                    vm.transcriptionController.retry(.project(URL(fileURLWithPath: project.projectPath)))
+                },
                 assets: assets,
                 library: library,
                 draftScene: layoutDraft?.scene ?? canvasSceneDraft,
@@ -172,6 +179,15 @@ struct EditorView: View {
                 onRemovePlacedItem: removePlacedItem
             )
             }
+        }
+        .task(id: "\(project?.projectPath ?? ""):\(String(describing: vm.transcriptionController.jobStatuses[project?.projectPath ?? ""]))") {
+            transcript = nil
+            guard let project else { return }
+            let store = TranscriptArtifactStore()
+            let url = store.locations(for: project).jsonURL
+            let loaded = await Task.detached(priority: .utility) { try? store.load(from: url) }.value
+            guard !Task.isCancelled else { return }
+            transcript = loaded
         }
         .task(id: vm.lastExportedSourceTakeURL) {
             vm.refreshLastExportedProject()
@@ -321,7 +337,7 @@ struct EditorView: View {
     }
 
     private var segmentBoundaries: [Double] {
-        (project?.sceneEvents.map(\.time) ?? []).sorted()
+        Array(Set((project?.sceneEvents.map(\.time) ?? []) + (project?.edits.videoSplits ?? []))).sorted()
     }
 
     private var hiddenAssetIDs: Set<String> {
@@ -1004,10 +1020,6 @@ struct EditorView: View {
             if case .placed(let id) = selection { removePlacedItem(id) }
             else if inspectorTab == .privacy, privacy.selectedID != nil { privacy.removeSelected() }
             else if let selected = selection?.silenceSelection { silence.toggleRanges(selected.ranges) }
-            else if inspectorTab == .silence, let range = selection?.timeRange {
-                selection = .silenceRange(range)
-                silence.toggle(range)
-            }
             else if case .range = selection { cutSelectedRange() }
             else if case .segment = selection { deleteSelectedSegment() }
             else { return false }
@@ -1160,13 +1172,15 @@ struct EditorView: View {
     }
 
     private func splitAtPlayhead() {
-        guard playback.isReady else { return }
+        guard playback.isReady, let project,
+            let edits = EditorVideoCuts.splitting(.init(
+                edits: project.edits, time: playback.currentTime, duration: timelineDuration
+            )) else { return }
         playback.pauseForEditing()
-        layoutDraft = nil
-        playback.setPreviewSceneOverride(nil, at: playback.currentTime)
-        let insertIndex = sceneEvents.filter { $0.time < playback.currentTime }.count
-        if vm.splitProjectScene(at: playback.currentTime, duration: timelineDuration) {
-            selection = .segment(max(0, insertIndex))
+        if edits == project.edits || vm.applyTimelineEdits(.init(edits: edits, actionName: "Split Video")) {
+            selection = EditorVideoCuts.range(.init(
+                edits: edits, time: playback.currentTime, duration: timelineDuration
+            )).map(EditorSelection.range)
         } else {
             editErrorMessage = vm.detailMessage
         }

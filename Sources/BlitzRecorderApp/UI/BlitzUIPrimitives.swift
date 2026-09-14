@@ -156,6 +156,7 @@ enum BlitzUI {
     static let controlFill = Color.white.opacity(0.055)
     static let cardFill = Color.white.opacity(0.035)
     static let primaryText = Color.white.opacity(0.92)
+    static let supportingText = Color.white.opacity(0.72)
     static let secondaryText = Color.white.opacity(0.56)
     static let hoverFill = Color.white.opacity(0.075)
     static let controlRadius = BlitzControlMetrics.radius

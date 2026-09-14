@@ -586,6 +586,8 @@ struct TimelineEdits: Equatable, Sendable {
     var outputVariants: [RecordingOutputVariant] = []
     var activeOutputLayout: CaptureLayout?
     var voiceCleanup: VoiceCleanupSettings = .disabled
+    var videoSplits: [Double] = []
+    var silenceRemovalApplied: Bool = false
 
     static let empty = TimelineEdits(cuts: [], textOverlays: [], zoom: .empty)
 

@@ -9,7 +9,7 @@ struct EditorShortcutHelp: View {
                 row(.init(title: "Back 3 seconds · pause · play faster", keys: "J  K  L"))
                 row(.init(title: "Previous / next frame", keys: "←  →"))
                 row(.init(title: "Back / forward 1 second", keys: "⇧ ←  ⇧ →"))
-                row(.init(title: "Previous / next scene", keys: "↑  ↓"))
+                row(.init(title: "Previous / next boundary", keys: "↑  ↓"))
                 row(.init(title: "Start / end of recording", keys: "Home  End"))
             }
             Divider()
@@ -22,7 +22,7 @@ struct EditorShortcutHelp: View {
                 row(.init(title: "Delete segment / range from all tracks", keys: "Delete"))
                 row(.init(title: "Switch selected sound / silence segments", keys: "Delete"))
                 row(.init(title: "Restore removed footage in range", keys: "⇧ Delete"))
-                row(.init(title: "Split all tracks at playhead", keys: "⌘ B / S"))
+                row(.init(title: "Split video at playhead", keys: "⌘ B / S"))
                 row(.init(title: "Toggle selected track", keys: "M / H"))
                 row(.init(title: "Undo / redo", keys: "⌘ Z  /  ⇧ ⌘ Z"))
             }
@@ -32,7 +32,7 @@ struct EditorShortcutHelp: View {
                 row(.init(title: "Fit recording", keys: "F"))
                 row(.init(title: "Show shortcuts", keys: "?"))
             }
-            Text("Split before and after a mistake, select the segment, then press Delete. All tracks stay in sync. Undo with ⌘Z.")
+            Text("Split before and after a mistake, select the video clip, then press Delete. All tracks stay in sync. Undo with ⌘Z.")
                 .font(.system(size: 11))
                 .foregroundStyle(BlitzUI.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)

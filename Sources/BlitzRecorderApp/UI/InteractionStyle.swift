@@ -111,7 +111,7 @@ struct BlitzTab: View {
                         .foregroundStyle(configuration.isSelected ? BlitzUI.mint : BlitzUI.secondaryText)
                 }
                 Text(configuration.title)
-                    .font(.system(size: configuration.symbolPlacement == .above ? 10 : controlSize == .large ? 12 : 11, weight: .medium))
+                    .font(.system(size: configuration.symbolPlacement == .above ? 10 : controlSize == .large ? 13 : 11, weight: .medium))
                     .lineLimit(1)
             }
             .padding(.horizontal, controlSize == .mini || controlSize == .large ? 6 : 10)

@@ -33,6 +33,8 @@ final class RecordingTranscriptTests: XCTestCase {
         XCTAssertFalse(transcript.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         XCTAssertFalse(transcript.segments.isEmpty)
         XCTAssertFalse(transcript.speakers.isEmpty)
+        XCTAssertGreaterThan(transcript.duration, 0)
+        XCTAssertTrue((transcript.words ?? []).allSatisfy { $0.endTime <= transcript.duration + 0.1 })
     }
 
     func testAssemblerCreatesChronologicalSpeakerSegments() {

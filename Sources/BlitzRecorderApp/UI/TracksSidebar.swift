@@ -475,10 +475,17 @@ private struct ScreenSourceInspector: View {
 
     private var captureSourceRow: some View {
         VStack(alignment: .leading, spacing: 8) {
-            BlitzSourcePicker(model: pickerModel)
+            BlitzSourcePicker(model: ScreenCaptureSourcePickerModel(vm: vm, enabled: enabled).model)
             .help("Choose a display or window")
         }
     }
+
+}
+
+@MainActor
+struct ScreenCaptureSourcePickerModel {
+    let vm: RecorderViewModel
+    let enabled: Bool
 
     private var captureSourceLabel: String {
         vm.selectedScreenSourceDisplayName
@@ -515,7 +522,7 @@ private struct ScreenSourceInspector: View {
         }
     }
 
-    private var pickerModel: BlitzSourcePickerModel {
+    var model: BlitzSourcePickerModel {
         let actions = [
             BlitzSourcePickerItem(
                 id: "screen:system-window-picker",
@@ -547,21 +554,21 @@ private struct ScreenSourceInspector: View {
             subtitle: selectedScreenSourceKindLabel,
             systemImage: selectedScreenSourceSystemImage,
             icon: selectedScreenSourceIcon,
-            sections: vm.state == .idle ? [
+            sections: [
                 screenSourceSection((kind: .display, title: "Displays", group: .all)),
                 screenSourceSection((kind: .application, title: "Suggested apps", group: .suggested)),
                 screenSourceSection((kind: .application, title: "Apps", group: .standard)),
                 screenSourceSection((kind: .window, title: "Windows", group: .standard))
-            ] : [],
+            ],
             actions: actions,
             layout: .thumbnails,
             enabled: enabled && vm.canAdjustScreenCapture,
-            hiddenSections: vm.state == .idle ? [
+            hiddenSections: [
                 screenSourceSection((kind: .application, title: "Private apps", group: .sensitive)),
                 screenSourceSection((kind: .window, title: "Private app windows", group: .sensitive)),
                 screenSourceSection((kind: .application, title: "Utility apps", group: .utility)),
                 screenSourceSection((kind: .window, title: "Small & utility windows", group: .utility))
-            ] : [],
+            ],
             prompt: "Choose screen or window",
             refresh: { await vm.refreshSources() }
         )

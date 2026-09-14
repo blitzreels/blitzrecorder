@@ -43,6 +43,7 @@ private extension View {
 
 private struct RecordingActionRow: View {
     @Bindable var vm: RecorderViewModel
+    @State private var showsScreenPicker = false
     var forcesSavedChip = false
 
     var body: some View {
@@ -107,13 +108,19 @@ private struct RecordingActionRow: View {
 
     @ViewBuilder
     private var screenSwitchButton: some View {
-        if vm.settings.visibleSources.contains(.screen) {
+        if vm.settings.enabledSources.contains(.screen) {
             DockActionButton(
                 title: "Screen",
                 systemImage: BlitzSymbols.screen,
                 help: "Change the recorded display or window without stopping"
             ) {
-                vm.switchRecordedScreenContent()
+                showsScreenPicker = true
+            }
+            .popover(isPresented: $showsScreenPicker, arrowEdge: .bottom) {
+                BlitzSourcePickerPopover(
+                    model: ScreenCaptureSourcePickerModel(vm: vm, enabled: vm.canAdjustScreenCapture).model,
+                    dismiss: { showsScreenPicker = false }
+                )
             }
         }
     }

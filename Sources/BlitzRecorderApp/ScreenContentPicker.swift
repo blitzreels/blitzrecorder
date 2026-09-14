@@ -131,7 +131,6 @@ final class ScreenContentPicker: NSObject, @preconcurrency SCContentSharingPicke
 
     private func finish(picker: SCContentSharingPicker, result: Result<SCContentFilter, Error>) {
         picker.remove(self)
-        picker.isActive = false
 
         guard let continuation else { return }
         self.continuation = nil

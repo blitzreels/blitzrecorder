@@ -94,6 +94,28 @@ final class SceneLibraryTests: XCTestCase {
         XCTAssertEqual(decoded.screenSourceBinding, .display(id: "42"))
     }
 
+    func testCameraOnlyAndDefaultScreenScenePreserveChosenWindow() {
+        let defaults = temporaryDefaults()
+        var settings = RecordingSettings()
+        settings.layout = .vertical
+        RecordingSettingsStore.save(settings, defaults: defaults)
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults), defaults: defaults
+        )
+        let window = ScreenSourceBinding(
+            kind: .window, displayID: nil, bundleIdentifier: "com.google.Chrome",
+            applicationName: "Google Chrome", processID: nil, windowID: 123, windowTitle: "Recording test"
+        )
+        coordinator.setScreenSource(window)
+        let scenes = coordinator.sceneLibrary.scenes(for: .vertical)
+        coordinator.selectScene(id: scenes[2].id)
+        XCTAssertEqual(coordinator.settings.screenSourceBinding, window)
+        coordinator.selectScene(id: scenes[0].id)
+        XCTAssertEqual(coordinator.settings.screenSourceBinding, window)
+        coordinator.selectScene(id: scenes[1].id)
+        XCTAssertEqual(coordinator.settings.screenSourceBinding, window)
+    }
+
     func testCoordinatorRestoresLastScenePerCanvasFormat() {
         let defaults = temporaryDefaults()
         var settings = RecordingSettings()
@@ -128,6 +150,7 @@ final class SceneLibraryTests: XCTestCase {
         currentSceneSettings.sceneLayout.cameraFrame = CGRect(x: 0.06, y: 0.62, width: 0.34, height: 0.25)
         var staleSceneSettings = currentSettings
         staleSceneSettings.selectedCameraID = "stale-camera"
+        staleSceneSettings.screenSourceBinding = .display(id: "old-display")
         staleSceneSettings.cameraCropAmount = .zero
         staleSceneSettings.cameraCropPosition = .zero
         staleSceneSettings.sceneLayout.cameraFrame = CGRect(x: 0.58, y: 0.08, width: 0.32, height: 0.24)
@@ -157,6 +180,7 @@ final class SceneLibraryTests: XCTestCase {
 
         XCTAssertEqual(coordinator.settings.sceneLayout.cameraFrame, staleSceneSettings.sceneLayout.cameraFrame)
         XCTAssertEqual(coordinator.settings.selectedCameraID, "stale-camera")
+        XCTAssertEqual(coordinator.settings.screenSourceBinding, currentSettings.screenSourceBinding)
         XCTAssertEqual(coordinator.settings.cameraCropAmount, .zero)
         XCTAssertEqual(coordinator.settings.cameraCropPosition, .zero)
     }

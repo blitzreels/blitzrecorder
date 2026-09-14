@@ -46,7 +46,7 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
             }
         )
         let asrManager = AsrManager(
-            config: ASRConfig(melChunkContext: false),
+            config: Self.recognitionConfiguration,
             models: asrModels
         )
         self.asrManager = asrManager
@@ -102,7 +102,7 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
             RecordingTranscriptAssembler.Request(
                 mediaPath: preparedAudio.mediaPath,
                 generatedAt: Date(),
-                duration: asrResult.duration,
+                duration: preparedAudio.duration,
                 confidence: asrResult.confidence,
                 text: asrResult.text,
                 suggestedTitle: nil,
@@ -141,7 +141,7 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
             version: .v3
         )
         let loadedASR = AsrManager(
-            config: ASRConfig(melChunkContext: false),
+            config: Self.recognitionConfiguration,
             models: asrModels
         )
 
@@ -154,6 +154,10 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
         asrManager = loadedASR
         diarizerManager = loadedDiarizer
         return (loadedASR, loadedDiarizer)
+    }
+
+    nonisolated static var recognitionConfiguration: ASRConfig {
+        ASRConfig(melChunkContext: false, dualDecodeArbitration: true)
     }
 
     private static func words(_ timings: [TokenTiming]) -> [TranscriptWord] {

@@ -65,7 +65,7 @@ final class SilenceEditingSession {
                 || previous.project.edits.silenceOverrides != request.project.edits.silenceOverrides {
                 cuts = request.project.edits.cuts
                 updateMetrics()
-                recalculate()
+                if !usesSavedSilenceCuts { recalculate() }
             } else if skipSilence {
                 updatePreview()
             }
@@ -119,7 +119,8 @@ final class SilenceEditingSession {
                 windows = result
                 loading = false
                 if automaticThreshold { threshold = SilenceDetection.suggestedThreshold(result) }
-                recalculate()
+                if usesSavedSilenceCuts { updateMetrics() }
+                else { recalculate() }
             } catch {
                 guard !Task.isCancelled, currentGeneration == generation else { return }
                 loading = false
@@ -153,6 +154,7 @@ final class SilenceEditingSession {
         guard canApply, let request else { return false }
         var edits = request.vm.lastExportedProject?.edits ?? request.project.edits
         edits.cuts = cuts
+        edits.silenceRemovalApplied = true
         previewTask?.cancel()
         request.playback.pauseForEditing()
         guard request.vm.applyTimelineEdits(.init(edits: edits, actionName: "Remove Silence")) else {
@@ -172,6 +174,7 @@ final class SilenceEditingSession {
         skipSilence = false
         request.playback.pauseForEditing()
         edits.cuts.removeAll { $0.kind == .silence }
+        edits.silenceRemovalApplied = false
         if !request.vm.applyTimelineEdits(.init(edits: edits, actionName: "Restore Silence")) {
             error = request.vm.detailMessage
         }
@@ -290,11 +293,15 @@ final class SilenceEditingSession {
         for change in changes {
             guard let updated = SilenceDetection.classifying(.init(
                 range: change.range, classification: change.classification, edits: edits, duration: duration
-            )) else { return }
+            )) else {
+                error = "Keep at least 0.1 seconds of the recording. This marking was not saved."
+                return
+            }
             edits = updated
         }
         let actionName = changes.allSatisfy { $0.classification == .sound } ? "Mark as Sound"
             : changes.allSatisfy { $0.classification == .silence } ? "Mark as Silence" : "Switch Sound and Silence"
+        request.playback.pauseForEditing()
         guard request.vm.applyTimelineEdits(.init(edits: edits, actionName: actionName)) else {
             error = request.vm.detailMessage
             return
@@ -302,12 +309,18 @@ final class SilenceEditingSession {
         calculationTask?.cancel()
         calculating = false
         error = nil
-        cuts = SilenceDetection.applyingOverrides(.init(cuts: cuts, overrides: edits.silenceOverrides))
+        cuts = edits.silenceRemovalApplied ? edits.cuts
+            : SilenceDetection.applyingOverrides(.init(cuts: cuts, overrides: edits.silenceOverrides))
         if let updatedProject = request.vm.lastExportedProject {
             self.request = .init(vm: request.vm, playback: request.playback, project: updatedProject)
         }
         updateMetrics()
         if skipSilence { updatePreview() }
+    }
+
+    private var usesSavedSilenceCuts: Bool {
+        guard let edits = request?.vm.lastExportedProject?.edits else { return false }
+        return edits.silenceRemovalApplied || edits.enabledCuts.contains { $0.kind == .silence }
     }
 
     private func updateMetrics() {

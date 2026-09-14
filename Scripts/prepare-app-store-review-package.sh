@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-VERSION="0.17.0"
-BUILD="28"
+VERSION="0.18.0"
+BUILD="29"
 PACKAGE_ROOT="${PACKAGE_ROOT:-build/AppStoreReviewPackage}"
 PACKAGE_DIR="$PACKAGE_ROOT/BlitzRecorder-$VERSION-build-$BUILD"
 RUN_VALIDATION=1

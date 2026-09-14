@@ -39,6 +39,35 @@ final class EditorSilenceWorkflowTests: XCTestCase {
         XCTAssertEqual(Set(reversed.silenceOverrides.map(\.id)).count, reversed.silenceOverrides.count)
     }
 
+    func testMarkingMoreSilenceAfterApplyingCutsUpdatesSavedTimelineImmediately() throws {
+        var edits = TimelineEdits.empty
+        edits.cuts = [.init(start: 3, end: 5, kind: .silence, source: .automatic)]
+        let marked = try XCTUnwrap(SilenceDetection.classifying(.init(
+            range: .init(start: 7, end: 8), classification: .silence, edits: edits, duration: 10
+        )))
+        let map = TimelineTimeMap(takeDuration: TimelineTimeMap.time(10), cuts: marked.cuts)
+        XCTAssertTrue(map.isRemoved(takeTime: 7.5))
+        XCTAssertEqual(map.removedDuration, 3, accuracy: 0.001)
+    }
+
+    func testAppliedModeSurvivesKeepingEveryPauseThenMarkingAnotherSound() throws {
+        var edits = TimelineEdits.empty
+        edits.silenceRemovalApplied = true
+        edits.cuts = [.init(start: 3, end: 5, kind: .silence, source: .automatic)]
+        let kept = try XCTUnwrap(SilenceDetection.classifying(.init(
+            range: .init(start: 3, end: 5), classification: .sound, edits: edits, duration: 10
+        )))
+        XCTAssertTrue(kept.silenceRemovalApplied)
+        XCTAssertTrue(kept.enabledCuts.isEmpty)
+        let marked = try XCTUnwrap(SilenceDetection.classifying(.init(
+            range: .init(start: 7, end: 8), classification: .silence, edits: kept, duration: 10
+        )))
+        XCTAssertTrue(TimelineTimeMap(takeDuration: TimelineTimeMap.time(10), cuts: marked.cuts).isRemoved(takeTime: 7.5))
+        XCTAssertNil(SilenceDetection.classifying(.init(
+            range: .init(start: 0, end: 10), classification: .silence, edits: marked, duration: 10
+        )))
+    }
+
     func testKeepingAppliedSilenceRestoresOnlyThatSectionAndPreservesManualCuts() throws {
         var edits = TimelineEdits.empty
         let manual = TimelineCut(start: 1, end: 2, kind: .manual, source: .user)
@@ -387,6 +416,10 @@ final class EditorSilenceWorkflowTests: XCTestCase {
         XCTAssertEqual(map.removedDuration - removedBeforeMarking, 1, accuracy: 0.001)
         XCTAssertFalse(map.isRemoved(takeTime: (range.start + range.end) / 2))
         XCTAssertTrue(map.isRemoved(takeTime: 0.75))
+        XCTAssertFalse(reopened.canApply)
+        reopened.prepare(.init(vm: vm, playback: playback, project: applied))
+        try await settle(reopened)
+        XCTAssertFalse(reopened.canApply)
         reopened.toggle(sound)
         let restored = try store.loadRecordingProject(at: fixture.take.projectURL)
         XCTAssertFalse(TimelineTimeMap(takeDuration: map.takeDuration, cuts: restored.edits.cuts).isRemoved(takeTime: 0.75))
@@ -395,7 +428,7 @@ final class EditorSilenceWorkflowTests: XCTestCase {
         reopened.setPreviewEnabled(true)
         XCTAssertNotNil(reopened.error)
         XCTAssertTrue(reopened.canClassify)
-        reopened.toggle(wholeRecording)
+        reopened.classify(.init(range: wholeRecording, classification: .sound))
         XCTAssertEqual(reopened.classification(wholeRecording), .sound)
         XCTAssertNil(reopened.error)
     }
