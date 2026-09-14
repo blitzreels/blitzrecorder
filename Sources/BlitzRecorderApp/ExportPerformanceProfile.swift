@@ -4,16 +4,19 @@ enum ExportPerformancePreset: String, CaseIterable {
     case fast
     case balanced
     case maximum
+    case master
     case custom
 
     var displayName: String {
         switch self {
         case .fast:
-            "Smaller"
+            "Sharing"
         case .balanced:
             "Recommended"
         case .maximum:
-            "Best"
+            "Archive"
+        case .master:
+            "Master"
         case .custom:
             "Custom"
         }
@@ -22,13 +25,15 @@ enum ExportPerformancePreset: String, CaseIterable {
     var plainDescription: String {
         switch self {
         case .fast:
-            "1080p · up to 30 fps · standard quality"
+            "Small H.264 · 1080p · 30 fps"
         case .balanced:
-            "1080p · source fps · high quality"
+            "Light loss · 1080p · source fps"
         case .maximum:
-            "Source resolution and fps · maximum quality"
+            "Visually lossless HEVC · source res"
+        case .master:
+            "ProRes 422 · source res · huge MOV"
         case .custom:
-            "Uses the format, resolution, frame rate, and quality below"
+            "Set format, resolution, fps, and quality below"
         }
     }
 }
@@ -54,7 +59,7 @@ struct ExportPerformanceProfile: Equatable {
                 preset: preset,
                 resolution: .p1080,
                 framesPerSecond: min(30, sourceFPS),
-                videoQuality: .standard
+                videoQuality: .web
             )
         case .balanced:
             return ExportPerformanceProfile(
@@ -70,6 +75,13 @@ struct ExportPerformanceProfile: Equatable {
                 framesPerSecond: sourceFPS,
                 videoQuality: .maximum
             )
+        case .master:
+            return ExportPerformanceProfile(
+                preset: preset,
+                resolution: sourceResolution,
+                framesPerSecond: sourceFPS,
+                videoQuality: .proRes
+            )
         case .custom:
             return ExportPerformanceProfile(
                 preset: preset,
@@ -84,9 +96,19 @@ struct ExportPerformanceProfile: Equatable {
         var settings = settings
         settings.outputResolution = resolution
         settings.framesPerSecond = framesPerSecond
-        settings.customVideoBitrate = videoQuality.videoBitrate(
-            baseBitrate: settings.autoVideoBitrate
+        let dimensions = settings.outputResolution.dimensions(for: settings.layout)
+        let encoding = videoQuality.encodingProfile(
+            baseBitrate: settings.autoVideoBitrate,
+            framesPerSecond: framesPerSecond,
+            audioBitrate: settings.audioQuality.bitrate,
+            width: dimensions.width,
+            height: dimensions.height
         )
+        settings.customVideoBitrate = encoding.bitrate
+        settings.exportEncoding = encoding
+        if let format = encoding.preferredFormat {
+            settings.outputVideoFormat = format
+        }
         if reducesExpensiveEffects {
             settings.screenShadowEnabled = false
             settings.cameraShadowEnabled = false

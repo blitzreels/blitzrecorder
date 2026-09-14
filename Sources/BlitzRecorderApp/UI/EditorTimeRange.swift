@@ -47,6 +47,26 @@ struct EditorTimeRange: Equatable {
         let takeDuration: Double
     }
 
+    struct BatchCutRequest {
+        let ranges: [EditorTimeRange]
+        let kind: TimelineCutKind
+        let edits: TimelineEdits
+        let takeDuration: Double
+    }
+
+    static func removingTogether(_ request: BatchCutRequest) -> TimelineEdits? {
+        var edits = request.edits
+        for range in request.ranges {
+            guard let range = resolve(.init(anchor: range.start, head: range.end, duration: request.takeDuration)),
+                range.canCut else { continue }
+            edits.cuts.append(.init(start: range.start, end: range.end, kind: request.kind, source: .user))
+        }
+        let before = TimelineTimeMap(takeDuration: TimelineTimeMap.time(request.takeDuration), cuts: request.edits.cuts)
+        let after = TimelineTimeMap(takeDuration: before.takeDuration, cuts: edits.cuts)
+        guard after.outputDuration.seconds >= 0.1, after.outputDuration < before.outputDuration else { return nil }
+        return edits
+    }
+
     static func removing(_ request: CutRequest) -> TimelineEdits? {
         guard
             let range = resolve(

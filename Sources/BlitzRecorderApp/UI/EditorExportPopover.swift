@@ -11,6 +11,7 @@ struct EditorExportPopover<MusicControls: View>: View {
         let quality: Binding<ExportVideoQuality>
         let summary: String
         let estimatedSize: String
+        let estimatedSizeCaption: String
         let encodingDetail: String
         let directory: URL
         let musicSummary: String?
@@ -23,6 +24,10 @@ struct EditorExportPopover<MusicControls: View>: View {
 
     let configuration: Configuration
     @State private var showsMusic = false
+
+    private var formatOptions: [OutputVideoFormat] {
+        configuration.quality.wrappedValue.requiresQuickTime ? [.mov] : OutputVideoFormat.allCases
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -63,8 +68,8 @@ struct EditorExportPopover<MusicControls: View>: View {
                 ))
                 BlitzFormDropdown(configuration: .init(
                     title: "Format", selection: configuration.format,
-                    options: OutputVideoFormat.allCases.map {
-                        .init(value: $0, title: $0.displayName, detail: nil)
+                    options: formatOptions.map {
+                        .init(value: $0, title: $0.displayName, detail: $0.plainDescription)
                     }
                 ))
                 BlitzFormDropdown(configuration: .init(
@@ -81,9 +86,9 @@ struct EditorExportPopover<MusicControls: View>: View {
                 ))
                 BlitzFormDropdown(configuration: .init(
                     title: "Quality", selection: configuration.quality,
-                    options: ExportVideoQuality.allCases.map {
+                    options: ExportVideoQuality.menuCases.map {
                         .init(value: $0, title: $0.displayName, detail: $0.plainDescription)
-                    }
+                    }, menuWidth: 330
                 ))
             }
 
@@ -103,7 +108,7 @@ struct EditorExportPopover<MusicControls: View>: View {
                     Text(configuration.estimatedSize)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(BlitzUI.primaryText)
-                    Text("Estimated size")
+                    Text(configuration.estimatedSizeCaption)
                         .font(.system(size: 11))
                         .foregroundStyle(BlitzUI.secondaryText)
                 }
@@ -161,4 +166,27 @@ struct EditorExportPopover<MusicControls: View>: View {
         .background(BlitzUI.panelBackground)
         .preferredColorScheme(.dark)
     }
+}
+
+#Preview("Export popover") {
+    EditorExportPopover(configuration: .init(
+        layouts: .constant([.horizontal]),
+        currentLayout: .horizontal,
+        preset: .constant(.fast),
+        format: .constant(.mp4),
+        resolution: .constant(.p1080),
+        framesPerSecond: .constant(30),
+        quality: .constant(.web),
+        summary: "1920 × 1080 · 30 fps",
+        estimatedSize: "≈ 32 MB",
+        estimatedSizeCaption: "Estimated size",
+        encodingDetail: "H.264 · 1.6 Mbps",
+        directory: URL(fileURLWithPath: "/tmp/BlitzRecorder"),
+        musicSummary: nil,
+        musicControls: { EmptyView() },
+        canExport: true,
+        export: {},
+        showFolder: {},
+        showBlitzReels: {}
+    ))
 }

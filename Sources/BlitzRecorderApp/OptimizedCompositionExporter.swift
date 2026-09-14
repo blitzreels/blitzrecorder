@@ -9,6 +9,52 @@ struct OptimizedVideoSettingsRequest {
     let bitrate: Int
     let framesPerSecond: Int
     let hardwareEncoderAvailable: Bool
+    var codec: ExportVideoCodec = .hevc
+    var compressionQuality: Float?
+    var usesAverageBitRate: Bool = true
+    var maxKeyFrameInterval: Int?
+
+    init(
+        width: Int,
+        height: Int,
+        bitrate: Int,
+        framesPerSecond: Int,
+        hardwareEncoderAvailable: Bool,
+        codec: ExportVideoCodec = .hevc,
+        compressionQuality: Float? = nil,
+        usesAverageBitRate: Bool = true,
+        maxKeyFrameInterval: Int? = nil
+    ) {
+        self.width = width
+        self.height = height
+        self.bitrate = bitrate
+        self.framesPerSecond = framesPerSecond
+        self.hardwareEncoderAvailable = hardwareEncoderAvailable
+        self.codec = codec
+        self.compressionQuality = compressionQuality
+        self.usesAverageBitRate = usesAverageBitRate
+        self.maxKeyFrameInterval = maxKeyFrameInterval
+    }
+
+    init(
+        width: Int,
+        height: Int,
+        framesPerSecond: Int,
+        hardwareEncoderAvailable: Bool,
+        encoding: ExportEncodingProfile
+    ) {
+        self.init(
+            width: width,
+            height: height,
+            bitrate: encoding.bitrate,
+            framesPerSecond: framesPerSecond,
+            hardwareEncoderAvailable: hardwareEncoderAvailable,
+            codec: encoding.codec,
+            compressionQuality: encoding.quality,
+            usesAverageBitRate: encoding.usesAverageBitRate,
+            maxKeyFrameInterval: encoding.maxKeyFrameInterval
+        )
+    }
 }
 
 enum OptimizedCompositionExporter {
@@ -32,11 +78,17 @@ enum OptimizedCompositionExporter {
             throw RecorderError.exportUnavailable
         }
 
+        let encoding = settings.exportEncoding ?? .hevc(
+            bitrate: settings.finalVideoBitrate,
+            audioBitrate: settings.finalAudioBitrate
+        )
+        let pixelFormat: OSType = encoding.prefersFullRangeRGB
+            ? kCVPixelFormatType_32BGRA
+            : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
         let videoOutput = AVAssetReaderVideoCompositionOutput(
             videoTracks: videoTracks,
             videoSettings: [
-                kCVPixelBufferPixelFormatTypeKey as String:
-                    kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+                kCVPixelBufferPixelFormatTypeKey as String: pixelFormat,
                 kCVPixelBufferMetalCompatibilityKey as String: true,
                 kCVPixelBufferIOSurfacePropertiesKey as String: [:]
             ]
@@ -57,16 +109,16 @@ enum OptimizedCompositionExporter {
             HardwareVideoEncoderProbeRequest(
                 width: width,
                 height: height,
-                codecType: kCMVideoCodecType_HEVC
+                codecType: encoding.codec.cmCodecType
             )
         )
         let videoSettings = videoOutputSettings(
             for: OptimizedVideoSettingsRequest(
                 width: width,
                 height: height,
-                bitrate: settings.finalVideoBitrate,
                 framesPerSecond: settings.framesPerSecond,
-                hardwareEncoderAvailable: hardwareEncoderStatus.isAvailable
+                hardwareEncoderAvailable: hardwareEncoderStatus.isAvailable,
+                encoding: encoding
             )
         )
         let videoInput = AVAssetWriterInput(
@@ -101,7 +153,7 @@ enum OptimizedCompositionExporter {
                     AVFormatIDKey: kAudioFormatMPEG4AAC,
                     AVSampleRateKey: 48_000,
                     AVNumberOfChannelsKey: 2,
-                    AVEncoderBitRateKey: settings.finalAudioBitrate
+                    AVEncoderBitRateKey: encoding.audioBitrate
                 ]
             )
             guard writer.canAdd(input) else {
@@ -143,22 +195,41 @@ enum OptimizedCompositionExporter {
 
     static func videoOutputSettings(for request: OptimizedVideoSettingsRequest) -> [String: Any] {
         var outputSettings: [String: Any] = [
-            AVVideoCodecKey: AVVideoCodecType.hevc,
+            AVVideoCodecKey: request.codec.avCodec,
             AVVideoWidthKey: request.width,
             AVVideoHeightKey: request.height,
             AVVideoColorPropertiesKey: [
                 AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
                 AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
                 AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2
-            ],
-            AVVideoCompressionPropertiesKey: [
-                AVVideoAverageBitRateKey: request.bitrate,
-                AVVideoExpectedSourceFrameRateKey: request.framesPerSecond,
-                AVVideoAllowFrameReorderingKey: true,
-                AVVideoProfileLevelKey: kVTProfileLevel_HEVC_Main_AutoLevel as String,
-                kVTCompressionPropertyKey_RealTime as String: false
             ]
         ]
+        var compression: [String: Any] = [
+            AVVideoExpectedSourceFrameRateKey: request.framesPerSecond,
+            kVTCompressionPropertyKey_RealTime as String: false
+        ]
+        if request.codec.isMezzanine {
+            outputSettings[AVVideoCompressionPropertiesKey] = compression
+        } else {
+            compression[AVVideoAllowFrameReorderingKey] = true
+            if let profileLevel = request.codec.profileLevel {
+                compression[AVVideoProfileLevelKey] = profileLevel
+            }
+            if request.usesAverageBitRate {
+                compression[AVVideoAverageBitRateKey] = request.bitrate
+            }
+            if let quality = request.compressionQuality {
+                compression[kVTCompressionPropertyKey_Quality as String] = quality
+            }
+            compression[kVTCompressionPropertyKey_DataRateLimits as String] = [
+                request.bitrate / 8,
+                1
+            ]
+            if let maxKeyFrameInterval = request.maxKeyFrameInterval {
+                compression[AVVideoMaxKeyFrameIntervalKey] = maxKeyFrameInterval
+            }
+            outputSettings[AVVideoCompressionPropertiesKey] = compression
+        }
         if request.hardwareEncoderAvailable {
             outputSettings[AVVideoEncoderSpecificationKey] = [
                 kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder as String: true

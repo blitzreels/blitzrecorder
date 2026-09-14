@@ -21,12 +21,8 @@ enum EditorVideoCuts {
 
     static func range(_ request: Request) -> EditorTimeRange? {
         guard request.time.isFinite, request.duration.isFinite, request.duration > 0 else { return nil }
-        let boundaries = ([0] + request.edits.videoSplits.filter {
-            $0.isFinite && $0 > 0 && $0 < request.duration
-        } + request.edits.enabledCuts.flatMap { [$0.start, $0.end] } + [request.duration]).sorted()
-        let start = boundaries.last { $0 <= request.time } ?? 0
-        let end = boundaries.first { $0 > request.time } ?? request.duration
-        guard end > start else { return nil }
-        return EditorTimeRange(start: start, end: end)
+        let projection = EditorTimelineProjection(.init(duration: request.duration, cuts: request.edits.cuts))
+        let layout = EditorVideoClipLayout(.init(projection: projection, splits: request.edits.videoSplits))
+        return layout.clip(at: projection.displayTime(TimelineTimeMap.time(request.time).seconds))?.range
     }
 }

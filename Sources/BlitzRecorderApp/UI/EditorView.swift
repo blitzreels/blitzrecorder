@@ -483,7 +483,7 @@ struct EditorView: View {
             selectedFormat = format
             selectedResolution = resolution
             selectedExportFramesPerSecond = recipe.framesPerSecond
-            selectedExportQuality = quality
+            selectedExportQuality = quality.resolvedMenuQuality
         } else {
             selectedFormat = OutputVideoFormat(rawValue: project.settings.outputVideoFormat)
                 ?? vm.settings.outputVideoFormat
@@ -574,9 +574,9 @@ struct EditorView: View {
                 }
             ),
             format: Binding(
-                get: { selectedFormat },
+                get: { exportPerformanceProfile.videoQuality.resolvedOutputFormat(selectedFormat) },
                 set: {
-                    selectedFormat = $0
+                    selectedFormat = exportPerformanceProfile.videoQuality.resolvedOutputFormat($0)
                     persistEditorState("Change Export Format")
                 }
             ),
@@ -597,16 +597,18 @@ struct EditorView: View {
                 }
             ),
             quality: Binding(
-                get: { selectedExportQuality },
+                get: { selectedExportQuality.resolvedMenuQuality },
                 set: {
                     selectedExportQuality = $0
+                    selectedFormat = $0.resolvedOutputFormat(selectedFormat)
                     selectedExportPreset = .custom
                     persistEditorState("Change Export Quality")
                 }
             ),
             summary: exportSummary,
             estimatedSize: exportEstimatedSize,
-            encodingDetail: String(format: "HEVC · %.1f Mbps", Double(exportBitrate) / 1_000_000),
+            estimatedSizeCaption: exportEncoding.estimatedSizeCaption,
+            encodingDetail: exportEncoding.detail,
             directory: vm.settings.outputDirectory,
             musicSummary: backgroundMusic.map { "\($0.url.lastPathComponent) · \(musicVolumeLabel)" },
             musicControls: { backgroundMusicControl },
@@ -635,36 +637,46 @@ struct EditorView: View {
         )
     }
 
-    private var exportBitrate: Int {
-        selectedExportQuality.videoBitrate(
+    private var exportEncoding: ExportEncodingProfile {
+        let profile = exportPerformanceProfile
+        let layout = captureLayout ?? vm.settings.layout
+        let dimensions = profile.resolution.dimensions(for: layout)
+        return profile.videoQuality.encodingProfile(
             baseBitrate: SocialVideoEncoding.videoBitrate(
-                resolution: selectedResolution,
-                fps: exportFrameRate
-            )
+                resolution: profile.resolution,
+                fps: profile.framesPerSecond
+            ),
+            framesPerSecond: profile.framesPerSecond,
+            audioBitrate: vm.settings.audioQuality.bitrate,
+            width: dimensions.width,
+            height: dimensions.height
         )
     }
 
     private var exportSummary: String {
         let layout = captureLayout ?? vm.settings.layout
-        let dimensions = selectedResolution.dimensions(for: layout)
+        let profile = exportPerformanceProfile
+        let dimensions = profile.resolution.dimensions(for: layout)
         if exportLayouts.count > 1 {
-            return "\(exportLayouts.count) videos · \(selectedResolution.displayName) · \(exportFrameRate) fps"
+            return "\(exportLayouts.count) videos · \(profile.resolution.displayName) · \(profile.framesPerSecond) fps"
         }
-        return "\(dimensions.width) × \(dimensions.height) · \(exportFrameRate) fps"
+        return "\(dimensions.width) × \(dimensions.height) · \(profile.framesPerSecond) fps"
     }
 
     private var exportEstimatedSize: String {
         let duration = TimelineTimeMap(takeDuration: TimelineTimeMap.time(timelineDuration),
             cuts: vm.lastExportedProject?.edits.enabledCuts ?? []).outputDuration.seconds
-        let estimatedBytes = Int64(max(0, duration) * Double(exportBitrate + 192_000) / 8 * Double(max(1, exportLayouts.count)))
-        return "≈ " + ByteCountFormatter.string(fromByteCount: estimatedBytes, countStyle: .file)
+        return exportEncoding.estimatedSizeText(
+            duration: duration,
+            layoutCount: max(1, exportLayouts.count)
+        )
     }
 
     private func exportVideo() {
         let profile = exportPerformanceProfile
         isExportPopoverPresented = false
         let request = EditorExportRequest(
-            outputFormat: selectedFormat,
+            outputFormat: profile.videoQuality.resolvedOutputFormat(selectedFormat),
             performanceProfile: profile,
             hiddenVideoSources: playback.hiddenKinds,
             mutedAudioSources: playback.mutedSources,
@@ -689,6 +701,7 @@ struct EditorView: View {
         selectedResolution = profile.resolution
         selectedExportFramesPerSecond = profile.framesPerSecond
         selectedExportQuality = profile.videoQuality
+        selectedFormat = profile.videoQuality.resolvedOutputFormat(selectedFormat)
     }
 
     private var exportStatus: EditorExportStatus? {
@@ -1020,7 +1033,7 @@ struct EditorView: View {
             if case .placed(let id) = selection { removePlacedItem(id) }
             else if inspectorTab == .privacy, privacy.selectedID != nil { privacy.removeSelected() }
             else if let selected = selection?.silenceSelection { silence.toggleRanges(selected.ranges) }
-            else if case .range = selection { cutSelectedRange() }
+            else if selection?.rangeSelection != nil { cutSelectedRange() }
             else if case .segment = selection { deleteSelectedSegment() }
             else { return false }
         case .restoreSelection: restoreSelectedRange()
@@ -1140,9 +1153,10 @@ struct EditorView: View {
     }
 
     private func cutSelectedRange() {
-        guard playback.isReady, let project, case .range(let range) = selection else { return }
-        guard let edits = EditorTimeRange.removing(.init(
-            range: range, edits: project.edits, takeDuration: timelineDuration
+        guard playback.isReady, let project, let selected = selection?.rangeSelection else { return }
+        let range = selected.bounds
+        guard let edits = EditorTimeRange.removingTogether(.init(
+            ranges: selected.ranges, kind: .manual, edits: project.edits, takeDuration: timelineDuration
         )) else {
             editErrorMessage = "Select a range containing kept footage and leave at least 0.1 seconds in the recording."
             return
@@ -1157,11 +1171,13 @@ struct EditorView: View {
     }
 
     private func restoreSelectedRange() {
-        guard playback.isReady, let project, case .range(let range) = selection,
-            let edits = EditorTimeRange.restoring(.init(
-                range: range, edits: project.edits, takeDuration: timelineDuration
-            ))
-        else { return }
+        guard playback.isReady, let project, let selected = selection?.rangeSelection else { return }
+        let range = selected.bounds
+        var edits = project.edits
+        for range in selected.ranges {
+            edits = EditorTimeRange.restoring(.init(range: range, edits: edits, takeDuration: timelineDuration)) ?? edits
+        }
+        guard edits != project.edits else { return }
         playback.pauseForEditing()
         if vm.applyTimelineEdits(.init(edits: edits, actionName: "Restore Range")) {
             pendingRangeCutSeek = range.start

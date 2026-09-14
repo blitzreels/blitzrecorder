@@ -9,13 +9,22 @@ enum EditorSelection: Equatable {
     case segment(Int)
     case asset(String)
     case range(EditorTimeRange)
+    case ranges(SilenceSegmentSelection)
     case silenceRange(EditorTimeRange)
     case silenceRanges(SilenceSegmentSelection)
 
     var timeRange: EditorTimeRange? {
         switch self {
         case .range(let range), .silenceRange(let range): return range
+        case .ranges(let selection): return selection.bounds
         case .silenceRanges(let selection): return selection.ranges.count == 1 ? selection.ranges.first : nil
+        default: return nil
+        }
+    }
+    var rangeSelection: SilenceSegmentSelection? {
+        switch self {
+        case .range(let range), .silenceRange(let range): return .init(range)
+        case .ranges(let selected), .silenceRanges(let selected): return selected
         default: return nil
         }
     }

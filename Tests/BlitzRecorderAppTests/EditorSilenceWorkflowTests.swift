@@ -492,6 +492,58 @@ final class EditorSilenceWorkflowTests: XCTestCase {
         XCTAssertEqual(try store.loadRecordingProject(at: fixture.take.projectURL).edits, marked)
     }
 
+    @MainActor
+    func testTranscriptSilenceIsSuggestedByDefaultAndBulkRemovalPersistsWithUndo() async throws {
+        let fixture = try SyntheticRecording()
+        try await fixture.writeVideo(.init(url: fixture.take.screenURL, frames: 300))
+        try writeAudio(fixture.take.audioURL)
+        var settings = fixture.settings
+        settings.enabledSources = [.screen, .microphone]
+        let store = TakeFileStore()
+        let scenes = store.sceneEvents(from: try store.loadRecordingProject(at: fixture.take.projectURL))
+        try store.writeRecordingProject(for: fixture.take, settings: settings, sceneEvents: scenes, finalVideoURL: nil)
+        let suite = "TranscriptSilenceTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let vm = RecorderViewModel(
+            coordinator: RecorderCoordinator(accessController: AccessController(defaults: defaults), defaults: defaults),
+            previewStage: PreviewStageView())
+        vm.settings = settings
+        vm.openProject(try XCTUnwrap(store.loadProjectHistory(settings: settings).entries.first))
+        let project = try XCTUnwrap(vm.lastExportedProject)
+        let playback = EditorPlaybackController()
+        let session = SilenceEditingSession()
+        defer { session.cancel(); playback.teardown() }
+        await playback.load(project: project, baseSettings: settings)
+        session.prepare(.init(vm: vm, playback: playback, project: project))
+        try await settle(session)
+        session.setTranscript(RecordingTranscriptAssembler.assemble(.init(
+            mediaPath: "/recording", generatedAt: Date(timeIntervalSince1970: 0), duration: 10,
+            confidence: 0.95, text: "hello", suggestedTitle: nil,
+            words: [.init(text: "hello", startTime: 0, endTime: 2, confidence: 0.95)],
+            diarizedIntervals: [.init(speakerID: "speaker", startTime: 0, endTime: 2)])))
+        XCTAssertTrue(session.canRemoveNonDialogue)
+        XCTAssertEqual(session.classification(.init(start: 6, end: 7)), .silence)
+        XCTAssertEqual(try store.loadRecordingProject(at: fixture.take.projectURL).edits, project.edits)
+        session.classify(.init(range: .init(start: 6, end: 7), classification: .sound))
+        let protectedEdits = try store.loadRecordingProject(at: fixture.take.projectURL).edits
+        XCTAssertEqual(session.classification(.init(start: 6, end: 7)), .sound)
+        session.removeNonDialogue()
+        let removed = try store.loadRecordingProject(at: fixture.take.projectURL).edits
+        let map = TimelineTimeMap(takeDuration: TimelineTimeMap.time(10), cuts: removed.cuts)
+        XCTAssertFalse(map.isRemoved(takeTime: 1))
+        XCTAssertFalse(map.isRemoved(takeTime: 6.5))
+        XCTAssertTrue(map.isRemoved(takeTime: 8))
+        XCTAssertEqual(vm.editorUndoTitle, "Undo Remove Silence Without Dialogue")
+        vm.undoEditor()
+        XCTAssertEqual(try store.loadRecordingProject(at: fixture.take.projectURL).edits, protectedEdits)
+        vm.redoEditor()
+        XCTAssertEqual(try store.loadRecordingProject(at: fixture.take.projectURL).edits, removed)
+        session.prepare(.init(vm: vm, playback: playback, project: try XCTUnwrap(vm.lastExportedProject)))
+        try await settle(session)
+        XCTAssertFalse(session.canRemoveNonDialogue)
+    }
+
     func testOlderProjectsDecodeWithoutClassificationOverrides() throws {
         let snapshot = try JSONDecoder().decode(RecordingProject.TimelineEditsSnapshot.self, from: Data("{}".utf8))
         XCTAssertTrue(snapshot.edits.silenceOverrides.isEmpty)

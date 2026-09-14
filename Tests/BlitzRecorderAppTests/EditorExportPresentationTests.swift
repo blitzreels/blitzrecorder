@@ -20,7 +20,7 @@ final class EditorExportPresentationTests: XCTestCase {
             ("Format", OutputVideoFormat.allCases.map(\.displayName)),
             ("Resolution", OutputResolution.allCases.map(\.displayName)),
             ("Export FPS", RecordingSettings.supportedFrameRates.map { "\($0) fps" }),
-            ("Quality", ExportVideoQuality.allCases.map(\.displayName))
+            ("Quality", ExportVideoQuality.menuCases.map(\.displayName))
         ]
         var heights: [CGFloat] = []
         for (title, values) in fields {

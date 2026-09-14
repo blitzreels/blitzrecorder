@@ -21,6 +21,10 @@ final class SilenceEditingSession {
     private var previousIntensity = 1.0
     private(set) var skipSilence = false
     private(set) var cuts: [TimelineCut] = []
+    private var baseCuts: [TimelineCut] = []
+    private var transcript: RecordingTranscript?
+    private var transcriptCuts: [TimelineCut] = []
+    private(set) var nonDialogueRanges: [EditorTimeRange] = []
     private(set) var windows: [SilenceWindow] = []
     private(set) var loading = false
     private(set) var preparingPreview = false
@@ -63,7 +67,7 @@ final class SilenceEditingSession {
             self.request = request
             if previous.project.edits.cuts != request.project.edits.cuts
                 || previous.project.edits.silenceOverrides != request.project.edits.silenceOverrides {
-                cuts = request.project.edits.cuts
+                baseCuts = request.project.edits.cuts
                 updateMetrics()
                 if !usesSavedSilenceCuts { recalculate() }
             } else if skipSilence {
@@ -75,8 +79,10 @@ final class SilenceEditingSession {
         self.request = request
         active = true
         duration = request.playback.duration
-        cuts = request.project.edits.cuts
+        baseCuts = request.project.edits.cuts
         windows = []
+        transcriptCuts = []
+        nonDialogueRanges = []
         error = nil
         skipSilence = false
         updateMetrics()
@@ -119,6 +125,7 @@ final class SilenceEditingSession {
                 windows = result
                 loading = false
                 if automaticThreshold { threshold = SilenceDetection.suggestedThreshold(result) }
+                refreshTranscriptCuts()
                 if usesSavedSilenceCuts { updateMetrics() }
                 else { recalculate() }
             } catch {
@@ -163,6 +170,7 @@ final class SilenceEditingSession {
         }
         preparingPreview = false
         skipSilence = false
+        baseCuts = edits.cuts
         updateMetrics()
         return true
     }
@@ -175,7 +183,9 @@ final class SilenceEditingSession {
         request.playback.pauseForEditing()
         edits.cuts.removeAll { $0.kind == .silence }
         edits.silenceRemovalApplied = false
-        if !request.vm.applyTimelineEdits(.init(edits: edits, actionName: "Restore Silence")) {
+        if request.vm.applyTimelineEdits(.init(edits: edits, actionName: "Restore Silence")) {
+            baseCuts = edits.cuts
+        } else {
             error = request.vm.detailMessage
         }
         updateMetrics()
@@ -238,6 +248,7 @@ final class SilenceEditingSession {
         calculationTask?.cancel()
         error = nil
         calculating = true
+        refreshTranscriptCuts()
         let windows = windows
         let configuration = configuration()
         let noCuts = !suggestsPauses
@@ -253,7 +264,7 @@ final class SilenceEditingSession {
             }
             let result = await withTaskCancellationHandler(operation: { await task.value }, onCancel: { task.cancel() })
             guard !Task.isCancelled else { return }
-            cuts = result
+            baseCuts = result
             calculating = false
             updateMetrics()
             if skipSilence { updatePreview() }
@@ -309,8 +320,8 @@ final class SilenceEditingSession {
         calculationTask?.cancel()
         calculating = false
         error = nil
-        cuts = edits.silenceRemovalApplied ? edits.cuts
-            : SilenceDetection.applyingOverrides(.init(cuts: cuts, overrides: edits.silenceOverrides))
+        baseCuts = edits.silenceRemovalApplied ? edits.cuts
+            : SilenceDetection.applyingOverrides(.init(cuts: baseCuts, overrides: edits.silenceOverrides))
         if let updatedProject = request.vm.lastExportedProject {
             self.request = .init(vm: request.vm, playback: request.playback, project: updatedProject)
         }
@@ -323,7 +334,49 @@ final class SilenceEditingSession {
         return edits.silenceRemovalApplied || edits.enabledCuts.contains { $0.kind == .silence }
     }
 
+    func setTranscript(_ transcript: RecordingTranscript?) {
+        guard self.transcript != transcript else { return }
+        self.transcript = transcript
+        refreshTranscriptCuts()
+        updateMetrics()
+    }
+
+    private func refreshTranscriptCuts() {
+        transcriptCuts = transcript.map {
+            EditorTranscriptTimeline.items(.init(transcript: $0, windows: windows, threshold: threshold, duration: duration))
+                .filter { $0.kind == .nonDialogue }
+                .map { .init(start: $0.range.start, end: $0.range.end, kind: .silence, source: .automatic) }
+        } ?? []
+    }
+
+    var canRemoveNonDialogue: Bool {
+        canClassify && !nonDialogueRanges.isEmpty
+    }
+
+    func removeNonDialogue() {
+        guard canRemoveNonDialogue, let request, let project = request.vm.lastExportedProject else { return }
+        guard let edits = EditorTimeRange.removingTogether(.init(
+            ranges: nonDialogueRanges, kind: .silence, edits: project.edits, takeDuration: duration)) else {
+            error = "Keep at least 0.1 seconds of the recording."
+            return
+        }
+        request.playback.pauseForEditing()
+        if request.vm.applyTimelineEdits(.init(edits: edits, actionName: "Remove Silence Without Dialogue")) {
+            baseCuts = edits.cuts
+            updateMetrics()
+        } else {
+            error = request.vm.detailMessage
+        }
+    }
+
     private func updateMetrics() {
+        let saved = request?.vm.lastExportedProject?.edits ?? .empty
+        let suggestions = SilenceDetection.applyingOverrides(.init(
+            cuts: transcriptCuts, overrides: saved.silenceOverrides)).filter { $0.source == .automatic && $0.isEnabled }
+        let projection = EditorTimelineProjection(.init(duration: duration, cuts: saved.cuts))
+        let remaining = EditorTranscriptTimeline.remainingSilence(.init(cuts: suggestions, projection: projection))
+        nonDialogueRanges = remaining.map { .init(start: $0.start, end: $0.end) }
+        cuts = baseCuts + (suggestsPauses ? remaining : [])
         metrics = SilenceTimelineMetrics(
             .init(
                 duration: duration, proposed: cuts,

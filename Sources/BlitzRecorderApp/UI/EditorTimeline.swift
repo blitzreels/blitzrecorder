@@ -91,7 +91,9 @@ struct EditorTimelineView: View {
     let onRemovePlacedItem: (EditorPlacedItem.ID) -> Void
 
     @State private var transcriptItems: [EditorTranscriptItem] = []
+    @State private var transcriptLayout = EditorTranscriptLayout(.init(items: [], projection: .init(.init(duration: 0, cuts: []))))
     @State private var projection = EditorTimelineProjection(.init(duration: 0, cuts: []))
+    @State private var clipLayout = EditorVideoClipLayout(.init(projection: .init(.init(duration: 0, cuts: [])), splits: []))
     @State private var scrollOffset: CGFloat = 0
     @State private var trackScrollWidth: CGFloat = 0
     @State private var rulerScrollOffset = EditorTimelineScrollOffset()
@@ -111,6 +113,7 @@ struct EditorTimelineView: View {
     private let videoRowHeight: CGFloat = 54
     private let audioRowHeight: CGFloat = 44
     private let silenceRowHeight: CGFloat = 38
+    private let clipRowHeight: CGFloat = 32
     private let placedRowHeight: CGFloat = 38
 
     private var placedTracks: [EditorPlacedTrack] {
@@ -137,7 +140,7 @@ struct EditorTimelineView: View {
                 silenceToolbar(selected)
             } else if let range = selection?.timeRange {
                 rangeToolbar(range)
-            } else if silence.canClassify {
+            } else if isEditingSilence, silence.canClassify {
                 silenceToolbar(nil)
             }
             Rectangle()
@@ -151,6 +154,10 @@ struct EditorTimelineView: View {
             .frame(maxHeight: .infinity, alignment: .top)
         }
         .background(BlitzUI.projectLibraryBackground)
+        .onChange(of: projection) { updateTranscriptLayout() }
+        .onChange(of: EditorVideoClipLayout.Request(projection: projection, splits: project?.edits.videoSplits ?? []), initial: true) {
+            clipLayout = EditorVideoClipLayout(.init(projection: projection, splits: project?.edits.videoSplits ?? []))
+        }
         .onChange(of: transcript, initial: true) { updateTranscriptItems() }
         .onChange(of: silence.windows) { updateTranscriptItems() }
         .onChange(of: silence.threshold) { updateTranscriptItems() }
@@ -290,12 +297,15 @@ struct EditorTimelineView: View {
 
     private func rangeToolbar(_ range: EditorTimeRange) -> some View {
         HStack(spacing: 12) {
-            Label("Range", systemImage: "rectangle.dashed")
+            Label(selection?.rangeSelection.map { $0.ranges.count > 1 ? "\($0.ranges.count) items" : "Range" } ?? "Range",
+                  systemImage: "rectangle.dashed")
                 .foregroundStyle(BlitzUI.mint)
             Text("\(rangeTime(projection.displayTime(range.start))) – \(rangeTime(projection.displayTime(range.end)))")
                 .monospacedDigit()
                 .foregroundStyle(BlitzUI.primaryText)
-            Text(String(format: "%.2f s selected", (projection.displayTime(range.end) - projection.displayTime(range.start))))
+            Text(String(format: "%.2f s selected", (selection?.rangeSelection?.displayRanges ?? [range]).reduce(0) {
+                $0 + projection.displayTime($1.end) - projection.displayTime($1.start)
+            }))
                 .monospacedDigit()
                 .foregroundStyle(BlitzUI.secondaryText)
             Spacer(minLength: 4)
@@ -450,7 +460,7 @@ struct EditorTimelineView: View {
     private func clickSilenceRange(_ range: EditorTimeRange) {
         let modifiers = NSEvent.modifierFlags
         let selected = SilenceSegmentSelection.clicking(.init(
-            current: selection?.silenceSelection, target: range, segments: selectableSilenceSegments,
+            current: selection?.rangeSelection, target: range, segments: selectableSilenceSegments,
             extending: modifiers.contains(.shift), toggling: modifiers.contains(.command)
         ))
         selection = selected.map(EditorSelection.silenceRanges)
@@ -462,13 +472,52 @@ struct EditorTimelineView: View {
 
     private func toggleSilenceRange(_ range: EditorTimeRange) {
         selection = SilenceSegmentSelection.clicking(.init(
-            current: selection?.silenceSelection, target: range, segments: selectableSilenceSegments,
+            current: selection?.rangeSelection, target: range, segments: selectableSilenceSegments,
             extending: false, toggling: true
         )).map(EditorSelection.silenceRanges)
     }
 
+    private func clickTimelineRange(_ click: EditorTimelineRangeClick) {
+        let current = selection?.rangeSelection ?? selectedSceneRange.map(SilenceSegmentSelection.init)
+        let range: EditorTimeRange
+        if click.modifiers.contains(.shift), let current {
+            range = .init(start: min(current.anchor.start, click.range.start), end: max(current.anchor.end, click.range.end))
+        } else {
+            range = click.range
+        }
+        selection = SilenceSegmentSelection.clickingItems(.init(
+            current: current, target: click.range, ranges: [range],
+            extending: click.modifiers.contains(.shift), toggling: click.modifiers.contains(.command)
+        )).map(EditorSelection.ranges)
+    }
+
+    private func clickVideoClip(_ click: EditorTimelineRangeClick) {
+        selection = SilenceSegmentSelection.clickingItems(.init(
+            current: selection?.rangeSelection ?? selectedSceneRange.map(SilenceSegmentSelection.init),
+            target: click.range, ranges: clipLayout.clips.map(\.range),
+            extending: click.modifiers.contains(.shift), toggling: click.modifiers.contains(.command)
+        )).map(EditorSelection.ranges)
+    }
+
+    private var selectedSceneRange: EditorTimeRange? {
+        guard case .segment(let index) = selection else { return nil }
+        return EditorTimeRange.segment(.init(eventTimes: sceneEvents.map(\.time), index: index, duration: duration))
+    }
+
+    private func clickTranscriptRange(_ click: EditorTimelineRangeClick) {
+        selection = SilenceSegmentSelection.clickingItems(.init(
+            current: selection?.rangeSelection ?? selectedSceneRange.map(SilenceSegmentSelection.init),
+            target: click.range, ranges: transcriptLayout.items.map { $0.source.range },
+            extending: click.modifiers.contains(.shift), toggling: click.modifiers.contains(.command)
+        )).map(EditorSelection.ranges)
+        if click.modifiers.intersection([.shift, .command]).isEmpty {
+            onSeek(click.range.start)
+            onSeekEnded()
+        }
+    }
+
     private var classificationSelection: SilenceSegmentSelection? {
-        selection?.silenceSelection ?? selection?.timeRange.map(SilenceSegmentSelection.init)
+        selection?.rangeSelection
     }
 
     private var silenceControlSelection: SilenceSegmentSelection? {
@@ -496,12 +545,7 @@ struct EditorTimelineView: View {
                 EditorTimelinePinnedRuler(configuration: .init(
                     scrollOffset: rulerScrollOffset,
                     viewportWidth: trackViewport + 16,
-                    content: ZStack(alignment: .topLeading) {
-                        ruler(.init(pxPerSecond: pxPerSecond, width: contentWidth, viewport: viewport))
-                        if duration > 0 {
-                            playhead(.init(pxPerSecond: pxPerSecond, showsHandle: true))
-                        }
-                    }
+                    content: ruler(.init(pxPerSecond: pxPerSecond, width: contentWidth, viewport: viewport))
                     .frame(width: contentWidth, height: rulerHeight, alignment: .topLeading)
                     .coordinateSpace(name: timelineContentSpace)
                     .padding(.horizontal, 8)
@@ -518,6 +562,11 @@ struct EditorTimelineView: View {
                         ZStack(alignment: .topLeading) {
                             VStack(alignment: .leading, spacing: 6) {
                                 if duration > 0 {
+                                    EditorVideoClipStrip(configuration: .init(
+                                        layout: clipLayout, viewport: viewport, pixelsPerSecond: pxPerSecond,
+                                        width: contentWidth, height: clipRowHeight, onSelect: clickVideoClip))
+                                        .disabled(!isInteractive)
+                                        .contextMenu { timelineContextMenu }
                                     if showsSilenceTrack {
                                         SilenceSegmentStrip(configuration: .init(
                                             segments: selectableSilenceSegments,
@@ -559,7 +608,8 @@ struct EditorTimelineView: View {
                                                 head: projection.takeTime(Double(value.location.x / pxPerSecond)), duration: duration
                                             ))
                                         else { return }
-                                        if showsSilenceTrack, value.startLocation.y < silenceRowHeight {
+                                        if showsSilenceTrack, value.startLocation.y >= clipRowHeight + 6,
+                                            value.startLocation.y < clipRowHeight + 6 + silenceRowHeight {
                                             if !isDraggingStrip {
                                                 stripDragSelection = selection?.silenceSelection
                                                 addsDraggedSegments = NSEvent.modifierFlags.contains(.command)
@@ -572,7 +622,8 @@ struct EditorTimelineView: View {
                                                 segments: selectableSilenceSegments, additive: addsDraggedSegments
                                             )).map(EditorSelection.silenceRanges)
                                         } else {
-                                            selection = isEditingSilence || isSilenceTrack(at: value.startLocation.y)
+                                            selection = value.startLocation.y >= clipRowHeight + 6
+                                                && (isEditingSilence || isSilenceTrack(at: value.startLocation.y))
                                                 ? .silenceRange(range) : .range(range)
                                         }
                                     }
@@ -585,17 +636,26 @@ struct EditorTimelineView: View {
 
                             if duration > 0 {
                                 linkedSegmentOverlay(pxPerSecond)
+                                EditorVideoClipSeams(configuration: .init(
+                                    layout: clipLayout, viewport: viewport, pixelsPerSecond: pxPerSecond,
+                                    height: clipRowHeight + 6 + (showsSilenceTrack ? silenceRowHeight + 6 : 0)
+                                        + silenceRowHeight))
                                 if let range = hoveredSilenceRange, !selectedSilenceRanges.contains(range) {
                                     hoverOverlay(.init(range: range, pxPerSecond: pxPerSecond))
                                 }
-                                if !selectedSilenceRanges.isEmpty {
-                                    ForEach(SilenceSegmentSelection.coalesced(selectedSilenceRanges), id: \.start) { range in
-                                        rangeOverlay(.init(range: range, pxPerSecond: pxPerSecond))
+                                if let selected = selection?.rangeSelection {
+                                    if selected.ranges.count == 1 {
+                                        rangeOverlay(.init(range: selected.bounds, pxPerSecond: pxPerSecond))
+                                    } else {
+                                        EditorTimelineSelectionCanvas(configuration: .init(
+                                            ranges: selected.displayRanges, projection: projection, viewport: viewport,
+                                            pixelsPerSecond: pxPerSecond, height: contentHeight,
+                                            isSilence: !selectedSilenceRanges.isEmpty))
+                                            .frame(width: viewport.width, height: contentHeight)
+                                            .offset(x: viewport.lowerBound)
+                                            .allowsHitTesting(false)
                                     }
-                                } else if let range = selection?.timeRange {
-                                    rangeOverlay(.init(range: range, pxPerSecond: pxPerSecond))
                                 }
-                                playhead(.init(pxPerSecond: pxPerSecond, showsHandle: false))
                             }
                         }
                         .frame(width: contentWidth, alignment: .topLeading)
@@ -626,6 +686,18 @@ struct EditorTimelineView: View {
                 .padding(.bottom, 14)
             }
             .frame(maxHeight: .infinity, alignment: .top)
+        }
+        .overlay(alignment: .topLeading) {
+            if duration > 0 {
+                EditorTimelinePlayhead(configuration: .init(
+                    projection: projection, scrollOffset: rulerScrollOffset, pixelsPerSecond: pxPerSecond,
+                    playbackTime: playbackTime, liveTime: liveTime, isPlaying: isPlaying,
+                    isInteractive: isInteractive, rulerHeight: rulerHeight, viewportWidth: trackViewport + 16,
+                    onSeek: onSeek, onSeekEnded: onSeekEnded))
+                    .frame(width: trackViewport + 16)
+                    .clipped()
+                    .padding(.leading, gutterWidth + 8)
+            }
         }
     }
 
@@ -660,14 +732,14 @@ struct EditorTimelineView: View {
     }
 
     private func isPlacedTrack(at y: CGFloat) -> Bool {
-        let top = (showsSilenceTrack ? silenceRowHeight + 6 : 0) + silenceRowHeight + 6
+        let top = clipRowHeight + 6 + (showsSilenceTrack ? silenceRowHeight + 6 : 0) + silenceRowHeight + 6
             + (showsChaptersTrack ? chaptersRowHeight + 6 : 0)
             + (showsSegmentsTrack ? segmentsRowHeight + 6 : 0)
         return y >= top && y < top + CGFloat(placedTracks.count) * (placedRowHeight + 6)
     }
 
     private func linkedSegmentOverlay(_ pxPerSecond: CGFloat) -> some View {
-        let top = (showsSilenceTrack ? silenceRowHeight + 6 : 0) + silenceRowHeight + 6
+        let top = clipRowHeight + 6 + (showsSilenceTrack ? silenceRowHeight + 6 : 0) + silenceRowHeight + 6
             + (showsChaptersTrack ? chaptersRowHeight + 6 : 0)
         let height = max(0, contentHeight - top)
         return Canvas { context, _ in
@@ -765,6 +837,15 @@ struct EditorTimelineView: View {
 
     private var gutterColumn: some View {
         VStack(spacing: 6) {
+            if duration > 0 {
+                Label("Clips", systemImage: "film.stack")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(BlitzUI.primaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 10)
+                    .frame(width: gutterWidth, height: clipRowHeight)
+                    .help("Video clips stay linked across Screen, Camera, and audio. Split with ⌘B.")
+            }
             if showsSilenceTrack {
                 Button(action: onOpenSilence) {
                     Label("Sound / silence", systemImage: "waveform")
@@ -804,7 +885,12 @@ struct EditorTimelineView: View {
                     .buttonStyle(.plain)
                     .disabled((row.asset == nil && row.item == nil) || !isInteractive)
                     .accessibilityLabel("Select \(row.title) track")
-                    if row.title == "Transcript", transcript != nil,
+                    if row.title == "Transcript", silence.canRemoveNonDialogue {
+                        Button("Remove silence") { silence.removeNonDialogue() }
+                            .blitzButton(.secondary)
+                            .controlSize(.mini)
+                            .help("Remove every section without detected dialogue from all tracks. Undo with ⌘Z.")
+                    } else if row.title == "Transcript", transcript != nil,
                         transcript?.words == nil || transcriptionStatus.isRunning {
                         Button(transcriptionStatus.isRunning ? "Working…" : "Words", action: onGenerateTranscript)
                             .blitzButton(.secondary)
@@ -1004,9 +1090,15 @@ struct EditorTimelineView: View {
         .contentShape(.rect(cornerRadius: BlitzUI.controlRadius))
         .pointingHandCursor()
         .onTapGesture {
-            selection = .segment(index)
-            onSeek(min(duration, request.start + 0.001))
-            onSeekEnded()
+            let modifiers = NSEvent.modifierFlags
+            if !modifiers.intersection([.shift, .command]).isEmpty,
+                let range = EditorTimeRange.segment(.init(eventTimes: sceneEvents.map(\.time), index: index, duration: duration)) {
+                clickTimelineRange(.init(range: range, modifiers: modifiers))
+            } else {
+                selection = .segment(index)
+                onSeek(min(duration, request.start + 0.001))
+                onSeekEnded()
+            }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Segment \(index + 1)")
@@ -1082,7 +1174,7 @@ struct EditorTimelineView: View {
             lowerBound: min(width, request.viewport.lowerBound),
             upperBound: min(width, request.viewport.upperBound)
         )
-        let showsSilence = !asset.isVideo && silence.audioSourcePaths.contains(asset.url.path)
+        let showsSilence = isEditingSilence && !asset.isVideo && silence.audioSourcePaths.contains(asset.url.path)
         let silenceRuns = showsSilence ? SilenceTimelineBands.overlayRuns(
             .init(
                 cuts: silence.cuts, projection: projection, pixelsPerSecond: request.pxPerSecond, viewport: viewport
@@ -1105,19 +1197,8 @@ struct EditorTimelineView: View {
             )
             .equatable()
             .padding(.vertical, asset.isVideo ? 3 : 0)
-            Canvas { context, size in
-                for time in project?.edits.videoSplits ?? [] {
-                    let x = CGFloat(projection.displayTime(time)) * request.pxPerSecond - viewport.lowerBound
-                    guard x >= 0, x <= size.width else { continue }
-                    context.fill(Path(CGRect(x: x - 2, y: 0, width: 5, height: size.height)),
-                                 with: .color(BlitzUI.projectLibraryBackground))
-                    context.fill(Path(CGRect(x: x, y: 0, width: 1, height: size.height)),
-                                 with: .color(BlitzUI.mint))
-                }
-            }
-            .frame(width: viewport.width)
-            .offset(x: viewport.lowerBound)
-            .allowsHitTesting(false)
+            EditorVideoClipSeams(configuration: .init(
+                layout: clipLayout, viewport: viewport, pixelsPerSecond: request.pxPerSecond, height: rowHeight))
             if showsSilence {
                 SilenceWaveformOverlay(runs: silenceRuns, viewport: viewport)
                     .equatable()
@@ -1138,11 +1219,8 @@ struct EditorTimelineView: View {
                     time: projection.takeTime(Double(event.location.x / request.pxPerSecond))
                 )) {
                 clickSilenceRange(segment.range)
-            } else if isInteractive, let range = EditorVideoCuts.range(.init(
-                edits: project?.edits ?? .empty,
-                time: projection.takeTime(Double(event.location.x / request.pxPerSecond)), duration: duration
-            )) {
-                selection = .range(range)
+            } else if isInteractive, let clip = clipLayout.clip(at: Double(event.location.x / request.pxPerSecond)) {
+                clickVideoClip(.init(range: clip.range, modifiers: NSEvent.modifierFlags))
             } else {
                 selection = .asset(asset.id)
             }
@@ -1226,7 +1304,7 @@ struct EditorTimelineView: View {
             .disabled(!isInteractive || !silence.canClassify)
             Divider()
         }
-        if case .range(let range) = selection {
+        if selection?.silenceSelection == nil, let range = selection?.timeRange {
             Button("Cut selected range", systemImage: "scissors", action: onCutRange)
                 .disabled(!isInteractive || !range.canCut)
             Button("Restore selected range", systemImage: "arrow.uturn.backward", action: onRestoreRange)
@@ -1248,57 +1326,18 @@ struct EditorTimelineView: View {
         Button("Keyboard shortcuts", systemImage: "keyboard") { showsShortcuts = true }
     }
 
-    private struct PlayheadRequest {
-        let pxPerSecond: CGFloat
-        let showsHandle: Bool
-    }
-
-    private func playhead(_ request: PlayheadRequest) -> some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !isPlaying)) { _ in
-            let time = isPlaying ? liveTime() : playbackTime
-            let x = CGFloat(projection.displayTime(time)) * request.pxPerSecond
-
-            ZStack(alignment: .top) {
-                Rectangle()
-                    .fill(BlitzUI.mint)
-                    .frame(width: 1.5)
-                    .frame(maxHeight: .infinity)
-
-                if request.showsHandle {
-                    PlayheadHandle()
-                        .fill(BlitzUI.mint)
-                        .frame(width: 11, height: 14)
-                        .overlay {
-                            PlayheadHandle()
-                                .stroke(Color.black.opacity(0.7), lineWidth: 1)
-                        }
-
-                    Color.clear
-                        .frame(width: 28, height: rulerHeight)
-                        .contentShape(.rect)
-                        .gesture(
-                            DragGesture(minimumDistance: 0, coordinateSpace: .named(timelineContentSpace))
-                                .onChanged { seek(toContentX: $0.location.x, pxPerSecond: request.pxPerSecond) }
-                                .onEnded { _ in onSeekEnded() },
-                            isEnabled: isInteractive
-                        )
-                }
-            }
-            .frame(width: 28)
-            .frame(maxHeight: .infinity, alignment: .top)
-            .offset(x: x - 14)
-            .opacity(isInteractive ? 1 : 0.4)
-            .allowsHitTesting(request.showsHandle)
-        }
-    }
-
-
     private func updateTranscriptItems() {
         transcriptItems = transcript.map {
             EditorTranscriptTimeline.items(.init(
                 transcript: $0, windows: silence.windows, threshold: silence.threshold, duration: duration
             ))
         } ?? []
+        updateTranscriptLayout()
+        silence.setTranscript(transcript)
+    }
+
+    private func updateTranscriptLayout() {
+        transcriptLayout = EditorTranscriptLayout(.init(items: transcriptItems, projection: projection))
     }
 
     private var transcriptionFailureDetail: String {
@@ -1328,16 +1367,15 @@ struct EditorTimelineView: View {
             .help(transcriptionFailureDetail)
         } else {
             EditorTranscriptStrip(configuration: .init(
-                items: transcriptItems, projection: projection, viewport: request.viewport,
+                layout: transcriptLayout, viewport: request.viewport,
                 pixelsPerSecond: request.pixelsPerSecond, width: request.contentWidth, height: silenceRowHeight,
-                selection: selection?.timeRange, onSelect: { range in
-                    selection = .range(range)
-                    onSeek(range.start)
-                    onSeekEnded()
-                }
+                selections: selection?.rangeSelection?.ranges ?? [], onSelect: clickTranscriptRange
             ))
             .disabled(!isInteractive)
             .contextMenu {
+                Button("Remove all silence without dialogue") { silence.removeNonDialogue() }
+                    .disabled(!silence.canRemoveNonDialogue)
+                Divider()
                 Button(transcript?.words?.isEmpty == false ? "Regenerate transcript" : "Generate word timings",
                        action: onGenerateTranscript)
                     .disabled(transcriptionStatus.isRunning)
@@ -1371,7 +1409,7 @@ struct EditorTimelineView: View {
     }
 
     private var showsSilenceTrack: Bool {
-        !silence.windows.isEmpty
+        isEditingSilence && !silence.windows.isEmpty
     }
 
     private var trackAssets: [EditorAsset] {
@@ -1411,6 +1449,7 @@ struct EditorTimelineView: View {
     private var contentHeight: CGFloat {
         var height: CGFloat = 0
         if duration > 0 {
+            height += clipRowHeight + 6
             height += silenceRowHeight + 6
             if showsSilenceTrack {
                 height += 6 + silenceRowHeight
@@ -1433,7 +1472,8 @@ struct EditorTimelineView: View {
     }
 
     private func isSilenceTrack(at y: CGFloat) -> Bool {
-        var top: CGFloat = 0
+        guard isEditingSilence else { return false }
+        var top: CGFloat = clipRowHeight + 6
         if showsSilenceTrack {
             if y >= top, y < top + silenceRowHeight { return true }
             top += silenceRowHeight + 6
@@ -1662,20 +1702,85 @@ enum EditorSceneTitle {
     }
 }
 
-private struct PlayheadHandle: Shape {
+private struct EditorTimelinePlayhead: View {
+    struct Configuration {
+        let projection: EditorTimelineProjection
+        let scrollOffset: EditorTimelineScrollOffset
+        let pixelsPerSecond: CGFloat
+        let playbackTime: Double
+        let liveTime: () -> Double
+        let isPlaying: Bool
+        let isInteractive: Bool
+        let rulerHeight: CGFloat
+        let viewportWidth: CGFloat
+        let onSeek: (Double) -> Void
+        let onSeekEnded: () -> Void
+    }
+
+    let configuration: Configuration
+    @Environment(\.displayScale) private var displayScale
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !configuration.isPlaying)) { _ in
+            let time = configuration.isPlaying ? configuration.liveTime() : configuration.playbackTime
+            let displayTime = configuration.projection.displayTime(time)
+            let rawX = 8 + CGFloat(displayTime) * configuration.pixelsPerSecond - configuration.scrollOffset.value
+            let x = (rawX * displayScale).rounded() / displayScale
+            ZStack(alignment: .topLeading) {
+                Canvas { context, size in
+                    guard x >= 0, x <= size.width else { return }
+                    let marker = EditorTimelinePlayheadShape().path(in: CGRect(x: x - 6, y: 0, width: 12, height: size.height))
+                    context.stroke(marker, with: .color(.black.opacity(0.7)), lineWidth: 2)
+                    context.fill(marker, with: .color(BlitzUI.mint))
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+                Color.clear
+                    .frame(width: max(0, min(configuration.viewportWidth, x + 14) - max(0, x - 14)),
+                        height: configuration.rulerHeight)
+                    .contentShape(.rect)
+                    .offset(x: max(0, x - 14))
+                    .allowsHitTesting(configuration.isInteractive && x >= 0 && x <= configuration.viewportWidth)
+                    .gesture(
+                        DragGesture(minimumDistance: 0, coordinateSpace: .named("EditorTimelinePlayhead"))
+                            .onChanged { value in
+                                guard configuration.pixelsPerSecond > 0 else { return }
+                                let displayTime = Double((value.location.x + configuration.scrollOffset.value - 8)
+                                    / configuration.pixelsPerSecond)
+                                configuration.onSeek(configuration.projection.takeTime(
+                                    min(configuration.projection.duration, max(0, displayTime))))
+                            }
+                            .onEnded { _ in configuration.onSeekEnded() },
+                        isEnabled: configuration.isInteractive
+                    )
+                    .accessibilityLabel("Playhead")
+                    .accessibilityValue(MediaTimecode.label(.init(time: displayTime, duration: configuration.projection.duration)))
+                    .help("Drag to scrub the full timeline")
+            }
+            .coordinateSpace(name: "EditorTimelinePlayhead")
+            .opacity(configuration.isInteractive ? 1 : 0.4)
+        }
+    }
+}
+
+private struct EditorTimelinePlayheadShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
         let radius: CGFloat = 2.5
-        let tipTop = rect.maxY - rect.height * 0.38
+        let shoulder = rect.minY + 8
+        let stemTop = rect.minY + 13
         path.move(to: CGPoint(x: rect.minX + radius, y: rect.minY))
         path.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
         path.addQuadCurve(
             to: CGPoint(x: rect.maxX, y: rect.minY + radius),
             control: CGPoint(x: rect.maxX, y: rect.minY)
         )
-        path.addLine(to: CGPoint(x: rect.maxX, y: tipTop))
-        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.minX, y: tipTop))
+        path.addLine(to: CGPoint(x: rect.maxX, y: shoulder))
+        path.addLine(to: CGPoint(x: rect.midX + 1, y: stemTop))
+        path.addLine(to: CGPoint(x: rect.midX + 1, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.midX - 1, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.midX - 1, y: stemTop))
+        path.addLine(to: CGPoint(x: rect.minX, y: shoulder))
         path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + radius))
         path.addQuadCurve(
             to: CGPoint(x: rect.minX + radius, y: rect.minY),

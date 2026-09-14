@@ -18,9 +18,7 @@ struct SilenceSegmentSelection: Equatable {
         let ordered = contents.ranges.sorted { $0.start == $1.start ? $0.end < $1.end : $0.start < $1.start }
         var distinct: [EditorTimeRange] = []
         for range in ordered {
-            if let last = distinct.last, range.start < last.end {
-                distinct[distinct.count - 1] = .init(start: last.start, end: max(last.end, range.end))
-            } else if distinct.last != range {
+            if distinct.last != range {
                 distinct.append(range)
             }
         }
@@ -30,10 +28,10 @@ struct SilenceSegmentSelection: Equatable {
     }
 
     var bounds: EditorTimeRange {
-        .init(start: ranges[0].start, end: ranges[ranges.count - 1].end)
+        .init(start: ranges[0].start, end: ranges.reduce(ranges[0].end) { max($0, $1.end) })
     }
 
-    var duration: Double { ranges.reduce(0) { $0 + $1.duration } }
+    var duration: Double { displayRanges.reduce(0) { $0 + $1.duration } }
 
     var displayRanges: [EditorTimeRange] {
         Self.coalesced(ranges)
@@ -63,14 +61,37 @@ struct SilenceSegmentSelection: Equatable {
     }
 
     static func clicking(_ request: Click) -> Self? {
+        let ranges: [EditorTimeRange]
+        if request.extending, let current = request.current {
+            ranges = SilenceTimelineSegments.overlapping(.init(segments: request.segments,
+                start: min(current.anchor.start, request.target.start), end: max(current.anchor.end, request.target.end),
+                includesSegmentStartingAtEnd: false)).map(\.range)
+        } else {
+            ranges = []
+        }
+        return clickingItems(.init(current: request.current, target: request.target,
+            ranges: ranges, extending: request.extending, toggling: request.toggling))
+    }
+
+    struct ItemClick {
+        let current: SilenceSegmentSelection?
+        let target: EditorTimeRange
+        let ranges: [EditorTimeRange]
+        let extending: Bool
+        let toggling: Bool
+    }
+
+    static func clickingItems(_ request: ItemClick) -> Self? {
         if request.extending, let current = request.current {
             let start = min(current.anchor.start, request.target.start)
             let end = max(current.anchor.end, request.target.end)
-            let extensionRanges = SilenceTimelineSegments.overlapping(
-                .init(
-                    segments: request.segments, start: start, end: end, includesSegmentStartingAtEnd: false
-                )
-            ).map(\.range)
+            let extensionRanges: [EditorTimeRange]
+            if let anchorIndex = request.ranges.firstIndex(of: current.anchor),
+                let targetIndex = request.ranges.firstIndex(of: request.target) {
+                extensionRanges = Array(request.ranges[min(anchorIndex, targetIndex)...max(anchorIndex, targetIndex)])
+            } else {
+                extensionRanges = request.ranges.filter { $0.start < end - 1e-9 && $0.end > start + 1e-9 }
+            }
             return Self(.init(
                 ranges: (request.toggling ? current.ranges : []) + extensionRanges,
                 anchor: current.anchor
