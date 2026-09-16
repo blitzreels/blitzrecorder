@@ -79,6 +79,7 @@ final class EditorSelectionControlsTests: XCTestCase {
         XCTAssertEqual(command(.init(keyCode: 31, characters: "o", modifiers: [])), .markOut)
         XCTAssertEqual(command(.init(keyCode: 53, characters: "", modifiers: [])), .clearSelection)
         XCTAssertEqual(command(.init(keyCode: 51, characters: "", modifiers: [])), .deleteSelection)
+        XCTAssertEqual(command(.init(keyCode: 117, characters: "", modifiers: [])), .deleteSelection)
         XCTAssertEqual(command(.init(keyCode: 51, characters: "", modifiers: .shift)), .restoreSelection)
         XCTAssertEqual(command(.init(keyCode: 38, characters: "j", modifiers: [])), .seek(-3))
         XCTAssertEqual(command(.init(keyCode: 40, characters: "k", modifiers: [])), .pause)
@@ -87,6 +88,44 @@ final class EditorSelectionControlsTests: XCTestCase {
         XCTAssertEqual(command(.init(keyCode: 27, characters: "-", modifiers: [])), .zoomOut)
         XCTAssertEqual(command(.init(keyCode: 3, characters: "f", modifiers: [])), .fit)
         XCTAssertEqual(command(.init(keyCode: 44, characters: "/", modifiers: .shift)), .showHelp)
+    }
+
+    func testDeleteOnASelectedAudioAssetMutesInsteadOfCuttingTheClip() {
+        XCTAssertEqual(
+            EditorDeleteRouting.action(.init(
+                selection: .asset("microphone"), hasPrivacySelection: false, assetIsToggleable: true
+            )),
+            .toggleAsset
+        )
+        XCTAssertNil(
+            EditorDeleteRouting.action(.init(
+                selection: .asset("microphone"), hasPrivacySelection: false, assetIsToggleable: false
+            ))
+        )
+        XCTAssertEqual(
+            EditorDeleteRouting.action(.init(
+                selection: .range(.init(start: 1, end: 3)), hasPrivacySelection: false, assetIsToggleable: true
+            )),
+            .cutRange
+        )
+        XCTAssertEqual(
+            EditorDeleteRouting.action(.init(
+                selection: .placed(.init(kind: .text, value: UUID())),
+                hasPrivacySelection: false, assetIsToggleable: true
+            )),
+            .removePlaced
+        )
+        XCTAssertEqual(
+            EditorDeleteRouting.action(.init(
+                selection: .silenceRange(.init(start: 1, end: 2)),
+                hasPrivacySelection: false, assetIsToggleable: true
+            )),
+            .toggleSilence
+        )
+        XCTAssertEqual(
+            EditorDeleteRouting.help(.toggleAsset),
+            "Mute or hide the selected track (Delete). Undo with ⌘Z."
+        )
     }
 
     @MainActor
@@ -221,5 +260,112 @@ final class EditorSelectionControlsTests: XCTestCase {
         XCTAssertTrue(vm.deleteProjectSegment(.init(index: 2, duration: 10)))
         XCTAssertEqual(vm.lastExportedProject?.edits.enabledCuts.last?.start, 6)
         XCTAssertEqual(vm.lastExportedProject?.edits.enabledCuts.last?.end, 10)
+    }
+
+    func testMarkInKeepsExistingEndUnlessPlayheadIsLater() throws {
+        let extended = try XCTUnwrap(EditorTimeRange.markIn(time: 2, existingEnd: 6, duration: 10))
+        XCTAssertEqual(extended.start, 2)
+        XCTAssertEqual(extended.end, 6)
+        let collapsed = try XCTUnwrap(EditorTimeRange.markIn(time: 8, existingEnd: 6, duration: 10))
+        XCTAssertEqual(collapsed.start, 8)
+        XCTAssertEqual(collapsed.end, 8)
+        let fresh = try XCTUnwrap(EditorTimeRange.markIn(time: 3, existingEnd: nil, duration: 10))
+        XCTAssertEqual(fresh.start, 3)
+        XCTAssertEqual(fresh.end, 10)
+    }
+
+    func testMarkOutKeepsExistingStartUnlessPlayheadIsEarlier() throws {
+        let extended = try XCTUnwrap(EditorTimeRange.markOut(time: 7, existingStart: 2, duration: 10))
+        XCTAssertEqual(extended.start, 2)
+        XCTAssertEqual(extended.end, 7)
+        let collapsed = try XCTUnwrap(EditorTimeRange.markOut(time: 1, existingStart: 2, duration: 10))
+        XCTAssertEqual(collapsed.start, 1)
+        XCTAssertEqual(collapsed.end, 1)
+        let fresh = try XCTUnwrap(EditorTimeRange.markOut(time: 4, existingStart: nil, duration: 10))
+        XCTAssertEqual(fresh.start, 0)
+        XCTAssertEqual(fresh.end, 4)
+    }
+
+    func testKeyboardSessionIgnoresSettingsAndShowsHelpWithoutPlayback() {
+        XCTAssertEqual(
+            EditorKeyboardSession.resolve(.init(
+                isShowingSettings: true,
+                isExportPopoverPresented: false,
+                showsTimelineShortcuts: false,
+                isFinishing: false,
+                isPlaybackReady: true,
+                keyCode: 49,
+                characters: " ",
+                modifiers: []
+            )),
+            .ignore
+        )
+        XCTAssertEqual(
+            EditorKeyboardSession.resolve(.init(
+                isShowingSettings: false,
+                isExportPopoverPresented: false,
+                showsTimelineShortcuts: false,
+                isFinishing: false,
+                isPlaybackReady: false,
+                keyCode: 49,
+                characters: " ",
+                modifiers: []
+            )),
+            .ignore
+        )
+        XCTAssertEqual(
+            EditorKeyboardSession.resolve(.init(
+                isShowingSettings: false,
+                isExportPopoverPresented: false,
+                showsTimelineShortcuts: false,
+                isFinishing: false,
+                isPlaybackReady: false,
+                keyCode: 44,
+                characters: "?",
+                modifiers: []
+            )),
+            .showHelp
+        )
+        XCTAssertEqual(
+            EditorKeyboardSession.resolve(.init(
+                isShowingSettings: false,
+                isExportPopoverPresented: false,
+                showsTimelineShortcuts: false,
+                isFinishing: false,
+                isPlaybackReady: true,
+                keyCode: 49,
+                characters: " ",
+                modifiers: []
+            )),
+            .command(.togglePlayback)
+        )
+    }
+
+    func testAssetTracksSnapshotIsOnePass() {
+        let snapshot = EditorAssetTracks.snapshot(.init(
+            assets: [
+                .init(id: "s", kind: .screen),
+                .init(id: "c", kind: .camera),
+                .init(id: "m", kind: .microphone)
+            ],
+            hiddenKinds: [.camera],
+            hideableKinds: [.screen, .camera],
+            mutedSources: [.microphone],
+            muteableSources: [.microphone]
+        ))
+        XCTAssertEqual(snapshot.hiddenIDs, ["c"])
+        XCTAssertEqual(snapshot.mutedIDs, ["m"])
+        XCTAssertEqual(snapshot.toggleableIDs, ["c", "m"])
+        XCTAssertEqual(EditorAssetTracks.layerKind(.screen), .screen)
+        XCTAssertEqual(EditorAssetTracks.audioSource(.microphone), .microphone)
+    }
+
+    func testRestoringTogetherNoopsWhenNothingIsCut() {
+        XCTAssertNil(EditorTimeRange.restoringTogether(.init(
+            ranges: [EditorTimeRange(start: 1, end: 2)],
+            kind: .manual,
+            edits: .empty,
+            takeDuration: 10
+        )))
     }
 }

@@ -40,6 +40,7 @@ enum EditorPlaybackPosition {
 struct EditorPlaybackControls: View {
     struct Configuration {
         let time: Double
+        var liveTime: (() -> Double)?
         let duration: Double
         let isPlaying: Bool
         let isEnabled: Bool
@@ -55,6 +56,13 @@ struct EditorPlaybackControls: View {
     @State private var showsPosition = false
     @State private var positionText = ""
     @FocusState private var isPositionFocused: Bool
+
+    private var displayedTime: Double {
+        if configuration.isPlaying, let liveTime = configuration.liveTime {
+            return liveTime()
+        }
+        return configuration.time
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -107,28 +115,23 @@ struct EditorPlaybackControls: View {
 
     private var position: some View {
         Button {
-            positionText = EditorPlaybackPosition.display(configuration.time)
+            positionText = EditorPlaybackPosition.display(displayedTime)
             showsPosition = true
         } label: {
-            HStack(spacing: 7) {
-                BlitzTimecode(configuration: .init(time: configuration.time, duration: configuration.duration))
-                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(BlitzUI.primaryText)
-                Text("/")
-                    .foregroundStyle(BlitzUI.secondaryText.opacity(0.5))
-                BlitzTimecode(configuration: .init(time: configuration.duration, duration: configuration.duration))
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundStyle(BlitzUI.secondaryText)
+            Group {
+                if configuration.isPlaying, configuration.liveTime != nil {
+                    TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: false)) { _ in
+                        timecodeStack(displayedTime)
+                    }
+                } else {
+                    timecodeStack(displayedTime)
+                }
             }
-            .monospacedDigit()
-            .fixedSize()
-            .padding(.horizontal, 8)
-            .frame(height: 44)
         }
         .buttonStyle(BlitzSelectionButtonStyle(isSelected: showsPosition))
         .accessibilityLabel("Playback position")
         .accessibilityValue(
-            "\(EditorPlaybackPosition.display(configuration.time)) of \(EditorPlaybackPosition.display(configuration.duration))"
+            "\(EditorPlaybackPosition.display(displayedTime)) of \(EditorPlaybackPosition.display(configuration.duration))"
         )
         .help("Click to jump to a time")
         .pointingHandCursor()
@@ -159,6 +162,23 @@ struct EditorPlaybackControls: View {
             .controlSize(.regular)
             .onAppear { isPositionFocused = true }
         }
+    }
+
+    private func timecodeStack(_ time: Double) -> some View {
+        HStack(spacing: 7) {
+            BlitzTimecode(configuration: .init(time: time, duration: configuration.duration))
+                .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                .foregroundStyle(BlitzUI.primaryText)
+            Text("/")
+                .foregroundStyle(BlitzUI.secondaryText.opacity(0.5))
+            BlitzTimecode(configuration: .init(time: configuration.duration, duration: configuration.duration))
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundStyle(BlitzUI.secondaryText)
+        }
+        .monospacedDigit()
+        .fixedSize()
+        .padding(.horizontal, 8)
+        .frame(height: 44)
     }
 
     private var parsedPosition: Double? {

@@ -6,6 +6,13 @@ This project uses GitHub Releases for downloadable macOS builds. Release tags us
 
 ## Unreleased
 
+## 0.20.0 - 2026-09-16
+
+- Continuity Camera interruptions no longer abort the take. Screen and audio keep recording, the camera slot goes black, and the camera can resume if it comes back.
+- Recording start now blocks until a screen source is actually picked, and capture devices reconnect without killing healthy sources.
+- Replaced the installer DMG with a light, mint-accent drag-to-install layout (760×480).
+- Studio preview and editor canvas/timeline handling is more reliable after splitting preview, inspector, and session code.
+
 ## 0.9.0 - 2026-07-28
 
 - Improved recording start and stop reliability when the macOS screen picker is open or changing sources.

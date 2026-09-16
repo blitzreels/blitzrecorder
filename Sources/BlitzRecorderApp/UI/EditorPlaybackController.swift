@@ -51,6 +51,38 @@ enum EditorPlaybackClockSelection {
     }
 }
 
+enum EditorPlaybackClockPublish {
+    struct Tick: Equatable {
+        let nextTime: Double
+        let currentTime: Double
+        let nextIsPlaying: Bool
+        let isPlaying: Bool
+        let isSameSceneSegment: Bool
+    }
+
+    struct Update: Equatable {
+        var currentTime: Double?
+        var isPlaying: Bool?
+        var shouldRefreshSceneCache: Bool
+    }
+
+    static func apply(_ tick: Tick) -> Update {
+        var update = Update(currentTime: nil, isPlaying: nil, shouldRefreshSceneCache: false)
+        if tick.nextIsPlaying != tick.isPlaying {
+            update.isPlaying = tick.nextIsPlaying
+        }
+        if tick.nextIsPlaying {
+            if !tick.isSameSceneSegment {
+                update.currentTime = tick.nextTime
+                update.shouldRefreshSceneCache = true
+            }
+        } else if abs(tick.nextTime - tick.currentTime) > 0.0001 {
+            update.currentTime = tick.nextTime
+        }
+        return update
+    }
+}
+
 enum EditorPlaybackRate: Float, CaseIterable, Equatable {
     case half = 0.5
     case normal = 1
@@ -165,6 +197,17 @@ final class EditorPlaybackController: NowPlayingPlayback {
     }
     @ObservationIgnored private var cachedRenderSegments: [FinalExportRenderSegment]?
     @ObservationIgnored private var cachedPreviewRenderSegments: [FinalExportRenderSegment]?
+    @ObservationIgnored private var cachedLayerFrames: (
+        range: CMTimeRange,
+        hiding: Set<SceneLayerKind>,
+        revision: Int,
+        frames: [(kind: SceneLayerKind, frame: CGRect)]
+    )?
+    @ObservationIgnored private var cachedSceneAt: (
+        range: CMTimeRange,
+        revision: Int,
+        scene: RecordingScene
+    )?
     @ObservationIgnored private var videoPlayers: [SceneLayerKind: AVPlayer] = [:]
     @ObservationIgnored private var audioPlayer: AVPlayer?
     @ObservationIgnored private var audioInputs: [(source: CaptureSource, baseVolume: Float)] = []
@@ -445,6 +488,8 @@ final class EditorPlaybackController: NowPlayingPlayback {
     private func invalidateRenderSegments() {
         cachedRenderSegments = nil
         cachedPreviewRenderSegments = nil
+        cachedLayerFrames = nil
+        cachedSceneAt = nil
     }
 
     private var renderSegments: [FinalExportRenderSegment] {
@@ -468,10 +513,24 @@ final class EditorPlaybackController: NowPlayingPlayback {
 
     func scene(at seconds: Double) -> RecordingScene? {
         guard playback != nil else { return nil }
-        let segments = previewRenderSegments
         let time = timeMap.outputTime(forTake: TimelineTimeMap.time(clampedTime(seconds)))
-        let segment = segments.first { CMTimeRangeContainsTime($0.timeRange, time: time) } ?? segments.last
-        return segment.map { TimelineOverlayRenderer.scene(.init(scene: $0.scene, edits: edits, time: seconds)) }
+        let segmentScene: RecordingScene
+        if let cachedSceneAt,
+           cachedSceneAt.revision == previewSceneRevision,
+           CMTimeRangeContainsTime(cachedSceneAt.range, time: time) {
+            segmentScene = cachedSceneAt.scene
+        } else {
+            let segments = previewRenderSegments
+            guard let index = EditorTimelineIndex.segmentIndex(at: time, in: segments) else { return nil }
+            segmentScene = segments[index].scene
+            cachedSceneAt = (
+                range: segments[index].timeRange,
+                revision: previewSceneRevision,
+                scene: segmentScene
+            )
+        }
+        guard edits.zoom.isActive else { return segmentScene }
+        return TimelineOverlayRenderer.scene(.init(scene: segmentScene, edits: edits, time: seconds))
     }
 
     func togglePlayback() {
@@ -655,16 +714,27 @@ final class EditorPlaybackController: NowPlayingPlayback {
     func layerFrames(at seconds: Double) -> [(kind: SceneLayerKind, frame: CGRect)] {
         guard let playback, renderSize.width > 0, renderSize.height > 0 else { return [] }
         let time = timeMap.outputTime(forTake: TimelineTimeMap.time(clampedTime(seconds)))
+        if let cachedLayerFrames,
+           cachedLayerFrames.hiding == hiddenKinds,
+           cachedLayerFrames.revision == previewSceneRevision,
+           CMTimeRangeContainsTime(cachedLayerFrames.range, time: time) {
+            return cachedLayerFrames.frames
+        }
         let renderSegments = self.renderSegments
-        let segment = renderSegments.first {
-            CMTimeRangeContainsTime($0.timeRange, time: time)
-        } ?? renderSegments.last
-        guard let segment else { return [] }
-        return playback.normalizedLayerFrames(
+        guard let index = EditorTimelineIndex.segmentIndex(at: time, in: renderSegments) else { return [] }
+        let segment = renderSegments[index]
+        let frames = playback.normalizedLayerFrames(
             scene: segment.scene,
             activeLayerOrder: segment.activeLayerOrder,
             hiding: hiddenKinds
         )
+        cachedLayerFrames = (
+            range: segment.timeRange,
+            hiding: hiddenKinds,
+            revision: previewSceneRevision,
+            frames: frames
+        )
+        return frames
     }
 
     func layerFrames(for scene: RecordingScene) -> [(kind: SceneLayerKind, frame: CGRect)] {
@@ -740,6 +810,12 @@ final class EditorPlaybackController: NowPlayingPlayback {
         min(max(0, seconds), max(duration, 0))
     }
 
+    private func isCachedSceneSegment(at seconds: Double) -> Bool {
+        guard let cachedSceneAt, cachedSceneAt.revision == previewSceneRevision else { return false }
+        let time = timeMap.outputTime(forTake: TimelineTimeMap.time(clampedTime(seconds)))
+        return CMTimeRangeContainsTime(cachedSceneAt.range, time: time)
+    }
+
     private func installObservers() {
         guard let masterPlayer else { return }
         let generation = loadGeneration
@@ -750,8 +826,24 @@ final class EditorPlaybackController: NowPlayingPlayback {
             MainActor.assumeIsolated {
                 guard let self, self.loadGeneration == generation, self.isReady, !self.isScrubbing else { return }
                 let seconds = time.seconds.isFinite ? time.seconds : 0
-                self.currentTime = self.clampedTime(self.timeMap.takeSeconds(forOutputSeconds: seconds))
-                self.isPlaying = (self.masterPlayer?.rate ?? 0) != 0
+                let nextTime = self.clampedTime(self.timeMap.takeSeconds(forOutputSeconds: seconds))
+                let nextIsPlaying = (self.masterPlayer?.rate ?? 0) != 0
+                let update = EditorPlaybackClockPublish.apply(.init(
+                    nextTime: nextTime,
+                    currentTime: self.currentTime,
+                    nextIsPlaying: nextIsPlaying,
+                    isPlaying: self.isPlaying,
+                    isSameSceneSegment: self.isCachedSceneSegment(at: nextTime)
+                ))
+                if let currentTime = update.currentTime {
+                    self.currentTime = currentTime
+                }
+                if let isPlaying = update.isPlaying {
+                    self.isPlaying = isPlaying
+                }
+                if update.shouldRefreshSceneCache {
+                    _ = self.scene(at: nextTime)
+                }
             }
         }
         if let masterItem = masterPlayer.currentItem {

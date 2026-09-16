@@ -70,6 +70,63 @@ struct ScreenContentPickerRequest {
     let selectionPolicy: ScreenContentPickerSelectionPolicy
 }
 
+struct PickScreenContentRequest {
+    let activatesScreenSource: Bool
+    let selectionPolicy: ScreenContentPickerSelectionPolicy
+
+    static func enablingScreen(_ settings: RecordingSettings, activatesScreenSource: Bool) -> RecordingSettings {
+        var settings = settings
+        settings.screenCrop = nil
+        if activatesScreenSource {
+            settings.enabledSources.insert(.screen)
+            settings.hiddenSources.remove(.screen)
+        }
+        return settings
+    }
+
+    static func finishing(
+        _ settings: RecordingSettings,
+        pickedAspectRatio: CGFloat,
+        activatesScreenSource: Bool,
+        isIdle: Bool
+    ) -> RecordingSettings {
+        var settings = settings
+        settings.screenSourceAspectRatio = pickedAspectRatio
+        if activatesScreenSource, isIdle {
+            settings.screenContentMode = .fit
+        }
+        return settings
+    }
+
+    static func applied(
+        to settings: RecordingSettings,
+        activatesScreenSource: Bool,
+        pickedAspectRatio: CGFloat,
+        isIdle: Bool,
+        selecting: (RecordingSettings) -> RecordingSettings
+    ) -> RecordingSettings {
+        finishing(
+            selecting(enablingScreen(settings, activatesScreenSource: activatesScreenSource)),
+            pickedAspectRatio: pickedAspectRatio,
+            activatesScreenSource: activatesScreenSource,
+            isIdle: isIdle
+        )
+    }
+
+    static func updatesActiveCapture(_ state: RecordingState) -> Bool {
+        state == .recording || state == .paused
+    }
+
+    static func persistAction(updatesActiveRecording: Bool) -> PersistAction {
+        updatesActiveRecording ? .cutTimeline : .updateIfNeeded
+    }
+
+    enum PersistAction: Equatable {
+        case cutTimeline
+        case updateIfNeeded
+    }
+}
+
 @MainActor
 final class ScreenContentPicker: NSObject, @preconcurrency SCContentSharingPickerObserver {
     private var continuation: CheckedContinuation<SCContentFilter, Error>?

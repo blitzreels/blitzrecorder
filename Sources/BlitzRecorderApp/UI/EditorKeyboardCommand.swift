@@ -73,3 +73,151 @@ enum EditorKeyboardCommand: Equatable {
         !(firstResponder is NSText || firstResponder is NSControl)
     }
 }
+
+enum EditorKeyboardSession {
+    struct Request {
+        let isShowingSettings: Bool
+        let isExportPopoverPresented: Bool
+        let showsTimelineShortcuts: Bool
+        let isFinishing: Bool
+        let isPlaybackReady: Bool
+        let keyCode: UInt16
+        let characters: String
+        let modifiers: NSEvent.ModifierFlags
+    }
+
+    enum Result: Equatable {
+        case ignore
+        case showHelp
+        case command(EditorKeyboardCommand)
+    }
+
+    static func resolve(_ request: Request) -> Result {
+        guard !request.isShowingSettings,
+              !request.isExportPopoverPresented,
+              !request.showsTimelineShortcuts,
+              !request.isFinishing,
+              let command = EditorKeyboardCommand.resolve(.init(
+                  keyCode: request.keyCode,
+                  characters: request.characters,
+                  modifiers: request.modifiers
+              ))
+        else { return .ignore }
+        if command == .showHelp {
+            return .showHelp
+        }
+        guard request.isPlaybackReady else { return .ignore }
+        return .command(command)
+    }
+}
+
+enum EditorKeyboardDispatch {
+    enum Action: Equatable {
+        case ignore
+        case showHelp
+        case togglePlayback
+        case pause
+        case playForward
+        case seekBy(Double)
+        case stepFrames(Int)
+        case goToStart
+        case goToEnd
+        case previousBoundary
+        case nextBoundary
+        case split
+        case deleteSelection
+        case restoreSelection
+        case toggleTrack
+        case markIn
+        case markOut
+        case clearSelection
+        case zoom(Double)
+    }
+
+    static func action(
+        _ session: EditorKeyboardSession.Result,
+        zoom: Double,
+        duration: Double
+    ) -> Action {
+        switch session {
+        case .ignore:
+            return .ignore
+        case .showHelp:
+            return .showHelp
+        case .command(let command):
+            if let zoomValue = EditorTimelineZoom.applying(command, value: zoom, duration: duration) {
+                return .zoom(zoomValue)
+            }
+            switch command {
+            case .togglePlayback: return .togglePlayback
+            case .pause: return .pause
+            case .playForward: return .playForward
+            case .seek(let seconds): return .seekBy(seconds)
+            case .step(let frames): return .stepFrames(frames)
+            case .goToStart: return .goToStart
+            case .goToEnd: return .goToEnd
+            case .previousBoundary: return .previousBoundary
+            case .nextBoundary: return .nextBoundary
+            case .split: return .split
+            case .deleteSelection: return .deleteSelection
+            case .restoreSelection: return .restoreSelection
+            case .toggleTrack: return .toggleTrack
+            case .markIn: return .markIn
+            case .markOut: return .markOut
+            case .clearSelection: return .clearSelection
+            case .zoomIn, .zoomOut, .fit, .showHelp: return .ignore
+            }
+        }
+    }
+}
+
+enum EditorDeleteRouting {
+    enum Action: Equatable {
+        case toggleAsset
+        case cutRange
+        case toggleSilence
+        case deleteSegment
+        case removePlaced
+        case removePrivacy
+    }
+
+    struct Request {
+        let selection: EditorSelection?
+        let hasPrivacySelection: Bool
+        let assetIsToggleable: Bool
+    }
+
+    static func action(_ request: Request) -> Action? {
+        if case .placed = request.selection { return .removePlaced }
+        if request.hasPrivacySelection { return .removePrivacy }
+        switch request.selection {
+        case .asset:
+            return request.assetIsToggleable ? .toggleAsset : nil
+        case .silenceRange, .silenceRanges:
+            return .toggleSilence
+        case .range, .ranges:
+            return .cutRange
+        case .segment:
+            return .deleteSegment
+        case .placed, nil:
+            return nil
+        }
+    }
+
+    static func help(_ action: Action) -> String {
+        switch action {
+        case .toggleAsset:
+            "Mute or hide the selected track (Delete). Undo with ⌘Z."
+        case .cutRange:
+            "Delete this clip from all tracks and close the gap (Delete). Undo with ⌘Z."
+        case .toggleSilence:
+            "Switch selected sections between silence and sound (Delete)"
+        case .deleteSegment:
+            "Delete this segment from all tracks and close the gap (Delete). Undo with ⌘Z."
+        case .removePlaced:
+            "Remove the selected item. Undo with ⌘Z."
+        case .removePrivacy:
+            "Remove the selected privacy mask. Undo with ⌘Z."
+        }
+    }
+}

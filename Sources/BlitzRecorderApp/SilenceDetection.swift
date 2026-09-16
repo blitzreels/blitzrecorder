@@ -103,7 +103,7 @@ enum SilenceDetection {
         var ranges: [(Double, Double)] = []
         var start: Double?
         var end = 0.0
-        for window in request.windows {
+        for window in coveringTimeline(request.windows, duration: config.takeDuration) {
             let threshold = start == nil ? config.thresholdDB : config.thresholdDB + 3
             if window.decibels < threshold {
                 if start == nil { start = window.start }
@@ -124,8 +124,11 @@ enum SilenceDetection {
             ranges = merged
         }
         let detected = ranges.compactMap { range -> TimelineCut? in
-            let from = max(0, range.0 + config.paddingAfter)
-            let to = min(config.takeDuration, range.1 - config.paddingBefore)
+            let tick = 1.0 / 600
+            let startsAtOrigin = range.0 <= tick
+            let endsAtTake = range.1 >= config.takeDuration - tick
+            let from = max(0, startsAtOrigin ? range.0 : range.0 + config.paddingAfter)
+            let to = min(config.takeDuration, endsAtTake ? range.1 : range.1 - config.paddingBefore)
             guard range.1 - range.0 >= max(0.1, config.minimumSilence), to - from > 0.02 else { return nil }
             let wasRestored = config.previousCuts.contains { cut in
                 cut.source == .automatic && !cut.isEnabled && cut.start < to && cut.end > from
@@ -137,6 +140,18 @@ enum SilenceDetection {
             cuts: config.previousCuts.filter { $0.source == .user } + detected,
             overrides: config.overrides
         ))
+    }
+
+    private static func coveringTimeline(_ windows: [SilenceWindow], duration: Double) -> [SilenceWindow] {
+        guard duration.isFinite, duration > 0, !windows.isEmpty else { return windows }
+        var result = windows
+        if let first = result.first, first.start > 0 {
+            result.insert(.init(start: 0, end: first.start, decibels: -120), at: 0)
+        }
+        if let last = result.last, last.end < duration {
+            result.append(.init(start: last.end, end: duration, decibels: -120))
+        }
+        return result
     }
 
     struct OverrideRequest {

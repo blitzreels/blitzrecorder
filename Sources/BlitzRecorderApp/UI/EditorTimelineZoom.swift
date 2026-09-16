@@ -17,12 +17,29 @@ enum EditorTimelineZoom {
         min(max(request.value.isFinite ? request.value : 1, minimum), maximum(for: request.duration))
     }
 
+    static func stepped(_ request: Request, factor: Double) -> Double {
+        clamp(.init(value: request.value * factor, duration: request.duration))
+    }
+
     static func sliderValue(_ request: Request) -> Double {
         log2(clamp(request))
     }
 
     static func scale(_ request: Request) -> Double {
         clamp(.init(value: pow(2, request.value), duration: request.duration))
+    }
+
+    static func applying(_ command: EditorKeyboardCommand, value: Double, duration: Double) -> Double? {
+        switch command {
+        case .zoomIn:
+            return stepped(.init(value: value, duration: duration), factor: 1.5)
+        case .zoomOut:
+            return stepped(.init(value: value, duration: duration), factor: 1 / 1.5)
+        case .fit:
+            return 1
+        default:
+            return nil
+        }
     }
 }
 

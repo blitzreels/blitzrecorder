@@ -7,18 +7,27 @@ struct EditorVideoClipLayout: Equatable {
     }
 
     struct Clip: Equatable, Identifiable {
-        let id: Int
+        struct ID: Hashable {
+            let ticks: Int
+
+            init(takeStart: Double) {
+                ticks = Int((TimelineTimeMap.time(takeStart).seconds * Double(TimelineTimeMap.timescale)).rounded())
+            }
+        }
+
+        let id: ID
+        let index: Int
         let range: EditorTimeRange
         let start: Double
         let end: Double
-        var title: String { "Clip \(id + 1)" }
+        var title: String { "Clip \(index + 1)" }
     }
 
     struct Run: Identifiable {
         let clip: Clip
         let x: CGFloat
         let width: CGFloat
-        var id: Int { clip.id }
+        var id: Clip.ID { clip.id }
     }
 
     struct Viewport {
@@ -37,15 +46,24 @@ struct EditorVideoClipLayout: Equatable {
             var start = fragment.takeStart
             while splitIndex < splits.count, splits[splitIndex] < fragment.takeEnd {
                 let end = splits[splitIndex]
-                result.append(.init(id: result.count, range: .init(start: start, end: end),
-                    start: fragment.start + start - fragment.takeStart, end: fragment.start + end - fragment.takeStart))
+                result.append(.init(
+                    id: .init(takeStart: start), index: result.count, range: .init(start: start, end: end),
+                    start: fragment.start + start - fragment.takeStart, end: fragment.start + end - fragment.takeStart
+                ))
                 start = end
                 splitIndex += 1
             }
-            result.append(.init(id: result.count, range: .init(start: start, end: fragment.takeEnd),
-                start: fragment.start + start - fragment.takeStart, end: fragment.end))
+            result.append(.init(
+                id: .init(takeStart: start), index: result.count, range: .init(start: start, end: fragment.takeEnd),
+                start: fragment.start + start - fragment.takeStart, end: fragment.end
+            ))
         }
         clips = result
+    }
+
+    func next(after clip: Clip) -> Clip? {
+        guard let index = clips.firstIndex(where: { $0.id == clip.id }), index + 1 < clips.count else { return nil }
+        return clips[index + 1]
     }
 
     func clip(at time: Double) -> Clip? {
@@ -64,7 +82,7 @@ struct EditorVideoClipLayout: Equatable {
         guard request.pixelsPerSecond.isFinite, request.pixelsPerSecond > 0,
             request.viewport.width > 0 else { return [] }
         var runs: [Run] = []
-        var previousID: Int?
+        var previousID: Clip.ID?
         for pixel in 0..<Int(ceil(request.viewport.width)) {
             let x = request.viewport.lowerBound + CGFloat(pixel) + 0.5
             guard let clip = clip(at: Double(x / request.pixelsPerSecond)), clip.id != previousID else { continue }
@@ -84,10 +102,23 @@ struct EditorVideoClipStrip: View {
         let pixelsPerSecond: CGFloat
         let width: CGFloat
         let height: CGFloat
+        let edits: TimelineEdits
+        let duration: Double
+        let selectedRanges: [EditorTimeRange]
         let onSelect: (EditorTimelineRangeClick) -> Void
+        let onPreviewExtend: (TimelineEdits?) -> Void
+        let onEndExtend: (TimelineEdits?) -> Void
+    }
+
+    private struct ExpandOrigin {
+        let edits: TimelineEdits
+        let clip: EditorTimeRange
+        let nextClipStart: Double?
+        let pixelsPerSecond: CGFloat
     }
 
     let configuration: Configuration
+    @State private var expandOrigin: ExpandOrigin?
 
     var body: some View {
         let runs = configuration.layout.runs(.init(
@@ -141,10 +172,91 @@ struct EditorVideoClipStrip: View {
                 }
             }
         }
+        .overlay(alignment: .topLeading) {
+            ForEach(expandableRuns(runs)) { run in
+                expandHandle(run)
+            }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Video clips")
         .accessibilityValue("\(configuration.layout.clips.count) clips")
-        .help("⌘B splits at the playhead. Click a clip to select it; Delete removes it from all source tracks.")
+        .help("⌘B splits this clip at the playhead, including Screen, Camera, and audio. Drag a clip’s right edge to restore the cut after it until the next clip. Click a clip to select it; Delete removes it from all source tracks.")
+    }
+
+    private func expandableRuns(_ runs: [EditorVideoClipLayout.Run]) -> [EditorVideoClipLayout.Run] {
+        runs.filter { run in
+            if let expandOrigin {
+                return abs(run.clip.range.start - expandOrigin.clip.start) <= 1.0 / 600
+            }
+            return EditorVideoCuts.rightExpandLimit(.init(
+                edits: configuration.edits, clip: run.clip.range,
+                nextClipStart: nextClipStart(run.clip), duration: configuration.duration
+            )) != nil
+        }
+    }
+
+    private func nextClipStart(_ clip: EditorVideoClipLayout.Clip) -> Double? {
+        configuration.layout.next(after: clip)?.range.start
+    }
+
+    private func expandHandle(_ run: EditorVideoClipLayout.Run) -> some View {
+        let isSelected = configuration.selectedRanges.contains {
+            abs($0.start - run.clip.range.start) <= 1.0 / 600
+        }
+        return HStack {
+            Spacer(minLength: 0)
+            Capsule().fill(isSelected || expandOrigin != nil ? BlitzUI.mint : BlitzUI.mint.opacity(0.55))
+                .frame(width: 3, height: 16)
+        }
+        .frame(width: 12, height: configuration.height)
+        .contentShape(.rect)
+        .blitzCursor(.resizeLeftRight)
+        .highPriorityGesture(
+            DragGesture(minimumDistance: 3, coordinateSpace: .global)
+                .onChanged { value in
+                    let origin = expandOrigin ?? ExpandOrigin(
+                        edits: configuration.edits, clip: run.clip.range,
+                        nextClipStart: nextClipStart(run.clip),
+                        pixelsPerSecond: configuration.pixelsPerSecond
+                    )
+                    if expandOrigin == nil {
+                        expandOrigin = origin
+                        configuration.onSelect(.init(range: origin.clip, modifiers: []))
+                    }
+                    configuration.onPreviewExtend(EditorVideoCuts.extendingRight(.init(
+                        edits: origin.edits, clip: origin.clip, nextClipStart: origin.nextClipStart,
+                        duration: configuration.duration,
+                        delta: Double(value.translation.width / origin.pixelsPerSecond)
+                    )))
+                }
+                .onEnded { value in
+                    let origin = expandOrigin
+                    expandOrigin = nil
+                    let edits = origin.flatMap { origin in
+                        EditorVideoCuts.extendingRight(.init(
+                            edits: origin.edits, clip: origin.clip, nextClipStart: origin.nextClipStart,
+                            duration: configuration.duration,
+                            delta: Double(value.translation.width / origin.pixelsPerSecond)
+                        ))
+                    }
+                    if let origin {
+                        let newEnd = EditorVideoCuts.rightExpandLimit(.init(
+                            edits: origin.edits, clip: origin.clip, nextClipStart: origin.nextClipStart,
+                            duration: configuration.duration, delta: 0
+                        )).map { min($0, origin.clip.end + max(0, Double(value.translation.width / origin.pixelsPerSecond))) }
+                            ?? origin.clip.end
+                        configuration.onSelect(.init(
+                            range: .init(start: origin.clip.start, end: max(origin.clip.end, newEnd)),
+                            modifiers: []
+                        ))
+                    }
+                    configuration.onEndExtend(edits)
+                }
+        )
+        .offset(x: configuration.viewport.lowerBound + run.x + run.width - 8)
+        .help("Drag right to restore footage into this clip until the next clip starts. Screen, Camera, and audio stay in sync.")
+        .accessibilityLabel("Extend \(run.clip.title)")
+        .accessibilityValue("Drag right to restore the cut after this clip")
     }
 }
 
@@ -162,7 +274,7 @@ struct EditorVideoClipSeams: View {
         let runs = configuration.layout.runs(.init(
             viewport: configuration.viewport, pixelsPerSecond: configuration.pixelsPerSecond))
         Canvas { context, size in
-            for run in runs where run.clip.id > 0 {
+            for run in runs where run.clip.index > 0 {
                 let x = CGFloat(run.clip.start) * configuration.pixelsPerSecond - configuration.viewport.lowerBound
                 guard x >= 0, x < size.width else { continue }
                 context.fill(Path(CGRect(x: x - 2, y: 0, width: 5, height: size.height)),

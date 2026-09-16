@@ -11,7 +11,7 @@
   <key>CFBundleIdentifier</key>
   <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
   <key>CFBundleIconFile</key>
-  <string>BlitzRecorder</string>
+  <string>$(APP_ICON_FILE)</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>

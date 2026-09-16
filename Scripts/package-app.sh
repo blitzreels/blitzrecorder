@@ -75,12 +75,19 @@ fi
 MARKETING_VERSION="${MARKETING_VERSION:-$(awk -F '"' '/MARKETING_VERSION:/ { print $2; exit }' "$ROOT/project.yml")}"
 CURRENT_PROJECT_VERSION="${CURRENT_PROJECT_VERSION:-$(awk -F '"' '/CURRENT_PROJECT_VERSION:/ { print $2; exit }' "$ROOT/project.yml")}"
 PRODUCT_BUNDLE_IDENTIFIER="${PRODUCT_BUNDLE_IDENTIFIER:-dev.blitzreels.blitzrecorder}"
+if [[ "$CONFIG" == "debug" || "$PRODUCT_BUNDLE_IDENTIFIER" == *.debug ]]; then
+  APP_ICON_FILE="${APP_ICON_FILE:-BlitzRecorderDev}"
+else
+  APP_ICON_FILE="${APP_ICON_FILE:-BlitzRecorder}"
+fi
+
 sed \
   -e "s/\$(MARKETING_VERSION)/$MARKETING_VERSION/g" \
   -e "s/\$(CURRENT_PROJECT_VERSION)/$CURRENT_PROJECT_VERSION/g" \
   -e "s/\$(PRODUCT_BUNDLE_IDENTIFIER)/$PRODUCT_BUNDLE_IDENTIFIER/g" \
   -e "s/\$(APP_DISPLAY_NAME)/$APP_DISPLAY_NAME/g" \
   -e "s/\$(EXECUTABLE_NAME)/$PRODUCT_NAME/g" \
+  -e "s/\$(APP_ICON_FILE)/$APP_ICON_FILE/g" \
   "$ROOT/Info.plist" >"$APP/Contents/Info.plist"
 
 plist_set_string() {
@@ -149,13 +156,28 @@ cp "$ROOT/Sources/BlitzRecorderApp/PrivacyInfo.xcprivacy" "$APP/Contents/Resourc
 cp "$ROOT/Sources/BlitzRecorderApp/Resources/WebMCPWorkspace.html" "$APP/Contents/Resources/WebMCPWorkspace.html"
 cp "$ROOT/Resources/CompanionAppIcon.png" "$APP/Contents/Resources/CompanionAppIcon.png"
 cp "$ROOT/Resources/BlitzReelsWordmarkWhite.png" "$APP/Contents/Resources/BlitzReelsWordmarkWhite.png"
-if [[ -f "$ROOT/Resources/BlitzRecorder.icns" ]]; then
-  cp "$ROOT/Resources/BlitzRecorder.icns" "$APP/Contents/Resources/BlitzRecorder.icns"
+cp "$ROOT/Resources/AppIcon.png" "$APP/Contents/Resources/AppIcon.png"
+copy_app_icon() {
+  local icon_name="$1"
+  local generate_dev="${2:-0}"
+  local icns="$ROOT/Resources/${icon_name}.icns"
+  if [[ -f "$icns" ]]; then
+    cp "$icns" "$APP/Contents/Resources/${icon_name}.icns"
+    return
+  fi
+  local iconset="$APP/Contents/Resources/${icon_name}.iconset"
+  if [[ "$generate_dev" == "1" ]]; then
+    swift "$ROOT/Scripts/make-icon.swift" --dev "$iconset"
+  else
+    swift "$ROOT/Scripts/make-icon.swift" "$iconset"
+  fi
+  iconutil -c icns "$iconset" -o "$APP/Contents/Resources/${icon_name}.icns"
+  rm -rf "$iconset"
+}
+if [[ "$APP_ICON_FILE" == "BlitzRecorderDev" ]]; then
+  copy_app_icon "BlitzRecorderDev" 1
 else
-  ICONSET="$APP/Contents/Resources/BlitzRecorder.iconset"
-  swift "$ROOT/Scripts/make-icon.swift" "$ICONSET"
-  iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/BlitzRecorder.icns"
-  rm -rf "$ICONSET"
+  copy_app_icon "BlitzRecorder" 0
 fi
 
 if [[ -n "${ENTITLEMENTS_PATH:-}" ]]; then
@@ -187,8 +209,9 @@ else
 fi
 
 # --- Branded DMG ----------------------------------------------------------
-# Wrap the signed app in a drag-to-install disk image. Art + icon coordinates
-# live in Scripts/dmg/ (regen the background with Scripts/dmg/render.sh).
+# Wrap the signed app in a drag-to-install disk image. Finder layout comes from
+# the Dmgly native export in Resources/dmg/dmgly.json. Arrow and wordmark are
+# baked into background.png.
 # Set SKIP_DMG=1 to skip. NOTE: create-dmg drives Finder via AppleScript, so
 # the first run on a machine prompts for Automation permission.
 if [[ "${SKIP_DMG:-0}" != "1" ]]; then
@@ -203,11 +226,11 @@ if [[ "${SKIP_DMG:-0}" != "1" ]]; then
         --volicon "$ROOT/Resources/BlitzRecorder.icns" \
         --background "$ROOT/Resources/dmg/background.png" \
         --window-pos 200 120 \
-        --window-size 660 400 \
+        --window-size 760 480 \
         --icon-size 128 \
-        --icon "${APP_BUNDLE_NAME}.app" 175 185 \
+        --icon "${APP_BUNDLE_NAME}.app" 210 228 \
         --hide-extension "${APP_BUNDLE_NAME}.app" \
-        --app-drop-link 485 185 \
+        --app-drop-link 550 228 \
         "$DMG" "$STAGE" >&2; then
       "$ROOT/Scripts/dmg/hide-support-files.sh" "$DMG"
       if [[ -n "$SIGN_IDENTITY" && "$SIGN_IDENTITY" != "-" ]]; then

@@ -238,4 +238,12 @@ enum SourceCropGeometry {
     static func clampedCropPosition(_ position: CGFloat) -> CGFloat {
         min(1, max(-1, position))
     }
+
+    static func clampedAmount(_ amount: CGPoint) -> CGPoint {
+        CGPoint(x: clampedCropAmount(amount.x), y: clampedCropAmount(amount.y))
+    }
+
+    static func clampedPosition(_ position: CGPoint) -> CGPoint {
+        CGPoint(x: clampedCropPosition(position.x), y: clampedCropPosition(position.y))
+    }
 }

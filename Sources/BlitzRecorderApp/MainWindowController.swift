@@ -670,7 +670,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             } catch {
                 guard self.screenPreviewStartRevision == previewStartRevision,
                       coordinator.state == .idle else { return }
-                previewStage.screenPreview.setMessage("")
+                previewStage.screenPreview.setMessage("Screen preview unavailable")
                 viewModel.applyMessage(
                     ScreenPreviewFailureMessage.detailMessage(for: error, settings: previewSettings)
                 )

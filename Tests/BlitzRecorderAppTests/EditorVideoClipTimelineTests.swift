@@ -2,6 +2,30 @@ import XCTest
 @testable import BlitzRecorderApp
 
 final class EditorVideoClipTimelineTests: XCTestCase {
+    func testSilenceCutsAndBladeSplitsBothCutTheClipRow() throws {
+        var edits = TimelineEdits.empty
+        edits.videoSplits = [6]
+        let layout = EditorClipSpine.layout(.init(
+            edits: edits, duration: 10,
+            silenceCuts: [.init(start: 2, end: 4, kind: .silence, source: .automatic)]
+        ))
+        XCTAssertEqual(layout.clips.map(\.range), [
+            .init(start: 0, end: 2), .init(start: 2, end: 4), .init(start: 4, end: 6), .init(start: 6, end: 10)
+        ])
+        let bladed = try XCTUnwrap(EditorVideoCuts.splitting(.init(
+            edits: edits, time: 5, duration: 10, silenceCuts: [
+                .init(start: 2, end: 4, kind: .silence, source: .automatic)
+            ]
+        )))
+        XCTAssertEqual(bladed.videoSplits, [5, 6])
+        XCTAssertEqual(
+            EditorVideoCuts.range(.init(edits: bladed, time: 5.2, duration: 10, silenceCuts: [
+                .init(start: 2, end: 4, kind: .silence, source: .automatic)
+            ])),
+            .init(start: 5, end: 6)
+        )
+    }
+
     func testCommandBSplitsVisibleClipAtPlayheadAndUndoRestoresOneClip() throws {
         let original = TimelineEdits.empty
         let edits = try XCTUnwrap(EditorVideoCuts.splitting(.init(edits: original, time: 4, duration: 10)))
@@ -60,6 +84,67 @@ final class EditorVideoClipTimelineTests: XCTestCase {
         XCTAssertEqual(remaining.clips.map(\.start), [0])
     }
 
+    func testExtendingAClipRestoresTheCutUntilTheNextClipAndRemovesTheOldOutSplit() throws {
+        var edits = TimelineEdits.empty
+        edits.videoSplits = [4, 7]
+        edits.cuts = [.init(start: 4, end: 7, kind: .manual, source: .user)]
+        XCTAssertEqual(
+            EditorVideoCuts.rightExpandLimit(.init(edits: edits, clip: .init(start: 0, end: 4), nextClipStart: 7, duration: 10)),
+            7
+        )
+        XCTAssertNil(EditorVideoCuts.extendingRight(.init(
+            edits: edits, clip: .init(start: 0, end: 4), nextClipStart: 7, duration: 10, delta: 0
+        )))
+        let partial = try XCTUnwrap(EditorVideoCuts.extendingRight(.init(
+            edits: edits, clip: .init(start: 0, end: 4), nextClipStart: 7, duration: 10, delta: 2
+        )))
+        XCTAssertEqual(partial.videoSplits, [7])
+        XCTAssertEqual(partial.enabledCuts.map(\.start), [6])
+        XCTAssertEqual(partial.enabledCuts.map(\.end), [7])
+        let layout = EditorClipSpine.layout(.init(edits: partial, duration: 10))
+        XCTAssertEqual(layout.clips.map(\.range), [.init(start: 0, end: 6), .init(start: 7, end: 10)])
+        let full = try XCTUnwrap(EditorVideoCuts.extendingRight(.init(
+            edits: edits, clip: .init(start: 0, end: 4), nextClipStart: 7, duration: 10, delta: 100
+        )))
+        XCTAssertTrue(full.enabledCuts.isEmpty)
+        XCTAssertEqual(full.videoSplits, [7])
+        XCTAssertNil(EditorVideoCuts.extendingRight(.init(
+            edits: full, clip: .init(start: 0, end: 7), nextClipStart: 7, duration: 10, delta: 2
+        )))
+    }
+
+    func testBladeOnlyClipsCannotExtendAndATrailingCutCan() throws {
+        var split = TimelineEdits.empty
+        split.videoSplits = [4]
+        XCTAssertNil(EditorVideoCuts.rightExpandLimit(.init(
+            edits: split, clip: .init(start: 0, end: 4), nextClipStart: 4, duration: 10
+        )))
+        var trailing = TimelineEdits.empty
+        trailing.cuts = [.init(start: 6, end: 10, kind: .manual, source: .user)]
+        let extended = try XCTUnwrap(EditorVideoCuts.extendingRight(.init(
+            edits: trailing, clip: .init(start: 0, end: 6), nextClipStart: nil, duration: 10, delta: 2.5
+        )))
+        XCTAssertEqual(extended.cuts.filter(\.isEnabled).map(\.start), [8.5])
+        XCTAssertEqual(TimelineTimeMap(takeDuration: TimelineTimeMap.time(10), cuts: extended.cuts).outputDuration.seconds, 8.5, accuracy: 0.001)
+    }
+
+    func testRestoredSilenceBoundaryDoesNotSplitAnExtendedClip() throws {
+        var edits = TimelineEdits.empty
+        edits.videoSplits = [4]
+        edits.cuts = [.init(start: 4, end: 7, kind: .manual, source: .user)]
+        let extended = try XCTUnwrap(EditorVideoCuts.extendingRight(.init(
+            edits: edits, clip: .init(start: 0, end: 4), nextClipStart: 7, duration: 10, delta: 2
+        )))
+        let layout = EditorClipSpine.layout(.init(
+            edits: extended, duration: 10,
+            silenceCuts: [.init(start: 4, end: 6, kind: .silence, source: .automatic)]
+        ))
+        XCTAssertEqual(layout.clips.map(\.range), [.init(start: 0, end: 6), .init(start: 7, end: 10)])
+        XCTAssertEqual(layout.clips.first?.id, EditorVideoClipLayout.Clip.ID(takeStart: 0))
+        XCTAssertEqual(layout.clips.first?.index, 0)
+        XCTAssertEqual(layout.clips.last?.index, 1)
+    }
+
     func testRemovingClipAtFractionalSplitDoesNotLeavePhantomClip() throws {
         var edits = TimelineEdits.empty
         edits.videoSplits = [1.2683333333334, 2.6094775533213]
@@ -85,5 +170,73 @@ final class EditorVideoClipTimelineTests: XCTestCase {
         XCTAssertEqual(runs.first?.clip.range, .init(start: 400, end: 401))
         XCTAssertEqual(runs.first?.x, 0)
         XCTAssertEqual(runs.first?.width, 50)
+    }
+
+    func testClipIdentityUsesTakeStartAndSurvivesARightExtend() throws {
+        var edits = TimelineEdits.empty
+        edits.videoSplits = [4, 7]
+        edits.cuts = [.init(start: 4, end: 7, kind: .manual, source: .user)]
+        let before = EditorClipSpine.layout(.init(edits: edits, duration: 10))
+        XCTAssertEqual(before.clips.map(\.index), [0, 1])
+        XCTAssertEqual(before.clips.map(\.id), [
+            .init(takeStart: 0), .init(takeStart: 7)
+        ])
+        let extended = try XCTUnwrap(EditorVideoCuts.extendingRight(.init(
+            edits: edits, clip: .init(start: 0, end: 4), nextClipStart: 7, duration: 10, delta: 2
+        )))
+        let after = EditorClipSpine.layout(.init(edits: extended, duration: 10))
+        XCTAssertEqual(after.clips.first?.id, before.clips.first?.id)
+        XCTAssertEqual(after.clips.last?.id, before.clips.last?.id)
+        XCTAssertEqual(after.next(after: after.clips[0])?.range.start, 7)
+    }
+
+    func testLeadingCutDoesNotGiveTheFirstVisibleClipASeamIndex() {
+        var edits = TimelineEdits.empty
+        edits.cuts = [.init(start: 0, end: 3, kind: .manual, source: .user)]
+        let layout = EditorClipSpine.layout(.init(edits: edits, duration: 10))
+        XCTAssertEqual(layout.clips.first?.index, 0)
+        XCTAssertEqual(layout.clips.first?.id, .init(takeStart: 3))
+        XCTAssertEqual(layout.clips.first?.range, .init(start: 3, end: 10))
+    }
+
+    func testTrimSessionPreviewsDraftEditsThenRestoresCommittedOnFinish() {
+        var committed = TimelineEdits.empty
+        committed.videoSplits = [4]
+        var draft = committed
+        draft.videoSplits = [4, 6]
+        var session = EditorClipTrimSession()
+        XCTAssertFalse(session.isActive)
+        session.preview(draft, currentDisplayDuration: 10)
+        XCTAssertEqual(session.lockedDisplayDuration, 10)
+        XCTAssertEqual(session.edits(committed: committed).videoSplits, [4, 6])
+        session.preview(nil, currentDisplayDuration: 12)
+        XCTAssertEqual(session.lockedDisplayDuration, 10)
+        XCTAssertEqual(session.edits(committed: committed).videoSplits, [4])
+        session.finish()
+        XCTAssertFalse(session.isActive)
+        XCTAssertEqual(session.edits(committed: committed).videoSplits, [4])
+    }
+
+    func testSeekTimesUseClipBoundariesAndSceneEventsNotRawVideoSplits() {
+        var edits = TimelineEdits.empty
+        edits.videoSplits = [4]
+        edits.cuts = [
+            .init(start: 4, end: 6, kind: .manual, source: .user, isEnabled: false)
+        ]
+        let times = EditorClipSpine.seekTimes(.init(
+            edits: edits, duration: 10,
+            silenceCuts: [.init(start: 4, end: 6, kind: .silence, source: .automatic)],
+            sceneEventTimes: [1]
+        ))
+        XCTAssertEqual(times, [1, 6])
+        XCTAssertFalse(times.contains { abs($0 - 4) <= 1.0 / 600 })
+        XCTAssertEqual(
+            EditorClipSpine.seekTimes(.init(
+                edits: edits, duration: 10,
+                silenceCuts: [.init(start: 4, end: 6, kind: .silence, source: .automatic)],
+                sceneEventTimes: [1]
+            )),
+            times
+        )
     }
 }

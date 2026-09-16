@@ -39,6 +39,22 @@ final class EditorTranscriptTimelineTests: XCTestCase {
         XCTAssertEqual(sounds.first?.range.end ?? 0, 4.26, accuracy: 0.001)
     }
 
+    func testLoudAudioWithoutWordsIsNonDialogueEvenInsideACoarseSpeechRange() {
+        var wide = transcript()
+        wide.speechRanges = [.init(startTime: 0, endTime: 10)]
+        let items = EditorTranscriptTimeline.items(.init(
+            transcript: wide, windows: [
+                .init(start: 1, end: 2.2, decibels: -12),
+                .init(start: 4, end: 7, decibels: -8)
+            ], threshold: -42, duration: 10
+        ))
+        let sounds = items.filter { $0.kind == .nonDialogue }
+        XCTAssertEqual(sounds.count, 1)
+        XCTAssertEqual(sounds.first?.range.start ?? 0, 3.94, accuracy: 0.001)
+        XCTAssertEqual(sounds.first?.range.end ?? 0, 7.06, accuracy: 0.001)
+        XCTAssertTrue(items.contains { $0.kind == .word && $0.text == "hello" })
+    }
+
     func testTenWordShiftSelectionKeepsAnchorAndCommandSelectionKeepsGaps() throws {
         let items = (0..<10).map { EditorTranscriptItem(id: $0,
             range: .init(start: Double($0), end: Double($0) + 0.8), text: "word", kind: .word) }

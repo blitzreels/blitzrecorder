@@ -1,14 +1,23 @@
 import AppKit
+import CoreImage
+import CoreImage.CIFilterBuiltins
 import Foundation
 
-let outputURL = URL(fileURLWithPath: CommandLine.arguments.dropFirst().first ?? "BlitzRecorder.iconset", isDirectory: true)
+let arguments = Array(CommandLine.arguments.dropFirst())
+let isDev = arguments.contains("--dev")
+let outputPath = arguments.last(where: { !$0.hasPrefix("-") }) ?? "BlitzRecorder.iconset"
+let outputURL = URL(fileURLWithPath: outputPath, isDirectory: true)
 try FileManager.default.createDirectory(at: outputURL, withIntermediateDirectories: true)
 
 let repoURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
 let masterURL = repoURL.appendingPathComponent("Resources/AppIcon.png")
 
-guard let master = NSImage(contentsOf: masterURL) else {
+guard var master = NSImage(contentsOf: masterURL) else {
     throw CocoaError(.fileReadNoSuchFile, userInfo: [NSFilePathErrorKey: masterURL.path])
+}
+
+if isDev {
+    master = tintedForDev(master)
 }
 
 let sizes: [(name: String, pixels: Int)] = [
@@ -23,6 +32,22 @@ let sizes: [(name: String, pixels: Int)] = [
     ("icon_512x512.png", 512),
     ("icon_512x512@2x.png", 1024)
 ]
+
+func tintedForDev(_ image: NSImage) -> NSImage {
+    guard let tiff = image.tiffRepresentation,
+        let bitmap = NSBitmapImageRep(data: tiff),
+        let input = CIImage(bitmapImageRep: bitmap)
+    else { return image }
+    let filter = CIFilter.hueAdjust()
+    filter.inputImage = input
+    // Mint ≈ 158° → amber ≈ 35°.
+    filter.angle = Float(-123 * Double.pi / 180)
+    guard let output = filter.outputImage else { return image }
+    let representation = NSCIImageRep(ciImage: output)
+    let tinted = NSImage(size: representation.size)
+    tinted.addRepresentation(representation)
+    return tinted
+}
 
 func resize(_ image: NSImage, to pixels: Int) -> NSImage {
     let size = NSSize(width: pixels, height: pixels)

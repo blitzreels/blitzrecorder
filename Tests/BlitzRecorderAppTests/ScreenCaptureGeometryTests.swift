@@ -189,4 +189,70 @@ final class ScreenCaptureGeometryTests: XCTestCase {
 
         XCTAssertEqual(rect, CGRect(x: 0, y: 0, width: 300, height: 300))
     }
+
+    func testOverlapAreaIsZeroWhenRectsDoNotIntersect() {
+        XCTAssertEqual(
+            ScreenCaptureGeometry.overlapArea(
+                CGRect(x: 0, y: 0, width: 10, height: 10),
+                CGRect(x: 20, y: 20, width: 10, height: 10)
+            ),
+            0
+        )
+        XCTAssertEqual(
+            ScreenCaptureGeometry.overlapArea(
+                CGRect(x: 0, y: 0, width: 10, height: 10),
+                CGRect(x: 5, y: 0, width: 10, height: 10)
+            ),
+            50
+        )
+    }
+
+    func testResolvedSourceAspectRatioPrefersPickedWindowRatio() {
+        var settings = RecordingSettings()
+        settings.screenCrop = CGRect(x: 0, y: 0, width: 0.5, height: 0.25)
+        let ratio = ScreenCaptureGeometry.resolvedSourceAspectRatio(.init(
+            isEditingScreenCrop: false,
+            bindingKind: .window,
+            pickedAspectRatio: 1.5,
+            usesPickedScreenContent: false,
+            pickedFilterAspectRatio: 4.0 / 3.0,
+            selectedDisplayID: nil,
+            settings: settings
+        ))
+        XCTAssertEqual(ratio, 1.5, accuracy: 0.0001)
+    }
+
+    func testResolvedSourceAspectRatioUsesCropWhileEditing() {
+        var settings = RecordingSettings()
+        settings.screenCrop = CGRect(x: 0, y: 0, width: 0.5, height: 0.25)
+        let ratio = ScreenCaptureGeometry.resolvedSourceAspectRatio(.init(
+            isEditingScreenCrop: true,
+            bindingKind: .window,
+            pickedAspectRatio: 1.5,
+            usesPickedScreenContent: false,
+            pickedFilterAspectRatio: nil,
+            selectedDisplayID: nil,
+            settings: settings
+        ))
+        XCTAssertEqual(ratio, 2.0, accuracy: 0.0001)
+    }
+
+    func testResolvedSourceAspectRatioFallsBackToPickedFilter() {
+        let ratio = ScreenCaptureGeometry.resolvedSourceAspectRatio(.init(
+            isEditingScreenCrop: false,
+            bindingKind: .display,
+            pickedAspectRatio: nil,
+            usesPickedScreenContent: true,
+            pickedFilterAspectRatio: 4.0 / 3.0,
+            selectedDisplayID: nil,
+            settings: RecordingSettings()
+        ))
+        XCTAssertEqual(ratio, 4.0 / 3.0, accuracy: 0.0001)
+    }
+
+    func testStalePickerQueuedRevision() {
+        XCTAssertFalse(ScreenCaptureGeometry.isStalePickerQueuedRevision(nil, current: 3))
+        XCTAssertFalse(ScreenCaptureGeometry.isStalePickerQueuedRevision(3, current: 3))
+        XCTAssertTrue(ScreenCaptureGeometry.isStalePickerQueuedRevision(2, current: 3))
+    }
 }

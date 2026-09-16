@@ -1,6 +1,6 @@
 import CoreGraphics
 
-enum ResizeAnchor {
+enum ResizeAnchor: Equatable {
     case topLeft
     case topRight
     case bottomLeft

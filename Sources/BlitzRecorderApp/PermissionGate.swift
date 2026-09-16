@@ -11,6 +11,31 @@ struct RecordingReadiness: Equatable {
     let detail: String
     let blockers: [PermissionBlocker]
     let statusLine: String
+
+    func blocking(with blocker: PermissionBlocker, statusSuffix: String) -> RecordingReadiness {
+        let statusLine = "\(self.statusLine) | \(statusSuffix)"
+        return RecordingReadiness(
+            isReady: false,
+            title: title,
+            detail: "Start disabled: \(statusLine)",
+            blockers: blockers + [blocker],
+            statusLine: statusLine
+        )
+    }
+
+    func replacingScreenSourceBlockers(with blocker: PermissionBlocker) -> RecordingReadiness {
+        let blockers = self.blockers.filter {
+            $0.source != .screen && $0.source != .systemAudio
+        } + [blocker]
+        let statusLine = "\(self.statusLine) | Screen source: not selected"
+        return RecordingReadiness(
+            isReady: false,
+            title: title,
+            detail: "Start disabled: \(statusLine)",
+            blockers: blockers,
+            statusLine: statusLine
+        )
+    }
 }
 
 enum LocalCameraRuntimeState: Equatable {
@@ -51,14 +76,9 @@ enum LocalCameraRuntimeState: Equatable {
             )
         }
 
-        let blockers = request.readiness.blockers + [blocker]
-        let statusLine = "\(request.readiness.statusLine) | Camera: \(blocker.status)"
-        return RecordingReadiness(
-            isReady: false,
-            title: request.readiness.title,
-            detail: "Start disabled: \(statusLine)",
-            blockers: blockers,
-            statusLine: statusLine
+        return request.readiness.blocking(
+            with: blocker,
+            statusSuffix: "Camera: \(blocker.status)"
         )
     }
 }

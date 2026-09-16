@@ -1,5 +1,14 @@
 # Third-party notices
 
+## Dmgly
+
+The direct-download Mac installer background and Finder icon layout are
+exported from Dmgly.
+
+Source:
+https://github.com/kapishdima/dmgly
+https://dmgly.com/
+
 ## FluidAudio
 
 BlitzRecorder uses FluidAudio, Copyright FluidInference, under the Apache

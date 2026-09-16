@@ -73,27 +73,22 @@ struct SilenceInspectorPane: View {
 
     private var summary: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Edited duration")
-                .font(.system(size: 12))
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(SilenceTime.label(session.metrics.outputDuration))
+                    .font(.system(size: 28, weight: .medium, design: .rounded))
+                    .fixedSize()
+                Spacer(minLength: 8)
+                if session.metrics.removedDuration > 0 {
+                    Text("−\(SilenceTime.label(session.metrics.removedDuration))")
+                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                        .foregroundStyle(BlitzUI.mint)
+                        .fixedSize()
+                }
+            }
+            Text(summaryCaption)
+                .font(.system(size: 13))
                 .foregroundStyle(BlitzUI.supportingText)
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    editedDuration
-                    originalDuration
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    editedDuration
-                    originalDuration
-                }
-            }
-            HStack(spacing: 0) {
-                Text("\(session.metrics.pauseCount) pauses")
-                    .foregroundStyle(BlitzUI.supportingText)
-                Text("  ·  \(SilenceTime.label(session.metrics.removedDuration)) shorter")
-                    .foregroundStyle(session.metrics.removedDuration > 0 ? BlitzUI.mint : BlitzUI.supportingText)
-            }
-            .font(.system(size: 13))
-            .fixedSize(horizontal: false, vertical: true)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .monospacedDigit()
@@ -101,17 +96,9 @@ struct SilenceInspectorPane: View {
         .accessibilityLabel("After removal, \(SilenceTime.label(session.metrics.outputDuration)), from \(SilenceTime.label(session.duration)), \(session.metrics.pauseCount) pauses, save \(SilenceTime.label(session.metrics.removedDuration))")
     }
 
-    private var editedDuration: some View {
-        Text(SilenceTime.label(session.metrics.outputDuration))
-            .font(.system(size: 30, weight: .medium, design: .rounded))
-            .fixedSize()
-    }
-
-    private var originalDuration: some View {
-        Text("from \(SilenceTime.label(session.duration))")
-            .font(.system(size: 13))
-            .foregroundStyle(BlitzUI.supportingText)
-            .fixedSize()
+    private var summaryCaption: String {
+        let pauses = session.metrics.pauseCount == 1 ? "1 pause" : "\(session.metrics.pauseCount) pauses"
+        return "from \(SilenceTime.label(session.duration)) · \(pauses)"
     }
 
     private var detection: some View {
@@ -119,7 +106,7 @@ struct SilenceInspectorPane: View {
             get: { session.suggestsPauses }, set: { session.setSuggestionsEnabled($0) }
         )) {
             Text("Find pauses")
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: 14, weight: .semibold))
         }
         .toggleStyle(.blitzSwitch)
         .accessibilityLabel("Find pauses")
@@ -127,23 +114,55 @@ struct SilenceInspectorPane: View {
         .disabled(session.loading || session.windows.isEmpty)
     }
 
+    private var selectedPacing: SilencePacing? {
+        session.suggestsPauses && !session.customized
+            ? SilencePacing(rawValue: Int(session.intensity.rounded())) : nil
+    }
+
     private var pacing: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            BlitzSegmentedPicker(configuration: .init(
-                title: "Pause removal strength",
-                options: SilencePacing.allCases.map(Optional.some),
-                selection: Binding<SilencePacing?>(
-                    get: {
-                        session.suggestsPauses && !session.customized
-                            ? SilencePacing(rawValue: Int(session.intensity)) : nil
-                    },
-                    set: { if let pace = $0 { session.selectPacing(pace) } }
+        VStack(alignment: .leading, spacing: 8) {
+            Slider(
+                value: Binding(
+                    get: { session.suggestsPauses ? max(1, session.intensity) : 1 },
+                    set: { value in
+                        if let pace = SilencePacing(rawValue: Int(value.rounded())) {
+                            session.selectPacing(pace)
+                        }
+                    }
                 ),
-                label: { $0?.title ?? "" }
-            ))
+                in: Double(SilencePacing.natural.rawValue)...Double(SilencePacing.rapid.rawValue),
+                step: 1
+            )
+            .controlSize(.regular)
+            .tint(BlitzUI.mint)
+            .accessibilityLabel("Pause removal")
+            .accessibilityValue(selectedPacing?.title ?? "Custom")
+            .help("How aggressively pauses are removed between phrases.")
+            .disabled(!session.suggestsPauses)
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(Array(SilencePacing.allCases.enumerated()), id: \.element.rawValue) { index, pace in
+                    let alignment: Alignment =
+                        index == 0 ? .leading
+                        : index == SilencePacing.allCases.count - 1 ? .trailing : .center
+                    Button {
+                        session.selectPacing(pace)
+                    } label: {
+                        Text(pace.title)
+                            .font(.system(size: 12, weight: selectedPacing == pace ? .semibold : .regular))
+                            .foregroundStyle(selectedPacing == pace ? BlitzUI.primaryText : BlitzUI.supportingText)
+                            .frame(maxWidth: .infinity, alignment: alignment)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(pace.title)
+                    .accessibilityAddTraits(selectedPacing == pace ? .isSelected : [])
+                    .pointingHandCursor()
+                    .disabled(!session.suggestsPauses)
+                }
+            }
             Text(!session.suggestsPauses ? "Automatic cuts are off. Manual selections are kept."
                  : session.customized ? "Using your custom pause and speech spacing."
-                 : (SilencePacing(rawValue: Int(session.intensity)) ?? .natural).detail)
+                 : (selectedPacing ?? .natural).detail)
                 .font(.system(size: 13)).foregroundStyle(BlitzUI.supportingText)
                 .fixedSize(horizontal: false, vertical: true)
         }

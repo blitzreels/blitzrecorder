@@ -387,31 +387,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
         guard Bundle.main.bundleIdentifier?.hasSuffix(".debug") == true else { return }
 #endif
         guard let base = devIconBaseImage() else { return }
-
-        let side: CGFloat = 512
-        let canvas = NSSize(width: side, height: side)
-        let badged = NSImage(size: canvas)
-        badged.lockFocus()
-        base.draw(in: NSRect(origin: .zero, size: canvas))
-
-        let badge = NSRect(x: side * 0.10, y: side * 0.07, width: side * 0.80, height: side * 0.22)
-        let pill = NSBezierPath(roundedRect: badge, xRadius: badge.height / 2, yRadius: badge.height / 2)
-        NSColor(calibratedRed: 1.0, green: 0.66, blue: 0.16, alpha: 1).setFill()
-        pill.fill()
-
-        let label = NSAttributedString(
-            string: "DEV",
-            attributes: [
-                .font: NSFont.systemFont(ofSize: badge.height * 0.62, weight: .heavy),
-                .foregroundColor: NSColor.black,
-                .kern: 2
-            ]
-        )
-        let labelSize = label.size()
-        label.draw(at: NSPoint(x: badge.midX - labelSize.width / 2, y: badge.midY - labelSize.height / 2))
-        badged.unlockFocus()
-
-        NSApp.applicationIconImage = badged
+        NSApp.applicationIconImage = DevAppIcon.tinted(base)
     }
 
     private func devIconBaseImage() -> NSImage? {
@@ -688,7 +664,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
                 try await coordinator.pickScreenSource()
                 mainMenuBuilder?.rebuild()
             } catch {
-                coordinator.onMessage?("Screen picker failed: \(error.localizedDescription)")
+                coordinator.onMessage?(RecorderStudioLabels.screenPickerFailed(error))
             }
         }
     }

@@ -277,9 +277,9 @@ final class EditorSilenceWorkflowTests: XCTestCase {
         playback.play(from: 6)
         try await Task.sleep(for: .milliseconds(350))
         XCTAssertTrue(playback.isPlaying)
-        XCTAssertGreaterThanOrEqual(playback.currentTime, 6)
-        XCTAssertLessThan(playback.currentTime, 7)
-        XCTAssertEqual(playback.currentTime, playback.displayTime(), accuracy: 0.15)
+        XCTAssertEqual(playback.currentTime, 6, accuracy: 0.15)
+        XCTAssertGreaterThan(playback.displayTime(), playback.currentTime)
+        XCTAssertLessThan(playback.displayTime(), 7)
         playback.pauseForEditing()
         vm.undoEditor()
         XCTAssertEqual(

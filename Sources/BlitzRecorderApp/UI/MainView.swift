@@ -87,20 +87,12 @@ struct MainView: View {
                 HStack(spacing: 10) {
                     RecordingOutputPicker(vm: vm)
                     Spacer(minLength: 0)
-                    if vm.showsCaptureInspector {
-                        Button { vm.selectBackgroundLayer() } label: {
-                            Label("Canvas", systemImage: "square.on.circle")
-                        }
-                        .blitzButton(.secondary)
-                        .controlSize(.small)
-                        .disabled(!vm.canEditScene)
-                    }
-                    Button { vm.showsCaptureInspector.toggle() } label: {
-                        Label(vm.showsCaptureInspector ? "Hide customization" : "Customize scene", systemImage: "sidebar.right")
+                    Button { vm.selectBackgroundLayer() } label: {
+                        Label("Canvas", systemImage: "square.on.circle")
                     }
                     .blitzButton(.secondary)
                     .controlSize(.small)
-                    .accessibilityValue(vm.showsCaptureInspector ? "Expanded" : "Collapsed")
+                    .disabled(!vm.canEditScene)
                 }
 
                 ZStack(alignment: .top) {
@@ -127,10 +119,8 @@ struct MainView: View {
             .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
             .background(BlitzUI.canvasBackground)
 
-            if vm.showsCaptureInspector {
-                Rectangle().fill(BlitzUI.separator).frame(width: 1)
-                SceneWorkspaceInspector(vm: vm)
-            }
+            Rectangle().fill(BlitzUI.separator).frame(width: 1)
+            SceneWorkspaceInspector(vm: vm)
         }
         .frame(maxHeight: .infinity)
     }

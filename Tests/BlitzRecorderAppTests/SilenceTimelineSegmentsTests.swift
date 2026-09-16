@@ -15,6 +15,23 @@ final class SilenceTimelineSegmentsTests: XCTestCase {
         XCTAssertEqual(segments.reduce(0) { $0 + $1.range.duration }, 10)
     }
 
+    func testTrailingSoundAfterLastClipIsDropped() {
+        let segments = SilenceTimelineSegments.resolve(.init(duration: 10, cuts: [
+            .init(start: 2, end: 4, kind: .silence, source: .automatic)
+        ]))
+        let capped = SilenceTimelineSegments.capped(.init(segments: segments, end: 5))
+        XCTAssertEqual(capped.map(\.range), [
+            .init(start: 0, end: 2), .init(start: 2, end: 4), .init(start: 4, end: 5)
+        ])
+        XCTAssertEqual(capped.map(\.classification), [.sound, .silence, .sound])
+        XCTAssertNil(SilenceTimelineSegments.at(.init(segments: capped, time: 5)))
+        XCTAssertTrue(SilenceTimelineSegments.capped(.init(segments: segments, end: 0)).isEmpty)
+        XCTAssertEqual(
+            SilenceTimelineSegments.capped(.init(segments: segments, end: 10)).map(\.range),
+            segments.map(\.range)
+        )
+    }
+
     func testLookupAndNavigationReachTinySegmentsAtExactBoundaries() throws {
         let segments = SilenceTimelineSegments.resolve(.init(duration: 5, cuts: [
             .init(start: 1, end: 2, kind: .silence, source: .automatic),

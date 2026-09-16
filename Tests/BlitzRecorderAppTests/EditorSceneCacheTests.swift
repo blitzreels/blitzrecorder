@@ -122,6 +122,7 @@ final class EditorSceneCacheTests: XCTestCase {
         XCTAssertTrue(controller.isReady)
         XCTAssertNil(controller.loadError)
         XCTAssertEqual(controller.scene(at: 0.5)?.canvasPadding, 0.2)
+        XCTAssertEqual(controller.scene(at: 0.8)?.canvasPadding, controller.scene(at: 0.5)?.canvasPadding)
     }
 
 }

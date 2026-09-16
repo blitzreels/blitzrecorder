@@ -34,7 +34,7 @@ enum LocalCameraSessionConfiguration {
             return fallback
         }
 
-        return discoveredCameras().first
+        return CaptureDeviceCatalog.connectedCameras().first
     }
 
     static func configure(_ request: LocalCameraDeviceConfigurationRequest) {
@@ -95,16 +95,6 @@ enum LocalCameraSessionConfiguration {
         let aspectPenalty = Int((abs(aspect - Double(SceneLayout.cameraAspectRatio)) * 10_000).rounded())
         let areaRank = 10_000_000 - min(9_999_999, width * height)
         return String(format: "%06d-%08d", aspectPenalty, areaRank)
-    }
-
-    private static func discoveredCameras() -> [AVCaptureDevice] {
-        AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInWideAngleCamera, .continuityCamera, .deskViewCamera, .external],
-            mediaType: .video,
-            position: .unspecified
-        ).devices
-        .filter { $0.isConnected && !$0.isSuspended }
-        .sorted { cameraSortKey($0) < cameraSortKey($1) }
     }
 
     private static func shouldForceFrameDuration(for device: AVCaptureDevice) -> Bool {

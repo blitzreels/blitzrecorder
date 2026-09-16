@@ -91,11 +91,11 @@ enum RecordingSettingsStore {
         }
 
         if defaults.object(forKey: Key.microphoneGain) != nil {
-            settings.microphoneGain = clampedGain(defaults.double(forKey: Key.microphoneGain))
+            settings.microphoneGain = CaptureValueClamps.gain(defaults.double(forKey: Key.microphoneGain))
         }
 
         if defaults.object(forKey: Key.systemAudioGain) != nil {
-            settings.systemAudioGain = clampedGain(defaults.double(forKey: Key.systemAudioGain))
+            settings.systemAudioGain = CaptureValueClamps.gain(defaults.double(forKey: Key.systemAudioGain))
         }
 
         if defaults.object(forKey: Key.removesCameraBackgroundAfterRecording) != nil {
@@ -160,7 +160,7 @@ enum RecordingSettingsStore {
             settings.canvasBackgroundAnimated = false
         }
         if defaults.object(forKey: Key.canvasPadding) != nil {
-            settings.canvasPadding = clampedCanvasPadding(defaults.double(forKey: Key.canvasPadding))
+            settings.canvasPadding = CaptureValueClamps.canvasPadding(CGFloat(defaults.double(forKey: Key.canvasPadding)))
         }
         if let rawScreenContentMode = defaults.string(forKey: Key.screenContentMode),
            let screenContentMode = CameraContentMode(rawValue: rawScreenContentMode) {
@@ -331,7 +331,7 @@ enum RecordingSettingsStore {
         defaults.set(string(from: settings.cameraCropPosition), forKey: Key.cameraCropPosition)
         defaults.set(settings.canvasBackgroundStyle.rawValue, forKey: Key.canvasBackgroundStyle)
         defaults.set(settings.canvasBackgroundAnimated, forKey: Key.canvasBackgroundAnimated)
-        defaults.set(clampedCanvasPadding(Double(settings.canvasPadding)), forKey: Key.canvasPadding)
+        defaults.set(CaptureValueClamps.canvasPadding(settings.canvasPadding), forKey: Key.canvasPadding)
         defaults.set(settings.screenContentMode.rawValue, forKey: Key.screenContentMode)
         defaults.set(settings.cameraContentMode.rawValue, forKey: Key.cameraContentMode)
         defaults.removeObject(forKey: Key.cameraFramePadding)
@@ -414,14 +414,6 @@ enum RecordingSettingsStore {
         }
 
         return false
-    }
-
-    private static func clampedGain(_ gain: Double) -> Double {
-        min(2.0, max(0.0, gain))
-    }
-
-    private static func clampedCanvasPadding(_ padding: Double) -> CGFloat {
-        CGFloat(min(0.16, max(0, padding)))
     }
 
 }

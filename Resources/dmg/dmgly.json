@@ -1,0 +1,25 @@
+{
+  "source": "Scripts/dmg/render.py",
+  "target": "native",
+  "window": {
+    "width": 760,
+    "height": 480
+  },
+  "iconSize": 128,
+  "app": {
+    "name": "BlitzRecorder",
+    "x": 210,
+    "y": 228
+  },
+  "applications": {
+    "x": 550,
+    "y": 228
+  },
+  "background": "background.png",
+  "textBakedIn": true,
+  "arrowBakedIn": true,
+  "labelBackgroundsBakedIn": {
+    "app": false,
+    "applications": false
+  }
+}

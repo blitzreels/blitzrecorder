@@ -217,6 +217,55 @@ final class ProjectLibraryTrashTests: XCTestCase {
         XCTAssertEqual(vm.projectLibraryNavigation.selectedProjectIDs, [fixture.project.id])
     }
 
+    func testLibraryMatchingAndTrashCopy() {
+        let keep = Self.entry("Keep this take")
+        let matchTitle = Self.entry("Safari window")
+        let matchPath = RecordingProjectHistory.Entry(
+            id: UUID(),
+            title: "Other",
+            projectPath: "/unused/other/project.blitzrecorder.json",
+            takeDirectoryPath: "/recordings/safari-clip",
+            finalVideoPath: nil,
+            createdAt: nil,
+            updatedAt: Date(),
+            exports: nil
+        )
+        XCTAssertEqual(
+            RecordingProjectLibrary.matching([keep, matchTitle, matchPath], query: "  safari  ").map(\.id),
+            [matchTitle.id, matchPath.id]
+        )
+        XCTAssertEqual(RecordingProjectLibrary.matching([keep], query: "   ").map(\.id), [keep.id])
+        XCTAssertTrue(
+            RecordingProjectLibrary.shouldClearOpenProject(
+                deletedIDs: [keep.id],
+                deletedTakePaths: [keep.takeDirectoryPath],
+                openProjectID: keep.id,
+                openTakePath: nil
+            )
+        )
+        XCTAssertTrue(
+            RecordingProjectLibrary.shouldClearOpenProject(
+                deletedIDs: [keep.id],
+                deletedTakePaths: [keep.takeDirectoryPath],
+                openProjectID: nil,
+                openTakePath: keep.takeDirectoryPath
+            )
+        )
+        XCTAssertFalse(
+            RecordingProjectLibrary.shouldClearOpenProject(
+                deletedIDs: [keep.id],
+                deletedTakePaths: [keep.takeDirectoryPath],
+                openProjectID: UUID(),
+                openTakePath: "/elsewhere"
+            )
+        )
+        XCTAssertNil(RecordingProjectLibrary.trashFailureMessage([]))
+        XCTAssertEqual(
+            RecordingProjectLibrary.trashFailureMessage(["one", "two", "three", "four"]),
+            "one\n\ntwo\n\nthree\n…and 1 more."
+        )
+    }
+
     private static func entry(_ title: String) -> RecordingProjectHistory.Entry {
         let id = UUID()
         return .init(

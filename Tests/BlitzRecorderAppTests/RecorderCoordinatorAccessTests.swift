@@ -245,7 +245,7 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         settings.usesPickedScreenContent = false
         settings.screenSourceBinding = .display(id: "display-1")
 
-        XCTAssertTrue(RecorderViewModel.shouldSuggestScreenPicker(
+        XCTAssertTrue(RecordingStartGate.shouldSuggestScreenPicker(
             readiness: screenCaptureReadiness,
             settings: settings
         ))
@@ -257,7 +257,7 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         settings.usesPickedScreenContent = false
         settings.screenSourceBinding = .display(id: "display-1")
 
-        XCTAssertTrue(RecorderViewModel.shouldSuggestScreenPicker(
+        XCTAssertTrue(RecordingStartGate.shouldSuggestScreenPicker(
             readiness: screenCaptureReadiness,
             settings: settings
         ))
@@ -573,12 +573,12 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
             windowTitle: "Landing Page"
         )
 
-        XCTAssertFalse(RecorderViewModel.canShowScreenWindowFitControls(
+        XCTAssertFalse(ScreenWindowFit.canShowFitControls(.init(
             settings: settings,
             targetWindowInfo: nil,
             hasAccessibilityAccess: false,
             canAdjustScreenCapture: true
-        ))
+        )))
     }
 
     func testScreenWindowFitControlsShowForWindowBindingWithAccessibility() {
@@ -594,12 +594,12 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
             windowTitle: "Landing Page"
         )
 
-        XCTAssertTrue(RecorderViewModel.canShowScreenWindowFitControls(
+        XCTAssertTrue(ScreenWindowFit.canShowFitControls(.init(
             settings: settings,
             targetWindowInfo: nil,
             hasAccessibilityAccess: true,
             canAdjustScreenCapture: true
-        ))
+        )))
     }
 
     func testPersistentWindowSupportsScalingWithoutActivePickerSession() {
@@ -615,12 +615,11 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
             windowTitle: "Landing Page"
         )
 
-        XCTAssertTrue(RecorderViewModel.supportsScreenWindowScaling(
-            RecorderViewModel.ScreenWindowScalingSupportRequest(
-                settings: settings,
-                hasActivePickerSelection: false
-            )
-        ))
+        XCTAssertTrue(ScreenWindowFit.supportsScaling(.init(
+            settings: settings,
+            hasActivePickerSelection: false,
+            activePickedKind: nil
+        )))
     }
 
     func testDisplayDoesNotSupportWindowScaling() {
@@ -628,12 +627,11 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         settings.enabledSources = [.screen]
         settings.screenSourceBinding = .display(id: "display-1")
 
-        XCTAssertFalse(RecorderViewModel.supportsScreenWindowScaling(
-            RecorderViewModel.ScreenWindowScalingSupportRequest(
-                settings: settings,
-                hasActivePickerSelection: true
-            )
-        ))
+        XCTAssertFalse(ScreenWindowFit.supportsScaling(.init(
+            settings: settings,
+            hasActivePickerSelection: true,
+            activePickedKind: nil
+        )))
     }
 
     func testScreenWindowFitControlsShowForApplicationBindingWithAccessibility() {
@@ -649,12 +647,12 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
             windowTitle: nil
         )
 
-        XCTAssertTrue(RecorderViewModel.canShowScreenWindowFitControls(
+        XCTAssertTrue(ScreenWindowFit.canShowFitControls(.init(
             settings: settings,
             targetWindowInfo: nil,
             hasAccessibilityAccess: true,
             canAdjustScreenCapture: true
-        ))
+        )))
     }
 
     func testScreenWindowFitControlsShowForPickedScreenContentWithAccessibility() {
@@ -671,12 +669,12 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
             windowTitle: "Landing Page"
         )
 
-        XCTAssertTrue(RecorderViewModel.canShowScreenWindowFitControls(
+        XCTAssertTrue(ScreenWindowFit.canShowFitControls(.init(
             settings: settings,
             targetWindowInfo: nil,
             hasAccessibilityAccess: true,
             canAdjustScreenCapture: true
-        ))
+        )))
     }
 
     func testScreenWindowFitControlsHideForPickedDisplay() {
@@ -685,12 +683,12 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         settings.usesPickedScreenContent = true
         settings.screenSourceBinding = .display(id: "display-1")
 
-        XCTAssertFalse(RecorderViewModel.canShowScreenWindowFitControls(
+        XCTAssertFalse(ScreenWindowFit.canShowFitControls(.init(
             settings: settings,
             targetWindowInfo: nil,
             hasAccessibilityAccess: true,
             canAdjustScreenCapture: true
-        ))
+        )))
     }
 
     func testScreenWindowFitControlsShowForLegacyPickedContentWithoutBinding() {
@@ -699,12 +697,12 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         settings.usesPickedScreenContent = true
         settings.screenSourceBinding = nil
 
-        XCTAssertTrue(RecorderViewModel.canShowScreenWindowFitControls(
+        XCTAssertTrue(ScreenWindowFit.canShowFitControls(.init(
             settings: settings,
             targetWindowInfo: nil,
             hasAccessibilityAccess: true,
             canAdjustScreenCapture: true
-        ))
+        )))
     }
 
     func testWindowOnlyDoesNotFallbackToAppCaptureWhenNoWindowSourceExists() {
@@ -756,8 +754,8 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
             windowID: 42,
             windowTitle: "BlitzRecorder"
         )
-        let selection = RecorderViewModel.preferredWindowBinding(
-            context: RecorderViewModel.WindowSourceSelectionContext(
+        let selection = ScreenSourceCatalog.preferredWindowBinding(
+            context: WindowSourceSelectionContext(
                 currentSource: displayBinding,
                 targetWindow: TargetWindowInfo(
                     processID: 123,
@@ -940,12 +938,12 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         settings.enabledSources = [.screen]
         settings.screenSourceBinding = .display(id: "display-1")
 
-        XCTAssertFalse(RecorderViewModel.canShowScreenWindowFitControls(
+        XCTAssertFalse(ScreenWindowFit.canShowFitControls(.init(
             settings: settings,
             targetWindowInfo: nil,
             hasAccessibilityAccess: true,
             canAdjustScreenCapture: true
-        ))
+        )))
     }
 
     func testReadableScreenWindowTitleCleansNoisyTitles() {

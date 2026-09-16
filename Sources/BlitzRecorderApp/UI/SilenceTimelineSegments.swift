@@ -91,6 +91,23 @@ enum SilenceTimelineSegments {
         }
     }
 
+    struct CapRequest {
+        let segments: [SilenceTimelineSegment]
+        let end: Double
+    }
+
+    static func capped(_ request: CapRequest) -> [SilenceTimelineSegment] {
+        guard request.end.isFinite, request.end > 0 else { return [] }
+        return request.segments.compactMap { segment in
+            guard segment.range.start < request.end else { return nil }
+            if segment.range.end <= request.end { return segment }
+            return SilenceTimelineSegment(
+                range: EditorTimeRange(start: segment.range.start, end: request.end),
+                classification: segment.classification
+            )
+        }
+    }
+
     static func at(_ request: Lookup) -> SilenceTimelineSegment? {
         guard request.time.isFinite, !request.segments.isEmpty else { return nil }
         let index = firstIndex(in: request.segments) { $0.range.start > request.time } - 1

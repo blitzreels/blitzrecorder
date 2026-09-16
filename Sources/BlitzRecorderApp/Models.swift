@@ -987,6 +987,32 @@ struct SceneLayout: Equatable {
     var cameraFrame: CGRect = CGRect(x: 0, y: 0.046796875, width: 1, height: 0.31640625)
     var layerOrder: [SceneLayerKind] = [.screen, .camera]
 
+    func frame(for kind: SceneLayerKind) -> CGRect {
+        switch kind {
+        case .screen: return screenFrame
+        case .camera: return cameraFrame
+        }
+    }
+
+    mutating func setFrame(_ frame: CGRect, for kind: SceneLayerKind) {
+        switch kind {
+        case .screen: screenFrame = frame
+        case .camera: cameraFrame = frame
+        }
+    }
+
+    static func scaledAroundCenter(_ frame: CGRect, scale: CGFloat) -> CGRect {
+        let scale = min(1, max(0.1, scale))
+        let width = frame.width * scale
+        let height = frame.height * scale
+        return CGRect(
+            x: frame.midX - width / 2,
+            y: frame.midY - height / 2,
+            width: width,
+            height: height
+        )
+    }
+
     static func defaultLayout(
         for layout: CaptureLayout,
         screenAspectRatio: CGFloat = defaultScreenAspectRatio,
@@ -1358,15 +1384,6 @@ struct SceneLayout: Equatable {
     private static func fullWidthSourceHeight(sourceAspectRatio: CGFloat, canvasAspectRatio: CGFloat) -> CGFloat {
         guard sourceAspectRatio > 0, canvasAspectRatio > 0 else { return 0.5 }
         return min(0.65, max(0.2, canvasAspectRatio / sourceAspectRatio))
-    }
-
-    func frame(for kind: SceneLayerKind) -> CGRect {
-        switch kind {
-        case .screen:
-            return screenFrame
-        case .camera:
-            return cameraFrame
-        }
     }
 
     var screenSplitHeight: CGFloat? {

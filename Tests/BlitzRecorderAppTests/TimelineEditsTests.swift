@@ -71,6 +71,65 @@ final class TimelineEditsTests: XCTestCase {
         XCTAssertEqual(cuts[0].end, 1.9, accuracy: 0.001)
     }
 
+    func testLeadingSilenceIsCutFromTheStartWithoutSpeechPadding() {
+        let windows = (0..<200).map { index in
+            SilenceWindow(start: Double(index) / 50, end: Double(index + 1) / 50,
+                decibels: index < 100 ? -70 : -20)
+        }
+        let config = SilenceDetectionRequest(audioURL: URL(fileURLWithPath: "/unused"), takeDuration: 4,
+            sourceOffset: 0, minimumSilence: 0.5, thresholdDB: -42, previousCuts: [],
+            paddingBefore: 0.3, paddingAfter: 0.3)
+        let cuts = SilenceDetection.cuts(.init(windows: windows, configuration: config))
+        XCTAssertEqual(cuts.count, 1)
+        XCTAssertEqual(cuts[0].start, 0, accuracy: 0.001)
+        XCTAssertEqual(cuts[0].end, 1.7, accuracy: 0.001)
+        XCTAssertEqual(
+            SilenceTimelineSegments.resolve(.init(duration: 4, cuts: cuts)).first?.classification,
+            .silence)
+    }
+
+    func testTrailingSilenceIsCutThroughTheEndWithoutSpeechPadding() {
+        let windows = (0..<200).map { index in
+            SilenceWindow(start: Double(index) / 50, end: Double(index + 1) / 50,
+                decibels: index < 100 ? -20 : -70)
+        }
+        let config = SilenceDetectionRequest(audioURL: URL(fileURLWithPath: "/unused"), takeDuration: 4,
+            sourceOffset: 0, minimumSilence: 0.5, thresholdDB: -42, previousCuts: [],
+            paddingBefore: 0.3, paddingAfter: 0.3)
+        let cuts = SilenceDetection.cuts(.init(windows: windows, configuration: config))
+        XCTAssertEqual(cuts.count, 1)
+        XCTAssertEqual(cuts[0].start, 2.3, accuracy: 0.001)
+        XCTAssertEqual(cuts[0].end, 4, accuracy: 0.001)
+    }
+
+    func testLeadingSilenceShorterThanPaddedMinimumStillStartsAsSilence() {
+        let windows = (0..<100).map { index in
+            SilenceWindow(start: Double(index) / 50, end: Double(index + 1) / 50,
+                decibels: index < 30 ? -70 : -20)
+        }
+        let config = SilenceDetectionRequest(audioURL: URL(fileURLWithPath: "/unused"), takeDuration: 2,
+            sourceOffset: 0, minimumSilence: 0.5, thresholdDB: -42, previousCuts: [],
+            paddingBefore: 0.3, paddingAfter: 0.3)
+        let cuts = SilenceDetection.cuts(.init(windows: windows, configuration: config))
+        XCTAssertEqual(cuts.count, 1)
+        XCTAssertEqual(cuts[0].start, 0, accuracy: 0.001)
+        XCTAssertEqual(cuts[0].end, 0.3, accuracy: 0.001)
+    }
+
+    func testUncoveredAudioBeforeFirstWindowIsSilence() {
+        let windows = (40..<200).map { index in
+            SilenceWindow(start: Double(index) / 50, end: Double(index + 1) / 50,
+                decibels: index < 100 ? -70 : -20)
+        }
+        let config = SilenceDetectionRequest(audioURL: URL(fileURLWithPath: "/unused"), takeDuration: 4,
+            sourceOffset: 0, minimumSilence: 0.5, thresholdDB: -42, previousCuts: [],
+            paddingBefore: 0.3, paddingAfter: 0.3)
+        let cuts = SilenceDetection.cuts(.init(windows: windows, configuration: config))
+        XCTAssertEqual(cuts.count, 1)
+        XCTAssertEqual(cuts[0].start, 0, accuracy: 0.001)
+        XCTAssertEqual(cuts[0].end, 1.7, accuracy: 0.001)
+    }
+
     func testShortAudioSpikesCanBeRemovedWithoutCuttingLongSpeech() {
         let windows = (0..<200).map { index in
             SilenceWindow(start: Double(index) / 50, end: Double(index + 1) / 50,

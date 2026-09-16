@@ -347,6 +347,35 @@ struct RecordingSceneSnapshot: Codable, Equatable {
         selectedScenePreset = settings.selectedScenePreset
     }
 
+    var restoresConcreteScreenSource: Bool {
+        screenSourceBinding?.isConcreteSelection == true || usesPickedScreenContent
+    }
+
+    func applying(to settings: RecordingSettings) -> RecordingSettings {
+        var settings = settings
+        let audioSources = settings.enabledSources.subtracting(Self.videoSources)
+        let hiddenAudioSources = settings.hiddenSources.subtracting(Self.videoSources)
+        settings.enabledSources = audioSources.union(enabledVideoSources)
+        settings.hiddenSources = hiddenAudioSources.union(hiddenVideoSources)
+        settings.sceneLayout = sceneLayout
+        settings.canvasBackgroundStyle = canvasBackgroundStyle
+        settings.canvasBackgroundAnimated = canvasBackgroundAnimated
+            && canvasBackgroundStyle.supportsBackgroundAnimation
+        settings.canvasPadding = canvasPadding
+        settings.screenCornerRadius = screenCornerRadius
+        settings.screenShadowEnabled = screenShadowEnabled
+        settings.screenContentMode = screenContentMode
+        settings.screenWindowZoom = screenWindowZoom
+        settings.cameraContentMode = cameraContentMode
+        settings.cameraFramePadding = 0
+        settings.cameraShadowEnabled = cameraShadowEnabled
+        settings.selectedScenePreset = selectedScenePreset
+        settings.cameraCropAmount = cameraCropAmount
+        settings.cameraCropPosition = cameraCropPosition
+        settings.selectedCameraID = selectedCameraID
+        return settings
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         enabledVideoSources = try container.decode(Set<CaptureSource>.self, forKey: .enabledVideoSources)

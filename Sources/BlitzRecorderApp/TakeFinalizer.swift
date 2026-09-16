@@ -1,4 +1,5 @@
 import Foundation
+import BlitzRecorderCore
 
 struct SavedRecordingOutput: Equatable {
     let url: URL
@@ -62,6 +63,32 @@ enum TakeFinalizationOutcome {
         }
     }
 
+    var retainedTake: RecordingTake? {
+        switch self {
+        case .saved:
+            return nil
+        case .projectReady(let take), .projectReadyWithWarning(let take, _), .recoveryFiles(let take, _):
+            return take
+        }
+    }
+
+    func recoveryReason(stopWarning: String?, settings: RecordingSettings) -> String {
+        let baseReason: String
+        if case .recoveryFiles(_, let reason) = self {
+            baseReason = reason
+        } else {
+            baseReason = userMessage
+        }
+        guard let stopWarning, !stopWarning.isEmpty else {
+            return baseReason
+        }
+        if RemoteCameraProviderID.isRemote(settings.selectedCameraID),
+           stopWarning.lowercased().contains("iphone") {
+            return "\(baseReason). iPhone camera did not save usable video. Keep BlitzRecorder Camera open until recording stops, then retry."
+        }
+        return "\(baseReason). \(stopWarning)"
+    }
+
     func projectOutput(warning: String? = nil) -> PostRecordingProjectOutput? {
         let take: RecordingTake
         let outcomeWarning: String?
@@ -78,7 +105,7 @@ enum TakeFinalizationOutcome {
         return PostRecordingProjectOutput(
             projectURL: take.projectURL,
             sourceDirectory: take.scratchDirectory,
-            warning: Self.combinedWarning(warning, outcomeWarning)
+            warning: RecordingWarning.combined([warning, outcomeWarning], separator: ". ")
         )
     }
 
@@ -94,16 +121,6 @@ enum TakeFinalizationOutcome {
             reason: overrideReason ?? reason,
             canRetryExport: canRetryExport
         )
-    }
-
-    private static func combinedWarning(_ first: String?, _ second: String?) -> String? {
-        let warning = [first, second]
-            .compactMap { warning in
-                guard let warning, !warning.isEmpty else { return nil }
-                return warning
-            }
-            .joined(separator: ". ")
-        return warning.isEmpty ? nil : warning
     }
 }
 

@@ -306,6 +306,56 @@ enum ScreenCaptureGeometry {
         return fallback
     }
 
+    struct ResolvedSourceAspectRatioRequest {
+        var isEditingScreenCrop: Bool
+        var bindingKind: ScreenSourceBinding.Kind?
+        var pickedAspectRatio: CGFloat?
+        var usesPickedScreenContent: Bool
+        var pickedFilterAspectRatio: CGFloat?
+        var selectedDisplayID: String?
+        var settings: RecordingSettings
+    }
+
+    static func resolvedSourceAspectRatio(_ request: ResolvedSourceAspectRatioRequest) -> CGFloat {
+        if !request.isEditingScreenCrop,
+           request.bindingKind != .display,
+           let picked = request.pickedAspectRatio, picked > 0 {
+            return picked
+        }
+        if request.usesPickedScreenContent && !request.isEditingScreenCrop {
+            if let picked = request.pickedAspectRatio, picked > 0 {
+                return picked
+            }
+            if let filterAspect = request.pickedFilterAspectRatio, filterAspect > 0 {
+                return filterAspect
+            }
+            return SceneLayout.defaultScreenAspectRatio
+        }
+        return screenSourceAspectRatio(
+            for: request.settings,
+            fallback: displayPixelAspectRatio(selectedDisplayID: request.selectedDisplayID)
+        )
+    }
+
+    static func displayPixelAspectRatio(selectedDisplayID: String?) -> CGFloat {
+        let displayID: CGDirectDisplayID
+        if let selectedDisplayID, let numericID = UInt32(selectedDisplayID) {
+            displayID = numericID
+        } else {
+            displayID = CGMainDisplayID()
+        }
+        let width = CGDisplayPixelsWide(displayID)
+        let height = CGDisplayPixelsHigh(displayID)
+        guard width > 0, height > 0 else {
+            return SceneLayout.defaultScreenAspectRatio
+        }
+        return CGFloat(width) / CGFloat(height)
+    }
+
+    static func isStalePickerQueuedRevision(_ queued: Int?, current: Int) -> Bool {
+        queued.map { $0 != current } ?? false
+    }
+
     static func pickedContentAspectRatio(for filter: SCContentFilter) -> CGFloat {
         let rect = SCShareableContent.info(for: filter).contentRect
         guard rect.width > 0, rect.height > 0 else {
@@ -530,7 +580,7 @@ enum ScreenCaptureGeometry {
         )
     }
 
-    private static func displayID(for window: SCWindow, displays: [SCDisplay]) -> String? {
+    static func displayID(for window: SCWindow, displays: [SCDisplay]) -> String? {
         displays
             .max { lhs, rhs in
                 overlapArea(lhs.frame, window.frame) < overlapArea(rhs.frame, window.frame)
@@ -538,7 +588,7 @@ enum ScreenCaptureGeometry {
             .map { String($0.displayID) }
     }
 
-    private static func overlapArea(_ a: CGRect, _ b: CGRect) -> CGFloat {
+    static func overlapArea(_ a: CGRect, _ b: CGRect) -> CGFloat {
         let intersection = a.intersection(b)
         return intersection.isNull ? 0 : intersection.width * intersection.height
     }
@@ -635,5 +685,25 @@ enum ScreenCaptureGeometry {
     private static func evenDimension(_ value: Int) -> Int {
         let value = max(2, value)
         return value.isMultiple(of: 2) ? value : value + 1
+    }
+}
+
+extension RecordingScene {
+    static func live(
+        settings: RecordingSettings,
+        pickedFilter: SCContentFilter?
+    ) -> RecordingScene {
+        var scene = RecordingScene(settings: settings)
+        guard settings.enabledSources.contains(.screen), let pickedFilter else {
+            return scene
+        }
+        var geometry = ScreenCaptureGeometry.screenSourceGeometry(
+            for: settings,
+            pickedFilter: pickedFilter
+        )
+        geometry.usesPickedContent = settings.usesPickedScreenContent
+        geometry.fillsSceneFrame = ScreenSourceGeometry.fillsSceneFrame(for: settings)
+        scene.screenSourceGeometry = geometry
+        return scene
     }
 }

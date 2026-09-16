@@ -41,6 +41,22 @@ struct EditorTimeRange: Equatable {
         return Self(start: min(anchor, head), end: max(anchor, head))
     }
 
+    static func markIn(time: Double, existingEnd: Double?, duration: Double) -> Self? {
+        resolve(.init(
+            anchor: time,
+            head: existingEnd.map { max(time, $0) } ?? duration,
+            duration: duration
+        ))
+    }
+
+    static func markOut(time: Double, existingStart: Double?, duration: Double) -> Self? {
+        resolve(.init(
+            anchor: existingStart.map { min(time, $0) } ?? 0,
+            head: time,
+            duration: duration
+        ))
+    }
+
     struct CutRequest {
         let range: EditorTimeRange
         let edits: TimelineEdits
@@ -116,6 +132,14 @@ struct EditorTimeRange: Equatable {
                     ))
             }
             return pieces
+        }
+        return edits == request.edits ? nil : edits
+    }
+
+    static func restoringTogether(_ request: BatchCutRequest) -> TimelineEdits? {
+        var edits = request.edits
+        for range in request.ranges {
+            edits = restoring(.init(range: range, edits: edits, takeDuration: request.takeDuration)) ?? edits
         }
         return edits == request.edits ? nil : edits
     }

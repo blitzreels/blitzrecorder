@@ -5,9 +5,18 @@ import XCTest
 @MainActor
 final class PreviewStageViewTests: XCTestCase {
     func testScreenPreviewMessageWidthNeverBecomesNegative() {
-        XCTAssertEqual(ScreenPreviewMessageLayout.maximumLabelWidth(for: 0), 0)
-        XCTAssertEqual(ScreenPreviewMessageLayout.maximumLabelWidth(for: 20), 0)
-        XCTAssertEqual(ScreenPreviewMessageLayout.maximumLabelWidth(for: 100), 72)
+        XCTAssertEqual(PreviewUnavailableLayout.maximumLabelWidth(for: 0), 0)
+        XCTAssertEqual(PreviewUnavailableLayout.maximumLabelWidth(for: 20), 4)
+        XCTAssertEqual(PreviewUnavailableLayout.maximumLabelWidth(for: 100), 68)
+    }
+
+    func testUnavailablePresentationClassifiesLoadingAndErrorStates() {
+        XCTAssertEqual(PreviewUnavailablePresentation.from(message: ""), .empty)
+        XCTAssertEqual(PreviewUnavailablePresentation.from(message: "Starting camera"), .loading)
+        XCTAssertEqual(PreviewUnavailablePresentation.from(message: "Restarting screen preview"), .loading)
+        XCTAssertEqual(PreviewUnavailablePresentation.from(message: "Waiting for iPhone preview"), .loading)
+        XCTAssertEqual(PreviewUnavailablePresentation.from(message: "Camera unavailable"), .unavailable)
+        XCTAssertEqual(PreviewUnavailablePresentation.from(message: "Screen preview unavailable"), .unavailable)
     }
 
     func testCameraUnavailableMessageWrapsInsideNarrowSceneSlot() {
@@ -29,6 +38,43 @@ final class PreviewStageViewTests: XCTestCase {
         preview.layoutSubtreeIfNeeded()
 
         XCTAssertRect(preview.messageBackgroundFrameForTesting, equals: preview.bounds)
+    }
+
+    func testScreenUnavailableBackgroundFillsSelectedScreenFrame() {
+        let preview = ScreenPreviewView()
+        preview.frame = CGRect(x: 0, y: 0, width: 420, height: 240)
+
+        preview.setMessage("Screen preview unavailable")
+        preview.layoutSubtreeIfNeeded()
+
+        XCTAssertRect(preview.messageBackgroundFrameForTesting, equals: preview.bounds)
+        XCTAssertFalse(preview.hasPreviewContent)
+        XCTAssertFalse(preview.isUnavailableOverlayHiddenForTesting)
+    }
+
+    func testPreviewOverlayStaysHiddenUntilAMessageIsSet() throws {
+        let screen = ScreenPreviewView()
+        screen.frame = CGRect(x: 0, y: 0, width: 420, height: 240)
+        screen.layoutSubtreeIfNeeded()
+        XCTAssertTrue(screen.isUnavailableOverlayHiddenForTesting)
+        XCTAssertFalse(screen.hasPreviewContent)
+
+        let image = try makeTestImage(width: 1280, height: 720)
+        screen.setImage(image)
+        XCTAssertTrue(screen.hasPreviewContent)
+        XCTAssertTrue(screen.isUnavailableOverlayHiddenForTesting)
+
+        screen.setMessage("")
+        XCTAssertFalse(screen.hasPreviewContent)
+        XCTAssertTrue(screen.isUnavailableOverlayHiddenForTesting)
+
+        let camera = CameraPreviewView()
+        camera.frame = CGRect(x: 0, y: 0, width: 180, height: 320)
+        camera.layoutSubtreeIfNeeded()
+        XCTAssertTrue(camera.isUnavailableOverlayHiddenForTesting)
+        camera.setPreviewImage(image)
+        XCTAssertTrue(camera.isUnavailableOverlayHiddenForTesting)
+        XCTAssertTrue(camera.hasPreviewContent)
     }
 
     func testCameraPreviewImageUsesOverrideSourceAspectRatio() throws {

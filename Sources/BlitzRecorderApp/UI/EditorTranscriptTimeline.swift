@@ -34,9 +34,13 @@ enum EditorTranscriptTimeline {
                 append((range: .init(start: segment.startTime, end: segment.endTime), text: segment.text, kind: .phrase))
             }
         }
-        let speech = merged(items.map(\.range) + (transcript.speechRanges ?? []).map {
-            .init(start: $0.startTime, end: $0.endTime)
-        }).map { EditorTimeRange(start: max(0, $0.start - 0.15), end: min(request.duration, $0.end + 0.15)) }
+        let spoken = items.map(\.range)
+        let speechSource = spoken.isEmpty
+            ? (transcript.speechRanges ?? []).map { EditorTimeRange(start: $0.startTime, end: $0.endTime) }
+            : spoken
+        let speech = merged(speechSource).map {
+            EditorTimeRange(start: max(0, $0.start - 0.15), end: min(request.duration, $0.end + 0.15))
+        }
         let sounds = merged(request.windows.filter { $0.decibels > request.threshold }.map {
             .init(start: max(0, $0.start - 0.06), end: min(request.duration, $0.end + 0.06))
         })

@@ -115,6 +115,74 @@ final class TakeRecordingRuntimeTests: XCTestCase {
         XCTAssertEqual(plan.sceneTimelineSettings.enabledSources, [.screen, .camera, .microphone])
     }
 
+    func testRecordingStartAccessMatchesCapturePlan() {
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen, .camera, .microphone]
+        let remote = TakeStartPlan.make(settings: settings, isRemoteCameraSelected: true)
+        XCTAssertEqual(
+            RecordingStartAccess.needed(enabledSources: settings.enabledSources, plan: remote),
+            .init(
+                remoteCamera: true,
+                localCamera: false,
+                microphone: true,
+                stopLocalCameraSession: false,
+                stopScreenPreview: false
+            )
+        )
+        let localLive = TakeStartPlan.make(settings: settings, isRemoteCameraSelected: false)
+        XCTAssertEqual(
+            RecordingStartAccess.needed(enabledSources: settings.enabledSources, plan: localLive),
+            .init(
+                remoteCamera: false,
+                localCamera: true,
+                microphone: true,
+                stopLocalCameraSession: localLive.usesLiveCompositor,
+                stopScreenPreview: localLive.usesLiveCompositor
+            )
+        )
+    }
+
+    func testRecordingStartPreparedAndPickerPersistAction() {
+        var requested = RecordingSettings()
+        requested.enabledSources = [.screen, .camera, .microphone, .systemAudio]
+        var recording = requested
+        recording.enabledSources.remove(.systemAudio)
+        let prepared = RecordingStartPrepared.make(
+            requestedSettings: requested,
+            recordingSettings: recording,
+            isRemoteCameraSelected: false,
+            pickedFilter: nil
+        )
+        XCTAssertTrue(prepared.skippedSystemAudio)
+        XCTAssertEqual(prepared.recordingSettings.enabledSources, recording.enabledSources)
+        XCTAssertEqual(prepared.access.localCamera, true)
+        XCTAssertNil(prepared.remoteTakeID)
+        XCTAssertEqual(PickScreenContentRequest.persistAction(updatesActiveRecording: true), .cutTimeline)
+        XCTAssertEqual(PickScreenContentRequest.persistAction(updatesActiveRecording: false), .updateIfNeeded)
+        var pickSettings = RecordingSettings()
+        pickSettings.enabledSources = [.screen]
+        pickSettings.usesPickedScreenContent = false
+        XCTAssertTrue(
+            RecordingStartGate.shouldPickScreenForStart(
+                readiness: RecordingReadiness(
+                    isReady: false,
+                    title: "blocked",
+                    detail: "blocked",
+                    blockers: [
+                        PermissionBlocker(
+                            source: .screen,
+                            permission: "Screen",
+                            status: "not selected",
+                            recovery: "pick"
+                        )
+                    ],
+                    statusLine: "screen"
+                ),
+                settings: pickSettings
+            )
+        )
+    }
+
     func testRemoteCameraSourceFileTakeKeepsCameraInRenderTimeline() async throws {
         var settings = RecordingSettings()
         settings.enabledSources = [.screen, .camera, .microphone]

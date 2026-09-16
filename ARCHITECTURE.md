@@ -241,6 +241,7 @@ and [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
 [Scripts/package-app.sh](Scripts/package-app.sh) builds and bundles the Mac app.
 Tagged releases use `vX.Y.Z` and publish a universal DMG, `SHA256SUMS`, `release-metadata.json`, and a Sparkle
 `appcast.xml`.
+The DMG Finder window is a [Dmgly](https://dmgly.com/) native export (`Resources/dmg/dmgly.json`).
 
 [GitHub Releases](https://github.com/blitzreels/blitzrecorder/releases) is the public changelog and download history.
 A released binary corresponds to its tag, while this guide describes the source tree it accompanies.

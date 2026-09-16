@@ -55,13 +55,7 @@ struct EditorTimelineView: View {
     let draftScene: RecordingScene?
     let draftSceneEventIndex: Int?
     let duration: Double
-    let playbackTime: Double
-    let liveTime: () -> Double
-    let isPlaying: Bool
-    let playbackRate: EditorPlaybackRate
-    @Binding var playbackVolume: Double
-    let hasPlaybackAudio: Bool
-    let onTogglePlaybackMute: () -> Void
+    let playback: EditorPlaybackController
     @Binding var selection: EditorSelection?
     let onSeek: (Double) -> Void
     let onSeekEnded: () -> Void
@@ -75,17 +69,19 @@ struct EditorTimelineView: View {
     let toggleableAssetIDs: Set<String>
     let onToggleTrack: (EditorAsset) -> Void
     let onSplit: () -> Void
+    let onDeleteSelection: () -> Void
+    let deleteAction: EditorDeleteRouting.Action?
     let onDeleteSegment: () -> Void
     let canDeleteSegment: Bool
     let onJoinSegment: () -> Void
     let onCutRange: () -> Void
     let onRestoreRange: () -> Void
+    let onExtendClip: (TimelineEdits) -> Void
     let onMarkIn: () -> Void
     let onMarkOut: () -> Void
     @Binding var zoomLevel: Double
     @Binding var showsShortcuts: Bool
     let silence: SilenceEditingSession
-    let isEditingSilence: Bool
     let onOpenSilence: () -> Void
     let onChangePlacedItem: (EditorPlacedItemEditing.Change) -> Void
     let onRemovePlacedItem: (EditorPlacedItem.ID) -> Void
@@ -105,6 +101,7 @@ struct EditorTimelineView: View {
     @State private var stripDragSelection: SilenceSegmentSelection?
     @State private var isDraggingStrip = false
     @State private var addsDraggedSegments = false
+    @State private var clipTrim = EditorClipTrimSession()
 
     private let gutterWidth: CGFloat = 210
     private let rulerHeight: CGFloat = 30
@@ -130,7 +127,11 @@ struct EditorTimelineView: View {
         guard let id = selectedPlacedItem else { return true }
         guard let item = placedTracks.flatMap(\.items).first(where: { $0.id == id }) else { return false }
         return item.canChangeTiming && !item.isPoint
-            && playbackTime > item.timing.start + 0.05 && playbackTime < item.timing.end - 0.05
+            && playback.currentTime > item.timing.start + 0.05 && playback.currentTime < item.timing.end - 0.05
+    }
+
+    private var displayedEdits: TimelineEdits {
+        clipTrim.edits(committed: project?.edits ?? .empty)
     }
 
     var body: some View {
@@ -140,7 +141,7 @@ struct EditorTimelineView: View {
                 silenceToolbar(selected)
             } else if let range = selection?.timeRange {
                 rangeToolbar(range)
-            } else if isEditingSilence, silence.canClassify {
+            } else if showsSilenceTrack, silence.canClassify {
                 silenceToolbar(nil)
             }
             Rectangle()
@@ -155,19 +156,21 @@ struct EditorTimelineView: View {
         }
         .background(BlitzUI.projectLibraryBackground)
         .onChange(of: projection) { updateTranscriptLayout() }
-        .onChange(of: EditorVideoClipLayout.Request(projection: projection, splits: project?.edits.videoSplits ?? []), initial: true) {
-            clipLayout = EditorVideoClipLayout(.init(projection: projection, splits: project?.edits.videoSplits ?? []))
+        .onChange(of: EditorClipSpine.Request(edits: displayedEdits, duration: duration, silenceCuts: silence.cuts), initial: true) {
+            clipLayout = EditorClipSpine.layout(.init(
+                edits: displayedEdits, duration: duration, silenceCuts: silence.cuts
+            ))
         }
         .onChange(of: transcript, initial: true) { updateTranscriptItems() }
         .onChange(of: silence.windows) { updateTranscriptItems() }
         .onChange(of: silence.threshold) { updateTranscriptItems() }
         .onChange(of: duration) { updateTranscriptItems() }
-        .onChange(of: EditorTimelineProjection.Request(duration: duration, cuts: project?.edits.cuts ?? []), initial: true) {
-            projection = EditorTimelineProjection(.init(duration: duration, cuts: project?.edits.cuts ?? []))
+        .onChange(of: EditorTimelineProjection.Request(duration: duration, cuts: displayedEdits.cuts), initial: true) {
+            projection = EditorTimelineProjection(.init(duration: duration, cuts: displayedEdits.cuts))
         }
+        .onChange(of: clipLayout) { updateSilenceSegments() }
         .onChange(of: SilenceTimelineSegments.Request(duration: duration, cuts: silence.cuts), initial: true) {
-            silenceSegments = SilenceTimelineSegments.resolve(.init(duration: duration, cuts: silence.cuts))
-            hoveredSilenceRange = nil
+            updateSilenceSegments()
         }
         .onChange(of: SilenceTimelineSegments.SelectableRequest(segments: silenceSegments, projection: projection), initial: true) {
             selectableSilenceSegments = SilenceTimelineSegments.selectable(
@@ -205,7 +208,7 @@ struct EditorTimelineView: View {
                 title: "Split", systemName: "scissors",
                 isDisabled: !isInteractive || !canSplitSelection, action: onSplit
             )
-            .help(selectedPlacedItem == nil ? "Split the video at the playhead, keeping audio in sync (⌘B)"
+            .help(selectedPlacedItem == nil ? "Split the clip at the playhead. Screen, Camera, and audio stay linked (⌘B)"
                   : "Split the selected item at the playhead (⌘B)")
             TimelineActionButton(
                 title: "Range", systemName: "rectangle.dashed",
@@ -217,22 +220,18 @@ struct EditorTimelineView: View {
                     title: "Switch", systemName: "arrow.triangle.2.circlepath",
                     isDisabled: !isInteractive || !silence.canClassify
                 ) {
-                    silence.toggleRanges(selected.ranges)
+                    onDeleteSelection()
                     selection = .silenceRanges(selected)
                 }
-                .help("Switch selected sections between silence and sound (Delete)")
+                .help(EditorDeleteRouting.help(.toggleSilence))
             } else {
                 TimelineActionButton(
                     title: "Delete", systemName: "trash",
-                    isDisabled: !isInteractive || (!canDeleteSegment && selectedPlacedItem == nil && selection?.timeRange == nil)
+                    isDisabled: !isInteractive || deleteAction == nil
                 ) {
-                    if let id = selectedPlacedItem { onRemovePlacedItem(id) }
-                    else if selection?.timeRange != nil { onCutRange() }
-                    else { onDeleteSegment() }
+                    onDeleteSelection()
                 }
-                .help(selectedPlacedItem == nil
-                      ? "Delete this segment from all tracks and close the gap (Delete). Undo with ⌘Z."
-                      : "Remove the selected item. Undo with ⌘Z.")
+                .help(deleteAction.map(EditorDeleteRouting.help) ?? "Select a clip, track, or range to delete.")
             }
         }
         .fixedSize(horizontal: true, vertical: false)
@@ -240,11 +239,12 @@ struct EditorTimelineView: View {
 
     private var playbackControls: some View {
         EditorPlaybackControls(configuration: .init(
-            time: projection.displayTime(playbackTime),
+            time: projection.displayTime(playback.currentTime),
+            liveTime: { [playback, projection] in projection.displayTime(playback.displayTime()) },
             duration: projection.duration,
-            isPlaying: isPlaying,
+            isPlaying: playback.isPlaying,
             isEnabled: isInteractive,
-            rate: playbackRate,
+            rate: playback.playbackRate,
             onSeek: {
                 onSeek(projection.takeTime($0))
                 onSeekEnded()
@@ -260,11 +260,14 @@ struct EditorTimelineView: View {
     private var listeningAndZoomControls: some View {
         HStack(spacing: 10) {
             BlitzPlaybackVolumeControl(configuration: .init(
-                volume: $playbackVolume,
+                volume: Binding(
+                    get: { playback.playbackVolume },
+                    set: { playback.setPlaybackVolume($0) }
+                ),
                 sliderWidth: 110,
-                onToggleMute: onTogglePlaybackMute
+                onToggleMute: { playback.togglePlaybackMute() }
             ))
-            .disabled(!isInteractive || !hasPlaybackAudio)
+            .disabled(!isInteractive || playback.muteableSources.isEmpty)
             Rectangle().fill(BlitzUI.separator).frame(width: 1, height: 24)
                 .padding(.horizontal, 4)
             BlitzSymbol(configuration: .init(name: "plus.magnifyingglass", size: 14))
@@ -531,7 +534,8 @@ struct EditorTimelineView: View {
 
     private func timelineBody(viewportWidth: CGFloat) -> some View {
         let trackViewport = max(trackScrollWidth > 0 ? trackScrollWidth - 16 : viewportWidth - gutterWidth - 24, 40)
-        let pxPerSecond = trackViewport / CGFloat(max(projection.duration, 0.5)) * CGFloat(EditorTimelineZoom.clamp(.init(value: zoomLevel, duration: projection.duration)))
+        let layoutDuration = clipTrim.lockedDisplayDuration ?? projection.duration
+        let pxPerSecond = trackViewport / CGFloat(max(layoutDuration, 0.5)) * CGFloat(EditorTimelineZoom.clamp(.init(value: zoomLevel, duration: layoutDuration)))
         let contentWidth = max(CGFloat(projection.duration) * pxPerSecond, trackViewport)
         let viewport = EditorTimelineViewport.resolve(.init(
             offset: scrollOffset,
@@ -564,7 +568,19 @@ struct EditorTimelineView: View {
                                 if duration > 0 {
                                     EditorVideoClipStrip(configuration: .init(
                                         layout: clipLayout, viewport: viewport, pixelsPerSecond: pxPerSecond,
-                                        width: contentWidth, height: clipRowHeight, onSelect: clickVideoClip))
+                                        width: contentWidth, height: clipRowHeight,
+                                        edits: project?.edits ?? .empty, duration: duration,
+                                        selectedRanges: selection?.rangeSelection?.ranges ?? [],
+                                        onSelect: clickVideoClip,
+                                        onPreviewExtend: { edits in
+                                            var session = clipTrim
+                                            session.preview(edits, currentDisplayDuration: projection.duration)
+                                            clipTrim = session
+                                        },
+                                        onEndExtend: { edits in
+                                            if let edits { onExtendClip(edits) }
+                                            clipTrim = EditorClipTrimSession()
+                                        }))
                                         .disabled(!isInteractive)
                                         .contextMenu { timelineContextMenu }
                                     if showsSilenceTrack {
@@ -623,7 +639,7 @@ struct EditorTimelineView: View {
                                             )).map(EditorSelection.silenceRanges)
                                         } else {
                                             selection = value.startLocation.y >= clipRowHeight + 6
-                                                && (isEditingSilence || isSilenceTrack(at: value.startLocation.y))
+                                                && (showsSilenceTrack || isSilenceTrack(at: value.startLocation.y))
                                                 ? .silenceRange(range) : .range(range)
                                         }
                                     }
@@ -631,15 +647,14 @@ struct EditorTimelineView: View {
                                         isDraggingStrip = false
                                         stripDragSelection = nil
                                     },
-                                isEnabled: isInteractive
+                                isEnabled: isInteractive && !clipTrim.isActive
                             )
 
                             if duration > 0 {
                                 linkedSegmentOverlay(pxPerSecond)
                                 EditorVideoClipSeams(configuration: .init(
                                     layout: clipLayout, viewport: viewport, pixelsPerSecond: pxPerSecond,
-                                    height: clipRowHeight + 6 + (showsSilenceTrack ? silenceRowHeight + 6 : 0)
-                                        + silenceRowHeight))
+                                    height: contentHeight))
                                 if let range = hoveredSilenceRange, !selectedSilenceRanges.contains(range) {
                                     hoverOverlay(.init(range: range, pxPerSecond: pxPerSecond))
                                 }
@@ -664,7 +679,7 @@ struct EditorTimelineView: View {
                     }
                     .scrollPosition($scrollPosition)
                     .onChange(of: [zoomLevel, projection.duration, selectionFocusTime ?? -1]) {
-                        let focusTime = selectionFocusTime ?? playbackTime
+                        let focusTime = selectionFocusTime ?? playback.currentTime
                         let playheadX = CGFloat(projection.displayTime(focusTime)) * pxPerSecond
                         let offset = min(max(0, contentWidth - trackViewport), max(0, playheadX - trackViewport / 2))
                         scrollPosition.scrollTo(x: offset)
@@ -691,7 +706,8 @@ struct EditorTimelineView: View {
             if duration > 0 {
                 EditorTimelinePlayhead(configuration: .init(
                     projection: projection, scrollOffset: rulerScrollOffset, pixelsPerSecond: pxPerSecond,
-                    playbackTime: playbackTime, liveTime: liveTime, isPlaying: isPlaying,
+                    playbackTime: playback.currentTime, liveTime: { playback.displayTime() },
+                    isPlaying: playback.isPlaying,
                     isInteractive: isInteractive, rulerHeight: rulerHeight, viewportWidth: trackViewport + 16,
                     onSeek: onSeek, onSeekEnded: onSeekEnded))
                     .frame(width: trackViewport + 16)
@@ -844,7 +860,7 @@ struct EditorTimelineView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, 10)
                     .frame(width: gutterWidth, height: clipRowHeight)
-                    .help("Video clips stay linked across Screen, Camera, and audio. Split with ⌘B.")
+                    .help("Video clips stay linked across Screen, Camera, and audio. ⌘B splits the whole clip at the playhead.")
             }
             if showsSilenceTrack {
                 Button(action: onOpenSilence) {
@@ -1138,7 +1154,7 @@ struct EditorTimelineView: View {
     private var activeSegmentIndex: Int? {
         EditorSceneTimelineActiveIndexResolver.index(request: .init(
             eventTimes: sceneEvents.map(\.time),
-            playbackTime: playbackTime
+            playbackTime: playback.currentTime
         ))
     }
 
@@ -1174,7 +1190,7 @@ struct EditorTimelineView: View {
             lowerBound: min(width, request.viewport.lowerBound),
             upperBound: min(width, request.viewport.upperBound)
         )
-        let showsSilence = isEditingSilence && !asset.isVideo && silence.audioSourcePaths.contains(asset.url.path)
+        let showsSilence = showsSilenceTrack && !asset.isVideo && silence.audioSourcePaths.contains(asset.url.path)
         let silenceRuns = showsSilence ? SilenceTimelineBands.overlayRuns(
             .init(
                 cuts: silence.cuts, projection: projection, pixelsPerSecond: request.pxPerSecond, viewport: viewport
@@ -1197,8 +1213,6 @@ struct EditorTimelineView: View {
             )
             .equatable()
             .padding(.vertical, asset.isVideo ? 3 : 0)
-            EditorVideoClipSeams(configuration: .init(
-                layout: clipLayout, viewport: viewport, pixelsPerSecond: request.pxPerSecond, height: rowHeight))
             if showsSilence {
                 SilenceWaveformOverlay(runs: silenceRuns, viewport: viewport)
                     .equatable()
@@ -1219,7 +1233,9 @@ struct EditorTimelineView: View {
                     time: projection.takeTime(Double(event.location.x / request.pxPerSecond))
                 )) {
                 clickSilenceRange(segment.range)
-            } else if isInteractive, let clip = clipLayout.clip(at: Double(event.location.x / request.pxPerSecond)) {
+            } else if isInteractive, asset.isVideo,
+                let clip = clipLayout.clip(at: Double(event.location.x / request.pxPerSecond))
+            {
                 clickVideoClip(.init(range: clip.range, modifiers: NSEvent.modifierFlags))
             } else {
                 selection = .asset(asset.id)
@@ -1244,10 +1260,12 @@ struct EditorTimelineView: View {
         .accessibilityLabel("\(asset.title) track")
         .accessibilityValue(isOff ? (asset.isVideo ? "Hidden" : "Muted in playback and export")
             : showsSilence && !selectedSilenceRanges.isEmpty ? "Sound or silence section selected"
-            : isSelected ? "Selected" : "Enabled, \(project?.edits.videoSplits.count ?? 0) video cuts")
+            : isSelected ? "Selected" : "Enabled, \(max(0, clipLayout.clips.count - 1)) clip boundaries")
         .help(showsSilence
             ? "Click to select. ⌘-click to add or remove. Shift-click to extend. Drag to select a time range."
-            : "Click to select a video clip. Drag to select a range. Delete removes it with audio kept in sync.")
+            : asset.isAudio
+                ? "Click to select this track. Delete mutes it for playback and export."
+                : "Click to select a video clip. Drag to select a range. Delete removes it with audio kept in sync.")
         .contextMenu {
             Button("Select \(asset.title)", systemImage: asset.systemImage) {
                 selection = .asset(asset.id)
@@ -1318,7 +1336,7 @@ struct EditorTimelineView: View {
             .disabled(!isInteractive)
         Button("Mark range out at playhead", systemImage: "selection.pin.in.out", action: onMarkOut)
             .disabled(!isInteractive)
-        Button("Split video at playhead", systemImage: "scissors", action: onSplit)
+        Button("Split clip at playhead", systemImage: "scissors", action: onSplit)
             .disabled(!isInteractive)
         Divider()
         Button("Silence settings", systemImage: "waveform", action: onOpenSilence)
@@ -1334,6 +1352,14 @@ struct EditorTimelineView: View {
         } ?? []
         updateTranscriptLayout()
         silence.setTranscript(transcript)
+    }
+
+    private func updateSilenceSegments() {
+        let resolved = SilenceTimelineSegments.resolve(.init(duration: duration, cuts: silence.cuts))
+        silenceSegments = SilenceTimelineSegments.capped(.init(
+            segments: resolved, end: clipLayout.clips.last?.range.end ?? duration
+        ))
+        hoveredSilenceRange = nil
     }
 
     private func updateTranscriptLayout() {
@@ -1409,7 +1435,7 @@ struct EditorTimelineView: View {
     }
 
     private var showsSilenceTrack: Bool {
-        isEditingSilence && !silence.windows.isEmpty
+        !silence.windows.isEmpty
     }
 
     private var trackAssets: [EditorAsset] {
@@ -1472,7 +1498,7 @@ struct EditorTimelineView: View {
     }
 
     private func isSilenceTrack(at y: CGFloat) -> Bool {
-        guard isEditingSilence else { return false }
+        guard showsSilenceTrack else { return false }
         var top: CGFloat = clipRowHeight + 6
         if showsSilenceTrack {
             if y >= top, y < top + silenceRowHeight { return true }
@@ -1493,10 +1519,6 @@ struct EditorTimelineView: View {
         onSeek(projection.takeTime(min(max(0, Double(x / pxPerSecond)), projection.duration)))
     }
 
-    private func formatTime(_ seconds: Double) -> String {
-        let total = max(0, Int(seconds.rounded()))
-        return String(format: "%02d:%02d", total / 60, total % 60)
-    }
 }
 
 private struct EditorSceneTimelineItem: View {

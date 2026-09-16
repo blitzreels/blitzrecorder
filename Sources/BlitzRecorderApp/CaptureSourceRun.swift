@@ -166,6 +166,10 @@ struct CaptureSourceStopFailure: Error {
 struct CaptureSourceRetargetFailure: Error {
     let rollbackFailed: Bool
     let underlyingError: Error
+
+    static func shouldStopTake(for error: Error) -> Bool {
+        (error as? CaptureSourceRetargetFailure)?.rollbackFailed == true
+    }
 }
 
 struct CaptureSourceRunStartResult: Equatable {

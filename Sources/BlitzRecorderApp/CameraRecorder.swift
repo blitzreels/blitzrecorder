@@ -16,6 +16,9 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     private var startupTimeoutTask: Task<Void, Never>?
     private var sessionObservers: [NSObjectProtocol] = []
     private var hasReportedActiveFailure = false
+    private var blackFrameGenerator: CameraBlackFrameGenerator?
+    private var blackFrameTimer: DispatchSourceTimer?
+    private var lastForwardedPresentationTime: CMTime?
     var failureHandler: (@MainActor (Error) -> Void)?
 
     override init() {
@@ -80,6 +83,9 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             frameNormalizer = nil
             pendingStartupSamples = []
             hasReportedActiveFailure = false
+            stopBlackFramesOnQueue()
+            blackFrameGenerator = nil
+            lastForwardedPresentationTime = nil
             startSessionIfNeededOnQueue()
         }
 
@@ -98,10 +104,13 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         let writerToFinish = await withCheckedContinuation { continuation in
             queue.async {
                 self.completeStartup(.failure(RecorderError.cameraDidNotStart))
+                self.stopBlackFramesOnQueue()
                 self.pendingRecording = nil
                 let writer = self.writer
                 self.writer = nil
                 self.frameNormalizer = nil
+                self.blackFrameGenerator = nil
+                self.lastForwardedPresentationTime = nil
                 self.pendingStartupSamples = []
                 continuation.resume(returning: writer)
             }
@@ -112,6 +121,7 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     func stopSession() async {
         await withCheckedContinuation { continuation in
             queue.async {
+                self.stopBlackFramesOnQueue()
                 if self.session.isRunning {
                     self.session.stopRunning()
                 }
@@ -125,6 +135,9 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
+        stopBlackFramesOnQueue()
+        hasReportedActiveFailure = false
+        prepareBlackFrameGeneratorIfNeeded(sampleBuffer)
         if writer == nil, let pendingRecording {
             pendingStartupSamples.append(sampleBuffer)
             do {
@@ -155,7 +168,7 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
                 frameNormalizer = setup.frameNormalizer
                 pendingStartupSamples = []
                 for startupSampleBuffer in setup.startupSampleBuffers {
-                    writer?.append(startupSampleBuffer)
+                    appendRecordingSampleOnQueue(startupSampleBuffer)
                 }
                 completeStartup(.success(()))
             } catch {
@@ -167,16 +180,25 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             return
         }
 
-        if let frameNormalizer {
-            guard let normalizedSampleBuffer = frameNormalizer.normalize(sampleBuffer) else {
-                NSLog("Camera frame normalization skipped an unreadable frame")
-                return
-            }
-            writer?.append(normalizedSampleBuffer)
-        } else {
-            writer?.append(sampleBuffer)
-        }
+        appendRecordingSampleOnQueue(sampleBuffer)
         completeStartup(.success(()))
+    }
+
+    func continueWithBlackFrames() {
+        queue.async {
+            guard self.pendingRecording != nil,
+                  self.writer != nil,
+                  let generator = self.blackFrameGenerator,
+                  self.blackFrameTimer == nil else { return }
+            let timer = DispatchSource.makeTimerSource(queue: self.queue)
+            let interval = max(1.0 / 120.0, generator.frameDuration.seconds)
+            timer.schedule(deadline: .now(), repeating: interval, leeway: .milliseconds(2))
+            timer.setEventHandler { [weak self] in
+                self?.appendBlackFrameOnQueue()
+            }
+            self.blackFrameTimer = timer
+            timer.resume()
+        }
     }
 
     private func configureSession(settings: RecordingSettings) throws {
@@ -234,6 +256,55 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         if !session.isRunning {
             session.startRunning()
         }
+    }
+
+    private func prepareBlackFrameGeneratorIfNeeded(_ sampleBuffer: CMSampleBuffer) {
+        guard blackFrameGenerator == nil,
+              let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
+              let pendingRecording else { return }
+        blackFrameGenerator = try? CameraBlackFrameGenerator(.init(
+            width: CVPixelBufferGetWidth(pixelBuffer),
+            height: CVPixelBufferGetHeight(pixelBuffer),
+            pixelFormat: CVPixelBufferGetPixelFormatType(pixelBuffer),
+            framesPerSecond: pendingRecording.settings.framesPerSecond
+        ))
+    }
+
+    private func appendBlackFrameOnQueue() {
+        guard let generator = blackFrameGenerator else { return }
+        let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
+        let minimumTime = lastForwardedPresentationTime.map {
+            CMTimeAdd($0, generator.frameDuration)
+        } ?? hostTime
+        let presentationTime = CMTimeCompare(hostTime, minimumTime) >= 0 ? hostTime : minimumTime
+        guard let sampleBuffer = generator.sampleBuffer(at: presentationTime) else { return }
+        appendRecordingSampleOnQueue(sampleBuffer)
+    }
+
+    private func appendRecordingSampleOnQueue(_ sampleBuffer: CMSampleBuffer) {
+        let outputSample: CMSampleBuffer
+        if let frameNormalizer {
+            guard let normalizedSampleBuffer = frameNormalizer.normalize(sampleBuffer) else {
+                NSLog("Camera frame normalization skipped an unreadable frame")
+                return
+            }
+            outputSample = normalizedSampleBuffer
+        } else {
+            outputSample = sampleBuffer
+        }
+        let presentationTime = CMSampleBufferGetPresentationTimeStamp(outputSample)
+        guard presentationTime.isValid else { return }
+        if let lastForwardedPresentationTime,
+           CMTimeCompare(presentationTime, lastForwardedPresentationTime) <= 0 {
+            return
+        }
+        self.lastForwardedPresentationTime = presentationTime
+        writer?.append(outputSample)
+    }
+
+    private func stopBlackFramesOnQueue() {
+        blackFrameTimer?.cancel()
+        blackFrameTimer = nil
     }
 
     private func selectedCamera(settings: RecordingSettings) -> AVCaptureDevice? {

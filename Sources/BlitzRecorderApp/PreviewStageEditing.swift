@@ -120,6 +120,51 @@ enum PreviewStageEditing {
         return nil
     }
 
+    enum MouseDownHit: Equatable {
+        case screenCrop(DragMode.Kind)
+        case cameraCrop(DragMode.Kind)
+        case resize(SceneLayerKind, ResizeAnchor)
+        case layer(SceneLayerKind)
+        case background
+        case ignore
+    }
+
+    struct MouseDownRequest {
+        let isScreenCropEditingEnabled: Bool
+        let hasScreen: Bool
+        let screenCropMode: DragMode.Kind?
+        let allowsCameraCropInteraction: Bool
+        let isCameraCropEditingEnabled: Bool
+        let hasCamera: Bool
+        let cameraCropMode: DragMode.Kind?
+        let allowsLayerInteraction: Bool
+        let resizeHit: (SceneLayerKind, ResizeAnchor)?
+        let layerAtPoint: SceneLayerKind?
+        let canvasContainsPoint: Bool
+    }
+
+    static func mouseDownHit(_ request: MouseDownRequest) -> MouseDownHit {
+        if request.isScreenCropEditingEnabled, request.hasScreen, let mode = request.screenCropMode {
+            return .screenCrop(mode)
+        }
+        if request.allowsCameraCropInteraction,
+           request.isCameraCropEditingEnabled,
+           request.hasCamera,
+           let mode = request.cameraCropMode {
+            return .cameraCrop(mode)
+        }
+        guard request.allowsLayerInteraction else {
+            return .ignore
+        }
+        if let (layer, anchor) = request.resizeHit {
+            return .resize(layer, anchor)
+        }
+        if let layer = request.layerAtPoint {
+            return .layer(layer)
+        }
+        return request.canvasContainsPoint ? .background : .ignore
+    }
+
     private static func constrained(_ rect: CGRect, to constraint: CGRect?) -> CGRect {
         guard let constraint, !constraint.isEmpty else { return rect }
         let width = min(rect.width, constraint.width)

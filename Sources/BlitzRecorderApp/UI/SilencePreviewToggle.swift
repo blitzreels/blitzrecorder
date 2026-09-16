@@ -22,7 +22,6 @@ struct SilencePreviewToggle: View {
     var body: some View {
         if presentation == .inspector {
             VStack(alignment: .leading, spacing: 4) {
-                preview
                 if session.metrics.hasChanges {
                     applyButton
                 }

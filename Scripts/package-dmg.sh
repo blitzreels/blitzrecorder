@@ -20,6 +20,11 @@ if ! command -v create-dmg >/dev/null 2>&1; then
   exit 2
 fi
 
+# Finder layout comes from Resources/dmg/dmgly.json. Arrow and wordmark are
+# baked into background.png; Finder supplies the real icons and labels.
+DMG_BACKGROUND="$ROOT/Resources/dmg/background.png"
+[[ -f "$DMG_BACKGROUND" ]] || { echo "error: missing Dmgly background: $DMG_BACKGROUND" >&2; exit 2; }
+
 SKIP_DMG=1 CONFIGURATION="$CONFIG" "$ROOT/Scripts/package-app.sh" >/dev/null
 codesign --verify --deep --strict --verbose=2 "$ROOT/build/BlitzRecorder.app" >/dev/null
 
@@ -30,13 +35,13 @@ ditto "$ROOT/build/BlitzRecorder.app" "$STAGE_DIR/BlitzRecorder.app"
 CREATE_DMG_ARGS=(
   --volname BlitzRecorder \
   --volicon "$ROOT/Resources/BlitzRecorder.icns" \
-  --background "$ROOT/Resources/dmg/background.png" \
+  --background "$DMG_BACKGROUND" \
   --window-pos 200 120 \
-  --window-size 660 400 \
+  --window-size 760 480 \
   --icon-size 128 \
-  --icon "BlitzRecorder.app" 175 185 \
+  --icon "BlitzRecorder.app" 210 228 \
   --hide-extension "BlitzRecorder.app" \
-  --app-drop-link 485 185 \
+  --app-drop-link 550 228 \
   "$DMG_PATH" \
   "$STAGE_DIR"
 )

@@ -16,6 +16,14 @@ enum ProjectExportFilename {
             .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
         return limitedSlug.isEmpty ? "blitzrecorder-export" : limitedSlug
     }
+
+    static func variantSuffix(for layout: CaptureLayout) -> String {
+        switch layout {
+        case .square: return "square"
+        case .vertical: return "vertical"
+        case .horizontal: return "landscape"
+        }
+    }
 }
 
 enum ProjectExportPlacement {
