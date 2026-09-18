@@ -20,6 +20,7 @@
 #include <roapi.h>
 #include <shellapi.h>
 #include <mmdeviceapi.h>
+#include <audioclient.h>
 #include <mfapi.h>
 #include <mfidl.h>
 #include <mfreadwrite.h>
@@ -372,6 +373,63 @@ void openSettingsUri(const wchar_t* uri) {
         return;
     }
     ShellExecuteW(nullptr, L"open", uri, nullptr, nullptr, SW_SHOWNORMAL);
+}
+
+long primeMicrophoneConsent() {
+    Microsoft::WRL::ComPtr<IMMDeviceEnumerator> enumerator;
+    HRESULT hr = CoCreateInstance(
+        __uuidof(MMDeviceEnumerator),
+        nullptr,
+        CLSCTX_ALL,
+        IID_PPV_ARGS(&enumerator)
+    );
+    if (FAILED(hr)) {
+        return static_cast<long>(hr);
+    }
+    IMMDevice* raw = nullptr;
+    hr = static_cast<HRESULT>(defaultAudioDevice(enumerator.Get(), 0, reinterpret_cast<void**>(&raw)));
+    Microsoft::WRL::ComPtr<IMMDevice> device;
+    if (raw) {
+        device.Attach(raw);
+    }
+    if (FAILED(hr) || !device) {
+        return FAILED(hr) ? static_cast<long>(hr) : static_cast<long>(E_FAIL);
+    }
+    Microsoft::WRL::ComPtr<IAudioClient> client;
+    hr = device->Activate(
+        __uuidof(IAudioClient),
+        CLSCTX_ALL,
+        nullptr,
+        reinterpret_cast<void**>(client.ReleaseAndGetAddressOf())
+    );
+    if (FAILED(hr)) {
+        return static_cast<long>(hr);
+    }
+    WAVEFORMATEX* mix = nullptr;
+    hr = client->GetMixFormat(&mix);
+    if (FAILED(hr) || !mix) {
+        return FAILED(hr) ? static_cast<long>(hr) : static_cast<long>(E_POINTER);
+    }
+    hr = client->Initialize(
+        AUDCLNT_SHAREMODE_SHARED,
+        AUDCLNT_STREAMFLAGS_NOPERSIST,
+        200000,
+        0,
+        mix,
+        nullptr
+    );
+    CoTaskMemFree(mix);
+    if (hr == AUDCLNT_E_ALREADY_INITIALIZED) {
+        return 0;
+    }
+    if (FAILED(hr)) {
+        return static_cast<long>(hr);
+    }
+    if (SUCCEEDED(client->Start())) {
+        Sleep(30);
+        client->Stop();
+    }
+    return 0;
 }
 
 void excludeWindowFromCapture(void* hwnd) {

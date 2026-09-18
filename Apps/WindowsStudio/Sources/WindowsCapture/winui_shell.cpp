@@ -336,6 +336,16 @@ void startCapture() {
     const int mic = gUi.mic ? 1 : 0;
     const int systemAudio = gUi.sys ? 1 : 0;
     const int camera = gUi.cam ? 1 : 0;
+    if (mic) {
+        const long primeHr = br::primeMicrophoneConsent();
+        if (primeHr == static_cast<long>(E_ACCESSDENIED)) {
+            br::setLastError("Microphone permission denied. Allow Microphone in Windows Settings > Privacy.");
+            br::openSettingsUri(L"ms-settings:privacy-microphone");
+            setRecordingButtons(false);
+            setStatus(br_capture_last_error());
+            return;
+        }
+    }
     if (gUi.prepare(gUi.outputRoot.c_str(), mic, systemAudio, camera, takeDir, static_cast<int>(sizeof(takeDir)), gUi.ctx) != 0) {
         if (!gUi.window || !IsWindow(gUi.window)) {
             return;
