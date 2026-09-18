@@ -326,6 +326,7 @@ Write-Host "linking with MSVC link.exe first; lld-link splits /LIBPATH:D:\\ on t
 $exit = Invoke-SwiftBuild @(
     "-Xswiftc", "-use-ld=link",
     "-Xswiftc", "-debug-info-format=codeview",
+    "-Xswiftc", "-gnone",
     "-Xlinker", "/MANIFEST:NO",
     "-Xlinker", "/MANIFESTUAC:NO"
 )
@@ -351,7 +352,10 @@ if (-not $peOk) {
     if ($stale) {
         Remove-Item $stale.FullName -Force -ErrorAction SilentlyContinue
     }
-    $exit = Invoke-SwiftBuild @()
+    $exit = Invoke-SwiftBuild @(
+        "-Xlinker", "/MANIFEST:NO",
+        "-Xlinker", "/MANIFESTUAC:NO"
+    )
     if ($exit -ne 0) { throw "swift build failed" }
     $exe = Get-StudioExe
     if (-not $exe) { throw "BlitzRecorderWindows.exe missing after swift build" }

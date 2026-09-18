@@ -152,7 +152,9 @@ require_literal_in_file "Apps/WindowsStudio/Package.swift" "/ENTRY:mainCRTStartu
 require_literal_in_file "Apps/WindowsStudio/Package.swift" "BlitzRecorder.res"
 require_literal_in_file "Apps/WindowsStudio/Package.swift" "nativeLibDirWin"
 require_literal_in_file "Apps/WindowsStudio/Package.swift" "nativeRes"
+require_literal_in_file "Apps/WindowsStudio/Package.swift" "nativeLibDirWin + \"\\\\BlitzRecorder.res\""
 require_literal_in_file "Apps/WindowsStudio/Package.swift" "func brWindowsPath"
+require_literal_in_file "Scripts/windows/build-studio.ps1" "-gnone"
 require_literal_in_file "Apps/WindowsStudio/Package.swift" "func brMapSlash"
 require_literal_in_file "Apps/WindowsStudio/Package.swift" "splits on the drive colon"
 require_literal_in_file "Apps/WindowsStudio/Package.swift" 'contains(where: { $0 == ":" })'

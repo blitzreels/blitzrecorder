@@ -49,9 +49,8 @@ let nativeLibDir = (!nativeLibDirEnv.isEmpty && !nativeLibDirEnv.contains(where:
     ? brMapSlash(nativeLibDirEnv, from: "\\", to: "/")
     : "build-native/lib"
 let nativeLibDirWin = brMapSlash(nativeLibDir, from: "/", to: "\\")
-// Positional input: absolute is OK. `/LIBPATH:D:\` and `/WHOLEARCHIVE:D:\` are not.
-let nativeRes = brWindowsPath(Context.packageDirectory)
-    + "\\" + nativeLibDirWin + "\\BlitzRecorder.res"
+// Relative only. lld-link splits on the drive colon in `D:\...BlitzRecorder.res`.
+let nativeRes = nativeLibDirWin + "\\BlitzRecorder.res"
 let nativeLinkExe: [LinkerSetting] = [
     .unsafeFlags([
         "-L", nativeLibDir,
