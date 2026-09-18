@@ -320,13 +320,7 @@ if [[ "$LOCAL_ONLY" != "1" ]]; then
       ASC_ISSUER_ID \
       ASC_PRIVATE_KEY \
       SPARKLE_PUBLIC_ED_KEY \
-      SPARKLE_PRIVATE_ED_KEY \
-      AZURE_CLIENT_ID \
-      AZURE_TENANT_ID \
-      AZURE_SUBSCRIPTION_ID \
-      AZURE_SIGNING_ENDPOINT \
-      AZURE_SIGNING_ACCOUNT \
-      AZURE_SIGNING_PROFILE
+      SPARKLE_PRIVATE_ED_KEY
     do
       if printf '%s\n' "$secrets" | grep -Fxq "$secret"; then
         pass "GitHub secret exists: $secret"
@@ -334,6 +328,32 @@ if [[ "$LOCAL_ONLY" != "1" ]]; then
         fail "missing GitHub secret: $secret"
       fi
     done
+    azure_ok=1
+    for secret in \
+      AZURE_CLIENT_ID \
+      AZURE_TENANT_ID \
+      AZURE_SUBSCRIPTION_ID \
+      AZURE_SIGNING_ENDPOINT \
+      AZURE_SIGNING_ACCOUNT \
+      AZURE_SIGNING_PROFILE
+    do
+      if ! printf '%s\n' "$secrets" | grep -Fxq "$secret"; then
+        azure_ok=0
+      fi
+    done
+    pfx_ok=1
+    for secret in WINDOWS_PFX_BASE64 WINDOWS_PFX_PASSWORD; do
+      if ! printf '%s\n' "$secrets" | grep -Fxq "$secret"; then
+        pfx_ok=0
+      fi
+    done
+    if [[ "$azure_ok" -eq 1 ]]; then
+      pass "Windows Authenticode: Azure Artifact Signing secrets present"
+    elif [[ "$pfx_ok" -eq 1 ]]; then
+      pass "Windows Authenticode: WINDOWS_PFX_BASE64 + WINDOWS_PFX_PASSWORD present"
+    else
+      fail "Windows Authenticode missing: set Azure Artifact Signing secrets or WINDOWS_PFX_BASE64 + WINDOWS_PFX_PASSWORD"
+    fi
     if python3 Scripts/sync-github-labels.py --repo "$REPO" >/dev/null; then
       pass "GitHub labels dry-run completed"
     else

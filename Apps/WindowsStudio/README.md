@@ -81,16 +81,12 @@ workflow_dispatch builds `BlitzRecorder-Windows-unsigned.exe` as a CI artifact o
 
 Unsigned local/CI artifacts trip SmartScreen (**More info** → **Run anyway**). After a `main` push, download Actions artifact **`windows-studio-installer-unsigned`** (`BlitzRecorder-Windows-ci-check.exe`, per-user Inno, same layout as the tagged installer) or **`windows-studio-portable`** (folder; run `BlitzRecorder.cmd`). Neither is a GitHub Release.
 
-Tagged builds sign with Azure Artifact Signing when these GitHub secrets exist:
+Tagged builds sign with **either**:
 
-- `AZURE_CLIENT_ID`
-- `AZURE_TENANT_ID`
-- `AZURE_SUBSCRIPTION_ID`
-- `AZURE_SIGNING_ENDPOINT` (for example `https://eus.codesigning.azure.net/`)
-- `AZURE_SIGNING_ACCOUNT`
-- `AZURE_SIGNING_PROFILE`
+1. Azure Artifact Signing (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT`, `AZURE_SIGNING_PROFILE`). The workflow identity needs the Artifact Signing Certificate Profile Signer role. ~$10/mo, paid Azure sub, identity verification.
+2. An OV Authenticode PFX (`WINDOWS_PFX_BASE64` + `WINDOWS_PFX_PASSWORD`). `signtool` + DigiCert timestamp. No Azure. USB EV tokens are not used.
 
-The workflow identity needs the Artifact Signing Certificate Profile Signer role. OV/EV Authenticode from a USB token is not used.
+A self-signed PFX is not enough — tag verify requires Authenticode `Valid`.
 
 ## Permissions and session
 

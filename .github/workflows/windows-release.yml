@@ -59,6 +59,7 @@ jobs:
         run: .\Scripts\windows\assert-studio-launches.ps1 -StageDir build\windows-stage
 
       - name: Require signing secrets on tags
+        id: signkind
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
@@ -68,8 +69,13 @@ jobs:
           AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
           AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
           AZURE_SIGNING_PROFILE: ${{ secrets.AZURE_SIGNING_PROFILE }}
+          WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
+          WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
         run: |
-          $required = @(
+          function Test-Secret([string]$name) {
+            -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))
+          }
+          $azureNames = @(
             "AZURE_CLIENT_ID",
             "AZURE_TENANT_ID",
             "AZURE_SUBSCRIPTION_ID",
@@ -77,15 +83,23 @@ jobs:
             "AZURE_SIGNING_ACCOUNT",
             "AZURE_SIGNING_PROFILE"
           )
-          foreach ($name in $required) {
-            $value = [Environment]::GetEnvironmentVariable($name)
-            if ([string]::IsNullOrWhiteSpace($value)) {
-              throw "Tag builds cannot ship unsigned. Missing $name."
-            }
+          $azure = $true
+          foreach ($name in $azureNames) {
+            if (-not (Test-Secret $name)) { $azure = $false }
+          }
+          $pfx = (Test-Secret "WINDOWS_PFX_BASE64") -and (Test-Secret "WINDOWS_PFX_PASSWORD")
+          if ($azure) {
+            "method=azure" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            Write-Host "tag signing=Azure Artifact Signing"
+          } elseif ($pfx) {
+            "method=pfx" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            Write-Host "tag signing=OV Authenticode PFX"
+          } else {
+            throw "Tag builds cannot ship unsigned. Set Azure Artifact Signing secrets or WINDOWS_PFX_BASE64 + WINDOWS_PFX_PASSWORD."
           }
 
       - name: Azure login
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') && steps.signkind.outputs.method == 'azure'
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -93,7 +107,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Sign staged binaries
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') && steps.signkind.outputs.method == 'azure'
         uses: azure/artifact-signing-action@v2
         with:
           endpoint: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
@@ -107,13 +121,21 @@ jobs:
           exclude-environment-credential: true
           exclude-azure-cli-credential: false
 
+      - name: Sign staged binaries with PFX
+        if: startsWith(github.ref, 'refs/tags/v') && steps.signkind.outputs.method == 'pfx'
+        shell: pwsh
+        env:
+          WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
+          WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
+        run: .\Scripts\windows\sign-pe.ps1 -Path build\windows-stage -Filter exe,dll
+
       - name: Verify exe is signed
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
           $sig = Get-AuthenticodeSignature build/windows-stage/BlitzRecorderWindows.exe
-          if ($sig.Status -eq "NotSigned") {
-            throw "BlitzRecorderWindows.exe is unsigned; refusing GitHub Release"
+          if ($sig.Status -ne "Valid") {
+            throw "BlitzRecorderWindows.exe Authenticode status=$($sig.Status) (NotSigned or untrusted); refusing GitHub Release"
           }
 
       - name: Package installer
@@ -129,7 +151,7 @@ jobs:
             -AppVersion $version
 
       - name: Sign installer
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') && steps.signkind.outputs.method == 'azure'
         uses: azure/artifact-signing-action@v2
         with:
           endpoint: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
@@ -143,6 +165,14 @@ jobs:
           exclude-environment-credential: true
           exclude-azure-cli-credential: false
 
+      - name: Sign installer with PFX
+        if: startsWith(github.ref, 'refs/tags/v') && steps.signkind.outputs.method == 'pfx'
+        shell: pwsh
+        env:
+          WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
+          WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
+        run: .\Scripts\windows\sign-pe.ps1 -Path dist -Filter exe
+
       - name: Verify installer is signed
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
@@ -150,8 +180,8 @@ jobs:
           $installer = Get-ChildItem dist -Filter BlitzRecorder-Windows.exe | Select-Object -First 1
           if (-not $installer) { throw "installer missing" }
           $sig = Get-AuthenticodeSignature $installer.FullName
-          if ($sig.Status -eq "NotSigned") {
-            throw "installer is unsigned; refusing GitHub Release"
+          if ($sig.Status -ne "Valid") {
+            throw "installer Authenticode status=$($sig.Status) (NotSigned or untrusted); refusing GitHub Release"
           }
 
       - name: Upload artifacts
