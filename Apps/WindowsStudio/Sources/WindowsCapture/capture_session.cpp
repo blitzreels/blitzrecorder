@@ -375,7 +375,7 @@ void CaptureSession::videoMain(std::wstring directory, int monitorIndex, void* h
     std::vector<std::uint8_t> fitted;
     std::int64_t origin = 0;
     const ULONGLONG firstFrameDeadline = GetTickCount64() + 60000;
-    const ULONGLONG silentGiveUp = GetTickCount64() + 3000;
+    ULONGLONG silentGiveUp = GetTickCount64() + 60000;
     bool gotFrame = false;
     videoLooping_ = true;
     while (running_.load()) {
@@ -390,6 +390,7 @@ void CaptureSession::videoMain(std::wstring directory, int monitorIndex, void* h
                 if (!window && SUCCEEDED(dxgi.open(monitorIndex))) {
                     wgc.close();
                     useWgc = false;
+                    silentGiveUp = GetTickCount64() + 3000;
                     continue;
                 }
                 if (window && wgcSilent) {
