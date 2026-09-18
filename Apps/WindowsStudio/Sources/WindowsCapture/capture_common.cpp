@@ -10,6 +10,24 @@
 #include <string>
 #include <vector>
 
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <objbase.h>
+#include <roapi.h>
+#include <shellapi.h>
+#include <mmdeviceapi.h>
+#include <mfapi.h>
+#include <mfidl.h>
+#include <mfreadwrite.h>
+#include <wrl/client.h>
+
+extern "C" HRESULT WINAPI SetCurrentProcessExplicitAppUserModelID(const wchar_t* appId);
+#endif
+
 namespace br {
 namespace {
 
@@ -59,20 +77,6 @@ const char* lastErrorCStr() {
 }
 
 #if defined(_WIN32)
-
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
-#include <objbase.h>
-#include <roapi.h>
-#include <shellapi.h>
-#include <mmdeviceapi.h>
-#include <mfapi.h>
-#include <mfidl.h>
-#include <mfreadwrite.h>
-#include <wrl/client.h>
-
-extern "C" HRESULT WINAPI SetCurrentProcessExplicitAppUserModelID(const wchar_t* appId);
 
 std::wstring utf8ToWide(const char* utf8) {
     if (!utf8 || !utf8[0]) {

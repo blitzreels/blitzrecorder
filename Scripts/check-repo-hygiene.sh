@@ -303,6 +303,25 @@ require_literal_in_file "Apps/WindowsStudio/Sources/WindowsCapture/wgc_capturer.
 require_literal_in_file "Apps/WindowsStudio/Sources/WindowsCapture/mf_sink.cpp" "MFCreateDXGIDeviceManager(&token, manager.ReleaseAndGetAddressOf())"
 require_literal_in_file ".gitattributes" "*.ico binary"
 
+# winbase.h Interlocked* + WRL become br::_InterlockedIncrement if included
+# inside namespace br (MSVC C2664 on the ARM fixture).
+while IFS= read -r file; do
+  [[ -f "$file" ]] || continue
+  if ! grep -Eq '#include <(windows\.h|wrl/)' "$file"; then
+    continue
+  fi
+  if ! grep -Fq 'namespace br {' "$file"; then
+    continue
+  fi
+  win_line="$(grep -nE '#include <(windows\.h|wrl/)' "$file" | head -1 | cut -d: -f1)"
+  ns_line="$(grep -nF 'namespace br {' "$file" | head -1 | cut -d: -f1)"
+  if [[ -z "$win_line" || -z "$ns_line" || "$win_line" -gt "$ns_line" ]]; then
+    fail "$file includes Windows/WRL headers inside namespace br"
+  else
+    pass "$file includes Windows/WRL headers before namespace br"
+  fi
+done < <(git ls-files 'Apps/WindowsStudio/**/*.cpp' 'Apps/WindowsStudio/**/*.h')
+
 if grep -Fq -- ".zip" .github/workflows/windows-release.yml; then
   fail "windows-release.yml must not attach a zip"
 else
