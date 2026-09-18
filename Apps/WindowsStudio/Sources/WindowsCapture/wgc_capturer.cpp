@@ -465,10 +465,38 @@ HRESULT WgcCapturer::acquireBGRA(UINT timeoutMs, std::vector<std::uint8_t>& bgra
 namespace br {
 
 long primeGraphicsCaptureConsent(int monitorIndex, void* hwnd) {
-    WgcCapturer capturer;
+    RoInitialize(RO_INIT_SINGLETHREADED);
+    Microsoft::WRL::ComPtr<IGraphicsCaptureItemInterop> interop;
+    HRESULT hr = activate(RuntimeClass_Windows_Graphics_Capture_GraphicsCaptureItem, interop);
+    if (FAILED(hr) || !interop) {
+        return 0;
+    }
+    Microsoft::WRL::ComPtr<IGraphicsCaptureItem> item;
     HWND window = static_cast<HWND>(hwnd);
-    const HRESULT hr = window ? capturer.openWindow(window) : capturer.open(monitorIndex);
-    capturer.close();
+    if (window) {
+        if (!IsWindow(window)) {
+            return static_cast<long>(E_INVALIDARG);
+        }
+        hr = interop->CreateForWindow(
+            window,
+            __uuidof(IGraphicsCaptureItem),
+            reinterpret_cast<void**>(item.ReleaseAndGetAddressOf())
+        );
+    } else {
+        const std::vector<AttachedOutput> rows = listAttachedOutputs();
+        if (rows.empty()) {
+            return 0;
+        }
+        int index = monitorIndex;
+        if (index < 0 || static_cast<size_t>(index) >= rows.size()) {
+            index = 0;
+        }
+        hr = interop->CreateForMonitor(
+            static_cast<HMONITOR>(rows[static_cast<size_t>(index)].monitor),
+            __uuidof(IGraphicsCaptureItem),
+            reinterpret_cast<void**>(item.ReleaseAndGetAddressOf())
+        );
+    }
     return static_cast<long>(hr);
 }
 

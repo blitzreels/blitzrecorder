@@ -22,6 +22,7 @@
 #include <windows.h>
 #include <windowsx.h>
 #include <commctrl.h>
+#include <roapi.h>
 
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "user32.lib")
@@ -563,6 +564,7 @@ int runStudioWindow(
         br::setLastError("CoInitializeEx STA failed", comHr);
         return 1;
     }
+    RoInitialize(RO_INIT_SINGLETHREADED);
     INITCOMMONCONTROLSEX icc{};
     icc.dwSize = sizeof(icc);
     icc.dwICC = ICC_STANDARD_CLASSES;
