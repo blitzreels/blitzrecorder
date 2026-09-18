@@ -128,9 +128,11 @@ int CaptureSession::start(
         }
         if (videoReady_ && !FAILED(videoHr_) && mic) {
             if (micDeadline == 0) {
-                micDeadline = GetTickCount64() + 8000;
+                // First-run Microphone consent sits on this thread's wait. 8s
+                // was killing Start while the user was still clicking Allow.
+                micDeadline = GetTickCount64() + 60000;
             }
-            if (!micReady_ && GetTickCount64() >= micDeadline) {
+            if (FAILED(micHr_) || (!micReady_ && GetTickCount64() >= micDeadline)) {
                 break;
             }
         }
