@@ -19,4 +19,8 @@ enum EditorVideoCuts {
     static func extendingRight(_ request: ExtendRequest) -> TimelineEdits? {
         EditorClipSpine.extendingRight(request)
     }
+
+    static func dragRight(_ request: ExtendRequest) -> EditorClipSpine.DragRightResult {
+        EditorClipSpine.dragRight(request)
+    }
 }

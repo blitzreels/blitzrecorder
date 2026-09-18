@@ -1,0 +1,2 @@
+# Inno Setup + rc.exe need a bit-exact ICO. Don't let CRLF filters smash it.
+*.ico binary

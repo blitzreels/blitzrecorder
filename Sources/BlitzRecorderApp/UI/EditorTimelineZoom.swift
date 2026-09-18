@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 enum EditorTimelineZoom {
@@ -40,6 +41,42 @@ enum EditorTimelineZoom {
         default:
             return nil
         }
+    }
+
+    static func fitDuration(anchor: Double, zoom: Double, current: Double) -> Double {
+        if zoom > 1, anchor.isFinite, anchor > 0 { return anchor }
+        return current.isFinite && current > 0 ? current : 0.5
+    }
+
+    static func anchoredFitDuration(currentAnchor: Double, oldDuration: Double, zoom: Double) -> Double {
+        if zoom > 1, !(currentAnchor.isFinite && currentAnchor > 0),
+            oldDuration.isFinite, oldDuration > 0
+        {
+            return oldDuration
+        }
+        return currentAnchor
+    }
+}
+
+enum EditorTimelineScroll {
+    static func clamped(offset: CGFloat, contentWidth: CGFloat, viewportWidth: CGFloat) -> CGFloat {
+        guard offset.isFinite, contentWidth.isFinite, viewportWidth.isFinite else { return 0 }
+        return min(max(0, offset), max(0, contentWidth - max(0, viewportWidth)))
+    }
+
+    static func centered(
+        on displayTime: Double,
+        pixelsPerSecond: CGFloat,
+        contentWidth: CGFloat,
+        viewportWidth: CGFloat
+    ) -> CGFloat {
+        let time = displayTime.isFinite ? displayTime : 0
+        let pps = pixelsPerSecond.isFinite ? pixelsPerSecond : 0
+        return clamped(
+            offset: CGFloat(time) * pps - viewportWidth / 2,
+            contentWidth: contentWidth,
+            viewportWidth: viewportWidth
+        )
     }
 }
 

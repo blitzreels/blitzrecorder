@@ -107,8 +107,11 @@ export function DownloadMeta({
   const version = release?.version ?? FALLBACK_VERSION;
 
   const notMac = os !== null && os !== "mac";
+  const windowsHref = release?.windowsUrl ?? LATEST_RELEASE_URL;
   const hint =
-    os === "ios"
+    os === "windows"
+      ? "Windows Studio is the signed BlitzRecorder-Windows.exe on GitHub Releases."
+      : os === "ios"
       ? "BlitzRecorder runs on your Mac. We can email you the download link."
       : notMac
         ? "BlitzRecorder is a macOS app. We can email you the download link."
@@ -128,7 +131,13 @@ export function DownloadMeta({
           {hint}
         </p>
       ) : null}
-      {notMac ? (
+      {os === "windows" ? (
+        <div className="mt-3 flex justify-center xl:justify-start">
+          <Button variant="outline" render={<a href={windowsHref} />}>
+            Download for Windows
+          </Button>
+        </div>
+      ) : notMac ? (
         <div className="mt-3 flex justify-center xl:justify-start">
           <NotifyForm
             source={`download_link_${os}`}

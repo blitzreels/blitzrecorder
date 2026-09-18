@@ -20,6 +20,8 @@ export type Release = {
   tag: string;
   /** Direct download URL of the macOS .dmg asset. */
   dmgUrl: string;
+  /** Direct download URL of the signed Windows installer, when present. */
+  windowsUrl?: string;
   /** GitHub release page. */
   htmlUrl: string;
   /** ISO date the release was published, or null. */
@@ -54,12 +56,16 @@ export async function getLatestRelease(): Promise<Release | null> {
 
     const data = (await res.json()) as GitHubRelease;
     const dmg = data.assets?.find((asset) => asset.name.toLowerCase().endsWith(".dmg"));
+    const windows = data.assets?.find(
+      (asset) => asset.name.toLowerCase() === "blitzrecorder-windows.exe",
+    );
     if (!dmg || !data.tag_name) return null;
 
     return {
       version: data.tag_name.replace(/^v/i, ""),
       tag: data.tag_name,
       dmgUrl: dmg.browser_download_url,
+      windowsUrl: windows?.browser_download_url,
       htmlUrl: data.html_url,
       publishedAt: data.published_at,
     };

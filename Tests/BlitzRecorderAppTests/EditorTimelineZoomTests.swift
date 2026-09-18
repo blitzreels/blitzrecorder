@@ -45,6 +45,21 @@ final class EditorTimelineZoomTests: XCTestCase {
         XCTAssertNil(EditorTimelineZoom.applying(.pause, value: 1, duration: 88))
     }
 
+    func testCuttingFootageKeepsScrollOffsetAndPixelsPerSecondWhileZoomedIn() {
+        XCTAssertEqual(
+            EditorTimelineZoom.anchoredFitDuration(currentAnchor: 0, oldDuration: 180, zoom: 2), 180)
+        XCTAssertEqual(
+            EditorTimelineZoom.fitDuration(anchor: 180, zoom: 2, current: 170), 180)
+        XCTAssertEqual(
+            EditorTimelineZoom.fitDuration(anchor: 180, zoom: 1, current: 170), 170)
+        XCTAssertEqual(
+            EditorTimelineScroll.clamped(offset: 1_400, contentWidth: 3_400, viewportWidth: 900), 1_400)
+        XCTAssertEqual(
+            EditorTimelineScroll.centered(
+                on: 130, pixelsPerSecond: 10, contentWidth: 1_800, viewportWidth: 900),
+            850)
+    }
+
     func testKeyboardDispatchMapsPlaybackAndZoom() {
         XCTAssertEqual(
             EditorKeyboardDispatch.action(.ignore, zoom: 1, duration: 88),

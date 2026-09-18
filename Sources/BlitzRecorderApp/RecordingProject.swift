@@ -584,6 +584,8 @@ struct RecordingProject: Codable, Equatable {
         case exports
         case timelineEdits
         case analysis
+        case cuts
+        case scene
     }
 
     init(
@@ -655,6 +657,8 @@ struct RecordingProject: Codable, Equatable {
         self.exports = try container.decodeIfPresent([ExportRecord].self, forKey: .exports) ?? []
         self.timelineEdits = try container.decodeIfPresent(TimelineEditsSnapshot.self, forKey: .timelineEdits) ?? .empty
         self.analysis = try container.decodeIfPresent(AnalysisSnapshot.self, forKey: .analysis) ?? .empty
+        _ = try container.decodeIfPresent([TimelineCut].self, forKey: .cuts)
+        _ = try container.decodeIfPresent(PortableSceneLayout.self, forKey: .scene)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -682,10 +686,106 @@ struct RecordingProject: Codable, Equatable {
         if !analysis.isEmpty {
             try container.encode(analysis, forKey: .analysis)
         }
+        try container.encode(timelineEdits.edits.cuts, forKey: .cuts)
+        try container.encode(portableSceneLayout, forKey: .scene)
+    }
+
+    var portableSceneLayout: PortableSceneLayout {
+        guard let snapshot = sceneEvents.last?.scene else {
+            return .screenOnly
+        }
+        let screen = snapshot.sceneLayout.screenFrame.rect
+        let camera = snapshot.sceneLayout.cameraFrame.rect
+        let cameraOn = snapshot.enabledSources.contains(CaptureSource.camera.rawValue)
+        return PortableSceneLayout(
+            canvasWidth: PortableSceneLayout.defaultCanvasWidth,
+            canvasHeight: PortableSceneLayout.defaultCanvasHeight,
+            screen: NormalizedRect(
+                x: screen.minX,
+                y: screen.minY,
+                width: screen.width,
+                height: screen.height
+            ),
+            camera: cameraOn
+                ? NormalizedRect(
+                    x: camera.minX,
+                    y: camera.minY,
+                    width: camera.width,
+                    height: camera.height
+                )
+                : nil
+        )
     }
 
     var edits: TimelineEdits {
         timelineEdits.edits
+    }
+
+    static func importedPortable(from data: Data, projectURL: URL) throws -> RecordingProject {
+        let portable = try JSONDecoder().decode(PortableProject.self, from: data)
+        let takeDir = projectURL.deletingLastPathComponent()
+        let manifest = try? TakeJSON.read(
+            TakeManifest.self,
+            from: takeDir.appendingPathComponent(TakeFolderLayout.takeManifestName)
+        )
+        let now = Date()
+        var settings = RecordingSettings()
+        settings.layout = .horizontal
+        settings.enabledSources = Set(portable.sources.compactMap { captureSource(forPortableRole: $0.role) })
+        if settings.enabledSources.intersection([.screen, .camera]).isEmpty {
+            settings.enabledSources.insert(.screen)
+        }
+        settings.sceneLayout.screenFrame = CGRect(
+            x: portable.scene.screen.x,
+            y: portable.scene.screen.y,
+            width: portable.scene.screen.width,
+            height: portable.scene.screen.height
+        )
+        if let camera = portable.scene.camera ?? (portable.hasCamera ? NormalizedRect.cameraPip : nil) {
+            settings.sceneLayout.cameraFrame = CGRect(
+                x: camera.x,
+                y: camera.y,
+                width: camera.width,
+                height: camera.height
+            )
+        }
+        var edits = TimelineEdits.empty
+        edits.cuts = portable.cuts
+        let sources = portable.sources.map { source -> SourceFile in
+            let absolute = takeDir.appendingPathComponent(source.path)
+            let exists = FileManager.default.fileExists(atPath: absolute.path)
+            return SourceFile(role: source.role, path: exists ? absolute.path : source.path, exists: exists)
+        }
+        let exported = takeDir.appendingPathComponent(TakeFolderLayout.exportName)
+        return RecordingProject(
+            version: portable.version,
+            id: manifest?.id ?? UUID(),
+            createdAt: manifest?.createdAt ?? now,
+            updatedAt: now,
+            title: takeDir.lastPathComponent,
+            projectPath: projectURL.path,
+            takeDirectoryPath: takeDir.path,
+            finalVideoPath: FileManager.default.fileExists(atPath: exported.path) ? exported.path : nil,
+            settings: SettingsSnapshot(settings),
+            sources: sources,
+            sceneEvents: [SceneEventSnapshot(RecordingSceneEvent(time: 0, scene: RecordingScene(settings: settings)))],
+            timelineEdits: TimelineEditsSnapshot(edits)
+        )
+    }
+
+    static func captureSource(forPortableRole role: String) -> CaptureSource? {
+        switch role {
+        case "screen":
+            return .screen
+        case "camera":
+            return .camera
+        case "microphone":
+            return .microphone
+        case "systemAudio":
+            return .systemAudio
+        default:
+            return CaptureSource(rawValue: role)
+        }
     }
 }
 

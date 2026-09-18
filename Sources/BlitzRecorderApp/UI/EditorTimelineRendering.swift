@@ -28,6 +28,21 @@ struct EditorTimelineViewport: Equatable {
     }
 }
 
+enum EditorTimelineRangeChrome {
+    struct Request {
+        let range: EditorTimeRange
+        let projection: EditorTimelineProjection
+        let pixelsPerSecond: CGFloat
+        let height: CGFloat
+    }
+
+    static func frame(_ request: Request) -> CGRect {
+        let start = CGFloat(request.projection.displayTime(request.range.start)) * request.pixelsPerSecond
+        let end = CGFloat(request.projection.displayTime(request.range.end)) * request.pixelsPerSecond
+        return CGRect(x: start, y: 0, width: max(1, end - start), height: max(0, request.height))
+    }
+}
+
 struct EditorTimelineFilmstripCells {
     struct Request {
         let width: CGFloat
@@ -156,15 +171,6 @@ struct EditorTimelineMediaCanvas: View, Equatable {
                 }
             }
             if !isVideo { context.fill(bars, with: .color(tint.opacity(0.9))) }
-            for (previous, fragment) in zip(projection.fragments, projection.fragments.dropFirst()) {
-                guard CGFloat(min(previous.duration, fragment.duration)) * pixelsPerSecond >= 24 else { continue }
-                let x = CGFloat(fragment.start) * pixelsPerSecond - viewport.lowerBound
-                guard x >= 0, x <= size.width else { continue }
-                context.fill(
-                    Path(CGRect(x: x, y: 0, width: 1 / displayScale, height: size.height)),
-                    with: .color(.black.opacity(0.6))
-                )
-            }
         }
         .frame(width: viewport.width)
         .offset(x: viewport.lowerBound)

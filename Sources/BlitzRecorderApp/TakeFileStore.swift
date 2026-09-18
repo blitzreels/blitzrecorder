@@ -245,7 +245,11 @@ struct TakeFileStore {
         let data = try Data(contentsOf: url)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(RecordingProject.self, from: data)
+        do {
+            return try decoder.decode(RecordingProject.self, from: data)
+        } catch {
+            return try RecordingProject.importedPortable(from: data, projectURL: url)
+        }
     }
 
     func renameProject(

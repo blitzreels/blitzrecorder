@@ -103,6 +103,25 @@ enum EditorClipSpine {
         return limit
     }
 
+    struct DragRightResult: Equatable {
+        let edits: TimelineEdits?
+        let selection: EditorTimeRange
+    }
+
+    static func dragRight(_ request: ExtendRequest) -> DragRightResult {
+        let clipEnd = TimelineTimeMap.time(request.clip.end).seconds
+        let newEnd = rightExpandLimit(request).map {
+            TimelineTimeMap.time(min($0, clipEnd + max(0, request.delta))).seconds
+        } ?? clipEnd
+        return DragRightResult(
+            edits: extendingRight(.init(
+                edits: request.edits, clip: request.clip, nextClipStart: request.nextClipStart,
+                duration: request.duration, delta: request.delta
+            )),
+            selection: .init(start: request.clip.start, end: max(clipEnd, newEnd))
+        )
+    }
+
     static func extendingRight(_ request: ExtendRequest) -> TimelineEdits? {
         guard let limit = rightExpandLimit(request), request.delta.isFinite else { return nil }
         let clipEnd = TimelineTimeMap.time(request.clip.end).seconds

@@ -30,7 +30,7 @@ struct EditorShortcutHelp: View {
             }
             Divider()
             VStack(spacing: 8) {
-                row(.init(title: "Zoom out / in", keys: "−  +"))
+                row(.init(title: "Zoom out / in", keys: "⌘ −  /  ⌘ +"))
                 row(.init(title: "Fit recording", keys: "F"))
                 row(.init(title: "Show shortcuts", keys: "?"))
             }

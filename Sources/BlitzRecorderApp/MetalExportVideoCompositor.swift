@@ -18,7 +18,7 @@ struct MetalExportInstructionRequest {
     let activeLayerOrder: [SceneLayerKind]
     let sourceDescriptors: [MetalExportSourceDescriptor]
     var edits: TimelineEdits = .empty
-    var timeMap: TimelineTimeMap = .identity(takeDuration: .zero)
+    var timeMap: TimelineTimeMap = .identity(takeDuration: MediaTime.zero)
     var cursorTrack: CursorPresentationTrack = .empty
 }
 

@@ -4,12 +4,13 @@
 
 <p align="center">
   Record your screen and camera, then edit the take.<br>
-  An open-source macOS recorder and editor, built by <a href="https://blitzreels.com">BlitzReels</a>.<br>
+  An open-source recorder: macOS studio plus a Windows capture app, built by <a href="https://blitzreels.com">BlitzReels</a>.<br>
   Free on macOS 15 or later. No account or app license key.
 </p>
 
 <p align="center">
   <a href="https://blitzrecorder.com/macos">Download for macOS</a>
+  · <a href="https://github.com/blitzreels/blitzrecorder/releases">Download for Windows</a>
   · <a href="https://blitzrecorder.com/ios">iPhone companion</a>
   · <a href="ARCHITECTURE.md">Architecture</a>
   · <a href="CONTRIBUTING.md">Contribute</a>
@@ -58,6 +59,14 @@ An actual capture of the rebuilt editor, with screen, camera, microphone, and sy
 
 The Mac app supports Apple silicon and Intel Macs running macOS 15 or later.
 The optional camera companion requires iOS 18 or later.
+
+### Try it on Windows
+
+Install the signed `BlitzRecorder-Windows.exe` from [GitHub Releases][releases] (tagged `v*` builds; no zip). Per-user, no admin (`%LOCALAPPDATA%\Programs\BlitzRecorder`).
+Allow Screen recording and Microphone when Windows asks, pick the display if you have more than one, press **Start**, then **Stop**. **Open take** plays screen + mic (+ camera/system audio) from a folder — including after restart.
+**Open last take** plays screen + mic in parallel.
+
+Windows Studio records and plays a take. It does not clone Continuity Camera, Liquid Glass, or the Mac editor.
 
 This README describes the current source tree.
 For the features included in a downloaded build, see its [release notes][releases].
@@ -119,7 +128,9 @@ Select the `BlitzRecorderCamera` scheme and your own signing team for a physical
 ```bash
 swift test
 swift test --package-path Packages/BlitzRecorderCore
+swift test --package-path Packages/BlitzRecorderDomain
 swift test --package-path Packages/BlitzRecorderTransport
+swift build --package-path Apps/WindowsStudio
 Scripts/check-repo-hygiene.sh
 ```
 
@@ -161,6 +172,8 @@ Connecting a client gives that client access to the project information and tran
 | [Sources/BlitzRecorderApp](Sources/BlitzRecorderApp) | Mac UI, capture, editing, exports, transcription, and MCP |
 | [Apps/iOSCamera](Apps/iOSCamera) | iPhone camera app, preview, recording, and transfer |
 | [Packages/BlitzRecorderCore](Packages/BlitzRecorderCore) | Shared camera messages, capabilities, and transfer models |
+| [Packages/BlitzRecorderDomain](Packages/BlitzRecorderDomain) | Portable take/timeline math (no Apple frameworks) |
+| [Apps/WindowsStudio](Apps/WindowsStudio) | Windows WGC/DXGI capture, D3D11 compose, WinUI shell |
 | [Packages/BlitzRecorderTransport](Packages/BlitzRecorderTransport) | Bonjour discovery and framed JSON connections |
 | [Tests](Tests) | Mac app tests |
 | [Web/blitzrecorder](Web/blitzrecorder) | Next.js website and download services |

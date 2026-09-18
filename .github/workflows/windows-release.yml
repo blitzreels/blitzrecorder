@@ -1,0 +1,180 @@
+name: Windows Studio
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  package:
+    name: Build Installer
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 60
+    env:
+      ACTIONS_RUNNER_DISABLE_NODE_MAGLEV: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assert Windows tree
+        shell: pwsh
+        run: .\Scripts\windows\assert-studio-tree.ps1
+
+      - name: MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        continue-on-error: true
+        with:
+          arch: amd64
+
+      - name: Setup Swift
+        uses: SwiftyLab/setup-swift@v1.14.0
+        with:
+          swift-version: "6.3.1"
+
+      - name: Assert Swift on PATH
+        shell: pwsh
+        run: |
+          if (-not (Get-Command swift -ErrorAction SilentlyContinue)) {
+            throw "swift missing after setup-swift"
+          }
+          Write-Host "swift=$((Get-Command swift).Source)"
+
+      - name: Build
+        shell: pwsh
+        run: .\Scripts\windows\build-studio.ps1 -Configuration release
+
+      - name: Stage exe and Swift runtime
+        shell: pwsh
+        run: |
+          & .\Scripts\windows\stage-studio.ps1 -PackageRoot Apps\WindowsStudio -StageDir build\windows-stage
+
+      - name: Assert staged exe launches
+        shell: pwsh
+        run: .\Scripts\windows\assert-studio-launches.ps1 -StageDir build\windows-stage
+
+      - name: Require signing secrets on tags
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ secrets.AZURE_SIGNING_PROFILE }}
+        run: |
+          $required = @(
+            "AZURE_CLIENT_ID",
+            "AZURE_TENANT_ID",
+            "AZURE_SUBSCRIPTION_ID",
+            "AZURE_SIGNING_ENDPOINT",
+            "AZURE_SIGNING_ACCOUNT",
+            "AZURE_SIGNING_PROFILE"
+          )
+          foreach ($name in $required) {
+            $value = [Environment]::GetEnvironmentVariable($name)
+            if ([string]::IsNullOrWhiteSpace($value)) {
+              throw "Tag builds cannot ship unsigned. Missing $name."
+            }
+          }
+
+      - name: Azure login
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign staged binaries
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.AZURE_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}/build/windows-stage
+          files-folder-filter: exe,dll
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          exclude-environment-credential: true
+          exclude-azure-cli-credential: false
+
+      - name: Verify exe is signed
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $sig = Get-AuthenticodeSignature build/windows-stage/BlitzRecorderWindows.exe
+          if ($sig.Status -eq "NotSigned") {
+            throw "BlitzRecorderWindows.exe is unsigned; refusing GitHub Release"
+          }
+
+      - name: Package installer
+        shell: pwsh
+        run: |
+          $version = "0.0.0"
+          if ($env:GITHUB_REF_NAME -match '^v(.+)$') { $version = $Matches[1] }
+          $outName = "BlitzRecorder-Windows-unsigned"
+          if ($env:GITHUB_REF -like 'refs/tags/v*') { $outName = "BlitzRecorder-Windows" }
+          .\Scripts\windows\compile-installer.ps1 `
+            -OutputName $outName `
+            -OutputDir dist `
+            -AppVersion $version
+
+      - name: Sign installer
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.AZURE_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}/dist
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          exclude-environment-credential: true
+          exclude-azure-cli-credential: false
+
+      - name: Verify installer is signed
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem dist -Filter BlitzRecorder-Windows.exe | Select-Object -First 1
+          if (-not $installer) { throw "installer missing" }
+          $sig = Get-AuthenticodeSignature $installer.FullName
+          if ($sig.Status -eq "NotSigned") {
+            throw "installer is unsigned; refusing GitHub Release"
+          }
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-studio
+          path: dist/*
+
+      - name: Attach GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $installer = Join-Path $pwd "dist\BlitzRecorder-Windows.exe"
+          if (-not (Test-Path $installer)) { throw "installer missing: $installer" }
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $installer --clobber
+          } else {
+            gh release create $tag $installer --title $tag --generate-notes
+            if ($LASTEXITCODE -ne 0) {
+              gh release upload $tag $installer --clobber
+            }
+          }

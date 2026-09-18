@@ -212,9 +212,53 @@ final class EditorVideoClipTimelineTests: XCTestCase {
         session.preview(nil, currentDisplayDuration: 12)
         XCTAssertEqual(session.lockedDisplayDuration, 10)
         XCTAssertEqual(session.edits(committed: committed).videoSplits, [4])
-        session.finish()
+        XCTAssertNil(session.finish())
         XCTAssertFalse(session.isActive)
         XCTAssertEqual(session.edits(committed: committed).videoSplits, [4])
+    }
+
+    func testDraggingRightRestoresTheCutAndPushesTheNextClip() throws {
+        var edits = TimelineEdits.empty
+        edits.videoSplits = [4, 7]
+        edits.cuts = [.init(start: 4, end: 7, kind: .manual, source: .user)]
+        let before = EditorClipSpine.layout(.init(edits: edits, duration: 10))
+        XCTAssertEqual(before.clips.map(\.range), [.init(start: 0, end: 4), .init(start: 7, end: 10)])
+        XCTAssertEqual(before.clips.map(\.start), [0, 4])
+        let dragged = EditorVideoCuts.dragRight(.init(
+            edits: edits, clip: .init(start: 0, end: 4), nextClipStart: 7, duration: 10, delta: 2
+        ))
+        XCTAssertEqual(dragged.selection, .init(start: 0, end: 6))
+        let after = EditorClipSpine.layout(.init(edits: try XCTUnwrap(dragged.edits), duration: 10))
+        XCTAssertEqual(after.clips.map(\.range), [.init(start: 0, end: 6), .init(start: 7, end: 10)])
+        XCTAssertEqual(after.clips.map(\.start), [0, 6])
+        XCTAssertEqual(
+            EditorVideoCuts.dragRight(.init(
+                edits: edits, clip: .init(start: 0, end: 4), nextClipStart: 7, duration: 10, delta: 0
+            )).edits,
+            nil
+        )
+        XCTAssertNil(EditorVideoCuts.dragRight(.init(
+            edits: edits, clip: .init(start: 7, end: 10), nextClipStart: nil, duration: 10, delta: 2
+        )).edits)
+    }
+
+    func testOutlineExpandSessionGrowsTheSelectedClipThenCommits() throws {
+        var edits = TimelineEdits.empty
+        edits.videoSplits = [4, 7]
+        edits.cuts = [.init(start: 4, end: 7, kind: .manual, source: .user)]
+        var session = EditorClipTrimSession()
+        session.beginExpand(.init(
+            edits: edits, clip: .init(start: 0, end: 4), nextClipStart: 7,
+            pixelsPerSecond: 100, duration: 10
+        ), currentDisplayDuration: 7)
+        XCTAssertEqual(session.applyExpand(translationWidth: 200), .init(start: 0, end: 6))
+        XCTAssertEqual(session.edits(committed: edits).videoSplits, [7])
+        let committed = try XCTUnwrap(session.finish())
+        XCTAssertEqual(committed.videoSplits, [7])
+        XCTAssertEqual(
+            EditorClipSpine.layout(.init(edits: committed, duration: 10)).clips.map(\.start),
+            [0, 6]
+        )
     }
 
     func testSeekTimesUseClipBoundariesAndSceneEventsNotRawVideoSplits() {
@@ -238,5 +282,35 @@ final class EditorVideoClipTimelineTests: XCTestCase {
             )),
             times
         )
+    }
+
+    func testClipPointerUsesResizeOnExpandableTrailingEdge() {
+        var edits = TimelineEdits.empty
+        edits.videoSplits = [4, 7]
+        edits.cuts = [.init(start: 4, end: 7, kind: .manual, source: .user)]
+        let layout = EditorClipSpine.layout(.init(edits: edits, duration: 10))
+        let request = {
+            EditorTimelineClipPointer.Request(
+                layout: layout, edits: edits, duration: 10, pixelsPerSecond: 100, x: $0)
+        }
+        XCTAssertEqual(EditorTimelineClipPointer.at(request(200)), .pointingHand)
+        XCTAssertEqual(EditorTimelineClipPointer.at(request(395)), .resize)
+        XCTAssertEqual(EditorTimelineClipPointer.at(request(500)), .pointingHand)
+        XCTAssertEqual(EditorTimelineClipPointer.at(request(1_000)), .arrow)
+        XCTAssertEqual(
+            EditorTimelineClipPointer.at(.init(
+                layout: layout, edits: edits, duration: 10, pixelsPerSecond: 100, x: 200, isExpanding: true
+            )),
+            .resize
+        )
+    }
+
+    func testClipSeamsStayHiddenUntilAClipIsHovered() {
+        let layout = EditorVideoClipLayout(.init(
+            projection: .init(.init(duration: 10, cuts: [])), splits: [4, 7]))
+        XCTAssertEqual(layout.hoveredSeamTimes(nil), [])
+        XCTAssertEqual(layout.hoveredSeamTimes(layout.clips[0].range), [4])
+        XCTAssertEqual(layout.hoveredSeamTimes(layout.clips[1].range), [4, 7])
+        XCTAssertEqual(layout.hoveredSeamTimes(layout.clips[2].range), [7])
     }
 }

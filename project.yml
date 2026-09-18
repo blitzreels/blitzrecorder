@@ -9,6 +9,8 @@ options:
 packages:
   BlitzRecorderCore:
     path: Packages/BlitzRecorderCore
+  BlitzRecorderDomain:
+    path: Packages/BlitzRecorderDomain
   BlitzRecorderTransport:
     path: Packages/BlitzRecorderTransport
   MCPSwiftSDK:
@@ -50,6 +52,8 @@ targets:
     dependencies:
       - package: BlitzRecorderCore
         product: BlitzRecorderCore
+      - package: BlitzRecorderDomain
+        product: BlitzRecorderDomain
       - package: BlitzRecorderTransport
         product: BlitzRecorderTransport
       - package: MCPSwiftSDK

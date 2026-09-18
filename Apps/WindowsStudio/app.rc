@@ -1,0 +1,6 @@
+#define IDI_APPICON 101
+IDI_APPICON ICON "BlitzRecorder.ico"
+/* 24 = RT_MANIFEST. Bake maxversiontested + asInvoker so Swift's default
+ * manifest cannot win and mt.exe does not have to rewrite .rsrc (that drop
+ * RT_GROUP_ICON). Pair with /MANIFEST:NO /MANIFESTUAC:NO. */
+1 24 "BlitzRecorderWindows.exe.manifest"

@@ -128,6 +128,14 @@ require_command codesign
 require_file ".github/workflows/macos-dmg.yml"
 require_file ".github/workflows/ios-testflight.yml"
 require_file ".github/workflows/app-store-release.yml"
+require_file ".github/workflows/windows-release.yml"
+require_file ".github/workflows/ci.yml"
+require_file "Scripts/windows/compile-installer.ps1"
+require_file "Scripts/windows/BlitzRecorder.iss"
+require_file "Scripts/windows/build-studio.ps1"
+require_file "Scripts/windows/assert-studio-tree.ps1"
+require_file "Scripts/windows/assert-studio-launches.ps1"
+require_file "Apps/WindowsStudio/BlitzRecorder.ico"
 require_file ".github/release.yml"
 require_file ".github/labels.json"
 require_file "Scripts/package-app.sh"
@@ -186,7 +194,7 @@ else
   fail "sync-github-labels.py does not compile"
 fi
 
-if ruby -e 'require "yaml"; ARGV.each { |path| YAML.load_file(path) }' .github/workflows/macos-dmg.yml .github/workflows/ios-testflight.yml .github/workflows/app-store-release.yml >/dev/null; then
+if ruby -e 'require "yaml"; ARGV.each { |path| YAML.load_file(path) }' .github/workflows/macos-dmg.yml .github/workflows/ios-testflight.yml .github/workflows/app-store-release.yml .github/workflows/windows-release.yml .github/workflows/ci.yml >/dev/null; then
   pass "release workflow YAML parses"
 else
   fail "release workflow YAML does not parse"
@@ -222,12 +230,39 @@ require_contains ".github/workflows/app-store-release.yml" "Scripts/archive-app-
 require_contains ".github/workflows/app-store-release.yml" "workflow_dispatch:"
 require_contains ".github/workflows/app-store-release.yml" "Validate App Store Submission Artifacts"
 require_contains ".github/workflows/app-store-release.yml" "build/ReleaseEvidence/app-store"
+require_contains ".github/workflows/ci.yml" "windows-2025"
+require_contains ".github/workflows/ci.yml" "windows-2025-vs2026"
+require_contains ".github/workflows/windows-release.yml" "windows-2025-vs2026"
+require_contains ".github/workflows/ci.yml" "assert-studio-launches.ps1"
+require_contains ".github/workflows/windows-release.yml" "assert-studio-launches.ps1"
+require_contains ".github/workflows/ci.yml" "windows-11-vs2026-arm"
+require_contains ".github/workflows/windows-release.yml" "tags:"
+require_contains ".github/workflows/windows-release.yml" "\"v*\""
+require_contains ".github/workflows/windows-release.yml" "AZURE_CLIENT_ID"
+require_contains ".github/workflows/windows-release.yml" "NotSigned"
+require_contains ".github/workflows/windows-release.yml" "BlitzRecorder-Windows.exe"
+require_contains ".github/workflows/windows-release.yml" "BlitzRecorder-Windows-unsigned"
+require_contains ".github/workflows/windows-release.yml" "gh release create"
+require_contains ".github/workflows/windows-release.yml" "gh release upload"
+require_contains ".github/workflows/ci.yml" "BlitzRecorder-Windows-ci-check"
+require_contains "Scripts/windows/compile-installer.ps1" "ISCC.exe"
+require_contains "Scripts/windows/compile-installer.ps1" "Find-Iscc"
+require_contains "Scripts/windows/compile-installer.ps1" "ConvertTo-InnoVersion"
+require_contains "Scripts/windows/BlitzRecorder.iss" "VersionInfoVersion"
+require_contains "Apps/WindowsStudio/Package.swift" "/MANIFEST:NO"
+require_contains "Apps/WindowsStudio/Sources/WindowsCapture/capture_common.cpp" "openMfSinkWriter"
+require_contains "Apps/WindowsStudio/Sources/WindowsCapture/capture_common.cpp" "cameraFrame"
+require_contains "Apps/WindowsStudio/Sources/WindowsCapture/capture_common.cpp" "resolveTakeDirectory"
+require_contains "Apps/WindowsStudio/CMakeLists.txt" "WindowsCaptureAdapter"
+require_contains "Apps/WindowsStudio/CMakeLists.txt" "BR_BUILD_CAPTURE_ADAPTER"
+reject_contains ".github/workflows/windows-release.yml" ".zip"
 private_branch_glob="$(printf '%s/%s' 'co''dex' '**')"
 reject_contains ".github/workflows/ci.yml" "$private_branch_glob"
 reject_contains ".github/workflows/macos-dmg.yml" "$private_branch_glob"
 reject_contains ".github/workflows/blitzrecorder-web.yml" "$private_branch_glob"
 reject_contains ".github/workflows/ios-testflight.yml" "$private_branch_glob"
 reject_contains ".github/workflows/app-store-release.yml" "$private_branch_glob"
+reject_contains ".github/workflows/windows-release.yml" "$private_branch_glob"
 require_contains ".github/release.yml" "ignore-for-release"
 require_contains ".github/labels.json" "\"ignore-for-release\""
 require_contains "Scripts/package-dmg.sh" "macOS-\${DMG_ARCH_LABEL}"
@@ -285,7 +320,13 @@ if [[ "$LOCAL_ONLY" != "1" ]]; then
       ASC_ISSUER_ID \
       ASC_PRIVATE_KEY \
       SPARKLE_PUBLIC_ED_KEY \
-      SPARKLE_PRIVATE_ED_KEY
+      SPARKLE_PRIVATE_ED_KEY \
+      AZURE_CLIENT_ID \
+      AZURE_TENANT_ID \
+      AZURE_SUBSCRIPTION_ID \
+      AZURE_SIGNING_ENDPOINT \
+      AZURE_SIGNING_ACCOUNT \
+      AZURE_SIGNING_PROFILE
     do
       if printf '%s\n' "$secrets" | grep -Fxq "$secret"; then
         pass "GitHub secret exists: $secret"

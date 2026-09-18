@@ -1,7 +1,7 @@
 # Architecture
 
-BlitzRecorder has a native macOS recorder and editor, an iOS camera companion, and a Next.js website.
-Recording, editing, and export run on the Mac; the companion records its camera file on the iPhone.
+BlitzRecorder has a native macOS recorder and editor, a Windows Studio adapter, an iOS camera companion, and a Next.js website.
+Mac and Windows write the same take folder through BlitzRecorderDomain. The companion records its camera file on the iPhone.
 
 Start with the [README](README.md) to run the app and [CONTRIBUTING.md](CONTRIBUTING.md) for validation commands.
 
@@ -21,6 +21,9 @@ flowchart TD
     Editor --> Export[Merger and export pipeline]
     Export --> Video[Local video file]
     Files --> Transcript[Local transcription]
+    Win[Windows Studio] --> Domain[BlitzRecorderDomain]
+    Win --> WinCap[WGC DXGI WASAPI MF]
+    WinCap --> Files
     MCP[Loopback MCP and WebMCP] --> Service[MCPProjectService]
     Service --> Files
     Service --> Export
@@ -38,13 +41,18 @@ The website distributes downloads and handles web services independently of loca
   transfer.
 - [BlitzRecorderCore](Packages/BlitzRecorderCore/Sources/BlitzRecorderCore) defines the shared camera protocol:
   pairing models, commands, events, capabilities, settings resolution, and transfer manifests.
+- [BlitzRecorderDomain](Packages/BlitzRecorderDomain/Sources/BlitzRecorderDomain) is the platform-agnostic take,
+  project, timeline time map, and scene layout. It must not import Apple media or UI frameworks.
+- [Apps/WindowsStudio](Apps/WindowsStudio) is the Windows adapter: WGC screen capture (DXGI Desktop Duplication
+  fallback), WASAPI loopback/mic, MF camera, D3D11 compose, NVENC/AMF/QSV/Microsoft H.264 export, parallel
+  take playback, WinUI XAML Islands shell with a Win32 fallback. It depends on Domain only.
 - [BlitzRecorderTransport](Packages/BlitzRecorderTransport/Sources/BlitzRecorderTransport) handles Bonjour services,
   connections, and JSON framing.
 - [Web/blitzrecorder](Web/blitzrecorder) contains the Next.js site and server routes.
   Its [README](Web/blitzrecorder/README.md) describes the web directory structure.
 
-Most recording and editor domain types live in the Mac target.
-The shared packages are focused on the Mac/iPhone protocol; they do not contain the editor or export engine.
+Most recording and editor domain types still live in the Mac target.
+Timeline cuts, take layout, and the portable project JSON are in Domain so Windows can write the same take folder.
 
 ## Recording lifecycle
 

@@ -376,18 +376,17 @@ private struct SilenceSegmentStripCanvas: View, Equatable {
         Canvas { context, size in
             for run in runs {
                 let color = run.classification == .silence ? BlitzUI.recordRed : BlitzUI.mint
-                let gap: CGFloat = run.width > 4 ? 2 : 0
-                let rect = CGRect(
-                    x: run.x + gap / 2, y: 2, width: max(0.5, run.width - gap), height: size.height - 4)
+                let rect = CGRect(x: run.x, y: 2, width: max(0.5, run.width), height: size.height - 4)
                 let path = Path(roundedRect: rect, cornerRadius: run.width > 4 ? 4 : 0)
                 context.fill(
                     path,
                     with: .color(color.opacity(run.isSelected ? 0.3 : run.isHovered ? 0.24 : 0.12)))
-                context.stroke(
-                    path,
-                    with: .color(
-                        run.isSelected ? Color.white : run.isHovered ? color : color.opacity(0.35)),
-                    lineWidth: run.isSelected || run.isHovered ? 2 : 1)
+                if run.isSelected || run.isHovered {
+                    context.stroke(
+                        path,
+                        with: .color(run.isSelected ? Color.white : color),
+                        lineWidth: 2)
+                }
                 if run.width >= 24 {
                     var clipped = context
                     clipped.clip(to: path)

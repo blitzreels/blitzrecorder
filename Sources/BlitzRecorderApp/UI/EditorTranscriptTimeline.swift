@@ -111,35 +111,28 @@ struct EditorTranscriptStrip: View {
     let configuration: Configuration
 
     var body: some View {
-        let runs = configuration.layout.runs(.init(
+        let runs = configuration.layout.coalescedRuns(.init(
             viewport: configuration.viewport, pixelsPerSecond: configuration.pixelsPerSecond))
         let selectedRanges = SilenceSegmentSelection.coalesced(configuration.selections)
         Canvas { context, size in
             for run in runs {
-                var lower = 0
-                var upper = selectedRanges.count
-                while lower < upper {
-                    let middle = (lower + upper) / 2
-                    if selectedRanges[middle].start <= run.item.source.range.start { lower = middle + 1 }
-                    else { upper = middle }
-                }
-                let selected = lower > 0 && selectedRanges[lower - 1].end >= run.item.source.range.end
-                let tint = run.item.source.kind == .nonDialogue ? BlitzUI.secondaryText : BlitzUI.mint
-                let rect = CGRect(x: run.x, y: 6, width: max(1, run.width - 1), height: size.height - 12)
-                let path = Path(roundedRect: rect, cornerRadius: run.width >= 4 ? 3 : 0)
-                context.fill(path, with: .color(tint.opacity(selected ? 0.25 : 0.1)))
+                let selected = isSelected(run, in: selectedRanges)
+                let tint = run.kind == .nonDialogue ? BlitzUI.secondaryText : BlitzUI.mint
+                let inset: CGFloat = run.width >= 8 ? 0.5 : 0
+                let rect = CGRect(
+                    x: run.x + inset, y: 8, width: max(1, run.width - inset * 2), height: size.height - 16)
+                let path = Path(roundedRect: rect, cornerRadius: run.width >= 8 ? 3 : 0)
+                context.fill(path, with: .color(tint.opacity(selected ? 0.22 : 0.09)))
                 if selected {
-                    context.stroke(path, with: .color(.white.opacity(0.8)), lineWidth: 1)
+                    context.stroke(path, with: .color(.white.opacity(0.55)), lineWidth: 1)
                 }
-                if run.width >= 28 {
-                    let label = context.resolve(Text(run.item.source.text).font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(selected ? .white : tint))
-                    if label.measure(in: CGSize(width: .infinity, height: rect.height)).width <= rect.width - 8 {
-                        var clipped = context
-                        clipped.clip(to: path)
-                        clipped.draw(label, at: CGPoint(x: rect.minX + 4, y: rect.midY), anchor: .leading)
-                        continue
-                    }
+                guard run.width >= 28 else { continue }
+                let label = context.resolve(Text(run.text).font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(selected ? .white : tint))
+                if label.measure(in: CGSize(width: .infinity, height: rect.height)).width <= rect.width - 8 {
+                    var clipped = context
+                    clipped.clip(to: path)
+                    clipped.draw(label, at: CGPoint(x: rect.minX + 6, y: rect.midY), anchor: .leading)
                 }
             }
         }
@@ -155,33 +148,56 @@ struct EditorTranscriptStrip: View {
             }
         })
         .overlay(alignment: .topLeading) {
-            ForEach(runs.filter { $0.width >= 28 }) { run in
-                accessibleWord(run)
+            ZStack(alignment: .topLeading) {
+                ForEach(runs.filter { $0.width >= 28 }) { run in
+                    accessibleWord(run)
+                }
             }
+            .frame(width: configuration.width, height: configuration.height, alignment: .leading)
+            .allowsHitTesting(false)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Transcript")
         .accessibilityValue("\(configuration.selections.count) items selected")
-        .help("Click to select. Shift-click selects every item between two clicks. ⌘-click toggles an item. Zoom in to read.")
+        .help("Click to select. Shift-click selects every item between two clicks. ⌘-click toggles an item. Zoom in to read words.")
     }
 
-    private func accessibleWord(_ run: EditorTranscriptLayout.Run) -> some View {
-                Button {
-                    configuration.onSelect(.init(range: run.item.source.range, modifiers: NSEvent.modifierFlags))
-                } label: {
-                    Color.clear
-                        .frame(width: run.width, height: configuration.height)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(BlitzPressButtonStyle())
-                .offset(x: configuration.viewport.lowerBound + run.x)
-                .accessibilityLabel(run.item.source.text)
-                .accessibilityValue("\(SilenceTime.label(run.item.start)) to \(SilenceTime.label(run.item.end))")
-                .accessibilityAction(named: "Extend selection") {
-                    configuration.onSelect(.init(range: run.item.source.range, modifiers: .shift))
-                }
-                .accessibilityAction(named: "Toggle selection") {
-                    configuration.onSelect(.init(range: run.item.source.range, modifiers: .command))
-                }
+    private func isSelected(_ run: EditorTranscriptLayout.DisplayRun, in selectedRanges: [EditorTimeRange]) -> Bool {
+        let start = run.items[0].source.range.start
+        let end = run.items[run.items.count - 1].source.range.end
+        return selectedRanges.contains { $0.start < end && $0.end > start }
+    }
+
+    private func accessibleWord(_ run: EditorTranscriptLayout.DisplayRun) -> some View {
+        Button {
+            configuration.onSelect(.init(
+                range: .init(start: run.items[0].source.range.start,
+                    end: run.items[run.items.count - 1].source.range.end),
+                modifiers: NSEvent.modifierFlags
+            ))
+        } label: {
+            Color.clear
+        }
+        .frame(width: run.width, height: configuration.height)
+        .contentShape(.rect)
+        .buttonStyle(BlitzPressButtonStyle())
+        .offset(x: configuration.viewport.lowerBound + run.x)
+        .fixedSize()
+        .accessibilityLabel(run.text)
+        .accessibilityValue("\(SilenceTime.label(run.items[0].start)) to \(SilenceTime.label(run.items[run.items.count - 1].end))")
+        .accessibilityAction(named: "Extend selection") {
+            configuration.onSelect(.init(
+                range: .init(start: run.items[0].source.range.start,
+                    end: run.items[run.items.count - 1].source.range.end),
+                modifiers: .shift
+            ))
+        }
+        .accessibilityAction(named: "Toggle selection") {
+            configuration.onSelect(.init(
+                range: .init(start: run.items[0].source.range.start,
+                    end: run.items[run.items.count - 1].source.range.end),
+                modifiers: .command
+            ))
+        }
     }
 }

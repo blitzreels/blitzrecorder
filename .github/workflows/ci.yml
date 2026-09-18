@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 env:
   PREFERRED_XCODE_VERSIONS: "26.5 26.0"
@@ -37,7 +38,9 @@ jobs:
           swift test
           DIRECT_DISTRIBUTION=1 swift test --filter 'AppUpdate.*Tests'
           swift test --package-path Packages/BlitzRecorderCore
+          swift test --package-path Packages/BlitzRecorderDomain
           swift test --package-path Packages/BlitzRecorderTransport
+          swift build --package-path Apps/WindowsStudio
 
       - name: App Store Connect Local Checks
         run: |
@@ -69,3 +72,121 @@ jobs:
             -derivedDataPath build/XcodeDerivedData-CI-iOS \
             CODE_SIGNING_ALLOWED=NO \
             build
+
+  windows-x64:
+    name: Windows x64 Compile
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 60
+    env:
+      ACTIONS_RUNNER_DISABLE_NODE_MAGLEV: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assert Windows tree
+        shell: pwsh
+        run: .\Scripts\windows\assert-studio-tree.ps1
+
+      - name: MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        continue-on-error: true
+        with:
+          arch: amd64
+
+      - name: Setup Swift
+        uses: SwiftyLab/setup-swift@v1.14.0
+        with:
+          swift-version: "6.3.1"
+
+      - name: Assert Swift on PATH
+        shell: pwsh
+        run: |
+          if (-not (Get-Command swift -ErrorAction SilentlyContinue)) {
+            throw "swift missing after setup-swift"
+          }
+          Write-Host "swift=$((Get-Command swift).Source)"
+          if (Get-Command cl -ErrorAction SilentlyContinue) {
+            Write-Host "cl=$((Get-Command cl).Source)"
+          } else {
+            Write-Host "cl missing here; build-studio.ps1 merges vcvars without wiping Swift PATH"
+          }
+
+      - name: Domain Tests
+        run: swift test --package-path Packages/BlitzRecorderDomain
+
+      - name: Build Windows Studio
+        shell: pwsh
+        run: .\Scripts\windows\build-studio.ps1 -Configuration release
+
+      - name: Stage exe and Swift runtime
+        shell: pwsh
+        run: |
+          .\Scripts\windows\stage-studio.ps1 `
+            -PackageRoot Apps\WindowsStudio `
+            -StageDir build\windows-stage `
+            -ZipPath build\windows-portable\BlitzRecorder-Windows-ci.zip
+
+      - name: Assert staged exe launches
+        shell: pwsh
+        run: .\Scripts\windows\assert-studio-launches.ps1 -StageDir build\windows-stage
+
+      - name: Upload portable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-studio-portable
+          path: build/windows-stage
+          if-no-files-found: error
+
+      - name: Upload staged studio
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-studio-x64
+          path: build/windows-stage/**
+          if-no-files-found: error
+
+      - name: Compile installer script
+        shell: pwsh
+        run: |
+          .\Scripts\windows\compile-installer.ps1 `
+            -OutputName BlitzRecorder-Windows-ci-check `
+            -OutputDir build\windows-iss-check `
+            -AppVersion 0.0.0-ci
+
+  windows-fixture:
+    name: Windows H.264 Fixture
+    runs-on: windows-11-vs2026-arm
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assert Windows tree
+        shell: pwsh
+        run: .\Scripts\windows\assert-studio-tree.ps1 -NativeOnly
+
+      - name: MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        continue-on-error: true
+        with:
+          arch: arm64
+
+      - name: Assert inbox H.264
+        shell: pwsh
+        run: .\Scripts\windows\assert-media-foundation.ps1
+
+      - name: Build native capture and fixture
+        shell: pwsh
+        run: .\Scripts\windows\build-studio.ps1 -Configuration release -NativeOnly
+
+      - name: Export And Play Fixture
+        shell: pwsh
+        run: .\Scripts\windows\export-fixture.ps1 -PackageRoot Apps\WindowsStudio
+
+      - name: Upload fixture
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-h264-fixture
+          path: build/windows-fixture/**
+          if-no-files-found: error

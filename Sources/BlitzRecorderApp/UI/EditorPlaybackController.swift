@@ -190,7 +190,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
     }
     private(set) var cursorTrack = CursorPresentationTrack.empty
     var outputDuration: Double { playback?.timeMap.outputDuration.seconds ?? 0 }
-    private var timeMap: TimelineTimeMap { playback?.timeMap ?? .identity(takeDuration: .zero) }
+    private var timeMap: TimelineTimeMap { playback?.timeMap ?? .identity(takeDuration: MediaTime.zero) }
 
     @ObservationIgnored private var playback: EditorPlaybackComposition? {
         didSet { invalidateRenderSegments() }

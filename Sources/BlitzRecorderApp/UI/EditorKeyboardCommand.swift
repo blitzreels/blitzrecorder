@@ -32,13 +32,17 @@ enum EditorKeyboardCommand: Equatable {
         let flags = request.modifiers.intersection([.command, .option, .control, .shift])
         let key = request.characters.lowercased()
         if flags.contains(.command) {
-            return flags == .command && key == "b" ? .split : nil
+            guard flags.isSubset(of: [.command, .shift]) else { return nil }
+            if key == "b", !flags.contains(.shift) { return .split }
+            if isZoomIn(request, key: key) { return .zoomIn }
+            if isZoomOut(request, key: key) { return .zoomOut }
+            return nil
         }
         guard flags.intersection([.option, .control]).isEmpty else { return nil }
         let shifted = flags.contains(.shift)
         if key == "?" || (key == "/" && shifted) { return .showHelp }
-        if key == "+" || key == "=" { return .zoomIn }
-        if key == "-" { return .zoomOut }
+        if isZoomIn(request, key: key) { return .zoomIn }
+        if isZoomOut(request, key: key) { return .zoomOut }
         switch request.keyCode {
         case 123: return shifted ? .seek(-1) : .step(-1)
         case 124: return shifted ? .seek(1) : .step(1)
@@ -66,6 +70,14 @@ enum EditorKeyboardCommand: Equatable {
         case "f": return .fit
         default: return nil
         }
+    }
+
+    private static func isZoomIn(_ request: Request, key: String) -> Bool {
+        key == "+" || key == "=" || request.keyCode == 24 || request.keyCode == 69
+    }
+
+    private static func isZoomOut(_ request: Request, key: String) -> Bool {
+        key == "-" || request.keyCode == 27 || request.keyCode == 78
     }
 
     @MainActor

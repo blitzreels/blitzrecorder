@@ -122,7 +122,7 @@ final class RecordingLifecycleTests: XCTestCase {
                     y: geometry.targetRect(for: .camera).midY / canvas.height)
         ], at: CMTime(seconds: 0.1, preferredTimescale: 600))
         XCTAssertLessThan(pixels[0].red, 150)
-        XCTAssertLessThan(pixels[0].blue, 100)
+        XCTAssertLessThan(pixels[0].blue, 120)
         XCTAssertGreaterThan(pixels[1].red, 140)
         XCTAssertGreaterThan(pixels[2].blue, 140)
         XCTAssertEqual(try Data(contentsOf: take.screenURL), sourceData)

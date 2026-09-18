@@ -559,9 +559,9 @@ enum Merger {
         }
         for insertion in insertions {
             try compositionAudioTrack.insertTimeRange(
-                CMTimeRange(start: insertion.sourceStart, duration: insertion.duration),
+                CMTimeRange(start: insertion.sourceStart.cmTime, duration: insertion.duration.cmTime),
                 of: audioTrack,
-                at: insertion.compositionStart
+                at: insertion.compositionStart.cmTime
             )
         }
 
@@ -846,7 +846,7 @@ extension Merger {
         )
         let takeDuration = exportPlan?.takeDuration ?? audioTakeDuration
         let timeMap = TimelineTimeMap(takeDuration: takeDuration, cuts: cuts)
-        let playbackDuration = timeMap.outputDuration
+        let playbackDuration = timeMap.outputDuration.cmTime
         guard CMTimeCompare(playbackDuration, .zero) > 0 else { throw RecorderError.exportUnavailable }
 
         let composition = AVMutableComposition()
@@ -874,16 +874,16 @@ extension Merger {
                 throw RecorderError.exportUnavailable
             }
             for insertion in insertions {
-                let range = CMTimeRange(start: insertion.sourceStart, duration: insertion.duration)
-                try compositionTrack.insertTimeRange(range, of: source.track, at: insertion.compositionStart)
-                try videoTrack.insertTimeRange(range, of: source.track, at: insertion.compositionStart)
+                let range = CMTimeRange(start: insertion.sourceStart.cmTime, duration: insertion.duration.cmTime)
+                try compositionTrack.insertTimeRange(range, of: source.track, at: insertion.compositionStart.cmTime)
+                try videoTrack.insertTimeRange(range, of: source.track, at: insertion.compositionStart.cmTime)
             }
             videoTrack.preferredTransform = source.preferredTransform
             videoAssets[source.kind] = videoAsset
             compositedSources.append(CompositedVideoSource(
                 source: source,
                 compositionTrack: compositionTrack,
-                timeRange: CMTimeRange(start: first.compositionStart, end: CMTimeAdd(last.compositionStart, last.duration))
+                timeRange: CMTimeRange(start: first.compositionStart.cmTime, end: CMTimeAdd(last.compositionStart.cmTime, last.duration.cmTime))
             ))
         }
 
@@ -1054,8 +1054,8 @@ extension Merger {
         do {
             for insertion in insertions {
                 try compositionAudioTrack.insertTimeRange(
-                    CMTimeRange(start: insertion.sourceStart, duration: insertion.duration),
-                    of: request.audioSource.track, at: insertion.compositionStart
+                    CMTimeRange(start: insertion.sourceStart.cmTime, duration: insertion.duration.cmTime),
+                    of: request.audioSource.track, at: insertion.compositionStart.cmTime
                 )
             }
         } catch {

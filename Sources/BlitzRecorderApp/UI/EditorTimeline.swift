@@ -97,11 +97,13 @@ struct EditorTimelineView: View {
     @State private var silenceSegments: [SilenceTimelineSegment] = []
     @State private var selectableSilenceSegments: [SilenceTimelineSegment] = []
     @State private var hoveredSilenceRange: EditorTimeRange?
+    @State private var hoveredClipRange: EditorTimeRange?
     @State private var selectionFocusTime: Double?
     @State private var stripDragSelection: SilenceSegmentSelection?
     @State private var isDraggingStrip = false
     @State private var addsDraggedSegments = false
     @State private var clipTrim = EditorClipTrimSession()
+    @State private var zoomFitDuration: Double = 0
 
     private let gutterWidth: CGFloat = 210
     private let rulerHeight: CGFloat = 30
@@ -164,7 +166,10 @@ struct EditorTimelineView: View {
         .onChange(of: transcript, initial: true) { updateTranscriptItems() }
         .onChange(of: silence.windows) { updateTranscriptItems() }
         .onChange(of: silence.threshold) { updateTranscriptItems() }
-        .onChange(of: duration) { updateTranscriptItems() }
+        .onChange(of: duration) {
+            zoomFitDuration = 0
+            updateTranscriptItems()
+        }
         .onChange(of: EditorTimelineProjection.Request(duration: duration, cuts: displayedEdits.cuts), initial: true) {
             projection = EditorTimelineProjection(.init(duration: duration, cuts: displayedEdits.cuts))
         }
@@ -281,7 +286,7 @@ struct EditorTimelineView: View {
                 .frame(width: 150)
                 .accessibilityLabel("Timeline zoom")
                 .accessibilityValue(String(format: "%.2f×", zoomLevel))
-                .help("Timeline zoom (− / +). Fit with F.")
+                .help("Timeline zoom (⌘− / ⌘+). Fit with F.")
             TimelineActionButton(
                 title: "Fit", systemName: "arrow.left.and.right", isDisabled: zoomLevel == 1
             ) { zoomLevel = 1 }
@@ -534,7 +539,9 @@ struct EditorTimelineView: View {
 
     private func timelineBody(viewportWidth: CGFloat) -> some View {
         let trackViewport = max(trackScrollWidth > 0 ? trackScrollWidth - 16 : viewportWidth - gutterWidth - 24, 40)
-        let layoutDuration = clipTrim.lockedDisplayDuration ?? projection.duration
+        let layoutDuration = clipTrim.lockedDisplayDuration
+            ?? EditorTimelineZoom.fitDuration(
+                anchor: zoomFitDuration, zoom: zoomLevel, current: projection.duration)
         let pxPerSecond = trackViewport / CGFloat(max(layoutDuration, 0.5)) * CGFloat(EditorTimelineZoom.clamp(.init(value: zoomLevel, duration: layoutDuration)))
         let contentWidth = max(CGFloat(projection.duration) * pxPerSecond, trackViewport)
         let viewport = EditorTimelineViewport.resolve(.init(
@@ -571,7 +578,9 @@ struct EditorTimelineView: View {
                                         width: contentWidth, height: clipRowHeight,
                                         edits: project?.edits ?? .empty, duration: duration,
                                         selectedRanges: selection?.rangeSelection?.ranges ?? [],
+                                        hoveredRange: hoveredClipRange,
                                         onSelect: clickVideoClip,
+                                        onHover: { hoveredClipRange = $0 },
                                         onPreviewExtend: { edits in
                                             var session = clipTrim
                                             session.preview(edits, currentDisplayDuration: projection.duration)
@@ -579,7 +588,7 @@ struct EditorTimelineView: View {
                                         },
                                         onEndExtend: { edits in
                                             if let edits { onExtendClip(edits) }
-                                            clipTrim = EditorClipTrimSession()
+                                            _ = clipTrim.finish()
                                         }))
                                         .disabled(!isInteractive)
                                         .contextMenu { timelineContextMenu }
@@ -654,7 +663,7 @@ struct EditorTimelineView: View {
                                 linkedSegmentOverlay(pxPerSecond)
                                 EditorVideoClipSeams(configuration: .init(
                                     layout: clipLayout, viewport: viewport, pixelsPerSecond: pxPerSecond,
-                                    height: contentHeight))
+                                    height: contentHeight, hoveredRange: hoveredClipRange))
                                 if let range = hoveredSilenceRange, !selectedSilenceRanges.contains(range) {
                                     hoverOverlay(.init(range: range, pxPerSecond: pxPerSecond))
                                 }
@@ -678,11 +687,37 @@ struct EditorTimelineView: View {
                         .padding(.horizontal, 8)
                     }
                     .scrollPosition($scrollPosition)
-                    .onChange(of: [zoomLevel, projection.duration, selectionFocusTime ?? -1]) {
-                        let focusTime = selectionFocusTime ?? playback.currentTime
-                        let playheadX = CGFloat(projection.displayTime(focusTime)) * pxPerSecond
-                        let offset = min(max(0, contentWidth - trackViewport), max(0, playheadX - trackViewport / 2))
-                        scrollPosition.scrollTo(x: offset)
+                    .onChange(of: zoomLevel) { _, _ in
+                        zoomFitDuration = projection.duration
+                        scrollPosition.scrollTo(x: EditorTimelineScroll.centered(
+                            on: projection.displayTime(selectionFocusTime ?? playback.currentTime),
+                            pixelsPerSecond: pxPerSecond,
+                            contentWidth: contentWidth,
+                            viewportWidth: trackViewport
+                        ))
+                    }
+                    .onChange(of: selectionFocusTime) { _, _ in
+                        guard selectionFocusTime != nil else { return }
+                        scrollPosition.scrollTo(x: EditorTimelineScroll.centered(
+                            on: projection.displayTime(selectionFocusTime ?? playback.currentTime),
+                            pixelsPerSecond: pxPerSecond,
+                            contentWidth: contentWidth,
+                            viewportWidth: trackViewport
+                        ))
+                    }
+                    .onChange(of: projection.duration) { old, new in
+                        zoomFitDuration = EditorTimelineZoom.anchoredFitDuration(
+                            currentAnchor: zoomFitDuration, oldDuration: old, zoom: zoomLevel)
+                        let fit = EditorTimelineZoom.fitDuration(
+                            anchor: zoomFitDuration, zoom: zoomLevel, current: new)
+                        let pps = trackViewport / CGFloat(max(fit, 0.5))
+                            * CGFloat(EditorTimelineZoom.clamp(.init(value: zoomLevel, duration: fit)))
+                        let width = max(CGFloat(new) * pps, trackViewport)
+                        let clamped = EditorTimelineScroll.clamped(
+                            offset: rulerScrollOffset.value, contentWidth: width, viewportWidth: trackViewport)
+                        if abs(clamped - rulerScrollOffset.value) > 0.5 {
+                            scrollPosition.scrollTo(x: clamped)
+                        }
                     }
                     .onScrollGeometryChange(for: CGFloat.self) { geometry in
                         geometry.contentOffset.x
@@ -769,13 +804,6 @@ struct EditorTimelineView: View {
                 context.fill(path, with: .color(BlitzUI.mint.opacity(0.08)))
                 context.stroke(path, with: .color(BlitzUI.mint), lineWidth: 1.5)
             }
-            for event in sceneEvents.dropFirst() {
-                let time = projection.displayTime(event.time)
-                guard time > 0, time < projection.duration else { continue }
-                let x = CGFloat(time) * pxPerSecond
-                let gap = Path(CGRect(x: x - 1, y: top, width: 3, height: height))
-                context.fill(gap, with: .color(BlitzUI.projectLibraryBackground))
-            }
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -798,29 +826,38 @@ struct EditorTimelineView: View {
         let range = request.range
         let isSilenceSelection = !selectedSilenceRanges.isEmpty
         let outline = isSilenceSelection ? Color.white : BlitzUI.mint
-        let top: CGFloat = 0
-        let height = max(0, contentHeight - top)
+        let chrome = EditorTimelineRangeChrome.frame(.init(
+            range: range, projection: projection, pixelsPerSecond: request.pxPerSecond, height: contentHeight
+        ))
         return ZStack(alignment: .topLeading) {
             Rectangle()
                 .fill(outline.opacity(isSilenceSelection ? 0.06 : 0.12))
                 .overlay { Rectangle().strokeBorder(.black.opacity(0.65), lineWidth: 4) }
                 .overlay { Rectangle().strokeBorder(outline, lineWidth: 2) }
-                .frame(width: max(1, CGFloat(projection.displayTime(range.end) - projection.displayTime(range.start)) * request.pxPerSecond), height: height)
-                .offset(x: CGFloat(projection.displayTime(range.start)) * request.pxPerSecond, y: top)
                 .allowsHitTesting(false)
-            ForEach(selectedSilenceRanges.count > 1 ? [] : [true, false], id: \.self) { isStart in
+            ForEach(rangeOverlayHandles(for: range), id: \.self) { isStart in
                 Capsule()
                     .fill(outline)
                     .frame(width: 8, height: 28)
                     .frame(width: 16, height: 40)
                     .contentShape(.rect)
                     .offset(
-                        x: CGFloat(projection.displayTime(isStart ? range.start : range.end)) * request.pxPerSecond - 8,
-                        y: top + max(0, (height - 40) / 2)
+                        x: (isStart ? 0 : chrome.width) - 8,
+                        y: max(0, (chrome.height - 40) / 2)
                     )
+                    .blitzCursor(.resizeLeftRight)
+                    .onHover { hovering in
+                        if hovering { EditorTimelineClipPointer.resize.apply() }
+                    }
                     .gesture(
                         DragGesture(minimumDistance: 0, coordinateSpace: .named(timelineContentSpace))
                             .onChanged { value in
+                                if applyClipExpand(
+                                    to: range, isStart: isStart, translationWidth: value.translation.width,
+                                    pixelsPerSecond: request.pxPerSecond
+                                ) {
+                                    return
+                                }
                                 let time = projection.takeTime(Double(value.location.x / request.pxPerSecond))
                                 let anchor = isStart ? min(time, range.end) : range.start
                                 let head = isStart ? range.end : max(time, range.start)
@@ -829,14 +866,82 @@ struct EditorTimelineView: View {
                                 )) {
                                     selection = isSilenceSelection ? .silenceRange(adjusted) : .range(adjusted)
                                 }
+                            }
+                            .onEnded { _ in
+                                if clipTrim.origin != nil {
+                                    commitClipExpand()
+                                }
                             },
                         isEnabled: isInteractive
                     )
-                    .accessibilityLabel(isStart ? "Range start" : "Range end")
+                    .fixedSize()
+                    .accessibilityLabel(isStart ? "Range start" : selectedClip(matching: range) == nil
+                        ? "Range end" : "Extend clip")
                     .accessibilityValue(rangeTime(projection.displayTime(isStart ? range.start : range.end)))
-                    .help(isStart ? "Drag to adjust range start" : "Drag to adjust range end")
+                    .help(isStart ? "Drag to adjust range start"
+                        : selectedClip(matching: range) == nil
+                            ? "Drag to adjust range end"
+                            : "Drag right to restore footage into this clip until the next clip. Later clips move right.")
             }
         }
+        .frame(width: chrome.width, height: chrome.height, alignment: .topLeading)
+        .fixedSize()
+        .offset(x: chrome.minX)
+    }
+
+    private func rangeOverlayHandles(for range: EditorTimeRange) -> [Bool] {
+        if selectedSilenceRanges.count > 1 { return [] }
+        if clipTrim.origin != nil || clipExpandOrigin(matching: range, pixelsPerSecond: 1) != nil {
+            return [false]
+        }
+        return [true, false]
+    }
+
+    private func selectedClip(matching range: EditorTimeRange) -> EditorVideoClipLayout.Clip? {
+        clipLayout.clips.first {
+            abs($0.range.start - range.start) <= 1.0 / 600
+                && abs($0.range.end - range.end) <= 1.0 / 600
+        }
+    }
+
+    private func clipExpandOrigin(matching range: EditorTimeRange, pixelsPerSecond: CGFloat)
+        -> EditorClipTrimSession.Origin?
+    {
+        guard let clip = selectedClip(matching: range) else { return nil }
+        let origin = EditorClipTrimSession.Origin(
+            edits: project?.edits ?? .empty,
+            clip: clip.range,
+            nextClipStart: clipLayout.next(after: clip)?.range.start,
+            pixelsPerSecond: pixelsPerSecond,
+            duration: duration
+        )
+        guard EditorClipSpine.rightExpandLimit(.init(
+            edits: origin.edits, clip: origin.clip, nextClipStart: origin.nextClipStart,
+            duration: origin.duration
+        )) != nil else { return nil }
+        return origin
+    }
+
+    private func applyClipExpand(
+        to range: EditorTimeRange, isStart: Bool, translationWidth: CGFloat, pixelsPerSecond: CGFloat
+    ) -> Bool {
+        let origin = clipTrim.origin ?? clipExpandOrigin(matching: range, pixelsPerSecond: pixelsPerSecond)
+        guard let origin else { return false }
+        if isStart { return true }
+        var session = clipTrim
+        session.beginExpand(origin, currentDisplayDuration: projection.duration)
+        if let expanded = session.applyExpand(translationWidth: translationWidth) {
+            selection = .range(expanded)
+        }
+        clipTrim = session
+        return true
+    }
+
+    private func commitClipExpand() {
+        var session = clipTrim
+        let edits = session.finish()
+        clipTrim = session
+        if let edits { onExtendClip(edits) }
     }
 
     private var gutterHeading: some View {

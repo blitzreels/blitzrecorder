@@ -68,6 +68,24 @@ final class EditorTimelineRenderingTests: XCTestCase {
         XCTAssertTrue(offscreen.isEmpty)
     }
 
+    func testSelectionChromeStaysOnTheSelectedClipAndMissesTheNextOne() {
+        let projection = EditorTimelineProjection(.init(duration: 100, cuts: []))
+        let layout = EditorVideoClipLayout(.init(projection: projection, splits: [82, 85.3]))
+        let selected = layout.clips[1]
+        let next = layout.clips[2]
+        let chrome = EditorTimelineRangeChrome.frame(.init(
+            range: selected.range, projection: projection, pixelsPerSecond: 100, height: 240
+        ))
+        let selectedX = CGFloat((selected.start + selected.end) / 2) * 100
+        let nextX = CGFloat((next.start + next.end) / 2) * 100
+        XCTAssertEqual(chrome.minX, CGFloat(selected.start) * 100, accuracy: 0.001)
+        XCTAssertEqual(chrome.maxX, CGFloat(selected.end) * 100, accuracy: 0.001)
+        XCTAssertTrue(chrome.contains(CGPoint(x: selectedX, y: 12)))
+        XCTAssertFalse(chrome.contains(CGPoint(x: nextX, y: 12)))
+        XCTAssertEqual(layout.clip(at: Double(nextX / 100))?.id, next.id)
+        XCTAssertNotEqual(layout.clip(at: Double(nextX / 100))?.id, selected.id)
+    }
+
     func testZoomRequestsUseBoundedCacheTiers() {
         XCTAssertEqual(EditorTimelineFilmstripCells.loadingCount(for: 1_200), 16)
         XCTAssertEqual(EditorTimelineFilmstripCells.loadingCount(for: 1_300), 16)

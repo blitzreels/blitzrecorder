@@ -16,7 +16,7 @@ final class TimelineLookupTests: XCTestCase {
             TimelineTimeMap(takeDuration: TimelineTimeMap.time(22), cuts: [
                 .init(start: 0, end: 22, kind: .manual, source: .user)
             ]),
-            TimelineTimeMap.identity(takeDuration: .zero)
+            TimelineTimeMap.identity(takeDuration: MediaTime.zero)
         ] {
             let boundaries = map.removedRanges.flatMap { [$0.start, $0.end] }
                 + map.keptRanges.flatMap { [$0.outputStart.seconds, $0.outputEnd.seconds] }
@@ -24,22 +24,22 @@ final class TimelineLookupTests: XCTestCase {
                 + stride(from: -1.0, through: 23.0, by: 0.073).map { $0 }
             for seconds in probes {
                 let time = CMTime(seconds: seconds, preferredTimescale: 600)
-                let takeRange = map.keptRanges.first { CMTimeCompare(time, $0.takeEnd) < 0 }
+                let takeRange = map.keptRanges.first { CMTimeCompare(time, $0.takeEnd.cmTime) < 0 }
                 let expectedOutput = takeRange.map {
-                    CMTimeCompare(time, $0.takeStart) < 0 ? $0.outputStart
-                        : CMTimeAdd($0.outputStart, CMTimeSubtract(time, $0.takeStart))
-                } ?? map.outputDuration
+                    CMTimeCompare(time, $0.takeStart.cmTime) < 0 ? $0.outputStart.cmTime
+                        : CMTimeAdd($0.outputStart.cmTime, CMTimeSubtract(time, $0.takeStart.cmTime))
+                } ?? map.outputDuration.cmTime
                 XCTAssertEqual(CMTimeCompare(map.outputTime(forTake: time), expectedOutput), 0)
 
-                let outputRange = map.keptRanges.first { CMTimeCompare(time, $0.outputEnd) < 0 }
+                let outputRange = map.keptRanges.first { CMTimeCompare(time, $0.outputEnd.cmTime) < 0 }
                 let expectedTake = outputRange.map {
-                    CMTimeAdd($0.takeStart, CMTimeMaximum(.zero, CMTimeSubtract(time, $0.outputStart)))
-                } ?? map.keptRanges.last?.takeEnd ?? map.takeDuration
+                    CMTimeAdd($0.takeStart.cmTime, CMTimeMaximum(.zero, CMTimeSubtract(time, $0.outputStart.cmTime)))
+                } ?? map.keptRanges.last?.takeEnd.cmTime ?? map.takeDuration.cmTime
                 XCTAssertEqual(CMTimeCompare(map.takeTime(forOutput: time), expectedTake), 0)
                 XCTAssertEqual(map.removedRange(containing: seconds),
                     map.removedRanges.first { seconds >= $0.start && seconds < $0.end })
                 XCTAssertEqual(map.keptRange(containingOutput: time), map.keptRanges.first {
-                    CMTimeCompare(time, $0.outputStart) >= 0 && CMTimeCompare(time, $0.outputEnd) < 0
+                    CMTimeCompare(time, $0.outputStart.cmTime) >= 0 && CMTimeCompare(time, $0.outputEnd.cmTime) < 0
                 })
             }
             XCTAssertNil(map.removedRange(containing: .nan))

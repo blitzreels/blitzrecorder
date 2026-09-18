@@ -108,13 +108,41 @@ final class EditorTranscriptTimelineTests: XCTestCase {
         let layout = EditorTranscriptLayout(.init(items: items, projection: .init(.init(duration: 10_000, cuts: []))))
         let start = ContinuousClock.now
         for zoom in [1.0, 4, 16, 64, 256, 1024] {
-            let runs = layout.runs(.init(viewport: .init(lowerBound: 0, upperBound: 1000), pixelsPerSecond: 0.1 * zoom))
+            let viewport = EditorTranscriptLayout.Viewport(
+                viewport: .init(lowerBound: 0, upperBound: 1000), pixelsPerSecond: 0.1 * zoom)
+            let runs = layout.runs(viewport)
             XCTAssertLessThanOrEqual(runs.count, 1000)
             XCTAssertLessThanOrEqual(runs.filter { $0.width >= 28 }.count, 36)
+            let coalesced = layout.coalescedRuns(viewport)
+            XCTAssertLessThanOrEqual(coalesced.count, 8)
+            XCTAssertTrue(coalesced.allSatisfy { $0.width >= 24 || coalesced.count == 1 })
         }
         XCTAssertLessThan(start.duration(to: .now), .seconds(0.5))
         XCTAssertEqual(layout.item(at: 742.53)?.source.id, 7425)
         XCTAssertNil(layout.item(at: 742.59))
+    }
+
+    func testZoomedOutTranscriptMergesTinyWordsUntilTheyAreReadable() {
+        let items = (0..<80).map { EditorTranscriptItem(id: $0,
+            range: .init(start: Double($0) * 0.2, end: Double($0) * 0.2 + 0.18), text: "w", kind: .word) }
+        let layout = EditorTranscriptLayout(.init(items: items, projection: .init(.init(duration: 16, cuts: []))))
+        let zoomedOut = layout.coalescedRuns(.init(viewport: .init(lowerBound: 0, upperBound: 160), pixelsPerSecond: 10))
+        XCTAssertEqual(zoomedOut.count, 1)
+        XCTAssertEqual(zoomedOut[0].items.count, 80)
+        let zoomedIn = layout.coalescedRuns(.init(viewport: .init(lowerBound: 0, upperBound: 3200), pixelsPerSecond: 200))
+        XCTAssertEqual(zoomedIn.count, 80)
+    }
+
+    func testTranscriptCoalesceStopsAtSilence() {
+        let items = [
+            EditorTranscriptItem(id: 0, range: .init(start: 0, end: 0.2), text: "hi", kind: .word),
+            EditorTranscriptItem(id: 1, range: .init(start: 0.2, end: 0.8), text: "Silence", kind: .nonDialogue),
+            EditorTranscriptItem(id: 2, range: .init(start: 0.8, end: 1.0), text: "there", kind: .word),
+        ]
+        let layout = EditorTranscriptLayout(.init(items: items, projection: .init(.init(duration: 2, cuts: []))))
+        let coalesced = layout.coalescedRuns(.init(viewport: .init(lowerBound: 0, upperBound: 20), pixelsPerSecond: 10))
+        XCTAssertEqual(coalesced.map(\.kind), [.word, .nonDialogue, .word])
+        XCTAssertEqual(coalesced.map(\.text), ["hi", "Silence", "there"])
     }
 
     func testTranscriptLayoutProjectsSavedCutsAndClipsToScrolledViewport() {

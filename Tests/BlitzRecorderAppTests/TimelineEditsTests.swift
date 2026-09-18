@@ -191,4 +191,60 @@ final class TimelineEditsTests: XCTestCase {
         XCTAssertEqual(url.path, "/dashboard/create")
         XCTAssertFalse(url.absoluteString.contains("api_key"))
     }
+
+    func testSavedProjectJSONWritesDomainCutsAndSceneForWindows() throws {
+        var settings = RecordingSettings()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        settings.outputDirectory = directory
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        var edits = TimelineEdits.empty
+        edits.cuts = [
+            TimelineCut(start: 1.25, end: 3.5, kind: .manual, source: .user),
+            TimelineCut(start: 8, end: 9, kind: .silence, source: .automatic, isEnabled: false)
+        ]
+        _ = try store.updateProjectTimelineEdits(
+            .init(projectURL: take.projectURL, edits: edits, baseSettings: settings)
+        )
+        let json = String(decoding: try Data(contentsOf: take.projectURL), as: UTF8.self)
+        XCTAssertTrue(json.contains("\"isEnabled\""))
+        XCTAssertTrue(json.contains("\"canvasWidth\""))
+        XCTAssertTrue(json.contains("1.25"))
+        XCTAssertTrue(json.contains("false"))
+        let sceneRange = try XCTUnwrap(json.range(of: "\"scene\""))
+        let eventsRange = try XCTUnwrap(json.range(of: "\"sceneEvents\""))
+        XCTAssertLessThan(sceneRange.lowerBound, eventsRange.lowerBound)
+        let cutsRange = try XCTUnwrap(json.range(of: "\"cuts\""))
+        let timelineRange = json.range(of: "\"timelineEdits\"")
+        if let timelineRange {
+            XCTAssertLessThan(cutsRange.lowerBound, timelineRange.lowerBound)
+        }
+    }
+
+    func testLoadRecordingProjectImportsWindowsPortableJSON() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try Data([0x00, 0x01, 0x02, 0x03]).write(to: directory.appendingPathComponent(TakeFolderLayout.screenName))
+        try Data([0x00, 0x01, 0x02, 0x03]).write(to: directory.appendingPathComponent(TakeFolderLayout.microphoneName))
+        var portable = PortableProject.screenAndAudio(hasMicrophone: true, hasSystemAudio: false, hasCamera: true)
+        portable.cuts = [TimelineCut(start: 1.25, end: 3.5, kind: .manual, source: .user)]
+        let projectURL = directory.appendingPathComponent(TakeFolderLayout.projectName)
+        try TakeJSON.write(portable, to: projectURL)
+        try TakeJSON.write(
+            TakeManifest(id: UUID(uuidString: "550E8400-E29B-41D4-A716-446655440000")!, createdAt: Date()),
+            to: directory.appendingPathComponent(TakeFolderLayout.takeManifestName)
+        )
+        let project = try TakeFileStore().loadRecordingProject(at: projectURL)
+        XCTAssertEqual(project.id.uuidString, "550E8400-E29B-41D4-A716-446655440000")
+        XCTAssertEqual(project.edits.cuts.count, 1)
+        XCTAssertEqual(project.edits.cuts[0].end, 3.5, accuracy: 0.001)
+        XCTAssertEqual(project.takeDirectoryPath, directory.path)
+        XCTAssertTrue(project.sources.contains { $0.role == "screen" && $0.exists })
+        XCTAssertTrue(project.sources.contains { $0.role == "microphone" && $0.exists })
+        XCTAssertTrue(project.sources.contains { $0.role == "camera" && !$0.exists })
+        XCTAssertEqual(project.sceneEvents.count, 1)
+        XCTAssertEqual(project.portableSceneLayout.camera, .cameraPip)
+    }
 }

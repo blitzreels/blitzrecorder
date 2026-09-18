@@ -109,7 +109,7 @@ struct FinalExportPlan: Equatable {
     }
 
     var takeDuration: CMTime {
-        timeMap.takeDuration
+        timeMap.takeDuration.cmTime
     }
 
     func insertion(for kind: SceneLayerKind) -> FinalExportSourceInsertion? {
@@ -180,7 +180,7 @@ enum FinalExportPlanning {
             .map { CMTimeAdd($0.timelineOffset, $0.duration) }
             .reduce(CMTimeAdd(durationSources[0].timelineOffset, durationSources[0].duration)) { CMTimeMinimum($0, $1) }
         let timeMap = TimelineTimeMap(takeDuration: takeDuration, cuts: request.cuts)
-        let duration = timeMap.outputDuration
+        let duration = timeMap.outputDuration.cmTime
         let dimensions = ScreenCaptureGeometry.outputDimensions(for: settings)
         let renderSize = CGSize(width: dimensions.width, height: dimensions.height)
         let insertions = durationSources.flatMap { source in
@@ -233,12 +233,12 @@ enum FinalExportPlanning {
             sourceTimeAtActiveStart: source.sourceTimeAtActiveStart,
             sourceEnd: source.duration
         )).compactMap { insertion in
-            guard CMTimeCompare(insertion.duration, .zero) > 0 else { return nil }
+            guard insertion.duration > .zero else { return nil }
             return FinalExportSourceInsertion(
                 kind: source.kind,
-                sourceStart: insertion.sourceStart,
-                compositionStart: insertion.compositionStart,
-                duration: insertion.duration
+                sourceStart: insertion.sourceStart.cmTime,
+                compositionStart: insertion.compositionStart.cmTime,
+                duration: insertion.duration.cmTime
             )
         }
     }
@@ -273,24 +273,24 @@ enum FinalExportPlanning {
             insertionsByKind[insertion.kind, default: []].append(insertion)
         }
         let sourceTakeRanges = request.sources.map { source in
-            CMTimeRange(start: source.activeTakeStart, end: CMTimeMinimum(source.activeTakeEnd, timeMap.takeDuration))
+            CMTimeRange(start: source.activeTakeStart, end: CMTimeMinimum(source.activeTakeEnd, timeMap.takeDuration.cmTime))
         }
         let takeBoundaries = RecordingSceneTimeline.takeBoundaries(RecordingSceneTimeline.BoundaryRequest(
             sceneEvents: request.sceneEvents,
-            duration: timeMap.takeDuration,
+            duration: timeMap.takeDuration.cmTime,
             sourceTimeRanges: sourceTakeRanges,
             transitionSampleInterval: request.transitionSampleInterval
         ))
         var outputBoundaries = takeBoundaries.map { timeMap.outputTime(forTake: $0) }
         for range in timeMap.keptRanges {
-            outputBoundaries.append(range.outputStart)
-            outputBoundaries.append(range.outputEnd)
+            outputBoundaries.append(range.outputStart.cmTime)
+            outputBoundaries.append(range.outputEnd.cmTime)
         }
         outputBoundaries.append(.zero)
-        outputBoundaries.append(timeMap.outputDuration)
+        outputBoundaries.append(timeMap.outputDuration.cmTime)
         let uniqueBoundaries = RecordingSceneTimeline.sortedUniqueBoundaries(
             outputBoundaries,
-            duration: timeMap.outputDuration
+            duration: timeMap.outputDuration.cmTime
         )
 
         var scenes: [RecordingScene] = []
@@ -311,7 +311,7 @@ enum FinalExportPlanning {
         }
         if ranges.isEmpty {
             scenes = [fallbackScene]
-            ranges = [CMTimeRange(start: .zero, duration: timeMap.outputDuration)]
+            ranges = [CMTimeRange(start: .zero, duration: timeMap.outputDuration.cmTime)]
         }
 
         return ranges.indices.map { index in

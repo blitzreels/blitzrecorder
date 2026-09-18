@@ -82,8 +82,12 @@ Run Swift checks:
 ```bash
 swift test
 swift test --package-path Packages/BlitzRecorderCore
+swift test --package-path Packages/BlitzRecorderDomain
 swift test --package-path Packages/BlitzRecorderTransport
+swift build --package-path Apps/WindowsStudio
 ```
+
+Windows capture (WGC + DXGI), WASAPI/MF, D3D11 compose, WinUI/Win32 studio, and the signed Inno installer live in [Apps/WindowsStudio](Apps/WindowsStudio/README.md). CI compiles the x64 studio with MSVC/CMake on `windows-2025-vs2026`, and software-exports an H.264 fixture on `windows-11-vs2026-arm` (inbox H.264 is client-only; that image has MSVC). Tagged releases ship only a signed installer — no zip.
 
 Run public repository checks before a commit or push:
 

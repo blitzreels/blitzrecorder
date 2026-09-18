@@ -65,6 +65,41 @@ struct EditorTranscriptLayout: Equatable {
         }
         return runs
     }
+
+    struct DisplayRun: Identifiable, Equatable {
+        let items: [Item]
+        let x: CGFloat
+        let width: CGFloat
+        var id: Int { items[0].source.id }
+        var kind: EditorTranscriptItem.Kind { items[0].source.kind }
+        var text: String {
+            if kind == .nonDialogue { return items[0].source.text }
+            return items.map(\.source.text).joined(separator: " ")
+        }
+    }
+
+    func coalescedRuns(_ request: Viewport, readableWidth: CGFloat = 24) -> [DisplayRun] {
+        let raw = runs(request)
+        guard let first = raw.first else { return [] }
+        var result: [DisplayRun] = []
+        var current = DisplayRun(items: [first.item], x: first.x, width: first.width)
+        for run in raw.dropFirst() {
+            let gap = run.x - (current.x + current.width)
+            let unreadablySmall = current.width < readableWidth || run.width < readableWidth
+            if run.item.source.kind == current.kind, unreadablySmall, gap <= 6 {
+                current = DisplayRun(
+                    items: current.items + [run.item],
+                    x: current.x,
+                    width: run.x + run.width - current.x
+                )
+            } else {
+                result.append(current)
+                current = DisplayRun(items: [run.item], x: run.x, width: run.width)
+            }
+        }
+        result.append(current)
+        return result
+    }
 }
 
 struct EditorTimelineRangeClick {
