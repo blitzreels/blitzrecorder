@@ -370,9 +370,13 @@ void startCapture() {
 }
 
 void stopCapture() {
-    br_capture_stop();
+    const int code = br_capture_stop();
     gUi.recording = false;
     setRecordingButtons(false);
+    if (code != 0) {
+        setStatus(br_capture_last_error()[0] ? br_capture_last_error() : "stop failed");
+        return;
+    }
     if (!gUi.lastTake.empty() && br::openTakePlayback(gUi.lastTake.c_str()) == 0) {
         gUi.playing = true;
         gUi.paused = false;

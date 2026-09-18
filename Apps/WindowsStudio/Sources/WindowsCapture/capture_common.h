@@ -23,6 +23,7 @@ std::string hrToString(long hr);
 std::wstring joinPath(const std::wstring& directory, const wchar_t* fileName);
 std::string joinUtf8Path(const std::string& directory, const char* fileName);
 bool fileExistsUtf8(const char* path);
+std::int64_t fileSizeUtf8(const char* path);
 std::int64_t qpcHns();
 void hideOwnConsole();
 long ensureCom();

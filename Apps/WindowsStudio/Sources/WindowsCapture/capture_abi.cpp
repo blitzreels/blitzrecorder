@@ -14,6 +14,7 @@ std::mutex gSessionMu;
 std::unique_ptr<CaptureSession> gSession;
 std::string gTakeDir;
 bool gStarting = false;
+bool gWantMic = false;
 
 }  // namespace
 
@@ -64,16 +65,20 @@ int br_capture_start(
     std::lock_guard<std::mutex> lock(gSessionMu);
     gSession = std::move(session);
     gTakeDir = output_dir ? output_dir : "";
+    gWantMic = include_mic != 0;
     return 0;
 }
 
 int br_capture_stop(void) {
     std::unique_ptr<CaptureSession> session;
     std::string takeDir;
+    bool wantMic = false;
     {
         std::lock_guard<std::mutex> lock(gSessionMu);
         session = std::move(gSession);
         takeDir = std::move(gTakeDir);
+        wantMic = gWantMic;
+        gWantMic = false;
     }
     int rc = 0;
     if (session) {
@@ -82,7 +87,21 @@ int br_capture_stop(void) {
         br::setLastError("");
     }
     if (!takeDir.empty()) {
+        const std::string screen = br::joinUtf8Path(takeDir, "screen.mp4");
+        const std::string mic = br::joinUtf8Path(takeDir, "audio.m4a");
+        const std::int64_t screenBytes = br::fileSizeUtf8(screen.c_str());
+        const std::int64_t micBytes = br::fileSizeUtf8(mic.c_str());
         br::syncTakeSidecarsFromDisk(takeDir.c_str());
+        if (screenBytes < 4096) {
+            br::setLastError("Take is missing screen.mp4. Allow Screen recording in Windows Settings > Privacy.");
+            br::openSettingsUri(L"ms-settings:privacy-graphicscapture");
+            return 1;
+        }
+        if (wantMic && micBytes < 256) {
+            br::setLastError("Take is missing microphone audio. Allow Microphone in Windows Settings > Privacy.");
+            br::openSettingsUri(L"ms-settings:privacy-microphone");
+            return 1;
+        }
     }
     return rc;
 }

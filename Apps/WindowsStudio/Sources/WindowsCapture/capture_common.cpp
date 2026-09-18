@@ -124,6 +124,24 @@ bool fileExistsUtf8(const char* path) {
     return size.QuadPart >= 16;
 }
 
+std::int64_t fileSizeUtf8(const char* path) {
+    const std::wstring wide = utf8ToWide(path);
+    if (wide.empty()) {
+        return -1;
+    }
+    WIN32_FILE_ATTRIBUTE_DATA data{};
+    if (!GetFileAttributesExW(wide.c_str(), GetFileExInfoStandard, &data)) {
+        return -1;
+    }
+    if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+        return -1;
+    }
+    ULARGE_INTEGER size{};
+    size.HighPart = data.nFileSizeHigh;
+    size.LowPart = data.nFileSizeLow;
+    return static_cast<std::int64_t>(size.QuadPart);
+}
+
 bool writeUtf8File(const char* path, const std::string& body) {
     const std::wstring wide = utf8ToWide(path);
     if (wide.empty()) {

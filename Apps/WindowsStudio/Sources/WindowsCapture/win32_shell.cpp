@@ -349,9 +349,13 @@ void startCapture() {
 }
 
 void stopCapture() {
-    br_capture_stop();
+    const int code = br_capture_stop();
     gState.recording = false;
     setTransportButtons(false, false);
+    if (code != 0) {
+        setStatus(br_capture_last_error()[0] ? br_capture_last_error() : "stop failed");
+        return;
+    }
     if (!gState.lastTake.empty() && br::openTakePlayback(gState.lastTake.c_str()) == 0) {
         gState.playing = true;
         gState.paused = false;
