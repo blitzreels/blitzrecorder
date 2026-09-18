@@ -2,6 +2,11 @@
 import PackageDescription
 
 #if os(Windows)
+/// Package.swift has no Foundation. Map path separators with stdlib only.
+func brMapSlash(_ raw: String, from: Character, to: Character) -> String {
+    String(raw.map { $0 == from ? to : $0 })
+}
+
 /// SwiftPM on Windows sometimes yields `/D:/Users/...`. Positional linker inputs
 /// need `D:\Users\...`; a leading slash makes link.exe miss BlitzRecorder.res.
 func brWindowsPath(_ raw: String) -> String {
@@ -13,7 +18,7 @@ func brWindowsPath(_ raw: String) -> String {
             path.removeFirst()
         }
     }
-    return path.replacingOccurrences(of: "/", with: "\\")
+    return brMapSlash(path, from: "/", to: "\\")
 }
 
 let windowsCaptureSkip = [
@@ -40,10 +45,10 @@ let windowsCaptureSkip = [
 // Absolute `D:\...` is poison: lld-link splits on the drive colon in
 // `/LIBPATH:D:\...` and `/WHOLEARCHIVE:D:\...`. Ignore env values that contain `:`.
 let nativeLibDirEnv = Context.environment["BR_WINDOWS_CAPTURE_LIBDIR"] ?? ""
-let nativeLibDir = (!nativeLibDirEnv.isEmpty && !nativeLibDirEnv.contains(":"))
-    ? nativeLibDirEnv.replacingOccurrences(of: "\\", with: "/")
+let nativeLibDir = (!nativeLibDirEnv.isEmpty && !nativeLibDirEnv.contains(where: { $0 == ":" }))
+    ? brMapSlash(nativeLibDirEnv, from: "\\", to: "/")
     : "build-native/lib"
-let nativeLibDirWin = nativeLibDir.replacingOccurrences(of: "/", with: "\\")
+let nativeLibDirWin = brMapSlash(nativeLibDir, from: "/", to: "\\")
 // Positional input: absolute is OK. `/LIBPATH:D:\` and `/WHOLEARCHIVE:D:\` are not.
 let nativeRes = brWindowsPath(Context.packageDirectory)
     + "\\" + nativeLibDirWin + "\\BlitzRecorder.res"

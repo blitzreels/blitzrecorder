@@ -153,8 +153,9 @@ require_literal_in_file "Apps/WindowsStudio/Package.swift" "BlitzRecorder.res"
 require_literal_in_file "Apps/WindowsStudio/Package.swift" "nativeLibDirWin"
 require_literal_in_file "Apps/WindowsStudio/Package.swift" "nativeRes"
 require_literal_in_file "Apps/WindowsStudio/Package.swift" "func brWindowsPath"
+require_literal_in_file "Apps/WindowsStudio/Package.swift" "func brMapSlash"
 require_literal_in_file "Apps/WindowsStudio/Package.swift" "splits on the drive colon"
-require_literal_in_file "Apps/WindowsStudio/Package.swift" "contains(\":\")"
+require_literal_in_file "Apps/WindowsStudio/Package.swift" 'contains(where: { $0 == ":" })'
 require_literal_in_file "Scripts/windows/build-studio.ps1" "rc.exe"
 require_literal_in_file "Scripts/windows/build-studio.ps1" "-use-ld=link"
 require_literal_in_file "Scripts/windows/build-studio.ps1" "PE gate failed"
@@ -332,6 +333,12 @@ if grep -Fq 'COMPILE_DEFINITIONS UNICODE' Apps/WindowsStudio/CMakeLists.txt; the
   fail "try_compile COMPILE_DEFINITIONS UNICODE is passed as extra source files on CMake 4.2"
 else
   pass "try_compile does not pass bare UNICODE as COMPILE_DEFINITIONS"
+fi
+
+if git grep -F -q replacingOccurrences -- Apps/WindowsStudio/Package.swift; then
+  fail "Package.swift cannot use Foundation replacingOccurrences"
+else
+  pass "Package.swift does not use Foundation replacingOccurrences"
 fi
 
 if grep -Fq -- ".zip" .github/workflows/windows-release.yml; then
