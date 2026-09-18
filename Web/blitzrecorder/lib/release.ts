@@ -10,6 +10,8 @@ export const GITHUB_REPO_URL = `https://github.com/${OWNER}/${REPO}`;
 export const RELEASES_URL = `${GITHUB_REPO_URL}/releases`;
 /** GitHub redirects this to the newest release (or the releases list if none). */
 export const LATEST_RELEASE_URL = `${RELEASES_URL}/latest`;
+/** Unsigned tester installer lives on this workflow until Authenticode secrets exist. */
+export const WINDOWS_CI_WORKFLOW_URL = `${GITHUB_REPO_URL}/actions/workflows/ci.yml`;
 /** Shown when no release is published yet; kept in sync by Scripts/set-version.py. */
 export const FALLBACK_VERSION = "0.20.0";
 

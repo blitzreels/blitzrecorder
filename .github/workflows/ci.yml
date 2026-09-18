@@ -2,9 +2,15 @@ name: CI
 
 on:
   pull_request:
+    paths-ignore:
+      - "Web/**"
+      - ".github/workflows/blitzrecorder-web.yml"
   push:
     branches:
       - main
+    paths-ignore:
+      - "Web/**"
+      - ".github/workflows/blitzrecorder-web.yml"
   workflow_dispatch:
 
 env:

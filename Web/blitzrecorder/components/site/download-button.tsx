@@ -10,6 +10,7 @@ import {
   FALLBACK_VERSION,
   GITHUB_REPO_URL,
   LATEST_RELEASE_URL,
+  WINDOWS_CI_WORKFLOW_URL,
 } from "@/lib/release";
 import { macCompatibility } from "@/lib/content";
 
@@ -107,10 +108,13 @@ export function DownloadMeta({
   const version = release?.version ?? FALLBACK_VERSION;
 
   const notMac = os !== null && os !== "mac";
-  const windowsHref = release?.windowsUrl ?? LATEST_RELEASE_URL;
+  const signedWindows = Boolean(release?.windowsUrl);
+  const windowsHref = release?.windowsUrl ?? WINDOWS_CI_WORKFLOW_URL;
   const hint =
     os === "windows"
-      ? "Windows Studio is the signed BlitzRecorder-Windows.exe on GitHub Releases."
+      ? signedWindows
+        ? "Windows Studio is the signed BlitzRecorder-Windows.exe on GitHub Releases."
+        : "Windows Studio is not on GitHub Releases yet. Testers: Actions artifact windows-studio-installer-unsigned. SmartScreen → More info → Run anyway."
       : os === "ios"
       ? "BlitzRecorder runs on your Mac. We can email you the download link."
       : notMac
@@ -134,7 +138,7 @@ export function DownloadMeta({
       {os === "windows" ? (
         <div className="mt-3 flex justify-center xl:justify-start">
           <Button variant="outline" render={<a href={windowsHref} />}>
-            Download for Windows
+            {signedWindows ? "Download for Windows" : "Windows CI artifacts"}
           </Button>
         </div>
       ) : notMac ? (
