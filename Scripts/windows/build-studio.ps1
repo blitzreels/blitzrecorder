@@ -283,6 +283,41 @@ if ($LASTEXITCODE -ne 0 -or -not (Test-Path $res)) { throw "rc.exe failed writin
 Copy-Item $res (Join-Path $PackageRoot "BlitzRecorder.res") -Force
 Write-Host "icon resource=$res"
 
+$cvtres = Get-Command cvtres.exe -ErrorAction SilentlyContinue
+$libExe = Get-Command lib.exe -ErrorAction SilentlyContinue
+if (-not $cvtres) { throw "cvtres.exe missing after vcvars" }
+if (-not $libExe) { throw "lib.exe missing after vcvars" }
+$machine = "X64"
+switch -Regex ($env:VSCMD_ARG_TGT_ARCH) {
+    '^arm64$' { $machine = "ARM64" }
+    '^x86$' { $machine = "X86" }
+}
+$resObj = Join-Path $libDir "BlitzRecorderRes.obj"
+$resLib = Join-Path $libDir "BlitzRecorderRes.lib"
+& $cvtres.Source /nologo "/MACHINE:$machine" "/OUT:$resObj" $res
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path $resObj)) { throw "cvtres failed converting $res" }
+& $libExe.Source /nologo "/OUT:$resLib" $resObj
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path $resLib)) { throw "lib.exe failed wrapping BlitzRecorder.res" }
+Write-Host "icon lib=$resLib (cvtres $machine)"
+
+if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
+    throw "cl.exe missing; cannot build br-link / embed_pe_resources"
+}
+Push-Location $PackageRoot
+try {
+    & cl.exe /nologo /O2 /EHsc /DUNICODE /D_UNICODE /Fe:br-link.exe br_link_wrap.cpp
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $PackageRoot "br-link.exe"))) {
+        throw "cl.exe failed building br-link.exe"
+    }
+    & cl.exe /nologo /O2 /EHsc /DUNICODE /D_UNICODE /Fe:embed_pe_resources.exe embed_pe_resources.cpp
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $PackageRoot "embed_pe_resources.exe"))) {
+        throw "cl.exe failed building embed_pe_resources.exe"
+    }
+} finally {
+    Pop-Location
+}
+$env:PATH = "$PackageRoot;$env:PATH"
+
 $swiftArgs = @("build")
 if ($Configuration -eq "release") {
     $swiftArgs += @("-c", "release")
@@ -297,6 +332,10 @@ function Get-StudioExe {
 
 function Invoke-PeGate([string]$exePath) {
     $manifest = Join-Path $PackageRoot "BlitzRecorderWindows.exe.manifest"
+    $embed = Join-Path $PackageRoot "embed_pe_resources.exe"
+    if (-not (Test-Path $embed)) { throw "embed_pe_resources.exe missing" }
+    & $embed $exePath $ico $manifest
+    if ($LASTEXITCODE -ne 0) { throw "embed_pe_resources failed ($LASTEXITCODE) for $exePath" }
     & (Join-Path $PSScriptRoot "embed-manifest.ps1") -ExePath $exePath -ManifestPath $manifest
     & (Join-Path $PSScriptRoot "assert-studio-pe.ps1") -ExePath $exePath
 }
@@ -324,7 +363,7 @@ function Invoke-SwiftBuild([string[]]$extra) {
 $peOk = $false
 Write-Host "linking with MSVC link.exe first; lld-link splits /LIBPATH:D:\\ on the drive colon"
 $exit = Invoke-SwiftBuild @(
-    "-Xswiftc", "-use-ld=link",
+    "-Xswiftc", "-use-ld=br-link",
     "-Xswiftc", "-debug-info-format=codeview",
     "-Xswiftc", "-gnone",
     "-Xlinker", "/MANIFEST:NO",

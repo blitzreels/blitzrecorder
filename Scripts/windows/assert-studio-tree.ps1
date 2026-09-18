@@ -35,6 +35,8 @@ if (-not $NativeOnly) {
         "BlitzRecorder.ico",
         "app.rc",
         "BlitzRecorderWindows.exe.manifest",
+        "embed_pe_resources.cpp",
+        "br_link_wrap.cpp",
         "Package.swift",
         "Sources/BlitzRecorderWindows/main.swift",
         "Sources/WindowsCapture/capture_abi.cpp",

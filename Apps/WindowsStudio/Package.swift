@@ -48,15 +48,15 @@ let nativeLibDirEnv = Context.environment["BR_WINDOWS_CAPTURE_LIBDIR"] ?? ""
 let nativeLibDir = (!nativeLibDirEnv.isEmpty && !nativeLibDirEnv.contains(where: { $0 == ":" }))
     ? brMapSlash(nativeLibDirEnv, from: "\\", to: "/")
     : "build-native/lib"
-let nativeLibDirWin = brMapSlash(nativeLibDir, from: "/", to: "\\")
-// Relative only. lld-link splits on the drive colon in `D:\...BlitzRecorder.res`.
-let nativeRes = nativeLibDirWin + "\\BlitzRecorder.res"
+// Basename only. Never pass BlitzRecorder.res as -Xlinker D:\... — lld-link
+// splits on the drive colon. cvtres+lib.exe wrap the .res as this .lib.
 let nativeLinkExe: [LinkerSetting] = [
     .unsafeFlags([
         "-L", nativeLibDir,
         "-Xlinker", "/WHOLEARCHIVE:WindowsCaptureNative.lib",
         "-Xlinker", "/WHOLEARCHIVE:WindowsCaptureAdapter.lib",
         "-Xlinker", "/WHOLEARCHIVE:WindowsStudioShell.lib",
+        "-Xlinker", "/WHOLEARCHIVE:BlitzRecorderRes.lib",
         "-Xlinker", "/INCLUDE:br_capture_start",
         "-Xlinker", "/INCLUDE:br_capture_stop",
         "-Xlinker", "/INCLUDE:br_capture_alive",
@@ -74,15 +74,14 @@ let nativeLinkExe: [LinkerSetting] = [
         // Swift @main emits `main`. WINDOWS CRT without /ENTRY looks for wWinMain.
         "-Xlinker", "/SUBSYSTEM:WINDOWS",
         "-Xlinker", "/ENTRY:mainCRTStartup",
-        // Relative file input (not /FLAG:D:\...) so the drive colon is not eaten.
-        "-Xlinker", nativeRes,
         // Last: stop Swift's default RT_MANIFEST from fighting app.rc (icon + XAML Islands).
         "-Xlinker", "/MANIFEST:NO",
         "-Xlinker", "/MANIFESTUAC:NO"
     ]),
     .linkedLibrary("WindowsCaptureNative"),
     .linkedLibrary("WindowsCaptureAdapter"),
-    .linkedLibrary("WindowsStudioShell")
+    .linkedLibrary("WindowsStudioShell"),
+    .linkedLibrary("BlitzRecorderRes")
 ]
 #else
 let windowsCaptureSkip: [String] = ["spm_link_placeholder.cpp", "fixture_main.cpp"]

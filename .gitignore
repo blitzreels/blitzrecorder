@@ -4,6 +4,9 @@ build/
 DerivedData/
 Apps/WindowsStudio/build-native/
 Apps/WindowsStudio/*.res
+Apps/WindowsStudio/*.obj
+Apps/WindowsStudio/br-link.exe
+Apps/WindowsStudio/embed_pe_resources.exe
 .DS_Store
 __pycache__/
 *.pyc

@@ -78,19 +78,25 @@ if (-not $gui) {
 Write-Host "PE subsystem=WINDOWS GUI ($ExePath)"
 
 $hasIcon = $false
+$resourceDump = ""
 if ($dumpbin) {
     $all = & $dumpbin /ALL $ExePath 2>&1 | Out-String
-    if ($all -match 'GROUP_ICON|RT_GROUP_ICON') {
+    $resourceDump = $all
+    if ($all -match 'GROUP_ICON|RT_GROUP_ICON|Icon Group') {
         $hasIcon = $true
     }
-} elseif ($readobj) {
+}
+if (-not $hasIcon -and $readobj) {
     $resDump = & $readobj --coff-resources $ExePath 2>&1 | Out-String
-    if ($resDump -match 'GROUP_ICON|RT_GROUP_ICON|Icon Group') {
+    $resourceDump = ($resourceDump + "`n" + $resDump)
+    if ($resDump -match 'GROUP_ICON|RT_GROUP_ICON|Icon Group|Type:.*0x[eE]\b') {
         $hasIcon = $true
     }
 }
 if (-not $hasIcon) {
-    throw "BlitzRecorderWindows.exe is missing RT_GROUP_ICON (link BlitzRecorder.res from app.rc)"
+    $hint = ($resourceDump -split "`r?`n" | Where-Object { $_ -match 'rsrc|ICON|MANIFEST|Resource|0x0e|GROUP' } | Select-Object -First 40) -join "`n"
+    Write-Host "PE resource dump (no GROUP_ICON):`n$hint"
+    throw "BlitzRecorderWindows.exe is missing RT_GROUP_ICON (link BlitzRecorderRes.lib / embed_pe_resources)"
 }
 Write-Host "PE has RT_GROUP_ICON"
 
