@@ -431,7 +431,7 @@ HRESULT WgcCapturer::acquireBGRA(UINT timeoutMs, std::vector<std::uint8_t>& bgra
     if (FAILED(hr) || !surface) {
         return hr;
     }
-    Microsoft::WRL::ComPtr<IDirect3DDxgiInterfaceAccess> access;
+    Microsoft::WRL::ComPtr<IBrDirect3DDxgiInterfaceAccess> access;
     hr = surface.As(&access);
     if (FAILED(hr)) {
         return hr;

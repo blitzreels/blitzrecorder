@@ -560,8 +560,8 @@ void layoutChrome(HWND hwnd) {
     }
     RECT rc{};
     GetClientRect(hwnd, &rc);
-    const int width = (std::max)(1, rc.right - rc.left);
-    const int height = (std::max)(1, rc.bottom - rc.top);
+    const int width = (std::max)(1, static_cast<int>(rc.right - rc.left));
+    const int height = (std::max)(1, static_cast<int>(rc.bottom - rc.top));
     const int islandH = 220;
     if (gUi.island) {
         SetWindowPos(gUi.island, HWND_TOP, 0, 0, width, islandH, SWP_SHOWWINDOW);

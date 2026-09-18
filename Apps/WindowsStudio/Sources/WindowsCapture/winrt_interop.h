@@ -33,15 +33,15 @@ IGraphicsCaptureItemInterop : public IUnknown {
 #endif
 
 #if !defined(BR_HAS_D3D11_INTEROP_H)
-#if !defined(__IDirect3DDxgiInterfaceAccess_INTERFACE_DEFINED__)
-#define __IDirect3DDxgiInterfaceAccess_INTERFACE_DEFINED__
-MIDL_INTERFACE("A9B3D012-3DF2-4EE3-B8D1-86926B929D52")
-IDirect3DDxgiInterfaceAccess : public IUnknown {
-    virtual HRESULT STDMETHODCALLTYPE GetInterface(REFIID iid, void** p) = 0;
-};
-#endif
 extern "C" HRESULT WINAPI CreateDirect3D11DeviceFromDXGIDevice(
     IDXGIDevice* dxgiDevice,
     IInspectable** graphicsDevice
 );
 #endif
+
+// SDK 26100 can ship the interop header without IDirect3DDxgiInterfaceAccess in
+// global scope. Same IID as the inbox interface so WRL As()/QI still works.
+struct __declspec(uuid("A9B3D012-3DF2-4EE3-B8D1-86926B929D52"))
+IBrDirect3DDxgiInterfaceAccess : public IUnknown {
+    virtual HRESULT STDMETHODCALLTYPE GetInterface(REFIID iid, void** p) = 0;
+};
