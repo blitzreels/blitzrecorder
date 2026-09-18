@@ -462,6 +462,18 @@ HRESULT WgcCapturer::acquireBGRA(UINT timeoutMs, std::vector<std::uint8_t>& bgra
     return copyTexture(texture.Get(), bgra, width, height);
 }
 
+namespace br {
+
+long primeGraphicsCaptureConsent(int monitorIndex, void* hwnd) {
+    WgcCapturer capturer;
+    HWND window = static_cast<HWND>(hwnd);
+    const HRESULT hr = window ? capturer.openWindow(window) : capturer.open(monitorIndex);
+    capturer.close();
+    return static_cast<long>(hr);
+}
+
+}  // namespace br
+
 #else
 [[maybe_unused]] static int br_windows_capture_tu_wgc = 0;
 #endif

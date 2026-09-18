@@ -33,7 +33,9 @@ bool writeTakeSidecars(const char* takeDir, bool microphone, bool systemAudio, b
 bool syncTakeSidecarsFromDisk(const char* takeDir);
 void removeTakeDirectory(const char* takeDir);
 void openSettingsUri(const wchar_t* uri);
+bool isConsentDenied(long hr);
 long primeMicrophoneConsent();
+long primeGraphicsCaptureConsent(int monitorIndex, void* hwnd);
 void excludeWindowFromCapture(void* hwnd);
 void setAppUserModelId();
 void letterboxDest(int dstW, int dstH, unsigned srcW, unsigned srcH, int& x, int& y, int& w, int& h);

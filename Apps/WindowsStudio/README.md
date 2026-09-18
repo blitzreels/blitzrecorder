@@ -72,12 +72,12 @@ The GUI lets testers pick **Screen** (full display; WGC + DXGI fallback), **Area
 
 1. Builds the Windows package
 2. Stages exe + runtime
-3. **Fails** if Azure Artifact Signing secrets are missing
+3. **Fails** if neither Azure Artifact Signing nor `WINDOWS_PFX_*` secrets are set
 4. Signs PE files
 5. Builds the installer and signs it
 6. Attaches **only** `BlitzRecorder-Windows.exe` to the GitHub Release
 
-workflow_dispatch builds `BlitzRecorder-Windows-unsigned.exe` as a CI artifact only. Testers install the signed `BlitzRecorder-Windows.exe` from GitHub Releases.
+workflow_dispatch builds `BlitzRecorder-Windows-unsigned.exe` as a CI artifact only. Until those secrets exist, testers use the unsigned Actions installer.
 
 Unsigned local/CI artifacts trip SmartScreen (**More info** → **Run anyway**). After a `main` push, download Actions artifact **`windows-studio-installer-unsigned`** (`BlitzRecorder-Windows-ci-check.exe`, per-user Inno, same layout as the tagged installer) or **`windows-studio-portable`** (folder; run `BlitzRecorder.cmd`). Neither is a GitHub Release.
 
@@ -90,8 +90,8 @@ A self-signed PFX is not enough — tag verify requires Authenticode `Valid`.
 
 ## Permissions and session
 
-- **Screen recording:** denied fails Start and opens Settings.
-- **Microphone:** denied fails Start (checkbox on by default) and opens Settings.
+- **Screen recording:** first Start primes WGC on the STA UI thread so the Allow dialog can appear; denied fails Start and opens Settings.
+- **Microphone:** same STA prime (checkbox on by default); denied fails Start and opens Settings.
 - **Camera:** off by default. If enabled and denied, Start continues without camera after a short wait.
 - **System audio:** WASAPI loopback, no consent dialog. Exclusive-mode apps are missing from the mix.
 - **Windows Graphics Capture** needs an interactive desktop. First use can show the capture border. DXGI Desktop Duplication is the fallback (not Session 0, not lock/UAC secure desktop, not WARP).

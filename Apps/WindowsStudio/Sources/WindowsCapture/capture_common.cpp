@@ -375,6 +375,11 @@ void openSettingsUri(const wchar_t* uri) {
     ShellExecuteW(nullptr, L"open", uri, nullptr, nullptr, SW_SHOWNORMAL);
 }
 
+bool isConsentDenied(long hr) {
+    const HRESULT h = static_cast<HRESULT>(hr);
+    return h == E_ACCESSDENIED || h == HRESULT_FROM_WIN32(ERROR_CANCELLED);
+}
+
 long primeMicrophoneConsent() {
     Microsoft::WRL::ComPtr<IMMDeviceEnumerator> enumerator;
     HRESULT hr = CoCreateInstance(

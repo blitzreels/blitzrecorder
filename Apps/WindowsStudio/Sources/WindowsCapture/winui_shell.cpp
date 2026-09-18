@@ -336,9 +336,19 @@ void startCapture() {
     const int mic = gUi.mic ? 1 : 0;
     const int systemAudio = gUi.sys ? 1 : 0;
     const int camera = gUi.cam ? 1 : 0;
+    {
+        const long screenHr = br::primeGraphicsCaptureConsent(monitorIndex, hwnd);
+        if (br::isConsentDenied(screenHr)) {
+            br::setLastError("Screen recording permission denied. Allow Screen recording in Windows Settings > Privacy.");
+            br::openSettingsUri(L"ms-settings:privacy-graphicscapture");
+            setRecordingButtons(false);
+            setStatus(br_capture_last_error());
+            return;
+        }
+    }
     if (mic) {
         const long primeHr = br::primeMicrophoneConsent();
-        if (primeHr == static_cast<long>(E_ACCESSDENIED)) {
+        if (br::isConsentDenied(primeHr)) {
             br::setLastError("Microphone permission denied. Allow Microphone in Windows Settings > Privacy.");
             br::openSettingsUri(L"ms-settings:privacy-microphone");
             setRecordingButtons(false);
