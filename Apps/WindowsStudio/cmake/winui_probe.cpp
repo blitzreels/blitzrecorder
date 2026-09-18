@@ -50,7 +50,7 @@ using ABI::Windows::Foundation::IEventHandler;
 using ABI::Windows::Foundation::IPropertyValueStatics;
 using ABI::Windows::Foundation::Collections::IObservableVector;
 using ABI::Windows::Foundation::Collections::IVector;
-using ABI::Windows::UI::Xaml::IControl;
+using ABI::Windows::UI::Xaml::Controls::IControl;
 using ABI::Windows::UI::Xaml::IRoutedEventArgs;
 using ABI::Windows::UI::Xaml::IRoutedEventHandler;
 using ABI::Windows::UI::Xaml::IUIElement;

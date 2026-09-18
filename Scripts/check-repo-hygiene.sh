@@ -214,6 +214,9 @@ require_literal_in_file "Apps/WindowsStudio/Sources/WindowsCapture/winui_shell.c
 require_literal_in_file "Apps/WindowsStudio/Sources/WindowsCapture/winui_shell.cpp" "activateFactory(readerName.get()"
 require_literal_in_file "Apps/WindowsStudio/Sources/WindowsCapture/winrt_interop.h" "BR_HAS_WGC_INTEROP_H"
 require_literal_in_file "Apps/WindowsStudio/Sources/WindowsCapture/winui_shell.cpp" "add_DropDownOpened"
+require_literal_in_file "Apps/WindowsStudio/CMakeLists.txt" "string(REPLACE \";\" \" \" _br_probe_cxx"
+require_literal_in_file "Apps/WindowsStudio/cmake/winui_probe.cpp" "using ABI::Windows::UI::Xaml::Controls::IControl"
+require_literal_in_file "Apps/WindowsStudio/Sources/WindowsCapture/winui_shell.cpp" "using ABI::Windows::UI::Xaml::Controls::IControl"
 require_literal_in_file "Apps/WindowsStudio/cmake/winui_probe.cpp" "IVector<IInspectable*>"
 require_literal_in_file "Apps/WindowsStudio/Sources/WindowsCapture/winui_shell.cpp" "add_GotFocus"
 require_literal_in_file "Apps/WindowsStudio/cmake/winui_probe.cpp" "add_DropDownOpened"
@@ -321,6 +324,12 @@ while IFS= read -r file; do
     pass "$file includes Windows/WRL headers before namespace br"
   fi
 done < <(git ls-files 'Apps/WindowsStudio/**/*.cpp' 'Apps/WindowsStudio/**/*.h')
+
+if grep -Fq 'COMPILE_DEFINITIONS UNICODE' Apps/WindowsStudio/CMakeLists.txt; then
+  fail "try_compile COMPILE_DEFINITIONS UNICODE is passed as extra source files on CMake 4.2"
+else
+  pass "try_compile does not pass bare UNICODE as COMPILE_DEFINITIONS"
+fi
 
 if grep -Fq -- ".zip" .github/workflows/windows-release.yml; then
   fail "windows-release.yml must not attach a zip"

@@ -125,14 +125,16 @@ if(BR_BUILD_STUDIO_SHELL)
     # Compile-only: an isolated try_compile *link* of windowsapp.lib is a false
     # FATAL on some images even when winui_shell.cpp compiles in-tree.
     # CMAKE_FLAGS -D is not enough on every CMake; set the variable too.
+    # CMake 4.2 try_compile defs without a -D prefix become extra cl source files (C1083).
+    # Probe cpp already #defines WINVER/UNICODE.
     set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+    string(REPLACE ";" " " _br_probe_cxx "${BR_MSVC_CXX}")
     try_compile(BR_WINUI_OK
         "${CMAKE_BINARY_DIR}/winui_probe"
         "${CMAKE_CURRENT_SOURCE_DIR}/cmake/winui_probe.cpp"
         CMAKE_FLAGS
-            "-DCMAKE_CXX_FLAGS=/EHsc /utf-8 /Zc:twoPhase- /permissive-"
+            "-DCMAKE_CXX_FLAGS=${_br_probe_cxx}"
             "-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY"
-        COMPILE_DEFINITIONS UNICODE _UNICODE NOMINMAX WINVER=0x0A00 _WIN32_WINNT=0x0A00 NTDDI_VERSION=0x0A00000C
         LINK_LIBRARIES runtimeobject ole32 oleaut32 uuid
         OUTPUT_VARIABLE BR_WINUI_PROBE_LOG
         CXX_STANDARD 17
