@@ -306,8 +306,16 @@ function Invoke-SwiftBuild([string[]]$extra) {
     Write-Host "swift $($args -join ' ')  (cwd=$PackageRoot)"
     Push-Location $PackageRoot
     try {
-        & swift @args
-        return $LASTEXITCODE
+        # Native swift stdout must not become this function's return value or
+        # `$exit -eq 0` is never true (and a green lld retry still throws).
+        $nativeEA = $PSNativeCommandUseErrorActionPreference
+        $PSNativeCommandUseErrorActionPreference = $false
+        try {
+            & swift @args | Out-Host
+            return [int]$LASTEXITCODE
+        } finally {
+            $PSNativeCommandUseErrorActionPreference = $nativeEA
+        }
     } finally {
         Pop-Location
     }
@@ -317,6 +325,7 @@ $peOk = $false
 Write-Host "linking with MSVC link.exe first; lld-link splits /LIBPATH:D:\\ on the drive colon"
 $exit = Invoke-SwiftBuild @(
     "-Xswiftc", "-use-ld=link",
+    "-Xswiftc", "-debug-info-format=codeview",
     "-Xlinker", "/MANIFEST:NO",
     "-Xlinker", "/MANIFESTUAC:NO"
 )

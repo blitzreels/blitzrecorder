@@ -158,6 +158,9 @@ require_literal_in_file "Apps/WindowsStudio/Package.swift" "splits on the drive 
 require_literal_in_file "Apps/WindowsStudio/Package.swift" 'contains(where: { $0 == ":" })'
 require_literal_in_file "Scripts/windows/build-studio.ps1" "rc.exe"
 require_literal_in_file "Scripts/windows/build-studio.ps1" "-use-ld=link"
+require_literal_in_file "Scripts/windows/build-studio.ps1" "-debug-info-format=codeview"
+require_literal_in_file "Scripts/windows/build-studio.ps1" "Out-Host"
+require_literal_in_file "Scripts/windows/build-studio.ps1" "PSNativeCommandUseErrorActionPreference"
 require_literal_in_file "Scripts/windows/build-studio.ps1" "PE gate failed"
 require_literal_in_file "Scripts/windows/build-studio.ps1" "linking with MSVC link.exe first"
 require_literal_in_file "Scripts/windows/build-studio.ps1" "BR_WINDOWS_CAPTURE_LIBDIR = \"build-native/lib\""
