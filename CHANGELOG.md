@@ -6,6 +6,14 @@ This project uses GitHub Releases for downloadable macOS builds. Release tags us
 
 ## Unreleased
 
+## 0.21.0 - 2026-09-23
+
+- Export videos faster, from 1.0× to 2.0× in 0.1 steps. The export size estimate follows the chosen speed.
+- Send an exported MP4 to BlitzReels for captions and B-roll after signing in once from the app.
+- Transcripts keep call participants from system audio and drop echoes of your own microphone.
+- The project library previews your newest edited export instead of the raw take.
+- The editor timeline drops duplicate controls and hides the Scenes lane for single-scene takes.
+
 ## 0.20.0 - 2026-09-16
 
 - Continuity Camera interruptions no longer abort the take. Screen and audio keep recording, the camera slot goes black, and the camera can resume if it comes back.
