@@ -9,6 +9,9 @@ function Get-VsWhere {
 }
 
 function Enter-MsvcDevCmd([string]$vsArch) {
+    if ($env:VSCMD_ARG_TGT_ARCH -eq $vsArch -and $env:INCLUDE -and $env:LIB -and (Get-Command cl -ErrorAction SilentlyContinue)) {
+        return $true
+    }
     $vswhere = Get-VsWhere
     if (-not $vswhere) { return $false }
     $vsPath = & $vswhere -latest -products * -property installationPath
@@ -29,7 +32,7 @@ function Enter-MsvcDevCmd([string]$vsArch) {
         "VCINSTALLDIR", "VCToolsInstallDir", "VCToolsVersion",
         "UniversalCRTSdkDir", "UCRTVersion",
         "DevEnvDir", "VSINSTALLDIR",
-        "WindowsLibPath", "ExtensionSdkDir"
+        "WindowsLibPath", "ExtensionSdkDir", "VSCMD_ARG_TGT_ARCH"
     )) {
         if ($map.ContainsKey($key) -and $map[$key]) {
             Set-Item -Path "Env:$key" -Value $map[$key]
