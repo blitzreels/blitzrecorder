@@ -386,7 +386,8 @@ final class MCPProjectService {
             mutedAudioSources: Set(
                 project.editorState.mutedAudioSources.compactMap(CaptureSource.init(rawValue:))
             ),
-            backgroundMusic: backgroundMusic(project.editorState)
+            backgroundMusic: backgroundMusic(project.editorState),
+            playbackRate: ExportPlaybackRate(clamping: project.editorState.exportRecipe?.playbackRate ?? 1).value
         )
     }
 

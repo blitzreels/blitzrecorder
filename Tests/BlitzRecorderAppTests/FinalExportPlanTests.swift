@@ -19,6 +19,24 @@ final class FinalExportPlanTests: XCTestCase {
         XCTAssertEqual(plan.duration.seconds, 1, accuracy: 0.0001)
     }
 
+    func testPlanShortensOutputWhenPlaybackRateIsFaster() throws {
+        var settings = RecordingSettings()
+        settings.enabledSources = [.screen]
+
+        let plan = try FinalExportPlanning.plan(
+            settings: settings,
+            sceneEvents: [],
+            sources: [source(.screen, duration: 2)],
+            playbackRate: 2
+        )
+        let insertion = try XCTUnwrap(plan.insertion(for: .screen))
+
+        XCTAssertEqual(plan.duration.seconds, 1, accuracy: 0.0001)
+        XCTAssertEqual(insertion.sourceDuration.seconds, 2, accuracy: 0.0001)
+        XCTAssertEqual(insertion.duration.seconds, 1, accuracy: 0.0001)
+        XCTAssertEqual(plan.timeMap.takeSeconds(forOutputSeconds: 0.5), 1, accuracy: 0.0001)
+    }
+
     func testPlanUsesOptimizedWriterForCanvasAwareSceneEvent() throws {
         var settings = RecordingSettings()
         settings.enabledSources = [.screen]

@@ -16,8 +16,8 @@ extension MediaTime {
 }
 
 extension TimelineTimeMap {
-    init(takeDuration: CMTime, cuts: [TimelineCut]) {
-        self.init(takeDuration: MediaTime(takeDuration), cuts: cuts)
+    init(takeDuration: CMTime, cuts: [TimelineCut], playbackRate: Double = 1.0) {
+        self.init(takeDuration: MediaTime(takeDuration), cuts: cuts, playbackRate: playbackRate)
     }
 
     static func identity(takeDuration: CMTime) -> TimelineTimeMap {

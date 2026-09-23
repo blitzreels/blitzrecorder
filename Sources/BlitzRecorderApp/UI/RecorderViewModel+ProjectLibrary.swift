@@ -178,7 +178,8 @@ extension RecorderViewModel {
             destinationURL: destinationURL,
             hiddenVideoSources: request.hiddenVideoSources,
             mutedAudioSources: request.mutedAudioSources,
-            backgroundMusic: request.backgroundMusic
+            backgroundMusic: request.backgroundMusic,
+            playbackRate: request.playbackRate
         ))
     }
 
@@ -205,7 +206,7 @@ extension RecorderViewModel {
                         outputLayout: layout, projectURL: projectURL, outputFormat: request.export.outputFormat,
                         performanceProfile: request.export.performanceProfile, destinationURL: destination,
                         hiddenVideoSources: request.export.hiddenVideoSources, mutedAudioSources: request.export.mutedAudioSources,
-                        backgroundMusic: request.export.backgroundMusic
+                        backgroundMusic: request.export.backgroundMusic, playbackRate: request.export.playbackRate
                     ))
                     variantExportURLs.append(result.url)
                 } catch { return }

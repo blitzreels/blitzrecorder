@@ -637,12 +637,36 @@ enum SceneLayerKind: String, CaseIterable {
     case camera = "Camera"
 }
 
+struct ExportPlaybackRate: Hashable, Codable, Sendable {
+    static let all = (TimelineTimeMap.minimumPlaybackRateTenths...TimelineTimeMap.maximumPlaybackRateTenths).map {
+        ExportPlaybackRate(tenths: $0)
+    }
+    static let normal = ExportPlaybackRate(tenths: TimelineTimeMap.minimumPlaybackRateTenths)
+
+    let tenths: Int
+
+    var value: Double { Double(tenths) / 10.0 }
+
+    var displayName: String {
+        String(format: "%.1f×", value)
+    }
+
+    init(tenths: Int) {
+        self.tenths = TimelineTimeMap.clampedRateTenths(Double(tenths) / 10.0)
+    }
+
+    init(clamping value: Double) {
+        tenths = TimelineTimeMap.clampedRateTenths(value)
+    }
+}
+
 struct EditorExportRequest {
     let outputFormat: OutputVideoFormat
     let performanceProfile: ExportPerformanceProfile
     let hiddenVideoSources: Set<SceneLayerKind>
     let mutedAudioSources: Set<CaptureSource>
     let backgroundMusic: ExportBackgroundMusic?
+    var playbackRate: Double = 1.0
 }
 
 struct ProjectExportRequest {
@@ -654,6 +678,7 @@ struct ProjectExportRequest {
     let hiddenVideoSources: Set<SceneLayerKind>
     let mutedAudioSources: Set<CaptureSource>
     let backgroundMusic: ExportBackgroundMusic?
+    var playbackRate: Double = 1.0
 }
 
 struct ExportBackgroundMusic {

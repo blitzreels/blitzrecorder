@@ -12,6 +12,7 @@ struct EditorExportRecipe {
         let layoutCount: Int
         let audioBitrate: Int
         let duration: Double
+        var playbackRate: Double = 1.0
     }
 
     let profile: ExportPerformanceProfile
@@ -41,16 +42,17 @@ struct EditorExportRecipe {
         )
         let summary: String
         if request.layoutCount > 1 {
-            summary = "\(request.layoutCount) videos · \(profile.resolution.displayName) · \(profile.framesPerSecond) fps"
+            summary = "\(request.layoutCount) videos · \(profile.resolution.displayName) · \(profile.framesPerSecond) fps\(Self.speedSuffix(request.playbackRate))"
         } else {
-            summary = "\(dimensions.width) × \(dimensions.height) · \(profile.framesPerSecond) fps"
+            summary = "\(dimensions.width) × \(dimensions.height) · \(profile.framesPerSecond) fps\(Self.speedSuffix(request.playbackRate))"
         }
+        let rate = ExportPlaybackRate(clamping: request.playbackRate).value
         return EditorExportRecipe(
             profile: profile,
             encoding: encoding,
             summary: summary,
             estimatedSize: encoding.estimatedSizeText(
-                duration: request.duration,
+                duration: request.duration / rate,
                 layoutCount: max(1, request.layoutCount)
             )
         )
@@ -62,6 +64,7 @@ struct EditorExportRecipe {
         var resolution: OutputResolution
         var framesPerSecond: Int
         var quality: ExportVideoQuality
+        var playbackRate: ExportPlaybackRate
     }
 
     static func restored(
@@ -79,7 +82,8 @@ struct EditorExportRecipe {
             format: format,
             resolution: resolution,
             framesPerSecond: snapshot.framesPerSecond,
-            quality: quality.resolvedMenuQuality
+            quality: quality.resolvedMenuQuality,
+            playbackRate: ExportPlaybackRate(clamping: snapshot.playbackRate)
         )
     }
 
@@ -122,5 +126,11 @@ struct EditorExportRecipe {
             quality: profile.videoQuality,
             format: profile.videoQuality.resolvedOutputFormat(currentFormat)
         )
+    }
+
+    private static func speedSuffix(_ rate: Double) -> String {
+        let playbackRate = ExportPlaybackRate(clamping: rate)
+        guard playbackRate != .normal else { return "" }
+        return " · \(playbackRate.displayName)"
     }
 }

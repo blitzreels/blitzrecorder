@@ -142,6 +142,7 @@ enum OptimizedCompositionExporter {
             )
             output.audioMix = audioMix
             output.alwaysCopiesSampleData = false
+            output.audioTimePitchAlgorithm = .spectral
             guard reader.canAdd(output) else {
                 throw RecorderError.exportUnavailable
             }

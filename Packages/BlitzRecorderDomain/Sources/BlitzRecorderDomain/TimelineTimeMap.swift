@@ -4,11 +4,18 @@ public struct TimelineMediaInsertion: Equatable, Sendable {
     public let sourceStart: MediaTime
     public let compositionStart: MediaTime
     public let duration: MediaTime
+    public let sourceDuration: MediaTime
 
-    public init(sourceStart: MediaTime, compositionStart: MediaTime, duration: MediaTime) {
+    public init(
+        sourceStart: MediaTime,
+        compositionStart: MediaTime,
+        duration: MediaTime,
+        sourceDuration: MediaTime? = nil
+    ) {
         self.sourceStart = sourceStart
         self.compositionStart = compositionStart
         self.duration = duration
+        self.sourceDuration = sourceDuration ?? duration
     }
 }
 
@@ -62,13 +69,22 @@ public struct TimelineTimeMap: Equatable, Sendable {
         }
     }
 
+    public static let minimumPlaybackRateTenths = 10
+    public static let maximumPlaybackRateTenths = 20
+
     public let takeDuration: MediaTime
     public let keptRanges: [KeptRange]
     public let removedRanges: [RemovedRange]
+    public let playbackRateTenths: Int
 
-    public init(takeDuration: MediaTime, cuts: [TimelineCut]) {
+    public var playbackRate: Double {
+        Double(playbackRateTenths) / 10.0
+    }
+
+    public init(takeDuration: MediaTime, cuts: [TimelineCut], playbackRate: Double = 1.0) {
         let normalizedDuration = MediaTime.maximum(.zero, takeDuration)
         self.takeDuration = normalizedDuration
+        self.playbackRateTenths = Self.clampedRateTenths(playbackRate)
         let durationSeconds = normalizedDuration.seconds
 
         var removed: [RemovedRange] = []
@@ -114,12 +130,18 @@ public struct TimelineTimeMap: Equatable, Sendable {
         self.keptRanges = kept
     }
 
-    public static func identity(takeDuration: MediaTime) -> TimelineTimeMap {
-        TimelineTimeMap(takeDuration: takeDuration, cuts: [])
+    public static func clampedRateTenths(_ rate: Double) -> Int {
+        guard rate.isFinite else { return minimumPlaybackRateTenths }
+        let tenths = Int((rate * 10).rounded())
+        return min(maximumPlaybackRateTenths, max(minimumPlaybackRateTenths, tenths))
+    }
+
+    public static func identity(takeDuration: MediaTime, playbackRate: Double = 1.0) -> TimelineTimeMap {
+        TimelineTimeMap(takeDuration: takeDuration, cuts: [], playbackRate: playbackRate)
     }
 
     public var outputDuration: MediaTime {
-        keptRanges.last?.outputEnd ?? .zero
+        scaledOutput(keptRanges.last?.outputEnd ?? .zero)
     }
 
     public var hasCuts: Bool {
@@ -154,8 +176,8 @@ public struct TimelineTimeMap: Equatable, Sendable {
         }
         guard lower < keptRanges.count else { return outputDuration }
         let range = keptRanges[lower]
-        guard takeTime >= range.takeStart else { return range.outputStart }
-        return range.outputStart + (takeTime - range.takeStart)
+        guard takeTime >= range.takeStart else { return scaledOutput(range.outputStart) }
+        return scaledOutput(range.outputStart + (takeTime - range.takeStart))
     }
 
     public func outputSeconds(forTakeSeconds seconds: TimeInterval) -> TimeInterval {
@@ -163,10 +185,11 @@ public struct TimelineTimeMap: Equatable, Sendable {
     }
 
     public func takeTime(forOutput outputTime: MediaTime) -> MediaTime {
-        let index = outputRangeIndex(at: outputTime)
+        let unscaled = unscaledOutput(outputTime)
+        let index = outputRangeIndex(at: unscaled)
         guard index < keptRanges.count else { return keptRanges.last?.takeEnd ?? takeDuration }
         let range = keptRanges[index]
-        let offset = MediaTime.maximum(.zero, outputTime - range.outputStart)
+        let offset = MediaTime.maximum(.zero, unscaled - range.outputStart)
         return range.takeStart + offset
     }
 
@@ -195,8 +218,9 @@ public struct TimelineTimeMap: Equatable, Sendable {
     }
 
     public func keptRange(containingOutput outputTime: MediaTime) -> KeptRange? {
-        let index = outputRangeIndex(at: outputTime)
-        guard index < keptRanges.count, outputTime >= keptRanges[index].outputStart else { return nil }
+        let unscaled = unscaledOutput(outputTime)
+        let index = outputRangeIndex(at: unscaled)
+        guard index < keptRanges.count, unscaled >= keptRanges[index].outputStart else { return nil }
         return keptRanges[index]
     }
 
@@ -232,13 +256,27 @@ public struct TimelineTimeMap: Equatable, Sendable {
             let pieceEnd = MediaTime.minimum(range.takeEnd, activeEnd)
             guard pieceEnd > pieceStart else { continue }
             let sourceStart = sourceAtActiveStart + (pieceStart - activeStart)
-            let compositionStart = range.outputStart + (pieceStart - range.takeStart)
+            let sourceDuration = pieceEnd - pieceStart
+            let compositionStart = scaledOutput(range.outputStart + (pieceStart - range.takeStart))
             insertions.append(TimelineMediaInsertion(
                 sourceStart: sourceStart,
                 compositionStart: compositionStart,
-                duration: pieceEnd - pieceStart
+                duration: scaledOutput(sourceDuration),
+                sourceDuration: sourceDuration
             ))
         }
         return insertions
+    }
+
+    private func scaledOutput(_ time: MediaTime) -> MediaTime {
+        guard playbackRateTenths != 10 else { return time }
+        let tenths = Int64(playbackRateTenths)
+        return MediaTime(value: (time.value * 10 + tenths / 2) / tenths)
+    }
+
+    private func unscaledOutput(_ time: MediaTime) -> MediaTime {
+        guard playbackRateTenths != 10 else { return time }
+        let tenths = Int64(playbackRateTenths)
+        return MediaTime(value: (time.value * tenths + 5) / 10)
     }
 }

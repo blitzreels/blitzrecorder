@@ -12,6 +12,7 @@ struct EditorExportControls: View {
     @Binding var selectedResolution: OutputResolution
     @Binding var selectedExportFramesPerSecond: Int
     @Binding var selectedExportQuality: ExportVideoQuality
+    @Binding var selectedExportPlaybackRate: ExportPlaybackRate
     @Binding var backgroundMusic: ExportBackgroundMusic?
     @Binding var backgroundMusicBookmarkData: Data?
     let recipe: EditorExportRecipe
@@ -79,6 +80,13 @@ struct EditorExportControls: View {
                     selectedFormat = $0.resolvedOutputFormat(selectedFormat)
                     selectedExportPreset = .custom
                     persist("Change Export Quality")
+                }
+            ),
+            playbackRate: Binding(
+                get: { selectedExportPlaybackRate },
+                set: {
+                    selectedExportPlaybackRate = $0
+                    persist("Change Export Speed")
                 }
             ),
             summary: recipe.summary,

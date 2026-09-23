@@ -10,25 +10,28 @@ struct FinalVideoExportRequest {
     let backgroundMusic: ExportBackgroundMusic?
     let destinationURL: URL?
     let progressHandler: (@MainActor (Double) -> Void)?
-    let timelineEdits: TimelineEdits
+        let timelineEdits: TimelineEdits
+        var playbackRate: Double = 1.0
 
-    init(
-        take: RecordingTake,
-        settings: RecordingSettings,
-        sceneEvents: [RecordingSceneEvent],
-        backgroundMusic: ExportBackgroundMusic?,
-        destinationURL: URL?,
-        progressHandler: (@MainActor (Double) -> Void)?,
-        timelineEdits: TimelineEdits = .empty
-    ) {
-        self.take = take
-        self.settings = settings
-        self.sceneEvents = sceneEvents
-        self.backgroundMusic = backgroundMusic
-        self.destinationURL = destinationURL
-        self.progressHandler = progressHandler
-        self.timelineEdits = timelineEdits
-    }
+        init(
+            take: RecordingTake,
+            settings: RecordingSettings,
+            sceneEvents: [RecordingSceneEvent],
+            backgroundMusic: ExportBackgroundMusic?,
+            destinationURL: URL?,
+            progressHandler: (@MainActor (Double) -> Void)?,
+            timelineEdits: TimelineEdits = .empty,
+            playbackRate: Double = 1.0
+        ) {
+            self.take = take
+            self.settings = settings
+            self.sceneEvents = sceneEvents
+            self.backgroundMusic = backgroundMusic
+            self.destinationURL = destinationURL
+            self.progressHandler = progressHandler
+            self.timelineEdits = timelineEdits
+            self.playbackRate = playbackRate
+        }
 }
 
 enum Merger {
@@ -91,7 +94,8 @@ enum Merger {
             settings: settings,
             sceneEvents: sceneEvents,
             sources: sourceInputs,
-            cuts: request.timelineEdits.enabledCuts
+            cuts: request.timelineEdits.enabledCuts,
+            playbackRate: request.playbackRate
         )
 
         let composition = AVMutableComposition()
@@ -110,10 +114,10 @@ enum Merger {
             }
 
             for insertion in insertions {
-                try compositionTrack.insertTimeRange(
-                    CMTimeRange(start: insertion.sourceStart, duration: insertion.duration),
+                try insertMappedTimeRange(
+                    insertion,
                     of: source.track,
-                    at: insertion.compositionStart
+                    into: compositionTrack
                 )
             }
 
@@ -251,6 +255,7 @@ enum Merger {
         exporter.outputFileType = outputFileType
         exporter.videoComposition = videoComposition
         exporter.audioMix = audioMix
+        exporter.audioTimePitchAlgorithm = .spectral
         exporter.shouldOptimizeForNetworkUse = true
 
         let progressTask = Task { @MainActor in
@@ -273,6 +278,56 @@ enum Merger {
             await progressTask.value
             throw error
         }
+    }
+
+    private static func insertMappedTimeRange(
+        _ insertion: FinalExportSourceInsertion,
+        of sourceTrack: AVAssetTrack,
+        into compositionTrack: AVMutableCompositionTrack
+    ) throws {
+        try insertMappedTimeRange(
+            sourceStart: insertion.sourceStart,
+            sourceDuration: insertion.sourceDuration,
+            compositionStart: insertion.compositionStart,
+            outputDuration: insertion.duration,
+            of: sourceTrack,
+            into: compositionTrack
+        )
+    }
+
+    private static func insertMappedTimeRange(
+        _ insertion: TimelineMediaInsertion,
+        of sourceTrack: AVAssetTrack,
+        into compositionTrack: AVMutableCompositionTrack
+    ) throws {
+        try insertMappedTimeRange(
+            sourceStart: insertion.sourceStart.cmTime,
+            sourceDuration: insertion.sourceDuration.cmTime,
+            compositionStart: insertion.compositionStart.cmTime,
+            outputDuration: insertion.duration.cmTime,
+            of: sourceTrack,
+            into: compositionTrack
+        )
+    }
+
+    private static func insertMappedTimeRange(
+        sourceStart: CMTime,
+        sourceDuration: CMTime,
+        compositionStart: CMTime,
+        outputDuration: CMTime,
+        of sourceTrack: AVAssetTrack,
+        into compositionTrack: AVMutableCompositionTrack
+    ) throws {
+        try compositionTrack.insertTimeRange(
+            CMTimeRange(start: sourceStart, duration: sourceDuration),
+            of: sourceTrack,
+            at: compositionStart
+        )
+        guard CMTimeCompare(sourceDuration, outputDuration) != 0 else { return }
+        compositionTrack.scaleTimeRange(
+            CMTimeRange(start: compositionStart, duration: sourceDuration),
+            toDuration: outputDuration
+        )
     }
 
     private static func availableVideoSources(for take: RecordingTake, settings: RecordingSettings) async throws -> [VideoSource] {
@@ -558,10 +613,10 @@ enum Merger {
             throw missingExpectedAudio(audioSource, reason: "file ends before the synchronized timeline starts")
         }
         for insertion in insertions {
-            try compositionAudioTrack.insertTimeRange(
-                CMTimeRange(start: insertion.sourceStart.cmTime, duration: insertion.duration.cmTime),
+            try insertMappedTimeRange(
+                insertion,
                 of: audioTrack,
-                at: insertion.compositionStart.cmTime
+                into: compositionAudioTrack
             )
         }
 
@@ -874,9 +929,16 @@ extension Merger {
                 throw RecorderError.exportUnavailable
             }
             for insertion in insertions {
-                let range = CMTimeRange(start: insertion.sourceStart.cmTime, duration: insertion.duration.cmTime)
-                try compositionTrack.insertTimeRange(range, of: source.track, at: insertion.compositionStart.cmTime)
-                try videoTrack.insertTimeRange(range, of: source.track, at: insertion.compositionStart.cmTime)
+                try insertMappedTimeRange(
+                    insertion,
+                    of: source.track,
+                    into: compositionTrack
+                )
+                try insertMappedTimeRange(
+                    insertion,
+                    of: source.track,
+                    into: videoTrack
+                )
             }
             videoTrack.preferredTransform = source.preferredTransform
             videoAssets[source.kind] = videoAsset
@@ -1053,9 +1115,10 @@ extension Merger {
         }
         do {
             for insertion in insertions {
-                try compositionAudioTrack.insertTimeRange(
-                    CMTimeRange(start: insertion.sourceStart.cmTime, duration: insertion.duration.cmTime),
-                    of: request.audioSource.track, at: insertion.compositionStart.cmTime
+                try insertMappedTimeRange(
+                    insertion,
+                    of: request.audioSource.track,
+                    into: compositionAudioTrack
                 )
             }
         } catch {

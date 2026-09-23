@@ -45,12 +45,28 @@ struct FinalExportSourceInsertion: Equatable {
     let sourceStart: CMTime
     let compositionStart: CMTime
     let duration: CMTime
+    let sourceDuration: CMTime
+
+    init(
+        kind: SceneLayerKind,
+        sourceStart: CMTime,
+        compositionStart: CMTime,
+        duration: CMTime,
+        sourceDuration: CMTime? = nil
+    ) {
+        self.kind = kind
+        self.sourceStart = sourceStart
+        self.compositionStart = compositionStart
+        self.duration = duration
+        self.sourceDuration = sourceDuration ?? duration
+    }
 
     static func == (lhs: FinalExportSourceInsertion, rhs: FinalExportSourceInsertion) -> Bool {
         lhs.kind == rhs.kind
             && CMTimeCompare(lhs.sourceStart, rhs.sourceStart) == 0
             && CMTimeCompare(lhs.compositionStart, rhs.compositionStart) == 0
             && CMTimeCompare(lhs.duration, rhs.duration) == 0
+            && CMTimeCompare(lhs.sourceDuration, rhs.sourceDuration) == 0
     }
 
     var timeRange: CMTimeRange {
@@ -132,6 +148,7 @@ enum FinalExportPlanning {
         let sceneEvents: [RecordingSceneEvent]
         let sources: [FinalExportSourceInput]
         let cuts: [TimelineCut]
+        var playbackRate: Double = 1.0
     }
 
     static func applyingTimelineTrim(_ request: TimelineTrimRequest) -> [FinalExportSourceInput] {
@@ -159,9 +176,16 @@ enum FinalExportPlanning {
         settings: RecordingSettings,
         sceneEvents: [RecordingSceneEvent],
         sources: [FinalExportSourceInput],
-        cuts: [TimelineCut] = []
+        cuts: [TimelineCut] = [],
+        playbackRate: Double = 1.0
     ) throws -> FinalExportPlan {
-        try plan(PlanRequest(settings: settings, sceneEvents: sceneEvents, sources: sources, cuts: cuts))
+        try plan(PlanRequest(
+            settings: settings,
+            sceneEvents: sceneEvents,
+            sources: sources,
+            cuts: cuts,
+            playbackRate: playbackRate
+        ))
     }
 
     static func plan(_ request: PlanRequest) throws -> FinalExportPlan {
@@ -179,7 +203,11 @@ enum FinalExportPlanning {
         let takeDuration = durationSources
             .map { CMTimeAdd($0.timelineOffset, $0.duration) }
             .reduce(CMTimeAdd(durationSources[0].timelineOffset, durationSources[0].duration)) { CMTimeMinimum($0, $1) }
-        let timeMap = TimelineTimeMap(takeDuration: takeDuration, cuts: request.cuts)
+        let timeMap = TimelineTimeMap(
+            takeDuration: takeDuration,
+            cuts: request.cuts,
+            playbackRate: request.playbackRate
+        )
         let duration = timeMap.outputDuration.cmTime
         let dimensions = ScreenCaptureGeometry.outputDimensions(for: settings)
         let renderSize = CGSize(width: dimensions.width, height: dimensions.height)
@@ -238,7 +266,8 @@ enum FinalExportPlanning {
                 kind: source.kind,
                 sourceStart: insertion.sourceStart.cmTime,
                 compositionStart: insertion.compositionStart.cmTime,
-                duration: insertion.duration.cmTime
+                duration: insertion.duration.cmTime,
+                sourceDuration: insertion.sourceDuration.cmTime
             )
         }
     }

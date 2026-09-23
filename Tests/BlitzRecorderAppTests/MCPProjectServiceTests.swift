@@ -15,7 +15,8 @@ final class MCPProjectServiceTests: XCTestCase {
                 format: OutputVideoFormat.mov.rawValue,
                 resolution: OutputResolution.p720.rawValue,
                 framesPerSecond: 24,
-                quality: ExportVideoQuality.maximum.rawValue
+                quality: ExportVideoQuality.maximum.rawValue,
+                playbackRate: 1.2
             )
         ))
 
@@ -32,6 +33,7 @@ final class MCPProjectServiceTests: XCTestCase {
         XCTAssertEqual(request.mutedAudioSources, [.microphone])
         XCTAssertEqual(request.destinationURL.pathExtension, "mp4")
         XCTAssertEqual(request.destinationURL.deletingLastPathComponent(), fixture.outputDirectory)
+        XCTAssertEqual(request.playbackRate, 1.2, accuracy: 0.0001)
     }
 
     func testExportAsIsUsesSourceQualityWhenNoRecipeExists() throws {

@@ -243,6 +243,35 @@ struct RecordingProject: Codable, Equatable {
         let resolution: String
         let framesPerSecond: Int
         let quality: String
+        var playbackRate: Double
+
+        init(
+            preset: String,
+            format: String,
+            resolution: String,
+            framesPerSecond: Int,
+            quality: String,
+            playbackRate: Double = 1.0
+        ) {
+            self.preset = preset
+            self.format = format
+            self.resolution = resolution
+            self.framesPerSecond = framesPerSecond
+            self.quality = quality
+            self.playbackRate = ExportPlaybackRate(clamping: playbackRate).value
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            preset = try container.decode(String.self, forKey: .preset)
+            format = try container.decode(String.self, forKey: .format)
+            resolution = try container.decode(String.self, forKey: .resolution)
+            framesPerSecond = try container.decode(Int.self, forKey: .framesPerSecond)
+            quality = try container.decode(String.self, forKey: .quality)
+            playbackRate = ExportPlaybackRate(
+                clamping: try container.decodeIfPresent(Double.self, forKey: .playbackRate) ?? 1.0
+            ).value
+        }
     }
 
     struct CutSnapshot: Codable, Equatable, Identifiable {

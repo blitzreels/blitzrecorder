@@ -658,7 +658,8 @@ extension RecorderCaptureRuntime {
             progressHandler: { [weak self] progress in
                 self?.onRenderProgress?(progress)
             },
-            timelineEdits: outputProject.edits
+            timelineEdits: outputProject.edits,
+            playbackRate: request.playbackRate
         ))
 
         try takeFileStore.writeSourceTakeManifest(

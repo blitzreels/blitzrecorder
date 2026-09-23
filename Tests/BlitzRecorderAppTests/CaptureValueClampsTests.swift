@@ -170,6 +170,38 @@ final class EditorExportRecipeTests: XCTestCase {
         XCTAssertTrue(recipe.summary.contains("2 videos"))
         XCTAssertFalse(recipe.estimatedSize.isEmpty)
     }
+
+    func testRecipeIncludesSpeedAndShrinksEstimate() {
+        let normal = EditorExportRecipe.make(.init(
+            preset: .balanced,
+            sourceResolution: .p1080,
+            sourceFramesPerSecond: 30,
+            customResolution: .p1080,
+            customFramesPerSecond: 30,
+            customVideoQuality: .web,
+            layout: .horizontal,
+            layoutCount: 1,
+            audioBitrate: 192_000,
+            duration: 10,
+            playbackRate: 1
+        ))
+        let faster = EditorExportRecipe.make(.init(
+            preset: .balanced,
+            sourceResolution: .p1080,
+            sourceFramesPerSecond: 30,
+            customResolution: .p1080,
+            customFramesPerSecond: 30,
+            customVideoQuality: .web,
+            layout: .horizontal,
+            layoutCount: 1,
+            audioBitrate: 192_000,
+            duration: 10,
+            playbackRate: 2
+        ))
+        XCTAssertFalse(normal.summary.contains("2.0×"))
+        XCTAssertTrue(faster.summary.contains("2.0×"))
+        XCTAssertNotEqual(normal.estimatedSize, faster.estimatedSize)
+    }
 }
 
 final class ProjectExportRenderPlanTests: XCTestCase {
@@ -290,7 +322,7 @@ final class RecordingStartGateTests: XCTestCase {
         XCTAssertNil(TakeFinalizationOutcome.saved(URL(fileURLWithPath: "/tmp/final.mov"), sourceDirectory: nil).retainedTake)
     }
 
-    func testStopPresentationAndPickerActivation() {
+    func testStopPresentationAndPickerActivation() throws {
         XCTAssertEqual(
             RecordingStopPresentation.liveComposited(
                 wroteMedia: false,
@@ -423,6 +455,12 @@ final class RecordingStartGateTests: XCTestCase {
         )
         XCTAssertEqual(restored?.preset, .balanced)
         XCTAssertEqual(restored?.framesPerSecond, 30)
+        XCTAssertEqual(restored?.playbackRate, .normal)
+        let decoded = try JSONDecoder().decode(
+            RecordingProject.ExportRecipeSnapshot.self,
+            from: Data(#"{"preset":"Balanced","format":"MOV","resolution":"1080p","framesPerSecond":30,"quality":"High"}"#.utf8)
+        )
+        XCTAssertEqual(decoded.playbackRate, 1, accuracy: 0.0001)
         XCTAssertNil(EditorExportRecipe.restored(snapshot: nil))
         XCTAssertEqual(
             CaptureDeviceEvent.connected(hasAudio: true, hasVideo: true, isIdle: false),

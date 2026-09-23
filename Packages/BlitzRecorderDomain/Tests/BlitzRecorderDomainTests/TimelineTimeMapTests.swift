@@ -82,4 +82,35 @@ final class TimelineTimeMapTests: XCTestCase {
             XCTAssertNil(map.removedRange(containing: -.infinity))
         }
     }
+
+    func testPlaybackRateShortensOutputAndKeepsSourceDuration() {
+        XCTAssertEqual(TimelineTimeMap.clampedRateTenths(1.15), 12)
+        XCTAssertEqual(TimelineTimeMap.clampedRateTenths(0.5), 10)
+        XCTAssertEqual(TimelineTimeMap.clampedRateTenths(3), 20)
+
+        let map = TimelineTimeMap(
+            takeDuration: MediaTime(seconds: 10),
+            cuts: [.init(start: 2, end: 4, kind: .manual, source: .user)],
+            playbackRate: 2
+        )
+        XCTAssertEqual(map.playbackRate, 2, accuracy: 0.0001)
+        XCTAssertEqual(map.outputDuration.seconds, 4, accuracy: 0.001)
+        XCTAssertEqual(map.outputSeconds(forTakeSeconds: 1), 0.5, accuracy: 0.001)
+        XCTAssertEqual(map.takeSeconds(forOutputSeconds: 0.5), 1, accuracy: 0.001)
+        XCTAssertEqual(map.takeSeconds(forOutputSeconds: 1), 4, accuracy: 0.001)
+
+        let pieces = map.mediaInsertions(.init(
+            activeTakeStart: .zero,
+            sourceTimeAtActiveStart: .zero,
+            sourceEnd: MediaTime(seconds: 10)
+        ))
+        XCTAssertEqual(pieces.count, 2)
+        XCTAssertEqual(pieces[0].sourceDuration.seconds, 2, accuracy: 0.001)
+        XCTAssertEqual(pieces[0].duration.seconds, 1, accuracy: 0.001)
+        XCTAssertEqual(pieces[0].compositionStart.seconds, 0, accuracy: 0.001)
+        XCTAssertEqual(pieces[1].sourceStart.seconds, 4, accuracy: 0.001)
+        XCTAssertEqual(pieces[1].sourceDuration.seconds, 6, accuracy: 0.001)
+        XCTAssertEqual(pieces[1].duration.seconds, 3, accuracy: 0.001)
+        XCTAssertEqual(pieces[1].compositionStart.seconds, 1, accuracy: 0.001)
+    }
 }

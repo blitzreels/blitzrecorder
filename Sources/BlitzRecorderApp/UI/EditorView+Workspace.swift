@@ -22,6 +22,7 @@ extension EditorView {
                 selectedResolution: $selectedResolution,
                 selectedExportFramesPerSecond: $selectedExportFramesPerSecond,
                 selectedExportQuality: $selectedExportQuality,
+                selectedExportPlaybackRate: $selectedExportPlaybackRate,
                 backgroundMusic: $backgroundMusic,
                 backgroundMusicBookmarkData: $backgroundMusicBookmarkData,
                 recipe: exportRecipe,
@@ -43,12 +44,14 @@ extension EditorView {
             selectedResolution = restored.resolution
             selectedExportFramesPerSecond = restored.framesPerSecond
             selectedExportQuality = restored.quality
+            selectedExportPlaybackRate = restored.playbackRate
         } else {
             selectedFormat = EditorExportRecipe.fallbackFormat(
                 projectFormat: project.settings.outputVideoFormat,
                 fallbackFormat: vm.settings.outputVideoFormat
             )
             applyExportPreset(EditorExportPresetRequest(preset: .balanced, project: project))
+            selectedExportPlaybackRate = .normal
         }
         backgroundMusicBookmarkData = project.editorState.backgroundMusicBookmarkData
         let resolved = EditorBackgroundMusicResolution.resolve(.init(
@@ -74,7 +77,8 @@ extension EditorView {
                 format: selectedFormat.rawValue,
                 resolution: selectedResolution.rawValue,
                 framesPerSecond: selectedExportFramesPerSecond,
-                quality: selectedExportQuality.rawValue
+                quality: selectedExportQuality.rawValue,
+                playbackRate: selectedExportPlaybackRate.value
             )
         )
     }
@@ -104,7 +108,8 @@ extension EditorView {
             layout: captureLayout ?? vm.settings.layout,
             layoutCount: exportLayouts.isEmpty ? 1 : exportLayouts.count,
             audioBitrate: vm.settings.audioQuality.bitrate,
-            duration: duration
+            duration: duration,
+            playbackRate: selectedExportPlaybackRate.value
         ))
     }
 
@@ -120,7 +125,8 @@ extension EditorView {
             performanceProfile: profile,
             hiddenVideoSources: playback.hiddenKinds,
             mutedAudioSources: playback.mutedSources,
-            backgroundMusic: backgroundMusic
+            backgroundMusic: backgroundMusic,
+            playbackRate: selectedExportPlaybackRate.value
         )
         let layouts = exportLayouts.isEmpty ? [vm.lastExportedProject?.selectedOutputLayout ?? .horizontal]
             : CaptureLayout.allCases.filter { exportLayouts.contains($0) }

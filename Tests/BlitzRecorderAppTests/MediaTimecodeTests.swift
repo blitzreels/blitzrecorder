@@ -38,7 +38,7 @@ final class MediaTimecodeTests: XCTestCase {
         let widths = [3_000.0, 3_599, 3_660].map { time in
             NSHostingView(rootView: EditorPlaybackControls(configuration: .init(
                 time: time, duration: 5_400, isPlaying: false, isEnabled: true, rate: .normal,
-                onSeek: { _ in }, onTogglePlayback: {}, onPreviousScene: {}, onNextScene: {}, onRateChange: { _ in }
+                onSeek: { _ in }, onTogglePlayback: {}, onRateChange: { _ in }
             ))).fittingSize.width
         }
         XCTAssertGreaterThan(widths[0], 0)
