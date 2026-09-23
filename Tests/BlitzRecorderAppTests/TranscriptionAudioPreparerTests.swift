@@ -10,8 +10,8 @@ final class TranscriptionAudioPreparerTests: XCTestCase {
         try writeAudio(.init(url: source, samples: samples))
         let original = try Data(contentsOf: source)
         let prepared = try await TranscriptionAudioPreparer().prepare(.recording(source))
-        defer { try? FileManager.default.removeItem(at: prepared.temporaryURL) }
-        let audio = try AVAudioFile(forReading: prepared.audioURL)
+        defer { cleanup(prepared) }
+        let audio = try AVAudioFile(forReading: try XCTUnwrap(prepared.tracks.first).audioURL)
         XCTAssertEqual(audio.fileFormat.streamDescription.pointee.mFormatID, kAudioFormatLinearPCM)
         XCTAssertEqual(audio.processingFormat.sampleRate, 16_000)
         XCTAssertEqual(audio.processingFormat.channelCount, 1)
@@ -39,15 +39,26 @@ final class TranscriptionAudioPreparerTests: XCTestCase {
         try JSONSerialization.data(withJSONObject: object).write(to: fixture.take.projectURL)
         let before = try Data(contentsOf: fixture.take.projectURL)
         let prepared = try await TranscriptionAudioPreparer().prepare(.project(fixture.take.projectURL))
-        defer { try? FileManager.default.removeItem(at: prepared.temporaryURL) }
-        let audio = try AVAudioFile(forReading: prepared.audioURL)
-        let output = try readSamples(audio)
+        defer { cleanup(prepared) }
+        XCTAssertEqual(prepared.tracks.count, 2)
         XCTAssertEqual(prepared.duration, 2, accuracy: 0.01)
-        XCTAssertEqual(output[4_000], 0, accuracy: 0.00001)
-        XCTAssertEqual(output[12_000], 0.4, accuracy: 0.00001)
-        XCTAssertEqual(output[20_000], 0.8, accuracy: 0.00001)
-        XCTAssertEqual(output[28_000], 0.4, accuracy: 0.00001)
+        let microphone = try XCTUnwrap(prepared.tracks.first { $0.source == .microphone })
+        let systemAudio = try XCTUnwrap(prepared.tracks.first { $0.source == .systemAudio })
+        let microphoneSamples = try readSamples(AVAudioFile(forReading: microphone.audioURL))
+        let systemSamples = try readSamples(AVAudioFile(forReading: systemAudio.audioURL))
+        XCTAssertEqual(microphone.duration, 1.5, accuracy: 0.01)
+        XCTAssertEqual(systemAudio.duration, 2, accuracy: 0.01)
+        XCTAssertEqual(microphoneSamples[4_000], 0, accuracy: 0.00001)
+        XCTAssertEqual(microphoneSamples[12_000], 0.8, accuracy: 0.00001)
+        XCTAssertEqual(systemSamples[12_000], 0, accuracy: 0.00001)
+        XCTAssertEqual(systemSamples[20_000], 0.8, accuracy: 0.00001)
         XCTAssertEqual(try Data(contentsOf: fixture.take.projectURL), before)
+    }
+
+    private func cleanup(_ prepared: PreparedTranscriptionAudio) {
+        for track in prepared.tracks {
+            try? FileManager.default.removeItem(at: track.audioURL)
+        }
     }
 
     private struct AudioRequest {

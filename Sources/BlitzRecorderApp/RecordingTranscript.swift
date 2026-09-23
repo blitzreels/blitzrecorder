@@ -221,6 +221,153 @@ struct RecordingTranscript: Codable, Equatable, Identifiable, Sendable {
         }
         return result
     }
+
+    func mappedToEditedTimeline(_ timeMap: TimelineTimeMap) -> RecordingTranscript {
+        guard timeMap.hasCuts else { return self }
+
+        let mappedWords = (words ?? []).compactMap { word -> (word: TranscriptWord, speakerID: String)? in
+            let midpoint = (word.startTime + word.endTime) / 2
+            guard !timeMap.isRemoved(takeTime: midpoint) else { return nil }
+            let start = timeMap.outputSeconds(forTakeSeconds: word.startTime)
+            let end = timeMap.outputSeconds(forTakeSeconds: word.endTime)
+            guard end > start else { return nil }
+            let speakerID = word.speakerID ?? speakerID(atTakeTime: midpoint)
+            return (
+                TranscriptWord(
+                    text: word.text,
+                    startTime: start,
+                    endTime: end,
+                    confidence: word.confidence,
+                    speakerID: speakerID
+                ),
+                speakerID
+            )
+        }
+
+        let mappedSegments: [Segment]
+        if mappedWords.isEmpty {
+            mappedSegments = Self.coalesced(segments.flatMap { segment in
+                Self.keptPieces(of: segment, timeMap: timeMap)
+            })
+        } else {
+            mappedSegments = Self.coalesced(Self.segments(from: mappedWords))
+        }
+
+        let remainingSpeakerIDs = Set(mappedSegments.map(\.speakerID))
+        let mappedSpeakers = speakers.filter { remainingSpeakerIDs.contains($0.id) }
+        let mappedSpeechRanges = (speechRanges ?? []).flatMap { range -> [SpeechRange] in
+            Self.keptOutputRanges(
+                start: range.startTime,
+                end: range.endTime,
+                timeMap: timeMap
+            ).map { SpeechRange(startTime: $0.start, endTime: $0.end) }
+        }
+
+        return RecordingTranscript(
+            version: version,
+            id: id,
+            mediaPath: mediaPath,
+            generatedAt: generatedAt,
+            duration: timeMap.outputDuration.seconds,
+            confidence: confidence,
+            text: mappedSegments.map(\.text).joined(separator: " "),
+            suggestedTitle: suggestedTitle,
+            speakers: mappedSpeakers.isEmpty ? speakers : mappedSpeakers,
+            segments: mappedSegments,
+            words: words == nil ? nil : mappedWords.map(\.word),
+            speechRanges: mappedSpeechRanges
+        )
+    }
+
+    private func speakerID(atTakeTime time: TimeInterval) -> String {
+        segments.last { $0.startTime <= time && time < $0.endTime }?.speakerID
+            ?? speakers.first?.id
+            ?? "Speaker 1"
+    }
+
+    private static func keptPieces(
+        of segment: Segment,
+        timeMap: TimelineTimeMap
+    ) -> [Segment] {
+        keptOutputRanges(start: segment.startTime, end: segment.endTime, timeMap: timeMap).map { range in
+            Segment(
+                id: UUID(),
+                speakerID: segment.speakerID,
+                startTime: range.start,
+                endTime: range.end,
+                text: segment.text,
+                confidence: segment.confidence
+            )
+        }
+    }
+
+    private static func keptOutputRanges(
+        start: TimeInterval,
+        end: TimeInterval,
+        timeMap: TimelineTimeMap
+    ) -> [(start: TimeInterval, end: TimeInterval)] {
+        timeMap.keptRanges.compactMap { range in
+            let overlapStart = max(start, range.takeStart.seconds)
+            let overlapEnd = min(end, range.takeEnd.seconds)
+            guard overlapEnd > overlapStart else { return nil }
+            let outputStart = timeMap.outputSeconds(forTakeSeconds: overlapStart)
+            let outputEnd = timeMap.outputSeconds(forTakeSeconds: overlapEnd)
+            guard outputEnd > outputStart else { return nil }
+            return (outputStart, outputEnd)
+        }
+    }
+
+    private static func segments(
+        from words: [(word: TranscriptWord, speakerID: String)]
+    ) -> [Segment] {
+        guard let first = words.first else { return [] }
+        var result: [Segment] = []
+        var speakerID = first.speakerID
+        var current = [first.word]
+        for item in words.dropFirst() {
+            let previousEnd = current.last?.endTime ?? item.word.startTime
+            let continues = item.speakerID == speakerID
+                && item.word.startTime - previousEnd <= 1.2
+            if continues {
+                current.append(item.word)
+            } else {
+                result.append(segment(speakerID: speakerID, words: current))
+                speakerID = item.speakerID
+                current = [item.word]
+            }
+        }
+        result.append(segment(speakerID: speakerID, words: current))
+        return result
+    }
+
+    private static func segment(speakerID: String, words: [TranscriptWord]) -> Segment {
+        let confidence = words.isEmpty
+            ? 0
+            : words.reduce(Float.zero) { $0 + $1.confidence } / Float(words.count)
+        return Segment(
+            id: UUID(),
+            speakerID: speakerID,
+            startTime: words.first?.startTime ?? 0,
+            endTime: words.last?.endTime ?? 0,
+            text: joinedText(words.map(\.text)),
+            confidence: confidence
+        )
+    }
+
+    private static func joinedText(_ words: [String]) -> String {
+        words.reduce(into: "") { result, word in
+            let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+            let attachesToPrevious = trimmed.first.map {
+                ".,!?;:%)]}".contains($0)
+            } ?? false
+            if result.isEmpty || attachesToPrevious {
+                result += trimmed
+            } else {
+                result += " \(trimmed)"
+            }
+        }
+    }
 }
 
 struct TranscriptSpeakerMergeRequest {
@@ -233,6 +380,7 @@ struct TranscriptWord: Codable, Equatable, Sendable {
     let startTime: TimeInterval
     let endTime: TimeInterval
     let confidence: Float
+    var speakerID: String? = nil
 }
 
 struct DiarizedInterval: Equatable, Sendable {
@@ -255,6 +403,12 @@ struct DiarizedInterval: Equatable, Sendable {
 }
 
 enum RecordingTranscriptAssembler {
+    enum WordSource: Equatable, Sendable {
+        case microphone
+        case systemAudio
+        case mixed
+    }
+
     struct Request {
         let mediaPath: String
         let generatedAt: Date
@@ -263,26 +417,71 @@ enum RecordingTranscriptAssembler {
         let text: String
         let suggestedTitle: String?
         let words: [TranscriptWord]
+        let wordSources: [WordSource]
         let diarizedIntervals: [DiarizedInterval]
+
+        init(
+            mediaPath: String,
+            generatedAt: Date,
+            duration: TimeInterval,
+            confidence: Float,
+            text: String,
+            suggestedTitle: String?,
+            words: [TranscriptWord],
+            wordSources: [WordSource] = [],
+            diarizedIntervals: [DiarizedInterval]
+        ) {
+            self.mediaPath = mediaPath
+            self.generatedAt = generatedAt
+            self.duration = duration
+            self.confidence = confidence
+            self.text = text
+            self.suggestedTitle = suggestedTitle
+            self.words = words
+            self.wordSources = wordSources
+            self.diarizedIntervals = diarizedIntervals
+        }
     }
 
+    static let microphoneSpeakerID = "mic"
+    static let systemSpeakerPrefix = "sys-"
+    static let microphoneSpeakerPrefix = "mic-"
+
     static func assemble(_ request: Request) -> RecordingTranscript {
-        let sortedWords = request.words.sorted { left, right in
-            left.startTime == right.startTime
-                ? left.endTime < right.endTime
-                : left.startTime < right.startTime
+        let sources = request.wordSources.count == request.words.count
+            ? request.wordSources
+            : Array(repeating: WordSource.mixed, count: request.words.count)
+        let paired = zip(request.words, sources).sorted { left, right in
+            if left.0.startTime == right.0.startTime {
+                return left.0.endTime < right.0.endTime
+            }
+            return left.0.startTime < right.0.startTime
         }
         let mergedIntervals = mergeAcousticDuplicates(request.diarizedIntervals)
-        let assignedWords = sortedWords.map { word in
+        let hostSpeakerID = mergedIntervals.first {
+            isMicrophoneSpeaker($0.speakerID)
+        }?.speakerID ?? microphoneSpeakerID
+        let filtered = paired.compactMap { word, source -> (TranscriptWord, WordSource)? in
+            if source == .systemAudio, isMicrophoneEcho(word: word, intervals: mergedIntervals) {
+                return nil
+            }
+            return (word, source)
+        }
+        let assignedWords = filtered.map { word, source in
             AssignedWord(
                 word: word,
                 rawSpeakerID: speakerID(SpeakerResolutionRequest(
                     word: word,
+                    source: source,
+                    hostSpeakerID: hostSpeakerID,
                     intervals: mergedIntervals
                 ))
             )
         }
-        let stabilizedWords = stabilizedSpeakerAssignments(assignedWords)
+        let hasSeparateTracks = sources.contains { $0 != .mixed }
+        let stabilizedWords = hasSeparateTracks
+            ? assignedWords
+            : stabilizedSpeakerAssignments(assignedWords)
         let normalizedSpeakerIDs = normalizedSpeakerIDs(for: stabilizedWords)
         let normalizedWords = stabilizedWords.map { assignedWord in
             NormalizedWord(
@@ -291,9 +490,15 @@ enum RecordingTranscriptAssembler {
             )
         }
         let segments = segments(from: normalizedWords)
-        let speakers = normalizedSpeakerIDs.values
-            .sorted { speakerNumber($0) < speakerNumber($1) }
-            .map { RecordingTranscript.Speaker(id: $0, name: "", context: "") }
+        let speakers = normalizedSpeakerIDs
+            .sorted { speakerNumber($0.value) < speakerNumber($1.value) }
+            .map { rawID, displayID in
+                RecordingTranscript.Speaker(
+                    id: displayID,
+                    name: isMicrophoneSpeaker(rawID) ? "You" : "",
+                    context: ""
+                )
+            }
 
         return RecordingTranscript(
             version: 2,
@@ -302,11 +507,19 @@ enum RecordingTranscriptAssembler {
             generatedAt: request.generatedAt,
             duration: request.duration,
             confidence: request.confidence,
-            text: request.text,
+            text: joinedText(normalizedWords.map(\.word.text)),
             suggestedTitle: request.suggestedTitle,
             speakers: speakers,
             segments: segments,
-            words: sortedWords,
+            words: normalizedWords.map { assigned in
+                TranscriptWord(
+                    text: assigned.word.text,
+                    startTime: assigned.word.startTime,
+                    endTime: assigned.word.endTime,
+                    confidence: assigned.word.confidence,
+                    speakerID: assigned.speakerID
+                )
+            },
             speechRanges: request.diarizedIntervals.map {
                 .init(startTime: $0.startTime, endTime: $0.endTime)
             }
@@ -325,6 +538,8 @@ enum RecordingTranscriptAssembler {
 
     private struct SpeakerResolutionRequest {
         let word: TranscriptWord
+        let source: WordSource
+        let hostSpeakerID: String
         let intervals: [DiarizedInterval]
     }
 
@@ -334,21 +549,38 @@ enum RecordingTranscriptAssembler {
     }
 
     private static func speakerID(_ request: SpeakerResolutionRequest) -> String {
-        let midpoint = (request.word.startTime + request.word.endTime) / 2
-        if let containing = request.intervals.first(where: { interval in
+        switch request.source {
+        case .microphone:
+            return request.hostSpeakerID
+        case .systemAudio:
+            return speakerID(
+                word: request.word,
+                intervals: request.intervals.filter { $0.speakerID.hasPrefix(systemSpeakerPrefix) }
+            )
+        case .mixed:
+            return speakerID(word: request.word, intervals: request.intervals)
+        }
+    }
+
+    private static func speakerID(
+        word: TranscriptWord,
+        intervals: [DiarizedInterval]
+    ) -> String {
+        let midpoint = (word.startTime + word.endTime) / 2
+        if let containing = intervals.first(where: { interval in
             midpoint >= interval.startTime && midpoint <= interval.endTime
         }) {
             return containing.speakerID
         }
 
-        let bestOverlap = request.intervals
+        let bestOverlap = intervals
             .map { interval in
                 (
                     interval.speakerID,
                     max(
                         0,
-                        min(request.word.endTime, interval.endTime)
-                            - max(request.word.startTime, interval.startTime)
+                        min(word.endTime, interval.endTime)
+                            - max(word.startTime, interval.startTime)
                     )
                 )
             }
@@ -357,13 +589,13 @@ enum RecordingTranscriptAssembler {
         if let bestOverlap, bestOverlap.1 > 0 {
             return bestOverlap.0
         }
-        let nearestInterval = request.intervals
+        let nearestInterval = intervals
             .map { interval in
                 let distance: TimeInterval
-                if request.word.endTime < interval.startTime {
-                    distance = interval.startTime - request.word.endTime
+                if word.endTime < interval.startTime {
+                    distance = interval.startTime - word.endTime
                 } else {
-                    distance = request.word.startTime - interval.endTime
+                    distance = word.startTime - interval.endTime
                 }
                 return (interval.speakerID, max(0, distance))
             }
@@ -374,12 +606,39 @@ enum RecordingTranscriptAssembler {
         return "undiarized"
     }
 
+    private static func isMicrophoneSpeaker(_ speakerID: String) -> Bool {
+        speakerID == microphoneSpeakerID || speakerID.hasPrefix(microphoneSpeakerPrefix)
+    }
+
+    private static func isMicrophoneEcho(
+        word: TranscriptWord,
+        intervals: [DiarizedInterval]
+    ) -> Bool {
+        let systemIntervals = intervals.filter { $0.speakerID.hasPrefix(systemSpeakerPrefix) }
+        if speakerID(word: word, intervals: systemIntervals) != "undiarized" {
+            return false
+        }
+        let microphoneIntervals = intervals.filter { isMicrophoneSpeaker($0.speakerID) }
+        return speakerID(word: word, intervals: microphoneIntervals) != "undiarized"
+    }
+
     private static func normalizedSpeakerIDs(
         for words: [AssignedWord]
     ) -> [String: String] {
+        var ordered: [String] = []
+        for word in words where !ordered.contains(word.rawSpeakerID) {
+            ordered.append(word.rawSpeakerID)
+        }
+        let appearance = Dictionary(uniqueKeysWithValues: ordered.enumerated().map { ($0.element, $0.offset) })
+        ordered.sort { left, right in
+            let leftMic = isMicrophoneSpeaker(left)
+            let rightMic = isMicrophoneSpeaker(right)
+            if leftMic != rightMic { return leftMic }
+            return (appearance[left] ?? 0) < (appearance[right] ?? 0)
+        }
         var result: [String: String] = [:]
-        for word in words where result[word.rawSpeakerID] == nil {
-            result[word.rawSpeakerID] = "Speaker \(result.count + 1)"
+        for speakerID in ordered {
+            result[speakerID] = "Speaker \(result.count + 1)"
         }
         if result.isEmpty {
             result["undiarized"] = "Speaker 1"
@@ -526,7 +785,7 @@ enum RecordingTranscriptAssembler {
         Int(speakerID.split(separator: " ").last ?? "") ?? 0
     }
 
-    static let acousticMergeMaxCosineDistance: Float = 0.72
+    static let acousticMergeMaxCosineDistance: Float = 0.12
 
     static func mergeAcousticDuplicates(
         _ intervals: [DiarizedInterval]
@@ -547,7 +806,13 @@ enum RecordingTranscriptAssembler {
                 guard resolve(b, in: canonical) != resolve(a, in: canonical),
                       let ea = centroids[a], let eb = centroids[b] else { continue }
                 if cosineDistance(ea, eb) <= acousticMergeMaxCosineDistance {
-                    canonical[resolve(b, in: canonical)] = resolve(a, in: canonical)
+                    let aCanon = resolve(a, in: canonical)
+                    let bCanon = resolve(b, in: canonical)
+                    if isMicrophoneSpeaker(bCanon) && !isMicrophoneSpeaker(aCanon) {
+                        canonical[aCanon] = bCanon
+                    } else {
+                        canonical[bCanon] = aCanon
+                    }
                 }
             }
         }

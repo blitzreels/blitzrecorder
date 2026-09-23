@@ -112,6 +112,7 @@ struct ProjectLibraryView: View {
     @State private var isLoadingMediaAssets = false
     @State private var hoveredSidebarProjectID: UUID?
     @State private var hoveredBulkProjectID: UUID?
+    @Namespace private var libraryFocus
     @FocusState private var isSearchFocused: Bool
 
     private struct ThumbnailConfiguration {
@@ -289,6 +290,7 @@ struct ProjectLibraryView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
                     .focused($isSearchFocused)
+                    .prefersDefaultFocus(false, in: libraryFocus)
 
                 if !vm.projectLibraryNavigation.searchText.isEmpty {
                     Button {
@@ -369,6 +371,8 @@ struct ProjectLibraryView: View {
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
             .background(BlitzUI.projectLibraryBackground)
+            .prefersDefaultFocus(true, in: libraryFocus)
+            .defaultFocus($isSearchFocused, false)
             .onDeleteCommand {
                 queueDeletion(projects(for: vm.projectLibraryNavigation.selectedProjectIDs))
             }
@@ -383,6 +387,13 @@ struct ProjectLibraryView: View {
         }
         .frame(width: 370)
         .background(BlitzUI.projectLibraryBackground)
+        .focusScope(libraryFocus)
+        .onAppear {
+            isSearchFocused = false
+            DispatchQueue.main.async {
+                isSearchFocused = false
+            }
+        }
     }
 
     private func sidebarRow(_ project: RecordingProjectHistory.Entry) -> some View {
@@ -976,10 +987,10 @@ struct ProjectLibraryView: View {
                 timestamp: durationLabel(request.segment.startTime),
                 isEnabled: playbackProjectID == selectedProject?.id && projectPlayback.isReady,
                 isActive: projectPlayback.isPlaying
-                    && projectPlayback.currentTime >= request.segment.startTime
-                    && projectPlayback.currentTime < request.segment.endTime,
+                    && projectPlayback.nowPlayingTime >= request.segment.startTime
+                    && projectPlayback.nowPlayingTime < request.segment.endTime,
                 action: {
-                    projectPlayback.play(from: request.segment.startTime)
+                    projectPlayback.playFromOutput(request.segment.startTime)
                 }
             )
 
@@ -1681,9 +1692,8 @@ struct ProjectLibraryView: View {
             )
             let artifactStore = TranscriptArtifactStore()
             let locations = artifactStore.locations(for: recordingProject)
-            transcriptByProjectID[project.id] = try artifactStore.load(
-                from: locations.jsonURL
-            )
+            let transcript = try artifactStore.load(from: locations.jsonURL)
+            transcriptByProjectID[project.id] = editedTranscript(transcript, project: recordingProject)
         } catch {
             transcriptByProjectID.removeValue(forKey: project.id)
         }
@@ -1710,10 +1720,15 @@ struct ProjectLibraryView: View {
                 at: URL(fileURLWithPath: project.projectPath)
             )
             guard !Task.isCancelled else { return }
-            await projectPlayback.load(
-                project: recordingProject,
-                baseSettings: vm.settings
-            )
+            let editedURL = ProjectLibraryPreviewMedia.editedVideoURL(for: recordingProject)
+            if let editedURL {
+                await projectPlayback.loadExported(url: editedURL, title: recordingProject.title)
+            } else {
+                await projectPlayback.load(
+                    project: recordingProject,
+                    baseSettings: vm.settings
+                )
+            }
             guard !Task.isCancelled,
                   selectedProject?.id == project.id,
                   projectPlayback.isReady else {
@@ -1722,10 +1737,39 @@ struct ProjectLibraryView: View {
             playbackProjectID = project.id
             playbackProjectPath = project.projectPath
 
-            if let transcript = projectTranscript(recordingProject) {
+            if let editedURL, projectPlayback.isExportedPlayback {
+                if let transcript = editedTranscript(
+                    projectTranscript(recordingProject),
+                    project: recordingProject
+                ) {
+                    playbackWaveformSamples = ProjectSpeechWaveform.samples(.init(
+                        segments: transcript.segments,
+                        duration: projectPlayback.outputDuration > 0
+                            ? projectPlayback.outputDuration
+                            : projectPlayback.duration,
+                        bucketCount: 240
+                    ))
+                    return
+                }
+                let waveformAsset = EditorAsset.output(url: editedURL)
+                await projectWaveformLibrary.loadAssets([waveformAsset])
+                guard !Task.isCancelled,
+                      selectedProject?.id == project.id else {
+                    return
+                }
+                playbackWaveformSamples = projectWaveformLibrary.waveforms[waveformAsset.id] ?? []
+                return
+            }
+
+            if let transcript = editedTranscript(
+                projectTranscript(recordingProject),
+                project: recordingProject
+            ) {
                 playbackWaveformSamples = ProjectSpeechWaveform.samples(.init(
                     segments: transcript.segments,
-                    duration: projectPlayback.duration,
+                    duration: projectPlayback.outputDuration > 0
+                        ? projectPlayback.outputDuration
+                        : projectPlayback.duration,
                     bucketCount: 240
                 ))
                 return
@@ -1801,6 +1845,19 @@ struct ProjectLibraryView: View {
         let artifactStore = TranscriptArtifactStore()
         let locations = artifactStore.locations(for: project)
         return try? artifactStore.load(from: locations.jsonURL)
+    }
+
+    private func editedTranscript(
+        _ transcript: RecordingTranscript?,
+        project: RecordingProject
+    ) -> RecordingTranscript? {
+        guard let transcript else { return nil }
+        return transcript.mappedToEditedTimeline(
+            TimelineTimeMap(
+                takeDuration: MediaTime(seconds: max(transcript.duration, 0)),
+                cuts: project.edits.enabledCuts
+            )
+        )
     }
 
     private func preferredWaveformAsset(

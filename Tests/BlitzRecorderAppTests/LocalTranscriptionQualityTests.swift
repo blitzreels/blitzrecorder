@@ -45,7 +45,11 @@ final class LocalTranscriptionQualityTests: XCTestCase {
         let store = LocalTranscriptionModelStore()
         guard store.isInstalled else { throw XCTSkip("Local transcription models are not installed.") }
         let prepared = try await TranscriptionAudioPreparer().prepare(.project(URL(fileURLWithPath: projectPath)))
-        defer { try? FileManager.default.removeItem(at: prepared.temporaryURL) }
+        defer {
+            for track in prepared.tracks {
+                try? FileManager.default.removeItem(at: track.audioURL)
+            }
+        }
         let models = try await AsrModels.load(from: store.asrDirectory, version: .v3)
         let output = URL(fileURLWithPath: outputPath, isDirectory: true)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
@@ -55,15 +59,20 @@ final class LocalTranscriptionQualityTests: XCTestCase {
             let manager = AsrManager(config: ASRConfig(
                 melChunkContext: false, dualDecodeArbitration: quality
             ), models: models)
-            var state = TdtDecoderState.make(decoderLayers: await manager.decoderLayerCount)
-            let result = try await manager.transcribe(prepared.audioURL, decoderState: &state)
-            XCTAssertGreaterThan(prepared.duration, 0)
-            XCTAssertTrue((result.tokenTimings ?? []).allSatisfy {
-                $0.startTime.isFinite && $0.endTime.isFinite && $0.startTime >= 0
-                    && $0.endTime >= $0.startTime && $0.endTime <= prepared.duration + 0.1
-            })
             let name = quality ? "quality" : "baseline"
-            try encoder.encode(result).write(to: output.appendingPathComponent("\(name).json"), options: .atomic)
+            for (index, track) in prepared.tracks.enumerated() {
+                var state = TdtDecoderState.make(decoderLayers: await manager.decoderLayerCount)
+                let result = try await manager.transcribe(track.audioURL, decoderState: &state)
+                XCTAssertGreaterThan(prepared.duration, 0)
+                XCTAssertTrue((result.tokenTimings ?? []).allSatisfy {
+                    $0.startTime.isFinite && $0.endTime.isFinite && $0.startTime >= 0
+                        && $0.endTime >= $0.startTime && $0.endTime <= prepared.duration + 0.1
+                })
+                try encoder.encode(result).write(
+                    to: output.appendingPathComponent("\(name)-\(index).json"),
+                    options: .atomic
+                )
+            }
         }
     }
 }

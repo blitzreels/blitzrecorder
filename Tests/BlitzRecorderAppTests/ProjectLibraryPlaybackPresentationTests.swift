@@ -112,4 +112,51 @@ final class ProjectLibraryPlaybackPresentationTests: XCTestCase {
 
         XCTAssertTrue(shouldReload)
     }
+
+    func testEditedPreviewPrefersNewestExistingExport() {
+        let older = exportRecord(path: "/tmp/old-export.mov", createdAt: 1)
+        let newer = exportRecord(path: "/tmp/new-export.mov", createdAt: 2)
+        let url = ProjectLibraryPreviewMedia.editedVideoURL(
+            exports: [older, newer],
+            finalVideoPath: "/tmp/final.mov",
+            fileExists: { $0 == "/tmp/new-export.mov" || $0 == "/tmp/final.mov" }
+        )
+
+        XCTAssertEqual(url?.path, "/tmp/new-export.mov")
+    }
+
+    func testEditedPreviewFallsBackToFinalVideoWhenExportsAreMissing() {
+        let missing = exportRecord(path: "/tmp/missing-export.mov", createdAt: 2)
+        let url = ProjectLibraryPreviewMedia.editedVideoURL(
+            exports: [missing],
+            finalVideoPath: "/tmp/final.mov",
+            fileExists: { $0 == "/tmp/final.mov" }
+        )
+
+        XCTAssertEqual(url?.path, "/tmp/final.mov")
+    }
+
+    func testEditedPreviewIsNilWhenNoEditedFileExists() {
+        let missing = exportRecord(path: "/tmp/missing-export.mov", createdAt: 1)
+        let url = ProjectLibraryPreviewMedia.editedVideoURL(
+            exports: [missing],
+            finalVideoPath: "/tmp/missing-final.mov",
+            fileExists: { _ in false }
+        )
+
+        XCTAssertNil(url)
+    }
+
+    private func exportRecord(path: String, createdAt: TimeInterval) -> RecordingProject.ExportRecord {
+        RecordingProject.ExportRecord(
+            id: UUID(),
+            createdAt: Date(timeIntervalSince1970: createdAt),
+            path: path,
+            format: "mov",
+            resolution: "1080p",
+            framesPerSecond: 24,
+            quality: "high",
+            fileSizeBytes: 1_024
+        )
+    }
 }

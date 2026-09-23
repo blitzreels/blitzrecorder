@@ -109,6 +109,28 @@ struct ProjectMediaInventorySummary: Equatable {
     }
 }
 
+enum ProjectLibraryPreviewMedia {
+    static func editedVideoURL(
+        exports: [RecordingProject.ExportRecord],
+        finalVideoPath: String?,
+        fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
+    ) -> URL? {
+        let ordered = exports.sorted { $0.createdAt > $1.createdAt }.map(\.path)
+            + [finalVideoPath].compactMap { $0 }
+        var seen = Set<String>()
+        for path in ordered {
+            let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
+            guard seen.insert(standardized).inserted, fileExists(path) else { continue }
+            return URL(fileURLWithPath: path)
+        }
+        return nil
+    }
+
+    static func editedVideoURL(for project: RecordingProject) -> URL? {
+        editedVideoURL(exports: project.exports, finalVideoPath: project.finalVideoPath)
+    }
+}
+
 enum ProjectLibraryMetadataLoader {
     private struct PreviewURLRequest {
         let project: RecordingProject
@@ -145,9 +167,8 @@ enum ProjectLibraryMetadataLoader {
     }
 
     private static func preferredPreviewURL(_ request: PreviewURLRequest) -> URL? {
-        if let finalVideoPath = request.project.finalVideoPath,
-           FileManager.default.fileExists(atPath: finalVideoPath) {
-            return URL(fileURLWithPath: finalVideoPath)
+        if let editedURL = ProjectLibraryPreviewMedia.editedVideoURL(for: request.project) {
+            return editedURL
         }
 
         let preferredRoles = ["screen", "camera", "microphone", "systemAudio"]

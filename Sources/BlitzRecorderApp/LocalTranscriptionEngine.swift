@@ -28,7 +28,8 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
     }
 
     private var asrManager: AsrManager?
-    private var diarizerManager: OfflineDiarizerManager?
+    private var microphoneDiarizer: OfflineDiarizerManager?
+    private var systemDiarizer: OfflineDiarizerManager?
     private let modelStore = LocalTranscriptionModelStore()
     private let audioPreparer = TranscriptionAudioPreparer()
     private let artifactStore = TranscriptArtifactStore()
@@ -60,9 +61,12 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
                 ))
             }
         )
-        let diarizerManager = OfflineDiarizerManager()
-        diarizerManager.initialize(models: diarizerModels)
-        self.diarizerManager = diarizerManager
+        let microphoneDiarizer = OfflineDiarizerManager(config: Self.microphoneDiarizerConfiguration)
+        microphoneDiarizer.initialize(models: diarizerModels)
+        self.microphoneDiarizer = microphoneDiarizer
+        let systemDiarizer = OfflineDiarizerManager(config: Self.systemDiarizerConfiguration)
+        systemDiarizer.initialize(models: diarizerModels)
+        self.systemDiarizer = systemDiarizer
 
         try modelStore.markInstalled()
         request.onUpdate(TranscriptionModelDownloadUpdate(
@@ -75,39 +79,69 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
         request.onUpdate(TranscriptionEngineUpdate(stage: .preparingAudio))
         let preparedAudio = try await audioPreparer.prepare(request.source)
         defer {
-            try? FileManager.default.removeItem(at: preparedAudio.temporaryURL)
+            for track in preparedAudio.tracks {
+                try? FileManager.default.removeItem(at: track.audioURL)
+            }
         }
 
         let managers = try await loadedManagers()
+        var words: [TranscriptWord] = []
+        var wordSources: [RecordingTranscriptAssembler.WordSource] = []
+        var intervals: [DiarizedInterval] = []
+        var confidences: [Float] = []
+
         request.onUpdate(TranscriptionEngineUpdate(stage: .transcribing))
-        var decoderState = TdtDecoderState.make(
-            decoderLayers: await managers.asr.decoderLayerCount
-        )
-        let asrResult = try await managers.asr.transcribe(
-            preparedAudio.audioURL,
-            decoderState: &decoderState
-        )
+        for track in preparedAudio.tracks {
+            var decoderState = TdtDecoderState.make(
+                decoderLayers: await managers.asr.decoderLayerCount
+            )
+            let asrResult = try await managers.asr.transcribe(
+                track.audioURL,
+                decoderState: &decoderState
+            )
+            let trackWords = Self.words(asrResult.tokenTimings ?? [])
+            words.append(contentsOf: trackWords)
+            wordSources.append(contentsOf: Array(repeating: track.source, count: trackWords.count))
+            confidences.append(asrResult.confidence)
+        }
 
         request.onUpdate(TranscriptionEngineUpdate(stage: .diarizing))
-        let diarizedIntervals: [DiarizedInterval]
-        do {
-            let diarizationResult = try await managers.diarizer.process(
-                preparedAudio.audioURL
-            )
-            diarizedIntervals = Self.intervals(diarizationResult.segments)
-        } catch OfflineDiarizationError.noSpeechDetected {
-            diarizedIntervals = []
+        let mixedTrackCount = preparedAudio.tracks.filter { $0.source == .mixed }.count
+        var mixedIndex = 0
+        for track in preparedAudio.tracks {
+            let prefix: String
+            let diarizer: OfflineDiarizerManager
+            switch track.source {
+            case .microphone:
+                prefix = RecordingTranscriptAssembler.microphoneSpeakerPrefix
+                diarizer = managers.microphone
+            case .systemAudio:
+                prefix = RecordingTranscriptAssembler.systemSpeakerPrefix
+                diarizer = managers.system
+            case .mixed:
+                prefix = mixedTrackCount > 1 ? "mix\(mixedIndex)-" : ""
+                mixedIndex += 1
+                diarizer = managers.system
+            }
+            do {
+                let diarizationResult = try await diarizer.process(track.audioURL)
+                intervals.append(contentsOf: Self.intervals(diarizationResult.segments, prefix: prefix))
+            } catch OfflineDiarizationError.noSpeechDetected {
+                continue
+            }
         }
+
         let transcript = RecordingTranscriptAssembler.assemble(
             RecordingTranscriptAssembler.Request(
                 mediaPath: preparedAudio.mediaPath,
                 generatedAt: Date(),
                 duration: preparedAudio.duration,
-                confidence: asrResult.confidence,
-                text: asrResult.text,
+                confidence: Self.average(confidences),
+                text: words.map(\.text).joined(separator: " "),
                 suggestedTitle: nil,
-                words: Self.words(asrResult.tokenTimings ?? []),
-                diarizedIntervals: diarizedIntervals
+                words: words,
+                wordSources: wordSources,
+                diarizedIntervals: intervals
             )
         )
 
@@ -121,19 +155,21 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
 
     func removeModels() async throws {
         asrManager = nil
-        diarizerManager = nil
+        microphoneDiarizer = nil
+        systemDiarizer = nil
         try modelStore.removeModels()
     }
 
     private func loadedManagers() async throws -> (
         asr: AsrManager,
-        diarizer: OfflineDiarizerManager
+        microphone: OfflineDiarizerManager,
+        system: OfflineDiarizerManager
     ) {
         guard modelStore.isInstalled else {
             throw LocalTranscriptionError.modelNotInstalled
         }
-        if let asrManager, let diarizerManager {
-            return (asrManager, diarizerManager)
+        if let asrManager, let microphoneDiarizer, let systemDiarizer {
+            return (asrManager, microphoneDiarizer, systemDiarizer)
         }
 
         let asrModels = try await AsrModels.load(
@@ -148,16 +184,27 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
         let diarizerModels = try await OfflineDiarizerModels.load(
             from: modelStore.diarizationDirectory
         )
-        let loadedDiarizer = OfflineDiarizerManager()
-        loadedDiarizer.initialize(models: diarizerModels)
+        let loadedMicrophone = OfflineDiarizerManager(config: Self.microphoneDiarizerConfiguration)
+        loadedMicrophone.initialize(models: diarizerModels)
+        let loadedSystem = OfflineDiarizerManager(config: Self.systemDiarizerConfiguration)
+        loadedSystem.initialize(models: diarizerModels)
 
         asrManager = loadedASR
-        diarizerManager = loadedDiarizer
-        return (loadedASR, loadedDiarizer)
+        microphoneDiarizer = loadedMicrophone
+        systemDiarizer = loadedSystem
+        return (loadedASR, loadedMicrophone, loadedSystem)
     }
 
     nonisolated static var recognitionConfiguration: ASRConfig {
         ASRConfig(melChunkContext: false, dualDecodeArbitration: true)
+    }
+
+    nonisolated static var microphoneDiarizerConfiguration: OfflineDiarizerConfig {
+        OfflineDiarizerConfig.default.withSpeakers(exactly: 1)
+    }
+
+    nonisolated static var systemDiarizerConfiguration: OfflineDiarizerConfig {
+        OfflineDiarizerConfig.default.withSpeakers(min: 1, max: 8)
     }
 
     private static func words(_ timings: [TokenTiming]) -> [TranscriptWord] {
@@ -203,11 +250,12 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
     }
 
     private static func intervals(
-        _ segments: [TimedSpeakerSegment]
+        _ segments: [TimedSpeakerSegment],
+        prefix: String
     ) -> [DiarizedInterval] {
         segments.map { segment in
             DiarizedInterval(
-                speakerID: segment.speakerId,
+                speakerID: prefix + segment.speakerId,
                 startTime: TimeInterval(segment.startTimeSeconds),
                 endTime: TimeInterval(segment.endTimeSeconds),
                 embedding: segment.embedding

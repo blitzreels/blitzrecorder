@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import Foundation
 import SwiftUI
 
@@ -175,13 +176,18 @@ struct ProjectLibraryPlayerSurface: View {
                 .opacity(isPlaybackReady ? 0 : 1)
 
             if isPlaybackReady {
-                EditorCompositedPlayer(
-                    controller: configuration.controller,
-                    renderSize: configuration.controller.renderSize,
-                    previewSceneRevision: configuration.controller.previewSceneRevision,
-                    cameraCropEditingScene: nil
-                )
-                .allowsHitTesting(false)
+                if let player = configuration.controller.filePlayer {
+                    ProjectLibraryExportedPlayer(player: player)
+                        .allowsHitTesting(false)
+                } else {
+                    EditorCompositedPlayer(
+                        controller: configuration.controller,
+                        renderSize: configuration.controller.renderSize,
+                        previewSceneRevision: configuration.controller.previewSceneRevision,
+                        cameraCropEditingScene: nil
+                    )
+                    .allowsHitTesting(false)
+                }
             }
 
         }
@@ -237,6 +243,39 @@ struct ProjectLibraryPlayerSurface: View {
 
 }
 
+private struct ProjectLibraryExportedPlayer: NSViewRepresentable {
+    let player: AVPlayer
+
+    func makeNSView(context: Context) -> PlayerView {
+        let view = PlayerView()
+        view.playerLayer.player = player
+        return view
+    }
+
+    func updateNSView(_ nsView: PlayerView, context: Context) {
+        nsView.playerLayer.player = player
+    }
+
+    final class PlayerView: NSView {
+        let playerLayer = AVPlayerLayer()
+
+        override init(frame frameRect: NSRect) {
+            super.init(frame: frameRect)
+            wantsLayer = true
+            playerLayer.videoGravity = .resizeAspect
+            layer?.addSublayer(playerLayer)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { nil }
+
+        override func layout() {
+            super.layout()
+            playerLayer.frame = bounds
+        }
+    }
+}
+
 @MainActor
 struct ProjectLibraryPlaybackControls: View {
     struct Configuration {
@@ -245,6 +284,15 @@ struct ProjectLibraryPlaybackControls: View {
     }
 
     let configuration: Configuration
+
+    private var displayedDuration: Double {
+        let output = configuration.controller.outputDuration
+        return output > 0 ? output : configuration.controller.duration
+    }
+
+    private var displayedTime: Double {
+        configuration.controller.nowPlayingTime
+    }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -264,7 +312,7 @@ struct ProjectLibraryPlaybackControls: View {
             .help(configuration.controller.isPlaying ? "Pause" : "Play")
 
             BlitzTimecode(configuration: .init(
-                time: configuration.controller.currentTime, duration: configuration.controller.duration
+                time: displayedTime, duration: displayedDuration
             ))
                 .font(.system(size: 11, weight: .regular, design: .monospaced))
                 .monospacedDigit()
@@ -273,17 +321,17 @@ struct ProjectLibraryPlaybackControls: View {
 
             ProjectPlaybackWaveform(
                 samples: configuration.waveformSamples,
-                currentTime: configuration.controller.currentTime,
-                duration: configuration.controller.duration,
+                currentTime: displayedTime,
+                duration: displayedDuration,
                 onScrub: { time in
-                    configuration.controller.scrub(to: time)
+                    configuration.controller.scrubToOutput(time)
                 },
                 onScrubEnd: configuration.controller.endScrub
             )
             .frame(height: 30)
 
             BlitzTimecode(configuration: .init(
-                time: configuration.controller.duration, duration: configuration.controller.duration
+                time: displayedDuration, duration: displayedDuration
             ))
                 .font(.system(size: 11, weight: .regular, design: .monospaced))
                 .monospacedDigit()

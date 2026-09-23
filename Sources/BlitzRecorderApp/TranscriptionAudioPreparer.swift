@@ -15,16 +15,22 @@ enum TranscriptionMediaSource: Equatable, Sendable {
     }
 }
 
-struct PreparedTranscriptionAudio: Sendable {
-    let mediaPath: String
+struct PreparedTranscriptionTrack: Sendable {
+    let source: RecordingTranscriptAssembler.WordSource
     let audioURL: URL
     let duration: TimeInterval
+}
+
+struct PreparedTranscriptionAudio: Sendable {
+    let mediaPath: String
+    let tracks: [PreparedTranscriptionTrack]
+    let duration: TimeInterval
     let artifactLocations: TranscriptArtifactStore.Locations
-    let temporaryURL: URL
 }
 
 struct TranscriptionAudioPreparer {
     private struct AudioInput {
+        let source: RecordingTranscriptAssembler.WordSource
         let url: URL
         let trackIndex: Int
         let sourceStart: CMTime
@@ -41,7 +47,6 @@ struct TranscriptionAudioPreparer {
     private let artifactStore = TranscriptArtifactStore()
 
     func prepare(_ source: TranscriptionMediaSource) async throws -> PreparedTranscriptionAudio {
-        let outputURL = try temporaryAudioURL()
         switch source {
         case .project(let projectURL):
             let project = try fileStore.loadRecordingProject(at: projectURL)
@@ -49,27 +54,46 @@ struct TranscriptionAudioPreparer {
             guard !inputs.isEmpty else {
                 throw RecorderError.speechUnavailable
             }
-            try await export(ExportRequest(inputs: inputs, outputURL: outputURL))
+            let tracks = try await exportTracks(inputs)
             return PreparedTranscriptionAudio(
                 mediaPath: project.finalVideoPath ?? project.projectPath,
-                audioURL: outputURL,
-                duration: try audioDuration(outputURL),
-                artifactLocations: artifactStore.locations(for: project),
-                temporaryURL: outputURL
+                tracks: tracks,
+                duration: tracks.map(\.duration).max() ?? 0,
+                artifactLocations: artifactStore.locations(for: project)
             )
         case .recording(let recordingURL):
             let inputs = try await recordingAudioInputs(recordingURL)
             guard !inputs.isEmpty else {
                 throw RecorderError.speechUnavailable
             }
-            try await export(ExportRequest(inputs: inputs, outputURL: outputURL))
+            let tracks = try await exportTracks(inputs)
             return PreparedTranscriptionAudio(
                 mediaPath: recordingURL.path,
-                audioURL: outputURL,
-                duration: try audioDuration(outputURL),
-                artifactLocations: artifactStore.locations(for: recordingURL),
-                temporaryURL: outputURL
+                tracks: tracks,
+                duration: tracks.map(\.duration).max() ?? 0,
+                artifactLocations: artifactStore.locations(for: recordingURL)
             )
+        }
+    }
+
+    private func exportTracks(_ inputs: [AudioInput]) async throws -> [PreparedTranscriptionTrack] {
+        var tracks: [PreparedTranscriptionTrack] = []
+        do {
+            for input in inputs {
+                let outputURL = try temporaryAudioURL()
+                try await export(ExportRequest(inputs: [input], outputURL: outputURL))
+                tracks.append(PreparedTranscriptionTrack(
+                    source: input.source,
+                    audioURL: outputURL,
+                    duration: try audioDuration(outputURL)
+                ))
+            }
+            return tracks
+        } catch {
+            for track in tracks {
+                try? FileManager.default.removeItem(at: track.audioURL)
+            }
+            throw error
         }
     }
 
@@ -96,6 +120,7 @@ struct TranscriptionAudioPreparer {
                 volume = Float(project.settings.systemAudioGain ?? 1)
             }
             return AudioInput(
+                source: source.role == "microphone" ? .microphone : .systemAudio,
                 url: url,
                 trackIndex: 0,
                 sourceStart: CMTime(seconds: sourceStart, preferredTimescale: 600),
@@ -113,6 +138,7 @@ struct TranscriptionAudioPreparer {
         for (index, track) in tracks.enumerated() {
             let timeRange = try await track.load(.timeRange)
             inputs.append(AudioInput(
+                source: .mixed,
                 url: url,
                 trackIndex: index,
                 sourceStart: timeRange.start,
