@@ -59,9 +59,7 @@ struct EditorTimelineView: View {
     @Binding var selection: EditorSelection?
     let onSeek: (Double) -> Void
     let onSeekEnded: () -> Void
-    let onPrevious: () -> Void
     let onTogglePlayback: () -> Void
-    let onNext: () -> Void
     let onPlaybackRateChange: (EditorPlaybackRate) -> Void
     let isInteractive: Bool
     let hiddenAssetIDs: Set<String>
@@ -208,28 +206,25 @@ struct EditorTimelineView: View {
     }
 
     private var editActions: some View {
-        HStack(spacing: 2) {
+        let chrome = EditorTimelineHeaderActions.resolve(.init(
+            hasRangeToolbar: silenceControlSelection == nil && selection?.timeRange != nil,
+            hasSilenceSelection: silenceControlSelection != nil
+        ))
+        return HStack(spacing: 2) {
             TimelineActionButton(
                 title: "Split", systemName: "scissors",
                 isDisabled: !isInteractive || !canSplitSelection, action: onSplit
             )
             .help(selectedPlacedItem == nil ? "Split the clip at the playhead. Screen, Camera, and audio stay linked (⌘B)"
                   : "Split the selected item at the playhead (⌘B)")
-            TimelineActionButton(
-                title: "Range", systemName: "rectangle.dashed",
-                isDisabled: !isInteractive, action: onMarkIn
-            )
-            .help("Mark a range from the playhead (I). Drag a track to select a range.")
-            if let selected = silenceControlSelection {
+            if chrome.showsRange {
                 TimelineActionButton(
-                    title: "Switch", systemName: "arrow.triangle.2.circlepath",
-                    isDisabled: !isInteractive || !silence.canClassify
-                ) {
-                    onDeleteSelection()
-                    selection = .silenceRanges(selected)
-                }
-                .help(EditorDeleteRouting.help(.toggleSilence))
-            } else {
+                    title: "Range", systemName: "rectangle.dashed",
+                    isDisabled: !isInteractive, action: onMarkIn
+                )
+                .help("Mark a range from the playhead (I). Drag a track to select a range.")
+            }
+            if chrome.showsDelete {
                 TimelineActionButton(
                     title: "Delete", systemName: "trash",
                     isDisabled: !isInteractive || deleteAction == nil
@@ -255,8 +250,6 @@ struct EditorTimelineView: View {
                 onSeekEnded()
             },
             onTogglePlayback: onTogglePlayback,
-            onPreviousScene: onPrevious,
-            onNextScene: onNext,
             onRateChange: onPlaybackRateChange
         ))
         .fixedSize()
@@ -647,9 +640,7 @@ struct EditorTimelineView: View {
                                                 segments: selectableSilenceSegments, additive: addsDraggedSegments
                                             )).map(EditorSelection.silenceRanges)
                                         } else {
-                                            selection = value.startLocation.y >= clipRowHeight + 6
-                                                && (showsSilenceTrack || isSilenceTrack(at: value.startLocation.y))
-                                                ? .silenceRange(range) : .range(range)
+                                            selection = .range(range)
                                         }
                                     }
                                     .onEnded { _ in
@@ -661,9 +652,6 @@ struct EditorTimelineView: View {
 
                             if duration > 0 {
                                 linkedSegmentOverlay(pxPerSecond)
-                                EditorVideoClipSeams(configuration: .init(
-                                    layout: clipLayout, viewport: viewport, pixelsPerSecond: pxPerSecond,
-                                    height: contentHeight, hoveredRange: hoveredClipRange))
                                 if let range = hoveredSilenceRange, !selectedSilenceRanges.contains(range) {
                                     hoverOverlay(.init(range: range, pxPerSecond: pxPerSecond))
                                 }
@@ -1006,12 +994,7 @@ struct EditorTimelineView: View {
                     .buttonStyle(.plain)
                     .disabled((row.asset == nil && row.item == nil) || !isInteractive)
                     .accessibilityLabel("Select \(row.title) track")
-                    if row.title == "Transcript", silence.canRemoveNonDialogue {
-                        Button("Remove silence") { silence.removeNonDialogue() }
-                            .blitzButton(.secondary)
-                            .controlSize(.mini)
-                            .help("Remove every section without detected dialogue from all tracks. Undo with ⌘Z.")
-                    } else if row.title == "Transcript", transcript != nil,
+                    if row.title == "Transcript", transcript != nil,
                         transcript?.words == nil || transcriptionStatus.isRunning {
                         Button(transcriptionStatus.isRunning ? "Working…" : "Words", action: onGenerateTranscript)
                             .blitzButton(.secondary)
@@ -1295,13 +1278,6 @@ struct EditorTimelineView: View {
             lowerBound: min(width, request.viewport.lowerBound),
             upperBound: min(width, request.viewport.upperBound)
         )
-        let showsSilence = showsSilenceTrack && !asset.isVideo && silence.audioSourcePaths.contains(asset.url.path)
-        let silenceRuns = showsSilence ? SilenceTimelineBands.overlayRuns(
-            .init(
-                cuts: silence.cuts, projection: projection, pixelsPerSecond: request.pxPerSecond, viewport: viewport
-            ),
-            selections: selectedSilenceRanges
-        ) : []
 
         return ZStack(alignment: .leading) {
             shape.fill(asset.tint.opacity(asset.isVideo ? 0.1 : 0.12))
@@ -1318,10 +1294,6 @@ struct EditorTimelineView: View {
             )
             .equatable()
             .padding(.vertical, asset.isVideo ? 3 : 0)
-            if showsSilence {
-                SilenceWaveformOverlay(runs: silenceRuns, viewport: viewport)
-                    .equatable()
-            }
         }
         .frame(width: width, height: rowHeight)
         .clipShape(shape)
@@ -1331,46 +1303,19 @@ struct EditorTimelineView: View {
         }
         .contentShape(shape)
         .pointingHandCursor()
-        .gesture(SpatialTapGesture().onEnded { event in
-            if isInteractive, showsSilence, silence.canClassify,
-                let segment = SilenceTimelineSegments.at(.init(
-                    segments: selectableSilenceSegments,
-                    time: projection.takeTime(Double(event.location.x / request.pxPerSecond))
-                )) {
-                clickSilenceRange(segment.range)
-            } else if isInteractive, asset.isVideo,
-                let clip = clipLayout.clip(at: Double(event.location.x / request.pxPerSecond))
-            {
-                clickVideoClip(.init(range: clip.range, modifiers: NSEvent.modifierFlags))
-            } else {
-                selection = .asset(asset.id)
-            }
+        .gesture(SpatialTapGesture().onEnded { _ in
+            selection = .asset(asset.id)
         })
-        .onContinuousHover { phase in
-            guard showsSilence, isInteractive else { return }
-            switch phase {
-            case .active(let location):
-                hoveredSilenceRange = SilenceTimelineSegments.at(.init(
-                    segments: selectableSilenceSegments,
-                    time: projection.takeTime(Double(location.x / request.pxPerSecond))
-                ))?.range
-            case .ended:
-                hoveredSilenceRange = nil
-            }
-        }
         .opacity(isOff ? 0.3 : 1)
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { selection = .asset(asset.id) }
         .accessibilityLabel("\(asset.title) track")
         .accessibilityValue(isOff ? (asset.isVideo ? "Hidden" : "Muted in playback and export")
-            : showsSilence && !selectedSilenceRanges.isEmpty ? "Sound or silence section selected"
             : isSelected ? "Selected" : "Enabled, \(max(0, clipLayout.clips.count - 1)) clip boundaries")
-        .help(showsSilence
-            ? "Click to select. ⌘-click to add or remove. Shift-click to extend. Drag to select a time range."
-            : asset.isAudio
-                ? "Click to select this track. Delete mutes it for playback and export."
-                : "Click to select a video clip. Drag to select a range. Delete removes it with audio kept in sync.")
+        .help(asset.isAudio
+            ? "Click to select this track. Delete mutes it for playback and export."
+            : "Click to select this video track. Drag to select a range. Split clips on the Clips row.")
         .contextMenu {
             Button("Select \(asset.title)", systemImage: asset.systemImage) {
                 selection = .asset(asset.id)
@@ -1416,36 +1361,7 @@ struct EditorTimelineView: View {
 
     @ViewBuilder
     private var timelineContextMenu: some View {
-        if classificationSelection != nil {
-            Button("Mark as sound", systemImage: "waveform") {
-                classifySelectedRanges(.sound)
-            }
-            .disabled(!isInteractive || !silence.canClassify)
-            Button("Mark as silence", systemImage: "waveform.slash") {
-                classifySelectedRanges(.silence)
-            }
-            .disabled(!isInteractive || !silence.canClassify)
-            Divider()
-        }
-        if selection?.silenceSelection == nil, let range = selection?.timeRange {
-            Button("Cut selected range", systemImage: "scissors", action: onCutRange)
-                .disabled(!isInteractive || !range.canCut)
-            Button("Restore selected range", systemImage: "arrow.uturn.backward", action: onRestoreRange)
-                .disabled(!isInteractive || !(project?.edits.enabledCuts.contains {
-                    $0.start < range.end && $0.end > range.start
-                } ?? false))
-            Button("Clear selection", systemImage: "xmark") { selection = nil }
-            Divider()
-        }
-        Button("Mark range in at playhead", systemImage: "selection.pin.in.out", action: onMarkIn)
-            .disabled(!isInteractive)
-        Button("Mark range out at playhead", systemImage: "selection.pin.in.out", action: onMarkOut)
-            .disabled(!isInteractive)
-        Button("Split clip at playhead", systemImage: "scissors", action: onSplit)
-            .disabled(!isInteractive)
-        Divider()
         Button("Silence settings", systemImage: "waveform", action: onOpenSilence)
-        Button("Fit recording", systemImage: "arrow.left.and.right") { zoomLevel = 1 }
         Button("Keyboard shortcuts", systemImage: "keyboard") { showsShortcuts = true }
     }
 
@@ -1536,7 +1452,7 @@ struct EditorTimelineView: View {
     }
 
     private var showsSegmentsTrack: Bool {
-        !sceneEvents.isEmpty
+        EditorTimelineLaneVisibility.showsScenes(eventCount: sceneEvents.count)
     }
 
     private var showsSilenceTrack: Bool {
@@ -1601,23 +1517,6 @@ struct EditorTimelineView: View {
         }
         return max(0, height - 6)
     }
-
-    private func isSilenceTrack(at y: CGFloat) -> Bool {
-        guard showsSilenceTrack else { return false }
-        var top: CGFloat = clipRowHeight + 6
-        if showsSilenceTrack {
-            if y >= top, y < top + silenceRowHeight { return true }
-            top += silenceRowHeight + 6
-        }
-        for row in gutterRows {
-            if y >= top, y < top + row.height, let asset = row.asset {
-                return !asset.isVideo && silence.audioSourcePaths.contains(asset.url.path)
-            }
-            top += row.height + 6
-        }
-        return false
-    }
-
 
     private func seek(toContentX x: CGFloat, pxPerSecond: CGFloat) {
         guard duration > 0, pxPerSecond > 0 else { return }

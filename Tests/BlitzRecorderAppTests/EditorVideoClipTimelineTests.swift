@@ -304,13 +304,4 @@ final class EditorVideoClipTimelineTests: XCTestCase {
             .resize
         )
     }
-
-    func testClipSeamsStayHiddenUntilAClipIsHovered() {
-        let layout = EditorVideoClipLayout(.init(
-            projection: .init(.init(duration: 10, cuts: [])), splits: [4, 7]))
-        XCTAssertEqual(layout.hoveredSeamTimes(nil), [])
-        XCTAssertEqual(layout.hoveredSeamTimes(layout.clips[0].range), [4])
-        XCTAssertEqual(layout.hoveredSeamTimes(layout.clips[1].range), [4, 7])
-        XCTAssertEqual(layout.hoveredSeamTimes(layout.clips[2].range), [7])
-    }
 }

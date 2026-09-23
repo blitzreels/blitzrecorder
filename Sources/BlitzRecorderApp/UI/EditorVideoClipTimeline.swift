@@ -126,14 +126,6 @@ struct EditorVideoClipLayout: Equatable {
         return clips[lower - 1]
     }
 
-    func hoveredSeamTimes(_ range: EditorTimeRange?) -> [Double] {
-        guard let range,
-            let clip = clips.first(where: { abs($0.range.start - range.start) <= 1.0 / 600 })
-        else { return [] }
-        let end = clips.last?.end ?? clip.end
-        return [clip.start, clip.end].filter { $0 > 1.0 / 600 && $0 < end - 1.0 / 600 }
-    }
-
     func runs(_ request: Viewport) -> [Run] {
         guard request.pixelsPerSecond.isFinite, request.pixelsPerSecond > 0,
             request.viewport.width > 0 else { return [] }
@@ -354,37 +346,5 @@ struct EditorVideoClipStrip: View {
         .help("Drag right to restore footage into this clip until the next clip starts. Screen, Camera, and audio stay in sync.")
         .accessibilityLabel("Extend \(run.clip.title)")
         .accessibilityValue("Drag right to restore the cut after this clip")
-    }
-}
-
-struct EditorVideoClipSeams: View {
-    struct Configuration {
-        let layout: EditorVideoClipLayout
-        let viewport: EditorTimelineViewport
-        let pixelsPerSecond: CGFloat
-        let height: CGFloat
-        let hoveredRange: EditorTimeRange?
-    }
-
-    let configuration: Configuration
-    @Environment(\.displayScale) private var displayScale
-
-    var body: some View {
-        let times = configuration.layout.hoveredSeamTimes(configuration.hoveredRange)
-        let hairline = max(1 / max(displayScale, 1), 0.5)
-        Canvas { context, size in
-            for time in times {
-                let x = CGFloat(time) * configuration.pixelsPerSecond - configuration.viewport.lowerBound
-                guard x >= 0, x < size.width else { continue }
-                context.fill(
-                    Path(CGRect(x: x, y: 0, width: hairline, height: size.height)),
-                    with: .color(.white.opacity(0.22))
-                )
-            }
-        }
-        .frame(width: configuration.viewport.width, height: configuration.height)
-        .offset(x: configuration.viewport.lowerBound)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 }

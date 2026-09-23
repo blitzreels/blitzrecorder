@@ -21,25 +21,20 @@ struct SilencePreviewToggle: View {
 
     var body: some View {
         if presentation == .inspector {
-            VStack(alignment: .leading, spacing: 4) {
-                if session.metrics.hasChanges {
-                    applyButton
-                }
-                if session.hasRemovedSilence {
-                    HStack(spacing: 12) {
-                        if !session.metrics.hasChanges {
-                            Label("Cuts saved", systemImage: "checkmark")
-                                .font(.system(size: 12))
-                                .foregroundStyle(BlitzUI.supportingText)
-                        }
-                        Spacer(minLength: 0)
-                        Button("Restore") { session.restoreSilence() }
-                            .blitzButton(.quiet)
-                            .controlSize(.regular)
-                            .disabled(session.loading || session.calculating || session.preparingPreview)
-                            .accessibilityLabel("Restore removed silence")
-                            .help("Restore removed pauses across all tracks. Undo with ⌘Z.")
+            if session.hasRemovedSilence {
+                HStack(spacing: 12) {
+                    if !session.metrics.hasChanges {
+                        Label("Cuts saved", systemImage: "checkmark")
+                            .font(.system(size: 12))
+                            .foregroundStyle(BlitzUI.supportingText)
                     }
+                    Spacer(minLength: 0)
+                    Button("Restore") { session.restoreSilence() }
+                        .blitzButton(.quiet)
+                        .controlSize(.regular)
+                        .disabled(session.loading || session.calculating || session.preparingPreview)
+                        .accessibilityLabel("Restore removed silence")
+                        .help("Restore removed pauses across all tracks. Undo with ⌘Z.")
                 }
             }
         } else {

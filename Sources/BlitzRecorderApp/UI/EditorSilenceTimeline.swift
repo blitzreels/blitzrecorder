@@ -96,13 +96,6 @@ struct SilenceTimelineBands {
         request.bands.first(where: { request.x >= $0.x && request.x < $0.x + $0.width })?.range
     }
 
-    struct OverlayRun: Equatable {
-        let x: CGFloat
-        let width: CGFloat
-        let isEnabled: Bool
-        let isSelected: Bool
-    }
-
     static func visible(_ request: Request) -> [Band] {
         guard request.pixelsPerSecond.isFinite, request.pixelsPerSecond > 0, request.viewport.width > 0 else {
             return []
@@ -120,88 +113,5 @@ struct SilenceTimelineBands {
                 x: start - request.viewport.lowerBound, width: max(1, end - start), isEnabled: cut.isEnabled
             )
         }
-    }
-
-    static func overlayRuns(_ request: Request, selections: [EditorTimeRange], pixelScale: CGFloat = 1)
-        -> [OverlayRun]
-    {
-        guard request.pixelsPerSecond.isFinite, request.pixelsPerSecond > 0, request.viewport.width > 0,
-            !request.cuts.isEmpty
-        else { return [] }
-        let scale = pixelScale.isFinite && pixelScale > 0 ? pixelScale : 1
-        let pixelCount = max(1, Int(ceil(request.viewport.width * scale)))
-        var runs: [OverlayRun] = []
-        var current: (pixel: Int, enabled: Bool, selected: Bool)?
-        func flush(_ pixel: Int) {
-            guard let current else { return }
-            runs.append(
-                OverlayRun(
-                    x: CGFloat(current.pixel) / scale,
-                    width: CGFloat(pixel - current.pixel) / scale,
-                    isEnabled: current.enabled,
-                    isSelected: current.selected
-                ))
-        }
-        for pixel in 0..<pixelCount {
-            let displayX = request.viewport.lowerBound + (CGFloat(pixel) + 0.5) / scale
-            let time = request.projection.takeTime(Double(displayX / request.pixelsPerSecond))
-            guard let cut = silenceCut(at: time, cuts: request.cuts) else {
-                if current != nil {
-                    flush(pixel)
-                    current = nil
-                }
-                continue
-            }
-            let selected = SilenceTimelineSegments.contains(
-                EditorTimeRange(start: cut.start, end: cut.end), in: selections)
-            if let active = current, active.enabled == cut.isEnabled, active.selected == selected {
-                continue
-            }
-            flush(pixel)
-            current = (pixel: pixel, enabled: cut.isEnabled, selected: selected)
-        }
-        flush(pixelCount)
-        return runs
-    }
-
-    static func silenceCut(at time: Double, cuts: [TimelineCut]) -> TimelineCut? {
-        guard time.isFinite, !cuts.isEmpty else { return nil }
-        let index = firstIndex(in: cuts) { $0.start > time } - 1
-        guard cuts.indices.contains(index) else { return nil }
-        let cut = cuts[index]
-        guard cut.kind == .silence, cut.end > time else { return nil }
-        return cut
-    }
-
-    private static func firstIndex(in cuts: [TimelineCut], where predicate: (TimelineCut) -> Bool) -> Int {
-        var lower = 0
-        var upper = cuts.count
-        while lower < upper {
-            let middle = (lower + upper) / 2
-            if predicate(cuts[middle]) { upper = middle } else { lower = middle + 1 }
-        }
-        return lower
-    }
-}
-
-struct SilenceWaveformOverlay: View, Equatable {
-    let runs: [SilenceTimelineBands.OverlayRun]
-    let viewport: EditorTimelineViewport
-
-    var body: some View {
-        Canvas { context, size in
-            for run in runs {
-                let color = run.isEnabled ? Color.red : BlitzUI.mint
-                let rect = CGRect(x: run.x, y: 0, width: run.width, height: size.height)
-                context.fill(Path(rect), with: .color(color.opacity(run.isSelected ? 0.25 : 0.18)))
-                context.stroke(
-                    Path(rect.insetBy(dx: 0.5, dy: 0.5)),
-                    with: .color(color.opacity(run.isSelected ? 0.9 : 0.5)), lineWidth: 1)
-            }
-        }
-        .frame(width: viewport.width)
-        .offset(x: viewport.lowerBound)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 }

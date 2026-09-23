@@ -290,6 +290,7 @@ final class EditorMediaLibrary {
 
             let posterTime = CMTime(seconds: min(0.1, seconds), preferredTimescale: 600)
             poster = try? await generator.image(at: posterTime).image
+            waveform = await EditorAudioWaveform.load(.init(asset: avAsset, duration: seconds))
         } else if asset.isAudio {
             waveform = await EditorAudioWaveform.load(.init(asset: avAsset, duration: seconds))
         }

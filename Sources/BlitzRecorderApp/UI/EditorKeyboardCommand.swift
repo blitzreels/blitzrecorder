@@ -233,3 +233,26 @@ enum EditorDeleteRouting {
         }
     }
 }
+
+struct EditorTimelineHeaderActions: Equatable {
+    struct Request: Equatable {
+        let hasRangeToolbar: Bool
+        let hasSilenceSelection: Bool
+    }
+
+    let showsRange: Bool
+    let showsDelete: Bool
+
+    static func resolve(_ request: Request) -> Self {
+        Self(
+            showsRange: !request.hasRangeToolbar,
+            showsDelete: !request.hasRangeToolbar && !request.hasSilenceSelection
+        )
+    }
+}
+
+enum EditorTimelineLaneVisibility {
+    static func showsScenes(eventCount: Int) -> Bool {
+        eventCount > 1
+    }
+}

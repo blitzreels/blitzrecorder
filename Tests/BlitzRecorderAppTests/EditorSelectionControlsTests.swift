@@ -135,6 +135,27 @@ final class EditorSelectionControlsTests: XCTestCase {
         )
     }
 
+    func testHeaderHidesDuplicateRangeAndDeleteWhenAContextualToolbarIsOpen() {
+        XCTAssertEqual(
+            EditorTimelineHeaderActions.resolve(.init(hasRangeToolbar: false, hasSilenceSelection: false)),
+            .init(showsRange: true, showsDelete: true)
+        )
+        XCTAssertEqual(
+            EditorTimelineHeaderActions.resolve(.init(hasRangeToolbar: true, hasSilenceSelection: false)),
+            .init(showsRange: false, showsDelete: false)
+        )
+        XCTAssertEqual(
+            EditorTimelineHeaderActions.resolve(.init(hasRangeToolbar: false, hasSilenceSelection: true)),
+            .init(showsRange: true, showsDelete: false)
+        )
+    }
+
+    func testScenesLaneHidesWhenTheTakeIsASingleScene() {
+        XCTAssertFalse(EditorTimelineLaneVisibility.showsScenes(eventCount: 0))
+        XCTAssertFalse(EditorTimelineLaneVisibility.showsScenes(eventCount: 1))
+        XCTAssertTrue(EditorTimelineLaneVisibility.showsScenes(eventCount: 2))
+    }
+
     @MainActor
     func testTypingAndNativeControlsKeepTheirKeyboardEvents() {
         XCTAssertFalse(EditorKeyboardCommand.acceptsShortcuts(firstResponder: NSTextView()))

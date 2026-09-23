@@ -189,8 +189,10 @@ final class EditorPlaybackController: NowPlayingPlayback {
         setPrivacyMaskPreview(nil)
     }
     private(set) var cursorTrack = CursorPresentationTrack.empty
-    var outputDuration: Double { playback?.timeMap.outputDuration.seconds ?? 0 }
-    private var timeMap: TimelineTimeMap { playback?.timeMap ?? .identity(takeDuration: MediaTime.zero) }
+    var outputDuration: Double { timeMap.outputDuration.seconds }
+    private var timeMap: TimelineTimeMap {
+        exportedTimeMap ?? playback?.timeMap ?? .identity(takeDuration: MediaTime.zero)
+    }
 
     @ObservationIgnored private var playback: EditorPlaybackComposition? {
         didSet { invalidateRenderSegments() }
@@ -210,6 +212,8 @@ final class EditorPlaybackController: NowPlayingPlayback {
     )?
     @ObservationIgnored private var videoPlayers: [SceneLayerKind: AVPlayer] = [:]
     @ObservationIgnored private var audioPlayer: AVPlayer?
+    @ObservationIgnored private var exportedPlayer: AVPlayer?
+    @ObservationIgnored private var exportedTimeMap: TimelineTimeMap?
     @ObservationIgnored private var audioInputs: [(source: CaptureSource, baseVolume: Float)] = []
     @ObservationIgnored private var audioMixTracks: [(source: CaptureSource, track: AVCompositionTrack, baseVolume: Float)] = []
     @ObservationIgnored private var audioComposition: AVMutableComposition?
@@ -249,14 +253,20 @@ final class EditorPlaybackController: NowPlayingPlayback {
     }
 
     private var masterPlayer: AVPlayer? {
-        playbackClockPlayer
+        exportedPlayer ?? playbackClockPlayer
     }
 
     private var allPlayers: [AVPlayer] {
+        if let exportedPlayer {
+            return [exportedPlayer]
+        }
         var players = Array(videoPlayers.values)
         if let audioPlayer { players.append(audioPlayer) }
         return players
     }
+
+    var isExportedPlayback: Bool { exportedPlayer != nil }
+    var filePlayer: AVPlayer? { exportedPlayer }
 
     struct VoiceComparison {
         let bypassed: Bool
@@ -269,6 +279,63 @@ final class EditorPlaybackController: NowPlayingPlayback {
         let wasPlaying = isPlaying
         await load(project: request.project, baseSettings: request.settings)
         if wasPlaying && isReady { play(from: currentTime) }
+    }
+
+    func loadExported(url: URL, title: String) async {
+        loadGeneration += 1
+        let generation = loadGeneration
+        pauseAll()
+        isPlaying = false
+        isReady = false
+        loadError = nil
+        teardownPlayers()
+        playback = nil
+        edits = .empty
+        hiddenKinds = []
+        mutedSources = []
+        loadedProjectPath = nil
+        loadedMediaSignature = nil
+        previewSceneOverride = nil
+
+        do {
+            let asset = AVURLAsset(url: url)
+            let durationTime = try await asset.load(.duration)
+            let tracks = try await asset.loadTracks(withMediaType: .video)
+            let size: CGSize
+            if let track = tracks.first {
+                let naturalSize = try await track.load(.naturalSize)
+                let transform = try await track.load(.preferredTransform)
+                let rect = CGRect(origin: .zero, size: naturalSize).applying(transform).standardized
+                size = CGSize(width: abs(rect.width), height: abs(rect.height))
+            } else {
+                size = .zero
+            }
+            guard generation == loadGeneration, !Task.isCancelled else { return }
+            let item = AVPlayerItem(asset: asset)
+            item.audioTimePitchAlgorithm = .timeDomain
+            let player = AVPlayer(playerItem: item)
+            player.automaticallyWaitsToMinimizeStalling = false
+            exportedPlayer = player
+            guard try await waitForPlayersReady((players: [player], generation: generation)) else { return }
+            guard generation == loadGeneration, !Task.isCancelled else { return }
+            playbackClockPlayer = player
+            nowPlayingTitle = title
+            self.duration = durationTime.seconds.isFinite ? max(0, durationTime.seconds) : 0
+            exportedTimeMap = .identity(takeDuration: MediaTime(seconds: self.duration))
+            renderSize = size
+            previewSceneRevision &+= 1
+            currentTime = 0
+            installObservers()
+            await seekAllPrecisely(to: 0)
+            guard generation == loadGeneration, !Task.isCancelled else { return }
+            isReady = true
+        } catch {
+            guard generation == loadGeneration, !Task.isCancelled else { return }
+            teardownPlayers()
+            duration = 0
+            renderSize = .zero
+            loadError = error.localizedDescription
+        }
     }
 
     func load(project: RecordingProject, baseSettings: RecordingSettings) async {
@@ -554,6 +621,10 @@ final class EditorPlaybackController: NowPlayingPlayback {
         isPlaying = playAll()
     }
 
+    func playFromOutput(_ seconds: Double) {
+        play(from: timeMap.takeSeconds(forOutputSeconds: seconds))
+    }
+
     func setPlaybackRate(_ rate: EditorPlaybackRate) {
         guard playbackRate != rate else { return }
         playbackRate = rate
@@ -618,6 +689,10 @@ final class EditorPlaybackController: NowPlayingPlayback {
                 toleranceAfter: CMTime(seconds: 0.1, preferredTimescale: 600)
             )
         }
+    }
+
+    func scrubToOutput(_ seconds: Double) {
+        scrub(to: timeMap.takeSeconds(forOutputSeconds: seconds))
     }
 
     func endScrub() {
@@ -795,6 +870,8 @@ final class EditorPlaybackController: NowPlayingPlayback {
         }
         videoPlayers = [:]
         audioPlayer = nil
+        exportedPlayer = nil
+        exportedTimeMap = nil
         playbackClockPlayer = nil
         audioComposition = nil
         audioMixTracks = []

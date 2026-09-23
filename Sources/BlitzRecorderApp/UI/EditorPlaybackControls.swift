@@ -47,8 +47,6 @@ struct EditorPlaybackControls: View {
         let rate: EditorPlaybackRate
         let onSeek: (Double) -> Void
         let onTogglePlayback: () -> Void
-        let onPreviousScene: () -> Void
-        let onNextScene: () -> Void
         let onRateChange: (EditorPlaybackRate) -> Void
     }
 
@@ -105,10 +103,6 @@ struct EditorPlaybackControls: View {
             speed
         }
         .disabled(!configuration.isEnabled)
-        .contextMenu {
-            Button("Previous scene", systemImage: "backward.end") { configuration.onPreviousScene() }
-            Button("Next scene", systemImage: "forward.end") { configuration.onNextScene() }
-        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Playback controls")
     }
