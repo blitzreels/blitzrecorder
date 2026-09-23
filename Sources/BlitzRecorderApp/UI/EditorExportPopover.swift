@@ -9,6 +9,7 @@ struct EditorExportPopover<MusicControls: View>: View {
         let resolution: Binding<OutputResolution>
         let framesPerSecond: Binding<Int>
         let quality: Binding<ExportVideoQuality>
+        let playbackRate: Binding<ExportPlaybackRate>
         let summary: String
         let estimatedSize: String
         let estimatedSizeCaption: String
@@ -90,6 +91,12 @@ struct EditorExportPopover<MusicControls: View>: View {
                         .init(value: $0, title: $0.displayName, detail: $0.plainDescription)
                     }, menuWidth: 330
                 ))
+                BlitzFormDropdown(configuration: .init(
+                    title: "Speed", selection: configuration.playbackRate,
+                    options: ExportPlaybackRate.all.map {
+                        .init(value: $0, title: $0.displayName, detail: nil)
+                    }
+                ))
             }
 
             Divider().overlay(BlitzUI.separator).padding(.vertical, 18)
@@ -152,7 +159,8 @@ struct EditorExportPopover<MusicControls: View>: View {
 
             Button(action: configuration.showBlitzReels) {
                 HStack(spacing: 6) {
-                    Text("Send to BlitzReels")
+                    BlitzReelsBrand().frame(width: 96, height: 15)
+                    Text("Add captions and B-roll")
                     Image(systemName: "arrow.up.right")
                 }
                 .frame(maxWidth: .infinity)
@@ -177,6 +185,7 @@ struct EditorExportPopover<MusicControls: View>: View {
         resolution: .constant(.p1080),
         framesPerSecond: .constant(30),
         quality: .constant(.web),
+        playbackRate: .constant(.normal),
         summary: "1920 × 1080 · 30 fps",
         estimatedSize: "≈ 32 MB",
         estimatedSizeCaption: "Estimated size",

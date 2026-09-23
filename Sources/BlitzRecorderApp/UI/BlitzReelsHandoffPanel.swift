@@ -1,57 +1,77 @@
 import AVFoundation
 import SwiftUI
 
+struct BlitzReelsBrand: View {
+    var body: some View {
+        Group {
+            if let url = Bundle.main.url(forResource: "BlitzReelsWordmarkWhite", withExtension: "png"),
+               let image = NSImage(contentsOf: url) {
+                Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
+            } else {
+                Text("BlitzReels").font(.system(size: 18, weight: .bold))
+            }
+        }
+        .accessibilityLabel("BlitzReels")
+    }
+}
+
 struct BlitzReelsHandoffPanel: View {
     let project: RecordingProject
     let settings: RecordingSettings
     @Bindable var handoff = BlitzReelsHandoffController.shared
     @State private var selection: URL?
 
-    private var files: [EditorAsset] {
-        EditorAsset.assets(project: project, finalVideoURL: project.finalVideoPath.map(URL.init(fileURLWithPath:)))
-            .filter { $0.isVideo && $0.exists }
-    }
-    private var currentResult: URL? { handoff.projectID == project.id ? handoff.createURL : nil }
-    private var feedback: String {
-        handoff.projectID == project.id || handoff.isWorking ? handoff.status : ""
+    private var files: [URL] { BlitzReelsExportFiles.files(project) }
+    private var currentResult: URL? {
+        handoff.projectID == project.id && handoff.selectedExportURL == selection ? handoff.createURL : nil
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Choose the video you want to turn into clips.")
+                VStack(alignment: .leading, spacing: 16) {
+                    BlitzReelsBrand().frame(width: 154, height: 24)
+                    Text("Add captions and B-roll")
+                        .font(.system(size: 17, weight: .semibold))
+                    Text("Send your exported MP4 and choose its captions in BlitzReels.")
                         .font(.system(size: 12)).foregroundStyle(BlitzUI.secondaryText)
-                    if handoff.hasKey {
-                        Label("Connected", systemImage: "checkmark.circle.fill")
-                            .font(.system(size: 11, weight: .medium)).foregroundStyle(BlitzUI.mint)
-                    }
-                    ForEach(files) { file in
-                        RecordingUploadChoice(
-                            file: file, isSelected: selection == file.url, onSelect: { selection = file.url }
-                        )
-                        .disabled(handoff.isWorking)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let account = handoff.connection.account {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label(account.user.email, systemImage: "checkmark.circle.fill")
+                                .font(.system(size: 11)).foregroundStyle(BlitzUI.mint)
+                                .lineLimit(2).textSelection(.enabled)
+                            BlitzDropdown(configuration: .init(
+                                title: "BlitzReels workspace",
+                                selection: Binding(
+                                    get: { handoff.connection.selectedWorkspaceID },
+                                    set: { if let id = $0 { handoff.selectWorkspace(id) } }
+                                ),
+                                options: account.workspaces.map {
+                                    BlitzDropdownOption(value: Optional($0.id), title: $0.name, detail: nil)
+                                }
+                            ))
+                            .disabled(handoff.isWorking)
+                            if account.workspaces.isEmpty {
+                                Text("Create or join a workspace in BlitzReels to continue.")
+                                    .font(.system(size: 12)).foregroundStyle(BlitzUI.secondaryText)
+                            }
+                        }
                     }
                     if files.isEmpty {
-                        Label("Export a video to send this recording.", systemImage: "film")
-                            .font(.system(size: 13)).foregroundStyle(BlitzUI.secondaryText).padding(.vertical, 28)
+                        Label("Export an MP4 first.", systemImage: "film")
+                            .font(.system(size: 13)).foregroundStyle(BlitzUI.secondaryText).padding(.vertical, 20)
                     } else {
-                        Label(
-                            "Source videos include recorded audio. Export again to include your latest edits.",
-                            systemImage: "info.circle"
-                        )
-                        .font(.system(size: 11)).foregroundStyle(BlitzUI.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true).padding(.top, 4)
-                    }
-                    if let code = handoff.userCode {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Confirm this code in your browser").font(.system(size: 12, weight: .semibold))
-                            Text(code).font(.system(size: 24, weight: .semibold, design: .monospaced)).textSelection(
-                                .enabled)
-                            Text("Sign in to connect your BlitzReels account.")
-                                .font(.system(size: 11)).foregroundStyle(BlitzUI.secondaryText)
-                        }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
-                            .background(BlitzUI.cardFill, in: .rect(cornerRadius: 12))
+                        ForEach(files, id: \.path) { url in
+                            RecordingUploadChoice(
+                                file: EditorAsset.output(url: url), isSelected: selection == url,
+                                onSelect: { select(url) }
+                            )
+                            .disabled(handoff.isWorking)
+                        }
+                        Text("Sends this exported file. Later timeline changes need a new export.")
+                            .font(.system(size: 11)).foregroundStyle(BlitzUI.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     if handoff.isWorking {
                         if let progress = handoff.progress {
@@ -63,32 +83,65 @@ struct BlitzReelsHandoffPanel: View {
                             ProgressView().controlSize(.small)
                         }
                     }
-                    if !feedback.isEmpty {
-                        Text(feedback).font(.system(size: 12)).foregroundStyle(BlitzUI.secondaryText)
+                    if !handoff.status.isEmpty {
+                        Text(handoff.status).font(.system(size: 12)).foregroundStyle(BlitzUI.secondaryText)
                             .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                     }
+                    if let url = handoff.upgradeURL {
+                        Link("View BlitzReels plans", destination: url).blitzButton(.secondary)
+                    }
+                    if let url = handoff.setupURL {
+                        Link("Finish account setup", destination: url).blitzButton(.secondary)
+                    }
                 }.padding(14)
-            }.frame(maxHeight: 430)
+            }
             Divider()
             VStack(spacing: 10) {
                 if handoff.isWorking {
-                    Button("Cancel upload") { handoff.cancel() }
-                } else if let url = currentResult {
-                    Link("Open in BlitzReels", destination: url)
-                        .buttonStyle(BlitzButtonStyle(.accent))
-                    Button("Send selected", action: send).disabled(selection == nil)
+                    Button("Cancel") { handoff.cancel() }.blitzButton(.secondary)
+                } else if handoff.connection.account == nil {
+                    Button(handoff.connection.hasCredential ? "Reconnect to BlitzReels" : "Connect to BlitzReels") {
+                        handoff.connect()
+                    }.blitzButton(.accent)
                 } else {
-                    Button(handoff.hasKey ? "Send recording" : "Connect and send", action: send)
-                        .buttonStyle(BlitzButtonStyle(.accent)).disabled(selection == nil)
+                    if let url = currentResult {
+                        Link("Continue in BlitzReels", destination: url).blitzButton(.accent)
+                    } else {
+                        Button("Upload to BlitzReels", action: send)
+                            .blitzButton(.accent)
+                            .disabled(selection == nil || handoff.connection.selectedWorkspace == nil)
+                    }
+                    Text("Choose captions and optional B-roll next.")
+                        .font(.system(size: 11)).foregroundStyle(BlitzUI.secondaryText)
                 }
-                if handoff.hasKey {
-                    Button("Disconnect") { handoff.disconnect() }.disabled(handoff.isWorking)
+                if handoff.connection.hasCredential {
+                    HStack {
+                        Button("Disconnect") { handoff.disconnect() }
+                            .blitzButton(.quiet).controlSize(.small).disabled(handoff.isWorking)
+                        Link("Manage connection", destination: handoff.connection.client.origin.appendingPathComponent("dashboard/settings"))
+                            .blitzButton(.quiet).controlSize(.small)
+                    }
                 }
             }.frame(maxWidth: .infinity).padding(14)
-        }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(BlitzUI.projectLibraryBackground).foregroundStyle(BlitzUI.primaryText)
-            .buttonStyle(BlitzButtonStyle(.secondary))
-            .onAppear { selection = files.first?.url }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(BlitzUI.projectLibraryBackground).foregroundStyle(BlitzUI.primaryText)
+        .task(id: project.id) {
+            let selected = handoff.projectID == project.id ? handoff.selectedExportURL : nil
+            selection = selected.flatMap { files.contains($0) ? $0 : nil } ?? files.first
+            await handoff.restoreConnection()
+        }
+        .onChange(of: handoff.selectedExportURL) { _, url in
+            if handoff.projectID == project.id, let url, files.contains(url) { selection = url }
+        }
+        .onChange(of: files) { _, urls in
+            if !urls.contains(where: { $0 == selection }) { selection = urls.first }
+        }
+    }
+
+    private func select(_ url: URL) {
+        selection = url
+        handoff.selectExport(.init(fileURL: url, project: project, settings: settings))
     }
 
     private func send() {
@@ -117,9 +170,9 @@ private struct RecordingUploadChoice: View {
                     }
                 }.frame(width: 72, height: 50).clipShape(.rect(cornerRadius: 7))
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(file.kind == .output ? "Finished export" : "\(file.title) + audio")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(file.kind == .output ? "Your last rendered video" : "Original source · without timeline edits")
+                    Text(file.url.lastPathComponent)
+                        .font(.system(size: 12, weight: .semibold)).lineLimit(2).truncationMode(.middle)
+                    Text("Exported MP4")
                         .font(.system(size: 10)).foregroundStyle(BlitzUI.secondaryText)
                     Text(metadata).font(.system(size: 10, design: .monospaced)).foregroundStyle(BlitzUI.secondaryText)
                 }.frame(maxWidth: .infinity, alignment: .leading)

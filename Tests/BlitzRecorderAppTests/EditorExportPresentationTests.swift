@@ -20,7 +20,8 @@ final class EditorExportPresentationTests: XCTestCase {
             ("Format", OutputVideoFormat.allCases.map(\.displayName)),
             ("Resolution", OutputResolution.allCases.map(\.displayName)),
             ("Export FPS", RecordingSettings.supportedFrameRates.map { "\($0) fps" }),
-            ("Quality", ExportVideoQuality.menuCases.map(\.displayName))
+            ("Quality", ExportVideoQuality.menuCases.map(\.displayName)),
+            ("Speed", ExportPlaybackRate.all.map(\.displayName))
         ]
         var heights: [CGFloat] = []
         for (title, values) in fields {
@@ -45,7 +46,7 @@ final class EditorExportPresentationTests: XCTestCase {
         for name in names {
             let host = NSHostingView(rootView: EditorExportStatusView(configuration: .init(
                 status: .succeeded(URL(fileURLWithPath: "/tmp/recordings/\(name)")),
-                open: { _ in }, reveal: { _ in }, retry: {}, dismiss: {}
+                open: { _ in }, reveal: { _ in }, sendToBlitzReels: { _ in }, retry: {}, dismiss: {}
             )).frame(width: 1120))
             host.layoutSubtreeIfNeeded()
             XCTAssertEqual(host.fittingSize.width, 1120, accuracy: 1)

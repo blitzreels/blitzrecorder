@@ -30,6 +30,7 @@ struct EditorExportStatusView: View {
         let status: EditorExportStatus
         let open: (URL) -> Void
         let reveal: (URL) -> Void
+        let sendToBlitzReels: (URL) -> Void
         let retry: () -> Void
         let dismiss: () -> Void
     }
@@ -132,6 +133,17 @@ struct EditorExportStatusView: View {
     private var actions: some View {
         switch configuration.status {
         case .succeeded(let url):
+            if url.pathExtension.lowercased() == "mp4" {
+                Button { configuration.sendToBlitzReels(url) } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        BlitzReelsBrand().frame(width: 94, height: 14)
+                        Text("Add captions").font(.system(size: 11, weight: .medium))
+                    }
+                }
+                .blitzButton(.accent)
+                .accessibilityLabel("Add captions in BlitzReels")
+                .help("Upload this MP4 to BlitzReels for captions and optional B-roll")
+            }
             Button { configuration.open(url) } label: {
                 Label("Open video", systemImage: "play")
                     .frame(width: 110)

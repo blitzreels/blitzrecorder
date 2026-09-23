@@ -21,6 +21,7 @@ struct EditorView: View {
     @State var selectedExportFramesPerSecond = 60
     @State var selectedExportQuality: ExportVideoQuality = .high
     @State var selectedExportPreset: ExportPerformancePreset = .balanced
+    @State var selectedExportPlaybackRate = ExportPlaybackRate.normal
     @State var backgroundMusic: ExportBackgroundMusic?
     @State var backgroundMusicBookmarkData: Data?
     @State var exportLayouts: Set<CaptureLayout> = []
@@ -56,6 +57,13 @@ struct EditorView: View {
                     status: exportStatus,
                     open: { NSWorkspace.shared.open($0) },
                     reveal: { NSWorkspace.shared.activateFileViewerSelecting([$0]) },
+                    sendToBlitzReels: { url in
+                        guard let project else { return }
+                        BlitzReelsHandoffController.shared.selectExport(.init(
+                            fileURL: url, project: project, settings: vm.settings
+                        ))
+                        inspectorTab = .blitzReels
+                    },
                     retry: exportVideo,
                     dismiss: {
                         vm.lastExportSucceededURL = nil
@@ -126,11 +134,9 @@ struct EditorView: View {
                 duration: timelineDuration,
                 playback: playback,
                 selection: $selection,
-                onSeek: { playback.scrub(to: $0) },
+                                onSeek: { playback.scrub(to: $0) },
                 onSeekEnded: { playback.endScrub() },
-                onPrevious: { playback.seek(to: previousBoundary()) },
                 onTogglePlayback: { playback.togglePlayback() },
-                onNext: { playback.seek(to: nextBoundary()) },
                 onPlaybackRateChange: { playback.setPlaybackRate($0) },
                 isInteractive: playback.isReady,
                 hiddenAssetIDs: tracks.hiddenIDs,
