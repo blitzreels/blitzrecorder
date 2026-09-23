@@ -150,6 +150,16 @@ jobs:
             -OutputDir dist `
             -AppVersion $version
 
+      - name: Assert installed app launches
+        shell: pwsh
+        run: |
+          $installer = if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            'dist\BlitzRecorder-Windows.exe'
+          } else {
+            'dist\BlitzRecorder-Windows-unsigned.exe'
+          }
+          .\Scripts\windows\assert-installer-launches.ps1 -InstallerPath $installer
+
       - name: Sign installer
         if: startsWith(github.ref, 'refs/tags/v') && steps.signkind.outputs.method == 'azure'
         uses: azure/artifact-signing-action@v2

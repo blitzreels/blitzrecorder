@@ -159,6 +159,10 @@ jobs:
             -OutputDir build\windows-iss-check `
             -AppVersion 0.0.0-ci
 
+      - name: Assert installed app launches
+        shell: pwsh
+        run: .\Scripts\windows\assert-installer-launches.ps1 -InstallerPath build\windows-iss-check\BlitzRecorder-Windows-ci-check.exe
+
       - name: Upload unsigned installer
         uses: actions/upload-artifact@v4
         with:

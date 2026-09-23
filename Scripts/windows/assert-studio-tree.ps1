@@ -88,6 +88,9 @@ if (-not (Test-Path (Join-Path $PSScriptRoot "msvc-env.ps1"))) {
 if (-not $NativeOnly -and -not (Test-Path (Join-Path $PSScriptRoot "assert-studio-launches.ps1"))) {
     $missing += "Scripts/windows/assert-studio-launches.ps1"
 }
+if (-not $NativeOnly -and -not (Test-Path (Join-Path $PSScriptRoot "assert-installer-launches.ps1"))) {
+    $missing += "Scripts/windows/assert-installer-launches.ps1"
+}
 if (-not $NativeOnly -and -not (Test-Path (Join-Path $PSScriptRoot "sign-pe.ps1"))) {
     $missing += "Scripts/windows/sign-pe.ps1"
 }
