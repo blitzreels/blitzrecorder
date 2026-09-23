@@ -45,7 +45,7 @@ jobs:
       matrix:
         mode: [thread, address, disk]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Show toolchain
         run: |
           xcodebuild -version
@@ -56,7 +56,7 @@ jobs:
         run: python3 Scripts/run-resilience.py "$RESILIENCE_MODE"
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: resilience-${{ matrix.mode }}
           path: build/resilience/
@@ -68,7 +68,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 240
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Show toolchain
         run: |
           xcodebuild -version
@@ -80,7 +80,7 @@ jobs:
         run: python3 Scripts/run-resilience.py "$RESILIENCE_MODE" --seconds "$RESILIENCE_SECONDS"
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: resilience-${{ inputs.mode }}
           path: build/resilience/
