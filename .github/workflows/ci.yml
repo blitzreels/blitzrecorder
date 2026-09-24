@@ -133,7 +133,6 @@ jobs:
 
       - name: Capture Windows Store screenshot
         shell: powershell
-        continue-on-error: true
         run: .\Scripts\windows\capture-studio-screenshot.ps1
 
       - name: Upload Windows Store screenshot
@@ -141,7 +140,7 @@ jobs:
         with:
           name: windows-store-screenshot
           path: build/windows-store/Studio-Screenshot.png
-          if-no-files-found: warn
+          if-no-files-found: error
 
       - name: Package Microsoft Store MSIX
         shell: pwsh

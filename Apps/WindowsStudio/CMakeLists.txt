@@ -122,6 +122,14 @@ set_target_properties(BlitzRecorderFixture PROPERTIES
 )
 
 if(BR_BUILD_STUDIO_SHELL)
+    if(NOT BR_WEBVIEW2_SDK)
+        message(FATAL_ERROR "BR_WEBVIEW2_SDK is required for the Windows workspace")
+    endif()
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|arm64")
+        set(_br_webview_arch arm64)
+    else()
+        set(_br_webview_arch x64)
+    endif()
     # Compile-only: an isolated try_compile *link* of windowsapp.lib is a false
     # FATAL on some images even when winui_shell.cpp compiles in-tree.
     # CMAKE_FLAGS -D is not enough on every CMake; set the variable too.
@@ -144,6 +152,7 @@ if(BR_BUILD_STUDIO_SHELL)
         Sources/WindowsCapture/studio_run.cpp
         Sources/WindowsCapture/studio_dialogs.cpp
         Sources/WindowsCapture/win32_shell.cpp
+        Sources/WindowsCapture/webview_shell.cpp
     )
     if(BR_WINUI_OK)
         message(STATUS "WinUI XAML Islands headers OK")
@@ -159,6 +168,7 @@ if(BR_BUILD_STUDIO_SHELL)
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/Sources/WindowsCapture
             ${CMAKE_CURRENT_SOURCE_DIR}/Sources/WindowsCapture/include
+            ${BR_WEBVIEW2_SDK}/build/native/include
     )
     target_compile_definitions(WindowsStudioShell
         PRIVATE
@@ -174,6 +184,7 @@ if(BR_BUILD_STUDIO_SHELL)
     target_link_libraries(WindowsStudioShell
         PUBLIC
             WindowsCaptureNative
+            "${BR_WEBVIEW2_SDK}/build/native/${_br_webview_arch}/WebView2Loader.dll.lib"
             user32
             gdi32
             comctl32

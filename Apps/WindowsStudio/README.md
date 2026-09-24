@@ -1,6 +1,6 @@
 # BlitzRecorder Windows Studio
 
-Win32 Swift executable with a WinUI XAML Islands shell (Win32 fallback):
+Win32 Swift executable with a local WebView2 workspace over the native capture engine. WinUI XAML Islands and Win32 remain fallbacks when WebView2 is unavailable.
 
 - Screen: **Windows Graphics Capture** (`CreateForMonitor` + `CreateFreeThreaded`), DXGI Desktop Duplication fallback
 - Audio: WASAPI loopback + microphone
@@ -15,7 +15,7 @@ Requires **Windows 10 version 2004** (build 19041) for WGC free-threaded capture
 
 ## Build
 
-Install the [Swift toolchain for Windows](https://www.swift.org/install/windows/) (6.3+) **and** Visual Studio 2022 C++ (MSVC + Windows 10/11 SDK). Capture/WGC/WinUI are compiled with **MSVC via CMake**, then linked by Swift. SPM clang-cl does not compile those WinRT headers.
+Install the [Swift toolchain for Windows](https://www.swift.org/install/windows/) (6.3+) **and** Visual Studio 2022 C++ (MSVC + Windows 10/11 SDK). Capture/WGC/WinUI/WebView2 are compiled with **MSVC via CMake**, then linked by Swift. SPM clang-cl does not compile those WinRT headers. The build downloads a pinned Microsoft WebView2 SDK package and verifies its SHA-256 checksum.
 
 From Developer PowerShell at the repo root:
 
@@ -45,7 +45,9 @@ Apps\WindowsStudio\.build\release\BlitzRecorderWindows.exe --play $env:TEMP\blit
 
 Default output is the OS Movies/Videos folder (`Videos\BlitzRecorder` on most PCs; the Ready line shows the real path). Microphone and system audio are on unless `--no-mic` / `--no-system-audio`. Camera is off unless `--camera`.
 
-The studio window has **Start** / **Stop** / **Open take** / **Export last**, plus checkboxes for system audio (on), microphone (on), and camera. WinUI XAML Islands is tried first; if it fails, the Win32 window is used; if that fails, the process falls back to console: `start`, `stop`, `quit`.
+The workspace has the same source/canvas/inspector/transport structure as macOS. Start, Stop, source selection, microphone, system audio, camera, take library, playback, and export call the existing native Windows engine. WebView2 uses bundled HTML/CSS/JS assets and a local message bridge. It never loads a remote page. Native preview pixels render into a child window over the canvas while recording or playing. If the Evergreen WebView2 Runtime is unavailable, the app falls back to WinUI, then Win32.
+
+The current Windows engine records at 30 fps and exports at source resolution. The macOS editor, scene controls, and 9:16 output pipeline are not yet ported; the Windows workspace does not display controls for those unavailable operations.
 
 Each Start creates `take-YYYYMMDD-HHMMSS\` containing:
 
