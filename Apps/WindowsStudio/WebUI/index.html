@@ -1,65 +1,159 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; frame-src 'none'">
-  <title>BlitzRecorder</title>
-  <link rel="stylesheet" href="workspace.css">
-  <script defer src="workspace.js"></script>
-</head>
-<body>
-  <div class="app">
-    <header class="toolbar">
-      <button class="nav-button" id="library-button" aria-label="Open projects"><span class="nav-icon">▦</span><span>Projects</span></button>
-      <span class="toolbar-divider"></span>
-      <div class="status-line"><span class="status-dot" id="status-dot"></span><span id="status-text">Ready to record</span></div>
-      <div class="toolbar-spacer"></div>
-      <span class="quality">Source size &nbsp;·&nbsp; 30 fps</span>
-      <button class="icon-button" id="refresh-button" aria-label="Refresh sources" title="Refresh sources">↻</button>
-    </header>
-    <main class="workspace" id="record-workspace">
-      <aside class="sidebar sources">
-        <div class="panel-heading">Sources</div>
-        <div class="section-label">Video</div>
-        <button class="source-row" id="camera-row"><span class="source-icon">▣</span><span>Camera</span><span class="row-spacer"></span><span class="switch" id="camera-switch"></span></button>
-        <button class="source-row" id="screen-row"><span class="source-icon">▭</span><span>Screen</span><span class="row-spacer"></span><span class="source-on">●</span></button>
-        <div class="source-detail" id="screen-detail">Choose a screen or window</div>
-        <div class="panel-rule"></div>
-        <div class="section-label">Audio</div>
-        <button class="source-row" id="microphone-row"><span class="source-icon">♩</span><span>Mic</span><span class="row-spacer"></span><span class="switch on" id="microphone-switch"></span></button>
-        <div class="source-detail">Default microphone</div>
-        <div class="meter"><span></span></div>
-        <button class="source-row" id="system-row"><span class="source-icon">◖</span><span>System</span><span class="row-spacer"></span><span class="switch on" id="system-switch"></span></button>
-        <div class="source-detail">Computer audio</div>
-        <div class="meter"><span></span></div>
-      </aside>
-      <section class="canvas-column">
-        <div class="canvas-toolbar"><div><span class="tiny-label">Output</span><span class="output-value">Source resolution <span class="muted">· 30 fps</span></span></div><button class="subtle-button" id="open-button">Open take</button></div>
-        <div class="stage" id="stage">
-          <div class="stage-content" id="stage-content">
-            <div class="stage-glow"></div>
-            <div class="stage-frame" id="preview-frame"><div class="empty-frame"><div class="frame-grid"></div><div class="frame-message"><span class="frame-symbol">▣</span><strong id="stage-title">Your recording canvas</strong><span id="stage-subtitle">Choose a screen or window, then start recording.</span></div></div></div>
-            <div class="stage-callout"><span class="callout-dot"></span><span id="stage-callout-text">Access is checked when recording starts.</span></div>
-          </div>
-          <div class="stage-label"><span class="label-dot"></span><span id="stage-label-text">LIVE CANVAS</span></div>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; frame-src 'none'"
+    />
+    <title>BlitzRecorder</title>
+    <link rel="stylesheet" href="workspace.css" />
+    <script defer src="workspace.js"></script>
+  </head>
+  <body>
+    <div class="app">
+      <header class="toolbar">
+        <button
+          class="nav-button"
+          id="library-button"
+          aria-label="Open projects"
+        >
+          <span class="nav-icon">▦</span><span>Projects</span>
+        </button>
+        <span class="toolbar-divider"></span>
+        <div class="status-line">
+          <span class="status-dot" id="status-dot"></span
+          ><span id="status-text">Ready to record</span>
         </div>
-        <div class="transport"><button class="transport-secondary" id="play-button" disabled>Play / pause</button><button class="record-button" id="record-button"><span class="record-indicator"></span><span id="record-label">Start recording</span></button><button class="transport-secondary" id="export-button" disabled>Export last</button></div>
-      </section>
-      <aside class="sidebar inspector">
-        <div class="panel-heading">Capture</div>
-        <label class="section-label" for="target-select">Target window</label>
-        <select id="target-select"></select>
-        <div class="target-note" id="target-note">Choose a screen, area, or window.</div>
-        <div class="panel-rule"></div>
-        <div class="panel-heading scenes-heading">Scenes</div>
-        <div class="scene-card selected"><span class="scene-thumbnail"><span></span></span><span><strong id="scene-title">Screen focus</strong><small id="scene-description">Screen only</small></span></div>
-        <div class="panel-rule"></div>
-        <div class="panel-heading">Last take</div>
-        <div class="last-take" id="last-take">Record a take to preview and export it here.</div>
-      </aside>
-    </main>
-    <main class="library hidden" id="library-workspace"><div class="library-header"><div><div class="eyebrow">BlitzRecorder</div><h1>Projects</h1><p>Open a take to preview or export.</p></div><button class="subtle-button" id="back-button">Back to recorder</button></div><div class="take-list" id="take-list"></div></main>
-  </div>
-</body>
+        <div class="toolbar-spacer"></div>
+        <span class="quality">Source size &nbsp;·&nbsp; 30 fps</span>
+        <button
+          class="icon-button"
+          id="refresh-button"
+          aria-label="Refresh sources"
+          title="Refresh sources"
+        >
+          ↻
+        </button>
+      </header>
+      <main class="workspace" id="record-workspace">
+        <aside class="sidebar sources">
+          <div class="panel-heading">Sources</div>
+          <div class="section-label">Video</div>
+          <button class="source-row" id="camera-row">
+            <span class="source-icon">▣</span><span>Camera</span
+            ><span class="row-spacer"></span
+            ><span class="switch" id="camera-switch"></span>
+          </button>
+          <button class="source-row" id="screen-row">
+            <span class="source-icon">▭</span><span>Screen</span
+            ><span class="row-spacer"></span><span class="source-on">●</span>
+          </button>
+          <div class="source-detail" id="screen-detail">
+            Choose a screen or window
+          </div>
+          <div class="panel-rule"></div>
+          <div class="section-label">Audio</div>
+          <button class="source-row" id="microphone-row">
+            <span class="source-icon">♩</span><span>Mic</span
+            ><span class="row-spacer"></span
+            ><span class="switch on" id="microphone-switch"></span>
+          </button>
+          <div class="source-detail">Default microphone</div>
+          <div class="meter"><span></span></div>
+          <button class="source-row" id="system-row">
+            <span class="source-icon">◖</span><span>System</span
+            ><span class="row-spacer"></span
+            ><span class="switch on" id="system-switch"></span>
+          </button>
+          <div class="source-detail">Computer audio</div>
+          <div class="meter"><span></span></div>
+        </aside>
+        <section class="canvas-column">
+          <div class="canvas-toolbar">
+            <div>
+              <span class="tiny-label">Output</span
+              ><span class="output-value"
+                >Source resolution <span class="muted">· 30 fps</span></span
+              >
+            </div>
+            <button class="subtle-button" id="open-button">Open take</button>
+          </div>
+          <div class="stage" id="stage">
+            <div class="stage-content" id="stage-content">
+              <div class="stage-glow"></div>
+              <div class="stage-frame" id="preview-frame">
+                <div class="empty-frame">
+                  <div class="frame-grid"></div>
+                  <div class="frame-message">
+                    <span class="frame-symbol">▣</span
+                    ><strong id="stage-title">Your recording canvas</strong
+                    ><span id="stage-subtitle"
+                      >Choose a screen or window, then start recording.</span
+                    >
+                  </div>
+                </div>
+              </div>
+              <div class="stage-callout">
+                <span class="callout-dot"></span
+                ><span id="stage-callout-text"
+                  >Access is checked when recording starts.</span
+                >
+              </div>
+            </div>
+            <div class="stage-label">
+              <span class="label-dot"></span
+              ><span id="stage-label-text">LIVE CANVAS</span>
+            </div>
+          </div>
+          <div class="transport">
+            <button class="transport-secondary" id="play-button" disabled>
+              Play / pause</button
+            ><button class="record-button" id="record-button">
+              <span class="record-indicator"></span
+              ><span id="record-label">Start recording</span></button
+            ><button class="transport-secondary" id="export-button" disabled>
+              Export last
+            </button>
+          </div>
+        </section>
+        <aside class="sidebar inspector">
+          <div class="panel-heading">Capture</div>
+          <label class="section-label" for="target-select">Target window</label>
+          <select id="target-select"></select>
+          <div class="target-note" id="target-note">
+            Choose a screen, area, or window.
+          </div>
+          <div class="panel-rule"></div>
+          <div class="panel-heading scenes-heading">Scenes</div>
+          <div class="scene-card selected">
+            <span class="scene-thumbnail"><span></span></span
+            ><span
+              ><strong id="scene-title">Screen focus</strong
+              ><small id="scene-description">Screen only</small></span
+            >
+          </div>
+          <div class="panel-rule"></div>
+          <div class="panel-heading">Last take</div>
+          <div class="last-take" id="last-take">
+            Record a take to preview and export it here.
+          </div>
+        </aside>
+      </main>
+      <main class="library hidden" id="library-workspace">
+        <div class="library-header">
+          <div>
+            <div class="eyebrow">BlitzRecorder</div>
+            <h1>Projects</h1>
+            <p>Open a take to preview or export.</p>
+          </div>
+          <button class="subtle-button" id="back-button">
+            Back to recorder
+          </button>
+        </div>
+        <div class="take-list" id="take-list"></div>
+      </main>
+    </div>
+  </body>
 </html>
