@@ -42,6 +42,9 @@ function render() {
   $("play-button").textContent = state.paused ? "Resume" : "Pause";
   $("export-button").disabled = busy || !state.lastTake;
   $("open-button").disabled = busy;
+  $("microphone-row").disabled = busy;
+  $("system-row").disabled = busy;
+  $("camera-row").disabled = busy;
   for (const [key, element] of [
     ["microphone", "microphone-switch"],
     ["systemAudio", "system-switch"],
@@ -49,10 +52,17 @@ function render() {
   ]) {
     $(element).classList.toggle("on", !!state[key]);
   }
+  $("microphone-row").setAttribute("aria-pressed", String(!!state.microphone));
+  $("system-row").setAttribute("aria-pressed", String(!!state.systemAudio));
+  $("camera-row").setAttribute("aria-pressed", String(!!state.camera));
   const selectedTarget =
     state.targets[state.selected] || "Choose a screen or window";
   $("screen-detail").textContent = selectedTarget;
-  $("target-note").textContent = selectedTarget;
+  $("target-note").textContent = selectedTarget.startsWith("Area")
+    ? "Choose the crop after you start recording."
+    : "This source will be recorded.";
+  $("frame-size").textContent =
+    selectedTarget.match(/\d+\s*[x×]\s*\d+/)?.[0] || "30 FPS";
   const select = $("target-select");
   const targetNames = state.targets.join("\u001f");
   if (select.dataset.names !== targetNames) {
@@ -65,7 +75,7 @@ function render() {
   select.disabled = busy;
   $("last-take").textContent = state.lastTake
     ? state.lastTake.split(/[\\/]/).pop()
-    : "Record a take to preview and export it here.";
+    : "Your finished recording will appear here.";
   $("scene-title").textContent = state.camera
     ? "Camera overlay"
     : "Screen focus";
@@ -73,25 +83,29 @@ function render() {
     ? "Screen with camera picture in picture"
     : "Screen only";
   $("stage-title").textContent = state.recording
-    ? "Recording in progress"
+    ? "Recording"
     : state.playing
-      ? "Take preview"
-      : "Your recording canvas";
+      ? "Playing take"
+      : selectedTarget.startsWith("Window")
+        ? "Window selected"
+        : selectedTarget.startsWith("Area")
+          ? "Area selected"
+          : "Screen selected";
   $("stage-subtitle").textContent = state.recording
-    ? "Press Stop to finish the take."
-    : state.playing
-      ? "Playback is running in this canvas."
-      : "Choose a screen or window, then start recording.";
-  $("stage-callout-text").textContent = state.recording
-    ? "Capturing the selected source and enabled audio."
+    ? selectedTarget
     : state.playing
       ? "Review your take, then export it."
-      : "Access is checked when recording starts.";
+      : selectedTarget;
+  $("frame-footnote").textContent = state.recording
+    ? "Capture in progress"
+    : state.playing
+      ? "Playback in progress"
+      : "Preview appears when recording starts";
   $("stage-label-text").textContent = state.recording
     ? "RECORDING"
     : state.playing
       ? "TAKE PREVIEW"
-      : "LIVE CANVAS";
+      : "CANVAS";
   const list = $("take-list");
   if (state.takes.length) {
     list.replaceChildren(

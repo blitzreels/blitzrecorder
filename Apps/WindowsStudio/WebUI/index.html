@@ -12,6 +12,36 @@
     <script defer src="workspace.js"></script>
   </head>
   <body>
+    <svg
+      aria-hidden="true"
+      class="icon-defs"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <symbol id="icon-projects" viewBox="0 0 20 20">
+        <rect x="2.5" y="3" width="6" height="6" rx="1.2" />
+        <rect x="11.5" y="3" width="6" height="6" rx="1.2" />
+        <rect x="2.5" y="12" width="6" height="6" rx="1.2" />
+        <rect x="11.5" y="12" width="6" height="6" rx="1.2" />
+      </symbol>
+      <symbol id="icon-camera" viewBox="0 0 20 20">
+        <rect x="2.5" y="5" width="11" height="10" rx="2" />
+        <path d="m13.5 8 4-2v8l-4-2" />
+      </symbol>
+      <symbol id="icon-screen" viewBox="0 0 20 20">
+        <rect x="2" y="3.5" width="16" height="11" rx="1.8" />
+        <path d="M7 17h6m-3-2.5V17" />
+      </symbol>
+      <symbol id="icon-mic" viewBox="0 0 20 20">
+        <rect x="7" y="2" width="6" height="11" rx="3" />
+        <path d="M4.5 10a5.5 5.5 0 0 0 11 0M10 15.5V18m-3 0h6" />
+      </symbol>
+      <symbol id="icon-audio" viewBox="0 0 20 20">
+        <path d="M3 8h3l4-3v10l-4-3H3zM13 7a4 4 0 0 1 0 6m2-9a8 8 0 0 1 0 12" />
+      </symbol>
+      <symbol id="icon-refresh" viewBox="0 0 20 20">
+        <path d="M16.5 7A7 7 0 1 0 17 10m-.5-7v4h-4" />
+      </symbol>
+    </svg>
     <div class="app">
       <header class="toolbar">
         <button
@@ -19,117 +49,137 @@
           id="library-button"
           aria-label="Open projects"
         >
-          <span class="nav-icon">▦</span><span>Projects</span>
+          <svg class="icon" aria-hidden="true">
+            <use href="#icon-projects" />
+          </svg>
+          <span>Projects</span>
         </button>
         <span class="toolbar-divider"></span>
-        <div class="status-line">
-          <span class="status-dot" id="status-dot"></span
-          ><span id="status-text">Ready to record</span>
+        <div class="status-line" role="status">
+          <span class="status-dot" id="status-dot"></span>
+          <span id="status-text">Ready to record</span>
         </div>
         <div class="toolbar-spacer"></div>
-        <span class="quality">Source size &nbsp;·&nbsp; 30 fps</span>
+        <span class="quality">Source size <span>·</span> 30 fps</span>
         <button
           class="icon-button"
           id="refresh-button"
           aria-label="Refresh sources"
           title="Refresh sources"
         >
-          ↻
+          <svg class="icon" aria-hidden="true">
+            <use href="#icon-refresh" />
+          </svg>
         </button>
       </header>
       <main class="workspace" id="record-workspace">
-        <aside class="sidebar sources">
+        <aside class="sidebar sources" aria-label="Sources">
           <div class="panel-heading">Sources</div>
           <div class="section-label">Video</div>
-          <button class="source-row" id="camera-row">
-            <span class="source-icon">▣</span><span>Camera</span
-            ><span class="row-spacer"></span
-            ><span class="switch" id="camera-switch"></span>
+          <button class="source-row" id="camera-row" aria-pressed="false">
+            <svg class="icon source-icon" aria-hidden="true">
+              <use href="#icon-camera" />
+            </svg>
+            <span>Camera</span>
+            <span class="row-spacer"></span>
+            <span class="switch" id="camera-switch"></span>
           </button>
           <button class="source-row" id="screen-row">
-            <span class="source-icon">▭</span><span>Screen</span
-            ><span class="row-spacer"></span><span class="source-on">●</span>
+            <svg class="icon source-icon" aria-hidden="true">
+              <use href="#icon-screen" />
+            </svg>
+            <span>Screen</span>
+            <span class="row-spacer"></span>
+            <span class="source-on"></span>
           </button>
           <div class="source-detail" id="screen-detail">
             Choose a screen or window
           </div>
           <div class="panel-rule"></div>
           <div class="section-label">Audio</div>
-          <button class="source-row" id="microphone-row">
-            <span class="source-icon">♩</span><span>Mic</span
-            ><span class="row-spacer"></span
-            ><span class="switch on" id="microphone-switch"></span>
+          <button class="source-row" id="microphone-row" aria-pressed="true">
+            <svg class="icon source-icon" aria-hidden="true">
+              <use href="#icon-mic" />
+            </svg>
+            <span>Microphone</span>
+            <span class="row-spacer"></span>
+            <span class="switch on" id="microphone-switch"></span>
           </button>
-          <div class="source-detail">Default microphone</div>
-          <div class="meter"><span></span></div>
-          <button class="source-row" id="system-row">
-            <span class="source-icon">◖</span><span>System</span
-            ><span class="row-spacer"></span
-            ><span class="switch on" id="system-switch"></span>
+          <div class="source-detail">Default input</div>
+          <button class="source-row" id="system-row" aria-pressed="true">
+            <svg class="icon source-icon" aria-hidden="true">
+              <use href="#icon-audio" />
+            </svg>
+            <span>System audio</span>
+            <span class="row-spacer"></span>
+            <span class="switch on" id="system-switch"></span>
           </button>
-          <div class="source-detail">Computer audio</div>
-          <div class="meter"><span></span></div>
+          <div class="source-detail">Computer playback</div>
         </aside>
-        <section class="canvas-column">
+        <section class="canvas-column" aria-label="Recording canvas">
           <div class="canvas-toolbar">
-            <div>
-              <span class="tiny-label">Output</span
-              ><span class="output-value"
-                >Source resolution <span class="muted">· 30 fps</span></span
-              >
+            <div class="canvas-output">
+              <span class="tiny-label">Canvas</span>
+              <span class="output-value">Source resolution</span>
             </div>
             <button class="subtle-button" id="open-button">Open take</button>
           </div>
           <div class="stage" id="stage">
-            <div class="stage-content" id="stage-content">
+            <div class="stage-content">
               <div class="stage-glow"></div>
               <div class="stage-frame" id="preview-frame">
                 <div class="empty-frame">
-                  <div class="frame-grid"></div>
+                  <div class="frame-topline">
+                    <span class="frame-badge"><span></span> SCREEN SOURCE</span>
+                    <span class="frame-size" id="frame-size">30 FPS</span>
+                  </div>
                   <div class="frame-message">
-                    <span class="frame-symbol">▣</span
-                    ><strong id="stage-title">Your recording canvas</strong
-                    ><span id="stage-subtitle"
-                      >Choose a screen or window, then start recording.</span
-                    >
+                    <span class="frame-symbol">
+                      <svg class="icon" aria-hidden="true">
+                        <use href="#icon-screen" />
+                      </svg>
+                    </span>
+                    <strong id="stage-title">Choose a source</strong>
+                    <span id="stage-subtitle">Choose a screen to begin.</span>
+                  </div>
+                  <div class="frame-footnote" id="frame-footnote">
+                    Preview appears when recording starts
                   </div>
                 </div>
-              </div>
-              <div class="stage-callout">
-                <span class="callout-dot"></span
-                ><span id="stage-callout-text"
-                  >Access is checked when recording starts.</span
-                >
               </div>
             </div>
             <div class="stage-label">
               <span class="label-dot"></span
-              ><span id="stage-label-text">LIVE CANVAS</span>
+              ><span id="stage-label-text">CANVAS</span>
             </div>
           </div>
           <div class="transport">
             <button class="transport-secondary" id="play-button" disabled>
-              Play / pause</button
-            ><button class="record-button" id="record-button">
+              Pause
+            </button>
+            <button class="record-button" id="record-button">
               <span class="record-indicator"></span
-              ><span id="record-label">Start recording</span></button
-            ><button class="transport-secondary" id="export-button" disabled>
+              ><span id="record-label">Start recording</span>
+            </button>
+            <button class="transport-secondary" id="export-button" disabled>
               Export last
             </button>
           </div>
         </section>
-        <aside class="sidebar inspector">
+        <aside class="sidebar inspector" aria-label="Capture settings">
           <div class="panel-heading">Capture</div>
-          <label class="section-label" for="target-select">Target window</label>
+          <label class="section-label" for="target-select"
+            >Screen or window</label
+          >
           <select id="target-select"></select>
           <div class="target-note" id="target-note">
-            Choose a screen, area, or window.
+            Choose the source to record.
           </div>
           <div class="panel-rule"></div>
-          <div class="panel-heading scenes-heading">Scenes</div>
+          <div class="panel-heading scenes-heading">Layout</div>
           <div class="scene-card selected">
-            <span class="scene-thumbnail"><span></span></span
-            ><span
+            <span class="scene-thumbnail"><span></span></span>
+            <span
               ><strong id="scene-title">Screen focus</strong
               ><small id="scene-description">Screen only</small></span
             >
@@ -137,7 +187,7 @@
           <div class="panel-rule"></div>
           <div class="panel-heading">Last take</div>
           <div class="last-take" id="last-take">
-            Record a take to preview and export it here.
+            Your finished recording will appear here.
           </div>
         </aside>
       </main>

@@ -45,8 +45,8 @@ try {
     [BlitzWindowCapture]::GetWindowText($window, $title, $title.Capacity) | Out-Null
     if ($title.ToString() -ne "BlitzRecorder") { throw "Unexpected Windows Studio window: $title" }
     [BlitzWindowCapture]::ShowWindow($window, 9) | Out-Null
-    $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-    [BlitzWindowCapture]::SetWindowPos($window, [IntPtr](-1), 0, 0, ($bounds.Width + 16), ($bounds.Height - 48), 0x0040) | Out-Null
+    $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+    [BlitzWindowCapture]::SetWindowPos($window, [IntPtr](-1), $bounds.Left, $bounds.Top, $bounds.Width, $bounds.Height, 0x0040) | Out-Null
     [BlitzWindowCapture]::SetForegroundWindow($window) | Out-Null
     $workspaceReady = $false
     for ($attempt = 0; $attempt -lt 40; $attempt++) {
