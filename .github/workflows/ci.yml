@@ -131,6 +131,17 @@ jobs:
         shell: pwsh
         run: .\Scripts\windows\assert-studio-launches.ps1 -StageDir build\windows-stage
 
+      - name: Package Microsoft Store MSIX
+        shell: pwsh
+        run: .\Scripts\windows\package-store-msix.ps1
+
+      - name: Upload Microsoft Store MSIX
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-store-msix-x64
+          path: build/windows-store/BlitzRecorder-Windows-Store-x64.msix
+          if-no-files-found: error
+
       - name: Upload portable zip
         uses: actions/upload-artifact@v7
         with:
