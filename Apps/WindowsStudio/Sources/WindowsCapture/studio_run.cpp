@@ -19,7 +19,7 @@ int br_studio_run(
 ) {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     br::setAppUserModelId();
-    if (runWebViewStudio(output_root, monitor_index, prepare, ctx) == 0) {
+    if (runWebViewStudio({output_root, monitor_index, prepare, ctx}) == 0) {
         return 0;
     }
     MSG webQuit{};

@@ -23,6 +23,8 @@ public static class BlitzWindowCapture {
     public static extern bool ShowWindow(IntPtr handle, int command);
     [DllImport("user32.dll")]
     public static extern bool SetWindowPos(IntPtr handle, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern IntPtr GetProp(IntPtr handle, string name);
 }
 "@
 
@@ -46,7 +48,17 @@ try {
     $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
     [BlitzWindowCapture]::SetWindowPos($window, [IntPtr](-1), 0, 0, ($bounds.Width + 16), ($bounds.Height - 48), 0x0040) | Out-Null
     [BlitzWindowCapture]::SetForegroundWindow($window) | Out-Null
-    Start-Sleep -Seconds 2
+    $workspaceReady = $false
+    for ($attempt = 0; $attempt -lt 40; $attempt++) {
+        if ([BlitzWindowCapture]::GetProp($window, "BlitzWorkspaceReady") -ne [IntPtr]::Zero) {
+            $workspaceReady = $true
+            break
+        }
+        if ($process.HasExited) { throw "Windows Studio exited before the workspace loaded" }
+        Start-Sleep -Milliseconds 500
+    }
+    if (-not $workspaceReady) { throw "Windows workspace did not load within 20 seconds" }
+    Start-Sleep -Seconds 1
     $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
     $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
     try {

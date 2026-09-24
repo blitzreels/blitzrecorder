@@ -316,6 +316,7 @@ void refreshPreview() {
 
 void handleMessage(const std::string& message) {
     if (message == "ready") {
+        SetPropW(g.window, L"BlitzWorkspaceReady", reinterpret_cast<HANDLE>(static_cast<INT_PTR>(1)));
         refreshTargets();
         refreshTakes();
         postState();
@@ -410,6 +411,7 @@ LRESULT CALLBACK windowProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_DESTROY:
         KillTimer(hwnd, kPreviewTimer);
+        RemovePropW(hwnd, L"BlitzWorkspaceReady");
         if (g.recording) br_capture_stop();
         br_player_close();
         if (g.controller) g.controller->Close();
@@ -489,8 +491,8 @@ HRESULT onController(HRESULT result, ICoreWebView2Controller* controller) {
 
 } 
 
-int runWebViewStudio(const char* outputRoot, int monitorIndex, br_prepare_take_fn prepare, void* context) {
-    if (!prepare) return 1;
+int runWebViewStudio(WebViewStudioOptions options) {
+    if (!options.prepare) return 1;
     const std::wstring assets = executableDirectory() + L"\\WebUI\\index.html";
     if (!std::filesystem::exists(assets)) {
         br::setLastError("Windows workspace assets missing");
@@ -502,10 +504,10 @@ int runWebViewStudio(const char* outputRoot, int monitorIndex, br_prepare_take_f
         return 1;
     }
     g = {};
-    g.outputRoot = outputRoot ? outputRoot : "";
-    g.selected = monitorIndex;
-    g.prepare = prepare;
-    g.context = context;
+    g.outputRoot = options.outputRoot ? options.outputRoot : "";
+    g.selected = options.monitorIndex;
+    g.prepare = options.prepare;
+    g.context = options.context;
     const HINSTANCE instance = GetModuleHandleW(nullptr);
     WNDCLASSEXW previewClass{};
     previewClass.cbSize = sizeof(previewClass);

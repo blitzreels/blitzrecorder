@@ -49,7 +49,7 @@ function render() {
   $('scene-description').textContent = state.camera ? 'Screen with camera picture in picture' : 'Screen only';
   $('stage-title').textContent = state.recording ? 'Recording in progress' : state.playing ? 'Take preview' : 'Your recording canvas';
   $('stage-subtitle').textContent = state.recording ? 'Press Stop to finish the take.' : state.playing ? 'Playback is running in this canvas.' : 'Choose a screen or window, then start recording.';
-  $('stage-callout-text').textContent = state.recording ? 'Capturing the selected source and enabled audio.' : state.playing ? 'Review your take, then export it.' : 'Screen and audio are ready when you are.';
+  $('stage-callout-text').textContent = state.recording ? 'Capturing the selected source and enabled audio.' : state.playing ? 'Review your take, then export it.' : 'Access is checked when recording starts.';
   $('stage-label-text').textContent = state.recording ? 'RECORDING' : state.playing ? 'TAKE PREVIEW' : 'LIVE CANVAS';
   const list = $('take-list');
   if (state.takes.length) {

@@ -1,5 +1,11 @@
 #pragma once
 
 #if defined(_WIN32)
-int runWebViewStudio(const char* outputRoot, int monitorIndex, int (*prepare)(const char*, int, int, int, char*, int, void*), void* ctx);
+struct WebViewStudioOptions {
+    const char* outputRoot;
+    int monitorIndex;
+    int (*prepare)(const char*, int, int, int, char*, int, void*);
+    void* context;
+};
+int runWebViewStudio(WebViewStudioOptions options);
 #endif
