@@ -55,7 +55,7 @@ namespace {
 
 constexpr wchar_t kXaml[] =
     L"<Grid xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'"
-    L" xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' Background='#1C1C1E'>"
+    L" xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' Background='#1C1C1E' RequestedTheme='Dark'>"
     L"<StackPanel Margin='16' Spacing='12'>"
     L"<TextBlock Text='BlitzRecorder' FontSize='22' Foreground='White'/>"
     L"<StackPanel Orientation='Horizontal' Spacing='8'>"

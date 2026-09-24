@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities">
+  <Identity Name="BlitzReels.BlitzRecorder" Version="1.0.21.0" Publisher="CN=10E13D0E-EE81-40C5-B37C-4052971ED410" ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>BlitzRecorder</DisplayName>
+    <PublisherDisplayName>BlitzReels</PublisherDisplayName>
+    <Description>Record and edit your screen with BlitzRecorder.</Description>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+  <Resources>
+    <Resource Language="en-US" />
+  </Resources>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+  <Applications>
+    <Application Id="App" Executable="BlitzRecorderWindows.exe" uap10:RuntimeBehavior="packagedClassicApp" uap10:TrustLevel="mediumIL">
+      <uap:VisualElements DisplayName="BlitzRecorder" Description="Record and edit your screen with BlitzRecorder." Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png" BackgroundColor="transparent" />
+    </Application>
+  </Applications>
+</Package>
