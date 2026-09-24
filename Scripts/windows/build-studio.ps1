@@ -13,6 +13,22 @@ $ErrorActionPreference = "Stop"
 
 $PackageRoot = (Resolve-Path $PackageRoot).Path
 
+$webviewSdk = Join-Path $PackageRoot ".webview-sdk/package"
+if (-not $NativeOnly) {
+    $header = Join-Path $webviewSdk "build/native/include/WebView2.h"
+    if (-not (Test-Path $header)) {
+        $archive = Join-Path $PackageRoot ".webview-sdk/WebView2.zip"
+        New-Item -ItemType Directory -Force -Path (Split-Path $archive) | Out-Null
+        Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/1.0.2903.40" -OutFile $archive
+        $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+        if ($hash -ne "ef128016dd1e51c59178c827ed5b8aa3322c57afa8675d930f8109505542ad74") {
+            throw "WebView2 SDK checksum mismatch"
+        }
+        New-Item -ItemType Directory -Force -Path $webviewSdk | Out-Null
+        Expand-Archive -Path $archive -DestinationPath $webviewSdk -Force
+    }
+}
+
 $arch = "x64"
 if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") {
     $arch = "ARM64"
@@ -109,6 +125,7 @@ $configured = $false
 $multiConfig = $true
 $shellFlag = if ($NativeOnly) { "OFF" } else { "ON" }
 $adapterFlag = if ($NativeOnly) { "OFF" } else { "ON" }
+$webviewFlag = "-DBR_WEBVIEW2_SDK=$($webviewSdk.Replace('\', '/'))"
 $vcArch = if ($arch -eq "ARM64") { "arm64" } else { "x64" }
 $msvcReady = Enter-MsvcDevCmd $vcArch
 if (-not $msvcReady) {
@@ -121,7 +138,7 @@ if ($msvcReady -and (Ensure-Ninja)) {
     if (Test-Path $buildDir) {
         Remove-Item -Recurse -Force $buildDir
     }
-    & cmake -S $PackageRoot -B $buildDir -G Ninja "-DCMAKE_BUILD_TYPE=$cmakeConfig" "-DBR_BUILD_CAPTURE_ADAPTER=$adapterFlag" "-DBR_BUILD_STUDIO_SHELL=$shellFlag"
+    & cmake -S $PackageRoot -B $buildDir -G Ninja "-DCMAKE_BUILD_TYPE=$cmakeConfig" "-DBR_BUILD_CAPTURE_ADAPTER=$adapterFlag" "-DBR_BUILD_STUDIO_SHELL=$shellFlag" $webviewFlag
     if ($LASTEXITCODE -eq 0) {
         $configured = $true
         $multiConfig = $false
@@ -136,7 +153,7 @@ if ($msvcReady -and (Ensure-Ninja)) {
 if (-not $configured) {
     foreach ($gen in $candidates) {
         Write-Host "cmake generator=$gen arch=$arch BR_BUILD_CAPTURE_ADAPTER=$adapterFlag BR_BUILD_STUDIO_SHELL=$shellFlag"
-        & cmake -S $PackageRoot -B $buildDir -G $gen -A $arch "-DBR_BUILD_CAPTURE_ADAPTER=$adapterFlag" "-DBR_BUILD_STUDIO_SHELL=$shellFlag"
+        & cmake -S $PackageRoot -B $buildDir -G $gen -A $arch "-DBR_BUILD_CAPTURE_ADAPTER=$adapterFlag" "-DBR_BUILD_STUDIO_SHELL=$shellFlag" $webviewFlag
         if ($LASTEXITCODE -eq 0) {
             $configured = $true
             break
@@ -153,7 +170,7 @@ if (-not $configured) {
         if (Test-Path $buildDir) {
             Remove-Item -Recurse -Force $buildDir
         }
-        & cmake -S $PackageRoot -B $buildDir -G Ninja "-DCMAKE_BUILD_TYPE=$cmakeConfig" "-DBR_BUILD_CAPTURE_ADAPTER=$adapterFlag" "-DBR_BUILD_STUDIO_SHELL=$shellFlag"
+        & cmake -S $PackageRoot -B $buildDir -G Ninja "-DCMAKE_BUILD_TYPE=$cmakeConfig" "-DBR_BUILD_CAPTURE_ADAPTER=$adapterFlag" "-DBR_BUILD_STUDIO_SHELL=$shellFlag" $webviewFlag
         if ($LASTEXITCODE -eq 0) {
             $configured = $true
             $multiConfig = $false
@@ -183,6 +200,10 @@ if (-not (Test-Path (Join-Path $libDir "WindowsCaptureNative.lib"))) {
 # run swift from that directory with BR_WINDOWS_CAPTURE_LIBDIR=build-native/lib.
 $linkDir = Join-Path $PackageRoot "build-native/lib"
 New-Item -ItemType Directory -Force -Path $linkDir | Out-Null
+if (-not $NativeOnly) {
+    $sdkArch = if ($arch -eq "ARM64") { "arm64" } else { "x64" }
+    Copy-Item (Join-Path $webviewSdk "build/native/$sdkArch/WebView2Loader.dll.lib") (Join-Path $linkDir "WebView2Loader.lib") -Force
+}
 $toCopy = @("WindowsCaptureNative.lib")
 if (-not $NativeOnly) {
     $toCopy += @("WindowsCaptureAdapter.lib", "WindowsStudioShell.lib")

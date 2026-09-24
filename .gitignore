@@ -3,6 +3,7 @@
 build/
 DerivedData/
 Apps/WindowsStudio/build-native/
+Apps/WindowsStudio/.webview-sdk/
 Apps/WindowsStudio/*.res
 Apps/WindowsStudio/*.obj
 Apps/WindowsStudio/br-link.exe

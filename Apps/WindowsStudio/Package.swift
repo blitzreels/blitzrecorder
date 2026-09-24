@@ -35,6 +35,7 @@ let windowsCaptureSkip = [
     "wasapi_capture.cpp",
     "wgc_capturer.cpp",
     "win32_shell.cpp",
+    "webview_shell.cpp",
     "studio_dialogs.cpp",
     "windows_capture.cpp",
     "winui_shell.cpp",
@@ -81,6 +82,7 @@ let nativeLinkExe: [LinkerSetting] = [
     .linkedLibrary("WindowsCaptureNative"),
     .linkedLibrary("WindowsCaptureAdapter"),
     .linkedLibrary("WindowsStudioShell"),
+    .linkedLibrary("WebView2Loader"),
     .linkedLibrary("BlitzRecorderRes")
 ]
 #else

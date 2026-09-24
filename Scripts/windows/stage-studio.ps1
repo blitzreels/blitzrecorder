@@ -119,6 +119,18 @@ if (Test-Path $ico) {
     Copy-Item $ico (Join-Path $StageDir "BlitzRecorder.ico") -Force
 }
 
+$webviewAssets = Join-Path $PackageRoot "WebUI"
+if (-not (Test-Path (Join-Path $webviewAssets "index.html"))) {
+    throw "Windows workspace assets missing"
+}
+Copy-Item $webviewAssets (Join-Path $StageDir "WebUI") -Recurse -Force
+$sdkArch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
+$webviewLoader = Join-Path $PackageRoot ".webview-sdk/package/build/native/$sdkArch/WebView2Loader.dll"
+if (-not (Test-Path $webviewLoader)) {
+    throw "WebView2Loader.dll missing"
+}
+Copy-Item $webviewLoader (Join-Path $StageDir "WebView2Loader.dll") -Force
+
 $system32 = Join-Path $env:SystemRoot "System32"
 $crtNames = @(
     "vcruntime140.dll",

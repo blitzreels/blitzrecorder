@@ -3,6 +3,7 @@
 #include "windows_capture.h"
 #include "capture_common.h"
 #include "win32_shell.h"
+#include "webview_shell.h"
 #if defined(BR_HAS_WINUI) && BR_HAS_WINUI
 #include "winui_shell.h"
 #endif
@@ -18,6 +19,12 @@ int br_studio_run(
 ) {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     br::setAppUserModelId();
+    if (runWebViewStudio(output_root, monitor_index, prepare, ctx) == 0) {
+        return 0;
+    }
+    MSG webQuit{};
+    while (PeekMessageW(&webQuit, nullptr, WM_QUIT, WM_QUIT, PM_REMOVE)) {
+    }
 #if defined(BR_HAS_WINUI) && BR_HAS_WINUI
     if (runWinUiStudio(output_root, monitor_index, prepare, ctx) == 0) {
         return 0;
