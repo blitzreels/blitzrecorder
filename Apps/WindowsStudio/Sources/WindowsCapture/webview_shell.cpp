@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 #include <windows.h>
+#include <dwmapi.h>
 #include <wrl.h>
 
 using Microsoft::WRL::Callback;
@@ -531,6 +532,8 @@ int runWebViewStudio(WebViewStudioOptions options) {
         br::setLastError("Windows workspace window failed", HRESULT_FROM_WIN32(GetLastError()));
         return 1;
     }
+    BOOL darkTitleBar = TRUE;
+    DwmSetWindowAttribute(g.window, 20, &darkTitleBar, sizeof(darkTitleBar));
     g.preview = CreateWindowExW(0, L"BlitzWebPreview", L"", WS_CHILD, 0, 0, 0, 0, g.window, nullptr, instance, nullptr);
     br::excludeWindowFromCapture(g.window);
     br::excludeWindowFromCapture(g.preview);
