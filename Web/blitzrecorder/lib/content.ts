@@ -223,12 +223,12 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
     eyebrow: "Effective May 22, 2026",
     title: "Privacy Policy",
     intro:
-      "This policy explains how BlitzRecorder and BlitzRecorder Camera handle your information.",
+      "This policy explains how BlitzRecorder for Mac and Windows and BlitzRecorder Camera handle your information.",
     sections: [
       {
         title: "Recording content",
         body:
-          "BlitzRecorder records only the sources you pick, such as your screen, microphone, Mac audio, local camera, and paired iPhone camera. The files are created on your own devices and saved to the folder you choose.",
+          "BlitzRecorder records only the sources you pick, such as your screen, microphone, system audio, and local camera. On Mac, you can also use a paired iPhone camera. Recordings are created and saved locally on your device.",
       },
       {
         title: "iPhone companion data",
@@ -253,7 +253,7 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
       {
         title: "Website analytics",
         body:
-          "The BlitzRecorder website uses DataFast to measure page visits, license claims, and basic conversion metadata. The native Mac and iPhone apps do not include a DataFast or analytics SDK.",
+          "The BlitzRecorder website uses DataFast to measure page visits, license claims, and basic conversion metadata. The native Mac, Windows, and iPhone apps do not include a DataFast or analytics SDK.",
       },
       {
         title: "Diagnostics and feedback",

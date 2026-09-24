@@ -34,7 +34,7 @@ New-Item $content -ItemType Directory -Force | Out-Null
 Copy-Item (Join-Path $stage "*") $content -Recurse -Force
 Copy-Item (Join-Path $source "AppxManifest.xml") $content -Force
 Copy-Item (Join-Path $source "Assets") $content -Recurse -Force
-foreach ($name in @("BlitzRecorder.cmd", "READ_ME.txt")) {
+foreach ($name in @("BlitzRecorder.cmd", "READ_ME.txt", "UNSIGNED.txt")) {
     $path = Join-Path $content $name
     if (Test-Path $path) { Remove-Item $path -Force }
 }
