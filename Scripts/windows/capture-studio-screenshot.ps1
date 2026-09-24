@@ -69,7 +69,7 @@ try {
     if (-not $workspaceReady) { throw "Windows workspace did not load within 20 seconds" }
     Start-Sleep -Seconds 1
     $visible = New-Object BlitzWindowCapture+WindowRect
-    $rectSize = [System.Runtime.InteropServices.Marshal]::SizeOf([BlitzWindowCapture+WindowRect])
+    $rectSize = [System.Runtime.InteropServices.Marshal]::SizeOf($visible)
     $dwmResult = [BlitzWindowCapture]::DwmGetWindowAttribute($window, 9, [ref]$visible, $rectSize)
     if ($dwmResult -ne 0) { throw "Could not read visible Windows Studio bounds: $dwmResult" }
     $captureWidth = $visible.Right - $visible.Left
