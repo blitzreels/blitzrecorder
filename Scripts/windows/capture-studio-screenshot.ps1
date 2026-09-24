@@ -26,6 +26,8 @@ public static class BlitzWindowCapture {
 }
 "@
 
+$previousScreenshotMode = $env:BLITZRECORDER_STORE_SCREENSHOT
+$env:BLITZRECORDER_STORE_SCREENSHOT = "1"
 $process = Start-Process $exe -PassThru
 try {
     $window = [IntPtr]::Zero
@@ -57,4 +59,5 @@ try {
     Write-Host "Windows Studio screenshot: $output ($($bounds.Width)x$($bounds.Height))"
 } finally {
     if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+    $env:BLITZRECORDER_STORE_SCREENSHOT = $previousScreenshotMode
 }

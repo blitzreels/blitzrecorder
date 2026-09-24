@@ -442,6 +442,10 @@ void excludeWindowFromCapture(void* hwnd) {
     if (!window) {
         return;
     }
+    wchar_t screenshotMode[2]{};
+    if (GetEnvironmentVariableW(L"BLITZRECORDER_STORE_SCREENSHOT", screenshotMode, 2) == 1 && screenshotMode[0] == L'1') {
+        return;
+    }
 #ifndef WDA_EXCLUDEFROMCAPTURE
 #define WDA_EXCLUDEFROMCAPTURE 0x00000011
 #endif
