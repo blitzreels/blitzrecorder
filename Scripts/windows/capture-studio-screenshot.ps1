@@ -13,9 +13,16 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
+using System.Text;
 public static class BlitzWindowCapture {
     [DllImport("user32.dll")]
     public static extern bool SetForegroundWindow(IntPtr handle);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern int GetWindowText(IntPtr handle, StringBuilder text, int capacity);
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr handle, int command);
+    [DllImport("user32.dll")]
+    public static extern bool SetWindowPos(IntPtr handle, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
 }
 "@
 
@@ -30,6 +37,11 @@ try {
         if ($window -ne [IntPtr]::Zero) { break }
     }
     if ($window -eq [IntPtr]::Zero) { throw "Windows Studio did not open a desktop window" }
+    $title = New-Object System.Text.StringBuilder 256
+    [BlitzWindowCapture]::GetWindowText($window, $title, $title.Capacity) | Out-Null
+    if ($title.ToString() -ne "BlitzRecorder") { throw "Unexpected Windows Studio window: $title" }
+    [BlitzWindowCapture]::ShowWindow($window, 9) | Out-Null
+    [BlitzWindowCapture]::SetWindowPos($window, [IntPtr](-1), 16, 8, 976, 720, 0x0040) | Out-Null
     [BlitzWindowCapture]::SetForegroundWindow($window) | Out-Null
     Start-Sleep -Seconds 2
     $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
