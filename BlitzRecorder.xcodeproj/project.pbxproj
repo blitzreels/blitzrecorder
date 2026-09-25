@@ -235,6 +235,7 @@
 		B36AEFBC738CB6CDBB5DD686 /* TracksSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 486E653523E3A032DE1C9668 /* TracksSidebar.swift */; };
 		B3D67D5ED261B05D4EC2A3E1 /* BlitzToggleStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A6454F140966C5FA4FCA1B /* BlitzToggleStyle.swift */; };
 		B56E6E1F18180DF46D365ECD /* EditorCameraCropViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB27F5FEEEAC98E7830F3197 /* EditorCameraCropViews.swift */; };
+		B5C32089B5816A3EEF184BB7 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = D71512A8DFCE0B37EDD595C1 /* WhisperKit */; };
 		B6B35C75FD6A4BCB98EB4F9C /* PrivacyMask.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87992EF32301ADF8E0B1A392 /* PrivacyMask.swift */; };
 		B8353CBF013999854AA0FFA1 /* PreviewStageDrag.swift in Sources */ = {isa = PBXBuildFile; fileRef = A72983219EB8E8301A4EB319 /* PreviewStageDrag.swift */; };
 		B88B5754754C927FF2D123D3 /* ExportPerformanceMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 049C58A71416545A4BBDA65E /* ExportPerformanceMonitor.swift */; };
@@ -707,6 +708,7 @@
 				59A59C244013CBDA61D2C120 /* NIOHTTP1 in Frameworks */,
 				48E2DCD4E6F17DA6DAE264B2 /* NIOPosix in Frameworks */,
 				E85087FFA58F9F28695E2FF9 /* FluidAudio in Frameworks */,
+				B5C32089B5816A3EEF184BB7 /* WhisperKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1154,6 +1156,7 @@
 				BDEEA898AE8DE9E9EC30C6CD /* NIOHTTP1 */,
 				5971C1D2C7CFE7222EF05562 /* NIOPosix */,
 				05DC77C9DDF169F9758FAB59 /* FluidAudio */,
+				D71512A8DFCE0B37EDD595C1 /* WhisperKit */,
 			);
 			productName = BlitzRecorder;
 			productReference = D64AD47EDABBF7FDA751BE48 /* BlitzRecorder.app */;
@@ -1212,6 +1215,7 @@
 				6F2E1AAE93041478E913C361 /* XCRemoteSwiftPackageReference "FluidAudio" */,
 				D82B368C6FF9D9BDFC1BE2A4 /* XCRemoteSwiftPackageReference "swift-sdk" */,
 				20F4A409FBC047782763C6C2 /* XCRemoteSwiftPackageReference "swift-nio" */,
+				101303A1CD7BCB50C2C00B26 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */,
 				6F5DFCF21752E742E8BE95C9 /* XCLocalSwiftPackageReference "Packages/BlitzRecorderCore" */,
 				682A6AC3545E309E99897761 /* XCLocalSwiftPackageReference "Packages/BlitzRecorderDomain" */,
 				FB59833A2D61C6723DDC8D2C /* XCLocalSwiftPackageReference "Packages/BlitzRecorderTransport" */,
@@ -1848,6 +1852,14 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		101303A1CD7BCB50C2C00B26 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/argmaxinc/argmax-oss-swift.git";
+			requirement = {
+				kind = exactVersion;
+				version = 1.0.0;
+			};
+		};
 		20F4A409FBC047782763C6C2 /* XCRemoteSwiftPackageReference "swift-nio" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/apple/swift-nio.git";
@@ -1905,6 +1917,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 20F4A409FBC047782763C6C2 /* XCRemoteSwiftPackageReference "swift-nio" */;
 			productName = NIOHTTP1;
+		};
+		D71512A8DFCE0B37EDD595C1 /* WhisperKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 101303A1CD7BCB50C2C00B26 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */;
+			productName = WhisperKit;
 		};
 		E0B3C6448C1F5B591EB2C959 /* BlitzRecorderCore */ = {
 			isa = XCSwiftPackageProductDependency;

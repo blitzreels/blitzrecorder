@@ -22,6 +22,9 @@ packages:
   FluidAudio:
     url: https://github.com/FluidInference/FluidAudio.git
     exactVersion: 0.15.5
+  WhisperKit:
+    url: https://github.com/argmaxinc/argmax-oss-swift.git
+    exactVersion: 1.0.0
 
 settings:
   base:
@@ -66,6 +69,8 @@ targets:
         product: NIOPosix
       - package: FluidAudio
         product: FluidAudio
+      - package: WhisperKit
+        product: WhisperKit
     settings:
       base:
         PRODUCT_NAME: BlitzRecorder
