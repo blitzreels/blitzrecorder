@@ -87,6 +87,18 @@ struct MainView: View {
                 HStack(spacing: 10) {
                     RecordingOutputPicker(vm: vm)
                     Spacer(minLength: 0)
+                    if vm.state == .idle {
+                        Toggle(
+                            isOn: Binding(
+                                get: { vm.isLivePreviewEnabled },
+                                set: { vm.setLivePreviewEnabled($0) }
+                            )
+                        ) {
+                            Text("Live preview")
+                        }
+                        .toggleStyle(.blitzSwitch)
+                        .help("Pause Mac camera, microphone, screen, and audio previews until recording starts")
+                    }
                     Button { vm.selectBackgroundLayer() } label: {
                         Label("Canvas", systemImage: "square.on.circle")
                     }
@@ -108,6 +120,29 @@ struct MainView: View {
 
                     SplitDividerOverlay(vm: vm)
                     CropToolbarOverlay(vm: vm)
+
+                    if vm.state == .idle && !vm.isLivePreviewEnabled {
+                        Color.black
+                            .overlay {
+                                VStack(spacing: 12) {
+                                    Image(systemName: "eye.slash")
+                                        .font(.system(size: 28, weight: .light))
+                                        .foregroundStyle(BlitzUI.mint)
+                                    Text("Live preview is off")
+                                        .font(.system(size: 16, weight: .semibold))
+                                    Text("Mac camera, microphone, screen, and system audio start when you record.")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(BlitzUI.secondaryText)
+                                        .multilineTextAlignment(.center)
+                                    Button("Turn on preview") {
+                                        vm.setLivePreviewEnabled(true)
+                                    }
+                                    .blitzButton(.secondary)
+                                    .padding(.top, 4)
+                                }
+                                .padding(24)
+                            }
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 

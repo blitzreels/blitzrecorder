@@ -29,6 +29,7 @@ struct RecordingSettingsPage: View {
                 }
 
                 storageSection
+                livePreviewSection
                 transcriptionSection
 
                 VStack(alignment: .leading, spacing: 12) {
@@ -64,6 +65,29 @@ struct RecordingSettingsPage: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshStorageDetail()
         }
+    }
+
+    private var livePreviewSection: some View {
+        Toggle(
+            isOn: Binding(
+                get: { vm.isLivePreviewEnabled },
+                set: { vm.setLivePreviewEnabled($0) }
+            )
+        ) {
+            SettingsRowLabel(.init(
+                title: "Live preview",
+                detail: "Pause Mac camera, microphone, screen, and audio previews while idle. Recording still works."
+            ))
+        }
+        .toggleStyle(.blitzSwitch)
+        .pointingHandCursor()
+        .settingsRow()
+        .disabled(!canEdit)
+        .settingsSection(.init(
+            title: "Before recording",
+            detail: nil,
+            systemImage: "eye"
+        ))
     }
 
     private var storageSection: some View {
@@ -163,6 +187,75 @@ struct RecordingSettingsPage: View {
             }
             .toggleStyle(.blitzSwitch)
             .pointingHandCursor()
+            .settingsRow()
+
+            SettingsRowDivider()
+
+            HStack(alignment: .center, spacing: 18) {
+                SettingsRowLabel(.init(
+                    title: "Transcription tool",
+                    detail: vm.transcriptionController.selectedModel.detail
+                ))
+                Spacer(minLength: 16)
+                BlitzDropdown(configuration: .init(
+                    title: "Transcription tool",
+                    selection: Binding(
+                        get: { vm.transcriptionController.selectedModel },
+                        set: { vm.transcriptionController.selectedModel = $0 }
+                    ),
+                    options: TranscriptionSpeechModel.allCases.map {
+                        .init(value: $0, title: $0.title, detail: $0.detail)
+                    }
+                ))
+                .frame(width: 180)
+            }
+            .settingsRow()
+
+            SettingsRowDivider()
+
+            HStack(alignment: .center, spacing: 18) {
+                SettingsRowLabel(.init(
+                    title: "Language",
+                    detail: vm.transcriptionController.selectedModel == .parakeet
+                        ? "Parakeet detects language automatically."
+                        : "Choose French to prevent English language detection."
+                ))
+                Spacer(minLength: 16)
+                BlitzDropdown(configuration: .init(
+                    title: "Language",
+                    selection: Binding(
+                        get: { vm.transcriptionController.selectedLanguage },
+                        set: { vm.transcriptionController.selectedLanguage = $0 }
+                    ),
+                    options: TranscriptionLanguage.allCases.map {
+                        .init(value: $0, title: $0.title, detail: nil)
+                    }
+                ))
+                .frame(width: 180)
+                .disabled(vm.transcriptionController.selectedModel == .parakeet)
+            }
+            .settingsRow()
+
+            SettingsRowDivider()
+
+            HStack(alignment: .center, spacing: 18) {
+                SettingsRowLabel(.init(
+                    title: "Microphone speakers",
+                    detail: "Use 2 speakers when two people share one microphone."
+                ))
+                Spacer(minLength: 16)
+                BlitzDropdown(configuration: .init(
+                    title: "Microphone speakers",
+                    selection: Binding(
+                        get: { vm.transcriptionController.speakerCount },
+                        set: { vm.transcriptionController.speakerCount = $0 }
+                    ),
+                    options: TranscriptionSpeakerCount.allCases.map {
+                        .init(value: $0, title: $0.title, detail: nil)
+                    }
+                ))
+                .frame(width: 180)
+            }
             .settingsRow()
 
             SettingsRowDivider()

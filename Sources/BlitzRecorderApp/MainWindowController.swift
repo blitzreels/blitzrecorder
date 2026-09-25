@@ -32,6 +32,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var currentRecordingState: RecordingState = .idle
     private var idlePreviewRestartTask: Task<Void, Never>?
     private var studioModeCaptureResourceTask: Task<Void, Never>?
+    private var idlePreviewIsAllowed: Bool {
+        viewModel.studioMode.keepsIdleCaptureResourcesActive && viewModel.isLivePreviewEnabled
+    }
+
+    private var previewFramesAreAllowed: Bool {
+        viewModel.studioMode.keepsIdleCaptureResourcesActive
+            && (coordinator.state != .idle || viewModel.isLivePreviewEnabled)
+    }
     var onEditorHistoryChanged: (() -> Void)? {
         didSet {
             viewModel.onEditorHistoryChanged = onEditorHistoryChanged
@@ -89,18 +97,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         viewModel.onStudioModeChanged = { [weak self] mode in
             self?.syncIdleCaptureResources(for: mode)
         }
+        viewModel.onLivePreviewChanged = { [weak self] _ in
+            guard let self else { return }
+            self.syncIdleCaptureResources(for: self.viewModel.studioMode)
+        }
         viewModel.onProjectOpened = { [weak self] in
             self?.showEditorAfterOpeningProject()
         }
         coordinator.onAudioLevel = { [weak self] source, level in
-            self?.viewModel.appendAudioLevel(level, source: source)
+            guard let self,
+                  self.coordinator.state != .idle || self.viewModel.isLivePreviewEnabled else { return }
+            self.viewModel.appendAudioLevel(level, source: source)
         }
         coordinator.onScreenCaptureConfigurationChanged = { [weak self] in
             self?.restartScreenPreview()
         }
         coordinator.onLiveScreenPreviewFrame = { [weak self] frame in
             guard let self,
-                  self.viewModel.studioMode.keepsIdleCaptureResourcesActive,
+                  self.previewFramesAreAllowed,
                   self.coordinator.settings.visibleSources.contains(.screen) else { return }
             self.previewStage.screenSourceAspectRatio = frame.sourceAspectRatio
             self.previewStage.screenPreview.enqueuePreviewSampleBuffer(frame.sampleBuffer)
@@ -110,7 +124,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         coordinator.onLocalCameraPreviewSampleBuffer = { [weak self] sampleBuffer, width, height in
             guard let self,
-                  self.viewModel.studioMode.keepsIdleCaptureResourcesActive,
+                  self.previewFramesAreAllowed,
                   self.coordinator.settings.visibleSources.contains(.camera),
                   !self.coordinator.isRemoteCameraSelected else { return }
             self.previewStage.cameraPreview.isHidden = false
@@ -119,7 +133,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         coordinator.onRemoteCameraPreviewFrame = { [weak self] image in
             guard let self,
-                  self.viewModel.studioMode.keepsIdleCaptureResourcesActive,
+                  self.previewFramesAreAllowed,
                   self.coordinator.settings.visibleSources.contains(.camera),
                   self.coordinator.isRemoteCameraSelected else { return }
             self.previewStage.cameraPreview.isHidden = false
@@ -129,7 +143,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         coordinator.onRemoteCameraPreviewSampleBuffer = { [weak self] sampleBuffer, width, height in
             guard let self,
-                  self.viewModel.studioMode.keepsIdleCaptureResourcesActive,
+                  self.previewFramesAreAllowed,
                   self.coordinator.settings.visibleSources.contains(.camera),
                   self.coordinator.isRemoteCameraSelected else { return }
             self.previewStage.cameraPreview.isHidden = false
@@ -148,6 +162,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         coordinator.onRemoteCameraPreviewReset = { [weak self] message in
             guard let self,
+                  self.previewFramesAreAllowed,
                   self.coordinator.settings.visibleSources.contains(.camera),
                   self.coordinator.isRemoteCameraSelected else { return }
             self.previewStage.cameraPreview.isHidden = false
@@ -188,9 +203,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 self.refreshPermissionGate()
                 return
             }
-            self.startCameraPreview()
-            self.refreshStartupState()
-            self.startScreenPreview()
+            if self.idlePreviewIsAllowed {
+                self.startCameraPreview()
+                self.refreshStartupState()
+                self.startScreenPreview()
+            } else {
+                self.viewModel.syncSettings()
+                self.refreshPermissionGate()
+            }
         }
     }
 
@@ -257,10 +277,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         switch state {
         case .idle:
             refreshPermissionGate()
-            scheduleIdlePreviewRestart(afterNanoseconds: IdlePreviewRestartPolicy.delayNanoseconds(
-                previousState: previousState,
-                newState: state
-            ))
+            if idlePreviewIsAllowed {
+                scheduleIdlePreviewRestart(afterNanoseconds: IdlePreviewRestartPolicy.delayNanoseconds(
+                    previousState: previousState,
+                    newState: state
+                ))
+            } else {
+                suspendIdleCaptureResources()
+            }
         case .recording, .paused:
             cancelScheduledIdlePreviewRestart()
             showRecordingCameraPreview()
@@ -422,7 +446,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func syncIdleCaptureResources(for mode: RecorderViewModel.StudioMode) {
-        if mode.keepsIdleCaptureResourcesActive {
+        if mode.keepsIdleCaptureResourcesActive && viewModel.isLivePreviewEnabled {
             resumeIdleCaptureResources()
         } else {
             suspendIdleCaptureResources()
@@ -430,7 +454,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func resumeIdleCaptureResources() {
-        guard !LocalDevelopmentRuntime.disablesIdleCapture() else { return }
+        guard !LocalDevelopmentRuntime.disablesIdleCapture(), idlePreviewIsAllowed else { return }
         let previousTask = studioModeCaptureResourceTask
         studioModeCaptureResourceTask = Task { @MainActor [weak self] in
             _ = await previousTask?.result
@@ -438,11 +462,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                   NSApp.isActive,
                   self.window?.isVisible == true,
                   self.coordinator.state == .idle,
-                  self.viewModel.studioMode.keepsIdleCaptureResourcesActive else { return }
+                  self.idlePreviewIsAllowed else { return }
             await coordinator.resumeIdleAudioLevelMonitoring()
             guard NSApp.isActive,
                   self.window?.isVisible == true,
-                  self.viewModel.studioMode.keepsIdleCaptureResourcesActive else { return }
+                  self.idlePreviewIsAllowed else { return }
             startScreenPreview()
             startCameraPreview()
         }
@@ -456,6 +480,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         screenPreviewWatchdogTask = nil
         lastStartedScreenCaptureSignature = nil
         invalidateCameraPreviewStart()
+        previewStage.screenPreview.setMessage("Live preview off")
+        previewStage.cameraPreview.setMessage("Live preview off")
+        coordinator.setLocalCameraRuntimeState(.unchecked)
+        viewModel.micLevels.clear()
+        viewModel.sysLevels.clear()
+        viewModel.refreshPermissionStatus()
+        refreshPermissionGate()
         let previousTask = studioModeCaptureResourceTask
         studioModeCaptureResourceTask = Task { [weak self] in
             _ = await previousTask?.result
@@ -525,7 +556,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     func restartScreenPreview() {
         viewModel.syncSettings()
         guard coordinator.state == .idle,
-              viewModel.studioMode.keepsIdleCaptureResourcesActive else { return }
+              idlePreviewIsAllowed else { return }
 
         if ScreenPreviewLifecycle.shouldReuse(.init(
             isRunning: coordinator.isScreenPreviewRunning,
@@ -544,7 +575,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         case .restart:
             Task {
                 await coordinator.stopScreenPreview()
-                guard viewModel.studioMode.keepsIdleCaptureResourcesActive else { return }
+                guard idlePreviewIsAllowed else { return }
                 startScreenPreview()
             }
         }
@@ -553,7 +584,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     func restartCameraPreview() {
         viewModel.syncSettings()
         guard coordinator.state == .idle,
-              viewModel.studioMode.keepsIdleCaptureResourcesActive else { return }
+              idlePreviewIsAllowed else { return }
         if coordinator.isRemoteCameraSelected {
             startCameraPreview()
             return
@@ -562,14 +593,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         previewStage.cameraPreview.setMessage("Restarting camera")
         Task {
             await coordinator.stopCameraPreview()
-            guard viewModel.studioMode.keepsIdleCaptureResourcesActive else { return }
+            guard idlePreviewIsAllowed else { return }
             startCameraPreview()
         }
     }
 
     private func refreshStartupState() {
         Task {
-            guard viewModel.studioMode.keepsIdleCaptureResourcesActive else { return }
+            guard idlePreviewIsAllowed else { return }
             coordinator.refreshAudioLevelMonitoring()
             viewModel.syncSettings()
             refreshPermissionGate()
@@ -611,7 +642,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private func startScreenPreview() {
         guard !LocalDevelopmentRuntime.disablesIdleCapture() else { return }
-        guard viewModel.studioMode.keepsIdleCaptureResourcesActive else { return }
+        guard idlePreviewIsAllowed else { return }
         if coordinator.settings.hiddenSources.contains(.screen) {
             screenPreviewWatchdogTask?.cancel()
             screenPreviewWatchdogTask = nil
@@ -688,7 +719,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                   !Task.isCancelled,
                   self.screenPreviewStartRevision == request.startRevision,
                   self.coordinator.state == .idle,
-                  self.viewModel.studioMode.keepsIdleCaptureResourcesActive,
+                  self.idlePreviewIsAllowed,
                   self.coordinator.settings.visibleSources.contains(.screen),
                   !self.previewStage.screenPreview.hasPreviewContent else { return }
 
@@ -708,7 +739,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             await self.coordinator.stopScreenPreview()
             try? await Task.sleep(for: .milliseconds(250))
             guard self.coordinator.state == .idle,
-                  self.viewModel.studioMode.keepsIdleCaptureResourcesActive,
+                  self.idlePreviewIsAllowed,
                   self.coordinator.settings.visibleSources.contains(.screen) else { return }
             self.startScreenPreview()
         }
@@ -719,7 +750,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let request = IdleCameraPreviewRequest(
             appIsActive: NSApp.isActive,
             windowIsVisible: window?.isVisible == true,
-            keepsIdleCaptureResourcesActive: viewModel.studioMode.keepsIdleCaptureResourcesActive
+            keepsIdleCaptureResourcesActive: idlePreviewIsAllowed
         )
         guard IdleCameraPreviewPolicy.shouldStart(request) else { return }
         if coordinator.settings.hiddenSources.contains(.camera) {
@@ -782,7 +813,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             Task {
                 let granted = await coordinator.permissionGate.requestCameraAccess()
                 isStartingCameraPreview = false
-                if granted, viewModel.studioMode.keepsIdleCaptureResourcesActive {
+                if granted, idlePreviewIsAllowed {
                     startCameraPreview()
                 } else {
                     previewStage.cameraPreview.setMessage("Camera permission required")
@@ -835,17 +866,30 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                     previewStage.cameraPreview.setMessage("Starting cutout")
                     try await coordinator.startCameraCutoutPreview { [weak self] image in
                         guard let self,
+                              self.cameraPreviewStartRevision == startRevision,
+                              self.idlePreviewIsAllowed,
                               self.coordinator.settings.visibleSources.contains(.camera) else {
                             return
                         }
                         self.previewStage.cameraPreview.setPreviewImage(image)
+                    }
+                    let completionRequest = IdleCameraPreviewRequest(
+                        appIsActive: NSApp.isActive,
+                        windowIsVisible: window?.isVisible == true,
+                        keepsIdleCaptureResourcesActive: idlePreviewIsAllowed
+                    )
+                    guard cameraPreviewStartRevision == startRevision,
+                          IdleCameraPreviewPolicy.shouldStart(completionRequest),
+                          coordinator.settings.visibleSources.contains(.camera) else {
+                        await coordinator.stopCameraPreview()
+                        return
                     }
                 } else {
                     let layer = try await coordinator.cameraPreviewLayer()
                     let completionRequest = IdleCameraPreviewRequest(
                         appIsActive: NSApp.isActive,
                         windowIsVisible: window?.isVisible == true,
-                        keepsIdleCaptureResourcesActive: viewModel.studioMode.keepsIdleCaptureResourcesActive
+                        keepsIdleCaptureResourcesActive: idlePreviewIsAllowed
                     )
                     guard cameraPreviewStartRevision == startRevision,
                           IdleCameraPreviewPolicy.shouldStart(completionRequest),
@@ -864,6 +908,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 coordinator.setLocalCameraRuntimeState(.ready)
                 refreshPermissionGate()
             } catch {
+                guard cameraPreviewStartRevision == startRevision,
+                      idlePreviewIsAllowed else { return }
                 isStartingCameraPreview = false
                 cameraPreviewDeviceID = nil
                 previewStage.cameraPreview.setMessage("Camera unavailable")

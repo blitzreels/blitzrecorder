@@ -916,6 +916,26 @@ struct ProjectLibraryView: View {
 
                     Spacer(minLength: 12)
 
+                    if status.isRunning || status == .waitingForModel {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(status.label)
+                            .font(.system(size: 11))
+                            .foregroundStyle(BlitzUI.secondaryText)
+                    } else {
+                        Button {
+                            requestTranscript(project)
+                        } label: {
+                            Label(
+                                status.isFailed ? "Retry transcription" : "Retranscribe",
+                                systemImage: "arrow.clockwise"
+                            )
+                        }
+                        .blitzButton(.secondary)
+                        .controlSize(.small)
+                        .help("Generate a new transcript from this recording's audio")
+                    }
+
                     Button {
                         guard titleGenerationProjectID == nil else { return }
                         titleGenerationProjectID = project.id

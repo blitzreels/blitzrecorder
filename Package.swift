@@ -13,7 +13,8 @@ var packageDependencies: [Package.Dependency] = [
     .package(
         url: "https://github.com/FluidInference/FluidAudio.git",
         exact: "0.15.5"
-    )
+    ),
+    .package(url: "https://github.com/argmaxinc/argmax-oss-swift.git", exact: "1.0.0")
 ]
 
 var appDependencies: [Target.Dependency] = [
@@ -24,7 +25,8 @@ var appDependencies: [Target.Dependency] = [
     .product(name: "NIOCore", package: "swift-nio"),
     .product(name: "NIOHTTP1", package: "swift-nio"),
     .product(name: "NIOPosix", package: "swift-nio"),
-    .product(name: "FluidAudio", package: "FluidAudio")
+    .product(name: "FluidAudio", package: "FluidAudio"),
+    .product(name: "WhisperKit", package: "argmax-oss-swift")
 ]
 
 var appSwiftSettings: [SwiftSetting] = []

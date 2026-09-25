@@ -304,7 +304,7 @@ final class PermissionGate {
             if system.hasScreenCaptureAccess() {
                 return "allowed"
             }
-            return "enabled"
+            return "needs Screen Recording access"
         case .camera:
             if RemoteCameraProviderID.isRemote(settings.selectedCameraID) {
                 return "remote iPhone"

@@ -24,6 +24,7 @@ final class RecorderViewModel {
     var settings: RecordingSettings
     var detailMessage: String = ""
     var isExportingVariants = false
+    var isLivePreviewEnabled = LivePreviewPreference().isEnabled
     var variantExportIndex = 0
     var variantExportTotal = 0
     var variantExportURLs: [URL] = []
@@ -90,6 +91,7 @@ final class RecorderViewModel {
     @ObservationIgnored var onProjectOpened: (() -> Void)?
     @ObservationIgnored var onFillEditorWindow: (() -> Void)?
     @ObservationIgnored var onStudioModeChanged: ((StudioMode) -> Void)?
+    @ObservationIgnored var onLivePreviewChanged: ((Bool) -> Void)?
     @ObservationIgnored var onEditorHistoryChanged: (() -> Void)?
     @ObservationIgnored var automaticTitleTasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored var editorHistory = EditorProjectHistory()

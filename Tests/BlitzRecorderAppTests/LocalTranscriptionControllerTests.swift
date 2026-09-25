@@ -39,16 +39,52 @@ final class LocalTranscriptionControllerTests: XCTestCase {
         XCTAssertFalse(controller.isAutomaticEnabled)
     }
 
+    @MainActor
+    func testSelectedBackendLanguageAndSpeakerCountReachEngine() async {
+        let transcriptionStarted = expectation(description: "Selected transcription started")
+        let engine = LocalTranscriptionEngineSpy(
+            onTranscriptionStarted: { transcriptionStarted.fulfill() }
+        )
+        let suiteName = "LocalTranscriptionControllerTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.set(false, forKey: "transcription.automatic.enabled")
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let controller = LocalTranscriptionController(.init(
+            engine: engine,
+            modelStore: LocalTranscriptionModelStoreStub(),
+            artifactStore: TranscriptArtifactStore(),
+            fileStore: TakeFileStore(),
+            defaults: defaults
+        ))
+        controller.selectedModel = .whisperMedium
+        controller.selectedLanguage = .french
+        controller.speakerCount = .two
+        controller.retry(.recording(FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)))
+
+        await fulfillment(of: [transcriptionStarted], timeout: 2)
+
+        let downloadedModel = await engine.downloadedModel
+        let transcribedRequest = await engine.transcribedRequest
+        XCTAssertEqual(downloadedModel, .whisperMedium)
+        XCTAssertEqual(transcribedRequest?.model, .whisperMedium)
+        XCTAssertEqual(transcribedRequest?.language, .french)
+        XCTAssertEqual(transcribedRequest?.speakerCount, .two)
+        XCTAssertEqual(defaults.string(forKey: "transcription.speech.model"), "whisperMedium")
+    }
+
 }
 
 private struct LocalTranscriptionModelStoreStub: LocalTranscriptionModelStoring {
-    let isInstalled = false
-    let installedSize: Int64 = 1_024
+    func isInstalled(_ model: TranscriptionSpeechModel) -> Bool { false }
+    func installedSize(_ model: TranscriptionSpeechModel) -> Int64 { 1_024 }
 }
 
 private actor LocalTranscriptionEngineSpy: LocalTranscriptionEngineServing {
     private(set) var downloadCount = 0
     private(set) var transcriptionCount = 0
+    private(set) var downloadedModel: TranscriptionSpeechModel?
+    private(set) var transcribedRequest: LocalTranscriptionEngine.TranscribeRequest?
     private let onTranscriptionStarted: @Sendable () -> Void
 
     init(onTranscriptionStarted: @escaping @Sendable () -> Void) {
@@ -59,6 +95,7 @@ private actor LocalTranscriptionEngineSpy: LocalTranscriptionEngineServing {
         _ request: LocalTranscriptionEngine.DownloadRequest
     ) async throws {
         downloadCount += 1
+        downloadedModel = request.model
         request.onUpdate(.init(fractionCompleted: 0.5, phase: "Downloading 1 of 2"))
         await Task.yield()
         request.onUpdate(.init(fractionCompleted: 1, phase: "Ready"))
@@ -68,6 +105,7 @@ private actor LocalTranscriptionEngineSpy: LocalTranscriptionEngineServing {
         _ request: LocalTranscriptionEngine.TranscribeRequest
     ) async throws -> RecordingTranscript {
         transcriptionCount += 1
+        transcribedRequest = request
         onTranscriptionStarted()
         request.onUpdate(.init(stage: .preparingAudio))
         return RecordingTranscript(
@@ -84,5 +122,5 @@ private actor LocalTranscriptionEngineSpy: LocalTranscriptionEngineServing {
         )
     }
 
-    func removeModels() async throws {}
+    func removeModels(_ model: TranscriptionSpeechModel) async throws {}
 }

@@ -10,7 +10,7 @@ final class RecordingTranscriptTests: XCTestCase {
 
         let engine = LocalTranscriptionEngine()
         try await engine.downloadModels(
-            LocalTranscriptionEngine.DownloadRequest { _ in }
+            LocalTranscriptionEngine.DownloadRequest(model: .parakeet) { _ in }
         )
 
         XCTAssertTrue(LocalTranscriptionModelStore().isInstalled)
@@ -26,6 +26,9 @@ final class RecordingTranscriptTests: XCTestCase {
         let transcript = try await engine.transcribe(
             LocalTranscriptionEngine.TranscribeRequest(
                 source: .project(URL(fileURLWithPath: projectPath)),
+                model: .parakeet,
+                language: .automatic,
+                speakerCount: .automatic,
                 onUpdate: { _ in }
             )
         )
@@ -35,6 +38,27 @@ final class RecordingTranscriptTests: XCTestCase {
         XCTAssertFalse(transcript.speakers.isEmpty)
         XCTAssertGreaterThan(transcript.duration, 0)
         XCTAssertTrue((transcript.words ?? []).allSatisfy { $0.endTime <= transcript.duration + 0.1 })
+    }
+
+    func testWhisperTranscribesFrenchAudioWhenExplicitlyEnabled() async throws {
+        guard let audioPath = ProcessInfo.processInfo.environment["BLITZRECORDER_TEST_WHISPER_AUDIO"] else {
+            throw XCTSkip("Set BLITZRECORDER_TEST_WHISPER_AUDIO to validate the local Whisper backend.")
+        }
+        let engine = LocalTranscriptionEngine()
+        if !LocalTranscriptionModelStore().isInstalled(.whisperMedium) {
+            try await engine.downloadModels(.init(model: .whisperMedium, onUpdate: { _ in }))
+        }
+        let transcript = try await engine.transcribe(.init(
+            source: .recording(URL(fileURLWithPath: audioPath)),
+            model: .whisperMedium,
+            language: .french,
+            speakerCount: .automatic,
+            onUpdate: { _ in }
+        ))
+        XCTAssertFalse(transcript.text.isEmpty)
+        XCTAssertFalse(transcript.text.contains("[silence]"))
+        XCTAssertTrue(transcript.words?.allSatisfy { $0.endTime >= $0.startTime } == true)
+        XCTAssertTrue(LocalTranscriptionModelStore().isInstalled(.whisperMedium))
     }
 
     func testAssemblerCreatesChronologicalSpeakerSegments() {
@@ -197,6 +221,28 @@ final class RecordingTranscriptTests: XCTestCase {
         XCTAssertEqual(transcript.segmentCount, 1)
         XCTAssertEqual(transcript.segments[0].speakerID, "Speaker 1")
         XCTAssertEqual(transcript.segments[0].text, wordTexts.joined(separator: " "))
+    }
+
+    func testAssemblerUsesLargestOverlapWhenSpeakerIntervalsOverlap() {
+        let transcript = RecordingTranscriptAssembler.assemble(.init(
+            mediaPath: "/tmp/overlapping-speakers.mov",
+            generatedAt: Date(timeIntervalSince1970: 10_000),
+            duration: 3,
+            confidence: 0.9,
+            text: "First. Second.",
+            suggestedTitle: nil,
+            words: [
+                TranscriptWord(text: "First.", startTime: 0.2, endTime: 0.5, confidence: 0.9),
+                TranscriptWord(text: "Second.", startTime: 1.5, endTime: 2.1, confidence: 0.9),
+            ],
+            wordSources: [.microphone, .microphone],
+            diarizedIntervals: [
+                DiarizedInterval(speakerID: "mic-0", startTime: 0, endTime: 2),
+                DiarizedInterval(speakerID: "mic-1", startTime: 1, endTime: 2.2),
+            ]
+        ))
+
+        XCTAssertEqual(transcript.words?.map(\.speakerID), ["Speaker 1", "Speaker 2"])
     }
 
     func testAssemblerCollapsesTinyFragmentSpeakerCluster() {
@@ -417,6 +463,33 @@ final class RecordingTranscriptTests: XCTestCase {
         ])
     }
 
+    func testAssemblerKeepsTwoSpeakersSharingOneMicrophone() {
+        let transcript = RecordingTranscriptAssembler.assemble(
+            RecordingTranscriptAssembler.Request(
+                mediaPath: "/tmp/shared-microphone.mov",
+                generatedAt: Date(timeIntervalSince1970: 8_000),
+                duration: 4,
+                confidence: 0.9,
+                text: "Bonjour. Salut.",
+                suggestedTitle: nil,
+                words: [
+                    TranscriptWord(text: "Bonjour.", startTime: 0.2, endTime: 0.8, confidence: 0.9),
+                    TranscriptWord(text: "Salut.", startTime: 2.2, endTime: 2.8, confidence: 0.9),
+                ],
+                wordSources: [.microphone, .microphone],
+                diarizedIntervals: [
+                    DiarizedInterval(speakerID: "mic-0", startTime: 0, endTime: 1),
+                    DiarizedInterval(speakerID: "mic-1", startTime: 2, endTime: 3),
+                ]
+            )
+        )
+
+        XCTAssertEqual(transcript.speakerCount, 2)
+        XCTAssertEqual(transcript.speakers.map(\.name), ["", ""])
+        XCTAssertEqual(transcript.segments.map(\.speakerID), ["Speaker 1", "Speaker 2"])
+        XCTAssertEqual(transcript.words?.map(\.speakerID), ["Speaker 1", "Speaker 2"])
+    }
+
     func testAssemblerDropsSystemEchoOfMicrophoneSpeaker() {
         let you: [Float] = [1, 0, 0, 0]
         let echo: [Float] = [0.99, 0.01, 0, 0]
@@ -449,6 +522,102 @@ final class RecordingTranscriptTests: XCTestCase {
         XCTAssertEqual(transcript.speakers.map(\.name), ["You", ""])
         XCTAssertEqual(transcript.words?.map(\.text), ["Hello", "there.", "Thanks."])
         XCTAssertEqual(transcript.segments.map(\.text), ["Hello there.", "Thanks."])
+    }
+
+    func testAssemblerRemovesSplitSystemEchoAndKeepsCompleteSpeakerSentences() {
+        let transcript = RecordingTranscriptAssembler.assemble(.init(
+            mediaPath: "/tmp/split-echo.mov",
+            generatedAt: Date(timeIntervalSince1970: 8_000),
+            duration: 4,
+            confidence: 0.9,
+            text: "Je voulais faire un post. Bonjour.",
+            suggestedTitle: nil,
+            words: [
+                .init(text: "Je voulais", startTime: 0, endTime: 0.4, confidence: 0.9),
+                .init(text: "faire", startTime: 0.42, endTime: 0.65, confidence: 0.9),
+                .init(text: "un post.", startTime: 0.7, endTime: 1.1, confidence: 0.9),
+                .init(text: "Je", startTime: 0.02, endTime: 0.2, confidence: 0.9),
+                .init(text: "voulais", startTime: 0.21, endTime: 0.4, confidence: 0.9),
+                .init(text: "faire", startTime: 0.44, endTime: 0.64, confidence: 0.9),
+                .init(text: "un", startTime: 0.72, endTime: 0.81, confidence: 0.9),
+                .init(text: "post", startTime: 0.82, endTime: 1.12, confidence: 0.9),
+                .init(text: "Bonjour.", startTime: 2, endTime: 2.5, confidence: 0.9),
+            ],
+            wordSources: [
+                .microphone, .microphone, .microphone,
+                .systemAudio, .systemAudio, .systemAudio, .systemAudio, .systemAudio, .systemAudio,
+            ],
+            diarizedIntervals: [
+                .init(speakerID: "mic-0", startTime: 0, endTime: 1.2),
+                .init(speakerID: "sys-echo", startTime: 0, endTime: 1.2),
+                .init(speakerID: "sys-guest", startTime: 1.9, endTime: 2.6),
+            ]
+        ))
+
+        XCTAssertEqual(transcript.text, "Je voulais faire un post. Bonjour.")
+        XCTAssertEqual(transcript.speakerCount, 2)
+        XCTAssertEqual(transcript.segments.map(\.text), ["Je voulais faire un post.", "Bonjour."])
+        XCTAssertEqual(transcript.segments.map(\.speakerID), ["Speaker 1", "Speaker 2"])
+    }
+
+    func testAssemblerBreaksAtSentenceEndForSameSpeaker() {
+        let transcript = RecordingTranscriptAssembler.assemble(.init(
+            mediaPath: "/tmp/sentences.mov",
+            generatedAt: Date(timeIntervalSince1970: 8_000),
+            duration: 3,
+            confidence: 0.9,
+            text: "Bonjour. Je voulais écrire.",
+            suggestedTitle: nil,
+            words: [
+                .init(text: "Bonjour.", startTime: 0, endTime: 0.5, confidence: 0.9),
+                .init(text: "Je", startTime: 0.7, endTime: 0.9, confidence: 0.9),
+                .init(text: "voulais", startTime: 0.9, endTime: 1.2, confidence: 0.9),
+                .init(text: "écrire.", startTime: 1.2, endTime: 1.7, confidence: 0.9),
+            ],
+            diarizedIntervals: [.init(speakerID: "mic-0", startTime: 0, endTime: 2)]
+        ))
+
+        XCTAssertEqual(transcript.segments.map(\.text), ["Bonjour.", "Je voulais écrire."])
+    }
+
+    func testAssemblerRemovesParaphrasedWordsFromRepeatedSystemSpeaker() {
+        let microphone = (0..<24).map { index in
+            TranscriptWord(
+                text: "mot\(index)",
+                startTime: Double(index) * 0.3,
+                endTime: Double(index) * 0.3 + 0.2,
+                confidence: 0.9
+            )
+        }
+        let echo = microphone.enumerated().map { index, word in
+            TranscriptWord(
+                text: index == 12 ? "variante" : word.text,
+                startTime: word.startTime + 0.1,
+                endTime: word.endTime + 0.1,
+                confidence: 0.9
+            )
+        }
+        let other = TranscriptWord(text: "Réponse.", startTime: 15, endTime: 15.5, confidence: 0.9)
+        let transcript = RecordingTranscriptAssembler.assemble(.init(
+            mediaPath: "/tmp/echo-speaker.mov",
+            generatedAt: Date(timeIntervalSince1970: 8_000),
+            duration: 16,
+            confidence: 0.9,
+            text: "",
+            suggestedTitle: nil,
+            words: microphone + echo + [other],
+            wordSources: Array(repeating: .microphone, count: microphone.count)
+                + Array(repeating: .systemAudio, count: echo.count + 1),
+            diarizedIntervals: [
+                .init(speakerID: "mic-0", startTime: 0, endTime: 8),
+                .init(speakerID: "sys-echo", startTime: 0, endTime: 8),
+                .init(speakerID: "sys-guest", startTime: 14.5, endTime: 16),
+            ]
+        ))
+
+        XCTAssertEqual(transcript.words?.count, microphone.count + 1)
+        XCTAssertFalse(transcript.text.contains("variante"))
+        XCTAssertTrue(transcript.text.contains("Réponse."))
     }
 
     func testAssemblerKeepsOverlappingMicrophoneAndCallSpeech() {
@@ -616,6 +785,36 @@ final class RecordingTranscriptTests: XCTestCase {
         XCTAssertTrue(mapped.segments.contains { $0.text.contains("Hello") })
         XCTAssertTrue(mapped.segments.contains { $0.text.contains("Later") })
         XCTAssertFalse(mapped.text.contains("there"))
+    }
+
+    func testEditedTimelineDoesNotDuplicateLegacySegmentAcrossCut() {
+        let transcript = RecordingTranscript(
+            version: 1,
+            id: UUID(),
+            mediaPath: "/tmp/legacy.mov",
+            generatedAt: Date(timeIntervalSince1970: 10_000),
+            duration: 8,
+            confidence: 0.9,
+            text: "One long segment.",
+            suggestedTitle: nil,
+            speakers: [.init(id: "Speaker 1", name: "", context: "")],
+            segments: [.init(
+                id: UUID(),
+                speakerID: "Speaker 1",
+                startTime: 0.5,
+                endTime: 7.5,
+                text: "One long segment.",
+                confidence: 0.9
+            )],
+            words: nil
+        )
+        let mapped = transcript.mappedToEditedTimeline(TimelineTimeMap(
+            takeDuration: MediaTime(seconds: 8),
+            cuts: [TimelineCut(start: 3, end: 5, kind: .silence, source: .automatic)]
+        ))
+
+        XCTAssertEqual(mapped.segments.map(\.text), ["One long segment."])
+        XCTAssertEqual(mapped.text, "One long segment.")
     }
 
     func testEditedTimelineIsUnchangedWithoutCuts() {

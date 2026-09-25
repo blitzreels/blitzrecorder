@@ -25,6 +25,12 @@ extension RecorderViewModel {
         }
     }
 
+    func enableSystemAudioFromCover() {
+        coordinator.addSource(.systemAudio)
+        syncSettings()
+        requestScreenAccessFromCover()
+    }
+
     func requestCameraAccessFromCover() {
         Task {
             _ = await coordinator.permissionGate.requestCameraAccess()
@@ -43,9 +49,14 @@ extension RecorderViewModel {
 
     func allowAllFromCover() {
         Task {
+            if !settings.enabledSources.contains(.systemAudio) {
+                coordinator.addSource(.systemAudio)
+                syncSettings()
+            }
             let needsScreenGrant =
                 (settings.enabledSources.contains(.screen)
                     && !settings.usesPickedScreenContent)
+                    || settings.enabledSources.contains(.systemAudio)
             if needsScreenGrant, !isPersistentScreenCaptureAccessActive {
                 let result = await coordinator.permissionGate.requestScreenCaptureAccess()
                 if result.status == .needsSettings {
@@ -224,11 +235,9 @@ extension RecorderViewModel {
                         ? "allowed for \(appName)"
                         : "not enabled for \(appName)"
                 case .systemAudio:
-                    return isBlocked
-                        ? permissionGate.status(
-                            PermissionGate.StatusRequest(source: source, settings: currentSettings)
-                        )
-                        : "enabled for recordings"
+                    return permissionGate.status(
+                        PermissionGate.StatusRequest(source: source, settings: currentSettings)
+                    )
                 case .camera, .microphone:
                     return permissionGate.status(
                         PermissionGate.StatusRequest(source: source, settings: currentSettings)

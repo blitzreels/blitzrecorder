@@ -28,11 +28,16 @@ struct RecordingAccessCover: View {
     }
 
     private var isReady: Bool {
-        vm.recordingReadiness.isReady
+        Self.canContinue(rows: sourceRows)
+    }
+
+    static func canContinue(rows: [PermissionStatusRow]) -> Bool {
+        let activeRows = rows.filter(\.isActive)
+        return !activeRows.isEmpty && activeRows.allSatisfy(\.isGranted)
     }
 
     private var hasAllowable: Bool {
-        sourceRows.contains { coverAction(for: $0) == .allow }
+        sourceRows.contains { coverAction(for: $0) == .allow || coverAction(for: $0) == .enable }
     }
 
     var body: some View {
@@ -142,7 +147,7 @@ struct RecordingAccessCover: View {
     private var statusLine: some View {
         Group {
             if isReady {
-                Label("All set — you're ready to record", systemImage: "checkmark.circle.fill")
+                Label("Permissions ready — continue to the recorder", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(accent)
             } else if requiredCount > 0 {
                 Text("\(readyCount) of \(requiredCount) permissions ready")
@@ -161,7 +166,7 @@ struct RecordingAccessCover: View {
             Button {
                 vm.startFromCover()
             } label: {
-                Label("Start Recording", systemImage: "arrow.right")
+                Label("Continue to recorder", systemImage: "arrow.right")
                     .font(.system(size: 14, weight: .bold))
                     .frame(maxWidth: .infinity)
                     .frame(height: 44)
@@ -200,13 +205,14 @@ struct RecordingAccessCover: View {
 
     private func coverAction(for row: PermissionStatusRow) -> CoverAction {
         guard let source = row.source else { return .inactive }
+        if source == .systemAudio && !row.isActive { return .enable }
         if !row.isActive { return .inactive }
         if row.isGranted { return .granted }
         switch source {
         case .screen:
             return vm.screenAccessAwaitingRestart ? .quitReopen : .allow
         case .systemAudio:
-            return vm.screenAccessAwaitingRestart ? .quitReopen : .openSettings
+            return vm.screenAccessAwaitingRestart ? .quitReopen : .allow
         case .camera, .microphone:
             // notDetermined can be resolved with an in-app prompt; denied/restricted needs Settings.
             return row.status == "not determined" ? .allow : .openSettings
@@ -218,6 +224,8 @@ struct RecordingAccessCover: View {
         switch coverAction(for: row) {
         case .granted, .inactive:
             break
+        case .enable:
+            vm.enableSystemAudioFromCover()
         case .allow:
             switch source {
             case .screen, .systemAudio: vm.requestScreenAccessFromCover()
@@ -238,6 +246,7 @@ struct RecordingAccessCover: View {
 
 private enum CoverAction: Equatable {
     case granted
+    case enable
     case allow
     case openSettings
     case quitReopen
@@ -276,6 +285,7 @@ private struct AccessPermissionRow: View {
         guard let source = row.source else { return "" }
         switch action {
         case .inactive: return "Not in current setup"
+        case .enable: return "Optional — record sound from apps"
         case .quitReopen: return "Enabled — restart to finish"
         default: return source.onboardingPurpose
         }
@@ -295,7 +305,7 @@ private struct AccessPermissionRow: View {
     private var badgeColor: Color {
         switch action {
         case .granted: return accent
-        case .allow: return .white.opacity(0.8)
+        case .allow, .enable: return .white.opacity(0.8)
         case .openSettings, .quitReopen: return Color(red: 1.0, green: 0.66, blue: 0.16)
         case .inactive: return .white.opacity(0.3)
         }
@@ -314,6 +324,8 @@ private struct AccessPermissionRow: View {
             .transition(.scale(scale: 0.6).combined(with: .opacity))
         case .inactive:
             EmptyView()
+        case .enable:
+            actionButton("Enable", icon: "speaker.wave.2")
         case .allow:
             actionButton("Allow", icon: "lock.open")
         case .openSettings:

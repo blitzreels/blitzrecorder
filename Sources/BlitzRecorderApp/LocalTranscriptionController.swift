@@ -8,12 +8,65 @@ protocol LocalTranscriptionEngineServing: Sendable {
     func transcribe(
         _ request: LocalTranscriptionEngine.TranscribeRequest
     ) async throws -> RecordingTranscript
-    func removeModels() async throws
+    func removeModels(_ model: TranscriptionSpeechModel) async throws
 }
 
 protocol LocalTranscriptionModelStoring: Sendable {
-    var isInstalled: Bool { get }
-    var installedSize: Int64 { get }
+    func isInstalled(_ model: TranscriptionSpeechModel) -> Bool
+    func installedSize(_ model: TranscriptionSpeechModel) -> Int64
+}
+
+enum TranscriptionSpeechModel: String, CaseIterable, Sendable {
+    case parakeet
+    case whisperMedium
+
+    var title: String {
+        switch self {
+        case .parakeet: "Parakeet v3"
+        case .whisperMedium: "Whisper Medium"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .parakeet: "Fast, multilingual; automatic language only"
+        case .whisperMedium: "Multilingual; supports a French language lock"
+        }
+    }
+}
+
+enum TranscriptionLanguage: String, CaseIterable, Sendable {
+    case automatic
+    case french
+    case english
+
+    var title: String {
+        switch self {
+        case .automatic: "Automatic"
+        case .french: "French"
+        case .english: "English"
+        }
+    }
+
+    var whisperCode: String? {
+        switch self {
+        case .automatic: nil
+        case .french: "fr"
+        case .english: "en"
+        }
+    }
+}
+
+enum TranscriptionSpeakerCount: String, CaseIterable, Sendable {
+    case automatic
+    case two
+
+    var title: String {
+        switch self {
+        case .automatic: "Automatic"
+        case .two: "2 speakers"
+        }
+    }
 }
 
 enum TranscriptionModelState: Equatable {
@@ -72,6 +125,11 @@ enum TranscriptionJobStatus: Equatable {
             return false
         }
     }
+
+    var isFailed: Bool {
+        if case .failed = self { return true }
+        return false
+    }
 }
 
 struct CompletedTranscription {
@@ -108,9 +166,32 @@ final class LocalTranscriptionController {
         let source: TranscriptionMediaSource
     }
 
-    private static let automaticKey = "transcription.automatic.enabled"
+    private struct ModelUpdateRequest {
+        let update: TranscriptionModelDownloadUpdate
+        let model: TranscriptionSpeechModel
+    }
 
-    var modelState: TranscriptionModelState
+    private static let automaticKey = "transcription.automatic.enabled"
+    private static let modelKey = "transcription.speech.model"
+    private static let languageKey = "transcription.language"
+    private static let speakerCountKey = "transcription.speaker-count"
+
+    var modelStates: [TranscriptionSpeechModel: TranscriptionModelState]
+    var modelState: TranscriptionModelState {
+        modelStates[selectedModel] ?? .notDownloaded
+    }
+    var selectedModel: TranscriptionSpeechModel {
+        didSet {
+            defaults.set(selectedModel.rawValue, forKey: Self.modelKey)
+            enqueueKnownSources()
+        }
+    }
+    var selectedLanguage: TranscriptionLanguage {
+        didSet { defaults.set(selectedLanguage.rawValue, forKey: Self.languageKey) }
+    }
+    var speakerCount: TranscriptionSpeakerCount {
+        didSet { defaults.set(speakerCount.rawValue, forKey: Self.speakerCountKey) }
+    }
     var jobStatuses: [String: TranscriptionJobStatus] = [:]
     @ObservationIgnored var onTranscriptionCompleted: ((CompletedTranscription) -> Void)?
     var isAutomaticEnabled: Bool {
@@ -142,50 +223,64 @@ final class LocalTranscriptionController {
         ) == nil
             ? true
             : dependencies.defaults.bool(forKey: Self.automaticKey)
-        self.modelState = dependencies.modelStore.isInstalled
-            ? .ready(size: dependencies.modelStore.installedSize)
-            : .notDownloaded
+        self.selectedModel = TranscriptionSpeechModel(
+            rawValue: dependencies.defaults.string(forKey: Self.modelKey) ?? ""
+        ) ?? .parakeet
+        self.selectedLanguage = TranscriptionLanguage(
+            rawValue: dependencies.defaults.string(forKey: Self.languageKey) ?? ""
+        ) ?? .automatic
+        self.speakerCount = TranscriptionSpeakerCount(
+            rawValue: dependencies.defaults.string(forKey: Self.speakerCountKey) ?? ""
+        ) ?? .automatic
+        self.modelStates = Dictionary(uniqueKeysWithValues: TranscriptionSpeechModel.allCases.map { model in
+            (model, dependencies.modelStore.isInstalled(model)
+                ? .ready(size: dependencies.modelStore.installedSize(model))
+                : .notDownloaded)
+        })
     }
 
     func downloadModels() {
-        guard !modelState.isReady else { return }
-        if case .downloading = modelState {
+        let model = selectedModel
+        guard !(modelStates[model] ?? .notDownloaded).isReady else { return }
+        if case .downloading = modelStates[model] {
             return
         }
-        modelState = .downloading(progress: 0, phase: "Starting")
+        modelStates[model] = .downloading(progress: 0, phase: "Starting")
         Task {
             do {
                 try await engine.downloadModels(
                     LocalTranscriptionEngine.DownloadRequest(
+                        model: model,
                         onUpdate: { [weak self] update in
                             Task { @MainActor in
-                                self?.applyModelDownloadUpdate(update)
+                                self?.applyModelDownloadUpdate(.init(update: update, model: model))
                             }
                         }
                     )
                 )
-                modelState = .ready(size: modelStore.installedSize)
+                modelStates[model] = .ready(size: modelStore.installedSize(model))
                 enqueuePendingManualSources()
                 enqueueKnownSources()
             } catch {
-                modelState = .failed(error.localizedDescription)
+                modelStates[model] = .failed(error.localizedDescription)
             }
         }
     }
 
     func removeModels() {
         guard !jobStatuses.values.contains(where: \.isRunning) else { return }
+        let model = selectedModel
         Task {
             do {
-                try await engine.removeModels()
-                modelState = .notDownloaded
+                try await engine.removeModels(model)
+                modelStates[model] = .notDownloaded
                 for key in knownSources.keys {
                     if !isTranscriptReady(key) {
                         jobStatuses[key] = .waitingForModel
                     }
                 }
             } catch {
-                modelState = .failed(error.localizedDescription)
+                modelStates[model] = .failed(error.localizedDescription)
             }
         }
     }
@@ -234,12 +329,18 @@ final class LocalTranscriptionController {
 
         pendingManualSources[source.key] = nil
         jobStatuses[source.key] = .queued
+        let model = selectedModel
+        let language = selectedLanguage
+        let speakerCount = speakerCount
         tasks[source.key] = Task { [weak self] in
             guard let self else { return }
             do {
                 let transcript = try await engine.transcribe(
                     LocalTranscriptionEngine.TranscribeRequest(
                         source: source,
+                        model: model,
+                        language: language,
+                        speakerCount: speakerCount,
                         onUpdate: { [weak self] update in
                             Task { @MainActor in
                                 self?.apply(UpdateRequest(
@@ -275,13 +376,11 @@ final class LocalTranscriptionController {
         }
     }
 
-    private func applyModelDownloadUpdate(
-        _ update: TranscriptionModelDownloadUpdate
-    ) {
-        guard case .downloading = modelState else { return }
-        modelState = .downloading(
-            progress: update.fractionCompleted,
-            phase: update.phase
+    private func applyModelDownloadUpdate(_ request: ModelUpdateRequest) {
+        guard case .downloading = modelStates[request.model] else { return }
+        modelStates[request.model] = .downloading(
+            progress: request.update.fractionCompleted,
+            phase: request.update.phase
         )
     }
 
