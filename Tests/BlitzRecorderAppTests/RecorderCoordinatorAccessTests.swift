@@ -115,6 +115,41 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         XCTAssertTrue(blockers.isEmpty)
     }
 
+    func testSystemAudioPermissionStatusRequiresScreenCaptureGrant() {
+        var settings = RecordingSettings()
+        settings.enabledSources = [.systemAudio]
+        let system = TestRecordingPermissionSystem()
+        system.screenCaptureAccess = false
+        let gate = PermissionGate(system: system)
+
+        XCTAssertEqual(gate.status(.init(source: .systemAudio, settings: settings)), "needs Screen Recording access")
+
+        system.screenCaptureAccess = true
+        XCTAssertEqual(gate.status(.init(source: .systemAudio, settings: settings)), "allowed")
+    }
+
+    func testOnboardingContinuesAfterGrantsBeforeScreenSourceIsPicked() {
+        let settings = RecordingSettings()
+        let gate = PermissionGate(system: TestRecordingPermissionSystem())
+        let readiness = RecordingStartGate.readiness(
+            permission: gate.readiness(for: settings),
+            settings: settings,
+            hasActiveScreenSourceSelection: false,
+            remoteBlocker: nil
+        )
+        let rows = PermissionStatusRows.make(.init(
+            settings: settings,
+            readiness: readiness,
+            hasPersistentScreenCaptureAccess: gate.hasScreenCaptureAccess,
+            appName: "BlitzRecorder",
+            hasAccessibilityAccess: gate.hasAccessibilityAccess,
+            status: { source, _ in gate.status(.init(source: source, settings: settings)) }
+        ))
+
+        XCTAssertFalse(readiness.isReady)
+        XCTAssertTrue(RecordingAccessCover.canContinue(rows: rows))
+    }
+
     func testScreenSourceSelectionMakesBindingTheSinglePersistentTruth() {
         var settings = RecordingSettings()
         settings.usesPickedScreenContent = true

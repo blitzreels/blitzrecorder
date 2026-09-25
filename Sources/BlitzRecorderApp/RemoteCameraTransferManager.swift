@@ -331,9 +331,22 @@ final class RemoteCameraTransferManager {
             }
             let validationWarnings = try await validateImportedMedia(transfer.partialURL, transfer.manifest)
             if FileManager.default.fileExists(atPath: transfer.destinationURL.path) {
-                try FileManager.default.removeItem(at: transfer.destinationURL)
+                let values = try transfer.destinationURL.resourceValues(forKeys: [
+                    .isRegularFileKey,
+                    .isSymbolicLinkKey
+                ])
+                guard values.isRegularFile == true, values.isSymbolicLink != true else {
+                    throw RecorderError.remoteCameraTransferFailed(
+                        "The iPhone import destination is not a regular file."
+                    )
+                }
+                _ = try FileManager.default.replaceItemAt(
+                    transfer.destinationURL,
+                    withItemAt: transfer.partialURL
+                )
+            } else {
+                try FileManager.default.moveItem(at: transfer.partialURL, to: transfer.destinationURL)
             }
-            try FileManager.default.moveItem(at: transfer.partialURL, to: transfer.destinationURL)
             try Self.writeManifest(transfer.manifest, destinationURL: transfer.destinationURL, sha256: sha256)
             validationWarnings.forEach { warning in
                 onMessage("iPhone media warning: \(warning)")

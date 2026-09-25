@@ -5,6 +5,17 @@ import XCTest
 @testable import BlitzRecorderApp
 
 final class LocalTranscriptionQualityTests: XCTestCase {
+    func testMicrophoneDiarizationDoesNotForceOneSpeaker() {
+        let speakers = LocalTranscriptionEngine.microphoneDiarizerConfiguration(.automatic).clustering
+        XCTAssertNil(speakers.numSpeakers)
+        XCTAssertEqual(speakers.minSpeakers, 1)
+        XCTAssertGreaterThanOrEqual(speakers.maxSpeakers ?? 0, 2)
+        XCTAssertEqual(
+            LocalTranscriptionEngine.microphoneDiarizerConfiguration(.two).clustering.numSpeakers,
+            2
+        )
+    }
+
     func testSilenceAndNonSpeechDoNotProduceInventedWordsWhenRequested() async throws {
         guard ProcessInfo.processInfo.environment["BLITZRECORDER_TRANSCRIPTION_EVALUATION_OUTPUT"] != nil else {
             throw XCTSkip("Enable the local transcription evaluation to run installed-model noise checks.")
@@ -29,7 +40,13 @@ final class LocalTranscriptionQualityTests: XCTestCase {
                 let file = try AVAudioFile(forWriting: url, settings: format.settings)
                 try file.write(from: buffer)
             }
-            let transcript = try await engine.transcribe(.init(source: .recording(url), onUpdate: { _ in }))
+            let transcript = try await engine.transcribe(.init(
+                source: .recording(url),
+                model: .parakeet,
+                language: .automatic,
+                speakerCount: .automatic,
+                onUpdate: { _ in }
+            ))
             XCTAssertTrue(transcript.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             XCTAssertTrue(transcript.words?.isEmpty == true)
             XCTAssertEqual(transcript.duration, 10, accuracy: 0.01)

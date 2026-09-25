@@ -40,7 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
 
         NSApp.setActivationPolicy(.regular)
         applyDevIconBadgeIfNeeded()
-        if !LocalDevelopmentRuntime.disablesIdleCapture() {
+        if !LocalDevelopmentRuntime.disablesIdleCapture(), LivePreviewPreference().isEnabled {
             coordinator.prewarmLocalCameraPreviewIfAuthorized()
         }
 

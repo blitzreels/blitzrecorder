@@ -78,6 +78,7 @@ The GUI lets testers pick **Screen** (full display; WGC + DXGI fallback), **Area
 6. Attaches **only** `BlitzRecorder-Windows.exe` to the GitHub Release
 
 workflow_dispatch builds `BlitzRecorder-Windows-unsigned.exe` as a CI artifact only. Until those secrets exist, testers use the unsigned Actions installer.
+CI installs the unsigned package into a path with spaces, launches it without Swift or Visual Studio on `PATH`, then uninstalls it.
 
 Unsigned local/CI artifacts trip SmartScreen (**More info** → **Run anyway**). After a `main` push, download Actions artifact **`windows-studio-installer-unsigned`** (`BlitzRecorder-Windows-ci-check.exe`, per-user Inno, same layout as the tagged installer) or **`windows-studio-portable`** (folder; run `BlitzRecorder.cmd`). Neither is a GitHub Release.
 

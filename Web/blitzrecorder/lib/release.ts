@@ -13,7 +13,7 @@ export const LATEST_RELEASE_URL = `${RELEASES_URL}/latest`;
 /** Unsigned tester installer: latest green CI on main (artifact windows-studio-installer-unsigned). */
 export const WINDOWS_CI_WORKFLOW_URL = `${GITHUB_REPO_URL}/actions/workflows/ci.yml?query=is%3Asuccess+branch%3Amain`;
 /** Shown when no release is published yet; kept in sync by Scripts/set-version.py. */
-export const FALLBACK_VERSION = "0.21.0";
+export const FALLBACK_VERSION = "0.21.1";
 
 export type Release = {
   /** Semver without the leading "v", e.g. "0.1.0". */

@@ -5,6 +5,17 @@ import Foundation
 import QuartzCore
 
 extension RecorderViewModel {
+    func setLivePreviewEnabled(_ enabled: Bool) {
+        guard state == .idle, isLivePreviewEnabled != enabled else { return }
+        isLivePreviewEnabled = enabled
+        LivePreviewPreference().setEnabled(enabled)
+        if !enabled {
+            micLevels.clear()
+            sysLevels.clear()
+        }
+        onLivePreviewChanged?(enabled)
+    }
+
     func applyState(_ newState: RecordingState) {
         let previousState = state
         state = newState

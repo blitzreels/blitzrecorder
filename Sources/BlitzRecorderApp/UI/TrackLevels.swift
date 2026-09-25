@@ -19,6 +19,10 @@ final class TrackLevels {
         levels.append(level)
     }
 
+    func clear() {
+        levels = Array(repeating: 0, count: capacity)
+    }
+
     var peak: Float {
         levels.max() ?? 0
     }

@@ -24,7 +24,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Select Preferred Xcode
         run: |
@@ -88,17 +88,11 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Assert Windows tree
         shell: pwsh
         run: .\Scripts\windows\assert-studio-tree.ps1
-
-      - name: MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-        continue-on-error: true
-        with:
-          arch: amd64
 
       - name: Setup Swift
         uses: SwiftyLab/setup-swift@v1.14.0
@@ -138,14 +132,14 @@ jobs:
         run: .\Scripts\windows\assert-studio-launches.ps1 -StageDir build\windows-stage
 
       - name: Upload portable zip
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-studio-portable
           path: build/windows-stage
           if-no-files-found: error
 
       - name: Upload staged studio
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-studio-x64
           path: build/windows-stage/**
@@ -159,8 +153,12 @@ jobs:
             -OutputDir build\windows-iss-check `
             -AppVersion 0.0.0-ci
 
+      - name: Assert installed app launches
+        shell: pwsh
+        run: .\Scripts\windows\assert-installer-launches.ps1 -InstallerPath build\windows-iss-check\BlitzRecorder-Windows-ci-check.exe
+
       - name: Upload unsigned installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-studio-installer-unsigned
           path: build/windows-iss-check/BlitzRecorder-Windows-ci-check.exe
@@ -173,17 +171,11 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Assert Windows tree
         shell: pwsh
         run: .\Scripts\windows\assert-studio-tree.ps1 -NativeOnly
-
-      - name: MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-        continue-on-error: true
-        with:
-          arch: arm64
 
       - name: Assert inbox H.264
         shell: pwsh
@@ -198,7 +190,7 @@ jobs:
         run: .\Scripts\windows\export-fixture.ps1 -PackageRoot Apps\WindowsStudio
 
       - name: Upload fixture
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-h264-fixture
           path: build/windows-fixture/**

@@ -206,7 +206,8 @@ struct RecordingTranscript: Codable, Equatable, Identifiable, Sendable {
         for segment in segments {
             guard let previous = result.last,
                   previous.speakerID == segment.speakerID,
-                  segment.startTime - previous.endTime <= 1.2 else {
+                  segment.startTime - previous.endTime <= 2.5,
+                  !Self.endsSentence(previous.text) else {
                 result.append(segment)
                 continue
             }
@@ -289,16 +290,18 @@ struct RecordingTranscript: Codable, Equatable, Identifiable, Sendable {
         of segment: Segment,
         timeMap: TimelineTimeMap
     ) -> [Segment] {
-        keptOutputRanges(start: segment.startTime, end: segment.endTime, timeMap: timeMap).map { range in
-            Segment(
-                id: UUID(),
-                speakerID: segment.speakerID,
-                startTime: range.start,
-                endTime: range.end,
-                text: segment.text,
-                confidence: segment.confidence
-            )
+        let ranges = keptOutputRanges(start: segment.startTime, end: segment.endTime, timeMap: timeMap)
+        guard let range = ranges.max(by: { ($0.end - $0.start) < ($1.end - $1.start) }) else {
+            return []
         }
+        return [Segment(
+            id: segment.id,
+            speakerID: segment.speakerID,
+            startTime: range.start,
+            endTime: range.end,
+            text: segment.text,
+            confidence: segment.confidence
+        )]
     }
 
     private static func keptOutputRanges(
@@ -327,7 +330,8 @@ struct RecordingTranscript: Codable, Equatable, Identifiable, Sendable {
         for item in words.dropFirst() {
             let previousEnd = current.last?.endTime ?? item.word.startTime
             let continues = item.speakerID == speakerID
-                && item.word.startTime - previousEnd <= 1.2
+                && item.word.startTime - previousEnd <= 2.5
+                && !Self.endsSentence(current.last?.text ?? "")
             if continues {
                 current.append(item.word)
             } else {
@@ -367,6 +371,11 @@ struct RecordingTranscript: Codable, Equatable, Identifiable, Sendable {
                 result += " \(trimmed)"
             }
         }
+    }
+
+    private static func endsSentence(_ text: String) -> Bool {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .last.map { ".!?".contains($0) } ?? false
     }
 }
 
@@ -458,11 +467,20 @@ enum RecordingTranscriptAssembler {
             return left.0.startTime < right.0.startTime
         }
         let mergedIntervals = mergeAcousticDuplicates(request.diarizedIntervals)
-        let hostSpeakerID = mergedIntervals.first {
-            isMicrophoneSpeaker($0.speakerID)
-        }?.speakerID ?? microphoneSpeakerID
-        let filtered = paired.compactMap { word, source -> (TranscriptWord, WordSource)? in
-            if source == .systemAudio, isMicrophoneEcho(word: word, intervals: mergedIntervals) {
+        let microphoneWords = paired.compactMap { word, source in
+            source == .microphone ? word : nil
+        }
+        let echoingSystemWordIndices = echoingSystemWords(.init(
+            paired: paired,
+            microphoneWords: microphoneWords,
+            intervals: mergedIntervals
+        ))
+        let filtered = paired.enumerated().compactMap { index, item -> (TranscriptWord, WordSource)? in
+            let (word, source) = item
+            if source == .systemAudio,
+               (echoingSystemWordIndices.contains(index)
+                    || isMicrophoneEcho(word: word, intervals: mergedIntervals)
+                    || matchesMicrophoneWords(.init(word: word, microphoneWords: microphoneWords))) {
                 return nil
             }
             return (word, source)
@@ -473,7 +491,6 @@ enum RecordingTranscriptAssembler {
                 rawSpeakerID: speakerID(SpeakerResolutionRequest(
                     word: word,
                     source: source,
-                    hostSpeakerID: hostSpeakerID,
                     intervals: mergedIntervals
                 ))
             )
@@ -490,12 +507,13 @@ enum RecordingTranscriptAssembler {
             )
         }
         let segments = segments(from: normalizedWords)
+        let microphoneSpeakerCount = normalizedSpeakerIDs.keys.filter(isMicrophoneSpeaker).count
         let speakers = normalizedSpeakerIDs
             .sorted { speakerNumber($0.value) < speakerNumber($1.value) }
             .map { rawID, displayID in
                 RecordingTranscript.Speaker(
                     id: displayID,
-                    name: isMicrophoneSpeaker(rawID) ? "You" : "",
+                    name: microphoneSpeakerCount == 1 && isMicrophoneSpeaker(rawID) ? "You" : "",
                     context: ""
                 )
             }
@@ -539,7 +557,6 @@ enum RecordingTranscriptAssembler {
     private struct SpeakerResolutionRequest {
         let word: TranscriptWord
         let source: WordSource
-        let hostSpeakerID: String
         let intervals: [DiarizedInterval]
     }
 
@@ -551,7 +568,11 @@ enum RecordingTranscriptAssembler {
     private static func speakerID(_ request: SpeakerResolutionRequest) -> String {
         switch request.source {
         case .microphone:
-            return request.hostSpeakerID
+            let microphoneID = speakerID(
+                word: request.word,
+                intervals: request.intervals.filter { isMicrophoneSpeaker($0.speakerID) }
+            )
+            return microphoneID == "undiarized" ? microphoneSpeakerID : microphoneID
         case .systemAudio:
             return speakerID(
                 word: request.word,
@@ -566,13 +587,6 @@ enum RecordingTranscriptAssembler {
         word: TranscriptWord,
         intervals: [DiarizedInterval]
     ) -> String {
-        let midpoint = (word.startTime + word.endTime) / 2
-        if let containing = intervals.first(where: { interval in
-            midpoint >= interval.startTime && midpoint <= interval.endTime
-        }) {
-            return containing.speakerID
-        }
-
         let bestOverlap = intervals
             .map { interval in
                 (
@@ -620,6 +634,139 @@ enum RecordingTranscriptAssembler {
         }
         let microphoneIntervals = intervals.filter { isMicrophoneSpeaker($0.speakerID) }
         return speakerID(word: word, intervals: microphoneIntervals) != "undiarized"
+    }
+
+    private struct TimedToken {
+        let text: String
+        let center: TimeInterval
+    }
+
+    private struct IndexedSystemWord {
+        let index: Int
+        let word: TranscriptWord
+        let speakerID: String
+    }
+
+    private struct EchoDetectionRequest {
+        let paired: [(TranscriptWord, WordSource)]
+        let microphoneWords: [TranscriptWord]
+        let intervals: [DiarizedInterval]
+    }
+
+    private struct WordMatchRequest {
+        let word: TranscriptWord
+        let microphoneWords: [TranscriptWord]
+    }
+
+    private struct NearbyWordRequest {
+        let word: TranscriptWord
+        let microphoneWords: [TranscriptWord]
+        let tolerance: TimeInterval
+    }
+
+    private static func echoingSystemWords(
+        _ request: EchoDetectionRequest
+    ) -> Set<Int> {
+        let systemIntervals = request.intervals.filter { $0.speakerID.hasPrefix(systemSpeakerPrefix) }
+        let systemWords = request.paired.enumerated().compactMap { index, item -> IndexedSystemWord? in
+            let (word, source) = item
+            guard source == .systemAudio else { return nil }
+            return IndexedSystemWord(
+                index: index,
+                word: word,
+                speakerID: speakerID(word: word, intervals: systemIntervals)
+            )
+        }
+        let grouped = Dictionary(grouping: systemWords, by: \.speakerID)
+        var echoIndices: Set<Int> = []
+
+        for (speakerID, words) in grouped where speakerID != "undiarized" {
+            let matches = words.filter { matchesMicrophoneWords(
+                .init(word: $0.word, microphoneWords: request.microphoneWords)
+            ) }.count
+            let nearMicrophone = words.filter { hasNearbyMicrophoneWord(
+                .init(word: $0.word, microphoneWords: request.microphoneWords, tolerance: 0.5)
+            ) }.count
+            let isEchoSpeaker = words.count >= 20
+                && Double(matches) / Double(words.count) >= 0.4
+                && Double(nearMicrophone) / Double(words.count) >= 0.75
+
+            var turn: [IndexedSystemWord] = []
+            func finishTurn() {
+                guard turn.count >= 4 else { turn = []; return }
+                let matching = turn.filter { matchesMicrophoneWords(
+                    .init(word: $0.word, microphoneWords: request.microphoneWords)
+                ) }.count
+                if Double(matching) / Double(turn.count) >= 0.5 {
+                    echoIndices.formUnion(turn.map(\.index))
+                }
+                turn = []
+            }
+            for item in words {
+                if let previous = turn.last,
+                   item.word.startTime - previous.word.endTime > 2.5 {
+                    finishTurn()
+                }
+                turn.append(item)
+                if isEchoSpeaker,
+                   hasNearbyMicrophoneWord(
+                    .init(word: item.word, microphoneWords: request.microphoneWords, tolerance: 2.5)
+                   ) {
+                    echoIndices.insert(item.index)
+                }
+            }
+            finishTurn()
+        }
+        return echoIndices
+    }
+
+    private static func hasNearbyMicrophoneWord(
+        _ request: NearbyWordRequest
+    ) -> Bool {
+        request.microphoneWords.contains {
+            $0.startTime <= request.word.endTime + request.tolerance
+                && $0.endTime >= request.word.startTime - request.tolerance
+        }
+    }
+
+    private static func matchesMicrophoneWords(
+        _ request: WordMatchRequest
+    ) -> Bool {
+        let systemTokens = timedTokens(from: [request.word])
+        guard !systemTokens.isEmpty else { return false }
+        let nearbyWords = request.microphoneWords.filter {
+            $0.startTime <= request.word.endTime + 0.5
+                && $0.endTime >= request.word.startTime - 0.5
+        }
+        let microphoneTokens = timedTokens(from: nearbyWords)
+        var nextIndex = microphoneTokens.startIndex
+        for token in systemTokens {
+            guard let match = microphoneTokens.indices.dropFirst(nextIndex).first(where: { index in
+                let candidate = microphoneTokens[index]
+                return candidate.text == token.text
+                    && abs(candidate.center - token.center) <= 0.5
+            }) else {
+                return false
+            }
+            nextIndex = match + 1
+        }
+        return true
+    }
+
+    private static func timedTokens(from words: [TranscriptWord]) -> [TimedToken] {
+        words.flatMap { word in
+            let tokens = word.text.folding(
+                options: [.caseInsensitive, .diacriticInsensitive],
+                locale: Locale(identifier: "fr")
+            ).split { !$0.isLetter && !$0.isNumber }
+            return tokens.enumerated().map { index, token in
+                TimedToken(
+                    text: String(token),
+                    center: word.startTime + (word.endTime - word.startTime)
+                        * (Double(index) + 0.5) / Double(tokens.count)
+                )
+            }
+        }
     }
 
     private static func normalizedSpeakerIDs(
@@ -729,7 +876,8 @@ enum RecordingTranscriptAssembler {
         for word in words.dropFirst() {
             let previousEnd = currentWords.last?.endTime ?? word.word.startTime
             let continuesSegment = word.speakerID == currentSpeakerID
-                && word.word.startTime - previousEnd <= 1.2
+                && word.word.startTime - previousEnd <= 2.5
+                && !endsSentence(currentWords.last?.text ?? "")
             if continuesSegment {
                 currentWords.append(word.word)
             } else {
@@ -749,6 +897,11 @@ enum RecordingTranscriptAssembler {
             words: currentWords
         )))
         return result
+    }
+
+    private static func endsSentence(_ text: String) -> Bool {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .last.map { ".!?".contains($0) } ?? false
     }
 
     private static func segment(_ request: SegmentRequest) -> RecordingTranscript.Segment {

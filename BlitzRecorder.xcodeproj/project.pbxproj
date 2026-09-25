@@ -235,6 +235,7 @@
 		B36AEFBC738CB6CDBB5DD686 /* TracksSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 486E653523E3A032DE1C9668 /* TracksSidebar.swift */; };
 		B3D67D5ED261B05D4EC2A3E1 /* BlitzToggleStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A6454F140966C5FA4FCA1B /* BlitzToggleStyle.swift */; };
 		B56E6E1F18180DF46D365ECD /* EditorCameraCropViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB27F5FEEEAC98E7830F3197 /* EditorCameraCropViews.swift */; };
+		B5C32089B5816A3EEF184BB7 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = D71512A8DFCE0B37EDD595C1 /* WhisperKit */; };
 		B6B35C75FD6A4BCB98EB4F9C /* PrivacyMask.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87992EF32301ADF8E0B1A392 /* PrivacyMask.swift */; };
 		B8353CBF013999854AA0FFA1 /* PreviewStageDrag.swift in Sources */ = {isa = PBXBuildFile; fileRef = A72983219EB8E8301A4EB319 /* PreviewStageDrag.swift */; };
 		B88B5754754C927FF2D123D3 /* ExportPerformanceMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 049C58A71416545A4BBDA65E /* ExportPerformanceMonitor.swift */; };
@@ -297,6 +298,7 @@
 		E4A38DF6E992292084A3127F /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 0FAA1F1DCEAE4E457FAF9CDF /* PrivacyInfo.xcprivacy */; };
 		E548C2AE781F78FCCCA858F9 /* FinalExportPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4198A76E3E054053D90551EB /* FinalExportPlan.swift */; };
 		E558135FEF6029B2BECDDEAA /* PermissionsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7979A2FEA1E6C8D9E561590A /* PermissionsPage.swift */; };
+		E5FD6B96152E50B6ADD0CCB5 /* LivePreviewPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = DADA704FC05EA721FB9A10B9 /* LivePreviewPreference.swift */; };
 		E65E82BE9720F3DA200656DE /* AppContentZoomer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFFD1221E724A03CA626F40E /* AppContentZoomer.swift */; };
 		E6DDFC8B4062A95A62976FFF /* BlitzTimecode.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEBDC1A0F85B0D478DCBD307 /* BlitzTimecode.swift */; };
 		E6EA780C3C5D5D0F38ECBFEC /* EditorPlacedItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB9FC1DF304E8257E79432B3 /* EditorPlacedItem.swift */; };
@@ -636,6 +638,7 @@
 		D7AB489BBB4D11543F4D84BE /* LocalTranscriptionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalTranscriptionController.swift; sourceTree = "<group>"; };
 		D8589D7796506F6209CB51BB /* RemoteCameraTransferManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCameraTransferManager.swift; sourceTree = "<group>"; };
 		D9DBC88798E5446C497CE07A /* BottomDock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomDock.swift; sourceTree = "<group>"; };
+		DADA704FC05EA721FB9A10B9 /* LivePreviewPreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LivePreviewPreference.swift; sourceTree = "<group>"; };
 		DADB9DB7A81D6B17ED10A18C /* EditorPrivacyInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorPrivacyInspector.swift; sourceTree = "<group>"; };
 		DB3BEFF2347C8E64642C4CAA /* MusicDucking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicDucking.swift; sourceTree = "<group>"; };
 		DBC017517A686039F530C5A3 /* SceneSplitPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneSplitPolicy.swift; sourceTree = "<group>"; };
@@ -705,6 +708,7 @@
 				59A59C244013CBDA61D2C120 /* NIOHTTP1 in Frameworks */,
 				48E2DCD4E6F17DA6DAE264B2 /* NIOPosix in Frameworks */,
 				E85087FFA58F9F28695E2FF9 /* FluidAudio in Frameworks */,
+				B5C32089B5816A3EEF184BB7 /* WhisperKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -802,6 +806,7 @@
 				82CAECCAE979855628BA24BB /* IdlePreviewRestartPolicy.swift */,
 				8DD2D53F68151268BBF78971 /* LiveCompositedRecorder.swift */,
 				D3F24D5A550C4BC2C7D5EB31 /* LiveCompositorRenderer.swift */,
+				DADA704FC05EA721FB9A10B9 /* LivePreviewPreference.swift */,
 				5D53B604ABDB18FF3B390207 /* LocalCameraSessionConfiguration.swift */,
 				E8668DEB813B9F10CB7D283D /* LocalCameraUsage.swift */,
 				1E686A4654F35F26EBDC5C73 /* LocalDevelopmentRuntime.swift */,
@@ -1151,6 +1156,7 @@
 				BDEEA898AE8DE9E9EC30C6CD /* NIOHTTP1 */,
 				5971C1D2C7CFE7222EF05562 /* NIOPosix */,
 				05DC77C9DDF169F9758FAB59 /* FluidAudio */,
+				D71512A8DFCE0B37EDD595C1 /* WhisperKit */,
 			);
 			productName = BlitzRecorder;
 			productReference = D64AD47EDABBF7FDA751BE48 /* BlitzRecorder.app */;
@@ -1209,6 +1215,7 @@
 				6F2E1AAE93041478E913C361 /* XCRemoteSwiftPackageReference "FluidAudio" */,
 				D82B368C6FF9D9BDFC1BE2A4 /* XCRemoteSwiftPackageReference "swift-sdk" */,
 				20F4A409FBC047782763C6C2 /* XCRemoteSwiftPackageReference "swift-nio" */,
+				101303A1CD7BCB50C2C00B26 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */,
 				6F5DFCF21752E742E8BE95C9 /* XCLocalSwiftPackageReference "Packages/BlitzRecorderCore" */,
 				682A6AC3545E309E99897761 /* XCLocalSwiftPackageReference "Packages/BlitzRecorderDomain" */,
 				FB59833A2D61C6723DDC8D2C /* XCLocalSwiftPackageReference "Packages/BlitzRecorderTransport" */,
@@ -1400,6 +1407,7 @@
 				FD851AA0F1DB9BA8B152C911 /* InteractionStyle.swift in Sources */,
 				F1396837DB126EA037D4C5A6 /* LiveCompositedRecorder.swift in Sources */,
 				517DA6E042A15AAF5A8D5FB4 /* LiveCompositorRenderer.swift in Sources */,
+				E5FD6B96152E50B6ADD0CCB5 /* LivePreviewPreference.swift in Sources */,
 				EDE47AD433AFC23889009464 /* LocalCameraSessionConfiguration.swift in Sources */,
 				DE6DB66F3510E284CBB2DAF4 /* LocalCameraUsage.swift in Sources */,
 				B17E5F01BE8D2275BBA23CA6 /* LocalDevelopmentRuntime.swift in Sources */,
@@ -1595,11 +1603,11 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = "";
 				CODE_SIGN_ENTITLEMENTS = BlitzRecorder.local.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 33;
 				INFOPLIST_FILE = Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.21.0;
+				MARKETING_VERSION = 0.21.1;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.blitzreels.blitzrecorder.debug;
 				PRODUCT_NAME = "BlitzRecorder Dev";
 				SDKROOT = macosx;
@@ -1613,14 +1621,14 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
 				CODE_SIGN_ENTITLEMENTS = Apps/iOSCamera/BlitzRecorderCamera.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 33;
 				INFOPLIST_FILE = Apps/iOSCamera/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.21.0;
+				MARKETING_VERSION = 0.21.1;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.blitzreels.blitzrecorder.camera;
 				PRODUCT_NAME = BlitzRecorderCamera;
 				SDKROOT = iphoneos;
@@ -1636,12 +1644,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = "";
 				CODE_SIGN_ENTITLEMENTS = BlitzRecorder.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 33;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.21.0;
+				MARKETING_VERSION = 0.21.1;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D RELEASE_APP_INTEGRITY_CHECKS";
 				PRODUCT_BUNDLE_IDENTIFIER = dev.blitzreels.blitzrecorder;
 				PRODUCT_NAME = BlitzRecorder;
@@ -1781,14 +1789,14 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
 				CODE_SIGN_ENTITLEMENTS = Apps/iOSCamera/BlitzRecorderCamera.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 33;
 				INFOPLIST_FILE = Apps/iOSCamera/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.21.0;
+				MARKETING_VERSION = 0.21.1;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.blitzreels.blitzrecorder.camera;
 				PRODUCT_NAME = BlitzRecorderCamera;
 				SDKROOT = iphoneos;
@@ -1844,6 +1852,14 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		101303A1CD7BCB50C2C00B26 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/argmaxinc/argmax-oss-swift.git";
+			requirement = {
+				kind = exactVersion;
+				version = 1.0.0;
+			};
+		};
 		20F4A409FBC047782763C6C2 /* XCRemoteSwiftPackageReference "swift-nio" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/apple/swift-nio.git";
@@ -1901,6 +1917,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 20F4A409FBC047782763C6C2 /* XCRemoteSwiftPackageReference "swift-nio" */;
 			productName = NIOHTTP1;
+		};
+		D71512A8DFCE0B37EDD595C1 /* WhisperKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 101303A1CD7BCB50C2C00B26 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */;
+			productName = WhisperKit;
 		};
 		E0B3C6448C1F5B591EB2C959 /* BlitzRecorderCore */ = {
 			isa = XCSwiftPackageProductDependency;

@@ -29,7 +29,7 @@ final class RecorderCaptureRuntime {
     let captureDeviceMonitor = CaptureDeviceMonitor()
     let screenReconfiguration = ActiveScreenCaptureReconfiguration()
     let recordingSession = RecordingSession()
-    var idleCaptureResourcesEnabled = true
+    var idleCaptureResourcesEnabled = LivePreviewPreference().isEnabled
     lazy var takeFinalizer: TakeFinalizer = {
         let finalizer = TakeFinalizer()
         finalizer.onMessage = { [weak self] message in

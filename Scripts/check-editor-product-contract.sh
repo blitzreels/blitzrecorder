@@ -7,7 +7,7 @@ cd "$repo_root"
 failures=0
 
 if ! rg -F 'ScenePreset.allCases.filter { $0.supports(captureLayout ?? .horizontal) }' \
-    Sources/BlitzRecorderApp/UI/EditorView.swift >/dev/null; then
+    Sources/BlitzRecorderApp/UI/EditorLayoutInspector.swift >/dev/null; then
     echo "Editor scene presets must use the shared layout compatibility rule."
     failures=$((failures + 1))
 fi

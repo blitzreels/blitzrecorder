@@ -6,6 +6,14 @@ This project uses GitHub Releases for downloadable macOS builds. Release tags us
 
 ## Unreleased
 
+## 0.21.1 - 2026-09-25
+
+- Retranscribe existing recordings from the project library and retry failed transcriptions.
+- Keep transcript turns as complete phrases and remove duplicated microphone and system-audio speech.
+- Add an optional local Whisper Medium transcription model.
+- Let users pause live capture previews until recording begins.
+- Improve capture permission handling and remote camera transfer reliability.
+
 ## 0.21.0 - 2026-09-23
 
 - Export videos faster, from 1.0× to 2.0× in 0.1 steps. The export size estimate follows the chosen speed.

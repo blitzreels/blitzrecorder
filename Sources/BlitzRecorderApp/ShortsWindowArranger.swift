@@ -674,14 +674,24 @@ enum ShortsWindowArranger {
 
     private static func frame(of window: AXUIElement) -> CGRect? {
         guard let positionValue = copyAttribute(kAXPositionAttribute, from: window),
-              let sizeValue = copyAttribute(kAXSizeAttribute, from: window) else {
+              let sizeValue = copyAttribute(kAXSizeAttribute, from: window),
+              CFGetTypeID(positionValue) == AXValueGetTypeID(),
+              CFGetTypeID(sizeValue) == AXValueGetTypeID() else {
+            return nil
+        }
+        let positionAXValue = positionValue as! AXValue
+        let sizeAXValue = sizeValue as! AXValue
+        guard AXValueGetType(positionAXValue) == .cgPoint,
+              AXValueGetType(sizeAXValue) == .cgSize else {
             return nil
         }
 
         var position = CGPoint.zero
         var size = CGSize.zero
-        AXValueGetValue(positionValue as! AXValue, .cgPoint, &position)
-        AXValueGetValue(sizeValue as! AXValue, .cgSize, &size)
+        guard AXValueGetValue(positionAXValue, .cgPoint, &position),
+              AXValueGetValue(sizeAXValue, .cgSize, &size) else {
+            return nil
+        }
         return CGRect(origin: position, size: size)
     }
 

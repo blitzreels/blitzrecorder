@@ -90,6 +90,63 @@ final class RemoteCameraTransferManagerTests: XCTestCase {
         XCTAssertTrue(RemoteCameraPendingImportStore().all(settings: settings).isEmpty)
     }
 
+    func testCompletedImportPreservesUnexpectedDestinationDirectory() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        let takeID = UUID()
+        let take = makeTake(in: settings.outputDirectory)
+        try FileManager.default.createDirectory(at: take.cameraURL, withIntermediateDirectories: true)
+        let existingURL = take.cameraURL.appendingPathComponent("existing.txt")
+        try Data("keep".utf8).write(to: existingURL)
+        var messages: [String] = []
+        let manager = RemoteCameraTransferManager(
+            sendCommand: { _ in },
+            onMessage: { messages.append($0) },
+            onTransferFinished: { _ in },
+            validateImportedMedia: { _, _ in [] }
+        )
+
+        XCTAssertEqual(manager.beginTransfer(
+            takeID: takeID,
+            destinationURL: take.cameraURL,
+            expectedByteCount: 5,
+            settings: settings
+        ), 0)
+        manager.writeChunk(takeID: takeID, offset: 0, data: Data("video".utf8), isFinal: true)
+        await manager.completeTransfer(takeID: takeID, byteCount: 5, sha256: nil, settings: settings)
+
+        XCTAssertEqual(try Data(contentsOf: existingURL), Data("keep".utf8))
+        XCTAssertEqual(try Data(contentsOf: take.cameraURL.appendingPathExtension("partial")), Data("video".utf8))
+        XCTAssertTrue(messages.contains { $0.contains("iPhone import failed") })
+    }
+
+    func testCompletedImportReplacesExistingCameraFile() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        let takeID = UUID()
+        let take = makeTake(in: settings.outputDirectory)
+        try FileManager.default.createDirectory(at: take.scratchDirectory, withIntermediateDirectories: true)
+        try Data("old".utf8).write(to: take.cameraURL)
+        let manager = RemoteCameraTransferManager(
+            sendCommand: { _ in },
+            onMessage: { _ in },
+            onTransferFinished: { _ in },
+            validateImportedMedia: { _, _ in [] }
+        )
+
+        XCTAssertEqual(manager.beginTransfer(
+            takeID: takeID,
+            destinationURL: take.cameraURL,
+            expectedByteCount: 5,
+            settings: settings
+        ), 0)
+        manager.writeChunk(takeID: takeID, offset: 0, data: Data("video".utf8), isFinal: true)
+        await manager.completeTransfer(takeID: takeID, byteCount: 5, sha256: nil, settings: settings)
+
+        XCTAssertEqual(try Data(contentsOf: take.cameraURL), Data("video".utf8))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: take.cameraURL.appendingPathExtension("partial").path))
+    }
+
     func testPendingImportDecodesLegacyImportAsWaitingForStop() throws {
         let takeID = UUID()
         let directory = temporaryDirectory()
