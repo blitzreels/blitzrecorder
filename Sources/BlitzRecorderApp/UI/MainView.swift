@@ -9,8 +9,8 @@ struct MainView: View {
     }
 
     @Bindable var vm: RecorderViewModel
-    @EnvironmentObject private var updates: AppUpdateController
     private let mcpServer: BlitzRecorderMCPServer
+    @State private var retainsEditor = false
 
     init(configuration: Configuration) {
         vm = configuration.viewModel
@@ -18,30 +18,38 @@ struct MainView: View {
     }
 
     var body: some View {
-        let screenshotVariant = ScreenshotVariant.current
+        HStack(spacing: 0) {
+            AppNavigationSidebar(vm: vm)
+            Rectangle().fill(BlitzUI.separator).frame(width: 1)
+                .padding(.top, MainWindowChrome.toolbarHeight)
+            ZStack {
+                backgroundLayer
+                recorderContent()
+                    .opacity(vm.studioMode == .record && !vm.isShowingSettings ? 1 : 0)
+                    .disabled(vm.studioMode != .record || vm.isShowingSettings)
+                    .allowsHitTesting(vm.studioMode == .record && !vm.isShowingSettings)
+                    .accessibilityHidden(vm.studioMode != .record || vm.isShowingSettings)
 
-        ZStack {
-            backgroundLayer
-
-            recorderContent(screenshotVariant: screenshotVariant)
-                .opacity(vm.isShowingSettings ? 0 : 1)
-                .disabled(vm.isShowingSettings)
-                .allowsHitTesting(!vm.isShowingSettings)
-                .accessibilityHidden(vm.isShowingSettings)
-
-            if vm.isShowingSettings {
-                SettingsView(configuration: .init(viewModel: vm, mcpServer: mcpServer))
+                if (retainsEditor || vm.studioMode == .edit) && vm.canOpenEditor {
+                    EditorView(vm: vm)
+                        .id(vm.lastExportedProject?.id)
+                        .opacity(vm.isEditorVisible ? 1 : 0)
+                        .disabled(!vm.isEditorVisible)
+                        .allowsHitTesting(vm.isEditorVisible)
+                        .accessibilityHidden(!vm.isEditorVisible)
+                }
+                if vm.studioMode == .projects && !vm.isShowingSettings {
+                    ProjectLibraryView(vm: vm)
+                }
+                if vm.isShowingSettings {
+                    SettingsView(configuration: .init(viewModel: vm, mcpServer: mcpServer))
+                }
             }
         }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if updates.updateVersion != nil && (vm.studioMode != .projects || vm.isShowingSettings) {
-                AppUpdateBanner()
-            }
-        }
-        .overlay(alignment: .topTrailing) {
-            screenshotOverlay
-                .padding(.top, 58)
-                .padding(.trailing, 22)
+        .background(BlitzUI.panelBackground)
+        .ignoresSafeArea(.container, edges: .top)
+        .onChange(of: vm.studioMode, initial: true) { _, mode in
+            if mode == .edit { retainsEditor = true }
         }
         .overlay {
             if vm.showsFirstRunOnboarding && !vm.isShowingSettings {
@@ -59,45 +67,39 @@ struct MainView: View {
         }
     }
 
-    private func recorderContent(screenshotVariant: ScreenshotVariant) -> some View {
+    private func recorderContent() -> some View {
         VStack(spacing: 0) {
-            switch vm.studioMode {
-            case .edit:
-                EditorView(vm: vm)
-            case .projects:
-                ProjectLibraryView(vm: vm)
-            case .record:
-                CaptureCommandBar(vm: vm)
-                    .blitzWorkspaceToolbar()
-
-                recordContent(screenshotVariant: screenshotVariant)
-            }
+            CaptureCommandBar(vm: vm)
+                .blitzWindowToolbar(showsUpdate: true)
+            recordContent()
         }
     }
 
-    private func recordContent(screenshotVariant: ScreenshotVariant) -> some View {
+    private func recordContent() -> some View {
         HStack(alignment: .top, spacing: 0) {
-            SourcesSidebar(vm: vm)
-
-            Rectangle()
-                .fill(BlitzUI.separator)
-                .frame(width: 1)
+            if vm.showsRecorderSources {
+                SourcesSidebar(vm: vm)
+                Rectangle().fill(BlitzUI.separator).frame(width: 1)
+            }
 
             VStack(spacing: 8) {
                 HStack(spacing: 10) {
                     RecordingOutputPicker(vm: vm)
                     Spacer(minLength: 0)
                     if vm.state == .idle {
-                        Toggle(
-                            isOn: Binding(
+                        HStack(spacing: 8) {
+                            Text("Live preview")
+                                .font(.system(size: 11))
+                                .foregroundStyle(BlitzUI.secondaryText)
+                            Toggle("Live preview", isOn: Binding(
                                 get: { vm.isLivePreviewEnabled },
                                 set: { vm.setLivePreviewEnabled($0) }
-                            )
-                        ) {
-                            Text("Live preview")
+                            ))
+                            .toggleStyle(.blitzSwitchOnly)
+                            .controlSize(.small)
+                            .help("Turn the live preview on or off")
                         }
-                        .toggleStyle(.blitzSwitch)
-                        .help("Pause Mac camera, microphone, screen, and audio previews until recording starts")
+                        .fixedSize()
                     }
                     Button { vm.selectBackgroundLayer() } label: {
                         Label("Canvas", systemImage: "square.on.circle")
@@ -109,10 +111,6 @@ struct MainView: View {
 
                 ZStack(alignment: .top) {
                     PreviewStageRepresentable(view: vm.previewStage)
-
-                    if ScreenshotVariant.isScreenshotModeEnabled {
-                        ScreenshotPreviewCanvas(variant: screenshotVariant)
-                    }
 
                     if vm.screenNeedsPicking {
                         ScreenPickPromptOverlay(vm: vm)
@@ -607,17 +605,15 @@ private struct CaptureCommandBar: View {
     var body: some View {
         HStack(spacing: 16) {
             BlitzToolbarButton(configuration: .init(
-                title: "Projects",
-                symbolName: "chevron.left",
-                showsTitle: true,
-                action: vm.showProjects
+                title: vm.showsRecorderSources ? "Hide sources and scenes" : "Show sources and scenes",
+                symbolName: "sidebar.left",
+                showsTitle: false,
+                action: { vm.showsRecorderSources.toggle() }
             ))
-            .disabled(!vm.canShowProjects)
-            .help("Open projects")
-
-            Rectangle()
-                .fill(BlitzUI.separator)
-                .frame(width: 1, height: 16)
+            .accessibilityValue(vm.showsRecorderSources ? "Visible" : "Hidden")
+            Text("Recorder")
+                .font(.system(size: 15, weight: .semibold))
+            Rectangle().fill(BlitzUI.separator).frame(width: 1, height: 16)
 
             statusRow
 
@@ -625,13 +621,6 @@ private struct CaptureCommandBar: View {
 
             RecordingQualityShortcut(vm: vm)
 
-            BlitzToolbarButton(configuration: .init(
-                title: "Settings",
-                symbolName: "gearshape",
-                showsTitle: false,
-                action: { vm.onPresentSettings?(nil) }
-            ))
-            .help("Open Settings (Cmd+,)")
         }
     }
 
@@ -688,7 +677,7 @@ private struct CaptureCommandBar: View {
         case .recording: return "Recording  \(vm.formattedElapsed)"
         case .paused: return "Paused  \(vm.formattedElapsed)"
         case .starting: return "Starting…"
-        case .finishing: return "Finishing…"
+        case .finishing: return vm.sessionProgressTitle
         case .idle:
             let readiness = vm.recordingReadiness
             return readiness.isReady ? "Ready to record" : readiness.blockers.shortSummary
@@ -705,7 +694,8 @@ struct CaptureScenePicker: View {
                 Text("Scenes")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(BlitzUI.primaryText)
-                Text("Switch scenes while recording")
+                Text(vm.state == .recording || vm.state == .paused
+                     ? "Select a scene to go live" : "Select a scene to edit its layout")
                     .font(.system(size: 10, weight: .regular))
                     .foregroundStyle(BlitzUI.secondaryText)
             }
@@ -755,7 +745,8 @@ struct CaptureScenePicker: View {
         .disabled(!vm.canSwitchScene)
         .opacity(vm.canSwitchScene || isSelected ? 1 : 0.5)
         .pointingHandCursor()
-        .help("Switch to \(scene.name)")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .help(vm.state == .idle ? "Edit \(scene.name)" : "Switch to \(scene.name)")
         .contextMenu {
             Button("Duplicate Scene") {
                 vm.selectScene(scene.id)
@@ -776,14 +767,14 @@ struct CaptureScenePicker: View {
         Button {
             vm.createScene()
         } label: {
-            Label("New scene", systemImage: "plus")
+            Label("Add scene", systemImage: "plus")
                 .frame(maxWidth: .infinity, minHeight: 24)
         }
         .blitzButton(.secondary)
         .controlSize(.small)
         .disabled(!vm.canEditScene)
         .pointingHandCursor()
-        .help("Create a new scene")
+        .help("Create a scene from this layout, then customize it in the preview")
     }
 }
 
@@ -823,8 +814,28 @@ private struct SceneEditorHeader: View {
                 } else {
                     nameLabel
                     Spacer(minLength: 0)
-                    sceneActions
+                    Button("Rename", action: beginEditing)
+                        .blitzButton(.quiet)
+                        .controlSize(.mini)
+                        .disabled(!vm.canEditScene)
+                        .accessibilityLabel("Rename scene")
+                        .help("Rename this scene")
                 }
+            }
+            Text(vm.state == .recording || vm.state == .paused
+                 ? "Live scene · Changes apply now" : "Editing scene · Saved automatically")
+                .font(.system(size: 10))
+                .foregroundStyle(BlitzUI.secondaryText)
+            HStack(spacing: 8) {
+                Button { vm.duplicateSelectedScene() } label: {
+                    Label("Duplicate", systemImage: "plus.square.on.square")
+                }
+                .blitzButton(.quiet)
+                .controlSize(.mini)
+                .disabled(!vm.canEditScene)
+                .help("Make a copy of this scene to customize")
+                Spacer(minLength: 0)
+                if canMoveEarlier || canMoveLater || canDelete { sceneActions }
             }
         }
         .padding(.bottom, 2)
@@ -921,27 +932,23 @@ private struct SceneEditorHeader: View {
 
     private var sceneActions: some View {
         BlitzGlassMenu(entries: sceneActionEntries, menuWidth: 210) {
-            BlitzSymbol(configuration: .init(name: "ellipsis", size: 18))
-                .foregroundStyle(BlitzUI.secondaryText)
-                .frame(width: 32, height: 32)
+            HStack(spacing: 6) {
+                Text("Organize")
+                BlitzMenuChevron()
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(BlitzUI.secondaryText)
+            .padding(.horizontal, 8)
+            .frame(height: BlitzControlMetrics.height(.mini))
         }
         .disabled(!vm.canEditScene)
-        .accessibilityLabel("Scene actions")
+        .accessibilityLabel("Organize scene")
         .pointingHandCursor()
-        .help("Rename, reset, duplicate, or organise this scene")
+        .help("Move or delete this scene")
     }
 
     private var sceneActionEntries: [BlitzMenuEntry] {
-        var entries: [BlitzMenuEntry] = [
-            .item(BlitzMenuItem(title: "Rename scene…", systemImage: "pencil", action: beginEditing)),
-            .item(BlitzMenuItem(title: "Reset layout", systemImage: "arrow.counterclockwise") {
-                vm.resetSceneLayout()
-            }),
-            .divider,
-            .item(BlitzMenuItem(title: "Duplicate scene", systemImage: "plus.square.on.square") {
-                vm.duplicateSelectedScene()
-            })
-        ]
+        var entries: [BlitzMenuEntry] = []
         if canMoveEarlier {
             entries.append(.item(BlitzMenuItem(title: "Move earlier", systemImage: "arrow.left") {
                 guard let id = vm.selectedSceneID else { return }
@@ -989,36 +996,26 @@ private struct SceneWorkspaceInspector: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 14) {
-                SceneEditorHeader(vm: vm)
-                layoutPicker
-                if vm.showsScreenSplitControl {
-                    splitHeightControl
-                }
-            }
-            .padding(14)
-
-            Rectangle()
-                .fill(BlitzUI.separator)
-                .frame(height: 1)
-
+            SceneEditorHeader(vm: vm)
+                .padding(14)
+            Rectangle().fill(BlitzUI.separator).frame(height: 1)
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 16) {
+                    layoutPicker
+                    if vm.showsScreenSplitControl { splitHeightControl }
+                    Rectangle().fill(BlitzUI.separator).frame(height: 1)
                     contextHeader
                     if vm.isBackgroundLayerSelected {
                         backgroundControls
                     } else {
                         SelectedSourceInspector(vm: vm)
-                        if vm.selectedSource?.source == .camera {
-                            CameraCropControls(vm: vm)
-                        }
+                        if vm.selectedSource?.source == .camera { CameraCropControls(vm: vm) }
                     }
                 }
                 .padding(14)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollIndicators(.automatic)
-            .id(vm.inspectorSelection)
         }
         .frame(minWidth: 264, idealWidth: 280, maxWidth: 280)
         .frame(maxHeight: .infinity, alignment: .top)
@@ -1026,39 +1023,41 @@ private struct SceneWorkspaceInspector: View {
     }
 
     private var layoutPicker: some View {
-        BlitzGlassMenu(entries: layoutEntries, menuWidth: 246) {
-            HStack(spacing: 8) {
-                BlitzSymbol(configuration: .init(
-                    name: vm.activeScenePreset?.symbolName ?? BlitzSymbols.layout,
-                    size: 18
-                ))
-                .foregroundStyle(BlitzUI.secondaryText)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
                 Text("Layout")
-                    .foregroundStyle(BlitzUI.secondaryText)
-                Spacer(minLength: 4)
-                Text(vm.activeScenePreset?.compactTitle ?? "Custom")
-                    .foregroundStyle(BlitzUI.primaryText)
-                    .lineLimit(1)
-                BlitzMenuChevron()
+                    .font(.system(size: 12, weight: .semibold))
+                Spacer(minLength: 0)
+                Button("Reset", action: vm.resetSceneLayout)
+                    .blitzButton(.quiet)
+                    .controlSize(.mini)
+                    .disabled(!vm.canEditScene)
+                    .accessibilityLabel("Reset scene layout")
+                    .help("Reset the layout of this scene")
+                if vm.activeScenePreset == nil {
+                    Text("Custom")
+                        .font(.system(size: 10))
+                        .foregroundStyle(BlitzUI.secondaryText)
+                }
             }
-            .font(.system(size: 12, weight: .medium))
-            .padding(.horizontal, 10)
-            .frame(height: BlitzControlMetrics.height(.regular))
-        }
-        .disabled(!vm.canEditScene)
-        .accessibilityLabel("Layout, \(vm.activeScenePreset?.compactTitle ?? "Custom")")
-        .help("Change the layout of this scene")
-        .pointingHandCursor()
-    }
-
-    private var layoutEntries: [BlitzMenuEntry] {
-        ScenePreset.allCases.filter { $0.supports(vm.settings.layout) }.map { preset in
-            .item(BlitzMenuItem(
-                title: preset.compactTitle,
-                systemImage: preset.symbolName,
-                isSelected: vm.isScenePresetActive(preset),
-                action: { vm.setScenePreset(preset) }
-            ))
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+                ForEach(ScenePreset.allCases.filter { $0.supports(vm.settings.layout) }, id: \.self) { preset in
+                    BlitzScenePresetCard(
+                        preset: preset,
+                        layout: vm.settings.layout,
+                        isSelected: vm.isScenePresetActive(preset),
+                        isEnabled: vm.canEditScene,
+                        availableSources: [.screen, .camera]
+                    ) {
+                        vm.setScenePreset(preset)
+                    }
+                    .help("Apply \(preset.compactTitle) to this scene")
+                }
+            }
+            Text("Drag the sources in the preview to customize.")
+                .font(.system(size: 10))
+                .foregroundStyle(BlitzUI.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -1085,20 +1084,12 @@ private struct SceneWorkspaceInspector: View {
                 .help("Show or hide this layer in the scene. Its source keeps recording.")
                 .pointingHandCursor()
 
-                BlitzGlassMenu(entries: [
-                    .item(BlitzMenuItem(
-                        title: "Fit \(contextTitle.lowercased()) layer",
-                        systemImage: "arrow.up.left.and.arrow.down.right",
-                        action: { vm.fitSelectedLayer() }
-                    ))
-                ], menuWidth: 210) {
-                    BlitzSymbol(configuration: .init(name: "ellipsis", size: 18))
-                        .foregroundStyle(BlitzUI.secondaryText)
-                        .frame(width: 32, height: 32)
-                }
-                .disabled(!vm.canEditScene)
-                .accessibilityLabel("\(contextTitle) layer actions")
-                .help("Adjust this layer in the scene")
+                Button("Fit", action: vm.fitSelectedLayer)
+                    .blitzButton(.quiet)
+                    .controlSize(.mini)
+                    .disabled(!vm.canEditScene)
+                    .accessibilityLabel("Fit \(contextTitle.lowercased()) layer")
+                    .help("Fit this layer to its space in the scene")
             }
         }
     }
@@ -1300,413 +1291,5 @@ private extension MainView {
     var backgroundLayer: some View {
         BlitzUI.canvasBackground
             .ignoresSafeArea()
-    }
-
-    @ViewBuilder
-    private var screenshotOverlay: some View {
-        switch ScreenshotVariant.current {
-        case .plan:
-            ScreenshotCard(width: 320) {
-                VStack(alignment: .leading, spacing: 12) {
-                    screenshotEyebrow("ACCESS")
-                    Text("Free. All features included.")
-                        .font(.system(size: 16, weight: .bold))
-                    Text("No account, card, watermark, or subscription.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.62))
-                    Text("iPhone camera, 4K, and 60 fps included. No license key.")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.white.opacity(0.54))
-
-                    Label("AGPL source code", systemImage: "chevron.left.forwardslash.chevron.right")
-                        .font(.system(size: 12, weight: .bold))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.16), in: .rect(cornerRadius: 8))
-
-                    HStack(spacing: 8) {
-                        screenshotSmallButton("Privacy", icon: "hand.raised")
-                        screenshotSmallButton("Support", icon: "questionmark.circle")
-                    }
-
-                    Divider().background(.white.opacity(0.12))
-
-                    HStack(spacing: 12) {
-                        Text("Terms")
-                        Text("Privacy")
-                        Text("Support")
-                    }
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.66))
-                }
-            }
-        case .iphoneControls:
-            ScreenshotCard(width: 330) {
-                VStack(alignment: .leading, spacing: 12) {
-                    screenshotEyebrow("IPHONE CAMERA")
-                    HStack(spacing: 9) {
-                        Image(systemName: "iphone.gen3")
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Connected to iPhone")
-                                .font(.system(size: 15, weight: .bold))
-                            Text("Monitor preview, local recording, transfer back to Mac")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.white.opacity(0.56))
-                        }
-                    }
-
-                    HStack(spacing: 7) {
-                        screenshotPill("Wide")
-                        screenshotPill("1.4x")
-                        screenshotPill("4K")
-                        screenshotPill("30 fps")
-                    }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        screenshotControlRow("Lens", value: "Wide", icon: "camera.aperture")
-                        screenshotControlRow("Focus", value: "Continuous", icon: "scope")
-                        screenshotControlRow("Exposure", value: "Auto", icon: "sun.max")
-                        screenshotControlRow("Transfer", value: "Ready", icon: "arrow.up.doc")
-                    }
-                }
-            }
-        case .none:
-            EmptyView()
-        }
-    }
-
-    private func screenshotEyebrow(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(.white.opacity(0.55))
-    }
-
-    private func screenshotSmallButton(_ title: String, icon: String) -> some View {
-        Label(title, systemImage: icon)
-            .font(.system(size: 10, weight: .semibold))
-            .lineLimit(1)
-            .minimumScaleFactor(0.75)
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 7)
-            .background(Color.white.opacity(0.10), in: .rect(cornerRadius: 8))
-    }
-
-    private func screenshotPill(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 10, weight: .bold))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(Color.white.opacity(0.10), in: .capsule)
-    }
-
-    private func screenshotControlRow(_ title: String, value: String, icon: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .foregroundStyle(.white.opacity(0.72))
-                .frame(width: 16)
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-            Spacer()
-            Text(value)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.white.opacity(0.62))
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Color.white.opacity(0.08), in: .rect(cornerRadius: 8))
-    }
-}
-
-private enum ScreenshotVariant: Equatable {
-    case none
-    case plan
-    case iphoneControls
-
-    static var current: ScreenshotVariant {
-        let environment = ProcessInfo.processInfo.environment
-        guard isScreenshotModeEnabled else {
-            return .none
-        }
-
-        switch environment["BLITZRECORDER_SCREENSHOT_VARIANT"] {
-        case "plan": return .plan
-        case "iphone-controls": return .iphoneControls
-        default: return .none
-        }
-    }
-
-    static var isScreenshotModeEnabled: Bool {
-        ProcessInfo.processInfo.environment["BLITZRECORDER_SCREENSHOT_MODE"] == "1"
-    }
-}
-
-private struct ScreenshotPreviewCanvas: View {
-    let variant: ScreenshotVariant
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack {
-                Color(red: 0.03, green: 0.04, blue: 0.05)
-
-                screenshotWorkspace(width: proxy.size.width, height: proxy.size.height)
-            }
-            .clipShape(.rect(cornerRadius: 24))
-            .overlay(
-                RoundedRectangle(cornerRadius: 24)
-                    .strokeBorder(.white.opacity(0.08), lineWidth: 1)
-            )
-        }
-        .padding(.horizontal, 4)
-    }
-
-    private func screenshotWorkspace(width: CGFloat, height: CGFloat) -> some View {
-        let stageHeight = min(height * 0.78, 560)
-        let stageWidth = min(stageHeight * 9 / 16, width * 0.34)
-
-        return HStack(alignment: .center, spacing: 28) {
-            VStack(alignment: .leading, spacing: 14) {
-                screenshotTimeline
-                screenshotAudioMeters
-            }
-            .frame(width: min(width * 0.28, 260), alignment: .leading)
-
-            screenshotShortsFrame
-                .frame(width: stageWidth, height: stageHeight)
-
-            VStack(alignment: .leading, spacing: 14) {
-                screenshotStatusCard
-                screenshotRenderCard
-            }
-            .frame(width: min(width * 0.24, 230), alignment: .leading)
-        }
-        .padding(.horizontal, 28)
-    }
-
-    private var screenshotShortsFrame: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 26)
-                .fill(Color(red: 0.065, green: 0.075, blue: 0.09))
-
-            VStack(spacing: 0) {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(red: 0.12, green: 0.16, blue: 0.18))
-                    .overlay(alignment: .topLeading) {
-                        HStack(spacing: 6) {
-                            Circle().fill(Color(red: 1.0, green: 0.36, blue: 0.34))
-                            Circle().fill(Color(red: 1.0, green: 0.77, blue: 0.28))
-                            Circle().fill(Color(red: 0.25, green: 0.86, blue: 0.48))
-                        }
-                        .frame(width: 54, height: 8)
-                        .padding(12)
-                    }
-                    .overlay {
-                        VStack(alignment: .leading, spacing: 10) {
-                            RoundedRectangle(cornerRadius: 5)
-                                .fill(Color.white.opacity(0.72))
-                                .frame(width: 112, height: 12)
-                            RoundedRectangle(cornerRadius: 5)
-                                .fill(Color(red: 0.14, green: 0.88, blue: 0.68).opacity(0.72))
-                                .frame(width: 154, height: 12)
-                            RoundedRectangle(cornerRadius: 5)
-                                .fill(Color.white.opacity(0.24))
-                                .frame(width: 132, height: 12)
-                        }
-                    }
-                    .padding(18)
-
-                ZStack(alignment: .bottomTrailing) {
-                    Color(red: 0.075, green: 0.085, blue: 0.105)
-                    .clipShape(.rect(cornerRadius: 16))
-
-                    ScreenshotRuleOfThirdsShape()
-                        .stroke(.white.opacity(0.14), lineWidth: 1)
-
-                    RoundedRectangle(cornerRadius: 18)
-                        .fill(Color(red: 0.08, green: 0.09, blue: 0.12))
-                        .frame(width: 96, height: 132)
-                        .overlay {
-                            VStack(spacing: 8) {
-                                Circle()
-                                    .fill(Color(red: 0.18, green: 0.9, blue: 0.76).opacity(0.72))
-                                    .frame(width: 34, height: 34)
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(Color.white.opacity(0.68))
-                                    .frame(width: 48, height: 7)
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(Color.white.opacity(0.34))
-                                    .frame(width: 60, height: 7)
-                            }
-                        }
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 18)
-                                .strokeBorder(.white.opacity(0.18), lineWidth: 1)
-                        )
-                        .padding(16)
-                }
-                .padding(.horizontal, 18)
-                .padding(.bottom, 18)
-            }
-
-            VStack {
-                Spacer()
-                HStack {
-                    Label(variant == .iphoneControls ? "iPhone camera linked" : "Ready to export", systemImage: variant == .iphoneControls ? "iphone.gen3" : "square.and.arrow.up")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.92))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(Color.black.opacity(0.36), in: .capsule)
-                    Spacer()
-                }
-                .padding(16)
-            }
-        }
-        .overlay(
-            RoundedRectangle(cornerRadius: 26)
-                .strokeBorder(.white.opacity(0.16), lineWidth: 1)
-        )
-    }
-
-    private var screenshotTimeline: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Scene")
-                .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.48))
-            screenshotTrack(label: "Screen", color: Color(red: 0.20, green: 0.74, blue: 0.96), width: 164)
-            screenshotTrack(label: "Camera", color: Color(red: 0.18, green: 0.9, blue: 0.72), width: 116)
-            screenshotTrack(label: "Cursor", color: Color(red: 0.95, green: 0.72, blue: 0.25), width: 136)
-        }
-        .padding(14)
-        .background(Color.white.opacity(0.07), in: .rect(cornerRadius: 14))
-    }
-
-    private func screenshotTrack(label: String, color: Color, width: CGFloat) -> some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(color)
-                .frame(width: 8, height: 8)
-            Text(label)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.72))
-            Spacer(minLength: 0)
-            RoundedRectangle(cornerRadius: 4)
-                .fill(color.opacity(0.62))
-                .frame(width: width * 0.36, height: 7)
-        }
-    }
-
-    private var screenshotAudioMeters: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Audio")
-                .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.48))
-            screenshotMeter("Mic", fill: 0.68)
-            screenshotMeter("System", fill: 0.46)
-        }
-        .padding(14)
-        .background(Color.white.opacity(0.06), in: .rect(cornerRadius: 14))
-    }
-
-    private func screenshotMeter(_ label: String, fill: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.7))
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(.white.opacity(0.12))
-                    Capsule()
-                        .fill(Color(red: 0.18, green: 0.9, blue: 0.72).opacity(0.76))
-                        .frame(width: proxy.size.width * fill)
-                }
-            }
-            .frame(height: 7)
-        }
-    }
-
-    private var screenshotStatusCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Vertical Shorts layout", systemImage: "rectangle.portrait")
-                .font(.system(size: 11, weight: .bold))
-            Text("Screen, face camera, cursor, and safe-zone overlays are arranged for export.")
-                .font(.system(size: 10))
-                .foregroundStyle(.white.opacity(0.58))
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .foregroundStyle(.white)
-        .padding(14)
-        .background(Color.white.opacity(0.07), in: .rect(cornerRadius: 14))
-    }
-
-    private var screenshotRenderCard: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack {
-                Text("Export")
-                    .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.48))
-                Spacer()
-                Text("1080x1920")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.56))
-            }
-            ProgressView(value: 0.72)
-                .progressViewStyle(.linear)
-                .tint(Color(red: 0.18, green: 0.9, blue: 0.72))
-            Text(exportStatusText)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.66))
-        }
-        .padding(14)
-        .background(Color.white.opacity(0.06), in: .rect(cornerRadius: 14))
-    }
-
-    private var exportStatusText: String {
-        switch variant {
-        case .plan:
-            return "Unlimited exports included"
-        case .iphoneControls:
-            return "Transfer ready from iPhone"
-        case .none:
-            return "Export preview ready"
-        }
-    }
-}
-
-private struct ScreenshotRuleOfThirdsShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        Path { path in
-            let firstX = rect.minX + rect.width / 3
-            let secondX = rect.minX + rect.width * 2 / 3
-            let firstY = rect.minY + rect.height / 3
-            let secondY = rect.minY + rect.height * 2 / 3
-
-            path.move(to: CGPoint(x: firstX, y: rect.minY))
-            path.addLine(to: CGPoint(x: firstX, y: rect.maxY))
-            path.move(to: CGPoint(x: secondX, y: rect.minY))
-            path.addLine(to: CGPoint(x: secondX, y: rect.maxY))
-            path.move(to: CGPoint(x: rect.minX, y: firstY))
-            path.addLine(to: CGPoint(x: rect.maxX, y: firstY))
-            path.move(to: CGPoint(x: rect.minX, y: secondY))
-            path.addLine(to: CGPoint(x: rect.maxX, y: secondY))
-        }
-    }
-}
-
-private struct ScreenshotCard<Content: View>: View {
-    let width: CGFloat
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        content
-            .padding(18)
-            .frame(width: width, alignment: .leading)
-            .foregroundStyle(.white)
-            .background(.regularMaterial, in: .rect(cornerRadius: 10))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(.white.opacity(0.16), lineWidth: 1)
-            )
     }
 }

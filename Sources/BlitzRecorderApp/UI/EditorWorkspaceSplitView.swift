@@ -5,7 +5,7 @@ struct EditorPaneSizing: Equatable {
         case inspector
         case timeline
 
-        var defaultSize: Double { self == .inspector ? 360 : 430 }
+        var defaultSize: Double { self == .inspector ? 360 : 380 }
         var minimum: Double { self == .inspector ? 312 : 180 }
         var maximum: Double { self == .inspector ? 640 : 600 }
         var previewMinimum: Double { self == .inspector ? 360 : 200 }
@@ -41,12 +41,15 @@ struct EditorPaneSizing: Equatable {
 }
 
 struct EditorWorkspaceSplitView<Preview: View, Inspector: View, Timeline: View>: View {
+    let showsInspector: Bool
+    let showsSourceTracks: Bool
     @ViewBuilder let preview: () -> Preview
     @ViewBuilder let inspector: () -> Inspector
     @ViewBuilder let timeline: () -> Timeline
 
     @AppStorage("editor.inspectorWidth") private var savedInspectorWidth = EditorPaneSizing.Pane.inspector.defaultSize
-    @AppStorage("editor.timelineHeight") private var savedTimelineHeight = EditorPaneSizing.Pane.timeline.defaultSize
+    @AppStorage("editor.timelineHeight") private var savedTimelineHeight = 430.0
+    @AppStorage("editor.compactTimelineHeight") private var savedCompactTimelineHeight = EditorPaneSizing.Pane.timeline.defaultSize
     @State private var inspectorWidthDraft: Double?
     @State private var timelineHeightDraft: Double?
 
@@ -58,29 +61,33 @@ struct EditorWorkspaceSplitView<Preview: View, Inspector: View, Timeline: View>:
                 ))
             let timelineSize = EditorPaneSizing.resolve(
                 .init(
-                    pane: .timeline, preferred: timelineHeightDraft ?? savedTimelineHeight, available: proxy.size.height
+                    pane: .timeline,
+                    preferred: timelineHeightDraft ?? (showsSourceTracks ? savedTimelineHeight : savedCompactTimelineHeight),
+                    available: proxy.size.height
                 ))
             VStack(spacing: 0) {
                 HStack(spacing: 0) {
                     preview()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .clipped()
-                    BlitzPaneDivider(
-                        configuration: .init(
-                            axis: .horizontal,
-                            label: "Inspector width",
-                            value: Binding(get: { inspectorSize.value }, set: { inspectorWidthDraft = $0 }),
-                            bounds: inspectorSize.bounds,
-                            defaultValue: EditorPaneSizing.Pane.inspector.defaultSize,
-                            onCommit: {
-                                savedInspectorWidth = inspectorWidthDraft ?? inspectorSize.value
-                                inspectorWidthDraft = nil
-                            }
-                        ))
-                    inspector()
-                        .frame(width: inspectorSize.value)
-                        .frame(maxHeight: .infinity)
-                        .clipped()
+                    if showsInspector {
+                        BlitzPaneDivider(
+                            configuration: .init(
+                                axis: .horizontal,
+                                label: "Inspector width",
+                                value: Binding(get: { inspectorSize.value }, set: { inspectorWidthDraft = $0 }),
+                                bounds: inspectorSize.bounds,
+                                defaultValue: EditorPaneSizing.Pane.inspector.defaultSize,
+                                onCommit: {
+                                    savedInspectorWidth = inspectorWidthDraft ?? inspectorSize.value
+                                    inspectorWidthDraft = nil
+                                }
+                            ))
+                        inspector()
+                            .frame(width: inspectorSize.value)
+                            .frame(maxHeight: .infinity)
+                            .clipped()
+                    }
                 }
                 .frame(height: max(0, proxy.size.height - timelineSize.value - EditorPaneSizing.dividerSize))
                 BlitzPaneDivider(
@@ -89,9 +96,11 @@ struct EditorWorkspaceSplitView<Preview: View, Inspector: View, Timeline: View>:
                         label: "Timeline height",
                         value: Binding(get: { timelineSize.value }, set: { timelineHeightDraft = $0 }),
                         bounds: timelineSize.bounds,
-                        defaultValue: EditorPaneSizing.Pane.timeline.defaultSize,
+                        defaultValue: showsSourceTracks ? 430 : EditorPaneSizing.Pane.timeline.defaultSize,
                         onCommit: {
-                            savedTimelineHeight = timelineHeightDraft ?? timelineSize.value
+                            let height = timelineHeightDraft ?? timelineSize.value
+                            if showsSourceTracks { savedTimelineHeight = height }
+                            else { savedCompactTimelineHeight = height }
                             timelineHeightDraft = nil
                         }
                     ))
@@ -100,5 +109,6 @@ struct EditorWorkspaceSplitView<Preview: View, Inspector: View, Timeline: View>:
                     .clipped()
             }
         }
+        .onChange(of: showsSourceTracks) { timelineHeightDraft = nil }
     }
 }

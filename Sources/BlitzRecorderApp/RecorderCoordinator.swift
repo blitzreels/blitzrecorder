@@ -71,6 +71,9 @@ final class RecorderCoordinator {
     var onRecordingRecovery: ((RecordingRecoveryOutput) -> Void)? {
         didSet { capture.onRecordingRecovery = onRecordingRecovery }
     }
+    var onCaptureStopProgress: ((CaptureStopProgress?) -> Void)? {
+        didSet { capture.onCaptureStopProgress = onCaptureStopProgress }
+    }
     var onRenderProgress: ((Double) -> Void)? {
         didSet { capture.onRenderProgress = onRenderProgress }
     }
@@ -237,6 +240,7 @@ final class RecorderCoordinator {
         capture.fitScreenSourceWindow(binding, zoom: zoom)
     }
     func fitPickedScreenWindowToSlot(zoom: CGFloat) { capture.fitPickedScreenWindowToSlot(zoom: zoom) }
+    func cancelPendingScreenWindowFits() { capture.cancelPendingScreenWindowFits() }
     func zoomScreenSourceContent(_ direction: AppContentZoomDirection) {
         capture.zoomScreenSourceContent(direction)
     }
@@ -446,6 +450,10 @@ extension RecorderCoordinator {
 
     func setOutputDirectory(_ url: URL) {
         studio.setOutputDirectory(url)
+    }
+
+    func setSourceDirectory(_ url: URL) {
+        studio.setSourceDirectory(url)
     }
 
     func setDisplay(id: String?) {

@@ -40,6 +40,11 @@ protocol MicrophoneCaptureRecording: AnyObject {
     func switchMicrophone(to deviceID: String) async throws
     func stop() async throws -> MediaWriterCompletion
     func finalizeSynchronization() async throws
+    func finalizeSynchronization(_ progress: AudioSynchronizationProgress) async throws
+}
+
+struct AudioSynchronizationProgress {
+    let onProgress: @Sendable (Double) -> Void
 }
 
 protocol SystemAudioCaptureRecording: AnyObject {
@@ -65,6 +70,9 @@ extension MicrophoneCaptureRecording {
         throw RecorderError.microphoneUnavailable
     }
     func finalizeSynchronization() async throws {}
+    func finalizeSynchronization(_ progress: AudioSynchronizationProgress) async throws {
+        try await finalizeSynchronization()
+    }
 }
 
 extension SystemAudioCaptureRecording {
@@ -185,6 +193,7 @@ struct CaptureSourceRunStartResult: Equatable {
 @MainActor
 final class CaptureSourceRun {
     let take: RecordingTake
+    var onStopProgress: ((CaptureStopProgress) -> Void)?
 
     private var settings: RecordingSettings
     private var pickedScreenFilter: SCContentFilter?
@@ -208,7 +217,7 @@ final class CaptureSourceRun {
         let pause: () -> Void
         let resume: () -> Void
         let stop: (RecordingSettings) async throws -> MediaWriterCompletion
-        let finalize: () async throws -> Void
+        let finalize: (AudioSynchronizationProgress) async throws -> Void
         let timelineOffset: () -> CMTime
     }
 
@@ -405,28 +414,52 @@ final class CaptureSourceRun {
         var stopFailures: [CaptureSource: String] = [:]
         var synchronizationFailures: Set<CaptureSource> = []
 
-        for source in sourcesToStop {
-            guard let adapter = sourceAdapters[source] else { continue }
+        var pendingSources = sourcesToStop
+        onStopProgress?(.init(phase: .closingTracks, completed: 0,
+                              total: sourcesToStop.count, pendingSources: pendingSources))
+        let startedAt = ContinuousClock.now
+        let stops = sourcesToStop.compactMap { source -> Task<Void, Never>? in
+            guard let adapter = sourceAdapters[source] else { return nil }
             activeSources.remove(source)
-            do {
-                completions[source] = try await adapter.stop(settings)
-            } catch let stopFailure as CaptureSourceStopFailure {
-                completions[source] = stopFailure.completion
-                stopFailures[source] = Self.sourceStopFailureDescription(stopFailure.underlyingError)
-            } catch {
-                stopFailures[source] = Self.sourceStopFailureDescription(error)
+            return Task { @MainActor in
+                let sourceStartedAt = ContinuousClock.now
+                do {
+                    completions[source] = try await adapter.stop(settings)
+                } catch let stopFailure as CaptureSourceStopFailure {
+                    completions[source] = stopFailure.completion
+                    stopFailures[source] = Self.sourceStopFailureDescription(stopFailure.underlyingError)
+                } catch {
+                    stopFailures[source] = Self.sourceStopFailureDescription(error)
+                }
+                pendingSources.removeAll { $0 == source }
+                self.onStopProgress?(.init(phase: .closingTracks,
+                    completed: sourcesToStop.count - pendingSources.count,
+                    total: sourcesToStop.count, pendingSources: pendingSources))
+                NSLog("Capture stop %@: %@", source.rawValue, String(describing: sourceStartedAt.duration(to: .now)))
             }
         }
+        for stop in stops { await stop.value }
 
         for source in sourcesToStop {
             guard let adapter = sourceAdapters[source] else { continue }
+            if source == .microphone {
+                onStopProgress?(.init(phase: .synchronizingAudio, completed: sourcesToStop.count,
+                                      total: sourcesToStop.count, pendingSources: []))
+            }
             do {
-                try await adapter.finalize()
+                try await adapter.finalize(.init(onProgress: { [weak self] fraction in
+                    Task { @MainActor [weak self] in
+                        self?.onStopProgress?(.init(phase: .synchronizingAudio,
+                            completed: sourcesToStop.count, total: sourcesToStop.count, pendingSources: [],
+                            synchronizationProgress: fraction))
+                    }
+                }))
             } catch {
                 stopFailures[source] = Self.sourceStopFailureDescription(error)
                 synchronizationFailures.insert(source)
             }
         }
+        NSLog("Capture stop and synchronization: %@", String(describing: startedAt.duration(to: .now)))
         return CaptureSourceRunSummary(
             completions: completions,
             stopFailures: stopFailures,
@@ -487,7 +520,7 @@ final class CaptureSourceRun {
                 stop: { settings in
                     try await remoteCameraRecorder.stopRemoteCamera(take: take, settings: settings)
                 },
-                finalize: {},
+                finalize: { _ in },
                 timelineOffset: { .zero }
             )
         } else {
@@ -503,7 +536,7 @@ final class CaptureSourceRun {
                 pause: { cameraRecorder.pause() },
                 resume: { cameraRecorder.resume() },
                 stop: { _ in try await cameraRecorder.stop() },
-                finalize: {},
+                finalize: { _ in },
                 timelineOffset: { .zero }
             )
         }
@@ -524,7 +557,7 @@ final class CaptureSourceRun {
                 pause: { screenRecorder.pause() },
                 resume: { screenRecorder.resume() },
                 stop: { _ in try await screenRecorder.stop() },
-                finalize: {},
+                finalize: { _ in },
                 timelineOffset: { .zero }
             ),
             .camera: cameraAdapter,
@@ -540,7 +573,7 @@ final class CaptureSourceRun {
                 pause: { audioRecorder.pause() },
                 resume: { audioRecorder.resume() },
                 stop: { _ in try await audioRecorder.stop() },
-                finalize: { try await audioRecorder.finalizeSynchronization() },
+                finalize: { try await audioRecorder.finalizeSynchronization($0) },
                 timelineOffset: { audioRecorder.recordingTimelineOffset }
             ),
             .systemAudio: CaptureSourceRunAdapter(
@@ -558,7 +591,7 @@ final class CaptureSourceRun {
                 pause: { systemAudioRecorder.pause() },
                 resume: { systemAudioRecorder.resume() },
                 stop: { _ in try await systemAudioRecorder.stop() },
-                finalize: {},
+                finalize: { _ in },
                 timelineOffset: { systemAudioRecorder.recordingTimelineOffset }
             )
         ]

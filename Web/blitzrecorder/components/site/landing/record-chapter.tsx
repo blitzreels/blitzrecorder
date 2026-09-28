@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useState, type CSSProperties } from "react";
 import { JourneySectionView } from "@/components/site/journey-markers";
 import { Section } from "@/components/ui/layout";
-import { ChapterHeader, chapters } from "@/components/site/landing/chapter";
+import { ChapterHeader, ChapterPoints, chapters, type ChapterPoint } from "@/components/site/landing/chapter";
 import { trackJourneyEvent } from "@/lib/journey-events";
 import { assets } from "@/lib/assets";
 import { cn } from "@/lib/utils";
@@ -69,7 +69,7 @@ function boxStyle(box: Box): CSSProperties {
   };
 }
 
-const points = [
+const points: ChapterPoint[] = [
   {
     title: "Every source in one take",
     body: "A screen, window, or app, plus a camera, your microphone, and Mac audio.",
@@ -79,8 +79,8 @@ const points = [
     body: "Move from a split to your camera alone mid-sentence. Nothing to redo later.",
   },
   {
-    title: "The preview is the export",
-    body: "Crops, padding, corners, and backgrounds apply before you press record.",
+    title: "Backgrounds and crops",
+    body: "Padding, corners, and backgrounds are set before the take, not after.",
   },
 ];
 
@@ -102,8 +102,8 @@ export function RecordChapter() {
       <JourneySectionView area="landing" section="record" payload={{ page: "home" }} />
       <ChapterHeader
         mark={chapters.record}
-        title="Frame the shot before you press record."
-        lede="Pick tall or wide and a layout. What you see in the studio is the video you get, so there is no reframing afterwards."
+        title="Frame the shot first."
+        lede="Pick 9:16 or 16:9 and a layout before you press record. The preview is the export."
         aside={null}
       />
 
@@ -205,14 +205,7 @@ export function RecordChapter() {
         </div>
       </div>
 
-      <ul className="mt-12 grid gap-8 sm:grid-cols-3 sm:gap-8">
-        {points.map((point) => (
-          <li key={point.title} data-reveal className="border-t border-separator pt-5">
-            <h3 className="font-display text-lg font-bold tracking-[-0.01em]">{point.title}</h3>
-            <p className="mt-2 text-[15px] leading-6 text-muted-foreground">{point.body}</p>
-          </li>
-        ))}
-      </ul>
+      <ChapterPoints points={points} />
     </Section>
   );
 }

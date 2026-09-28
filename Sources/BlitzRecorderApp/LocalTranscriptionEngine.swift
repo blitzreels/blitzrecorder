@@ -10,12 +10,37 @@ struct TranscriptionModelDownloadUpdate: Sendable {
 struct TranscriptionEngineUpdate: Sendable {
     enum Stage: Sendable {
         case preparingAudio
+        case loadingModels
         case transcribing
         case diarizing
         case saving
     }
 
     let stage: Stage
+    let detail: String?
+
+    init(stage: Stage) {
+        self.stage = stage
+        detail = nil
+    }
+
+    struct Track {
+        let stage: Stage
+        let source: RecordingTranscriptAssembler.WordSource
+        let index: Int
+        let total: Int
+    }
+
+    init(_ track: Track) {
+        stage = track.stage
+        let source: String
+        switch track.source {
+        case .microphone: source = "Microphone"
+        case .systemAudio: source = "Mac audio"
+        case .mixed: source = "Audio"
+        }
+        detail = "\(source) · Track \(track.index + 1) of \(track.total)"
+    }
 }
 
 actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
@@ -125,6 +150,7 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
             }
         }
 
+        request.onUpdate(TranscriptionEngineUpdate(stage: .loadingModels))
         let managers = try await loadedManagers(.init(
             model: request.model,
             speakerCount: request.speakerCount
@@ -134,8 +160,9 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
         var intervals: [DiarizedInterval] = []
         var confidences: [Float] = []
 
-        request.onUpdate(TranscriptionEngineUpdate(stage: .transcribing))
-        for track in preparedAudio.tracks {
+        for (index, track) in preparedAudio.tracks.enumerated() {
+            request.onUpdate(TranscriptionEngineUpdate(.init(stage: .transcribing,
+                source: track.source, index: index, total: preparedAudio.tracks.count)))
             let trackWords: [TranscriptWord]
             let confidence: Float
             switch request.model {
@@ -173,7 +200,9 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
         request.onUpdate(TranscriptionEngineUpdate(stage: .diarizing))
         let mixedTrackCount = preparedAudio.tracks.filter { $0.source == .mixed }.count
         var mixedIndex = 0
-        for track in preparedAudio.tracks {
+        for (index, track) in preparedAudio.tracks.enumerated() {
+            request.onUpdate(TranscriptionEngineUpdate(.init(stage: .diarizing,
+                source: track.source, index: index, total: preparedAudio.tracks.count)))
             let prefix: String
             let diarizer: OfflineDiarizerManager
             switch track.source {

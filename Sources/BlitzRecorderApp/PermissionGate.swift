@@ -143,6 +143,7 @@ struct PermissionRequestResult: Equatable {
     enum Status: Equatable {
         case granted
         case needsSettings
+        case cancelled
     }
 
     let status: Status
@@ -222,7 +223,9 @@ final class MacOSRecordingPermissionSystem: RecordingPermissionSystem {
 @MainActor
 final class PermissionGate {
     private let system: any RecordingPermissionSystem
-    private var hasRequestedScreenCaptureAccessThisSession = false
+    private(set) var hasRequestedScreenCaptureAccessThisSession = false
+    private(set) var hasRequestedAccessibilityAccessThisSession = false
+    private var isTerminating = false
 
     convenience init() {
         self.init(system: MacOSRecordingPermissionSystem())
@@ -230,6 +233,10 @@ final class PermissionGate {
 
     init(system: any RecordingPermissionSystem) {
         self.system = system
+    }
+
+    func stopRequestingPermissions() {
+        isTerminating = true
     }
 
     func readiness(for settings: RecordingSettings) -> RecordingReadiness {
@@ -336,6 +343,7 @@ final class PermissionGate {
     }
 
     func requestScreenCaptureAccess() async -> PermissionRequestResult {
+        guard !isTerminating, !Task.isCancelled else { return cancelledRequest }
         if hasScreenCaptureAccess {
             return PermissionRequestResult(
                 status: .granted,
@@ -343,10 +351,14 @@ final class PermissionGate {
             )
         }
 
-        if !hasRequestedScreenCaptureAccessThisSession {
-            hasRequestedScreenCaptureAccessThisSession = true
-            _ = system.requestScreenCaptureAccess()
+        guard !hasRequestedScreenCaptureAccessThisSession else {
+            return PermissionRequestResult(
+                status: .needsSettings,
+                message: "Enable Screen Recording in System Settings, then reopen BlitzRecorder."
+            )
         }
+        hasRequestedScreenCaptureAccessThisSession = true
+        _ = system.requestScreenCaptureAccess()
 
         if await waitForPermission({ [system] in system.hasScreenCaptureAccess() }) {
             return PermissionRequestResult(
@@ -355,14 +367,15 @@ final class PermissionGate {
             )
         }
 
-        system.openSettings(.screenCapture)
+        guard !isTerminating, !Task.isCancelled else { return cancelledRequest }
         return PermissionRequestResult(
             status: .needsSettings,
-            message: "Enable Screen Recording for BlitzRecorder, then quit and reopen it."
+            message: "Enable Screen Recording in System Settings, then reopen BlitzRecorder."
         )
     }
 
     func requestAccessibilityAccessForWindowControls() async -> PermissionRequestResult {
+        guard !isTerminating, !Task.isCancelled else { return cancelledRequest }
         if hasAccessibilityAccess {
             return PermissionRequestResult(
                 status: .granted,
@@ -370,6 +383,13 @@ final class PermissionGate {
             )
         }
 
+        guard !hasRequestedAccessibilityAccessThisSession else {
+            return PermissionRequestResult(
+                status: .needsSettings,
+                message: "Enable Accessibility in System Settings to move and resize captured windows."
+            )
+        }
+        hasRequestedAccessibilityAccessThisSession = true
         _ = system.requestAccessibilityAccess()
         if await waitForPermission({ [system] in system.hasAccessibilityAccess() }) {
             return PermissionRequestResult(
@@ -378,10 +398,10 @@ final class PermissionGate {
             )
         }
 
-        system.openSettings(.accessibility)
+        guard !isTerminating, !Task.isCancelled else { return cancelledRequest }
         return PermissionRequestResult(
             status: .needsSettings,
-            message: "Enable Accessibility for BlitzRecorder to resize target windows."
+            message: "Enable Accessibility in System Settings to move and resize captured windows."
         )
     }
 
@@ -471,6 +491,7 @@ final class PermissionGate {
     }
 
     func requestScreenCaptureAccessIfNeeded() -> Bool {
+        guard !isTerminating else { return false }
         if hasScreenCaptureAccess {
             return true
         }
@@ -482,6 +503,7 @@ final class PermissionGate {
     }
 
     private func requestMediaAccess(_ mediaType: AVMediaType) async -> Bool {
+        guard !isTerminating, !Task.isCancelled else { return false }
         switch system.authorizationStatus(for: mediaType) {
         case .authorized:
             return true
@@ -495,18 +517,28 @@ final class PermissionGate {
     }
 
     private func waitForPermission(_ isGranted: @escaping () -> Bool) async -> Bool {
+        guard !isTerminating, !Task.isCancelled else { return false }
         if isGranted() {
             return true
         }
 
         for _ in 0..<10 {
-            try? await Task.sleep(nanoseconds: 200_000_000)
+            do {
+                try await Task.sleep(nanoseconds: 200_000_000)
+            } catch {
+                return false
+            }
+            guard !isTerminating, !Task.isCancelled else { return false }
             if isGranted() {
                 return true
             }
         }
 
         return false
+    }
+
+    private var cancelledRequest: PermissionRequestResult {
+        PermissionRequestResult(status: .cancelled, message: "")
     }
 
     private struct ScreenCaptureBlockerRequest {

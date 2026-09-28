@@ -101,20 +101,14 @@ struct SourcesSidebar: View {
             return recordingStatus
         }
 
-        if vm.recordingReadiness.blockers.contains(where: {
-            $0.source == source && $0.permission == "Camera availability"
-        }) {
-            return SourceRowStatus(label: "Unavailable", tone: .warning)
-        }
-
-        if vm.recordingReadiness.blockers.contains(where: { $0.source == source }) {
-            return SourceRowStatus(label: "No access", tone: .warning)
+        if let notice = vm.sourceReadinessNotice(source) {
+            return SourceRowStatus(label: notice.title, tone: .warning)
         }
 
         switch source {
         case .screen:
             if !vm.hasActiveScreenPickerSelection {
-                return SourceRowStatus(label: "Choose", tone: .warning)
+                return SourceRowStatus(label: "Choose screen or window", tone: .warning)
             }
             if vm.settings.usesPickedScreenContent {
                 return SourceRowStatus(label: "Picked", tone: .active)
@@ -325,18 +319,20 @@ private struct DeviceCard: View {
                             .foregroundStyle(BlitzUI.primaryText)
                             .lineLimit(1)
 
-                        HStack(spacing: 6) {
-                            Text(subtitle)
-                                .font(.system(size: 11, weight: .regular))
-                                .foregroundStyle(BlitzUI.secondaryText)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
+                        if vm.sourceReadinessNotice(source)?.action != .chooseScreen {
+                            HStack(spacing: 6) {
+                                Text(subtitle)
+                                    .font(.system(size: 11, weight: .regular))
+                                    .foregroundStyle(BlitzUI.secondaryText)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
 
-                            if let levels {
-                                Spacer(minLength: 0)
-                                BlitzLevelMeter(levels: levels, active: status.tone == .active)
-                                    .frame(width: 24, height: 10)
-                                    .accessibilityHidden(true)
+                                if let levels {
+                                    Spacer(minLength: 0)
+                                    BlitzLevelMeter(levels: levels, active: status.tone == .active)
+                                        .frame(width: 24, height: 10)
+                                        .accessibilityHidden(true)
+                                }
                             }
                         }
 
@@ -344,7 +340,8 @@ private struct DeviceCard: View {
                             Text(noticeLabel)
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundStyle(detailColor)
-                                .lineLimit(1)
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -417,8 +414,18 @@ private enum SourceRowStatusTone: Equatable {
 struct SelectedSourceInspector: View {
     @Bindable var vm: RecorderViewModel
 
-    @ViewBuilder
     var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let notice = vm.sourceReadinessNotice(vm.selectedSource?.source ?? .screen),
+               notice.action != .chooseScreen {
+                SourceReadinessNoticeView(notice: notice, vm: vm)
+            }
+            sourceControls
+        }
+    }
+
+    @ViewBuilder
+    private var sourceControls: some View {
         switch vm.selectedSource?.source ?? .screen {
         case .screen:
             ScreenSourceInspector(vm: vm, enabled: vm.isSourceConfigured(.screen))
@@ -488,7 +495,7 @@ struct ScreenCaptureSourcePickerModel {
     let enabled: Bool
 
     private var captureSourceLabel: String {
-        vm.selectedScreenSourceDisplayName
+        vm.hasActiveScreenPickerSelection ? vm.selectedScreenSourceDisplayName : "Choose screen or window"
     }
 
     private var selectedScreenSourceIcon: NSImage? {
@@ -612,7 +619,7 @@ struct ScreenCaptureSourcePickerModel {
 
     private var selectedScreenSourceKindLabel: String {
         if !vm.hasActiveScreenPickerSelection {
-            return "Picker selection required"
+            return "Nothing selected"
         }
         if vm.settings.usesPickedScreenContent {
             return "Screen capture"
@@ -696,7 +703,7 @@ private struct ScreenSourceFramingControl: View {
                 }
                 .blitzButton(.secondary)
                 .accessibilityLabel("Reset screen size")
-                .disabled(abs(vm.targetWindowZoom - 1) < 0.001)
+                .disabled(!vm.hasAccessibilityAccessForWindowControls || abs(vm.targetWindowZoom - 1) < 0.001)
             }
             .font(.system(size: 11, weight: .medium))
 
@@ -712,7 +719,8 @@ private struct ScreenSourceFramingControl: View {
             .controlSize(.small)
             .tint(BlitzUI.mint)
             .accessibilityLabel("Screen size")
-            .help("Scale the screen on the canvas. Fit window to scene still resizes the real window.")
+            .disabled(!vm.hasAccessibilityAccessForWindowControls)
+            .help("Resize the source window to show more or larger content. The screen frame in your scene stays fixed.")
 
             HStack {
                 Text("More content")

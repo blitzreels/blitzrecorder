@@ -147,8 +147,7 @@ struct ProjectLibraryView: View {
     var body: some View {
         VStack(spacing: 0) {
             commandBar
-                .blitzWorkspaceToolbar()
-                .controlSize(.large)
+                .blitzWindowToolbar(showsUpdate: false)
             trashStatusBar
 
             HStack(spacing: 0) {
@@ -242,7 +241,7 @@ struct ProjectLibraryView: View {
     private var commandBar: some View {
         HStack(spacing: 12) {
             Text("Projects")
-                .font(.system(size: 21, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(BlitzUI.primaryText)
             Text(projectCountLabel)
                 .font(.system(size: 12, weight: .regular))
@@ -252,17 +251,9 @@ struct ProjectLibraryView: View {
 
             AppUpdateToolbarButton()
 
-            BlitzToolbarButton(configuration: .init(
-                title: "Settings",
-                symbolName: "gearshape",
-                showsTitle: true,
-                action: { vm.onPresentSettings?(nil) }
-            ))
-            .help("Open Settings (Cmd+,)")
-
             Button(action: vm.showRecorder) {
                 HStack(spacing: 10) {
-                    Label("New recording", systemImage: "record.circle")
+                    Label(vm.state == .idle ? "New recording" : "Return to recording", systemImage: "record.circle")
                     Text("⌘N")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.black.opacity(0.5))
@@ -274,7 +265,7 @@ struct ProjectLibraryView: View {
             .disabled(vm.projectTrash.isWorking)
             .keyboardShortcut("n", modifiers: .command)
             .help("Set up a new recording (⌘N)")
-            .accessibilityLabel("New recording")
+            .accessibilityLabel(vm.state == .idle ? "New recording" : "Return to recording")
             .pointingHandCursor(enabled: !vm.projectTrash.isWorking)
         }
     }
@@ -463,6 +454,7 @@ struct ProjectLibraryView: View {
                 Button("Edit recording") {
                     vm.openProject(project)
                 }
+                .disabled(vm.state != .idle)
 
                 Button {
                     beginRename(project)
@@ -854,8 +846,16 @@ struct ProjectLibraryView: View {
                     Text(recordedAt.formatted(date: .abbreviated, time: .shortened))
                         .help("Recorded \(recordedAt.formatted(date: .long, time: .shortened))")
                     Text("·")
+                    if status.isRunning {
+                        ProgressView().controlSize(.mini)
+                            .accessibilityLabel(status.label)
+                    }
                     Text(transcriptStatusLabel(status))
                         .foregroundStyle(transcriptStatusColor(status))
+                    if !projectWaveformLibrary.loadingIDs.isEmpty {
+                        ProgressView().controlSize(.mini)
+                        Text("Preparing media")
+                    }
                 }
                 .font(.system(size: 11, weight: .regular))
                 .foregroundStyle(BlitzUI.secondaryText)
@@ -887,7 +887,7 @@ struct ProjectLibraryView: View {
             EditRecordingButton(configuration: .init(
                 title: "Edit recording",
                 isLoading: isOpening,
-                help: "Open this recording in the editor",
+                help: vm.state == .idle ? "Open this recording in the editor" : "Finish recording before editing a project",
                 action: {
                     openingProjectID = project.id
                     Task {
@@ -898,6 +898,7 @@ struct ProjectLibraryView: View {
                 }
             ))
             .controlSize(.large)
+            .disabled(vm.state != .idle)
         }
         .disabled(vm.projectTrash.isWorking)
     }
@@ -917,11 +918,11 @@ struct ProjectLibraryView: View {
                     Spacer(minLength: 12)
 
                     if status.isRunning || status == .waitingForModel {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text(status.label)
-                            .font(.system(size: 11))
-                            .foregroundStyle(BlitzUI.secondaryText)
+                        TranscriptionActivityView(configuration: .init(
+                            status: status,
+                            detail: vm.transcriptionController.jobDetails[project.projectPath],
+                            startedAt: vm.transcriptionController.jobStartedAt[project.projectPath]
+                        ))
                     } else {
                         Button {
                             requestTranscript(project)
@@ -1065,13 +1066,17 @@ struct ProjectLibraryView: View {
                 Text(transcriptStatusLabel(request.status))
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.72))
-                Text(transcriptUnavailableDetail(request.status))
+                Text(vm.transcriptionController.jobDetails[request.project.projectPath]
+                     ?? transcriptUnavailableDetail(request.status))
                     .font(.system(size: 10, weight: .regular))
                     .foregroundStyle(.white.opacity(0.38))
             }
 
             Spacer(minLength: 0)
 
+            if let startedAt = vm.transcriptionController.jobStartedAt[request.project.projectPath] {
+                ActivityElapsedTime(startedAt: startedAt)
+            }
             if !request.status.isRunning {
                 Button(transcriptActionTitle(request.status)) {
                     performTranscriptAction(request.project)
@@ -1327,6 +1332,11 @@ struct ProjectLibraryView: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(BlitzUI.primaryText)
 
+                    if projectWaveformLibrary.loadingIDs.contains(asset.id)
+                        || projectWaveformLibrary.filmstripLoadingCounts[asset.id] != nil {
+                        ProgressView().controlSize(.mini)
+                            .help(asset.isAudio ? "Preparing waveform" : "Preparing media previews")
+                    }
                     if !asset.exists {
                         Text("Missing file")
                             .font(.system(size: 11, weight: .regular))
@@ -1391,38 +1401,32 @@ struct ProjectLibraryView: View {
         }
     }
 
+    @ViewBuilder
     private func mediaWaveform(
         _ request: MediaWaveformRequest
     ) -> some View {
-        Canvas { context, size in
-            guard !request.values.isEmpty else {
-                let line = CGRect(
-                    x: 0,
-                    y: size.height / 2 - 0.75,
-                    width: size.width,
-                    height: 1.5
-                )
-                context.fill(
-                    Path(roundedRect: line, cornerRadius: 0.75),
-                    with: .color(request.tint.opacity(0.38))
-                )
-                return
-            }
-            let slot = size.width / CGFloat(request.values.count)
-            let barWidth = max(1, slot - 1)
-            let maximumHeight = size.height - 8
-            for (index, value) in request.values.enumerated() {
-                let height = max(1.5, CGFloat(value) * maximumHeight)
-                let bar = CGRect(
-                    x: CGFloat(index) * slot + (slot - barWidth) / 2,
-                    y: (size.height - height) / 2,
-                    width: barWidth,
-                    height: height
-                )
-                context.fill(
-                    Path(roundedRect: bar, cornerRadius: barWidth / 2),
-                    with: .color(request.tint.opacity(0.84))
-                )
+        if request.values.isEmpty {
+            BlitzSymbol(configuration: .init(name: "waveform", size: 24))
+                .foregroundStyle(request.tint.opacity(0.5))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            Canvas { context, size in
+                let slot = size.width / CGFloat(request.values.count)
+                let barWidth = max(1, slot - 1)
+                let maximumHeight = size.height - 8
+                for (index, value) in request.values.enumerated() {
+                    let height = max(1.5, CGFloat(value) * maximumHeight)
+                    let bar = CGRect(
+                        x: CGFloat(index) * slot + (slot - barWidth) / 2,
+                        y: (size.height - height) / 2,
+                        width: barWidth,
+                        height: height
+                    )
+                    context.fill(
+                        Path(roundedRect: bar, cornerRadius: barWidth / 2),
+                        with: .color(request.tint.opacity(0.84))
+                    )
+                }
             }
         }
     }
@@ -1547,7 +1551,7 @@ struct ProjectLibraryView: View {
             ))
         case .waitingForModel:
             requestTranscript(project)
-        case .queued, .preparingAudio, .transcribing, .diarizing, .saving:
+        case .queued, .preparingAudio, .loadingModels, .transcribing, .diarizing, .saving:
             break
         }
     }
@@ -1572,8 +1576,8 @@ struct ProjectLibraryView: View {
             return "Generate Transcript"
         case .waitingForModel:
             return "Download Model"
-        case .queued, .preparingAudio, .transcribing, .diarizing, .saving:
-            return "Transcribing"
+        case .queued, .preparingAudio, .loadingModels, .transcribing, .diarizing, .saving:
+            return status.label
         }
     }
 
@@ -1601,8 +1605,8 @@ struct ProjectLibraryView: View {
             return "Speech model required"
         case .notGenerated:
             return "No transcript"
-        case .queued, .preparingAudio, .transcribing, .diarizing, .saving:
-            return "Transcribing"
+        case .queued, .preparingAudio, .loadingModels, .transcribing, .diarizing, .saving:
+            return status.label
         }
     }
 
@@ -1615,7 +1619,7 @@ struct ProjectLibraryView: View {
         case .failed:
             return BlitzUI.warning
         case .notGenerated, .waitingForModel,
-             .queued, .preparingAudio, .transcribing, .diarizing, .saving:
+             .queued, .preparingAudio, .loadingModels, .transcribing, .diarizing, .saving:
             return .white.opacity(0.42)
         }
     }
@@ -1636,6 +1640,8 @@ struct ProjectLibraryView: View {
             return "Waiting for local transcription to start."
         case .preparingAudio:
             return "Preparing the project audio."
+        case .loadingModels:
+            return "Loading the speech model into memory."
         case .transcribing:
             return "Converting speech into timed text."
         case .diarizing:
@@ -1701,8 +1707,7 @@ struct ProjectLibraryView: View {
 
     private func loadSelectedTranscript() {
         guard vm.projectLibraryNavigation.selectedDetailTab == .transcript,
-              let project = selectedProject,
-              case .ready = vm.transcriptionController.status(for: project) else {
+              let project = selectedProject else {
             return
         }
 
@@ -1757,47 +1762,8 @@ struct ProjectLibraryView: View {
             playbackProjectID = project.id
             playbackProjectPath = project.projectPath
 
-            if let editedURL, projectPlayback.isExportedPlayback {
-                if let transcript = editedTranscript(
-                    projectTranscript(recordingProject),
-                    project: recordingProject
-                ) {
-                    playbackWaveformSamples = ProjectSpeechWaveform.samples(.init(
-                        segments: transcript.segments,
-                        duration: projectPlayback.outputDuration > 0
-                            ? projectPlayback.outputDuration
-                            : projectPlayback.duration,
-                        bucketCount: 240
-                    ))
-                    return
-                }
-                let waveformAsset = EditorAsset.output(url: editedURL)
-                await projectWaveformLibrary.loadAssets([waveformAsset])
-                guard !Task.isCancelled,
-                      selectedProject?.id == project.id else {
-                    return
-                }
-                playbackWaveformSamples = projectWaveformLibrary.waveforms[waveformAsset.id] ?? []
-                return
-            }
-
-            if let transcript = editedTranscript(
-                projectTranscript(recordingProject),
-                project: recordingProject
-            ) {
-                playbackWaveformSamples = ProjectSpeechWaveform.samples(.init(
-                    segments: transcript.segments,
-                    duration: projectPlayback.outputDuration > 0
-                        ? projectPlayback.outputDuration
-                        : projectPlayback.duration,
-                    bucketCount: 240
-                ))
-                return
-            }
-
-            guard let waveformAsset = preferredWaveformAsset(recordingProject) else {
-                return
-            }
+            guard let editedURL, projectPlayback.isExportedPlayback else { return }
+            let waveformAsset = EditorAsset.output(url: editedURL)
             await projectWaveformLibrary.loadAssets([waveformAsset])
             guard !Task.isCancelled,
                   selectedProject?.id == project.id else {
@@ -1878,14 +1844,6 @@ struct ProjectLibraryView: View {
                 cuts: project.edits.enabledCuts
             )
         )
-    }
-
-    private func preferredWaveformAsset(
-        _ project: RecordingProject
-    ) -> EditorAsset? {
-        let assets = EditorAsset.assets(project: project, finalVideoURL: nil)
-        return assets.first { $0.kind == .microphone && $0.isAudio }
-            ?? assets.first { $0.kind == .systemAudio && $0.isAudio }
     }
 
     private var transcriptSearchTaskID: String {

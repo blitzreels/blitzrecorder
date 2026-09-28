@@ -25,7 +25,7 @@ enum ExportPerformancePreset: String, CaseIterable {
     var plainDescription: String {
         switch self {
         case .fast:
-            "Small H.264 · 1080p · 30 fps"
+            "Clear H.264 · 1080p · up to 30 fps"
         case .balanced:
             "Light loss · 1080p · source fps"
         case .maximum:

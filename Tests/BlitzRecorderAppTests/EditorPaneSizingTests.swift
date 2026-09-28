@@ -33,7 +33,7 @@ final class EditorPaneSizingTests: XCTestCase {
     func testInvalidPreferencesAndTransientGeometryStayFinite() {
         XCTAssertEqual(EditorPaneSizing.resolve(.init(pane: .inspector, preferred: .nan, available: 1_200)).value, 360)
         XCTAssertEqual(
-            EditorPaneSizing.resolve(.init(pane: .timeline, preferred: .infinity, available: 680)).value, 430)
+            EditorPaneSizing.resolve(.init(pane: .timeline, preferred: .infinity, available: 680)).value, 380)
         for available in [0.0, -1, .nan, .infinity] {
             let sizing = EditorPaneSizing.resolve(.init(pane: .timeline, preferred: 300, available: available))
             XCTAssertEqual(sizing.value, 0)

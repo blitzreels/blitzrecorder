@@ -347,7 +347,11 @@ extension RecorderCaptureRuntime {
                 committedRecordingSettings = nil
                 let takeToFinalize = stopContext.take
                 let takeSettings = stopContext.settings ?? settings
+                takeRecording.onStopProgress = { [weak self] progress in
+                    self?.onCaptureStopProgress?(progress)
+                }
                 let stopOutcome = try await takeRecording.stop()
+                onCaptureStopProgress?(nil)
                 switch stopOutcome {
                 case .liveComposited(let completion, let warning):
                     onMessage?(RecordingStartCopy.saving)
@@ -405,6 +409,7 @@ extension RecorderCaptureRuntime {
                 }
             } catch {
                 await takeRecording.stopAnyActiveRecording()
+                onCaptureStopProgress?(nil)
                 recordingSession.finish(with: nil)
                 takeRecording.resetSceneTimeline()
                 onRenderProgress?(0)
@@ -684,6 +689,7 @@ extension RecorderCaptureRuntime {
             editorState: project.editorState,
             exportRecord: exportRecord
         )
+        await HostingExportMetadata.save(.init(fileURL: url, project: outputProject, playbackRate: request.playbackRate))
         return ProjectExportRenderPlan.savedOutput(url: url, take: context.take)
     }
 

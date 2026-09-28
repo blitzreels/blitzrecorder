@@ -10,9 +10,12 @@ struct RecordingAccessCover: View {
 
     private let accent = BlitzUI.mint
 
-    /// The four capture sources (Accessibility lives in the Access tab, not here).
     private var sourceRows: [PermissionStatusRow] {
         vm.permissionStatusRows.filter { $0.source != nil }
+    }
+
+    private var accessibilityRow: PermissionStatusRow? {
+        vm.permissionStatusRows.first { $0.source == nil }
     }
 
     private var activeRows: [PermissionStatusRow] {
@@ -37,7 +40,7 @@ struct RecordingAccessCover: View {
     }
 
     private var hasAllowable: Bool {
-        sourceRows.contains { coverAction(for: $0) == .allow || coverAction(for: $0) == .enable }
+        sourceRows.contains { coverAction(for: $0) == .allow }
     }
 
     var body: some View {
@@ -134,7 +137,22 @@ struct RecordingAccessCover: View {
                     row: row,
                     action: coverAction(for: row),
                     accent: accent,
-                    onTap: { performAction(for: row) }
+                    isRequesting: vm.isRequestingPermissions,
+                    onTap: { performAction(for: row) },
+                    onOpenSettings: vm.openScreenRecordingSettings
+                )
+            }
+            if let row = accessibilityRow {
+                Divider()
+                    .background(.white.opacity(0.06))
+                    .padding(.horizontal, 14)
+                AccessPermissionRow(
+                    row: row,
+                    action: coverAction(for: row),
+                    accent: accent,
+                    isRequesting: vm.isRequestingPermissions,
+                    onTap: { performAction(for: row) },
+                    onOpenSettings: vm.openScreenRecordingSettings
                 )
             }
         }
@@ -173,46 +191,43 @@ struct RecordingAccessCover: View {
             }
             .blitzButton(.accent)
             .tint(accent)
-            .disabled(!isReady)
+            .disabled(!isReady || vm.isRequestingPermissions)
             .opacity(isReady ? 1 : 0.45)
             .pointingHandCursor()
 
             HStack(spacing: 18) {
                 if hasAllowable {
-                    Button {
-                        vm.allowAllFromCover()
-                    } label: {
-                        Text("Allow All")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.82))
-                    }
-                    .buttonStyle(.plain)
-                    .pointingHandCursor()
+                    Button("Allow selected sources", action: vm.allowAllFromCover)
+                        .blitzButton(.quiet)
+                        .controlSize(.small)
+                        .disabled(vm.isRequestingPermissions)
                 }
 
-                Button {
-                    vm.dismissFirstRunOnboarding()
-                } label: {
-                    Text("Set up later")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.5))
-                }
-                .buttonStyle(.plain)
-                .pointingHandCursor()
+                Button("Set up later", action: vm.dismissFirstRunOnboarding)
+                    .blitzButton(.quiet)
+                    .controlSize(.small)
             }
         }
     }
 
     private func coverAction(for row: PermissionStatusRow) -> CoverAction {
-        guard let source = row.source else { return .inactive }
+        guard let source = row.source else {
+            if row.isGranted { return .granted }
+            return vm.coordinator.permissionGate.hasRequestedAccessibilityAccessThisSession
+                ? .openSettings : .allow
+        }
         if source == .systemAudio && !row.isActive { return .enable }
         if !row.isActive { return .inactive }
         if row.isGranted { return .granted }
         switch source {
         case .screen:
-            return vm.screenAccessAwaitingRestart ? .quitReopen : .allow
+            if vm.screenAccessAwaitingRestart { return .quitReopen }
+            return vm.coordinator.permissionGate.hasRequestedScreenCaptureAccessThisSession
+                ? .openSettings : .allow
         case .systemAudio:
-            return vm.screenAccessAwaitingRestart ? .quitReopen : .allow
+            if vm.screenAccessAwaitingRestart { return .quitReopen }
+            return vm.coordinator.permissionGate.hasRequestedScreenCaptureAccessThisSession
+                ? .openSettings : .allow
         case .camera, .microphone:
             // notDetermined can be resolved with an in-app prompt; denied/restricted needs Settings.
             return row.status == "not determined" ? .allow : .openSettings
@@ -220,7 +235,14 @@ struct RecordingAccessCover: View {
     }
 
     private func performAction(for row: PermissionStatusRow) {
-        guard let source = row.source else { return }
+        guard let source = row.source else {
+            switch coverAction(for: row) {
+            case .allow: vm.requestAccessibilityPermission()
+            case .openSettings: vm.openAccessibilitySettings()
+            default: break
+            }
+            return
+        }
         switch coverAction(for: row) {
         case .granted, .inactive:
             break
@@ -257,7 +279,9 @@ private struct AccessPermissionRow: View {
     let row: PermissionStatusRow
     let action: CoverAction
     let accent: Color
+    let isRequesting: Bool
     let onTap: () -> Void
+    let onOpenSettings: () -> Void
 
     var body: some View {
         HStack(spacing: 13) {
@@ -270,7 +294,7 @@ private struct AccessPermissionRow: View {
                 Text(subtitle)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.white.opacity(action == .inactive ? 0.3 : 0.5))
-                    .lineLimit(1)
+                    .lineLimit(2)
             }
 
             Spacer(minLength: 12)
@@ -282,11 +306,13 @@ private struct AccessPermissionRow: View {
     }
 
     private var subtitle: String {
-        guard let source = row.source else { return "" }
+        guard let source = row.source else {
+            return row.isGranted ? "Window controls ready" : "Optional — move and resize captured windows"
+        }
         switch action {
         case .inactive: return "Not in current setup"
         case .enable: return "Optional — record sound from apps"
-        case .quitReopen: return "Enabled — restart to finish"
+        case .quitReopen: return "After enabling in Settings, reopen BlitzRecorder"
         default: return source.onboardingPurpose
         }
     }
@@ -331,18 +357,23 @@ private struct AccessPermissionRow: View {
         case .openSettings:
             actionButton("Open Settings", icon: "gearshape")
         case .quitReopen:
-            actionButton("Quit & Reopen", icon: "arrow.clockwise")
+            HStack(spacing: 6) {
+                Button("Settings…", action: onOpenSettings)
+                    .blitzButton(.quiet)
+                    .controlSize(.small)
+                    .disabled(isRequesting)
+                actionButton("Quit & Reopen", icon: "arrow.clockwise")
+            }
         }
     }
 
     private func actionButton(_ title: String, icon: String) -> some View {
         Button(action: onTap) {
             Label(title, systemImage: icon)
-                .font(.system(size: 12, weight: .bold))
-                .padding(.horizontal, 12)
-                .frame(height: 30)
         }
         .blitzButton(.secondary)
+        .controlSize(.small)
+        .disabled(isRequesting)
         .pointingHandCursor()
     }
 }

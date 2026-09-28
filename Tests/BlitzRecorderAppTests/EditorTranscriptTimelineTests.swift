@@ -39,7 +39,7 @@ final class EditorTranscriptTimelineTests: XCTestCase {
         XCTAssertEqual(sounds.first?.range.end ?? 0, 4.26, accuracy: 0.001)
     }
 
-    func testLoudAudioWithoutWordsIsNonDialogueEvenInsideACoarseSpeechRange() {
+    func testCoarseSpeechRangesProtectLoudAudioWhenWordsAreMissing() {
         var wide = transcript()
         wide.speechRanges = [.init(startTime: 0, endTime: 10)]
         let items = EditorTranscriptTimeline.items(.init(
@@ -49,10 +49,27 @@ final class EditorTranscriptTimelineTests: XCTestCase {
             ], threshold: -42, duration: 10
         ))
         let sounds = items.filter { $0.kind == .nonDialogue }
-        XCTAssertEqual(sounds.count, 1)
-        XCTAssertEqual(sounds.first?.range.start ?? 0, 3.94, accuracy: 0.001)
-        XCTAssertEqual(sounds.first?.range.end ?? 0, 7.06, accuracy: 0.001)
+        XCTAssertTrue(sounds.isEmpty)
         XCTAssertTrue(items.contains { $0.kind == .word && $0.text == "hello" })
+    }
+
+    func testIncompleteTranscriptionDoesNotTurnDetectedSpeechIntoAutomaticSilence() {
+        var incomplete = transcript()
+        incomplete.speechRanges = [
+            .init(startTime: 0.9, endTime: 2.2),
+            .init(startTime: 4, endTime: 5.5)
+        ]
+        let items = EditorTranscriptTimeline.items(.init(
+            transcript: incomplete, windows: [
+                .init(start: 4.2, end: 5.3, decibels: -12),
+                .init(start: 7, end: 7.4, decibels: -12)
+            ], threshold: -42, duration: 10
+        ))
+        let sounds = items.filter { $0.kind == .nonDialogue }
+        XCTAssertEqual(sounds.count, 1)
+        XCTAssertEqual(sounds.first?.range.start ?? 0, 6.94, accuracy: 0.001)
+        XCTAssertEqual(sounds.first?.range.end ?? 0, 7.46, accuracy: 0.001)
+        XCTAssertFalse(sounds.contains { $0.range.start < 5.65 && $0.range.end > 3.85 })
     }
 
     func testTenWordShiftSelectionKeepsAnchorAndCommandSelectionKeepsGaps() throws {

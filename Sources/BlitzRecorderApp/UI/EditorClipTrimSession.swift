@@ -9,32 +9,30 @@ struct EditorClipTrimSession: Equatable {
         let duration: Double
     }
 
+    struct BeginRequest {
+        let origin: Origin
+        let displayDuration: Double
+    }
+
     private(set) var origin: Origin?
     private(set) var draft: TimelineEdits?
     private(set) var lockedDisplayDuration: Double?
 
-    var isActive: Bool { origin != nil || lockedDisplayDuration != nil }
+    var isActive: Bool { origin != nil }
 
     func edits(committed: TimelineEdits) -> TimelineEdits {
         draft ?? committed
     }
 
-    mutating func preview(_ edits: TimelineEdits?, currentDisplayDuration: Double) {
-        if lockedDisplayDuration == nil {
-            lockedDisplayDuration = currentDisplayDuration
-        }
-        draft = edits
-    }
-
-    mutating func beginExpand(_ origin: Origin, currentDisplayDuration: Double) {
-        guard self.origin == nil else { return }
+    mutating func beginTrim(_ request: BeginRequest) {
+        let origin = request.origin
+        guard self.origin == nil, origin.pixelsPerSecond.isFinite, origin.pixelsPerSecond > 0,
+            request.displayDuration.isFinite, request.displayDuration > 0 else { return }
         self.origin = origin
-        if lockedDisplayDuration == nil {
-            lockedDisplayDuration = currentDisplayDuration
-        }
+        lockedDisplayDuration = request.displayDuration
     }
 
-    mutating func applyExpand(translationWidth: CGFloat) -> EditorTimeRange? {
+    mutating func applyTrim(translationWidth: CGFloat) -> EditorTimeRange? {
         guard let origin else { return nil }
         let dragged = EditorClipSpine.dragRight(.init(
             edits: origin.edits, clip: origin.clip, nextClipStart: origin.nextClipStart,

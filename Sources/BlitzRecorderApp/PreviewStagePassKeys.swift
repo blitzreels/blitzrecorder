@@ -8,6 +8,7 @@ enum PreviewStagePassKeys {
         let isCameraCropEditingEnabled: Bool
         let isScreenCropEditingEnabled: Bool
         let enabledSources: Set<CaptureSource>
+        let fillsCanvasWhenOnlyVideoSource: Bool
         let cameraSourceAspectRatio: CGFloat
         let sceneLayout: SceneLayout
         let screenFillsSceneFrame: Bool

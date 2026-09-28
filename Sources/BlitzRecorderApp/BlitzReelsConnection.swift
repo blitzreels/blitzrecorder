@@ -264,6 +264,11 @@ final class BlitzReelsConnection {
         try await reload()
     }
 
+    func hostingAuthorization() async throws -> String {
+        try await connect()
+        return try await accessToken(forceRefresh: false)
+    }
+
     func reload() async throws {
         let result: BlitzReelsAccount
         do {

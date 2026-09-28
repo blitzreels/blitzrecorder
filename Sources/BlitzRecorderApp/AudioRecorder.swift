@@ -188,13 +188,19 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     }
 
     func finalizeSynchronization() async throws {
-        guard let request = queue.sync(execute: {
+        try await finalizeSynchronization(.init(onProgress: { _ in }))
+    }
+
+    func finalizeSynchronization(_ progress: AudioSynchronizationProgress) async throws {
+        guard var request = queue.sync(execute: {
             let request = pendingClockNormalization
             pendingClockNormalization = nil
             return request
         }) else {
+            progress.onProgress(1)
             return
         }
+        request.onProgress = progress.onProgress
         let result = try await AudioClockNormalizer.normalize(request)
         if result.didCorrect {
             NSLog(

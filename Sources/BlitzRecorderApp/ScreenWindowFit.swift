@@ -126,7 +126,7 @@ enum ScreenWindowFit {
             guard isCurrent() else { throw CancellationError() }
             return try await ShortsWindowArranger.fitWindow(
                 ownerPID: processID,
-                bounds: request.filter.contentRect,
+                bounds: ScreenCaptureGeometry.knownWindowTarget(binding)?.bounds ?? request.filter.contentRect,
                 title: binding.windowTitle,
                 appName: binding.applicationName ?? "Application",
                 displayID: displayID,

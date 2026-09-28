@@ -13,6 +13,8 @@ final class EditorMediaLibraryTests: XCTestCase {
         async let timeline: Void = library.loadFilmstrip(request: .init(assetID: asset.id, url: url, frameCount: 32))
         _ = await (metadata, timeline)
 
+        XCTAssertTrue(library.loadingIDs.isEmpty)
+        XCTAssertTrue(library.filmstripLoadingCounts.isEmpty)
         XCTAssertNotNil(library.posters[asset.id])
         XCTAssertNotNil(library.technicalMetadata[asset.id])
         XCTAssertGreaterThan(library.durations[asset.id] ?? 0, 0)
@@ -35,6 +37,8 @@ final class EditorMediaLibraryTests: XCTestCase {
         task.cancel()
         await task.value
 
+        XCTAssertTrue(library.loadingIDs.isEmpty)
+        XCTAssertTrue(library.filmstripLoadingCounts.isEmpty)
         XCTAssertTrue(library.posters.isEmpty)
         XCTAssertTrue(library.filmstrips.isEmpty)
         XCTAssertTrue(library.durations.isEmpty)

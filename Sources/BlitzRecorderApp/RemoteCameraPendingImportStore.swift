@@ -86,6 +86,18 @@ enum RemoteCameraTakeIDResolver {
 
 struct RemoteCameraPendingImportStore {
     func all(settings: RecordingSettings) -> [RemoteCameraPendingImport] {
+        var seen: Set<UUID> = []
+        return settings.projectLibraries.flatMap { location in
+            let access = OutputDirectoryAccess(locations: [location])
+            defer { access.stop() }
+            guard access.hasSecurityScopedAccess else { return [RemoteCameraPendingImport]() }
+            var localSettings = settings
+            localSettings.projectLibrary = location
+            return localImports(settings: localSettings)
+        }.filter { seen.insert($0.takeID).inserted }
+    }
+
+    private func localImports(settings: RecordingSettings) -> [RemoteCameraPendingImport] {
         guard let data = try? Data(contentsOf: indexURL(settings: settings)) else {
             return []
         }
@@ -93,7 +105,16 @@ struct RemoteCameraPendingImportStore {
     }
 
     func upsert(_ pendingImport: RemoteCameraPendingImport, settings: RecordingSettings) {
-        var imports = all(settings: settings)
+        let root = pendingImport.scratchDirectory.deletingLastPathComponent().deletingLastPathComponent()
+            .standardizedFileURL.resolvingSymlinksInPath()
+        var settings = settings
+        if let owner = settings.projectLibraries.first(where: { $0.url.standardizedFileURL.resolvingSymlinksInPath() == root }) {
+            settings.projectLibrary = owner
+        }
+        let access = OutputDirectoryAccess(locations: [settings.sourceStorage])
+        defer { access.stop() }
+        guard access.hasSecurityScopedAccess else { return }
+        var imports = localImports(settings: settings)
         if let index = imports.firstIndex(where: { $0.takeID == pendingImport.takeID }) {
             imports[index] = pendingImport
         } else {
@@ -103,22 +124,40 @@ struct RemoteCameraPendingImportStore {
     }
 
     func remove(takeID: UUID, settings: RecordingSettings) {
-        let imports = all(settings: settings).filter { $0.takeID != takeID }
-        save(imports, settings: settings)
+        updateLibraries(.init(settings: settings, mutate: { $0.removeAll { $0.takeID == takeID } }))
     }
 
     func updateExpectedByteCount(takeID: UUID, expectedByteCount: Int64, settings: RecordingSettings) {
-        var imports = all(settings: settings)
-        guard let index = imports.firstIndex(where: { $0.takeID == takeID }) else { return }
-        imports[index].expectedByteCount = expectedByteCount
-        save(imports, settings: settings)
+        updateLibraries(.init(settings: settings, mutate: { imports in
+            guard let index = imports.firstIndex(where: { $0.takeID == takeID }) else { return }
+            imports[index].expectedByteCount = expectedByteCount
+        }))
     }
 
     func updatePhase(takeID: UUID, phase: RemoteCameraImportPhase, settings: RecordingSettings) {
-        var imports = all(settings: settings)
-        guard let index = imports.firstIndex(where: { $0.takeID == takeID }) else { return }
-        imports[index].phase = phase
-        save(imports, settings: settings)
+        updateLibraries(.init(settings: settings, mutate: { imports in
+            guard let index = imports.firstIndex(where: { $0.takeID == takeID }) else { return }
+            imports[index].phase = phase
+        }))
+    }
+
+    private struct LibraryUpdate {
+        let settings: RecordingSettings
+        let mutate: (inout [RemoteCameraPendingImport]) -> Void
+    }
+
+    private func updateLibraries(_ request: LibraryUpdate) {
+        for location in request.settings.projectLibraries {
+            let access = OutputDirectoryAccess(locations: [location])
+            defer { access.stop() }
+            guard access.hasSecurityScopedAccess else { continue }
+            var settings = request.settings
+            settings.projectLibrary = location
+            var imports = localImports(settings: settings)
+            let previous = imports
+            request.mutate(&imports)
+            if imports != previous { save(imports, settings: settings) }
+        }
     }
 
     private func save(_ imports: [RemoteCameraPendingImport], settings: RecordingSettings) {
@@ -133,7 +172,7 @@ struct RemoteCameraPendingImportStore {
     }
 
     private func indexURL(settings: RecordingSettings) -> URL {
-        settings.outputDirectory
+        settings.sourceStorage.url
             .appendingPathComponent(".BlitzRecorderScratch", isDirectory: true)
             .appendingPathComponent("remote-camera-pending-imports.json")
     }

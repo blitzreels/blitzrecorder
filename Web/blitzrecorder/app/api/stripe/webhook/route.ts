@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { getStripe } from "@/lib/payments";
 import { claimLicenseForCheckoutSession } from "@/lib/licenses";
+import { syncHostingBilling } from "@/lib/hosting/billing";
 import {
   isLicenseStoreConfigured,
   revokeLicenseByPaymentIntent,
@@ -36,13 +37,9 @@ export async function POST(request: Request) {
     );
   }
 
-  // Without a store the stateless flow stands alone: validation re-checks
-  // Stripe live, so there is nothing to record here.
-  if (!isLicenseStoreConfigured()) {
-    return NextResponse.json({ received: true });
-  }
-
   try {
+    await syncHostingBilling(event);
+    if (!isLicenseStoreConfigured()) return NextResponse.json({ received: true });
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object;

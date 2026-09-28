@@ -223,12 +223,12 @@ final class TakeFinalizer {
     ) -> TakeFinalizationOutcome {
         do {
             onMessage?("Preparing editable project...")
-            onRenderProgress?(1)
             try writeRecoverableProject(
                 take: take,
                 settings: settings,
                 sceneEvents: sceneEvents
             )
+            onRenderProgress?(1)
             if let warning, !warning.isEmpty {
                 return .projectReadyWithWarning(take, warning: warning)
             }

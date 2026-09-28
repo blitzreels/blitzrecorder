@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
     private lazy var coordinator = RecorderCoordinator(accessController: accessController)
     private var windowController: MainWindowController?
     private var statusItem: NSStatusItem?
+    private var recordingAppIcon: RecordingAppIconController?
     private var recordingStatusMenuItem: NSMenuItem?
     private var blinkTimer: Timer?
     private var statusElapsedTimer: Timer?
@@ -40,6 +41,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
 
         NSApp.setActivationPolicy(.regular)
         applyDevIconBadgeIfNeeded()
+        recordingAppIcon = RecordingAppIconController(.init(
+            baseImage: NSApp.applicationIconImage,
+            applyImage: { image in
+                NSApp.applicationIconImage = image
+                NSApp.dockTile.display()
+            }
+        ))
         if !LocalDevelopmentRuntime.disablesIdleCapture(), LivePreviewPreference().isEnabled {
             coordinator.prewarmLocalCameraPreviewIfAuthorized()
         }
@@ -77,6 +85,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
         coordinator.onRecordingRecovery = { [weak self] output in
             self?.windowController?.applyRecoveryOutput(output)
             self?.rebuildMenu()
+        }
+        coordinator.onCaptureStopProgress = { [weak self] progress in
+            self?.windowController?.updateCaptureStopProgress(progress)
         }
         coordinator.onRenderProgress = { [weak self] progress in
             self?.windowController?.updateRenderProgress(progress)
@@ -124,6 +135,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard terminationTask == nil else { return .terminateLater }
+        coordinator.permissionGate.stopRequestingPermissions()
+        windowController?.cancelPendingPermissionRequests()
         terminationTask = Task { [weak self, weak sender] in
             guard let self else {
                 sender?.reply(toApplicationShouldTerminate: true)
@@ -295,6 +308,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
     }
 
     private func updateStatusItem(for state: RecordingState) {
+        recordingAppIcon?.update(state)
         blinkTimer?.invalidate()
         blinkTimer = nil
 
@@ -705,7 +719,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
         panel.allowsMultipleSelection = false
         panel.directoryURL = coordinator.settings.outputDirectory
         panel.prompt = "Choose"
-        panel.message = "Pick the folder where recordings will be saved."
+        panel.message = "Choose where finished videos are saved. Source files and your library stay in place."
         if panel.runModal() == .OK, let url = panel.url {
             coordinator.setOutputDirectory(url)
             windowController?.syncRuleOfThirdsOverlay()

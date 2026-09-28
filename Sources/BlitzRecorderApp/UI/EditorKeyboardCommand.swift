@@ -51,6 +51,7 @@ enum EditorKeyboardCommand: Equatable {
         }
         guard !shifted else { return nil }
         switch request.keyCode {
+        case 36, 76: return .deleteSelection
         case 115: return .goToStart
         case 119: return .goToEnd
         case 49: return .togglePlayback
@@ -187,7 +188,6 @@ enum EditorDeleteRouting {
     enum Action: Equatable {
         case toggleAsset
         case cutRange
-        case toggleSilence
         case deleteSegment
         case removePlaced
         case removePrivacy
@@ -201,18 +201,15 @@ enum EditorDeleteRouting {
 
     static func action(_ request: Request) -> Action? {
         if case .placed = request.selection { return .removePlaced }
-        if request.hasPrivacySelection { return .removePrivacy }
         switch request.selection {
         case .asset:
             return request.assetIsToggleable ? .toggleAsset : nil
-        case .silenceRange, .silenceRanges:
-            return .toggleSilence
-        case .range, .ranges:
+        case .range, .ranges, .silenceRange, .silenceRanges:
             return .cutRange
         case .segment:
             return .deleteSegment
         case .placed, nil:
-            return nil
+            return request.hasPrivacySelection ? .removePrivacy : nil
         }
     }
 
@@ -221,9 +218,7 @@ enum EditorDeleteRouting {
         case .toggleAsset:
             "Mute or hide the selected track (Delete). Undo with ⌘Z."
         case .cutRange:
-            "Delete this clip from all tracks and close the gap (Delete). Undo with ⌘Z."
-        case .toggleSilence:
-            "Switch selected sections between silence and sound (Delete)"
+            "Delete the selection from all tracks and close the gap (Return or Delete). Undo with ⌘Z."
         case .deleteSegment:
             "Delete this segment from all tracks and close the gap (Delete). Undo with ⌘Z."
         case .removePlaced:
@@ -231,23 +226,6 @@ enum EditorDeleteRouting {
         case .removePrivacy:
             "Remove the selected privacy mask. Undo with ⌘Z."
         }
-    }
-}
-
-struct EditorTimelineHeaderActions: Equatable {
-    struct Request: Equatable {
-        let hasRangeToolbar: Bool
-        let hasSilenceSelection: Bool
-    }
-
-    let showsRange: Bool
-    let showsDelete: Bool
-
-    static func resolve(_ request: Request) -> Self {
-        Self(
-            showsRange: !request.hasRangeToolbar,
-            showsDelete: !request.hasRangeToolbar && !request.hasSilenceSelection
-        )
     }
 }
 

@@ -12,7 +12,7 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         XCTAssertFalse(RecorderViewModel.StudioMode.edit.keepsIdleCaptureResourcesActive)
     }
 
-    func testProjectsStayLockedUntilAProjectExists() throws {
+    func testProjectsIsTheDefaultHomeEvenBeforeFirstRecording() throws {
         let defaults = temporaryDefaults()
         let coordinator = RecorderCoordinator(
             accessController: AccessController(defaults: defaults),
@@ -25,10 +25,12 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         viewModel.settings = settings
         viewModel.refreshRecentProjects()
 
-        XCTAssertFalse(viewModel.canShowProjects)
+        XCTAssertTrue(viewModel.canShowProjects)
+        XCTAssertEqual(viewModel.studioMode, .projects)
+        viewModel.showRecorder()
         viewModel.showProjects()
-        guard case .record = viewModel.studioMode else {
-            XCTFail("Expected an empty project library to keep Record selected")
+        guard case .projects = viewModel.studioMode else {
+            XCTFail("Expected the empty project library to remain accessible")
             return
         }
 
@@ -177,6 +179,48 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         XCTAssertFalse(gate.requestScreenCaptureAccessIfNeeded())
         XCTAssertFalse(gate.requestScreenCaptureAccessIfNeeded())
         XCTAssertEqual(system.screenCaptureRequestCount, 1)
+    }
+
+    func testScreenRequestLeavesSettingsUnderUserControl() async {
+        let system = TestRecordingPermissionSystem()
+        system.screenCaptureAccess = false
+        let gate = PermissionGate(system: system)
+
+        let first = await gate.requestScreenCaptureAccess()
+        let second = await gate.requestScreenCaptureAccess()
+
+        XCTAssertEqual(first.status, .needsSettings)
+        XCTAssertEqual(second.status, .needsSettings)
+        XCTAssertEqual(system.screenCaptureRequestCount, 1)
+        XCTAssertTrue(system.openedPanes.isEmpty)
+    }
+
+    func testAccessibilityRequestLeavesSettingsUnderUserControl() async {
+        let system = TestRecordingPermissionSystem()
+        system.accessibilityAccess = false
+        let gate = PermissionGate(system: system)
+
+        let first = await gate.requestAccessibilityAccessForWindowControls()
+        let second = await gate.requestAccessibilityAccessForWindowControls()
+
+        XCTAssertEqual(first.status, .needsSettings)
+        XCTAssertEqual(second.status, .needsSettings)
+        XCTAssertEqual(system.accessibilityRequestCount, 1)
+        XCTAssertTrue(system.openedPanes.isEmpty)
+    }
+
+    func testShutdownStopsPendingPermissionRequest() async throws {
+        let system = TestRecordingPermissionSystem()
+        system.screenCaptureAccess = false
+        let gate = PermissionGate(system: system)
+        let request = Task { await gate.requestScreenCaptureAccess() }
+
+        try await Task.sleep(for: .milliseconds(20))
+        gate.stopRequestingPermissions()
+
+        let result = await request.value
+        XCTAssertEqual(result.status, .cancelled)
+        XCTAssertTrue(system.openedPanes.isEmpty)
     }
 
     func testRecordingSessionOwnsPreparationAndExportTransitions() {

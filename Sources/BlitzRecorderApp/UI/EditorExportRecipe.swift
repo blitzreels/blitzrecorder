@@ -134,3 +134,22 @@ struct EditorExportRecipe {
         return " · \(playbackRate.displayName)"
     }
 }
+
+enum EditorExportLayouts {
+    struct Request {
+        let current: CaptureLayout
+        let additional: Set<CaptureLayout>
+    }
+
+    static func resolve(_ request: Request) -> [CaptureLayout] {
+        CaptureLayout.allCases.filter { $0 == request.current || request.additional.contains($0) }
+    }
+
+    static func title(_ layout: CaptureLayout) -> String {
+        switch layout {
+        case .vertical: "Vertical"
+        case .horizontal: "Landscape"
+        case .square: "Square"
+        }
+    }
+}

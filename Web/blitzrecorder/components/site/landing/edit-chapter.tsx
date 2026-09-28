@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { JourneySectionView } from "@/components/site/journey-markers";
 import { Section } from "@/components/ui/layout";
-import { ChapterHeader, chapters } from "@/components/site/landing/chapter";
+import { ChapterHeader, ChapterPoints, chapters, type ChapterPoint } from "@/components/site/landing/chapter";
 import { trackJourneyEvent } from "@/lib/journey-events";
 import { assets } from "@/lib/assets";
 import { Button } from "@/components/ui/button";
@@ -52,17 +52,10 @@ const SEGMENTS = buildSegments();
 
 export const silentSeconds = SILENCES.reduce((sum, [start, end]) => sum + end - start, 0);
 
-const transcript = [
-  { time: "00:02", speaker: "Host", text: "Today I want to show you a 3D UI library for website design." },
-  { time: "00:14", speaker: "Host", text: "Every component ships with its own scene, so a planet drops into a hero in one line." },
-  { time: "00:31", speaker: "Guest", text: "Does it work with the dark theme too?" },
-  { time: "00:35", speaker: "Host", text: "It does. Watch what happens when I switch it." },
-];
-
-const tools = [
+const points: ChapterPoint[] = [
+  { title: "Transcripts on your Mac", body: "Speakers are kept apart, including people on a call. Nothing is uploaded." },
   { title: "Layouts per segment", body: "Change the composition for one part of the take without touching the rest." },
   { title: "Text and zoom", body: "Add titles and zoom into the screen where the detail matters." },
-  { title: "Crop and fit", body: "Fill the frame or show the whole screen, and reposition any source on the canvas." },
 ];
 
 export function EditChapter() {
@@ -74,8 +67,8 @@ export function EditChapter() {
       <JourneySectionView area="landing" section="edit" payload={{ page: "home" }} />
       <ChapterHeader
         mark={chapters.edit}
-        title="Cut the pauses. Keep the good part."
-        lede="When you stop, the take opens on a timeline with the screen, camera, microphone, and Mac audio on their own tracks. Silence detection finds the dead air for you."
+        title="Cut the pauses in one click."
+        lede="Every take opens on a timeline with the screen, camera, and audio on their own tracks. Try it below."
         aside={null}
       />
 
@@ -124,41 +117,7 @@ export function EditChapter() {
         </div>
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-        <div data-reveal className="panel rounded-card p-5 sm:p-6">
-          <div className="flex items-center justify-between gap-4">
-            <p className="label-mono text-faint">Transcript</p>
-            <p className="text-xs text-faint">Made on your Mac</p>
-          </div>
-          <ul className="mt-5 flex flex-col gap-4">
-            {transcript.map((line) => (
-              <li key={line.time} className="grid grid-cols-[3.25rem_1fr] gap-3">
-                <span className="font-mono text-xs leading-6 text-primary/80 tabular-nums">{line.time}</span>
-                <p className="text-[15px] leading-6">
-                  <span className="font-semibold text-foreground">{line.speaker}</span>{" "}
-                  <span className="text-muted-foreground">{line.text}</span>
-                </p>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-6 border-t border-separator pt-4 text-sm leading-6 text-faint">
-            Speakers are kept apart, including people on a call. Copy it as Markdown or use it to title the project.
-          </p>
-        </div>
-
-        <ul className="flex flex-col">
-          {tools.map((tool) => (
-            <li
-              key={tool.title}
-              data-reveal
-              className="border-t border-separator py-5 first:border-t-0 first:pt-1 lg:first:pt-5 lg:first:border-t"
-            >
-              <h3 className="font-display text-lg font-bold tracking-[-0.01em]">{tool.title}</h3>
-              <p className="mt-1.5 text-[15px] leading-6 text-muted-foreground">{tool.body}</p>
-            </li>
-          ))}
-        </ul>
-      </div>
+      <ChapterPoints points={points} />
     </Section>
   );
 }

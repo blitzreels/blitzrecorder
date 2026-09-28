@@ -422,9 +422,21 @@ final class RecorderStudioConfiguration {
     }
 
     func setOutputDirectory(_ url: URL) {
+        if settings.projectLibrary == nil { settings.projectLibrary = settings.sourceStorage }
         settings.outputDirectory = url
         settings.outputDirectoryBookmarkData = RecordingSettingsStore.bookmarkData(for: url)
         persist()
+    }
+
+    func setSourceDirectory(_ url: URL) {
+        guard state == .idle else { return }
+        let libraries = settings.projectLibraries
+        let selectedRoot = url.standardizedFileURL.resolvingSymlinksInPath()
+        settings.projectLibrary = RecordingStorageLocation(url: url, bookmarkData: RecordingSettingsStore.bookmarkData(for: url))
+        settings.additionalProjectLibraries = libraries.filter {
+            $0.url.standardizedFileURL.resolvingSymlinksInPath() != selectedRoot
+        }
+        persist(saveSceneSnapshot: false)
     }
 
     func setDisplay(id: String?) {

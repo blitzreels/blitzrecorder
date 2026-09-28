@@ -62,6 +62,7 @@ final class TakeRecordingRuntime {
     }
 
     private let liveCompositedRecorder: LiveCompositedRecording
+    var onStopProgress: ((CaptureStopProgress) -> Void)?
 
     private let cursorTracker = RecordingCursorTracker()
     private var mode: Mode = .idle
@@ -232,6 +233,7 @@ final class TakeRecordingRuntime {
             return CaptureSourceRunSummary(completions: [:])
         }
         mode = .idle
+        captureRun.onStopProgress = onStopProgress
         return await captureRun.stop()
     }
 

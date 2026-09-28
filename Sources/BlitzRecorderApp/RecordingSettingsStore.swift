@@ -28,6 +28,8 @@ enum RecordingSettingsStore {
         static let remoteCameraSettingsByServiceID = "recording.remoteCameraSettingsByServiceID"
         static let outputDirectoryPath = "recording.outputDirectoryPath"
         static let outputDirectoryBookmark = "recording.outputDirectoryBookmark"
+        static let projectLibrary = "recording.projectLibrary"
+        static let additionalProjectLibraries = "recording.additionalProjectLibraries"
         static let screenCrop = "screen.crop"
         static let screenSourceAspectRatio = "screen.sourceAspectRatio"
         static let screenWindowZoom = "screen.windowZoom"
@@ -265,6 +267,14 @@ enum RecordingSettingsStore {
             settings.outputDirectory = URL(fileURLWithPath: path, isDirectory: true)
         }
 
+        if let data = defaults.data(forKey: Key.projectLibrary),
+           let location = try? JSONDecoder().decode(RecordingStorageLocation.self, from: data) {
+            settings.projectLibrary = resolvedStorageLocation(location)
+        }
+        if let data = defaults.data(forKey: Key.additionalProjectLibraries),
+           let locations = try? JSONDecoder().decode([RecordingStorageLocation].self, from: data) {
+            settings.additionalProjectLibraries = locations.map(resolvedStorageLocation)
+        }
         settings.usesPickedScreenContent = false
         return settings
     }
@@ -307,6 +317,14 @@ enum RecordingSettingsStore {
             defaults.removeObject(forKey: Key.remoteCameraSettingsByServiceID)
         }
         defaults.set(settings.outputDirectory.path, forKey: Key.outputDirectoryPath)
+        if let location = settings.projectLibrary, let data = try? JSONEncoder().encode(location) {
+            defaults.set(data, forKey: Key.projectLibrary)
+        } else {
+            defaults.removeObject(forKey: Key.projectLibrary)
+        }
+        if let data = try? JSONEncoder().encode(settings.additionalProjectLibraries) {
+            defaults.set(data, forKey: Key.additionalProjectLibraries)
+        }
         if let bookmarkData = settings.outputDirectoryBookmarkData {
             defaults.set(bookmarkData, forKey: Key.outputDirectoryBookmark)
         } else {
@@ -374,6 +392,15 @@ enum RecordingSettingsStore {
 
     static func bookmarkData(for url: URL) -> Data? {
         try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
+    }
+
+    private static func resolvedStorageLocation(_ location: RecordingStorageLocation) -> RecordingStorageLocation {
+        guard let data = location.bookmarkData else { return location }
+        var stale = false
+        guard let url = try? URL(resolvingBookmarkData: data, options: [.withSecurityScope],
+                                relativeTo: nil, bookmarkDataIsStale: &stale) else { return location }
+        _ = url.startAccessingSecurityScopedResource()
+        return RecordingStorageLocation(url: url, bookmarkData: stale ? bookmarkData(for: url) ?? data : data)
     }
 
     private static func string(from rect: CGRect) -> String {

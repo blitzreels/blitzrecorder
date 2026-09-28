@@ -49,6 +49,7 @@ enum ScreenWindowFitRetry {
 enum WindowFrameWriter {
     static let settlingInterval: Duration = .milliseconds(10)
     static let maximumSettlingPolls = 50
+    static let stableChangedFramePolls = 6
 
     enum Change {
         case size(CGSize)
@@ -77,14 +78,28 @@ enum WindowFrameWriter {
             .position(request.frame.origin),
             .size(request.frame.size)
         ]
-        for change in changes {
+        var moved = false
+        for (index, change) in changes.enumerated() {
             try Task.checkCancellation()
-            if change.matches(try request.read()) { continue }
+            if index == 2, !moved { continue }
+            let original = try request.read()
+            if change.matches(original) { continue }
             try request.write(change)
+            var previous = original
+            var stablePolls = 0
+            var hasChanged = false
             for _ in 0..<maximumSettlingPolls {
-                if change.matches(try request.read()) { break }
+                let current = try request.read()
+                if change.matches(current) { break }
+                hasChanged = hasChanged || current != original
+                stablePolls = current == previous ? stablePolls + 1 : 0
+                if hasChanged, stablePolls >= stableChangedFramePolls { break }
+                previous = current
                 try await request.settle()
                 try Task.checkCancellation()
+            }
+            if case .position = change {
+                moved = try request.read().origin != original.origin
             }
         }
         return try request.read()
@@ -215,7 +230,7 @@ enum ShortsWindowArranger {
         displayID: String?,
         fittingPlan: (NSScreen) -> TargetWindowFittingPlan
     ) async throws -> ShortsWindowArrangement {
-        guard accessibilityTrusted(prompt: true) else {
+        guard accessibilityTrusted(prompt: false) else {
             throw ShortsWindowArrangerError.accessibilityPermissionRequired
         }
 
@@ -263,7 +278,7 @@ enum ShortsWindowArranger {
         widthDelta: CGFloat,
         heightDelta: CGFloat
     ) throws -> ShortsWindowArrangement {
-        guard accessibilityTrusted(prompt: true) else {
+        guard accessibilityTrusted(prompt: false) else {
             throw ShortsWindowArrangerError.accessibilityPermissionRequired
         }
 
@@ -294,7 +309,7 @@ enum ShortsWindowArranger {
         width: CGFloat,
         height: CGFloat
     ) throws -> ShortsWindowArrangement {
-        guard accessibilityTrusted(prompt: true) else {
+        guard accessibilityTrusted(prompt: false) else {
             throw ShortsWindowArrangerError.accessibilityPermissionRequired
         }
 

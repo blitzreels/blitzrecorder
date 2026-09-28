@@ -2,7 +2,7 @@
 import XCTest
 
 final class ExportPerformanceProfileTests: XCTestCase {
-    func testSmallerProfileUses1080p30AndPreservesCreativeEffects() {
+    func testSharingProfilePreservesScreenDetailAndCreativeEffects() {
         let profile = profile(.fast)
         var settings = RecordingSettings()
         settings.screenShadowEnabled = true
@@ -14,8 +14,8 @@ final class ExportPerformanceProfileTests: XCTestCase {
         XCTAssertEqual(profile.framesPerSecond, 30)
         XCTAssertEqual(profile.videoQuality, .web)
         XCTAssertEqual(appliedSettings.exportEncoding?.codec, .h264)
-        XCTAssertEqual(appliedSettings.finalVideoBitrate, 1_600_000)
-        XCTAssertEqual(appliedSettings.finalAudioBitrate, 128_000)
+        XCTAssertEqual(appliedSettings.finalVideoBitrate, 8_000_000)
+        XCTAssertEqual(appliedSettings.finalAudioBitrate, 192_000)
         XCTAssertTrue(appliedSettings.screenShadowEnabled)
         XCTAssertTrue(appliedSettings.cameraShadowEnabled)
         XCTAssertTrue(appliedScene.screenShadowEnabled)
@@ -71,15 +71,15 @@ final class ExportPerformanceProfileTests: XCTestCase {
         XCTAssertEqual(profile.framesPerSecond, 24)
     }
 
-    func testSmallerProfileAppliesWebEncodingBelowTheOldBitrateFloor() {
+    func testSharingProfileAppliesHighDetailH264Encoding() {
         let settings = profile(.fast).applying(to: RecordingSettings())
 
         XCTAssertEqual(settings.outputResolution, .p1080)
         XCTAssertEqual(settings.framesPerSecond, 30)
         XCTAssertEqual(settings.exportEncoding?.codec, .h264)
-        XCTAssertEqual(settings.finalVideoBitrate, 1_600_000)
-        XCTAssertEqual(settings.finalAudioBitrate, 128_000)
-        XCTAssertEqual(settings.exportEncoding?.quality ?? -1, 0.40, accuracy: 0.001)
+        XCTAssertEqual(settings.finalVideoBitrate, 8_000_000)
+        XCTAssertEqual(settings.finalAudioBitrate, 192_000)
+        XCTAssertEqual(settings.exportEncoding?.quality ?? -1, 0.75, accuracy: 0.001)
     }
 
     func testCompactCustomProfileStaysUnderTwoMegabitsAt1080p30() {

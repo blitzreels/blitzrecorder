@@ -4,6 +4,7 @@ enum PreviewStageLayout {
     struct RenderRequest: Equatable {
         let canvas: CGRect
         let enabledSources: Set<CaptureSource>
+        let fillsCanvasWhenOnlyVideoSource: Bool
         let sceneLayout: SceneLayout
         let screenFillsSceneFrame: Bool
         let screenCrop: CGRect?
@@ -64,7 +65,8 @@ enum PreviewStageLayout {
                 screenContentMode: request.screenContentMode,
                 cameraContentMode: request.cameraContentMode,
                 cameraFramePadding: request.cameraFramePadding,
-                cameraShadowEnabled: request.cameraShadowEnabled
+                cameraShadowEnabled: request.cameraShadowEnabled,
+                fillsCanvasWhenOnlyVideoSource: request.fillsCanvasWhenOnlyVideoSource
             ),
             origin: .lowerLeft
         )
