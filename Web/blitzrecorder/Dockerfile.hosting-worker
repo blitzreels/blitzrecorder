@@ -13,4 +13,4 @@ COPY scripts/hosting-worker.ts ./scripts/hosting-worker.ts
 USER node
 ENV NODE_ENV=production
 STOPSIGNAL SIGTERM
-CMD ["node", "--import", "tsx", "scripts/hosting-worker.ts"]
+CMD ["sh", "-c", "rm -rf /tmp/blitz-hosting-* && exec node --import tsx scripts/hosting-worker.ts"]

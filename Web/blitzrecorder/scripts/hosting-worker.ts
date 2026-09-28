@@ -26,7 +26,7 @@ async function main() {
       await cleanupExpired();
       nextMaintenance = Date.now() + 30 * 60_000;
     }
-    const processed = (draining || maintenance || signals.length > 0) && await processNext();
+    const processed: boolean = (draining || maintenance || signals.length > 0) && await processNext();
     draining = processed;
     if (!processed) await clearCompletedSignals(signals);
     if (process.argv.includes("--once")) break;
