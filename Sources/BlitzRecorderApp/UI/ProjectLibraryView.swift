@@ -38,6 +38,11 @@ enum ProjectLibraryDetailTab: CaseIterable, Equatable {
 }
 
 struct ProjectLibraryNavigationState: Equatable {
+    enum Section: String, CaseIterable {
+        case recordings = "Recordings"
+        case shared = "Shared"
+    }
+    var section: Section = .recordings
     var selectedProjectIDs: Set<UUID> = []
     var selectedDetailTab: ProjectLibraryDetailTab = .overview
     var searchText = ""
@@ -89,6 +94,7 @@ struct ProjectLibraryView: View {
     }
 
     @Bindable var vm: RecorderViewModel
+    @Bindable private var sharing = HostedVideoShareController.shared
     @State private var openingProjectID: UUID?
     @State private var projectsPendingDeletion: [RecordingProjectHistory.Entry] = []
     @State private var projectPendingRename: RecordingProjectHistory.Entry?
@@ -148,6 +154,11 @@ struct ProjectLibraryView: View {
         VStack(spacing: 0) {
             commandBar
                 .blitzWindowToolbar(showsUpdate: false)
+            if vm.projectLibraryNavigation.section == .shared {
+                HostedVideoLibraryView(controller: sharing, showRecordings: {
+                    vm.projectLibraryNavigation.section = .recordings
+                })
+            } else {
             trashStatusBar
 
             HStack(spacing: 0) {
@@ -159,6 +170,7 @@ struct ProjectLibraryView: View {
 
                 projectDetail
             }
+            }
         }
         .background(BlitzUI.projectLibraryBackground)
         .transaction { transaction in
@@ -168,6 +180,7 @@ struct ProjectLibraryView: View {
         .task {
             vm.refreshRecentProjects()
             selectFirstProjectIfNeeded()
+            await sharing.refresh()
         }
         .task(id: vm.recentProjects.map(\.id)) {
             await loadMetadata()
@@ -189,6 +202,9 @@ struct ProjectLibraryView: View {
         }
         .onChange(of: vm.projectLibraryNavigation.selectedProjectIDs) {
             vm.projectLibraryNavigation.selectedDetailTab = vm.projectLibraryNavigation.searchText.isEmpty ? .overview : .transcript
+        }
+        .onChange(of: vm.projectLibraryNavigation.section) {
+            if vm.projectLibraryNavigation.section == .shared { projectPlayback.pauseForEditing() }
         }
         .onDisappear {
             projectPlayback.teardown()
@@ -243,9 +259,11 @@ struct ProjectLibraryView: View {
             Text("Projects")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(BlitzUI.primaryText)
-            Text(projectCountLabel)
-                .font(.system(size: 12, weight: .regular))
-                .foregroundStyle(BlitzUI.secondaryText)
+            BlitzSegmentedPicker(configuration: .init(
+                title: "Project library", options: ProjectLibraryNavigationState.Section.allCases,
+                selection: $vm.projectLibraryNavigation.section, label: { $0.rawValue }
+            ))
+            .fixedSize()
 
             Spacer(minLength: 16)
 
@@ -422,6 +440,10 @@ struct ProjectLibraryView: View {
                     .font(.system(size: 10, weight: .regular))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                if sharing.sharedURL(forProject: project.projectPath) != nil {
+                    Label("Shared", systemImage: "link")
+                        .font(.system(size: 10, weight: .medium)).foregroundStyle(BlitzUI.mint)
+                }
             }
 
             Spacer(minLength: 0)
@@ -451,6 +473,14 @@ struct ProjectLibraryView: View {
 
         Group {
             if projects.count == 1, let project = projects.first {
+                if let url = sharing.sharedURL(forProject: project.projectPath) {
+                    Button("Copy share link") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                    }
+                    Button("Open shared video") { NSWorkspace.shared.open(url) }
+                    Divider()
+                }
                 Button("Edit recording") {
                     vm.openProject(project)
                 }
@@ -859,6 +889,9 @@ struct ProjectLibraryView: View {
                 }
                 .font(.system(size: 11, weight: .regular))
                 .foregroundStyle(BlitzUI.secondaryText)
+                if let url = sharing.sharedURL(forProject: project.projectPath) {
+                    HostedVideoLinkActions(url: url).controlSize(.small)
+                }
             }
 
             Spacer(minLength: 0)

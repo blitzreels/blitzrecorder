@@ -116,10 +116,14 @@ struct EditorView: View {
                     .background(BlitzUI.canvasBackground)
             } inspector: {
                 if showsHostingShare {
-                    HostedVideoSharePanel(controller: .shared, preparation: preparesHostedExport ? .init(
+                    HostedVideoSharePanel(controller: .shared, context: .project(project?.projectPath), preparation: preparesHostedExport ? .init(
                         title: project?.displayTitle ?? "Video", summary: exportRecipe(for: .link).summary,
                         status: exportStatus, export: { exportVideo(to: .link) }
-                    ) : nil, newExport: { preparesHostedExport = true }, close: { showsHostingShare = false })
+                    ) : nil, newExport: { preparesHostedExport = true }, close: { showsHostingShare = false },
+                    showLibrary: {
+                        vm.projectLibraryNavigation.section = .shared
+                        vm.showProjects()
+                    })
                 } else {
                 EditorInspector(
                     vm: vm,
