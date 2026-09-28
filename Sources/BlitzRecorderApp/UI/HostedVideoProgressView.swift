@@ -7,18 +7,20 @@ struct HostedVideoProgressPresentation {
     let fraction: Double?
 
     static func exporting(_ progress: EditorExportStatus.Progress) -> Self {
-        .init(stage: 0, title: "Saving cloud copy", detail: progress.supplementaryDetail ?? "Rendering your edit at source quality.",
+        .init(stage: 0, title: "Saving cloud copy", detail: progress.supplementaryDetail ?? "Rendering your edit in high quality, up to 1080p.",
               fraction: progress.value)
     }
 
     static func transfer(_ progress: HostingClient.Progress) -> Self {
         switch progress {
+        case .optimizing(let fraction):
+            .init(stage: 0, title: "Preparing sharing copy", detail: "Reducing this export to 1080p maximum. Your original stays unchanged.", fraction: fraction)
         case .preparing:
             .init(stage: 1, title: "Connecting to cloud", detail: "Your local copy is saved. Preparing a secure upload.", fraction: nil)
         case .uploading(let bytes):
             .init(stage: 1, title: "Uploading video", detail: bytes.detail, fraction: bytes.fraction)
         case .processing:
-            .init(stage: 2, title: "Preparing playback", detail: "Upload complete. Creating streaming quality options; your original is saved.", fraction: nil)
+            .init(stage: 2, title: "Preparing playback", detail: "Upload complete. Creating streaming quality options.", fraction: nil)
         }
     }
 }

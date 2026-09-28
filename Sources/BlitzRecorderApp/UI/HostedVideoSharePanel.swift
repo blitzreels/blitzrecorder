@@ -69,10 +69,10 @@ struct HostedVideoSharePanel: View {
                         ready(url)
                     } else if let preparation {
                         VStack(alignment: .leading, spacing: 6) {
-                            Label("Source quality", systemImage: "checkmark.shield")
+                            Label("High quality · 1080p max", systemImage: "checkmark.shield")
                                 .font(.system(size: 13, weight: .semibold))
                             Text(preparation.summary).font(.system(size: 12)).foregroundStyle(BlitzUI.supportingText)
-                            Text("Your edited original is kept. Streaming versions adapt to the viewer’s connection.")
+                            Text("A smaller copy for sharing. Your original stays on this Mac.")
                                 .font(.system(size: 12)).foregroundStyle(BlitzUI.supportingText)
                         }
                         if case .failed(let error) = preparation.status { errorText(error) }
@@ -163,7 +163,7 @@ struct HostedVideoSharePanel: View {
                 Text("\(plan.price) / month").font(.system(size: 24, weight: .semibold))
                 Text("Excluding tax · \(plan.allowance)")
                     .font(.system(size: 12)).foregroundStyle(BlitzUI.supportingText)
-                Text("Source-quality storage · Adaptive playback up to \(plan.maximumResolution)p")
+                Text("High-quality sharing · Adaptive playback up to \(plan.maximumResolution)p")
                     .font(.system(size: 12)).foregroundStyle(BlitzUI.supportingText)
                 action(.init(title: controller.awaitingPayment ? "Reopen checkout" : "Enable sharing",
                     operation: .openingBilling, enabled: true, run: { Task { await controller.openBilling() } }))

@@ -76,11 +76,11 @@ struct EditorExportPopover: View {
             VStack(spacing: 12) {
                 if configuration.destination.wrappedValue == .link {
                     VStack(alignment: .leading, spacing: 6) {
-                        Label("Source quality", systemImage: "checkmark.shield")
+                        Label("High quality · 1080p max", systemImage: "checkmark.shield")
                             .font(.system(size: 13, weight: .semibold))
                         Text("\(configuration.resolution.wrappedValue.displayName) · \(configuration.framesPerSecond.wrappedValue) fps · High-quality HEVC")
                             .font(.system(size: 12))
-                        Text("Original resolution and frame rate. Adaptive streaming copies are prepared separately.")
+                        Text("Smaller uploads with the source frame rate. Streaming adapts to the viewer’s connection.")
                             .font(.system(size: 12)).foregroundStyle(BlitzUI.supportingText)
                             .fixedSize(horizontal: false, vertical: true)
                     }.frame(maxWidth: .infinity, alignment: .leading)
