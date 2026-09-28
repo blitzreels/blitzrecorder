@@ -64,7 +64,9 @@ async function handle(request: Request) {
     return Response.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const known = error instanceof HostingError;
-    if (!known) console.error("Hosting request failed", error instanceof Error ? error.name : "Unknown error");
+    if (!known) console.error("Hosting request failed", error instanceof Error
+      ? { name: error.name, message: error.message.replace(/(?:sk|rk|whsec)_[A-Za-z0-9_]+/g, "[redacted]") }
+      : "Unknown error");
     return Response.json({ error: known ? error.message : "Video hosting is temporarily unavailable. Please retry." }, {
       status: known ? error.status : 503, headers: { "Cache-Control": "no-store" },
     });

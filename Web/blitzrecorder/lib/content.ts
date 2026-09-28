@@ -143,7 +143,7 @@ export type LegalPageData = { eyebrow: string; title: string; intro: string; sec
 
 export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> = {
   terms: {
-    eyebrow: "Effective May 22, 2026",
+    eyebrow: "Updated September 28, 2026",
     title: "Terms of Use",
     intro:
       "These terms cover BlitzRecorder and BlitzRecorder Camera. If you download from the App Store, Apple's media services terms also apply.",
@@ -157,6 +157,16 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
         title: "License",
         body:
           "The Mac app is free. Version 0.15 and later includes all features without an account or app license key. The source is available under AGPL-3.0-only. Separate commercial source licenses are available by written agreement with the copyright holder.",
+      },
+      {
+        title: "Optional video hosting",
+        body:
+          "Video hosting is a separate subscription at €9 per month, excluding any applicable tax. It includes 50 GB of storage for uploaded videos and streaming versions, 5 hours of new uploads per rolling 30 days, and streaming up to 1080p. Each video can be up to one hour and 5 GB. The Mac app and local exports remain free. Your subscription renews monthly until cancelled; cancel from the app's hosting settings before renewal to keep access through the paid period.",
+      },
+      {
+        title: "Shared links and retention",
+        body:
+          "Anyone with a share link can view its video and the transcript, chapters, and description you include. You can revoke a link from the app. Links stop working when your subscription expires, and hosted video files are removed after 30 days without an active subscription. Keep your local exports as your own copies.",
       },
       {
         title: "User content",
@@ -176,7 +186,7 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
     ],
   },
   privacy: {
-    eyebrow: "Effective May 22, 2026",
+    eyebrow: "Updated September 28, 2026",
     title: "Privacy Policy",
     intro:
       "This policy explains how BlitzRecorder and BlitzRecorder Camera handle your information.",
@@ -187,6 +197,16 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
           "BlitzRecorder records only the sources you pick, such as your screen, microphone, Mac audio, local camera, and paired iPhone camera. The files are created on your own devices and saved to the folder you choose.",
       },
       {
+        title: "Hosted videos",
+        body:
+          "When you choose Share link, we upload your exported video and any included title, summary, transcript, chapters, and recording metadata. Cloudflare R2 stores the files and delivers streaming video; our processing server creates streaming versions. Neon stores account and video records, Vercel serves the sharing website, and Stripe handles subscription payments. We use your connected BlitzReels account ID and email to identify your hosting account. We do not receive or store your full payment card details.",
+      },
+      {
+        title: "Sharing and deletion",
+        body:
+          "Shared videos and their included metadata are accessible to anyone who has the link. Revoke a link in the app to stop access. Hosted video files are removed after 30 days without an active subscription. For account deletion or questions about retained billing records, contact support@blitzreels.com.",
+      },
+      {
         title: "iPhone companion data",
         body:
           "BlitzRecorder Camera uses your local network to pair with your Mac. It sends a preview to your Mac, receives camera controls, and transfers the recorded video back to your Mac.",
@@ -194,7 +214,7 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
       {
         title: "License checks",
         body:
-          "BlitzRecorder 0.15 and later does not issue or validate app license keys. If you use an older version and request a legacy key on this website, we store your email and license record. Older paid keys may still be checked against Stripe payment status. A BlitzReels account is only used when you choose its upload integration.",
+          "BlitzRecorder 0.15 and later does not issue or validate app license keys. If you use an older version and request a legacy key on this website, we store your email and license record. Older paid keys may still be checked against Stripe payment status. A BlitzReels account is used when you choose its upload integration or connect video hosting.",
       },
       {
         title: "Permissions",

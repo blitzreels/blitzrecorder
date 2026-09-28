@@ -28,7 +28,7 @@ async function delivery({ slug, env }: { slug: string; env: Env }): Promise<Deli
   const cached = await cache.match(cacheKey);
   if (cached) return cached.json<Delivery>();
   const response = await fetch(`${origin}/api/hosting/delivery/${slug}`, {
-    headers: { Authorization: `Bearer ${env.DELIVERY_SECRET}` }, redirect: "error", signal: AbortSignal.timeout(5000),
+    headers: { Authorization: `Bearer ${env.DELIVERY_SECRET}` }, redirect: "manual", signal: AbortSignal.timeout(5000),
   });
   if (!response.ok) return null;
   const data = await response.json<Delivery>();
@@ -52,7 +52,10 @@ export async function serve({ request, env, ctx }: { request: Request; env: Env;
   const [, slug, filePath] = match;
   let allowed: Delivery | null;
   try { allowed = await delivery({ slug, env }); }
-  catch { return new Response(null, { status: 503, headers }); }
+  catch (error) {
+    console.error("Video delivery lookup failed", error instanceof Error ? error.message : "Unknown error");
+    return new Response(null, { status: 503, headers });
+  }
   const file = allowed?.files.find((entry) => entry.path === filePath);
   if (!allowed || !file) return new Response(null, { status: 404, headers });
   let range: ReturnType<typeof requestedRange>;
