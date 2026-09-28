@@ -7,7 +7,7 @@ import { freeIncludes, macCompatibility } from "@/lib/content";
 
 export function Pricing() {
   return (
-    <Section id="free" className="scroll-mt-24 py-12 sm:py-16">
+    <Section id="free" className="scroll-mt-24 pt-4 pb-32 sm:pt-8">
       <JourneySectionView area="landing" section="license" payload={{ page: "home" }} />
       <div
         data-reveal
@@ -23,7 +23,7 @@ export function Pricing() {
               Every feature, for everyone.
             </Heading>
             <Paragraph className="mt-4 max-w-md">
-              No trial, no tiers, no card. Built by BlitzReels, with the code in public.
+              No trial and no card. Hosting share links is the one optional extra. Built by BlitzReels.
             </Paragraph>
           </div>
           <div>

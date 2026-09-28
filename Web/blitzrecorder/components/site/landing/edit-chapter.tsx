@@ -53,9 +53,18 @@ const SEGMENTS = buildSegments();
 export const silentSeconds = SILENCES.reduce((sum, [start, end]) => sum + end - start, 0);
 
 const points: ChapterPoint[] = [
-  { title: "Transcripts on your Mac", body: "Speakers are kept apart, including people on a call. Nothing is uploaded." },
-  { title: "Layouts per segment", body: "Change the composition for one part of the take without touching the rest." },
-  { title: "Text and zoom", body: "Add titles and zoom into the screen where the detail matters." },
+  {
+    title: "Transcripts on your Mac",
+    body: "Speakers stay apart, including people on a call. Switch to Whisper Medium for accuracy or retranscribe an old take.",
+  },
+  {
+    title: "Cuts you can see",
+    body: "Waveforms, red silence markers, and hover scrubbing. Delete a range or extend a clip, and undo any step.",
+  },
+  {
+    title: "Layouts, text, and zoom",
+    body: "Change the composition for one segment, add titles, and zoom into the screen where the detail matters.",
+  },
 ];
 
 export function EditChapter() {
@@ -68,7 +77,7 @@ export function EditChapter() {
       <ChapterHeader
         mark={chapters.edit}
         title="Cut the pauses in one click."
-        lede="Every take opens on a timeline with the screen, camera, and audio on their own tracks. Try it below."
+        lede="Every take opens on a timeline with the screen, camera, and audio on separate tracks, so you can edit it again later. Try it below."
         aside={null}
       />
 

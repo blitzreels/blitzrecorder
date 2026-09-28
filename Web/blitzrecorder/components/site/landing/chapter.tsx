@@ -12,6 +12,7 @@ export const chapters = {
   camera: { time: "00:21", name: "iPhone camera" },
   edit: { time: "00:48", name: "Edit" },
   export: { time: "01:12", name: "Export" },
+  share: { time: "01:34", name: "Share" },
 } satisfies Record<string, ChapterMark>;
 
 export function ChapterRuler({ mark }: { mark: ChapterMark }) {
