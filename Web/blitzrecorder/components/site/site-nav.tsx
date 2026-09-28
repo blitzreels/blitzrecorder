@@ -3,13 +3,17 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import {
-  DownloadButton,
-  VersionTag,
-  GitHubLink,
-} from "@/components/site/download-button";
+import { DownloadButton, GitHubLink } from "@/components/site/download-button";
 import { assets } from "@/lib/assets";
-import { BlitzReelsLink } from "@/components/site/blitzreels-link";
+import { cn } from "@/lib/utils";
+
+const links = [
+  { href: "/#record", label: "Record" },
+  { href: "/#camera", label: "iPhone" },
+  { href: "/#edit", label: "Edit" },
+  { href: "/#export", label: "Export" },
+  { href: "/#free", label: "Free" },
+];
 
 export function SiteNav() {
   const [scrolled, setScrolled] = useState(false);
@@ -23,48 +27,31 @@ export function SiteNav() {
 
   return (
     <header
-      className={
-        "fixed inset-x-0 top-0 z-50 transition-colors duration-300 " +
-        (scrolled
-          ? "border-b border-border bg-background/70 backdrop-blur-xl"
-          : "border-b border-transparent bg-transparent")
-      }
+      className={cn(
+        "fixed inset-x-0 top-0 z-50 border-b transition-colors duration-300",
+        scrolled ? "glass border-separator" : "border-transparent",
+      )}
     >
       <div className="mx-auto flex h-16 w-[min(1180px,calc(100%-32px))] items-center">
-        <Link href="/" className="group flex items-center gap-2.5 font-semibold">
-          <Image
-            src={assets.macIcon}
-            width={32}
-            height={32}
-            alt=""
-            className="rounded-[22%]"
-          />
-          {/* Below 360px the CTA would overlap the wordmark — keep the icon only. */}
-          <span className="hidden font-display text-[17px] tracking-tight min-[360px]:inline">
+        <Link href="/" className="flex items-center gap-2.5">
+          <Image src={assets.macIcon} width={30} height={30} alt="" className="rounded-[22%]" />
+          <span className="hidden font-display text-[17px] font-bold tracking-[-0.02em] min-[360px]:inline">
             BlitzRecorder
           </span>
         </Link>
         <nav
-          className="ml-auto hidden items-center gap-8 text-sm font-medium text-muted-foreground md:flex"
+          className="ml-auto hidden items-center gap-7 text-sm text-muted-foreground md:flex"
           aria-label="Sections"
         >
-          <Link className="transition-colors hover:text-foreground" href="/#how">How it works</Link>
-          <Link className="transition-colors hover:text-foreground" href="/#license">Free app</Link>
-          <BlitzReelsLink
-            content="nav"
-            className="transition-colors hover:text-foreground"
-          >
-            BlitzReels
-          </BlitzReelsLink>
+          {links.map((link) => (
+            <Link key={link.href} className="transition-colors hover:text-foreground" href={link.href}>
+              {link.label}
+            </Link>
+          ))}
         </nav>
-        <div className="ml-auto flex items-center gap-2.5 md:ml-8">
+        <div className="ml-auto flex items-center gap-4 md:ml-8">
           <GitHubLink className="hidden text-muted-foreground transition-colors hover:text-foreground sm:inline-flex" />
-          <VersionTag className="hidden rounded-full border border-border px-2.5 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground sm:inline-flex" />
-          <DownloadButton
-            label="Download"
-            source="nav"
-            className="h-9 rounded-full px-4"
-          />
+          <DownloadButton label="Download" source="nav" size="default" className="" />
         </div>
       </div>
     </header>

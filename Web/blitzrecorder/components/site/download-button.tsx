@@ -20,14 +20,14 @@ import { macCompatibility } from "@/lib/content";
  */
 export function DownloadButton({
   className,
-  variant = "default",
-  label = "Download for Mac",
-  source = "unknown",
+  size,
+  label,
+  source,
 }: {
-  className?: string;
-  variant?: "default" | "outline";
-  label?: string;
-  source?: string;
+  className: string;
+  size: "default" | "lg";
+  label: string;
+  source: string;
 }) {
   const release = useRelease();
   const href = release?.dmgUrl ?? LATEST_RELEASE_URL;
@@ -46,7 +46,7 @@ export function DownloadButton({
 
   return (
     <Button
-      variant={variant}
+      size={size}
       render={<a href={href} onClick={trackDownload} />}
       className={className}
     >
@@ -98,10 +98,12 @@ export function GitHubLink({ className }: { className?: string }) {
  */
 export function DownloadMeta({
   className,
-  compact = false,
+  compact,
+  align,
 }: {
-  className?: string;
-  compact?: boolean;
+  className: string;
+  compact: boolean;
+  align: "center" | "start";
 }) {
   const release = useRelease();
   const os = useUserOS();
@@ -113,8 +115,8 @@ export function DownloadMeta({
   const hint =
     os === "windows"
       ? signedWindows
-        ? "Windows Studio is the signed BlitzRecorder-Windows.exe on GitHub Releases."
-        : "Windows Studio is not on GitHub Releases yet. Testers: Actions artifact windows-studio-installer-unsigned. SmartScreen → More info → Run anyway."
+        ? "On Windows? Windows Studio is an early capture app for PC."
+        : "On Windows? Windows Studio is in testing. Unsigned builds are on GitHub."
       : os === "ios"
       ? "BlitzRecorder runs on your Mac. We can email you the download link."
       : notMac
@@ -131,18 +133,18 @@ export function DownloadMeta({
         {compact ? macCompatibility : `${macCompatibility} · v${version}`}
       </p>
       {hint ? (
-        <p className="mt-3 text-balance text-foreground/90 text-base font-medium leading-6 ">
+        <p className="mt-4 text-balance text-sm leading-6 text-muted-foreground">
           {hint}
         </p>
       ) : null}
       {os === "windows" ? (
-        <div className="mt-3 flex justify-center xl:justify-start">
+        <div className={"mt-3 flex " + (align === "center" ? "justify-center" : "justify-start")}>
           <Button variant="outline" render={<a href={windowsHref} />}>
-            {signedWindows ? "Download for Windows" : "Windows CI artifacts"}
+            {signedWindows ? "Download Windows Studio" : "Get the test build"}
           </Button>
         </div>
       ) : notMac ? (
-        <div className="mt-3 flex justify-center xl:justify-start">
+        <div className={"mt-3 flex " + (align === "center" ? "justify-center" : "justify-start")}>
           <NotifyForm
             source={`download_link_${os}`}
             os={os ?? undefined}

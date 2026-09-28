@@ -3,7 +3,6 @@ import { LicenseButton } from "@/components/site/buy-button";
 import { DownloadButton } from "@/components/site/download-button";
 import { BlitzReelsLink } from "@/components/site/blitzreels-link";
 import { JourneyPageView } from "@/components/site/journey-markers";
-import { SiteBackground } from "@/components/site/site-background";
 import { SiteFooter } from "@/components/site/site-footer";
 import { SiteNav } from "@/components/site/site-nav";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,11 +23,10 @@ export default function LicensePage() {
         eventName="license_page_viewed"
         payload={{ page: "license" }}
       />
-      <SiteBackground />
       <SiteNav />
       <main>
         <Section width="sm" className="grid min-h-[80vh] place-items-center pt-32 pb-24 text-center">
-          <Card className="glass ring-gradient w-full ring-0">
+          <Card className="w-full rounded-card">
             <CardContent className="p-8 sm:p-10">
               <Heading level={1} className="text-4xl leading-[1.02] sm:text-5xl">
                 No license key needed
@@ -39,7 +37,9 @@ export default function LicensePage() {
               </Paragraph>
               <DownloadButton
                 source="license_page_download"
-                className="mt-7 h-11 rounded-full px-5"
+                size="lg"
+                label="Download for Mac"
+                className="mt-7"
               />
               <details className="mt-8 border-t border-border pt-6 text-left">
                 <summary className="cursor-pointer font-medium">Using an older version?</summary>
@@ -51,7 +51,7 @@ export default function LicensePage() {
                   label="Get legacy license"
                   source="license_page_legacy"
                   formClassName="mt-4"
-                  className="h-11 rounded-full px-5"
+                  size="lg"
                 />
               </details>
               <Paragraph tone="faint" size="sm" className="mt-6">

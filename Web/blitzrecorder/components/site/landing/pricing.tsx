@@ -1,56 +1,45 @@
+import { Check } from "@/components/site/icons";
 import { DownloadButton } from "@/components/site/download-button";
-import { CheckItem } from "@/components/site/check-item";
 import { JourneySectionView } from "@/components/site/journey-markers";
-import { Card, CardContent } from "@/components/ui/card";
 import { Section } from "@/components/ui/layout";
 import { Heading, Paragraph } from "@/components/ui/typography";
-import { license, requirements } from "@/lib/content";
-import { Eyebrow } from "@/components/site/landing/eyebrow";
+import { freeIncludes, macCompatibility } from "@/lib/content";
 
 export function Pricing() {
   return (
-    <Section width="lg" id="license" className="scroll-mt-24 py-28">
-      <JourneySectionView
-        area="landing"
-        section="license"
-        payload={{ page: "home" }}
-      />
-      <div className="mx-auto max-w-2xl text-center">
-        <div data-reveal className="flex justify-center">
-          <Eyebrow center>Free app</Eyebrow>
-        </div>
-        <Heading level={2} data-reveal className="mt-5">
-          All features. Free.
-        </Heading>
-        <Paragraph data-reveal className="mt-5">
-          Record, edit, and export in 4K at 60 fps. No account, email, or license
-          key needed.
-        </Paragraph>
-      </div>
-
-      <div className="mx-auto mt-14 max-w-xl" data-reveal>
-        <Card className="glass ring-gradient gap-0 py-8 ring-0">
-          <CardContent className="px-8">
-            <p className="font-display text-5xl font-black tracking-tight tabular-nums">$0</p>
-            <Paragraph tone="default" size="sm" className="mt-3 font-semibold text-primary">
-              Free download
+    <Section id="free" className="scroll-mt-24 py-12 sm:py-16">
+      <JourneySectionView area="landing" section="license" payload={{ page: "home" }} />
+      <div
+        data-reveal
+        className="panel rounded-card px-6 py-12 sm:px-12 sm:py-16"
+      >
+        <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)] lg:items-center lg:gap-20">
+          <div>
+            <p className="label-mono text-primary">Price</p>
+            <p className="mt-5 font-display text-[clamp(5rem,14vw,9rem)] leading-[0.8] font-extrabold tracking-[-0.06em]">
+              $0
+            </p>
+            <Heading level={3} as="h2" className="mt-8 max-w-[16ch] text-[clamp(1.75rem,3.4vw,2.5rem)] leading-[1.02] font-extrabold tracking-[-0.035em]">
+              Every feature, for everyone.
+            </Heading>
+            <Paragraph className="mt-4 max-w-md">
+              No trial, no tiers, no card. Built by BlitzReels, with the code in public.
             </Paragraph>
-            <ul className="mt-7 flex flex-col gap-3.5 text-[15px]">
-              {license.features.map((feature) => (
-                <CheckItem key={feature}>{feature}</CheckItem>
+          </div>
+          <div>
+            <ul className="flex flex-col">
+              {freeIncludes.map((item) => (
+                <li key={item} className="flex items-center gap-3 border-t border-separator py-3.5 first:border-t-0">
+                  <Check className="size-4 shrink-0 text-primary" strokeWidth={2.5} />
+                  <span>{item}</span>
+                </li>
               ))}
             </ul>
-            <DownloadButton
-              source="home_free_app"
-              className="mt-8 h-12 w-full rounded-full text-base"
-            />
-          </CardContent>
-        </Card>
+            <DownloadButton source="home_free_app" size="lg" label="Download for Mac" className="mt-7 w-full" />
+            <p className="mt-3 text-center text-sm text-faint">{macCompatibility}</p>
+          </div>
+        </div>
       </div>
-
-      <Paragraph tone="faint" size="sm" className="mt-6 text-center" data-reveal>
-        Requires {requirements.macos}.
-      </Paragraph>
     </Section>
   );
 }

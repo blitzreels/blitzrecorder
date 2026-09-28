@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { JourneyPageView } from "@/components/site/journey-markers";
-import { SiteBackground } from "@/components/site/site-background";
 import { SiteFooter } from "@/components/site/site-footer";
 import { SiteNav } from "@/components/site/site-nav";
 import { BlitzReelsLink } from "@/components/site/blitzreels-link";
@@ -86,11 +85,10 @@ export default async function ClaimLicensePage({
           has_grant: Boolean(grant),
         }}
       />
-      <SiteBackground />
       <SiteNav />
       <main>
         <Section width="sm" className="grid min-h-[80vh] place-items-center pt-32 pb-24 text-center">
-          <Card className="glass ring-gradient w-full ring-0">
+          <Card className="w-full rounded-card">
             <CardContent className="p-8 sm:p-10">
               {result.kind === "claimed" ? (
                 <>
@@ -136,7 +134,7 @@ export default async function ClaimLicensePage({
                   <TrackedLinkButton
                     href="/license"
                     label="Get a free license"
-                    className="mt-7 h-11 rounded-full px-5"
+                    className="mt-7" variant="default" size="lg"
                     area="license"
                     eventName="license_claim_cta_clicked"
                     payload={{ result: result.kind, cta: "get_free_license" }}
@@ -149,7 +147,7 @@ export default async function ClaimLicensePage({
                   <TrackedLinkButton
                     href="/license"
                     label="Back to license"
-                    className="mt-7 h-11 rounded-full px-5"
+                    className="mt-7" variant="default" size="lg"
                     area="license"
                     eventName="license_claim_cta_clicked"
                     payload={{ result: result.kind, cta: "back_to_license" }}

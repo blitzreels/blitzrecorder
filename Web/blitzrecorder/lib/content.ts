@@ -11,68 +11,44 @@ export const requirements = {
 /** Shown next to the Mac download. The DMG is a universal build. */
 export const macCompatibility = "macOS 15 Sequoia or later · Apple silicon and Intel";
 
-export type FeatureIconKey =
-  | "composite"
-  | "scenes"
-  | "background"
-  | "remote"
-  | "aspect"
-  | "sources"
-  | "timeline"
-  | "silence";
-
-export const studioBeats: { title: string; body: string }[] = [
-  {
-    title: "Screen, window, or area",
-    body: "Mic and system audio in the same take.",
-  },
-  {
-    title: "Timeline in the same app",
-    body: "Waveforms, cuts, and layout after you stop.",
-  },
-  {
-    title: "Silence cuts",
-    body: "Drop the pauses so the take is short-form ready.",
-  },
-  {
-    title: "Local files",
-    body: "Keep the recording on your Mac. AGPL source.",
-  },
-];
-
 export type FaqItem = { q: string; a: string };
 
 export const faqs: FaqItem[] = [
   {
-    q: "Do I need an account or license key?",
-    a: "No. BlitzRecorder 0.15 and later includes recording, editing, 4K export, 60 fps export, and iPhone camera support without an account, email, or license key. Capture options depend on your hardware.",
+    q: "Do I need an account or a license key?",
+    a: "No. Recording, editing, 4K and 60 fps export, transcripts, and the iPhone camera work without an account, email, or key. You only sign in to BlitzReels if you choose to send a video there.",
   },
   {
-    q: "Is it open source?",
-    a: "Yes. AGPL. Download the Mac app from this site. No account, card, watermark, or subscription.",
+    q: "Is it really free?",
+    a: "Yes. The source is public under AGPL-3.0, and the signed Mac app is a free download. There is no watermark, export limit, or subscription.",
   },
   {
-    q: "Is my footage private?",
-    a: "Yes. Recording stays on your Mac, in a folder you choose. The native apps do not include an analytics SDK.",
+    q: "Where do my recordings go?",
+    a: "To a folder you choose on your Mac. Transcription runs on your Mac too. The apps include no analytics or crash-reporting SDK.",
   },
   {
-    q: "What's BlitzReels?",
-    a: "Clips, captions, and publish, from the same company. Recorder is the local Mac studio for the take.",
+    q: "Which Macs are supported?",
+    a: "Any Mac with macOS 15 Sequoia or later, Apple silicon or Intel. The iPhone camera app needs iOS 18 or later.",
+  },
+  {
+    q: "Is there a Windows version?",
+    a: "Windows Studio is an early capture app. It records your screen, microphone, camera, and system audio, and plays the take back. The editor is Mac only for now. Installers are on GitHub Releases.",
+  },
+  {
+    q: "What is BlitzReels?",
+    a: "BlitzReels is the company behind BlitzRecorder. Its web app finds the best moments in a long recording, reframes them for vertical video, and adds captions. Sending a video there is optional.",
   },
 ];
 
-export const license = {
-  features: [
-    "4K export",
-    "60 fps export",
-    "Optional iPhone camera",
-    "No account or license key",
-    "No watermark or subscription",
-  ],
-};
+export const freeIncludes = [
+  "4K and 60 fps export",
+  "iPhone as a camera",
+  "On-device transcripts",
+  "No watermark or export limit",
+  "No account or license key",
+];
 
-export type ScreenKind = "icon" | "phone" | "desktop";
-export type ProductScreen = { title: string; text: string; image: StaticImageData; kind: ScreenKind };
+export type ProductScreen = { title: string; text: string };
 
 export type ProductPageData = {
   key: "ios" | "macos";
@@ -81,8 +57,6 @@ export type ProductPageData = {
   tagline: string;
   hero: string;
   icon: StaticImageData;
-  previewKind: "phone" | "desktop";
-  preview: StaticImageData;
   copyTitle: string;
   copy: string;
   bullets: string[];
@@ -97,45 +71,31 @@ export const pages: Record<"ios" | "macos", ProductPageData> = {
     eyebrow: "iPhone app",
     appName: "BlitzRecorder Camera",
     tagline: "Your iPhone, as a Mac camera",
-    hero: "Use your iPhone as the camera for your Mac recordings.",
+    hero: "Turn your iPhone into the studio camera for BlitzRecorder on your Mac. Full quality, framed from your desk.",
     icon: assets.iosIcon,
-    previewKind: "phone",
-    preview: assets.iosPhone,
-    copyTitle: "Record with the phone you already have.",
+    copyTitle: "Record with the camera you already own.",
     copy:
-      "Open the app and pair your iPhone with your Mac. Your iPhone records locally and sends the video to your Mac when you stop. You set up the shot from your desk.",
+      "Continuity Camera streams a compressed feed to your Mac. BlitzRecorder Camera records on the iPhone at full quality and sends a separate live preview, so you frame the shot from your desk and keep the sharp file.",
     bullets: [
-      "Pairs with your Mac in seconds. No account.",
-      "Records locally on the iPhone at full quality.",
-      "Set up the shot from your Mac, not the phone.",
-      "Your video saves to your Mac on its own.",
+      "Pairs over your local network with a six-digit code.",
+      "Records the full-quality file on the iPhone.",
+      "Camera controls and preview live on the Mac.",
+      "The file moves into your take when you stop.",
     ],
     requirement: requirements.ios,
     screensTitle: "How it works",
     screens: [
       {
-        title: "Your iPhone is the camera.",
-        text: "The app does one thing well: it turns your iPhone into the camera for your Mac.",
-        image: assets.iosIcon,
-        kind: "icon",
+        title: "Pair once.",
+        text: "Open the app on your iPhone, pick it in BlitzRecorder, and type the six-digit code.",
       },
       {
-        title: "Open it and you are ready.",
-        text: "Start the app on your iPhone. It waits for your Mac to connect.",
-        image: assets.iosPhone,
-        kind: "phone",
+        title: "Frame it from your desk.",
+        text: "A live preview and the camera controls sit next to your recording on the Mac.",
       },
       {
-        title: "Set up the shot from your Mac.",
-        text: "See your iPhone on your Mac and line up the shot from your desk.",
-        image: assets.macPlan,
-        kind: "desktop",
-      },
-      {
-        title: "Keep the full-quality video.",
-        text: "Your iPhone records the video, then sends it to your Mac when you stop.",
-        image: assets.macRecorder,
-        kind: "desktop",
+        title: "Keep the full-quality file.",
+        text: "The iPhone records on the device and sends the file to your Mac when you stop. Interrupted transfers resume.",
       },
     ],
   },
@@ -143,40 +103,36 @@ export const pages: Record<"ios" | "macos", ProductPageData> = {
     key: "macos",
     eyebrow: "Mac app",
     appName: "BlitzRecorder",
-    tagline: "Studio recording and editing for Mac",
-    hero: "Record screen and camera, then cut the take on a timeline. iPhone camera, silence removal, local files.",
+    tagline: "Record and edit on your Mac",
+    hero: "Record your screen and camera together, then edit the take on a timeline. Free, open source, and local.",
     icon: assets.macIcon,
-    previewKind: "desktop",
-    preview: assets.macRecorder,
-    copyTitle: "Record the take. Cut it here.",
+    copyTitle: "One app from the first take to the export.",
     copy:
-      "Set up the shot, pick tall or wide, and hit record. Then open the take: timeline, waveforms, silence cuts, scene layouts. Raw screen, camera, and audio files stay on your Mac.",
+      "Frame the shot in 9:16 or 16:9 before you press record. When you stop, the take opens on a timeline with every source on its own track, ready to cut, relayout, and export.",
     bullets: [
-      "Record your screen, camera, mic, and Mac sound.",
-      "Use your iPhone as the camera.",
-      "Cut silence and layouts on a timeline.",
-      "Keep the raw screen, camera, and audio files.",
+      "Screen, camera, microphone, and Mac audio in one take.",
+      "Silence detection, text, zoom, and layouts in the editor.",
+      "Transcripts with speakers, made on your Mac.",
+      "Separate source files, so any take can be edited again.",
     ],
     requirement: requirements.macos,
     screensTitle: "How it works",
     screens: [
       {
-        title: "Set up your shot first.",
-        text: "Pick a tall or wide layout on screen before you record. What you see is what you get.",
-        image: assets.macRecorder,
-        kind: "desktop",
+        title: "Frame the shot.",
+        text: "Choose your screen, window, or app, add a camera, and pick a layout. The preview is the export.",
       },
       {
-        title: "Add your iPhone camera.",
-        text: "See your iPhone on your Mac and keep the camera controls next to your recording.",
-        image: assets.macPlan,
-        kind: "desktop",
+        title: "Record the take.",
+        text: "Switch scenes while you talk. Screen, camera, and audio are saved as separate files.",
       },
       {
-        title: "Pick how you record.",
-        text: "Choose your format, keep every part saved, and move from recording to editing fast.",
-        image: assets.macRecorder,
-        kind: "desktop",
+        title: "Edit on the timeline.",
+        text: "Remove silences, adjust crops and layouts, add text and zoom, then read the transcript.",
+      },
+      {
+        title: "Export or send.",
+        text: "Export up to 4K at 60 fps and up to 2x speed, or send the MP4 to BlitzReels for captions.",
       },
     ],
   },

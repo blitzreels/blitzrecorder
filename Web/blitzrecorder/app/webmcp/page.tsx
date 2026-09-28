@@ -1,62 +1,52 @@
 import type { Metadata } from "next";
-import { SiteBackground } from "@/components/site/site-background";
 import { SiteFooter } from "@/components/site/site-footer";
 import { SiteNav } from "@/components/site/site-nav";
+import { Button } from "@/components/ui/button";
+import { Section } from "@/components/ui/layout";
+import { Heading, Paragraph } from "@/components/ui/typography";
 
 export const metadata: Metadata = {
   title: "Local WebMCP workspace",
   description: "Open the WebMCP workspace served by BlitzRecorder on your Mac.",
 };
 
+const facts = [
+  { label: "Data", value: "Your local projects" },
+  { label: "Transport", value: "127.0.0.1 only" },
+  { label: "Upload", value: "None" },
+];
+
 export default function WebMCPPage() {
   return (
-    <div className="relative min-h-screen overflow-hidden bg-background">
-      <SiteBackground />
+    <div className="relative min-h-screen overflow-x-clip">
       <SiteNav />
-      <main className="mx-auto flex min-h-[calc(100vh-1px)] w-[min(880px,calc(100%-32px))] items-center py-32">
-        <section className="w-full">
-          <p className="font-mono text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-            Local WebMCP
-          </p>
-          <h1 className="mt-5 max-w-3xl font-display text-5xl font-black tracking-[-0.045em] text-foreground sm:text-7xl">
+      <main>
+        <Section width="md" className="flex min-h-[80vh] flex-col justify-center pt-32 pb-24">
+          <p className="label-mono text-primary">Local WebMCP</p>
+          <Heading level={1} className="mt-6 max-w-[14ch] text-[clamp(2.5rem,6vw,4.5rem)] leading-[0.95]">
             Your recordings stay inside BlitzRecorder.
-          </h1>
-          <p className="mt-7 max-w-2xl text-lg leading-8 text-muted-foreground">
-            The workspace is served by the macOS app on your loopback network.
+          </Heading>
+          <Paragraph className="mt-6 max-w-xl">
+            The workspace is served by the Mac app on your loopback network.
             This public page does not load, copy, or simulate your recordings.
-          </p>
-
-          <div className="mt-10 flex flex-col items-start gap-4 sm:flex-row sm:items-center">
-            <a
-              href="http://127.0.0.1:18473/webmcp"
-              className="inline-flex h-12 items-center justify-center rounded-full bg-primary px-6 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary/80"
-            >
+          </Paragraph>
+          <div className="mt-9 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-5">
+            <Button size="lg" render={<a href="http://127.0.0.1:18473/webmcp" />}>
               Open local workspace
-            </a>
-            <span className="font-mono text-xs text-faint">
-              Requires BlitzRecorder to be open on this Mac
-            </span>
+            </Button>
+            <span className="text-sm text-faint">Requires BlitzRecorder to be open on this Mac</span>
           </div>
-
-          <div className="mt-16 grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-3">
-            <Fact label="Data" value="Real local projects" />
-            <Fact label="Transport" value="127.0.0.1 only" />
-            <Fact label="Upload" value="None" />
-          </div>
-        </section>
+          <dl className="panel mt-14 grid rounded-card sm:grid-cols-3">
+            {facts.map((fact) => (
+              <div key={fact.label} className="border-t border-separator p-5 first:border-t-0 sm:border-t-0 sm:border-l sm:first:border-l-0 sm:p-6">
+                <dt className="label-mono text-faint">{fact.label}</dt>
+                <dd className="mt-3 font-display text-lg font-bold tracking-[-0.01em]">{fact.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </Section>
       </main>
       <SiteFooter />
-    </div>
-  );
-}
-
-function Fact({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="bg-card/80 p-6 backdrop-blur-sm">
-      <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-faint">
-        {label}
-      </p>
-      <p className="mt-3 font-display text-lg font-bold text-foreground">{value}</p>
     </div>
   );
 }

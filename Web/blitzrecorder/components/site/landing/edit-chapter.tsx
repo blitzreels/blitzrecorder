@@ -1,0 +1,249 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { JourneySectionView } from "@/components/site/journey-markers";
+import { Section } from "@/components/ui/layout";
+import { ChapterHeader, chapters } from "@/components/site/landing/chapter";
+import { trackJourneyEvent } from "@/lib/journey-events";
+import { assets } from "@/lib/assets";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+export const TAKE_SECONDS = 114;
+const SILENCES: [number, number][] = [
+  [9, 13],
+  [26, 31],
+  [43, 47],
+  [58, 64],
+  [77, 81],
+  [92, 98],
+  [106, 109],
+];
+
+type Segment = { start: number; end: number; silent: boolean };
+
+function buildSegments(): Segment[] {
+  const segments: Segment[] = [];
+  let cursor = 0;
+  for (const [start, end] of SILENCES) {
+    if (start > cursor) segments.push({ start: cursor, end: start, silent: false });
+    segments.push({ start, end, silent: true });
+    cursor = end;
+  }
+  if (cursor < TAKE_SECONDS) segments.push({ start: cursor, end: TAKE_SECONDS, silent: false });
+  return segments;
+}
+
+function seeded(seed: number) {
+  let value = seed;
+  return () => {
+    value = (value * 16807) % 2147483647;
+    return value / 2147483647;
+  };
+}
+
+export function formatTime(seconds: number) {
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+const SEGMENTS = buildSegments();
+
+export const silentSeconds = SILENCES.reduce((sum, [start, end]) => sum + end - start, 0);
+
+const transcript = [
+  { time: "00:02", speaker: "Host", text: "Today I want to show you a 3D UI library for website design." },
+  { time: "00:14", speaker: "Host", text: "Every component ships with its own scene, so a planet drops into a hero in one line." },
+  { time: "00:31", speaker: "Guest", text: "Does it work with the dark theme too?" },
+  { time: "00:35", speaker: "Host", text: "It does. Watch what happens when I switch it." },
+];
+
+const tools = [
+  { title: "Layouts per segment", body: "Change the composition for one part of the take without touching the rest." },
+  { title: "Text and zoom", body: "Add titles and zoom into the screen where the detail matters." },
+  { title: "Crop and fit", body: "Fill the frame or show the whole screen, and reposition any source on the canvas." },
+];
+
+export function EditChapter() {
+  const [trimmed, setTrimmed] = useState(false);
+  const duration = trimmed ? TAKE_SECONDS - silentSeconds : TAKE_SECONDS;
+
+  return (
+    <Section id="edit" className="scroll-mt-24 py-16 sm:py-20">
+      <JourneySectionView area="landing" section="edit" payload={{ page: "home" }} />
+      <ChapterHeader
+        mark={chapters.edit}
+        title="Cut the pauses. Keep the good part."
+        lede="When you stop, the take opens on a timeline with the screen, camera, microphone, and Mac audio on their own tracks. Silence detection finds the dead air for you."
+        aside={null}
+      />
+
+      <div data-reveal className="panel app-surface mt-10 overflow-hidden rounded-card sm:mt-14">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-separator px-4 py-3 sm:px-5">
+          <div className="flex items-baseline gap-3">
+            <span className="label-mono text-faint">Duration</span>
+            <span className="font-mono text-sm tabular-nums">
+              <span className={cn("transition-colors", trimmed ? "text-faint line-through" : "text-foreground")}>
+                {formatTime(TAKE_SECONDS)}
+              </span>
+              {trimmed ? <span className="ml-2 text-primary">{formatTime(duration)}</span> : null}
+            </span>
+          </div>
+          <Button
+            variant={trimmed ? "outline" : "default"}
+            aria-pressed={trimmed}
+            onClick={() => {
+              setTrimmed((value) => !value);
+              trackJourneyEvent({
+                eventName: "landing_demo_changed",
+                area: "landing",
+                payload: { demo: "timeline", control: "silence", value: !trimmed },
+              });
+            }}
+          >
+            {trimmed ? "Restore silences" : `Remove ${SILENCES.length} silences`}
+          </Button>
+        </div>
+
+        <div className="overflow-x-auto">
+          <div className="min-w-[640px] px-4 pt-4 pb-5 sm:px-5">
+            <div className="grid grid-cols-[88px_1fr] gap-x-3 gap-y-1.5">
+              <span />
+              <div className="ruler h-3 opacity-80" />
+              <TrackLabel label="Screen" />
+              <Track segments={SEGMENTS} trimmed={trimmed} kind="screen" />
+              <TrackLabel label="Camera" />
+              <Track segments={SEGMENTS} trimmed={trimmed} kind="camera" />
+              <TrackLabel label="Mic" />
+              <Track segments={SEGMENTS} trimmed={trimmed} kind="mic" />
+              <TrackLabel label="Mac audio" />
+              <Track segments={SEGMENTS} trimmed={trimmed} kind="system" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+        <div data-reveal className="panel rounded-card p-5 sm:p-6">
+          <div className="flex items-center justify-between gap-4">
+            <p className="label-mono text-faint">Transcript</p>
+            <p className="text-xs text-faint">Made on your Mac</p>
+          </div>
+          <ul className="mt-5 flex flex-col gap-4">
+            {transcript.map((line) => (
+              <li key={line.time} className="grid grid-cols-[3.25rem_1fr] gap-3">
+                <span className="font-mono text-xs leading-6 text-primary/80 tabular-nums">{line.time}</span>
+                <p className="text-[15px] leading-6">
+                  <span className="font-semibold text-foreground">{line.speaker}</span>{" "}
+                  <span className="text-muted-foreground">{line.text}</span>
+                </p>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-6 border-t border-separator pt-4 text-sm leading-6 text-faint">
+            Speakers are kept apart, including people on a call. Copy it as Markdown or use it to title the project.
+          </p>
+        </div>
+
+        <ul className="flex flex-col">
+          {tools.map((tool) => (
+            <li
+              key={tool.title}
+              data-reveal
+              className="border-t border-separator py-5 first:border-t-0 first:pt-1 lg:first:pt-5 lg:first:border-t"
+            >
+              <h3 className="font-display text-lg font-bold tracking-[-0.01em]">{tool.title}</h3>
+              <p className="mt-1.5 text-[15px] leading-6 text-muted-foreground">{tool.body}</p>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </Section>
+  );
+}
+
+function TrackLabel({ label }: { label: string }) {
+  return <span className="self-center truncate text-xs font-medium text-faint">{label}</span>;
+}
+
+type TrackKind = "screen" | "camera" | "mic" | "system";
+
+function Track({
+  segments,
+  trimmed,
+  kind,
+}: {
+  segments: Segment[];
+  trimmed: boolean;
+  kind: TrackKind;
+}) {
+  const media = kind === "screen" || kind === "camera";
+  return (
+    <div className="relative flex h-10 overflow-hidden rounded-inner bg-fill-card">
+      {segments.map((segment) => {
+        const seconds = segment.end - segment.start;
+        const hidden = trimmed && segment.silent;
+        return (
+          <div
+            key={segment.start}
+            className="relative min-w-0 overflow-hidden transition-[flex-grow] duration-700 ease-out-expo"
+            style={{ flexGrow: hidden ? 0 : seconds, flexBasis: 0 }}
+          >
+            {media ? (
+              <div
+                className="absolute inset-0 bg-repeat-x"
+                style={{
+                  backgroundImage: `url(${kind === "screen" ? assets.screenTake.src : assets.cameraTake.src})`,
+                  backgroundSize: kind === "screen" ? "48px 40px" : "71px 40px",
+                  backgroundPosition: `${-segment.start * 7}px 0`,
+                  opacity: 0.85,
+                }}
+              />
+            ) : (
+              <Waveform seconds={seconds} seed={segment.start + (kind === "mic" ? 7 : 101)} silent={segment.silent} kind={kind} />
+            )}
+            {segment.silent ? <div className="hatch absolute inset-0 bg-black/45" /> : null}
+          </div>
+        );
+      })}
+      {kind === "screen" ? (
+        <div aria-hidden className="pointer-events-none absolute inset-y-0 w-px bg-primary [animation:br-playhead_14s_linear_infinite]" />
+      ) : null}
+    </div>
+  );
+}
+
+function Waveform({
+  seconds,
+  seed,
+  silent,
+  kind,
+}: {
+  seconds: number;
+  seed: number;
+  silent: boolean;
+  kind: "mic" | "system";
+}) {
+  const bars = useMemo(() => {
+    const random = seeded(seed * 97 + 13);
+    return Array.from({ length: seconds * 2 }, () => {
+      if (silent) return 4 + random() * 6;
+      const base = kind === "mic" ? 28 : 16;
+      return base + random() * (kind === "mic" ? 62 : 44);
+    });
+  }, [seconds, seed, silent, kind]);
+
+  return (
+    <div
+      className={cn(
+        "absolute inset-0 flex items-center justify-around gap-px px-px",
+        kind === "mic" ? "bg-track-mic/[0.08] text-track-mic" : "bg-track-system/[0.07] text-track-system",
+      )}
+    >
+      {bars.map((height, index) => (
+        <span key={index} className="w-[2px] shrink-0 rounded-full bg-current" style={{ height: `${height}%`, opacity: silent ? 0.4 : 0.9 }} />
+      ))}
+    </div>
+  );
+}
