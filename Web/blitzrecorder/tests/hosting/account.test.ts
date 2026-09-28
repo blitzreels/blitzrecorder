@@ -25,6 +25,7 @@ test.before(async () => {
   process.env.BLITZRECORDER_HOSTING_ENABLED = "true";
   process.env.HOSTING_PLAN_STORAGE_BYTES = String(1024 ** 3);
   process.env.HOSTING_STRIPE_PRICE_ID = "test-hosting-price";
+  process.env.HOSTING_STRIPE_PORTAL_CONFIGURATION_ID = "test-hosting-portal";
   process.env.STRIPE_SECRET_KEY = "test-placeholder";
   process.env.NEXT_PUBLIC_SITE_URL = "https://hosting.test";
   for (const file of ["001-hosting.sql", "002-hosting-details.sql", "003-hosting-accounts.sql", "004-hosting-usage.sql"]) {
@@ -97,4 +98,19 @@ integration("checkout refuses a price that differs from the displayed hosting pl
   });
   await assert.rejects(billingURL(account), { status: 503 });
   assert.equal(checkout.mock.callCount(), 0);
+});
+
+integration("hosting subscribers use the hosting portal without changing other product subscriptions", async (t) => {
+  const connected = await connectAccount({ id: randomUUID(), email: "portal@example.test" });
+  const account = await authenticate(new Request("https://hosting.test", { headers: { Authorization: `Bearer ${connected.token}` } }));
+  await hostingPool().query("UPDATE hosting_accounts SET stripe_customer_id=$2,stripe_subscription_id=$3 WHERE id=$1",
+    [account.id, "customer-portal-test", "subscription-portal-test"]);
+  const stripe = getStripe();
+  t.mock.method(stripe.subscriptions, "retrieve", async () => ({ status: "active" }) as Stripe.Subscription);
+  t.mock.method(stripe.billingPortal.sessions, "create", async (params: Stripe.BillingPortal.SessionCreateParams) => {
+    assert.equal(params.customer, "customer-portal-test");
+    assert.equal(params.configuration, "test-hosting-portal");
+    return { url: "https://billing.stripe.com/hosting" } as Stripe.BillingPortal.Session;
+  });
+  assert.equal((await billingURL(account)).url, "https://billing.stripe.com/hosting");
 });
