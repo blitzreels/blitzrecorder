@@ -25,16 +25,16 @@ components/
   site/                     Site-specific UI and feature components.
     landing/                Home landing page sections and landing-only helpers.
       index.tsx             Landing page orchestrator.
-      hero.tsx              Hero, editor screenshot, and chapter links.
+      hero.tsx              Hero, presentation film, and chapter links.
       chapter.tsx           Timeline chapter ruler and section header.
       record-chapter.tsx    Record: interactive layout composer.
       camera-chapter.tsx    iPhone camera: phone preview and pairing inspector.
       edit-chapter.tsx      Edit: silence-removal timeline and transcript.
       export-chapter.tsx    Export: resolution, frame rate, speed, and BlitzReels.
+      share-chapter.tsx     Share: hosted link with transcript and chapters.
       toolbox.tsx           "Also in the app" list.
-      pricing.tsx           Free plan.
       faq.tsx               FAQ accordion section.
-      closing-cta.tsx       Final download CTA.
+      pricing.tsx           Free plan and final download CTA.
       checkout-return-tracker.tsx  Legacy checkout return analytics.
       tracking.ts           Landing CTA tracking helper.
       reveal.ts             Reveal animation delay helper.
