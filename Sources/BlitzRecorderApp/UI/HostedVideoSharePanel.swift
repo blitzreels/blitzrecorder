@@ -421,7 +421,7 @@ struct HostedVideoLibraryView: View {
             .background(BlitzUI.cardFill, in: .rect(cornerRadius: 8))
             .padding(.horizontal, 24).padding(.bottom, 16)
 
-            if controller.videos.isEmpty && controller.isRefreshingVideos {
+            if controller.videos.isEmpty && controller.isRefreshingVideos && controller.libraryUpdatedAt == nil {
                 empty(.init(symbol: "icloud", title: "Loading shared videos", detail: nil, loading: true))
             } else if controller.videos.isEmpty && controller.libraryMessage == nil {
                 empty(.init(symbol: "link", title: "Your next video belongs here",
