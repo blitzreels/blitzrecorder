@@ -5,6 +5,26 @@ import XCTest
 @testable import BlitzRecorderApp
 
 final class EditorSelectionControlsTests: XCTestCase {
+    func testReturnAndKeypadEnterDeleteTimelineSelection() {
+        for keyCode: UInt16 in [36, 76] {
+            XCTAssertEqual(command(.init(keyCode: keyCode, characters: "\r", modifiers: [])), .deleteSelection)
+            XCTAssertNil(command(.init(keyCode: keyCode, characters: "\r", modifiers: .command)))
+        }
+    }
+
+    func testEveryTimelineRangeDeletesEvenAfterChangingInspector() {
+        let range = EditorTimeRange(start: 2, end: 4)
+        let selected = SilenceSegmentSelection(range)
+        let selections: [EditorSelection] = [.range(range), .ranges(selected), .silenceRange(range), .silenceRanges(selected)]
+        for selection in selections {
+            for hasPrivacySelection in [false, true] {
+                XCTAssertEqual(EditorDeleteRouting.action(.init(
+                    selection: selection, hasPrivacySelection: hasPrivacySelection, assetIsToggleable: false
+                )), .cutRange)
+            }
+        }
+    }
+
     func testDraggingBackwardsAndBeyondEdgesClampsToTake() throws {
         let range = try XCTUnwrap(EditorTimeRange.resolve(.init(anchor: 14, head: -2, duration: 10)))
         XCTAssertEqual(range.start, 0)
@@ -127,26 +147,11 @@ final class EditorSelectionControlsTests: XCTestCase {
                 selection: .silenceRange(.init(start: 1, end: 2)),
                 hasPrivacySelection: false, assetIsToggleable: true
             )),
-            .toggleSilence
+            .cutRange
         )
         XCTAssertEqual(
             EditorDeleteRouting.help(.toggleAsset),
             "Mute or hide the selected track (Delete). Undo with ⌘Z."
-        )
-    }
-
-    func testHeaderHidesDuplicateRangeAndDeleteWhenAContextualToolbarIsOpen() {
-        XCTAssertEqual(
-            EditorTimelineHeaderActions.resolve(.init(hasRangeToolbar: false, hasSilenceSelection: false)),
-            .init(showsRange: true, showsDelete: true)
-        )
-        XCTAssertEqual(
-            EditorTimelineHeaderActions.resolve(.init(hasRangeToolbar: true, hasSilenceSelection: false)),
-            .init(showsRange: false, showsDelete: false)
-        )
-        XCTAssertEqual(
-            EditorTimelineHeaderActions.resolve(.init(hasRangeToolbar: false, hasSilenceSelection: true)),
-            .init(showsRange: true, showsDelete: false)
         )
     }
 
@@ -162,6 +167,29 @@ final class EditorSelectionControlsTests: XCTestCase {
         XCTAssertFalse(EditorKeyboardCommand.acceptsShortcuts(firstResponder: NSTextField()))
         XCTAssertFalse(EditorKeyboardCommand.acceptsShortcuts(firstResponder: NSSlider()))
         XCTAssertTrue(EditorKeyboardCommand.acceptsShortcuts(firstResponder: NSView()))
+    }
+
+    @MainActor
+    func testTimelineClickRecoversShortcutsFromInspectorControlWithoutStealingOutsideClicks() throws {
+        _ = NSApplication.shared
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 300),
+                              styleMask: .borderless, backing: .buffered, defer: false)
+        let content = try XCTUnwrap(window.contentView)
+        let timeline = EditorTimelineKeyboardFocus.FocusView(frame: NSRect(x: 0, y: 0, width: 500, height: 100))
+        let slider = NSSlider(frame: NSRect(x: 20, y: 200, width: 100, height: 20))
+        content.addSubview(timeline)
+        content.addSubview(slider)
+        window.makeFirstResponder(slider)
+        XCTAssertFalse(EditorKeyboardCommand.acceptsShortcuts(firstResponder: window.firstResponder))
+        for point in [NSPoint(x: 30, y: 210), NSPoint(x: 30, y: 40)] {
+            let event = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDown, location: point,
+                modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                eventNumber: 1, clickCount: 1, pressure: 1))
+            timeline.focusForTimelineClick(event)
+            XCTAssertEqual(window.firstResponder === timeline, point.y < 100)
+        }
+        XCTAssertTrue(EditorKeyboardCommand.acceptsShortcuts(firstResponder: window.firstResponder))
+        timeline.removeFromSuperview()
     }
 
     @MainActor
@@ -200,6 +228,33 @@ final class EditorSelectionControlsTests: XCTestCase {
         vm.redoEditor()
         XCTAssertEqual(try store.loadRecordingProject(at: take.projectURL).edits, edits)
         XCTAssertEqual(vm.lastExportedProject?.sceneEvents, original.sceneEvents)
+        let extended = try XCTUnwrap(EditorVideoCuts.extendingRight(.init(
+            edits: edits, clip: .init(start: 0, end: 2), nextClipStart: 4, duration: 10, delta: 2
+        )))
+        XCTAssertTrue(vm.applyTimelineEdits(.init(edits: extended, actionName: "Extend Clip")))
+        XCTAssertEqual(try store.loadRecordingProject(at: take.projectURL).edits, extended)
+        XCTAssertEqual(EditorClipSpine.layout(.init(edits: extended, duration: 10)).clips.map(\.range), [
+            .init(start: 0, end: 4), .init(start: 4, end: 10)
+        ])
+        vm.undoEditor()
+        XCTAssertEqual(try store.loadRecordingProject(at: take.projectURL).edits, edits)
+        vm.redoEditor()
+        XCTAssertEqual(try store.loadRecordingProject(at: take.projectURL).edits, extended)
+        let trimmed = try XCTUnwrap(EditorVideoCuts.dragRight(.init(
+            edits: extended, clip: .init(start: 0, end: 4), nextClipStart: 4, duration: 10, delta: -1
+        )).edits)
+        XCTAssertTrue(vm.applyTimelineEdits(.init(edits: trimmed, actionName: "Trim Clip")))
+        XCTAssertEqual(vm.editorUndoTitle, "Undo Trim Clip")
+        XCTAssertEqual(try store.loadRecordingProject(at: take.projectURL).edits, trimmed)
+        XCTAssertEqual(EditorClipSpine.layout(.init(edits: trimmed, duration: 10)).clips.map(\.range), [
+            .init(start: 0, end: 3), .init(start: 4, end: 10)
+        ])
+        vm.undoEditor()
+        XCTAssertEqual(try store.loadRecordingProject(at: take.projectURL).edits, extended)
+        vm.redoEditor()
+        XCTAssertEqual(try store.loadRecordingProject(at: take.projectURL).edits, trimmed)
+        vm.undoEditor()
+        vm.undoEditor()
         let restored = try XCTUnwrap(
             EditorTimeRange.restoring(
                 .init(

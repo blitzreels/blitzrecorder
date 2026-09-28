@@ -74,13 +74,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         )
         window.title = "BlitzRecorder"
         window.sharingType = .readOnly
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
+        MainWindowChrome.configure(window)
         window.isMovableByWindowBackground = false
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.moveToActiveSpace]
         window.minSize = Self.minimumWindowContentSize
-        window.backgroundColor = .black
         window.tabbingMode = .disallowed
         window.center()
 
@@ -176,6 +174,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         previewStage.captureLayout = coordinator.settings.layout
         previewStage.enabledSources = coordinator.settings.visibleSources
+        previewStage.fillsCanvasWhenOnlyVideoSource =
+            coordinator.settings.enabledSources.intersection([.screen, .camera]).count == 1
         previewStage.sceneLayout = coordinator.settings.sceneLayout
         previewStage.screenSourceAspectRatio = coordinator.currentScreenSourceAspectRatio()
         previewStage.showsRuleOfThirdsOverlay = coordinator.settings.showsRuleOfThirdsOverlay
@@ -238,6 +238,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         suspendIdleCaptureResources()
         viewModel.prepareForWindowClose()
+    }
+
+    func cancelPendingPermissionRequests() {
+        viewModel.cancelPendingPermissionRequests()
     }
 
     static let minimumWindowContentSize = NSSize(width: 1120, height: 760)
@@ -406,6 +410,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func redoEditor() {
         viewModel.redoEditor()
+    }
+
+    func updateCaptureStopProgress(_ progress: CaptureStopProgress?) {
+        viewModel.captureStopProgress = progress
     }
 
     func updateRenderProgress(_ progress: Double) {

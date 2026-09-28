@@ -67,55 +67,6 @@ enum ProjectLibraryPlaybackReloadPolicy {
     }
 }
 
-enum ProjectSpeechWaveform {
-    struct Request {
-        let segments: [RecordingTranscript.Segment]
-        let duration: Double
-        let bucketCount: Int
-    }
-
-    static func samples(_ request: Request) -> [Float] {
-        guard request.duration > 0, request.bucketCount > 0 else {
-            return []
-        }
-
-        let bucketDuration = request.duration / Double(request.bucketCount)
-        var samples = [Float](repeating: 0, count: request.bucketCount)
-        for segment in request.segments {
-            let start = min(request.duration, max(0, segment.startTime))
-            let end = min(request.duration, max(start, segment.endTime))
-            let segmentDuration = end - start
-            guard segmentDuration > 0 else { continue }
-
-            let wordCount = segment.text.split(whereSeparator: \.isWhitespace).count
-            let wordsPerSecond = Double(wordCount) / segmentDuration
-            let confidence = min(1, max(0.55, Double(segment.confidence)))
-            let intensity = min(1, 0.38 + wordsPerSecond * 0.20) * confidence
-            let firstBucket = min(
-                request.bucketCount - 1,
-                max(0, Int(start / bucketDuration))
-            )
-            let lastBucket = min(
-                request.bucketCount - 1,
-                max(firstBucket, Int(end / bucketDuration))
-            )
-
-            for index in firstBucket...lastBucket {
-                let bucketStart = Double(index) * bucketDuration
-                let bucketEnd = bucketStart + bucketDuration
-                let overlap = max(
-                    0,
-                    min(end, bucketEnd) - max(start, bucketStart)
-                )
-                let coverage = min(1, overlap / bucketDuration)
-                let value = Float(sqrt(coverage) * intensity)
-                samples[index] = max(samples[index], value)
-            }
-        }
-        return samples
-    }
-}
-
 @MainActor
 struct ProjectLibraryPlayerSurface: View {
     struct Configuration {
@@ -382,31 +333,32 @@ private struct ProjectPlaybackWaveform: View {
     var body: some View {
         GeometryReader { proxy in
             Canvas { context, size in
-                let values = samples.isEmpty
-                    ? [Float](repeating: 0, count: 120)
-                    : samples
-                let slot = size.width / CGFloat(values.count)
-                let barWidth = max(1, min(2.5, slot * 0.58))
-                let maxHeight = max(1, size.height - 4)
                 let playedWidth = size.width * progress
+                if samples.isEmpty {
+                    let rail = CGRect(x: 0, y: size.height / 2 - 0.5, width: size.width, height: 1)
+                    context.fill(Path(rail), with: .color(.white.opacity(0.18)))
+                } else {
+                    let slot = size.width / CGFloat(samples.count)
+                    let barWidth = max(1, min(2.5, slot * 0.58))
+                    let maxHeight = max(1, size.height - 4)
 
-                for (index, value) in values.enumerated() {
-                    let amplitude = samples.isEmpty ? 0.08 : min(1, max(0, value))
-                    let height = max(2, CGFloat(amplitude) * maxHeight)
-                    let x = CGFloat(index) * slot + (slot - barWidth) / 2
-                    let bar = CGRect(
-                        x: x,
-                        y: (size.height - height) / 2,
-                        width: barWidth,
-                        height: height
-                    )
-                    let color = bar.midX <= playedWidth
-                        ? BlitzUI.mint.opacity(0.92)
-                        : Color.white.opacity(samples.isEmpty ? 0.15 : 0.38)
-                    context.fill(
-                        Path(roundedRect: bar, cornerRadius: barWidth / 2),
-                        with: .color(color)
-                    )
+                    for (index, value) in samples.enumerated() {
+                        let height = max(2, CGFloat(min(1, max(0, value))) * maxHeight)
+                        let x = CGFloat(index) * slot + (slot - barWidth) / 2
+                        let bar = CGRect(
+                            x: x,
+                            y: (size.height - height) / 2,
+                            width: barWidth,
+                            height: height
+                        )
+                        let color = bar.midX <= playedWidth
+                            ? BlitzUI.mint.opacity(0.92)
+                            : Color.white.opacity(0.38)
+                        context.fill(
+                            Path(roundedRect: bar, cornerRadius: barWidth / 2),
+                            with: .color(color)
+                        )
+                    }
                 }
 
                 let playhead = CGRect(
@@ -465,7 +417,7 @@ private struct ProjectPlaybackWaveform: View {
             )
         }
         .accessibilityElement()
-        .accessibilityLabel("Playback waveform")
+        .accessibilityLabel(samples.isEmpty ? "Playback position" : "Playback waveform")
         .accessibilityValue(timeLabel(currentTime))
         .accessibilityAdjustableAction { direction in
             let step = max(1, duration / 100)

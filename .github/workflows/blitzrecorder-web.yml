@@ -24,6 +24,18 @@ jobs:
     name: Lint And Build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: hosting-ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout
@@ -43,6 +55,16 @@ jobs:
       - name: Lint
         working-directory: ${{ env.WEB_DIR }}
         run: npm run lint
+
+      - name: Typecheck
+        working-directory: ${{ env.WEB_DIR }}
+        run: npm run typecheck
+
+      - name: Hosting Tests
+        working-directory: ${{ env.WEB_DIR }}
+        env:
+          HOSTING_TEST_DATABASE_URL: postgresql://postgres:hosting-ci@localhost:5432/postgres
+        run: npm run test:hosting
 
       - name: Build
         working-directory: ${{ env.WEB_DIR }}

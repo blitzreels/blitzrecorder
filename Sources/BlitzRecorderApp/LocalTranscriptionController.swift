@@ -88,6 +88,7 @@ enum TranscriptionJobStatus: Equatable {
     case waitingForModel
     case queued
     case preparingAudio
+    case loadingModels
     case transcribing
     case diarizing
     case saving
@@ -104,6 +105,8 @@ enum TranscriptionJobStatus: Equatable {
             return "Queued"
         case .preparingAudio:
             return "Preparing audio"
+        case .loadingModels:
+            return "Loading speech model"
         case .transcribing:
             return "Transcribing"
         case .diarizing:
@@ -119,7 +122,7 @@ enum TranscriptionJobStatus: Equatable {
 
     var isRunning: Bool {
         switch self {
-        case .queued, .preparingAudio, .transcribing, .diarizing, .saving:
+        case .queued, .preparingAudio, .loadingModels, .transcribing, .diarizing, .saving:
             return true
         case .notGenerated, .waitingForModel, .ready, .failed:
             return false
@@ -164,6 +167,7 @@ final class LocalTranscriptionController {
     private struct UpdateRequest {
         let update: TranscriptionEngineUpdate
         let source: TranscriptionMediaSource
+        let jobID: UUID
     }
 
     private struct ModelUpdateRequest {
@@ -193,6 +197,9 @@ final class LocalTranscriptionController {
         didSet { defaults.set(speakerCount.rawValue, forKey: Self.speakerCountKey) }
     }
     var jobStatuses: [String: TranscriptionJobStatus] = [:]
+    private(set) var jobDetails: [String: String] = [:]
+    private(set) var jobStartedAt: [String: Date] = [:]
+    @ObservationIgnored private var jobIDs: [String: UUID] = [:]
     @ObservationIgnored var onTranscriptionCompleted: ((CompletedTranscription) -> Void)?
     var isAutomaticEnabled: Bool {
         didSet {
@@ -313,6 +320,7 @@ final class LocalTranscriptionController {
     private func enqueue(_ request: EnqueueRequest) {
         let source = request.source
         knownSources[source.key] = source
+        guard tasks[source.key] == nil else { return }
         if !request.force, isTranscriptReady(source.key) {
             return
         }
@@ -325,10 +333,12 @@ final class LocalTranscriptionController {
             }
             return
         }
-        guard tasks[source.key] == nil else { return }
-
         pendingManualSources[source.key] = nil
         jobStatuses[source.key] = .queued
+        let jobID = UUID()
+        jobIDs[source.key] = jobID
+        jobStartedAt[source.key] = Date()
+        jobDetails[source.key] = nil
         let model = selectedModel
         let language = selectedLanguage
         let speakerCount = speakerCount
@@ -345,7 +355,8 @@ final class LocalTranscriptionController {
                             Task { @MainActor in
                                 self?.apply(UpdateRequest(
                                     update: update,
-                                    source: source
+                                    source: source,
+                                    jobID: jobID
                                 ))
                             }
                         }
@@ -360,6 +371,9 @@ final class LocalTranscriptionController {
                 jobStatuses[source.key] = .failed(error.localizedDescription)
             }
             tasks[source.key] = nil
+            jobIDs[source.key] = nil
+            jobStartedAt[source.key] = nil
+            jobDetails[source.key] = nil
         }
     }
 
@@ -385,6 +399,7 @@ final class LocalTranscriptionController {
     }
 
     private func refreshStatus(_ source: TranscriptionMediaSource) {
+        guard tasks[source.key] == nil else { return }
         if let transcriptURL = transcriptURL(source),
            FileManager.default.fileExists(atPath: transcriptURL.path) {
             jobStatuses[source.key] = .ready(transcriptURL)
@@ -423,9 +438,13 @@ final class LocalTranscriptionController {
     }
 
     private func apply(_ request: UpdateRequest) {
+        guard jobIDs[request.source.key] == request.jobID else { return }
+        jobDetails[request.source.key] = request.update.detail
         switch request.update.stage {
         case .preparingAudio:
             jobStatuses[request.source.key] = .preparingAudio
+        case .loadingModels:
+            jobStatuses[request.source.key] = .loadingModels
         case .transcribing:
             jobStatuses[request.source.key] = .transcribing
         case .diarizing:

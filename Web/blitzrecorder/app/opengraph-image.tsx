@@ -3,11 +3,11 @@ import { join } from "node:path";
 import { ImageResponse } from "next/og";
 
 export const alt =
-  "BlitzRecorder. Mac screen recording for short-form. Open source. Completely free.";
+  "BlitzRecorder. Record and edit on your Mac. Free and open source.";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-const MINT = "#5EF2AF";
+const MINT = "#17FFA6";
 
 /**
  * Brand display font, fetched once at build time (the OG image is statically
@@ -32,15 +32,11 @@ async function loadDisplayFont(): Promise<ArrayBuffer | null> {
 }
 
 export default async function OpengraphImage() {
-  const [font, iconData, screenData] = await Promise.all([
+  const [font, iconData] = await Promise.all([
     loadDisplayFont(),
     readFile(join(process.cwd(), "app/icon.png")),
-    readFile(
-      join(process.cwd(), "public/generated-screens/macos-recorder-live.png")
-    ),
   ]);
   const icon = `data:image/png;base64,${iconData.toString("base64")}`;
-  const screen = `data:image/png;base64,${screenData.toString("base64")}`;
   return new ImageResponse(
     (
       <div
@@ -53,33 +49,13 @@ export default async function OpengraphImage() {
           ...(font ? { fontFamily: "Schibsted Grotesk" } : {}),
         }}
       >
-        {/* Mac screenshot in a dark bezel, bleeding off the right edge */}
-        <div
-          style={{
-            position: "absolute",
-            right: -130,
-            top: 96,
-            display: "flex",
-            padding: 12,
-            borderRadius: 20,
-            background: "#0c0d10",
-            border: "1px solid rgba(255,255,255,0.12)",
-            transform: "rotate(2deg)",
-            boxShadow: "0 50px 120px rgba(0,0,0,0.7)",
-          }}
-        >
-          {/* 1480x1092 source */}
-          <img src={screen} alt="" width={560} height={413} style={{ borderRadius: 10 }} />
-        </div>
-
-        {/* copy */}
         <div
           style={{
             display: "flex",
             flexDirection: "column",
             justifyContent: "center",
             paddingLeft: 72,
-            width: 660,
+            width: 1100,
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 22 }}>
@@ -100,8 +76,8 @@ export default async function OpengraphImage() {
               color: "#fff",
             }}
           >
-            <span>Record the screen.</span>
-            <span style={{ color: MINT }}>Cut the short.</span>
+            <span>Record and edit videos</span>
+            <span style={{ color: MINT }}>on your Mac.</span>
           </div>
           <div
             style={{
@@ -113,8 +89,8 @@ export default async function OpengraphImage() {
               color: "rgba(232,242,238,0.74)",
             }}
           >
-            <span>Mac screen recorder for short-form.</span>
-            <span>Open source. Completely free.</span>
+            <span>Screen and camera in one take.</span>
+            <span>Free and open source.</span>
           </div>
         </div>
       </div>

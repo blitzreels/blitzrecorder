@@ -3,32 +3,20 @@ import SwiftUI
 struct EditorToolbar: View {
     @Bindable var vm: RecorderViewModel
     var title: String
+    @Binding var showsInspector: Bool
     var onFillWindow: () -> Void
     var onSelectOutputLayout: (CaptureLayout) -> Void
     var exportButton: AnyView
 
     var body: some View {
         HStack(spacing: 0) {
-            Button {
-                vm.showProjects()
-            } label: {
-                Label("Projects", systemImage: "chevron.left")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.68))
-                    .padding(.leading, 9)
-                    .padding(.trailing, 11)
-                    .frame(height: 40)
-                    .contentShape(.rect(cornerRadius: 9))
-            }
-            .buttonStyle(BlitzPressButtonStyle())
-            .pointingHandCursor()
-            .help("Return to projects")
-
-            Rectangle()
-                .fill(Color.white.opacity(0.09))
-                .frame(width: 1, height: 18)
-                .padding(.leading, 4)
-                .padding(.trailing, 16)
+            Button("Projects", action: vm.showProjects)
+                .blitzButton(.quiet)
+                .controlSize(.small)
+                .help("Open projects")
+            Text("/")
+                .foregroundStyle(BlitzUI.secondaryText)
+                .padding(.horizontal, 8)
 
             Text(title)
                 .font(.system(size: 15, weight: .semibold))
@@ -54,16 +42,16 @@ struct EditorToolbar: View {
                 .onTapGesture(count: 2, perform: onFillWindow)
 
             BlitzToolbarButton(configuration: .init(
-                title: "Settings",
-                symbolName: "gearshape",
+                title: showsInspector ? "Hide inspector" : "Show inspector",
+                symbolName: "sidebar.right",
                 showsTitle: false,
-                action: { vm.onPresentSettings?(nil) }
+                action: { showsInspector.toggle() }
             ))
-            .help("Open Settings (Cmd+,)")
+            .accessibilityValue(showsInspector ? "Visible" : "Hidden")
+            .help(showsInspector ? "Hide editing tools to enlarge the preview" : "Show editing tools")
             .padding(.trailing, 12)
 
             exportButton
         }
-        .frame(height: 44)
     }
 }

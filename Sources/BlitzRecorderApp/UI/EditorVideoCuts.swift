@@ -12,6 +12,10 @@ enum EditorVideoCuts {
         EditorClipSpine.range(request)
     }
 
+    static func canTrimRight(_ request: ExtendRequest) -> Bool {
+        EditorClipSpine.canTrimRight(request)
+    }
+
     static func rightExpandLimit(_ request: ExtendRequest) -> Double? {
         EditorClipSpine.rightExpandLimit(request)
     }

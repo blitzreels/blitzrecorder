@@ -1,5 +1,89 @@
 import SwiftUI
 
+struct EditorTimelineControlAnchor: Identifiable {
+    let id: String
+    let bounds: Anchor<CGRect>
+    let content: AnyView
+}
+
+struct EditorTimelineControlKey: PreferenceKey {
+    static let defaultValue: [EditorTimelineControlAnchor] = []
+
+    static func reduce(value: inout [EditorTimelineControlAnchor], nextValue: () -> [EditorTimelineControlAnchor]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+extension View {
+    func timelineControl(id: String) -> some View {
+        hidden()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .anchorPreference(key: EditorTimelineControlKey.self, value: .bounds) { bounds in
+                [.init(id: id, bounds: bounds, content: AnyView(self))]
+            }
+    }
+}
+
+struct EditorTimelineControlLayer: View {
+    struct Configuration {
+        let controls: [EditorTimelineControlAnchor]
+        let geometry: GeometryProxy
+        let viewport: CGRect
+    }
+
+    let configuration: Configuration
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(configuration.controls) { control in
+                let frame = configuration.geometry[control.bounds]
+                control.content
+                    .allowsHitTesting(true)
+                    .frame(width: frame.width, height: frame.height)
+                    .position(x: frame.midX - configuration.viewport.minX, y: frame.midY - configuration.viewport.minY)
+                    .accessibilityHidden(!frame.intersects(configuration.viewport))
+            }
+        }
+        .frame(width: configuration.viewport.width, height: configuration.viewport.height,
+               alignment: .topLeading)
+        .contentShape(hitRegion)
+        .clipped()
+        .offset(x: configuration.viewport.minX, y: configuration.viewport.minY)
+    }
+
+    private var hitRegion: Path {
+        Path { path in
+            for control in configuration.controls {
+                let frame = configuration.geometry[control.bounds].intersection(configuration.viewport)
+                guard !frame.isNull, !frame.isEmpty else { continue }
+                path.addRect(frame.offsetBy(dx: -configuration.viewport.minX, dy: -configuration.viewport.minY))
+            }
+        }
+    }
+}
+
+struct EditorTimelineGrip: View {
+    let tint: Color
+    let isActive: Bool
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 3)
+            .fill(Color(white: isActive ? 0.2 : 0.12))
+            .overlay {
+                RoundedRectangle(cornerRadius: 3)
+                    .strokeBorder(.white.opacity(isActive ? 0.3 : 0.16), lineWidth: 1)
+            }
+            .overlay {
+                Capsule()
+                    .fill(isActive ? tint : .white.opacity(0.85))
+                    .frame(width: 2, height: 12)
+            }
+            .frame(width: 8, height: 24)
+            .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+    }
+}
+
 struct EditorTimelineViewport: Equatable {
     struct Request {
         let offset: CGFloat
@@ -40,6 +124,31 @@ enum EditorTimelineRangeChrome {
         let start = CGFloat(request.projection.displayTime(request.range.start)) * request.pixelsPerSecond
         let end = CGFloat(request.projection.displayTime(request.range.end)) * request.pixelsPerSecond
         return CGRect(x: start, y: 0, width: max(1, end - start), height: max(0, request.height))
+    }
+}
+
+struct EditorTimelineRangeHighlight: View {
+    struct Configuration {
+        let range: EditorTimeRange
+        let projection: EditorTimelineProjection
+        let pixelsPerSecond: CGFloat
+        let height: CGFloat
+        let tint: Color
+    }
+
+    let configuration: Configuration
+
+    var body: some View {
+        let frame = EditorTimelineRangeChrome.frame(.init(
+            range: configuration.range, projection: configuration.projection,
+            pixelsPerSecond: configuration.pixelsPerSecond, height: configuration.height))
+        Rectangle()
+            .fill(.white.opacity(0.04))
+            .overlay { Rectangle().strokeBorder(configuration.tint.opacity(0.85), lineWidth: 1) }
+            .frame(width: frame.width, height: frame.height)
+            .offset(x: frame.minX)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 

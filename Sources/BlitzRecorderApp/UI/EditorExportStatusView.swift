@@ -5,7 +5,7 @@ enum EditorExportStatus {
         let title: String
         let percentage: String
         let detail: String?
-        let value: Double
+        let value: Double?
 
         var supplementaryDetail: String? {
             guard let detail else { return nil }
@@ -30,6 +30,7 @@ struct EditorExportStatusView: View {
         let status: EditorExportStatus
         let open: (URL) -> Void
         let reveal: (URL) -> Void
+        let share: (URL) -> Void
         let sendToBlitzReels: (URL) -> Void
         let retry: () -> Void
         let dismiss: () -> Void
@@ -46,7 +47,8 @@ struct EditorExportStatusView: View {
             detail
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)
-            actions
+            HStack(spacing: 8) { actions }
+                .fixedSize(horizontal: true, vertical: false)
         }
         .padding(12)
         .frame(maxWidth: 940)
@@ -133,6 +135,11 @@ struct EditorExportStatusView: View {
     private var actions: some View {
         switch configuration.status {
         case .succeeded(let url):
+            Button { configuration.share(url) } label: {
+                Label("Share link", systemImage: "link")
+            }
+            .blitzButton(.accent)
+            .help("Upload this export to BlitzRecorder hosting and get a watch link")
             if url.pathExtension.lowercased() == "mp4" {
                 Button { configuration.sendToBlitzReels(url) } label: {
                     VStack(alignment: .leading, spacing: 3) {
@@ -140,20 +147,22 @@ struct EditorExportStatusView: View {
                         Text("Add captions").font(.system(size: 11, weight: .medium))
                     }
                 }
-                .blitzButton(.accent)
+                .blitzButton(.secondary)
                 .accessibilityLabel("Add captions in BlitzReels")
                 .help("Upload this MP4 to BlitzReels for captions and optional B-roll")
             }
             Button { configuration.open(url) } label: {
                 Label("Open video", systemImage: "play")
-                    .frame(width: 110)
+                    .labelStyle(.iconOnly)
             }
             .blitzButton(.secondary)
+            .help("Open video")
             Button { configuration.reveal(url) } label: {
                 Label("Show in Finder", systemImage: "folder")
-                    .frame(width: 110)
+                    .labelStyle(.iconOnly)
             }
             .blitzButton(.secondary)
+            .help("Show in Finder")
             dismissButton
         case .failed:
             Button("Try again", action: configuration.retry)

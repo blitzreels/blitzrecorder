@@ -100,6 +100,9 @@ struct RecordingSettingsPage: View {
                         .frame(width: 48, height: 48)
                         .background(BlitzUI.mint.opacity(0.08), in: .rect(cornerRadius: 10))
                     VStack(alignment: .leading, spacing: 5) {
+                        Text("Exports")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(BlitzUI.secondaryText)
                         Text(vm.settings.outputDirectory.lastPathComponent)
                             .font(.system(size: 15, weight: .semibold))
                         Text(vm.settings.outputDirectory.path)
@@ -117,8 +120,8 @@ struct RecordingSettingsPage: View {
                     Button("Change Folder…") { vm.chooseOutputFolder() }
                         .blitzButton(.secondary)
                         .disabled(!canEdit)
-                        .accessibilityLabel("Change recordings folder")
-                        .help("Choose where new recordings and exports are saved")
+                        .accessibilityLabel("Change export folder")
+                        .help("Choose where finished videos are saved. Source files stay in the library.")
                     Button("Show in Finder") {
                         if !NSWorkspace.shared.open(vm.settings.outputDirectory) {
                             storageDetail = "Folder unavailable. Reconnect the drive or choose another folder."
@@ -126,7 +129,7 @@ struct RecordingSettingsPage: View {
                         }
                     }
                     .blitzButton(.secondary)
-                    .help("Open the recordings folder in Finder")
+                    .help("Open the export folder in Finder")
                     Spacer(minLength: 0)
                 }
 
@@ -136,10 +139,40 @@ struct RecordingSettingsPage: View {
                         .foregroundStyle(storageUnavailable ? BlitzUI.warning : BlitzUI.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Text("New recordings and exports use this folder. Existing files stay where they are.")
+                Text("Finished videos are saved here. Changing this folder keeps your source files and project library in place.")
                     .font(.system(size: 11))
                     .foregroundStyle(BlitzUI.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+            .settingsRow()
+
+            SettingsRowDivider()
+
+            VStack(alignment: .leading, spacing: 14) {
+                SettingsRowLabel(.init(
+                    title: "Recording sources",
+                    detail: "Choose where new source tracks are stored. Existing projects stay in your library."
+                ))
+                Text(vm.settings.sourceStorage.url.path)
+                    .font(.system(size: 12))
+                    .foregroundStyle(BlitzUI.secondaryText)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+                    .help(vm.settings.sourceStorage.url.path)
+                HStack(spacing: 8) {
+                    Button("Change Folder…") { vm.chooseSourceFolder() }
+                        .blitzButton(.secondary)
+                        .disabled(!canEdit)
+                        .accessibilityLabel("Change recording sources folder")
+                        .help("Choose a source library folder for new recordings. Existing files stay where they are.")
+                    Button("Show in Finder") {
+                        NSWorkspace.shared.open(vm.settings.sourceStorage.url)
+                    }
+                    .blitzButton(.secondary)
+                    .help("Open the source library. Other linked project folders also stay in Projects.")
+                    Spacer(minLength: 0)
+                }
             }
             .settingsRow()
 

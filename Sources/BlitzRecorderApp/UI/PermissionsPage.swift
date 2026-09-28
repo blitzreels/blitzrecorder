@@ -121,10 +121,11 @@ struct PermissionsPage: View {
             SettingsStatusBadge(configuration: .init(title: statusTitle(row), tone: statusTone(row)))
                 .frame(width: 100, alignment: .trailing)
 
-            Button(row.level == .warning && row.status == "not determined" ? "Allow…" : "Manage…") {
+            Button(actionTitle(for: row)) {
                 manage(row)
             }
             .blitzButton(.secondary)
+            .disabled((row.source != nil && !row.isActive) || vm.isRequestingPermissions)
             .accessibilityLabel("Manage \(row.title) permission")
             .help("Open \(row.title.lowercased()) permission controls")
         }
@@ -163,7 +164,11 @@ struct PermissionsPage: View {
     private func manage(_ row: PermissionStatusRow) {
         switch row.source {
         case .screen, .systemAudio:
-            vm.openScreenRecordingSettings()
+            if row.isGranted || vm.coordinator.permissionGate.hasRequestedScreenCaptureAccessThisSession {
+                vm.openScreenRecordingSettings()
+            } else {
+                vm.applyScreenRecordingPermission()
+            }
         case .camera:
             if vm.isRemoteCameraSelected {
                 vm.showSettings(.devices)
@@ -179,7 +184,25 @@ struct PermissionsPage: View {
                 vm.openMicrophoneSettings()
             }
         case nil:
-            vm.openAccessibilitySettings()
+            if row.isGranted || vm.coordinator.permissionGate.hasRequestedAccessibilityAccessThisSession {
+                vm.openAccessibilitySettings()
+            } else {
+                vm.requestAccessibilityPermission()
+            }
+        }
+    }
+
+    private func actionTitle(for row: PermissionStatusRow) -> String {
+        if row.isGranted { return "Manage…" }
+        switch row.source {
+        case .screen, .systemAudio:
+            return vm.coordinator.permissionGate.hasRequestedScreenCaptureAccessThisSession
+                ? "Settings…" : "Allow…"
+        case .camera, .microphone:
+            return row.status == "not determined" ? "Allow…" : "Settings…"
+        case nil:
+            return vm.coordinator.permissionGate.hasRequestedAccessibilityAccessThisSession
+                ? "Settings…" : "Allow…"
         }
     }
 }

@@ -4,7 +4,7 @@ import VideoToolbox
 import XCTest
 
 final class ExportVideoQualityTests: XCTestCase {
-    func testWebQualityUsesH264AtAFractionOfAutomaticBitrate() {
+    func testWebQualityPreservesScreenDetailAtTheFullSharingBitrate() {
         let profile = ExportVideoQuality.web.encodingProfile(
             baseBitrate: 8_000_000,
             framesPerSecond: 30,
@@ -12,12 +12,12 @@ final class ExportVideoQualityTests: XCTestCase {
         )
 
         XCTAssertEqual(profile.codec, .h264)
-        XCTAssertEqual(profile.bitrate, 1_600_000)
-        XCTAssertEqual(profile.audioBitrate, 128_000)
-        XCTAssertEqual(profile.quality ?? -1, 0.40, accuracy: 0.001)
+        XCTAssertEqual(profile.bitrate, 8_000_000)
+        XCTAssertEqual(profile.audioBitrate, 192_000)
+        XCTAssertEqual(profile.quality ?? -1, 0.75, accuracy: 0.001)
         XCTAssertTrue(profile.usesAverageBitRate)
-        XCTAssertEqual(profile.maxKeyFrameInterval, 150)
-        XCTAssertEqual(profile.detail, "H.264 · 1.6 Mbps")
+        XCTAssertEqual(profile.maxKeyFrameInterval, 60)
+        XCTAssertEqual(profile.detail, "H.264 · 8.0 Mbps")
     }
 
     func testCompactQualityUsesHEVCBelowTheOldTwoMegabitFloor() {
@@ -105,7 +105,7 @@ final class ExportVideoQualityTests: XCTestCase {
         )
         XCTAssertEqual(
             ExportVideoQuality.web.videoBitrate(baseBitrate: 1_000_000),
-            400_000
+            1_000_000
         )
         XCTAssertEqual(
             ExportVideoQuality.standard.videoBitrate(baseBitrate: 1_000_000),
@@ -147,7 +147,7 @@ final class ExportVideoQualityTests: XCTestCase {
         )
     }
 
-    func testWebExportSettingsUseH264QualityCapsAndLongGOP() throws {
+    func testWebExportSettingsUseDetailedH264AndTwoSecondKeyframes() throws {
         let encoding = ExportVideoQuality.web.encodingProfile(
             baseBitrate: 8_000_000,
             framesPerSecond: 30,
@@ -165,12 +165,12 @@ final class ExportVideoQualityTests: XCTestCase {
 
         XCTAssertEqual(settings[AVVideoCodecKey] as? AVVideoCodecType, .h264)
         let compression = try XCTUnwrap(settings[AVVideoCompressionPropertiesKey] as? [String: Any])
-        XCTAssertEqual(compression[AVVideoAverageBitRateKey] as? Int, 1_600_000)
+        XCTAssertEqual(compression[AVVideoAverageBitRateKey] as? Int, 8_000_000)
         XCTAssertEqual(compression[AVVideoProfileLevelKey] as? String, AVVideoProfileLevelH264HighAutoLevel)
-        XCTAssertEqual(compression[AVVideoMaxKeyFrameIntervalKey] as? Int, 150)
-        XCTAssertEqual((compression[kVTCompressionPropertyKey_Quality as String] as? NSNumber)?.floatValue ?? -1, 0.40, accuracy: 0.001)
+        XCTAssertEqual(compression[AVVideoMaxKeyFrameIntervalKey] as? Int, 60)
+        XCTAssertEqual((compression[kVTCompressionPropertyKey_Quality as String] as? NSNumber)?.floatValue ?? -1, 0.75, accuracy: 0.001)
         let limits = try XCTUnwrap(compression[kVTCompressionPropertyKey_DataRateLimits as String] as? [Int])
-        XCTAssertEqual(limits, [200_000, 1])
+        XCTAssertEqual(limits, [1_000_000, 1])
     }
 
     func testLosslessExportOmitsAverageBitRateSoQualityCanBreathe() throws {

@@ -124,6 +124,7 @@ struct RecordingProject: Codable, Equatable {
         let cameraFramePadding: Double
         let cameraShadowEnabled: Bool
         let sourceOpacities: [String: Double]
+        let fillsCanvasWhenOnlyVideoSource: Bool?
 
         init(_ scene: RecordingScene) {
             self.enabledSources = scene.enabledSources.map(\.rawValue).sorted()
@@ -145,6 +146,7 @@ struct RecordingProject: Codable, Equatable {
             self.sourceOpacities = Dictionary(uniqueKeysWithValues: scene.sourceOpacities.map { source, opacity in
                 (source.rawValue, Double(opacity))
             })
+            self.fillsCanvasWhenOnlyVideoSource = scene.fillsCanvasWhenOnlyVideoSource
         }
     }
 
@@ -439,6 +441,7 @@ struct RecordingProject: Codable, Equatable {
         let zoom: ZoomTrackSnapshot
         let videoSplits: [Double]
         let silenceRemovalApplied: Bool
+        let silenceSettings: SilenceRemovalSettings?
         let silenceOverrides: [SilenceOverride]
         let cursorStyle: CursorPresentationStyle
         let voiceCleanup: VoiceCleanupSettings
@@ -455,6 +458,7 @@ struct RecordingProject: Codable, Equatable {
             self.zoom = zoom
             self.videoSplits = []
             self.silenceRemovalApplied = false
+            self.silenceSettings = nil
             self.silenceOverrides = []
             self.cursorStyle = .standard
             self.cameraFollowsZoom = false
@@ -470,6 +474,7 @@ struct RecordingProject: Codable, Equatable {
             zoom = ZoomTrackSnapshot(edits.zoom)
             videoSplits = edits.videoSplits
             silenceRemovalApplied = edits.silenceRemovalApplied
+            silenceSettings = edits.silenceSettings
             silenceOverrides = edits.silenceOverrides
             cursorStyle = edits.cursorStyle
             cameraFollowsZoom = edits.cameraFollowsZoom
@@ -487,6 +492,7 @@ struct RecordingProject: Codable, Equatable {
             videoSplits = try container.decodeIfPresent([Double].self, forKey: .videoSplits) ?? []
             silenceRemovalApplied = try container.decodeIfPresent(Bool.self, forKey: .silenceRemovalApplied)
                 ?? cuts.contains { $0.cut.kind == .silence && $0.cut.isEnabled }
+            silenceSettings = try container.decodeIfPresent(SilenceRemovalSettings.self, forKey: .silenceSettings)?.sanitized
             silenceOverrides = try container.decodeIfPresent([SilenceOverride].self, forKey: .silenceOverrides) ?? []
             cursorStyle = try container.decodeIfPresent(CursorPresentationStyle.self, forKey: .cursorStyle) ?? .standard
             voiceCleanup = try container.decodeIfPresent(VoiceCleanupSettings.self, forKey: .voiceCleanup) ?? .disabled
@@ -509,12 +515,13 @@ struct RecordingProject: Codable, Equatable {
                 activeOutputLayout: activeOutputLayout,
                 voiceCleanup: voiceCleanup,
                 videoSplits: videoSplits,
-                silenceRemovalApplied: silenceRemovalApplied
+                silenceRemovalApplied: silenceRemovalApplied,
+                silenceSettings: silenceSettings
             )
         }
 
         var isEmpty: Bool {
-            videoSplits.isEmpty && !silenceRemovalApplied && cuts.isEmpty && textOverlays.isEmpty && zoom.keyframes.isEmpty && silenceOverrides.isEmpty
+            silenceSettings == nil && videoSplits.isEmpty && !silenceRemovalApplied && cuts.isEmpty && textOverlays.isEmpty && zoom.keyframes.isEmpty && silenceOverrides.isEmpty
                 && cursorStyle == .standard && !cameraFollowsZoom && privacyMasks.isEmpty && outputVariants.isEmpty && activeOutputLayout == nil && voiceCleanup == .disabled
         }
     }
@@ -1040,7 +1047,8 @@ extension RecordingScene {
             sourceOpacities: Dictionary(uniqueKeysWithValues: snapshot.sourceOpacities.compactMap { key, value in
                 guard let source = CaptureSource(rawValue: key) else { return nil }
                 return (source, CGFloat(value))
-            })
+            }),
+            fillsCanvasWhenOnlyVideoSource: snapshot.fillsCanvasWhenOnlyVideoSource ?? false
         )
     }
 
@@ -1091,28 +1099,37 @@ private extension CGPoint {
 }
 
 final class OutputDirectoryAccess {
-    private let url: URL
-    private let shouldStopAccessing: Bool
+    private let accesses: [(url: URL, needsScope: Bool, started: Bool)]
     private var isStopped = false
-    let needsSecurityScopedAccess: Bool
+
+    var needsSecurityScopedAccess: Bool { accesses.contains { $0.needsScope } }
 
     init(url: URL, usesSecurityScopedBookmark: Bool) {
-        self.url = url
-        self.needsSecurityScopedAccess = usesSecurityScopedBookmark
-        shouldStopAccessing = usesSecurityScopedBookmark && url.startAccessingSecurityScopedResource()
+        accesses = [(url, usesSecurityScopedBookmark,
+                     usesSecurityScopedBookmark && url.startAccessingSecurityScopedResource())]
+    }
+
+    init(locations: [RecordingStorageLocation]) {
+        var seen: Set<URL> = []
+        accesses = locations.filter { seen.insert($0.url.standardizedFileURL).inserted }.map {
+            let needsScope = $0.bookmarkData != nil
+            return ($0.url, needsScope, needsScope && $0.url.startAccessingSecurityScopedResource())
+        }
     }
 
     var hasSecurityScopedAccess: Bool {
-        !needsSecurityScopedAccess || shouldStopAccessing
+        accesses.allSatisfy { !$0.needsScope || ($0.started && !isStopped) }
     }
+
+    var unavailableURL: URL? { accesses.first { $0.needsScope && !$0.started }?.url }
 
     deinit {
         stop()
     }
 
     func stop() {
-        guard shouldStopAccessing, !isStopped else { return }
-        url.stopAccessingSecurityScopedResource()
+        guard !isStopped else { return }
+        for access in accesses where access.started { access.url.stopAccessingSecurityScopedResource() }
         isStopped = true
     }
 }

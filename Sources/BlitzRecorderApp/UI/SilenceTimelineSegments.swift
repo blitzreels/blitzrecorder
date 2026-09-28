@@ -235,181 +235,35 @@ enum SilenceTimelineSegments {
     }
 }
 
-struct SilenceSegmentStrip: View {
-    struct Configuration {
+struct EditorTimelineSilenceOverlay: View, Equatable {
+    struct Configuration: Equatable {
         let segments: [SilenceTimelineSegment]
         let projection: EditorTimelineProjection
         let pixelsPerSecond: CGFloat
         let viewport: EditorTimelineViewport
-        let width: CGFloat
-        let height: CGFloat
-        let selections: [EditorTimeRange]
-        let hoveredRange: EditorTimeRange?
-        let onSelect: (EditorTimeRange) -> Void
-        let onToggleSelection: (EditorTimeRange) -> Void
-        let onHover: (EditorTimeRange?) -> Void
-        let onClassify: (SilenceEditingSession.ClassificationRequest) -> Void
+        let rows: [Range<CGFloat>]
     }
 
     let configuration: Configuration
     @Environment(\.displayScale) private var displayScale
 
-    var body: some View {
-        let runs = SilenceTimelineSegments.visibleRuns(
-            .init(
-                segments: configuration.segments,
-                projection: configuration.projection,
-                pixelsPerSecond: configuration.pixelsPerSecond,
-                viewport: configuration.viewport,
-                selections: configuration.selections,
-                hoveredRange: configuration.hoveredRange,
-                pixelScale: displayScale
-            ))
-        SilenceSegmentStripCanvas(runs: runs)
-            .equatable()
-            .frame(width: configuration.viewport.width, height: configuration.height)
-            .offset(x: configuration.viewport.lowerBound)
-            .frame(width: configuration.width, height: configuration.height, alignment: .leading)
-            .contentShape(.rect)
-            .pointingHandCursor()
-            .simultaneousGesture(
-                SpatialTapGesture().onEnded { event in
-                    select(at: event.location.x)
-                }
-            )
-            .onContinuousHover { phase in
-                switch phase {
-                case .active(let location):
-                    configuration.onHover(segment(at: location.x)?.range)
-                case .ended:
-                    configuration.onHover(nil)
-                }
-            }
-            .contextMenu {
-                if let range = configuration.hoveredRange ?? configuration.selections.first {
-                    Button(
-                        configuration.selections.contains(range) ? "Remove from selection" : "Add to selection",
-                        systemImage: configuration.selections.contains(range) ? "minus" : "plus"
-                    ) {
-                        configuration.onToggleSelection(range)
-                    }
-                    Divider()
-                    Button("Mark as sound", systemImage: "waveform") {
-                        configuration.onClassify(.init(range: range, classification: .sound))
-                    }
-                    Button("Mark as silence", systemImage: "waveform.slash") {
-                        configuration.onClassify(.init(range: range, classification: .silence))
-                    }
-                }
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Sound and silence segments")
-            .accessibilityValue(accessibilityValue)
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction {
-                if let range = configuration.selections.first {
-                    configuration.onSelect(range)
-                }
-            }
-            .accessibilityAdjustableAction { direction in
-                let selected = configuration.selections.first ?? configuration.hoveredRange
-                let neighbor: SilenceTimelineSegment?
-                switch direction {
-                case .increment:
-                    if let selected {
-                        neighbor = SilenceTimelineSegments.neighbor(
-                            .init(segments: configuration.segments, selection: selected, direction: .next))
-                    } else {
-                        neighbor = configuration.segments.first
-                    }
-                case .decrement:
-                    if let selected {
-                        neighbor = SilenceTimelineSegments.neighbor(
-                            .init(segments: configuration.segments, selection: selected, direction: .previous))
-                    } else {
-                        neighbor = configuration.segments.last
-                    }
-                @unknown default:
-                    neighbor = nil
-                }
-                if let neighbor {
-                    configuration.onSelect(neighbor.range)
-                }
-            }
-            .help(
-                "Click to select. ⌘-click to add or remove. Shift-click or drag to select several. Right-click to mark."
-            )
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.configuration == rhs.configuration
     }
-
-    private var accessibilityValue: String {
-        if configuration.selections.count > 1 {
-            return "\(configuration.selections.count) segments selected"
-        }
-        if let range = configuration.selections.first,
-            let segment = SilenceTimelineSegments.at(
-                .init(segments: configuration.segments, time: range.start))
-        {
-            return "\(segment.title) selected, \(SilenceTime.label(range.start)) to \(SilenceTime.label(range.end))"
-        }
-        return "\(configuration.segments.count) segments"
-    }
-
-    private func select(at x: CGFloat) {
-        guard let segment = segment(at: x) else { return }
-        configuration.onSelect(segment.range)
-    }
-
-    private func segment(at x: CGFloat) -> SilenceTimelineSegment? {
-        guard configuration.pixelsPerSecond > 0 else { return nil }
-        return SilenceTimelineSegments.at(
-            .init(
-                segments: configuration.segments,
-                time: configuration.projection.takeTime(Double(x / configuration.pixelsPerSecond))
-            ))
-    }
-}
-
-private struct SilenceSegmentStripCanvas: View, Equatable {
-    let runs: [SilenceTimelineSegments.VisibleRun]
 
     var body: some View {
-        Canvas { context, size in
-            for run in runs {
-                let color = run.classification == .silence ? BlitzUI.recordRed : BlitzUI.mint
-                let rect = CGRect(x: run.x, y: 2, width: max(0.5, run.width), height: size.height - 4)
-                let path = Path(roundedRect: rect, cornerRadius: run.width > 4 ? 4 : 0)
-                context.fill(
-                    path,
-                    with: .color(color.opacity(run.isSelected ? 0.3 : run.isHovered ? 0.24 : 0.12)))
-                if run.isSelected || run.isHovered {
-                    context.stroke(
-                        path,
-                        with: .color(run.isSelected ? Color.white : color),
-                        lineWidth: 2)
-                }
-                if run.width >= 24 {
-                    var clipped = context
-                    clipped.clip(to: path)
-                    let title = run.classification == .silence ? "Silence" : "Sound"
-                    let symbol = run.classification == .silence ? "waveform.slash" : "waveform"
-                    let foreground = run.isSelected ? Color.white : color
-                    var image = clipped.resolve(Image(systemName: symbol))
-                    image.shading = .color(foreground)
-                    clipped.draw(image, at: CGPoint(x: rect.minX + 12, y: rect.midY), anchor: .center)
-                    if run.width >= 72 {
-                        clipped.draw(
-                            Text(title).font(.system(size: 10, weight: .semibold)).foregroundStyle(foreground),
-                            at: CGPoint(x: rect.minX + 22, y: rect.midY),
-                            anchor: .leading)
-                    }
-                    if run.width >= 128 {
-                        clipped.draw(
-                            Text(String(format: "%.1fs", run.duration))
-                                .font(.system(size: 10, weight: .semibold)).monospacedDigit()
-                                .foregroundStyle(BlitzUI.secondaryText),
-                            at: CGPoint(x: rect.maxX - 8, y: rect.midY),
-                            anchor: .trailing)
-                    }
+        let runs = SilenceTimelineSegments.visibleRuns(.init(
+            segments: configuration.segments, projection: configuration.projection,
+            pixelsPerSecond: configuration.pixelsPerSecond, viewport: configuration.viewport,
+            selections: [], hoveredRange: nil, pixelScale: displayScale))
+        Canvas { context, _ in
+            for run in runs where run.classification == .silence {
+                for row in configuration.rows {
+                    let rect = CGRect(x: run.x, y: row.lowerBound, width: run.width,
+                                      height: row.upperBound - row.lowerBound)
+                    context.fill(Path(rect), with: .color(BlitzUI.recordRed.opacity(0.22)))
+                    context.fill(Path(CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: 2)),
+                                 with: .color(BlitzUI.recordRed.opacity(0.9)))
                 }
             }
         }

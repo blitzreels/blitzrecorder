@@ -149,6 +149,25 @@ final class ScreenFramingTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testMinimumSizeConstraintSettlesWithoutRepeatingUnchangedResize() async throws {
+        var current = CGRect(x: 20, y: 20, width: 900, height: 700)
+        let target = CGRect(x: 20, y: 20, width: 300, height: 400)
+        var writes = 0
+        var waits = 0
+        let result = try await WindowFrameWriter.apply(.init(
+            frame: target,
+            write: { change in
+                writes += 1
+                if case .size = change { current.size = CGSize(width: 500, height: 400) }
+            },
+            settle: { waits += 1 }, read: { current }
+        ))
+        XCTAssertEqual(result.width, 500)
+        XCTAssertEqual(writes, 1)
+        XCTAssertEqual(waits, WindowFrameWriter.stableChangedFramePolls)
+    }
+
     func testWindowScalePreservesSceneAspectWhenItReachesMonitorEdges() {
         let plan = TargetWindowFitting.plan(
             screenFrame: CGRect(x: 0, y: 0, width: 1920, height: 1080),

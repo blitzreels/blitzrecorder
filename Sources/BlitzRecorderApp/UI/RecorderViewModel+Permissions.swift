@@ -2,7 +2,29 @@ import AppKit
 import Foundation
 
 extension RecorderViewModel {
+    func startPermissionRequest(_ operation: @escaping @MainActor () async -> Void) {
+        guard permissionRequestTask == nil else { return }
+        let requestID = UUID()
+        permissionRequestID = requestID
+        isRequestingPermissions = true
+        permissionRequestTask = Task { [weak self] in
+            await operation()
+            guard let self, permissionRequestID == requestID else { return }
+            permissionRequestTask = nil
+            permissionRequestID = nil
+            isRequestingPermissions = false
+        }
+    }
+
+    func cancelPendingPermissionRequests() {
+        permissionRequestTask?.cancel()
+        permissionRequestTask = nil
+        permissionRequestID = nil
+        isRequestingPermissions = false
+    }
+
     func dismissFirstRunOnboarding() {
+        cancelPendingPermissionRequests()
         UserDefaults.standard.set(true, forKey: Self.firstRunOnboardingKey)
         showsFirstRunOnboarding = false
     }
@@ -12,11 +34,10 @@ extension RecorderViewModel {
     }
 
     func requestScreenAccessFromCover() {
-        Task {
+        startPermissionRequest { [weak self] in
+            guard let self else { return }
             let result = await coordinator.permissionGate.requestScreenCaptureAccess()
-            if result.status == .needsSettings {
-                screenAccessAwaitingRestart = true
-            }
+            guard !Task.isCancelled, result.status != .cancelled else { return }
             detailMessage = result.message
             refreshPermissionStatus()
             if result.status == .granted {
@@ -32,43 +53,49 @@ extension RecorderViewModel {
     }
 
     func requestCameraAccessFromCover() {
-        Task {
+        startPermissionRequest { [weak self] in
+            guard let self else { return }
             _ = await coordinator.permissionGate.requestCameraAccess()
+            guard !Task.isCancelled else { return }
             syncSettings()
             refreshPermissionStatus()
         }
     }
 
     func requestMicrophoneAccessFromCover() {
-        Task {
+        startPermissionRequest { [weak self] in
+            guard let self else { return }
             _ = await coordinator.permissionGate.requestMicrophoneAccess()
+            guard !Task.isCancelled else { return }
             syncSettings()
             refreshPermissionStatus()
         }
     }
 
     func allowAllFromCover() {
-        Task {
-            if !settings.enabledSources.contains(.systemAudio) {
-                coordinator.addSource(.systemAudio)
-                syncSettings()
-            }
+        startPermissionRequest { [weak self] in
+            guard let self else { return }
             let needsScreenGrant =
                 (settings.enabledSources.contains(.screen)
                     && !settings.usesPickedScreenContent)
                     || settings.enabledSources.contains(.systemAudio)
             if needsScreenGrant, !isPersistentScreenCaptureAccessActive {
                 let result = await coordinator.permissionGate.requestScreenCaptureAccess()
+                guard !Task.isCancelled, result.status != .cancelled else { return }
                 if result.status == .needsSettings {
-                    screenAccessAwaitingRestart = true
+                    detailMessage = result.message
+                    refreshPermissionStatus()
+                    return
                 }
             }
             if settings.enabledSources.contains(.camera),
                !isRemoteCameraSelected {
                 _ = await coordinator.permissionGate.requestCameraAccess()
+                guard !Task.isCancelled else { return }
             }
             if settings.enabledSources.contains(.microphone) {
                 _ = await coordinator.permissionGate.requestMicrophoneAccess()
+                guard !Task.isCancelled else { return }
             }
             syncSettings()
             refreshPermissionStatus()
@@ -84,10 +111,18 @@ extension RecorderViewModel {
     }
 
     func quitAndReopen() {
+        cancelPendingPermissionRequests()
         let bundlePath = Bundle.main.bundlePath
+        let processID = ProcessInfo.processInfo.processIdentifier
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", "sleep 1; exec /usr/bin/open \"$1\"", "blitzrecorder-relaunch", bundlePath]
+        process.arguments = [
+            "-c",
+            "while kill -0 \"$1\" 2>/dev/null; do sleep 0.2; done; exec /usr/bin/open \"$2\"",
+            "blitzrecorder-relaunch",
+            String(processID),
+            bundlePath
+        ]
         try? process.run()
         NSApp.terminate(nil)
     }
@@ -141,8 +176,10 @@ extension RecorderViewModel {
     }
 
     func applyScreenRecordingPermission() {
-        Task {
+        startPermissionRequest { [weak self] in
+            guard let self else { return }
             let result = await coordinator.permissionGate.requestScreenCaptureAccess()
+            guard !Task.isCancelled, result.status != .cancelled else { return }
             detailMessage = result.message
             refreshPermissionStatus()
             if result.status == .granted {
@@ -152,11 +189,18 @@ extension RecorderViewModel {
     }
 
     func requestSourcePermissions() {
-        Task {
+        startPermissionRequest { [weak self] in
+            guard let self else { return }
             await coordinator.requestPermissionsForEnabledSources()
+            guard !Task.isCancelled else { return }
             syncSettings()
             let readiness = coordinator.recordingReadiness()
-            detailMessage = readiness.isReady ? "Recording permissions ready." : readiness.detail
+            if settings.enabledSources.contains(.systemAudio),
+               !coordinator.permissionGate.hasScreenCaptureAccess {
+                detailMessage = "Mac audio is off until Screen Recording access is enabled."
+            } else {
+                detailMessage = readiness.isReady ? "Recording permissions ready." : readiness.detail
+            }
             refreshPermissionStatus()
         }
     }
@@ -175,8 +219,10 @@ extension RecorderViewModel {
     }
 
     func requestAccessibilityPermission() {
-        Task {
+        startPermissionRequest { [weak self] in
+            guard let self else { return }
             let result = await coordinator.permissionGate.requestAccessibilityAccessForWindowControls()
+            guard !Task.isCancelled, result.status != .cancelled else { return }
             detailMessage = result.message
             refreshPermissionStatus()
         }
@@ -205,6 +251,7 @@ extension RecorderViewModel {
     }
 
     func openScreenRecordingSettings() {
+        screenAccessAwaitingRestart = true
         coordinator.permissionGate.openScreenCaptureSettings()
     }
 

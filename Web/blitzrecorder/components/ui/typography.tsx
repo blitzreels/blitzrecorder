@@ -6,10 +6,10 @@ import { cn } from "@/lib/utils"
 type HeadingLevel = 1 | 2 | 3 | 4
 
 const headingLevels: Record<HeadingLevel, string> = {
-  1: "text-5xl leading-[0.95] font-black sm:text-6xl",
-  2: "text-4xl leading-[1.02] font-black sm:text-6xl",
-  3: "text-xl leading-tight font-bold",
-  4: "text-lg leading-tight font-bold",
+  1: "text-[clamp(2.75rem,8.5vw,5.75rem)] leading-[0.92] font-extrabold tracking-[-0.045em]",
+  2: "text-[clamp(2.125rem,5vw,3.75rem)] leading-[0.98] font-extrabold tracking-[-0.04em]",
+  3: "text-[1.375rem] leading-tight font-bold tracking-[-0.02em]",
+  4: "text-lg leading-tight font-bold tracking-[-0.01em]",
 }
 
 function Heading({
@@ -27,7 +27,7 @@ function Heading({
     <Tag
       data-slot="heading"
       className={cn(
-        "font-display tracking-tight text-balance",
+        "font-display text-balance",
         headingLevels[level],
         className
       )}
@@ -46,7 +46,7 @@ const paragraphVariants = cva("", {
     size: {
       sm: "text-sm leading-6",
       base: "text-base leading-7",
-      lg: "text-lg leading-8",
+      lg: "text-[1.0625rem] leading-7 sm:text-lg sm:leading-8",
     },
   },
   defaultVariants: {

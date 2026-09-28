@@ -25,34 +25,32 @@ components/
   site/                     Site-specific UI and feature components.
     landing/                Home landing page sections and landing-only helpers.
       index.tsx             Landing page orchestrator.
-      hero.tsx              Hero section and product demo preview.
-      trust-strip.tsx       Trust/supporting claims row.
-      features.tsx          Feature cards section.
-      iphone-companion.tsx  iPhone camera companion section.
-      setups.tsx            Recording setup cards.
-      comparison.tsx        Product comparison table.
-      editor.tsx             Timeline / silence / edit section.
-      pricing.tsx           Free license claim.
-      how-to-start.tsx      Three-step getting started section.
+      hero.tsx              Hero, editor screenshot, and chapter links.
+      chapter.tsx           Timeline chapter ruler and section header.
+      record-chapter.tsx    Record: interactive layout composer.
+      camera-chapter.tsx    iPhone camera: phone preview and pairing inspector.
+      edit-chapter.tsx      Edit: silence-removal timeline and transcript.
+      export-chapter.tsx    Export: resolution, frame rate, speed, and BlitzReels.
+      toolbox.tsx           "Also in the app" list.
+      pricing.tsx           Free plan.
       faq.tsx               FAQ accordion section.
-      closing-cta.tsx       Final license CTA.
+      closing-cta.tsx       Final download CTA.
+      checkout-return-tracker.tsx  Legacy checkout return analytics.
       tracking.ts           Landing CTA tracking helper.
       reveal.ts             Reveal animation delay helper.
-      eyebrow.tsx           Shared landing eyebrow label.
-      apple-logo.tsx        Inline Apple logo used in landing copy.
+    app-window.tsx          macOS window frame for app screenshots.
     product-page.tsx        Product page template for macOS and iOS.
     product-shell.tsx       Product page shell.
+    legal-page.tsx          Terms, privacy, and support template.
     site-nav.tsx            Global site navigation.
     site-footer.tsx         Global site footer.
-    site-background.tsx     Shared page background treatment.
-    watch-film.tsx          Hero video lightbox.
+    marketing-only.tsx      Hides marketing scripts on shared video pages.
     download-button.tsx     Download CTA and version metadata.
-    buy-button.tsx          Free license email form.
+    buy-button.tsx          Legacy license email form.
     notify-form.tsx         Waitlist form.
     journey-markers.tsx     Page and section analytics markers.
     icons.tsx               Site icon components.
-  ui/                       Reusable primitive UI components.
-    badge.tsx
+  ui/                       Reusable primitive UI components. See DESIGN.md.
     button.tsx
     card.tsx
     layout.tsx
@@ -60,7 +58,7 @@ components/
 
 lib/
   assets.ts                 Static image asset imports.
-  content.ts                Site copy, product data, license, FAQs, and comparison content.
+  content.ts                Site copy, product pages, FAQs, and legal pages.
   journey-events.ts         Analytics event helper.
   release.ts                Release/download metadata helpers.
   payments.ts               Stripe/payment helpers.
@@ -72,7 +70,7 @@ lib/
 
 public/
   generated-icons/          App icon artwork.
-  generated-screens/        Product screenshots.
+  media/                    Editor screenshot and frames from a real take.
   logos/                    Brand logos.
   videos/                   Public video assets.
 

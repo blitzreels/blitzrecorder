@@ -14,6 +14,8 @@ struct EditorPlacedItemClip: View {
     }
     let configuration: Configuration
     @State private var draft: EditorPlacedItem.Timing?
+    @State private var isHovering = false
+    @State private var hoveredHandle: EditorPlacedItemEditing.Gesture?
 
     private var item: EditorPlacedItem { configuration.item }
     private var timing: EditorPlacedItem.Timing { draft ?? item.timing }
@@ -35,14 +37,14 @@ struct EditorPlacedItemClip: View {
         ZStack {
             if item.isPoint {
                 Image(systemName: "diamond.fill").font(.system(size: 13))
-                    .foregroundStyle(configuration.isSelected ? BlitzUI.mint : tint)
+                    .foregroundStyle(configuration.isSelected || isHovering ? BlitzUI.mint : tint)
             } else {
                 RoundedRectangle(cornerRadius: 5)
-                    .fill(tint.opacity(configuration.isSelected ? 0.3 : 0.15))
+                    .fill(tint.opacity(configuration.isSelected || isHovering ? 0.3 : 0.15))
                     .overlay {
                         RoundedRectangle(cornerRadius: 5)
-                            .strokeBorder(configuration.isSelected ? BlitzUI.mint : tint.opacity(0.6),
-                                          lineWidth: configuration.isSelected ? 2 : 1)
+                            .strokeBorder(configuration.isSelected ? BlitzUI.mint : tint.opacity(isHovering ? 1 : 0.6),
+                                          lineWidth: configuration.isSelected || isHovering ? 2 : 1)
                     }
                 HStack(spacing: 5) {
                     Image(systemName: item.symbol)
@@ -56,6 +58,8 @@ struct EditorPlacedItemClip: View {
         }
         .frame(width: width, height: configuration.height)
         .contentShape(.rect)
+        .blitzCursor(item.canChangeTiming ? (draft == nil ? .openHand : .closedHand) : .pointingHand)
+        .onHover { isHovering = $0 && configuration.isInteractive }
         .onTapGesture { configuration.select(item.id) }
         .gesture(drag(.move), isEnabled: configuration.isInteractive && item.canChangeTiming)
         .overlay {
@@ -85,10 +89,14 @@ struct EditorPlacedItemClip: View {
     }
 
     private func handle(_ gesture: EditorPlacedItemEditing.Gesture) -> some View {
-        Capsule().fill(BlitzUI.mint).frame(width: 3, height: 16)
+        EditorTimelineGrip(tint: BlitzUI.mint, isActive: hoveredHandle == gesture)
             .frame(width: 12, height: configuration.height)
             .contentShape(.rect)
+            .blitzCursor(.resizeLeftRight)
+            .onHover { hoveredHandle = $0 && configuration.isInteractive ? gesture : nil }
             .highPriorityGesture(drag(gesture), isEnabled: configuration.isInteractive)
+            .accessibilityLabel(gesture == .trimStart ? "Item start" : "Item end")
+            .timelineControl(id: "placed-\(item.id.kind)-\(item.id.value)-\(gesture == .trimStart ? "start" : "end")")
     }
 
     private func drag(_ gesture: EditorPlacedItemEditing.Gesture) -> some Gesture {

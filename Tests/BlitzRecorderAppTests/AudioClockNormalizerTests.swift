@@ -36,11 +36,13 @@ final class AudioClockNormalizerTests: XCTestCase {
             )
         )
 
+        let progress = AudioClockTestProgress()
         let result = try await AudioClockNormalizer.normalize(.init(
             url: url,
             format: format,
             bitrate: 192_000,
-            measurement: measurement
+            measurement: measurement,
+            onProgress: { progress.append($0) }
         ))
         let correctedAsset = AVURLAsset(url: url)
         let correctedDuration = try await correctedAsset.load(.duration)
@@ -50,6 +52,11 @@ final class AudioClockNormalizerTests: XCTestCase {
         XCTAssertTrue(result.didCorrect)
         XCTAssertFalse(tracks.isEmpty)
         XCTAssertEqual(correctedDuration.seconds, expectedDuration, accuracy: 0.05)
+        let updates = progress.snapshot()
+        XCTAssertEqual(updates.first, 0)
+        XCTAssertEqual(updates.last, 1)
+        XCTAssertEqual(updates, updates.sorted())
+        XCTAssertLessThanOrEqual(updates.count, 101)
     }
 
     private func writeSilentAudio(_ request: AudioClockTestFileRequest) async throws {
@@ -148,6 +155,23 @@ final class AudioClockNormalizerTests: XCTestCase {
             withIntermediateDirectories: true
         )
         return directory
+    }
+}
+
+private final class AudioClockTestProgress: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [Double] = []
+
+    func append(_ value: Double) {
+        lock.lock()
+        defer { lock.unlock() }
+        values.append(value)
+    }
+
+    func snapshot() -> [Double] {
+        lock.lock()
+        defer { lock.unlock() }
+        return values
     }
 }
 

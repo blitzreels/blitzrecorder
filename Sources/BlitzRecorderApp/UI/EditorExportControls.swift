@@ -5,19 +5,16 @@ struct EditorExportControls: View {
     @Bindable var vm: RecorderViewModel
     let project: RecordingProject?
     @Binding var isPresented: Bool
-    @Binding var inspectorTab: EditorInspectorTab
-    @Binding var exportLayouts: Set<CaptureLayout>
+    @Binding var destination: EditorExportDestination
+    @Binding var additionalExportLayouts: Set<CaptureLayout>
     @Binding var selectedExportPreset: ExportPerformancePreset
     @Binding var selectedFormat: OutputVideoFormat
     @Binding var selectedResolution: OutputResolution
     @Binding var selectedExportFramesPerSecond: Int
     @Binding var selectedExportQuality: ExportVideoQuality
     @Binding var selectedExportPlaybackRate: ExportPlaybackRate
-    @Binding var backgroundMusic: ExportBackgroundMusic?
-    @Binding var backgroundMusicBookmarkData: Data?
     let recipe: EditorExportRecipe
     let persist: (String) -> Void
-    let applyPreset: (EditorExportPresetRequest) -> Void
     let export: () -> Void
 
     var body: some View {
@@ -40,16 +37,9 @@ struct EditorExportControls: View {
 
     private var popover: some View {
         EditorExportPopover(configuration: .init(
-            layouts: $exportLayouts,
+            destination: $destination,
+            additionalLayouts: $additionalExportLayouts,
             currentLayout: vm.lastExportedProject?.selectedOutputLayout ?? .horizontal,
-            preset: Binding(
-                get: { selectedExportPreset },
-                set: { preset in
-                    guard let project else { return }
-                    applyPreset(EditorExportPresetRequest(preset: preset, project: project))
-                    persist("Change Export Preset")
-                }
-            ),
             format: Binding(
                 get: { recipe.profile.videoQuality.resolvedOutputFormat(selectedFormat) },
                 set: {
@@ -58,59 +48,58 @@ struct EditorExportControls: View {
                 }
             ),
             resolution: Binding(
-                get: { selectedResolution },
+                get: { recipe.profile.resolution },
                 set: {
+                    guard $0 != recipe.profile.resolution else { return }
+                    useCustomProfile()
                     selectedResolution = $0
-                    selectedExportPreset = .custom
                     persist("Change Export Resolution")
                 }
             ),
             framesPerSecond: Binding(
-                get: { selectedExportFramesPerSecond },
+                get: { recipe.profile.framesPerSecond },
                 set: {
+                    guard $0 != recipe.profile.framesPerSecond else { return }
+                    useCustomProfile()
                     selectedExportFramesPerSecond = $0
-                    selectedExportPreset = .custom
                     persist("Change Export Frame Rate")
                 }
             ),
             quality: Binding(
-                get: { selectedExportQuality.resolvedMenuQuality },
+                get: { recipe.profile.videoQuality.resolvedMenuQuality },
                 set: {
+                    guard $0 != recipe.profile.videoQuality.resolvedMenuQuality else { return }
+                    useCustomProfile()
                     selectedExportQuality = $0
                     selectedFormat = $0.resolvedOutputFormat(selectedFormat)
-                    selectedExportPreset = .custom
                     persist("Change Export Quality")
                 }
             ),
             playbackRate: Binding(
                 get: { selectedExportPlaybackRate },
                 set: {
+                    guard selectedExportPlaybackRate != $0 else { return }
                     selectedExportPlaybackRate = $0
                     persist("Change Export Speed")
                 }
             ),
-            summary: recipe.summary,
             estimatedSize: recipe.estimatedSize,
             estimatedSizeCaption: recipe.encoding.estimatedSizeCaption,
             encodingDetail: recipe.encoding.detail,
             directory: vm.settings.outputDirectory,
-            musicSummary: backgroundMusic.map {
-                "\($0.url.lastPathComponent) · \(EditorBackgroundMusicControl.volumeLabel(for: $0))"
-            },
-            musicControls: {
-                EditorBackgroundMusicControl(
-                    backgroundMusic: $backgroundMusic,
-                    backgroundMusicBookmarkData: $backgroundMusicBookmarkData,
-                    persist: persist
-                )
-            },
             canExport: project != nil && vm.state == .idle && !vm.isExportingVariants,
             export: export,
-            showFolder: { NSWorkspace.shared.open(vm.settings.outputDirectory) },
-            showBlitzReels: {
+            chooseFolder: {
                 isPresented = false
-                inspectorTab = .blitzReels
+                vm.chooseOutputFolder { _ in isPresented = true }
             }
         ))
+    }
+
+    private func useCustomProfile() {
+        selectedResolution = recipe.profile.resolution
+        selectedExportFramesPerSecond = recipe.profile.framesPerSecond
+        selectedExportQuality = recipe.profile.videoQuality
+        selectedExportPreset = .custom
     }
 }

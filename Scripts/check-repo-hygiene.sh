@@ -120,7 +120,7 @@ require_literal_in_file ".github/workflows/ci.yml" "actions/checkout@v7"
 require_literal_in_file ".github/workflows/ci.yml" "actions/upload-artifact@v7"
 require_literal_in_file ".github/workflows/ci.yml" "paths-ignore:"
 require_literal_in_file "Web/blitzrecorder/lib/release.ts" "WINDOWS_CI_WORKFLOW_URL"
-require_literal_in_file "Web/blitzrecorder/components/site/download-button.tsx" "windows-studio-installer-unsigned"
+require_literal_in_file "Web/blitzrecorder/components/site/download-button.tsx" 'const windowsHref = release?.windowsUrl ?? WINDOWS_CI_WORKFLOW_URL;'
 require_literal_in_file ".github/workflows/windows-release.yml" "actions/checkout@v7"
 require_literal_in_file ".github/workflows/windows-release.yml" "actions/upload-artifact@v7"
 require_literal_in_file ".github/workflows/windows-release.yml" "tags:"

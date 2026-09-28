@@ -11,7 +11,8 @@ export function TrackedLinkButton({
   href,
   label,
   className,
-  variant = "default",
+  variant,
+  size,
   area,
   eventName,
   payload,
@@ -19,7 +20,8 @@ export function TrackedLinkButton({
   href: string;
   label: string;
   className: string;
-  variant?: "default" | "outline";
+  variant: "default" | "outline";
+  size: "default" | "lg";
   area: string;
   eventName: string;
   payload: JourneyPayload;
@@ -38,6 +40,7 @@ export function TrackedLinkButton({
   return (
     <Button
       variant={variant}
+      size={size}
       render={<Link href={href} onClick={trackClick} />}
       className={className}
     >

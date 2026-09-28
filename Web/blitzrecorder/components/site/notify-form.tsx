@@ -93,18 +93,18 @@ export function NotifyForm({
           onChange={(e) => setEmail(e.target.value)}
           placeholder={placeholder}
           aria-label="Email address"
-          className="h-12 min-h-12 w-full rounded-full border border-border bg-background/70 px-4 text-base text-foreground outline-none transition-colors placeholder:text-faint focus:border-primary/60 sm:flex-1 sm:text-sm"
+          className="h-10 w-full rounded-control border border-border bg-fill-control px-3 text-base text-foreground outline-none transition-colors placeholder:text-faint focus:border-primary/60 sm:flex-1 sm:text-sm"
         />
         <Button
           type="submit"
           disabled={state === "loading"}
-          className="h-12 min-h-12 w-full rounded-full px-5 text-base sm:w-auto sm:text-sm"
+          size="lg" className="w-full sm:w-auto"
         >
           {state === "loading" ? "Sending..." : cta}
           {state !== "loading" ? <ArrowUpRight className="size-4" /> : null}
         </Button>
       </form>
-      {error ? <p className="mt-1.5 text-sm text-[#f0b429]">{error}</p> : null}
+      {error ? <p className="mt-1.5 text-sm text-warning">{error}</p> : null}
     </div>
   );
 }

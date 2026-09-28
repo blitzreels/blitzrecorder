@@ -91,7 +91,8 @@ private struct RecordingActionRow: View {
                     title: vm.sessionProgressTitle,
                     detail: vm.sessionProgressDetail,
                     progress: vm.sessionProgressValue,
-                    percent: vm.sessionProgressLabel
+                    percent: vm.sessionProgressLabel,
+                    startedAt: vm.finishingStartedAt
                 )
             }
         }
@@ -362,8 +363,9 @@ private struct ElapsedTimeText: View {
 private struct FinishingProgressStatus: View {
     let title: String
     let detail: String?
-    let progress: Double
+    let progress: Double?
     let percent: String
+    let startedAt: Date?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -380,13 +382,31 @@ private struct FinishingProgressStatus: View {
                     .monospacedDigit()
                     .foregroundStyle(.white.opacity(0.95))
             }
-            ProgressView(value: progress)
-                .progressViewStyle(.linear)
-                .tint(.white.opacity(0.85))
-                .frame(width: 240)
+            if let progress {
+                ProgressView(value: progress)
+                    .progressViewStyle(.linear)
+                    .tint(BlitzUI.mint)
+            }
+            HStack(alignment: .top, spacing: 8) {
+                if let detail {
+                    Text(detail)
+                        .font(.system(size: 10))
+                        .foregroundStyle(BlitzUI.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                if let startedAt {
+                    TimelineView(.periodic(from: startedAt, by: 1)) { context in
+                        Text("\(max(0, Int(context.date.timeIntervalSince(startedAt))))s")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(BlitzUI.secondaryText)
+                    }
+                }
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
+        .frame(width: 320)
         .help(detail ?? title)
     }
 }

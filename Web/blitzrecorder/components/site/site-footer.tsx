@@ -1,100 +1,72 @@
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowUpRight } from "@/components/site/icons";
 import { Container } from "@/components/ui/layout";
-import { Paragraph } from "@/components/ui/typography";
 import { VersionTag } from "@/components/site/download-button";
 import { assets } from "@/lib/assets";
 import { ALGOMAX_URL } from "@/lib/content";
 import { BlitzReelsLink } from "@/components/site/blitzreels-link";
-import { GITHUB_REPO_URL } from "@/lib/release";
+import { GITHUB_REPO_URL, RELEASES_URL } from "@/lib/release";
 
-type FooterLink = { label: string; href?: string; external?: boolean; blitzreels?: string };
+type FooterLink =
+  | { kind: "internal"; label: string; href: string }
+  | { kind: "external"; label: string; href: string }
+  | { kind: "blitzreels"; label: string; content: string };
 
 const productLinks: FooterLink[] = [
-  { label: "macOS app", href: "/macos" },
-  { label: "iOS camera app", href: "/ios" },
-  { label: "Free app", href: "/#license" },
-  { label: "BlitzReels", blitzreels: "footer_nav" },
+  { kind: "internal", label: "Mac app", href: "/macos" },
+  { kind: "internal", label: "iPhone camera", href: "/ios" },
+  { kind: "external", label: "Windows Studio", href: RELEASES_URL },
+  { kind: "external", label: "Release notes", href: RELEASES_URL },
 ];
 
 const resourceLinks: FooterLink[] = [
-  { label: "Legacy licenses", href: "/license" },
-  { label: "Support", href: "/support" },
-  { label: "Privacy", href: "/privacy" },
-  { label: "Terms", href: "/terms" },
+  { kind: "internal", label: "Support", href: "/support" },
+  { kind: "internal", label: "Privacy", href: "/privacy" },
+  { kind: "internal", label: "Terms", href: "/terms" },
+  { kind: "internal", label: "Legacy licenses", href: "/license" },
+];
+
+const sourceLinks: FooterLink[] = [
+  { kind: "external", label: "GitHub", href: GITHUB_REPO_URL },
+  { kind: "external", label: "AGPL-3.0 license", href: `${GITHUB_REPO_URL}/blob/main/LICENSE` },
+  { kind: "blitzreels", label: "BlitzReels", content: "footer_nav" },
 ];
 
 export function SiteFooter() {
   return (
-    <footer className="relative border-t border-border bg-card/30">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-px"
-        style={{
-          background:
-            "linear-gradient(to right, transparent, rgba(94,242,175,0.16), transparent)",
-        }}
-      />
+    <footer className="border-t border-separator">
       <Container>
-        <div className="grid gap-12 py-16 sm:grid-cols-2 lg:grid-cols-[1.6fr_1fr_1fr] lg:gap-16">
-          <div className="max-w-sm">
+        <div className="grid gap-12 py-16 sm:grid-cols-3 lg:grid-cols-[1.5fr_1fr_1fr_1fr]">
+          <div className="max-w-xs sm:col-span-3 lg:col-span-1">
             <Link href="/" className="inline-flex items-center gap-2.5">
-              <Image src={assets.macIcon} width={36} height={36} alt="" className="rounded-[22%]" />
-              <span className="font-display text-lg font-bold tracking-tight">BlitzRecorder</span>
+              <Image src={assets.macIcon} width={32} height={32} alt="" className="rounded-[22%]" />
+              <span className="font-display text-lg font-bold tracking-[-0.02em]">BlitzRecorder</span>
             </Link>
-            <Paragraph tone="faint" size="sm" className="mt-4">
-              Native Mac screen recorder for short-form. Open source.
-              Completely free.
-            </Paragraph>
-
-            <div className="mt-7 flex flex-col gap-3">
-              <BlitzReelsLink
-                content="footer_byline"
-                className="group inline-flex items-center gap-1.5 text-sm text-faint transition-colors hover:text-foreground"
-              >
-                A BlitzReels.com product
-                <ArrowUpRight className="size-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
-              </BlitzReelsLink>
-            </div>
+            <p className="mt-4 text-sm leading-6 text-faint">
+              Record and edit on your Mac. Free and open source.
+            </p>
+            <BlitzReelsLink
+              content="footer_byline"
+              className="mt-7 inline-flex items-center gap-2.5 text-sm text-faint transition-colors hover:text-foreground"
+            >
+              A project by
+              <Image src={assets.blitzreelsWordmark} alt="BlitzReels" width={107} height={16} className="h-4 w-auto opacity-80" />
+            </BlitzReelsLink>
           </div>
-
           <FooterNav title="Product" links={productLinks} />
-          <FooterNav title="Resources" links={resourceLinks} />
+          <FooterNav title="Help" links={resourceLinks} />
+          <FooterNav title="Source" links={sourceLinks} />
         </div>
 
-        <div className="flex flex-col items-start justify-between gap-4 border-t border-border py-7 text-sm text-faint sm:flex-row sm:items-center">
-          <Paragraph tone="faint" size="sm">
+        <div className="flex flex-col items-start justify-between gap-3 border-t border-separator py-7 text-sm text-faint sm:flex-row sm:items-center">
+          <p>
             &copy; 2026{" "}
-            <a
-              href={ALGOMAX_URL}
-              target="_blank"
-              rel="noopener"
-              className="font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
+            <a href={ALGOMAX_URL} target="_blank" rel="noopener" className="transition-colors hover:text-foreground">
               Algomax
             </a>
             . Made in Strasbourg, France.
-          </Paragraph>
-          <div className="flex items-center gap-6">
-            <VersionTag className="font-mono text-xs text-muted-foreground transition-colors hover:text-foreground" />
-            <a
-              href={GITHUB_REPO_URL}
-              target="_blank"
-              rel="noopener"
-              className="transition-colors hover:text-foreground"
-            >
-              GitHub repo
-            </a>
-            <a
-              href={ALGOMAX_URL}
-              target="_blank"
-              rel="noopener"
-              className="transition-colors hover:text-foreground"
-            >
-              Algomax
-            </a>
-          </div>
+          </p>
+          <VersionTag className="font-mono text-xs" />
         </div>
       </Container>
     </footer>
@@ -104,34 +76,38 @@ export function SiteFooter() {
 function FooterNav({ title, links }: { title: string; links: FooterLink[] }) {
   return (
     <nav className="text-sm" aria-label={title}>
-      <p className="font-display font-bold">{title}</p>
+      <p className="label-mono text-faint">{title}</p>
       <ul className="mt-4 flex flex-col gap-3 text-muted-foreground">
         {links.map((link) => (
-          <li key={link.blitzreels ?? link.href}>
-            {link.blitzreels ? (
-              <BlitzReelsLink
-                content={link.blitzreels}
-                className="transition-colors hover:text-foreground"
-              >
-                {link.label}
-              </BlitzReelsLink>
-            ) : link.external ? (
-              <a
-                className="transition-colors hover:text-foreground"
-                href={link.href}
-                target="_blank"
-                rel="noopener"
-              >
-                {link.label}
-              </a>
-            ) : (
-              <Link className="transition-colors hover:text-foreground" href={link.href!}>
-                {link.label}
-              </Link>
-            )}
+          <li key={link.label}>
+            <FooterAnchor link={link} />
           </li>
         ))}
       </ul>
     </nav>
   );
+}
+
+function FooterAnchor({ link }: { link: FooterLink }) {
+  const className = "transition-colors hover:text-foreground";
+  switch (link.kind) {
+    case "blitzreels":
+      return (
+        <BlitzReelsLink content={link.content} className={className}>
+          {link.label}
+        </BlitzReelsLink>
+      );
+    case "external":
+      return (
+        <a className={className} href={link.href} target="_blank" rel="noopener">
+          {link.label}
+        </a>
+      );
+    case "internal":
+      return (
+        <Link className={className} href={link.href}>
+          {link.label}
+        </Link>
+      );
+  }
 }

@@ -57,19 +57,24 @@ enum EditorClipSpine {
     }
 
     static func boundaries(_ request: Request) -> [Double] {
-        let restored = request.edits.cuts.filter { !$0.isEnabled }
-        func isRestoredInterior(_ time: Double) -> Bool {
-            restored.contains { time >= $0.start && time < $0.end }
-        }
-        var times = request.edits.videoSplits.filter { $0.isFinite && !isRestoredInterior($0) }
+        let restored = request.edits.cuts.filter {
+            !$0.isEnabled && $0.start.isFinite && $0.end.isFinite && $0.end > $0.start
+        }.sorted { $0.start < $1.start }
+        var times: [Double] = []
         for cut in request.silenceCuts where cut.kind == .silence && cut.isEnabled
             && cut.start.isFinite && cut.end.isFinite && cut.end > cut.start
         {
-            for time in [cut.start, cut.end] where !isRestoredInterior(time) {
-                times.append(time)
-            }
+            times.append(contentsOf: [cut.start, cut.end])
         }
-        return times
+        times.sort()
+        var restoredIndex = 0
+        let automatic = times.filter { time in
+            while restoredIndex < restored.count, restored[restoredIndex].end <= time {
+                restoredIndex += 1
+            }
+            return restoredIndex == restored.count || restored[restoredIndex].start > time
+        }
+        return (request.edits.videoSplits.filter(\.isFinite) + automatic).sorted()
     }
 
     static func splitting(_ request: BladeRequest) -> TimelineEdits? {
@@ -94,11 +99,30 @@ enum EditorClipSpine {
         return layout.clip(at: displayTime)?.range
     }
 
+    private static func validRightEdge(_ request: ExtendRequest) -> Bool {
+        request.clip.start.isFinite && request.clip.end.isFinite
+            && request.clip.start >= 0 && request.clip.end > request.clip.start
+            && request.duration.isFinite && request.duration >= request.clip.end
+            && request.nextClipStart?.isFinite != false
+            && (request.nextClipStart ?? request.duration) >= request.clip.end
+    }
+
+    private static func minimumRightEnd(_ request: ExtendRequest) -> Double {
+        min(TimelineTimeMap.time(request.clip.end).seconds,
+            TimelineTimeMap.time(request.clip.start + 0.1).seconds)
+    }
+
+    static func canTrimRight(_ request: ExtendRequest) -> Bool {
+        guard validRightEdge(request) else { return false }
+        return TimelineTimeMap.time(request.clip.end).seconds > minimumRightEnd(request)
+            || rightExpandLimit(request) != nil
+    }
+
     static func rightExpandLimit(_ request: ExtendRequest) -> Double? {
-        guard request.clip.end.isFinite, request.duration.isFinite, request.duration > 0 else { return nil }
+        guard validRightEdge(request) else { return nil }
         let clipEnd = TimelineTimeMap.time(request.clip.end).seconds
         let limit = TimelineTimeMap.time(min(request.duration, request.nextClipStart ?? request.duration)).seconds
-        guard limit - clipEnd >= 1.0 / 600 else { return nil }
+        guard limit > clipEnd else { return nil }
         guard request.edits.enabledCuts.contains(where: { $0.start < limit && $0.end > clipEnd }) else { return nil }
         return limit
     }
@@ -109,24 +133,27 @@ enum EditorClipSpine {
     }
 
     static func dragRight(_ request: ExtendRequest) -> DragRightResult {
+        let unchanged = DragRightResult(edits: nil, selection: request.clip)
+        guard request.delta.isFinite, validRightEdge(request) else { return unchanged }
         let clipEnd = TimelineTimeMap.time(request.clip.end).seconds
-        let newEnd = rightExpandLimit(request).map {
-            TimelineTimeMap.time(min($0, clipEnd + max(0, request.delta))).seconds
-        } ?? clipEnd
-        return DragRightResult(
-            edits: extendingRight(.init(
-                edits: request.edits, clip: request.clip, nextClipStart: request.nextClipStart,
-                duration: request.duration, delta: request.delta
-            )),
-            selection: .init(start: request.clip.start, end: max(clipEnd, newEnd))
-        )
+        if request.delta < 0 {
+            let newEnd = TimelineTimeMap.time(max(minimumRightEnd(request), clipEnd + request.delta)).seconds
+            guard newEnd < clipEnd,
+                let edits = EditorTimeRange.removing(.init(
+                    range: .init(start: newEnd, end: clipEnd), edits: request.edits, takeDuration: request.duration
+                )) else { return unchanged }
+            return .init(edits: edits, selection: .init(start: request.clip.start, end: newEnd))
+        }
+        guard let edits = extendingRight(request), let limit = rightExpandLimit(request) else { return unchanged }
+        let newEnd = TimelineTimeMap.time(min(limit, clipEnd + request.delta)).seconds
+        return .init(edits: edits, selection: .init(start: request.clip.start, end: newEnd))
     }
 
     static func extendingRight(_ request: ExtendRequest) -> TimelineEdits? {
         guard let limit = rightExpandLimit(request), request.delta.isFinite else { return nil }
         let clipEnd = TimelineTimeMap.time(request.clip.end).seconds
         let newEnd = TimelineTimeMap.time(min(limit, clipEnd + max(0, request.delta))).seconds
-        guard newEnd - clipEnd >= 1.0 / 600 else { return nil }
+        guard newEnd > clipEnd else { return nil }
         guard var edits = EditorTimeRange.restoring(.init(
             range: .init(start: clipEnd, end: newEnd), edits: request.edits, takeDuration: request.duration
         )) else { return nil }
@@ -134,6 +161,12 @@ enum EditorClipSpine {
             guard split.isFinite else { return false }
             let time = TimelineTimeMap.time(split).seconds
             return time < clipEnd || time >= newEnd
+        }
+        if let nextClipStart = request.nextClipStart,
+            newEnd == TimelineTimeMap.time(nextClipStart).seconds,
+            !edits.videoSplits.contains(where: { TimelineTimeMap.time($0).seconds == newEnd }) {
+            edits.videoSplits.append(newEnd)
+            edits.videoSplits.sort()
         }
         return edits == request.edits ? nil : edits
     }

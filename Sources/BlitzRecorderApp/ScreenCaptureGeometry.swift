@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Darwin
 import ScreenCaptureKit
@@ -540,6 +541,7 @@ enum ScreenCaptureGeometry {
     }
 
     static func windowTarget(for binding: ScreenSourceBinding) async -> PickedWindowTarget? {
+        if let target = knownWindowTarget(binding) { return target }
         guard let content = try? await SCShareableContent.current else { return nil }
         guard let window = window(matching: binding, in: content),
               let pid = window.owningApplication?.processID else {
@@ -551,6 +553,26 @@ enum ScreenCaptureGeometry {
             title: window.title,
             appName: window.owningApplication?.applicationName,
             displayID: binding.displayID ?? displayID(for: window, displays: content.displays)
+        )
+    }
+
+    static func knownWindowTarget(_ binding: ScreenSourceBinding) -> PickedWindowTarget? {
+        guard let identity = ScreenWindowIdentity(binding),
+              let windows = CGWindowListCopyWindowInfo(.optionIncludingWindow, identity.windowID) as? [[String: Any]],
+              let info = windows.first,
+              let windowID = info[kCGWindowNumber as String] as? UInt32,
+              let pid = info[kCGWindowOwnerPID as String] as? Int32,
+              let application = NSRunningApplication(processIdentifier: pid),
+              identity.matches(.init(windowID: windowID, processID: pid, bundleIdentifier: application.bundleIdentifier)),
+              let bounds = info[kCGWindowBounds as String] as? [String: Any],
+              let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary),
+              frame.width > 0, frame.height > 0 else { return nil }
+        return PickedWindowTarget(
+            pid: pid,
+            bounds: frame,
+            title: info[kCGWindowName as String] as? String ?? binding.windowTitle,
+            appName: application.localizedName,
+            displayID: binding.displayID
         )
     }
 

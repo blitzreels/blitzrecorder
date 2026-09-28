@@ -373,7 +373,7 @@ enum ExportVideoQuality: String, CaseIterable {
         case .compact:
             return "Tiniest file · more loss"
         case .web:
-            return "H.264 · sharing and uploads"
+            return "Clear H.264 · sharing and uploads"
         case .standard:
             return "Some loss · smaller HEVC"
         case .high:
@@ -429,11 +429,11 @@ enum ExportVideoQuality: String, CaseIterable {
         case .web:
             return ExportEncodingProfile(
                 codec: .h264,
-                bitrate: scaledBitrate(baseBitrate, multiplier: 0.20),
-                quality: 0.40,
+                bitrate: scaledBitrate(baseBitrate, multiplier: 1.0),
+                quality: 0.75,
                 usesAverageBitRate: true,
-                maxKeyFrameInterval: fps * 5,
-                audioBitrate: min(audioBitrate, 128_000),
+                maxKeyFrameInterval: fps * 2,
+                audioBitrate: min(audioBitrate, 192_000),
                 prefersFullRangeRGB: false,
                 preferredFormat: nil,
                 sizeEstimateIsCeiling: false
@@ -1468,7 +1468,8 @@ struct RecordingScene: Equatable {
             screenContentMode: settings.screenContentMode,
             cameraContentMode: settings.cameraContentMode,
             cameraFramePadding: 0,
-            cameraShadowEnabled: settings.cameraShadowEnabled
+            cameraShadowEnabled: settings.cameraShadowEnabled,
+            fillsCanvasWhenOnlyVideoSource: settings.enabledSources.intersection([.screen, .camera]).count == 1
         )
     }
 
@@ -1681,6 +1682,11 @@ extension ScenePreset {
     }
 }
 
+struct RecordingStorageLocation: Codable, Equatable {
+    let url: URL
+    let bookmarkData: Data?
+}
+
 struct RecordingSettings {
     var voiceCleanup: VoiceCleanupSettings = .disabled
     static let supportedFrameRates = [24, 30, 60]
@@ -1728,10 +1734,23 @@ struct RecordingSettings {
     var cameraShadowEnabled: Bool = false
     var sceneLayout = SceneLayout()
     var selectedScenePreset: ScenePreset?
+    var projectLibrary: RecordingStorageLocation?
+    var additionalProjectLibraries: [RecordingStorageLocation] = []
     var outputDirectoryBookmarkData: Data?
     var outputDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Movies", isDirectory: true)
         .appendingPathComponent("BlitzRecorder", isDirectory: true)
+
+    var sourceStorage: RecordingStorageLocation {
+        projectLibrary ?? RecordingStorageLocation(url: outputDirectory, bookmarkData: outputDirectoryBookmarkData)
+    }
+
+    var projectLibraries: [RecordingStorageLocation] {
+        var seen: Set<URL> = []
+        return ([sourceStorage] + additionalProjectLibraries).filter {
+            seen.insert($0.url.standardizedFileURL.resolvingSymlinksInPath()).inserted
+        }
+    }
 
     var autoVideoBitrate: Int {
         SocialVideoEncoding.videoBitrate(

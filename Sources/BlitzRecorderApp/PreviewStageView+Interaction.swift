@@ -325,6 +325,7 @@ extension PreviewStageView {
         let request = PreviewStageLayout.RenderRequest(
             canvas: canvas,
             enabledSources: enabledSources,
+            fillsCanvasWhenOnlyVideoSource: fillsCanvasWhenOnlyVideoSource,
             sceneLayout: sceneLayout,
             screenFillsSceneFrame: screenFillsSceneFrame,
             screenCrop: screenCrop,

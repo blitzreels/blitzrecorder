@@ -200,6 +200,9 @@ final class EditorSilenceWorkflowTests: XCTestCase {
                 accessController: AccessController(defaults: defaults), defaults: defaults),
             previewStage: PreviewStageView()
         )
+        let automaticTranscription = vm.transcriptionController.isAutomaticEnabled
+        vm.transcriptionController.isAutomaticEnabled = false
+        defer { vm.transcriptionController.isAutomaticEnabled = automaticTranscription }
         vm.settings = settings
         vm.openProject(try XCTUnwrap(store.loadProjectHistory(settings: settings).entries.first))
         let project = try XCTUnwrap(vm.lastExportedProject)
@@ -248,6 +251,24 @@ final class EditorSilenceWorkflowTests: XCTestCase {
         XCTAssertGreaterThan(session.metrics.removedDuration, 1)
         session.selectPacing(.natural)
         try await settle(session)
+        session.setTranscriptLoading(true)
+        XCTAssertFalse(session.canApply)
+        XCTAssertFalse(session.apply())
+        XCTAssertEqual(try Data(contentsOf: fixture.take.projectURL), originalData)
+        session.setTranscript(RecordingTranscriptAssembler.assemble(.init(
+            mediaPath: "/recording", generatedAt: Date(timeIntervalSince1970: 0), duration: 10,
+            confidence: 0.95, text: "hello", suggestedTitle: nil,
+            words: [.init(text: "hello", startTime: 0, endTime: 2, confidence: 0.95)],
+            diarizedIntervals: [.init(speakerID: "speaker", startTime: 0, endTime: 10)])))
+        session.setTranscriptLoading(false)
+        session.customized = true
+        session.minimumDuration = 0.4
+        session.paddingBefore = 0.2
+        session.paddingAfter = 0.25
+        session.linkedPadding = false
+        session.recalculate()
+        try await settle(session)
+        let savedSettings = session.settingsSnapshot
         let suggestedCuts = session.cuts
         session.prepare(.init(vm: vm, playback: playback, project: project))
         XCTAssertFalse(session.loading)
@@ -256,7 +277,21 @@ final class EditorSilenceWorkflowTests: XCTestCase {
         XCTAssertFalse(session.canApply)
         XCTAssertEqual(vm.editorUndoTitle, "Undo Remove Silence")
         XCTAssertEqual(try store.loadRecordingProject(at: fixture.take.projectURL).edits.cuts, suggestedCuts)
+        XCTAssertEqual(try store.loadRecordingProject(at: fixture.take.projectURL).edits.silenceSettings, savedSettings)
+        session.setTranscript(RecordingTranscriptAssembler.assemble(.init(
+            mediaPath: "/recording", generatedAt: Date(timeIntervalSince1970: 1), duration: 10,
+            confidence: 0.95, text: "hello", suggestedTitle: nil,
+            words: [.init(text: "hello", startTime: 0, endTime: 2, confidence: 0.95)],
+            diarizedIntervals: [.init(speakerID: "speaker", startTime: 0, endTime: 2)])))
+        XCTAssertFalse(session.canApply)
+        XCTAssertEqual(session.cuts, suggestedCuts)
         let editedProject = try XCTUnwrap(vm.lastExportedProject)
+        let reopenedSession = SilenceEditingSession()
+        reopenedSession.prepare(.init(vm: vm, playback: playback, project: editedProject))
+        try await settle(reopenedSession)
+        XCTAssertEqual(reopenedSession.settingsSnapshot, savedSettings)
+        XCTAssertFalse(reopenedSession.hasChanges)
+        reopenedSession.cancel()
         await playback.load(project: editedProject, baseSettings: settings)
         XCTAssertTrue(playback.isReady, playback.loadError ?? "Playback did not recover after removing silence")
         XCTAssertLessThan(playback.outputDuration, playback.duration - 1)
@@ -350,6 +385,9 @@ final class EditorSilenceWorkflowTests: XCTestCase {
             coordinator: RecorderCoordinator(accessController: AccessController(defaults: defaults), defaults: defaults),
             previewStage: PreviewStageView()
         )
+        let automaticTranscription = vm.transcriptionController.isAutomaticEnabled
+        vm.transcriptionController.isAutomaticEnabled = false
+        defer { vm.transcriptionController.isAutomaticEnabled = automaticTranscription }
         vm.settings = settings
         vm.openProject(try XCTUnwrap(store.loadProjectHistory(settings: settings).entries.first))
         let project = try XCTUnwrap(vm.lastExportedProject)
@@ -437,6 +475,9 @@ final class EditorSilenceWorkflowTests: XCTestCase {
             coordinator: RecorderCoordinator(accessController: AccessController(defaults: defaults), defaults: defaults),
             previewStage: PreviewStageView()
         )
+        let automaticTranscription = vm.transcriptionController.isAutomaticEnabled
+        vm.transcriptionController.isAutomaticEnabled = false
+        defer { vm.transcriptionController.isAutomaticEnabled = automaticTranscription }
         vm.settings = settings
         vm.openProject(try XCTUnwrap(store.loadProjectHistory(settings: settings).entries.first))
         let project = try XCTUnwrap(vm.lastExportedProject)
@@ -495,6 +536,9 @@ final class EditorSilenceWorkflowTests: XCTestCase {
         let vm = RecorderViewModel(
             coordinator: RecorderCoordinator(accessController: AccessController(defaults: defaults), defaults: defaults),
             previewStage: PreviewStageView())
+        let automaticTranscription = vm.transcriptionController.isAutomaticEnabled
+        vm.transcriptionController.isAutomaticEnabled = false
+        defer { vm.transcriptionController.isAutomaticEnabled = automaticTranscription }
         vm.settings = settings
         vm.openProject(try XCTUnwrap(store.loadProjectHistory(settings: settings).entries.first))
         let project = try XCTUnwrap(vm.lastExportedProject)
@@ -534,6 +578,7 @@ final class EditorSilenceWorkflowTests: XCTestCase {
     func testOlderProjectsDecodeWithoutClassificationOverrides() throws {
         let snapshot = try JSONDecoder().decode(RecordingProject.TimelineEditsSnapshot.self, from: Data("{}".utf8))
         XCTAssertTrue(snapshot.edits.silenceOverrides.isEmpty)
+        XCTAssertNil(snapshot.edits.silenceSettings)
         let edits = try XCTUnwrap(SilenceDetection.classifying(.init(
             range: .init(start: 1, end: 2), classification: .sound, edits: .empty, duration: 10
         )))

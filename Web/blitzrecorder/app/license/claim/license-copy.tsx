@@ -53,18 +53,18 @@ export function LicenseCopy({
 
   return (
     <div className="mt-6">
-      <pre className="max-h-48 overflow-auto rounded-xl border border-border bg-background/70 p-4 text-left font-mono text-xs leading-relaxed text-muted-foreground">
+      <pre className="max-h-48 overflow-auto rounded-control bg-fill-control p-4 text-left font-mono text-xs leading-relaxed text-muted-foreground">
         {licenseKey}
       </pre>
       <div className="mt-4 flex flex-col items-center justify-center gap-3 sm:flex-row">
         <Button
           render={<a href={activationUrl} onClick={trackOpenApp} />}
-          className="h-11 rounded-full px-5"
+          size="lg"
         >
           <ArrowUpRight className="size-4" />
           Open BlitzRecorder to activate
         </Button>
-        <Button onClick={copyLicense} variant="outline" className="h-11 rounded-full px-5">
+        <Button onClick={copyLicense} variant="outline" size="lg">
           {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
           {copied ? "Copied" : "Copy key"}
         </Button>

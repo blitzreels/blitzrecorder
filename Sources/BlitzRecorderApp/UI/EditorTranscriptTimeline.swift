@@ -19,6 +19,9 @@ enum EditorTranscriptTimeline {
         let windows: [SilenceWindow]
         let threshold: Double
         let duration: Double
+        var paddingBefore: Double = 0.15
+        var paddingAfter: Double = 0.15
+        var minimumSilence: Double = 0.12
     }
 
     static func items(_ request: Request) -> [EditorTranscriptItem] {
@@ -35,11 +38,11 @@ enum EditorTranscriptTimeline {
             }
         }
         let spoken = items.map(\.range)
-        let speechSource = spoken.isEmpty
-            ? (transcript.speechRanges ?? []).map { EditorTimeRange(start: $0.startTime, end: $0.endTime) }
-            : spoken
+        let speechSource = spoken + (transcript.speechRanges ?? []).map {
+            EditorTimeRange(start: $0.startTime, end: $0.endTime)
+        }
         let speech = merged(speechSource).map {
-            EditorTimeRange(start: max(0, $0.start - 0.15), end: min(request.duration, $0.end + 0.15))
+            EditorTimeRange(start: max(0, $0.start - request.paddingBefore), end: min(request.duration, $0.end + request.paddingAfter))
         }
         let sounds = merged(request.windows.filter { $0.decibels > request.threshold }.map {
             .init(start: max(0, $0.start - 0.06), end: min(request.duration, $0.end + 0.06))
@@ -50,14 +53,14 @@ enum EditorTranscriptTimeline {
             while speechIndex < speech.count && speech[speechIndex].end <= cursor { speechIndex += 1 }
             for voice in speech.dropFirst(speechIndex) {
                 if voice.start >= sound.end { break }
-                if voice.start - cursor >= 0.12 {
+                if voice.start - cursor >= request.minimumSilence {
                     append((range: .init(start: cursor, end: min(sound.end, voice.start)),
                             text: "Silence", kind: .nonDialogue))
                 }
                 cursor = max(cursor, voice.end)
                 if cursor >= sound.end { break }
             }
-            if sound.end - cursor >= 0.12 {
+            if sound.end - cursor >= request.minimumSilence {
                 append((range: .init(start: cursor, end: sound.end), text: "Silence", kind: .nonDialogue))
             }
         }
@@ -109,6 +112,8 @@ struct EditorTranscriptStrip: View {
     }
 
     let configuration: Configuration
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var hoveredRange: EditorTimeRange?
 
     var body: some View {
         let runs = configuration.layout.coalescedRuns(.init(
@@ -117,18 +122,22 @@ struct EditorTranscriptStrip: View {
         Canvas { context, size in
             for run in runs {
                 let selected = isSelected(run, in: selectedRanges)
-                let tint = run.kind == .nonDialogue ? BlitzUI.secondaryText : BlitzUI.mint
+                let hovered = hoveredRange.map { range in run.items.contains { $0.source.range == range } } ?? false
+                let isSilence = run.kind == .nonDialogue
+                let tint = isSilence ? BlitzUI.recordRed : BlitzUI.mint
                 let inset: CGFloat = run.width >= 8 ? 0.5 : 0
                 let rect = CGRect(
                     x: run.x + inset, y: 8, width: max(1, run.width - inset * 2), height: size.height - 16)
                 let path = Path(roundedRect: rect, cornerRadius: run.width >= 8 ? 3 : 0)
-                context.fill(path, with: .color(tint.opacity(selected ? 0.22 : 0.09)))
-                if selected {
-                    context.stroke(path, with: .color(.white.opacity(0.55)), lineWidth: 1)
+                context.fill(path, with: .color(tint.opacity(
+                    isSilence ? (selected || hovered ? 0.32 : 0.18) : (selected || hovered ? 0.22 : 0.09))))
+                if selected || hovered {
+                    context.stroke(path, with: .color(isSilence || hovered ? tint : .white.opacity(0.55)),
+                                   lineWidth: hovered ? 2 : 1)
                 }
                 guard run.width >= 28 else { continue }
                 let label = context.resolve(Text(run.text).font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(selected ? .white : tint))
+                    .foregroundStyle(selected && !isSilence ? .white : tint))
                 if label.measure(in: CGSize(width: .infinity, height: rect.height)).width <= rect.width - 8 {
                     var clipped = context
                     clipped.clip(to: path)
@@ -141,7 +150,18 @@ struct EditorTranscriptStrip: View {
         .frame(width: configuration.width, height: configuration.height, alignment: .leading)
         .background(Color.white.opacity(0.025))
         .contentShape(.rect)
-        .pointingHandCursor()
+        .pointingHandCursor(enabled: hoveredRange != nil)
+        .onContinuousHover { phase in
+            switch phase {
+            case .active(let location):
+                guard isEnabled, configuration.pixelsPerSecond > 0 else { return }
+                let range = configuration.layout.item(at: Double(location.x / configuration.pixelsPerSecond))?.source.range
+                if range != hoveredRange { hoveredRange = range }
+            case .ended:
+                hoveredRange = nil
+            }
+        }
+        .onDisappear { hoveredRange = nil }
         .gesture(SpatialTapGesture().onEnded { event in
             if let item = configuration.layout.item(at: Double(event.location.x / configuration.pixelsPerSecond)) {
                 configuration.onSelect(.init(range: item.source.range, modifiers: NSEvent.modifierFlags))

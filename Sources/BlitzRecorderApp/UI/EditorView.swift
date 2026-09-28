@@ -13,8 +13,11 @@ struct EditorView: View {
     @State var assets: [EditorAsset] = []
     @State var selection: EditorSelection?
     @State var transcript: RecordingTranscript?
+    @State var transcriptProjectPath: String?
     @State var timelineZoom: Double = 1
     @State var showsTimelineShortcuts = false
+    @State var showsInspector = true
+    @AppStorage("editor.showsSourceTracks") var showsSourceTracks = false
     @State var pendingRangeCutSeek: Double?
     @State var selectedFormat: OutputVideoFormat = .mov
     @State var selectedResolution: OutputResolution = .p1080
@@ -24,7 +27,7 @@ struct EditorView: View {
     @State var selectedExportPlaybackRate = ExportPlaybackRate.normal
     @State var backgroundMusic: ExportBackgroundMusic?
     @State var backgroundMusicBookmarkData: Data?
-    @State var exportLayouts: Set<CaptureLayout> = []
+    @State var additionalExportLayouts: Set<CaptureLayout> = []
     @State var loadedProjectID: UUID?
     @State var isExportPopoverPresented = false
     @State var reloadTask: Task<Void, Never>?
@@ -40,6 +43,9 @@ struct EditorView: View {
     @State var silence = SilenceEditingSession()
     @State var privacy = PrivacyEditingSession()
     @State var inspectorTab: EditorInspectorTab = .silence
+    @State var showsHostingShare = false
+    @State var exportDestination: EditorExportDestination = .file
+    @State var preparesHostedExport = false
     @State var showsSourceFraming = false
     @State var framingSource: SceneLayerKind = .screen
     @State var aspectRatioLockedKinds: Set<SceneLayerKind> = [.screen, .camera]
@@ -48,15 +54,18 @@ struct EditorView: View {
         let tracks = assetTracks
         return VStack(spacing: 0) {
             toolbar
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(.bar)
+                .blitzWindowToolbar(showsUpdate: true)
 
             if let exportStatus {
                 EditorExportStatusView(configuration: .init(
                     status: exportStatus,
                     open: { NSWorkspace.shared.open($0) },
                     reveal: { NSWorkspace.shared.activateFileViewerSelecting([$0]) },
+                    share: { url in
+                        preparesHostedExport = false
+                        HostedVideoShareController.shared.select(url)
+                        showsHostingShare = true
+                    },
                     sendToBlitzReels: { url in
                         guard let project else { return }
                         BlitzReelsHandoffController.shared.selectExport(.init(
@@ -64,7 +73,7 @@ struct EditorView: View {
                         ))
                         inspectorTab = .blitzReels
                     },
-                    retry: exportVideo,
+                    retry: prepareExport,
                     dismiss: {
                         vm.lastExportSucceededURL = nil
                         vm.lastExportError = nil
@@ -83,7 +92,7 @@ struct EditorView: View {
 
             divider
 
-            EditorWorkspaceSplitView {
+            EditorWorkspaceSplitView(showsInspector: showsInspector, showsSourceTracks: showsSourceTracks) {
                 playerColumn
                     .background(BlitzUI.canvasBackground)
             } inspector: {
@@ -156,13 +165,13 @@ struct EditorView: View {
                 onDeleteSegment: deleteSelectedSegment,
                 canDeleteSegment: canDeleteSelectedSegment,
                 onJoinSegment: joinSelectedSegment,
-                onCutRange: cutSelectedRange,
                 onRestoreRange: restoreSelectedRange,
-                onExtendClip: extendClip,
+                onTrimClip: trimClip,
                 onMarkIn: markRangeIn,
                 onMarkOut: markRangeOut,
                 zoomLevel: $timelineZoom,
                 showsShortcuts: $showsTimelineShortcuts,
+                showsSourceTracks: $showsSourceTracks,
                 silence: silence,
                 onOpenSilence: openSilenceInspector,
                 onChangePlacedItem: changePlacedItem,
@@ -170,13 +179,33 @@ struct EditorView: View {
             )
             }
         }
+        .sheet(isPresented: $showsHostingShare) {
+            HostedVideoSharePanel(controller: .shared, preparation: preparesHostedExport ? .init(
+                title: project?.displayTitle ?? "Video",
+                export: {
+                    showsHostingShare = false
+                    preparesHostedExport = false
+                    exportVideo()
+                }
+            ) : nil)
+        }
         .task(id: "\(project?.projectPath ?? ""):\(String(describing: vm.transcriptionController.jobStatuses[project?.projectPath ?? ""]))") {
-            transcript = nil
-            guard let project else { return }
+            if transcriptProjectPath != project?.projectPath {
+                transcript = nil
+                transcriptProjectPath = project?.projectPath
+                silence.setTranscript(nil)
+            }
+            guard let project else { silence.setTranscriptLoading(false); return }
+            if transcript != nil, vm.transcriptionController.jobStatuses[project.projectPath]?.isRunning == true {
+                silence.setTranscriptLoading(false)
+                return
+            }
+            silence.setTranscriptLoading(true)
             let store = TranscriptArtifactStore()
             let url = store.locations(for: project).jsonURL
             let loaded = await Task.detached(priority: .utility) { try? store.load(from: url) }.value
             guard !Task.isCancelled else { return }
+            silence.setTranscriptLoading(false)
             transcript = loaded
             silence.setTranscript(loaded)
         }
@@ -208,6 +237,14 @@ struct EditorView: View {
             }
             reloadTask = task
         }
+        .onChange(of: vm.isEditorVisible) { _, visible in
+            guard !visible else { return }
+            playback.pauseForEditing()
+            NowPlayingController.shared.deactivate(playback)
+            isExportPopoverPresented = false
+            showsTimelineShortcuts = false
+            privacy.cancelGesture()
+        }
         .onDisappear {
             privacy.cancelGesture()
             silence.cancel()
@@ -218,6 +255,7 @@ struct EditorView: View {
             playback.teardown()
         }
         .onChange(of: inspectorTab) { _, tab in
+            showsInspector = true
             if tab != .privacy { privacy.cancelGesture() }
         }
         .onChange(of: selection) { _, selection in
@@ -256,7 +294,7 @@ struct EditorView: View {
         if loadedProjectID != project.id {
             loadedProjectID = project.id
             privacy.select(nil)
-            exportLayouts = []
+            additionalExportLayouts = []
             inspectorTab = .silence
         }
         sceneEvents = TakeFileStore().sceneEvents(from: project)

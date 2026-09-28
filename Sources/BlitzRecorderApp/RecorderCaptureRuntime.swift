@@ -83,6 +83,7 @@ final class RecorderCaptureRuntime {
     var onSavedRecording: ((SavedRecordingOutput) -> Void)?
     var onPostRecordingProject: ((PostRecordingProjectOutput) -> Void)?
     var onRecordingRecovery: ((RecordingRecoveryOutput) -> Void)?
+    var onCaptureStopProgress: ((CaptureStopProgress?) -> Void)?
     var onRenderProgress: ((Double) -> Void)?
     var onExportFailure: ((String?) -> Void)?
     var onScreenCaptureConfigurationChanged: (() -> Void)?

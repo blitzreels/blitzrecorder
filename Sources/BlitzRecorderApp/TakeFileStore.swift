@@ -7,42 +7,24 @@ struct TakeFileStore {
     static let minimumAvailableCapacityBytes: Int64 = 512 * 1024 * 1024
 
     func prepareOutputDirectory(settings: RecordingSettings) throws -> OutputDirectoryAccess {
-        let access = OutputDirectoryAccess(
-            url: settings.outputDirectory,
-            usesSecurityScopedBookmark: settings.outputDirectoryBookmarkData != nil
-        )
+        var seen: Set<URL> = []
+        let locations = [settings.sourceStorage,
+                         RecordingStorageLocation(url: settings.outputDirectory, bookmarkData: settings.outputDirectoryBookmarkData)]
+            .filter { seen.insert($0.url.standardizedFileURL).inserted }
+        let access = OutputDirectoryAccess(locations: locations)
         guard access.hasSecurityScopedAccess else {
             access.stop()
-            throw RecorderError.outputDirectoryUnavailable(Self.permissionRecoveryMessage(for: settings.outputDirectory))
+            throw RecorderError.outputDirectoryUnavailable(Self.permissionRecoveryMessage(for: access.unavailableURL ?? settings.outputDirectory))
         }
 
         do {
-            let fileManager = FileManager.default
-            try fileManager.createDirectory(
-                at: settings.outputDirectory,
-                withIntermediateDirectories: true
-            )
+            for location in locations {
+                try prepareWritableDirectory(location.url)
+            }
 
+            let fileManager = FileManager.default
             let scratchRoot = scratchRoot(for: settings)
             try fileManager.createDirectory(at: scratchRoot, withIntermediateDirectories: true)
-
-            let probeURL = scratchRoot.appendingPathComponent(".write-test-\(UUID().uuidString)")
-            try Data().write(to: probeURL, options: .atomic)
-            try fileManager.removeItem(at: probeURL)
-            let resourceValues = try settings.outputDirectory.resourceValues(
-                forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey]
-            )
-            let fileSystemCapacity = Self.fileSystemAvailableCapacity(for: settings.outputDirectory)
-            let capacity = Self.availableCapacityForRecording(
-                importantUsageCapacity: resourceValues.volumeAvailableCapacityForImportantUsage,
-                fallbackCapacity: resourceValues.volumeAvailableCapacity.map(Int64.init),
-                fileSystemCapacity: fileSystemCapacity
-            )
-            if let capacity, capacity < Self.minimumAvailableCapacityBytes {
-                throw RecorderError.outputDirectoryUnavailable(
-                    "\(Self.formattedByteCount(capacity)) available; at least 512 MB required"
-                )
-            }
             if let contents = try? fileManager.contentsOfDirectory(atPath: scratchRoot.path),
                contents.isEmpty {
                 try? fileManager.removeItem(at: scratchRoot)
@@ -55,6 +37,29 @@ struct TakeFileStore {
         } catch {
             access.stop()
             throw RecorderError.outputDirectoryUnavailable(Self.outputDirectoryFailureMessage(error, url: settings.outputDirectory))
+        }
+    }
+
+    private func prepareWritableDirectory(_ url: URL) throws {
+        do {
+            let fileManager = FileManager.default
+            try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
+            let probeURL = url.appendingPathComponent(".write-test-\(UUID().uuidString)")
+            try Data().write(to: probeURL, options: .atomic)
+            try fileManager.removeItem(at: probeURL)
+            let values = try url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey])
+            let capacity = Self.availableCapacityForRecording(
+                importantUsageCapacity: values.volumeAvailableCapacityForImportantUsage,
+                fallbackCapacity: values.volumeAvailableCapacity.map(Int64.init),
+                fileSystemCapacity: Self.fileSystemAvailableCapacity(for: url))
+            if let capacity, capacity < Self.minimumAvailableCapacityBytes {
+                throw RecorderError.outputDirectoryUnavailable(
+                    "\(url.lastPathComponent): \(Self.formattedByteCount(capacity)) available; at least 512 MB required")
+            }
+        } catch let error as RecorderError {
+            throw error
+        } catch {
+            throw RecorderError.outputDirectoryUnavailable(Self.outputDirectoryFailureMessage(error, url: url))
         }
     }
 
@@ -228,6 +233,36 @@ struct TakeFileStore {
     }
 
     func loadProjectHistory(settings: RecordingSettings) -> RecordingProjectHistory {
+        var entries: [RecordingProjectHistory.Entry] = []
+        let roots = Set(settings.projectLibraries.map { $0.url.standardizedFileURL.resolvingSymlinksInPath() })
+        for location in settings.projectLibraries {
+            var librarySettings = settings
+            librarySettings.projectLibrary = location
+            let access = OutputDirectoryAccess(locations: [location])
+            defer { access.stop() }
+            guard access.hasSecurityScopedAccess else { continue }
+            let root = location.url.standardizedFileURL.resolvingSymlinksInPath()
+            entries += loadLocalProjectHistory(settings: librarySettings).entries.filter {
+                let owner = URL(fileURLWithPath: $0.takeDirectoryPath).deletingLastPathComponent().deletingLastPathComponent()
+                    .standardizedFileURL.resolvingSymlinksInPath()
+                return owner == root || !roots.contains(owner)
+            }
+        }
+        entries.sort { $0.updatedAt > $1.updatedAt }
+        var ids: Set<UUID> = []
+        var paths: Set<String> = []
+        var history = RecordingProjectHistory(version: 1, entries: entries.filter {
+            let path = URL(fileURLWithPath: $0.projectPath).standardizedFileURL.path
+            guard !ids.contains($0.id), !paths.contains(path) else { return false }
+            ids.insert($0.id)
+            paths.insert(path)
+            return true
+        })
+        history.sortByRecordedDate()
+        return history
+    }
+
+    private func loadLocalProjectHistory(settings: RecordingSettings) -> RecordingProjectHistory {
         let url = projectHistoryURL(for: settings)
         guard let data = try? Data(contentsOf: url) else {
             return RecordingProjectHistory(version: 1, entries: [])
@@ -297,14 +332,12 @@ struct TakeFileStore {
     @discardableResult
     func deleteProject(_ request: RecordingProjectDeletionRequest) throws -> RecordingProjectTrashReceipt? {
         let fileManager = FileManager.default
-        let outputDirectoryAccess = OutputDirectoryAccess(
-            url: request.settings.outputDirectory,
-            usesSecurityScopedBookmark: request.settings.outputDirectoryBookmarkData != nil
-        )
+        let librarySettings = projectLibrarySettings(.init(takePath: request.project.takeDirectoryPath, settings: request.settings))
+        let outputDirectoryAccess = OutputDirectoryAccess(locations: [librarySettings.sourceStorage])
         guard outputDirectoryAccess.hasSecurityScopedAccess else {
             outputDirectoryAccess.stop()
             throw RecorderError.outputDirectoryUnavailable(
-                Self.permissionRecoveryMessage(for: request.settings.outputDirectory)
+                Self.permissionRecoveryMessage(for: librarySettings.sourceStorage.url)
             )
         }
         defer {
@@ -333,12 +366,12 @@ struct TakeFileStore {
 
         Self.projectHistoryLock.lock()
         defer { Self.projectHistoryLock.unlock() }
-        var history = loadProjectHistory(settings: request.settings)
+        var history = loadLocalProjectHistory(settings: librarySettings)
         history.entries.removeAll {
             $0.id == request.project.id || $0.projectPath == request.project.projectPath
         }
         do {
-            try writeProjectHistory(ProjectHistoryWriteRequest(history: history, settings: request.settings))
+            try writeProjectHistory(ProjectHistoryWriteRequest(history: history, settings: librarySettings))
         } catch {
             if let receipt {
                 try fileManager.moveItem(at: receipt.trashedDirectory, to: projectDirectory)
@@ -351,13 +384,11 @@ struct TakeFileStore {
     func restoreProjectFromTrash(_ request: RecordingProjectRestorationRequest) throws {
         let receipt = request.receipt
         let fileManager = FileManager.default
-        let access = OutputDirectoryAccess(
-            url: request.settings.outputDirectory,
-            usesSecurityScopedBookmark: request.settings.outputDirectoryBookmarkData != nil
-        )
+        let librarySettings = projectLibrarySettings(.init(takePath: receipt.project.takeDirectoryPath, settings: request.settings))
+        let access = OutputDirectoryAccess(locations: [librarySettings.sourceStorage])
         defer { access.stop() }
         guard access.hasSecurityScopedAccess else {
-            throw RecorderError.outputDirectoryUnavailable(Self.permissionRecoveryMessage(for: request.settings.outputDirectory))
+            throw RecorderError.outputDirectoryUnavailable(Self.permissionRecoveryMessage(for: librarySettings.sourceStorage.url))
         }
         try validateProjectDeletionTarget(.init(project: receipt.project, settings: request.settings, disposition: .trash))
         let original = URL(fileURLWithPath: receipt.project.takeDirectoryPath, isDirectory: true)
@@ -381,7 +412,8 @@ struct TakeFileStore {
     private func validateProjectDeletionTarget(_ request: RecordingProjectDeletionRequest) throws {
         let directory = URL(fileURLWithPath: request.project.takeDirectoryPath, isDirectory: true)
             .standardizedFileURL.resolvingSymlinksInPath()
-        let root = scratchRoot(for: request.settings).standardizedFileURL.resolvingSymlinksInPath()
+        let librarySettings = projectLibrarySettings(.init(takePath: request.project.takeDirectoryPath, settings: request.settings))
+        let root = scratchRoot(for: librarySettings).standardizedFileURL.resolvingSymlinksInPath()
         let metadata = URL(fileURLWithPath: request.project.projectPath).standardizedFileURL.resolvingSymlinksInPath()
         guard directory.deletingLastPathComponent() == root,
             metadata.deletingLastPathComponent() == directory,
@@ -801,7 +833,7 @@ struct TakeFileStore {
     }
 
     func projectHistoryURL(for settings: RecordingSettings) -> URL {
-        settings.outputDirectory
+        settings.sourceStorage.url
             .appendingPathComponent("BlitzRecorder Projects", isDirectory: true)
             .appendingPathComponent("projects.json")
     }
@@ -850,7 +882,7 @@ struct TakeFileStore {
     }
 
     private func scratchRoot(for settings: RecordingSettings) -> URL {
-        settings.outputDirectory.appendingPathComponent("BlitzRecorder Source Takes", isDirectory: true)
+        settings.sourceStorage.url.appendingPathComponent("BlitzRecorder Source Takes", isDirectory: true)
     }
 
     private func projectID(for take: RecordingTake, projectURL: URL) -> UUID {
@@ -874,7 +906,13 @@ struct TakeFileStore {
     private func upsertProjectHistory(_ project: RecordingProject, settings: RecordingSettings) throws {
         Self.projectHistoryLock.lock()
         defer { Self.projectHistoryLock.unlock() }
-        var history = loadProjectHistory(settings: settings)
+        let settings = projectLibrarySettings(.init(takePath: project.takeDirectoryPath, settings: settings))
+        let access = OutputDirectoryAccess(locations: [settings.sourceStorage])
+        defer { access.stop() }
+        guard access.hasSecurityScopedAccess else {
+            throw RecorderError.outputDirectoryUnavailable(Self.permissionRecoveryMessage(for: settings.sourceStorage.url))
+        }
+        var history = loadLocalProjectHistory(settings: settings)
         history.entries.removeAll { $0.id == project.id || $0.projectPath == project.projectPath }
         history.entries.insert(
             RecordingProjectHistory.Entry(
@@ -894,6 +932,21 @@ struct TakeFileStore {
             history: history,
             settings: settings
         ))
+    }
+
+    private struct ProjectLibrarySettingsRequest {
+        let takePath: String
+        let settings: RecordingSettings
+    }
+
+    private func projectLibrarySettings(_ request: ProjectLibrarySettingsRequest) -> RecordingSettings {
+        let root = URL(fileURLWithPath: request.takePath).deletingLastPathComponent().deletingLastPathComponent()
+            .standardizedFileURL.resolvingSymlinksInPath()
+        var settings = request.settings
+        if let location = settings.projectLibraries.first(where: { $0.url.standardizedFileURL.resolvingSymlinksInPath() == root }) {
+            settings.projectLibrary = location
+        }
+        return settings
     }
 
     private func writeProjectHistory(_ request: ProjectHistoryWriteRequest) throws {

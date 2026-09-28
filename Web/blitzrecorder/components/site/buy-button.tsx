@@ -53,15 +53,15 @@ function writeAttributionInputs(form: HTMLFormElement) {
 }
 
 export function LicenseButton({
-  className,
   formClassName,
-  label = "Get free license",
-  source = "unknown",
+  label,
+  source,
+  size,
 }: {
-  className?: string;
-  formClassName?: string;
-  label?: string;
-  source?: string;
+  formClassName: string;
+  label: string;
+  source: string;
+  size: "default" | "lg";
 }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -98,9 +98,9 @@ export function LicenseButton({
         autoComplete="email"
         inputMode="email"
         placeholder="Email for your license key"
-        className="h-12 w-full rounded-full border border-border bg-background/75 px-4 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus:border-primary/70 focus:ring-3 focus:ring-primary/20"
+        className="h-10 w-full rounded-control border border-border bg-fill-control px-3 text-sm text-foreground outline-none transition placeholder:text-faint focus:border-primary/60 focus:ring-3 focus:ring-primary/20"
       />
-      <Button type="submit" disabled={isSubmitting} className={className}>
+      <Button type="submit" size={size} disabled={isSubmitting}>
         <Key className="size-4" />
         {isSubmitting ? "Issuing license..." : label}
       </Button>

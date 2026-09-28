@@ -17,7 +17,9 @@ struct EditorTimeRange: Equatable {
     let end: Double
 
     var duration: Double { end - start }
-    var canCut: Bool { duration >= 1.0 / 600 }
+    var canCut: Bool {
+        start.isFinite && end.isFinite && TimelineTimeMap.time(end) > TimelineTimeMap.time(start)
+    }
 
     struct SegmentRequest {
         let eventTimes: [Double]

@@ -36,15 +36,19 @@ final class RecorderViewModel {
     var lastRecoveryOutput: RecordingRecoveryOutput?
     var lastPostRecordingProjectOutput: PostRecordingProjectOutput?
     var lastExportedProject: RecordingProject?
-    var studioMode: StudioMode = .record {
+    var studioMode: StudioMode = .projects {
         didSet {
             isShowingSettings = false
+            onEditorHistoryChanged?()
             guard oldValue != studioMode else { return }
             onStudioModeChanged?(studioMode)
         }
     }
     private(set) var isShowingSettings = false
     var selectedSettingsPane: SettingsPane = .recording
+    var showsRecorderSources = true
+
+    var isEditorVisible: Bool { studioMode == .edit && !isShowingSettings }
 
     var settingsReturnTitle: String {
         switch studioMode {
@@ -69,7 +73,7 @@ final class RecorderViewModel {
     var projectLibraryError: String?
 
     var canShowProjects: Bool {
-        state == .idle && (!recentProjects.isEmpty || projectTrash.canRestore)
+        !projectTrash.isWorking
     }
 
     var availableDisplays: [SourceOption] = []
@@ -84,6 +88,8 @@ final class RecorderViewModel {
     var remoteCameraPreviewFrameSize: (width: Int, height: Int)?
 
     var elapsedSeconds: Int = 0
+    var captureStopProgress: CaptureStopProgress?
+    var finishingStartedAt: Date?
     var renderProgress: Double = 0
     let elapsedClock = RecordingElapsedClock()
 
@@ -114,6 +120,10 @@ final class RecorderViewModel {
     var targetWindowStatus: String = "Detecting target..."
     var targetWindowZoom: CGFloat = 1.0
     @ObservationIgnored var targetWindowZoomTask: Task<Void, Never>?
+    @ObservationIgnored var pendingTargetWindowFitContext: ScheduledTargetWindowFitContext?
+    @ObservationIgnored var permissionRequestTask: Task<Void, Never>?
+    @ObservationIgnored var permissionRequestID: UUID?
+    var isRequestingPermissions = false
     var permissionRefreshToken = 0
     var remoteCameraRefreshToken = 0
 

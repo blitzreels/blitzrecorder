@@ -5,6 +5,7 @@ import { readdir } from "node:fs/promises";
 import path from "node:path";
 import "./globals.css";
 import { ReleaseProvider } from "@/components/site/release-context";
+import { MarketingOnly } from "@/components/site/marketing-only";
 import {
   getLatestRelease,
   FALLBACK_VERSION,
@@ -60,16 +61,16 @@ const mono = JetBrains_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL("https://blitzrecorder.com"),
   title: {
-    default: "BlitzRecorder: Mac screen recording for short-form",
+    default: "BlitzRecorder: record and edit on your Mac",
     template: "%s · BlitzRecorder",
   },
   description:
-    "Native macOS screen recorder for short-form video. Timeline, silence cuts, local files. Open source. Completely free.",
+    "Record your screen and camera, then edit the take on your Mac. iPhone camera, silence cuts, on-device transcripts. Free and open source.",
   openGraph: {
     title: "BlitzRecorder",
     siteName: "BlitzRecorder",
     description:
-      "Mac screen recording for short-form. Open source. Completely free.",
+      "Record and edit on your Mac. Free and open source.",
     type: "website",
     url: "https://blitzrecorder.com",
   },
@@ -90,6 +91,7 @@ export default async function RootLayout({
       className={`dark ${display.variable} ${sans.variable} ${mono.variable}`}
     >
       <body>
+        <MarketingOnly>
         <Script
           id="datafast-queue"
           strategy="afterInteractive"
@@ -109,6 +111,7 @@ export default async function RootLayout({
           src="https://datafa.st/js/script.js"
           strategy="afterInteractive"
         />
+        </MarketingOnly>
         <ReleaseProvider release={release}>{children}</ReleaseProvider>
       </body>
     </html>

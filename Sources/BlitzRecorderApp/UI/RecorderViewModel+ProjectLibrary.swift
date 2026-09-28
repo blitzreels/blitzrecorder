@@ -5,26 +5,16 @@ extension RecorderViewModel {
     func refreshRecentProjects() {
         recentProjects = TakeFileStore().loadProjectHistory(settings: settings).entries
         transcriptionController.syncProjects(recentProjects)
-        if recentProjects.isEmpty, studioMode == .projects,
-            projectTrash.status == nil, !projectTrash.canRestore, !projectTrash.isWorking {
-            studioMode = .record
-        }
     }
 
     func showRecorder() {
         guard !projectTrash.isWorking else { return }
-        clearEditorHistory()
         studioMode = .record
     }
 
     func showProjects() {
-        guard state == .idle else { return }
-        clearEditorHistory()
+        guard canShowProjects else { return }
         refreshRecentProjects()
-        guard !recentProjects.isEmpty || projectTrash.canRestore else {
-            studioMode = .record
-            return
-        }
         studioMode = .projects
     }
 
@@ -79,7 +69,11 @@ extension RecorderViewModel {
     }
 
     func openProject(_ project: RecordingProjectHistory.Entry) {
-        guard !projectTrash.isWorking else { return }
+        guard !projectTrash.isWorking, state == .idle else { return }
+        if lastExportedProject?.id == project.id {
+            openEditor()
+            return
+        }
         let projectURL = URL(fileURLWithPath: project.projectPath)
         let sourceDirectory = URL(fileURLWithPath: project.takeDirectoryPath, isDirectory: true)
         do {
@@ -211,6 +205,7 @@ extension RecorderViewModel {
                     variantExportURLs.append(result.url)
                 } catch { return }
             }
+            request.onCompletion(variantExportURLs)
         }
     }
 
@@ -247,8 +242,11 @@ extension RecorderViewModel {
     }
 
     func openEditor() {
-        clearEditorHistory()
-        refreshLastExportedProject()
+        guard state == .idle, !projectTrash.isWorking else { return }
+        if lastExportedProject == nil {
+            clearEditorHistory()
+            refreshLastExportedProject()
+        }
         if lastExportedProject == nil {
             detailMessage = "This take's project file could not be opened."
         }
@@ -256,7 +254,6 @@ extension RecorderViewModel {
     }
 
     func closeEditor() {
-        clearEditorHistory()
         studioMode = .record
     }
 }

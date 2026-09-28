@@ -374,13 +374,14 @@ extension RecorderCaptureRuntime {
             return true
         }
 
-        Task { _ = await permissionGate.requestAccessibilityAccessForWindowControls() }
-        if permissionGate.hasAccessibilityAccess {
-            return true
+        Task { [weak self] in
+            guard let self else { return }
+            let result = await permissionGate.requestAccessibilityAccessForWindowControls()
+            if result.status == .needsSettings {
+                onMessage?(result.message)
+            }
         }
 
-        permissionGate.openAccessibilitySettings()
-        onMessage?("Enable Accessibility for BlitzRecorder to resize target windows.")
         return false
     }
 
