@@ -66,7 +66,7 @@ struct EditorExportPopover: View {
                     selection: configuration.destination, label: { $0.title }
                 ))
                 Text(configuration.destination.wrappedValue == .link
-                     ? "Host this video on BlitzRecorder. A hosting subscription is required."
+                     ? "Keep a high-quality copy of your edit in the cloud. A hosting subscription is required."
                      : "Save a video file to your Mac.")
                     .font(.system(size: 12))
                     .foregroundStyle(BlitzUI.supportingText)
@@ -74,28 +74,42 @@ struct EditorExportPopover: View {
             }
 
             VStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Quality")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(BlitzUI.secondaryText)
-                    BlitzSegmentedPicker(configuration: .init(
-                        title: "Export quality", options: ExportVideoQuality.menuCases,
-                        selection: configuration.quality, label: { $0.displayName }
+                if configuration.destination.wrappedValue == .link {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("Source quality", systemImage: "checkmark.shield")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("\(configuration.resolution.wrappedValue.displayName) · \(configuration.framesPerSecond.wrappedValue) fps · High-quality HEVC")
+                            .font(.system(size: 12))
+                        Text("Original resolution and frame rate. Adaptive streaming copies are prepared separately.")
+                            .font(.system(size: 12)).foregroundStyle(BlitzUI.supportingText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Quality")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(BlitzUI.secondaryText)
+                        BlitzSegmentedPicker(configuration: .init(
+                            title: "Export quality", options: ExportVideoQuality.menuCases,
+                            selection: configuration.quality, label: { $0.displayName }
+                        ))
+                        .controlSize(.mini)
+                        .help(configuration.quality.wrappedValue.plainDescription)
+                    }
+                    EditorExportChoiceRow(configuration: .init(
+                        title: "Export FPS", options: RecordingSettings.supportedFrameRates,
+                        selection: configuration.framesPerSecond, label: { "\($0)" }
                     ))
-                    .controlSize(.mini)
-                    .help(configuration.quality.wrappedValue.plainDescription)
                 }
-                EditorExportChoiceRow(configuration: .init(
-                    title: "Export FPS", options: RecordingSettings.supportedFrameRates,
-                    selection: configuration.framesPerSecond, label: { "\($0)" }
-                ))
                 EditorExportSpeedControl(selection: configuration.playbackRate)
             }
 
-            BlitzInspectorDisclosure(configuration: .init(
-                title: "Advanced settings", detail: nil, isExpanded: $showsAdvanced,
-                content: { advancedSettings }
-            ))
+            if configuration.destination.wrappedValue == .file {
+                BlitzInspectorDisclosure(configuration: .init(
+                    title: "Advanced settings", detail: nil, isExpanded: $showsAdvanced,
+                    content: { advancedSettings }
+                ))
+            }
 
             Rectangle().fill(BlitzUI.separator).frame(height: 1)
 

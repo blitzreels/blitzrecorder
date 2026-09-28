@@ -1,29 +1,11 @@
+import type { PoolClient } from "pg";
 import { randomUUID } from "node:crypto";
 import { getSiteUrl, getStripe } from "../payments";
 import { hostingPool, transaction } from "./db";
-import { assertHostingEnabled, HostingError, newAccessToken, required, tokenHash, type HostingAccount } from "./model";
+import { HostingError, newAccessToken, required, tokenHash, type HostingAccount } from "./model";
 import { HOSTING_PLAN } from "./plan";
 
 export type HostingIdentity = { id: string; email: string };
-
-export async function verifyIdentity(request: Request): Promise<HostingIdentity> {
-  assertHostingEnabled();
-  const authorization = request.headers.get("authorization");
-  if (!authorization?.startsWith("Bearer ") || authorization.length > 8192) {
-    throw new HostingError({ status: 401, message: "Sign in with BlitzReels to connect video hosting." });
-  }
-  const response = await fetch("https://blitzreels.com/api/blitzrecorder/connection", {
-    headers: { Authorization: authorization }, redirect: "error", cache: "no-store", signal: AbortSignal.timeout(15_000),
-  });
-  if (!response.ok) throw new HostingError({ status: response.status >= 500 ? 503 : 401, message: "Reconnect your BlitzReels account to continue." });
-  const data = await response.json();
-  const user = data?.user;
-  if (typeof user?.id !== "string" || !/^[A-Za-z0-9_-]{1,200}$/.test(user.id)
-    || typeof user.email !== "string" || user.email.length > 320 || !user.email.includes("@")) {
-    throw new HostingError({ status: 401, message: "Your account could not be verified." });
-  }
-  return { id: user.id, email: user.email };
-}
 
 export function planStorageBytes(): number {
   const storage = Number(process.env.HOSTING_PLAN_STORAGE_BYTES ?? HOSTING_PLAN.storageBytes);
@@ -32,24 +14,34 @@ export function planStorageBytes(): number {
 }
 
 export async function connectAccount(identity: HostingIdentity) {
+  return transaction((db) => connectAccountInTransaction({ ...identity, db }));
+}
+
+export async function connectAccountInTransaction(identity: HostingIdentity & { db: PoolClient }) {
   const storage = planStorageBytes();
   const token = newAccessToken();
-  const account = await transaction(async (db) => {
-    const result = await db.query<HostingAccount>(
-      `INSERT INTO hosting_accounts (id,token_hash,identity_id,email,active_until,storage_limit)
-       VALUES ($1,$2,$3,$4,to_timestamp(0),$5)
-       ON CONFLICT (identity_id) DO UPDATE SET email=EXCLUDED.email RETURNING id,active_until,storage_limit`,
-      [randomUUID(), tokenHash(newAccessToken()), identity.id, identity.email, storage]);
+  const connect = async (db: PoolClient) => {
+    await db.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`hosting-email:${identity.email}`]);
+    const existing = await db.query<HostingAccount>(
+      "SELECT * FROM hosting_accounts WHERE lower(email)=$1 ORDER BY created_at LIMIT 2 FOR UPDATE", [identity.email]);
+    if (existing.rows.length > 1) throw new HostingError({ status: 409, message: "Contact BlitzRecorder support to recover this account." });
+    const result = existing.rows[0]
+      ? await db.query<HostingAccount>("UPDATE hosting_accounts SET identity_id=$2,email=$3 WHERE id=$1 RETURNING *",
+        [existing.rows[0].id, identity.id, identity.email])
+      : await db.query<HostingAccount>(
+        `INSERT INTO hosting_accounts (id,token_hash,identity_id,email,active_until,storage_limit)
+         VALUES ($1,$2,$3,$4,to_timestamp(0),$5) RETURNING *`,
+        [randomUUID(), tokenHash(newAccessToken()), identity.id, identity.email, storage]);
     const account = result.rows[0];
     await db.query("DELETE FROM hosting_connections WHERE account_id=$1 AND expires_at < now()", [account.id]);
     await db.query("INSERT INTO hosting_connections (token_hash,account_id) VALUES ($1,$2)", [tokenHash(token), account.id]);
-    return account;
-  });
-  return { token, ...accountState(account) };
+    return { token, ...accountState(account) };
+  };
+  return connect(identity.db);
 }
 
 export function accountState(account: HostingAccount) {
-  return { active: account.active_until.getTime() > Date.now(), activeUntil: account.active_until.toISOString(), storageLimit: Number(account.storage_limit) };
+  return { email: account.email, active: account.active_until.getTime() > Date.now(), activeUntil: account.active_until.toISOString(), storageLimit: Number(account.storage_limit) };
 }
 
 export async function disconnectAccount(request: Request) {
@@ -102,6 +94,8 @@ export async function billingURL(account: HostingAccount) {
       customer_email: row.stripe_customer_id ? undefined : row.email ?? undefined,
       client_reference_id: account.id, metadata, subscription_data: { metadata },
       integration_identifier: "blitzrecorder_hosting_qmzpxrta",
+      branding_settings: { display_name: "BlitzRecorder", button_color: "#00e69b", border_style: "rounded" },
+      custom_text: { submit: { message: "BlitzRecorder video hosting. Your local recordings and exports remain free." } },
       success_url: `${site}/hosting/complete`, cancel_url: `${site}/hosting/complete?cancelled=1`,
     }, { idempotencyKey: `hosting-checkout:${account.id}:${row.checkout_session_id ?? "first"}` });
     if (!session.url) throw new HostingError({ status: 503, message: "The subscription page could not be opened." });

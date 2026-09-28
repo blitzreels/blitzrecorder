@@ -3,8 +3,9 @@ import {
   preparePart, resumeUpload, revokeAsset, sharedAsset, updateDetails,
 } from "@/lib/hosting/service";
 import { DELIVERY_TTL_SECONDS, HostingError } from "@/lib/hosting/model";
-import { accountState, billingURL, connectAccount, disconnectAccount, verifyIdentity } from "@/lib/hosting/account";
+import { accountState, billingURL, disconnectAccount } from "@/lib/hosting/account";
 import { DETAILS_MAX_BYTES } from "@/lib/hosting/details";
+import { requestSignInCode, verifySignInCode } from "@/lib/hosting/sign-in";
 import { hostingPlan } from "@/lib/hosting/plan";
 
 export const runtime = "nodejs";
@@ -35,8 +36,13 @@ async function handle(request: Request) {
     let result: unknown;
     if (request.method === "GET" && resource === "plan" && path.length === 1) {
       result = hostingPlan();
-    } else if (request.method === "POST" && resource === "connect" && path.length === 1) {
-      result = await connectAccount(await verifyIdentity(request));
+    } else if (request.method === "POST" && resource === "sign-in" && path.length === 2 && id === "request") {
+      result = await requestSignInCode({ body: await readBody({ request, limit: 2048 }),
+        network: request.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim() ?? "unknown" });
+    } else if (request.method === "POST" && resource === "sign-in" && path.length === 2 && id === "verify") {
+      result = await verifySignInCode(await readBody({ request, limit: 2048 }));
+    } else if (resource === "connect") {
+      throw new HostingError({ status: 410, message: "Update BlitzRecorder to sign in with your email address." });
     } else if (request.method === "GET" && resource === "delivery" && path.length === 2) {
       authenticateDelivery(request);
       const asset = await sharedAsset(id);

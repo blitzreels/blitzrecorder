@@ -13,6 +13,7 @@ struct EditorExportRecipe {
         let audioBitrate: Int
         let duration: Double
         var playbackRate: Double = 1.0
+        var destination: EditorExportDestination = .file
     }
 
     let profile: ExportPerformanceProfile
@@ -22,7 +23,7 @@ struct EditorExportRecipe {
 
     static func make(_ request: Request) -> EditorExportRecipe {
         let profile = ExportPerformanceProfile.resolved(
-            preset: request.preset,
+            preset: request.destination == .link ? .maximum : request.preset,
             sourceResolution: request.sourceResolution,
             sourceFramesPerSecond: request.sourceFramesPerSecond,
             customResolution: request.customResolution,

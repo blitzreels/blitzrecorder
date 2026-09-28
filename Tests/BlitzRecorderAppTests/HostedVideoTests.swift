@@ -20,6 +20,61 @@ final class HostedVideoTests: XCTestCase {
         XCTAssertEqual(server.requests.map { $0.url?.path }, ["/api/hosting/plan"])
     }
 
+    @MainActor
+    func testSourceQualityCloudExportKeeps1440pAndFrameRateWithEdits() async throws {
+        let fixture = try SyntheticRecording()
+        try await fixture.writeVideo(.init(url: fixture.take.screenURL, frames: 30))
+        let recipe = EditorExportRecipe.make(.init(
+            preset: .fast, sourceResolution: .p1440, sourceFramesPerSecond: 30,
+            customResolution: .p720, customFramesPerSecond: 24, customVideoQuality: .compact,
+            layout: .horizontal, layoutCount: 1, audioBitrate: 192_000, duration: 1,
+            playbackRate: 1.3, destination: .link))
+        var settings = recipe.profile.applying(to: fixture.settings)
+        settings.outputVideoFormat = .mp4
+        let output = fixture.root.appendingPathComponent("cloud-master.mp4")
+        var edits = TimelineEdits.empty
+        edits.cuts = [.init(start: 0.2, end: 0.4, kind: .manual, source: .user)]
+        let url = try await Merger.exportFinalVideo(.init(
+            take: fixture.take, settings: settings, sceneEvents: [], backgroundMusic: nil,
+            destinationURL: output, progressHandler: nil, timelineEdits: edits, playbackRate: 1.3))
+        let asset = AVURLAsset(url: url)
+        let tracks = try await asset.loadTracks(withMediaType: .video)
+        let video = try XCTUnwrap(tracks.first)
+        let size = try await video.load(.naturalSize)
+        let fps = try await video.load(.nominalFrameRate)
+        let duration = try await asset.load(.duration)
+        let formats = try await video.load(.formatDescriptions)
+        XCTAssertEqual(size, CGSize(width: 2560, height: 1440))
+        XCTAssertEqual(fps, 30, accuracy: 0.1)
+        XCTAssertEqual(duration.seconds, 0.8 / 1.3, accuracy: 0.1)
+        XCTAssertEqual(CMFormatDescriptionGetMediaSubType(try XCTUnwrap(formats.first)), kCMVideoCodecType_HEVC)
+        let decoded = try await SyntheticRecording.inspectVideo(url)
+        XCTAssertGreaterThan(decoded.frames, 15)
+        if let directory = ProcessInfo.processInfo.environment["BLITZRECORDER_EXPORT_UI_PROOF"] {
+            try FileManager.default.copyItem(at: url, to: URL(fileURLWithPath: directory).appendingPathComponent("cloud-master.mp4"))
+        }
+    }
+
+    func testUploadDelegateReportsBytesBeforePartCompletionAndRejectsRedirects() async throws {
+        let updates = AsyncStream<Int64>.makeStream()
+        let delegate = HostingUploadDelegate(continuation: updates.continuation)
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let task = session.uploadTask(with: URLRequest(url: URL(string: "https://upload.test/part")!), from: Data())
+        try await Task.sleep(for: .milliseconds(110))
+        delegate.urlSession(session, task: task, didSendBodyData: 100, totalBytesSent: 100, totalBytesExpectedToSend: 1000)
+        delegate.urlSession(session, task: task, didSendBodyData: 900, totalBytesSent: 1000, totalBytesExpectedToSend: 1000)
+        updates.continuation.finish()
+        var values: [Int64] = []
+        for await value in updates.stream { values.append(value) }
+        XCTAssertEqual(values, [100, 1000])
+        let response = HTTPURLResponse(url: task.originalRequest!.url!, statusCode: 307, httpVersion: nil, headerFields: nil)!
+        delegate.urlSession(session, task: task, willPerformHTTPRedirection: response,
+            newRequest: URLRequest(url: URL(string: "https://foreign.test")!)) { request in
+                XCTAssertNil(request)
+            }
+    }
+
     func testR2StreamingRoundTripWhenRequested() async throws {
         let env = ProcessInfo.processInfo.environment
         guard let origin = env["HOSTING_SMOKE_ORIGIN"], let token = env["HOSTING_SMOKE_TOKEN"],
@@ -27,8 +82,9 @@ final class HostedVideoTests: XCTestCase {
             throw XCTSkip("Requires an isolated hosting validation service.")
         }
         let client = HostingClient(origin: try XCTUnwrap(URL(string: origin)), session: .shared)
+        let duration = try await AVURLAsset(url: URL(fileURLWithPath: file)).load(.duration).seconds
         let details = HostedVideoDetails(version: 1, summary: "Streaming integration check", language: "en", recordedAt: nil,
-            transcript: [.init(start: 0, end: 2, text: "A generated test video.", speaker: nil)],
+            transcript: [.init(start: 0, end: min(2, duration), text: "A generated test video.", speaker: nil)],
             chapters: [.init(start: 0, title: "Test chapter", summary: nil)])
         let url = try await client.upload(.init(fileURL: URL(fileURLWithPath: file), token: token,
             metadata: .init(title: "Hosting integration check", details: details), progress: { _ in }))
@@ -78,9 +134,20 @@ final class HostedVideoTests: XCTestCase {
         let network = URLSession(configuration: configuration)
         defer { network.invalidateAndCancel() }
         let client = HostingClient(origin: URL(string: "https://hosting.test")!, session: network)
+        let progress = HostingTestProgress()
         let request = HostingClient.Upload(fileURL: fixture.take.screenURL, token: "test-token",
-            metadata: .init(title: "Test video", details: .empty), progress: { _ in })
+            metadata: .init(title: "Test video", details: .empty), progress: { await progress.append($0) })
         let first = try await client.upload(request)
+        let updates = await progress.values
+        XCTAssertEqual(updates.first, .preparing)
+        XCTAssertEqual(updates.last, .processing)
+        let uploaded = updates.compactMap { update -> HostingUploadBytes? in
+            guard case .uploading(let bytes) = update else { return nil }
+            return bytes
+        }
+        XCTAssertEqual(uploaded.first?.sent, Int64(bytes / 2))
+        XCTAssertEqual(uploaded.last?.sent, Int64(bytes))
+        XCTAssertTrue(uploaded.allSatisfy { (0...1).contains($0.fraction) })
         let second = try await client.upload(request)
         XCTAssertEqual(first, second)
         let requests = server.requests
@@ -149,4 +216,9 @@ private final class HostingTestProtocol: URLProtocol, @unchecked Sendable {
         } catch { client?.urlProtocol(self, didFailWithError: error) }
     }
     override func stopLoading() {}
+}
+
+private actor HostingTestProgress {
+    private(set) var values: [HostingClient.Progress] = []
+    func append(_ value: HostingClient.Progress) { values.append(value) }
 }

@@ -72,6 +72,7 @@ export type HostedAsset = {
 
 export type HostingAccount = {
   id: string;
+  email: string | null;
   active_until: Date;
   storage_limit: string;
 };
