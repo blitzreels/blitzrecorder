@@ -37,7 +37,7 @@ export async function authenticate(request: Request): Promise<HostingAccount> {
   const token = request.headers.get("authorization")?.match(/^Bearer (brh_[A-Za-z0-9_-]{43})$/)?.[1];
   if (!token) throw new HostingError({ status: 401, message: "Connect your hosting account to continue." });
   const result = await hostingPool().query<HostingAccount>(
-    `SELECT id, active_until, storage_limit FROM hosting_accounts WHERE token_hash = $1
+    `SELECT id, email, active_until, storage_limit FROM hosting_accounts WHERE token_hash = $1
      OR id IN (SELECT account_id FROM hosting_connections WHERE token_hash=$1 AND expires_at>now())`, [tokenHash(token)]);
   if (!result.rows[0]) throw new HostingError({ status: 401, message: "Your hosting connection has expired." });
   return result.rows[0];

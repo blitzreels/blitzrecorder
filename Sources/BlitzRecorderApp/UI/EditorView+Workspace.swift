@@ -13,21 +13,23 @@ extension EditorView {
                 vm.selectOutputLayout($0)
             },
             exportButton: AnyView(HStack(spacing: 8) {
-                if vm.lastExportSucceededURL == nil,
-                   vm.lastExportedURL != nil || HostedVideoShareController.shared.fileURL != nil {
-                    Button {
-                        preparesHostedExport = false
-                        if let url = vm.lastExportedURL { HostedVideoShareController.shared.select(url) }
-                        showsHostingShare = true
-                    } label: { Image(systemName: "link") }
-                    .blitzButton(.quiet)
-                    .accessibilityLabel("Share exported video")
-                    .help("Share an exported video or resume an upload")
-                }
+                Button {
+                    let sharing = HostedVideoShareController.shared
+                    preparesHostedExport = !sharing.isRunning && !sharing.belongsToProject(project?.projectPath)
+                    showsInspector = true
+                    showsHostingShare = true
+                } label: { Label("Share", systemImage: "link") }
+                .blitzButton(.secondary)
+                .controlSize(.large)
+                .disabled(project == nil)
+                .help("Open BlitzRecorder sharing")
                 EditorExportControls(
                 vm: vm,
                 project: project,
-                isPresented: $isExportPopoverPresented,
+                isPresented: Binding(get: { isExportPopoverPresented }, set: {
+                    if $0 { exportDestination = .file }
+                    isExportPopoverPresented = $0
+                }),
                 destination: $exportDestination,
                 additionalExportLayouts: $additionalExportLayouts,
                 selectedExportPreset: $selectedExportPreset,
@@ -105,6 +107,10 @@ extension EditorView {
     }
 
     var exportRecipe: EditorExportRecipe {
+        exportRecipe(for: exportDestination)
+    }
+
+    func exportRecipe(for destination: EditorExportDestination) -> EditorExportRecipe {
         let duration = TimelineTimeMap(
             takeDuration: TimelineTimeMap.time(timelineDuration),
             cuts: vm.lastExportedProject?.edits.enabledCuts ?? []
@@ -117,15 +123,20 @@ extension EditorView {
             customFramesPerSecond: selectedExportFramesPerSecond,
             customVideoQuality: selectedExportQuality,
             layout: captureLayout ?? vm.settings.layout,
-            layoutCount: selectedExportLayouts.count,
+            layoutCount: exportLayouts(for: destination).count,
             audioBitrate: vm.settings.audioQuality.bitrate,
             duration: duration,
-            playbackRate: selectedExportPlaybackRate.value
+            playbackRate: selectedExportPlaybackRate.value,
+            destination: destination
         ))
     }
 
     var selectedExportLayouts: [CaptureLayout] {
-        exportDestination.layouts(.init(
+        exportLayouts(for: exportDestination)
+    }
+
+    func exportLayouts(for destination: EditorExportDestination) -> [CaptureLayout] {
+        destination.layouts(.init(
             current: vm.lastExportedProject?.selectedOutputLayout ?? .horizontal,
             additional: additionalExportLayouts))
     }
@@ -138,32 +149,34 @@ extension EditorView {
         isExportPopoverPresented = false
         if exportDestination == .link {
             preparesHostedExport = true
+            showsInspector = true
             showsHostingShare = true
         } else {
-            exportVideo()
+            showsHostingShare = false
+            exportVideo(to: .file)
         }
     }
 
-    func exportVideo() {
-        let profile = exportRecipe.profile
+    func exportVideo(to destination: EditorExportDestination) {
+        guard !vm.isExportingVariants else { return }
+        let profile = exportRecipe(for: destination).profile
         isExportPopoverPresented = false
         let request = EditorExportRequest(
-            outputFormat: profile.videoQuality.resolvedOutputFormat(selectedFormat),
+            outputFormat: destination == .link ? .mp4 : profile.videoQuality.resolvedOutputFormat(selectedFormat),
             performanceProfile: profile,
             hiddenVideoSources: playback.hiddenKinds,
             mutedAudioSources: playback.mutedSources,
             backgroundMusic: backgroundMusic,
             playbackRate: selectedExportPlaybackRate.value
         )
-        let sharesExport = exportDestination == .link
+        let sharesExport = destination == .link
         let projectPath = project?.projectPath
-        vm.exportOutputVariants(.init(export: request, layouts: selectedExportLayouts, onCompletion: { urls in
+        vm.exportOutputVariants(.init(export: request, layouts: exportLayouts(for: destination), onCompletion: { urls in
             guard sharesExport, let url = urls.first else { return }
-            HostedVideoShareController.shared.select(url)
+            HostedVideoShareController.shared.select(.init(fileURL: url, projectPath: projectPath))
             HostedVideoShareController.shared.start()
             if vm.lastExportedProject?.projectPath == projectPath {
                 preparesHostedExport = false
-                showsHostingShare = true
             }
         }))
     }

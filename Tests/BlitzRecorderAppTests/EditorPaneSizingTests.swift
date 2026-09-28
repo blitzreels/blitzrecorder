@@ -1,8 +1,36 @@
 import XCTest
+import AppKit
+import SwiftUI
 
 @testable import BlitzRecorderApp
 
 final class EditorPaneSizingTests: XCTestCase {
+    @MainActor
+    func testSharingInspectorStaysBesideTheTimelineAtFullHeight() throws {
+        for fullHeight in [true, false] {
+            let host = NSHostingView(rootView: EditorWorkspaceSplitView(showsInspector: true,
+                showsSourceTracks: true, inspectorSpansTimeline: fullHeight,
+                preview: { Color(red: 1, green: 0, blue: 0) },
+                inspector: { Color(red: 0, green: 0, blue: 1) },
+                timeline: { Color(red: 0, green: 1, blue: 0) }).frame(width: 1200, height: 700))
+            host.setFrameSize(host.fittingSize)
+            host.layoutSubtreeIfNeeded()
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let edges = try [10, bitmap.pixelsHigh - 10].map { y in
+                try XCTUnwrap(bitmap.colorAt(x: bitmap.pixelsWide - 10, y: y)?.usingColorSpace(.sRGB))
+            }
+            if let directory = ProcessInfo.processInfo.environment["BLITZRECORDER_EXPORT_UI_PROOF"] {
+                let url = URL(fileURLWithPath: directory).appendingPathComponent("workspace-\(fullHeight).png")
+                try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: url)
+            }
+            XCTAssertEqual(edges.filter { $0.blueComponent > $0.greenComponent + 0.5 }.count,
+                           fullHeight ? 2 : 1)
+            XCTAssertEqual(edges.filter { $0.greenComponent > $0.blueComponent + 0.5 }.count,
+                           fullHeight ? 0 : 1)
+        }
+    }
+
     func testInspectorBoundsPreservePreviewSpace() {
         let wide = EditorPaneSizing.resolve(.init(pane: .inspector, preferred: 2_000, available: 1_200))
         XCTAssertEqual(wide.value, 640)

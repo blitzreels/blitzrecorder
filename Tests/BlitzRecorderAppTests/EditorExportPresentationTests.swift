@@ -10,6 +10,59 @@ final class EditorExportPresentationTests: XCTestCase {
         XCTAssertEqual(Set(EditorExportDestination.file.layouts(request)), Set(CaptureLayout.allCases))
     }
 
+    func testCloudCopyPreservesSourceResolutionAndFrameRateRegardlessOfLocalRecipe() {
+        for resolution in OutputResolution.allCases {
+            for fps in RecordingSettings.supportedFrameRates {
+                for layout in CaptureLayout.allCases {
+                    let request = EditorExportRecipe.Request(
+                        preset: .custom, sourceResolution: resolution, sourceFramesPerSecond: fps,
+                        customResolution: .p720, customFramesPerSecond: 24, customVideoQuality: .compact,
+                        layout: layout, layoutCount: 1, audioBitrate: 192_000, duration: 30,
+                        playbackRate: 1.3, destination: .link)
+                    let cloud = EditorExportRecipe.make(request)
+                    XCTAssertEqual(cloud.profile.resolution, resolution)
+                    XCTAssertEqual(cloud.profile.framesPerSecond, fps)
+                    XCTAssertEqual(cloud.profile.videoQuality, .maximum)
+                    XCTAssertEqual(cloud.encoding.codec, .hevc)
+                    XCTAssertTrue(cloud.summary.contains("1.3×"))
+                    var localRequest = request
+                    localRequest.destination = .file
+                    let local = EditorExportRecipe.make(localRequest)
+                    XCTAssertEqual(local.profile.resolution, .p720)
+                    XCTAssertEqual(local.profile.framesPerSecond, 24)
+                    XCTAssertEqual(local.profile.videoQuality, .compact)
+                }
+            }
+        }
+    }
+
+    @MainActor
+    func testCloudProgressShowsMeasuredStagesAndFitsTheSharePanel() throws {
+        let stages: [HostedVideoProgressPresentation] = [
+            .exporting(.init(title: "Exporting", percentage: "42%", detail: nil, value: 0.42)),
+            .transfer(.preparing),
+            .transfer(.uploading(.init(sent: 420_000_000, total: 1_000_000_000))),
+            .transfer(.processing)
+        ]
+        XCTAssertEqual(stages.map(\.stage), [0, 1, 1, 2])
+        XCTAssertEqual(stages[2].fraction, 0.42)
+        XCTAssertNil(stages[3].fraction, "Streaming preparation must not invent a percentage.")
+        for (index, stage) in stages.enumerated() {
+            let host = NSHostingView(rootView: HostedVideoProgressView(presentation: stage)
+                .padding(24).frame(width: 420).background(BlitzUI.projectLibraryBackground).preferredColorScheme(.dark))
+            host.setFrameSize(host.fittingSize)
+            host.layoutSubtreeIfNeeded()
+            XCTAssertEqual(host.fittingSize.width, 420, accuracy: 1)
+            XCTAssertLessThan(host.fittingSize.height, 190)
+            if let directory = ProcessInfo.processInfo.environment["BLITZRECORDER_EXPORT_UI_PROOF"] {
+                let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                let file = URL(fileURLWithPath: directory).appendingPathComponent("cloud-stage-\(index).png")
+                try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: file)
+            }
+        }
+    }
+
     @MainActor
     func testBothExportDestinationsFitAndRemainVisible() throws {
         for destination in EditorExportDestination.allCases {

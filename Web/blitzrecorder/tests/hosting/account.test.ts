@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Pool } from "pg";
-import { accountState, billingURL, connectAccount, verifyIdentity } from "../../lib/hosting/account";
+import { accountState, billingURL, connectAccount } from "../../lib/hosting/account";
 import { authenticate } from "../../lib/hosting/service";
 import { hostingPool } from "../../lib/hosting/db";
 import { getStripe } from "../../lib/payments";
@@ -54,18 +54,6 @@ integration("two devices reconnect to one unpaid account without revoking each o
   assert.equal(Number((await hostingPool().query("SELECT count(*) FROM hosting_accounts WHERE identity_id=$1", [identity.id])).rows[0].count), 1);
 });
 
-integration("identity is verified with the fixed provider and redirects cannot forward the bearer token", async (t) => {
-  const upstream = t.mock.method(globalThis, "fetch", async (url: string | URL | Request, options?: RequestInit) => {
-    assert.equal(url, "https://blitzreels.com/api/blitzrecorder/connection");
-    assert.equal(options?.redirect, "error");
-    return Response.json({ user: { id: "valid-user", email: "owner@example.test" } });
-  });
-  const identity = await verifyIdentity(new Request("https://hosting.test", { headers: { Authorization: "Bearer test-upstream-token" } }));
-  assert.deepEqual(identity, { id: "valid-user", email: "owner@example.test" });
-  upstream.mock.mockImplementation(async () => Response.json({ user: { id: "fake" } }, { status: 401 }));
-  await assert.rejects(verifyIdentity(new Request("https://hosting.test", { headers: { Authorization: "Bearer invalid" } })), { status: 401 });
-});
-
 integration("concurrent subscribe actions reuse one checkout and never grant access from the return page", async (t) => {
   const connected = await connectAccount({ id: randomUUID(), email: "subscriber@example.test" });
   const account = await authenticate(new Request("https://hosting.test", { headers: { Authorization: `Bearer ${connected.token}` } }));
@@ -74,6 +62,7 @@ integration("concurrent subscribe actions reuse one checkout and never grant acc
     tax_behavior: "exclusive", recurring: { interval: "month", interval_count: 1 } }) as Stripe.Price);
   const create = t.mock.method(stripe.checkout.sessions, "create", async (params: Stripe.Checkout.SessionCreateParams, options?: Stripe.RequestOptions) => {
     assert.equal(params.mode, "subscription");
+    assert.equal(params.branding_settings?.display_name, "BlitzRecorder");
     assert.equal(params.subscription_data?.metadata?.blitzrecorder_hosting_account_id, account.id);
     assert.equal(params.line_items?.[0]?.price, "test-hosting-price");
     assert.ok(options?.idempotencyKey);

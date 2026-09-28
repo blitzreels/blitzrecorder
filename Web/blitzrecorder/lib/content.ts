@@ -16,7 +16,7 @@ export type FaqItem = { q: string; a: string };
 export const faqs: FaqItem[] = [
   {
     q: "Do I need an account or a license key?",
-    a: "No. Recording, editing, 4K and 60 fps export, transcripts, and the iPhone camera work without an account, email, or key. You only sign in to BlitzReels if you choose to send a video there.",
+    a: "No. Recording, editing, 4K and 60 fps export, transcripts, and the iPhone camera work without an account, email, or key. A separate BlitzRecorder account is needed only for paid video hosting. Sending videos to BlitzReels is an optional integration.",
   },
   {
     q: "Is it really free?",
@@ -199,7 +199,7 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
       {
         title: "Hosted videos",
         body:
-          "When you choose Share link, we upload your exported video and any included title, summary, transcript, chapters, and recording metadata. Cloudflare R2 stores the files and delivers streaming video; our processing server creates streaming versions. Neon stores account and video records, Vercel serves the sharing website, and Stripe handles subscription payments. We use your connected BlitzReels account ID and email to identify your hosting account. We do not receive or store your full payment card details.",
+          "When you choose Share link, we upload your exported video and any included title, summary, transcript, chapters, and recording metadata. Cloudflare R2 stores the files and delivers streaming video; our processing server creates streaming versions. Neon stores account and video records, Vercel serves the sharing website, and Stripe handles subscription payments. Your hosting account belongs to BlitzRecorder. Resend delivers email sign-in codes from blitzrecorder.com. We store your email, hashed verification codes, and connection tokens to secure your account; verification records expire after one day. We do not receive or store your full payment card details.",
       },
       {
         title: "Sharing and deletion",
@@ -214,7 +214,7 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
       {
         title: "License checks",
         body:
-          "BlitzRecorder 0.15 and later does not issue or validate app license keys. If you use an older version and request a legacy key on this website, we store your email and license record. Older paid keys may still be checked against Stripe payment status. A BlitzReels account is used when you choose its upload integration or connect video hosting.",
+          "BlitzRecorder 0.15 and later does not issue or validate app license keys. If you use an older version and request a legacy key on this website, we store your email and license record. Older paid keys may still be checked against Stripe payment status. A BlitzReels account is used only when you choose its optional upload integration. Video hosting uses a separate BlitzRecorder account.",
       },
       {
         title: "Permissions",

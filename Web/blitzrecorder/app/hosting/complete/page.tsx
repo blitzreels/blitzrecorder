@@ -8,7 +8,7 @@ export default async function HostingComplete({ searchParams }: { searchParams: 
     <p className="text-sm text-neutral-400">BlitzRecorder · Video hosting</p>
     <h1 className="text-3xl font-semibold tracking-tight">{cancelled ? "Continue when you’re ready" : "Return to BlitzRecorder"}</h1>
     <p className="text-neutral-400">{cancelled ? "Your video remains on your Mac. No upload has started."
-      : "Open Share video in the app and choose Check subscription. Hosting becomes available once your payment is confirmed."}</p>
+      : "Return to the Share panel in BlitzRecorder. Your subscription updates automatically once payment is confirmed."}</p>
     <p className="text-sm text-neutral-500">Your local exports stay available with or without a hosting subscription.</p>
     <Link href="/" className="text-sm underline underline-offset-4">Back to BlitzRecorder</Link>
   </main>;

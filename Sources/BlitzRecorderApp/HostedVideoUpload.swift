@@ -101,12 +101,14 @@ struct HostingClient {
         let metadata: HostingExportMetadata
         let progress: @Sendable (Progress) async -> Void
     }
-    enum Progress: Sendable {
-        case uploading(Double)
+    enum Progress: Sendable, Equatable {
+        case preparing
+        case uploading(HostingUploadBytes)
         case processing
     }
 
     func upload(_ request: Upload) async throws -> URL {
+        await request.progress(.preparing)
         let values = try request.fileURL.resourceValues(forKeys: [.fileSizeKey])
         guard let bytes = values.fileSize, bytes >= 16, bytes <= 5 * 1024 * 1024 * 1024,
               ["mp4", "mov"].contains(request.fileURL.pathExtension.lowercased()) else {
@@ -134,10 +136,13 @@ struct HostingClient {
                 throw HostingFailure(message: "The upload configuration is invalid.")
             }
             let state: HostingAsset = try await send(.init(route: "assets/\(asset.id)", token: request.token, body: nil))
-            let uploaded = state.uploadedParts ?? []
+            let uploaded = Set((state.uploadedParts ?? []).filter { part in
+                (1...parts).contains(part.number) && part.bytes == min(partBytes, bytes - (part.number - 1) * partBytes)
+            }.map(\.number))
             let handle = try FileHandle(forReadingFrom: request.fileURL)
             defer { try? handle.close() }
-            var sent = 0
+            var sent = uploaded.reduce(0) { $0 + min(partBytes, bytes - ($1 - 1) * partBytes) }
+            await request.progress(.uploading(.init(sent: Int64(sent), total: Int64(bytes))))
             for number in 1...parts {
                 try Task.checkCancellation()
                 guard try HostingExportMetadata.fingerprint(request.fileURL) == key else {
@@ -145,7 +150,7 @@ struct HostingClient {
                 }
                 let offset = (number - 1) * partBytes
                 let expected = min(partBytes, bytes - offset)
-                if !uploaded.contains(where: { $0.number == number && $0.bytes == expected }) {
+                if !uploaded.contains(number) {
                     try handle.seek(toOffset: UInt64(offset))
                     var data = Data()
                     while data.count < expected {
@@ -165,7 +170,9 @@ struct HostingClient {
                             }
                             var put = URLRequest(url: signed.url)
                             put.httpMethod = "PUT"
-                            let (_, response) = try await session.upload(for: put, from: data)
+                            let response = try await uploadPart(.init(
+                                request: put, data: data, completedBytes: Int64(sent), totalBytes: Int64(bytes),
+                                progress: request.progress))
                             guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
                                 throw HostingFailure(message: "The upload was interrupted. Resume to continue from the saved parts.")
                             }
@@ -176,9 +183,9 @@ struct HostingClient {
                             try await Task.sleep(for: .seconds(1 << attempt))
                         }
                     }
+                    sent += expected
+                    await request.progress(.uploading(.init(sent: Int64(sent), total: Int64(bytes))))
                 }
-                sent += expected
-                await request.progress(.uploading(Double(sent) / Double(bytes)))
             }
             guard try HostingExportMetadata.fingerprint(request.fileURL) == key else {
                 throw HostingFailure(message: "The video changed during upload. Export it again before sharing.")
@@ -195,6 +202,70 @@ struct HostingClient {
             try await Task.sleep(for: .seconds(3))
         }
         throw HostingFailure(message: "The video is still processing. Check again to retrieve the same link.")
+    }
+
+    private struct PartUpload {
+        let request: URLRequest
+        let data: Data
+        let completedBytes: Int64
+        let totalBytes: Int64
+        let progress: @Sendable (Progress) async -> Void
+    }
+
+    private func uploadPart(_ part: PartUpload) async throws -> URLResponse {
+        let updates = AsyncStream<Int64>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        let delegate = HostingUploadDelegate(continuation: updates.continuation)
+        let observer = Task {
+            for await bytes in updates.stream {
+                await part.progress(.uploading(.init(
+                    sent: part.completedBytes + min(Int64(part.data.count), max(0, bytes)), total: part.totalBytes)))
+            }
+        }
+        do {
+            let (_, response) = try await session.upload(for: part.request, from: part.data, delegate: delegate)
+            updates.continuation.finish()
+            await observer.value
+            return response
+        } catch {
+            updates.continuation.finish()
+            await observer.value
+            throw error
+        }
+    }
+}
+
+struct HostingUploadBytes: Sendable, Equatable {
+    let sent: Int64
+    let total: Int64
+
+    var fraction: Double { total > 0 ? min(1, max(0, Double(sent) / Double(total))) : 0 }
+    var detail: String {
+        let sentText = ByteCountFormatter.string(fromByteCount: min(total, max(0, sent)), countStyle: .file)
+        let totalText = ByteCountFormatter.string(fromByteCount: total, countStyle: .file)
+        return "\(sentText) of \(totalText)"
+    }
+}
+
+final class HostingUploadDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let continuation: AsyncStream<Int64>.Continuation
+    private let lock = NSLock()
+    private var lastUpdate = ContinuousClock.now
+
+    init(continuation: AsyncStream<Int64>.Continuation) { self.continuation = continuation }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64,
+                    totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+        lock.withLock {
+            let now = ContinuousClock.now
+            guard now - lastUpdate >= .milliseconds(100) || totalBytesSent >= totalBytesExpectedToSend else { return }
+            lastUpdate = now
+            continuation.yield(totalBytesSent)
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
     }
 }
 

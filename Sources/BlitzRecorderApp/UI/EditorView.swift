@@ -56,14 +56,32 @@ struct EditorView: View {
             toolbar
                 .blitzWindowToolbar(showsUpdate: true)
 
-            if let exportStatus {
+            if HostedVideoShareController.shared.isRunning,
+               let progress = HostedVideoShareController.shared.transferProgress {
+                if !showsHostingShare || !showsInspector {
+                HStack(spacing: 16) {
+                    HostedVideoProgressView(presentation: .transfer(progress))
+                        .frame(maxWidth: .infinity)
+                    Button("View sharing") {
+                        preparesHostedExport = false
+                        showsInspector = true
+                        showsHostingShare = true
+                    }.blitzButton(.secondary)
+                }
+                .padding(12)
+                .background(BlitzUI.controlFill, in: .rect(cornerRadius: BlitzControlMetrics.radius))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                }
+            } else if let exportStatus, !(showsHostingShare && showsInspector && preparesHostedExport) {
                 EditorExportStatusView(configuration: .init(
                     status: exportStatus,
                     open: { NSWorkspace.shared.open($0) },
                     reveal: { NSWorkspace.shared.activateFileViewerSelecting([$0]) },
                     share: { url in
                         preparesHostedExport = false
-                        HostedVideoShareController.shared.select(url)
+                        HostedVideoShareController.shared.select(.init(fileURL: url, projectPath: project?.projectPath))
+                        showsInspector = true
                         showsHostingShare = true
                     },
                     sendToBlitzReels: { url in
@@ -92,10 +110,17 @@ struct EditorView: View {
 
             divider
 
-            EditorWorkspaceSplitView(showsInspector: showsInspector, showsSourceTracks: showsSourceTracks) {
+            EditorWorkspaceSplitView(showsInspector: showsInspector, showsSourceTracks: showsSourceTracks,
+                                     inspectorSpansTimeline: showsHostingShare) {
                 playerColumn
                     .background(BlitzUI.canvasBackground)
             } inspector: {
+                if showsHostingShare {
+                    HostedVideoSharePanel(controller: .shared, preparation: preparesHostedExport ? .init(
+                        title: project?.displayTitle ?? "Video", summary: exportRecipe(for: .link).summary,
+                        status: exportStatus, export: { exportVideo(to: .link) }
+                    ) : nil, newExport: { preparesHostedExport = true }, close: { showsHostingShare = false })
+                } else {
                 EditorInspector(
                     vm: vm,
                     playback: playback,
@@ -127,6 +152,7 @@ struct EditorView: View {
                     zoomSelection: placedSelection(.zoom)
                 )
                     .background(BlitzUI.panelBackground)
+                }
             } timeline: {
             EditorTimelineView(
                 project: vm.editorProject,
@@ -178,16 +204,6 @@ struct EditorView: View {
                 onRemovePlacedItem: removePlacedItem
             )
             }
-        }
-        .sheet(isPresented: $showsHostingShare) {
-            HostedVideoSharePanel(controller: .shared, preparation: preparesHostedExport ? .init(
-                title: project?.displayTitle ?? "Video",
-                export: {
-                    showsHostingShare = false
-                    preparesHostedExport = false
-                    exportVideo()
-                }
-            ) : nil)
         }
         .task(id: "\(project?.projectPath ?? ""):\(String(describing: vm.transcriptionController.jobStatuses[project?.projectPath ?? ""]))") {
             if transcriptProjectPath != project?.projectPath {
@@ -244,6 +260,10 @@ struct EditorView: View {
             isExportPopoverPresented = false
             showsTimelineShortcuts = false
             privacy.cancelGesture()
+        }
+        .onChange(of: project?.projectPath) {
+            let sharing = HostedVideoShareController.shared
+            preparesHostedExport = !sharing.isRunning && !sharing.belongsToProject(project?.projectPath)
         }
         .onDisappear {
             privacy.cancelGesture()
