@@ -110,7 +110,8 @@ struct EditorView: View {
 
             divider
 
-            EditorWorkspaceSplitView(showsInspector: showsInspector, showsSourceTracks: showsSourceTracks) {
+            EditorWorkspaceSplitView(showsInspector: showsInspector, showsSourceTracks: showsSourceTracks,
+                                     inspectorSpansTimeline: showsHostingShare) {
                 playerColumn
                     .background(BlitzUI.canvasBackground)
             } inspector: {
