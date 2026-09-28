@@ -75,7 +75,10 @@ export async function billingURL(account: HostingAccount) {
       const subscription = await stripe.subscriptions.retrieve(row.stripe_subscription_id);
       subscriptionEnded = ["canceled", "incomplete_expired"].includes(subscription.status);
       if (!subscriptionEnded) {
-        const portal = await stripe.billingPortal.sessions.create({ customer: row.stripe_customer_id, return_url: `${site}/hosting/complete` });
+        const portal = await stripe.billingPortal.sessions.create({
+          customer: row.stripe_customer_id, return_url: `${site}/hosting/complete`,
+          configuration: required("HOSTING_STRIPE_PORTAL_CONFIGURATION_ID"),
+        });
         return { url: portal.url };
       }
     }

@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit && tsc -p hosting-worker/tsconfig.json",
