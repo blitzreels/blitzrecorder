@@ -75,18 +75,6 @@ final class AppNavigationTests: XCTestCase {
         }
     }
 
-    func testSourceVisibilityIsPreservedAcrossWorkspaces() throws {
-        let fixture = try Fixture()
-        defer { fixture.cleanup() }
-        let vm = fixture.vm
-        vm.showRecorder()
-        vm.showsRecorderSources = false
-        vm.showSettings(.recording)
-        vm.showProjects()
-        vm.showRecorder()
-        XCTAssertFalse(vm.showsRecorderSources)
-    }
-
     @MainActor
     private struct Fixture {
         let vm: RecorderViewModel

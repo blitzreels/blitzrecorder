@@ -198,8 +198,8 @@ struct PreviewSourceUnavailableView: View {
                 accessory
                 if !message.isEmpty {
                     Text(message)
-                        .font(.system(size: isCompact ? 11 : 12, weight: .semibold))
-                        .foregroundStyle(Color.white.opacity(0.86))
+                        .font(isCompact ? BlitzType.captionEmphasis : BlitzType.strong)
+                        .foregroundStyle(BlitzUI.primaryText)
                         .multilineTextAlignment(.center)
                         .lineLimit(3)
                 }
@@ -216,7 +216,7 @@ struct PreviewSourceUnavailableView: View {
         case .loading:
             ProgressView()
                 .controlSize(isCompact ? .mini : .small)
-                .tint(.white.opacity(0.86))
+                .tint(BlitzUI.primaryText)
         case .empty:
             EmptyView()
         case .unavailable:
@@ -225,7 +225,7 @@ struct PreviewSourceUnavailableView: View {
                     name: kind == .screen ? BlitzSymbols.screen : BlitzSymbols.camera,
                     size: 22
                 ))
-                .foregroundStyle(Color.white.opacity(0.58))
+                .foregroundStyle(BlitzUI.secondaryText)
             }
         }
     }
@@ -234,11 +234,11 @@ struct PreviewSourceUnavailableView: View {
 #Preview("Screen unavailable") {
     PreviewSourceUnavailableView(kind: .screen, message: "Screen preview unavailable")
         .frame(width: 420, height: 240)
-        .clipShape(.rect(cornerRadius: 10))
+        .clipShape(.rect(cornerRadius: BlitzUI.cardRadius))
 }
 
 #Preview("Camera unavailable") {
     PreviewSourceUnavailableView(kind: .camera, message: "Camera unavailable")
         .frame(width: 160, height: 284)
-        .clipShape(.rect(cornerRadius: 10))
+        .clipShape(.rect(cornerRadius: BlitzUI.cardRadius))
 }

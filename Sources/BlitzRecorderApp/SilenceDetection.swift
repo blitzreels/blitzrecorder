@@ -242,3 +242,104 @@ enum SilenceDetectionError: LocalizedError {
     case noAudio
     var errorDescription: String? { "No readable audio was found. Select a take with a microphone or audio track." }
 }
+
+actor SilenceWindowCache {
+    struct Configuration {
+        let directory: URL
+        let byteLimit: Int
+    }
+
+    struct Key {
+        let file: MediaFileFingerprint
+        let sourceOffset: Double
+    }
+
+    struct SaveRequest {
+        let key: Key
+        let windows: [SilenceWindow]
+    }
+
+    static let shared = SilenceWindowCache(.init(
+        directory: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("BlitzRecorder/SilenceWindows-v1", isDirectory: true),
+        byteLimit: 128 * 1_024 * 1_024
+    ))
+
+    private static let maximumWindows = 2_000_000
+    private let configuration: Configuration
+    private let header = Data("BRSW0001".utf8)
+
+    init(_ configuration: Configuration) {
+        self.configuration = configuration
+    }
+
+    func load(_ key: Key) -> [SilenceWindow]? {
+        let url = fileURL(key)
+        guard !Task.isCancelled,
+              let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+              data.count >= 16, data.prefix(8) == header else { return nil }
+        let count = data.withUnsafeBytes { Int(UInt64(littleEndian: $0.loadUnaligned(fromByteOffset: 8, as: UInt64.self))) }
+        let stride = 3 * MemoryLayout<Double>.size
+        guard count > 0, count <= Self.maximumWindows, data.count == 16 + count * stride else { return nil }
+        let windows = data.withUnsafeBytes { bytes in
+            (0..<count).map { index in
+                let offset = 16 + index * stride
+                return SilenceWindow(
+                    start: bytes.loadUnaligned(fromByteOffset: offset, as: Double.self),
+                    end: bytes.loadUnaligned(fromByteOffset: offset + 8, as: Double.self),
+                    decibels: bytes.loadUnaligned(fromByteOffset: offset + 16, as: Double.self)
+                )
+            }
+        }
+        try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
+        return windows
+    }
+
+    func save(_ request: SaveRequest) {
+        guard !Task.isCancelled, !request.windows.isEmpty, request.windows.count <= Self.maximumWindows else { return }
+        var data = header
+        data.reserveCapacity(16 + request.windows.count * 24)
+        var count = UInt64(request.windows.count).littleEndian
+        withUnsafeBytes(of: &count) { data.append(contentsOf: $0) }
+        for window in request.windows {
+            for value in [window.start, window.end, window.decibels] {
+                withUnsafeBytes(of: value) { data.append(contentsOf: $0) }
+            }
+        }
+        do {
+            try FileManager.default.createDirectory(at: configuration.directory, withIntermediateDirectories: true)
+            try data.write(to: fileURL(request.key), options: .atomic)
+            prune()
+        } catch {}
+    }
+
+    private func fileURL(_ key: Key) -> URL {
+        configuration.directory.appendingPathComponent("\(key.file.cacheKey)-\(key.sourceOffset.bitPattern).brsw")
+    }
+
+    private func prune() {
+        let keys: Set<URLResourceKey> = [.fileSizeKey, .contentModificationDateKey]
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: configuration.directory, includingPropertiesForKeys: Array(keys), options: .skipsHiddenFiles
+        ) else { return }
+        let entries = files.filter { $0.pathExtension == "brsw" }.compactMap { url -> (URL, Int, Date)? in
+            guard let values = try? url.resourceValues(forKeys: keys), let size = values.fileSize else { return nil }
+            return (url, size, values.contentModificationDate ?? .distantPast)
+        }.sorted { $0.2 < $1.2 }
+        var total = entries.reduce(0) { $0 + $1.1 }
+        for entry in entries where total > configuration.byteLimit {
+            if (try? FileManager.default.removeItem(at: entry.0)) != nil { total -= entry.1 }
+        }
+    }
+}
+
+extension SilenceDetection {
+    static func cachedWindows(_ request: SilenceDetectionRequest) async throws -> [SilenceWindow] {
+        guard let file = MediaFileFingerprint(url: request.audioURL) else { return try await windows(request) }
+        let key = SilenceWindowCache.Key(file: file, sourceOffset: request.sourceOffset)
+        if let cached = await SilenceWindowCache.shared.load(key) { return cached }
+        let computed = try await windows(request)
+        await SilenceWindowCache.shared.save(.init(key: key, windows: computed))
+        return computed
+    }
+}

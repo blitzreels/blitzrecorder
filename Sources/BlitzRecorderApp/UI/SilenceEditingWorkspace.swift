@@ -10,7 +10,8 @@ final class SilenceEditingSession {
         let project: RecordingProject
     }
     var intensity = 1.0
-    var threshold = -42.0
+    static let defaultThreshold = -42.0
+    var threshold = SilenceEditingSession.defaultThreshold
     var automaticThreshold = true
     var minimumDuration = 0.5
     var paddingBefore = 0.3
@@ -148,7 +149,7 @@ final class SilenceEditingSession {
             do {
                 let task = Task.detached(priority: .utility) {
                     var tracks: [[SilenceWindow]] = []
-                    for config in configs { tracks.append(try await SilenceDetection.windows(config)) }
+                    for config in configs { tracks.append(try await SilenceDetection.cachedWindows(config)) }
                     return SilenceDetection.combinedWindows(tracks)
                 }
                 let result = try await withTaskCancellationHandler(

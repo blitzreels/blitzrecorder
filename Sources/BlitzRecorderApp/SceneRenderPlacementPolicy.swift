@@ -36,10 +36,15 @@ struct SceneRenderPlacementPolicy {
     }
 
     func cornerRadius(for kind: SceneLayerKind) -> CGFloat {
-        SceneLayoutProjection.sourceCornerRadius(
-            for: targetRect(for: kind),
-            normalizedRadius: kind == .screen ? scene.screenCornerRadius : 0
-        )
+        cornerRadius(LayerCornerRequest(
+            kind: kind,
+            normalizedFrame: normalizedFrame(for: kind),
+            targetRect: targetRect(for: kind)
+        ))
+    }
+
+    var rendersCircularCamera: Bool {
+        isCircularCamera(normalizedFrame: normalizedFrame(for: .camera))
     }
 
     func videoPlacement(
@@ -72,12 +77,38 @@ struct SceneRenderPlacementPolicy {
             kind: kind,
             normalizedFrame: normalizedFrame,
             targetRect: targetRect,
-            cornerRadius: SceneLayoutProjection.sourceCornerRadius(
-                for: targetRect,
-                normalizedRadius: kind == .screen ? scene.screenCornerRadius : 0
-            ),
+            cornerRadius: cornerRadius(LayerCornerRequest(
+                kind: kind,
+                normalizedFrame: normalizedFrame,
+                targetRect: targetRect
+            )),
             videoPlacement: videoPlacement
         )
+    }
+
+    private struct LayerCornerRequest {
+        let kind: SceneLayerKind
+        let normalizedFrame: CGRect
+        let targetRect: CGRect
+    }
+
+    private func cornerRadius(_ request: LayerCornerRequest) -> CGFloat {
+        guard request.kind == .camera else {
+            return SceneLayoutProjection.sourceCornerRadius(
+                for: request.targetRect,
+                normalizedRadius: scene.screenCornerRadius
+            )
+        }
+        if isCircularCamera(normalizedFrame: request.normalizedFrame) {
+            return SceneLayoutProjection.circularCornerRadius(for: request.targetRect)
+        }
+        let frame = request.normalizedFrame
+        guard !frame.isAlmostFullCanvasFrame, !frame.isAlmostFullCanvasWidth else { return 0 }
+        return SceneLayoutProjection.cameraCornerRadius(for: request.targetRect)
+    }
+
+    private func isCircularCamera(normalizedFrame: CGRect) -> Bool {
+        scene.sceneLayout.cameraMask == .circle && !normalizedFrame.isAlmostFullCanvas
     }
 
     private func targetRect(for kind: SceneLayerKind, normalizedFrame: CGRect) -> CGRect {
@@ -187,5 +218,15 @@ struct SceneRenderPlacementPolicy {
 
     private func defaultSourceCropPosition(for kind: SceneLayerKind) -> CGPoint {
         kind == .camera ? scene.cameraCropPosition : scene.screenCropPosition
+    }
+}
+
+private extension CGRect {
+    var isAlmostFullCanvas: Bool {
+        let frame = standardized
+        return frame.minX <= 0.0001
+            && frame.minY <= 0.0001
+            && frame.maxX >= 0.9999
+            && frame.maxY >= 0.9999
     }
 }

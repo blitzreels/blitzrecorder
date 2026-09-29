@@ -22,7 +22,6 @@ struct PermissionsPage: View {
                 SettingsPageHeader(.init(
                     title: "Permissions",
                     detail: "Control what BlitzRecorder can capture on this Mac.",
-                    systemImage: "lock.shield",
                     status: nil
                 ))
 
@@ -46,7 +45,7 @@ struct PermissionsPage: View {
                 }
 
                 Label("macOS controls access to this Mac. Changes apply when you return to BlitzRecorder.", systemImage: "lock")
-                    .font(.system(size: 11))
+                    .font(BlitzType.caption)
                     .foregroundStyle(BlitzUI.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -62,22 +61,22 @@ struct PermissionsPage: View {
     private var accessSummary: some View {
         HStack(spacing: 16) {
             Image(systemName: needsAccess ? "lock.shield" : "checkmark.shield")
-                .font(.system(size: 25, weight: .medium))
+                .font(BlitzType.glyph(25))
                 .foregroundStyle(needsAccess ? BlitzUI.warning : BlitzUI.mint)
                 .frame(width: 50, height: 50)
                 .background(
                     (needsAccess ? BlitzUI.warning : BlitzUI.mint).opacity(0.08),
-                    in: .rect(cornerRadius: 12)
+                    in: .rect(cornerRadius: BlitzUI.cardRadius)
                 )
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(!hasEnabledSources ? "No capture sources enabled" : needsAccess ? "Review capture access" : "Your capture access is ready")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(BlitzType.title)
                     .foregroundStyle(BlitzUI.primaryText)
                 Text(!hasEnabledSources ? "Enable a source in the recorder to check its access." : needsAccess
                      ? "Some enabled sources need your permission before recording."
                      : "All enabled sources have the permissions they need.")
-                    .font(.system(size: 12))
+                    .font(BlitzType.body)
                     .foregroundStyle(BlitzUI.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -98,21 +97,21 @@ struct PermissionsPage: View {
             BlitzSymbol(configuration: .init(name: row.symbol, size: 19))
                 .foregroundStyle(BlitzUI.secondaryText)
                 .frame(width: 36, height: 36)
-                .background(BlitzUI.quietFill, in: .rect(cornerRadius: 8))
+                .background(BlitzUI.quietFill, in: .rect(cornerRadius: BlitzUI.controlRadius))
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 7) {
                     Text(row.title == "System Audio" ? "Mac audio" : row.title)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(BlitzType.callout)
                         .foregroundStyle(BlitzUI.primaryText)
                     if row.isOptional {
                         Text("Optional")
-                            .font(.system(size: 10))
+                            .font(BlitzType.footnote)
                             .foregroundStyle(BlitzUI.secondaryText)
                     }
                 }
                 Text(purpose(row))
-                    .font(.system(size: 12))
+                    .font(BlitzType.body)
                     .foregroundStyle(BlitzUI.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }

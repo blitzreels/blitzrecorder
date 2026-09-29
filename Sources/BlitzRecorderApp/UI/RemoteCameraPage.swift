@@ -34,7 +34,6 @@ struct RemoteCameraPage: View {
                 SettingsPageHeader(.init(
                     title: "iPhone Camera",
                     detail: "Pair your iPhone, check its connection, and adjust the camera.",
-                    systemImage: "iphone.gen3",
                     status: nil
                 ))
 
@@ -63,9 +62,9 @@ struct RemoteCameraPage: View {
                 phoneIcon
                 VStack(alignment: .leading, spacing: 6) {
                     Text("A better camera. Right beside you.")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(BlitzType.title)
                     Text("Record on your iPhone. Frame the shot and control the camera from your Mac.")
-                        .font(.system(size: 12))
+                        .font(BlitzType.body)
                         .foregroundStyle(BlitzUI.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -88,10 +87,10 @@ struct RemoteCameraPage: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-                .font(.system(size: 11))
+                .font(BlitzType.caption)
                 .foregroundStyle(BlitzUI.secondaryText)
                 Text("Pairing below uses the BlitzRecorder Camera app, separate from macOS Continuity Camera.")
-                    .font(.system(size: 11))
+                    .font(BlitzType.caption)
                     .foregroundStyle(BlitzUI.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, -8)
@@ -102,10 +101,10 @@ struct RemoteCameraPage: View {
 
     private var phoneIcon: some View {
         Image(systemName: "iphone.gen3.radiowaves.left.and.right")
-            .font(.system(size: 30, weight: .light))
+            .font(BlitzType.glyph(30))
             .foregroundStyle(BlitzUI.mint)
             .frame(width: 64, height: 64)
-            .background(BlitzUI.mint.opacity(0.08), in: .rect(cornerRadius: 16))
+            .background(BlitzUI.mint.opacity(0.08), in: .rect(cornerRadius: BlitzUI.surfaceRadius))
     }
 
     private var setupGuide: some View {
@@ -120,14 +119,14 @@ struct RemoteCameraPage: View {
     private func setupStep(_ step: SetupStep) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             Text("\(step.number)")
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .font(BlitzType.captionEmphasis)
                 .foregroundStyle(BlitzUI.secondaryText)
                 .frame(width: 24, height: 24)
                 .background(BlitzUI.quietFill, in: .circle)
             Text(step.title)
-                .font(.system(size: 12, weight: .medium))
+                .font(BlitzType.label)
             Text(step.detail)
-                .font(.system(size: 11))
+                .font(BlitzType.caption)
                 .foregroundStyle(BlitzUI.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -138,7 +137,7 @@ struct RemoteCameraPage: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("Nearby iPhones")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(BlitzType.section)
                 Spacer()
                 Button {
                     vm.startRemoteCameraDiscovery()
@@ -152,14 +151,14 @@ struct RemoteCameraPage: View {
             if vm.remoteCameraDeviceSummaries.isEmpty {
                 HStack(spacing: 14) {
                     Image(systemName: "wifi")
-                        .font(.system(size: 22, weight: .light))
+                        .font(BlitzType.glyph(22))
                         .foregroundStyle(BlitzUI.secondaryText)
                         .frame(width: 44, height: 44)
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Waiting for your iPhone")
-                            .font(.system(size: 13, weight: .medium))
+                            .font(BlitzType.callout)
                         Text("Keep the iPhone app open. Your device will appear here automatically.")
-                            .font(.system(size: 12))
+                            .font(BlitzType.body)
                             .foregroundStyle(BlitzUI.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -181,14 +180,14 @@ struct RemoteCameraPage: View {
     private func deviceRow(_ device: RemoteCameraDeviceSummary) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "iphone.gen3")
-                .font(.system(size: 21, weight: .light))
+                .font(BlitzType.glyph(21))
                 .foregroundStyle(device.isSelected ? BlitzUI.mint : BlitzUI.secondaryText)
                 .frame(width: 36, height: 42)
             VStack(alignment: .leading, spacing: 4) {
                 Text(device.name)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(BlitzType.callout)
                 Text(device.detail)
-                    .font(.system(size: 11))
+                    .font(BlitzType.caption)
                     .foregroundStyle(BlitzUI.secondaryText)
                     .lineLimit(2)
             }
@@ -214,9 +213,9 @@ struct RemoteCameraPage: View {
             phoneIcon
             VStack(alignment: .leading, spacing: 6) {
                 Text(vm.selectedRemoteCameraName ?? "iPhone camera")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(BlitzType.title)
                 Text(vm.selectedRemoteCameraDeviceDescription)
-                    .font(.system(size: 12))
+                    .font(BlitzType.body)
                     .foregroundStyle(BlitzUI.secondaryText)
                     .lineLimit(2)
                 SettingsStatusBadge(configuration: .init(
@@ -238,7 +237,7 @@ struct RemoteCameraPage: View {
         HStack(alignment: .top, spacing: 20) {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Camera preview")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(BlitzType.section)
                 ZStack {
                     Color.black
                     CameraPreviewRepresentable(view: vm.remoteCameraPreviewSurface)
@@ -246,11 +245,11 @@ struct RemoteCameraPage: View {
                     if !vm.hasRemoteCameraPreviewImage {
                         VStack(spacing: 10) {
                             Image(systemName: "iphone.gen3")
-                                .font(.system(size: 28, weight: .light))
+                                .font(BlitzType.glyph(28))
                             Text("Waiting for video")
-                                .font(.system(size: 12, weight: .medium))
+                                .font(BlitzType.label)
                             Text("Keep the iPhone app open.")
-                                .font(.system(size: 11))
+                                .font(BlitzType.caption)
                         }
                         .foregroundStyle(BlitzUI.secondaryText)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -258,9 +257,9 @@ struct RemoteCameraPage: View {
                     }
                 }
                 .frame(height: 310)
-                .clipShape(.rect(cornerRadius: 10))
+                .clipShape(.rect(cornerRadius: BlitzUI.cardRadius))
                 Text(vm.selectedRemoteCameraReviewStatus)
-                    .font(.system(size: 11))
+                    .font(BlitzType.caption)
                     .foregroundStyle(BlitzUI.secondaryText)
                 RemoteCameraOrientationControl(vm: vm, usesPanelBackground: true)
             }
@@ -282,10 +281,10 @@ struct RemoteCameraPage: View {
                     Image(systemName: "network")
                         .foregroundStyle(BlitzUI.secondaryText)
                     Text("Connect by address")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(BlitzType.label)
                     Spacer()
                     Image(systemName: showsDirectConnection ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(BlitzType.glyph(10))
                         .foregroundStyle(BlitzUI.secondaryText)
                 }
                 .contentShape(.rect)
@@ -296,7 +295,7 @@ struct RemoteCameraPage: View {
 
             if showsDirectConnection {
                 Text("If discovery cannot find your iPhone, enter the address and port shown in its app.")
-                    .font(.system(size: 12))
+                    .font(BlitzType.body)
                     .foregroundStyle(BlitzUI.secondaryText)
                 HStack(alignment: .bottom, spacing: 10) {
                     connectionField(.address)
@@ -319,19 +318,19 @@ struct RemoteCameraPage: View {
     private func connectionField(_ field: ConnectionField) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(field == .address ? "iPhone address" : "Port")
-                .font(.system(size: 11, weight: .medium))
+                .font(BlitzType.captionEmphasis)
                 .foregroundStyle(BlitzUI.secondaryText)
             TextField(
                 field == .address ? "192.168.1.10" : "Port",
                 text: field == .address ? $vm.directRemoteCameraHost : $vm.directRemoteCameraPort
             )
             .textFieldStyle(.plain)
-            .font(.system(size: 12, design: .monospaced))
+            .font(BlitzType.body.monospaced())
             .padding(.horizontal, 10)
             .frame(height: 36)
-            .background(BlitzUI.quietFill, in: .rect(cornerRadius: 8))
+            .background(BlitzUI.quietFill, in: .rect(cornerRadius: BlitzUI.controlRadius))
             .overlay {
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: BlitzUI.controlRadius)
                     .strokeBorder(focusedField == field ? BlitzUI.mint.opacity(0.6) : BlitzUI.separator, lineWidth: 1)
                     .allowsHitTesting(false)
             }

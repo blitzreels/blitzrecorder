@@ -8,6 +8,9 @@ protocol LocalTranscriptionEngineServing: Sendable {
     func transcribe(
         _ request: LocalTranscriptionEngine.TranscribeRequest
     ) async throws -> RecordingTranscript
+    func reassignSpeakers(
+        _ request: LocalTranscriptionEngine.SpeakerFixRequest
+    ) async throws -> RecordingTranscript
     func removeModels(_ model: TranscriptionSpeechModel) async throws
 }
 
@@ -31,6 +34,13 @@ enum TranscriptionSpeechModel: String, CaseIterable, Sendable {
         switch self {
         case .parakeet: "Fast, multilingual; automatic language only"
         case .whisperMedium: "Multilingual; supports a French language lock"
+        }
+    }
+
+    var plainDetail: String {
+        switch self {
+        case .parakeet: "Fastest. Detects the language on its own."
+        case .whisperMedium: "Slower. Lets you pick the language."
         }
     }
 }
@@ -135,6 +145,20 @@ enum TranscriptionJobStatus: Equatable {
     }
 }
 
+enum SpeakerFixProgress {
+    static func label(_ update: TranscriptionEngineUpdate) -> String {
+        let stage: String
+        switch update.stage {
+        case .preparingAudio: stage = TranscriptionJobStatus.preparingAudio.label
+        case .loadingModels: stage = "Loading speaker model"
+        case .transcribing, .diarizing: stage = TranscriptionJobStatus.diarizing.label
+        case .saving: stage = TranscriptionJobStatus.saving.label
+        }
+        guard let detail = update.detail else { return stage }
+        return "\(stage) · \(detail)"
+    }
+}
+
 struct CompletedTranscription {
     let source: TranscriptionMediaSource
     let transcript: RecordingTranscript
@@ -198,6 +222,7 @@ final class LocalTranscriptionController {
     }
     var jobStatuses: [String: TranscriptionJobStatus] = [:]
     private(set) var jobDetails: [String: String] = [:]
+    private(set) var speakerFixDetails: [String: String] = [:]
     private(set) var jobStartedAt: [String: Date] = [:]
     @ObservationIgnored private var jobIDs: [String: UUID] = [:]
     @ObservationIgnored var onTranscriptionCompleted: ((CompletedTranscription) -> Void)?
@@ -236,9 +261,8 @@ final class LocalTranscriptionController {
         self.selectedLanguage = TranscriptionLanguage(
             rawValue: dependencies.defaults.string(forKey: Self.languageKey) ?? ""
         ) ?? .automatic
-        self.speakerCount = TranscriptionSpeakerCount(
-            rawValue: dependencies.defaults.string(forKey: Self.speakerCountKey) ?? ""
-        ) ?? .automatic
+        self.speakerCount = .automatic
+        dependencies.defaults.removeObject(forKey: Self.speakerCountKey)
         self.modelStates = Dictionary(uniqueKeysWithValues: TranscriptionSpeechModel.allCases.map { model in
             (model, dependencies.modelStore.isInstalled(model)
                 ? .ready(size: dependencies.modelStore.installedSize(model))
@@ -313,6 +337,36 @@ final class LocalTranscriptionController {
         enqueue(EnqueueRequest(source: source, force: true))
     }
 
+    func isFixingSpeakers(_ project: RecordingProjectHistory.Entry) -> Bool {
+        speakerFixDetails[project.projectPath] != nil
+    }
+
+    func isUpdatingTranscript(_ project: RecordingProjectHistory.Entry) -> Bool {
+        tasks[project.projectPath] != nil || isFixingSpeakers(project)
+    }
+
+    func canFixSpeakers(_ project: RecordingProjectHistory.Entry) -> Bool {
+        !isUpdatingTranscript(project) && modelStates.values.contains(where: \.isReady)
+    }
+
+    func fixSpeakers(_ project: RecordingProjectHistory.Entry) async throws -> RecordingTranscript {
+        let key = project.projectPath
+        guard !isUpdatingTranscript(project) else { throw LocalTranscriptionError.transcriptBusy }
+        guard canFixSpeakers(project) else { throw LocalTranscriptionError.modelNotInstalled }
+        speakerFixDetails[key] = TranscriptionJobStatus.preparingAudio.label
+        defer { speakerFixDetails[key] = nil }
+        return try await engine.reassignSpeakers(LocalTranscriptionEngine.SpeakerFixRequest(
+            source: .project(URL(fileURLWithPath: key)),
+            speakerCount: speakerCount,
+            onUpdate: { [weak self] update in
+                Task { @MainActor in
+                    guard let self, self.speakerFixDetails[key] != nil else { return }
+                    self.speakerFixDetails[key] = SpeakerFixProgress.label(update)
+                }
+            }
+        ))
+    }
+
     func status(for project: RecordingProjectHistory.Entry) -> TranscriptionJobStatus {
         jobStatuses[project.projectPath] ?? .notGenerated
     }
@@ -320,7 +374,7 @@ final class LocalTranscriptionController {
     private func enqueue(_ request: EnqueueRequest) {
         let source = request.source
         knownSources[source.key] = source
-        guard tasks[source.key] == nil else { return }
+        guard tasks[source.key] == nil, speakerFixDetails[source.key] == nil else { return }
         if !request.force, isTranscriptReady(source.key) {
             return
         }

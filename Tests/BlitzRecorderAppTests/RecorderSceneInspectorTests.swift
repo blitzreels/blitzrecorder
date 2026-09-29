@@ -168,7 +168,7 @@ final class RecorderSceneInspectorTests: XCTestCase {
         setup.viewModel.showProjects()
         let selectedID = try XCTUnwrap(setup.viewModel.recentProjects.last?.id)
         let navigation = ProjectLibraryNavigationState(
-            selectedProjectIDs: [selectedID], selectedDetailTab: .media, searchText: "Recording"
+            selectedProjectIDs: [selectedID], searchText: "Recording"
         )
         setup.viewModel.projectLibraryNavigation = navigation
 
@@ -185,17 +185,15 @@ final class RecorderSceneInspectorTests: XCTestCase {
         let firstID = UUID()
         let secondID = UUID()
         var navigation = ProjectLibraryNavigationState(
-            selectedProjectIDs: [firstID, secondID], selectedDetailTab: .media, searchText: "demo"
+            selectedProjectIDs: [firstID, secondID], searchText: "demo"
         )
 
         navigation.reconcileSelection(availableProjectIDs: [secondID])
         XCTAssertEqual(navigation.selectedProjectIDs, [secondID])
-        XCTAssertEqual(navigation.selectedDetailTab, .overview)
         XCTAssertEqual(navigation.searchText, "demo")
 
-        navigation.selectedDetailTab = .transcript
         navigation.reconcileSelection(availableProjectIDs: [secondID, firstID])
-        XCTAssertEqual(navigation.selectedDetailTab, .transcript)
+        XCTAssertEqual(navigation.selectedProjectIDs, [secondID])
 
         navigation.reconcileSelection(availableProjectIDs: [firstID])
         XCTAssertEqual(navigation.selectedProjectIDs, [firstID])

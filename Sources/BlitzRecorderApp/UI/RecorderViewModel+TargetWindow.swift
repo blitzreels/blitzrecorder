@@ -167,6 +167,7 @@ extension RecorderViewModel {
     }
 
     func prepareForWindowClose() {
+        cancelCountdown()
         cancelScheduledTargetWindowFit()
         cancelPendingPermissionRequests()
     }

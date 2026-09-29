@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import type Hls from "hls.js";
 import { transcriptVTT, type VideoDetails } from "@/lib/hosting/details";
 
@@ -14,6 +14,7 @@ export function usePlayback({ source, duration, details }: { source: string; dur
   const video = useRef<HTMLVideoElement>(null);
   const frame = useRef<HTMLDivElement>(null);
   const hls = useRef<Hls | null>(null);
+  const resumeAt = useRef(0);
   const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -30,7 +31,8 @@ export function usePlayback({ source, duration, details }: { source: string; dur
     const element = video.current;
     if (!element) return;
     let disposed = false;
-    let requestedStart = Number(new URL(location.href).searchParams.get("t"));
+    let requestedStart = resumeAt.current || Number(new URL(location.href).searchParams.get("t"));
+    resumeAt.current = 0;
     if (!Number.isFinite(requestedStart) || requestedStart < 0) requestedStart = 0;
     const sync = () => {
       const validDuration = Number.isFinite(element.duration) && element.duration > 0 ? element.duration : duration;
@@ -48,7 +50,13 @@ export function usePlayback({ source, duration, details }: { source: string; dur
       setCanPip(Boolean(document.pictureInPictureEnabled && element.requestPictureInPicture));
       sync();
     };
-    const failed = () => { if (!disposed) setError("This video could not be loaded. Retry, or ask the sender for a new link."); };
+    const failed = () => {
+      if (disposed) return;
+      setError(navigator.onLine
+        ? "This video couldn’t load. Try again in a moment. If it keeps failing, ask the sender for a fresh link."
+        : "You’re offline. Playback will resume when you reconnect.");
+    };
+    let recoveries = 0;
     const events = ["timeupdate", "play", "pause", "ended", "progress", "volumechange", "ratechange", "waiting", "playing", "canplay", "seeked", "seeking"];
     events.forEach((event) => element.addEventListener(event, sync));
     element.addEventListener("loadedmetadata", loaded);
@@ -68,7 +76,13 @@ export function usePlayback({ source, duration, details }: { source: string; dur
       const engine = new Hls({ capLevelToPlayerSize: true, maxBufferLength: 30, startLevel: -1 });
       hls.current = engine;
       engine.on(Hls.Events.MANIFEST_PARSED, () => setLevels(engine.levels.map((level, index) => ({ index, label: `${Math.min(level.height, level.width)}p` }))));
-      engine.on(Hls.Events.ERROR, (_, data) => { if (data.fatal) failed(); });
+      engine.on(Hls.Events.ERROR, (_, data) => {
+        if (!data.fatal) return;
+        if (recoveries < 3 && navigator.onLine && data.type === Hls.ErrorTypes.NETWORK_ERROR) { recoveries++; engine.startLoad(); return; }
+        if (recoveries < 3 && data.type === Hls.ErrorTypes.MEDIA_ERROR) { recoveries++; engine.recoverMediaError(); return; }
+        failed();
+      });
+      engine.on(Hls.Events.FRAG_LOADED, () => { recoveries = 0; });
       engine.loadSource(source);
       engine.attachMedia(element);
     }).catch(failed);
@@ -139,10 +153,18 @@ export function usePlayback({ source, duration, details }: { source: string; dur
     } catch { setNotice("Picture in picture is unavailable right now."); }
   };
   const retry = () => {
+    resumeAt.current = video.current?.currentTime ?? 0;
     setError(null); setNotice(null); setQuality(-1); setLevels([]);
     setState((current) => ({ ...current, ready: false, playing: false, waiting: true }));
     setAttempt((current) => current + 1);
   };
+  const retryWhenOnline = useEffectEvent(retry);
+  useEffect(() => {
+    if (!error) return;
+    const online = () => retryWhenOnline();
+    window.addEventListener("online", online);
+    return () => window.removeEventListener("online", online);
+  }, [error]);
   return { videoRef: video, frameRef: frame, state, error, notice, levels, quality, captions, fullscreen, pip, canPip,
     seek, toggle, changeSpeed, changeVolume, toggleMute, changeQuality, toggleFullscreen, togglePip,
     toggleCaptions: () => setCaptions((current) => !current), retry };

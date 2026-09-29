@@ -72,19 +72,11 @@ enum PreviewStageLayout {
         )
     }
 
-    static func sourceCornerRadius(for rect: CGRect) -> CGFloat {
-        guard !rect.isEmpty else { return 0 }
-        return min(18, max(8, min(rect.width, rect.height) * 0.08))
-    }
-
-    static func cameraPreviewCornerRadius(
-        bounds: CGRect,
-        isFullscreen: Bool,
-        isFullWidth: Bool
-    ) -> CGFloat {
-        let paddedRadius = SceneLayoutProjection.sourceCornerRadius(for: bounds, normalizedRadius: 0)
-        if paddedRadius > 0 { return paddedRadius }
-        if isFullscreen || isFullWidth { return 0 }
-        return sourceCornerRadius(for: bounds)
+    static func cameraPreviewCornerRadius(_ request: PreviewStageDrawing.SourceShapeRequest) -> CGFloat {
+        if request.isCircle {
+            return SceneLayoutProjection.circularCornerRadius(for: request.rect)
+        }
+        if request.isFullscreen || request.isFullWidth { return 0 }
+        return SceneLayoutProjection.cameraCornerRadius(for: request.rect)
     }
 }

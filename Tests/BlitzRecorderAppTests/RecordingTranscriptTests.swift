@@ -620,6 +620,41 @@ final class RecordingTranscriptTests: XCTestCase {
         XCTAssertTrue(transcript.text.contains("Réponse."))
     }
 
+    func testAssemblerKeepsCallSpeakerWhenMicrophonePicksThemUp() {
+        let host: [Float] = [0.98, 0.02, 0.10, 0.15]
+        let guest: [Float] = [0.05, 0.97, 0.90, 0.12]
+        let guestOnMicrophone: [Float] = [0.08, 0.94, 0.88, 0.18]
+        let hostWords = (0..<10).map { index in
+            TranscriptWord(text: "moi\(index)", startTime: Double(index) * 0.3, endTime: Double(index) * 0.3 + 0.2,
+                           confidence: 0.9)
+        }
+        let guestWords = (0..<24).map { index in
+            TranscriptWord(text: "invite\(index)", startTime: 5 + Double(index) * 0.3,
+                           endTime: 5.2 + Double(index) * 0.3, confidence: 0.9)
+        }
+        let bleed = guestWords.enumerated().compactMap { index, word -> TranscriptWord? in
+            guard index != 5 else { return nil }
+            return TranscriptWord(text: index == 12 ? "variante" : word.text, startTime: word.startTime + 0.03,
+                                  endTime: word.endTime + 0.03, confidence: 0.6)
+        }
+        let transcript = RecordingTranscriptAssembler.assemble(.init(
+            mediaPath: "/tmp/speakerphone.mov", generatedAt: Date(timeIntervalSince1970: 8_100), duration: 13,
+            confidence: 0.9, text: "", suggestedTitle: nil,
+            words: hostWords + bleed + guestWords,
+            wordSources: Array(repeating: .microphone, count: hostWords.count + bleed.count)
+                + Array(repeating: .systemAudio, count: guestWords.count),
+            diarizedIntervals: [
+                .init(speakerID: "mic-0", startTime: 0, endTime: 3.2, embedding: host),
+                .init(speakerID: "mic-1", startTime: 5, endTime: 12, embedding: guestOnMicrophone),
+                .init(speakerID: "sys-0", startTime: 4.9, endTime: 12.5, embedding: guest),
+            ]
+        ))
+
+        XCTAssertEqual(transcript.words?.map(\.text), (hostWords + guestWords).map(\.text))
+        XCTAssertEqual(transcript.speakers.map(\.name), ["You", ""])
+        XCTAssertEqual(transcript.wordCount(for: "Speaker 2"), guestWords.count)
+    }
+
     func testAssemblerKeepsOverlappingMicrophoneAndCallSpeech() {
         let you: [Float] = [1, 0, 0, 0]
         let alice: [Float] = [0, 1, 0, 0]
@@ -852,5 +887,190 @@ final class RecordingTranscriptTests: XCTestCase {
             withIntermediateDirectories: true
         )
         return directory
+    }
+}
+
+final class RecordingTranscriptFragmentSpeakerTests: XCTestCase {
+    func testTinyMacAudioFragmentsJoinTheRemoteSpeakerOnSeparateTracks() {
+        var words: [TranscriptWord] = []
+        var sources: [RecordingTranscriptAssembler.WordSource] = []
+        var intervals: [DiarizedInterval] = []
+        for index in 0..<160 {
+            let start = Double(index) * 0.5
+            words.append(.init(text: "word\(index)", startTime: start, endTime: start + 0.4, confidence: 0.9))
+            sources.append(index.isMultiple(of: 2) ? .microphone : .systemAudio)
+        }
+        intervals.append(.init(speakerID: "mic-a", startTime: 0, endTime: 80))
+        intervals.append(.init(speakerID: "sys-remote", startTime: 0, endTime: 40))
+        intervals.append(.init(speakerID: "sys-blip", startTime: 40, endTime: 40.9))
+        intervals.append(.init(speakerID: "sys-remote", startTime: 40.9, endTime: 80))
+        let transcript = RecordingTranscriptAssembler.assemble(.init(
+            mediaPath: "/call", generatedAt: Date(timeIntervalSince1970: 0), duration: 80, confidence: 0.9,
+            text: "", suggestedTitle: nil, words: words, wordSources: sources, diarizedIntervals: intervals))
+        XCTAssertEqual(transcript.speakerCount, 2, "A 1-second blip on the call audio is not a third person.")
+    }
+}
+
+final class RecordingTranscriptSpeakerFixTests: XCTestCase {
+    private struct CallFixture {
+        let transcript: RecordingTranscript
+        let intervals: [DiarizedInterval]
+    }
+
+    private func callFixture() -> CallFixture {
+        let host: [Float] = [0.98, 0.02, 0.10, 0.15]
+        let guest: [Float] = [0.05, 0.97, 0.90, 0.12]
+        let guestDrift: [Float] = [0.06, 0.95, 0.92, 0.14]
+        var words: [TranscriptWord] = []
+        var intervals: [DiarizedInterval] = []
+        for turn in 0..<8 {
+            let turnStart = Double(turn) * 6
+            let isHost = turn.isMultiple(of: 2)
+            let oldSpeaker = "Speaker \(turn % 4 + 1)"
+            for index in 0..<10 {
+                let start = turnStart + Double(index) * 0.5
+                words.append(.init(text: "w\(turn)-\(index)", startTime: start, endTime: start + 0.4,
+                                   confidence: 0.9, speakerID: oldSpeaker))
+            }
+            let speakerID = isHost ? "mic-0" : (turn < 4 ? "sys-0" : "sys-1")
+            let embedding = isHost ? host : (turn < 4 ? guest : guestDrift)
+            intervals.append(.init(speakerID: speakerID, startTime: turnStart, endTime: turnStart + 5,
+                                   embedding: embedding))
+        }
+        let transcript = RecordingTranscript(
+            version: 2, id: UUID(), mediaPath: "/call.mov", generatedAt: Date(timeIntervalSince1970: 10),
+            duration: 48, confidence: 0.9, text: words.map(\.text).joined(separator: " "),
+            suggestedTitle: "Call",
+            speakers: (1...4).map { .init(id: "Speaker \($0)", name: "", context: "") },
+            segments: [], words: words, speechRanges: nil
+        )
+        return CallFixture(transcript: transcript, intervals: intervals)
+    }
+
+    func testFixSpeakersCollapsesOverSplitCallAndKeepsEveryWord() throws {
+        let fixture = callFixture()
+        let fixed = try RecordingTranscriptAssembler.reassignSpeakers(.init(
+            transcript: fixture.transcript, diarizedIntervals: fixture.intervals))
+
+        XCTAssertEqual(fixed.speakers.map(\.id), ["Speaker 1", "Speaker 2"])
+        XCTAssertEqual(fixed.speakers.first?.name, "You")
+        XCTAssertEqual(fixed.words?.map(\.text), fixture.transcript.words?.map(\.text))
+        XCTAssertEqual(fixed.id, fixture.transcript.id)
+        XCTAssertEqual(fixed.suggestedTitle, "Call")
+        XCTAssertEqual(fixed.generatedAt, fixture.transcript.generatedAt)
+        let hostWords = fixed.words?.filter { $0.text.hasPrefix("w0-") || $0.text.hasPrefix("w2-") }
+        XCTAssertEqual(Set(hostWords?.compactMap(\.speakerID) ?? []), ["Speaker 1"])
+        let guestWords = fixed.words?.filter { $0.text.hasPrefix("w1-") || $0.text.hasPrefix("w7-") }
+        XCTAssertEqual(Set(guestWords?.compactMap(\.speakerID) ?? []), ["Speaker 2"])
+        XCTAssertEqual(fixed.segments.count, 8)
+    }
+
+    func testFixSpeakersCarriesRenamedSpeakerNames() throws {
+        var fixture = callFixture()
+        var transcript = fixture.transcript
+        transcript = transcript.renamingSpeaker(.init(speakerID: "Speaker 2", name: "Benjamin"))
+        fixture = CallFixture(transcript: transcript, intervals: fixture.intervals)
+        let fixed = try RecordingTranscriptAssembler.reassignSpeakers(.init(
+            transcript: fixture.transcript, diarizedIntervals: fixture.intervals))
+
+        XCTAssertEqual(fixed.speakerName(for: "Speaker 2"), "Benjamin")
+        XCTAssertEqual(fixed.speakerName(for: "Speaker 1"), "You")
+    }
+
+    func testVoiceClustersJoinEchoFragmentsButKeepDistinctVoices() {
+        let guest: [Float] = [0.05, 0.97, 0.90, 0.12]
+        let guestOnMicrophone: [Float] = [0.5, 0.9, 0.2, 0.3]
+        let host: [Float] = [0.98, 0.02, 0.10, 0.15]
+        let promo: [Float] = [0, 0, 0, 1]
+        let labels = RecordingTranscriptAssembler.voiceClusterLabels([
+            .init(speakerID: "mic-0", startTime: 0, endTime: 100, embedding: host),
+            .init(speakerID: "sys-0", startTime: 100, endTime: 200, embedding: guest),
+            .init(speakerID: "mic-1", startTime: 200, endTime: 205, embedding: guestOnMicrophone),
+            .init(speakerID: "sys-1", startTime: 205, endTime: 210, embedding: promo),
+        ])
+        XCTAssertEqual(labels["mic-1"], "sys-0", "A short echo of the guest on the microphone is the guest.")
+        XCTAssertEqual(labels["mic-0"], "mic-0")
+        XCTAssertEqual(labels["sys-1"], "sys-1", "A short but different voice stays its own speaker.")
+    }
+
+    func testFixSpeakersRequiresWordTimings() {
+        let transcript = RecordingTranscript(
+            version: 1, id: UUID(), mediaPath: "/old.mov", generatedAt: Date(), duration: 1, confidence: 1,
+            text: "Hello", suggestedTitle: nil, speakers: [], segments: []
+        )
+        XCTAssertThrowsError(try RecordingTranscriptAssembler.reassignSpeakers(.init(
+            transcript: transcript, diarizedIntervals: []))) { error in
+            XCTAssertEqual(error as? RecordingTranscriptAssembler.SpeakerReassignmentError, .missingWordTimings)
+        }
+    }
+
+    func testWordSourceInferencePrefersCallAudioAndFallsBackToPreviousSpeaker() {
+        let words: [TranscriptWord] = [
+            .init(text: "local", startTime: 0, endTime: 0.4, confidence: 1, speakerID: "Speaker 1"),
+            .init(text: "remote", startTime: 1, endTime: 1.4, confidence: 1, speakerID: "Speaker 2"),
+            .init(text: "gap", startTime: 5, endTime: 5.4, confidence: 1, speakerID: "Speaker 2"),
+            .init(text: "quiet", startTime: 6, endTime: 6.4, confidence: 1, speakerID: "Speaker 1"),
+        ]
+        let sources = RecordingTranscriptAssembler.inferredWordSources(.init(words: words, intervals: [
+            .init(speakerID: "mic-0", startTime: 0, endTime: 1.5),
+            .init(speakerID: "sys-0", startTime: 0.9, endTime: 1.5),
+        ]))
+        XCTAssertEqual(sources, [.microphone, .systemAudio, .systemAudio, .microphone])
+    }
+
+    func testWordSourceInferenceUsesSingleTrackKind() {
+        let words: [TranscriptWord] = [.init(text: "hi", startTime: 0, endTime: 0.4, confidence: 1)]
+        XCTAssertEqual(RecordingTranscriptAssembler.inferredWordSources(.init(words: words, intervals: [
+            .init(speakerID: "sys-0", startTime: 3, endTime: 4),
+        ])), [.systemAudio])
+        XCTAssertEqual(RecordingTranscriptAssembler.inferredWordSources(.init(words: words, intervals: [
+            .init(speakerID: "S1", startTime: 0, endTime: 1),
+        ])), [.mixed])
+    }
+
+    func testRenamingSpeakerUpdatesCopiedMarkdown() {
+        let transcript = RecordingTranscript(
+            version: 2, id: UUID(), mediaPath: "/call.mov", generatedAt: Date(), duration: 2, confidence: 1,
+            text: "Salut", suggestedTitle: nil,
+            speakers: [.init(id: "Speaker 6", name: "", context: "")],
+            segments: [.init(id: UUID(), speakerID: "Speaker 6", startTime: 0, endTime: 1, text: "Salut", confidence: 1)]
+        )
+        let renamed = transcript.renamingSpeaker(.init(speakerID: "Speaker 6", name: "  Benjamin "))
+        XCTAssertEqual(renamed.speakerName(for: "Speaker 6"), "Benjamin")
+        XCTAssertTrue(renamed.markdownText(title: "Call").contains("**[00:00] Benjamin:** Salut"))
+        XCTAssertTrue(renamed.formattedText.contains("Benjamin: Salut"))
+        XCTAssertEqual(transcript.renamingSpeaker(.init(speakerID: "Speaker 9", name: "X")), transcript)
+        XCTAssertEqual(renamed.renamingSpeaker(.init(speakerID: "Speaker 6", name: "")).speakerName(for: "Speaker 6"),
+                       "Speaker 6")
+    }
+
+    func testFixSpeakersOnProjectCopyWhenExplicitlyEnabled() async throws {
+        guard let projectPath = ProcessInfo.processInfo.environment["BLITZRECORDER_TEST_FIX_SPEAKERS_PROJECT"] else {
+            throw XCTSkip("Set BLITZRECORDER_TEST_FIX_SPEAKERS_PROJECT to a scratch copy of a project file.")
+        }
+        let started = Date()
+        let fixed = try await LocalTranscriptionEngine().reassignSpeakers(.init(
+            source: .project(URL(fileURLWithPath: projectPath)), speakerCount: .automatic, onUpdate: { _ in }))
+        print("FIX_SPEAKERS speakers=\(fixed.speakerCount) segments=\(fixed.segmentCount) "
+            + "words=\(fixed.words?.count ?? 0) seconds=\(Date().timeIntervalSince(started))")
+        XCTAssertGreaterThan(fixed.speakerCount, 0)
+    }
+}
+
+final class ProjectLibraryPosterPolicyTests: XCTestCase {
+    func testExportedPosterStaysUntilFirstFrameIsReady() {
+        XCTAssertFalse(ProjectLibraryPosterPolicy.hasVisibleVideo(.init(
+            exportedPlayerIsReadyForDisplay: false, isPlaying: true, currentTime: 3)))
+        XCTAssertTrue(ProjectLibraryPosterPolicy.hasVisibleVideo(.init(
+            exportedPlayerIsReadyForDisplay: true, isPlaying: false, currentTime: 0)))
+    }
+
+    func testCompositedPosterStaysUntilPlaybackMoves() {
+        XCTAssertFalse(ProjectLibraryPosterPolicy.hasVisibleVideo(.init(
+            exportedPlayerIsReadyForDisplay: nil, isPlaying: false, currentTime: 0)))
+        XCTAssertTrue(ProjectLibraryPosterPolicy.hasVisibleVideo(.init(
+            exportedPlayerIsReadyForDisplay: nil, isPlaying: true, currentTime: 0)))
+        XCTAssertTrue(ProjectLibraryPosterPolicy.hasVisibleVideo(.init(
+            exportedPlayerIsReadyForDisplay: nil, isPlaying: false, currentTime: 12)))
     }
 }

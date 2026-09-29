@@ -14,10 +14,10 @@ enum EditorInspectorTab: String, CaseIterable {
         case .layout: return BlitzSymbols.layout
         case .text: return "textformat"
         case .zoom: return "cursorarrow.motionlines"
-        case .silence: return "waveform.path"
+        case .silence: return "waveform.badge.minus"
         case .privacy: return "eye.slash"
-        case .audio: return "waveform"
-        case .blitzReels: return "arrow.up.right"
+        case .audio: return BlitzSymbols.systemAudio
+        case .blitzReels: return "captions.bubble"
         }
     }
 }

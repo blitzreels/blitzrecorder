@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-VERSION="0.30.1"
-BUILD="35"
+VERSION="0.31.0"
+BUILD="36"
 PACKAGE_ROOT="${PACKAGE_ROOT:-build/AppStoreReviewPackage}"
 PACKAGE_DIR="$PACKAGE_ROOT/BlitzRecorder-$VERSION-build-$BUILD"
 RUN_VALIDATION=1
@@ -161,10 +161,12 @@ copy_file "Web/blitzrecorder/index.html" "PublicWebSource/index.html"
 copy_file "Web/blitzrecorder/src/main.jsx" "PublicWebSource/src/main.jsx"
 copy_file "Web/blitzrecorder/vercel.json" "PublicWebSource/vercel.json"
 
-while IFS= read -r screenshot; do
-  relative="${screenshot#AppStore/ScreenshotAssets/}"
-  copy_file "$screenshot" "Screenshots/$relative"
-done < <(find AppStore/ScreenshotAssets -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) | sort)
+if [[ -d AppStore/ScreenshotAssets ]]; then
+  while IFS= read -r screenshot; do
+    relative="${screenshot#AppStore/ScreenshotAssets/}"
+    copy_file "$screenshot" "Screenshots/$relative"
+  done < <(find AppStore/ScreenshotAssets -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) | sort)
+fi
 
 write_manifest
 

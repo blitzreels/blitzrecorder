@@ -8,7 +8,7 @@ struct BlitzReelsBrand: View {
                let image = NSImage(contentsOf: url) {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
             } else {
-                Text("BlitzReels").font(.system(size: 18, weight: .bold))
+                Text("BlitzReels").font(BlitzType.title)
             }
         }
         .accessibilityLabel("BlitzReels")
@@ -32,14 +32,14 @@ struct BlitzReelsHandoffPanel: View {
                 VStack(alignment: .leading, spacing: 16) {
                     BlitzReelsBrand().frame(width: 154, height: 24)
                     Text("Add captions and B-roll")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(BlitzType.title)
                     Text("Send your exported MP4 and choose its captions in BlitzReels.")
-                        .font(.system(size: 12)).foregroundStyle(BlitzUI.secondaryText)
+                        .font(BlitzType.body).foregroundStyle(BlitzUI.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     if let account = handoff.connection.account {
                         VStack(alignment: .leading, spacing: 8) {
                             Label(account.user.email, systemImage: "checkmark.circle.fill")
-                                .font(.system(size: 11)).foregroundStyle(BlitzUI.mint)
+                                .font(BlitzType.caption).foregroundStyle(BlitzUI.mint)
                                 .lineLimit(2).textSelection(.enabled)
                             BlitzDropdown(configuration: .init(
                                 title: "BlitzReels workspace",
@@ -54,13 +54,13 @@ struct BlitzReelsHandoffPanel: View {
                             .disabled(handoff.isWorking)
                             if account.workspaces.isEmpty {
                                 Text("Create or join a workspace in BlitzReels to continue.")
-                                    .font(.system(size: 12)).foregroundStyle(BlitzUI.secondaryText)
+                                    .font(BlitzType.body).foregroundStyle(BlitzUI.secondaryText)
                             }
                         }
                     }
                     if files.isEmpty {
                         Label("Export an MP4 first.", systemImage: "film")
-                            .font(.system(size: 13)).foregroundStyle(BlitzUI.secondaryText).padding(.vertical, 20)
+                            .font(BlitzType.callout).foregroundStyle(BlitzUI.secondaryText).padding(.vertical, 20)
                     } else {
                         ForEach(files, id: \.path) { url in
                             RecordingUploadChoice(
@@ -70,28 +70,28 @@ struct BlitzReelsHandoffPanel: View {
                             .disabled(handoff.isWorking)
                         }
                         Text("Sends this exported file. Later timeline changes need a new export.")
-                            .font(.system(size: 11)).foregroundStyle(BlitzUI.secondaryText)
+                            .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if handoff.isWorking {
                         if let progress = handoff.progress {
                             VStack(alignment: .leading, spacing: 8) {
                                 ProgressView(value: progress).tint(BlitzUI.mint)
-                                Text("\(Int(progress * 100))% uploaded").font(.system(size: 11)).monospacedDigit()
+                                Text("\(Int(progress * 100))% uploaded").font(BlitzType.caption).monospacedDigit()
                             }
                         } else {
                             ProgressView().controlSize(.small)
                         }
                     }
                     if !handoff.status.isEmpty {
-                        Text(handoff.status).font(.system(size: 12)).foregroundStyle(BlitzUI.secondaryText)
+                        Text(handoff.status).font(BlitzType.body).foregroundStyle(BlitzUI.secondaryText)
                             .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                     }
                     if let url = handoff.upgradeURL {
-                        Link("View BlitzReels plans", destination: url).blitzButton(.secondary)
+                        Button("View BlitzReels plans") { NSWorkspace.shared.open(url) }.blitzButton(.secondary)
                     }
                     if let url = handoff.setupURL {
-                        Link("Finish account setup", destination: url).blitzButton(.secondary)
+                        Button("Finish account setup") { NSWorkspace.shared.open(url) }.blitzButton(.secondary)
                     }
                 }.padding(14)
             }
@@ -105,20 +105,20 @@ struct BlitzReelsHandoffPanel: View {
                     }.blitzButton(.accent)
                 } else {
                     if let url = currentResult {
-                        Link("Continue in BlitzReels", destination: url).blitzButton(.accent)
+                        Button("Continue in BlitzReels") { NSWorkspace.shared.open(url) }.blitzButton(.accent)
                     } else {
                         Button("Upload to BlitzReels", action: send)
                             .blitzButton(.accent)
                             .disabled(selection == nil || handoff.connection.selectedWorkspace == nil)
                     }
                     Text("Choose captions and optional B-roll next.")
-                        .font(.system(size: 11)).foregroundStyle(BlitzUI.secondaryText)
+                        .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
                 }
                 if handoff.connection.hasCredential {
                     HStack {
                         Button("Disconnect") { handoff.disconnect() }
                             .blitzButton(.quiet).controlSize(.small).disabled(handoff.isWorking)
-                        Link("Manage connection", destination: handoff.connection.client.origin.appendingPathComponent("dashboard/settings"))
+                        Button("Manage connection") { NSWorkspace.shared.open(handoff.connection.client.origin.appendingPathComponent("dashboard/settings")) }
                             .blitzButton(.quiet).controlSize(.small)
                     }
                 }
@@ -165,19 +165,19 @@ private struct RecordingUploadChoice: View {
                     if let thumbnail {
                         Image(nsImage: thumbnail).resizable().aspectRatio(contentMode: .fit)
                     } else {
-                        Image(systemName: file.systemImage).font(.system(size: 22)).foregroundStyle(
+                        Image(systemName: file.systemImage).font(BlitzType.glyph(22)).foregroundStyle(
                             BlitzUI.secondaryText)
                     }
-                }.frame(width: 72, height: 50).clipShape(.rect(cornerRadius: 7))
+                }.frame(width: 72, height: 50).clipShape(.rect(cornerRadius: BlitzUI.controlRadius))
                 VStack(alignment: .leading, spacing: 5) {
                     Text(file.url.lastPathComponent)
-                        .font(.system(size: 12, weight: .semibold)).lineLimit(2).truncationMode(.middle)
+                        .font(BlitzType.strong).lineLimit(2).truncationMode(.middle)
                     Text("Exported MP4")
-                        .font(.system(size: 10)).foregroundStyle(BlitzUI.secondaryText)
-                    Text(metadata).font(.system(size: 10, design: .monospaced)).foregroundStyle(BlitzUI.secondaryText)
+                        .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
+                    Text(metadata).font(BlitzType.caption.monospacedDigit()).foregroundStyle(BlitzUI.secondaryText)
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 18)).foregroundStyle(isSelected ? BlitzUI.mint : BlitzUI.secondaryText)
+                    .font(BlitzType.glyph(18)).foregroundStyle(isSelected ? BlitzUI.mint : BlitzUI.secondaryText)
             }.padding(10)
         }.buttonStyle(BlitzSelectionButtonStyle(isSelected: isSelected)).accessibilityAddTraits(
             isSelected ? .isSelected : []

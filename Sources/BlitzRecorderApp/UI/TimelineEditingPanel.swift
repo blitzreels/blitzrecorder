@@ -1,5 +1,50 @@
 import SwiftUI
 
+@MainActor @Observable
+final class EditorCursorTrackCache {
+    enum State: Equatable {
+        case loading
+        case missing
+        case loaded
+    }
+
+    static let shared = EditorCursorTrackCache()
+
+    private(set) var state: State = .missing
+    private(set) var track: RecordingCursorTrack?
+    private(set) var hasClicks = false
+    @ObservationIgnored private var fingerprint: MediaFileFingerprint?
+    @ObservationIgnored private var directory: String?
+    @ObservationIgnored private var task: Task<Void, Never>?
+
+    func prepare(directory: String) {
+        let url = URL(fileURLWithPath: directory).appendingPathComponent("cursor-track.json")
+        let current = MediaFileFingerprint(url: url)
+        guard directory != self.directory || current != fingerprint else { return }
+        task?.cancel()
+        self.directory = directory
+        fingerprint = current
+        track = nil
+        hasClicks = false
+        guard current != nil else {
+            state = .missing
+            return
+        }
+        state = .loading
+        task = Task { [weak self] in
+            let (decoded, clicks) = await Task.detached(priority: .userInitiated) {
+                let track = (try? Data(contentsOf: url))
+                    .flatMap { try? JSONDecoder().decode(RecordingCursorTrack.self, from: $0) }
+                return (track, track?.samples.contains(where: \.clicked) == true)
+            }.value
+            guard !Task.isCancelled, let self, self.directory == directory else { return }
+            self.track = decoded
+            self.hasClicks = clicks
+            self.state = decoded == nil ? .missing : .loaded
+        }
+    }
+}
+
 struct TimelineEditingPanel: View {
     struct Configuration {
         let vm: RecorderViewModel
@@ -12,10 +57,9 @@ struct TimelineEditingPanel: View {
     let playback: EditorPlaybackController
     let scenePreview: BlitzScenePreview
     let selectedKeyframeID: Binding<UUID?>
-    @AppStorage(BlitzPreviewPreferences.animatePreviewsKey) private var animatePreviews = true
     @State private var magnification = 1.7
     @State private var cursorScale = 1.5
-    @State private var cursorTrack: RecordingCursorTrack?
+    private let cursorTracks = EditorCursorTrackCache.shared
     @State private var message: String?
     @State private var messageIsError = false
 
@@ -27,58 +71,48 @@ struct TimelineEditingPanel: View {
     }
 
     private var edits: TimelineEdits { vm.lastExportedProject?.edits ?? .empty }
-    private var hasCursorClicks: Bool { cursorTrack?.samples.contains(where: \.clicked) == true }
+    private var cursorTrack: RecordingCursorTrack? { cursorTracks.track }
+    private var hasCursorClicks: Bool { cursorTracks.hasClicks }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+        EditorInspectorPane(configuration: .init(
+            title: "Motion",
+            detail: "Zoom into your clicks and smooth the cursor.",
+            showsFooter: message != nil || (hasCursorClicks && edits.zoom.isActive),
+            content: {
+                VStack(alignment: .leading, spacing: EditorInspectorMetrics.sectionSpacing) {
                     if let id = selectedKeyframeID.wrappedValue,
                        let keyframe = edits.zoom.keyframes.first(where: { $0.id == id }) {
                         EditorZoomPointInspector(configuration: .init(
                             vm: vm, playback: playback, point: keyframe, selection: selectedKeyframeID
                         ))
-                        Divider()
+                        Rectangle().fill(BlitzUI.separator).frame(height: 1)
                     }
                     zoomContent
-                }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .scrollIndicators(.hidden)
-            Divider().overlay(.white.opacity(0.05))
-            VStack(alignment: .leading, spacing: 8) {
+                }
+            },
+            footer: {
                 if let message {
-                    Text(message).font(.system(size: 11)).foregroundStyle(
+                    Text(message).font(BlitzType.caption).foregroundStyle(
                         messageIsError ? BlitzUI.recordRed : BlitzUI.secondaryText
                     )
                     .fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.updatesFrequently)
                 }
                 if hasCursorClicks && edits.zoom.isActive {
-                    Button("Update cursor zoom", action: generateZoom)
-                        .blitzButton(.accent)
+                    Button(action: generateZoom) {
+                        Label("Update cursor zoom", systemImage: "arrow.triangle.2.circlepath").frame(maxWidth: .infinity)
+                    }
+                    .blitzButton(.accent)
+                    .help("Rebuild zoom points from the clicks in this take")
                 }
-                Toggle("Animate previews", isOn: $animatePreviews)
-                    .toggleStyle(.blitzCheckbox)
-                    .controlSize(.small)
-                    .help("Animate the setting thumbnails on hover. This does not change your video or exports.")
-            }.frame(maxWidth: .infinity, alignment: .leading).padding(14)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(BlitzUI.projectLibraryBackground)
-        .foregroundStyle(BlitzUI.primaryText)
-        .buttonStyle(BlitzButtonStyle(.secondary))
-        .tint(BlitzUI.mint)
+            }
+        ))
         .onAppear {
             magnification = edits.zoom.isEmpty ? 1.7 : edits.zoom.intensity
             cursorScale = edits.cursorStyle.scale
         }
-        .task(id: vm.lastExportedProject?.projectPath) {
-            cursorTrack = nil
-            if let project = vm.lastExportedProject {
-                let url = URL(fileURLWithPath: project.takeDirectoryPath).appendingPathComponent("cursor-track.json")
-                if let data = try? Data(contentsOf: url) {
-                    cursorTrack = try? JSONDecoder().decode(RecordingCursorTrack.self, from: data)
-                }
-            }
+        .onAppear {
+            if let project = vm.lastExportedProject { cursorTracks.prepare(directory: project.takeDirectoryPath) }
         }
         .onChange(of: edits.cursorStyle.scale) { _, value in cursorScale = value }
         .onChange(of: edits.zoom.intensity) { _, value in magnification = value }
@@ -88,7 +122,9 @@ struct TimelineEditingPanel: View {
         VStack(alignment: .leading, spacing: 20) {
             cursorContent
             Divider()
-            if !hasCursorClicks {
+            if cursorTracks.state == .loading {
+                loadingPlaceholder
+            } else if !hasCursorClicks {
                 emptyState(.init(
                     symbol: "cursorarrow.motionlines",
                     title: cursorTrack == nil ? "No cursor track on this take" : "No clicks recorded",
@@ -114,24 +150,16 @@ struct TimelineEditingPanel: View {
                     .toggleStyle(.blitzSwitch)
                     .help("Turn cursor zoom on or off for preview and export. Your zoom points are kept when off.")
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Zoom amount")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(BlitzUI.secondaryText)
-                            Spacer()
-                            Text("\(magnification, specifier: "%.1f")×")
-                                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                .monospacedDigit()
-                        }
-                        Slider(value: $magnification, in: 1.3...2.5, step: 0.1)
-                            .accessibilityLabel("Cursor zoom amount")
-                        HStack {
-                            Text("Subtle")
-                            Spacer()
-                            Text("Close-up")
-                        }.font(.system(size: 11)).foregroundStyle(BlitzUI.secondaryText)
-                    }
+                    BlitzInspectorSlider(configuration: .init(
+                        title: "Amount",
+                        value: $magnification,
+                        range: 1.3...2.5,
+                        step: 0.1,
+                        valueLabel: String(format: "%.1f×", magnification),
+                        onEditingChanged: { _ in },
+                        onReset: { magnification = 1.7 }
+                    ))
+                    .accessibilityLabel("Cursor zoom amount")
                     .disabled(!edits.zoom.isActive)
                     .opacity(edits.zoom.isActive ? 1 : 0.45)
                 }
@@ -155,7 +183,7 @@ struct TimelineEditingPanel: View {
 
     private var cursorContent: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Cursor").font(.headline)
+            Text("Cursor").font(BlitzType.section)
             if cursorTrack?.supportsPresentation == true {
                 Toggle(isOn: Binding(
                     get: { edits.cursorStyle.smoothed },
@@ -183,29 +211,37 @@ struct TimelineEditingPanel: View {
                         ))
                     }
                 .toggleStyle(.blitzSwitch)
-                HStack(spacing: 12) {
-                    illustratedLabel(.init(
-                        title: "Cursor size", detail: "Keep the pointer easy to follow.",
-                        effect: .cursorSize(cursorScale)
-                    ))
-                    Text("\(cursorScale, specifier: "%.1f")×")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .monospacedDigit()
-                        .fixedSize()
-                }
-                Slider(value: $cursorScale, in: 0.75...3, step: 0.25, onEditingChanged: { editing in
-                    guard !editing else { return }
-                    var updated = edits
-                    updated.cursorStyle.scale = cursorScale
-                    apply(.init(edits: updated, actionName: "Resize Cursor"))
-                }).accessibilityLabel("Cursor size")
+                illustratedLabel(.init(
+                    title: "Cursor size", detail: "Keep the pointer easy to follow.",
+                    effect: .cursorSize(cursorScale)
+                ))
+                BlitzInspectorSlider(configuration: .init(
+                    title: "Size",
+                    value: $cursorScale,
+                    range: 0.75...3,
+                    step: 0.25,
+                    valueLabel: String(format: "%.1f×", cursorScale),
+                    onEditingChanged: { editing in
+                        guard !editing else { return }
+                        var updated = edits
+                        updated.cursorStyle.scale = cursorScale
+                        apply(.init(edits: updated, actionName: "Resize Cursor"))
+                    },
+                    onReset: {
+                        cursorScale = 1.5
+                        var updated = edits
+                        updated.cursorStyle.scale = cursorScale
+                        apply(.init(edits: updated, actionName: "Resize Cursor"))
+                    }
+                ))
+                .accessibilityLabel("Cursor size")
 
             } else {
                 Text("This take has its original cursor. Record a new display capture with source files saved to adjust its look.")
                     .foregroundStyle(BlitzUI.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
-        }.font(.system(size: 12))
+        }.font(BlitzType.body)
     }
 
     private struct MotionLabel {
@@ -233,13 +269,13 @@ struct TimelineEditingPanel: View {
     }
     private func emptyState(_ request: EmptyStateRequest) -> some View {
         VStack(spacing: 10) {
-            Image(systemName: request.symbol).font(.system(size: 26, weight: .light)).foregroundStyle(
+            Image(systemName: request.symbol).font(BlitzType.glyph(26)).foregroundStyle(
                 BlitzUI.secondaryText)
-            Text(request.title).font(.system(size: 13, weight: .semibold))
-            Text(request.detail).font(.system(size: 11)).foregroundStyle(BlitzUI.secondaryText)
+            Text(request.title).font(BlitzType.section)
+            Text(request.detail).font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
                 .multilineTextAlignment(.center).frame(maxWidth: 340)
         }.frame(maxWidth: .infinity).padding(.vertical, 26)
-            .background(BlitzUI.cardFill, in: .rect(cornerRadius: 12))
+            .background(BlitzUI.cardFill, in: .rect(cornerRadius: BlitzUI.cardRadius))
     }
 
     @discardableResult
@@ -270,6 +306,18 @@ struct TimelineEditingPanel: View {
         var updated = edits
         updated.zoom.isEnabled = enabled
         apply(.init(edits: updated, actionName: enabled ? "Enable Cursor Zoom" : "Disable Cursor Zoom"))
+    }
+
+    private var loadingPlaceholder: some View {
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: BlitzUI.controlRadius).fill(BlitzUI.controlFill).frame(width: 64, height: 40)
+            VStack(alignment: .leading, spacing: 7) {
+                RoundedRectangle(cornerRadius: 3).fill(BlitzUI.controlFill).frame(width: 110, height: 11)
+                RoundedRectangle(cornerRadius: 3).fill(BlitzUI.quietFill).frame(width: 170, height: 9)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Reading cursor clicks")
     }
 
     private func generateZoom() {

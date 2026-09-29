@@ -139,7 +139,8 @@ extension PreviewStageView {
             layer: dragMode.layer,
             startFrame: dragMode.startFrame,
             delta: delta,
-            screenContentMode: screenContentMode
+            screenContentMode: screenContentMode,
+            locksAspectRatio: dragMode.layer == .camera && sceneLayout.cameraMask == .circle
         )) {
         case .layerFrame(let frame):
             applyLayerDragFrame(frame, layer: dragMode.layer)

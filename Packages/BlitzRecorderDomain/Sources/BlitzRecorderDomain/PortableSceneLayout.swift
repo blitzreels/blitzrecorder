@@ -49,11 +49,17 @@ public struct PixelRect: Equatable, Sendable {
     }
 }
 
+public enum PortableCameraShape: String, Codable, Equatable, Sendable {
+    case rectangle
+    case circle
+}
+
 public struct PortableSceneLayout: Codable, Equatable, Sendable {
     public var canvasWidth: Int
     public var canvasHeight: Int
     public var screen: NormalizedRect
     public var camera: NormalizedRect?
+    public var cameraShape: PortableCameraShape
 
     public static let defaultCanvasWidth = 1920
     public static let defaultCanvasHeight = 1080
@@ -78,12 +84,27 @@ public struct PortableSceneLayout: Codable, Equatable, Sendable {
         canvasWidth: Int = PortableSceneLayout.defaultCanvasWidth,
         canvasHeight: Int = PortableSceneLayout.defaultCanvasHeight,
         screen: NormalizedRect = .full,
-        camera: NormalizedRect? = nil
+        camera: NormalizedRect? = nil,
+        cameraShape: PortableCameraShape = .rectangle
     ) {
         self.canvasWidth = canvasWidth
         self.canvasHeight = canvasHeight
         self.screen = screen
         self.camera = camera
+        self.cameraShape = cameraShape
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case canvasWidth, canvasHeight, screen, camera, cameraShape
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        canvasWidth = try container.decode(Int.self, forKey: .canvasWidth)
+        canvasHeight = try container.decode(Int.self, forKey: .canvasHeight)
+        screen = try container.decode(NormalizedRect.self, forKey: .screen)
+        camera = try container.decodeIfPresent(NormalizedRect.self, forKey: .camera)
+        cameraShape = try container.decodeIfPresent(PortableCameraShape.self, forKey: .cameraShape) ?? .rectangle
     }
 
     public func screenPixels(width: Int? = nil, height: Int? = nil) -> PixelRect {

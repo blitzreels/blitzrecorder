@@ -20,34 +20,30 @@ struct EditorTextInspector: View {
     private var sortedOverlays: [TextOverlay] { edits.textOverlays.sorted { $0.start < $1.start } }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
+        ScrollViewReader { proxy in
+            EditorInspectorPane(configuration: .init(
+                title: "Text",
+                detail: "Add titles and callouts on top of your video.",
+                showsFooter: true,
+                content: {
+                    VStack(alignment: .leading, spacing: EditorInspectorMetrics.sectionSpacing) {
                         composer.id("composer")
                         timing
                         Toggle("Fade in and out", isOn: $draft.fades)
                             .toggleStyle(.blitzSwitch)
                             .help("Turn off for text that appears and disappears instantly. Applies to this overlay.")
                         if !sortedOverlays.isEmpty {
-                            Divider()
+                            Rectangle().fill(BlitzUI.separator).frame(height: 1)
                             overlayList
                         }
                     }
-                    .padding(14)
-                }
-                .scrollIndicators(.hidden)
-                .onChange(of: draft.original?.id) { _, _ in proxy.scrollTo("composer", anchor: .top) }
-            }
-            Divider()
-            footer.padding(14)
+                },
+                footer: { footer }
+            ))
+            .onChange(of: draft.original?.id) { _, _ in proxy.scrollTo("composer", anchor: .top) }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(BlitzUI.projectLibraryBackground)
-        .foregroundStyle(BlitzUI.primaryText)
-        .buttonStyle(BlitzButtonStyle(.secondary))
-        .tint(BlitzUI.mint)
-        .task(id: (configuration.vm.lastExportedProject?.projectPath ?? "") + (configuration.vm.lastExportedProject?.selectedOutputLayout.rawValue ?? "")) { loadSelection() }
+        .onAppear(perform: loadSelection)
+        .onChange(of: (configuration.vm.lastExportedProject?.projectPath ?? "") + (configuration.vm.lastExportedProject?.selectedOutputLayout.rawValue ?? "")) { loadSelection() }
         .onChange(of: configuration.selectedID.wrappedValue) { _, _ in loadSelection() }
         .onChange(of: edits.textOverlays) { _, overlays in
             if let id = draft.original?.id, !overlays.contains(where: { $0.id == id }) { resetDraft() }
@@ -64,7 +60,7 @@ struct EditorTextInspector: View {
             TextField("What would you like to say?", text: $draft.text, axis: .vertical)
                 .lineLimit(3...5)
                 .textFieldStyle(.plain)
-                .font(.system(size: 14, weight: .medium))
+                .font(BlitzType.section)
                 .padding(12)
                 .background(BlitzUI.cardFill, in: .rect(cornerRadius: BlitzControlMetrics.radius))
                 .overlay {
@@ -120,12 +116,12 @@ struct EditorTextInspector: View {
                     Spacer(minLength: 0)
                     Text("min:sec")
                 }
-                .font(.system(size: 10)).foregroundStyle(BlitzUI.secondaryText)
+                .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
                 Text("Start and end refer to the original recording.")
-                    .font(.system(size: 10)).foregroundStyle(BlitzUI.secondaryText)
+                    .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
             } else {
                 Text("Enter a start before the end, within \(EditorPlaybackPosition.display(duration)).")
-                    .font(.system(size: 11)).foregroundStyle(BlitzUI.recordRed)
+                    .font(BlitzType.caption).foregroundStyle(BlitzUI.recordRed)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -146,12 +142,12 @@ struct EditorTextInspector: View {
                     } label: {
                         HStack(spacing: 10) {
                             Image(systemName: "textformat")
-                                .font(.system(size: 14)).foregroundStyle(BlitzUI.secondaryText)
+                                .font(BlitzType.glyph(14)).foregroundStyle(BlitzUI.secondaryText)
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(overlay.text).font(.system(size: 12, weight: .medium)).lineLimit(2)
+                                Text(overlay.text).font(BlitzType.label).lineLimit(2)
                                     .fixedSize(horizontal: false, vertical: true)
                                 Text("\(SilenceTime.label(overlay.start))–\(SilenceTime.label(overlay.end)) · \(overlay.style.preset.displayName)")
-                                    .font(.system(size: 10)).foregroundStyle(BlitzUI.secondaryText)
+                                    .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
                             }
                             Spacer(minLength: 0)
                         }
@@ -185,12 +181,12 @@ struct EditorTextInspector: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let error {
-                Text(error).font(.system(size: 11)).foregroundStyle(BlitzUI.recordRed)
+                Text(error).font(BlitzType.caption).foregroundStyle(BlitzUI.recordRed)
                     .fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 8) {
                 if draft.isEditing {
-                    Button("Cancel", action: resetDraft).blitzButton(.secondary)
+                    Button(action: resetDraft) { Label("Cancel", systemImage: "xmark") }.blitzButton(.secondary)
                 }
                 Button(action: saveText) {
                     Label(draft.isEditing ? "Save changes" : "Add to video",
@@ -201,7 +197,7 @@ struct EditorTextInspector: View {
                 .disabled(draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || draft.range(duration) == nil)
             }
             Text("Saved in this project · ⌘Z to undo")
-                .font(.system(size: 10)).foregroundStyle(BlitzUI.secondaryText)
+                .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
                 .frame(maxWidth: .infinity)
         }
     }
@@ -213,10 +209,10 @@ struct EditorTextInspector: View {
 
     private func timeField(_ field: TimeField) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(field.title).font(.system(size: 10)).foregroundStyle(BlitzUI.secondaryText)
+            Text(field.title).font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
             TextField("00:00.00", text: field.value)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .font(BlitzType.label.monospacedDigit())
                 .accessibilityLabel("Text \(field.title.lowercased()) time")
                 .help("Enter minutes:seconds, or seconds. Decimals are supported.")
         }

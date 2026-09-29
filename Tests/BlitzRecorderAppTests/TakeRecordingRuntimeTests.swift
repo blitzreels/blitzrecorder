@@ -1,4 +1,5 @@
 @testable import BlitzRecorderApp
+import AVFoundation
 import CoreMedia
 import Foundation
 import ScreenCaptureKit
@@ -447,4 +448,17 @@ private final class FailingStartLiveCompositedRecorder: LiveCompositedRecording 
     }
     func updateScene(_ scene: RecordingScene, transition: RecordingSceneTransition) {}
     func updateScreenCapture(settings: RecordingSettings, filter pickedFilter: SCContentFilter?) async throws {}
+}
+
+final class LiveCompositedRecorderDelegateTests: XCTestCase {
+    func testCaptureCallbacksReachObjectiveC() {
+        let selectors = [
+            #selector(SCStreamOutput.stream(_:didOutputSampleBuffer:of:)),
+            #selector(SCStreamDelegate.stream(_:didStopWithError:)),
+            #selector(AVCaptureVideoDataOutputSampleBufferDelegate.captureOutput(_:didOutput:from:)),
+        ]
+        for selector in selectors {
+            XCTAssertTrue(LiveCompositedRecorder.instancesRespond(to: selector), "\(selector)")
+        }
+    }
 }

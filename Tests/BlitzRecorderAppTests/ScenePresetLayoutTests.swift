@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 @testable import BlitzRecorderApp
 import XCTest
@@ -202,6 +203,111 @@ final class ScenePresetLayoutTests: XCTestCase {
             accuracy: 0.0001
         )
         XCTAssertEqual(SceneLayout.cameraInsetShape(for: frame, in: .horizontal), .portrait)
+    }
+
+    func testCircleCameraInsetRendersSquareTargetWithHalfSideRadius() throws {
+        for layout in CaptureLayout.allCases {
+            for padding in [CGFloat(0), 0.06] {
+                var settings = RecordingSettings()
+                settings.layout = layout
+                settings.canvasPadding = padding
+                settings = RecordingSceneMutation.applyingCameraInset(
+                    alignment: .bottomRight,
+                    shape: .circle,
+                    size: 0.3,
+                    to: settings,
+                    screenAspectRatio: 16.0 / 9.0,
+                    cameraAspectRatio: 16.0 / 9.0
+                ).settings
+                let dimensions = ScreenCaptureGeometry.outputDimensions(for: settings)
+                let policy = SceneRenderPlacementPolicy(
+                    canvas: CGRect(x: 0, y: 0, width: dimensions.width, height: dimensions.height),
+                    scene: RecordingScene(settings: settings),
+                    origin: .lowerLeft
+                )
+                let camera = try XCTUnwrap(policy.activePlacements.first { $0.kind == .camera })
+
+                XCTAssertEqual(settings.sceneLayout.cameraMask, .circle)
+                XCTAssertEqual(settings.sceneLayout.cameraInsetShape(in: layout), .circle)
+                XCTAssertEqual(settings.sceneLayout.cameraInsetSize(in: layout), 0.3, accuracy: 0.0001)
+                XCTAssertTrue(SceneLayout.isCameraInsetFrame(settings.sceneLayout.cameraFrame))
+                XCTAssertTrue(policy.rendersCircularCamera)
+                XCTAssertEqual(camera.targetRect.width, camera.targetRect.height, accuracy: 1)
+                XCTAssertEqual(
+                    camera.cornerRadius,
+                    min(camera.targetRect.width, camera.targetRect.height) / 2,
+                    accuracy: 0.0001
+                )
+                XCTAssertEqual(policy.cornerRadius(for: .camera), camera.cornerRadius, accuracy: 0.0001)
+            }
+        }
+    }
+
+    @MainActor
+    func testRectangleInsetCameraCornersMatchThePreview() throws {
+        var settings = RecordingSettings()
+        settings.layout = .horizontal
+        settings.sceneLayout.cameraMask = .circle
+        settings = RecordingSceneMutation.applyingCameraInset(
+            alignment: .bottomLeft,
+            shape: .landscape,
+            size: 0.3,
+            to: settings,
+            screenAspectRatio: 16.0 / 9.0,
+            cameraAspectRatio: 16.0 / 9.0
+        ).settings
+        let policy = SceneRenderPlacementPolicy(
+            canvas: CGRect(x: 0, y: 0, width: 1920, height: 1080),
+            scene: RecordingScene(settings: settings),
+            origin: .lowerLeft
+        )
+
+        XCTAssertEqual(settings.sceneLayout.cameraMask, .rectangle)
+        XCTAssertEqual(settings.sceneLayout.cameraInsetShape(in: .horizontal), .landscape)
+        let target = policy.targetRect(for: .camera)
+        XCTAssertEqual(policy.cornerRadius(for: .camera), SceneLayoutProjection.cameraCornerRadius(for: target))
+        XCTAssertGreaterThan(policy.cornerRadius(for: .camera), 0)
+
+        let preview = PreviewStageView()
+        preview.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
+        preview.captureLayout = .horizontal
+        preview.enabledSources = [.screen, .camera]
+        preview.sceneLayout = settings.sceneLayout
+        preview.layoutSubtreeIfNeeded()
+        let previewFrame = preview.renderedCameraFrameForTesting
+        let previewRadius = try XCTUnwrap(preview.cameraPreview.layer?.cornerRadius)
+        XCTAssertEqual(
+            previewRadius / min(previewFrame.width, previewFrame.height),
+            policy.cornerRadius(for: .camera) / min(target.width, target.height),
+            accuracy: 0.0001
+        )
+    }
+
+    func testCircleMaskIsDroppedWhenCameraFillsTheCanvas() {
+        var layout = SceneLayout.presetLayout(.webcamFullscreen, for: .horizontal)
+        layout.cameraMask = .circle
+        let policy = SceneRenderPlacementPolicy(
+            canvas: CGRect(x: 0, y: 0, width: 1920, height: 1080),
+            scene: RecordingScene(enabledSources: [.camera], sceneLayout: layout, fillsCanvasWhenOnlyVideoSource: true),
+            origin: .lowerLeft
+        )
+
+        XCTAssertFalse(policy.rendersCircularCamera)
+        XCTAssertEqual(policy.cornerRadius(for: .camera), 0)
+    }
+
+    func testApplyingPresetClearsCircleMask() {
+        var settings = RecordingSettings()
+        settings.layout = .vertical
+        settings.sceneLayout.cameraMask = .circle
+        let next = RecordingSceneMutation.applyingPreset(
+            .stackedHalves,
+            to: settings,
+            screenAspectRatio: 16.0 / 9.0,
+            cameraAspectRatio: 16.0 / 9.0
+        )
+
+        XCTAssertEqual(next.sceneLayout.cameraMask, .rectangle)
     }
 
     func testCameraFocusIsNoLongerSupported() {

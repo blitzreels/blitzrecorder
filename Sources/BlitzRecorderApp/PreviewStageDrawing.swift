@@ -4,52 +4,49 @@ import QuartzCore
 
 enum PreviewStageDrawing {
     static func maskPath(for rect: CGRect, radius: CGFloat) -> CGPath {
+        let radius = min(radius, SceneLayoutProjection.circularCornerRadius(for: rect))
         guard radius > 0 else {
             return CGPath(rect: rect, transform: nil)
         }
         return CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
     }
 
-    static func maskCornerRadius(
-        visibleRect: CGRect,
-        isCamera: Bool,
-        isFullscreen: Bool,
-        isFullWidth: Bool
-    ) -> CGFloat {
-        let paddedRadius = SceneLayoutProjection.sourceCornerRadius(for: visibleRect, normalizedRadius: 0)
-        guard paddedRadius <= 0, isCamera, !isFullscreen, !isFullWidth else {
-            return paddedRadius
-        }
-        return PreviewStageLayout.sourceCornerRadius(for: visibleRect)
+    struct SourceShapeRequest: Equatable {
+        let isCamera: Bool
+        let rect: CGRect
+        let isFullscreen: Bool
+        let isFullWidth: Bool
+        let isCircle: Bool
+    }
+
+    static func maskCornerRadius(_ request: SourceShapeRequest) -> CGFloat {
+        request.isCamera ? PreviewStageLayout.cameraPreviewCornerRadius(request) : 0
     }
 
     struct SourceShape: Equatable {
         var cornerRadius: CGFloat
         var borderWidth: CGFloat
         var borderAlpha: CGFloat
+        var isCircle: Bool
     }
 
-    static func sourceShape(
-        isCamera: Bool,
-        bounds: CGRect,
-        isFullscreen: Bool,
-        isFullWidth: Bool
-    ) -> SourceShape {
-        if isCamera {
-            let radius = PreviewStageLayout.cameraPreviewCornerRadius(
-                bounds: bounds,
-                isFullscreen: isFullscreen,
-                isFullWidth: isFullWidth
+    static func sourceShape(_ request: SourceShapeRequest) -> SourceShape {
+        if request.isCamera {
+            let radius = PreviewStageLayout.cameraPreviewCornerRadius(request)
+            return SourceShape(
+                cornerRadius: radius,
+                borderWidth: radius > 0 ? 1 : 0,
+                borderAlpha: 0.16,
+                isCircle: request.isCircle
             )
-            return SourceShape(cornerRadius: radius, borderWidth: radius > 0 ? 1 : 0, borderAlpha: 0.16)
         }
-        let radius = SceneLayoutProjection.sourceCornerRadius(for: bounds, normalizedRadius: 0)
-        return SourceShape(cornerRadius: radius, borderWidth: radius > 0 ? 1 : 0, borderAlpha: 0.14)
+        let radius = SceneLayoutProjection.sourceCornerRadius(for: request.rect, normalizedRadius: 0)
+        return SourceShape(cornerRadius: radius, borderWidth: radius > 0 ? 1 : 0, borderAlpha: 0.14, isCircle: false)
     }
 
     static func apply(_ shape: SourceShape, to layer: CALayer) {
         layer.cornerRadius = shape.cornerRadius
-        layer.cornerCurve = .continuous
+        layer.cornerCurve = shape.isCircle ? .circular : .continuous
         layer.borderWidth = shape.borderWidth
         layer.borderColor = NSColor.white.withAlphaComponent(shape.borderAlpha).cgColor
     }

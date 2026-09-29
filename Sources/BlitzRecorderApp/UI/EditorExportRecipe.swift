@@ -22,13 +22,14 @@ struct EditorExportRecipe {
     let estimatedSize: String
 
     static func make(_ request: Request) -> EditorExportRecipe {
+        let sharing = request.destination == .link
         let profile = ExportPerformanceProfile.resolved(
-            preset: request.destination == .link ? .maximum : request.preset,
+            preset: sharing ? .custom : request.preset,
             sourceResolution: request.sourceResolution,
             sourceFramesPerSecond: request.sourceFramesPerSecond,
-            customResolution: request.customResolution,
-            customFramesPerSecond: request.customFramesPerSecond,
-            customVideoQuality: request.customVideoQuality
+            customResolution: sharing ? (request.sourceResolution.height < 1080 ? request.sourceResolution : .p1080) : request.customResolution,
+            customFramesPerSecond: sharing ? request.sourceFramesPerSecond : request.customFramesPerSecond,
+            customVideoQuality: sharing ? .high : request.customVideoQuality
         )
         let dimensions = profile.resolution.dimensions(for: request.layout)
         let encoding = profile.videoQuality.encodingProfile(

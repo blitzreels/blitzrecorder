@@ -74,7 +74,7 @@ struct EditorAsset: Identifiable, Equatable {
         case .camera: return BlitzUI.trackCamera
         case .microphone: return BlitzUI.trackMicrophone
         case .systemAudio: return BlitzUI.trackSystemAudio
-        case .other: return Color.white.opacity(0.5)
+        case .other: return BlitzUI.secondaryText
         }
     }
 

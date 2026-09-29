@@ -96,11 +96,11 @@ struct SourceReadinessNoticeView: View {
             HStack(spacing: 6) {
                 if notice.isWaiting { ProgressView().controlSize(.mini) }
                 Text(notice.title)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(BlitzType.label)
                     .foregroundStyle(notice.isWaiting ? BlitzUI.primaryText : BlitzUI.warning)
             }
             Text(notice.detail)
-                .font(.system(size: 11))
+                .font(BlitzType.caption)
                 .foregroundStyle(BlitzUI.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
             if let action = notice.action {

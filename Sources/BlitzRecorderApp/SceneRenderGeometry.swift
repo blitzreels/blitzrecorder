@@ -56,6 +56,10 @@ struct SceneRenderGeometry {
         placementPolicy.cornerRadius(for: kind)
     }
 
+    var rendersCircularCamera: Bool {
+        placementPolicy.rendersCircularCamera
+    }
+
     func isFullCanvasFrame(for kind: SceneLayerKind) -> Bool {
         normalizedFrame(for: kind).isAlmostFullCanvasFrame
     }
@@ -67,8 +71,7 @@ struct SceneRenderGeometry {
     }
 
     func isFullCanvasWidth(for kind: SceneLayerKind) -> Bool {
-        let frame = normalizedFrame(for: kind)
-        return abs(frame.minX) <= 0.0001 && abs(frame.width - 1) <= 0.0001
+        normalizedFrame(for: kind).isAlmostFullCanvasWidth
     }
 
     func sourceFrame(
@@ -136,7 +139,7 @@ struct SceneRenderGeometry {
     }
 }
 
-private extension CGRect {
+extension CGRect {
     var isAlmostFullCanvasFrame: Bool {
         abs(minX) <= 0.0001
             && abs(minY) <= 0.0001
@@ -144,6 +147,12 @@ private extension CGRect {
             && abs(height - 1) <= 0.0001
     }
 
+    var isAlmostFullCanvasWidth: Bool {
+        abs(minX) <= 0.0001 && abs(width - 1) <= 0.0001
+    }
+}
+
+private extension CGRect {
     func isAlmostEqual(to other: CGRect) -> Bool {
         abs(minX - other.minX) <= 0.0001
             && abs(minY - other.minY) <= 0.0001

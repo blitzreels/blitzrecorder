@@ -139,31 +139,47 @@ The [architecture guide](ARCHITECTURE.md) maps the recording lifecycle, project 
 
 ## Local agent tools
 
-With the Mac app open, go to **Settings > Integrations** to enable the local server, test the connection,
-and copy client setup details.
-It exposes Streamable HTTP MCP at `http://127.0.0.1:18473/mcp`.
+BlitzRecorder runs a local MCP server so AI agents can find your recordings, read transcripts, and export MP4s.
+It is on by default while the Mac app is open. Manage it in **Settings > Integrations**, where you can also
+test the connection and copy the setup commands below.
 
-For Codex, run:
+Endpoint: `http://127.0.0.1:18473/mcp` (Streamable HTTP, JSON responses, no session).
+
+Claude Code:
+
+```bash
+claude mcp add --transport http blitzrecorder http://127.0.0.1:18473/mcp
+```
+
+Codex:
 
 ```bash
 codex mcp add blitzrecorder --url http://127.0.0.1:18473/mcp
 ```
 
-Start a new Codex task after adding the server so it discovers the tools.
-Agent Plugin 1.0-compatible clients can use the `mcp.json` entry shown in Settings.
+Start a new session after adding the server so the agent discovers the tools.
+Agent Plugin 1.0 clients can use the `mcp.json` entry shown in Settings.
 
-The tools can filter projects, check source readiness, read saved transcripts, inspect previous exports,
-and queue one or more MP4 exports.
-Exports use the saved editor state and export recipe, run sequentially, and expose job progress.
+| Tool | What it does | Key inputs |
+|------|--------------|------------|
+| `projects_list` | Lists projects with transcript and export availability | `query`, `recordedAfter`, `recordedBefore`, `hasTranscript`, `limit` (1–200, default 50), `offset` |
+| `project_get` | Shows source readiness, the saved export recipe, and previous exports | `projectId` |
+| `project_transcript` | Returns the saved local transcript | `projectId` |
+| `projects_export_as_is` | Queues MP4 exports with each project's saved edits and export recipe | `projectIds`, optional absolute `outputDirectory` |
+| `export_status` | Reports job progress and output paths | `jobId` |
 
-`projects_export_as_is` accepts an optional absolute `outputDirectory`.
-It defaults to the configured export folder; an override must be that folder or one of its subfolders.
+Exports run one at a time. `outputDirectory` defaults to the configured export folder;
+an override must be that folder or one of its subfolders.
 
-For browser clients, choose **Open workspace** in the same Settings page.
-The WebMCP workspace at `http://127.0.0.1:18473/webmcp` exposes the same tools in a compatible browser.
+The server listens only on your Mac's loopback address and accepts browser origins from `localhost` only.
+Any local agent you connect can read the project information and transcripts it asks for.
 
-The server listens only on your Mac's loopback address.
-Connecting a client gives that client access to the project information and transcripts it requests.
+To check the server by hand while the app is open:
+
+```bash
+curl -s http://127.0.0.1:18473/mcp -H 'Content-Type: application/json' -H 'Accept: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
 
 ## Repository map
 

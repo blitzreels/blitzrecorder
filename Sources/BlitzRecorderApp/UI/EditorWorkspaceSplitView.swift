@@ -41,15 +41,12 @@ struct EditorPaneSizing: Equatable {
 }
 
 struct EditorWorkspaceSplitView<Preview: View, Inspector: View, Timeline: View>: View {
-    let showsInspector: Bool
     let showsSourceTracks: Bool
-    let inspectorSpansTimeline: Bool
     @ViewBuilder let preview: () -> Preview
     @ViewBuilder let inspector: () -> Inspector
     @ViewBuilder let timeline: () -> Timeline
 
     @AppStorage("editor.inspectorWidth") private var savedInspectorWidth = EditorPaneSizing.Pane.inspector.defaultSize
-    @AppStorage("editor.sharingWidth") private var savedSharingWidth = EditorPaneSizing.Pane.inspector.defaultSize
     @AppStorage("editor.timelineHeight") private var savedTimelineHeight = 430.0
     @AppStorage("editor.compactTimelineHeight") private var savedCompactTimelineHeight = EditorPaneSizing.Pane.timeline.defaultSize
     @State private var inspectorWidthDraft: Double?
@@ -60,7 +57,7 @@ struct EditorWorkspaceSplitView<Preview: View, Inspector: View, Timeline: View>:
             let inspectorSize = EditorPaneSizing.resolve(
                 .init(
                     pane: .inspector,
-                    preferred: inspectorWidthDraft ?? (inspectorSpansTimeline ? savedSharingWidth : savedInspectorWidth),
+                    preferred: inspectorWidthDraft ?? savedInspectorWidth,
                     available: proxy.size.width
                 ))
             let timelineSize = EditorPaneSizing.resolve(
@@ -69,55 +66,42 @@ struct EditorWorkspaceSplitView<Preview: View, Inspector: View, Timeline: View>:
                     preferred: timelineHeightDraft ?? (showsSourceTracks ? savedTimelineHeight : savedCompactTimelineHeight),
                     available: proxy.size.height
                 ))
-            HStack(spacing: 0) {
-                VStack(spacing: 0) {
-                    HStack(spacing: 0) {
-                        preview()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .clipped()
-                        if showsInspector && !inspectorSpansTimeline {
-                          inspectorPane(inspectorSize)
-                        }
-                    }
-                    .frame(height: max(0, proxy.size.height - timelineSize.value - EditorPaneSizing.dividerSize))
-                    BlitzPaneDivider(
-                        configuration: .init(
-                            axis: .vertical,
-                            label: "Timeline height",
-                            value: Binding(get: { timelineSize.value }, set: { timelineHeightDraft = $0 }),
-                            bounds: timelineSize.bounds,
-                            defaultValue: showsSourceTracks ? 430 : EditorPaneSizing.Pane.timeline.defaultSize,
-                            onCommit: {
-                                let height = timelineHeightDraft ?? timelineSize.value
-                                if showsSourceTracks { savedTimelineHeight = height }
-                                else { savedCompactTimelineHeight = height }
-                                timelineHeightDraft = nil
-                            }
-                        ))
-                    timeline()
-                        .frame(height: timelineSize.value)
+            VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    preview()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .clipped()
+                    BlitzPaneDivider(configuration: .init(
+                        axis: .horizontal, label: "Inspector width",
+                        value: Binding(get: { inspectorSize.value }, set: { inspectorWidthDraft = $0 }),
+                        bounds: inspectorSize.bounds, defaultValue: EditorPaneSizing.Pane.inspector.defaultSize,
+                        onCommit: {
+                            savedInspectorWidth = inspectorWidthDraft ?? inspectorSize.value
+                            inspectorWidthDraft = nil
+                        }
+                    ))
+                    inspector().frame(width: inspectorSize.value).frame(maxHeight: .infinity).clipped()
                 }
-                if showsInspector && inspectorSpansTimeline {
-                    inspectorPane(inspectorSize)
-                }
+                .frame(height: max(0, proxy.size.height - timelineSize.value - EditorPaneSizing.dividerSize))
+                BlitzPaneDivider(
+                    configuration: .init(
+                        axis: .vertical,
+                        label: "Timeline height",
+                        value: Binding(get: { timelineSize.value }, set: { timelineHeightDraft = $0 }),
+                        bounds: timelineSize.bounds,
+                        defaultValue: showsSourceTracks ? 430 : EditorPaneSizing.Pane.timeline.defaultSize,
+                        onCommit: {
+                            let height = timelineHeightDraft ?? timelineSize.value
+                            if showsSourceTracks { savedTimelineHeight = height }
+                            else { savedCompactTimelineHeight = height }
+                            timelineHeightDraft = nil
+                        }
+                    ))
+                timeline()
+                    .frame(height: timelineSize.value)
+                    .clipped()
             }
         }
         .onChange(of: showsSourceTracks) { timelineHeightDraft = nil }
-        .onChange(of: inspectorSpansTimeline) { inspectorWidthDraft = nil }
-    }
-
-    @ViewBuilder private func inspectorPane(_ size: EditorPaneSizing) -> some View {
-        BlitzPaneDivider(configuration: .init(
-            axis: .horizontal, label: inspectorSpansTimeline ? "Sharing width" : "Inspector width",
-            value: Binding(get: { size.value }, set: { inspectorWidthDraft = $0 }),
-            bounds: size.bounds, defaultValue: EditorPaneSizing.Pane.inspector.defaultSize,
-            onCommit: {
-                if inspectorSpansTimeline { savedSharingWidth = inspectorWidthDraft ?? size.value }
-                else { savedInspectorWidth = inspectorWidthDraft ?? size.value }
-                inspectorWidthDraft = nil
-            }
-        ))
-        inspector().frame(width: size.value).frame(maxHeight: .infinity).clipped()
     }
 }

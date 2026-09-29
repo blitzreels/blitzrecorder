@@ -40,14 +40,39 @@ export async function connectAccountInTransaction(identity: HostingIdentity & { 
   return connect(identity.db);
 }
 
+export async function accountForToken(token: string): Promise<HostingAccount | null> {
+  const result = await hostingPool().query<HostingAccount>(
+    `SELECT id, email, active_until, storage_limit FROM hosting_accounts WHERE token_hash = $1
+     OR id IN (SELECT account_id FROM hosting_connections WHERE token_hash=$1 AND expires_at>now())`, [tokenHash(token)]);
+  return result.rows[0] ?? null;
+}
+
 export function accountState(account: HostingAccount) {
   return { email: account.email, active: account.active_until.getTime() > Date.now(), activeUntil: account.active_until.toISOString(), storageLimit: Number(account.storage_limit) };
 }
 
-export async function disconnectAccount(request: Request) {
+/** Ends every Mac and browser session, including the account's original token. */
+export async function signOutEverywhere(account: HostingAccount) {
+  await transaction(async (db) => {
+    await db.query("DELETE FROM hosting_connections WHERE account_id=$1", [account.id]);
+    await db.query("UPDATE hosting_accounts SET token_hash=$2 WHERE id=$1", [account.id, tokenHash(newAccessToken())]);
+  });
+}
+
+export async function disconnectAccount({ request, account, body }: { request: Request; account: HostingAccount; body: unknown }) {
+  if (body && typeof body === "object" && "everywhere" in body && body.everywhere === true) {
+    await signOutEverywhere(account);
+    return { disconnected: true, everywhere: true };
+  }
   const token = request.headers.get("authorization")?.slice(7) ?? "";
   await hostingPool().query("DELETE FROM hosting_connections WHERE token_hash=$1", [tokenHash(token)]);
-  return { disconnected: true };
+  return { disconnected: true, everywhere: false };
+}
+
+export async function activeSessionCount(account: HostingAccount): Promise<number> {
+  const result = await hostingPool().query<{ count: string }>(
+    "SELECT count(*) FROM hosting_connections WHERE account_id=$1 AND expires_at>now()", [account.id]);
+  return Number(result.rows[0]?.count ?? 0);
 }
 
 export async function billingURL(account: HostingAccount) {

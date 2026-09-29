@@ -1,11 +1,36 @@
 import AppKit
 import Observation
 
+struct HostedLibraryVideo: Codable, Identifiable, Equatable {
+    let id: String
+    let title: String
+    let status: String
+    let sharePath: String?
+    let duration: Double?
+    let width: Int?
+    let height: Int?
+    let bytes: Int64
+    let error: String?
+
+    var isProcessing: Bool { ["queued", "processing"].contains(status) }
+    var statusLabel: String {
+        switch status {
+        case "ready": "Ready to share"
+        case "uploading": "Upload incomplete"
+        case "queued": "Waiting to process"
+        case "processing": "Preparing playback"
+        case "failed": "Processing failed"
+        case "revoked": "Removed"
+        default: "Checking status"
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class HostedVideoShareController {
-    enum AccountOperation { case checking, sendingCode, verifyingCode, openingBilling, signingOut }
-    struct Account: Decodable, Equatable {
+    enum AccountOperation { case checking, sendingCode, verifyingCode, openingBilling, signingOut, signingOutEverywhere }
+    struct Account: Codable, Equatable {
         let active: Bool
         let email: String?
     }
@@ -28,6 +53,7 @@ final class HostedVideoShareController {
     private(set) var shareURL: URL?
     private(set) var transferProgress: HostingClient.Progress?
     private(set) var transferMessage: String?
+    private(set) var detailsNotice: String?
     private(set) var isRunning = false
     private(set) var account: Account?
     private(set) var accountOperation: AccountOperation?
@@ -37,6 +63,21 @@ final class HostedVideoShareController {
     private(set) var challenge: SignInChallenge?
     private(set) var resendAfter = Date.distantPast
     private(set) var awaitingPayment = false
+    private(set) var videos: [HostedLibraryVideo] = []
+    private(set) var isRefreshingVideos = false
+    private(set) var libraryMessage: String?
+    private(set) var libraryUpdatedAt: Date?
+    @ObservationIgnored private var libraryEmail: String?
+    @ObservationIgnored private var refreshAfterUpload = false
+    private var projectShares: [ProjectShare] = []
+    private struct ProjectShare: Codable {
+        let projectPath: String
+        let url: URL
+    }
+    private struct LibraryCache: Codable {
+        let videos: [HostedLibraryVideo]
+        let updatedAt: Date
+    }
     @ObservationIgnored private var selectedFingerprint: String?
     @ObservationIgnored private let client: HostingClient
     @ObservationIgnored private let credentials: HostingCredentialStore
@@ -44,12 +85,22 @@ final class HostedVideoShareController {
     @ObservationIgnored private var billingTask: Task<Void, Never>?
 
     var isConnected: Bool { account != nil }
+    var isPerformingAccountAction: Bool { accountOperation != nil && accountOperation != .checking }
     var isSubscribed: Bool { account?.active == true }
+    var isSigningOut: Bool { accountOperation == .signingOut || accountOperation == .signingOutEverywhere }
     var message: String? { transferMessage ?? accountMessage }
 
     init(client: HostingClient) {
         self.client = client
         credentials = .init(origin: client.origin)
+        if credentials.load() != nil,
+           let data = UserDefaults.standard.data(forKey: snapshotKey),
+           let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) {
+            account = snapshot.account
+            plan = snapshot.plan
+            hasCheckedAccount = true
+            prepareLibrary()
+        }
         if let data = UserDefaults.standard.data(forKey: "HostingExport:\(client.origin.absoluteString)") {
             var stale = false
             fileURL = try? URL(resolvingBookmarkData: data, options: [.withSecurityScope, .withoutUI],
@@ -79,6 +130,7 @@ final class HostedVideoShareController {
         shareURL = nil
         transferProgress = nil
         transferMessage = nil
+        detailsNotice = nil
     }
 
     func requestCode(email: String) async {
@@ -102,9 +154,10 @@ final class HostedVideoShareController {
             let result: Connection = try await client.send(.init(route: "sign-in/verify", token: nil,
                 body: JSONSerialization.data(withJSONObject: ["challenge": challenge.challenge, "code": code])))
             try credentials.save(result.token)
-            account = .init(active: result.active, email: result.email)
+            setAccount(.init(active: result.active, email: result.email))
             self.challenge = nil
             hasCheckedAccount = true
+            await refreshVideos()
         } catch { accountMessage = error.localizedDescription }
     }
 
@@ -121,6 +174,7 @@ final class HostedVideoShareController {
         defer { accountOperation = nil; hasCheckedAccount = true }
         do {
             plan = try await client.send(.init(route: "plan", token: nil, body: nil))
+            saveSnapshot()
         } catch {
             accountMessage = (error as? HostingFailure)?.status == 404
                 ? "Video hosting is not available on this server yet. You can save your video to this Mac."
@@ -129,19 +183,22 @@ final class HostedVideoShareController {
         }
         guard plan?.available == true else { return }
         guard let token = credentials.load() else {
-            account = nil
+            setAccount(nil)
+            clearLibrary()
             if challenge == nil { accountMessage = nil }
             return
         }
         do {
-            account = try await client.send(.init(route: "account", token: token, body: nil))
+            setAccount(try await client.send(.init(route: "account", token: token, body: nil)))
             accountMessage = nil
             if isSubscribed { awaitingPayment = false }
+            await refreshVideos()
         } catch {
             if (error as? HostingFailure)?.status == 401 {
                 credentials.clear()
-                account = nil
+                setAccount(nil)
                 awaitingPayment = false
+                clearLibrary()
             }
             accountMessage = error.localizedDescription
         }
@@ -174,46 +231,63 @@ final class HostedVideoShareController {
         } catch { accountMessage = error.localizedDescription }
     }
 
-    func disconnect() async {
+    /// `everywhere` also ends every other Mac and browser session for this account.
+    func disconnect(everywhere: Bool = false) async {
         guard accountOperation == nil, !isRunning, let token = credentials.load() else { return }
-        accountOperation = .signingOut
+        accountOperation = everywhere ? .signingOutEverywhere : .signingOut
         defer { accountOperation = nil }
         do {
-            struct Result: Decodable { let disconnected: Bool }
-            let _: Result = try await client.send(.init(route: "disconnect", token: token, body: Data("{}".utf8)))
+            struct Result: Decodable { let disconnected: Bool; let everywhere: Bool? }
+            let body = Data((everywhere ? #"{"everywhere":true}"# : "{}").utf8)
+            let result: Result = try await client.send(.init(route: "disconnect", token: token, body: body))
             billingTask?.cancel()
             credentials.clear()
-            account = nil
+            setAccount(nil)
             challenge = nil
             awaitingPayment = false
             shareURL = nil
-            accountMessage = nil
             transferMessage = nil
+            clearLibrary()
+            // A server without sign-out-everywhere still revokes this Mac's token, so the local sign-out stands.
+            accountMessage = everywhere && result.everywhere != true
+                ? "Signed out of this Mac only. Sign out your other devices from blitzrecorder.com." : nil
         } catch { accountMessage = error.localizedDescription }
     }
 
     func start() {
-        guard !isRunning, accountOperation != .signingOut, isSubscribed, let fileURL, let token = credentials.load() else { return }
+        guard !isRunning, !isSigningOut, isSubscribed, let fileURL, let token = credentials.load() else { return }
         isRunning = true
         transferMessage = nil
         shareURL = nil
         transferProgress = .preparing
-        let metadata = HostingExportMetadata.load(fileURL) ?? .init(
-            title: fileURL.deletingPathExtension().lastPathComponent, details: .empty)
+        detailsNotice = nil
+        let projectPath = projectPath
         task = Task {
             var access = SecurityScopedResourceAccess(urls: [fileURL])
             access.start()
             defer { access.stop(); isRunning = false; task = nil }
+            let metadata = await HostingExportMetadata.resolve(.init(fileURL: fileURL, projectPath: projectPath))
+            if metadata.details.transcript.isEmpty {
+                detailsNotice = projectPath == nil
+                    ? "This link has no transcript or chapters because the video isn’t linked to a BlitzRecorder project."
+                    : "This link has no transcript yet. Transcribe the recording, then share again to include it."
+            }
             do {
                 shareURL = try await client.upload(.init(fileURL: fileURL, token: token, metadata: metadata,
                     progress: { update in await MainActor.run { self.transferProgress = update } }))
+                if let shareURL, let projectPath {
+                    rememberShare(.init(projectPath: projectPath, url: shareURL))
+                }
+                if isRefreshingVideos { refreshAfterUpload = true }
+                else { await refreshVideos() }
             } catch is CancellationError {
                 transferMessage = "Upload paused. Resume continues from the saved parts."
             } catch {
                 if (error as? HostingFailure)?.status == 401 {
                     credentials.clear()
-                    account = nil
+                    setAccount(nil)
                     hasCheckedAccount = true
+                    clearLibrary()
                 }
                 transferMessage = Task.isCancelled ? "Upload paused. Resume continues from the saved parts." : error.localizedDescription
             }
@@ -221,4 +295,118 @@ final class HostedVideoShareController {
     }
 
     func pause() { task?.cancel() }
+
+    func watchURL(_ video: HostedLibraryVideo) -> URL? {
+        guard video.status == "ready", let path = video.sharePath else { return nil }
+        return try? client.shareURL(path)
+    }
+
+    func projectPath(for video: HostedLibraryVideo) -> String? {
+        guard let url = watchURL(video) else { return nil }
+        return projectShares.first { $0.url == url }?.projectPath
+    }
+
+    func sharedURL(forProject path: String?) -> URL? {
+        guard let path, isConnected else { return nil }
+        return projectShares.first { $0.projectPath == path }.flatMap { receipt in
+            videos.contains { watchURL($0) == receipt.url } ? receipt.url : nil
+        }
+    }
+
+    private func libraryKey(_ suffix: String) -> String? {
+        guard let email = libraryEmail else { return nil }
+        return "HostingLibrary:\(client.origin.absoluteString):\(email):\(suffix)"
+    }
+
+    private struct Snapshot: Codable {
+        let account: Account?
+        let plan: HostingPlan?
+    }
+
+    private var snapshotKey: String { "HostingAccount:\(client.origin.absoluteString)" }
+
+    private func setAccount(_ value: Account?) {
+        account = value
+        saveSnapshot()
+    }
+
+    private func saveSnapshot() {
+        guard account != nil, let data = try? JSONEncoder().encode(Snapshot(account: account, plan: plan)) else {
+            UserDefaults.standard.removeObject(forKey: snapshotKey)
+            return
+        }
+        UserDefaults.standard.set(data, forKey: snapshotKey)
+    }
+
+    private func prepareLibrary() {
+        guard let email = account?.email?.lowercased(), email != libraryEmail else { return }
+        clearLibrary()
+        libraryEmail = email
+        if let key = libraryKey("videos"), let data = UserDefaults.standard.data(forKey: key),
+           let cache = try? JSONDecoder().decode(LibraryCache.self, from: data) {
+            videos = cache.videos
+            libraryUpdatedAt = cache.updatedAt
+        }
+        if let key = libraryKey("projects"), let data = UserDefaults.standard.data(forKey: key) {
+            projectShares = (try? JSONDecoder().decode([ProjectShare].self, from: data)) ?? []
+        }
+    }
+
+    private func rememberShare(_ receipt: ProjectShare) {
+        prepareLibrary()
+        shareURL = receipt.url
+        projectShares.removeAll { $0.projectPath == receipt.projectPath }
+        projectShares.insert(receipt, at: 0)
+        if let key = libraryKey("projects"), let data = try? JSONEncoder().encode(projectShares) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+    }
+
+    private func clearLibrary() {
+        videos = []
+        projectShares = []
+        libraryEmail = nil
+        libraryMessage = nil
+        libraryUpdatedAt = nil
+        shareURL = nil
+    }
+
+    func refreshVideos() async {
+        guard !isRefreshingVideos, isConnected, let token = credentials.load() else { return }
+        prepareLibrary()
+        let email = libraryEmail
+        isRefreshingVideos = true
+        defer {
+            isRefreshingVideos = false
+            if refreshAfterUpload {
+                refreshAfterUpload = false
+                Task { await refreshVideos() }
+            }
+        }
+        do {
+            struct Library: Decodable { let assets: [HostedLibraryVideo] }
+            let library: Library = try await client.send(.init(route: "assets", token: token, body: nil))
+            guard credentials.load() == token, libraryEmail == email else { return }
+            videos = library.assets.filter { $0.status != "revoked" }
+            let updatedAt = Date()
+            libraryUpdatedAt = updatedAt
+            libraryMessage = nil
+            if let key = libraryKey("videos"), let data = try? JSONEncoder().encode(
+                LibraryCache(videos: videos, updatedAt: updatedAt)) {
+                UserDefaults.standard.set(data, forKey: key)
+            }
+            if !isRunning { shareURL = sharedURL(forProject: projectPath) }
+        } catch {
+            guard credentials.load() == token, libraryEmail == email else { return }
+            if (error as? HostingFailure)?.status == 401 {
+                credentials.clear()
+                setAccount(nil)
+                clearLibrary()
+                accountMessage = "Sign in again to see your shared videos."
+            } else {
+                libraryMessage = videos.isEmpty ? "Unable to load shared videos. Try again."
+                    : "Couldn’t refresh. Showing your last synced videos."
+            }
+        }
+    }
 }

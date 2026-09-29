@@ -260,11 +260,11 @@ extension RecorderViewModel {
     }
 
     var cameraInsetShape: CameraInsetShape {
-        SceneLayout.cameraInsetShape(for: settings.sceneLayout.cameraFrame, in: settings.layout)
+        settings.sceneLayout.cameraInsetShape(in: settings.layout)
     }
 
     var cameraInsetSize: Double {
-        Double(SceneLayout.cameraInsetSize(for: settings.sceneLayout.cameraFrame, in: settings.layout))
+        Double(settings.sceneLayout.cameraInsetSize(in: settings.layout))
     }
 
     var cameraInsetSizeRange: ClosedRange<Double> {
@@ -487,16 +487,61 @@ extension RecorderViewModel {
     func primaryAction() {
         switch state {
         case .idle:
-            let readiness = coordinator.recordingReadiness()
-            guard readiness.isReady else {
-                resolveStartBlockers(readiness)
-                return
+            if countdownRemaining != nil {
+                cancelCountdown()
+            } else {
+                requestRecordingStart()
             }
-            coordinator.start()
         case .recording, .paused:
             coordinator.stop()
         case .starting, .finishing:
             break
+        }
+    }
+
+    func requestRecordingStart() {
+        guard state == .idle, countdownRemaining == nil else { return }
+        let readiness = coordinator.recordingReadiness()
+        guard readiness.isReady else {
+            resolveStartBlockers(readiness)
+            return
+        }
+        beginCountdown()
+    }
+
+    func setCountdownSeconds(_ seconds: Int) {
+        RecordingCountdownPreference().setSeconds(seconds)
+        countdownSeconds = RecordingCountdownPreference().seconds
+    }
+
+    func cancelCountdown() {
+        countdownTask?.cancel()
+        countdownTask = nil
+        countdownRemaining = nil
+    }
+
+    private func beginCountdown() {
+        guard state == .idle, countdownRemaining == nil, studioMode == .record else { return }
+        countdownTask?.cancel()
+        cancelScreenCropMode()
+        if isCameraCropModeEnabled { cancelCameraCropMode() }
+        guard countdownSeconds > 0 else {
+            coordinator.start()
+            return
+        }
+        countdownRemaining = countdownSeconds
+        countdownTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            for remaining in stride(from: self.countdownSeconds, to: 0, by: -1) {
+                self.countdownRemaining = remaining
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return }
+            }
+            self.countdownTask = nil
+            self.countdownRemaining = nil
+            guard self.state == .idle, self.studioMode == .record,
+                  self.coordinator.recordingReadiness().isReady else { return }
+            self.coordinator.start()
         }
     }
 
@@ -518,7 +563,7 @@ extension RecorderViewModel {
 
             let updatedReadiness = coordinator.recordingReadiness()
             if updatedReadiness.isReady {
-                coordinator.start()
+                beginCountdown()
             } else {
                 detailMessage = updatedReadiness.blockers.first?.sentence ?? updatedReadiness.detail
             }
@@ -547,6 +592,12 @@ extension RecorderViewModel {
 
     func openReadinessDetails() {
         onPresentSettings?(.permissions)
+    }
+
+    var recordingBlockerSummary: String? {
+        _ = permissionRefreshToken
+        let readiness = coordinator.recordingReadiness()
+        return readiness.isReady ? nil : readiness.blockers.shortSummary
     }
 
     var recordingBlockerDetail: String? {

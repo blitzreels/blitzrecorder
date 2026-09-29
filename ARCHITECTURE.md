@@ -24,7 +24,7 @@ flowchart TD
     Win[Windows Studio] --> Domain[BlitzRecorderDomain]
     Win --> WinCap[WGC DXGI WASAPI MF]
     WinCap --> Files
-    MCP[Loopback MCP and WebMCP] --> Service[MCPProjectService]
+    MCP[Loopback MCP server] --> Service[MCPProjectService]
     Service --> Files
     Service --> Export
     Editor -->|User chooses upload| BlitzReels[BlitzReels]
@@ -207,18 +207,21 @@ storage.
 Transcription runs locally after the models are available.
 Model downloads require network access.
 
-### MCP and WebMCP
+### MCP server
 
-[BlitzRecorderMCPServer](Sources/BlitzRecorderApp/BlitzRecorderMCPServer.swift) registers tools with the Swift MCP SDK.
+[BlitzRecorderMCPServer](Sources/BlitzRecorderApp/BlitzRecorderMCPServer.swift) defines the tools with the Swift MCP SDK.
 [LoopbackMCPHTTPServer](Sources/BlitzRecorderApp/LoopbackMCPHTTPServer.swift) serves them over SwiftNIO at
-`127.0.0.1:18473` while the app is open and the server is enabled.
+`127.0.0.1:18473/mcp` while the app is open and the server is enabled.
 
-[MCPProjectService](Sources/BlitzRecorderApp/MCPProjectService.swift) reads projects and transcripts and queues exports
-through the same native export pipeline.
-MCP exports run sequentially and use saved editor state; destination overrides stay within the configured export folder.
+The endpoint is stateless Streamable HTTP with JSON responses.
+Each HTTP request gets a short-lived SDK `Server` and `StatelessHTTPServerTransport`, so every client can send
+`initialize` without colliding with earlier clients. Origin, Accept, Content-Type, and protocol-version headers are
+validated before a request reaches a tool.
 
-`/mcp` is the Streamable HTTP endpoint.
-`/webmcp` serves the bundled browser workspace with the same project tools.
+[MCPProjectService](Sources/BlitzRecorderApp/MCPProjectService.swift) is shared across requests. It reads projects and
+transcripts and queues exports through the same native export pipeline, so export jobs outlive the request that
+started them. MCP exports run sequentially and use saved editor state; destination overrides stay within the
+configured export folder.
 
 ### BlitzReels handoff
 

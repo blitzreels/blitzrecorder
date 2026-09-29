@@ -25,7 +25,7 @@ struct EditorTimelineSelectionCanvas: View {
                 if selected, start == nil { start = pixel }
                 if !selected, let first = start {
                     let rect = CGRect(x: first, y: 0, width: pixel - first, height: Int(configuration.height))
-                    context.fill(Path(rect), with: .color(.white.opacity(0.04)))
+                    context.fill(Path(rect), with: .color(BlitzUI.cardFill))
                     context.stroke(Path(rect.insetBy(dx: 0.5, dy: 0.5)), with: .color(color.opacity(0.85)), lineWidth: 1)
                     start = nil
                 }

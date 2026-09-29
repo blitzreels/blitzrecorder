@@ -116,6 +116,57 @@ struct HostingExportMetadata: Codable {
         return try? JSONDecoder().decode(Self.self, from: data)
     }
 
+    struct ResolveRequest {
+        let fileURL: URL
+        let projectPath: String?
+    }
+
+    /// Cached details from export time, rebuilt from the project when they are missing or were saved before the
+    /// transcript existed.
+    static func resolve(_ request: ResolveRequest) async -> Self {
+        let cached = load(request.fileURL)
+        if let cached, !cached.details.transcript.isEmpty { return cached }
+        if let projectPath = request.projectPath,
+           let rebuilt = await rebuild(.init(fileURL: request.fileURL, projectPath: projectPath)) {
+            if let url = try? cacheURL(request.fileURL), let data = try? JSONEncoder().encode(rebuilt) {
+                try? data.write(to: url, options: .atomic)
+            }
+            return rebuilt
+        }
+        return cached ?? .init(title: request.fileURL.deletingPathExtension().lastPathComponent, details: .empty)
+    }
+
+    private struct RebuildRequest {
+        let fileURL: URL
+        let projectPath: String
+    }
+
+    /// The export speed is not recorded per file, so pick the rate whose edited duration matches the file.
+    private static func rebuild(_ request: RebuildRequest) async -> Self? {
+        guard let saved = try? TakeFileStore().loadRecordingProject(at: URL(fileURLWithPath: request.projectPath)) else {
+            return nil
+        }
+        let layout = saved.exports.first { $0.path == request.fileURL.path }?.layout
+            .flatMap(CaptureLayout.init(rawValue:)) ?? saved.selectedOutputLayout
+        let project = saved.outputProject(for: layout)
+        let store = TranscriptArtifactStore()
+        guard let transcript = try? store.load(from: store.locations(for: project).jsonURL),
+              transcript.duration.isFinite, transcript.duration > 0,
+              let duration = try? await AVURLAsset(url: request.fileURL).load(.duration).seconds,
+              duration.isFinite, duration > 0 else { return nil }
+        let cuts = project.edits.cuts.filter(\.isEnabled)
+        let takeDuration = TimelineTimeMap.time(transcript.duration)
+        let preferred = project.editorState.exportRecipe?.playbackRate ?? ExportPlaybackRate.normal.value
+        let rate = ([preferred] + ExportPlaybackRate.all.map(\.value)).min { lhs, rhs in
+            let left = abs(TimelineTimeMap(takeDuration: takeDuration, cuts: cuts, playbackRate: lhs).outputDuration.seconds - duration)
+            let right = abs(TimelineTimeMap(takeDuration: takeDuration, cuts: cuts, playbackRate: rhs).outputDuration.seconds - duration)
+            return left < right
+        } ?? preferred
+        guard let details = HostedVideoDetails.project(.init(transcript: transcript, chapters: project.chapters, cuts: cuts,
+            playbackRate: rate, outputDuration: duration, recordedAt: project.createdAt)) else { return nil }
+        return .init(title: project.title, details: details)
+    }
+
     static func fingerprint(_ url: URL) throws -> String {
         let values = try url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
         guard let size = values.fileSize, let modified = values.contentModificationDate else {

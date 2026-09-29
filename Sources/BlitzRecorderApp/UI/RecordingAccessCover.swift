@@ -89,8 +89,8 @@ struct RecordingAccessCover: View {
         ZStack {
             LinearGradient(
                 colors: [
-                    Color(red: 0.03, green: 0.03, blue: 0.04),
-                    Color(red: 0.06, green: 0.06, blue: 0.08)
+                    BlitzUI.canvasBackground,
+                    BlitzUI.projectLibraryBackground
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -110,16 +110,16 @@ struct RecordingAccessCover: View {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
                 .frame(width: 60, height: 60)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: BlitzUI.cardRadius, style: .continuous))
                 .shadow(color: .black.opacity(0.4), radius: 14, y: 8)
 
             VStack(spacing: 6) {
                 Text("Welcome to BlitzRecorder")
-                    .font(.system(size: 24, weight: .bold))
+                    .font(BlitzType.largeTitle)
                     .foregroundStyle(.white)
                 Text("Allow a few permissions and you're ready to record.")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .font(BlitzType.callout)
+                    .foregroundStyle(BlitzUI.secondaryText)
                     .multilineTextAlignment(.center)
             }
         }
@@ -130,7 +130,7 @@ struct RecordingAccessCover: View {
             ForEach(Array(sourceRows.enumerated()), id: \.element.id) { index, row in
                 if index > 0 {
                     Divider()
-                        .background(.white.opacity(0.06))
+                        .background(BlitzUI.controlFill)
                         .padding(.horizontal, 14)
                 }
                 AccessPermissionRow(
@@ -144,7 +144,7 @@ struct RecordingAccessCover: View {
             }
             if let row = accessibilityRow {
                 Divider()
-                    .background(.white.opacity(0.06))
+                    .background(BlitzUI.controlFill)
                     .padding(.horizontal, 14)
                 AccessPermissionRow(
                     row: row,
@@ -157,7 +157,7 @@ struct RecordingAccessCover: View {
             }
         }
         .padding(.vertical, 6)
-        .blitzGlassSurface(cornerRadius: 18)
+        .blitzGlassSurface(cornerRadius: BlitzUI.surfaceRadius)
         .shadow(color: .black.opacity(0.34), radius: 28, y: 14)
     }
 
@@ -169,13 +169,13 @@ struct RecordingAccessCover: View {
                     .foregroundStyle(accent)
             } else if requiredCount > 0 {
                 Text("\(readyCount) of \(requiredCount) permissions ready")
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(BlitzUI.secondaryText)
             } else {
                 Text("Select a source in BlitzRecorder to begin")
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(BlitzUI.secondaryText)
             }
         }
-        .font(.system(size: 12, weight: .semibold))
+        .font(BlitzType.strong)
         .animation(.smooth(duration: 0.3), value: readyCount)
     }
 
@@ -185,7 +185,7 @@ struct RecordingAccessCover: View {
                 vm.startFromCover()
             } label: {
                 Label("Continue to recorder", systemImage: "arrow.right")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(BlitzType.headline)
                     .frame(maxWidth: .infinity)
                     .frame(height: 44)
             }
@@ -289,11 +289,11 @@ private struct AccessPermissionRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white.opacity(action == .inactive ? 0.4 : 0.92))
+                    .font(BlitzType.section)
+                    .foregroundStyle(action == .inactive ? BlitzUI.tertiaryText : BlitzUI.primaryText)
                 Text(subtitle)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(action == .inactive ? 0.3 : 0.5))
+                    .font(BlitzType.captionEmphasis)
+                    .foregroundStyle(action == .inactive ? BlitzUI.tertiaryText : BlitzUI.secondaryText)
                     .lineLimit(2)
             }
 
@@ -319,10 +319,10 @@ private struct AccessPermissionRow: View {
 
     private var iconBadge: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous)
                 .fill(badgeColor.opacity(0.16))
             Image(systemName: row.symbol)
-                .font(.system(size: 14, weight: .semibold))
+                .font(BlitzType.glyph(14))
                 .foregroundStyle(badgeColor)
         }
         .frame(width: 34, height: 34)
@@ -331,9 +331,9 @@ private struct AccessPermissionRow: View {
     private var badgeColor: Color {
         switch action {
         case .granted: return accent
-        case .allow, .enable: return .white.opacity(0.8)
-        case .openSettings, .quitReopen: return Color(red: 1.0, green: 0.66, blue: 0.16)
-        case .inactive: return .white.opacity(0.3)
+        case .allow, .enable: return BlitzUI.supportingText
+        case .openSettings, .quitReopen: return BlitzUI.warning
+        case .inactive: return BlitzUI.tertiaryText
         }
     }
 
@@ -345,7 +345,7 @@ private struct AccessPermissionRow: View {
                 Image(systemName: "checkmark.circle.fill")
                 Text("Granted")
             }
-            .font(.system(size: 12, weight: .semibold))
+            .font(BlitzType.strong)
             .foregroundStyle(accent)
             .transition(.scale(scale: 0.6).combined(with: .opacity))
         case .inactive:

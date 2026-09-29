@@ -79,6 +79,7 @@ struct ProjectLibraryPlayerSurface: View {
     }
 
     let configuration: Configuration
+    @State private var readyForDisplayPlayer: ObjectIdentifier?
 
     private var isPlaybackReady: Bool {
         configuration.isCurrentProject && configuration.controller.isReady
@@ -106,30 +107,44 @@ struct ProjectLibraryPlayerSurface: View {
         VStack(spacing: 10) {
             videoSurface
 
-            if isPlaybackReady {
-                ProjectLibraryPlaybackControls(configuration: .init(
-                    controller: configuration.controller,
-                    waveformSamples: configuration.waveformSamples
-                ))
-                .frame(width: playerLayout.transportWidth)
-            }
+            ProjectLibraryPlaybackControls(configuration: .init(
+                controller: configuration.controller,
+                waveformSamples: configuration.waveformSamples
+            ))
+            .frame(width: playerLayout.transportWidth)
+            .opacity(isPlaybackReady ? 1 : 0)
+            .disabled(!isPlaybackReady)
+            .accessibilityHidden(!isPlaybackReady)
         }
         .frame(width: playerLayout.transportWidth)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Project playback")
     }
 
+    private var showsPoster: Bool {
+        guard isPlaybackReady else { return true }
+        return !ProjectLibraryPosterPolicy.hasVisibleVideo(.init(
+            exportedPlayerIsReadyForDisplay: configuration.controller.filePlayer.map {
+                readyForDisplayPlayer == ObjectIdentifier($0)
+            },
+            isPlaying: configuration.controller.isPlaying,
+            currentTime: configuration.controller.nowPlayingTime
+        ))
+    }
+
     private var videoSurface: some View {
         ZStack {
             Color.black
 
-            fallback
-                .opacity(isPlaybackReady ? 0 : 1)
-
             if isPlaybackReady {
                 if let player = configuration.controller.filePlayer {
-                    ProjectLibraryExportedPlayer(player: player)
-                        .allowsHitTesting(false)
+                    ProjectLibraryExportedPlayer(configuration: .init(
+                        player: player,
+                        onReadyForDisplay: { isReady in
+                            readyForDisplayPlayer = isReady ? ObjectIdentifier(player) : nil
+                        }
+                    ))
+                    .allowsHitTesting(false)
                 } else {
                     EditorCompositedPlayer(
                         controller: configuration.controller,
@@ -141,6 +156,13 @@ struct ProjectLibraryPlayerSurface: View {
                 }
             }
 
+            poster
+                .opacity(showsPoster ? 1 : 0)
+                .allowsHitTesting(false)
+
+            if !isPlaybackReady {
+                loadingStatus
+            }
         }
         .frame(width: playerLayout.videoSize.width, height: playerLayout.videoSize.height)
         .clipShape(.rect(cornerRadius: BlitzUI.controlRadius))
@@ -151,30 +173,32 @@ struct ProjectLibraryPlayerSurface: View {
     }
 
     @ViewBuilder
-    private var fallback: some View {
+    private var poster: some View {
         if let fallbackThumbnail = configuration.fallbackThumbnail {
             Image(nsImage: fallbackThumbnail)
                 .resizable()
                 .scaledToFill()
-                .overlay {
-                    Color.black.opacity(0.34)
-                }
+                .frame(width: playerLayout.videoSize.width, height: playerLayout.videoSize.height)
+                .clipped()
+                .accessibilityHidden(true)
         }
+    }
 
+    private var loadingStatus: some View {
         VStack(spacing: 10) {
             if let loadError = configuration.loadError {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(BlitzType.glyph(22))
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(BlitzUI.warning)
 
                 Text("Playback unavailable")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.86))
+                    .font(BlitzType.section)
+                    .foregroundStyle(BlitzUI.primaryText)
 
                 Text(loadError)
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.52))
+                    .font(BlitzType.footnote)
+                    .foregroundStyle(BlitzUI.secondaryText)
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 360)
@@ -184,31 +208,59 @@ struct ProjectLibraryPlayerSurface: View {
                     .tint(.white)
 
                 Text("Preparing playback")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.68))
+                    .font(BlitzType.captionEmphasis)
+                    .foregroundStyle(BlitzUI.supportingText)
             }
         }
         .padding(16)
-        .background(.black.opacity(0.62), in: .rect(cornerRadius: 12))
+        .background(.black.opacity(0.62), in: .rect(cornerRadius: BlitzUI.cardRadius))
     }
 
 }
 
+struct ProjectLibraryPosterRequest {
+    let exportedPlayerIsReadyForDisplay: Bool?
+    let isPlaying: Bool
+    let currentTime: Double
+}
+
+enum ProjectLibraryPosterPolicy {
+    static func hasVisibleVideo(_ request: ProjectLibraryPosterRequest) -> Bool {
+        if let isReady = request.exportedPlayerIsReadyForDisplay {
+            return isReady
+        }
+        return request.isPlaying || request.currentTime > 0
+    }
+}
+
 private struct ProjectLibraryExportedPlayer: NSViewRepresentable {
-    let player: AVPlayer
+    struct Configuration {
+        let player: AVPlayer
+        let onReadyForDisplay: (Bool) -> Void
+    }
+
+    let configuration: Configuration
 
     func makeNSView(context: Context) -> PlayerView {
         let view = PlayerView()
-        view.playerLayer.player = player
+        view.onReadyForDisplay = configuration.onReadyForDisplay
+        view.attach(configuration.player)
         return view
     }
 
     func updateNSView(_ nsView: PlayerView, context: Context) {
-        nsView.playerLayer.player = player
+        nsView.onReadyForDisplay = configuration.onReadyForDisplay
+        nsView.attach(configuration.player)
+    }
+
+    static func dismantleNSView(_ nsView: PlayerView, coordinator: ()) {
+        nsView.detach()
     }
 
     final class PlayerView: NSView {
         let playerLayer = AVPlayerLayer()
+        var onReadyForDisplay: ((Bool) -> Void)?
+        private var readyObservation: NSKeyValueObservation?
 
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
@@ -219,6 +271,23 @@ private struct ProjectLibraryExportedPlayer: NSViewRepresentable {
 
         @available(*, unavailable)
         required init?(coder: NSCoder) { nil }
+
+        func attach(_ player: AVPlayer) {
+            guard playerLayer.player !== player || readyObservation == nil else { return }
+            playerLayer.player = player
+            readyObservation = playerLayer.observe(\.isReadyForDisplay, options: [.initial, .new]) { [weak self] layer, _ in
+                let isReady = layer.isReadyForDisplay
+                DispatchQueue.main.async {
+                    guard let self, self.playerLayer.player === player else { return }
+                    self.onReadyForDisplay?(isReady)
+                }
+            }
+        }
+
+        func detach() {
+            readyObservation = nil
+            playerLayer.player = nil
+        }
 
         override func layout() {
             super.layout()
@@ -251,7 +320,7 @@ struct ProjectLibraryPlaybackControls: View {
                 configuration.controller.togglePlayback()
             } label: {
                 Image(systemName: configuration.controller.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(BlitzType.glyph(12))
                     .foregroundStyle(BlitzUI.primaryText)
                     .offset(x: configuration.controller.isPlaying ? 0 : 1)
                     .frame(width: 18, height: 24)
@@ -265,9 +334,9 @@ struct ProjectLibraryPlaybackControls: View {
             BlitzTimecode(configuration: .init(
                 time: displayedTime, duration: displayedDuration
             ))
-                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .font(BlitzType.caption.monospaced())
                 .monospacedDigit()
-                .foregroundStyle(.white.opacity(0.66))
+                .foregroundStyle(BlitzUI.supportingText)
                 .fixedSize()
 
             ProjectPlaybackWaveform(
@@ -284,9 +353,9 @@ struct ProjectLibraryPlaybackControls: View {
             BlitzTimecode(configuration: .init(
                 time: displayedDuration, duration: displayedDuration
             ))
-                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .font(BlitzType.caption.monospaced())
                 .monospacedDigit()
-                .foregroundStyle(.white.opacity(0.66))
+                .foregroundStyle(BlitzUI.supportingText)
                 .fixedSize()
 
             Rectangle()
@@ -336,7 +405,7 @@ private struct ProjectPlaybackWaveform: View {
                 let playedWidth = size.width * progress
                 if samples.isEmpty {
                     let rail = CGRect(x: 0, y: size.height / 2 - 0.5, width: size.width, height: 1)
-                    context.fill(Path(rail), with: .color(.white.opacity(0.18)))
+                    context.fill(Path(rail), with: .color(BlitzUI.strongFill))
                 } else {
                     let slot = size.width / CGFloat(samples.count)
                     let barWidth = max(1, min(2.5, slot * 0.58))
@@ -353,7 +422,7 @@ private struct ProjectPlaybackWaveform: View {
                         )
                         let color = bar.midX <= playedWidth
                             ? BlitzUI.mint.opacity(0.92)
-                            : Color.white.opacity(0.38)
+                            : BlitzUI.tertiaryText
                         context.fill(
                             Path(roundedRect: bar, cornerRadius: barWidth / 2),
                             with: .color(color)
@@ -369,7 +438,7 @@ private struct ProjectPlaybackWaveform: View {
                 )
                 context.fill(
                     Path(roundedRect: playhead, cornerRadius: 0.5),
-                    with: .color(.white.opacity(0.88))
+                    with: .color(BlitzUI.primaryText)
                 )
 
                 if let hoverX {
@@ -389,7 +458,7 @@ private struct ProjectPlaybackWaveform: View {
             .overlay(alignment: .topLeading) {
                 if let hoverX, duration > 0 {
                     Text(timeLabel(time(.init(x: hoverX, width: proxy.size.width))))
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .font(BlitzType.footnote.monospaced())
                         .foregroundStyle(BlitzUI.primaryText)
                         .frame(width: 56, height: 22)
                         .background(BlitzUI.controlFill, in: .rect(cornerRadius: 5))

@@ -14,7 +14,6 @@ enum EditorExportDestination: String, CaseIterable {
 
 struct EditorExportPopover: View {
     struct Configuration {
-        let destination: Binding<EditorExportDestination>
         let additionalLayouts: Binding<Set<CaptureLayout>>
         let currentLayout: CaptureLayout
         let format: Binding<OutputVideoFormat>
@@ -35,7 +34,7 @@ struct EditorExportPopover: View {
     @State private var showsAdvanced = false
 
     private var layouts: [CaptureLayout] {
-        configuration.destination.wrappedValue.layouts(.init(
+        EditorExportDestination.file.layouts(.init(
             current: configuration.currentLayout, additional: configuration.additionalLayouts.wrappedValue))
     }
 
@@ -44,100 +43,88 @@ struct EditorExportPopover: View {
     }
 
     private var summary: String {
-        let format = layouts.count > 1 ? "\(layouts.count) videos" : EditorExportLayouts.title(configuration.currentLayout)
-        return "\(format) · \(configuration.resolution.wrappedValue.displayName) · \(configuration.framesPerSecond.wrappedValue) fps"
+        let formats = layouts.count > 1 ? "\(layouts.count) videos" : EditorExportLayouts.title(configuration.currentLayout)
+        return [formats, configuration.resolution.wrappedValue.displayName,
+                "\(configuration.framesPerSecond.wrappedValue) fps", configuration.estimatedSize]
+            .joined(separator: " · ")
+    }
+
+    private var advancedDetail: String {
+        let extra = layouts.count > 1 ? " · +\(layouts.count - 1)" : ""
+        return "\(configuration.format.wrappedValue.displayName) · \(configuration.framesPerSecond.wrappedValue) fps\(extra)"
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(layouts.count > 1 ? "Export videos" : "Export video")
-                    .font(.system(size: 18, weight: .semibold))
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(layouts.count > 1 ? "Export \(layouts.count) videos" : "Export video")
+                    .font(BlitzType.title)
                     .foregroundStyle(BlitzUI.primaryText)
                 Text(summary)
-                    .font(.system(size: 12))
+                    .font(BlitzType.body.monospacedDigit())
                     .foregroundStyle(BlitzUI.supportingText)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(1)
+                    .help("\(configuration.estimatedSizeCaption) · \(configuration.encodingDetail)")
             }
 
             VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Quality")
+                        .font(BlitzType.label)
+                        .foregroundStyle(BlitzUI.secondaryText)
+                    Spacer(minLength: 8)
+                    Text(configuration.quality.wrappedValue.plainDescription)
+                        .font(BlitzType.caption)
+                        .foregroundStyle(BlitzUI.secondaryText)
+                        .lineLimit(1)
+                }
                 BlitzSegmentedPicker(configuration: .init(
-                    title: "Export destination", options: EditorExportDestination.allCases,
-                    selection: configuration.destination, label: { $0.title }
+                    title: "Export quality", options: ExportVideoQuality.menuCases,
+                    selection: configuration.quality, label: { $0.displayName }
                 ))
-                Text(configuration.destination.wrappedValue == .link
-                     ? "Keep a high-quality copy of your edit in the cloud. A hosting subscription is required."
-                     : "Save a video file to your Mac.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(BlitzUI.supportingText)
-                    .fixedSize(horizontal: false, vertical: true)
+                .controlSize(.mini)
             }
 
-            VStack(spacing: 12) {
-                if configuration.destination.wrappedValue == .link {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Label("Source quality", systemImage: "checkmark.shield")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text("\(configuration.resolution.wrappedValue.displayName) · \(configuration.framesPerSecond.wrappedValue) fps · High-quality HEVC")
-                            .font(.system(size: 12))
-                        Text("Original resolution and frame rate. Adaptive streaming copies are prepared separately.")
-                            .font(.system(size: 12)).foregroundStyle(BlitzUI.supportingText)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Quality")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(BlitzUI.secondaryText)
-                        BlitzSegmentedPicker(configuration: .init(
-                            title: "Export quality", options: ExportVideoQuality.menuCases,
-                            selection: configuration.quality, label: { $0.displayName }
-                        ))
-                        .controlSize(.mini)
-                        .help(configuration.quality.wrappedValue.plainDescription)
-                    }
-                    EditorExportChoiceRow(configuration: .init(
-                        title: "Export FPS", options: RecordingSettings.supportedFrameRates,
-                        selection: configuration.framesPerSecond, label: { "\($0)" }
-                    ))
-                }
+            VStack(spacing: 10) {
+                EditorExportChoiceRow(configuration: .init(
+                    title: "Resolution", options: OutputResolution.allCases,
+                    selection: configuration.resolution, label: { $0.displayName }
+                ))
                 EditorExportSpeedControl(selection: configuration.playbackRate)
             }
 
-            if configuration.destination.wrappedValue == .file {
-                BlitzInspectorDisclosure(configuration: .init(
-                    title: "Advanced settings", detail: nil, isExpanded: $showsAdvanced,
-                    content: { advancedSettings }
-                ))
-            }
+            BlitzInspectorDisclosure(configuration: .init(
+                title: "More options", detail: showsAdvanced ? nil : advancedDetail, isExpanded: $showsAdvanced,
+                content: { advancedSettings }
+            ))
 
-            Rectangle().fill(BlitzUI.separator).frame(height: 1)
-
-            HStack(spacing: 8) {
-                Image(systemName: "folder")
-                    .foregroundStyle(BlitzUI.secondaryText)
-                Text("Save to \(configuration.directory.lastPathComponent)")
-                    .font(.system(size: 12))
-                    .foregroundStyle(BlitzUI.supportingText)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(configuration.directory.path)
-                Spacer(minLength: 0)
-                Button("Change", action: configuration.chooseFolder)
-                    .blitzButton(.quiet)
-                    .controlSize(.small)
-                    .accessibilityLabel("Change export folder")
-                    .help("Change where finished videos are saved. Source files stay in the library.")
+            VStack(spacing: 12) {
+                Rectangle().fill(BlitzUI.separator).frame(height: 1)
+                HStack(spacing: 8) {
+                    Image(systemName: "folder")
+                        .foregroundStyle(BlitzUI.secondaryText)
+                    Text(configuration.directory.lastPathComponent)
+                        .font(BlitzType.body)
+                        .foregroundStyle(BlitzUI.supportingText)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(configuration.directory.path)
+                    Spacer(minLength: 0)
+                    Button("Change…", action: configuration.chooseFolder)
+                        .blitzButton(.quiet)
+                        .controlSize(.small)
+                        .accessibilityLabel("Change export folder")
+                        .help("Change where finished videos are saved. Source files stay in the library.")
+                }
+                Button(action: configuration.export) {
+                    Text(layouts.count > 1 ? "Export \(layouts.count) videos" : "Export video")
+                        .frame(maxWidth: .infinity)
+                }
+                .blitzButton(.accent)
+                .controlSize(.large)
+                .keyboardShortcut(.defaultAction)
+                .disabled(!configuration.canExport)
             }
-
-            Button(action: configuration.export) {
-                Text(configuration.destination.wrappedValue == .link ? "Continue to share"
-                     : layouts.count > 1 ? "Export \(layouts.count) videos" : "Export video")
-                    .frame(maxWidth: .infinity)
-            }
-            .blitzButton(.accent)
-            .controlSize(.large)
-            .disabled(!configuration.canExport)
         }
         .padding(20)
         .frame(width: 380)
@@ -145,32 +132,25 @@ struct EditorExportPopover: View {
         .preferredColorScheme(.dark)
     }
 
-    private var advancedHeight: CGFloat {
-        let screen = NSApp.mainWindow?.screen ?? NSScreen.main
-        return min(260, max(140, (screen?.visibleFrame.height ?? 800) - 520))
-    }
-
     private var advancedSettings: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(spacing: 12) {
-                    EditorExportChoiceRow(configuration: .init(
-                        title: "File format", options: OutputVideoFormat.allCases,
-                        selection: configuration.format, label: { $0.displayName },
-                        isOptionEnabled: { formatOptions.contains($0) }
-                    ))
-                    .help(configuration.quality.wrappedValue.requiresQuickTime
-                        ? "ProRes requires MOV." : configuration.format.wrappedValue.plainDescription)
-                    EditorExportChoiceRow(configuration: .init(
-                        title: "Resolution", options: OutputResolution.allCases,
-                        selection: configuration.resolution, label: { $0.displayName }
-                    ))
-                }
-                Rectangle().fill(BlitzUI.separator).frame(height: 1)
-                if configuration.destination.wrappedValue == .file {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Also export")
-                        .font(.system(size: 12, weight: .medium))
+        VStack(alignment: .leading, spacing: 12) {
+            EditorExportChoiceRow(configuration: .init(
+                title: "Frame rate", options: RecordingSettings.supportedFrameRates,
+                selection: configuration.framesPerSecond, label: { "\($0)" }
+            ))
+            EditorExportChoiceRow(configuration: .init(
+                title: "File format", options: OutputVideoFormat.allCases,
+                selection: configuration.format, label: { $0.displayName },
+                isOptionEnabled: { formatOptions.contains($0) }
+            ))
+            .help(configuration.quality.wrappedValue.requiresQuickTime
+                ? "ProRes requires MOV." : configuration.format.wrappedValue.plainDescription)
+            HStack(spacing: 16) {
+                Text("Also export")
+                    .font(BlitzType.label)
+                    .foregroundStyle(BlitzUI.secondaryText)
+                    .frame(width: 88, alignment: .leading)
+                HStack(spacing: 14) {
                     ForEach(CaptureLayout.allCases.filter { $0 != configuration.currentLayout }, id: \.self) { layout in
                         Toggle(EditorExportLayouts.title(layout), isOn: Binding(
                             get: { configuration.additionalLayouts.wrappedValue.contains(layout) },
@@ -184,19 +164,14 @@ struct EditorExportPopover: View {
                         .help("Export an additional \(EditorExportLayouts.title(layout).lowercased()) video. Adjust its framing above the preview.")
                     }
                 }
-                }
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("\(configuration.estimatedSizeCaption) · \(configuration.estimatedSize)")
-                    Text(configuration.encodingDetail)
-                }
-                .font(.system(size: 11))
+                Spacer(minLength: 0)
+            }
+            .frame(minHeight: BlitzControlMetrics.height(.regular))
+            Text("\(configuration.estimatedSizeCaption) \(configuration.estimatedSize) · \(configuration.encodingDetail)")
+                .font(BlitzType.caption)
                 .foregroundStyle(BlitzUI.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.vertical, 4)
         }
-        .scrollIndicators(.automatic)
-        .frame(height: advancedHeight)
     }
 }
 
@@ -206,7 +181,7 @@ struct EditorExportChoiceRow<Value: Hashable>: View {
     var body: some View {
         HStack(spacing: 16) {
             Text(configuration.title)
-                .font(.system(size: 12, weight: .medium))
+                .font(BlitzType.label)
                 .foregroundStyle(BlitzUI.secondaryText)
                 .frame(width: 88, alignment: .leading)
             BlitzSegmentedPicker(configuration: configuration)
@@ -228,7 +203,7 @@ struct EditorExportSpeedControl: View {
     var body: some View {
         HStack(spacing: 16) {
             Text("Speed")
-                .font(.system(size: 12, weight: .medium))
+                .font(BlitzType.label)
                 .foregroundStyle(BlitzUI.secondaryText)
                 .frame(width: 88, alignment: .leading)
             HStack(spacing: 10) {
@@ -243,7 +218,7 @@ struct EditorExportSpeedControl: View {
                 .accessibilityLabel("Export speed")
                 .accessibilityValue(ExportPlaybackRate(clamping: value.wrappedValue).displayName)
                 Text(ExportPlaybackRate(clamping: value.wrappedValue).displayName)
-                    .font(.system(size: 12, weight: .medium).monospacedDigit())
+                    .font(BlitzType.label.monospacedDigit())
                     .foregroundStyle(BlitzUI.primaryText)
                     .frame(width: 40, alignment: .trailing)
                     .accessibilityHidden(true)
@@ -263,7 +238,6 @@ struct EditorExportSpeedControl: View {
 
 #Preview("Export popover") {
     EditorExportPopover(configuration: .init(
-        destination: .constant(.file),
         additionalLayouts: .constant([]), currentLayout: .vertical,
         format: .constant(.mp4), resolution: .constant(.p1080), framesPerSecond: .constant(24),
         quality: .constant(.high), playbackRate: .constant(.init(clamping: 1.3)),

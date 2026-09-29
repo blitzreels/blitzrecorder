@@ -3,9 +3,9 @@ import SwiftUI
 
 struct RecordingSettingsPage: View {
     @Bindable var vm: RecorderViewModel
-    @State private var showsAdvancedEncoding = false
     @State private var storageDetail = ""
     @State private var storageUnavailable = false
+    @AppStorage(BlitzPreviewPreferences.animatePreviewsKey) private var animatePreviews = true
 
     private var canEdit: Bool {
         vm.state == .idle
@@ -17,45 +17,22 @@ struct RecordingSettingsPage: View {
                 SettingsPageHeader(.init(
                     title: "Recording",
                     detail: "Choose where your files live and what happens after recording.",
-                    systemImage: "gearshape",
                     status: nil
                 ))
                 .padding(.bottom, 4)
 
                 if !canEdit {
                     Label("Recording settings can be changed when this session finishes.", systemImage: "info.circle")
-                        .font(.system(size: 12))
+                        .font(BlitzType.body)
                         .foregroundStyle(BlitzUI.warning)
                 }
 
                 storageSection
                 livePreviewSection
                 transcriptionSection
+                interfaceSection
 
-                VStack(alignment: .leading, spacing: 12) {
-                    Button {
-                        showsAdvancedEncoding.toggle()
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: showsAdvancedEncoding ? "chevron.down" : "chevron.right")
-                                .font(.system(size: 10, weight: .semibold))
-                                .frame(width: 12)
-                            Text("Advanced encoding")
-                                .font(.system(size: 13, weight: .medium))
-                            Spacer()
-                        }
-                        .padding(.horizontal, 10)
-                        .frame(height: 36)
-                    }
-                    .buttonStyle(BlitzSelectionButtonStyle(isSelected: false))
-                    .pointingHandCursor()
-                    .accessibilityValue(showsAdvancedEncoding ? "Expanded" : "Collapsed")
-                    .help(showsAdvancedEncoding ? "Hide encoding options" : "Show encoding options")
-
-                    if showsAdvancedEncoding {
-                        advancedSection
-                    }
-                }
+                qualitySection
             }
             .settingsPageContent()
         }
@@ -68,25 +45,62 @@ struct RecordingSettingsPage: View {
     }
 
     private var livePreviewSection: some View {
-        Toggle(
-            isOn: Binding(
-                get: { vm.isLivePreviewEnabled },
-                set: { vm.setLivePreviewEnabled($0) }
-            )
-        ) {
+        VStack(spacing: 0) {
+            Toggle(
+                isOn: Binding(
+                    get: { vm.isLivePreviewEnabled },
+                    set: { vm.setLivePreviewEnabled($0) }
+                )
+            ) {
+                SettingsRowLabel(.init(
+                    title: "Live preview",
+                    detail: "Pause Mac camera, microphone, screen, and audio previews while idle. Recording still works."
+                ))
+            }
+            .toggleStyle(.blitzSwitch)
+            .pointingHandCursor()
+            .settingsRow()
+            .disabled(!canEdit)
+
+            SettingsRowDivider()
+
+            HStack(spacing: 16) {
+                SettingsRowLabel(.init(
+                    title: "Countdown",
+                    detail: "Time to get ready after you press Record. Click Record or press Esc to cancel."
+                ))
+                BlitzSegmentedPicker(configuration: .init(
+                    title: "Countdown",
+                    options: RecordingCountdownPreference.options,
+                    selection: Binding(get: { vm.countdownSeconds }, set: { vm.setCountdownSeconds($0) }),
+                    label: { $0 == 0 ? "Off" : "\($0) s" }
+                ))
+                .frame(width: 180)
+            }
+            .settingsRow()
+            .disabled(!canEdit)
+        }
+        .settingsSection(.init(
+            title: "Before recording",
+            detail: nil,
+            systemImage: "eye"
+        ))
+    }
+
+    private var interfaceSection: some View {
+        Toggle(isOn: $animatePreviews) {
             SettingsRowLabel(.init(
-                title: "Live preview",
-                detail: "Pause Mac camera, microphone, screen, and audio previews while idle. Recording still works."
+                title: "Animate setting previews",
+                detail: "Play the small thumbnails in the editor tools on hover. Your video is not affected."
             ))
         }
         .toggleStyle(.blitzSwitch)
         .pointingHandCursor()
         .settingsRow()
-        .disabled(!canEdit)
         .settingsSection(.init(
-            title: "Before recording",
+            title: "Interface",
             detail: nil,
-            systemImage: "eye"
+            systemImage: "sparkles"
         ))
     }
 
@@ -95,18 +109,18 @@ struct RecordingSettingsPage: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .center, spacing: 14) {
                     Image(systemName: "folder.fill")
-                        .font(.system(size: 30))
+                        .font(BlitzType.glyph(30))
                         .foregroundStyle(BlitzUI.mint)
                         .frame(width: 48, height: 48)
-                        .background(BlitzUI.mint.opacity(0.08), in: .rect(cornerRadius: 10))
+                        .background(BlitzUI.mint.opacity(0.08), in: .rect(cornerRadius: BlitzUI.cardRadius))
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Exports")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(BlitzType.label)
                             .foregroundStyle(BlitzUI.secondaryText)
                         Text(vm.settings.outputDirectory.lastPathComponent)
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(BlitzType.headline)
                         Text(vm.settings.outputDirectory.path)
-                            .font(.system(size: 12))
+                            .font(BlitzType.body)
                             .foregroundStyle(BlitzUI.secondaryText)
                             .lineLimit(2)
                             .truncationMode(.middle)
@@ -135,12 +149,12 @@ struct RecordingSettingsPage: View {
 
                 if !storageDetail.isEmpty {
                     Label(storageDetail, systemImage: storageUnavailable ? "exclamationmark.triangle" : "internaldrive")
-                        .font(.system(size: 11))
+                        .font(BlitzType.caption)
                         .foregroundStyle(storageUnavailable ? BlitzUI.warning : BlitzUI.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Text("Finished videos are saved here. Changing this folder keeps your source files and project library in place.")
-                    .font(.system(size: 11))
+                    .font(BlitzType.caption)
                     .foregroundStyle(BlitzUI.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -154,7 +168,7 @@ struct RecordingSettingsPage: View {
                     detail: "Choose where new source tracks are stored. Existing projects stay in your library."
                 ))
                 Text(vm.settings.sourceStorage.url.path)
-                    .font(.system(size: 12))
+                    .font(BlitzType.body)
                     .foregroundStyle(BlitzUI.secondaryText)
                     .lineLimit(2)
                     .truncationMode(.middle)
@@ -203,19 +217,13 @@ struct RecordingSettingsPage: View {
 
     private var transcriptionSection: some View {
         VStack(spacing: 0) {
-            Toggle(
-                isOn: Binding(
-                    get: {
-                        vm.transcriptionController.isAutomaticEnabled
-                    },
-                    set: {
-                        vm.transcriptionController.isAutomaticEnabled = $0
-                    }
-                )
-            ) {
+            Toggle(isOn: Binding(
+                get: { vm.transcriptionController.isAutomaticEnabled },
+                set: { vm.transcriptionController.isAutomaticEnabled = $0 }
+            )) {
                 SettingsRowLabel(.init(
-                    title: "Automatic transcript and title",
-                    detail: "Create a transcript and title on this Mac, without uploading audio."
+                    title: "Transcribe automatically",
+                    detail: "Create a transcript and title after each recording. Audio never leaves this Mac."
                 ))
             }
             .toggleStyle(.blitzSwitch)
@@ -224,25 +232,16 @@ struct RecordingSettingsPage: View {
 
             SettingsRowDivider()
 
-            HStack(alignment: .center, spacing: 18) {
-                SettingsRowLabel(.init(
-                    title: "Transcription tool",
-                    detail: vm.transcriptionController.selectedModel.detail
-                ))
-                Spacer(minLength: 16)
-                BlitzDropdown(configuration: .init(
-                    title: "Transcription tool",
-                    selection: Binding(
-                        get: { vm.transcriptionController.selectedModel },
-                        set: { vm.transcriptionController.selectedModel = $0 }
-                    ),
-                    options: TranscriptionSpeechModel.allCases.map {
-                        .init(value: $0, title: $0.title, detail: $0.detail)
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Speech model").font(BlitzType.label).foregroundStyle(BlitzUI.primaryText)
+                HStack(spacing: 8) {
+                    ForEach(TranscriptionSpeechModel.allCases, id: \.self) { model in
+                        speechModelCard(model)
                     }
-                ))
-                .frame(width: 180)
+                }
+                speechModelStatus
             }
-            .settingsRow()
+            .padding(.vertical, 14)
 
             SettingsRowDivider()
 
@@ -250,133 +249,152 @@ struct RecordingSettingsPage: View {
                 SettingsRowLabel(.init(
                     title: "Language",
                     detail: vm.transcriptionController.selectedModel == .parakeet
-                        ? "Parakeet detects language automatically."
-                        : "Choose French to prevent English language detection."
+                        ? "Detected automatically for each recording."
+                        : "Pick a language if Automatic guesses wrong."
                 ))
                 Spacer(minLength: 16)
-                BlitzDropdown(configuration: .init(
-                    title: "Language",
-                    selection: Binding(
-                        get: { vm.transcriptionController.selectedLanguage },
-                        set: { vm.transcriptionController.selectedLanguage = $0 }
-                    ),
-                    options: TranscriptionLanguage.allCases.map {
-                        .init(value: $0, title: $0.title, detail: nil)
-                    }
-                ))
-                .frame(width: 180)
-                .disabled(vm.transcriptionController.selectedModel == .parakeet)
-            }
-            .settingsRow()
-
-            SettingsRowDivider()
-
-            HStack(alignment: .center, spacing: 18) {
-                SettingsRowLabel(.init(
-                    title: "Microphone speakers",
-                    detail: "Use 2 speakers when two people share one microphone."
-                ))
-                Spacer(minLength: 16)
-                BlitzDropdown(configuration: .init(
-                    title: "Microphone speakers",
-                    selection: Binding(
-                        get: { vm.transcriptionController.speakerCount },
-                        set: { vm.transcriptionController.speakerCount = $0 }
-                    ),
-                    options: TranscriptionSpeakerCount.allCases.map {
-                        .init(value: $0, title: $0.title, detail: nil)
-                    }
-                ))
-                .frame(width: 180)
-            }
-            .settingsRow()
-
-            SettingsRowDivider()
-
-            HStack(alignment: .center, spacing: 18) {
-                SettingsRowLabel(.init(
-                    title: "Local speech model",
-                    detail: transcriptionModelDetail
-                ))
-
-                Spacer(minLength: 16)
-
-                transcriptionModelAction
-            }
-            .settingsRow()
-
-            if case .downloading(let progress, let phase) = vm.transcriptionController.modelState {
-                VStack(alignment: .leading, spacing: 6) {
-                    ProgressView(value: progress)
-                        .tint(BlitzUI.mint)
-                    Text(phase)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.44))
+                if vm.transcriptionController.selectedModel == .parakeet {
+                    Label("Automatic", systemImage: "globe")
+                        .font(BlitzType.label)
+                        .foregroundStyle(BlitzUI.secondaryText)
+                } else {
+                    BlitzSegmentedPicker(configuration: .init(
+                        title: "Language",
+                        options: TranscriptionLanguage.allCases,
+                        selection: Binding(
+                            get: { vm.transcriptionController.selectedLanguage },
+                            set: { vm.transcriptionController.selectedLanguage = $0 }
+                        ),
+                        label: { $0.title }
+                    ))
+                    .controlSize(.small)
+                    .fixedSize()
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 14)
             }
+            .frame(minHeight: 56)
+            .settingsRow()
         }
         .settingsSection(.init(
-            title: "After recording",
-            detail: nil,
+            title: "Transcripts",
+            detail: "Speakers are told apart by their voices.",
             systemImage: "waveform.badge.mic"
         ))
     }
 
-    @ViewBuilder
-    private var transcriptionModelAction: some View {
-        switch vm.transcriptionController.modelState {
-        case .notDownloaded, .failed:
-            Button("Download model") {
-                vm.transcriptionController.downloadModels()
-            }
-            .blitzButton(.secondary)
-            .pointingHandCursor()
-        case .downloading:
-            Text("Downloading")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(BlitzUI.mint.opacity(0.72))
-        case .ready:
-            Button("Remove model") {
-                vm.transcriptionController.removeModels()
-            }
-            .blitzButton(.secondary)
-            .pointingHandCursor()
-        }
-    }
-
-    private var advancedSection: some View {
-        VStack(spacing: 14) {
-            HStack(alignment: .center, spacing: 18) {
-                SettingsRowLabel(.init(
-                    title: "Video detail override",
-                    detail: qualityPresentation.bitrateOverrideDetail
-                ))
-
-                Spacer(minLength: 16)
-
-                HStack(spacing: 10) {
-                    Slider(
-                        value: bitrateBinding,
-                        in: Double(RecordingSettings.minCustomVideoBitrate / 1_000_000)
-                            ... Double(RecordingSettings.maxCustomVideoBitrate / 1_000_000),
-                        step: 1
-                    )
-                    .frame(width: 170)
-
-                    Button(vm.settings.customVideoBitrate == nil ? "Custom" : "Auto") {
-                        if vm.settings.customVideoBitrate == nil {
-                            vm.setCustomVideoBitrate(vm.settings.autoVideoBitrate)
-                        } else {
-                            vm.setCustomVideoBitrate(nil)
+    private func speechModelCard(_ model: TranscriptionSpeechModel) -> some View {
+        let isSelected = vm.transcriptionController.selectedModel == model
+        let installed = vm.transcriptionController.modelStates[model]?.isReady == true
+        return Button { vm.transcriptionController.selectedModel = model } label: {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(BlitzType.glyph(15))
+                    .foregroundStyle(isSelected ? BlitzUI.mint : BlitzUI.secondaryText)
+                    .padding(.top, 1)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(model.title).font(BlitzType.label).foregroundStyle(BlitzUI.primaryText)
+                        if installed {
+                            Text("Installed").font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
                         }
                     }
-                    .blitzButton(.secondary)
+                    Text(model.plainDetail)
+                        .font(BlitzType.caption)
+                        .foregroundStyle(BlitzUI.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .disabled(!canEdit)
+                Spacer(minLength: 0)
             }
+            .padding(10)
+            .frame(maxWidth: .infinity, minHeight: 58, alignment: .topLeading)
+            .contentShape(.rect)
+        }
+        .buttonStyle(BlitzSelectionButtonStyle(isSelected: isSelected))
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
 
+    private var speechModelStatus: some View {
+        HStack(spacing: 12) {
+            switch vm.transcriptionController.modelState {
+            case .notDownloaded:
+                Text("Download once to transcribe on this Mac.")
+                    .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
+                Spacer(minLength: 8)
+                Button { vm.transcriptionController.downloadModels() } label: {
+                    Label("Download", systemImage: "arrow.down.circle.fill")
+                }
+                .blitzButton(.accent)
+                .controlSize(.small)
+            case .downloading(let progress, let phase):
+                ProgressView(value: progress).tint(BlitzUI.mint).frame(maxWidth: .infinity)
+                Text(phase).font(BlitzType.caption.monospacedDigit()).foregroundStyle(BlitzUI.secondaryText)
+                    .lineLimit(1)
+            case .ready(let size):
+                Label("\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)) installed",
+                      systemImage: "checkmark.seal.fill")
+                    .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
+                Spacer(minLength: 8)
+                Button { vm.transcriptionController.removeModels() } label: {
+                    Label("Remove", systemImage: "trash.fill")
+                }
+                .blitzButton(.secondary)
+                .controlSize(.small)
+            case .failed(let message):
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(BlitzType.caption).foregroundStyle(BlitzUI.warning).lineLimit(2)
+                Spacer(minLength: 8)
+                Button { vm.transcriptionController.downloadModels() } label: {
+                    Label("Try again", systemImage: "arrow.clockwise")
+                }
+                .blitzButton(.secondary)
+                .controlSize(.small)
+            }
+        }
+        .frame(height: BlitzControlMetrics.height(.small))
+    }
+
+    private var qualitySection: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .center, spacing: 18) {
+                    SettingsRowLabel(.init(
+                        title: "Video bitrate",
+                        detail: vm.settings.customVideoBitrate == nil
+                            ? "Automatic · \(qualityPresentation.finalBitrateLabel) for your resolution and frame rate."
+                            : "Custom · Higher keeps more detail and makes bigger files."
+                    ))
+                    Spacer(minLength: 16)
+                    BlitzSegmentedPicker(configuration: .init(
+                        title: "Video bitrate",
+                        options: [false, true],
+                        selection: Binding(
+                            get: { vm.settings.customVideoBitrate != nil },
+                            set: { custom in
+                                vm.setCustomVideoBitrate(custom ? vm.settings.autoVideoBitrate : nil)
+                            }
+                        ),
+                        label: { $0 ? "Custom" : "Automatic" }
+                    ))
+                    .controlSize(.small)
+                    .fixedSize()
+                }
+                if vm.settings.customVideoBitrate != nil {
+                    HStack(spacing: 12) {
+                        Slider(
+                            value: bitrateBinding,
+                            in: Double(RecordingSettings.minCustomVideoBitrate / 1_000_000)
+                                ... Double(RecordingSettings.maxCustomVideoBitrate / 1_000_000),
+                            step: 1
+                        )
+                        .tint(BlitzUI.mint)
+                        Text("\(Int(bitrateBinding.wrappedValue)) Mbps")
+                            .font(BlitzType.label.monospacedDigit())
+                            .frame(width: 70, alignment: .trailing)
+                    }
+                    .padding(.bottom, 4)
+                }
+            }
+            .padding(.vertical, 12)
+            .disabled(!canEdit)
             SettingsRowDivider()
 
             HStack(alignment: .center, spacing: 18) {
@@ -397,6 +415,7 @@ struct RecordingSettingsPage: View {
                 .frame(width: 180)
                 .disabled(!canEdit)
             }
+            .settingsRow()
 
             if vm.settings.savesSourceFiles {
                 SettingsRowDivider()
@@ -419,12 +438,14 @@ struct RecordingSettingsPage: View {
                     .frame(width: 180)
                     .disabled(!canEdit)
                 }
+                .settingsRow()
             }
         }
-        .font(.system(size: 12, weight: .semibold))
-        .foregroundStyle(.white.opacity(0.72))
-        .settingsRow()
-
+        .settingsSection(.init(
+            title: "Quality",
+            detail: "Defaults suit most videos.",
+            systemImage: "dial.medium"
+        ))
     }
 
     private func refreshStorageDetail() {
@@ -466,19 +487,6 @@ struct RecordingSettingsPage: View {
 
     private var qualityPresentation: RecordingQualityPresentation {
         RecordingQualityPresentation(settings: vm.settings)
-    }
-
-    private var transcriptionModelDetail: String {
-        switch vm.transcriptionController.modelState {
-        case .notDownloaded:
-            return "Required for local transcription and speaker detection."
-        case .downloading:
-            return "Downloading the speech model."
-        case .ready(let size):
-            return "\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)) installed."
-        case .failed(let message):
-            return message
-        }
     }
 
     private var audioQualityBinding: Binding<AudioQuality> {

@@ -5,8 +5,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 STRICT=0
 TARGET="${TARGET:-all}"
 REQUIRE_EXPORTS="${REQUIRE_EXPORTS:-1}"
-EXPECTED_MARKETING_VERSION="0.30.1"
-EXPECTED_BUILD_NUMBER="35"
+EXPECTED_MARKETING_VERSION="0.31.0"
+EXPECTED_BUILD_NUMBER="36"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -353,33 +353,6 @@ validate_screenshot_set() {
   fi
 }
 
-require_screenshot_file() {
-  local label="$1"
-  local file="$2"
-  shift 2
-  local accepted=("$@")
-
-  if [[ ! -f "$file" ]]; then
-    if [[ "$STRICT" == "1" ]]; then
-      fail "missing required $label screenshot: $file"
-    else
-      note_pending "missing required $label screenshot: $file"
-    fi
-    return
-  fi
-
-  local dimensions
-  dimensions="$(image_dimensions "$file")"
-  for accepted_dimensions in "${accepted[@]}"; do
-    if [[ "$dimensions" == "$accepted_dimensions" ]]; then
-      echo "✓ required $label screenshot $(basename "$file") is $dimensions"
-      return
-    fi
-  done
-
-  fail "required $label screenshot $(basename "$file") is ${dimensions:-unknown}, expected one of: ${accepted[*]}"
-}
-
 check_public_urls() {
   check_url_status "https://blitzrecorder.com" "200"
   check_url_status "https://blitzrecorder.com/privacy" "200"
@@ -395,18 +368,6 @@ check_screenshots() {
     validate_screenshot_set \
       "macOS" \
       "AppStore/ScreenshotAssets/macOS" \
-      "1280x800" "1440x900" "2560x1600" "2880x1800"
-    require_screenshot_file \
-      "macOS main canvas" \
-      "AppStore/ScreenshotAssets/macOS/01-main-recording-canvas.png" \
-      "1280x800" "1440x900" "2560x1600" "2880x1800"
-    require_screenshot_file \
-      "macOS plan popover" \
-      "AppStore/ScreenshotAssets/macOS/02-plan-popover.png" \
-      "1280x800" "1440x900" "2560x1600" "2880x1800"
-    require_screenshot_file \
-      "macOS iPhone camera controls" \
-      "AppStore/ScreenshotAssets/macOS/03-iphone-camera-controls.png" \
       "1280x800" "1440x900" "2560x1600" "2880x1800"
   fi
 

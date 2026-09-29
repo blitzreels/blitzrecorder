@@ -72,11 +72,11 @@ struct EditorTimelineGrip: View {
             .fill(Color(white: isActive ? 0.2 : 0.12))
             .overlay {
                 RoundedRectangle(cornerRadius: 3)
-                    .strokeBorder(.white.opacity(isActive ? 0.3 : 0.16), lineWidth: 1)
+                    .strokeBorder(isActive ? BlitzUI.strongStroke : BlitzUI.panelStroke, lineWidth: 1)
             }
             .overlay {
                 Capsule()
-                    .fill(isActive ? tint : .white.opacity(0.85))
+                    .fill(isActive ? tint : BlitzUI.supportingText)
                     .frame(width: 2, height: 12)
             }
             .frame(width: 8, height: 24)
@@ -143,7 +143,7 @@ struct EditorTimelineRangeHighlight: View {
             range: configuration.range, projection: configuration.projection,
             pixelsPerSecond: configuration.pixelsPerSecond, height: configuration.height))
         Rectangle()
-            .fill(.white.opacity(0.04))
+            .fill(BlitzUI.cardFill)
             .overlay { Rectangle().strokeBorder(configuration.tint.opacity(0.85), lineWidth: 1) }
             .frame(width: frame.width, height: frame.height)
             .offset(x: frame.minX)

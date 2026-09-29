@@ -68,6 +68,40 @@ extension RecorderViewModel {
         }
     }
 
+    func fixProjectSpeakers(_ project: RecordingProjectHistory.Entry) async -> RecordingTranscript? {
+        do {
+            return try await transcriptionController.fixSpeakers(project)
+        } catch {
+            projectLibraryError = "Fixing speakers failed: \(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    func renameTranscriptSpeaker(_ request: ProjectTranscriptSpeakerRenameRequest) async -> Bool {
+        guard !transcriptionController.isUpdatingTranscript(request.project) else {
+            projectLibraryError = LocalTranscriptionError.transcriptBusy.localizedDescription
+            return false
+        }
+        let projectURL = URL(fileURLWithPath: request.project.projectPath)
+        let rename = request.rename
+        do {
+            try await Task.detached(priority: .userInitiated) {
+                let project = try TakeFileStore().loadRecordingProject(at: projectURL)
+                let artifactStore = TranscriptArtifactStore()
+                let locations = artifactStore.locations(for: project)
+                let transcript = try artifactStore.load(from: locations.jsonURL)
+                try artifactStore.save(.init(
+                    transcript: transcript.renamingSpeaker(rename),
+                    locations: locations
+                ))
+            }.value
+            return true
+        } catch {
+            projectLibraryError = "Renaming the speaker failed: \(error.localizedDescription)"
+            return false
+        }
+    }
+
     func openProject(_ project: RecordingProjectHistory.Entry) {
         guard !projectTrash.isWorking, state == .idle else { return }
         if lastExportedProject?.id == project.id {

@@ -10,7 +10,7 @@ final class EditorExportPresentationTests: XCTestCase {
         XCTAssertEqual(Set(EditorExportDestination.file.layouts(request)), Set(CaptureLayout.allCases))
     }
 
-    func testCloudCopyPreservesSourceResolutionAndFrameRateRegardlessOfLocalRecipe() {
+    func testCloudCopyCapsResolutionWithoutUpscalingAndKeepsSourceFrameRate() {
         for resolution in OutputResolution.allCases {
             for fps in RecordingSettings.supportedFrameRates {
                 for layout in CaptureLayout.allCases {
@@ -20,9 +20,9 @@ final class EditorExportPresentationTests: XCTestCase {
                         layout: layout, layoutCount: 1, audioBitrate: 192_000, duration: 30,
                         playbackRate: 1.3, destination: .link)
                     let cloud = EditorExportRecipe.make(request)
-                    XCTAssertEqual(cloud.profile.resolution, resolution)
+                    XCTAssertEqual(cloud.profile.resolution, resolution == .p720 ? .p720 : .p1080)
                     XCTAssertEqual(cloud.profile.framesPerSecond, fps)
-                    XCTAssertEqual(cloud.profile.videoQuality, .maximum)
+                    XCTAssertEqual(cloud.profile.videoQuality, .high)
                     XCTAssertEqual(cloud.encoding.codec, .hevc)
                     XCTAssertTrue(cloud.summary.contains("1.3×"))
                     var localRequest = request
@@ -64,10 +64,10 @@ final class EditorExportPresentationTests: XCTestCase {
     }
 
     @MainActor
-    func testBothExportDestinationsFitAndRemainVisible() throws {
-        for destination in EditorExportDestination.allCases {
+    func testExportPopoverFitsCollapsedAndWithMultipleFormats() throws {
+        for (name, additional) in [("single", Set<CaptureLayout>()), ("multi", Set([CaptureLayout.horizontal]))] {
             let host = NSHostingView(rootView: EditorExportPopover(configuration: .init(
-                destination: .constant(destination), additionalLayouts: .constant([]), currentLayout: .vertical,
+                additionalLayouts: .constant(additional), currentLayout: .vertical,
                 format: .constant(.mp4), resolution: .constant(.p1080), framesPerSecond: .constant(24),
                 quality: .constant(.high), playbackRate: .constant(.init(clamping: 1.3)),
                 estimatedSize: "≈ 160 MB", estimatedSizeCaption: "Estimated size", encodingDetail: "HEVC · 12 Mbps",
@@ -81,7 +81,7 @@ final class EditorExportPresentationTests: XCTestCase {
             if let directory = ProcessInfo.processInfo.environment["BLITZRECORDER_EXPORT_UI_PROOF"] {
                 let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
                 host.cacheDisplay(in: host.bounds, to: bitmap)
-                let file = URL(fileURLWithPath: directory).appendingPathComponent("export-\(destination.rawValue).png")
+                let file = URL(fileURLWithPath: directory).appendingPathComponent("export-\(name).png")
                 try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: file)
             }
         }
@@ -155,18 +155,26 @@ final class EditorExportPresentationTests: XCTestCase {
     }
 
     @MainActor
-    func testLongExportFilenameDoesNotStretchTheConfirmation() {
+    func testLongExportFilenameDoesNotStretchTheConfirmation() throws {
         let names = ["recording.mp4", String(repeating: "A long exported recording name ", count: 12) + ".mp4"]
         var heights: [CGFloat] = []
         for name in names {
             let host = NSHostingView(rootView: EditorExportStatusView(configuration: .init(
-                status: .succeeded(URL(fileURLWithPath: "/tmp/recordings/\(name)")),
+                status: .succeeded(URL(fileURLWithPath: "/tmp/recordings/\(name)")), savedCount: 1,
                 open: { _ in }, reveal: { _ in }, share: { _ in }, sendToBlitzReels: { _ in }, retry: {}, dismiss: {}
-            )).frame(width: 1120))
+            )).frame(width: 1120).background(BlitzUI.canvasBackground).preferredColorScheme(.dark))
             host.layoutSubtreeIfNeeded()
             XCTAssertEqual(host.fittingSize.width, 1120, accuracy: 1)
             XCTAssertLessThanOrEqual(host.fittingSize.height, 80)
             heights.append(host.fittingSize.height)
+            if let directory = ProcessInfo.processInfo.environment["BLITZRECORDER_EXPORT_UI_PROOF"] {
+                host.setFrameSize(host.fittingSize)
+                host.layoutSubtreeIfNeeded()
+                let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                let file = URL(fileURLWithPath: directory).appendingPathComponent("export-done-\(heights.count).png")
+                try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: file)
+            }
         }
         XCTAssertEqual(Set(heights).count, 1)
     }

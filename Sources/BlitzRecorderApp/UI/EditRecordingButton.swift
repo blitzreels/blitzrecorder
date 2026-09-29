@@ -12,24 +12,23 @@ struct EditRecordingButton: View {
 
     var body: some View {
         Button(action: configuration.action) {
-            HStack(spacing: 12) {
-                Text(configuration.isLoading ? "Opening…" : configuration.title)
+            HStack(spacing: 8) {
                 ZStack {
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 11, weight: .medium))
-                        .opacity(configuration.isLoading ? 0 : 0.65)
+                    Image(systemName: "slider.horizontal.below.rectangle")
+                        .opacity(configuration.isLoading ? 0 : 1)
                     if configuration.isLoading {
                         ProgressView()
                             .controlSize(.mini)
                             .environment(\.colorScheme, .light)
                     }
                 }
-                .frame(width: 14, height: 14)
+                .frame(width: 16, height: 16)
                 .accessibilityHidden(true)
+                Text(configuration.isLoading ? "Opening…" : configuration.title)
             }
             .fixedSize()
         }
-        .blitzButton(.emphasized)
+        .blitzButton(.accent)
         .pointingHandCursor()
         .disabled(configuration.isLoading)
         .accessibilityLabel(configuration.isLoading ? "Opening recording" : configuration.title)

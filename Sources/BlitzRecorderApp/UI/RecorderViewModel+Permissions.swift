@@ -135,7 +135,7 @@ extension RecorderViewModel {
     }
 
     var screenPickActionTitle: String {
-        "Choose App Window"
+        "Choose app window"
     }
 
     func pickAndEnableScreenSource() {

@@ -664,6 +664,56 @@ final class PreviewStageViewTests: XCTestCase {
         XCTAssertEqual(view.cameraPreview.layer?.borderWidth, 0)
     }
 
+    func testCircleCameraInsetPreviewIsRoundWithMatchingShadow() throws {
+        let view = PreviewStageView()
+        view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
+        view.captureLayout = .horizontal
+        view.enabledSources = [.screen, .camera]
+        view.cameraShadowEnabled = true
+        var layout = SceneLayout.cameraInsetLayout(for: .horizontal, shape: .circle, size: 0.3)
+        layout.cameraMask = .circle
+        view.sceneLayout = layout
+        view.layoutSubtreeIfNeeded()
+
+        let frame = view.renderedCameraFrameForTesting
+        let radius = try XCTUnwrap(view.cameraPreview.layer?.cornerRadius)
+        XCTAssertEqual(frame.width, frame.height, accuracy: 1)
+        XCTAssertEqual(radius, min(frame.width, frame.height) / 2, accuracy: 0.0001)
+        XCTAssertEqual(view.cameraPreview.layer?.cornerCurve, .circular)
+
+        let shadowPath = try XCTUnwrap(view.cameraShadowLayer.shadowPath)
+        let side = min(frame.width, frame.height)
+        XCTAssertTrue(shadowPath.contains(CGPoint(x: side / 2, y: side / 2)))
+        XCTAssertFalse(shadowPath.contains(CGPoint(x: side * 0.05, y: side * 0.05)))
+
+        layout.cameraMask = .rectangle
+        view.sceneLayout = layout
+        view.layoutSubtreeIfNeeded()
+        XCTAssertLessThan(view.cameraPreview.layer?.cornerRadius ?? 0, min(frame.width, frame.height) / 2)
+    }
+
+    func testCircleCameraPreviewShapeUsesHalfOfShortestSide() {
+        let rect = CGRect(x: 0, y: 0, width: 180, height: 120)
+        let shape = PreviewStageDrawing.sourceShape(.init(
+            isCamera: true,
+            rect: rect,
+            isFullscreen: false,
+            isFullWidth: false,
+            isCircle: true
+        ))
+        let maskRadius = PreviewStageDrawing.maskCornerRadius(.init(
+            isCamera: true,
+            rect: rect,
+            isFullscreen: false,
+            isFullWidth: false,
+            isCircle: true
+        ))
+
+        XCTAssertEqual(shape.cornerRadius, 60)
+        XCTAssertTrue(shape.isCircle)
+        XCTAssertEqual(maskRadius, 60)
+    }
+
     func testSingleCameraPreviewMatchesPaddedRenderFrame() {
         let view = PreviewStageView()
         view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)

@@ -103,16 +103,6 @@ struct CameraCompanionView: View {
                 }
             )
                 .ignoresSafeArea()
-        } else if let preview = store.screenshotPreviewImage {
-            // Flexible fill + clip so the image fills the screen edge to edge
-            // without proposing an oversized layout that would push the control
-            // VStack out of the top safe area (matches the gradient's sizing).
-            Image(uiImage: preview)
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
-                .ignoresSafeArea()
         } else {
             LinearGradient(
                 colors: [
@@ -130,7 +120,7 @@ struct CameraCompanionView: View {
     }
 
     private var readabilityOverlay: some View {
-        let onCamera = store.isCameraSurfaceVisible
+        let onCamera = store.isLiveCameraPreviewEnabled
         return LinearGradient(
             colors: [
                 .black.opacity(onCamera ? 0.58 : 0.10),
@@ -432,7 +422,7 @@ struct CameraCompanionView: View {
         case .failed:
             return "Needs help"
         case .idle:
-            return store.isCameraSurfaceVisible ? "Live" : "Ready"
+            return store.isLiveCameraPreviewEnabled ? "Live" : "Ready"
         }
     }
 

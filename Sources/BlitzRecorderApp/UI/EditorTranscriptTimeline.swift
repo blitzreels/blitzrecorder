@@ -132,11 +132,11 @@ struct EditorTranscriptStrip: View {
                 context.fill(path, with: .color(tint.opacity(
                     isSilence ? (selected || hovered ? 0.32 : 0.18) : (selected || hovered ? 0.22 : 0.09))))
                 if selected || hovered {
-                    context.stroke(path, with: .color(isSilence || hovered ? tint : .white.opacity(0.55)),
+                    context.stroke(path, with: .color(isSilence || hovered ? tint : BlitzUI.secondaryText),
                                    lineWidth: hovered ? 2 : 1)
                 }
                 guard run.width >= 28 else { continue }
-                let label = context.resolve(Text(run.text).font(.system(size: 11, weight: .medium))
+                let label = context.resolve(Text(run.text).font(BlitzType.captionEmphasis)
                     .foregroundStyle(selected && !isSilence ? .white : tint))
                 if label.measure(in: CGSize(width: .infinity, height: rect.height)).width <= rect.width - 8 {
                     var clipped = context
@@ -148,7 +148,7 @@ struct EditorTranscriptStrip: View {
         .frame(width: configuration.viewport.width, height: configuration.height)
         .offset(x: configuration.viewport.lowerBound)
         .frame(width: configuration.width, height: configuration.height, alignment: .leading)
-        .background(Color.white.opacity(0.025))
+        .background(BlitzUI.cardFill)
         .contentShape(.rect)
         .pointingHandCursor(enabled: hoveredRange != nil)
         .onContinuousHover { phase in

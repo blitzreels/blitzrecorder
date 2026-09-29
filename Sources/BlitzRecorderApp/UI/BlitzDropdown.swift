@@ -26,7 +26,7 @@ struct BlitzDropdownValueLabel: View {
 
     var body: some View {
         Text(value)
-            .font(.system(size: BlitzDropdownMetrics.fontSize, weight: .medium))
+            .font(BlitzType.control(BlitzDropdownMetrics.fontSize))
             .foregroundStyle(BlitzUI.primaryText)
             .lineLimit(2)
             .truncationMode(.tail)

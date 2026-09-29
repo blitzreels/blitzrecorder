@@ -45,6 +45,7 @@ enum RecordingSettingsStore {
         static let screenFrame = "scene.screenFrame"
         static let cameraFrame = "scene.cameraFrame"
         static let layerOrder = "scene.layerOrder"
+        static let cameraMask = "scene.cameraMask"
         static let selectedScenePreset = "scene.selectedScenePreset"
     }
 
@@ -226,6 +227,10 @@ enum RecordingSettingsStore {
                 settings.sceneLayout.layerOrder = order
             }
         }
+        if let rawMask = defaults.string(forKey: Key.cameraMask),
+           let mask = SceneCameraMask(rawValue: rawMask) {
+            settings.sceneLayout.cameraMask = mask
+        }
         if settings.layout == .vertical,
            rectAlmostEquals(settings.sceneLayout.screenFrame, CGRect(x: 0, y: 0.341796875, width: 1, height: 0.31640625)),
            rectAlmostEquals(settings.sceneLayout.cameraFrame, CGRect(x: 0, y: 0.046796875, width: 1, height: 0.31640625)) {
@@ -357,6 +362,7 @@ enum RecordingSettingsStore {
         defaults.set(string(from: settings.sceneLayout.screenFrame), forKey: Key.screenFrame)
         defaults.set(string(from: settings.sceneLayout.cameraFrame), forKey: Key.cameraFrame)
         defaults.set(settings.sceneLayout.layerOrder.map(\.rawValue), forKey: Key.layerOrder)
+        defaults.set(settings.sceneLayout.cameraMask.rawValue, forKey: Key.cameraMask)
         if let preset = settings.selectedScenePreset {
             defaults.set(preset.rawValue, forKey: Key.selectedScenePreset)
         } else {

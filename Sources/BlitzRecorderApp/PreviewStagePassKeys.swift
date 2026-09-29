@@ -29,6 +29,7 @@ enum PreviewStagePassKeys {
         let frame: CGRect
         let isFullscreen: Bool
         let isFullWidth: Bool
+        let isCircle: Bool
         let cameraShadowEnabled: Bool
         let isCameraCropEditingEnabled: Bool
     }
@@ -72,5 +73,6 @@ enum PreviewStagePassKeys {
         let isCamera: Bool
         let isFullscreen: Bool
         let isFullWidth: Bool
+        let isCircle: Bool
     }
 }

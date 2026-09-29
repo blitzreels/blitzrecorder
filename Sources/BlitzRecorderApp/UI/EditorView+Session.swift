@@ -214,7 +214,6 @@ extension EditorView {
     }
 
     func selectPlacedItem(_ id: EditorPlacedItem.ID) {
-        showsInspector = true
         if id.kind != .mask, privacy.selectedID != nil { privacy.select(nil) }
         if id.kind == .music { inspectorTab = .audio; return }
         guard let project = vm.editorProject,
@@ -484,7 +483,6 @@ extension EditorView {
     }
 
     func openSilenceInspector() {
-        showsInspector = true
         inspectorTab = .silence
     }
 

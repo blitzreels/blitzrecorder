@@ -2,10 +2,11 @@ import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { hostingPool, transaction } from "./db";
 import {
   assertHostingEnabled, HostingError, PART_BYTES, UPLOAD_SECONDS, parseUploadInput,
-  publicAsset, required, reservationBytes, tokenHash, type HostedAsset, type HostingAccount,
+  publicAsset, required, reservationBytes, type HostedAsset, type HostingAccount,
 } from "./model";
 import { createUpload, completeUpload, signPart, uploadParts, signalJob } from "./r2";
 import { parseVideoDetails } from "./details";
+import { accountForToken } from "./account";
 import { HOSTING_PLAN } from "./plan";
 import type { PoolClient } from "pg";
 
@@ -36,11 +37,9 @@ export async function authenticate(request: Request): Promise<HostingAccount> {
   assertHostingEnabled();
   const token = request.headers.get("authorization")?.match(/^Bearer (brh_[A-Za-z0-9_-]{43})$/)?.[1];
   if (!token) throw new HostingError({ status: 401, message: "Connect your hosting account to continue." });
-  const result = await hostingPool().query<HostingAccount>(
-    `SELECT id, email, active_until, storage_limit FROM hosting_accounts WHERE token_hash = $1
-     OR id IN (SELECT account_id FROM hosting_connections WHERE token_hash=$1 AND expires_at>now())`, [tokenHash(token)]);
-  if (!result.rows[0]) throw new HostingError({ status: 401, message: "Your hosting connection has expired." });
-  return result.rows[0];
+  const account = await accountForToken(token);
+  if (!account) throw new HostingError({ status: 401, message: "Your hosting connection has expired." });
+  return account;
 }
 
 function requirePaid(account: HostingAccount) {

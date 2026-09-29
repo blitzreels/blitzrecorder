@@ -93,7 +93,7 @@ struct TranscriptCopyButton: View {
         case .failed: return .red
         case .idle, .copying:
             switch request.appearance {
-            case .compact: return .white.opacity(0.82)
+            case .compact: return BlitzUI.supportingText
             case .regular: return .primary
             }
         }

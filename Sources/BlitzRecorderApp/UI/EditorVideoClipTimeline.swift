@@ -179,18 +179,18 @@ struct EditorVideoClipStrip: View {
                 let path = Path(roundedRect: rect, cornerRadius: run.width >= 8 ? 4 : 0)
                 context.fill(path, with: .color(BlitzUI.mint.opacity(hovered ? 0.26 : 0.12)))
                 context.stroke(path, with: .color(.black.opacity(0.7)), lineWidth: 3)
-                context.stroke(path, with: .color(hovered ? BlitzUI.mint : .white.opacity(0.2)), lineWidth: hovered ? 2 : 1)
-                guard run.width >= 64 else { continue }
+                context.stroke(path, with: .color(hovered ? BlitzUI.mint : BlitzUI.strongFill), lineWidth: hovered ? 2 : 1)
+                guard run.width >= 64, hovered || isSelected(run) else { continue }
                 var clipped = context
                 clipped.clip(to: path)
                 clipped.fill(Path(CGRect(x: rect.minX, y: rect.maxY - 19, width: rect.width, height: 19)),
                              with: .color(.black.opacity(0.8)))
-                clipped.draw(Text(run.clip.title).font(.system(size: 11, weight: .medium))
+                clipped.draw(Text(run.clip.title).font(BlitzType.captionEmphasis)
                     .foregroundStyle(BlitzUI.primaryText),
                     at: CGPoint(x: rect.minX + 8, y: rect.maxY - 10), anchor: .leading)
                 if run.width >= 140 {
                     clipped.draw(Text(String(format: "%.1fs", run.clip.end - run.clip.start))
-                        .font(.system(size: 10, weight: .medium)).monospacedDigit()
+                        .font(BlitzType.footnote).monospacedDigit()
                         .foregroundStyle(BlitzUI.secondaryText),
                         at: CGPoint(x: rect.maxX - 8, y: rect.maxY - 10), anchor: .trailing)
                 }
@@ -264,6 +264,10 @@ struct EditorVideoClipStrip: View {
         .help("⌘B splits this clip at the playhead, including Screen, Camera, and audio. Drag a clip’s right edge left to shorten it or right to restore cut footage up to the next clip. Click a clip to select it; Delete removes it from all source tracks.")
     }
 
+    private func isSelected(_ run: EditorVideoClipLayout.Run) -> Bool {
+        configuration.selectedRanges.contains { abs($0.start - run.clip.range.start) <= 1.0 / 600 }
+    }
+
     private func isHovered(_ run: EditorVideoClipLayout.Run) -> Bool {
         guard let hovered = configuration.hoveredRange else { return false }
         return abs(run.clip.range.start - hovered.start) <= 1.0 / 600
@@ -296,11 +300,8 @@ struct EditorVideoClipStrip: View {
     }
 
     private func trimHandle(_ run: EditorVideoClipLayout.Run) -> some View {
-        let isSelected = configuration.selectedRanges.contains {
-            abs($0.start - run.clip.range.start) <= 1.0 / 600
-        }
         let isActive = hoveredHandle == run.clip.id || configuration.trimOrigin?.clip.start == run.clip.range.start
-        let showsHandle = isSelected || isActive || isHovered(run)
+        let showsHandle = isSelected(run) || isActive || isHovered(run)
         return EditorTimelineGrip(tint: BlitzUI.mint, isActive: isActive)
         .opacity(showsHandle ? 1 : 0)
         .frame(width: EditorTimelineClipPointer.handleWidth, height: configuration.height)

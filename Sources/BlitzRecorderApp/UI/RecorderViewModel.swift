@@ -41,12 +41,12 @@ final class RecorderViewModel {
             isShowingSettings = false
             onEditorHistoryChanged?()
             guard oldValue != studioMode else { return }
+            cancelCountdown()
             onStudioModeChanged?(studioMode)
         }
     }
     private(set) var isShowingSettings = false
     var selectedSettingsPane: SettingsPane = .recording
-    var showsRecorderSources = true
 
     var isEditorVisible: Bool { studioMode == .edit && !isShowingSettings }
 
@@ -103,6 +103,10 @@ final class RecorderViewModel {
     @ObservationIgnored var editorHistory = EditorProjectHistory()
     var editorHistoryRevision = 0
     var inspectorSelection: RecorderInspectorSelection = .canvas
+    var liveSceneThumbnails = LiveSceneThumbnails()
+    var countdownRemaining: Int?
+    var countdownSeconds = RecordingCountdownPreference().seconds
+    var countdownTask: Task<Void, Never>?
     var projectLibraryNavigation = ProjectLibraryNavigationState()
     let projectTrash = ProjectLibraryTrashController(operations: .live)
     var screenSplitPreviewHeight: Double?
@@ -274,6 +278,13 @@ final class RecorderViewModel {
         remoteCameraPreviewSurface.setMessage("Waiting for iPhone preview")
         if let selectedLayer = inspectorSelection.sceneLayer {
             previewStage.selectedLayer = selectedLayer
+        }
+
+        previewStage.screenPreview.thumbnailSampler.onImage = { [weak self] image in
+            self?.liveSceneThumbnails.screen = image
+        }
+        previewStage.cameraPreview.thumbnailSampler.onImage = { [weak self] image in
+            self?.liveSceneThumbnails.camera = image
         }
 
         previewStage.onLayerSelected = { [weak self] kind in

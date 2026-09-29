@@ -3,8 +3,12 @@ import SwiftUI
 struct SettingsPageHeaderConfiguration {
     let title: String
     let detail: String
-    let systemImage: String
-    let status: String?
+    let status: SettingsPageStatus?
+}
+
+struct SettingsPageStatus {
+    let title: String
+    let isActive: Bool
 }
 
 struct SettingsPageHeader: View {
@@ -16,17 +20,13 @@ struct SettingsPageHeader: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
-            BlitzSymbol(configuration: .init(name: configuration.systemImage, size: 26))
-                .foregroundStyle(BlitzUI.secondaryText)
-                .padding(.top, 3)
-
             VStack(alignment: .leading, spacing: 4) {
                 Text(configuration.title)
-                    .font(.system(size: 23, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.95))
+                    .font(BlitzType.largeTitle)
+                    .foregroundStyle(BlitzUI.primaryText)
 
                 Text(configuration.detail)
-                    .font(.system(size: 12, weight: .regular))
+                    .font(BlitzType.body)
                     .foregroundStyle(BlitzUI.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -34,12 +34,15 @@ struct SettingsPageHeader: View {
             Spacer(minLength: 16)
 
             if let status = configuration.status {
-                Text(status)
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(BlitzUI.mint.opacity(0.88))
-                    .padding(.horizontal, 10)
-                    .frame(height: 28)
-                    .background(BlitzUI.mint.opacity(0.09), in: .capsule)
+                HStack(spacing: 6) {
+                    Circle().fill(status.isActive ? BlitzUI.mint : BlitzUI.secondaryText).frame(width: 6, height: 6)
+                    Text(status.title)
+                        .font(BlitzType.label)
+                        .foregroundStyle(status.isActive ? BlitzUI.primaryText : BlitzUI.secondaryText)
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 28)
+                .background(BlitzUI.controlFill, in: .capsule)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -59,14 +62,15 @@ private struct SettingsSectionModifier: ViewModifier {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 8) {
                 BlitzSymbol(configuration: .init(name: configuration.systemImage, size: 18))
+                    .symbolVariant(.fill)
                     .foregroundStyle(BlitzUI.secondaryText)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(configuration.title)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(BlitzType.section)
                         .foregroundStyle(BlitzUI.primaryText)
                     if let detail = configuration.detail {
                         Text(detail)
-                            .font(.system(size: 12, weight: .regular))
+                            .font(BlitzType.body)
                             .foregroundStyle(BlitzUI.secondaryText)
                     }
                 }
@@ -74,12 +78,7 @@ private struct SettingsSectionModifier: ViewModifier {
             .padding(.bottom, 4)
 
             content
-                .padding(.horizontal, 16)
-                .background(.white.opacity(0.035), in: .rect(cornerRadius: 12))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 12)
-                        .strokeBorder(BlitzUI.separator, lineWidth: 1)
-                }
+                .settingsCard()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -100,10 +99,10 @@ struct SettingsRowLabel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(configuration.title)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.white.opacity(0.84))
+                .font(BlitzType.callout)
+                .foregroundStyle(BlitzUI.supportingText)
             Text(configuration.detail)
-                .font(.system(size: 12, weight: .regular))
+                .font(BlitzType.body)
                 .foregroundStyle(BlitzUI.secondaryText)
                 .lineLimit(2)
                 .truncationMode(.middle)
@@ -133,7 +132,7 @@ struct SettingsStatusBadge: View {
         HStack(spacing: 6) {
             BlitzStatusDot(tone: configuration.tone, diameter: 5)
             Text(configuration.title)
-                .font(.system(size: 11, weight: .medium))
+                .font(BlitzType.captionEmphasis)
                 .lineLimit(1)
         }
         .foregroundStyle(configuration.tone == .muted ? BlitzUI.secondaryText : configuration.tone.color)
@@ -148,9 +147,22 @@ private struct SettingsSurfaceModifier: ViewModifier {
         content
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(BlitzUI.cardFill, in: .rect(cornerRadius: 12))
+            .background(BlitzUI.cardFill, in: .rect(cornerRadius: BlitzUI.cardRadius))
             .overlay {
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: BlitzUI.cardRadius)
+                    .strokeBorder(BlitzUI.separator, lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+    }
+}
+
+private struct SettingsCardModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 16)
+            .background(BlitzUI.cardFill, in: .rect(cornerRadius: BlitzUI.cardRadius))
+            .overlay {
+                RoundedRectangle(cornerRadius: BlitzUI.cardRadius)
                     .strokeBorder(BlitzUI.separator, lineWidth: 1)
                     .allowsHitTesting(false)
             }
@@ -184,6 +196,10 @@ extension View {
 
     func settingsSection(_ configuration: SettingsSectionConfiguration) -> some View {
         modifier(SettingsSectionModifier(configuration: configuration))
+    }
+
+    func settingsCard() -> some View {
+        modifier(SettingsCardModifier())
     }
 
     func settingsRow() -> some View {

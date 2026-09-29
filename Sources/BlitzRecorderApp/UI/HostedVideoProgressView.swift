@@ -7,18 +7,20 @@ struct HostedVideoProgressPresentation {
     let fraction: Double?
 
     static func exporting(_ progress: EditorExportStatus.Progress) -> Self {
-        .init(stage: 0, title: "Saving cloud copy", detail: progress.supplementaryDetail ?? "Rendering your edit at source quality.",
+        .init(stage: 0, title: "Saving cloud copy", detail: progress.supplementaryDetail ?? "Rendering your edit in high quality, up to 1080p.",
               fraction: progress.value)
     }
 
     static func transfer(_ progress: HostingClient.Progress) -> Self {
         switch progress {
+        case .optimizing(let fraction):
+            .init(stage: 0, title: "Preparing sharing copy", detail: "Reducing this export to 1080p maximum. Your original stays unchanged.", fraction: fraction)
         case .preparing:
             .init(stage: 1, title: "Connecting to cloud", detail: "Your local copy is saved. Preparing a secure upload.", fraction: nil)
         case .uploading(let bytes):
             .init(stage: 1, title: "Uploading video", detail: bytes.detail, fraction: bytes.fraction)
         case .processing:
-            .init(stage: 2, title: "Preparing playback", detail: "Upload complete. Creating streaming quality options; your original is saved.", fraction: nil)
+            .init(stage: 2, title: "Preparing playback", detail: "Upload complete. Creating streaming quality options.", fraction: nil)
         }
     }
 }
@@ -29,11 +31,11 @@ struct HostedVideoProgressView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Text(presentation.title).font(.system(size: 13, weight: .semibold))
+                Text(presentation.title).font(BlitzType.section)
                 Spacer(minLength: 8)
                 if let fraction = presentation.fraction {
                     Text(fraction, format: .percent.precision(.fractionLength(0)))
-                        .font(.system(size: 12, weight: .medium).monospacedDigit())
+                        .font(BlitzType.label.monospacedDigit())
                 }
             }
             ProgressView(value: presentation.fraction)
@@ -41,7 +43,7 @@ struct HostedVideoProgressView: View {
                 .tint(BlitzUI.mint)
                 .accessibilityLabel(presentation.title)
             Text(presentation.detail)
-                .font(.system(size: 12)).foregroundStyle(BlitzUI.supportingText)
+                .font(BlitzType.body).foregroundStyle(BlitzUI.supportingText)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 16) {
                 ForEach(Array(["Save", "Upload", "Prepare playback"].enumerated()), id: \.offset) { item in
@@ -49,7 +51,7 @@ struct HostedVideoProgressView: View {
                         Image(systemName: item.offset < presentation.stage ? "checkmark.circle.fill" : "\(item.offset + 1).circle")
                         Text(item.element)
                     }
-                    .font(.system(size: 11, weight: item.offset == presentation.stage ? .semibold : .regular))
+                    .font(item.offset == presentation.stage ? BlitzType.captionEmphasis : BlitzType.caption)
                     .foregroundStyle(item.offset <= presentation.stage ? BlitzUI.primaryText : BlitzUI.secondaryText)
                 }
             }

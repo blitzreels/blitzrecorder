@@ -52,7 +52,9 @@ async function handle(request: Request) {
       const account = await authenticate(request);
       if (resource === "account" && path.length === 1 && request.method === "GET") result = accountState(account);
       else if (resource === "billing" && path.length === 1 && request.method === "POST") result = await billingURL(account);
-      else if (resource === "disconnect" && path.length === 1 && request.method === "POST") result = await disconnectAccount(request);
+      else if (resource === "disconnect" && path.length === 1 && request.method === "POST") {
+        result = await disconnectAccount({ request, account, body: await readBody({ request, limit: 256 }) });
+      }
       else if (resource !== "assets") throw new HostingError({ status: 404, message: "Not found." });
       else if (request.method === "GET" && path.length === 1) result = await listAssets(account);
       else if (request.method === "POST" && path.length === 1) result = await beginUpload({ account, body: await readBody({ request, limit: 16_384 }) });

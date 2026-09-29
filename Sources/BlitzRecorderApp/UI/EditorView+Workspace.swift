@@ -6,31 +6,22 @@ extension EditorView {
         EditorToolbar(
             vm: vm,
             title: project?.displayTitle ?? "Last recording",
-            showsInspector: $showsInspector,
             onFillWindow: fillWindow,
             onSelectOutputLayout: {
                 playback.pauseForEditing()
                 vm.selectOutputLayout($0)
             },
             exportButton: AnyView(HStack(spacing: 8) {
-                Button {
-                    let sharing = HostedVideoShareController.shared
-                    preparesHostedExport = !sharing.isRunning && !sharing.belongsToProject(project?.projectPath)
-                    showsInspector = true
-                    showsHostingShare = true
-                } label: { Label("Share", systemImage: "link") }
+                Button(action: openSharing) { Label("Share", systemImage: "link") }
                 .blitzButton(.secondary)
                 .controlSize(.large)
                 .disabled(project == nil)
-                .help("Open BlitzRecorder sharing")
+                .accessibilityValue(showsHostingShare ? "Open" : "Closed")
+                .help("Create a watch link anyone can open")
                 EditorExportControls(
                 vm: vm,
                 project: project,
-                isPresented: Binding(get: { isExportPopoverPresented }, set: {
-                    if $0 { exportDestination = .file }
-                    isExportPopoverPresented = $0
-                }),
-                destination: $exportDestination,
+                isPresented: $isExportPopoverPresented,
                 additionalExportLayouts: $additionalExportLayouts,
                 selectedExportPreset: $selectedExportPreset,
                 selectedFormat: $selectedFormat,
@@ -107,7 +98,7 @@ extension EditorView {
     }
 
     var exportRecipe: EditorExportRecipe {
-        exportRecipe(for: exportDestination)
+        exportRecipe(for: .file)
     }
 
     func exportRecipe(for destination: EditorExportDestination) -> EditorExportRecipe {
@@ -132,7 +123,7 @@ extension EditorView {
     }
 
     var selectedExportLayouts: [CaptureLayout] {
-        exportLayouts(for: exportDestination)
+        exportLayouts(for: .file)
     }
 
     func exportLayouts(for destination: EditorExportDestination) -> [CaptureLayout] {
@@ -147,14 +138,14 @@ extension EditorView {
 
     func prepareExport() {
         isExportPopoverPresented = false
-        if exportDestination == .link {
-            preparesHostedExport = true
-            showsInspector = true
-            showsHostingShare = true
-        } else {
-            showsHostingShare = false
-            exportVideo(to: .file)
-        }
+        showsHostingShare = false
+        exportVideo(to: .file)
+    }
+
+    func openSharing() {
+        let sharing = HostedVideoShareController.shared
+        preparesHostedExport = !sharing.isRunning && !sharing.belongsToProject(project?.projectPath)
+        showsHostingShare = true
     }
 
     func exportVideo(to destination: EditorExportDestination) {

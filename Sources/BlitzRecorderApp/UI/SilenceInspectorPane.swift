@@ -27,12 +27,14 @@ struct SilenceInspectorPane: View {
     @State private var showsTuning = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollView {
+        EditorInspectorPane(configuration: .init(
+            title: "Silence removal",
+            detail: "Shorten gaps between spoken phrases.",
+            showsFooter: !session.windows.isEmpty || session.hasRemovedSilence || session.error != nil,
+            content: {
                 VStack(alignment: .leading, spacing: 16) {
-                    heading
-                    detection
                     summary
+                    detection
                     BlitzInspectorDisclosure(configuration: .init(
                         title: "Fine-tune",
                         detail: session.customized ? "Custom" : nil,
@@ -40,31 +42,9 @@ struct SilenceInspectorPane: View {
                         content: { tuning }
                     ))
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 16)
-            }
-            .scrollIndicators(.hidden)
-            if session.hasChanges || session.skipSilence || session.hasRemovedSilence || session.error != nil || session.waitingForTranscript {
-                footer
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(BlitzUI.projectLibraryBackground)
-        .foregroundStyle(BlitzUI.primaryText)
-        .buttonStyle(BlitzButtonStyle(.secondary))
-        .controlSize(.regular)
-        .tint(BlitzUI.mint)
-    }
-
-    private var heading: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Silence removal")
-                .font(.system(size: 17, weight: .semibold))
-            Text("Shorten gaps between spoken phrases.")
-                .font(.system(size: 12))
-                .foregroundStyle(BlitzUI.supportingText)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+            },
+            footer: { footer }
+        ))
     }
 
     private var detection: some View {
@@ -87,7 +67,7 @@ struct SilenceInspectorPane: View {
             Text(!session.suggestsPauses ? "Detection is off. Manual selections are kept."
                  : session.customized ? "Custom silence length and speech padding."
                  : (selectedPacing ?? .natural).detail)
-                .font(.system(size: 12))
+                .font(BlitzType.body)
                 .foregroundStyle(BlitzUI.supportingText)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -104,34 +84,32 @@ struct SilenceInspectorPane: View {
             if session.loading {
                 status("Analyzing audio…")
                 Text("Finding the quiet moments in your recording.")
-                    .font(.system(size: 12))
+                    .font(BlitzType.body)
                     .foregroundStyle(BlitzUI.supportingText)
             } else if session.windows.isEmpty {
                 Text("Audio unavailable")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(BlitzType.section)
                 Text("Silence detection needs a readable audio track.")
-                    .font(.system(size: 12))
+                    .font(BlitzType.body)
                     .foregroundStyle(BlitzUI.supportingText)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(session.hasChanges ? "After removal" : "Edited duration")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(BlitzUI.supportingText)
+                    durationHeading
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
                         Text(SilenceTime.label(session.metrics.outputDuration))
-                            .font(.system(size: 30, weight: .medium, design: .rounded))
+                            .font(BlitzType.largeTitle)
                             .foregroundStyle(BlitzUI.primaryText)
                             .fixedSize()
                         Spacer(minLength: 0)
                         if session.metrics.removedDuration > 0 {
                             Text("−\(SilenceTime.label(session.metrics.removedDuration))")
-                                .font(.system(size: 13, weight: .medium))
+                                .font(BlitzType.section)
                                 .foregroundStyle(BlitzUI.mint)
                                 .fixedSize()
                         }
                     }
                     Text("Original · \(SilenceTime.label(session.duration))")
-                        .font(.system(size: 12))
+                        .font(BlitzType.body)
                         .foregroundStyle(BlitzUI.supportingText)
                 }
                 .monospacedDigit()
@@ -139,7 +117,7 @@ struct SilenceInspectorPane: View {
                 if session.waitingForTranscript {
                     status("Finishing speech analysis…")
                     Text("Apply becomes available when all pauses are ready.")
-                        .font(.system(size: 11)).foregroundStyle(BlitzUI.supportingText)
+                        .font(BlitzType.caption).foregroundStyle(BlitzUI.supportingText)
                 } else if session.calculating || session.preparingPreview {
                     status(session.calculating ? "Updating silences…" : "Preparing preview…")
                 } else {
@@ -150,7 +128,7 @@ struct SilenceInspectorPane: View {
                             .fill(BlitzUI.recordRed)
                             .frame(width: 8, height: 8)
                     }
-                    .font(.system(size: 12))
+                    .font(BlitzType.body)
                     .foregroundStyle(BlitzUI.supportingText)
                     .fixedSize(horizontal: false, vertical: true)
                 }
@@ -158,8 +136,30 @@ struct SilenceInspectorPane: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(BlitzUI.quietFill, in: .rect(cornerRadius: 10))
+        .background(BlitzUI.quietFill, in: .rect(cornerRadius: BlitzUI.cardRadius))
         .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var durationHeading: some View {
+        if session.hasChanges {
+            Text("After removal")
+                .font(BlitzType.label)
+                .foregroundStyle(BlitzUI.supportingText)
+        } else if session.hasRemovedSilence {
+            Label {
+                Text("Silence removed")
+                    .foregroundStyle(BlitzUI.supportingText)
+            } icon: {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(BlitzUI.mint)
+            }
+            .font(BlitzType.label)
+        } else {
+            Text("Edited duration")
+                .font(BlitzType.label)
+                .foregroundStyle(BlitzUI.supportingText)
+        }
     }
 
     private var silenceCountLabel: String {
@@ -172,7 +172,7 @@ struct SilenceInspectorPane: View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.mini)
             Text(title)
-                .font(.system(size: 12))
+                .font(BlitzType.body)
                 .foregroundStyle(BlitzUI.supportingText)
         }
     }
@@ -180,36 +180,14 @@ struct SilenceInspectorPane: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let error = session.error {
-                Label(error, systemImage: "exclamationmark.circle")
-                    .font(.system(size: 12))
-                    .foregroundStyle(BlitzUI.recordRed)
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(BlitzType.body)
+                    .foregroundStyle(BlitzUI.warning)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !session.windows.isEmpty {
-                HStack(spacing: 8) {
-                    Button("Listen before") { session.audition(false) }
-                    Button("Listen after") { session.audition(true) }
-                }
-                .blitzButton(.secondary)
-                .controlSize(.small)
-                .disabled(session.loading || session.calculating || session.waitingForTranscript || session.isAuditioning)
-                if session.isAuditioning {
-                    HStack {
-                        status("Playing a short comparison…")
-                        Spacer(minLength: 0)
-                        Button("Stop") { session.stopAudition() }
-                            .blitzButton(.quiet)
-                            .controlSize(.small)
-                    }
-                }
+                SilencePreviewToggle(session: session)
             }
-            SilencePreviewToggle(session: session)
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 16)
-        .background(BlitzUI.projectLibraryBackground)
-        .overlay(alignment: .top) {
-            Rectangle().fill(BlitzUI.separator).frame(height: 1)
         }
     }
 
@@ -229,7 +207,7 @@ struct SilenceInspectorPane: View {
                     ), range: -70 ... -15, step: 1,
                     valueLabel: "\(Int(session.threshold)) dB",
                     onEditingChanged: { _ in },
-                    onReset: { session.threshold = -42; session.recalculate() }
+                    onReset: { session.threshold = SilenceEditingSession.defaultThreshold; session.recalculate() }
                 ))
                 .disabled(session.automaticThreshold)
 
@@ -243,6 +221,7 @@ struct SilenceInspectorPane: View {
                     set: { linked in
                         session.linkedPadding = linked
                         if linked { session.paddingAfter = session.paddingBefore }
+                        session.customized = true
                         session.recalculate()
                     }
                 ))
@@ -278,10 +257,10 @@ struct SilenceInspectorPane: View {
     private func parameter(_ parameter: Parameter) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack {
-                Text(parameter.title).font(.system(size: 12, weight: .medium))
+                Text(parameter.title).font(BlitzType.label)
                 Spacer(minLength: 0)
                 Text("\(parameter.value.wrappedValue, specifier: "%.2f") s")
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(BlitzType.body.monospacedDigit())
                     .foregroundStyle(BlitzUI.supportingText)
             }
             Slider(value: Binding(get: { parameter.value.wrappedValue }, set: { value in
@@ -294,7 +273,7 @@ struct SilenceInspectorPane: View {
                 .accessibilityValue(String(format: "%.2f seconds", parameter.value.wrappedValue))
             if let detail = parameter.detail {
                 Text(detail)
-                    .font(.system(size: 11))
+                    .font(BlitzType.caption)
                     .foregroundStyle(BlitzUI.supportingText)
                     .fixedSize(horizontal: false, vertical: true)
             }

@@ -6,7 +6,7 @@ struct BlitzFormDropdown<Value: Hashable>: View {
     var body: some View {
         HStack(spacing: 16) {
             Text(configuration.title)
-                .font(.system(size: 12, weight: .medium))
+                .font(BlitzType.label)
                 .foregroundStyle(BlitzUI.secondaryText)
                 .frame(width: 88, alignment: .leading)
             BlitzDropdown(configuration: configuration)

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Pool } from "pg";
-import { accountState, billingURL, connectAccount } from "../../lib/hosting/account";
+import { accountState, activeSessionCount, billingURL, connectAccount, disconnectAccount } from "../../lib/hosting/account";
 import { authenticate } from "../../lib/hosting/service";
 import { hostingPool } from "../../lib/hosting/db";
 import { getStripe } from "../../lib/payments";
@@ -52,6 +52,22 @@ integration("two devices reconnect to one unpaid account without revoking each o
   assert.equal(a.id, b.id);
   assert.equal(accountState(a).storageLimit, 1024 ** 3);
   assert.equal(Number((await hostingPool().query("SELECT count(*) FROM hosting_accounts WHERE identity_id=$1", [identity.id])).rows[0].count), 1);
+});
+
+integration("signing out everywhere revokes every Mac and browser session, a single sign-out only its own", async () => {
+  const identity = { id: randomUUID(), email: "everywhere@example.test" };
+  const [mac, laptop, browser] = await Promise.all([connectAccount(identity), connectAccount(identity), connectAccount(identity)]);
+  const request = (token: string) => new Request("https://hosting.test", { headers: { Authorization: `Bearer ${token}` } });
+  const account = await authenticate(request(mac.token));
+  assert.equal(await activeSessionCount(account), 3);
+  await disconnectAccount({ request: request(laptop.token), account, body: {} });
+  await assert.rejects(authenticate(request(laptop.token)), { status: 401 });
+  assert.equal((await authenticate(request(browser.token))).id, account.id);
+  assert.deepEqual(await disconnectAccount({ request: request(mac.token), account, body: { everywhere: true } }),
+    { disconnected: true, everywhere: true });
+  await assert.rejects(authenticate(request(mac.token)), { status: 401 });
+  await assert.rejects(authenticate(request(browser.token)), { status: 401 });
+  assert.equal(await activeSessionCount(account), 0);
 });
 
 integration("concurrent subscribe actions reuse one checkout and never grant access from the return page", async (t) => {

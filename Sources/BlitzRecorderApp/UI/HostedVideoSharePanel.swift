@@ -2,6 +2,10 @@ import AppKit
 import SwiftUI
 
 struct HostedVideoSharePanel: View {
+    enum Context {
+        case project(path: String?, title: String)
+        case account
+    }
     struct ExportPreparation {
         let title: String
         let summary: String
@@ -10,14 +14,35 @@ struct HostedVideoSharePanel: View {
     }
 
     @Bindable var controller: HostedVideoShareController
+    let context: Context
     let preparation: ExportPreparation?
     let newExport: () -> Void
     let close: () -> Void
+    let showLibrary: () -> Void
     @State private var email = ""
     @State private var code = ""
-    @State private var copied = false
     @FocusState private var focusedField: Field?
     private enum Field { case email, code }
+
+    private var isAccountOnly: Bool {
+        if case .account = context { return true }
+        return false
+    }
+
+    private var previousShare: URL? {
+        guard case .project(let path, _) = context else { return nil }
+        return controller.sharedURL(forProject: path)
+    }
+
+    private var currentShare: URL? {
+        guard case .project(let path, _) = context, let path else { return nil }
+        return controller.projectPath == path ? controller.shareURL ?? previousShare : previousShare
+    }
+
+    private var projectTitle: String {
+        guard case .project(_, let title) = context else { return "" }
+        return title
+    }
 
     private var isSaving: Bool {
         if case .exporting = preparation?.status { return true }
@@ -25,81 +50,51 @@ struct HostedVideoSharePanel: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Button(action: close) { Image(systemName: "arrow.left") }
-                    .blitzButton(.quiet).controlSize(.small)
-                    .accessibilityLabel("Back to editing")
-                    .help("Back to editing. Sharing continues in the background.")
-                Text("Share video").font(.system(size: 15, weight: .semibold))
-                Spacer()
-            }
-            .padding(12)
-            Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(controller.isRunning ? controller.fileURL?.lastPathComponent ?? "Video"
-                             : preparation?.title ?? controller.fileURL?.lastPathComponent ?? "Your video")
-                            .font(.system(size: 14, weight: .semibold)).lineLimit(2)
-                        Text("A watch page on BlitzRecorder, ready to share.")
-                            .font(.system(size: 12)).foregroundStyle(BlitzUI.supportingText)
-                    }
-                    if controller.isRunning, let progress = controller.transferProgress {
-                        HostedVideoProgressView(presentation: .transfer(progress))
-                        if progress != .processing {
-                            Button("Pause upload", action: controller.pause).blitzButton(.secondary)
-                        }
-                        Text("You can keep editing while your video is prepared.")
-                            .font(.system(size: 12)).foregroundStyle(BlitzUI.supportingText)
-                    } else if isSaving, let preparation, case .exporting(let progress) = preparation.status {
-                        HostedVideoProgressView(presentation: .exporting(progress))
-                    } else if !controller.hasCheckedAccount {
-                        activity("Loading your BlitzRecorder account")
-                    } else if controller.plan == nil || controller.plan?.available == false {
-                        Text("Sharing is temporarily unavailable. Your video stays on this Mac.")
-                            .font(.system(size: 13)).foregroundStyle(BlitzUI.supportingText)
-                        action(.init(title: "Try again", operation: .checking, enabled: true,
-                            run: { Task { await controller.refresh() } }))
-                    } else if !controller.isConnected {
-                        signIn
-                    } else if !controller.isSubscribed {
-                        subscription
-                    } else if let url = controller.shareURL, preparation == nil {
-                        ready(url)
-                    } else if let preparation {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if !isAccountOnly {
+                    HStack(alignment: .top, spacing: 8) {
                         VStack(alignment: .leading, spacing: 6) {
-                            Label("Source quality", systemImage: "checkmark.shield")
-                                .font(.system(size: 13, weight: .semibold))
-                            Text(preparation.summary).font(.system(size: 12)).foregroundStyle(BlitzUI.supportingText)
-                            Text("Your edited original is kept. Streaming versions adapt to the viewer’s connection.")
-                                .font(.system(size: 12)).foregroundStyle(BlitzUI.supportingText)
+                            Text("Share video")
+                                .font(BlitzType.title)
+                            Text(projectTitle)
+                                .font(BlitzType.body).foregroundStyle(BlitzUI.supportingText)
+                                .lineLimit(2)
                         }
-                        if case .failed(let error) = preparation.status { errorText(error) }
-                        Button(action: preparation.export) {
-                            Label("Create share link", systemImage: "link").frame(maxWidth: .infinity)
-                        }.blitzButton(.accent).controlSize(.large)
-                    } else if controller.fileURL != nil {
-                        Button(action: controller.start) {
-                            Text(controller.transferProgress == .processing ? "Check playback status"
-                                 : controller.transferMessage == nil ? "Create share link" : "Resume upload")
-                                .frame(maxWidth: .infinity)
-                        }.blitzButton(.accent).controlSize(.large)
+                        Spacer(minLength: 0)
+                        Button(action: close) {
+                            Image(systemName: "xmark").frame(width: 14, height: 14)
+                        }
+                        .blitzButton(.quiet).controlSize(.small)
+                        .accessibilityLabel("Close sharing")
+                        .help("Back to editing. Sharing continues in the background.")
                     }
-                    if preparation == nil, let message = controller.transferMessage { errorText(message) }
-                    if let message = controller.accountMessage { errorText(message) }
-                    if controller.isConnected {
-                        Divider()
-                        account
-                    }
+                }
+                content
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .animation(.easeOut(duration: 0.18), value: stateKey)
+                if !isAccountOnly {
                     Text("Anyone with the link can watch. Transcript and chapters are included when available.")
-                        .font(.system(size: 11)).foregroundStyle(BlitzUI.secondaryText)
+                        .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                if !isAccountOnly, let url = previousShare, preparation != nil || controller.isRunning || isSaving {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Previously shared")
+                            .font(BlitzType.strong).foregroundStyle(BlitzUI.secondaryText)
+                        HostedVideoLinkField(url: url, prominence: .secondary)
+                        Text("That link keeps the version you shared. Sharing now creates a new link.")
+                            .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                footer
             }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .scrollIndicators(.hidden)
         .background(BlitzUI.panelBackground)
         .foregroundStyle(BlitzUI.primaryText)
         .controlSize(.regular)
@@ -111,15 +106,155 @@ struct HostedVideoSharePanel: View {
             code = ""
             focusedField = controller.challenge == nil ? .email : .code
         }
-        .onChange(of: controller.shareURL) { copied = false }
+    }
+
+    private enum StateKey: Hashable {
+        case uploading, saving, loading, unavailable, signIn, subscribe, account, ready, prepare, resume, idle
+    }
+
+    private var stateKey: StateKey {
+        if !isAccountOnly, controller.isRunning, controller.transferProgress != nil { return .uploading }
+        if !isAccountOnly, isSaving { return .saving }
+        if !controller.hasCheckedAccount { return .loading }
+        if controller.plan == nil || controller.plan?.available == false { return .unavailable }
+        if !controller.isConnected { return .signIn }
+        if !controller.isSubscribed { return .subscribe }
+        if isAccountOnly { return .account }
+        if currentShare != nil, preparation == nil { return .ready }
+        if preparation != nil { return .prepare }
+        if controller.fileURL != nil { return .resume }
+        return .idle
+    }
+
+    @ViewBuilder private var content: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            switch stateKey {
+            case .uploading:
+                if let progress = controller.transferProgress {
+                    HostedVideoProgressView(presentation: .transfer(progress))
+                    HStack {
+                        Text("Keep editing while your video is prepared.")
+                            .font(BlitzType.body).foregroundStyle(BlitzUI.supportingText)
+                        Spacer(minLength: 8)
+                        if progress != .processing {
+                            Button(action: controller.pause) { Label("Pause", systemImage: "pause.fill") }
+                                .blitzButton(.secondary).controlSize(.small)
+                        }
+                    }
+                }
+            case .saving:
+                if let preparation, case .exporting(let progress) = preparation.status {
+                    HostedVideoProgressView(presentation: .exporting(progress))
+                }
+            case .loading:
+                placeholder
+            case .unavailable:
+                Text("Sharing is temporarily unavailable. Your video stays on this Mac.")
+                    .font(BlitzType.callout).foregroundStyle(BlitzUI.supportingText)
+                action(.init(title: "Try again", operation: .checking, enabled: true,
+                    run: { Task { await controller.refresh() } }))
+            case .signIn:
+                signIn
+            case .subscribe:
+                subscription
+            case .account:
+                Label("Your videos are synced with this account.", systemImage: "checkmark.circle.fill")
+                    .font(BlitzType.body).foregroundStyle(BlitzUI.supportingText)
+            case .ready:
+                if let url = currentShare { ready(url) }
+            case .prepare:
+                if let preparation {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("High quality, up to 1080p", systemImage: "checkmark.shield.fill")
+                            .font(BlitzType.section)
+                        Text("\(preparation.summary) · Your original stays on this Mac.")
+                            .font(BlitzType.body).foregroundStyle(BlitzUI.supportingText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if case .failed(let error) = preparation.status { errorText(error) }
+                    Button(action: preparation.export) {
+                        Label("Create share link", systemImage: "link").frame(maxWidth: .infinity)
+                    }.blitzButton(.accent).controlSize(.large)
+                }
+            case .resume:
+                Button(action: controller.start) {
+                    Text(controller.transferProgress == .processing ? "Check playback status"
+                         : controller.transferMessage == nil ? "Create share link" : "Resume upload")
+                        .frame(maxWidth: .infinity)
+                }.blitzButton(.accent).controlSize(.large)
+            case .idle:
+                EmptyView()
+            }
+            if preparation == nil, let message = controller.transferMessage { errorText(message) }
+            if [.uploading, .ready].contains(stateKey), let notice = controller.detailsNotice {
+                Label(notice, systemImage: "text.badge.xmark")
+                    .font(BlitzType.caption).foregroundStyle(BlitzUI.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let message = controller.accountMessage { errorText(message) }
+        }
+        .transition(.opacity)
+        .id(stateKey)
+    }
+
+    private var placeholder: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            RoundedRectangle(cornerRadius: 3).fill(BlitzUI.controlFill).frame(width: 150, height: 12)
+            RoundedRectangle(cornerRadius: 3).fill(BlitzUI.quietFill).frame(maxWidth: .infinity).frame(height: 10)
+            RoundedRectangle(cornerRadius: BlitzControlMetrics.radius).fill(BlitzUI.quietFill)
+                .frame(height: BlitzControlMetrics.height(.large))
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Loading your BlitzRecorder account")
+    }
+
+    @ViewBuilder private var footer: some View {
+        if controller.isConnected {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(controller.account?.email ?? "BlitzRecorder account")
+                        .font(BlitzType.label).lineLimit(1).truncationMode(.middle)
+                    Text(controller.isSubscribed ? "Hosting active" : "Free account")
+                        .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
+                }
+                Spacer(minLength: 8)
+                BlitzGlassMenu(entries: accountEntries, menuWidth: 200) {
+                    Image(systemName: "ellipsis")
+                        .font(BlitzType.glyph(12))
+                        .foregroundStyle(BlitzUI.supportingText)
+                        .frame(width: 28, height: BlitzControlMetrics.height(.small))
+                        .background(BlitzUI.controlFill, in: .rect(cornerRadius: BlitzControlMetrics.radius))
+                }
+                .accessibilityLabel("Account options")
+                .help("Account options")
+                .disabled(controller.accountOperation != nil || controller.isRunning || isSaving)
+            }
+            .padding(.top, 14)
+            .overlay(alignment: .top) { Rectangle().fill(BlitzUI.separator).frame(height: 1) }
+        }
+    }
+
+    private var accountEntries: [BlitzMenuEntry] {
+        var entries: [BlitzMenuEntry] = []
+        if !isAccountOnly {
+            entries.append(.item(.init(title: "All shared videos", systemImage: "film.stack.fill", action: showLibrary)))
+        }
+        if controller.isSubscribed {
+            entries.append(.item(.init(title: "Manage hosting", systemImage: "creditcard.fill",
+                action: { Task { await controller.openBilling() } })))
+        }
+        if !entries.isEmpty { entries.append(.divider) }
+        entries.append(.item(.init(title: "Sign out", systemImage: "rectangle.portrait.and.arrow.right",
+            isDestructive: true, action: { Task { await controller.disconnect() } })))
+        return entries
     }
 
     @ViewBuilder private var signIn: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Your BlitzRecorder account").font(.system(size: 13, weight: .semibold))
+            Text(isAccountOnly ? "Sign in" : "Sign in to share").font(BlitzType.section)
             if let challenge = controller.challenge {
                 Text("Enter the code sent to \(challenge.email).")
-                    .font(.system(size: 12)).foregroundStyle(BlitzUI.supportingText)
+                    .font(BlitzType.body).foregroundStyle(BlitzUI.supportingText)
                     .fixedSize(horizontal: false, vertical: true)
                 TextField("6-digit code", text: $code)
                     .textContentType(.oneTimeCode).textFieldStyle(.roundedBorder)
@@ -138,11 +273,11 @@ struct HostedVideoSharePanel: View {
                         Spacer()
                         Button("Change email", action: controller.changeEmail)
                             .disabled(controller.accountOperation != nil)
-                    }.blitzButton(.quiet).controlSize(.small)
+                    }.blitzButton(.quiet).controlSize(.small).monospacedDigit()
                 }
             } else {
                 Text("Sign in or create an account with your email.")
-                    .font(.system(size: 12)).foregroundStyle(BlitzUI.supportingText)
+                    .font(BlitzType.body).foregroundStyle(BlitzUI.supportingText)
                 TextField("Email address", text: $email)
                     .textContentType(.emailAddress).textFieldStyle(.roundedBorder)
                     .focused($focusedField, equals: .email)
@@ -151,7 +286,7 @@ struct HostedVideoSharePanel: View {
                 action(.init(title: "Continue with email", operation: .sendingCode, enabled: email.contains("@"),
                     run: { Task { await controller.requestCode(email: email) } }))
                 Text("We’ll email you a sign-in code. No password needed.")
-                    .font(.system(size: 11)).foregroundStyle(BlitzUI.secondaryText)
+                    .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
             }
         }
     }
@@ -159,56 +294,59 @@ struct HostedVideoSharePanel: View {
     @ViewBuilder private var subscription: some View {
         if let plan = controller.plan {
             VStack(alignment: .leading, spacing: 10) {
-                Text("BlitzRecorder Hosting").font(.system(size: 15, weight: .semibold))
-                Text("\(plan.price) / month").font(.system(size: 24, weight: .semibold))
+                Text("BlitzRecorder Hosting").font(BlitzType.title)
+                Text("\(plan.price) / month").font(BlitzType.largeTitle)
                 Text("Excluding tax · \(plan.allowance)")
-                    .font(.system(size: 12)).foregroundStyle(BlitzUI.supportingText)
-                Text("Source-quality storage · Adaptive playback up to \(plan.maximumResolution)p")
-                    .font(.system(size: 12)).foregroundStyle(BlitzUI.supportingText)
+                    .font(BlitzType.body).foregroundStyle(BlitzUI.supportingText)
+                Text("High-quality sharing · Adaptive playback up to \(plan.maximumResolution)p")
+                    .font(BlitzType.body).foregroundStyle(BlitzUI.supportingText)
                 action(.init(title: controller.awaitingPayment ? "Reopen checkout" : "Enable sharing",
                     operation: .openingBilling, enabled: true, run: { Task { await controller.openBilling() } }))
                 if controller.awaitingPayment { activity("Waiting for payment confirmation") }
                 Text("Your local recordings and exports stay free. Hosted links require an active subscription.")
-                    .font(.system(size: 11)).foregroundStyle(BlitzUI.secondaryText)
+                    .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
             }
-        }
-    }
-
-    private var account: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(controller.account?.email ?? "BlitzRecorder account")
-                .font(.system(size: 12, weight: .medium)).lineLimit(1).truncationMode(.middle)
-            HStack {
-                Text(controller.isSubscribed ? "Hosting active" : "Free account")
-                    .font(.system(size: 11)).foregroundStyle(BlitzUI.supportingText)
-                Spacer()
-                if controller.isSubscribed {
-                    Button("Manage") { Task { await controller.openBilling() } }
-                        .blitzButton(.quiet).controlSize(.small)
-                }
-                Button(controller.accountOperation == .signingOut ? "Signing out…" : "Sign out") {
-                    Task { await controller.disconnect() }
-                }.blitzButton(.quiet).controlSize(.small)
-            }.disabled(controller.accountOperation != nil || controller.isRunning || isSaving)
         }
     }
 
     private func ready(_ url: URL) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Ready to share", systemImage: "checkmark.circle.fill")
-                .font(.system(size: 14, weight: .semibold)).foregroundStyle(BlitzUI.mint)
-            Text(url.absoluteString).font(.system(size: 12)).textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-            Button {
-                NSPasteboard.general.clearContents()
-                copied = NSPasteboard.general.setString(url.absoluteString, forType: .string)
-            } label: {
-                Label(copied ? "Link copied" : "Copy link", systemImage: copied ? "checkmark" : "link")
-                    .frame(maxWidth: .infinity)
-            }.blitzButton(.accent).controlSize(.large)
-            Button("Open watch page") { NSWorkspace.shared.open(url) }.blitzButton(.secondary)
-            Button("Share current edit", action: newExport).blitzButton(.quiet)
+            HStack(spacing: 6) {
+                Text("Watch link")
+                    .font(BlitzType.strong).foregroundStyle(BlitzUI.secondaryText)
+                Spacer(minLength: 8)
+                Circle().fill(BlitzUI.mint).frame(width: 6, height: 6)
+                Text("Live").font(BlitzType.captionEmphasis).foregroundStyle(BlitzUI.supportingText)
+            }
+            .accessibilityElement(children: .combine)
+            Text(HostedVideoLinkField.displayText(url))
+                .font(BlitzType.callout)
+                .foregroundStyle(BlitzUI.primaryText)
+                .lineLimit(1).truncationMode(.tail)
+                .textSelection(.enabled)
+                .help(url.absoluteString)
+            HostedVideoCopyLinkButton(url: url)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { readyActions(url) }
+                VStack(spacing: 8) { readyActions(url) }
+            }
         }
+        .padding(14)
+        .background(BlitzUI.quietFill, in: .rect(cornerRadius: BlitzUI.cardRadius))
+    }
+
+    @ViewBuilder private func readyActions(_ url: URL) -> some View {
+        Button { NSWorkspace.shared.open(url) } label: {
+            Label("Open", systemImage: "safari.fill").frame(maxWidth: .infinity)
+        }
+        .blitzButton(.secondary)
+        .help("Open the watch page in your browser")
+        Button(action: newExport) {
+            Label("New link", systemImage: "arrow.triangle.2.circlepath").frame(maxWidth: .infinity)
+                .lineLimit(1)
+        }
+        .blitzButton(.secondary)
+        .help("Share your latest edit as a new link. The current link keeps its version.")
     }
 
     private struct Action {
@@ -232,12 +370,12 @@ struct HostedVideoSharePanel: View {
     private func activity(_ title: String) -> some View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
-            Text(title).font(.system(size: 12)).foregroundStyle(BlitzUI.supportingText)
+            Text(title).font(BlitzType.body).foregroundStyle(BlitzUI.supportingText)
         }
     }
 
     private func errorText(_ text: String) -> some View {
-        Text(text).font(.system(size: 12)).foregroundStyle(BlitzUI.warning)
+        Text(text).font(BlitzType.body).foregroundStyle(BlitzUI.warning)
             .fixedSize(horizontal: false, vertical: true)
     }
 }

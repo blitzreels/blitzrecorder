@@ -54,12 +54,12 @@ struct EditorTimelineTrackHeader<Accessory: View>: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(configuration.title)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(BlitzType.captionEmphasis)
                     .foregroundStyle(configuration.status == nil ? BlitzUI.primaryText : BlitzUI.supportingText)
                     .lineLimit(1)
                 if let status = configuration.status {
                     Text(status)
-                        .font(.system(size: 10))
+                        .font(BlitzType.footnote)
                         .foregroundStyle(BlitzUI.supportingText)
                         .lineLimit(1)
                 }

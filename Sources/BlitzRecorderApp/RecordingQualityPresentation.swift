@@ -24,6 +24,8 @@ struct RecordingQualityPresentation {
         return "\(mode) · Default export \(bitrateLabel(settings.finalVideoBitrate)) · Source bitrates scale automatically"
     }
 
+    var finalBitrateLabel: String { bitrateLabel(settings.finalVideoBitrate) }
+
     private func bitrateLabel(_ bitrate: Int) -> String {
         let megabitsPerSecond = Double(bitrate) / 1_000_000
         if megabitsPerSecond.rounded() == megabitsPerSecond {

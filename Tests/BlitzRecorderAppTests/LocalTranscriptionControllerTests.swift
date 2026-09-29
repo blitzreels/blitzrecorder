@@ -122,5 +122,11 @@ private actor LocalTranscriptionEngineSpy: LocalTranscriptionEngineServing {
         )
     }
 
+    func reassignSpeakers(
+        _ request: LocalTranscriptionEngine.SpeakerFixRequest
+    ) async throws -> RecordingTranscript {
+        throw LocalTranscriptionError.transcriptUnavailable
+    }
+
     func removeModels(_ model: TranscriptionSpeechModel) async throws {}
 }

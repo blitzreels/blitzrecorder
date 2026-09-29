@@ -36,7 +36,7 @@ struct EditorPlacedItemClip: View {
     var body: some View {
         ZStack {
             if item.isPoint {
-                Image(systemName: "diamond.fill").font(.system(size: 13))
+                Image(systemName: "diamond.fill").font(BlitzType.glyph(13))
                     .foregroundStyle(configuration.isSelected || isHovering ? BlitzUI.mint : tint)
             } else {
                 RoundedRectangle(cornerRadius: 5)
@@ -51,7 +51,7 @@ struct EditorPlacedItemClip: View {
                     Text(item.title).lineLimit(1)
                     Spacer(minLength: 0)
                 }
-                .font(.system(size: 10, weight: .medium))
+                .font(BlitzType.footnote)
                 .padding(.horizontal, 10)
                 .clipped()
             }

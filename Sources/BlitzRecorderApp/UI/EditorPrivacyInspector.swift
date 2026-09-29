@@ -21,48 +21,44 @@ struct EditorPrivacyInspector: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Text("Privacy masks").font(.system(size: 12, weight: .semibold))
-                    Spacer(minLength: 0)
-                    Button("Add mask", systemImage: "plus") { session.add() }
-                        .blitzButton(.accent).controlSize(.small)
-                        .disabled(sources.isEmpty)
-                }
-                Text(session.isDrawing ? "Drag over the area to hide in the video preview."
-                     : "Select a mask on the video to move or resize it.")
-                    .font(.system(size: 12)).foregroundStyle(BlitzUI.secondaryText)
-                if session.isDrawing {
-                    Button("Cancel drawing") { session.cancelGesture() }.blitzButton(.quiet)
-                }
-                if let selected = session.selected {
-                    controls(selected)
-                    Divider()
-                }
-                ForEach(Array(session.masks.enumerated()), id: \.element.id) { index, mask in
-                    Button { session.select(mask.id) } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: mask.style == .cover ? "rectangle.fill" : "drop.halffull")
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Mask \(index + 1) · \(mask.source.rawValue)")
-                                Text("\(mask.style.rawValue) · \(SilenceTime.label(mask.start)) – \(SilenceTime.label(mask.end))")
-                                    .font(.system(size: 10)).foregroundStyle(BlitzUI.secondaryText)
-                            }
-                            Spacer(minLength: 0)
-                        }.padding(8)
+        EditorInspectorPane(configuration: .init(
+            title: "Privacy",
+            detail: "Blur or cover private information in the video.",
+            showsFooter: false,
+            content: {
+                VStack(alignment: .leading, spacing: 16) {
+                    Button { session.add() } label: {
+                        Label("Add mask", systemImage: "plus").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(BlitzSelectionButtonStyle(isSelected: selected?.id == mask.id))
-                    .accessibilityLabel("Select privacy mask \(index + 1)")
+                    .blitzButton(.accent)
+                    .disabled(sources.isEmpty || session.isDrawing)
+                    Text(session.isDrawing ? "Drag over the area to hide in the video preview."
+                         : session.masks.isEmpty ? "Add a mask, then drag over the area to hide."
+                         : "Select a mask on the video to move or resize it.")
+                        .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if session.isDrawing {
+                        Button { session.cancelGesture() } label: { Label("Cancel drawing", systemImage: "xmark") }
+                            .blitzButton(.secondary).controlSize(.small)
+                    }
+                    if let selected = session.selected {
+                        controls(selected)
+                        Rectangle().fill(BlitzUI.separator).frame(height: 1)
+                    }
+                    if !session.masks.isEmpty {
+                        EditorInspectorSection(configuration: .init(title: "Masks", content: { maskList }))
+                    }
+                    Text("Changes save automatically. Use Cover to make information unreadable.")
+                        .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let error = timingError ?? session.error {
+                        Text(error).font(BlitzType.caption).foregroundStyle(BlitzUI.warning)
+                    }
                 }
-                Text("Changes save automatically. Use Cover to make information unreadable.")
-                    .font(.system(size: 11)).foregroundStyle(BlitzUI.secondaryText)
-                if let error = timingError ?? session.error {
-                    Text(error).font(.system(size: 11)).foregroundStyle(BlitzUI.warning)
-                }
-            }.padding(14)
-        }
-        .task { session.configure(.init(vm: configuration.vm, playback: configuration.playback)) }
+            },
+            footer: { EmptyView() }
+        ))
+        .onAppear { session.configure(.init(vm: configuration.vm, playback: configuration.playback)) }
         .onChange(of: timeField) { old, new in
             if old != nil { saveTimes() }
             if new == nil { refreshTimes() }
@@ -73,6 +69,27 @@ struct EditorPrivacyInspector: View {
     }
 
     private var selected: PrivacyMask? { session.selected }
+
+    private var maskList: some View {
+        VStack(spacing: 2) {
+            ForEach(Array(session.masks.enumerated()), id: \.element.id) { index, mask in
+                Button { session.select(mask.id) } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: mask.style == .cover ? "rectangle.fill" : "drop.halffull")
+                            .font(BlitzType.glyph(13)).foregroundStyle(BlitzUI.secondaryText).frame(width: 18)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Mask \(index + 1) · \(mask.source.rawValue)").font(BlitzType.label)
+                            Text("\(mask.style.rawValue) · \(SilenceTime.label(mask.start)) – \(SilenceTime.label(mask.end))")
+                                .font(BlitzType.caption.monospacedDigit()).foregroundStyle(BlitzUI.secondaryText)
+                        }
+                        Spacer(minLength: 0)
+                    }.padding(8)
+                }
+                .buttonStyle(BlitzSelectionButtonStyle(isSelected: selected?.id == mask.id))
+                .accessibilityLabel("Select privacy mask \(index + 1)")
+            }
+        }
+    }
 
     private func controls(_ mask: PrivacyMask) -> some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -85,10 +102,10 @@ struct EditorPrivacyInspector: View {
                 set: { value in if var mask = session.selected { mask.style = value; session.update(mask) } }
             ), options: PrivacyMask.Style.allCases.map { .init(value: $0, title: $0.rawValue, detail: nil) }))
             HStack(spacing: 8) {
-                Text("From").font(.system(size: 11))
+                Text("From").font(BlitzType.caption)
                 TextField("0:00", text: $startText).textFieldStyle(.roundedBorder)
                     .accessibilityLabel("Mask start time").focused($timeField, equals: .start).onSubmit(saveTimes)
-                Text("To").font(.system(size: 11))
+                Text("To").font(BlitzType.caption)
                 TextField("End", text: $endText).textFieldStyle(.roundedBorder)
                     .accessibilityLabel("Mask end time").focused($timeField, equals: .end).onSubmit(saveTimes)
             }
@@ -104,7 +121,7 @@ struct EditorPrivacyInspector: View {
                 }
             }
             Text("Times refer to the original recording.")
-                .font(.system(size: 10)).foregroundStyle(BlitzUI.secondaryText)
+                .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
         }
     }
 

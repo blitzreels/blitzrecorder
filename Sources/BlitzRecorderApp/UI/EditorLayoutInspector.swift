@@ -102,7 +102,7 @@ struct EditorLayoutInspector: View {
             } label: {
                 HStack {
                     Text("Source framing")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(BlitzType.strong)
                     Spacer(minLength: 0)
                     BlitzSymbol(
                         configuration: .init(
@@ -135,7 +135,7 @@ struct EditorLayoutInspector: View {
                     cameraControlsSection
                 } else {
                     Text("Choose a composition with Camera to adjust its framing.")
-                        .font(.system(size: 11))
+                        .font(BlitzType.caption)
                         .foregroundStyle(BlitzUI.secondaryText)
                 }
             }
@@ -145,12 +145,12 @@ struct EditorLayoutInspector: View {
     @ViewBuilder
     private var screenFrameSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            BlitzUI.sectionLabel("Screen frame", icon: "macwindow")
+            BlitzUI.sectionLabel("Screen frame")
 
             if sceneEvents.count > 1 {
                 Text("Applies to segment \(currentEventIndex + 1)")
-                    .font(.system(size: 9.5, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.42))
+                    .font(BlitzType.captionEmphasis)
+                    .foregroundStyle(BlitzUI.secondaryText)
             }
 
             SourceFramingPicker(selection: segmentSceneBinding(\.screenContentMode, fallback: .fill))
@@ -186,6 +186,12 @@ struct EditorLayoutInspector: View {
                 }
 
                 CameraImageControls(configuration: editorCameraImageConfiguration)
+
+                if showsEditorCameraShadow && cameraCropDraft == nil {
+                    Toggle("Shadow", isOn: segmentSceneBinding(\.cameraShadowEnabled, fallback: false))
+                        .toggleStyle(.blitzSwitch)
+                        .help("Add a soft shadow under the camera")
+                }
             }
         }
     }
@@ -240,7 +246,7 @@ struct EditorLayoutInspector: View {
             )
             .help("Round the screen recording")
             Toggle("Shadow", isOn: screenShadowBinding)
-                .font(.system(size: 11, weight: .medium))
+                .font(BlitzType.captionEmphasis)
                 .foregroundStyle(BlitzUI.secondaryText)
                 .toggleStyle(.blitzSwitch)
                 .tint(BlitzUI.mint)
@@ -263,10 +269,10 @@ struct EditorLayoutInspector: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
-                    BlitzUI.sectionLabel("Frame", icon: "aspectratio")
+                    BlitzUI.sectionLabel("Frame")
                     Spacer(minLength: 0)
                     Text(EditorFrameRatioLabel.text(for: currentRatio))
-                        .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                        .font(BlitzType.captionEmphasis.monospacedDigit())
                         .foregroundStyle(BlitzUI.mint)
                         .padding(.horizontal, 8)
                         .frame(height: 24)
@@ -286,17 +292,17 @@ struct EditorLayoutInspector: View {
                 }
 
                 Toggle("Lock aspect ratio", isOn: aspectRatioLockBinding(for: kind))
-                    .font(.system(size: 10.5, weight: .semibold))
+                    .font(BlitzType.captionEmphasis)
                     .toggleStyle(.blitzSwitch)
                     .tint(BlitzUI.mint)
 
                 Text("Lock for proportional corners. Unlock or drag a side handle to reshape.")
-                    .font(.system(size: 9.5, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.44))
+                    .font(BlitzType.captionEmphasis)
+                    .foregroundStyle(BlitzUI.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(10)
-            .background(BlitzUI.quietFill, in: .rect(cornerRadius: 10))
+            .background(BlitzUI.quietFill, in: .rect(cornerRadius: BlitzUI.cardRadius))
         }
     }
 
@@ -437,18 +443,19 @@ struct EditorLayoutInspector: View {
 
     private var editorCameraInsetConfiguration: CameraInsetFrameControlsConfiguration {
         let layout = captureLayout ?? .horizontal
-        let frame = currentEventScene?.sceneLayout.cameraFrame ?? .zero
+        let sceneLayout = currentEventScene?.sceneLayout ?? SceneLayout(cameraFrame: .zero)
+        let frame = sceneLayout.cameraFrame
         return CameraInsetFrameControlsConfiguration(
             alignment: Binding(
                 get: { SceneLayout.cameraInsetAlignment(for: frame) },
                 set: { applyEditorCameraInsetChange(.alignment($0)) }
             ),
             shape: Binding(
-                get: { SceneLayout.cameraInsetShape(for: frame, in: layout) },
+                get: { sceneLayout.cameraInsetShape(in: layout) },
                 set: { applyEditorCameraInsetChange(.shape($0)) }
             ),
             size: Binding(
-                get: { Double(SceneLayout.cameraInsetSize(for: frame, in: layout)) },
+                get: { Double(sceneLayout.cameraInsetSize(in: layout)) },
                 set: { applyEditorCameraInsetChange(.size(CGFloat($0))) }
             ),
             sizeRange: Double(SceneLayout.minimumCameraInsetSize)...Double(
@@ -461,8 +468,8 @@ struct EditorLayoutInspector: View {
         guard let scene = currentEventScene, let layout = captureLayout else { return }
         let frame = scene.sceneLayout.cameraFrame
         var alignment = SceneLayout.cameraInsetAlignment(for: frame)
-        var shape = SceneLayout.cameraInsetShape(for: frame, in: layout)
-        var size = SceneLayout.cameraInsetSize(for: frame, in: layout)
+        var shape = scene.sceneLayout.cameraInsetShape(in: layout)
+        var size = scene.sceneLayout.cameraInsetSize(in: layout)
 
         switch change {
         case .alignment(let value):
@@ -484,10 +491,16 @@ struct EditorLayoutInspector: View {
         playback.pauseForEditing()
         guard vm.applyProjectSceneEdit(eventIndex: currentEventIndex, { editedScene in
             editedScene.sceneLayout.cameraFrame = nextFrame
+            editedScene.sceneLayout.cameraMask = shape.cameraMask
         }) else {
             editErrorMessage = vm.detailMessage
             return
         }
+    }
+
+    private var showsEditorCameraShadow: Bool {
+        let scene = cameraCropDraft?.scene ?? currentEventScene
+        return scene.map { SceneLayout.isCameraInsetFrame($0.sceneLayout.cameraFrame) } ?? false
     }
 
     private var editorCameraImageConfiguration: CameraImageControlsConfiguration {
@@ -497,13 +510,11 @@ struct EditorLayoutInspector: View {
         let isCentered = max(amount.x, amount.y) < 0.001
             && abs(position.x) < 0.001
             && abs(position.y) < 0.001
-        let showsShadow = scene.map { SceneLayout.isCameraInsetFrame($0.sceneLayout.cameraFrame) } ?? false
         return CameraImageControlsConfiguration(
             contentMode: segmentSceneBinding(\.cameraContentMode, fallback: .fill),
             cropZoom: cameraZoomBinding,
-            shadowEnabled: segmentSceneBinding(\.cameraShadowEnabled, fallback: false),
             isCropModeEnabled: cameraCropDraft != nil,
-            showsShadow: showsShadow,
+            showsContentMode: !showsEditorCameraShadow,
             isResetDisabled: isCentered,
             onCropZoomEditingChanged: { isEditing in
                 if !isEditing {

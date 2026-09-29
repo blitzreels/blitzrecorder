@@ -3,7 +3,7 @@ import SwiftUI
 struct EditorShortcutHelp: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            BlitzUI.sectionLabel("Timeline shortcuts", icon: "keyboard")
+            BlitzUI.sectionLabel("Timeline shortcuts")
             VStack(spacing: 8) {
                 row(.init(title: "Play / pause", keys: "Space"))
                 row(.init(title: "Back 3 seconds · pause · play faster", keys: "J  K  L"))
@@ -34,7 +34,7 @@ struct EditorShortcutHelp: View {
                 row(.init(title: "Show shortcuts", keys: "?"))
             }
             Text("Drag a range, then press Return or Delete to remove it from every track and close the gap. The same keys delete selected clips, words, and sound or silence sections. ⌘B splits at the playhead. Undo with ⌘Z.")
-                .font(.system(size: 11))
+                .font(BlitzType.caption)
                 .foregroundStyle(BlitzUI.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -54,12 +54,12 @@ struct EditorShortcutHelp: View {
                 .foregroundStyle(BlitzUI.primaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(row.keys)
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .font(BlitzType.footnote.monospaced())
                 .foregroundStyle(BlitzUI.secondaryText)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
                 .blitzCard(cornerRadius: BlitzUI.controlRadius)
         }
-        .font(.system(size: 11))
+        .font(BlitzType.caption)
     }
 }

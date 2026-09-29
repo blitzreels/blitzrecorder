@@ -63,48 +63,56 @@ struct EditorPlaybackControls: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 4) {
-                Button {
-                    configuration.onSeek(0)
-                } label: {
-                    BlitzSymbol(configuration: .init(name: "backward.end.fill", size: 16))
-                        .frame(width: 32, height: 44)
-                }
-                .buttonStyle(BlitzSelectionButtonStyle(isSelected: false))
-                .accessibilityLabel("Go to start")
-                .help("Go to the start of the recording (Home)")
-                .pointingHandCursor()
-
+        HStack(spacing: 10) {
+            HStack(spacing: 2) {
+                transportButton(.init(symbol: "backward.end.fill", title: "Go to start",
+                                      help: "Go to the start of the recording (Home)",
+                                      action: { configuration.onSeek(0) }))
                 Button(action: configuration.onTogglePlayback) {
-                    BlitzSymbol(
-                        configuration: .init(name: configuration.isPlaying ? "pause.fill" : "play.fill", size: 20)
-                    )
-                    .offset(x: configuration.isPlaying ? 0 : 1)
-                    .frame(width: 28, height: 36)
+                    Image(systemName: configuration.isPlaying ? "pause.fill" : "play.fill")
+                        .font(BlitzType.glyph(13))
+                        .foregroundStyle(.black.opacity(0.88))
+                        .offset(x: configuration.isPlaying ? 0 : 1)
+                        .frame(width: 32, height: 32)
+                        .background(BlitzUI.primaryText, in: Circle())
+                        .contentShape(Circle())
                 }
-                .blitzButton(.accent)
+                .buttonStyle(BlitzPressButtonStyle())
                 .accessibilityLabel(configuration.isPlaying ? "Pause" : "Play")
                 .help(configuration.isPlaying ? "Pause (Space)" : "Play (Space or L)")
-                .pointingHandCursor()
-
-                Button {
-                    configuration.onSeek(configuration.duration)
-                } label: {
-                    BlitzSymbol(configuration: .init(name: "forward.end.fill", size: 16))
-                        .frame(width: 32, height: 44)
-                }
-                .buttonStyle(BlitzSelectionButtonStyle(isSelected: false))
-                .accessibilityLabel("Go to end")
-                .help("Go to the end of the recording (End)")
-                .pointingHandCursor()
+                transportButton(.init(symbol: "forward.end.fill", title: "Go to end",
+                                      help: "Go to the end of the recording (End)",
+                                      action: { configuration.onSeek(configuration.duration) }))
             }
+            .padding(3)
+            .background(BlitzUI.quietFill, in: Capsule())
             position
             speed
         }
         .disabled(!configuration.isEnabled)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Playback controls")
+    }
+
+    private struct Transport {
+        let symbol: String
+        let title: String
+        let help: String
+        let action: () -> Void
+    }
+
+    private func transportButton(_ transport: Transport) -> some View {
+        Button(action: transport.action) {
+            Image(systemName: transport.symbol)
+                .font(BlitzType.glyph(12))
+                .frame(width: 30, height: 30)
+                .contentShape(Circle())
+        }
+        .buttonStyle(BlitzSelectionButtonStyle(isSelected: false))
+        .clipShape(Circle())
+        .accessibilityLabel(transport.title)
+        .help(transport.help)
+        .pointingHandCursor()
     }
 
     private var position: some View {
@@ -131,11 +139,11 @@ struct EditorPlaybackControls: View {
         .pointingHandCursor()
         .popover(isPresented: $showsPosition, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 12) {
-                BlitzUI.sectionLabel("Jump to time", icon: "clock")
+                BlitzUI.sectionLabel("Jump to time")
                 HStack(spacing: 8) {
                     TextField("08:07.25", text: $positionText)
                         .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 14, weight: .medium, design: .monospaced))
+                        .font(BlitzType.headline.monospaced())
                         .focused($isPositionFocused)
                         .onSubmit(jumpToPosition)
                         .accessibilityLabel("Time to jump to")
@@ -147,7 +155,7 @@ struct EditorPlaybackControls: View {
                     parsedPosition == nil
                         ? "Enter a time within this recording." : "Minutes:seconds, or seconds with decimals."
                 )
-                .font(.system(size: 11))
+                .font(BlitzType.caption)
                 .foregroundStyle(BlitzUI.secondaryText)
             }
             .padding(16)
@@ -161,18 +169,18 @@ struct EditorPlaybackControls: View {
     private func timecodeStack(_ time: Double) -> some View {
         HStack(spacing: 7) {
             BlitzTimecode(configuration: .init(time: time, duration: configuration.duration))
-                .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                .font(BlitzType.section.monospacedDigit())
                 .foregroundStyle(BlitzUI.primaryText)
             Text("/")
                 .foregroundStyle(BlitzUI.secondaryText.opacity(0.5))
             BlitzTimecode(configuration: .init(time: configuration.duration, duration: configuration.duration))
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .font(BlitzType.label.monospacedDigit())
                 .foregroundStyle(BlitzUI.secondaryText)
         }
         .monospacedDigit()
         .fixedSize()
         .padding(.horizontal, 8)
-        .frame(height: 44)
+        .frame(height: 32)
     }
 
     private var parsedPosition: Double? {
@@ -186,17 +194,22 @@ struct EditorPlaybackControls: View {
     }
 
     private var speed: some View {
-        BlitzSegmentedPicker(configuration: .init(
-            title: "Playback speed",
-            options: EditorPlaybackRate.allCases,
-            selection: Binding(
-                get: { configuration.rate },
-                set: { configuration.onRateChange($0) }
-            ),
-            label: { $0.displayName }
-        ))
-        .controlSize(.mini)
-        .fixedSize()
-        .help("Playback speed: \(configuration.rate.displayName) (L)")
+        BlitzGlassMenu(entries: EditorPlaybackRate.allCases.map { rate in
+            .item(.init(title: rate.displayName, systemImage: nil, isSelected: rate == configuration.rate,
+                        action: { configuration.onRateChange(rate) }))
+        }, menuWidth: 120) {
+            HStack(spacing: 5) {
+                Text(configuration.rate.displayName)
+                    .font(BlitzType.label.monospacedDigit())
+                    .frame(minWidth: 30, alignment: .leading)
+                BlitzMenuChevron()
+            }
+            .foregroundStyle(BlitzUI.primaryText)
+            .padding(.horizontal, 10)
+            .frame(height: BlitzControlMetrics.height(.small))
+        }
+        .accessibilityLabel("Playback speed")
+        .accessibilityValue(configuration.rate.displayName)
+        .help("Playback speed (L to speed up)")
     }
 }

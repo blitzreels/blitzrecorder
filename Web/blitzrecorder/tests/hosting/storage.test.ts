@@ -13,6 +13,7 @@ import { getStripe } from "../../lib/payments";
 import { syncHostingBilling } from "../../lib/hosting/billing";
 import { HOSTING_PLAN } from "../../lib/hosting/plan";
 import { cleanupExpired } from "../../lib/hosting/processor";
+import { stopSharingVideo } from "../../lib/hosting/web-session";
 
 const database = process.env.HOSTING_TEST_DATABASE_URL;
 const integration = database ? test : test.skip;
@@ -127,6 +128,19 @@ integration("only the paid owner can attach bounded viewer metadata and revoked 
   await assert.rejects(updateDetails({ account: owner, id: asset.id, body: { ...body, chapters: [{ start: 99, title: "Invalid" }] } }), { status: 400 });
   await revokeAsset({ account: owner, id: asset.id });
   await assert.rejects(updateDetails({ account: owner, id: asset.id, body }), { status: 409 });
+});
+
+integration("stopping a share from the web only works for the owner and ends the public link", async () => {
+  const owner = await account({ limit: 1024 ** 3, active: true });
+  const stranger = await account({ limit: 1024 ** 3, active: true });
+  const { id } = await beginUpload({ account: owner, body: { ...input, requestKey: "w".repeat(20) } });
+  const { slug } = (await hostingPool().query<{ slug: string }>(
+    "UPDATE hosting_assets SET status='ready' WHERE id=$1 RETURNING slug", [id])).rows[0];
+  assert.equal(await stopSharingVideo({ account: stranger, slug }), false);
+  assert.ok(await sharedAsset(slug));
+  assert.equal(await stopSharingVideo({ account: owner, slug }), true);
+  assert.equal(await sharedAsset(slug), null);
+  assert.equal(await stopSharingVideo({ account: owner, slug }), false);
 });
 
 integration("concurrent uploads cannot overspend the account storage quota", async () => {

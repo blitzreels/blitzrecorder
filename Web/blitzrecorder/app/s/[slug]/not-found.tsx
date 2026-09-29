@@ -1,9 +1,25 @@
 import Link from "next/link";
+import { Link2Off } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { StatusScreen } from "@/components/hosting/status-screen";
+import { viewerAccount } from "@/lib/hosting/web-session";
+import { TRY_URL } from "./try-url";
 
-export default function UnavailableVideo() {
-  return <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#101111] px-8 text-center">
-    <h1 className="font-display text-3xl font-semibold">This video is unavailable</h1>
-    <p className="max-w-sm text-zinc-400">The owner may have removed it or turned off sharing.</p>
-    <Link href="/" className="mt-3 text-sm text-emerald-400">Visit BlitzRecorder</Link>
-  </main>;
+async function signedIn() {
+  try { return Boolean(await viewerAccount()); } catch { return false; }
+}
+
+export default async function UnavailableVideo() {
+  const owner = await signedIn();
+  return <StatusScreen icon={<Link2Off />} title="This link isn’t working"
+    actions={owner
+      ? <Button render={<Link href="/hosting/videos" />}>Go to your videos</Button>
+      : <>
+        <Button variant="outline" render={<Link href="/hosting/sign-in" prefetch={false} />}>It’s my video, sign in</Button>
+        <Button render={<Link href={TRY_URL} />}>Try BlitzRecorder free</Button>
+      </>}
+    footer={owner ? "If you stopped sharing this video, share it again from the app to get a new link." : null}>
+    The video may have been removed, sharing may have been turned off, or the link was copied incompletely.
+    Ask the person who sent it for a new link.
+  </StatusScreen>;
 }

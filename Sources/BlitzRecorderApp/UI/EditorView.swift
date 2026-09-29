@@ -16,7 +16,6 @@ struct EditorView: View {
     @State var transcriptProjectPath: String?
     @State var timelineZoom: Double = 1
     @State var showsTimelineShortcuts = false
-    @State var showsInspector = true
     @AppStorage("editor.showsSourceTracks") var showsSourceTracks = false
     @State var pendingRangeCutSeek: Double?
     @State var selectedFormat: OutputVideoFormat = .mov
@@ -44,7 +43,6 @@ struct EditorView: View {
     @State var privacy = PrivacyEditingSession()
     @State var inspectorTab: EditorInspectorTab = .silence
     @State var showsHostingShare = false
-    @State var exportDestination: EditorExportDestination = .file
     @State var preparesHostedExport = false
     @State var showsSourceFraming = false
     @State var framingSource: SceneLayerKind = .screen
@@ -56,70 +54,36 @@ struct EditorView: View {
             toolbar
                 .blitzWindowToolbar(showsUpdate: true)
 
-            if HostedVideoShareController.shared.isRunning,
-               let progress = HostedVideoShareController.shared.transferProgress {
-                if !showsHostingShare || !showsInspector {
-                HStack(spacing: 16) {
-                    HostedVideoProgressView(presentation: .transfer(progress))
-                        .frame(maxWidth: .infinity)
-                    Button("View sharing") {
-                        preparesHostedExport = false
-                        showsInspector = true
-                        showsHostingShare = true
-                    }.blitzButton(.secondary)
-                }
-                .padding(12)
-                .background(BlitzUI.controlFill, in: .rect(cornerRadius: BlitzControlMetrics.radius))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                }
-            } else if let exportStatus, !(showsHostingShare && showsInspector && preparesHostedExport) {
-                EditorExportStatusView(configuration: .init(
-                    status: exportStatus,
-                    open: { NSWorkspace.shared.open($0) },
-                    reveal: { NSWorkspace.shared.activateFileViewerSelecting([$0]) },
-                    share: { url in
-                        preparesHostedExport = false
-                        HostedVideoShareController.shared.select(.init(fileURL: url, projectPath: project?.projectPath))
-                        showsInspector = true
-                        showsHostingShare = true
-                    },
-                    sendToBlitzReels: { url in
-                        guard let project else { return }
-                        BlitzReelsHandoffController.shared.selectExport(.init(
-                            fileURL: url, project: project, settings: vm.settings
-                        ))
-                        inspectorTab = .blitzReels
-                    },
-                    retry: prepareExport,
-                    dismiss: {
-                        vm.lastExportSucceededURL = nil
-                        vm.lastExportError = nil
-                        vm.variantExportURLs = []
-                    }
-                ))
-            }
-
-            if !vm.isExportingVariants, vm.variantExportURLs.count > 1 {
-                Button("Show all \(vm.variantExportURLs.count) exported videos") {
-                    NSWorkspace.shared.activateFileViewerSelecting(vm.variantExportURLs)
-                }
-                .blitzButton(.quiet)
-                .padding(.bottom, 8)
-            }
-
             divider
 
-            EditorWorkspaceSplitView(showsInspector: showsInspector, showsSourceTracks: showsSourceTracks,
-                                     inspectorSpansTimeline: showsHostingShare) {
+            EditorWorkspaceSplitView(showsSourceTracks: showsSourceTracks) {
                 playerColumn
                     .background(BlitzUI.canvasBackground)
+                    .overlay(alignment: .bottom) {
+                        editorNotice
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 20)
+                            .animation(.spring(duration: 0.32, bounce: 0.12), value: noticeKey)
+                    }
             } inspector: {
                 if showsHostingShare {
-                    HostedVideoSharePanel(controller: .shared, preparation: preparesHostedExport ? .init(
+                    VStack(spacing: 0) {
+                    EditorInspectorTabBar(selection: Binding(get: { .blitzReels }, set: { tab in
+                        showsHostingShare = false
+                        inspectorTab = tab
+                    }))
+                    Rectangle().fill(BlitzUI.separator).frame(height: 1)
+                    HostedVideoSharePanel(controller: .shared, context: .project(path: project?.projectPath,
+                        title: project?.displayTitle ?? "Video"), preparation: preparesHostedExport ? .init(
                         title: project?.displayTitle ?? "Video", summary: exportRecipe(for: .link).summary,
                         status: exportStatus, export: { exportVideo(to: .link) }
-                    ) : nil, newExport: { preparesHostedExport = true }, close: { showsHostingShare = false })
+                    ) : nil, newExport: { preparesHostedExport = true }, close: { showsHostingShare = false },
+                    showLibrary: {
+                        vm.projectLibraryNavigation.section = .shared
+                        vm.showProjects()
+                    })
+                    }
+                    .background(BlitzUI.panelBackground)
                 } else {
                 EditorInspector(
                     vm: vm,
@@ -275,7 +239,6 @@ struct EditorView: View {
             playback.teardown()
         }
         .onChange(of: inspectorTab) { _, tab in
-            showsInspector = true
             if tab != .privacy { privacy.cancelGesture() }
         }
         .onChange(of: selection) { _, selection in
@@ -304,6 +267,74 @@ struct EditorView: View {
         }
     }
 
+
+    enum EditorNoticeKey: Hashable {
+        case none, uploading, exporting, succeeded, failed
+    }
+
+    var noticeKey: EditorNoticeKey {
+        let sharing = HostedVideoShareController.shared
+        if sharing.isRunning, sharing.transferProgress != nil { return showsHostingShare ? .none : .uploading }
+        guard let exportStatus, !(showsHostingShare && preparesHostedExport) else { return .none }
+        switch exportStatus {
+        case .exporting: return .exporting
+        case .succeeded: return .succeeded
+        case .failed: return .failed
+        }
+    }
+
+    @ViewBuilder var editorNotice: some View {
+        switch noticeKey {
+        case .none:
+            EmptyView()
+        case .uploading:
+            if let progress = HostedVideoShareController.shared.transferProgress {
+                HStack(spacing: 16) {
+                    HostedVideoProgressView(presentation: .transfer(progress))
+                        .frame(maxWidth: .infinity)
+                    Button {
+                        preparesHostedExport = false
+                        showsHostingShare = true
+                    } label: { Label("View", systemImage: "link") }
+                    .blitzButton(.secondary)
+                }
+                .editorNoticeSurface()
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        case .exporting, .succeeded, .failed:
+            if let exportStatus {
+                EditorExportStatusView(configuration: .init(
+                    status: exportStatus,
+                    savedCount: max(1, vm.variantExportURLs.count),
+                    open: { NSWorkspace.shared.open($0) },
+                    reveal: { url in
+                        let urls = vm.variantExportURLs.count > 1 ? vm.variantExportURLs : [url]
+                        NSWorkspace.shared.activateFileViewerSelecting(urls)
+                    },
+                    share: { url in
+                        preparesHostedExport = false
+                        HostedVideoShareController.shared.select(.init(fileURL: url, projectPath: project?.projectPath))
+                        showsHostingShare = true
+                    },
+                    sendToBlitzReels: { url in
+                        guard let project else { return }
+                        BlitzReelsHandoffController.shared.selectExport(.init(
+                            fileURL: url, project: project, settings: vm.settings
+                        ))
+                        inspectorTab = .blitzReels
+                    },
+                    retry: prepareExport,
+                    dismiss: {
+                        vm.lastExportSucceededURL = nil
+                        vm.lastExportError = nil
+                        vm.variantExportURLs = []
+                    }
+                ))
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+    }
+
     func reloadProject() async {
         guard !Task.isCancelled else { return }
         guard let project = vm.editorProject else {
@@ -317,6 +348,8 @@ struct EditorView: View {
             additionalExportLayouts = []
             inspectorTab = .silence
         }
+        EditorCursorTrackCache.shared.prepare(directory: project.takeDirectoryPath)
+        privacy.configure(.init(vm: vm, playback: playback))
         sceneEvents = TakeFileStore().sceneEvents(from: project)
         applyEditorState(project)
         assets = EditorAsset.assets(project: project, finalVideoURL: vm.lastExportedURL)

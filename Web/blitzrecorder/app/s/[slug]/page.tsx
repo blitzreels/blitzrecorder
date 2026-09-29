@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { sharedAsset } from "@/lib/hosting/service";
 import { required } from "@/lib/hosting/model";
-import { SharedPlayer } from "./player";
+import { ownerLibrary, viewerAccount } from "@/lib/hosting/web-session";
+import { activeSessionCount } from "@/lib/hosting/account";
+import { SharedVideoView, type SharedViewer } from "./shared-video-view";
 import { EMPTY_DETAILS } from "@/lib/hosting/details";
 
 export const dynamic = "force-dynamic";
@@ -15,16 +16,14 @@ export const metadata: Metadata = {
 export default async function SharedVideoPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   if (process.env.BLITZRECORDER_HOSTING_ENABLED !== "true") notFound();
-  const asset = await sharedAsset(slug);
+  const [asset, account] = await Promise.all([sharedAsset(slug), viewerAccount()]);
   if (!asset || !asset.width || !asset.height) notFound();
+  const owner = account?.id === asset.account_id;
+  const [library, sessions] = account && owner
+    ? await Promise.all([ownerLibrary(account), activeSessionCount(account)]) : [null, 0];
+  const viewer: SharedViewer | null = account && { email: account.email, library, sessions };
   const base = `${new URL(required("HOSTING_MEDIA_ORIGIN")).origin}/s/${slug}`;
-  return <main className="min-h-screen bg-background px-4 pb-12 text-foreground sm:px-8 lg:px-10">
-    <header className="mx-auto flex max-w-[1440px] items-center justify-between py-7">
-      <Link href="/" className="font-display text-lg font-bold tracking-tight">blitzrecorder<span className="text-emerald-400">.</span></Link>
-      <span className="text-xs text-zinc-500">Video sharing</span>
-    </header>
-    <SharedPlayer key={asset.slug} source={`${base}/master.m3u8`} poster={`${base}/poster.jpg`}
-      title={asset.title} width={asset.width} height={asset.height} duration={asset.duration ?? asset.declared_seconds}
-      frameRate={asset.frame_rate} details={asset.viewer_details ?? EMPTY_DETAILS} />
-  </main>;
+  return <SharedVideoView slug={asset.slug} source={`${base}/master.m3u8`} poster={`${base}/poster.jpg`}
+    title={asset.title} width={asset.width} height={asset.height} duration={asset.duration ?? asset.declared_seconds}
+    frameRate={asset.frame_rate} details={asset.viewer_details ?? EMPTY_DETAILS} viewer={viewer} />;
 }

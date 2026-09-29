@@ -107,16 +107,173 @@ final class HostedVideoAccountTests: XCTestCase {
         try snapshot(.init(controller: controller, name: "saving", preparation: saving))
     }
 
+    @MainActor
+    func testCompletedSharePersistsAndReopensWithoutUploadingAgain() async throws {
+        let fixture = AccountFixture()
+        defer { fixture.cleanup() }
+        let recording = try SyntheticRecording()
+        try await recording.writeVideo(.init(url: recording.take.screenURL, frames: 15))
+        try fixture.credentials.save(fixture.server.token)
+        fixture.server.active = true
+        fixture.server.assets = [libraryVideo()]
+        await fixture.controller.refresh()
+        fixture.controller.select(.init(fileURL: recording.take.screenURL, projectPath: "/recordings/completed"))
+        fixture.controller.start()
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        while fixture.controller.isRunning && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertFalse(fixture.controller.isRunning)
+        XCTAssertNil(fixture.controller.transferMessage)
+        let original = try XCTUnwrap(fixture.controller.shareURL)
+        try snapshot(.init(controller: fixture.controller, name: "shared", preparation: nil, projectPath: "/recordings/completed"))
+        let reopened = HostedVideoShareController(client: .init(origin: fixture.credentials.origin, session: fixture.session))
+        await reopened.refresh()
+        XCTAssertEqual(reopened.shareURL, original)
+        XCTAssertEqual(reopened.sharedURL(forProject: "/recordings/completed"), original)
+        XCTAssertEqual(fixture.server.requests.filter { $0.url?.path.hasSuffix("/assets") == true && $0.httpMethod == "POST" }.count, 1)
+    }
+
+    @MainActor
+    func testSharedLibraryRestoresProjectLinksWithoutTheLocalExport() async throws {
+        let fixture = AccountFixture()
+        defer { fixture.cleanup() }
+        try fixture.credentials.save(fixture.server.token)
+        fixture.server.active = true
+        fixture.server.assets = [libraryVideo()]
+        let link = "https://account.hosting.test/s/abcdefghijklmnopqrstuvwx"
+        let key = "HostingLibrary:https://account.hosting.test:owner@example.test:projects"
+        UserDefaults.standard.set(try JSONSerialization.data(withJSONObject: [
+            ["projectPath": "/recordings/first", "url": link]
+        ]), forKey: key)
+        await fixture.controller.refresh()
+        XCTAssertEqual(fixture.controller.videos.count, 1)
+        XCTAssertEqual(fixture.controller.sharedURL(forProject: "/recordings/first")?.absoluteString, link)
+        XCTAssertNil(fixture.controller.sharedURL(forProject: "/recordings/unrelated"))
+        XCTAssertNil(fixture.controller.fileURL)
+        let reopened = HostedVideoShareController(client: .init(origin: fixture.credentials.origin, session: fixture.session))
+        await reopened.refresh()
+        XCTAssertEqual(reopened.sharedURL(forProject: "/recordings/first")?.absoluteString, link)
+        fixture.server.assets = []
+        await reopened.refreshVideos()
+        XCTAssertNil(reopened.sharedURL(forProject: "/recordings/first"))
+    }
+
+    @MainActor
+    func testSharedLibraryRetainsSyncedRowsOfflineAndSeparatesAccounts() async throws {
+        let fixture = AccountFixture()
+        defer { fixture.cleanup() }
+        try fixture.credentials.save(fixture.server.token)
+        fixture.server.active = true
+        fixture.server.assets = [libraryVideo()]
+        await fixture.controller.refresh()
+        fixture.server.rejectsLibrary = true
+        let reopened = HostedVideoShareController(client: .init(origin: fixture.credentials.origin, session: fixture.session))
+        await reopened.refresh()
+        XCTAssertEqual(reopened.videos.count, 1)
+        XCTAssertNotNil(reopened.libraryMessage)
+        XCTAssertNotNil(reopened.libraryUpdatedAt)
+        XCTAssertFalse(reopened.isRefreshingVideos)
+        fixture.server.email = "another@example.test"
+        await reopened.refresh()
+        XCTAssertTrue(reopened.videos.isEmpty)
+        XCTAssertNil(reopened.libraryUpdatedAt)
+        await reopened.disconnect()
+        XCTAssertTrue(reopened.videos.isEmpty)
+        XCTAssertNil(reopened.shareURL)
+    }
+
+    @MainActor
+    func testLibraryRefreshCoalescesAndDoesNotUploadOrTrustForeignLinks() async throws {
+        let fixture = AccountFixture()
+        defer { fixture.cleanup() }
+        try fixture.credentials.save(fixture.server.token)
+        fixture.server.assets = [libraryVideo()]
+        await fixture.controller.refresh()
+        let count = fixture.server.requests.filter { $0.url?.path.hasSuffix("/assets") == true }.count
+        let first = Task { await fixture.controller.refreshVideos() }
+        await Task.yield()
+        await fixture.controller.refreshVideos()
+        await first.value
+        XCTAssertEqual(fixture.server.requests.filter { $0.url?.path.hasSuffix("/assets") == true }.count, count + 1)
+        XCTAssertTrue(fixture.server.requests.filter { $0.url?.path.hasSuffix("/assets") == true }.allSatisfy { $0.httpMethod == "GET" })
+        var foreign = libraryVideo()
+        foreign["sharePath"] = "https://other.test/video"
+        fixture.server.assets = [foreign]
+        await fixture.controller.refreshVideos()
+        XCTAssertNil(fixture.controller.watchURL(try XCTUnwrap(fixture.controller.videos.first)))
+    }
+
+    @MainActor
+    func testSharedLibraryRendersReadyProcessingAndFailedVideosAtNarrowWidths() async throws {
+        let fixture = AccountFixture()
+        defer { fixture.cleanup() }
+        try fixture.credentials.save(fixture.server.token)
+        fixture.server.active = true
+        var processing = libraryVideo()
+        processing["id"] = "processing-video"
+        processing["status"] = "processing"
+        processing["sharePath"] = NSNull()
+        var failed = libraryVideo()
+        failed["id"] = "failed-video"
+        failed["status"] = "failed"
+        failed["error"] = "The uploaded file could not be decoded. Export it again to retry."
+        failed["sharePath"] = NSNull()
+        fixture.server.assets = [libraryVideo(), processing, failed]
+        try await proof(.init(view: AnyView(HostedVideoLibraryView(controller: fixture.controller, showRecordings: {}, thumbnail: { _ in nil })),
+            size: .init(width: 1000, height: 680), name: "shared-library-loading"))
+        await fixture.controller.refresh()
+        for width in [620.0, 1000.0] {
+            let host = NSHostingView(rootView: HostedVideoLibraryView(controller: fixture.controller, showRecordings: {}, thumbnail: { _ in nil })
+                .frame(width: width, height: 680).preferredColorScheme(.dark))
+            host.setFrameSize(host.fittingSize)
+            host.layoutSubtreeIfNeeded()
+            XCTAssertEqual(host.fittingSize.width, width, accuracy: 1)
+            try await proof(.init(view: AnyView(HostedVideoLibraryView(controller: fixture.controller, showRecordings: {}, thumbnail: { _ in nil })),
+                size: .init(width: width, height: 680), name: "shared-library-\(Int(width))"))
+        }
+    }
+
+    private struct Proof {
+        let view: AnyView
+        let size: CGSize
+        let name: String
+    }
+
+    @MainActor private func proof(_ request: Proof) async throws {
+        guard let directory = ProcessInfo.processInfo.environment["BLITZRECORDER_EXPORT_UI_PROOF"] else { return }
+        let host = NSHostingView(rootView: request.view.frame(width: request.size.width, height: request.size.height)
+            .background(BlitzUI.projectLibraryBackground).preferredColorScheme(.dark))
+        let window = NSWindow(contentRect: CGRect(origin: .zero, size: request.size), styleMask: [.borderless],
+            backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.orderOut(nil); window.contentView = nil }
+        try await Task.sleep(for: .milliseconds(150))
+        host.layoutSubtreeIfNeeded()
+        let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(
+            to: URL(fileURLWithPath: directory).appendingPathComponent("\(request.name).png"))
+    }
+
+    private func libraryVideo() -> [String: Any] {
+        ["id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "title": "A complete product walkthrough", "status": "ready",
+         "sharePath": "/s/abcdefghijklmnopqrstuvwx", "duration": 123.5,
+         "width": 1920, "height": 1080, "bytes": 12_000_000, "error": NSNull()]
+    }
+
     private struct Snapshot {
         let controller: HostedVideoShareController
         let name: String
         let preparation: HostedVideoSharePanel.ExportPreparation?
+        var projectPath: String? = nil
     }
 
     @MainActor private func snapshot(_ request: Snapshot) throws {
         for width in [312.0, 400.0] {
-            let host = NSHostingView(rootView: HostedVideoSharePanel(controller: request.controller,
-                preparation: request.preparation, newExport: {}, close: {}).frame(width: width, height: 660).preferredColorScheme(.dark))
+            let host = NSHostingView(rootView: HostedVideoSharePanel(controller: request.controller, context: .project(path: request.projectPath, title: "How to record a useful walkthrough"),
+                preparation: request.preparation, newExport: {}, close: {}, showLibrary: {}).frame(width: width, height: 660).preferredColorScheme(.dark))
             host.setFrameSize(host.fittingSize)
             host.layoutSubtreeIfNeeded()
             XCTAssertEqual(host.fittingSize.width, width, accuracy: 1)
@@ -150,6 +307,10 @@ final class HostedVideoAccountTests: XCTestCase {
         credentials.clear()
         UserDefaults.standard.removeObject(forKey: "HostingExport:https://account.hosting.test")
         UserDefaults.standard.removeObject(forKey: "HostingProject:https://account.hosting.test")
+        UserDefaults.standard.removeObject(forKey: "HostingAccount:https://account.hosting.test")
+        for key in UserDefaults.standard.dictionaryRepresentation().keys where key.hasPrefix("HostingLibrary:https://account.hosting.test:") {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
         AccountProtocol.server = nil
     }
 }
@@ -160,6 +321,9 @@ private final class AccountServer: @unchecked Sendable {
     private var recorded: [URLRequest] = []
     private var isActive = false
     private var rejectsAccount = false
+    var assets: [[String: Any]] = []
+    var rejectsLibrary = false
+    var email = "owner@example.test"
     var requests: [URLRequest] { lock.withLock { recorded } }
     var active: Bool {
         get { lock.withLock { isActive } }
@@ -184,8 +348,11 @@ private final class AccountServer: @unchecked Sendable {
                 body = ["disconnected": true]
             } else if path.hasSuffix("/account"), rejectsAccount {
                 return (401, Data("{\"error\":\"Your connection expired.\"}".utf8))
+            } else if path.hasSuffix("/assets") {
+                if rejectsLibrary { return (503, Data("{\"error\":\"Offline\"}".utf8)) }
+                body = request.httpMethod == "POST" ? assets[0] : ["assets": assets]
             } else {
-                body = ["token": token, "active": isActive, "email": "owner@example.test"]
+                body = ["token": token, "active": isActive, "email": email]
             }
             return (200, try JSONSerialization.data(withJSONObject: body))
         }

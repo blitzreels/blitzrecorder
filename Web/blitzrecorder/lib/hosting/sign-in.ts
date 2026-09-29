@@ -50,8 +50,8 @@ export async function requestSignInCode({ body, network }: { body: unknown; netw
       method: "POST", redirect: "error", signal: AbortSignal.timeout(15_000),
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "Idempotency-Key": `hosting-sign-in/${hash}` },
       body: JSON.stringify({ from, to: [email], subject: `${code} is your BlitzRecorder sign-in code`,
-        text: `Your BlitzRecorder sign-in code is ${code}.\n\nEnter it in BlitzRecorder to create or access your account. It expires in 10 minutes.\n\nIf you did not request this code, you can ignore this email.`,
-        html: `<div style="font-family:system-ui,sans-serif;max-width:480px;margin:auto;padding:32px;color:#171717"><p style="font-weight:700">BlitzRecorder</p><h1 style="font-size:24px">Your sign-in code</h1><p>Enter this code in BlitzRecorder to create or access your account.</p><p style="font-size:36px;font-weight:700;letter-spacing:8px">${code}</p><p>This code expires in 10 minutes.</p><p style="color:#737373;font-size:13px">If you did not request this code, you can ignore this email.</p></div>` }),
+        text: `Your BlitzRecorder sign-in code is ${code}.\n\nEnter it in the BlitzRecorder app or on blitzrecorder.com to create or access your account. It expires in 10 minutes.\n\nIf you did not request this code, you can ignore this email.`,
+        html: `<div style="font-family:system-ui,sans-serif;max-width:480px;margin:auto;padding:32px;color:#171717"><p style="font-weight:700">BlitzRecorder</p><h1 style="font-size:24px">Your sign-in code</h1><p>Enter this code in the BlitzRecorder app or on blitzrecorder.com to create or access your account.</p><p style="font-size:36px;font-weight:700;letter-spacing:8px">${code}</p><p>This code expires in 10 minutes.</p><p style="color:#737373;font-size:13px">If you did not request this code, you can ignore this email.</p></div>` }),
     });
     if (!response.ok) throw new Error("delivery");
   } catch {

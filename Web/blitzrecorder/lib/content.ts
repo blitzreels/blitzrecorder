@@ -16,7 +16,7 @@ export type FaqItem = { q: string; a: string };
 export const faqs: FaqItem[] = [
   {
     q: "Do I need an account or a license key?",
-    a: "No. Recording, editing, export, transcripts, and the iPhone camera work without an account, email, or key. Share links need a BlitzRecorder account, which you sign in to with an email code.",
+    a: "No. Recording, editing, 4K and 60 fps export, transcripts, and the iPhone camera work without an account, email, or key. Share links need a BlitzRecorder account, which you sign in to with an email code. Sending videos to BlitzReels is an optional integration.",
   },
   {
     q: "What does video hosting include?",

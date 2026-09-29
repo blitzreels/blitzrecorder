@@ -82,6 +82,10 @@ private actor ActivityTranscriptionEngine: LocalTranscriptionEngineServing {
     init(_ configuration: Configuration) { self.configuration = configuration }
     func downloadModels(_ request: LocalTranscriptionEngine.DownloadRequest) async throws {}
     func removeModels(_ model: TranscriptionSpeechModel) async throws {}
+    func reassignSpeakers(_ request: LocalTranscriptionEngine.SpeakerFixRequest) async throws -> RecordingTranscript {
+        request.onUpdate(.init(stage: .diarizing))
+        return configuration.transcript
+    }
     func transcribe(_ request: LocalTranscriptionEngine.TranscribeRequest) async throws -> RecordingTranscript {
         if firstJobUpdate == nil { firstJobUpdate = request.onUpdate }
         request.onUpdate(.init(stage: .loadingModels))

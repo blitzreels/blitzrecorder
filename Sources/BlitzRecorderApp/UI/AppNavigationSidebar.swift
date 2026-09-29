@@ -48,7 +48,8 @@ struct AppNavigationSidebar: View {
     private func navigationItem(_ item: Item) -> some View {
         Button(action: item.action) {
             Image(systemName: item.symbol)
-                .font(.system(size: 20, weight: .medium))
+                .font(BlitzType.symbol(17))
+                .symbolVariant(item.selected ? .fill : .none)
                 .foregroundStyle(item.selected ? BlitzUI.primaryText : BlitzUI.secondaryText)
                 .frame(width: 24, height: 32)
                 .overlay(alignment: .topTrailing) {

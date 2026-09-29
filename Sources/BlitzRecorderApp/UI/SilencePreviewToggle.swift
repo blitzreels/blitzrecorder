@@ -3,47 +3,70 @@ import SwiftUI
 struct SilencePreviewToggle: View {
     @Bindable var session: SilenceEditingSession
 
+    private enum Stage: CaseIterable {
+        case before
+        case after
+
+        var title: String {
+            switch self {
+            case .before: "Before"
+            case .after: "After"
+            }
+        }
+
+        var symbolName: String {
+            switch self {
+            case .before: "waveform"
+            case .after: "scissors"
+            }
+        }
+    }
+
+    private var comparesCuts: Bool { session.hasChanges || session.skipSilence }
+
+    private var applyTitle: String {
+        if session.hasChanges {
+            return session.hasRemovedSilence || !session.metrics.hasChanges ? "Apply changes" : "Remove silence"
+        }
+        return session.hasRemovedSilence ? "Silence removed" : "Nothing to remove"
+    }
+
     var body: some View {
         VStack(spacing: 10) {
-            if session.hasChanges || session.skipSilence {
-                Toggle("Preview cuts", isOn: Binding(
-                    get: { session.skipSilence }, set: { session.setPreviewEnabled($0) }
-                ))
-                .toggleStyle(.blitzSwitch)
-                .controlSize(.regular)
-                .disabled(session.isAuditioning || (!session.skipSilence && !session.canClassify))
-                .help("Preview marked silences as removed. Apply changes to save them in the timeline and export.")
+            Button { _ = session.apply() } label: {
+                Label(applyTitle, systemImage: session.hasChanges ? "scissors" : "checkmark")
+                    .frame(maxWidth: .infinity)
             }
-            if session.hasChanges {
-                Button { _ = session.apply() } label: {
-                    Text(session.hasRemovedSilence || !session.metrics.hasChanges ? "Apply changes" : "Remove silence")
-                        .frame(maxWidth: .infinity)
+            .blitzButton(.accent)
+            .controlSize(.large)
+            .disabled(!session.hasChanges || !session.canApply)
+            .help("Apply silence settings across all tracks and exports. Undo with ⌘Z.")
+            HStack(spacing: 8) {
+                Group {
+                    BlitzSegmentedPicker(configuration: .init(
+                        title: "Silence preview",
+                        options: Stage.allCases,
+                        selection: Binding(
+                            get: { session.skipSilence ? .after : .before },
+                            set: { session.setPreviewEnabled($0 == .after) }
+                        ),
+                        label: { $0.title },
+                        symbolName: { $0.symbolName }
+                    ))
+                    .controlSize(.small)
+                    .disabled(!comparesCuts || session.isAuditioning || (!session.skipSilence && !session.canClassify))
+                    .help("Preview the timeline before or after the marked silences are cut. Apply changes to keep them.")
                 }
-                .blitzButton(.accent)
-                .controlSize(.large)
-                .disabled(!session.canApply)
-                .help("Apply silence settings across all tracks and exports. Undo with ⌘Z.")
-            }
-            if session.hasChanges || session.hasRemovedSilence {
-                HStack(spacing: 8) {
-                    if session.hasChanges {
-                        Text("All tracks · ⌘Z to undo")
-                            .font(.system(size: 11))
-                            .foregroundStyle(BlitzUI.supportingText)
-                    } else {
-                        Label("Silence removed", systemImage: "checkmark")
-                            .font(.system(size: 12))
-                            .foregroundStyle(BlitzUI.supportingText)
+                if session.hasRemovedSilence {
+                    Button { session.restoreSilence() } label: {
+                        Label("Restore", systemImage: "arrow.uturn.backward")
                     }
-                    Spacer(minLength: 0)
-                    if session.hasRemovedSilence {
-                        Button("Restore silence") { session.restoreSilence() }
-                            .blitzButton(.quiet)
-                            .controlSize(.small)
-                            .disabled(session.isAuditioning || session.loading || session.calculating || session.preparingPreview)
-                            .accessibilityLabel("Restore removed silence")
-                            .help("Restore removed silences across all tracks. Undo with ⌘Z.")
-                    }
+                    .blitzButton(.secondary)
+                    .controlSize(.small)
+                    .fixedSize()
+                    .disabled(session.isAuditioning || session.loading || session.calculating || session.preparingPreview)
+                    .accessibilityLabel("Restore removed silence")
+                    .help("Restore removed silences across all tracks. Undo with ⌘Z.")
                 }
             }
         }

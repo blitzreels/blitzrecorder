@@ -15,12 +15,12 @@ struct TranscriptionActivityView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(configuration.status.label)
                 if let detail = configuration.detail {
-                    Text(detail).font(.system(size: 10))
+                    Text(detail).font(BlitzType.footnote)
                 }
             }
             if let startedAt = configuration.startedAt { ActivityElapsedTime(startedAt: startedAt) }
         }
-        .font(.system(size: 11))
+        .font(BlitzType.caption)
         .foregroundStyle(BlitzUI.secondaryText)
         .accessibilityElement(children: .combine)
     }
@@ -33,7 +33,7 @@ struct ActivityElapsedTime: View {
         TimelineView(.periodic(from: startedAt, by: 1)) { context in
             let elapsed = max(0, Int(context.date.timeIntervalSince(startedAt)))
             Text(elapsed < 60 ? "\(elapsed)s" : "\(elapsed / 60)m \(elapsed % 60)s")
-                .font(.system(size: 10, design: .monospaced))
+                .font(BlitzType.footnote.monospaced())
                 .foregroundStyle(BlitzUI.secondaryText)
                 .accessibilityLabel("\(elapsed) seconds elapsed")
         }

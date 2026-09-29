@@ -34,6 +34,7 @@ struct BlitzSelectionButtonStyle: ButtonStyle {
                 in: .rect(cornerRadius: BlitzUI.controlRadius)
             )
             .contentShape(.rect(cornerRadius: BlitzUI.controlRadius))
+            .blitzFocusRing(cornerRadius: BlitzUI.controlRadius)
             .opacity(isEnabled ? (configuration.isPressed ? 0.72 : 1) : 0.38)
             .onHover { isHovering = $0 }
             .animation(.easeOut(duration: 0.12), value: isHovering)
@@ -56,7 +57,7 @@ struct BlitzToolbarButton: View {
                 BlitzSymbol(configuration: .init(name: configuration.symbolName, size: 16))
                 if configuration.showsTitle {
                     Text(configuration.title)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(BlitzType.label)
                 }
             }
         }
@@ -108,11 +109,13 @@ struct BlitzTab: View {
             layout {
                 if let symbolName = configuration.symbolName {
                     BlitzSymbol(configuration: .init(name: symbolName, size: 16))
+                        .symbolVariant(configuration.isSelected ? .fill : .none)
                         .foregroundStyle(configuration.isSelected ? BlitzUI.mint : BlitzUI.secondaryText)
                 }
                 Text(configuration.title)
-                    .font(.system(size: configuration.symbolPlacement == .above ? 10 : controlSize == .large ? 13 : 11, weight: .medium))
+                    .font(configuration.symbolPlacement == .above ? BlitzType.footnote : controlSize == .large ? BlitzType.control(13) : BlitzType.captionEmphasis)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .padding(.horizontal, controlSize == .mini || controlSize == .large ? 6 : 10)
             .frame(maxWidth: configuration.expands ? .infinity : nil)
@@ -159,11 +162,27 @@ private struct BlitzTabGroupModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(3)
-            .background(BlitzUI.quietFill, in: .rect(cornerRadius: 10))
+            .background(BlitzUI.quietFill, in: .rect(cornerRadius: BlitzUI.controlRadius + 3))
+    }
+}
+
+private struct BlitzFocusRing: View {
+    let cornerRadius: CGFloat
+    @Environment(\.isFocused) private var isFocused
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius + 3, style: .continuous)
+            .strokeBorder(isFocused ? BlitzUI.mint : .clear, lineWidth: 2)
+            .padding(-3)
+            .allowsHitTesting(false)
     }
 }
 
 extension View {
+    func blitzFocusRing(cornerRadius: CGFloat) -> some View {
+        overlay { BlitzFocusRing(cornerRadius: cornerRadius) }
+    }
+
     func blitzWorkspaceToolbar() -> some View {
         modifier(BlitzWorkspaceToolbarModifier())
     }

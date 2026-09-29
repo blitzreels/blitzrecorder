@@ -3,7 +3,7 @@ import SwiftUI
 struct BlitzPlaybackVolumeControl: View {
     struct Configuration {
         let volume: Binding<Double>
-        let sliderWidth: CGFloat
+        let sliderWidth: ClosedRange<CGFloat>
         let onToggleMute: () -> Void
     }
 
@@ -32,12 +32,13 @@ struct BlitzPlaybackVolumeControl: View {
             Slider(value: configuration.volume, in: 0...1)
                 .tint(BlitzUI.mint)
                 .controlSize(.small)
-                .frame(width: configuration.sliderWidth)
+                .frame(minWidth: configuration.sliderWidth.lowerBound, idealWidth: configuration.sliderWidth.lowerBound,
+                       maxWidth: configuration.sliderWidth.upperBound)
                 .accessibilityLabel("Playback volume")
                 .accessibilityValue(percentage)
                 .help("Listening volume for preview playback. Export audio is unchanged.")
             Text(percentage)
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .font(BlitzType.footnote.monospaced())
                 .foregroundStyle(BlitzUI.secondaryText)
                 .monospacedDigit()
                 .frame(width: 32, alignment: .trailing)

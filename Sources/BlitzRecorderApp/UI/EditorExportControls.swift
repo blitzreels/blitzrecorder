@@ -5,7 +5,6 @@ struct EditorExportControls: View {
     @Bindable var vm: RecorderViewModel
     let project: RecordingProject?
     @Binding var isPresented: Bool
-    @Binding var destination: EditorExportDestination
     @Binding var additionalExportLayouts: Set<CaptureLayout>
     @Binding var selectedExportPreset: ExportPerformancePreset
     @Binding var selectedFormat: OutputVideoFormat
@@ -21,15 +20,21 @@ struct EditorExportControls: View {
         Button {
             isPresented.toggle()
         } label: {
-            Label(
-                vm.state == .finishing ? "Exporting" : "Export",
-                systemImage: vm.state == .finishing ? "hourglass" : "square.and.arrow.up"
-            )
+            HStack(spacing: 6) {
+                ZStack {
+                    ProgressView().controlSize(.mini).tint(.black).opacity(vm.state == .finishing ? 1 : 0)
+                    Image(systemName: "square.and.arrow.down").opacity(vm.state == .finishing ? 0 : 1)
+                }
+                .frame(width: 14, height: 14)
+                Text(vm.state == .finishing ? "Exporting…" : "Export")
+                    .frame(minWidth: 62, alignment: .leading)
+            }
+            .accessibilityElement(children: .combine)
         }
         .blitzButton(.accent)
         .controlSize(.large)
         .disabled(project == nil || vm.state != .idle)
-        .help("Choose export settings")
+        .help("Save a video file to your Mac")
         .popover(isPresented: $isPresented, arrowEdge: .top) {
             popover
         }
@@ -37,7 +42,6 @@ struct EditorExportControls: View {
 
     private var popover: some View {
         EditorExportPopover(configuration: .init(
-            destination: $destination,
             additionalLayouts: $additionalExportLayouts,
             currentLayout: vm.lastExportedProject?.selectedOutputLayout ?? .horizontal,
             format: Binding(

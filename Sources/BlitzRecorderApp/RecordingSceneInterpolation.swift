@@ -49,7 +49,10 @@ extension SceneLayout {
         return SceneLayout(
             screenFrame: screenFrame.interpolated(to: target.screenFrame, progress: progress),
             cameraFrame: cameraFrame.interpolated(to: target.cameraFrame, progress: progress),
-            layerOrder: progress <= 0 ? layerOrder : target.layerOrder
+            layerOrder: progress <= 0 ? layerOrder : target.layerOrder,
+            cameraMask: progress <= 0
+                ? cameraMask
+                : (progress >= 1 || cameraMask == target.cameraMask ? target.cameraMask : .rectangle)
         )
     }
 }

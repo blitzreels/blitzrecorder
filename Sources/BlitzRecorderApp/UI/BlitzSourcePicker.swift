@@ -95,8 +95,8 @@ struct BlitzSourcePicker: View {
                     BlitzDropdownValueLabel(value: model.title)
 
                     Text(model.subtitle)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(model.enabled ? 0.5 : 0.28))
+                        .font(BlitzType.footnote)
+                        .foregroundStyle(model.enabled ? BlitzUI.secondaryText : BlitzUI.tertiaryText)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
@@ -131,10 +131,10 @@ struct BlitzSourcePicker: View {
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 24, height: 24)
                 .padding(5)
-                .clipShape(.rect(cornerRadius: 8))
+                .clipShape(.rect(cornerRadius: BlitzUI.controlRadius))
         } else {
             BlitzSymbol(configuration: .init(name: model.systemImage, size: 22))
-                .foregroundStyle(model.enabled ? BlitzUI.mint : .white.opacity(0.28))
+                .foregroundStyle(model.enabled ? BlitzUI.mint : BlitzUI.tertiaryText)
                 .frame(width: 34, height: 34)
         }
     }
@@ -162,16 +162,16 @@ struct BlitzSourcePickerThumbnailCard: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.title)
-                        .font(.system(size: 11.5, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.94))
+                        .font(BlitzType.captionEmphasis)
+                        .foregroundStyle(BlitzUI.primaryText)
                         .lineLimit(2)
                         .frame(height: 30, alignment: .topLeading)
                         .truncationMode(.tail)
 
                     if let subtitle = item.subtitle {
                         Text(subtitle)
-                            .font(.system(size: 9.5, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.46))
+                            .font(BlitzType.footnote)
+                            .foregroundStyle(BlitzUI.secondaryText)
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
@@ -179,13 +179,18 @@ struct BlitzSourcePickerThumbnailCard: View {
                 .padding(.horizontal, 9)
                 .padding(.vertical, 8)
             }
-            .background(rowFill, in: .rect(cornerRadius: 9))
-            .overlay {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .strokeBorder(item.isSelected ? BlitzUI.mint.opacity(0.55) : .white.opacity(0.08), lineWidth: 1)
-                    .allowsHitTesting(false)
+            .background(rowFill, in: .rect(cornerRadius: BlitzUI.controlRadius))
+            .overlay(alignment: .topTrailing) {
+                if item.isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(BlitzType.glyph(14))
+                        .foregroundStyle(BlitzUI.mint)
+                        .background(Circle().fill(.black))
+                        .padding(6)
+                        .allowsHitTesting(false)
+                }
             }
-            .contentShape(.rect(cornerRadius: 9))
+            .contentShape(.rect(cornerRadius: BlitzUI.controlRadius))
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
@@ -209,7 +214,7 @@ struct BlitzSourcePickerThumbnailCard: View {
                     .clipped()
             } else {
                 LinearGradient(
-                    colors: [.white.opacity(0.07), .white.opacity(0.025)],
+                    colors: [BlitzUI.hoverFill, BlitzUI.cardFill],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
@@ -217,7 +222,7 @@ struct BlitzSourcePickerThumbnailCard: View {
                     BlitzSymbol(configuration: .init(name: item.systemImage, size: 26))
                         .foregroundStyle(BlitzUI.secondaryText)
                     Text(thumbnail.isLoading ? "Loading preview…" : "Preview unavailable")
-                        .font(.system(size: 10))
+                        .font(BlitzType.footnote)
                         .foregroundStyle(BlitzUI.secondaryText)
                 }
             }
@@ -230,14 +235,14 @@ struct BlitzSourcePickerThumbnailCard: View {
                             .aspectRatio(contentMode: .fit)
                             .frame(width: 22, height: 22)
                             .padding(4)
-                            .background(.black.opacity(0.66), in: .rect(cornerRadius: 7))
+                            .background(.black.opacity(0.66), in: .rect(cornerRadius: BlitzUI.controlRadius))
                     }
 
                     Spacer(minLength: 0)
 
                     Image(systemName: item.isSelected ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(item.isSelected ? BlitzUI.mint : .white.opacity(0.72))
+                        .font(BlitzType.glyph(16))
+                        .foregroundStyle(item.isSelected ? BlitzUI.mint : BlitzUI.supportingText)
                         .shadow(color: .black.opacity(0.7), radius: 3)
                 }
                 Spacer(minLength: 0)
@@ -250,8 +255,8 @@ struct BlitzSourcePickerThumbnailCard: View {
 
     private var rowFill: Color {
         if item.isSelected {
-            return BlitzUI.mint.opacity(0.12)
+            return BlitzUI.selectedFill
         }
-        return isHovering ? Color.white.opacity(0.09) : Color.white.opacity(0.035)
+        return isHovering ? BlitzUI.hoverFill : BlitzUI.cardFill
     }
 }

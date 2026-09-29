@@ -78,16 +78,16 @@ struct RemoteCameraControlsPane: View {
     private var statusHeader: some View {
         HStack(spacing: 8) {
             Image(systemName: "iphone.gen3")
-                .font(.system(size: 14, weight: .regular))
+                .font(BlitzType.glyph(14))
                 .foregroundStyle(.secondary)
                 .frame(width: 20, height: 20)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(deviceName)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(BlitzType.label)
                     .lineLimit(1)
                 Text(remoteCameraStatus)
-                    .font(.system(size: 11, weight: .regular))
+                    .font(BlitzType.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -98,7 +98,7 @@ struct RemoteCameraControlsPane: View {
                 vm.resetRemoteCameraSettings()
             } label: {
                 Label("Auto", systemImage: "wand.and.sparkles")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(BlitzType.captionEmphasis)
             }
             .blitzButton(.secondary)
             .controlSize(.small)
@@ -114,9 +114,9 @@ struct RemoteCameraControlsPane: View {
                 .controlSize(.small)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Waiting for camera controls")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(BlitzType.label)
                 Text("Keep the iPhone app open and paired.")
-                    .font(.system(size: 11, weight: .regular))
+                    .font(BlitzType.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
@@ -129,7 +129,7 @@ struct RemoteCameraControlsPane: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title)
-                .font(.system(size: 11, weight: .medium))
+                .font(BlitzType.captionEmphasis)
                     .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 10) {
@@ -170,20 +170,20 @@ struct RemoteCameraControlsPane: View {
                     get: { currentRemoteSettings.captureProfileID },
                     set: { vm.setRemoteCameraCaptureProfile($0) }
                 ),
-                label: captureProfileLabel,
+                label: RemoteCameraControlsCopy.captureProfileLabel,
                 isOptionEnabled: { id in
                     capabilities.supportedCaptureProfiles.first { $0.id == id }?.isAvailable == true
                 }
             ))
-            Text(captureProfileHelpText(currentRemoteSettings.captureProfileID))
-                .font(.system(size: 11, weight: .regular))
+            Text(RemoteCameraControlsCopy.captureProfileHelpText(currentRemoteSettings.captureProfileID))
+                .font(BlitzType.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
 
             if let reason = profileUnavailableReason(.proRes422, capabilities: capabilities) {
                 Label(reason, systemImage: "info.circle")
-                    .font(.system(size: 11, weight: .regular))
+                    .font(BlitzType.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -206,13 +206,9 @@ struct RemoteCameraControlsPane: View {
                         get: { currentRemoteSettings.colorMode },
                         set: { vm.setRemoteCameraColorMode($0) }
                     ),
-                    label: colorModeLabel
+                    label: RemoteCameraControlsCopy.colorModeLabel
                 ))
-                Text(colorModeHelpText(currentRemoteSettings.colorMode))
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
+                helperText(RemoteCameraControlsCopy.colorModeHelpText(currentRemoteSettings.colorMode))
             }
         }
         .disabled(!allowsFormatChanges || cinematicLocksFormatControls)
@@ -264,7 +260,7 @@ struct RemoteCameraControlsPane: View {
                 .disabled(!allowsFormatChanges)
 
                 Text("iPhone Cinematic mode with adjustable depth of field.")
-                    .font(.system(size: 11, weight: .regular))
+                    .font(BlitzType.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -273,7 +269,7 @@ struct RemoteCameraControlsPane: View {
                 }
             } else {
                 Label("Cinematic unavailable", systemImage: "camera.aperture")
-                    .font(.system(size: 12, weight: .regular))
+                    .font(BlitzType.body)
                 helperText(cinematicUnavailableReason())
             }
 
@@ -301,181 +297,7 @@ struct RemoteCameraControlsPane: View {
         .help("Cinematic settings apply before recording starts")
     }
 
-    @ViewBuilder
-    private func remoteFocusControls(capabilities: RemoteCameraCapabilities) -> some View {
-        if capabilities.supportsManualFocus || capabilities.supportsFocusLock {
-            modePicker(.init(
-                title: "Sharpness",
-                options: RemoteCameraFocusMode.allCases.filter { mode in
-                    switch mode {
-                    case .continuousAuto: true
-                    case .locked: capabilities.supportsFocusLock
-                    case .manual: capabilities.supportsManualFocus
-                    }
-                },
-                selection: Binding(
-                    get: { currentRemoteSettings.focusMode },
-                    set: { vm.setRemoteCameraFocusMode($0) }
-                ),
-                label: { $0.displayName }
-            ))
-            .disabled(!allowsLiveCameraChanges || currentRemoteSettings.cinematicVideoEnabled)
-            helperText(currentRemoteSettings.cinematicVideoEnabled
-                ? "Cinematic controls focus automatically."
-                : focusModeHelpText(currentRemoteSettings.focusMode))
-
-            if currentRemoteSettings.focusMode == .manual {
-                remoteSlider(
-                    title: "Focus position",
-                    value: currentRemoteSettings.focusPosition,
-                    range: 0...1,
-                    step: 0.01,
-                    label: String(format: "%.2f", currentRemoteSettings.focusPosition),
-                    isEnabled: capabilities.supportsManualFocus && !currentRemoteSettings.cinematicVideoEnabled,
-                    onChange: vm.setRemoteCameraFocusPosition
-                )
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func remoteExposureControls(capabilities: RemoteCameraCapabilities) -> some View {
-        if capabilities.supportsManualExposure || capabilities.supportsExposureLock {
-            modePicker(.init(
-                title: "Light",
-                options: RemoteCameraExposureMode.allCases.filter { mode in
-                    switch mode {
-                    case .continuousAuto: true
-                    case .locked: capabilities.supportsExposureLock
-                    case .manual: capabilities.supportsManualExposure
-                    }
-                },
-                selection: Binding(
-                    get: { currentRemoteSettings.exposureMode },
-                    set: { vm.setRemoteCameraExposureMode($0) }
-                ),
-                label: { $0.displayName }
-            ))
-            .disabled(!allowsLiveCameraChanges)
-            helperText(exposureModeHelpText(currentRemoteSettings.exposureMode))
-        }
-
-        remoteSlider(
-            title: "Brightness",
-            value: currentRemoteSettings.exposureBias,
-            range: capabilities.minimumExposureBias...capabilities.maximumExposureBias,
-            step: 0.1,
-            label: String(format: "%+.1f", currentRemoteSettings.exposureBias),
-            isEnabled: capabilities.maximumExposureBias > capabilities.minimumExposureBias,
-            onChange: vm.setRemoteCameraExposureBias
-        )
-
-        HStack {
-            Spacer(minLength: 0)
-            Button {
-                vm.resetRemoteCameraExposureBias()
-            } label: {
-                Label("Reset brightness", systemImage: "sun.max")
-                    .font(.system(size: 11, weight: .medium))
-            }
-            .blitzButton(.secondary)
-            .controlSize(.small)
-            .disabled(vm.selectedRemoteCameraCapabilities == nil)
-            .pointingHandCursor()
-            .help("Set exposure to Auto and brightness to 0")
-        }
-
-        if currentRemoteSettings.exposureMode == .manual,
-           let minimumISO = capabilities.minimumISO,
-           let maximumISO = capabilities.maximumISO {
-            remoteSlider(
-                title: "ISO",
-                value: currentRemoteSettings.iso ?? minimumISO,
-                range: minimumISO...maximumISO,
-                step: 10,
-                label: "\(Int(currentRemoteSettings.iso ?? minimumISO))",
-                isEnabled: capabilities.supportsManualExposure && maximumISO > minimumISO,
-                onChange: { vm.setRemoteCameraISO($0) }
-            )
-        }
-
-        if currentRemoteSettings.exposureMode == .manual,
-           let minimumShutter = capabilities.minimumShutterDurationSeconds,
-           let maximumShutter = capabilities.maximumShutterDurationSeconds {
-            remoteSlider(
-                title: "Shutter",
-                value: currentRemoteSettings.shutterDurationSeconds ?? max(minimumShutter, 1.0 / 60.0),
-                range: minimumShutter...min(maximumShutter, 1.0),
-                step: 0.001,
-                label: shutterLabel(currentRemoteSettings.shutterDurationSeconds ?? max(minimumShutter, 1.0 / 60.0)),
-                isEnabled: capabilities.supportsManualExposure && maximumShutter > minimumShutter,
-                onChange: { vm.setRemoteCameraShutterDuration($0) }
-            )
-        }
-    }
-
-    @ViewBuilder
-    private func remoteWhiteBalanceControls(capabilities: RemoteCameraCapabilities) -> some View {
-        if capabilities.supportsWhiteBalanceLock || capabilities.supportsManualWhiteBalance {
-            modePicker(.init(
-                title: "Color",
-                options: RemoteCameraWhiteBalanceMode.allCases.filter { mode in
-                    switch mode {
-                    case .continuousAuto: true
-                    case .locked: capabilities.supportsWhiteBalanceLock
-                    case .manual: capabilities.supportsManualWhiteBalance
-                    }
-                },
-                selection: Binding(
-                    get: { currentRemoteSettings.whiteBalanceMode },
-                    set: { vm.setRemoteCameraWhiteBalanceMode($0) }
-                ),
-                label: { $0.displayName }
-            ))
-            .disabled(!allowsLiveCameraChanges)
-            helperText(whiteBalanceModeHelpText(currentRemoteSettings.whiteBalanceMode))
-
-            if currentRemoteSettings.whiteBalanceMode == .manual {
-                remoteSlider(
-                    title: "Temperature",
-                    value: currentRemoteSettings.whiteBalanceTemperature,
-                    range: 2_500...9_500,
-                    step: 100,
-                    label: "\(Int(currentRemoteSettings.whiteBalanceTemperature))K",
-                    isEnabled: capabilities.supportsManualWhiteBalance,
-                    onChange: { vm.setRemoteCameraWhiteBalance(temperature: $0, tint: currentRemoteSettings.whiteBalanceTint) }
-                )
-                remoteSlider(
-                    title: "Tint",
-                    value: currentRemoteSettings.whiteBalanceTint,
-                    range: -150...150,
-                    step: 1,
-                    label: "\(Int(currentRemoteSettings.whiteBalanceTint))",
-                    isEnabled: capabilities.supportsManualWhiteBalance,
-                    onChange: { vm.setRemoteCameraWhiteBalance(temperature: currentRemoteSettings.whiteBalanceTemperature, tint: $0) }
-                )
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func stabilizationPicker(capabilities: RemoteCameraCapabilities) -> some View {
-        if !capabilities.supportedStabilizationModes.isEmpty {
-            modePicker(.init(
-                title: "Smoother video",
-                options: capabilities.supportedStabilizationModes,
-                selection: Binding(
-                    get: { currentRemoteSettings.stabilizationMode },
-                    set: { vm.setRemoteCameraStabilizationMode($0) }
-                ),
-                label: stabilizationModeLabel
-            ))
-            .disabled(!allowsFormatChanges || cinematicLocksFormatControls || capabilities.supportedStabilizationModes.count <= 1)
-            helperText(stabilizationModeHelpText(currentRemoteSettings.stabilizationMode))
-        }
-    }
-
-    private func modePicker<Value: Hashable>(
+    func modePicker<Value: Hashable>(
         _ configuration: BlitzSegmentedPicker<Value>.Configuration
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -485,50 +307,43 @@ struct RemoteCameraControlsPane: View {
         }
     }
 
-    private func controlLabel(_ title: String) -> some View {
+    func controlLabel(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 11, weight: .regular))
+            .font(BlitzType.caption)
             .foregroundStyle(.secondary)
     }
 
-    private func helperText(_ text: String) -> some View {
+    func helperText(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 11, weight: .regular))
+            .font(BlitzType.caption)
             .foregroundStyle(.secondary)
             .lineLimit(3)
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func remoteSlider(
-        title: String,
-        value: Double,
-        range: ClosedRange<Double>,
-        step: Double,
-        label: String,
-        isEnabled: Bool = true,
-        onChange: @escaping (Double) -> Void
-    ) -> some View {
-        let sliderRange = range.lowerBound < range.upperBound ? range : range.lowerBound...(range.lowerBound + max(step, 1))
-        let sliderValue = min(sliderRange.upperBound, max(sliderRange.lowerBound, value))
-        return VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                controlLabel(title)
-                Spacer(minLength: 0)
-                Text(label)
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            }
-            Slider(
-                value: Binding(
-                    get: { sliderValue },
-                    set: onChange
-                ),
-                in: sliderRange,
-                step: step
-            )
-            .controlSize(.small)
-            .disabled(!allowsLiveCameraChanges || !isEnabled)
+    struct SliderRangeRequest {
+        let range: ClosedRange<Double>
+        let step: Double
+    }
+
+    func sliderRange(_ request: SliderRangeRequest) -> ClosedRange<Double> {
+        let range = request.range
+        return range.lowerBound < range.upperBound ? range : range.lowerBound...(range.lowerBound + max(request.step, 1))
+    }
+
+    struct SliderHeader {
+        let title: String
+        let value: String
+    }
+
+    func sliderHeader(_ header: SliderHeader) -> some View {
+        HStack {
+            controlLabel(header.title)
+            Spacer(minLength: 0)
+            Text(header.value)
+                .font(BlitzType.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
         }
     }
 
@@ -538,17 +353,10 @@ struct RemoteCameraControlsPane: View {
         step: Double,
         isEnabled: Bool
     ) -> some View {
-        let sliderRange = range.lowerBound < range.upperBound ? range : range.lowerBound...(range.lowerBound + max(step, 1))
+        let sliderRange = self.sliderRange(.init(range: range, step: step))
         let sliderValue = min(sliderRange.upperBound, max(sliderRange.lowerBound, pendingCinematicAperture ?? value))
         return VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                controlLabel("Depth of field")
-                Spacer(minLength: 0)
-                Text(String(format: "f/%.1f", sliderValue))
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            }
+            sliderHeader(.init(title: "Depth of field", value: String(format: "f/%.1f", sliderValue)))
             Slider(
                 value: Binding(
                     get: { sliderValue },
@@ -571,275 +379,6 @@ struct RemoteCameraControlsPane: View {
             helperText("Lower f-number means stronger blur. Applies when you release the slider.")
         }
     }
-
-    private var resetImageControlsButton: some View {
-        HStack {
-            Spacer(minLength: 0)
-            Button {
-                vm.resetRemoteCameraImageSettings()
-            } label: {
-                Label("Auto image", systemImage: "sun.max")
-                    .font(.system(size: 11, weight: .medium))
-            }
-            .blitzButton(.secondary)
-            .controlSize(.small)
-            .disabled(vm.selectedRemoteCameraCapabilities == nil)
-            .pointingHandCursor()
-            .help("Reset focus, brightness, and color to auto")
-        }
-    }
-
-    private var deviceName: String {
-        vm.selectedRemoteCameraCapabilities?.deviceName ?? "iPhone Camera"
-    }
-
-    private var remoteCameraStatus: String {
-        guard let telemetry = vm.selectedRemoteCameraTelemetry else {
-            return "Waiting for iPhone"
-        }
-        if telemetry.phase == .transferring,
-           let progress = telemetry.transferProgress {
-            return "Transferring \(Int((progress.fraction * 100).rounded()))%"
-        }
-        if let previewHealth = telemetry.previewHealth,
-           !previewHealth.isHealthy {
-            if previewHealth.isTransferActive {
-                return "Importing iPhone video"
-            }
-            if previewHealth.isStale {
-                return "Live view stalled"
-            }
-            if previewHealth.isBlockedBeforeFirstFrame {
-                return "Live view blocked"
-            }
-            if previewHealth.isDroppingFrames {
-                return "iPhone live view is dropping frames"
-            }
-            if previewHealth.isWaitingForFirstFrame {
-                return "Waiting for live view"
-            }
-            return "iPhone connected"
-        }
-        if let captureWarning = telemetry.captureWarning,
-           !captureWarning.isEmpty {
-            return captureWarning
-        }
-        return "\(telemetry.phase.rawValue.capitalized) - \(Int(telemetry.elapsedSeconds))s"
-    }
-
-    private var allowsLiveCameraChanges: Bool {
-        vm.state == .idle || vm.state == .recording
-    }
-
-    private var allowsFormatChanges: Bool {
-        vm.state == .idle
-    }
-
-    private var cinematicLocksFormatControls: Bool {
-        currentRemoteSettings.cinematicVideoEnabled
-    }
-
-    private var currentRemoteSettings: RemoteCameraSettings {
-        vm.selectedRemoteCameraTelemetry?.activeSettings ?? RemoteCameraSettings()
-    }
-
-    private func currentFormatID(_ capabilities: RemoteCameraCapabilities) -> String {
-        currentRemoteSettings.formatID ?? availableRemoteFormats(capabilities).first?.id ?? ""
-    }
-
-    private func frameRates(for formatID: String, capabilities: RemoteCameraCapabilities) -> [Int] {
-        let formats = availableRemoteFormats(capabilities)
-        let format = formats.first(where: { $0.id == formatID }) ?? formats.first
-        guard let format else { return [30] }
-        return RemoteCameraSettingsResolver.compatibleFrameRates(
-            for: format,
-            profileID: currentRemoteSettings.captureProfileID,
-            colorMode: currentRemoteSettings.colorMode,
-            profiles: capabilities.supportedCaptureProfiles
-        )
-    }
-
-    private func availableColorModes(_ capabilities: RemoteCameraCapabilities) -> [RemoteCameraColorMode] {
-        var formats = availableRemoteFormats(capabilities)
-        if currentRemoteSettings.captureProfileID != .proRes422,
-           let proResProfile = capabilities.supportedCaptureProfiles.first(where: { $0.id == .proRes422 && $0.isAvailable }),
-           !proResProfile.supportedFormatIDs.isEmpty {
-            let supportedIDs = Set(proResProfile.supportedFormatIDs)
-            formats = capabilities.supportedFormats.filter { supportedIDs.contains($0.id) }
-        }
-        let modes = Set(formats.flatMap(\.colorModes))
-        let ordered = RemoteCameraColorMode.allCases.filter { mode in
-            mode == .standard || modes.contains(mode)
-        }
-        return ordered.isEmpty ? [.standard] : ordered
-    }
-
-    private func colorModeLabel(_ mode: RemoteCameraColorMode) -> String {
-        switch mode {
-        case .standard:
-            return "Standard"
-        case .appleLog:
-            return "Log"
-        case .appleLog2:
-            return "Log 2"
-        }
-    }
-
-    private func colorModeHelpText(_ mode: RemoteCameraColorMode) -> String {
-        switch mode {
-        case .standard:
-            return "The normal iPhone video color pipeline."
-        case .appleLog:
-            return "Flat Apple Log ProRes for grading. Preview LUT is not applied yet."
-        case .appleLog2:
-            return "Apple Log 2 ProRes for newer iPhones. Preview LUT is not applied yet."
-        }
-    }
-
-    private func availableRemoteFormats(_ capabilities: RemoteCameraCapabilities) -> [RemoteCameraFormat] {
-        guard let profile = capabilities.supportedCaptureProfiles.first(where: { $0.id == currentRemoteSettings.captureProfileID }),
-              !profile.supportedFormatIDs.isEmpty else {
-            return capabilities.supportedFormats
-        }
-        let supportedIDs = Set(profile.supportedFormatIDs)
-        var formats = capabilities.supportedFormats.filter { supportedIDs.contains($0.id) }
-        if currentRemoteSettings.colorMode != .standard {
-            let colorModeFormats = formats.filter { $0.colorModes.contains(currentRemoteSettings.colorMode) }
-            if !colorModeFormats.isEmpty {
-                formats = colorModeFormats
-            }
-        }
-        return formats
-    }
-
-    private func profileUnavailableReason(
-        _ profileID: RemoteCameraCaptureProfileID,
-        capabilities: RemoteCameraCapabilities
-    ) -> String? {
-        guard let profile = capabilities.supportedCaptureProfiles.first(where: { $0.id == profileID }),
-              !profile.isAvailable else {
-            return nil
-        }
-        switch profileID {
-        case .automatic:
-            return profile.unavailableReason ?? "Best is unavailable for this iPhone camera setting."
-        case .highEfficiency:
-            return profile.unavailableReason ?? "Small files are unavailable for this iPhone camera setting."
-        case .proRes422:
-            return profile.unavailableReason ?? "Pro means ProRes, and ProRes is unavailable for this iPhone camera setting."
-        }
-    }
-
-    private func cinematicUnavailableReason() -> String {
-        var checks: [String] = []
-        if currentRemoteSettings.captureProfileID == .proRes422 {
-            checks.append("switch Recording to Best")
-        }
-        if currentRemoteSettings.lens != .wide {
-            checks.append("switch Lens to Wide")
-        }
-        if currentRemoteSettings.frameRate != 30 {
-            checks.append("switch FPS to 30")
-        }
-        if checks.isEmpty {
-            return "Phone did not report Cinematic support. Reopen the latest iPhone app build and pair again."
-        }
-        return "Phone did not report Cinematic support. Try: \(checks.joined(separator: ", "))."
-    }
-
-    private func captureProfileLabel(_ profileID: RemoteCameraCaptureProfileID) -> String {
-        switch profileID {
-        case .automatic:
-            return "Best"
-        case .highEfficiency:
-            return "HEVC"
-        case .proRes422:
-            return "ProRes"
-        }
-    }
-
-    private func captureProfileHelpText(_ profileID: RemoteCameraCaptureProfileID) -> String {
-        switch profileID {
-        case .automatic:
-            return "Recommended. The iPhone chooses the best recording format."
-        case .highEfficiency:
-            return "High-efficiency iPhone quality. Required for Cinematic."
-        case .proRes422:
-            return "Very large ProRes files for editing. Not Cinematic mode."
-        }
-    }
-
-    private func focusModeHelpText(_ mode: RemoteCameraFocusMode) -> String {
-        switch mode {
-        case .continuousAuto:
-            return "Auto keeps the subject sharp as it moves."
-        case .locked:
-            return "Locked keeps the current focus and stops hunting."
-        case .manual:
-            return "Manual lets you set the focus distance yourself."
-        }
-    }
-
-    private func exposureModeHelpText(_ mode: RemoteCameraExposureMode) -> String {
-        switch mode {
-        case .continuousAuto:
-            return "Auto lets the iPhone adjust to brighter or darker scenes."
-        case .locked:
-            return "Locked keeps the current light level from changing."
-        case .manual:
-            return "Manual gives you ISO and shutter controls."
-        }
-    }
-
-    private func whiteBalanceModeHelpText(_ mode: RemoteCameraWhiteBalanceMode) -> String {
-        switch mode {
-        case .continuousAuto:
-            return "Auto keeps colors natural as the room light changes."
-        case .locked:
-            return "Locked stops colors from shifting during a take."
-        case .manual:
-            return "Manual lets you set warmth and tint yourself."
-        }
-    }
-
-    private func stabilizationModeHelpText(_ mode: RemoteCameraStabilizationMode) -> String {
-        switch mode {
-        case .off:
-            return "Off records without extra smoothing."
-        case .standard:
-            return "Standard smooths small hand movements."
-        case .cinematic:
-            return "Strong smoothing reduces bigger hand movements and may crop the image."
-        case .cinematicExtendedEnhanced:
-            return "Enhanced strong smoothing follows Apple's Cinematic recording path and may crop the image."
-        case .auto:
-            return "Auto lets the iPhone choose the best smoothing."
-        }
-    }
-
-    private func stabilizationModeLabel(_ mode: RemoteCameraStabilizationMode) -> String {
-        switch mode {
-        case .off:
-            return "Off"
-        case .standard:
-            return "Normal"
-        case .cinematic:
-            return "Strong"
-        case .cinematicExtendedEnhanced:
-            return "Enhanced"
-        case .auto:
-            return "Auto"
-        }
-    }
-
-    private func shutterLabel(_ seconds: Double) -> String {
-        guard seconds > 0 else { return "0s" }
-        if seconds < 1 {
-            return "1/\(Int((1 / seconds).rounded()))"
-        }
-        return String(format: "%.2fs", seconds)
-    }
-
 }
 
 private enum RemoteCameraControlsTab: String, CaseIterable {

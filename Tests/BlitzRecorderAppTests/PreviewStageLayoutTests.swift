@@ -117,21 +117,25 @@ final class PreviewStageLayoutTests: XCTestCase {
     }
 
     func testCameraPreviewCornerRadiusSkipsFullscreen() {
-        XCTAssertEqual(PreviewStageLayout.sourceCornerRadius(for: .zero), 0)
+        XCTAssertEqual(SceneLayoutProjection.cameraCornerRadius(for: .zero), 0)
         XCTAssertEqual(
-            PreviewStageLayout.cameraPreviewCornerRadius(
-                bounds: CGRect(x: 0, y: 0, width: 200, height: 200),
+            PreviewStageLayout.cameraPreviewCornerRadius(.init(
+                isCamera: true,
+                rect: CGRect(x: 0, y: 0, width: 200, height: 200),
                 isFullscreen: true,
-                isFullWidth: false
-            ),
+                isFullWidth: false,
+                isCircle: false
+            )),
             0
         )
         XCTAssertGreaterThan(
-            PreviewStageLayout.cameraPreviewCornerRadius(
-                bounds: CGRect(x: 0, y: 0, width: 200, height: 200),
+            PreviewStageLayout.cameraPreviewCornerRadius(.init(
+                isCamera: true,
+                rect: CGRect(x: 0, y: 0, width: 200, height: 200),
                 isFullscreen: false,
-                isFullWidth: false
-            ),
+                isFullWidth: false,
+                isCircle: false
+            )),
             0
         )
 

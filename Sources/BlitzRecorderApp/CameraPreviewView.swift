@@ -4,6 +4,7 @@ import QuartzCore
 
 final class CameraPreviewView: NSView {
     private let unavailableOverlay = PreviewUnavailableOverlay(kind: .camera)
+    let thumbnailSampler = LivePreviewThumbnailSampler()
     private let imageLayer = CALayer()
     private var previewLayer: AVCaptureVideoPreviewLayer?
     private var sampleBufferLayer: AVSampleBufferDisplayLayer?
@@ -108,6 +109,7 @@ final class CameraPreviewView: NSView {
         sampleBufferLayer?.removeFromSuperlayer()
         sampleBufferLayer = nil
         imageLayer.contents = image
+        thumbnailSampler.offer(image)
         sourceAspectRatio = overrideAspectRatio ?? CGFloat(image.width) / max(1, CGFloat(image.height))
         syncPreviewLayerFrame()
         hideUnavailableOverlay()
@@ -119,6 +121,7 @@ final class CameraPreviewView: NSView {
         height: Int,
         sourceAspectRatio overrideAspectRatio: CGFloat? = nil
     ) {
+        thumbnailSampler.offer(sampleBuffer)
         previewLayer?.removeFromSuperlayer()
         previewLayer = nil
         imageLayer.contents = nil

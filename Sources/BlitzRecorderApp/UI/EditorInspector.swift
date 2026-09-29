@@ -36,16 +36,21 @@ struct EditorInspector: View {
             divider
             switch inspectorTab {
             case .audio:
-                VStack(spacing: 0) {
-                    EditorAudioInspector(configuration: .init(vm: vm, playback: playback))
-                    divider
-                    EditorBackgroundMusicControl(
-                        backgroundMusic: $backgroundMusic,
-                        backgroundMusicBookmarkData: $backgroundMusicBookmarkData,
-                        persist: persistEditorState
-                    )
-                    .padding(14)
-                }
+                EditorInspectorPane(configuration: .init(
+                    title: "Audio",
+                    detail: "Clean up your voice and add background music.",
+                    showsFooter: false,
+                    content: {
+                        EditorAudioInspector(configuration: .init(vm: vm, playback: playback))
+                        Rectangle().fill(BlitzUI.separator).frame(height: 1)
+                        EditorBackgroundMusicControl(
+                            backgroundMusic: $backgroundMusic,
+                            backgroundMusicBookmarkData: $backgroundMusicBookmarkData,
+                            persist: persistEditorState
+                        )
+                    },
+                    footer: { EmptyView() }
+                ))
             case .privacy:
                 EditorPrivacyInspector(configuration: .init(vm: vm, playback: playback, session: privacy))
             case .silence:
@@ -66,45 +71,40 @@ struct EditorInspector: View {
                 ))
             case .blitzReels:
                 if let project {
-                    VStack(spacing: 0) {
-                        BlitzUI.sectionLabel("BlitzReels", icon: "arrow.up.right")
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(14)
-                        BlitzReelsHandoffPanel(project: project, settings: vm.settings)
-                    }
+                    BlitzReelsHandoffPanel(project: project, settings: vm.settings)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .background(BlitzUI.panelBackground)
                 }
-            default:
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        switch inspectorTab {
-                        case .layout:
-                            EditorLayoutInspector(
-                                vm: vm,
-                                playback: playback,
-                                sceneEvents: sceneEvents,
-                                captureLayout: captureLayout,
-                                canvasAspectRatio: canvasAspectRatio,
-                                recordedVideoSources: recordedVideoSources,
-                                scenePresetPreview: scenePresetPreview,
-                                cameraAssetID: cameraAssetID,
-                                showsSourceFraming: $showsSourceFraming,
-                                framingSource: $framingSource,
-                                screenZoomDraft: $screenZoomDraft,
-                                cameraZoomDraft: $cameraZoomDraft,
-                                cameraCropDraft: $cameraCropDraft,
-                                canvasSceneDraft: $canvasSceneDraft,
-                                canvasCommitTask: $canvasCommitTask,
-                                preservesCanvasPreviewOnNextProjectRefresh: $preservesCanvasPreviewOnNextProjectRefresh,
-                                selection: $selection,
-                                editErrorMessage: $editErrorMessage,
-                                aspectRatioLockedKinds: $aspectRatioLockedKinds
-                            )
-                        default: EmptyView()
-                        }
-                    }
-                    .padding(14)
-                }
-                .scrollIndicators(.hidden)
-                .id(inspectorTab)
+            case .layout:
+                EditorInspectorPane(configuration: .init(
+                    title: "Layout",
+                    detail: "Arrange your screen and camera on the canvas.",
+                    showsFooter: false,
+                    content: {
+                        EditorLayoutInspector(
+                            vm: vm,
+                            playback: playback,
+                            sceneEvents: sceneEvents,
+                            captureLayout: captureLayout,
+                            canvasAspectRatio: canvasAspectRatio,
+                            recordedVideoSources: recordedVideoSources,
+                            scenePresetPreview: scenePresetPreview,
+                            cameraAssetID: cameraAssetID,
+                            showsSourceFraming: $showsSourceFraming,
+                            framingSource: $framingSource,
+                            screenZoomDraft: $screenZoomDraft,
+                            cameraZoomDraft: $cameraZoomDraft,
+                            cameraCropDraft: $cameraCropDraft,
+                            canvasSceneDraft: $canvasSceneDraft,
+                            canvasCommitTask: $canvasCommitTask,
+                            preservesCanvasPreviewOnNextProjectRefresh: $preservesCanvasPreviewOnNextProjectRefresh,
+                            selection: $selection,
+                            editErrorMessage: $editErrorMessage,
+                            aspectRatioLockedKinds: $aspectRatioLockedKinds
+                        )
+                    },
+                    footer: { EmptyView() }
+                ))
             }
         }
     }
