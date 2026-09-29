@@ -16,15 +16,15 @@ export type FaqItem = { q: string; a: string };
 export const faqs: FaqItem[] = [
   {
     q: "Do I need an account or a license key?",
-    a: "No. Recording, editing, 4K and 60 fps export, transcripts, and the iPhone camera work without an account, email, or key. A separate BlitzRecorder account is needed only for paid video hosting. Sending videos to BlitzReels is an optional integration.",
+    a: "No. Recording, editing, 4K and 60 fps export, transcripts, and the iPhone camera work without an account, email, or key. Share links need a BlitzRecorder account, which you sign in to with an email code. Sending videos to BlitzReels is an optional integration.",
   },
   {
-    q: "Is it really free?",
-    a: "Yes. The source is public under AGPL-3.0, and the signed Mac app is a free download. There is no watermark, export limit, or subscription.",
+    q: "What does video hosting include?",
+    a: "Hosting is €9 a month plus tax: 50 GB of storage, 5 hours of new uploads every 30 days, and streaming up to 1080p. Each video can be up to an hour and 5 GB. Cancel from the app. Links stop when the subscription ends, and files are removed 30 days later.",
   },
   {
     q: "Where do my recordings go?",
-    a: "To a folder you choose on your Mac. Transcription runs on your Mac too. The apps include no analytics or crash-reporting SDK.",
+    a: "To a folder you choose on your Mac, with exports in a folder of their own. Transcription runs on your Mac too. Nothing is uploaded unless you share a link. The apps include no analytics or crash-reporting SDK.",
   },
   {
     q: "Which Macs are supported?",
@@ -114,6 +114,7 @@ export const pages: Record<"ios" | "macos", ProductPageData> = {
       "Silence detection, text, zoom, and layouts in the editor.",
       "Transcripts with speakers, made on your Mac.",
       "Separate source files, so any take can be edited again.",
+      "Optional share links with a transcript and chapters.",
     ],
     requirement: requirements.macos,
     screensTitle: "How it works",
@@ -131,8 +132,8 @@ export const pages: Record<"ios" | "macos", ProductPageData> = {
         text: "Remove silences, adjust crops and layouts, add text and zoom, then read the transcript.",
       },
       {
-        title: "Export or send.",
-        text: "Export up to 4K at 60 fps and up to 2x speed, or send the MP4 to BlitzReels for captions.",
+        title: "Export or share.",
+        text: "Export up to 4K at 60 fps and up to 2x speed, share a link with the transcript and chapters, or send the MP4 to BlitzReels for captions.",
       },
     ],
   },

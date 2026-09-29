@@ -1,10 +1,10 @@
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { hostingPool, signalJob, transaction } from "./db";
+import { hostingPool, transaction } from "./db";
 import {
   assertHostingEnabled, HostingError, PART_BYTES, UPLOAD_SECONDS, parseUploadInput,
   publicAsset, required, reservationBytes, type HostedAsset, type HostingAccount,
 } from "./model";
-import { createUpload, completeUpload, signPart, uploadParts } from "./r2";
+import { createUpload, completeUpload, signPart, uploadParts, signalJob } from "./r2";
 import { parseVideoDetails } from "./details";
 import { accountForToken } from "./account";
 import { HOSTING_PLAN } from "./plan";

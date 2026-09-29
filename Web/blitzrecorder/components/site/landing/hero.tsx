@@ -1,13 +1,12 @@
-import Image from "next/image";
 import { ChevronDown } from "@/components/site/icons";
-import { AppWindow } from "@/components/site/app-window";
 import { DownloadButton, DownloadMeta } from "@/components/site/download-button";
 import { JourneySectionView } from "@/components/site/journey-markers";
 import { Section } from "@/components/ui/layout";
 import { Heading, Paragraph } from "@/components/ui/typography";
 import { revealDelay } from "@/components/site/landing/reveal";
 import { trackLandingCtaClicked } from "@/components/site/landing/tracking";
-import { assets } from "@/lib/assets";
+import { trackJourneyEvent } from "@/lib/journey-events";
+import { assets, presentationFilm } from "@/lib/assets";
 
 export function Hero() {
   return (
@@ -26,10 +25,10 @@ export function Hero() {
 
         <Paragraph
           data-reveal
-          className="mx-auto mt-6 max-w-[32rem] text-balance sm:text-xl sm:leading-8"
+          className="mx-auto mt-6 max-w-[34rem] text-balance sm:text-xl sm:leading-8"
           style={revealDelay("80ms")}
         >
-          Capture your screen and camera in one take, then cut it on a timeline.
+          Capture your screen and camera in one take, cut it on a timeline, then export or share a link.
           Free and open source.
         </Paragraph>
 
@@ -59,15 +58,26 @@ export function Hero() {
         style={revealDelay("240ms")}
         className="mx-auto mt-16 w-[min(1180px,calc(100%-24px))] sm:mt-20 sm:w-[min(1180px,calc(100%-48px))]"
       >
-        <AppWindow className="max-sm:rounded-tile">
-          <Image
-            src={assets.editor}
-            alt="The BlitzRecorder editor with a vertical screen and camera split, and screen, camera, mic, and Mac audio tracks on the timeline"
-            priority
-            sizes="(min-width: 1280px) 1180px, 100vw"
-            className="h-auto w-full max-sm:w-[190%] max-sm:max-w-none max-sm:-translate-x-[23%]"
+        <div className="app-surface overflow-hidden rounded-card bg-black max-sm:rounded-tile">
+          <video
+            src={presentationFilm}
+            poster={assets.presentationPoster.src}
+            width={1920}
+            height={1080}
+            controls
+            playsInline
+            preload="metadata"
+            aria-label="A 30-second film showing BlitzRecorder recording, transcribing, and exporting a take"
+            onPlay={(event) =>
+              trackJourneyEvent({
+                eventName: "landing_film_played",
+                area: "landing",
+                payload: { page: "home", resumed: event.currentTarget.currentTime > 0 },
+              })
+            }
+            className="block aspect-video h-auto w-full"
           />
-        </AppWindow>
+        </div>
       </div>
     </div>
   );

@@ -3,23 +3,8 @@ import Link from "next/link";
 import { ArrowRight, Check } from "@/components/site/icons";
 import { JourneySectionView } from "@/components/site/journey-markers";
 import { Section } from "@/components/ui/layout";
-import { ChapterHeader, ChapterPoints, chapters, type ChapterPoint } from "@/components/site/landing/chapter";
+import { ChapterHeader, chapters } from "@/components/site/landing/chapter";
 import { assets } from "@/lib/assets";
-
-const steps: ChapterPoint[] = [
-  {
-    title: "Pair with a code",
-    body: "Open BlitzRecorder Camera on your iPhone, pick it on the Mac, and type the six digits. Same network, no account.",
-  },
-  {
-    title: "Frame it from your desk",
-    body: "The live preview and camera controls sit in the studio next to your screen, so you never walk to the phone.",
-  },
-  {
-    title: "Get the full-quality file",
-    body: "The iPhone records on the device. When you stop, the file moves into the take, and interrupted transfers resume.",
-  },
-];
 
 export function CameraChapter() {
   return (
@@ -28,7 +13,7 @@ export function CameraChapter() {
       <ChapterHeader
         mark={chapters.camera}
         title="Use your iPhone as the camera."
-        lede="The iPhone records at full quality and sends the file to your Mac when you stop. Sharper than Continuity Camera."
+        lede="Pair with a six-digit code and frame the shot from your Mac. The iPhone records at full quality, sharper than Continuity Camera, and the file lands in your take when you stop."
         aside={
           <Link
             href="/ios"
@@ -79,8 +64,6 @@ export function CameraChapter() {
           </InspectorSection>
         </div>
       </div>
-
-      <ChapterPoints points={steps} />
     </Section>
   );
 }

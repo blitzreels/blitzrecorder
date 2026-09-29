@@ -19,6 +19,7 @@ const database = process.env.HOSTING_TEST_DATABASE_URL;
 const integration = database ? test : test.skip;
 const schema = `hosting_test_${randomUUID().replaceAll("-", "")}`;
 let admin: Pool;
+let failJobNotification = false;
 
 test.before(async () => {
   if (!database) return;
@@ -39,6 +40,10 @@ test.before(async () => {
   await hostingPool().query(await readFile(new URL("../../migrations/004-hosting-usage.sql", import.meta.url), "utf8"));
   r2().middlewareStack.add(() => async (args) => {
     const value = args.input as { Key?: string };
+    if (value.Key?.startsWith("hosting-jobs/") && failJobNotification) {
+      failJobNotification = false;
+      throw new Error("Notification interrupted");
+    }
     return { response: {}, output: { $metadata: {}, UploadId: "test-upload", ContentLength: 1024,
       Metadata: { asset: value.Key?.split("/")[2] } } };
   }, {
@@ -62,6 +67,18 @@ async function account({ limit, active }: { limit: number; active: boolean }): P
 }
 
 const input = { title: "A recording", bytes: 1024, duration: 12, contentType: "video/mp4", requestKey: "a".repeat(20) };
+
+integration("an interrupted worker notification retries without consuming the upload allowance twice", async () => {
+  const owner = await account({ limit: 50_000_000_000, active: true });
+  const upload = await beginUpload({ account: owner, body: input });
+  failJobNotification = true;
+  try {
+    await assert.rejects(finishUpload({ account: owner, id: upload.id }), /Notification interrupted/);
+    assert.equal((await finishUpload({ account: owner, id: upload.id })).status, "queued");
+    const usage = await hostingPool().query("SELECT SUM(seconds) AS seconds FROM hosting_upload_usage WHERE account_id=$1", [owner.id]);
+    assert.equal(Number(usage.rows[0].seconds), input.duration);
+  } finally { failJobNotification = false; }
+});
 
 integration("upload allowance survives deletion, rejects concurrent overspend and expires after 30 days", async () => {
   const owner = await account({ limit: 50_000_000_000, active: true });

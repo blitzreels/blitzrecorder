@@ -109,3 +109,22 @@ export async function deletePrefix(prefix: string) {
     if (deleted.Errors?.length) throw new Error("Some hosted files could not be deleted.");
   }
 }
+
+export async function signalJob(id: string) {
+  await r2().send(new PutObjectCommand({ Bucket: bucket(), Key: `hosting-jobs/${id}`, Body: "", ContentLength: 0 }));
+}
+
+export async function pendingJobSignals() {
+  const result = await r2().send(new ListObjectsV2Command({ Bucket: bucket(), Prefix: "hosting-jobs/", MaxKeys: 1000 }));
+  return (result.Contents ?? []).flatMap(({ Key, LastModified }) => {
+    const id = Key?.match(/^hosting-jobs\/([a-f0-9-]{36})$/)?.[1];
+    return id && LastModified ? [{ id, modifiedAt: LastModified }] : [];
+  });
+}
+
+export async function clearJobSignals(ids: string[]) {
+  if (!ids.length) return;
+  const result = await r2().send(new DeleteObjectsCommand({ Bucket: bucket(),
+    Delete: { Objects: ids.map(id => ({ Key: `hosting-jobs/${id}` })), Quiet: true } }));
+  if (result.Errors?.length) throw new Error("Job notifications could not be cleared.");
+}

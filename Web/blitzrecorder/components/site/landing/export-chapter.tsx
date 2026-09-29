@@ -10,17 +10,18 @@ import { TAKE_SECONDS, formatTime, silentSeconds } from "@/components/site/landi
 import { trackJourneyEvent } from "@/lib/journey-events";
 import { cn } from "@/lib/utils";
 
-type Resolution = "1080p" | "4K";
+type Resolution = "1080p" | "1440p" | "4K";
 type FrameRate = 30 | 60;
 
 const MEGABITS: Record<Resolution, Record<FrameRate, number>> = {
   "1080p": { 30: 12, 60: 18 },
+  "1440p": { 30: 24, 60: 36 },
   "4K": { 30: 40, 60: 60 },
 };
 
 const points: ChapterPoint[] = [
-  { title: "Up to 4K at 60 fps", body: "Metal rendering and hardware encoding keep exports quick." },
-  { title: "Speed up slow talk", body: "Export from 1.0x to 2.0x in 0.1 steps without touching the edit." },
+  { title: "Fast on any Mac", body: "Metal rendering and hardware encoding, on Apple silicon and Intel." },
+  { title: "Its own folder", body: "Exports go to a folder you pick. Your recordings stay put in the project library." },
   { title: "Captions with BlitzReels", body: "Sign in once, send the MP4, and get captions and B-roll back." },
 ];
 
@@ -48,7 +49,7 @@ export function ExportChapter() {
       <ChapterHeader
         mark={chapters.export}
         title="Export in 4K and post anywhere."
-        lede="Save an MP4 at up to 60 fps and up to 2x speed. The size estimate updates as you go."
+        lede="Save an MP4 at 60 fps and speed up slow talk to 2x, in 0.1 steps. The size estimate updates as you go."
         aside={
           <BlitzReelsLink
             content="landing_export"
@@ -64,7 +65,7 @@ export function ExportChapter() {
         <div className="grid gap-6 md:grid-cols-3">
           <Segmented
             legend="Resolution"
-            options={["1080p", "4K"] as const}
+            options={["1080p", "1440p", "4K"] as const}
             value={resolution}
             format={(value) => value}
             onChange={(value) => {
@@ -139,7 +140,10 @@ function Segmented<T extends string | number>({
   return (
     <fieldset>
       <legend className="text-xs text-faint">{legend}</legend>
-      <div className="mt-2 grid grid-cols-2 gap-0.5 rounded-control bg-fill-control p-0.5">
+      <div
+        className="mt-2 grid gap-0.5 rounded-control bg-fill-control p-0.5"
+        style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
+      >
         {options.map((option) => (
           <button
             key={option}

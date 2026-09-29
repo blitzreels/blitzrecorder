@@ -1,0 +1,8 @@
+*
+!Dockerfile.hosting-worker
+!package.json
+!package-lock.json
+!lib/
+!lib/**
+!scripts/
+!scripts/hosting-worker.ts

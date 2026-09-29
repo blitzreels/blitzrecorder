@@ -71,16 +71,16 @@ function boxStyle(box: Box): CSSProperties {
 
 const points: ChapterPoint[] = [
   {
-    title: "Every source in one take",
-    body: "A screen, window, or app, plus a camera, your microphone, and Mac audio.",
-  },
-  {
     title: "Switch scenes while you talk",
     body: "Move from a split to your camera alone mid-sentence. Nothing to redo later.",
   },
   {
     title: "Backgrounds and crops",
     body: "Padding, corners, and backgrounds are set before the take, not after.",
+  },
+  {
+    title: "Know when it's ready",
+    body: "The Dock icon shows when you're recording, and a progress bar tracks the take as it finalizes.",
   },
 ];
 

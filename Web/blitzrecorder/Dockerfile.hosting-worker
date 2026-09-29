@@ -1,0 +1,16 @@
+FROM node:24-bookworm-slim AS dependencies
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts --no-audit --no-fund
+
+FROM node:24-bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=dependencies /app/node_modules ./node_modules
+COPY package.json ./
+COPY lib ./lib
+COPY scripts/hosting-worker.ts ./scripts/hosting-worker.ts
+USER node
+ENV NODE_ENV=production
+STOPSIGNAL SIGTERM
+CMD ["sh", "-c", "rm -rf /tmp/blitz-hosting-* && exec node --import tsx scripts/hosting-worker.ts"]

@@ -9,9 +9,9 @@ const items = [
     body: "Preview the latest export, rename takes, copy transcripts, and open the files in Finder.",
   },
   {
-    label: "Source files",
-    title: "Nothing is baked in",
-    body: "Screen, camera, and audio are saved separately, so you can open any take and edit it again.",
+    label: "Navigation",
+    title: "Projects, record, edit",
+    body: "A compact sidebar moves between the library, the studio, and the editor in one window.",
   },
   {
     label: "Agents",

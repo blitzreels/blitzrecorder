@@ -12,6 +12,7 @@ const links = [
   { href: "/#camera", label: "iPhone" },
   { href: "/#edit", label: "Edit" },
   { href: "/#export", label: "Export" },
+  { href: "/#share", label: "Share" },
   { href: "/#free", label: "Free" },
 ];
 
