@@ -202,7 +202,7 @@ final class HostedVideoTests: XCTestCase {
         let first = try await client.upload(request)
         let updates = await progress.values
         XCTAssertEqual(updates.first, .preparing)
-        XCTAssertEqual(updates.last, .processing)
+        XCTAssertEqual(updates.last, .processing(nil))
         let uploaded = updates.compactMap { update -> HostingUploadBytes? in
             guard case .uploading(let bytes) = update else { return nil }
             return bytes

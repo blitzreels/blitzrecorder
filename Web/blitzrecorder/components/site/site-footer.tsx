@@ -15,6 +15,7 @@ type FooterLink =
 const productLinks: FooterLink[] = [
   { kind: "internal", label: "Mac app", href: "/macos" },
   { kind: "internal", label: "iPhone camera", href: "/ios" },
+  { kind: "internal", label: "Your shared videos", href: "/hosting/videos" },
   { kind: "external", label: "Windows Studio", href: RELEASES_URL },
   { kind: "external", label: "Release notes", href: RELEASES_URL },
 ];

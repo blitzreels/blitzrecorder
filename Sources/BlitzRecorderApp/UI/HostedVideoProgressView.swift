@@ -19,8 +19,8 @@ struct HostedVideoProgressPresentation {
             .init(stage: 1, title: "Connecting to cloud", detail: "Your local copy is saved. Preparing a secure upload.", fraction: nil)
         case .uploading(let bytes):
             .init(stage: 1, title: "Uploading video", detail: bytes.detail, fraction: bytes.fraction)
-        case .processing:
-            .init(stage: 2, title: "Preparing playback", detail: "Upload complete. Creating streaming quality options.", fraction: nil)
+        case .processing(let fraction):
+            .init(stage: 2, title: "Preparing playback", detail: "Upload complete. Creating streaming quality options.", fraction: fraction)
         }
     }
 }
