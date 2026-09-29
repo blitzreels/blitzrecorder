@@ -204,6 +204,24 @@ final class HostedVideoAccountTests: XCTestCase {
     }
 
     @MainActor
+    func testReadyMP4KeepsItsLinkWhileAdaptivePlaybackIsProcessingOrFailed() async throws {
+        let fixture = AccountFixture()
+        defer { fixture.cleanup() }
+        try fixture.credentials.save(fixture.server.token)
+        fixture.server.active = true
+        for status in ["processing", "failed", "ready"] {
+            var video = libraryVideo()
+            video["streamingStatus"] = status
+            fixture.server.assets = [video]
+            await fixture.controller.refresh()
+            let saved = try XCTUnwrap(fixture.controller.videos.first)
+            XCTAssertNotNil(fixture.controller.watchURL(saved))
+            XCTAssertEqual(saved.isProcessing, status == "processing")
+            XCTAssertTrue(saved.statusLabel.hasPrefix("Ready to share"))
+        }
+    }
+
+    @MainActor
     func testSharedLibraryRendersReadyProcessingAndFailedVideosAtNarrowWidths() async throws {
         let fixture = AccountFixture()
         defer { fixture.cleanup() }
@@ -218,7 +236,9 @@ final class HostedVideoAccountTests: XCTestCase {
         failed["status"] = "failed"
         failed["error"] = "The uploaded file could not be decoded. Export it again to retry."
         failed["sharePath"] = NSNull()
-        fixture.server.assets = [libraryVideo(), processing, failed]
+        var progressive = libraryVideo()
+        progressive["streamingStatus"] = "processing"
+        fixture.server.assets = [progressive, processing, failed]
         await fixture.controller.refresh()
         for width in [620.0, 1000.0] {
             let host = NSHostingView(rootView: HostedVideoLibraryView(controller: fixture.controller, showRecordings: {})

@@ -78,7 +78,7 @@ test("the uploader reuses generated title and summary without forwarding arbitra
     const detailsPath = path.join(folder, "details.json");
     await writeFile(detailsPath, JSON.stringify({ ...EMPTY_DETAILS, title: "Generated title", summary: "Generated summary", mediaPath: "/private/source" }));
     const info = { duration: 10, width: 1920, height: 1080, hasAudio: true, frameRate: 30, codec: "h264",
-      title: "Embedded title", description: "Embedded description", recordedAt: null };
+      title: "Embedded title", description: "Embedded description", recordedAt: null, progressive: true };
     const result = await localVideoDetails({ file: "/local/export.mp4", info, projectPath: null, transcriptPath: null, detailsPath, playbackRate: 1 });
     assert.equal(result.title, "Generated title");
     assert.equal(result.details.summary, "Generated summary");

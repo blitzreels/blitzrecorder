@@ -49,6 +49,7 @@ export type HostedAsset = {
   status: AssetStatus;
   content_type: string;
   source_key: string;
+  source_ready: boolean;
   upload_id: string | null;
   declared_bytes: string;
   declared_seconds: number;
@@ -122,10 +123,12 @@ export function safeDeliveryPath(path: string): boolean {
 }
 
 export function publicAsset(asset: HostedAsset) {
+  const playable = asset.status !== "revoked" && (asset.source_ready || asset.status === "ready");
   return {
-    id: asset.id, title: asset.title, status: asset.status,
-    sharePath: asset.status === "ready" ? `/s/${asset.slug}` : null,
+    id: asset.id, title: asset.title, status: playable ? "ready" : asset.status,
+    streamingStatus: asset.status,
+    sharePath: playable ? `/s/${asset.slug}` : null,
     duration: asset.duration, width: asset.width, height: asset.height,
-    bytes: Number(asset.stored_bytes), error: asset.error,
+    bytes: Number(asset.stored_bytes) || Number(asset.declared_bytes), error: playable ? null : asset.error,
   };
 }

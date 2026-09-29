@@ -11,11 +11,12 @@ struct HostedLibraryVideo: Codable, Identifiable, Equatable {
     let height: Int?
     let bytes: Int64
     let error: String?
+    var streamingStatus: String? = nil
 
-    var isProcessing: Bool { ["queued", "processing"].contains(status) }
+    var isProcessing: Bool { ["queued", "processing"].contains(streamingStatus ?? status) }
     var statusLabel: String {
         switch status {
-        case "ready": "Ready to share"
+        case "ready": isProcessing ? "Ready to share · optimizing playback" : "Ready to share"
         case "uploading": "Upload incomplete"
         case "queued": "Waiting to process"
         case "processing": "Preparing playback"
@@ -251,7 +252,15 @@ final class HostedVideoShareController {
             defer { access.stop(); isRunning = false; task = nil }
             do {
                 shareURL = try await client.upload(.init(fileURL: fileURL, token: token, metadata: metadata,
-                    progress: { update in await MainActor.run { self.transferProgress = update } }))
+                    progress: { update in await MainActor.run {
+                        let beginsUpload: Bool
+                        if case .uploading = update {
+                            if case .uploading = self.transferProgress { beginsUpload = false }
+                            else { beginsUpload = true }
+                        } else { beginsUpload = false }
+                        self.transferProgress = update
+                        if beginsUpload || update == .processing { Task { await self.refreshVideos() } }
+                    } }))
                 if let shareURL, let projectPath {
                     rememberShare(.init(projectPath: projectPath, url: shareURL))
                 }

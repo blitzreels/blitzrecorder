@@ -47,7 +47,7 @@ final class HostedVideoTests: XCTestCase {
         XCTAssertEqual(size, CGSize(width: 1920, height: 1080))
         XCTAssertEqual(fps, 30, accuracy: 0.1)
         XCTAssertEqual(duration.seconds, 0.8 / 1.3, accuracy: 0.1)
-        XCTAssertEqual(CMFormatDescriptionGetMediaSubType(try XCTUnwrap(formats.first)), kCMVideoCodecType_HEVC)
+        XCTAssertEqual(CMFormatDescriptionGetMediaSubType(try XCTUnwrap(formats.first)), kCMVideoCodecType_H264)
         let decoded = try await SyntheticRecording.inspectVideo(url)
         XCTAssertGreaterThan(decoded.frames, 15)
         if let directory = ProcessInfo.processInfo.environment["BLITZRECORDER_EXPORT_UI_PROOF"] {
@@ -96,6 +96,8 @@ final class HostedVideoTests: XCTestCase {
             let tracks = try await asset.loadTracks(withMediaType: .video)
             let video = try XCTUnwrap(tracks.first)
             let size = try await video.load(.naturalSize)
+            let formats = try await video.load(.formatDescriptions)
+            XCTAssertEqual(CMFormatDescriptionGetMediaSubType(try XCTUnwrap(formats.first)), kCMVideoCodecType_H264)
             let expected = OutputResolution.p1080.dimensions(for: layout)
             XCTAssertEqual(size, CGSize(width: expected.width, height: expected.height))
             let fps = try await video.load(.nominalFrameRate)
@@ -117,8 +119,11 @@ final class HostedVideoTests: XCTestCase {
             let repeatCopy = try await HostingSharingCopy.prepare(.init(fileURL: original, progress: { _ in }))
             XCTAssertEqual(try HostingExportMetadata.fingerprint(repeatCopy), try HostingExportMetadata.fingerprint(copy))
         }
-        let unchanged = try await HostingSharingCopy.prepare(.init(fileURL: fixture.take.screenURL, progress: { _ in }))
-        XCTAssertEqual(unchanged, fixture.take.screenURL)
+        let remuxed = try await HostingSharingCopy.prepare(.init(fileURL: fixture.take.screenURL, progress: { _ in }))
+        defer { try? FileManager.default.removeItem(at: remuxed) }
+        XCTAssertNotEqual(remuxed, fixture.take.screenURL)
+        let unchanged = try await HostingSharingCopy.prepare(.init(fileURL: remuxed, progress: { _ in }))
+        XCTAssertEqual(unchanged, remuxed)
     }
 
     func testParallelProgressDoesNotDoubleCountRetriesOrMoveBackwards() async {
@@ -187,7 +192,9 @@ final class HostedVideoTests: XCTestCase {
     func testResumingUploadSkipsSavedPartsRetriesAndReturnsSameLink() async throws {
         let fixture = try SyntheticRecording()
         try await fixture.writeVideo(.init(url: fixture.take.screenURL, frames: 60))
-        let bytes = try XCTUnwrap(fixture.take.screenURL.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+        let export = try await HostingSharingCopy.prepare(.init(fileURL: fixture.take.screenURL, progress: { _ in }))
+        defer { try? FileManager.default.removeItem(at: export) }
+        let bytes = try XCTUnwrap(export.resourceValues(forKeys: [.fileSizeKey]).fileSize)
         let server = HostingTestServer(.init(bytes: bytes, partDivisor: 8, permanentFailure: false))
         HostingTestProtocol.server = server
         defer { HostingTestProtocol.server = nil }
@@ -197,7 +204,7 @@ final class HostedVideoTests: XCTestCase {
         defer { network.invalidateAndCancel() }
         let client = HostingClient(origin: URL(string: "https://hosting.test")!, session: network)
         let progress = HostingTestProgress()
-        let request = HostingClient.Upload(fileURL: fixture.take.screenURL, token: "test-token",
+        let request = HostingClient.Upload(fileURL: export, token: "test-token",
             metadata: .init(title: "Test video", details: .empty), progress: { await progress.append($0) })
         let first = try await client.upload(request)
         let updates = await progress.values
@@ -226,7 +233,9 @@ final class HostedVideoTests: XCTestCase {
     func testFailedPartNeverCompletesTheUpload() async throws {
         let fixture = try SyntheticRecording()
         try await fixture.writeVideo(.init(url: fixture.take.screenURL, frames: 15))
-        let bytes = try XCTUnwrap(fixture.take.screenURL.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+        let export = try await HostingSharingCopy.prepare(.init(fileURL: fixture.take.screenURL, progress: { _ in }))
+        defer { try? FileManager.default.removeItem(at: export) }
+        let bytes = try XCTUnwrap(export.resourceValues(forKeys: [.fileSizeKey]).fileSize)
         let server = HostingTestServer(.init(bytes: bytes, partDivisor: 8, permanentFailure: true))
         HostingTestProtocol.server = server
         defer { HostingTestProtocol.server = nil }
@@ -236,7 +245,7 @@ final class HostedVideoTests: XCTestCase {
         defer { network.invalidateAndCancel() }
         let client = HostingClient(origin: URL(string: "https://hosting.test")!, session: network)
         do {
-            _ = try await client.upload(.init(fileURL: fixture.take.screenURL, token: "test-token",
+            _ = try await client.upload(.init(fileURL: export, token: "test-token",
                 metadata: .init(title: "Test video", details: .empty), progress: { _ in }))
             XCTFail("A failed part must not publish a video.")
         } catch is HostingFailure {}
@@ -248,7 +257,9 @@ final class HostedVideoTests: XCTestCase {
     func testCancellingParallelUploadNeverPublishesOrStartsMoreParts() async throws {
         let fixture = try SyntheticRecording()
         try await fixture.writeVideo(.init(url: fixture.take.screenURL, frames: 15))
-        let bytes = try XCTUnwrap(fixture.take.screenURL.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+        let export = try await HostingSharingCopy.prepare(.init(fileURL: fixture.take.screenURL, progress: { _ in }))
+        defer { try? FileManager.default.removeItem(at: export) }
+        let bytes = try XCTUnwrap(export.resourceValues(forKeys: [.fileSizeKey]).fileSize)
         let server = HostingTestServer(.init(bytes: bytes, partDivisor: 8, permanentFailure: false))
         HostingTestProtocol.server = server
         defer { HostingTestProtocol.server = nil }
@@ -258,7 +269,7 @@ final class HostedVideoTests: XCTestCase {
         defer { network.invalidateAndCancel() }
         let client = HostingClient(origin: URL(string: "https://hosting.test")!, session: network)
         let task = Task {
-            try await client.upload(.init(fileURL: fixture.take.screenURL, token: "test-token",
+            try await client.upload(.init(fileURL: export, token: "test-token",
                 metadata: .init(title: "Test video", details: .empty), progress: { _ in }))
         }
         let deadline = ContinuousClock.now.advanced(by: .seconds(3))

@@ -29,7 +29,7 @@ struct EditorExportRecipe {
             sourceFramesPerSecond: request.sourceFramesPerSecond,
             customResolution: sharing ? (request.sourceResolution.height < 1080 ? request.sourceResolution : .p1080) : request.customResolution,
             customFramesPerSecond: sharing ? request.sourceFramesPerSecond : request.customFramesPerSecond,
-            customVideoQuality: sharing ? .high : request.customVideoQuality
+            customVideoQuality: sharing ? .web : request.customVideoQuality
         )
         let dimensions = profile.resolution.dimensions(for: request.layout)
         let encoding = profile.videoQuality.encodingProfile(

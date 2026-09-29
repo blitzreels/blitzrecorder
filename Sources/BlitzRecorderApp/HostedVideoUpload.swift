@@ -295,18 +295,28 @@ enum HostingSharingCopy {
         let displaySize = bounds.size
         let formats = try await track.load(.formatDescriptions)
         let codec = formats.first.map(CMFormatDescriptionGetMediaSubType)
-        if min(displaySize.width, displaySize.height) <= 1080, max(displaySize.width, displaySize.height) <= 1920,
-           codec == kCMVideoCodecType_HEVC || codec == kCMVideoCodecType_H264 {
+        let audio = try await asset.loadTracks(withMediaType: .audio)
+        var compatibleAudio = true
+        for track in audio {
+            let formats = try await track.load(.formatDescriptions)
+            if !formats.allSatisfy({ CMFormatDescriptionGetMediaSubType($0) == kAudioFormatMPEG4AAC }) {
+                compatibleAudio = false
+            }
+        }
+        let compatibleVideo = min(displaySize.width, displaySize.height) <= 1080
+            && max(displaySize.width, displaySize.height) <= 1920 && codec == kCMVideoCodecType_H264 && compatibleAudio
+        if compatibleVideo, request.fileURL.pathExtension.lowercased() == "mp4", try hasFastStart(request.fileURL) {
             return request.fileURL
         }
         let fingerprint = try HostingExportMetadata.fingerprint(request.fileURL)
         let directory = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask,
-            appropriateFor: nil, create: true).appendingPathComponent("BlitzRecorder/Sharing1080-v1", isDirectory: true)
+            appropriateFor: nil, create: true).appendingPathComponent("BlitzRecorder/Sharing1080-h264-v2", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let cached = directory.appendingPathComponent(fingerprint).appendingPathExtension("mp4")
         if FileManager.default.fileExists(atPath: cached.path) { return cached }
         let output = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension("mp4")
-        guard let exporter = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHEVCHighestQuality) else {
+        guard let exporter = AVAssetExportSession(asset: asset, presetName:
+            compatibleVideo ? AVAssetExportPresetPassthrough : AVAssetExportPresetHighestQuality) else {
             throw HostingFailure(message: "This video could not be prepared for sharing.")
         }
         let scale = min(1, 1080 / min(displaySize.width, displaySize.height), 1920 / max(displaySize.width, displaySize.height))
@@ -325,7 +335,7 @@ enum HostingSharingCopy {
             .concatenating(CGAffineTransform(scaleX: scale, y: scale)), at: .zero)
         instruction.layerInstructions = [layer]
         composition.instructions = [instruction]
-        exporter.videoComposition = composition
+        if !compatibleVideo { exporter.videoComposition = composition }
         exporter.shouldOptimizeForNetworkUse = true
         exporter.metadata = []
         await request.progress(.optimizing(0))
@@ -359,6 +369,29 @@ enum HostingSharingCopy {
             try? FileManager.default.removeItem(at: output)
             throw error
         }
+    }
+
+    private static func hasFastStart(_ url: URL) throws -> Bool {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let size = try handle.seekToEnd()
+        var position: UInt64 = 0
+        for _ in 0..<10_000 {
+            guard position <= size, size - position >= 8 else { return false }
+            try handle.seek(toOffset: position)
+            guard let header = try handle.read(upToCount: 16), header.count >= 8 else { return false }
+            var length = header.prefix(4).reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
+            if length == 1 {
+                guard header.count == 16 else { return false }
+                length = header.suffix(8).reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
+            } else if length == 0 { length = size - position }
+            guard length >= 8, length <= size - position else { return false }
+            let type = String(decoding: header[4..<8], as: UTF8.self)
+            if type == "mdat" { return false }
+            if type == "moov" { return true }
+            position += length
+        }
+        return false
     }
 }
 

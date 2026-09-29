@@ -47,7 +47,8 @@ async function handle(request: Request) {
       authenticateDelivery(request);
       const asset = await sharedAsset(id);
       if (!asset) throw new HostingError({ status: 404, message: "Video unavailable." });
-      result = { prefix: asset.stream_prefix, files: asset.files, ttl: DELIVERY_TTL_SECONDS };
+      result = { prefix: asset.stream_prefix, files: asset.files, ttl: DELIVERY_TTL_SECONDS,
+        source: asset.source_ready ? { key: asset.source_key, bytes: Number(asset.declared_bytes) } : null };
     } else {
       const account = await authenticate(request);
       if (resource === "account" && path.length === 1 && request.method === "GET") result = accountState(account);

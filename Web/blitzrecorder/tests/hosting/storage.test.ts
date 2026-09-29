@@ -6,7 +6,7 @@ import { Pool } from "pg";
 import { beginUpload, authenticate, ownedAsset, revokeAsset, sharedAsset, updateDetails, finishUpload } from "../../lib/hosting/service";
 import { EMPTY_DETAILS } from "../../lib/hosting/details";
 import { hostingPool } from "../../lib/hosting/db";
-import { newAccessToken, tokenHash, parseUploadInput, reservationBytes, type HostingAccount } from "../../lib/hosting/model";
+import { newAccessToken, tokenHash, parseUploadInput, reservationBytes, publicAsset, type HostingAccount } from "../../lib/hosting/model";
 import { r2 } from "../../lib/hosting/r2";
 import type Stripe from "stripe";
 import { getStripe } from "../../lib/payments";
@@ -37,6 +37,7 @@ test.before(async () => {
   await hostingPool().query(await readFile(new URL("../../migrations/002-hosting-details.sql", import.meta.url), "utf8"));
   await hostingPool().query(await readFile(new URL("../../migrations/003-hosting-accounts.sql", import.meta.url), "utf8"));
   await hostingPool().query(await readFile(new URL("../../migrations/004-hosting-usage.sql", import.meta.url), "utf8"));
+  await hostingPool().query(await readFile(new URL("../../migrations/006-hosting-progressive.sql", import.meta.url), "utf8"));
   r2().middlewareStack.add(() => async (args) => {
     const value = args.input as { Key?: string };
     if (value.Key?.startsWith("hosting-jobs/") && failJobNotification) {
@@ -66,6 +67,30 @@ async function account({ limit, active }: { limit: number; active: boolean }): P
 }
 
 const input = { title: "A recording", bytes: 1024, duration: 12, contentType: "video/mp4", requestKey: "a".repeat(20) };
+
+integration("a validated MP4 stays shareable during encoding and after HLS failure, but respects revocation and expiry", async () => {
+  const owner = await account({ limit: 50_000_000_000, active: true });
+  const upload = await beginUpload({ account: owner, body: input });
+  const original = await ownedAsset({ account: owner, id: upload.id });
+  assert.equal(await sharedAsset(original.slug), null);
+  for (const status of ["processing", "failed"]) {
+    await hostingPool().query("UPDATE hosting_assets SET source_ready=true,status=$2,width=1920,height=1080,duration=12 WHERE id=$1",
+      [upload.id, status]);
+    const ready = await sharedAsset(original.slug);
+    assert.ok(ready);
+    const response = publicAsset(ready);
+    assert.equal(response.status, "ready");
+    assert.equal(response.streamingStatus, status);
+    assert.equal(response.sharePath, `/s/${original.slug}`);
+    assert.equal(response.error, null);
+  }
+  await hostingPool().query("UPDATE hosting_accounts SET active_until=now()-interval '1 hour' WHERE id=$1", [owner.id]);
+  assert.equal(await sharedAsset(original.slug), null);
+  await hostingPool().query("UPDATE hosting_accounts SET active_until=now()+interval '1 hour' WHERE id=$1", [owner.id]);
+  await revokeAsset({ account: owner, id: upload.id });
+  assert.equal(await sharedAsset(original.slug), null);
+  assert.equal(publicAsset(await ownedAsset({ account: owner, id: upload.id })).sharePath, null);
+});
 
 integration("an interrupted worker notification retries without consuming the upload allowance twice", async () => {
   const owner = await account({ limit: 50_000_000_000, active: true });

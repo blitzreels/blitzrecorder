@@ -22,8 +22,8 @@ final class EditorExportPresentationTests: XCTestCase {
                     let cloud = EditorExportRecipe.make(request)
                     XCTAssertEqual(cloud.profile.resolution, resolution == .p720 ? .p720 : .p1080)
                     XCTAssertEqual(cloud.profile.framesPerSecond, fps)
-                    XCTAssertEqual(cloud.profile.videoQuality, .high)
-                    XCTAssertEqual(cloud.encoding.codec, .hevc)
+                    XCTAssertEqual(cloud.profile.videoQuality, .web)
+                    XCTAssertEqual(cloud.encoding.codec, .h264)
                     XCTAssertTrue(cloud.summary.contains("1.3×"))
                     var localRequest = request
                     localRequest.destination = .file
