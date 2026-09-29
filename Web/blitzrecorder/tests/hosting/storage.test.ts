@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Pool } from "pg";
-import { beginUpload, authenticate, ownedAsset, revokeAsset, sharedAsset, updateDetails, finishUpload } from "../../lib/hosting/service";
+import { beginUpload, authenticate, ownedAsset, revokeAsset, sharedAsset, updateDetails, finishUpload, uploadPoster } from "../../lib/hosting/service";
 import { EMPTY_DETAILS } from "../../lib/hosting/details";
 import { hostingPool } from "../../lib/hosting/db";
 import { newAccessToken, tokenHash, parseUploadInput, publicAsset, reservationBytes, type HostingAccount } from "../../lib/hosting/model";
@@ -138,6 +138,30 @@ integration("the Mac sees processing progress only while a video is being prepar
   assert.equal(publicAsset(await ownedAsset({ account: owner, id })).progress, 0.42);
   await hostingPool().query("UPDATE hosting_assets SET status='ready' WHERE id=$1", [id]);
   assert.equal(publicAsset(await ownedAsset({ account: owner, id })).progress, null);
+});
+
+integration("a 1080p MP4 plays as soon as its upload completes, with no processing job", async () => {
+  const owner = await account({ limit: 1024 ** 3, active: true });
+  const upload = await beginUpload({ account: owner,
+    body: { ...input, requestKey: "d".repeat(20), video: { width: 1920, height: 1080, frameRate: 30 } } });
+  const stored = await ownedAsset({ account: owner, id: upload.id });
+  assert.match(stored.source_key, /^hosting\/[a-f0-9-]{36}\/[a-f0-9-]{36}\/streams\/[a-f0-9-]{36}\/video\.mp4$/);
+  assert.equal(stored.source_key, `${stored.stream_prefix}video.mp4`);
+  await assert.rejects(uploadPoster({ account: owner, id: upload.id, body: { jpeg: Buffer.from("<html>").toString("base64") } }), { status: 400 });
+  assert.deepEqual(await uploadPoster({ account: owner, id: upload.id,
+    body: { jpeg: Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2]).toString("base64") } }), { saved: true });
+  failJobNotification = true;
+  try {
+    const ready = await finishUpload({ account: owner, id: upload.id });
+    assert.equal(ready.status, "ready");
+    assert.match(ready.sharePath ?? "", /^\/s\/[A-Za-z0-9_-]{24}$/);
+    assert.equal(failJobNotification, true);
+  } finally { failJobNotification = false; }
+  const shared = await sharedAsset(stored.slug);
+  assert.deepEqual(shared?.files.map((file) => file.path), ["video.mp4", "poster.jpg"]);
+  assert.equal(shared?.width, 1920);
+  assert.equal(shared?.duration, input.duration);
+  await assert.rejects(uploadPoster({ account: owner, id: upload.id, body: { jpeg: "" } }), { status: 409 });
 });
 
 integration("stopping a share from the web only works for the owner and ends the public link", async () => {

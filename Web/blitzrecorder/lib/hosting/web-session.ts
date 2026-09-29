@@ -48,11 +48,11 @@ export async function stopSharingVideo({ account, slug }: { account: HostingAcco
 export async function ownerLibrary(account: HostingAccount): Promise<LibraryVideo[]> {
   const media = new URL(required("HOSTING_MEDIA_ORIGIN")).origin;
   const rows = await hostingPool().query<{
-    slug: string; title: string; status: AssetStatus; duration: number | null; declared_seconds: number; created_at: Date;
-  }>(`SELECT slug, title, status, duration, declared_seconds, created_at FROM hosting_assets
-      WHERE account_id=$1 AND status IN ('queued','processing','ready') ORDER BY created_at DESC LIMIT 200`, [account.id]);
+    slug: string; title: string; status: AssetStatus; duration: number | null; declared_seconds: number; created_at: Date; has_poster: boolean;
+  }>(`SELECT slug, title, status, duration, declared_seconds, created_at, files @> '[{"path":"poster.jpg"}]'::jsonb AS has_poster
+      FROM hosting_assets WHERE account_id=$1 AND status IN ('queued','processing','ready') ORDER BY created_at DESC LIMIT 200`, [account.id]);
   return rows.rows.map((row) => ({
     slug: row.slug, title: row.title, status: row.status, duration: row.duration ?? row.declared_seconds,
-    createdAt: row.created_at.toISOString(), poster: row.status === "ready" ? `${media}/s/${row.slug}/poster.jpg` : null,
+    createdAt: row.created_at.toISOString(), poster: row.status === "ready" && row.has_poster ? `${media}/s/${row.slug}/poster.jpg` : null,
   }));
 }

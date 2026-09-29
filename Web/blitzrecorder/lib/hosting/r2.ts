@@ -98,6 +98,23 @@ export async function uploadFile({ key, path, bytes, contentType }: { key: strin
   }));
 }
 
+export async function uploadData({ key, data, contentType }: { key: string; data: Buffer; contentType: string }) {
+  await r2().send(new PutObjectCommand({
+    Bucket: bucket(), Key: key, Body: data, ContentLength: data.length, ContentType: contentType,
+    CacheControl: "public, max-age=31536000, immutable",
+  }));
+}
+
+export async function objectBytes(key: string): Promise<number | null> {
+  try {
+    const result = await r2().send(new HeadObjectCommand({ Bucket: bucket(), Key: key }));
+    return result.ContentLength ?? null;
+  } catch (error) {
+    if ((error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 404) return null;
+    throw error;
+  }
+}
+
 export async function deletePrefix(prefix: string) {
   if (!/^hosting\/[a-f0-9-]{36}\/[a-f0-9-]{36}\//.test(prefix)) throw new Error("Invalid cleanup prefix.");
   for (;;) {
