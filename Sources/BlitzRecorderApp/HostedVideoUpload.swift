@@ -1,6 +1,8 @@
 import AVFoundation
 import Foundation
+import ImageIO
 import Security
+import UniformTypeIdentifiers
 
 struct HostingFailure: LocalizedError {
     let message: String
@@ -48,6 +50,7 @@ final class HostingRedirectPolicy: NSObject, URLSessionTaskDelegate, Sendable {
 }
 
 struct HostingClient {
+    static let parallelParts = 6
     let origin: URL
     let session: URLSession
 
@@ -120,17 +123,18 @@ struct HostingClient {
         await request.progress(.preparing)
         let values = try fileURL.resourceValues(forKeys: [.fileSizeKey])
         guard let bytes = values.fileSize, bytes >= 16, bytes <= 5 * 1024 * 1024 * 1024,
-              ["mp4", "mov"].contains(fileURL.pathExtension.lowercased()) else {
-            throw HostingFailure(message: "Choose an exported MP4 or MOV smaller than 5 GB.")
+              fileURL.pathExtension.lowercased() == "mp4" else {
+            throw HostingFailure(message: "Choose an exported video smaller than 5 GB.")
         }
         let duration = try await AVURLAsset(url: fileURL).load(.duration).seconds
         guard duration.isFinite, duration > 0, duration <= 3600 else {
             throw HostingFailure(message: "Sharing supports videos up to one hour long.")
         }
         let key = try HostingExportMetadata.fingerprint(fileURL)
+        let video = try await HostingSharingCopy.playable(fileURL)
         let body: [String: Any] = ["title": String(request.metadata.title.prefix(160)), "bytes": bytes,
-            "duration": duration, "contentType": fileURL.pathExtension.lowercased() == "mov" ? "video/quicktime" : "video/mp4",
-            "requestKey": key]
+            "duration": duration, "contentType": "video/mp4", "requestKey": key,
+            "video": ["width": video.width, "height": video.height, "frameRate": video.frameRate.map { $0 as Any } ?? NSNull()]]
         let asset: HostingAsset = try await send(.init(route: "assets", token: request.token,
             body: JSONSerialization.data(withJSONObject: body)))
         guard UUID(uuidString: asset.id) != nil else { throw HostingFailure(message: "The upload could not be created.") }
@@ -143,6 +147,10 @@ struct HostingClient {
             guard let partBytes = asset.partBytes, (1...64 * 1024 * 1024).contains(partBytes),
                   let parts = asset.parts, parts == (bytes + partBytes - 1) / partBytes else {
                 throw HostingFailure(message: "The upload configuration is invalid.")
+            }
+            if let poster = await HostingSharingCopy.poster(fileURL) {
+                let _: Saved? = try? await send(.init(route: "assets/\(asset.id)/poster", token: request.token,
+                    body: JSONSerialization.data(withJSONObject: ["jpeg": poster.base64EncodedString()])))
             }
             let state: HostingAsset = try await send(.init(route: "assets/\(asset.id)", token: request.token, body: nil))
             let uploaded = Set((state.uploadedParts ?? []).filter { part in
@@ -161,7 +169,7 @@ struct HostingClient {
                 try await withThrowingTaskGroup(of: Void.self) { group in
                     var active = 0
                     for number in 1...parts where !uploaded.contains(number) {
-                        if active == 3 {
+                        if active == Self.parallelParts {
                             try await group.next()
                             active -= 1
                         }
@@ -202,7 +210,8 @@ struct HostingClient {
                 throw HostingFailure(message: "The video changed during upload. Export it again before sharing.")
             }
             try Task.checkCancellation()
-            let _: HostingAsset = try await send(.init(route: "assets/\(asset.id)/complete", token: request.token, body: Data("{}".utf8)))
+            let completed: HostingAsset = try await send(.init(route: "assets/\(asset.id)/complete", token: request.token, body: Data("{}".utf8)))
+            if completed.status == "ready", let path = completed.sharePath { return try shareURL(path) }
         }
         var reported: Double?
         await request.progress(.processing(nil))
@@ -304,39 +313,45 @@ enum HostingSharingCopy {
         let transform = try await track.load(.preferredTransform)
         let bounds = CGRect(origin: .zero, size: size).applying(transform)
         let displaySize = bounds.size
-        let formats = try await track.load(.formatDescriptions)
-        let codec = formats.first.map(CMFormatDescriptionGetMediaSubType)
-        if min(displaySize.width, displaySize.height) <= 1080, max(displaySize.width, displaySize.height) <= 1920,
-           codec == kCMVideoCodecType_HEVC || codec == kCMVideoCodecType_H264 {
-            return request.fileURL
+        let codec = try await track.load(.formatDescriptions).first.map(CMFormatDescriptionGetMediaSubType)
+        var audioIsAAC = true
+        for audio in try await asset.loadTracks(withMediaType: .audio) {
+            let format = try await audio.load(.formatDescriptions).first.map(CMFormatDescriptionGetMediaSubType)
+            audioIsAAC = audioIsAAC && format == kAudioFormatMPEG4AAC
         }
+        let browserReady = min(displaySize.width, displaySize.height) <= 1080 && max(displaySize.width, displaySize.height) <= 1920
+            && codec == kCMVideoCodecType_H264 && audioIsAAC
+        if browserReady, request.fileURL.pathExtension.lowercased() == "mp4" { return request.fileURL }
         let fingerprint = try HostingExportMetadata.fingerprint(request.fileURL)
         let directory = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask,
-            appropriateFor: nil, create: true).appendingPathComponent("BlitzRecorder/Sharing1080-v1", isDirectory: true)
+            appropriateFor: nil, create: true).appendingPathComponent("BlitzRecorder/Sharing1080-h264-v1", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let cached = directory.appendingPathComponent(fingerprint).appendingPathExtension("mp4")
         if FileManager.default.fileExists(atPath: cached.path) { return cached }
         let output = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension("mp4")
-        guard let exporter = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHEVCHighestQuality) else {
+        guard let exporter = AVAssetExportSession(asset: asset,
+            presetName: browserReady ? AVAssetExportPresetPassthrough : AVAssetExportPresetHighestQuality) else {
             throw HostingFailure(message: "This video could not be prepared for sharing.")
         }
-        let scale = min(1, 1080 / min(displaySize.width, displaySize.height), 1920 / max(displaySize.width, displaySize.height))
-        let renderSize = CGSize(width: max(2, floor(displaySize.width * scale / 2) * 2),
-                                height: max(2, floor(displaySize.height * scale / 2) * 2))
-        let composition = AVMutableVideoComposition()
-        composition.renderSize = renderSize
-        let frameDuration = try await track.load(.minFrameDuration)
-        let fps = try await track.load(.nominalFrameRate)
-        composition.frameDuration = frameDuration.isNumeric && frameDuration.seconds > 0
-            ? frameDuration : CMTime(seconds: 1 / Double(max(1, fps)), preferredTimescale: 60_000)
-        let instruction = AVMutableVideoCompositionInstruction()
-        instruction.timeRange = CMTimeRange(start: .zero, duration: try await asset.load(.duration))
-        let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: track)
-        layer.setTransform(transform.concatenating(CGAffineTransform(translationX: -bounds.minX, y: -bounds.minY))
-            .concatenating(CGAffineTransform(scaleX: scale, y: scale)), at: .zero)
-        instruction.layerInstructions = [layer]
-        composition.instructions = [instruction]
-        exporter.videoComposition = composition
+        if !browserReady {
+            let scale = min(1, 1080 / min(displaySize.width, displaySize.height), 1920 / max(displaySize.width, displaySize.height))
+            let renderSize = CGSize(width: max(2, floor(displaySize.width * scale / 2) * 2),
+                                    height: max(2, floor(displaySize.height * scale / 2) * 2))
+            let composition = AVMutableVideoComposition()
+            composition.renderSize = renderSize
+            let frameDuration = try await track.load(.minFrameDuration)
+            let fps = try await track.load(.nominalFrameRate)
+            composition.frameDuration = frameDuration.isNumeric && frameDuration.seconds > 0
+                ? frameDuration : CMTime(seconds: 1 / Double(max(1, fps)), preferredTimescale: 60_000)
+            let instruction = AVMutableVideoCompositionInstruction()
+            instruction.timeRange = CMTimeRange(start: .zero, duration: try await asset.load(.duration))
+            let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: track)
+            layer.setTransform(transform.concatenating(CGAffineTransform(translationX: -bounds.minX, y: -bounds.minY))
+                .concatenating(CGAffineTransform(scaleX: scale, y: scale)), at: .zero)
+            instruction.layerInstructions = [layer]
+            composition.instructions = [instruction]
+            exporter.videoComposition = composition
+        }
         exporter.shouldOptimizeForNetworkUse = true
         exporter.metadata = []
         await request.progress(.optimizing(0))
@@ -370,6 +385,38 @@ enum HostingSharingCopy {
             try? FileManager.default.removeItem(at: output)
             throw error
         }
+    }
+
+    struct Playable: Equatable {
+        let width: Int
+        let height: Int
+        let frameRate: Double?
+    }
+
+    static func playable(_ fileURL: URL) async throws -> Playable {
+        guard let track = try await AVURLAsset(url: fileURL).loadTracks(withMediaType: .video).first else {
+            throw HostingFailure(message: "This video could not be prepared for sharing.")
+        }
+        let (size, transform, fps) = try await track.load(.naturalSize, .preferredTransform, .nominalFrameRate)
+        let display = CGRect(origin: .zero, size: size).applying(transform).size
+        return Playable(width: Int(display.width.rounded()), height: Int(display.height.rounded()),
+                        frameRate: fps > 0 && fps <= 240 ? Double(fps) : nil)
+    }
+
+    static func poster(_ fileURL: URL) async -> Data? {
+        let asset = AVURLAsset(url: fileURL)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 960, height: 960)
+        guard let duration = try? await asset.load(.duration).seconds, duration.isFinite,
+              let image = try? await generator.image(at: CMTime(seconds: min(1, duration / 2), preferredTimescale: 600)).image else {
+            return nil
+        }
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, UTType.jpeg.identifier as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
+        guard CGImageDestinationFinalize(destination), data.length <= 1024 * 1024 else { return nil }
+        return data as Data
     }
 }
 

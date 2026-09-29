@@ -1,6 +1,6 @@
 import {
   authenticate, authenticateDelivery, beginUpload, finishUpload, listAssets,
-  preparePart, resumeUpload, revokeAsset, sharedAsset, updateDetails,
+  preparePart, resumeUpload, revokeAsset, sharedAsset, updateDetails, uploadPoster,
 } from "@/lib/hosting/service";
 import { DELIVERY_TTL_SECONDS, HostingError } from "@/lib/hosting/model";
 import { accountState, billingURL, disconnectAccount } from "@/lib/hosting/account";
@@ -63,6 +63,9 @@ async function handle(request: Request) {
       else if (request.method === "POST" && path.length === 3 && action === "complete") result = await finishUpload({ account, id });
       else if (request.method === "POST" && path.length === 3 && action === "details") {
         result = await updateDetails({ account, id, body: await readBody({ request, limit: DETAILS_MAX_BYTES }) });
+      }
+      else if (request.method === "POST" && path.length === 3 && action === "poster") {
+        result = await uploadPoster({ account, id, body: await readBody({ request, limit: 1_500_000 }) });
       }
       else if (request.method === "POST" && path.length === 3 && action === "parts") {
         const body = await readBody({ request, limit: 16_384 }) as { number: number };

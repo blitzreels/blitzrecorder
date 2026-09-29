@@ -15,6 +15,19 @@ test("upload metadata rejects unbounded sizes, durations and unsupported files",
   assert.ok(reservationBytes(input) > input.bytes);
 });
 
+test("a playable 1080p upload reserves only its own bytes and rejects anything larger", () => {
+  const video = { width: 1920, height: 1080, frameRate: 60 };
+  const input = parseUploadInput({ ...valid, video });
+  assert.deepEqual(input.video, video);
+  assert.equal(reservationBytes(input), valid.bytes + 1024 ** 2);
+  assert.deepEqual(parseUploadInput({ ...valid, video: { width: 1080, height: 1920, frameRate: null } }).video,
+    { width: 1080, height: 1920, frameRate: null });
+  for (const bad of [{ width: 2560, height: 1440 }, { width: 1920, height: 1200 }, { width: 1.5, height: 2 }, null, { ...video, frameRate: 0 }]) {
+    assert.throws(() => parseUploadInput({ ...valid, video: { frameRate: null, ...bad } }));
+  }
+  assert.throws(() => parseUploadInput({ ...valid, contentType: "video/quicktime", video }));
+});
+
 test("part sizes bind each signed URL to the expected file bounds", () => {
   assert.equal(partSize({ bytes: PART_BYTES * 2 + 17, number: 1 }), PART_BYTES);
   assert.equal(partSize({ bytes: PART_BYTES * 2 + 17, number: 3 }), 17);
@@ -22,7 +35,7 @@ test("part sizes bind each signed URL to the expected file bounds", () => {
 });
 
 test("only generated playback files can be delivered, never source or traversal paths", () => {
-  for (const path of ["master.m3u8", "poster.jpg", "v1080/init.mp4", "v720/segment-000012.m4s"]) assert.equal(safeDeliveryPath(path), true);
+  for (const path of ["video.mp4", "master.m3u8", "poster.jpg", "v1080/init.mp4", "v720/segment-000012.m4s"]) assert.equal(safeDeliveryPath(path), true);
   for (const path of ["source", "../../source", "v720/../source", "v720/%2e%2e/source", "secret.json", "v720/segment-x.m4s"]) {
     assert.equal(safeDeliveryPath(path), false);
   }

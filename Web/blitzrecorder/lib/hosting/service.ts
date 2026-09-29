@@ -1,10 +1,10 @@
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { hostingPool, transaction } from "./db";
 import {
-  assertHostingEnabled, HostingError, PART_BYTES, UPLOAD_SECONDS, parseUploadInput,
-  publicAsset, required, reservationBytes, type HostedAsset, type HostingAccount,
+  assertHostingEnabled, HostingError, PART_BYTES, POSTER_MAX_BYTES, UPLOAD_SECONDS, parseUploadInput,
+  publicAsset, required, reservationBytes, type HostedAsset, type HostedFile, type HostingAccount,
 } from "./model";
-import { createUpload, completeUpload, signPart, uploadParts, signalJob } from "./r2";
+import { createUpload, completeUpload, objectBytes, signPart, uploadData, uploadParts, signalJob } from "./r2";
 import { parseVideoDetails } from "./details";
 import { accountForToken } from "./account";
 import { HOSTING_PLAN } from "./plan";
@@ -78,12 +78,14 @@ export async function beginUpload({ account, body }: { account: HostingAccount; 
       throw new HostingError({ status: 413, message: "Your hosting storage is full. Remove a video or increase your plan." });
     }
     const id = randomUUID();
+    const prefix = input.video ? `hosting/${account.id}/${id}/streams/${randomUUID()}/` : null;
     const created = await db.query<HostedAsset>(
       `INSERT INTO hosting_assets (id,slug,account_id,request_key,title,status,content_type,source_key,
-       declared_bytes,declared_seconds,reserved_bytes,expires_at)
-       VALUES ($1,$2,$3,$4,$5,'uploading',$6,$7,$8,$9,$10,now() + $11 * interval '1 second') RETURNING *`,
+       declared_bytes,declared_seconds,reserved_bytes,expires_at,stream_prefix,width,height,frame_rate,video_codec)
+       VALUES ($1,$2,$3,$4,$5,'uploading',$6,$7,$8,$9,$10,now() + $11 * interval '1 second',$12,$13,$14,$15,$16) RETURNING *`,
       [id, randomBytes(18).toString("base64url"), account.id, input.requestKey, input.title, input.contentType,
-        `hosting/${account.id}/${id}/source`, input.bytes, input.duration, reservation, UPLOAD_SECONDS]);
+        prefix ? `${prefix}video.mp4` : `hosting/${account.id}/${id}/source`, input.bytes, input.duration, reservation, UPLOAD_SECONDS,
+        prefix, input.video?.width ?? null, input.video?.height ?? null, input.video?.frameRate ?? null, input.video ? "h264" : null]);
     return created.rows[0];
   });
   if (asset.status === "uploading" && !asset.upload_id) {
@@ -104,6 +106,19 @@ export async function preparePart({ account, id, number }: { account: HostingAcc
     throw new HostingError({ status: 409, message: "This upload is no longer active." });
   }
   return signPart({ asset, number });
+}
+
+export async function uploadPoster({ account, id, body }: { account: HostingAccount; id: string; body: unknown }) {
+  requirePaid(account);
+  const asset = await ownedAsset({ account, id });
+  if (asset.status !== "uploading" || !asset.stream_prefix) throw new HostingError({ status: 409, message: "This upload is no longer active." });
+  const encoded = (body as { jpeg?: unknown } | null)?.jpeg;
+  const data = typeof encoded === "string" ? Buffer.from(encoded, "base64") : Buffer.alloc(0);
+  if (data.length < 4 || data.length > POSTER_MAX_BYTES || data[0] !== 0xff || data[1] !== 0xd8 || data[2] !== 0xff) {
+    throw new HostingError({ status: 400, message: "Invalid poster image." });
+  }
+  await uploadData({ key: `${asset.stream_prefix}poster.jpg`, data, contentType: "image/jpeg" });
+  return { saved: true };
 }
 
 export async function resumeUpload({ account, id }: { account: HostingAccount; id: string }) {
@@ -127,6 +142,15 @@ export async function finishUpload({ account, id }: { account: HostingAccount; i
     await completeUpload(asset);
     await db.query("INSERT INTO hosting_upload_usage(asset_id,account_id,seconds) VALUES($1,$2,$3)",
       [asset.id, account.id, asset.declared_seconds]);
+    if (asset.stream_prefix) {
+      const posterBytes = await objectBytes(`${asset.stream_prefix}poster.jpg`);
+      const files: HostedFile[] = [{ path: "video.mp4", bytes: Number(asset.declared_bytes), contentType: "video/mp4" },
+        ...(posterBytes ? [{ path: "poster.jpg", bytes: posterBytes, contentType: "image/jpeg" }] : [])];
+      const ready = await db.query<HostedAsset>(
+        `UPDATE hosting_assets SET status='ready', files=$2::jsonb, stored_bytes=$3, duration=declared_seconds, updated_at=now()
+         WHERE id=$1 RETURNING *`, [id, JSON.stringify(files), files.reduce((sum, file) => sum + file.bytes, 0)]);
+      return publicAsset(ready.rows[0]);
+    }
     const updated = await db.query<HostedAsset>(
       "UPDATE hosting_assets SET status = 'queued', updated_at = now() WHERE id = $1 RETURNING *", [id]);
     return publicAsset(updated.rows[0]);

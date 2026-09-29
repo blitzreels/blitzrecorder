@@ -6,6 +6,7 @@ export const UPLOAD_SECONDS = 24 * 60 * 60;
 export const MAX_VIDEO_SECONDS = 60 * 60;
 export const MAX_SOURCE_BYTES = 5 * 1024 ** 3;
 export const DELIVERY_TTL_SECONDS = 10;
+export const POSTER_MAX_BYTES = 1024 ** 2;
 
 export class HostingError extends Error {
   readonly status: number;
@@ -84,7 +85,23 @@ export type UploadInput = {
   duration: number;
   contentType: "video/mp4" | "video/quicktime";
   requestKey: string;
+  video?: PlayableVideo;
 };
+
+export type PlayableVideo = { width: number; height: number; frameRate: number | null };
+
+function parsePlayableVideo(value: unknown): PlayableVideo {
+  const video = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
+  const { width, height, frameRate } = video;
+  if (typeof width !== "number" || typeof height !== "number" || !Number.isSafeInteger(width) || !Number.isSafeInteger(height)
+    || Math.min(width, height) < 2 || Math.min(width, height) > 1080 || Math.max(width, height) > 1920) {
+    throw new HostingError({ status: 400, message: "Share a video up to 1080p." });
+  }
+  if (frameRate !== null && (typeof frameRate !== "number" || !Number.isFinite(frameRate) || frameRate <= 0 || frameRate > 240)) {
+    throw new HostingError({ status: 400, message: "Invalid video frame rate." });
+  }
+  return { width, height, frameRate };
+}
 
 export function parseUploadInput(body: unknown): UploadInput {
   if (!body || typeof body !== "object") throw new HostingError({ status: 400, message: "Invalid upload." });
@@ -104,10 +121,14 @@ export function parseUploadInput(body: unknown): UploadInput {
   if (typeof value.requestKey !== "string" || !/^[A-Za-z0-9_-]{16,100}$/.test(value.requestKey)) {
     throw new HostingError({ status: 400, message: "A stable upload request key is required." });
   }
-  return { title: value.title.trim(), bytes: value.bytes, duration: value.duration, contentType: value.contentType, requestKey: value.requestKey };
+  const input: UploadInput = { title: value.title.trim(), bytes: value.bytes, duration: value.duration, contentType: value.contentType, requestKey: value.requestKey };
+  if (value.video === undefined) return input;
+  if (input.contentType !== "video/mp4") throw new HostingError({ status: 400, message: "Share an MP4 video." });
+  return { ...input, video: parsePlayableVideo(value.video) };
 }
 
 export function reservationBytes(input: UploadInput): number {
+  if (input.video) return input.bytes + POSTER_MAX_BYTES;
   return input.bytes + Math.ceil(input.duration * 12_000_000 / 8 * 1.3) + 10 * 1024 ** 2;
 }
 
@@ -119,7 +140,7 @@ export function partSize({ bytes, number }: { bytes: number; number: number }): 
 }
 
 export function safeDeliveryPath(path: string): boolean {
-  return /^(master\.m3u8|poster\.jpg|v(?:480|720|1080)\/(?:index\.m3u8|init\.mp4|segment-\d{6}\.m4s))$/.test(path);
+  return /^(video\.mp4|master\.m3u8|poster\.jpg|v(?:480|720|1080)\/(?:index\.m3u8|init\.mp4|segment-\d{6}\.m4s))$/.test(path);
 }
 
 export function publicAsset(asset: HostedAsset) {

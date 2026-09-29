@@ -23,7 +23,9 @@ export default async function SharedVideoPage({ params }: { params: Promise<{ sl
     ? await Promise.all([ownerLibrary(account), activeSessionCount(account)]) : [null, 0];
   const viewer: SharedViewer | null = account && { email: account.email, library, sessions };
   const base = `${new URL(required("HOSTING_MEDIA_ORIGIN")).origin}/s/${slug}`;
-  return <SharedVideoView slug={asset.slug} source={`${base}/master.m3u8`} poster={`${base}/poster.jpg`}
+  const has = (path: string) => asset.files.some((file) => file.path === path);
+  return <SharedVideoView slug={asset.slug} source={`${base}/${has("video.mp4") ? "video.mp4" : "master.m3u8"}`}
+    poster={has("poster.jpg") ? `${base}/poster.jpg` : ""}
     title={asset.title} width={asset.width} height={asset.height} duration={asset.duration ?? asset.declared_seconds}
     frameRate={asset.frame_rate} details={asset.viewer_details ?? EMPTY_DETAILS} viewer={viewer} />;
 }
