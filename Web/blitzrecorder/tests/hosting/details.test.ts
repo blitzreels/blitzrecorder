@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { EMPTY_DETAILS, parseVideoDetails, transcriptVTT, formatTime, activeChapter } from "../../lib/hosting/details";
+import { EMPTY_DETAILS, compactTranscript, parseVideoDetails, transcriptVTT, formatTime, activeChapter } from "../../lib/hosting/details";
 import { localVideoDetails, projectLocalDetails } from "../../lib/hosting/local-details";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -25,6 +25,18 @@ test("local transcript and chapters follow merged cuts and export speed without 
   assert.equal(output.transcript[1].end, 4 / 1.5);
   assert.deepEqual(output.chapters.map(({ title, start }) => [title, start]), [["Intro", 0], ["Final take", 2 / 1.5]]);
   assert.equal(output.transcript[0].speaker, "Alex");
+});
+
+test("overlapping speakers keep their own phrases instead of alternating single words", () => {
+  const talk = [["Le", 0, "a"], ["Mais", 0.1, "b"], ["forfait", 0.3, "a"], ["sincèrement,", 0.4, "b"], ["mensuel", 0.7, "a"], ["non.", 0.8, "b"]]
+    .map(([text, startTime, speakerID]) => ({ text: String(text), startTime: Number(startTime), endTime: Number(startTime) + 0.25, speakerID: String(speakerID) }));
+  const local = { duration: 2, speakers: [{ id: "a", name: "A" }, { id: "b", name: "B" }], words: talk, segments: talk };
+  const expected = [["A", "Le forfait mensuel"], ["B", "Mais sincèrement, non."]];
+  const output = projectLocalDetails({ transcript: local, project: null, playbackRate: 1, outputDuration: 2 });
+  assert.deepEqual(output.transcript.map((cue) => [cue.speaker, cue.text]), expected);
+  const uploaded = talk.map((word) => ({ start: word.startTime, end: word.endTime, text: word.text, speaker: word.speakerID.toUpperCase() }));
+  assert.deepEqual(compactTranscript(uploaded).map((cue) => [cue.speaker, cue.text]), expected);
+  assert.equal(uploaded[0].text, "Le");
 });
 
 test("export speed is applied even when there are no cuts", () => {

@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import { EMPTY_DETAILS, parseVideoDetails, type TranscriptCue, type VideoDetails } from "./details";
+import { EMPTY_DETAILS, appendCueText, joinsCue, parseVideoDetails, type TranscriptCue, type VideoDetails } from "./details";
 import type { VideoInspection } from "./transcode";
 
 type LocalWord = { text: string; startTime: number; endTime: number; speakerID?: string };
@@ -48,8 +48,8 @@ export function projectLocalDetails({ transcript, project, playbackRate, outputD
   const cues: TranscriptCue[] = [];
   const hasWords = Boolean(transcript.words?.length);
   const units = [...(hasWords ? transcript.words! : transcript.segments)].sort((a, b) => a.startTime - b.startTime);
+  const open = new Map<string | null, { cue: TranscriptCue; range: number }>();
   let rangeIndex = 0;
-  let previousRange = -1;
   for (const unit of units) {
     if (!Number.isFinite(unit.startTime) || !Number.isFinite(unit.endTime) || unit.endTime <= unit.startTime || typeof unit.text !== "string") {
       throw new Error("The local transcript contains invalid timestamps or text.");
@@ -61,12 +61,15 @@ export function projectLocalDetails({ transcript, project, playbackRate, outputD
     const end = Math.min(outputDuration, range.output + (unit.endTime - range.start) / playbackRate);
     if (end <= start) continue;
     const speaker = unit.speakerID ? speakerNames.get(unit.speakerID) ?? unit.speakerID : null;
-    const prior = cues.at(-1);
-    if (hasWords && prior && previousRange === rangeIndex && prior.speaker === speaker && start - prior.end < 0.8 && end - prior.start < 7 && prior.text.length < 180 && !/[.!?…]$/.test(prior.text)) {
-      prior.text += /^[,.;:!?]/.test(unit.text) ? unit.text.trim() : ` ${unit.text.trim()}`;
-      prior.end = end;
-    } else cues.push({ start, end, text: unit.text.trim(), speaker });
-    previousRange = rangeIndex;
+    const prior = open.get(speaker);
+    if (hasWords && prior && prior.range === rangeIndex && joinsCue({ prior: prior.cue, start, end })) {
+      appendCueText({ prior: prior.cue, text: unit.text.trim() });
+      prior.cue.end = end;
+      continue;
+    }
+    const cue = { start, end, text: unit.text.trim(), speaker };
+    cues.push(cue);
+    open.set(speaker, { cue, range: rangeIndex });
   }
   const orderedChapters = [...(project?.chapters ?? [])].sort((a, b) => a.time - b.time);
   const chapters = orderedChapters.flatMap((chapter, index) => {

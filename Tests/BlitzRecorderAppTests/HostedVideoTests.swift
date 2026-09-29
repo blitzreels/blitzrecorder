@@ -187,6 +187,19 @@ final class HostedVideoTests: XCTestCase {
             playbackRate: 1, outputDuration: 10, recordedAt: Date())))
     }
 
+    func testOverlappingSpeakersKeepTheirOwnPhrases() throws {
+        var transcript = RecordingTranscriptAssembler.assemble(.init(mediaPath: "/tmp", generatedAt: Date(),
+            duration: 2, confidence: 1, text: "", suggestedTitle: nil, words: [], diarizedIntervals: []))
+        transcript.words = [("Le", 0, "A"), ("Mais", 0.1, "B"), ("forfait", 0.3, "A"), ("sincèrement,", 0.4, "B"),
+                            ("mensuel", 0.7, "A"), ("non.", 0.8, "B")].map { text, start, speaker in
+            TranscriptWord(text: text, startTime: start, endTime: start + 0.25, confidence: 1, speakerID: speaker)
+        }
+        let details = try XCTUnwrap(HostedVideoDetails.project(.init(transcript: transcript, chapters: [], cuts: [],
+            playbackRate: 1, outputDuration: 2, recordedAt: Date())))
+        XCTAssertEqual(details.transcript.map(\.text), ["Le forfait mensuel", "Mais sincèrement, non."])
+        XCTAssertEqual(details.transcript.map(\.speaker), ["A", "B"])
+    }
+
     func testSharingURLRejectsRedirectsAndForeignPaths() throws {
         let client = HostingClient(origin: URL(string: "https://example.com")!, session: .shared)
         XCTAssertThrowsError(try client.shareURL("https://other.example/s/video"))

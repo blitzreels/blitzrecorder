@@ -44,8 +44,8 @@ struct HostedVideoDetails: Codable, Equatable, Sendable {
                            confidence: $0.confidence, speakerID: $0.speakerID)
         }
         var cues: [Cue] = []
+        var openCues: [String?: (index: Int, range: Int)] = [:]
         var rangeIndex = 0
-        var priorRange = -1
         for word in words.sorted(by: { $0.startTime < $1.startTime }) {
             guard word.startTime.isFinite, word.endTime.isFinite, word.endTime > word.startTime else { continue }
             while rangeIndex < map.keptRanges.count && map.keptRanges[rangeIndex].takeEnd.seconds <= word.startTime {
@@ -60,15 +60,16 @@ struct HostedVideoDetails: Codable, Equatable, Sendable {
             let end = min(request.outputDuration, map.outputSeconds(forTakeSeconds: word.endTime))
             guard end > start else { continue }
             let speaker = word.speakerID.map { request.transcript.speakerName(for: $0) }
-            if hasWords, let prior = cues.last, priorRange == rangeIndex, prior.speaker == speaker,
-               start - prior.end < 0.8, end - prior.start < 7, prior.text.count < 180,
-               prior.text.last.map({ !".!?…".contains($0) }) == true {
-                cues[cues.count - 1].text += (text.first.map { ",.;:!?".contains($0) } == true ? "" : " ") + text
-                cues[cues.count - 1].end = end
+            // Overlapping speakers each continue their own phrase instead of alternating single words.
+            if hasWords, let open = openCues[speaker], open.range == rangeIndex,
+               start - cues[open.index].end < 0.8, end - cues[open.index].start < 7, cues[open.index].text.count < 180,
+               cues[open.index].text.last.map({ !".!?…".contains($0) }) == true {
+                cues[open.index].text += (text.first.map { ",.;:!?".contains($0) } == true ? "" : " ") + text
+                cues[open.index].end = end
             } else {
                 cues.append(.init(start: start, end: end, text: text, speaker: speaker))
+                openCues[speaker] = (cues.count - 1, rangeIndex)
             }
-            priorRange = rangeIndex
         }
         let sourceChapters = request.chapters.sorted { $0.time < $1.time }
         var chapters: [Chapter] = []

@@ -69,6 +69,32 @@ export function parseVideoDetails({ value, duration }: { value: unknown; duratio
   return result;
 }
 
+export function joinsCue({ prior, start, end }: { prior: TranscriptCue; start: number; end: number }): boolean {
+  return start - prior.end < 0.8 && end - prior.start < 7 && prior.text.length < 180 && !/[.!?…]$/.test(prior.text);
+}
+
+export function appendCueText({ prior, text }: { prior: TranscriptCue; text: string }): void {
+  prior.text += /^[,.;:!?]/.test(text) ? text : ` ${text}`;
+}
+
+/** Joins words into phrases per speaker, so overlapping speech doesn't split every sentence into single words. */
+export function compactTranscript(cues: TranscriptCue[]): TranscriptCue[] {
+  const result: TranscriptCue[] = [];
+  const open = new Map<string | null, TranscriptCue>();
+  for (const cue of cues) {
+    const prior = open.get(cue.speaker);
+    if (prior && joinsCue({ prior, start: cue.start, end: cue.end })) {
+      appendCueText({ prior, text: cue.text });
+      prior.end = Math.max(prior.end, cue.end);
+      continue;
+    }
+    const next = { ...cue };
+    result.push(next);
+    open.set(cue.speaker, next);
+  }
+  return result;
+}
+
 export function formatTime(seconds: number): string {
   const total = Math.max(0, Math.floor(Number.isFinite(seconds) ? seconds : 0));
   const hours = Math.floor(total / 3600);
