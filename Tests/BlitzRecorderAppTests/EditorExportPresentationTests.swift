@@ -42,11 +42,13 @@ final class EditorExportPresentationTests: XCTestCase {
             .exporting(.init(title: "Exporting", percentage: "42%", detail: nil, value: 0.42)),
             .transfer(.preparing),
             .transfer(.uploading(.init(sent: 420_000_000, total: 1_000_000_000))),
-            .transfer(.processing)
+            .transfer(.processing(nil)),
+            .transfer(.processing(0.6))
         ]
-        XCTAssertEqual(stages.map(\.stage), [0, 1, 1, 2])
+        XCTAssertEqual(stages.map(\.stage), [0, 1, 1, 2, 2])
         XCTAssertEqual(stages[2].fraction, 0.42)
         XCTAssertNil(stages[3].fraction, "Streaming preparation must not invent a percentage.")
+        XCTAssertEqual(stages[4].fraction, 0.6, "The server's measured processing progress is shown as is.")
         for (index, stage) in stages.enumerated() {
             let host = NSHostingView(rootView: HostedVideoProgressView(presentation: stage)
                 .padding(24).frame(width: 420).background(BlitzUI.projectLibraryBackground).preferredColorScheme(.dark))

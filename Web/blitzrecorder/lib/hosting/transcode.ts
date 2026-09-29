@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -54,27 +54,64 @@ export function renditions(info: VideoInfo) {
   });
 }
 
-export async function transcode({ source, destination, info, signal }: {
-  source: string; destination: string; info: VideoInfo; signal: AbortSignal;
+export function encodeArguments({ source, destination, ladder }: {
+  source: string; destination: string; ladder: ReturnType<typeof renditions>;
+}) {
+  const split = `[0:v]split=${ladder.length}${ladder.map((_, index) => `[s${index}]`).join("")}`;
+  const scales = ladder.map((level, index) => `[s${index}]scale=${level.width}:${level.height}:flags=lanczos,setsar=1[v${index}]`);
+  return [
+    "-nostdin", "-hide_banner", "-loglevel", "error", "-nostats", "-progress", "pipe:1",
+    "-protocol_whitelist", "file,pipe", "-i", source,
+    "-filter_complex", [split, ...scales].join(";"),
+    ...ladder.flatMap((level, index) => {
+      const directory = path.join(destination, level.name);
+      return [
+        "-map", `[v${index}]`, "-map", "0:a:0?", "-sn", "-dn", "-map_metadata", "-1",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-profile:v", "high", "-pix_fmt", "yuv420p",
+        "-maxrate", String(level.maxRate), "-bufsize", String(level.maxRate * 2),
+        "-force_key_frames", "expr:gte(t,n_forced*4)", "-sc_threshold", "0",
+        "-c:a", "aac", "-b:a", "160k", "-ac", "2", "-ar", "48000",
+        "-f", "hls", "-hls_time", "4", "-hls_playlist_type", "vod", "-hls_segment_type", "fmp4",
+        "-hls_fmp4_init_filename", "init.mp4", "-hls_flags", "independent_segments",
+        "-hls_segment_filename", path.join(directory, "segment-%06d.m4s"), path.join(directory, "index.m3u8"),
+      ];
+    }),
+  ];
+}
+
+function encode({ args, duration, signal, onProgress }: {
+  args: string[]; duration: number; signal: AbortSignal; onProgress: (fraction: number) => void;
+}) {
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn("ffmpeg", args, { signal, stdio: ["ignore", "pipe", "pipe"] });
+    const timeout = setTimeout(() => child.kill("SIGKILL"), 2 * 60 * 60 * 1000);
+    let pending = "";
+    let errors = "";
+    child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
+      const lines = (pending + chunk).split("\n");
+      pending = lines.pop() ?? "";
+      for (const line of lines) {
+        const microseconds = Number(line.match(/^out_time_us=(\d+)$/)?.[1]);
+        if (microseconds > 0) onProgress(Math.min(1, microseconds / 1_000_000 / duration));
+      }
+    });
+    child.stderr.setEncoding("utf8").on("data", (chunk: string) => { errors = (errors + chunk).slice(-2000); });
+    child.on("error", (error) => { clearTimeout(timeout); reject(error); });
+    child.on("close", (code) => {
+      clearTimeout(timeout);
+      if (code === 0) resolve();
+      else reject(new Error(`ffmpeg exited with ${code}: ${errors.trim()}`));
+    });
+  });
+}
+
+export async function transcode({ source, destination, info, signal, onProgress = () => undefined }: {
+  source: string; destination: string; info: VideoInfo; signal: AbortSignal; onProgress?: (fraction: number) => void;
 }): Promise<HostedFile[]> {
   await mkdir(destination, { recursive: true });
   const ladder = renditions(info);
-  for (const level of ladder) {
-    const directory = path.join(destination, level.name);
-    await mkdir(directory);
-    await exec("ffmpeg", [
-      "-nostdin", "-hide_banner", "-loglevel", "error", "-protocol_whitelist", "file,pipe", "-i", source,
-      "-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn", "-map_metadata", "-1",
-      "-vf", `scale=${level.width}:${level.height}:flags=lanczos,setsar=1`,
-      "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-profile:v", "high", "-pix_fmt", "yuv420p",
-      "-maxrate", String(level.maxRate), "-bufsize", String(level.maxRate * 2), "-threads", "2",
-      "-force_key_frames", "expr:gte(t,n_forced*4)", "-sc_threshold", "0",
-      "-c:a", "aac", "-b:a", "160k", "-ac", "2", "-ar", "48000",
-      "-f", "hls", "-hls_time", "4", "-hls_playlist_type", "vod", "-hls_segment_type", "fmp4",
-      "-hls_fmp4_init_filename", "init.mp4", "-hls_flags", "independent_segments",
-      "-hls_segment_filename", path.join(directory, "segment-%06d.m4s"), path.join(directory, "index.m3u8"),
-    ], { signal, timeout: 2 * 60 * 60 * 1000, maxBuffer: 1024 * 1024 });
-  }
+  for (const level of ladder) await mkdir(path.join(destination, level.name));
+  await encode({ args: encodeArguments({ source, destination, ladder }), duration: info.duration, signal, onProgress });
   await writeFile(path.join(destination, "master.m3u8"), [
     "#EXTM3U", "#EXT-X-VERSION:7", "#EXT-X-INDEPENDENT-SEGMENTS",
     ...ladder.flatMap((level) => [

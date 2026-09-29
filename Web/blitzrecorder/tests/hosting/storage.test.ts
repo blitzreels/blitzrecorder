@@ -6,7 +6,7 @@ import { Pool } from "pg";
 import { beginUpload, authenticate, ownedAsset, revokeAsset, sharedAsset, updateDetails, finishUpload } from "../../lib/hosting/service";
 import { EMPTY_DETAILS } from "../../lib/hosting/details";
 import { hostingPool } from "../../lib/hosting/db";
-import { newAccessToken, tokenHash, parseUploadInput, reservationBytes, type HostingAccount } from "../../lib/hosting/model";
+import { newAccessToken, tokenHash, parseUploadInput, publicAsset, reservationBytes, type HostingAccount } from "../../lib/hosting/model";
 import { r2 } from "../../lib/hosting/r2";
 import type Stripe from "stripe";
 import { getStripe } from "../../lib/payments";
@@ -38,6 +38,7 @@ test.before(async () => {
   await hostingPool().query(await readFile(new URL("../../migrations/002-hosting-details.sql", import.meta.url), "utf8"));
   await hostingPool().query(await readFile(new URL("../../migrations/003-hosting-accounts.sql", import.meta.url), "utf8"));
   await hostingPool().query(await readFile(new URL("../../migrations/004-hosting-usage.sql", import.meta.url), "utf8"));
+  await hostingPool().query(await readFile(new URL("../../migrations/006-hosting-processing-progress.sql", import.meta.url), "utf8"));
   r2().middlewareStack.add(() => async (args) => {
     const value = args.input as { Key?: string };
     if (value.Key?.startsWith("hosting-jobs/") && failJobNotification) {
@@ -128,6 +129,15 @@ integration("only the paid owner can attach bounded viewer metadata and revoked 
   await assert.rejects(updateDetails({ account: owner, id: asset.id, body: { ...body, chapters: [{ start: 99, title: "Invalid" }] } }), { status: 400 });
   await revokeAsset({ account: owner, id: asset.id });
   await assert.rejects(updateDetails({ account: owner, id: asset.id, body }), { status: 409 });
+});
+
+integration("the Mac sees processing progress only while a video is being prepared", async () => {
+  const owner = await account({ limit: 1024 ** 3, active: true });
+  const { id } = await beginUpload({ account: owner, body: { ...input, requestKey: "p".repeat(20) } });
+  await hostingPool().query("UPDATE hosting_assets SET status='processing', processing_progress=0.42 WHERE id=$1", [id]);
+  assert.equal(publicAsset(await ownedAsset({ account: owner, id })).progress, 0.42);
+  await hostingPool().query("UPDATE hosting_assets SET status='ready' WHERE id=$1", [id]);
+  assert.equal(publicAsset(await ownedAsset({ account: owner, id })).progress, null);
 });
 
 integration("stopping a share from the web only works for the owner and ends the public link", async () => {

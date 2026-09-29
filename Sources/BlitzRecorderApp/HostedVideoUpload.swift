@@ -37,6 +37,7 @@ struct HostingAsset: Decodable {
     var partBytes: Int? = nil
     var parts: Int? = nil
     var uploadedParts: [Part]? = nil
+    var progress: Double? = nil
 }
 
 final class HostingRedirectPolicy: NSObject, URLSessionTaskDelegate, Sendable {
@@ -105,7 +106,12 @@ struct HostingClient {
         case optimizing(Double)
         case preparing
         case uploading(HostingUploadBytes)
-        case processing
+        case processing(Double?)
+
+        var isProcessing: Bool {
+            if case .processing = self { return true }
+            return false
+        }
     }
 
     func upload(_ request: Upload) async throws -> URL {
@@ -198,13 +204,18 @@ struct HostingClient {
             try Task.checkCancellation()
             let _: HostingAsset = try await send(.init(route: "assets/\(asset.id)/complete", token: request.token, body: Data("{}".utf8)))
         }
-        await request.progress(.processing)
+        var reported: Double?
+        await request.progress(.processing(nil))
         let deadline = ContinuousClock.now.advanced(by: .seconds(7200))
         while ContinuousClock.now < deadline {
             try Task.checkCancellation()
             let status: HostingAsset = try await send(.init(route: "assets/\(asset.id)", token: request.token, body: nil))
             if status.status == "ready", let path = status.sharePath { return try shareURL(path) }
             if ["failed", "revoked"].contains(status.status) { throw HostingFailure(message: status.error ?? "The video could not be shared.") }
+            if let fraction = status.progress.map({ min(max($0, 0), 1) }), fraction != reported {
+                reported = fraction
+                await request.progress(.processing(fraction))
+            }
             try await Task.sleep(for: .seconds(3))
         }
         throw HostingFailure(message: "The video is still processing. Check again to retrieve the same link.")

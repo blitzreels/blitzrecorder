@@ -136,7 +136,7 @@ struct HostedVideoSharePanel: View {
                         Text("Keep editing while your video is prepared.")
                             .font(BlitzType.body).foregroundStyle(BlitzUI.supportingText)
                         Spacer(minLength: 8)
-                        if progress != .processing {
+                        if !progress.isProcessing {
                             Button(action: controller.pause) { Label("Pause", systemImage: "pause.fill") }
                                 .blitzButton(.secondary).controlSize(.small)
                         }
@@ -178,7 +178,7 @@ struct HostedVideoSharePanel: View {
                 }
             case .resume:
                 Button(action: controller.start) {
-                    Text(controller.transferProgress == .processing ? "Check playback status"
+                    Text(controller.transferProgress?.isProcessing == true ? "Check playback status"
                          : controller.transferMessage == nil ? "Create share link" : "Resume upload")
                         .frame(maxWidth: .infinity)
                 }.blitzButton(.accent).controlSize(.large)

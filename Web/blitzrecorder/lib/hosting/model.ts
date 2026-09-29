@@ -57,6 +57,7 @@ export type HostedAsset = {
   expires_at: Date;
   lease_token: string | null;
   lease_until: Date | null;
+  processing_progress?: number | null;
   attempts: number;
   stream_prefix: string | null;
   files: HostedFile[];
@@ -127,5 +128,6 @@ export function publicAsset(asset: HostedAsset) {
     sharePath: asset.status === "ready" ? `/s/${asset.slug}` : null,
     duration: asset.duration, width: asset.width, height: asset.height,
     bytes: Number(asset.stored_bytes), error: asset.error,
+    progress: asset.status === "processing" ? asset.processing_progress ?? null : null,
   };
 }

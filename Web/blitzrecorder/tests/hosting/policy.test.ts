@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parseUploadInput, partSize, PART_BYTES, reservationBytes, safeDeliveryPath, tokenHash, newAccessToken } from "../../lib/hosting/model";
-import { renditions } from "../../lib/hosting/transcode";
+import { encodeArguments, renditions } from "../../lib/hosting/transcode";
 
 const valid = { title: "Demo", bytes: 1024, duration: 12, contentType: "video/mp4", requestKey: "a".repeat(24) };
 
@@ -34,6 +34,16 @@ test("renditions preserve portrait and landscape geometry without upscaling", ()
   const portrait = renditions({ duration: 10, width: 1080, height: 1920, hasAudio: false });
   assert.deepEqual(portrait.map(({ width, height }) => [width, height]), [[480, 852], [720, 1280], [1080, 1920]]);
   assert.deepEqual(renditions({ duration: 10, width: 400, height: 300, hasAudio: false }).map(({ width, height }) => [width, height]), [[400, 300]]);
+});
+
+test("one ffmpeg pass decodes the source once and writes every rendition", () => {
+  const ladder = renditions({ duration: 10, width: 1920, height: 1080, hasAudio: true });
+  const args = encodeArguments({ source: "/work/source.mov", destination: "/work/stream", ladder });
+  assert.equal(args.filter((arg) => arg === "-i").length, 1);
+  assert.match(args[args.indexOf("-filter_complex") + 1], /^\[0:v\]split=3\[s0\]\[s1\]\[s2\];/);
+  assert.deepEqual(args.filter((arg) => arg.endsWith("index.m3u8")),
+    ["/work/stream/v480/index.m3u8", "/work/stream/v720/index.m3u8", "/work/stream/v1080/index.m3u8"]);
+  assert.equal(args[args.indexOf("-progress") + 1], "pipe:1");
 });
 
 test("owner keys are random bearer credentials and only their digests are stored", () => {

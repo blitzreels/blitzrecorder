@@ -51,6 +51,12 @@ export function SiteNav() {
           ))}
         </nav>
         <div className="ml-auto flex items-center gap-4 md:ml-8">
+          <Link
+            href="/hosting/videos"
+            className="text-sm text-muted-foreground transition-colors hover:text-foreground max-[359px]:hidden"
+          >
+            Your videos
+          </Link>
           <GitHubLink className="hidden text-muted-foreground transition-colors hover:text-foreground sm:inline-flex" />
           <DownloadButton label="Download" source="nav" size="default" className="" />
         </div>
