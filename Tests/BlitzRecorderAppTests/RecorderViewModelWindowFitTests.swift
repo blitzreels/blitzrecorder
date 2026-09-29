@@ -256,7 +256,9 @@ final class RecorderViewModelWindowFitTests: XCTestCase {
         XCTAssertEqual(vm.pendingTargetWindowFitContext, scheduledContext)
         coordinator.settings.sceneLayout.screenFrame.size.height = 0.45
         vm.syncSettings()
-        try await Task.sleep(for: .milliseconds(100))
+        for _ in 0..<40 where vm.hasScheduledTargetWindowFit || vm.pendingTargetWindowFitContext != nil {
+            try await Task.sleep(for: .milliseconds(50))
+        }
         XCTAssertFalse(vm.hasScheduledTargetWindowFit)
         XCTAssertNil(vm.pendingTargetWindowFitContext)
         XCTAssertEqual(vm.targetWindowZoom, 1.1, accuracy: 0.0001)
