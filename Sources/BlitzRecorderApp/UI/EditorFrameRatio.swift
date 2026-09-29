@@ -9,14 +9,14 @@ struct EditorFrameRatioButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(isSelected ? BlitzUI.mint : .white.opacity(0.68))
+                .font(BlitzType.footnote)
+                .foregroundStyle(isSelected ? BlitzUI.mint : BlitzUI.supportingText)
                 .frame(maxWidth: .infinity, minHeight: 30)
                 .background(
                     isSelected ? BlitzUI.selectedFill : BlitzUI.quietFill,
-                    in: .rect(cornerRadius: 7)
+                    in: .rect(cornerRadius: BlitzUI.controlRadius)
                 )
-                .contentShape(.rect(cornerRadius: 7))
+                .contentShape(.rect(cornerRadius: BlitzUI.controlRadius))
         }
         .buttonStyle(.plain)
         .pointingHandCursor()

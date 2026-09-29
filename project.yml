@@ -48,6 +48,10 @@ targets:
         buildPhase: resources
       - path: Resources/BlitzReelsWordmarkWhite.png
         buildPhase: resources
+      - path: Resources/IntegrationClaude.png
+        buildPhase: resources
+      - path: Resources/IntegrationCodex.png
+        buildPhase: resources
     resources:
       - path: Resources/AppIcon.png
         optional: true
@@ -106,8 +110,6 @@ targets:
       - path: Apps/iOSCamera/Sources
       - path: Apps/iOSCamera/Resources/Assets.xcassets
       - path: Apps/iOSCamera/Resources/PrivacyInfo.xcprivacy
-        buildPhase: resources
-      - path: Apps/iOSCamera/Resources/ScreenshotPreview.jpg
         buildPhase: resources
       - path: Resources/AppIcon.png
         buildPhase: resources

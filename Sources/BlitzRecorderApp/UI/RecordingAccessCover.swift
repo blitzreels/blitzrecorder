@@ -10,9 +10,12 @@ struct RecordingAccessCover: View {
 
     private let accent = BlitzUI.mint
 
-    /// The four capture sources (Accessibility lives in the Access tab, not here).
     private var sourceRows: [PermissionStatusRow] {
         vm.permissionStatusRows.filter { $0.source != nil }
+    }
+
+    private var accessibilityRow: PermissionStatusRow? {
+        vm.permissionStatusRows.first { $0.source == nil }
     }
 
     private var activeRows: [PermissionStatusRow] {
@@ -37,7 +40,7 @@ struct RecordingAccessCover: View {
     }
 
     private var hasAllowable: Bool {
-        sourceRows.contains { coverAction(for: $0) == .allow || coverAction(for: $0) == .enable }
+        sourceRows.contains { coverAction(for: $0) == .allow }
     }
 
     var body: some View {
@@ -86,8 +89,8 @@ struct RecordingAccessCover: View {
         ZStack {
             LinearGradient(
                 colors: [
-                    Color(red: 0.03, green: 0.03, blue: 0.04),
-                    Color(red: 0.06, green: 0.06, blue: 0.08)
+                    BlitzUI.canvasBackground,
+                    BlitzUI.projectLibraryBackground
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -107,16 +110,16 @@ struct RecordingAccessCover: View {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
                 .frame(width: 60, height: 60)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: BlitzUI.cardRadius, style: .continuous))
                 .shadow(color: .black.opacity(0.4), radius: 14, y: 8)
 
             VStack(spacing: 6) {
                 Text("Welcome to BlitzRecorder")
-                    .font(.system(size: 24, weight: .bold))
+                    .font(BlitzType.largeTitle)
                     .foregroundStyle(.white)
                 Text("Allow a few permissions and you're ready to record.")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .font(BlitzType.callout)
+                    .foregroundStyle(BlitzUI.secondaryText)
                     .multilineTextAlignment(.center)
             }
         }
@@ -127,19 +130,34 @@ struct RecordingAccessCover: View {
             ForEach(Array(sourceRows.enumerated()), id: \.element.id) { index, row in
                 if index > 0 {
                     Divider()
-                        .background(.white.opacity(0.06))
+                        .background(BlitzUI.controlFill)
                         .padding(.horizontal, 14)
                 }
                 AccessPermissionRow(
                     row: row,
                     action: coverAction(for: row),
                     accent: accent,
-                    onTap: { performAction(for: row) }
+                    isRequesting: vm.isRequestingPermissions,
+                    onTap: { performAction(for: row) },
+                    onOpenSettings: vm.openScreenRecordingSettings
+                )
+            }
+            if let row = accessibilityRow {
+                Divider()
+                    .background(BlitzUI.controlFill)
+                    .padding(.horizontal, 14)
+                AccessPermissionRow(
+                    row: row,
+                    action: coverAction(for: row),
+                    accent: accent,
+                    isRequesting: vm.isRequestingPermissions,
+                    onTap: { performAction(for: row) },
+                    onOpenSettings: vm.openScreenRecordingSettings
                 )
             }
         }
         .padding(.vertical, 6)
-        .blitzGlassSurface(cornerRadius: 18)
+        .blitzGlassSurface(cornerRadius: BlitzUI.surfaceRadius)
         .shadow(color: .black.opacity(0.34), radius: 28, y: 14)
     }
 
@@ -151,13 +169,13 @@ struct RecordingAccessCover: View {
                     .foregroundStyle(accent)
             } else if requiredCount > 0 {
                 Text("\(readyCount) of \(requiredCount) permissions ready")
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(BlitzUI.secondaryText)
             } else {
                 Text("Select a source in BlitzRecorder to begin")
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(BlitzUI.secondaryText)
             }
         }
-        .font(.system(size: 12, weight: .semibold))
+        .font(BlitzType.strong)
         .animation(.smooth(duration: 0.3), value: readyCount)
     }
 
@@ -167,52 +185,49 @@ struct RecordingAccessCover: View {
                 vm.startFromCover()
             } label: {
                 Label("Continue to recorder", systemImage: "arrow.right")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(BlitzType.headline)
                     .frame(maxWidth: .infinity)
                     .frame(height: 44)
             }
             .blitzButton(.accent)
             .tint(accent)
-            .disabled(!isReady)
+            .disabled(!isReady || vm.isRequestingPermissions)
             .opacity(isReady ? 1 : 0.45)
             .pointingHandCursor()
 
             HStack(spacing: 18) {
                 if hasAllowable {
-                    Button {
-                        vm.allowAllFromCover()
-                    } label: {
-                        Text("Allow All")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.82))
-                    }
-                    .buttonStyle(.plain)
-                    .pointingHandCursor()
+                    Button("Allow selected sources", action: vm.allowAllFromCover)
+                        .blitzButton(.quiet)
+                        .controlSize(.small)
+                        .disabled(vm.isRequestingPermissions)
                 }
 
-                Button {
-                    vm.dismissFirstRunOnboarding()
-                } label: {
-                    Text("Set up later")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.5))
-                }
-                .buttonStyle(.plain)
-                .pointingHandCursor()
+                Button("Set up later", action: vm.dismissFirstRunOnboarding)
+                    .blitzButton(.quiet)
+                    .controlSize(.small)
             }
         }
     }
 
     private func coverAction(for row: PermissionStatusRow) -> CoverAction {
-        guard let source = row.source else { return .inactive }
+        guard let source = row.source else {
+            if row.isGranted { return .granted }
+            return vm.coordinator.permissionGate.hasRequestedAccessibilityAccessThisSession
+                ? .openSettings : .allow
+        }
         if source == .systemAudio && !row.isActive { return .enable }
         if !row.isActive { return .inactive }
         if row.isGranted { return .granted }
         switch source {
         case .screen:
-            return vm.screenAccessAwaitingRestart ? .quitReopen : .allow
+            if vm.screenAccessAwaitingRestart { return .quitReopen }
+            return vm.coordinator.permissionGate.hasRequestedScreenCaptureAccessThisSession
+                ? .openSettings : .allow
         case .systemAudio:
-            return vm.screenAccessAwaitingRestart ? .quitReopen : .allow
+            if vm.screenAccessAwaitingRestart { return .quitReopen }
+            return vm.coordinator.permissionGate.hasRequestedScreenCaptureAccessThisSession
+                ? .openSettings : .allow
         case .camera, .microphone:
             // notDetermined can be resolved with an in-app prompt; denied/restricted needs Settings.
             return row.status == "not determined" ? .allow : .openSettings
@@ -220,7 +235,14 @@ struct RecordingAccessCover: View {
     }
 
     private func performAction(for row: PermissionStatusRow) {
-        guard let source = row.source else { return }
+        guard let source = row.source else {
+            switch coverAction(for: row) {
+            case .allow: vm.requestAccessibilityPermission()
+            case .openSettings: vm.openAccessibilitySettings()
+            default: break
+            }
+            return
+        }
         switch coverAction(for: row) {
         case .granted, .inactive:
             break
@@ -257,7 +279,9 @@ private struct AccessPermissionRow: View {
     let row: PermissionStatusRow
     let action: CoverAction
     let accent: Color
+    let isRequesting: Bool
     let onTap: () -> Void
+    let onOpenSettings: () -> Void
 
     var body: some View {
         HStack(spacing: 13) {
@@ -265,12 +289,12 @@ private struct AccessPermissionRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white.opacity(action == .inactive ? 0.4 : 0.92))
+                    .font(BlitzType.section)
+                    .foregroundStyle(action == .inactive ? BlitzUI.tertiaryText : BlitzUI.primaryText)
                 Text(subtitle)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(action == .inactive ? 0.3 : 0.5))
-                    .lineLimit(1)
+                    .font(BlitzType.captionEmphasis)
+                    .foregroundStyle(action == .inactive ? BlitzUI.tertiaryText : BlitzUI.secondaryText)
+                    .lineLimit(2)
             }
 
             Spacer(minLength: 12)
@@ -282,21 +306,23 @@ private struct AccessPermissionRow: View {
     }
 
     private var subtitle: String {
-        guard let source = row.source else { return "" }
+        guard let source = row.source else {
+            return row.isGranted ? "Window controls ready" : "Optional — move and resize captured windows"
+        }
         switch action {
         case .inactive: return "Not in current setup"
         case .enable: return "Optional — record sound from apps"
-        case .quitReopen: return "Enabled — restart to finish"
+        case .quitReopen: return "After enabling in Settings, reopen BlitzRecorder"
         default: return source.onboardingPurpose
         }
     }
 
     private var iconBadge: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous)
                 .fill(badgeColor.opacity(0.16))
             Image(systemName: row.symbol)
-                .font(.system(size: 14, weight: .semibold))
+                .font(BlitzType.glyph(14))
                 .foregroundStyle(badgeColor)
         }
         .frame(width: 34, height: 34)
@@ -305,9 +331,9 @@ private struct AccessPermissionRow: View {
     private var badgeColor: Color {
         switch action {
         case .granted: return accent
-        case .allow, .enable: return .white.opacity(0.8)
-        case .openSettings, .quitReopen: return Color(red: 1.0, green: 0.66, blue: 0.16)
-        case .inactive: return .white.opacity(0.3)
+        case .allow, .enable: return BlitzUI.supportingText
+        case .openSettings, .quitReopen: return BlitzUI.warning
+        case .inactive: return BlitzUI.tertiaryText
         }
     }
 
@@ -319,7 +345,7 @@ private struct AccessPermissionRow: View {
                 Image(systemName: "checkmark.circle.fill")
                 Text("Granted")
             }
-            .font(.system(size: 12, weight: .semibold))
+            .font(BlitzType.strong)
             .foregroundStyle(accent)
             .transition(.scale(scale: 0.6).combined(with: .opacity))
         case .inactive:
@@ -331,18 +357,23 @@ private struct AccessPermissionRow: View {
         case .openSettings:
             actionButton("Open Settings", icon: "gearshape")
         case .quitReopen:
-            actionButton("Quit & Reopen", icon: "arrow.clockwise")
+            HStack(spacing: 6) {
+                Button("Settings…", action: onOpenSettings)
+                    .blitzButton(.quiet)
+                    .controlSize(.small)
+                    .disabled(isRequesting)
+                actionButton("Quit & Reopen", icon: "arrow.clockwise")
+            }
         }
     }
 
     private func actionButton(_ title: String, icon: String) -> some View {
         Button(action: onTap) {
             Label(title, systemImage: icon)
-                .font(.system(size: 12, weight: .bold))
-                .padding(.horizontal, 12)
-                .frame(height: 30)
         }
         .blitzButton(.secondary)
+        .controlSize(.small)
+        .disabled(isRequesting)
         .pointingHandCursor()
     }
 }

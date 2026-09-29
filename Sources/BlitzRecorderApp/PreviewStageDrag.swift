@@ -40,6 +40,7 @@ enum PreviewStageDrag {
         let startFrame: CGRect
         let delta: CGPoint
         let screenContentMode: CameraContentMode
+        let locksAspectRatio: Bool
     }
 
     static func tick(_ request: TickRequest) -> Tick {
@@ -62,7 +63,7 @@ enum PreviewStageDrag {
                 request.startFrame,
                 delta: request.delta,
                 anchor: anchor,
-                aspectRatio: anchor.keepsAspectRatio
+                aspectRatio: anchor.keepsAspectRatio || request.locksAspectRatio
                     ? request.startFrame.width / max(0.01, request.startFrame.height)
                     : nil
             ))

@@ -36,15 +36,19 @@ final class RecorderViewModel {
     var lastRecoveryOutput: RecordingRecoveryOutput?
     var lastPostRecordingProjectOutput: PostRecordingProjectOutput?
     var lastExportedProject: RecordingProject?
-    var studioMode: StudioMode = .record {
+    var studioMode: StudioMode = .projects {
         didSet {
             isShowingSettings = false
+            onEditorHistoryChanged?()
             guard oldValue != studioMode else { return }
+            cancelCountdown()
             onStudioModeChanged?(studioMode)
         }
     }
     private(set) var isShowingSettings = false
     var selectedSettingsPane: SettingsPane = .recording
+
+    var isEditorVisible: Bool { studioMode == .edit && !isShowingSettings }
 
     var settingsReturnTitle: String {
         switch studioMode {
@@ -69,7 +73,7 @@ final class RecorderViewModel {
     var projectLibraryError: String?
 
     var canShowProjects: Bool {
-        state == .idle && (!recentProjects.isEmpty || projectTrash.canRestore)
+        !projectTrash.isWorking
     }
 
     var availableDisplays: [SourceOption] = []
@@ -84,6 +88,8 @@ final class RecorderViewModel {
     var remoteCameraPreviewFrameSize: (width: Int, height: Int)?
 
     var elapsedSeconds: Int = 0
+    var captureStopProgress: CaptureStopProgress?
+    var finishingStartedAt: Date?
     var renderProgress: Double = 0
     let elapsedClock = RecordingElapsedClock()
 
@@ -97,6 +103,10 @@ final class RecorderViewModel {
     @ObservationIgnored var editorHistory = EditorProjectHistory()
     var editorHistoryRevision = 0
     var inspectorSelection: RecorderInspectorSelection = .canvas
+    var liveSceneThumbnails = LiveSceneThumbnails()
+    var countdownRemaining: Int?
+    var countdownSeconds = RecordingCountdownPreference().seconds
+    var countdownTask: Task<Void, Never>?
     var projectLibraryNavigation = ProjectLibraryNavigationState()
     let projectTrash = ProjectLibraryTrashController(operations: .live)
     var screenSplitPreviewHeight: Double?
@@ -114,6 +124,10 @@ final class RecorderViewModel {
     var targetWindowStatus: String = "Detecting target..."
     var targetWindowZoom: CGFloat = 1.0
     @ObservationIgnored var targetWindowZoomTask: Task<Void, Never>?
+    @ObservationIgnored var pendingTargetWindowFitContext: ScheduledTargetWindowFitContext?
+    @ObservationIgnored var permissionRequestTask: Task<Void, Never>?
+    @ObservationIgnored var permissionRequestID: UUID?
+    var isRequestingPermissions = false
     var permissionRefreshToken = 0
     var remoteCameraRefreshToken = 0
 
@@ -264,6 +278,13 @@ final class RecorderViewModel {
         remoteCameraPreviewSurface.setMessage("Waiting for iPhone preview")
         if let selectedLayer = inspectorSelection.sceneLayer {
             previewStage.selectedLayer = selectedLayer
+        }
+
+        previewStage.screenPreview.thumbnailSampler.onImage = { [weak self] image in
+            self?.liveSceneThumbnails.screen = image
+        }
+        previewStage.cameraPreview.thumbnailSampler.onImage = { [weak self] image in
+            self?.liveSceneThumbnails.camera = image
         }
 
         previewStage.onLayerSelected = { [weak self] kind in

@@ -1,5 +1,4 @@
 import CoreGraphics
-import CoreMedia
 import Foundation
 
 @MainActor
@@ -58,6 +57,10 @@ final class RecorderStudioConfiguration {
             layout: settings.layout,
             snapshot: currentRecordingSceneSnapshot()
         )
+        saveSceneLibrary()
+    }
+
+    func saveSceneLibrary() {
         SceneLibraryStore.save(sceneLibrary, defaults: defaults)
     }
 
@@ -132,164 +135,6 @@ final class RecorderStudioConfiguration {
         if shouldUpdateCapture {
             onScreenCaptureConfigurationChanged?()
         }
-    }
-
-    func scenesForCurrentLayout() -> [RecordingSceneDefinition] {
-        sceneLibrary.scenes(for: settings.layout)
-    }
-
-    func scenes(for layout: CaptureLayout) -> [RecordingSceneDefinition] {
-        sceneLibrary.scenes(for: layout)
-    }
-
-    func layout(ofSceneID id: UUID) -> CaptureLayout? {
-        sceneLibrary.layout(ofSceneID: id)
-    }
-
-    func selectedSceneIDForCurrentLayout() -> UUID? {
-        sceneLibrary.selectedSceneIDsByLayout[settings.layout]
-    }
-
-    func selectedSceneName() -> String {
-        sceneLibrary.selectedScene(layout: settings.layout)?.name ?? "Scene"
-    }
-
-    func selectScene(id: UUID) {
-        guard allowsSceneChanges else {
-            onMessage?("Scenes are locked while saving.")
-            return
-        }
-        saveCurrentSceneSnapshotIfNeeded()
-        guard let scene = sceneLibrary.selectScene(id: id, layout: settings.layout) else { return }
-        SceneLibraryStore.save(sceneLibrary, defaults: defaults)
-        let screenSelection = currentScreenSourceSelection()
-        let screenAspectRatio = settings.screenSourceAspectRatio
-        applySceneSnapshot(scene.snapshot)
-        restoreScreenSourceSelection(screenSelection)
-        settings.screenSourceAspectRatio = screenAspectRatio
-        persist(saveSceneSnapshot: false)
-        updateRecordingScene?(.sceneSwitch)
-        onScreenCaptureConfigurationChanged?()
-        if state == .idle {
-            onCameraConfigurationChanged?()
-        }
-        autoFitSelectedScreenWindow?()
-    }
-
-    func createSceneFromCurrentSettings(named name: String? = nil) {
-        guard state == .idle else {
-            onMessage?("Scene library editing is locked while recording.")
-            return
-        }
-        saveCurrentSceneSnapshotIfNeeded()
-        let snapshot = currentRecordingSceneSnapshot()
-        let scene = sceneLibrary.createScene(
-            layout: settings.layout,
-            name: name ?? RecordingSceneDefinition.defaultName(for: settings),
-            snapshot: snapshot
-        )
-        SceneLibraryStore.save(sceneLibrary, defaults: defaults)
-        applySceneSnapshot(scene.snapshot)
-        persist(saveSceneSnapshot: false)
-        onScreenCaptureConfigurationChanged?()
-        onCameraConfigurationChanged?()
-        autoFitSelectedScreenWindow?()
-    }
-
-    func duplicateSelectedScene() {
-        guard state == .idle else {
-            onMessage?("Scene library editing is locked while recording.")
-            return
-        }
-        saveCurrentSceneSnapshotIfNeeded()
-        guard let selectedSceneID = sceneLibrary.selectedSceneIDsByLayout[settings.layout],
-              let scene = sceneLibrary.duplicateScene(id: selectedSceneID, layout: settings.layout) else {
-            return
-        }
-        SceneLibraryStore.save(sceneLibrary, defaults: defaults)
-        applySceneSnapshot(scene.snapshot)
-        persist(saveSceneSnapshot: false)
-        onScreenCaptureConfigurationChanged?()
-        onCameraConfigurationChanged?()
-        autoFitSelectedScreenWindow?()
-    }
-
-    func renameScene(id: UUID, to name: String) {
-        guard state == .idle else {
-            onMessage?("Scene library editing is locked while recording.")
-            return
-        }
-        guard sceneLibrary.renameScene(id: id, layout: settings.layout, name: name) else {
-            return
-        }
-        SceneLibraryStore.save(sceneLibrary, defaults: defaults)
-    }
-
-    func deleteScene(id: UUID) {
-        guard state == .idle else {
-            onMessage?("Scene library editing is locked while recording.")
-            return
-        }
-        guard sceneLibrary.deleteScene(id: id, layout: settings.layout) else {
-            onMessage?("Keep at least one scene in this canvas format.")
-            return
-        }
-        SceneLibraryStore.save(sceneLibrary, defaults: defaults)
-        if let selectedScene = sceneLibrary.selectedScene(layout: settings.layout) {
-            applySceneSnapshot(selectedScene.snapshot)
-            persist(saveSceneSnapshot: false)
-            onScreenCaptureConfigurationChanged?()
-            onCameraConfigurationChanged?()
-        }
-    }
-
-    func moveScene(id: UUID, to index: Int) {
-        guard state == .idle else {
-            onMessage?("Scene library editing is locked while recording.")
-            return
-        }
-        guard sceneLibrary.moveScene(id: id, layout: settings.layout, to: index) else {
-            return
-        }
-        SceneLibraryStore.save(sceneLibrary, defaults: defaults)
-    }
-
-    func setLayout(_ layout: CaptureLayout) {
-        guard state == .idle else {
-            onMessage?("Output aspect ratio is locked while recording.")
-            return
-        }
-        guard settings.layout != layout else {
-            if let next = RecordingSceneMutation.clearingIncompatibleScreenCrop(settings) {
-                settings = next
-                persist()
-                onScreenCaptureConfigurationChanged?()
-            }
-            return
-        }
-        let preservedScreenSource = currentScreenSourceSelection()
-        saveCurrentSceneSnapshotIfNeeded()
-        settings.layout = layout
-        sceneLibrary.ensureScenes(for: layout)
-        if let scene = sceneLibrary.selectedScene(layout: layout) {
-            applySceneSnapshot(scene.snapshot)
-        } else {
-            settings.screenCrop = nil
-            let layoutDefaults = RecordingSceneMutation.defaultsForLayout(
-                layout,
-                screenAspectRatio: screenAspectRatio(),
-                cameraAspectRatio: cameraAspectRatio()
-            )
-            settings.selectedScenePreset = layoutDefaults.preset
-            settings.sceneLayout = layoutDefaults.layout
-        }
-        restoreScreenSourceSelection(preservedScreenSource)
-        recomputeSelectedPresetLayoutForCurrentSource()
-        SceneLibraryStore.save(sceneLibrary, defaults: defaults)
-        persist(saveSceneSnapshot: false)
-        onScreenCaptureConfigurationChanged?()
-        onCameraConfigurationChanged?()
-        autoFitSelectedScreenWindow?()
     }
 
     func setOutputResolution(_ outputResolution: OutputResolution) {
@@ -385,14 +230,6 @@ final class RecorderStudioConfiguration {
         persist()
     }
 
-    func setSource(_ source: CaptureSource, enabled: Bool) {
-        guard state == .idle else {
-            onMessage?("Capture source visibility is locked while recording.")
-            return
-        }
-        applySourceVisibility(source, enabled: enabled)
-    }
-
     func setSourceVisibilityDuringLiveCompositor(_ source: CaptureSource, enabled: Bool) {
         applySourceVisibility(source, enabled: enabled)
     }
@@ -422,9 +259,21 @@ final class RecorderStudioConfiguration {
     }
 
     func setOutputDirectory(_ url: URL) {
+        if settings.projectLibrary == nil { settings.projectLibrary = settings.sourceStorage }
         settings.outputDirectory = url
         settings.outputDirectoryBookmarkData = RecordingSettingsStore.bookmarkData(for: url)
         persist()
+    }
+
+    func setSourceDirectory(_ url: URL) {
+        guard state == .idle else { return }
+        let libraries = settings.projectLibraries
+        let selectedRoot = url.standardizedFileURL.resolvingSymlinksInPath()
+        settings.projectLibrary = RecordingStorageLocation(url: url, bookmarkData: RecordingSettingsStore.bookmarkData(for: url))
+        settings.additionalProjectLibraries = libraries.filter {
+            $0.url.standardizedFileURL.resolvingSymlinksInPath() != selectedRoot
+        }
+        persist(saveSceneSnapshot: false)
     }
 
     func setDisplay(id: String?) {
@@ -463,358 +312,6 @@ final class RecorderStudioConfiguration {
         refreshAudio?()
     }
 
-    func setSceneLayer(
-        _ kind: SceneLayerKind,
-        frame: CGRect,
-        transition: RecordingSceneTransition = .cut
-    ) {
-        guard sceneChangeIsAllowed() else { return }
-        settings.selectedScenePreset = nil
-        var screenCaptureConfigurationChanged = false
-        switch kind {
-        case .screen:
-            let nextFrame = SceneLayerResizing.clamped(frame)
-            if settings.sceneLayout.screenFrame != nextFrame, settings.screenCrop != nil {
-                settings.screenCrop = nil
-                screenCaptureConfigurationChanged = true
-            }
-            settings.sceneLayout.screenFrame = nextFrame
-        case .camera:
-            settings.sceneLayout.cameraFrame = SceneLayerResizing.clamped(frame)
-        }
-        persist()
-        updateRecordingScene?(transition)
-        if screenCaptureConfigurationChanged {
-            onScreenCaptureConfigurationChanged?()
-        }
-    }
-
-    func setCameraCropAmount(_ amount: CGPoint) {
-        guard sceneChangeIsAllowed() else { return }
-        settings.cameraCropAmount = SourceCropGeometry.clampedAmount(amount)
-        persist()
-        updateRecordingScene?(.cut)
-    }
-
-    func setCameraCropPosition(_ position: CGPoint) {
-        guard sceneChangeIsAllowed() else { return }
-        settings.cameraCropPosition = SourceCropGeometry.clampedPosition(position)
-        persist()
-        updateRecordingScene?(.cut)
-    }
-
-    func setCanvasBackgroundStyle(_ style: CanvasBackgroundStyle) {
-        guard sceneChangeIsAllowed() else { return }
-        settings.canvasBackgroundStyle = style
-        if !style.supportsBackgroundAnimation {
-            settings.canvasBackgroundAnimated = false
-        }
-        persist()
-        updateRecordingScene?(.cut)
-    }
-
-    func setCanvasBackgroundAnimated(_ animated: Bool) {
-        guard sceneChangeIsAllowed() else { return }
-        settings.canvasBackgroundAnimated = animated && settings.canvasBackgroundStyle.supportsBackgroundAnimation
-        persist()
-        updateRecordingScene?(.cut)
-    }
-
-    func setCanvasPadding(_ padding: CGFloat) {
-        guard sceneChangeIsAllowed() else { return }
-        settings.canvasPadding = CaptureValueClamps.canvasPadding(padding)
-        persist()
-        updateRecordingScene?(.cut)
-        autoFitSelectedScreenWindow?()
-    }
-
-    func setCameraContentMode(_ mode: CameraContentMode) {
-        guard sceneChangeIsAllowed() else { return }
-        settings.cameraContentMode = mode
-        persist()
-        updateRecordingScene?(.cut)
-    }
-
-    func setScreenContentMode(_ mode: CameraContentMode) {
-        guard sceneChangeIsAllowed() else { return }
-        settings.screenContentMode = mode
-        persist()
-        updateRecordingScene?(.cut)
-    }
-
-    func setCameraFramePadding(_ padding: CGFloat) {
-        guard sceneChangeIsAllowed() else { return }
-        settings.cameraFramePadding = 0
-        persist()
-        updateRecordingScene?(.cut)
-    }
-
-    func setCameraShadowEnabled(_ enabled: Bool) {
-        guard sceneChangeIsAllowed() else { return }
-        settings.cameraShadowEnabled = enabled
-        persist()
-        updateRecordingScene?(.cut)
-    }
-
-    func setSceneLayout(_ sceneLayout: SceneLayout) {
-        guard sceneChangeIsAllowed() else { return }
-        let nextScreenFrame = SceneLayerResizing.clamped(sceneLayout.screenFrame)
-        let nextCameraFrame = SceneLayerResizing.clamped(sceneLayout.cameraFrame)
-        let screenCaptureConfigurationChanged = settings.sceneLayout.screenFrame != nextScreenFrame
-            && settings.screenCrop != nil
-        settings.selectedScenePreset = nil
-        if screenCaptureConfigurationChanged {
-            settings.screenCrop = nil
-        }
-        settings.sceneLayout.screenFrame = nextScreenFrame
-        settings.sceneLayout.cameraFrame = nextCameraFrame
-        settings.sceneLayout.layerOrder = sceneLayout.layerOrder
-        persist()
-        updateRecordingScene?(.cut)
-        if screenCaptureConfigurationChanged {
-            onScreenCaptureConfigurationChanged?()
-        }
-    }
-
-    func previewSettings(for sceneLayout: SceneLayout) -> RecordingSettings {
-        var previewSettings = settings
-        previewSettings.selectedScenePreset = nil
-        previewSettings.sceneLayout.screenFrame = SceneLayerResizing.clamped(sceneLayout.screenFrame)
-        previewSettings.sceneLayout.cameraFrame = SceneLayerResizing.clamped(sceneLayout.cameraFrame)
-        previewSettings.sceneLayout.layerOrder = sceneLayout.layerOrder
-        return previewSettings
-    }
-
-    func resetSceneLayout() {
-        guard sceneChangeIsAllowed() else { return }
-        settings.selectedScenePreset = nil
-        settings.sceneLayout = SceneLayout.defaultLayout(
-            for: settings.layout,
-            screenAspectRatio: screenAspectRatio(),
-            cameraAspectRatio: cameraAspectRatio()
-        )
-        persist()
-        updateRecordingScene?(.sceneSwitch)
-        onScreenCaptureConfigurationChanged?()
-        autoFitSelectedScreenWindow?()
-    }
-
-    func applyScenePreset(_ preset: ScenePreset) {
-        guard sceneChangeIsAllowed() else { return }
-        guard preset.supports(settings.layout) else { return }
-        let cameraWasVisible = settings.enabledSources.contains(.camera)
-            && !settings.hiddenSources.contains(.camera)
-        settings = RecordingSceneMutation.applyingPreset(
-            preset,
-            to: settings,
-            screenAspectRatio: screenAspectRatio(),
-            cameraAspectRatio: cameraAspectRatio()
-        )
-        persist()
-        updateRecordingScene?(.sceneSwitch)
-        onScreenCaptureConfigurationChanged?()
-        let cameraIsVisible = settings.enabledSources.contains(.camera)
-            && !settings.hiddenSources.contains(.camera)
-        if cameraWasVisible != cameraIsVisible {
-            onCameraConfigurationChanged?()
-        }
-        autoFitSelectedScreenWindow?()
-    }
-
-    func setScreenSplitHeight(_ height: CGFloat) {
-        guard sceneChangeIsAllowed() else { return }
-        guard settings.layout == .vertical else { return }
-        let cameraWasVisible = settings.enabledSources.contains(.camera)
-            && !settings.hiddenSources.contains(.camera)
-        settings = RecordingSceneMutation.applyingScreenSplit(
-            height: height,
-            to: settings,
-            screenAspectRatio: screenAspectRatio()
-        )
-        persist()
-        updateRecordingScene?(.sceneSwitch)
-        onScreenCaptureConfigurationChanged?()
-        if !cameraWasVisible {
-            onCameraConfigurationChanged?()
-        }
-        autoFitSelectedScreenWindow?()
-    }
-
-    func setCameraInset(
-        alignment: CameraInsetAlignment,
-        shape: CameraInsetShape,
-        size: CGFloat
-    ) {
-        guard sceneChangeIsAllowed() else { return }
-        let screenWasVisible = settings.enabledSources.contains(.screen)
-            && !settings.hiddenSources.contains(.screen)
-        let cameraWasVisible = settings.enabledSources.contains(.camera)
-            && !settings.hiddenSources.contains(.camera)
-        let mutation = RecordingSceneMutation.applyingCameraInset(
-            alignment: alignment,
-            shape: shape,
-            size: size,
-            to: settings,
-            screenAspectRatio: screenAspectRatio(),
-            cameraAspectRatio: cameraAspectRatio()
-        )
-        settings = mutation.settings
-        persist()
-        updateRecordingScene?(.cut)
-        if mutation.clearedScreenCrop || !screenWasVisible {
-            onScreenCaptureConfigurationChanged?()
-        }
-        if !cameraWasVisible {
-            onCameraConfigurationChanged?()
-        }
-        autoFitSelectedScreenWindow?()
-    }
-
-    @discardableResult
-    func fitScreenToAvailableSlot() -> CGRect {
-        guard sceneChangeIsAllowed() else { return settings.sceneLayout.screenFrame }
-        let screenSlot = SceneSlotGeometry.screenSlot(
-            in: settings.sceneLayout,
-            enabledSources: settings.enabledSources
-        )
-        settings.selectedScenePreset = nil
-        settings.sceneLayout.screenFrame = SceneLayerResizing.clamped(screenSlot)
-        settings.screenCrop = nil
-        persist()
-        updateRecordingScene?(.sceneSwitch)
-        onScreenCaptureConfigurationChanged?()
-        return settings.sceneLayout.screenFrame
-    }
-
-    func fitScreenItemToFrontWindow(_ arrangement: ShortsWindowArrangement) {
-        settings.screenCrop = CaptureValueClamps.normalizedRect(arrangement.screenCrop)
-        persist()
-        updateRecordingScene?(.cut)
-        onScreenCaptureConfigurationChanged?()
-        onMessage?(arrangement.screenItemMessage)
-    }
-
-    func setSceneLayerOrder(_ order: [SceneLayerKind]) {
-        guard sceneChangeIsAllowed() else { return }
-        guard Set(order) == Set(SceneLayerKind.allCases),
-              order.count == SceneLayerKind.allCases.count else {
-            return
-        }
-        settings.selectedScenePreset = nil
-        settings.sceneLayout.layerOrder = order
-        persist()
-        updateRecordingScene?(.sceneSwitch)
-    }
-
-    func fitSceneLayer(_ kind: SceneLayerKind, scale: CGFloat = 1) {
-        let sourceAspectRatio: CGFloat
-        switch kind {
-        case .screen:
-            sourceAspectRatio = screenAspectRatio()
-        case .camera:
-            sourceAspectRatio = cameraAspectRatio()
-        }
-        setSceneLayer(
-            kind,
-            frame: SceneLayerFit.frame(.init(
-                kind: kind,
-                layout: settings.sceneLayout,
-                visibleSources: settings.visibleSources,
-                removesCameraBackgroundAfterRecording: settings.removesCameraBackgroundAfterRecording,
-                sourceAspectRatio: sourceAspectRatio,
-                canvasAspectRatio: settings.layout.aspectRatio,
-                scale: scale
-            )),
-            transition: .sceneSwitch
-        )
-    }
-
-    func beginScreenCropEditing() {
-        guard sceneChangeIsAllowed() else { return }
-        if let next = RecordingSceneMutation.clearingIncompatibleScreenCrop(settings) {
-            settings = next
-            persist()
-        }
-        isEditingScreenCrop = true
-        onScreenCaptureConfigurationChanged?()
-    }
-
-    func endScreenCropEditing() {
-        guard isEditingScreenCrop else { return }
-        isEditingScreenCrop = false
-        onScreenCaptureConfigurationChanged?()
-    }
-
-    func setScreenCrop(_ crop: CGRect?) {
-        guard sceneChangeIsAllowed() else { return }
-        if let crop {
-            settings.screenCrop = CaptureValueClamps.persistedScreenCrop(crop)
-        } else {
-            settings.screenCrop = nil
-        }
-        persist()
-        updateRecordingScene?(.cut)
-        onScreenCaptureConfigurationChanged?()
-    }
-
-    func setScreenWindowZoom(_ zoom: CGFloat) {
-        guard sceneChangeIsAllowed() else { return }
-        let zoom = ScreenSourceZoomGeometry.clamped(zoom)
-        guard abs(settings.screenWindowZoom - zoom) > 0.0001 else { return }
-        settings.screenWindowZoom = zoom
-        persist()
-    }
-
-    func applyPickedScreenCrop(_ crop: CGRect) {
-        settings.screenCrop = CaptureValueClamps.persistedScreenCrop(crop)
-        persist()
-        updateRecordingScene?(.cut)
-        onScreenCaptureConfigurationChanged?()
-    }
-
-    func clearScreenCrop() {
-        settings.screenCrop = nil
-        persist()
-        updateRecordingScene?(.cut)
-        onScreenCaptureConfigurationChanged?()
-    }
-
-    func clearCustomScreenCrop() {
-        guard settings.screenCrop != nil else { return }
-        clearScreenCrop()
-    }
-
-    func screenSettingsWithoutCrop() -> RecordingSettings {
-        var settings = settings
-        settings.screenCrop = nil
-        return settings
-    }
-
-    func noteScreenSourceAspectRatio(_ aspectRatio: CGFloat) {
-        guard aspectRatio > 0 else { return }
-        currentPickedScreenSourceAspectRatio = aspectRatio
-    }
-
-    @discardableResult
-    func refitCameraInsetFrame(sourceAspectRatio: CGFloat) -> Bool {
-        let frame = settings.sceneLayout.cameraFrame
-        guard SceneLayout.isCameraInsetFrame(frame) else { return false }
-        let next = SceneLayout.cameraInsetFrame(
-            for: settings.layout,
-            alignment: SceneLayout.cameraInsetAlignment(for: frame),
-            shape: SceneLayout.cameraInsetShape(for: frame, in: settings.layout),
-            size: SceneLayout.cameraInsetSize(for: frame, in: settings.layout),
-            sourceAspectRatio: sourceAspectRatio
-        )
-        let epsilon: CGFloat = 0.0005
-        guard abs(next.minX - frame.minX) > epsilon
-            || abs(next.minY - frame.minY) > epsilon
-            || abs(next.width - frame.width) > epsilon
-            || abs(next.height - frame.height) > epsilon else { return false }
-        settings.sceneLayout.cameraFrame = next
-        return true
-    }
-
     private func applySourceVisibility(_ source: CaptureSource, enabled: Bool) {
         if enabled {
             settings.enabledSources.insert(source)
@@ -838,13 +335,5 @@ final class RecorderStudioConfiguration {
         } else if source == .screen {
             onScreenCaptureConfigurationChanged?()
         }
-    }
-
-    private func sceneChangeIsAllowed() -> Bool {
-        guard allowsSceneChanges else {
-            onMessage?("Scene layout is locked while saving.")
-            return false
-        }
-        return true
     }
 }

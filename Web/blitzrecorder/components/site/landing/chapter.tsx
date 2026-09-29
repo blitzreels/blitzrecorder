@@ -54,3 +54,18 @@ export function ChapterHeader({
     </div>
   );
 }
+
+export type ChapterPoint = { title: string; body: string };
+
+export function ChapterPoints({ points }: { points: ChapterPoint[] }) {
+  return (
+    <ul className="mt-12 grid gap-8 sm:grid-cols-3">
+      {points.map((point) => (
+        <li key={point.title} data-reveal className="border-t border-separator pt-5">
+          <h3 className="font-display text-lg font-bold tracking-[-0.01em]">{point.title}</h3>
+          <p className="mt-2 text-[15px] leading-6 text-muted-foreground">{point.body}</p>
+        </li>
+      ))}
+    </ul>
+  );
+}

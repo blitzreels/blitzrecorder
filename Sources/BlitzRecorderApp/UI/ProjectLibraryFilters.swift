@@ -48,6 +48,8 @@ struct ProjectLibraryFilters: Equatable {
     enum Sort: String, CaseIterable {
         case newest = "Newest first", oldest = "Oldest first", longest = "Longest first"
         case shortest = "Shortest first", title = "Title A–Z"
+
+        var isChronological: Bool { self == .newest || self == .oldest }
     }
 
     var recorded: Recorded = .any
@@ -115,5 +117,55 @@ struct ProjectLibraryFilters: Equatable {
             if lhs.recordedAt != rhs.recordedAt { return lhs.recordedAt > rhs.recordedAt }
             return lhs.id.uuidString < rhs.id.uuidString
         }
+    }
+}
+
+enum ProjectLibraryDayGroups {
+    struct Request {
+        let projects: [RecordingProjectHistory.Entry]
+        let groupsByDay: Bool
+        let now: Date
+        let calendar: Calendar
+    }
+
+    struct Group {
+        let title: String
+        let groupsByDay: Bool
+        let projects: [RecordingProjectHistory.Entry]
+    }
+
+    static func groups(_ request: Request) -> [Group] {
+        guard request.groupsByDay else {
+            return request.projects.isEmpty ? [] : [.init(title: "", groupsByDay: false, projects: request.projects)]
+        }
+        var groups: [Group] = []
+        for project in request.projects {
+            let title = title(.init(date: project.recordedAt, now: request.now, calendar: request.calendar))
+            if let last = groups.last, last.title == title {
+                groups[groups.count - 1] = .init(title: title, groupsByDay: true, projects: last.projects + [project])
+            } else {
+                groups.append(.init(title: title, groupsByDay: true, projects: [project]))
+            }
+        }
+        return groups
+    }
+
+    struct TitleRequest {
+        let date: Date
+        let now: Date
+        let calendar: Calendar
+    }
+
+    static func title(_ request: TitleRequest) -> String {
+        let calendar = request.calendar
+        if calendar.isDate(request.date, inSameDayAs: request.now) { return "Today" }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: request.now),
+           calendar.isDate(request.date, inSameDayAs: yesterday) { return "Yesterday" }
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: request.date),
+                                           to: calendar.startOfDay(for: request.now)).day ?? 0
+        if (2..<7).contains(days) { return request.date.formatted(.dateTime.weekday(.wide)) }
+        let sameYear = calendar.component(.year, from: request.date) == calendar.component(.year, from: request.now)
+        return sameYear ? request.date.formatted(.dateTime.day().month(.wide))
+            : request.date.formatted(.dateTime.day().month(.wide).year())
     }
 }

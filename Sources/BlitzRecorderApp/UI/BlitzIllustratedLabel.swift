@@ -31,10 +31,10 @@ struct BlitzIllustratedLabel<Preview: View>: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(configuration.title)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(BlitzType.label)
                     .foregroundStyle(BlitzUI.primaryText)
                 Text(configuration.detail)
-                    .font(.system(size: 11))
+                    .font(BlitzType.caption)
                     .foregroundStyle(BlitzUI.secondaryText)
             }
             .multilineTextAlignment(.leading)

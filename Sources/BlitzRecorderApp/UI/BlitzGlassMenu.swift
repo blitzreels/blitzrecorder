@@ -126,7 +126,7 @@ struct BlitzMenuList: View {
                                     .frame(height: BlitzControlMetrics.dividerHeight)
                             case .section(let title):
                                 Text(title)
-                                    .font(.system(size: 11, weight: .medium))
+                                    .font(BlitzType.captionEmphasis)
                                     .foregroundStyle(BlitzUI.secondaryText)
                                     .padding(.horizontal, 10)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -211,7 +211,7 @@ struct BlitzMenuRow: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(item.title)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(BlitzType.label)
                         .foregroundStyle(textColor)
                         .lineLimit(2)
                         .truncationMode(.tail)
@@ -219,7 +219,7 @@ struct BlitzMenuRow: View {
 
                     if let subtitle = item.subtitle, !subtitle.isEmpty {
                         Text(subtitle)
-                            .font(.system(size: 11))
+                            .font(BlitzType.caption)
                             .foregroundStyle(BlitzUI.secondaryText)
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -230,7 +230,7 @@ struct BlitzMenuRow: View {
 
                 if item.selection != nil {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(BlitzType.glyph(11))
                         .foregroundStyle(BlitzUI.mint)
                         .opacity(item.isSelected ? 1 : 0)
                         .accessibilityHidden(true)
@@ -239,8 +239,8 @@ struct BlitzMenuRow: View {
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: Self.height(item))
-            .background(item.isEnabled && (isHighlighted || isHovering) ? BlitzUI.selectedFill : .clear, in: .rect(cornerRadius: 7))
-            .contentShape(.rect(cornerRadius: 7))
+            .background(item.isEnabled && (isHighlighted || isHovering) ? BlitzUI.selectedFill : .clear, in: .rect(cornerRadius: BlitzUI.controlRadius))
+            .contentShape(.rect(cornerRadius: BlitzUI.controlRadius))
         }
         .buttonStyle(.plain)
         .onHover {

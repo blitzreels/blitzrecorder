@@ -85,6 +85,10 @@ struct ScheduledTargetWindowFitContext: Equatable {
     let areaSelection: ScreenCaptureAreaSelection
     let screenSourceBinding: ScreenSourceBinding?
     let usesPickedScreenContent: Bool
+    let sceneID: UUID?
+    let layout: CaptureLayout
+    let screenFrame: CGRect
+    let canvasPadding: CGFloat
 }
 
 struct EditorProjectSceneCorrectionRequest {
@@ -121,4 +125,3 @@ enum RecorderStudioEditPolicy {
         return detailMessage
     }
 }
-

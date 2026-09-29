@@ -6,6 +6,7 @@ final class ScreenPreviewView: NSView {
     private let imageLayer = CALayer()
     private var sampleBufferLayer: AVSampleBufferDisplayLayer?
     private let unavailableOverlay = PreviewUnavailableOverlay(kind: .screen)
+    let thumbnailSampler = LivePreviewThumbnailSampler()
 
     var hasPreviewContent: Bool { sampleBufferLayer != nil || imageLayer.contents != nil }
     var messageFrameForTesting: CGRect { unavailableOverlay.convert(unavailableOverlay.messageFrameForTesting, to: self) }
@@ -66,9 +67,11 @@ final class ScreenPreviewView: NSView {
         sampleBufferLayer = nil
         hideUnavailableOverlay()
         imageLayer.contents = image
+        thumbnailSampler.offer(image)
     }
 
     func enqueuePreviewSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
+        thumbnailSampler.offer(sampleBuffer)
         imageLayer.contents = nil
         if sampleBufferLayer == nil {
             let layer = AVSampleBufferDisplayLayer()

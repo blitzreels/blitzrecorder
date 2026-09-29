@@ -14,7 +14,7 @@ struct EditorZoomPointInspector: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Zoom point").font(.system(size: 12, weight: .semibold))
+            Text("Zoom point").font(BlitzType.strong)
             HStack {
                 Text("Time")
                 TextField("0:00", text: $time).textFieldStyle(.roundedBorder)
@@ -39,7 +39,7 @@ struct EditorZoomPointInspector: View {
             }.controlSize(.small)
             if let error { Text(error).foregroundStyle(BlitzUI.warning) }
         }
-        .font(.system(size: 11))
+        .font(BlitzType.caption)
         .onChange(of: configuration.point, initial: true) { _, point in
             time = EditorPlaybackPosition.display(point.time)
             magnification = String(format: "%.2f", 1 / max(0.25, 1 - point.amount))

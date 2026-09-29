@@ -1,8 +1,26 @@
 import XCTest
+import AppKit
+import SwiftUI
 
 @testable import BlitzRecorderApp
 
 final class EditorPaneSizingTests: XCTestCase {
+    @MainActor
+    func testInspectorAlwaysSitsAboveTheTimeline() throws {
+        let host = NSHostingView(rootView: EditorWorkspaceSplitView(showsSourceTracks: true,
+            preview: { Color(red: 1, green: 0, blue: 0) },
+            inspector: { Color(red: 0, green: 0, blue: 1) },
+            timeline: { Color(red: 0, green: 1, blue: 0) }).frame(width: 1200, height: 700))
+        host.setFrameSize(host.fittingSize)
+        host.layoutSubtreeIfNeeded()
+        let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        let top = try XCTUnwrap(bitmap.colorAt(x: bitmap.pixelsWide - 10, y: 10)?.usingColorSpace(.sRGB))
+        let bottom = try XCTUnwrap(bitmap.colorAt(x: bitmap.pixelsWide - 10, y: bitmap.pixelsHigh - 10)?.usingColorSpace(.sRGB))
+        XCTAssertGreaterThan(top.blueComponent, top.greenComponent + 0.5)
+        XCTAssertGreaterThan(bottom.greenComponent, bottom.blueComponent + 0.5)
+    }
+
     func testInspectorBoundsPreservePreviewSpace() {
         let wide = EditorPaneSizing.resolve(.init(pane: .inspector, preferred: 2_000, available: 1_200))
         XCTAssertEqual(wide.value, 640)
@@ -33,7 +51,7 @@ final class EditorPaneSizingTests: XCTestCase {
     func testInvalidPreferencesAndTransientGeometryStayFinite() {
         XCTAssertEqual(EditorPaneSizing.resolve(.init(pane: .inspector, preferred: .nan, available: 1_200)).value, 360)
         XCTAssertEqual(
-            EditorPaneSizing.resolve(.init(pane: .timeline, preferred: .infinity, available: 680)).value, 430)
+            EditorPaneSizing.resolve(.init(pane: .timeline, preferred: .infinity, available: 680)).value, 380)
         for available in [0.0, -1, .nan, .infinity] {
             let sizing = EditorPaneSizing.resolve(.init(pane: .timeline, preferred: 300, available: available))
             XCTAssertEqual(sizing.value, 0)

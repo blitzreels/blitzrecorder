@@ -7,6 +7,7 @@ struct AudioClockNormalizationRequest {
     let format: SourceAudioFormat
     let bitrate: Int
     let measurement: CaptureClockRateMeasurement
+    var onProgress: (@Sendable (Double) -> Void)? = nil
 }
 
 struct AudioClockNormalizationResult: Equatable {
@@ -42,6 +43,7 @@ enum AudioClockNormalizer {
 
         guard request.measurement.sourceDuration.seconds >= minimumMeasuredDurationSeconds,
               abs(accumulatedDrift.seconds) >= minimumCorrectionSeconds else {
+            request.onProgress?(1)
             return result
         }
         guard rate >= minimumSafeRate, rate <= maximumSafeRate else {
@@ -76,13 +78,16 @@ enum AudioClockNormalizer {
             outputURL: temporaryURL,
             format: request.format,
             bitrate: request.bitrate,
-            sourceTrack: sourceTrack
+            sourceTrack: sourceTrack,
+            duration: correctedDuration,
+            onProgress: request.onProgress
         ))
         try await validate(.init(
             url: temporaryURL,
             expectedDuration: correctedDuration
         ))
         _ = try FileManager.default.replaceItemAt(request.url, withItemAt: temporaryURL)
+        request.onProgress?(1)
         return AudioClockNormalizationResult(
             didCorrect: true,
             sourceDuration: sourceDuration,
@@ -127,12 +132,15 @@ enum AudioClockNormalizer {
             reader: reader,
             output: output,
             writer: writer,
-            input: input
+            input: input,
+            duration: request.duration,
+            onProgress: request.onProgress
         ))
     }
 
     private static func pump(_ request: AudioClockRenderPumpRequest) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            var lastPercent = -1
             request.input.requestMediaDataWhenReady(
                 on: DispatchQueue(label: "blitzrecorder.audio-clock-normalizer")
             ) {
@@ -167,6 +175,14 @@ enum AudioClockNormalizer {
                                 )
                         )
                         return
+                    }
+                    let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds
+                    if time.isFinite, request.duration.seconds > 0 {
+                        let percent = min(99, max(0, Int(time / request.duration.seconds * 100)))
+                        if percent > lastPercent {
+                            lastPercent = percent
+                            request.onProgress?(Double(percent) / 100)
+                        }
                     }
                 }
             }
@@ -219,6 +235,8 @@ private struct AudioClockRenderRequest {
     let format: SourceAudioFormat
     let bitrate: Int
     let sourceTrack: AVAssetTrack
+    let duration: CMTime
+    let onProgress: (@Sendable (Double) -> Void)?
 }
 
 private struct AudioClockRenderPumpRequest: @unchecked Sendable {
@@ -226,6 +244,8 @@ private struct AudioClockRenderPumpRequest: @unchecked Sendable {
     let output: AVAssetReaderOutput
     let writer: AVAssetWriter
     let input: AVAssetWriterInput
+    let duration: CMTime
+    let onProgress: (@Sendable (Double) -> Void)?
 }
 
 private struct AudioClockOutputSettingsRequest {

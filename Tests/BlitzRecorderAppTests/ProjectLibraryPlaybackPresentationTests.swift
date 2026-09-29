@@ -23,11 +23,6 @@ final class ProjectLibraryPlaybackPresentationTests: XCTestCase {
         XCTAssertEqual(summary.sizeBytes, 3_000_000)
     }
 
-    func testMediaTabUsesMediaLanguage() {
-        XCTAssertEqual(ProjectLibraryDetailTab.media.title, "Media")
-        XCTAssertEqual(ProjectLibraryDetailTab.media.systemImage, "film.stack")
-    }
-
     func testMediaInventorySummaryCountsEveryCaptureType() {
         let summary = ProjectMediaInventorySummary(
             screenCaptureCount: 2,

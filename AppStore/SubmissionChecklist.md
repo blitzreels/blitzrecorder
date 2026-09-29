@@ -36,14 +36,14 @@ Do not submit the current macOS direct-download build to the Mac App Store while
 - Export does not decrement a quota.
 - 1080p export does not show purchase, restore, subscription management, or BlitzReels entitlement UI.
 - iPhone companion pairs over the local network and transfers a local camera recording back to the Mac.
-- Direct-download screenshots show the free 1080p tier and free website license honestly.
+- Verify that new direct-download screenshots show the current free offering accurately.
 
 ## Commands
 
 ```bash
 Scripts/validate-launch-readiness.sh
 Scripts/validate-storekit-local.sh
-Scripts/capture-app-store-screenshots.sh --all
+Scripts/capture-app-store-screenshots.sh --mac
 Scripts/validate-submission-artifacts.sh
 Scripts/release-status.sh --full
 Scripts/collect-release-evidence.sh --full

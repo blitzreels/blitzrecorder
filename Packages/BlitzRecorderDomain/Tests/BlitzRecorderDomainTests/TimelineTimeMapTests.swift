@@ -3,6 +3,23 @@ import XCTest
 @testable import BlitzRecorderDomain
 
 final class TimelineTimeMapTests: XCTestCase {
+    func testOneTickCutsUseQuantizedBoundariesInsteadOfFloatingPointEpsilon() {
+        for end in [4.0, 8.1, 17.0 / 3, 601.0 / 600] {
+            let duration = MediaTime(seconds: end)
+            let map = TimelineTimeMap(takeDuration: duration, cuts: [
+                .init(start: end - 1.0 / 600, end: end, kind: .manual, source: .user)
+            ])
+            XCTAssertEqual(map.outputDuration.value, duration.value - 1)
+            XCTAssertEqual(map.removedRanges.count, 1)
+        }
+        let duration = MediaTime(seconds: 4)
+        let subTick = TimelineTimeMap(takeDuration: duration, cuts: [
+            .init(start: 4 - 0.1 / 600, end: 4, kind: .manual, source: .user)
+        ])
+        XCTAssertEqual(subTick.outputDuration, duration)
+        XCTAssertTrue(subTick.removedRanges.isEmpty)
+    }
+
     func testOverlappingCutsMergeAndSeamSeeksToNextKeptSample() {
         let map = TimelineTimeMap(takeDuration: MediaTime(seconds: 10), cuts: [
             .init(start: 2, end: 4, kind: .manual, source: .user),
@@ -80,6 +97,30 @@ final class TimelineTimeMapTests: XCTestCase {
             XCTAssertNil(map.removedRange(containing: .nan))
             XCTAssertNil(map.removedRange(containing: .infinity))
             XCTAssertNil(map.removedRange(containing: -.infinity))
+        }
+    }
+
+    func testFractionalPlaybackRatesKeepEveryInsertionContiguous() throws {
+        let duration = MediaTime(value: 20_000)
+        let cuts: [TimelineCut] = (0..<100).map { index in
+            let start = Double(index * 197 + 61) / 600
+            let end = Double(index * 197 + 112) / 600
+            return TimelineCut(start: start, end: end, kind: .silence, source: .automatic)
+        }
+        for tenths in 10...20 {
+            let map = TimelineTimeMap(takeDuration: duration, cuts: cuts, playbackRate: Double(tenths) / 10)
+            let pieces = map.mediaInsertions(.init(activeTakeStart: .zero, sourceTimeAtActiveStart: .zero,
+                                                   sourceEnd: duration))
+            XCTAssertEqual(pieces.first?.compositionStart, .zero)
+            for piece in pieces {
+                XCTAssertEqual(map.takeTime(forOutput: piece.compositionStart), piece.sourceStart)
+            }
+            for (previous, next) in zip(pieces, pieces.dropFirst()) {
+                XCTAssertEqual(previous.compositionStart + previous.duration, next.compositionStart,
+                               "Insertion seam at rate \(tenths)")
+            }
+            let last = try XCTUnwrap(pieces.last)
+            XCTAssertEqual(last.compositionStart + last.duration, map.outputDuration)
         }
     }
 

@@ -65,7 +65,7 @@ struct BlitzSourcePickerPopover: View {
     private var header: some View {
         HStack(spacing: 8) {
             Text(isEditingSources ? "Edit sources" : model.prompt)
-                .font(.system(size: 14, weight: .semibold))
+                .font(BlitzType.headline)
                 .foregroundStyle(BlitzUI.primaryText)
             Spacer()
             if isEditingSources {
@@ -131,7 +131,7 @@ struct BlitzSourcePickerPopover: View {
                 VStack(alignment: .leading, spacing: 16) {
                     if mainSections.isEmpty && !showsHiddenSources {
                         Text("No sources here. Check hidden sources or refresh the list.")
-                            .font(.system(size: 12))
+                            .font(BlitzType.body)
                             .foregroundStyle(BlitzUI.secondaryText)
                             .frame(maxWidth: .infinity, minHeight: 100)
                     }
@@ -140,7 +140,7 @@ struct BlitzSourcePickerPopover: View {
                     }
                     if showsHiddenSources {
                         Text("Hidden sources")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(BlitzType.strong)
                             .foregroundStyle(BlitzUI.secondaryText)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .id("hidden")
@@ -163,7 +163,7 @@ struct BlitzSourcePickerPopover: View {
     private func sourceSection(_ section: BlitzSourcePickerSection) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(section.title)
-                .font(.system(size: 11, weight: .medium))
+                .font(BlitzType.captionEmphasis)
                 .foregroundStyle(BlitzUI.secondaryText)
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                 ForEach(section.items) { item in
@@ -183,7 +183,7 @@ struct BlitzSourcePickerPopover: View {
     private var managementList: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Choose what appears first. Hidden sources stay available below.")
-                .font(.system(size: 11))
+                .font(BlitzType.caption)
                 .foregroundStyle(BlitzUI.secondaryText)
                 .padding(12)
             BlitzMenuList(entries: managementEntries, width: width, maxHeight: browserHeight, dismiss: {})

@@ -7,7 +7,7 @@ export const alt =
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-const MINT = "#5EF2AF";
+const MINT = "#17FFA6";
 
 /**
  * Brand display font, fetched once at build time (the OG image is statically
@@ -76,8 +76,8 @@ export default async function OpengraphImage() {
               color: "#fff",
             }}
           >
-            <span>Your next video</span>
-            <span style={{ color: MINT }}>starts here.</span>
+            <span>Record and edit videos</span>
+            <span style={{ color: MINT }}>on your Mac.</span>
           </div>
           <div
             style={{
@@ -89,7 +89,7 @@ export default async function OpengraphImage() {
               color: "rgba(232,242,238,0.74)",
             }}
           >
-            <span>Record and edit on your Mac.</span>
+            <span>Screen and camera in one take.</span>
             <span>Free and open source.</span>
           </div>
         </div>

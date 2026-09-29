@@ -11,8 +11,7 @@ struct AgentsSettingsPage: View {
                 SettingsPageHeader(.init(
                     title: "Integrations",
                     detail: "Connect local AI agents to projects, transcripts, and MP4 exports.",
-                    systemImage: "terminal",
-                    status: statusTitle
+                    status: .init(title: statusTitle, isActive: mcpServer.status == .running)
                 ))
                 .padding(.bottom, 4)
 
@@ -36,24 +35,6 @@ struct AgentsSettingsPage: View {
             .toggleStyle(.blitzSwitch)
             .settingsRow()
 
-            SettingsRowDivider()
-
-            HStack(alignment: .center, spacing: 16) {
-                SettingsRowLabel(.init(
-                    title: "WebMCP workspace",
-                    detail: "Review local projects with ChatGPT or Codex in the browser."
-                ))
-
-                Spacer(minLength: 16)
-
-                Button("Open workspace") {
-                    NSWorkspace.shared.open(BlitzRecorderMCPServer.workspaceURL)
-                }
-                .blitzButton(.secondary)
-                .pointingHandCursor()
-                .disabled(mcpServer.status != .running)
-            }
-            .settingsRow()
 
             SettingsRowDivider()
 
@@ -100,11 +81,23 @@ struct AgentsSettingsPage: View {
     private var connectSection: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Codex")
-                    .font(.system(size: 12, weight: .semibold))
+                IntegrationProviderTitle(configuration: .init(title: "Claude Code", imageName: "IntegrationClaude",
+                                                              fallbackSymbol: "sparkle"))
+                Text("Run once in Terminal, then start a new Claude Code session.")
+                    .font(BlitzType.caption)
+                    .foregroundStyle(BlitzUI.secondaryText)
+                copyableCode(BlitzRecorderMCPServer.claudeCodeSetupCommand)
+            }
+            .settingsRow()
+
+            SettingsRowDivider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                IntegrationProviderTitle(configuration: .init(title: "Codex", imageName: "IntegrationCodex",
+                                                              fallbackSymbol: "chevron.left.forwardslash.chevron.right"))
                 Text("Run once, then start a new Codex task so the tools are discovered.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(BlitzType.caption)
+                    .foregroundStyle(BlitzUI.secondaryText)
                 copyableCode(BlitzRecorderMCPServer.codexSetupCommand)
             }
             .settingsRow()
@@ -113,17 +106,17 @@ struct AgentsSettingsPage: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Agent Plugin 1.0")
-                        .font(.system(size: 12, weight: .semibold))
+                    IntegrationProviderTitle(configuration: .init(title: "Agent Plugin 1.0", imageName: nil,
+                                                                  fallbackSymbol: "puzzlepiece.extension.fill"))
                     Spacer()
                     Link(
                         "Open guide",
                         destination: URL(string: "https://agent-plugins.org/plugin-authors")!
                     )
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(BlitzType.captionEmphasis)
                 }
                 Text("Use this portable mcp.json entry in a compatible agent plugin.")
-                    .font(.system(size: 11))
+                    .font(BlitzType.caption)
                     .foregroundStyle(.secondary)
                 copyableCode(BlitzRecorderMCPServer.agentPluginConfiguration)
             }
@@ -196,7 +189,7 @@ struct AgentsSettingsPage: View {
     private func copyableValue(_ value: String) -> some View {
         HStack(spacing: 8) {
             Text(value)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .font(BlitzType.captionEmphasis.monospaced())
                 .textSelection(.enabled)
             Button(copiedValue == value ? "Copied" : "Copy") {
                 copy(value)
@@ -209,12 +202,12 @@ struct AgentsSettingsPage: View {
         HStack(alignment: .top, spacing: 10) {
             ScrollView(.horizontal) {
                 Text(value)
-                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                    .font(BlitzType.footnote.monospaced())
                     .textSelection(.enabled)
                     .fixedSize(horizontal: true, vertical: false)
                     .padding(10)
             }
-            .background(.black.opacity(0.28), in: .rect(cornerRadius: 7))
+            .background(.black.opacity(0.28), in: .rect(cornerRadius: BlitzUI.controlRadius))
 
             Button(copiedValue == value ? "Copied" : "Copy") {
                 copy(value)
@@ -233,6 +226,38 @@ struct AgentsSettingsPage: View {
             try? await Task.sleep(for: .seconds(2))
             guard copiedValue == value else { return }
             copiedValue = nil
+        }
+    }
+}
+
+private struct IntegrationProviderTitle: View {
+    struct Configuration {
+        let title: String
+        let imageName: String?
+        let fallbackSymbol: String
+    }
+
+    let configuration: Configuration
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Group {
+                if let name = configuration.imageName,
+                   let url = Bundle.main.url(forResource: name, withExtension: "png"),
+                   let image = NSImage(contentsOf: url) {
+                    Image(nsImage: image).resizable().interpolation(.high)
+                } else {
+                    Image(systemName: configuration.fallbackSymbol)
+                        .font(BlitzType.glyph(13))
+                        .foregroundStyle(BlitzUI.supportingText)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(BlitzUI.controlFill, in: .rect(cornerRadius: 6))
+                }
+            }
+            .frame(width: 24, height: 24)
+            .clipShape(.rect(cornerRadius: 6))
+            .accessibilityHidden(true)
+            Text(configuration.title).font(BlitzType.strong)
         }
     }
 }

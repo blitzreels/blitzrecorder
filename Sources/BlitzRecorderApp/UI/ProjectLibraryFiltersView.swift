@@ -6,7 +6,7 @@ struct ProjectLibraryFiltersView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("Filter projects").font(.system(size: 16, weight: .semibold))
+                Text("Filter projects").font(BlitzType.title)
                 Spacer()
                 Button("Reset") { filters = .init(sort: filters.sort) }
                     .blitzButton(.quiet)

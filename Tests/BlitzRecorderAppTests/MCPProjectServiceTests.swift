@@ -199,6 +199,7 @@ final class MCPProjectServiceTests: XCTestCase {
         let project = try store.loadRecordingProject(at: take.projectURL)
 
         let defaults = temporaryDefaults()
+        RecordingSettingsStore.save(settings, defaults: defaults)
         let access = AccessController(defaults: defaults)
         let coordinator = RecorderCoordinator(accessController: access, defaults: defaults)
         coordinator.setOutputDirectory(outputDirectory)

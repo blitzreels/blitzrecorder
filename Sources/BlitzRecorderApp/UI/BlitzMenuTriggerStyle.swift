@@ -8,14 +8,15 @@ struct BlitzMenuTriggerStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(
-                isHovering && isEnabled ? BlitzUI.hoverFill : BlitzUI.controlFill,
+                isPresented ? BlitzUI.selectedFill : (isHovering && isEnabled ? BlitzUI.hoverFill : BlitzUI.controlFill),
                 in: .rect(cornerRadius: BlitzControlMetrics.radius)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: BlitzControlMetrics.radius)
-                    .strokeBorder(isPresented ? BlitzUI.mint.opacity(0.65) : BlitzUI.panelStroke, lineWidth: 1)
+                    .strokeBorder(BlitzUI.panelStroke, lineWidth: 1)
                     .allowsHitTesting(false)
             }
+            .blitzFocusRing(cornerRadius: BlitzControlMetrics.radius)
             .opacity(isEnabled ? (configuration.isPressed ? 0.76 : 1) : 0.4)
             .contentShape(.rect(cornerRadius: BlitzControlMetrics.radius))
             .onHover { isHovering = $0 }
@@ -26,7 +27,7 @@ struct BlitzMenuTriggerStyle: ButtonStyle {
 struct BlitzMenuChevron: View {
     var body: some View {
         Image(systemName: "chevron.down")
-            .font(.system(size: 10, weight: .semibold))
+            .font(BlitzType.glyph(10))
             .foregroundStyle(BlitzUI.secondaryText)
             .accessibilityHidden(true)
     }

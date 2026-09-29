@@ -9,6 +9,33 @@ import XCTest
 @testable import BlitzRecorderApp
 
 final class RecordingLifecycleTests: XCTestCase {
+    func testFractionalSpeedExportsCutVideoAndAudioWithoutCompositionGaps() async throws {
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: settings.outputDirectory) }
+        settings.enabledSources = [.screen, .microphone]
+        settings.outputResolution = .p720
+        let take = try TakeFileStore().createTake(settings: settings)
+        try writeTestMovie(url: take.screenURL, codec: .h264,
+                           color: (blue: 0, green: 0, red: 255, alpha: 255), frameCount: 90)
+        try writeSilentAudioFile(url: take.audioURL)
+        var edits = TimelineEdits.empty
+        edits.cuts = [
+            .init(start: 113.0 / 600, end: 244.0 / 600, kind: .manual, source: .user),
+            .init(start: 791.0 / 600, end: 997.0 / 600, kind: .silence, source: .automatic)
+        ]
+        let sourceDuration = try await AVURLAsset(url: take.screenURL).load(.duration)
+        let expected = TimelineTimeMap(takeDuration: sourceDuration, cuts: edits.cuts, playbackRate: 1.3)
+        let output = try await Merger.exportFinalVideo(.init(take: take, settings: settings,
+            sceneEvents: [], backgroundMusic: nil, destinationURL: nil, progressHandler: nil,
+            timelineEdits: edits, playbackRate: 1.3))
+        let inspection = try await SyntheticRecording.inspectVideo(output)
+        XCTAssertGreaterThan(inspection.frames, 0)
+        XCTAssertEqual(inspection.duration, expected.outputDuration.seconds, accuracy: 0.05)
+        let audioTracks = try await AVURLAsset(url: output).loadTracks(withMediaType: .audio)
+        XCTAssertFalse(audioTracks.isEmpty)
+    }
+
     func testExportPreservesVideoWithSubframeLeadingTimestampGap() async throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
@@ -1673,7 +1700,7 @@ final class RecordingLifecycleTests: XCTestCase {
     }
 
     @MainActor
-    func testCaptureSourceRunStartsEnabledSourcesBeforeWaitingForStartupCompletionAndStopsScreenLast() async throws {
+    func testCaptureSourceRunStartsEnabledSourcesBeforeWaitingForStartupCompletionAndStopsEverySource() async throws {
         var settings = RecordingSettings()
         settings.outputDirectory = temporaryDirectory()
         settings.enabledSources = [.screen, .camera, .microphone, .systemAudio]
@@ -1704,7 +1731,7 @@ final class RecordingLifecycleTests: XCTestCase {
         _ = try await startTask.value
         _ = await run.stop()
 
-        XCTAssertEqual(order.stopped, [.microphone, .systemAudio, .camera, .screen])
+        XCTAssertEqual(Set(order.stopped), Set([.microphone, .systemAudio, .camera, .screen]))
     }
 
     @MainActor
@@ -3966,15 +3993,19 @@ private final class NoopScreenCaptureRecorder: ScreenCaptureRecording {
 }
 
 private final class OrderedCaptureEvents {
-    private(set) var started: [CaptureSource] = []
-    private(set) var stopped: [CaptureSource] = []
+    private let lock = NSLock()
+    private var startedSources: [CaptureSource] = []
+    private var stoppedSources: [CaptureSource] = []
+
+    var started: [CaptureSource] { lock.withLock { startedSources } }
+    var stopped: [CaptureSource] { lock.withLock { stoppedSources } }
 
     func start(_ source: CaptureSource) {
-        started.append(source)
+        lock.withLock { startedSources.append(source) }
     }
 
     func stop(_ source: CaptureSource) {
-        stopped.append(source)
+        lock.withLock { stoppedSources.append(source) }
     }
 }
 

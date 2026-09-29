@@ -9,7 +9,7 @@ export default function robots(): MetadataRoute.Robots {
         userAgent: "*",
         allow: "/",
         // Private post-checkout page and machine endpoints stay out of the index.
-        disallow: ["/license/claim", "/api/"],
+        disallow: ["/license/claim", "/api/", "/s/"],
       },
     ],
     sitemap: `${SITE}/sitemap.xml`,

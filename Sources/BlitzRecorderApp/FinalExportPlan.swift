@@ -312,8 +312,8 @@ enum FinalExportPlanning {
         ))
         var outputBoundaries = takeBoundaries.map { timeMap.outputTime(forTake: $0) }
         for range in timeMap.keptRanges {
-            outputBoundaries.append(range.outputStart.cmTime)
-            outputBoundaries.append(range.outputEnd.cmTime)
+            outputBoundaries.append(timeMap.outputTime(forTake: range.takeStart).cmTime)
+            outputBoundaries.append(timeMap.outputTime(forTake: range.takeEnd).cmTime)
         }
         outputBoundaries.append(.zero)
         outputBoundaries.append(timeMap.outputDuration.cmTime)

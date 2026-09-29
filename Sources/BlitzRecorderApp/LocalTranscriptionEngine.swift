@@ -10,12 +10,37 @@ struct TranscriptionModelDownloadUpdate: Sendable {
 struct TranscriptionEngineUpdate: Sendable {
     enum Stage: Sendable {
         case preparingAudio
+        case loadingModels
         case transcribing
         case diarizing
         case saving
     }
 
     let stage: Stage
+    let detail: String?
+
+    init(stage: Stage) {
+        self.stage = stage
+        detail = nil
+    }
+
+    struct Track {
+        let stage: Stage
+        let source: RecordingTranscriptAssembler.WordSource
+        let index: Int
+        let total: Int
+    }
+
+    init(_ track: Track) {
+        stage = track.stage
+        let source: String
+        switch track.source {
+        case .microphone: source = "Microphone"
+        case .systemAudio: source = "Mac audio"
+        case .mixed: source = "Audio"
+        }
+        detail = "\(source) · Track \(track.index + 1) of \(track.total)"
+    }
 }
 
 actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
@@ -29,6 +54,19 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
         let model: TranscriptionSpeechModel
         let language: TranscriptionLanguage
         let speakerCount: TranscriptionSpeakerCount
+        let onUpdate: @Sendable (TranscriptionEngineUpdate) -> Void
+    }
+
+    struct SpeakerFixRequest: Sendable {
+        let source: TranscriptionMediaSource
+        let speakerCount: TranscriptionSpeakerCount
+        let onUpdate: @Sendable (TranscriptionEngineUpdate) -> Void
+    }
+
+    private struct DiarizationRequest {
+        let tracks: [PreparedTranscriptionTrack]
+        let microphone: OfflineDiarizerManager
+        let system: OfflineDiarizerManager
         let onUpdate: @Sendable (TranscriptionEngineUpdate) -> Void
     }
 
@@ -125,17 +163,18 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
             }
         }
 
+        request.onUpdate(TranscriptionEngineUpdate(stage: .loadingModels))
         let managers = try await loadedManagers(.init(
             model: request.model,
             speakerCount: request.speakerCount
         ))
         var words: [TranscriptWord] = []
         var wordSources: [RecordingTranscriptAssembler.WordSource] = []
-        var intervals: [DiarizedInterval] = []
         var confidences: [Float] = []
 
-        request.onUpdate(TranscriptionEngineUpdate(stage: .transcribing))
-        for track in preparedAudio.tracks {
+        for (index, track) in preparedAudio.tracks.enumerated() {
+            request.onUpdate(TranscriptionEngineUpdate(.init(stage: .transcribing,
+                source: track.source, index: index, total: preparedAudio.tracks.count)))
             let trackWords: [TranscriptWord]
             let confidence: Float
             switch request.model {
@@ -170,31 +209,12 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
             confidences.append(confidence)
         }
 
-        request.onUpdate(TranscriptionEngineUpdate(stage: .diarizing))
-        let mixedTrackCount = preparedAudio.tracks.filter { $0.source == .mixed }.count
-        var mixedIndex = 0
-        for track in preparedAudio.tracks {
-            let prefix: String
-            let diarizer: OfflineDiarizerManager
-            switch track.source {
-            case .microphone:
-                prefix = RecordingTranscriptAssembler.microphoneSpeakerPrefix
-                diarizer = managers.microphone
-            case .systemAudio:
-                prefix = RecordingTranscriptAssembler.systemSpeakerPrefix
-                diarizer = managers.system
-            case .mixed:
-                prefix = mixedTrackCount > 1 ? "mix\(mixedIndex)-" : ""
-                mixedIndex += 1
-                diarizer = managers.system
-            }
-            do {
-                let diarizationResult = try await diarizer.process(track.audioURL)
-                intervals.append(contentsOf: Self.intervals(diarizationResult.segments, prefix: prefix))
-            } catch OfflineDiarizationError.noSpeechDetected {
-                continue
-            }
-        }
+        let intervals = try await diarizedIntervals(DiarizationRequest(
+            tracks: preparedAudio.tracks,
+            microphone: managers.microphone,
+            system: managers.system,
+            onUpdate: request.onUpdate
+        ))
 
         let transcript = RecordingTranscriptAssembler.assemble(
             RecordingTranscriptAssembler.Request(
@@ -216,6 +236,70 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
             locations: preparedAudio.artifactLocations
         ))
         return transcript
+    }
+
+    func reassignSpeakers(_ request: SpeakerFixRequest) async throws -> RecordingTranscript {
+        guard modelStore.isInstalled(.parakeet) || modelStore.isInstalled(.whisperMedium) else {
+            throw LocalTranscriptionError.modelNotInstalled
+        }
+        request.onUpdate(TranscriptionEngineUpdate(stage: .preparingAudio))
+        let preparedAudio = try await audioPreparer.prepare(request.source)
+        defer {
+            for track in preparedAudio.tracks {
+                try? FileManager.default.removeItem(at: track.audioURL)
+            }
+        }
+        let transcript = try artifactStore.load(from: preparedAudio.artifactLocations.jsonURL)
+        request.onUpdate(TranscriptionEngineUpdate(stage: .loadingModels))
+        let diarizers = try await loadedDiarizers(request.speakerCount)
+        let intervals = try await diarizedIntervals(DiarizationRequest(
+            tracks: preparedAudio.tracks,
+            microphone: diarizers.microphone,
+            system: diarizers.system,
+            onUpdate: request.onUpdate
+        ))
+        let reassigned = try RecordingTranscriptAssembler.reassignSpeakers(.init(
+            transcript: transcript,
+            diarizedIntervals: intervals
+        ))
+        request.onUpdate(TranscriptionEngineUpdate(stage: .saving))
+        try artifactStore.save(TranscriptArtifactStore.SaveRequest(
+            transcript: reassigned,
+            locations: preparedAudio.artifactLocations
+        ))
+        return reassigned
+    }
+
+    private func diarizedIntervals(_ request: DiarizationRequest) async throws -> [DiarizedInterval] {
+        request.onUpdate(TranscriptionEngineUpdate(stage: .diarizing))
+        let mixedTrackCount = request.tracks.filter { $0.source == .mixed }.count
+        var mixedIndex = 0
+        var intervals: [DiarizedInterval] = []
+        for (index, track) in request.tracks.enumerated() {
+            request.onUpdate(TranscriptionEngineUpdate(.init(stage: .diarizing,
+                source: track.source, index: index, total: request.tracks.count)))
+            let prefix: String
+            let diarizer: OfflineDiarizerManager
+            switch track.source {
+            case .microphone:
+                prefix = RecordingTranscriptAssembler.microphoneSpeakerPrefix
+                diarizer = request.microphone
+            case .systemAudio:
+                prefix = RecordingTranscriptAssembler.systemSpeakerPrefix
+                diarizer = request.system
+            case .mixed:
+                prefix = mixedTrackCount > 1 ? "mix\(mixedIndex)-" : ""
+                mixedIndex += 1
+                diarizer = request.system
+            }
+            do {
+                let diarizationResult = try await diarizer.process(track.audioURL)
+                intervals.append(contentsOf: Self.intervals(diarizationResult.segments, prefix: prefix))
+            } catch OfflineDiarizationError.noSpeechDetected {
+                continue
+            }
+        }
+        return intervals
     }
 
     func removeModels(_ model: TranscriptionSpeechModel) async throws {
@@ -255,23 +339,31 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
                 download: false
             ))
         }
-        if microphoneDiarizers[request.speakerCount] == nil || systemDiarizer == nil {
+        let diarizers = try await loadedDiarizers(request.speakerCount)
+        return (asrManager, whisperManager, diarizers.microphone, diarizers.system)
+    }
+
+    private func loadedDiarizers(_ speakerCount: TranscriptionSpeakerCount) async throws -> (
+        microphone: OfflineDiarizerManager,
+        system: OfflineDiarizerManager
+    ) {
+        if microphoneDiarizers[speakerCount] == nil || systemDiarizer == nil {
             let models = try await OfflineDiarizerModels.load(from: modelStore.diarizationDirectory)
             let microphone = OfflineDiarizerManager(
-                config: Self.microphoneDiarizerConfiguration(request.speakerCount)
+                config: Self.microphoneDiarizerConfiguration(speakerCount)
             )
             microphone.initialize(models: models)
-            microphoneDiarizers[request.speakerCount] = microphone
+            microphoneDiarizers[speakerCount] = microphone
             if systemDiarizer == nil {
                 let system = OfflineDiarizerManager(config: Self.systemDiarizerConfiguration)
                 system.initialize(models: models)
                 systemDiarizer = system
             }
         }
-        guard let microphone = microphoneDiarizers[request.speakerCount], let systemDiarizer else {
+        guard let microphone = microphoneDiarizers[speakerCount], let systemDiarizer else {
             throw LocalTranscriptionError.modelNotInstalled
         }
-        return (asrManager, whisperManager, microphone, systemDiarizer)
+        return (microphone, systemDiarizer)
     }
 
     nonisolated static var recognitionConfiguration: ASRConfig {
@@ -375,6 +467,7 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
 enum LocalTranscriptionError: LocalizedError {
     case modelNotInstalled
     case transcriptUnavailable
+    case transcriptBusy
 
     var errorDescription: String? {
         switch self {
@@ -382,6 +475,8 @@ enum LocalTranscriptionError: LocalizedError {
             return "Download the transcription model in Settings."
         case .transcriptUnavailable:
             return "The transcript is unavailable."
+        case .transcriptBusy:
+            return "This transcript is already being updated. Try again when it finishes."
         }
     }
 }

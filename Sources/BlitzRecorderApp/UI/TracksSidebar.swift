@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 struct SourcesSidebar: View {
@@ -6,46 +5,26 @@ struct SourcesSidebar: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                devicesHeader
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Sources")
+                    .font(BlitzType.section)
+                    .foregroundStyle(BlitzUI.primaryText)
+                    .padding(.horizontal, 4)
+                    .help("Every source that is on is recorded on its own track, even when a scene hides it.")
 
-                devicesSection
-
-                Rectangle()
-                    .fill(BlitzUI.separator)
-                    .frame(height: 1)
-
-                CaptureScenePicker(vm: vm)
+                VStack(spacing: 4) {
+                    ForEach(displayedSources, id: \.self) { source in
+                        deviceCard(for: source)
+                    }
+                }
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 12)
+            .padding(.vertical, 14)
         }
         .scrollIndicators(.automatic)
         .frame(minWidth: 216, idealWidth: 232, maxWidth: 232)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(BlitzUI.panelBackground)
-    }
-
-    private var devicesHeader: some View {
-        HStack {
-            Text("Sources")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(BlitzUI.primaryText)
-            Spacer(minLength: 0)
-            Text("Record")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(BlitzUI.secondaryText)
-        }
-        .padding(.horizontal, 2)
-        .help("Enabled sources are recorded separately, even when hidden in a scene.")
-    }
-
-    private var devicesSection: some View {
-        VStack(spacing: 6) {
-            ForEach(displayedSources, id: \.self) { source in
-                deviceCard(for: source)
-            }
-        }
     }
 
     private var displayedSources: [CaptureSource] {
@@ -59,8 +38,10 @@ struct SourcesSidebar: View {
             DeviceCard(
                 source: .screen,
                 title: "Screen",
-                subtitle: vm.selectedScreenSourceDisplayName,
+                subtitle: vm.hasActiveScreenPickerSelection ? vm.selectedScreenSourceDisplayName : "Choose screen or window",
                 status: sourceStatus(for: .screen),
+                picker: ScreenCaptureSourcePickerModel(vm: vm, enabled: vm.isSourceConfigured(.screen)).model,
+                levels: nil,
                 vm: vm
             )
         case .camera:
@@ -69,6 +50,8 @@ struct SourcesSidebar: View {
                 title: "Camera",
                 subtitle: vm.selectedCameraDisplayName,
                 status: sourceStatus(for: .camera),
+                picker: CameraSourcePickerModel(vm: vm, enabled: vm.isSourceConfigured(.camera)).model,
+                levels: nil,
                 vm: vm
             )
         case .microphone:
@@ -77,15 +60,17 @@ struct SourcesSidebar: View {
                 title: "Microphone",
                 subtitle: vm.selectedMicrophoneDisplayName,
                 status: sourceStatus(for: .microphone),
+                picker: MicrophoneSourcePickerModel(vm: vm, enabled: vm.isSourceConfigured(.microphone)).model,
                 levels: vm.micLevels,
                 vm: vm
             )
         case .systemAudio:
             DeviceCard(
                 source: .systemAudio,
-                title: "System audio",
-                subtitle: "Mac audio",
+                title: "Mac audio",
+                subtitle: "Sound from your apps",
                 status: sourceStatus(for: .systemAudio),
+                picker: nil,
                 levels: vm.sysLevels,
                 vm: vm
             )
@@ -101,41 +86,23 @@ struct SourcesSidebar: View {
             return recordingStatus
         }
 
-        if vm.recordingReadiness.blockers.contains(where: {
-            $0.source == source && $0.permission == "Camera availability"
-        }) {
-            return SourceRowStatus(label: "Unavailable", tone: .warning)
-        }
-
-        if vm.recordingReadiness.blockers.contains(where: { $0.source == source }) {
-            return SourceRowStatus(label: "No access", tone: .warning)
+        if let notice = vm.sourceReadinessNotice(source) {
+            return SourceRowStatus(label: notice.title, tone: .warning)
         }
 
         switch source {
         case .screen:
             if !vm.hasActiveScreenPickerSelection {
-                return SourceRowStatus(label: "Choose", tone: .warning)
+                return SourceRowStatus(label: "Choose screen or window", tone: .warning)
             }
-            if vm.settings.usesPickedScreenContent {
-                return SourceRowStatus(label: "Picked", tone: .active)
-            }
-            switch vm.settings.screenSourceBinding?.kind {
-            case .application:
-                return SourceRowStatus(label: "App", tone: .active)
-            case .window:
-                return SourceRowStatus(label: "Window", tone: .active)
-            case .display, nil:
-                return SourceRowStatus(label: "Display", tone: .active)
-            }
+            return SourceRowStatus(label: "Ready", tone: .active)
         case .camera:
             if vm.isRemoteCameraSelected {
                 return remoteCameraStatus
             }
-            return SourceRowStatus(label: "Local", tone: .active)
-        case .microphone:
-            return SourceRowStatus(label: "Input", tone: .active)
-        case .systemAudio:
-            return SourceRowStatus(label: "System", tone: .active)
+            return SourceRowStatus(label: "Ready", tone: .active)
+        case .microphone, .systemAudio:
+            return SourceRowStatus(label: "Ready", tone: .active)
         }
     }
 
@@ -162,202 +129,79 @@ struct SourcesSidebar: View {
 
 }
 
-private struct TransparentWebcamToggle: View {
-    @Bindable var vm: RecorderViewModel
-    let enabled: Bool
-
-    var body: some View {
-        Toggle(isOn: Binding(
-            get: { vm.settings.removesCameraBackgroundAfterRecording },
-            set: { vm.setCameraBackgroundRemovalAfterRecording($0) }
-        )) {
-            Text("Remove background")
-        }
-        .toggleStyle(.blitzSwitch)
-        .disabled(vm.state != .idle || !enabled)
-        .help("Remove camera background after recording")
-    }
-
-}
-
-private struct WebcamSourceMenu: View {
-    @Bindable var vm: RecorderViewModel
-    let enabled: Bool
-
-    private var selectedName: String {
-        if vm.isRemoteCameraSelected {
-            return vm.selectedRemoteCameraName ?? "Remote iPhone"
-        }
-        if let selectedCameraID = vm.settings.selectedCameraID,
-           let option = vm.localCameraOptions.first(where: { $0.id == selectedCameraID }) {
-            return option.name
-        }
-        return "Default camera"
-    }
-
-	var body: some View {
-        BlitzSourcePicker(model: pickerModel)
-        .help("Choose camera source")
-    }
-
-    private var selectedIcon: String {
-        vm.isRemoteCameraSelected ? "iphone.gen3" : BlitzSymbols.camera
-    }
-
-    private var pickerModel: BlitzSourcePickerModel {
-        BlitzSourcePickerModel(
-            title: selectedName,
-            subtitle: vm.isRemoteCameraSelected ? "Wireless iPhone camera" : "Camera input",
-            systemImage: selectedIcon,
-            icon: nil,
-            sections: cameraSections,
-            actions: [
-                BlitzSourcePickerItem(
-                    id: "camera:manage",
-                    title: "Connect an iPhone…",
-                    subtitle: nil,
-                    systemImage: "iphone.radiowaves.left.and.right",
-                    icon: nil,
-                    thumbnail: nil,
-                    isSelected: false
-                ) {
-                    vm.showSettings(.devices)
-                }
-            ],
-            layout: .list,
-            enabled: enabled && vm.state == .idle,
-            prompt: "Choose camera",
-            refresh: { await vm.refreshSources() }
-        )
-    }
-
-    private var cameraSections: [BlitzSourcePickerSection] {
-        let defaultItem = BlitzSourcePickerItem(
-            id: "camera:default",
-            title: "Default camera",
-            subtitle: "Follow the macOS default",
-            systemImage: "camera",
-            icon: nil,
-            thumbnail: nil,
-            isSelected: vm.settings.selectedCameraID == nil,
-            visibility: .init(id: "camera:default", hiddenReason: nil)
-        ) {
-            vm.setCamera(nil)
-        }
-        let local = vm.localCameraOptions.filter { $0.cameraKind?.hiddenReason == nil }
-        let continuity = vm.localCameraOptions.filter { $0.cameraKind?.hiddenReason != nil }
-        let remoteItems = vm.remoteCameraOptions.map { option in
-            BlitzSourcePickerItem(
-                id: "camera:\(option.id)",
-                title: option.name,
-                subtitle: "Wireless iPhone camera",
-                systemImage: "iphone.gen3",
-                icon: nil,
-                thumbnail: nil,
-                isSelected: vm.settings.selectedCameraID == option.id,
-                visibility: .init(id: "camera:\(option.id)", hiddenReason: nil)
-            ) {
-                vm.setCamera(option.id)
-            }
-        }
-        return [
-            BlitzSourcePickerSection(title: "Connected cameras", items: local.map(cameraItem)),
-            BlitzSourcePickerSection(title: "Wireless iPhones", items: remoteItems),
-            BlitzSourcePickerSection(title: "Automatic", items: [defaultItem]),
-            BlitzSourcePickerSection(title: "Continuity & Desk View", items: continuity.map(cameraItem))
-        ]
-    }
-
-    private func cameraItem(_ option: SourceOption) -> BlitzSourcePickerItem {
-        let kind = option.cameraKind ?? .external
-        let title = option.name
-            .replacingOccurrences(of: " (Continuity)", with: "")
-            .replacingOccurrences(of: " (Desk View)", with: "")
-        return BlitzSourcePickerItem(
-            id: "camera:\(option.id)",
-            title: title,
-            subtitle: kind.subtitle,
-            systemImage: kind.systemImage,
-            icon: nil,
-            thumbnail: nil,
-            isSelected: vm.settings.selectedCameraID == option.id,
-            visibility: .init(id: "camera:\(option.id)", hiddenReason: kind.hiddenReason)
-        ) {
-            vm.setCamera(option.id)
-        }
-    }
-
-}
-
 private struct DeviceCard: View {
     let source: CaptureSource
     let title: String
     let subtitle: String
     let status: SourceRowStatus
-    var levels: TrackLevels?
+    let picker: BlitzSourcePickerModel?
+    let levels: TrackLevels?
     @Bindable var vm: RecorderViewModel
     @State private var isHovering = false
+    @State private var showsPicker = false
 
-    private var isSelected: Bool { vm.selectedSource?.source == source }
+    private var isSelected: Bool {
+        guard let selected = vm.selectedSource?.source else { return false }
+        return selected == source
+    }
     private var isEnabled: Bool { vm.isSourceConfigured(source) }
+    private var canPick: Bool { isEnabled && picker?.enabled == true }
 
     var body: some View {
-        header
-            .background(
-                isSelected && isEnabled ? BlitzUI.selectedFill : (isHovering ? BlitzUI.quietFill : .clear),
-                in: .rect(cornerRadius: BlitzUI.controlRadius)
-            )
-            .opacity(isEnabled ? 1 : 0.62)
-            .onHover { isHovering = $0 }
-    }
-
-    private var header: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Button {
                 vm.selectSource(source)
+                if canPick { showsPicker = true }
             } label: {
-                HStack(spacing: 9) {
-                    sourceIdentity
+                HStack(spacing: 10) {
+                    BlitzSymbol(configuration: .init(name: source.symbolName, size: 18))
+                        .symbolVariant(isSelected && isEnabled ? .fill : .none)
+                        .foregroundStyle(isSelected && isEnabled ? BlitzUI.mint : BlitzUI.secondaryText)
+                        .frame(width: 24, height: 28)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(title)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(BlitzType.label)
                             .foregroundStyle(BlitzUI.primaryText)
                             .lineLimit(1)
-
-                        HStack(spacing: 6) {
-                            Text(subtitle)
-                                .font(.system(size: 11, weight: .regular))
-                                .foregroundStyle(BlitzUI.secondaryText)
+                        HStack(spacing: 4) {
+                            Text(subtitleText)
+                                .font(BlitzType.caption)
+                                .foregroundStyle(subtitleColor)
                                 .lineLimit(1)
                                 .truncationMode(.tail)
-
-                            if let levels {
-                                Spacer(minLength: 0)
-                                BlitzLevelMeter(levels: levels, active: status.tone == .active)
-                                    .frame(width: 24, height: 10)
-                                    .accessibilityHidden(true)
+                            if canPick {
+                                Image(systemName: "chevron.down")
+                                    .font(BlitzType.glyph(8))
+                                    .foregroundStyle(BlitzUI.secondaryText)
                             }
                         }
-
-                        if let noticeLabel {
-                            Text(noticeLabel)
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(detailColor)
-                                .lineLimit(1)
+                        if let levels {
+                            BlitzLevelMeter(levels: levels, active: status.tone == .active)
+                                .frame(height: 10)
+                                .padding(.top, 2)
+                                .accessibilityHidden(true)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .contentShape(.rect(cornerRadius: 8))
+                .padding(.leading, 8)
+                .padding(.vertical, 8)
+                .contentShape(.rect(cornerRadius: BlitzUI.controlRadius))
             }
             .buttonStyle(.plain)
             .disabled(!isEnabled)
             .accessibilityLabel("\(title), \(subtitle)")
-            .accessibilityValue(detailLabel)
+            .accessibilityValue(status.label)
             .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-            .help("\(title): \(subtitle). \(detailLabel)")
+            .help(canPick ? "Choose a different \(title.lowercased())" : "\(title): \(status.label)")
             .pointingHandCursor()
+            .popover(isPresented: $showsPicker, arrowEdge: .trailing) {
+                if let picker {
+                    BlitzSourcePickerPopover(model: picker) { showsPicker = false }
+                        .preferredColorScheme(.dark)
+                }
+            }
 
             Toggle("Record \(title)", isOn: Binding(
                 get: { isEnabled },
@@ -366,40 +210,31 @@ private struct DeviceCard: View {
             .toggleStyle(.blitzSwitchOnly)
             .disabled(vm.state != .idle)
             .tint(BlitzUI.mint)
-            .frame(minWidth: 40, minHeight: 40)
-            .help(isEnabled ? "Turn off \(title)" : "Turn on \(title)")
+            .help(isEnabled ? "Stop recording \(title.lowercased())" : "Record \(title.lowercased())")
         }
-        .padding(.leading, 10)
-        .padding(.trailing, 6)
-        .padding(.vertical, 5)
+        .padding(.trailing, 8)
         .frame(minHeight: 52)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            isSelected && isEnabled ? BlitzUI.selectedFill : (isHovering ? BlitzUI.quietFill : .clear),
+            in: .rect(cornerRadius: BlitzUI.controlRadius)
+        )
+        .opacity(isEnabled ? 1 : 0.55)
+        .onHover { isHovering = $0 }
+        .onChange(of: canPick) { if !canPick { showsPicker = false } }
     }
 
-    private var detailLabel: String {
-        guard isEnabled, source == .screen || source == .camera else {
-            return status.label
-        }
-        let sceneState = vm.isSourceVisible(source) ? "Visible in scene" : "Hidden from scene"
-        return "\(status.label) · \(sceneState)"
-    }
-
-    private var noticeLabel: String? {
+    private var subtitleText: String {
+        guard isEnabled else { return "Off" }
         if status.tone == .warning { return status.label }
-        if isEnabled, source == .screen || source == .camera, !vm.isSourceVisible(source) {
-            return "Hidden in scene"
+        if source == .screen || source == .camera, !vm.isSourceVisible(source) {
+            return "Hidden in this scene"
         }
-        return nil
+        return subtitle
     }
 
-    private var detailColor: Color {
-        status.tone == .warning ? BlitzUI.warning : .white.opacity(0.42)
-    }
-
-    private var sourceIdentity: some View {
-        BlitzSymbol(configuration: .init(name: source.symbolName, size: 22))
-            .foregroundStyle(isSelected && isEnabled ? BlitzUI.mint : BlitzUI.secondaryText)
-            .frame(width: 28, height: 32)
+    private var subtitleColor: Color {
+        status.tone == .warning && isEnabled ? BlitzUI.warning : BlitzUI.secondaryText
     }
 }
 
@@ -412,524 +247,6 @@ private enum SourceRowStatusTone: Equatable {
     case active
     case muted
     case warning
-}
-
-struct SelectedSourceInspector: View {
-    @Bindable var vm: RecorderViewModel
-
-    @ViewBuilder
-    var body: some View {
-        switch vm.selectedSource?.source ?? .screen {
-        case .screen:
-            ScreenSourceInspector(vm: vm, enabled: vm.isSourceConfigured(.screen))
-        case .camera:
-            CameraSourceInspector(vm: vm, enabled: vm.isSourceConfigured(.camera))
-        case .microphone:
-            AudioSourceInspector(
-                title: "Input level",
-                source: .microphone,
-                levels: vm.micLevels,
-                gain: Binding(
-                    get: { vm.settings.microphoneGain },
-                    set: { vm.setMicrophoneGain($0) }
-                ),
-                vm: vm
-            )
-        case .systemAudio:
-            AudioSourceInspector(
-                title: "Output level",
-                source: .systemAudio,
-                levels: vm.sysLevels,
-                gain: Binding(
-                    get: { vm.settings.systemAudioGain },
-                    set: { vm.setSystemAudioGain($0) }
-                ),
-                vm: vm
-            )
-        }
-    }
-}
-
-private struct ScreenSourceInspector: View {
-    @Bindable var vm: RecorderViewModel
-    let enabled: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            captureSourceRow
-            if enabled && vm.hasActiveScreenPickerSelection {
-                if vm.supportsScreenWindowScaling {
-                    ScreenSourceFramingControl(vm: vm, enabled: enabled)
-                } else {
-                    Button(action: vm.pickScreen) {
-                        Label("Choose a window for vertical video", systemImage: "macwindow")
-                            .font(.system(size: 11, weight: .medium))
-                            .frame(maxWidth: .infinity, minHeight: 30)
-                    }
-                    .blitzButton(.secondary)
-                    ScreenContentModeControl(vm: vm, enabled: enabled)
-                }
-            }
-        }
-    }
-
-    private var captureSourceRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            BlitzSourcePicker(model: ScreenCaptureSourcePickerModel(vm: vm, enabled: enabled).model)
-            .help("Choose a display or window")
-        }
-    }
-
-}
-
-@MainActor
-struct ScreenCaptureSourcePickerModel {
-    let vm: RecorderViewModel
-    let enabled: Bool
-
-    private var captureSourceLabel: String {
-        vm.selectedScreenSourceDisplayName
-    }
-
-    private var selectedScreenSourceIcon: NSImage? {
-        selectedScreenSourceOption?.icon
-    }
-
-    private var selectedScreenSourceOption: ScreenSourceOption? {
-        guard !vm.settings.usesPickedScreenContent,
-              let binding = vm.settings.screenSourceBinding else {
-            return nil
-        }
-        return vm.availableScreenSources.first {
-            ScreenSourcePickerOrganization.isSelected(.init(
-                selectedBinding: binding, candidate: $0.binding, usesPickedContent: false
-            ))
-        }
-    }
-
-    private var selectedScreenSourceSystemImage: String {
-        if vm.settings.usesPickedScreenContent {
-            return "rectangle.dashed"
-        }
-
-        switch vm.settings.screenSourceBinding?.kind {
-        case .application:
-            return "app"
-        case .window:
-            return "macwindow"
-        case .display, nil:
-            return "display"
-        }
-    }
-
-    var model: BlitzSourcePickerModel {
-        let actions = [
-            BlitzSourcePickerItem(
-                id: "screen:system-window-picker",
-                title: "Use macOS window picker…",
-                subtitle: nil,
-                systemImage: "rectangle.dashed",
-                icon: nil,
-                thumbnail: nil,
-                isSelected: vm.activePickedScreenContentKind == .application
-                    || vm.activePickedScreenContentKind == .window
-            ) {
-                vm.pickScreen()
-            },
-            BlitzSourcePickerItem(
-                id: "screen:system-display-picker",
-                title: "Use macOS display picker…",
-                subtitle: nil,
-                systemImage: BlitzSymbols.screen,
-                icon: nil,
-                thumbnail: nil,
-                isSelected: vm.activePickedScreenContentKind == .display
-            ) {
-                vm.pickFullScreen()
-            }
-        ]
-
-        return BlitzSourcePickerModel(
-            title: captureSourceLabel,
-            subtitle: selectedScreenSourceKindLabel,
-            systemImage: selectedScreenSourceSystemImage,
-            icon: selectedScreenSourceIcon,
-            sections: [
-                screenSourceSection((kind: .display, title: "Displays", group: .all)),
-                screenSourceSection((kind: .application, title: "Suggested apps", group: .suggested)),
-                screenSourceSection((kind: .application, title: "Apps", group: .standard)),
-                screenSourceSection((kind: .window, title: "Windows", group: .standard))
-            ],
-            actions: actions,
-            layout: .thumbnails,
-            enabled: enabled && vm.canAdjustScreenCapture,
-            hiddenSections: [
-                screenSourceSection((kind: .application, title: "Private apps", group: .sensitive)),
-                screenSourceSection((kind: .window, title: "Private app windows", group: .sensitive)),
-                screenSourceSection((kind: .application, title: "Utility apps", group: .utility)),
-                screenSourceSection((kind: .window, title: "Small & utility windows", group: .utility))
-            ],
-            prompt: "Choose screen or window",
-            refresh: { await vm.refreshSources() }
-        )
-    }
-
-    private func screenSourceSection(
-        _ request: (
-            kind: ScreenSourceBinding.Kind,
-            title: String,
-            group: ScreenSourcePickerGroup
-        )
-    ) -> BlitzSourcePickerSection {
-        let options = vm.availableScreenSources.filter {
-            $0.binding.kind == request.kind
-                && (request.group == .all || $0.pickerPlacement.group == request.group)
-        }
-        return BlitzSourcePickerSection(
-            title: request.title,
-            items: options.map { option in
-                BlitzSourcePickerItem(
-                    id: option.binding.runtimeID,
-                    title: option.title,
-                    subtitle: option.subtitle,
-                    systemImage: option.systemImage,
-                    icon: option.icon,
-                    thumbnail: nil,
-                    isSelected: ScreenSourcePickerOrganization.isSelected(.init(
-                        selectedBinding: vm.settings.screenSourceBinding,
-                        candidate: option.binding,
-                        usesPickedContent: vm.settings.usesPickedScreenContent
-                    )),
-                    visibility: ScreenSourcePickerOrganization.visibility(option),
-                    screenKind: option.binding.kind,
-                    loadThumbnail: { await vm.screenSourceThumbnail(option.binding) }
-                ) {
-                    vm.setScreenSource(option.binding)
-                }
-            }
-        )
-    }
-
-    private var selectedScreenSourceKindLabel: String {
-        if !vm.hasActiveScreenPickerSelection {
-            return "Picker selection required"
-        }
-        if vm.settings.usesPickedScreenContent {
-            return "Screen capture"
-        }
-        switch vm.settings.screenSourceBinding?.kind {
-        case .application:
-            return "App window capture"
-        case .window:
-            return "Window capture"
-        case .display, nil:
-            return "Display capture"
-        }
-    }
-}
-
-struct ScreenContentModeControl: View {
-    @Bindable var vm: RecorderViewModel
-    let enabled: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            BlitzUI.sectionLabel("Framing", icon: "crop")
-
-            SourceFramingPicker(selection: Binding(
-                get: { vm.settings.screenContentMode },
-                set: { vm.setScreenContentMode($0) }
-            ), fitTitle: "Full display")
-            .disabled(!enabled || !vm.canEditScene)
-
-            if vm.settings.screenContentMode == .fill {
-                Button {
-                    vm.beginScreenCropMode()
-                } label: {
-                    Label("Adjust crop", systemImage: "crop")
-                        .font(.system(size: 11, weight: .semibold))
-                        .frame(maxWidth: .infinity, minHeight: 24)
-                }
-                .blitzButton(.secondary)
-                .controlSize(.small)
-                .disabled(!enabled || !vm.canEditScene)
-                .pointingHandCursor()
-                .help("Move and resize the visible screen area directly on the canvas")
-            }
-        }
-        .opacity(enabled ? 1 : 0.55)
-    }
-}
-
-private struct ScreenSourceFramingControl: View {
-    @Bindable var vm: RecorderViewModel
-    let enabled: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Button {
-                if vm.hasAccessibilityAccessForWindowControls {
-                    vm.fitCurrentScreenWindowToSlot()
-                } else {
-                    vm.requestAccessibilityForWindowControls()
-                }
-            } label: {
-                Label("Fit window to scene", systemImage: "rectangle.arrowtriangle.2.inward")
-                    .font(.system(size: 11, weight: .semibold))
-                    .frame(maxWidth: .infinity, minHeight: 30)
-            }
-            .blitzButton(.secondary)
-            .help("Resize the selected window to this scene. Keep its full width and height visible.")
-
-            Text("Keeps the whole window visible.")
-                .font(.system(size: 10))
-                .foregroundStyle(BlitzUI.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack(spacing: 8) {
-                Text("Screen size")
-                Spacer(minLength: 0)
-                Text("\(Int((vm.targetWindowZoom * 100).rounded()))%")
-                    .monospacedDigit()
-                Button(action: vm.resetTargetWindowZoom) {
-                    Image(systemName: "arrow.counterclockwise")
-                }
-                .blitzButton(.secondary)
-                .accessibilityLabel("Reset screen size")
-                .disabled(abs(vm.targetWindowZoom - 1) < 0.001)
-            }
-            .font(.system(size: 11, weight: .medium))
-
-            Slider(
-                value: Binding(
-                    get: { Double(vm.targetWindowZoom) },
-                    set: { vm.setTargetWindowZoom(CGFloat($0)) }
-                ),
-                in: 0.5...2,
-                step: 0.05,
-                onEditingChanged: { if !$0 { vm.applyTargetWindowZoom() } }
-            )
-            .controlSize(.small)
-            .tint(BlitzUI.mint)
-            .accessibilityLabel("Screen size")
-            .help("Scale the screen on the canvas. Fit window to scene still resizes the real window.")
-
-            HStack {
-                Text("More content")
-                Spacer(minLength: 0)
-                Text("Larger content")
-            }
-            .font(.system(size: 10))
-            .foregroundStyle(BlitzUI.secondaryText)
-        }
-        .disabled(!enabled || !vm.canEditScene || vm.isScreenCropModeEnabled)
-    }
-}
-
-private struct CameraSourceInspector: View {
-    @Bindable var vm: RecorderViewModel
-    let enabled: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            WebcamSourceMenu(vm: vm, enabled: enabled)
-            if vm.isRemoteCameraSelected {
-                remoteCameraSettingsShortcut
-            }
-            TransparentWebcamToggle(vm: vm, enabled: enabled)
-        }
-    }
-
-    private var remoteCameraSettingsShortcut: some View {
-        Button {
-            vm.onPresentSettings?(.devices)
-        } label: {
-            HStack(spacing: 8) {
-                inspectorIcon("slider.horizontal.3", enabled: enabled)
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("iPhone settings")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white.opacity(enabled ? 0.82 : 0.38))
-                        .lineLimit(1)
-                    Text("Change camera controls in Settings (Cmd+,).")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(enabled ? 0.55 : 0.3))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
-
-                Spacer(minLength: 0)
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.white.opacity(enabled ? 0.42 : 0.24))
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(.rect(cornerRadius: 8))
-        }
-        .blitzButton(.secondary)
-        .controlSize(.small)
-        .disabled(!enabled)
-        .pointingHandCursor()
-        .help("Open iPhone camera settings. You can also use Cmd+, then Devices.")
-    }
-}
-
-private struct AudioSourceInspector: View {
-    let title: String
-    let source: CaptureSource
-    let levels: TrackLevels
-    @Binding var gain: Double
-    @Bindable var vm: RecorderViewModel
-
-    private var enabled: Bool { vm.settings.enabledSources.contains(source) }
-    private var gainLabel: String { "\(Int((gain * 100).rounded()))%" }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if source == .microphone {
-                MicrophoneSourceMenu(vm: vm, enabled: enabled)
-            } else {
-                HStack(spacing: 8) {
-                    BlitzSymbol(configuration: .init(name: BlitzSymbols.systemAudio, size: 18))
-                    Text("Mac audio")
-                        .font(.system(size: 12, weight: .medium))
-                }
-                .foregroundStyle(BlitzUI.secondaryText)
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 10) {
-                    Text(title)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(BlitzUI.secondaryText)
-                        .lineLimit(1)
-
-                    Spacer(minLength: 0)
-
-                    Text(gainLabel)
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(BlitzUI.primaryText)
-                        .monospacedDigit()
-                }
-
-                TrackLevelGraph(levels: levels, active: enabled)
-                    .frame(height: 22)
-                    .opacity(enabled ? 1 : 0.3)
-                    .accessibilityHidden(true)
-
-                HStack(spacing: 7) {
-                    BlitzSymbol(configuration: .init(name: "speaker", size: 16))
-                    Slider(value: $gain, in: 0...2)
-                        .controlSize(.small)
-                        .tint(BlitzUI.mint)
-                        .disabled(vm.state != .idle || !enabled)
-                        .accessibilityLabel(source == .microphone ? "Microphone volume" : "System audio volume")
-                        .accessibilityValue(gainLabel)
-                    BlitzSymbol(configuration: .init(name: BlitzSymbols.systemAudio, size: 16))
-                }
-                .foregroundStyle(BlitzUI.secondaryText)
-            }
-        }
-    }
-}
-
-private func inspectorIcon(_ icon: String, enabled: Bool) -> some View {
-    Image(systemName: icon)
-        .font(.system(size: 10, weight: .semibold))
-        .foregroundStyle(.white.opacity(enabled ? 0.5 : 0.28))
-        .frame(width: 20, height: 20)
-        .background(.white.opacity(enabled ? 0.07 : 0.035), in: .rect(cornerRadius: 6))
-}
-
-private func inspectorLabel(_ title: String, enabled: Bool) -> some View {
-    Text(title)
-        .font(.system(size: 10, weight: .medium))
-        .foregroundStyle(.white.opacity(enabled ? 0.38 : 0.24))
-}
-
-private struct MicrophoneSourceMenu: View {
-    @Bindable var vm: RecorderViewModel
-    let enabled: Bool
-
-    var body: some View {
-        BlitzSourcePicker(model: pickerModel)
-            .help("Choose microphone source")
-    }
-
-    private var pickerModel: BlitzSourcePickerModel {
-        BlitzSourcePickerModel(
-            title: vm.selectedMicrophoneDisplayName,
-            subtitle: "Microphone input",
-            systemImage: BlitzSymbols.microphone,
-            icon: nil,
-            sections: [BlitzSourcePickerSection(title: "Microphones", items: microphoneItems)],
-            actions: [],
-            layout: .list,
-            enabled: enabled && vm.state != .starting && vm.state != .finishing
-        )
-    }
-
-    private var microphoneItems: [BlitzSourcePickerItem] {
-        let defaultItem = BlitzSourcePickerItem(
-            id: "microphone:default",
-            title: "Default microphone",
-            subtitle: "Follow the macOS default",
-            systemImage: BlitzSymbols.microphone,
-            icon: nil,
-            thumbnail: nil,
-            isSelected: vm.settings.selectedMicrophoneID == nil
-        ) {
-            vm.setMicrophone(nil)
-        }
-        return [defaultItem] + vm.availableMicrophones.map { option in
-            BlitzSourcePickerItem(
-                id: "microphone:\(option.id)",
-                title: option.name,
-                subtitle: nil,
-                systemImage: BlitzSymbols.microphone,
-                icon: nil,
-                thumbnail: nil,
-                isSelected: vm.settings.selectedMicrophoneID == option.id
-            ) {
-                vm.setMicrophone(option.id)
-            }
-        }
-    }
-}
-
-private struct TrackLevelGraph: View {
-    let levels: TrackLevels
-    let active: Bool
-
-    var body: some View {
-        Canvas { context, size in
-            let values = levels.levels
-            guard !values.isEmpty else { return }
-
-            let recentMax = max(0.08, (values.suffix(16).max() ?? 0) * 0.86)
-            let barCount = values.count
-            let spacing: CGFloat = 1
-            let barWidth = max(1.5, (size.width - spacing * CGFloat(barCount - 1)) / CGFloat(barCount))
-            let centerY = size.height / 2
-            let color = BlitzUI.levelColor(active: active)
-
-            for (i, raw) in values.enumerated() {
-                let normalized = raw > 0.003 ? max(0.04, min(1, raw / recentMax)) : 0.02
-                let h = max(1.5, CGFloat(normalized) * size.height)
-                let x = CGFloat(i) * (barWidth + spacing)
-                let rect = CGRect(x: x, y: centerY - h / 2, width: barWidth, height: h)
-                let alpha = 0.25 + 0.7 * CGFloat(normalized)
-                context.fill(
-                    Path(roundedRect: rect, cornerRadius: barWidth / 2),
-                    with: .color(color.opacity(alpha))
-                )
-            }
-        }
-    }
 }
 
 #if DEBUG

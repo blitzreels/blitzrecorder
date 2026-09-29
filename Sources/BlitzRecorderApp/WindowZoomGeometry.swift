@@ -5,7 +5,7 @@ enum WindowZoomGeometry {
     static let maximumZoom: CGFloat = 2
 
     static func clampedZoom(_ zoom: CGFloat) -> CGFloat {
-        min(maximumZoom, max(minimumZoom, zoom))
+        ScreenSourceZoomGeometry.clamped(zoom)
     }
 
     static func sourceFrame(for slotFrame: CGRect, zoom: CGFloat) -> CGRect {

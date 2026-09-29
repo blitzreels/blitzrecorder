@@ -20,7 +20,7 @@ struct EditorCanvasStage: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: BlitzUI.cardRadius, style: .continuous)
                 .fill(Color.black)
 
             if playback.isReady {
@@ -31,7 +31,7 @@ struct EditorCanvasStage: View {
                     cameraCropEditingScene: cameraCropDraft?.scene
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipShape(.rect(cornerRadius: 12))
+                .clipShape(.rect(cornerRadius: BlitzUI.cardRadius))
                 .allowsHitTesting(false)
             }
 
@@ -42,19 +42,12 @@ struct EditorCanvasStage: View {
         .transaction { transaction in
             transaction.animation = nil
         }
-        .overlay(alignment: .top) {
-            Text(ratioLabel)
-                .font(.system(size: 9.5, weight: .heavy, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.78))
-                .padding(.horizontal, 9)
-                .padding(.vertical, 3.5)
-                .background(Color.black.opacity(0.55), in: .capsule)
-                .padding(.top, 8)
-        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Preview, \(ratioLabel)")
         .overlay(alignment: .bottom) {
             if let editErrorMessage {
                 Label(editErrorMessage, systemImage: "exclamationmark.triangle")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(BlitzType.captionEmphasis)
                     .foregroundStyle(BlitzUI.warning)
                     .padding(.horizontal, 11)
                     .padding(.vertical, 6)
@@ -100,22 +93,22 @@ struct EditorCanvasStage: View {
         } else if layoutDraft == nil, let error = playback.loadError {
             VStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 24, weight: .semibold))
+                    .font(BlitzType.glyph(24))
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(BlitzUI.warning)
                 Text("The preview could not be built.")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.72))
+                    .font(BlitzType.strong)
+                    .foregroundStyle(BlitzUI.supportingText)
                 Text(error)
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .font(BlitzType.footnote)
+                    .foregroundStyle(BlitzUI.secondaryText)
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
             }
         } else if layoutDraft == nil {
             ProgressView("Preparing preview…")
-                .font(.system(size: 12))
+                .font(BlitzType.body)
                 .foregroundStyle(BlitzUI.secondaryText)
         }
     }

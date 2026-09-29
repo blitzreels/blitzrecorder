@@ -4,9 +4,8 @@ import SwiftUI
 struct CameraImageControlsConfiguration {
     let contentMode: Binding<CameraContentMode>
     let cropZoom: Binding<Double>
-    let shadowEnabled: Binding<Bool>
     let isCropModeEnabled: Bool
-    let showsShadow: Bool
+    let showsContentMode: Bool
     let isResetDisabled: Bool
     let onCropZoomEditingChanged: (Bool) -> Void
     let onBeginCrop: () -> Void
@@ -22,82 +21,65 @@ struct CameraImageControls: View {
         if configuration.isCropModeEnabled {
             cropActiveNotice
         } else {
-            VStack(alignment: .leading, spacing: 14) {
-                cameraImageGroup
-
-                if configuration.showsShadow {
-                    styleGroup
-                }
-            }
+            cameraImageGroup
         }
     }
 
     private var cameraImageGroup: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            BlitzUI.sectionLabel("Framing", icon: "crop")
+        VStack(alignment: .leading, spacing: 10) {
+            if configuration.showsContentMode {
+                SourceFramingPicker(selection: configuration.contentMode)
+            }
 
-            SourceFramingPicker(selection: configuration.contentMode)
-
-            CameraInspectorSliderRow(
-                title: "Camera crop",
+            BlitzInspectorSlider(configuration: .init(
+                title: "Zoom",
                 value: configuration.cropZoom,
                 range: 0...0.75,
-                onEditingChanged: configuration.onCropZoomEditingChanged
-            )
-            .help("Crop into the camera image")
+                step: 0.01,
+                valueLabel: "\(Int((configuration.cropZoom.wrappedValue / 0.75 * 100).rounded()))%",
+                onEditingChanged: configuration.onCropZoomEditingChanged,
+                onReset: configuration.onResetCrop
+            ))
+            .help("Zoom into the camera image")
 
             cropActions
-        }
-    }
-
-    private var styleGroup: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            BlitzUI.sectionLabel("Style", icon: "wand.and.stars")
-            Toggle("Shadow", isOn: configuration.shadowEnabled)
-                .toggleStyle(.blitzSwitch)
-                .help("Add a soft shadow under the camera")
         }
     }
 
     private var cropActiveNotice: some View {
         HStack(spacing: 8) {
             Image(systemName: "crop")
-                .font(.system(size: 11, weight: .semibold))
+                .font(BlitzType.glyph(11))
                 .foregroundStyle(mint)
             Text("Cropping on canvas")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.85))
+                .font(BlitzType.captionEmphasis)
+                .foregroundStyle(BlitzUI.supportingText)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(mint.opacity(0.12), in: .rect(cornerRadius: 8))
+        .background(mint.opacity(0.12), in: .rect(cornerRadius: BlitzUI.controlRadius))
     }
 
     private var cropActions: some View {
         HStack(spacing: 8) {
             Button(action: configuration.onBeginCrop) {
-                Label("Adjust crop", systemImage: "crop")
-                    .font(.system(size: 11, weight: .semibold))
+                Label("Reposition", systemImage: "hand.draw.fill")
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 4)
             }
             .blitzButton(.secondary)
-            .controlSize(.small)
             .pointingHandCursor()
-            .help("Edit the camera crop on the live canvas")
+            .help("Drag the camera image on the preview to choose what shows")
 
             Button(action: configuration.onResetCrop) {
-                Image(systemName: "arrow.counterclockwise")
-                    .font(.system(size: 10, weight: .bold))
-                    .frame(width: 24, height: 24)
+                Label("Reset zoom", systemImage: "arrow.counterclockwise")
+                    .frame(maxWidth: .infinity)
             }
             .blitzButton(.secondary)
-            .controlSize(.small)
             .disabled(configuration.isResetDisabled)
             .pointingHandCursor()
-            .accessibilityLabel("Reset camera crop")
-            .help("Reset camera crop")
+            .accessibilityLabel("Reset camera zoom")
+            .help("Reset zoom and position")
         }
     }
 }
@@ -115,10 +97,6 @@ struct CameraCropControls: View {
                 RemoteCameraOrientationControl(vm: vm)
             }
 
-            if vm.isCameraInsetLayout && !vm.isCameraCropModeEnabled {
-                CameraInsetFrameControls(vm: vm)
-            }
-
             CameraImageControls(configuration: cameraImageConfiguration)
         }
         .disabled(disabled)
@@ -132,9 +110,8 @@ struct CameraCropControls: View {
                 get: { cropZoom },
                 set: { vm.setCameraCropZoom(CGFloat($0)) }
             ),
-            shadowEnabled: shadowSelection,
             isCropModeEnabled: vm.isCameraCropModeEnabled,
-            showsShadow: vm.isCameraInsetLayout,
+            showsContentMode: !vm.isCameraInsetLayout,
             isResetDisabled: isCentered,
             onCropZoomEditingChanged: { _ in },
             onBeginCrop: vm.beginCameraCropMode,
@@ -146,13 +123,6 @@ struct CameraCropControls: View {
         Binding(
             get: { vm.settings.cameraContentMode },
             set: { vm.setCameraContentMode($0) }
-        )
-    }
-
-    private var shadowSelection: Binding<Bool> {
-        Binding(
-            get: { vm.settings.cameraShadowEnabled },
-            set: { vm.setCameraShadowEnabled($0) }
         )
     }
 
@@ -199,12 +169,15 @@ struct CameraInsetFrameControlPanel: View {
                 )
                 .help("Camera frame shape")
 
-                CameraInspectorSliderRow(
+                BlitzInspectorSlider(configuration: .init(
                     title: "Size",
                     value: configuration.size,
                     range: configuration.sizeRange,
-                    step: 0.005
-                )
+                    step: 0.005,
+                    valueLabel: "\(Int((configuration.size.wrappedValue * 100).rounded()))%",
+                    onEditingChanged: { _ in },
+                    onReset: {}
+                ))
                 .help("Camera frame size — the frame keeps the camera's real aspect ratio")
             }
         }
@@ -251,41 +224,6 @@ struct CameraInsetFrameControls: View {
     }
 }
 
-struct CameraInspectorSliderRow: View {
-    let title: String
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-    var step: Double?
-    var onEditingChanged: (Bool) -> Void = { _ in }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(title)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(BlitzUI.secondaryText)
-                Spacer(minLength: 8)
-                Text("\(Int((value * 100).rounded()))%")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .monospacedDigit()
-                    .foregroundStyle(BlitzUI.primaryText)
-            }
-
-            Group {
-                if let step {
-                    Slider(value: $value, in: range, step: step, onEditingChanged: onEditingChanged)
-                } else {
-                    Slider(value: $value, in: range, onEditingChanged: onEditingChanged)
-                }
-            }
-            .controlSize(.small)
-            .tint(BlitzUI.mint)
-            .accessibilityLabel(title)
-            .accessibilityValue("\(Int((value * 100).rounded())) percent")
-        }
-    }
-}
-
 struct CameraDiagramPicker<Value: Hashable>: View {
     let options: [Value]
     @Binding var selection: Value
@@ -307,8 +245,8 @@ struct CameraDiagramPicker<Value: Hashable>: View {
                         .frame(width: 28, height: 28)
 
                         Text(label(value))
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(isSelected ? .white.opacity(0.92) : .white.opacity(0.64))
+                            .font(BlitzType.footnote)
+                            .foregroundStyle(isSelected ? BlitzUI.primaryText : BlitzUI.secondaryText)
                             .lineLimit(1)
                             .minimumScaleFactor(0.82)
                     }
@@ -334,7 +272,9 @@ struct CameraDiagramRow<Value: Hashable>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            BlitzUI.sectionLabel(title, icon: icon)
+            Text(title)
+                .font(BlitzType.captionEmphasis)
+                .foregroundStyle(BlitzUI.secondaryText)
             CameraDiagramPicker(
                 options: options,
                 selection: $selection,
@@ -363,39 +303,46 @@ private enum CamDiagram {
 
 private func positionDraw(_ v: CameraInsetAlignment, _ c: inout GraphicsContext, _ s: CGSize, _ sel: Bool) {
     let f = CamDiagram.canvasRect(s)
-    CamDiagram.fill(c, f, 3, .white.opacity(0.05))
-    CamDiagram.stroke(c, f, 3, .white.opacity(sel ? 0.4 : 0.2))
+    CamDiagram.fill(c, f, 3, BlitzUI.quietFill)
+    CamDiagram.stroke(c, f, 3, (sel ? BlitzUI.tertiaryText : BlitzUI.strongStroke))
     let cw = f.width * 0.62, ch = cw * 9 / 16, pad: CGFloat = 2
     let x = (v == .bottomLeft) ? f.minX + pad : f.maxX - pad - cw
     let chip = CGRect(x: x, y: f.maxY - pad - ch, width: cw, height: ch)
-    CamDiagram.fill(c, chip, 2, sel ? BlitzUI.mint : .white.opacity(0.42))
+    CamDiagram.fill(c, chip, 2, sel ? BlitzUI.mint : BlitzUI.tertiaryText)
 }
 
 private func shapeDraw(_ v: CameraInsetShape, _ c: inout GraphicsContext, _ s: CGSize, _ sel: Bool) {
     let f = CamDiagram.canvasRect(s)
-    CamDiagram.fill(c, f, 3, .white.opacity(0.05))
-    CamDiagram.stroke(c, f, 3, .white.opacity(0.2))
-    let chip: CGRect
+    CamDiagram.fill(c, f, 3, BlitzUI.quietFill)
+    CamDiagram.stroke(c, f, 3, BlitzUI.strongStroke)
     let pad: CGFloat = 2
-    if v == .landscape {
-        let w = f.width * 0.78, h = w * 9 / 16
-        chip = CGRect(x: f.midX - w / 2, y: f.maxY - pad - h, width: w, height: h)
-    } else {
-        let h = f.height * 0.5, w = h * 9 / 16
-        chip = CGRect(x: f.midX - w / 2, y: f.maxY - pad - h, width: w, height: h)
+    let w: CGFloat, h: CGFloat, radius: CGFloat
+    switch v {
+    case .landscape:
+        w = f.width * 0.78
+        h = w * 9 / 16
+        radius = 2
+    case .portrait:
+        h = f.height * 0.5
+        w = h * 9 / 16
+        radius = 2
+    case .circle:
+        w = f.width * 0.66
+        h = w
+        radius = w / 2
     }
-    CamDiagram.fill(c, chip, 2, sel ? BlitzUI.mint : .white.opacity(0.42))
+    let chip = CGRect(x: f.midX - w / 2, y: f.maxY - pad - h, width: w, height: h)
+    CamDiagram.fill(c, chip, radius, sel ? BlitzUI.mint : BlitzUI.tertiaryText)
 }
 
 struct SourceFramingPicker: View {
     @Binding var selection: CameraContentMode
-    var fitTitle = "Show all"
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(CameraContentMode.allCases, id: \.self) { mode in
                 BlitzTab(configuration: .init(
-                    title: mode == .fill ? "Fill frame" : fitTitle,
+                    title: mode == .fill ? "Fill" : "Fit",
                     symbolName: nil,
                     isSelected: selection == mode,
                     expands: true,
@@ -447,26 +394,26 @@ struct RemoteCameraOrientationControl: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: isPortraitRotation ? "rectangle.portrait" : "rectangle")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(isEnabled ? 0.76 : 0.42))
+                    .font(BlitzType.glyph(11))
+                    .foregroundStyle(isEnabled ? BlitzUI.supportingText : BlitzUI.tertiaryText)
                     .frame(width: 18, height: 18)
                 Text("Orientation")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(isEnabled ? 0.72 : 0.48))
+                    .font(BlitzType.captionEmphasis)
+                    .foregroundStyle(isEnabled ? BlitzUI.supportingText : BlitzUI.secondaryText)
                 Spacer(minLength: 0)
                 Text(orientationLabel)
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.white.opacity(isEnabled ? 0.74 : 0.42))
+                    .font(BlitzType.footnote)
+                    .foregroundStyle(isEnabled ? BlitzUI.supportingText : BlitzUI.tertiaryText)
                     .padding(.horizontal, 7)
                     .frame(height: 20)
-                    .background(.white.opacity(0.06), in: .rect(cornerRadius: 6))
+                    .background(BlitzUI.controlFill, in: .rect(cornerRadius: 6))
             }
 
             HStack(spacing: 7) {
                 orientationButton("Auto", systemImage: "iphone.gen3") {
                     vm.setRemoteCameraAutomaticRotation(true)
                 }
-                .background(usesAutomaticRotation ? BlitzUI.mint.opacity(0.16) : Color.clear, in: .rect(cornerRadius: 8))
+                .background(usesAutomaticRotation ? BlitzUI.mint.opacity(0.16) : Color.clear, in: .rect(cornerRadius: BlitzUI.controlRadius))
                 orientationButton("Left", systemImage: "rotate.left") {
                     rotate(by: -1)
                 }
@@ -479,7 +426,7 @@ struct RemoteCameraOrientationControl: View {
             }
         }
         .padding(usesPanelBackground ? 10 : 0)
-        .background(usesPanelBackground ? Color.white.opacity(0.055) : Color.clear, in: .rect(cornerRadius: 10))
+        .background(usesPanelBackground ? BlitzUI.controlFill : Color.clear, in: .rect(cornerRadius: BlitzUI.cardRadius))
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.6)
     }
@@ -487,7 +434,7 @@ struct RemoteCameraOrientationControl: View {
     private func orientationButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
-                .font(.system(size: 10, weight: .semibold))
+                .font(BlitzType.footnote)
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
                 .frame(maxWidth: .infinity, minHeight: 26)
@@ -547,7 +494,7 @@ struct RemoteCameraOrientationControl: View {
             }
             .padding(16)
             .frame(width: 268)
-            .background(Color(red: 0.035, green: 0.035, blue: 0.043))
+            .background(BlitzUI.canvasBackground)
         }
     }
     return DiagramPreview().preferredColorScheme(.dark)

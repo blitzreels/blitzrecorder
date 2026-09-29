@@ -2,7 +2,8 @@ import AppKit
 
 extension PreviewStageView {
     override func hitTest(_ point: NSPoint) -> NSView? {
-        bounds.contains(point) ? self : nil
+        guard super.hitTest(point) != nil else { return nil }
+        return self
     }
 
     override func resetCursorRects() {
@@ -138,7 +139,8 @@ extension PreviewStageView {
             layer: dragMode.layer,
             startFrame: dragMode.startFrame,
             delta: delta,
-            screenContentMode: screenContentMode
+            screenContentMode: screenContentMode,
+            locksAspectRatio: dragMode.layer == .camera && sceneLayout.cameraMask == .circle
         )) {
         case .layerFrame(let frame):
             applyLayerDragFrame(frame, layer: dragMode.layer)

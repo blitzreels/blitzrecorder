@@ -10,6 +10,7 @@ enum BlitzButtonEmphasis {
 enum BlitzControlMetrics {
     static let radius: CGFloat = 8
     static let rowHeight: CGFloat = 38
+    static let toolbarHeight: CGFloat = 38
     static let detailedRowHeight: CGFloat = 64
     static let menuPadding: CGFloat = 8
     static let sectionHeight: CGFloat = 30
@@ -53,7 +54,7 @@ struct BlitzButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: BlitzControlMetrics.fontSize(controlSize), weight: .medium))
+            .font(BlitzType.control(BlitzControlMetrics.fontSize(controlSize)))
             .symbolRenderingMode(.monochrome)
             .symbolVariant(.none)
             .padding(.horizontal, BlitzControlMetrics.horizontalPadding(controlSize))
@@ -66,6 +67,7 @@ struct BlitzButtonStyle: ButtonStyle {
                     .strokeBorder(emphasis == .secondary ? BlitzUI.panelStroke : .clear, lineWidth: 1)
                     .allowsHitTesting(false)
             }
+            .blitzFocusRing(cornerRadius: BlitzControlMetrics.radius)
             .opacity(isEnabled ? (configuration.isPressed ? 0.76 : 1) : 0.4)
             .contentShape(.rect(cornerRadius: BlitzControlMetrics.radius))
             .onHover { isHovering = $0 }
@@ -85,7 +87,7 @@ struct BlitzButtonStyle: ButtonStyle {
         let hovered = isHovering && isEnabled
         switch emphasis {
         case .accent: return hovered ? BlitzUI.mint.opacity(0.9) : BlitzUI.mint
-        case .emphasized: return .white.opacity(hovered ? 0.98 : 0.88)
+        case .emphasized: return hovered ? .white : BlitzUI.primaryText
         case .secondary: return hovered ? BlitzUI.hoverFill : BlitzUI.controlFill
         case .quiet: return hovered ? BlitzUI.quietFill : .clear
         }

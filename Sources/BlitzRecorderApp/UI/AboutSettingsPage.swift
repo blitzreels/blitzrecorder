@@ -15,7 +15,6 @@ struct AboutSettingsPage: View {
                 SettingsPageHeader(.init(
                     title: "About",
                     detail: "BlitzRecorder for Mac",
-                    systemImage: "info.circle",
                     status: nil
                 ))
 
@@ -25,9 +24,9 @@ struct AboutSettingsPage: View {
                         .frame(width: 72, height: 72)
                     VStack(alignment: .leading, spacing: 6) {
                         Text("BlitzRecorder")
-                            .font(.system(size: 23, weight: .semibold))
+                            .font(BlitzType.largeTitle)
                         Text(version)
-                            .font(.system(size: 12))
+                            .font(BlitzType.body)
                             .foregroundStyle(BlitzUI.secondaryText)
                             .textSelection(.enabled)
                     }
@@ -35,13 +34,13 @@ struct AboutSettingsPage: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Label("Free. All features included.", systemImage: "checkmark.circle.fill")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(BlitzType.headline)
                         .foregroundStyle(BlitzUI.mint)
                     Text("Unlimited recording and exports, iPhone camera, 4K, and 60 fps.")
                     Text("No account, payment, or license key needed.")
                         .foregroundStyle(BlitzUI.secondaryText)
                 }
-                .font(.system(size: 12))
+                .font(BlitzType.body)
                 .fixedSize(horizontal: false, vertical: true)
                 .settingsRow()
 
@@ -93,7 +92,7 @@ struct AboutSettingsPage: View {
                     Link("Privacy", destination: AppLinks.privacy)
                     Link("Terms", destination: AppLinks.terms)
                 }
-                .font(.system(size: 12))
+                .font(BlitzType.body)
                 .foregroundStyle(BlitzUI.secondaryText)
             }
             .settingsPageContent()

@@ -96,7 +96,7 @@ public struct TimelineTimeMap: Equatable, Sendable {
                 let end = min(max(start, cut.end), durationSeconds)
                 return (start, end, cut.id)
             }
-            .filter { $0.end - $0.start > epsilon }
+            .filter { MediaTime(seconds: $0.end) > MediaTime(seconds: $0.start) }
             .sorted { $0.start < $1.start }
         for candidate in candidates {
             if let last = removed.last, candidate.start <= last.end + epsilon {
@@ -185,11 +185,11 @@ public struct TimelineTimeMap: Equatable, Sendable {
     }
 
     public func takeTime(forOutput outputTime: MediaTime) -> MediaTime {
-        let unscaled = unscaledOutput(outputTime)
-        let index = outputRangeIndex(at: unscaled)
+        let index = outputRangeIndex(at: outputTime)
         guard index < keptRanges.count else { return keptRanges.last?.takeEnd ?? takeDuration }
         let range = keptRanges[index]
-        let offset = MediaTime.maximum(.zero, unscaled - range.outputStart)
+        let elapsed = outputTime - scaledOutput(range.outputStart)
+        let offset = MediaTime.minimum(range.duration, MediaTime.maximum(.zero, unscaledOutput(elapsed)))
         return range.takeStart + offset
     }
 
@@ -218,9 +218,8 @@ public struct TimelineTimeMap: Equatable, Sendable {
     }
 
     public func keptRange(containingOutput outputTime: MediaTime) -> KeptRange? {
-        let unscaled = unscaledOutput(outputTime)
-        let index = outputRangeIndex(at: unscaled)
-        guard index < keptRanges.count, unscaled >= keptRanges[index].outputStart else { return nil }
+        let index = outputRangeIndex(at: outputTime)
+        guard index < keptRanges.count, outputTime >= scaledOutput(keptRanges[index].outputStart) else { return nil }
         return keptRanges[index]
     }
 
@@ -229,7 +228,7 @@ public struct TimelineTimeMap: Equatable, Sendable {
         var upper = keptRanges.count
         while lower < upper {
             let middle = lower + (upper - lower) / 2
-            if time < keptRanges[middle].outputEnd {
+            if time < scaledOutput(keptRanges[middle].outputEnd) {
                 upper = middle
             } else {
                 lower = middle + 1
@@ -258,10 +257,12 @@ public struct TimelineTimeMap: Equatable, Sendable {
             let sourceStart = sourceAtActiveStart + (pieceStart - activeStart)
             let sourceDuration = pieceEnd - pieceStart
             let compositionStart = scaledOutput(range.outputStart + (pieceStart - range.takeStart))
+            let compositionEnd = scaledOutput(range.outputStart + (pieceEnd - range.takeStart))
+            guard compositionEnd > compositionStart else { continue }
             insertions.append(TimelineMediaInsertion(
                 sourceStart: sourceStart,
                 compositionStart: compositionStart,
-                duration: scaledOutput(sourceDuration),
+                duration: compositionEnd - compositionStart,
                 sourceDuration: sourceDuration
             ))
         }

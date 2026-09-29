@@ -69,7 +69,7 @@ struct EditorCameraCropSelectionOverlay: View {
             .fill(.black.opacity(0.48), style: FillStyle(eoFill: true))
 
             Rectangle()
-                .stroke(.white.opacity(0.34), lineWidth: 1)
+                .stroke(BlitzUI.tertiaryText, lineWidth: 1)
                 .frame(width: presentation.sourceFrame.width, height: presentation.sourceFrame.height)
                 .offset(x: presentation.sourceFrame.minX, y: presentation.sourceFrame.minY)
 

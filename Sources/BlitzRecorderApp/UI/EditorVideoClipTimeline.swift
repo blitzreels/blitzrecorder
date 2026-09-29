@@ -2,6 +2,9 @@ import AppKit
 import SwiftUI
 
 enum EditorTimelineClipPointer: Equatable {
+    static let handleWidth: CGFloat = 12
+    static let handleLeadingWidth: CGFloat = 8
+
     case arrow
     case pointingHand
     case resize
@@ -14,37 +17,34 @@ enum EditorTimelineClipPointer: Equatable {
         }
     }
 
-    func apply() {
-        cursor.set()
-    }
-
     struct Request {
         let layout: EditorVideoClipLayout
         let edits: TimelineEdits
         let duration: Double
         let pixelsPerSecond: CGFloat
         let x: CGFloat
-        var edgeWidth: CGFloat = 12
-        var isExpanding: Bool = false
+        var edgeWidth: CGFloat = EditorTimelineClipPointer.handleWidth
+        var isTrimming: Bool = false
     }
 
     static func at(_ request: Request) -> Self {
-        if request.isExpanding { return .resize }
+        if request.isTrimming { return .resize }
         guard request.pixelsPerSecond.isFinite, request.pixelsPerSecond > 0, request.x.isFinite else {
             return .arrow
         }
-        guard let clip = request.layout.clip(at: Double(request.x / request.pixelsPerSecond)) else {
-            return .arrow
+        let trailingWidth = request.edgeWidth / 3
+        if let edgeClip = request.layout.clip(at: Double((request.x - trailingWidth) / request.pixelsPerSecond)) {
+            let endX = CGFloat(edgeClip.end) * request.pixelsPerSecond
+            if request.x >= endX - request.edgeWidth + trailingWidth,
+                EditorVideoCuts.canTrimRight(.init(
+                    edits: request.edits, clip: edgeClip.range,
+                    nextClipStart: request.layout.next(after: edgeClip)?.range.start,
+                    duration: request.duration
+                )) {
+                return .resize
+            }
         }
-        let endX = CGFloat(clip.end) * request.pixelsPerSecond
-        let onTrailingEdge = request.x >= endX - request.edgeWidth
-        if onTrailingEdge, EditorVideoCuts.rightExpandLimit(.init(
-            edits: request.edits, clip: clip.range, nextClipStart: request.layout.next(after: clip)?.range.start,
-            duration: request.duration
-        )) != nil {
-            return .resize
-        }
-        return .pointingHand
+        return request.layout.clip(at: Double(request.x / request.pixelsPerSecond)) == nil ? .arrow : .pointingHand
     }
 }
 
@@ -110,8 +110,9 @@ struct EditorVideoClipLayout: Equatable {
     }
 
     func next(after clip: Clip) -> Clip? {
-        guard let index = clips.firstIndex(where: { $0.id == clip.id }), index + 1 < clips.count else { return nil }
-        return clips[index + 1]
+        guard clips.indices.contains(clip.index), clips[clip.index].id == clip.id,
+            clip.index + 1 < clips.count else { return nil }
+        return clips[clip.index + 1]
     }
 
     func clip(at time: Double) -> Clip? {
@@ -154,21 +155,19 @@ struct EditorVideoClipStrip: View {
         let duration: Double
         let selectedRanges: [EditorTimeRange]
         let hoveredRange: EditorTimeRange?
+        let trimOrigin: EditorClipTrimSession.Origin?
         let onSelect: (EditorTimelineRangeClick) -> Void
         let onHover: (EditorTimeRange?) -> Void
-        let onPreviewExtend: (TimelineEdits?) -> Void
-        let onEndExtend: (TimelineEdits?) -> Void
-    }
-
-    private struct ExpandOrigin {
-        let edits: TimelineEdits
-        let clip: EditorTimeRange
-        let nextClipStart: Double?
-        let pixelsPerSecond: CGFloat
+        let onBeginTrim: (EditorClipTrimSession.Origin) -> Void
+        let onTrim: (CGFloat) -> Void
+        let onEndTrim: () -> Void
+        let onCancelTrim: () -> Void
     }
 
     let configuration: Configuration
-    @State private var expandOrigin: ExpandOrigin?
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var pointer = EditorTimelineClipPointer.arrow
+    @State private var hoveredHandle: EditorVideoClipLayout.Clip.ID?
 
     var body: some View {
         let runs = configuration.layout.runs(.init(
@@ -178,21 +177,22 @@ struct EditorVideoClipStrip: View {
                 let hovered = isHovered(run)
                 let rect = CGRect(x: run.x, y: 2, width: max(1, run.width), height: size.height - 4)
                 let path = Path(roundedRect: rect, cornerRadius: run.width >= 8 ? 4 : 0)
-                context.fill(path, with: .color(BlitzUI.mint.opacity(hovered ? 0.18 : 0.12)))
-                if hovered {
-                    context.stroke(path, with: .color(BlitzUI.mint.opacity(0.55)), lineWidth: 1)
-                }
-                guard run.width >= 64 else { continue }
+                context.fill(path, with: .color(BlitzUI.mint.opacity(hovered ? 0.26 : 0.12)))
+                context.stroke(path, with: .color(.black.opacity(0.7)), lineWidth: 3)
+                context.stroke(path, with: .color(hovered ? BlitzUI.mint : BlitzUI.strongFill), lineWidth: hovered ? 2 : 1)
+                guard run.width >= 64, hovered || isSelected(run) else { continue }
                 var clipped = context
                 clipped.clip(to: path)
-                clipped.draw(Text(run.clip.title).font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(BlitzUI.mint),
-                    at: CGPoint(x: rect.minX + 8, y: rect.midY), anchor: .leading)
+                clipped.fill(Path(CGRect(x: rect.minX, y: rect.maxY - 19, width: rect.width, height: 19)),
+                             with: .color(.black.opacity(0.8)))
+                clipped.draw(Text(run.clip.title).font(BlitzType.captionEmphasis)
+                    .foregroundStyle(BlitzUI.primaryText),
+                    at: CGPoint(x: rect.minX + 8, y: rect.maxY - 10), anchor: .leading)
                 if run.width >= 140 {
                     clipped.draw(Text(String(format: "%.1fs", run.clip.end - run.clip.start))
-                        .font(.system(size: 10, weight: .medium)).monospacedDigit()
+                        .font(BlitzType.footnote).monospacedDigit()
                         .foregroundStyle(BlitzUI.secondaryText),
-                        at: CGPoint(x: rect.maxX - 8, y: rect.midY), anchor: .trailing)
+                        at: CGPoint(x: rect.maxX - 8, y: rect.maxY - 10), anchor: .trailing)
                 }
             }
         }
@@ -200,6 +200,7 @@ struct EditorVideoClipStrip: View {
         .offset(x: configuration.viewport.lowerBound)
         .frame(width: configuration.width, height: configuration.height, alignment: .leading)
         .contentShape(.rect)
+        .blitzCursor(pointer.cursor)
         .gesture(SpatialTapGesture().onEnded { event in
             if let clip = configuration.layout.clip(at: Double(event.location.x / configuration.pixelsPerSecond)) {
                 configuration.onSelect(.init(range: clip.range, modifiers: NSEvent.modifierFlags))
@@ -208,20 +209,21 @@ struct EditorVideoClipStrip: View {
         .onContinuousHover { phase in
             switch phase {
             case .active(let location):
-                let pointer = EditorTimelineClipPointer.at(.init(
+                guard isEnabled else { return }
+                let target = EditorTimelineClipPointer.at(.init(
                     layout: configuration.layout, edits: configuration.edits,
                     duration: configuration.duration, pixelsPerSecond: configuration.pixelsPerSecond,
-                    x: location.x, isExpanding: expandOrigin != nil
+                    x: location.x, isTrimming: configuration.trimOrigin != nil
                 ))
-                pointer.apply()
-                configuration.onHover(
-                    configuration.layout.clip(at: Double(location.x / configuration.pixelsPerSecond))?.range)
+                if pointer != target { pointer = target }
+                let range = configuration.layout.clip(at: Double(location.x / configuration.pixelsPerSecond))?.range
+                if range != configuration.hoveredRange { configuration.onHover(range) }
             case .ended:
                 configuration.onHover(nil)
-                if expandOrigin == nil { EditorTimelineClipPointer.arrow.apply() }
+                if configuration.trimOrigin == nil { pointer = .arrow }
             }
         }
-        .onDisappear { EditorTimelineClipPointer.arrow.apply() }
+        .onDisappear { cancelTrim() }
         .overlay(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
                 ForEach(runs.filter { $0.width >= 28 }) { run in
@@ -250,8 +252,8 @@ struct EditorVideoClipStrip: View {
         }
         .overlay(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
-                ForEach(expandableRuns(runs)) { run in
-                    expandHandle(run)
+                ForEach(trimmableRuns(runs)) { run in
+                    trimHandle(run)
                 }
             }
             .frame(width: configuration.width, height: configuration.height, alignment: .leading)
@@ -259,7 +261,11 @@ struct EditorVideoClipStrip: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Video clips")
         .accessibilityValue("\(configuration.layout.clips.count) clips")
-        .help("⌘B splits this clip at the playhead, including Screen, Camera, and audio. Drag a clip’s right edge to restore the cut after it until the next clip. Click a clip to select it; Delete removes it from all source tracks.")
+        .help("⌘B splits this clip at the playhead, including Screen, Camera, and audio. Drag a clip’s right edge left to shorten it or right to restore cut footage up to the next clip. Click a clip to select it; Delete removes it from all source tracks.")
+    }
+
+    private func isSelected(_ run: EditorVideoClipLayout.Run) -> Bool {
+        configuration.selectedRanges.contains { abs($0.start - run.clip.range.start) <= 1.0 / 600 }
     }
 
     private func isHovered(_ run: EditorVideoClipLayout.Run) -> Bool {
@@ -267,15 +273,25 @@ struct EditorVideoClipStrip: View {
         return abs(run.clip.range.start - hovered.start) <= 1.0 / 600
     }
 
-    private func expandableRuns(_ runs: [EditorVideoClipLayout.Run]) -> [EditorVideoClipLayout.Run] {
-        runs.filter { run in
-            if let expandOrigin {
-                return abs(run.clip.range.start - expandOrigin.clip.start) <= 1.0 / 600
-            }
-            return EditorVideoCuts.rightExpandLimit(.init(
+    private func trimmableRuns(_ runs: [EditorVideoClipLayout.Run]) -> [EditorVideoClipLayout.Run] {
+        if let trimOrigin = configuration.trimOrigin,
+            let clip = configuration.layout.clips.first(where: {
+                abs($0.range.start - trimOrigin.clip.start) <= 1.0 / 600
+            }) {
+            return [.init(
+                clip: clip,
+                x: CGFloat(clip.start) * configuration.pixelsPerSecond - configuration.viewport.lowerBound,
+                width: CGFloat(clip.end - clip.start) * configuration.pixelsPerSecond
+            )]
+        }
+        return runs.filter { run in
+            let endX = CGFloat(run.clip.end) * configuration.pixelsPerSecond
+            guard endX >= configuration.viewport.lowerBound,
+                endX <= configuration.viewport.upperBound else { return false }
+            return EditorVideoCuts.canTrimRight(.init(
                 edits: configuration.edits, clip: run.clip.range,
                 nextClipStart: nextClipStart(run.clip), duration: configuration.duration
-            )) != nil
+            ))
         }
     }
 
@@ -283,68 +299,44 @@ struct EditorVideoClipStrip: View {
         configuration.layout.next(after: clip)?.range.start
     }
 
-    private func expandHandle(_ run: EditorVideoClipLayout.Run) -> some View {
-        let isSelected = configuration.selectedRanges.contains {
-            abs($0.start - run.clip.range.start) <= 1.0 / 600
-        }
-        let showsHandle = isSelected || expandOrigin != nil || isHovered(run)
-        return HStack {
-            Spacer(minLength: 0)
-            Capsule().fill(isSelected || expandOrigin != nil ? BlitzUI.mint : BlitzUI.mint.opacity(0.55))
-                .frame(width: 3, height: 16)
-                .opacity(showsHandle ? 1 : 0)
-        }
-        .frame(width: 12, height: configuration.height)
+    private func trimHandle(_ run: EditorVideoClipLayout.Run) -> some View {
+        let isActive = hoveredHandle == run.clip.id || configuration.trimOrigin?.clip.start == run.clip.range.start
+        let showsHandle = isSelected(run) || isActive || isHovered(run)
+        return EditorTimelineGrip(tint: BlitzUI.mint, isActive: isActive)
+        .opacity(showsHandle ? 1 : 0)
+        .frame(width: EditorTimelineClipPointer.handleWidth, height: configuration.height)
         .contentShape(.rect)
         .blitzCursor(.resizeLeftRight)
         .onHover { hovering in
-            if hovering { EditorTimelineClipPointer.resize.apply() }
+            hoveredHandle = hovering && isEnabled ? run.clip.id : nil
         }
         .highPriorityGesture(
             DragGesture(minimumDistance: 3, coordinateSpace: .global)
                 .onChanged { value in
-                    let origin = expandOrigin ?? ExpandOrigin(
+                    configuration.onBeginTrim(.init(
                         edits: configuration.edits, clip: run.clip.range,
                         nextClipStart: nextClipStart(run.clip),
-                        pixelsPerSecond: configuration.pixelsPerSecond
-                    )
-                    if expandOrigin == nil {
-                        expandOrigin = origin
-                        configuration.onSelect(.init(range: origin.clip, modifiers: []))
-                    }
-                    configuration.onPreviewExtend(EditorVideoCuts.extendingRight(.init(
-                        edits: origin.edits, clip: origin.clip, nextClipStart: origin.nextClipStart,
-                        duration: configuration.duration,
-                        delta: Double(value.translation.width / origin.pixelsPerSecond)
-                    )))
+                        pixelsPerSecond: configuration.pixelsPerSecond, duration: configuration.duration
+                    ))
+                    configuration.onTrim(value.translation.width)
                 }
                 .onEnded { value in
-                    let origin = expandOrigin
-                    expandOrigin = nil
-                    let edits = origin.flatMap { origin in
-                        EditorVideoCuts.extendingRight(.init(
-                            edits: origin.edits, clip: origin.clip, nextClipStart: origin.nextClipStart,
-                            duration: configuration.duration,
-                            delta: Double(value.translation.width / origin.pixelsPerSecond)
-                        ))
-                    }
-                    if let origin {
-                        configuration.onSelect(.init(
-                            range: EditorVideoCuts.dragRight(.init(
-                                edits: origin.edits, clip: origin.clip, nextClipStart: origin.nextClipStart,
-                                duration: configuration.duration,
-                                delta: Double(value.translation.width / origin.pixelsPerSecond)
-                            )).selection,
-                            modifiers: []
-                        ))
-                    }
-                    configuration.onEndExtend(edits)
+                    configuration.onTrim(value.translation.width)
+                    configuration.onEndTrim()
                 }
         )
         .fixedSize()
-        .offset(x: configuration.viewport.lowerBound + run.x + run.width - 8)
-        .help("Drag right to restore footage into this clip until the next clip starts. Screen, Camera, and audio stay in sync.")
-        .accessibilityLabel("Extend \(run.clip.title)")
-        .accessibilityValue("Drag right to restore the cut after this clip")
+        .help("Drag left to shorten this clip; drag right to restore cut footage up to the next clip. Screen, Camera, and audio stay in sync.")
+        .accessibilityLabel("Trim \(run.clip.title)")
+        .accessibilityValue("Drag left to shorten or right to restore cut footage")
+        .timelineControl(id: "trim-\(run.clip.id.ticks)")
+        .offset(x: CGFloat(run.clip.end) * configuration.pixelsPerSecond - EditorTimelineClipPointer.handleLeadingWidth)
+    }
+
+    private func cancelTrim() {
+        configuration.onCancelTrim()
+        configuration.onHover(nil)
+        hoveredHandle = nil
+        pointer = .arrow
     }
 }

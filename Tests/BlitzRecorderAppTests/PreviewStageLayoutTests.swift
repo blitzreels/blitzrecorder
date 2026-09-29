@@ -3,7 +3,54 @@ import CoreGraphics
 @testable import BlitzRecorderApp
 import XCTest
 
+@MainActor
 final class PreviewStageLayoutTests: XCTestCase {
+    func testTurningOffScreenFillsCanvasWithCameraInPreviewAndSavedScene() throws {
+        var settings = RecordingSettings()
+        settings.enabledSources = [.camera]
+        settings.sceneLayout.cameraFrame = CGRect(x: 0, y: 0, width: 1.0 / 3.0, height: 1)
+        settings.canvasBackgroundStyle = .macOSSonomaHorizon
+        let canvas = CGRect(x: 0, y: 0, width: 900, height: 500)
+        let preview = PreviewStageLayout.geometry(.init(
+            canvas: canvas,
+            enabledSources: settings.visibleSources,
+            fillsCanvasWhenOnlyVideoSource: true,
+            sceneLayout: settings.sceneLayout,
+            screenFillsSceneFrame: false,
+            screenCrop: nil,
+            screenSourceAspectRatio: 16.0 / 9.0,
+            cameraCropAmount: .zero,
+            cameraCropPosition: .zero,
+            canvasBackgroundStyle: settings.canvasBackgroundStyle,
+            canvasPadding: 0,
+            screenContentMode: .fill,
+            cameraContentMode: .fill,
+            cameraFramePadding: 0,
+            cameraShadowEnabled: false
+        ))
+        XCTAssertEqual(preview.activeLayerOrder, [.camera])
+        XCTAssertEqual(preview.targetRect(for: .camera), canvas)
+
+        let stage = PreviewStageView()
+        stage.frame = CGRect(x: 0, y: 0, width: 1200, height: 800)
+        stage.captureLayout = .horizontal
+        stage.enabledSources = settings.visibleSources
+        stage.fillsCanvasWhenOnlyVideoSource = true
+        stage.sceneLayout = settings.sceneLayout
+        stage.layoutSubtreeIfNeeded()
+        XCTAssertEqual(stage.renderedCameraFrameForTesting, stage.renderedCanvasFrameForTesting)
+
+        let scene = RecordingScene(settings: settings)
+        let snapshot = RecordingProject.SceneSnapshot(scene)
+        let restored = try XCTUnwrap(RecordingScene(snapshot: JSONDecoder().decode(
+            RecordingProject.SceneSnapshot.self,
+            from: JSONEncoder().encode(snapshot)
+        )))
+        let output = SceneRenderGeometry(canvas: canvas, scene: restored, origin: .lowerLeft)
+        XCTAssertEqual(output.activeLayerOrder, [.camera])
+        XCTAssertEqual(output.targetRect(for: .camera), canvas)
+    }
+
     func testFittedCanvasMatchesSceneSlotGeometry() {
         let rect = CGRect(x: 10, y: 20, width: 800, height: 400)
         XCTAssertEqual(
@@ -70,21 +117,25 @@ final class PreviewStageLayoutTests: XCTestCase {
     }
 
     func testCameraPreviewCornerRadiusSkipsFullscreen() {
-        XCTAssertEqual(PreviewStageLayout.sourceCornerRadius(for: .zero), 0)
+        XCTAssertEqual(SceneLayoutProjection.cameraCornerRadius(for: .zero), 0)
         XCTAssertEqual(
-            PreviewStageLayout.cameraPreviewCornerRadius(
-                bounds: CGRect(x: 0, y: 0, width: 200, height: 200),
+            PreviewStageLayout.cameraPreviewCornerRadius(.init(
+                isCamera: true,
+                rect: CGRect(x: 0, y: 0, width: 200, height: 200),
                 isFullscreen: true,
-                isFullWidth: false
-            ),
+                isFullWidth: false,
+                isCircle: false
+            )),
             0
         )
         XCTAssertGreaterThan(
-            PreviewStageLayout.cameraPreviewCornerRadius(
-                bounds: CGRect(x: 0, y: 0, width: 200, height: 200),
+            PreviewStageLayout.cameraPreviewCornerRadius(.init(
+                isCamera: true,
+                rect: CGRect(x: 0, y: 0, width: 200, height: 200),
                 isFullscreen: false,
-                isFullWidth: false
-            ),
+                isFullWidth: false,
+                isCircle: false
+            )),
             0
         )
 

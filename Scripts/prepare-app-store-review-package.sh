@@ -161,10 +161,12 @@ copy_file "Web/blitzrecorder/index.html" "PublicWebSource/index.html"
 copy_file "Web/blitzrecorder/src/main.jsx" "PublicWebSource/src/main.jsx"
 copy_file "Web/blitzrecorder/vercel.json" "PublicWebSource/vercel.json"
 
-while IFS= read -r screenshot; do
-  relative="${screenshot#AppStore/ScreenshotAssets/}"
-  copy_file "$screenshot" "Screenshots/$relative"
-done < <(find AppStore/ScreenshotAssets -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) | sort)
+if [[ -d AppStore/ScreenshotAssets ]]; then
+  while IFS= read -r screenshot; do
+    relative="${screenshot#AppStore/ScreenshotAssets/}"
+    copy_file "$screenshot" "Screenshots/$relative"
+  done < <(find AppStore/ScreenshotAssets -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) | sort)
+fi
 
 write_manifest
 

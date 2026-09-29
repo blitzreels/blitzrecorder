@@ -182,6 +182,24 @@ enum ProjectLibraryMetadataLoader {
 
     private static func thumbnail(for url: URL?) async -> NSImage? {
         guard let url else { return nil }
+        let cacheURL = MediaFileFingerprint(url: url).map {
+            thumbnailCacheDirectory.appendingPathComponent("\($0.cacheKey).jpg")
+        }
+        if let cacheURL, let cached = NSImage(contentsOf: cacheURL) { return cached }
+        let generated = await generatedThumbnail(for: url)
+        if let cacheURL, let generated,
+           let tiff = generated.tiffRepresentation,
+           let data = NSBitmapImageRep(data: tiff)?.representation(using: .jpeg, properties: [.compressionFactor: 0.82]) {
+            try? FileManager.default.createDirectory(at: thumbnailCacheDirectory, withIntermediateDirectories: true)
+            try? data.write(to: cacheURL, options: .atomic)
+        }
+        return generated
+    }
+
+    private static let thumbnailCacheDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("BlitzRecorder/ProjectThumbnails-v1", isDirectory: true)
+
+    private static func generatedThumbnail(for url: URL) async -> NSImage? {
         let asset = AVURLAsset(url: url)
         guard let tracks = try? await asset.loadTracks(withMediaType: .video), !tracks.isEmpty else { return nil }
         let generator = AVAssetImageGenerator(asset: asset)
@@ -271,5 +289,34 @@ enum ProjectLibraryMetadataLoader {
         }
         guard totalBytes > 0 else { return nil }
         return totalBytes
+    }
+}
+
+@MainActor @Observable
+final class ProjectLibraryMetadataStore {
+    static let shared = ProjectLibraryMetadataStore()
+
+    private(set) var metadata: [UUID: ProjectLibraryMetadata] = [:]
+    @ObservationIgnored private var loadedVersions: [UUID: Date] = [:]
+
+    func needsLoad(_ entry: RecordingProjectHistory.Entry) -> Bool {
+        metadata[entry.id] == nil || loadedVersions[entry.id] != entry.updatedAt
+    }
+
+    func retain(_ entries: [RecordingProjectHistory.Entry]) {
+        let ids = Set(entries.map(\.id))
+        guard metadata.keys.contains(where: { !ids.contains($0) }) else { return }
+        metadata = metadata.filter { ids.contains($0.key) }
+        loadedVersions = loadedVersions.filter { ids.contains($0.key) }
+    }
+
+    func store(_ loaded: [(RecordingProjectHistory.Entry, ProjectLibraryMetadata)]) {
+        guard !loaded.isEmpty else { return }
+        var next = metadata
+        for (entry, value) in loaded {
+            next[entry.id] = value
+            loadedVersions[entry.id] = entry.updatedAt
+        }
+        metadata = next
     }
 }

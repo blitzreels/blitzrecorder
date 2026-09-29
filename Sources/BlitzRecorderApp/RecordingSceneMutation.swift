@@ -109,6 +109,7 @@ enum RecordingSceneMutation {
             size: size,
             sourceAspectRatio: cameraAspectRatio
         )
+        settings.sceneLayout.cameraMask = shape.cameraMask
         settings.sceneLayout.layerOrder = [.screen, .camera]
         settings.enabledSources.insert(.screen)
         settings.enabledSources.insert(.camera)

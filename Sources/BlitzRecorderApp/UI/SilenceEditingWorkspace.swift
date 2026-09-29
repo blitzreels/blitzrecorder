@@ -10,7 +10,8 @@ final class SilenceEditingSession {
         let project: RecordingProject
     }
     var intensity = 1.0
-    var threshold = -42.0
+    static let defaultThreshold = -42.0
+    var threshold = SilenceEditingSession.defaultThreshold
     var automaticThreshold = true
     var minimumDuration = 0.5
     var paddingBefore = 0.3
@@ -23,6 +24,10 @@ final class SilenceEditingSession {
     private(set) var cuts: [TimelineCut] = []
     private var baseCuts: [TimelineCut] = []
     private var transcript: RecordingTranscript?
+    private var includesTranscriptSuggestions = true
+    private(set) var loadingTranscript = false
+    private(set) var isAuditioning = false
+    @ObservationIgnored private var auditionTask: Task<Void, Never>?
     private var transcriptCuts: [TimelineCut] = []
     private(set) var nonDialogueRanges: [EditorTimeRange] = []
     private(set) var windows: [SilenceWindow] = []
@@ -47,9 +52,31 @@ final class SilenceEditingSession {
     var timeMap: TimelineTimeMap { .init(takeDuration: TimelineTimeMap.time(duration), cuts: cuts.filter(\.isEnabled)) }
     var cutCount: Int { cuts.filter(\.isEnabled).count }
     var suggestsPauses: Bool { intensity > 0 }
-    var canClassify: Bool { active && !loading && !calculating && !windows.isEmpty }
+    var canClassify: Bool { active && !isAuditioning && !loading && !calculating && !windows.isEmpty }
+    var waitingForTranscript: Bool {
+        loadingTranscript || request.map { $0.vm.transcriptionController.jobStatuses[$0.project.projectPath]?.isRunning == true } == true
+    }
+
+    var settingsSnapshot: SilenceRemovalSettings {
+        .init(intensity: intensity, threshold: threshold, automaticThreshold: automaticThreshold,
+              minimumDuration: minimumDuration, paddingBefore: paddingBefore, paddingAfter: paddingAfter,
+              linkedPadding: linkedPadding, minimumAudio: minimumAudio, customized: customized)
+    }
+
+    var hasSettingsChanges: Bool {
+        var saved = request?.vm.lastExportedProject?.edits.silenceSettings ?? .standard
+        var current = settingsSnapshot
+        if saved.automaticThreshold && current.automaticThreshold {
+            saved.threshold = 0
+            current.threshold = 0
+        }
+        return saved != current
+    }
+
+    var hasChanges: Bool { metrics.hasChanges || hasSettingsChanges }
+
     var canApply: Bool {
-        !loading && !calculating && !preparingPreview && error == nil && !windows.isEmpty && metrics.hasChanges
+        active && !waitingForTranscript && !isAuditioning && !loading && !calculating && !preparingPreview && error == nil && !windows.isEmpty && hasChanges
             && metrics.outputDuration >= 0.1
     }
 
@@ -65,9 +92,13 @@ final class SilenceEditingSession {
             duration == request.playback.duration
         {
             self.request = request
-            if previous.project.edits.cuts != request.project.edits.cuts
+            let settingsChanged = previous.project.edits.silenceSettings != request.project.edits.silenceSettings
+            if settingsChanged { restoreSettings(request.project.edits.silenceSettings) }
+            if settingsChanged || previous.project.edits.cuts != request.project.edits.cuts
                 || previous.project.edits.silenceOverrides != request.project.edits.silenceOverrides {
                 baseCuts = request.project.edits.cuts
+                includesTranscriptSuggestions = !usesSavedSilenceCuts
+                refreshTranscriptCuts()
                 updateMetrics()
                 if !usesSavedSilenceCuts { recalculate() }
             } else if skipSilence {
@@ -78,6 +109,8 @@ final class SilenceEditingSession {
         cancel()
         self.request = request
         active = true
+        restoreSettings(request.project.edits.silenceSettings)
+        includesTranscriptSuggestions = !usesSavedSilenceCuts
         duration = request.playback.duration
         baseCuts = request.project.edits.cuts
         windows = []
@@ -116,7 +149,7 @@ final class SilenceEditingSession {
             do {
                 let task = Task.detached(priority: .utility) {
                     var tracks: [[SilenceWindow]] = []
-                    for config in configs { tracks.append(try await SilenceDetection.windows(config)) }
+                    for config in configs { tracks.append(try await SilenceDetection.cachedWindows(config)) }
                     return SilenceDetection.combinedWindows(tracks)
                 }
                 let result = try await withTaskCancellationHandler(
@@ -142,13 +175,15 @@ final class SilenceEditingSession {
         analysisTask?.cancel()
         previewTask?.cancel()
         calculationTask?.cancel()
+        auditionTask?.cancel()
+        isAuditioning = false
         calculating = false
         loading = false
         preparingPreview = false
     }
 
     func setPreviewEnabled(_ enabled: Bool) {
-        guard skipSilence != enabled else { return }
+        guard !isAuditioning, skipSilence != enabled else { return }
         skipSilence = enabled
         updatePreview()
     }
@@ -162,6 +197,7 @@ final class SilenceEditingSession {
         var edits = request.vm.lastExportedProject?.edits ?? request.project.edits
         edits.cuts = cuts
         edits.silenceRemovalApplied = true
+        edits.silenceSettings = settingsSnapshot
         previewTask?.cancel()
         request.playback.pauseForEditing()
         guard request.vm.applyTimelineEdits(.init(edits: edits, actionName: "Remove Silence")) else {
@@ -171,6 +207,7 @@ final class SilenceEditingSession {
         preparingPreview = false
         skipSilence = false
         baseCuts = edits.cuts
+        includesTranscriptSuggestions = false
         updateMetrics()
         return true
     }
@@ -246,6 +283,7 @@ final class SilenceEditingSession {
     func recalculate() {
         guard active, !loading, !windows.isEmpty else { return }
         calculationTask?.cancel()
+        includesTranscriptSuggestions = true
         error = nil
         calculating = true
         refreshTranscriptCuts()
@@ -334,6 +372,10 @@ final class SilenceEditingSession {
         return edits.silenceRemovalApplied || edits.enabledCuts.contains { $0.kind == .silence }
     }
 
+    func setTranscriptLoading(_ loading: Bool) {
+        loadingTranscript = loading
+    }
+
     func setTranscript(_ transcript: RecordingTranscript?) {
         guard self.transcript != transcript else { return }
         self.transcript = transcript
@@ -343,7 +385,8 @@ final class SilenceEditingSession {
 
     private func refreshTranscriptCuts() {
         transcriptCuts = transcript.map {
-            EditorTranscriptTimeline.items(.init(transcript: $0, windows: windows, threshold: threshold, duration: duration))
+            EditorTranscriptTimeline.items(.init(transcript: $0, windows: windows, threshold: threshold, duration: duration,
+                    paddingBefore: paddingBefore, paddingAfter: paddingAfter, minimumSilence: minimumDuration))
                 .filter { $0.kind == .nonDialogue }
                 .map { .init(start: $0.range.start, end: $0.range.end, kind: .silence, source: .automatic) }
         } ?? []
@@ -376,7 +419,7 @@ final class SilenceEditingSession {
         let projection = EditorTimelineProjection(.init(duration: duration, cuts: saved.cuts))
         let remaining = EditorTranscriptTimeline.remainingSilence(.init(cuts: suggestions, projection: projection))
         nonDialogueRanges = remaining.map { .init(start: $0.start, end: $0.end) }
-        cuts = baseCuts + (suggestsPauses ? remaining : [])
+        cuts = baseCuts + (suggestsPauses && includesTranscriptSuggestions ? remaining : [])
         metrics = SilenceTimelineMetrics(
             .init(
                 duration: duration, proposed: cuts,
@@ -384,8 +427,62 @@ final class SilenceEditingSession {
             ))
     }
 
+    private func restoreSettings(_ saved: SilenceRemovalSettings?) {
+        let value = (saved ?? .standard).sanitized
+        intensity = value.intensity
+        threshold = value.threshold
+        automaticThreshold = value.automaticThreshold
+        minimumDuration = value.minimumDuration
+        paddingBefore = value.paddingBefore
+        paddingAfter = value.paddingAfter
+        linkedPadding = value.linkedPadding
+        minimumAudio = value.minimumAudio
+        customized = value.customized
+        previousIntensity = max(1, value.intensity)
+    }
+
+    func audition(_ withCuts: Bool) {
+        guard active, !isAuditioning, !loading, !calculating, !waitingForTranscript, let request else { return }
+        auditionTask?.cancel()
+        previewTask?.cancel()
+        request.playback.pauseForEditing()
+        let originalTime = request.playback.currentTime
+        let originalPreview = skipSilence
+        let example = cuts.first { $0.isEnabled && $0.kind == .silence }
+        let start = max(0, (example?.start ?? originalTime) - 2)
+        let end = min(duration, (example?.end ?? start + 4) + 2)
+        isAuditioning = true
+        auditionTask = Task {
+            guard let project = request.vm.lastExportedProject else { isAuditioning = false; return }
+            await request.playback.load(.init(project: project, baseSettings: request.vm.settings,
+                previewCuts: withCuts ? cuts.filter(\.isEnabled) : project.edits.enabledCuts))
+            guard !Task.isCancelled else { return }
+            guard request.playback.isReady else {
+                error = request.playback.loadError ?? "The comparison could not be loaded."
+                isAuditioning = false
+                return
+            }
+            request.playback.play(from: start)
+            let deadline = ContinuousClock.now.advanced(by: .seconds(12))
+            while !Task.isCancelled && request.playback.isPlaying && request.playback.currentTime < end && ContinuousClock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            guard !Task.isCancelled else { return }
+            request.playback.pauseForEditing()
+            await request.playback.load(.init(project: project, baseSettings: request.vm.settings,
+                previewCuts: originalPreview ? cuts.filter(\.isEnabled) : nil))
+            guard !Task.isCancelled else { return }
+            request.playback.seek(to: originalTime)
+            isAuditioning = false
+        }
+    }
+
+    func stopAudition() {
+        request?.playback.pauseForEditing()
+    }
+
     func updatePreview() {
-        guard active, let request, !loading else { return }
+        guard active, !isAuditioning, let request, !loading else { return }
         previewTask?.cancel()
         guard let project = request.vm.lastExportedProject, project.id == request.project.id else { return }
         let proposed = skipSilence ? cuts.filter(\.isEnabled) : project.edits.enabledCuts

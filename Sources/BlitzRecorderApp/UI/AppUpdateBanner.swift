@@ -41,7 +41,7 @@ struct AppUpdateBanner: View {
             Image(systemName: "arrow.down.circle")
                 .foregroundStyle(BlitzUI.mint)
             Text(updates.detail)
-                .font(.system(size: 12, weight: .medium))
+                .font(BlitzType.label)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 12)
             Button(updates.actionTitle) {

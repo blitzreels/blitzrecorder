@@ -9,30 +9,17 @@ struct EditorToolbar: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Button {
-                vm.showProjects()
-            } label: {
-                Label("Projects", systemImage: "chevron.left")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.68))
-                    .padding(.leading, 9)
-                    .padding(.trailing, 11)
-                    .frame(height: 40)
-                    .contentShape(.rect(cornerRadius: 9))
-            }
-            .buttonStyle(BlitzPressButtonStyle())
-            .pointingHandCursor()
-            .help("Return to projects")
-
-            Rectangle()
-                .fill(Color.white.opacity(0.09))
-                .frame(width: 1, height: 18)
-                .padding(.leading, 4)
-                .padding(.trailing, 16)
+            Button("Projects", action: vm.showProjects)
+                .blitzButton(.quiet)
+                .controlSize(.small)
+                .help("Open projects")
+            Text("/")
+                .foregroundStyle(BlitzUI.secondaryText)
+                .padding(.horizontal, 8)
 
             Text(title)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.92))
+                .font(BlitzType.headline)
+                .foregroundStyle(BlitzUI.primaryText)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .layoutPriority(1)
@@ -40,12 +27,11 @@ struct EditorToolbar: View {
                 .onTapGesture(count: 2, perform: onFillWindow)
 
             Spacer(minLength: 12)
-            BlitzSegmentedPicker(configuration: .init(title: "Aspect ratio", options: CaptureLayout.allCases, selection: Binding(
-                get: { vm.lastExportedProject?.selectedOutputLayout ?? .horizontal },
-                set: onSelectOutputLayout
-            ), label: { $0.shortLabel }, symbolName: { $0.symbolName }))
+            ViewThatFits(in: .horizontal) {
+                formatPicker { $0.formatTitle }
+                formatPicker { $0.shortLabel }
+            }
             .controlSize(.small)
-            .fixedSize()
             .help("Choose the output aspect ratio")
             .disabled(vm.state != .idle)
             Spacer(minLength: 12)
@@ -53,17 +39,25 @@ struct EditorToolbar: View {
                 .allowsWindowActivationEvents(true)
                 .onTapGesture(count: 2, perform: onFillWindow)
 
-            BlitzToolbarButton(configuration: .init(
-                title: "Settings",
-                symbolName: "gearshape",
-                showsTitle: false,
-                action: { vm.onPresentSettings?(nil) }
-            ))
-            .help("Open Settings (Cmd+,)")
-            .padding(.trailing, 12)
-
             exportButton
         }
-        .frame(height: 44)
+    }
+
+    private func formatPicker(label: @escaping (CaptureLayout) -> String) -> some View {
+        BlitzSegmentedPicker(configuration: .init(title: "Aspect ratio", options: CaptureLayout.allCases, selection: Binding(
+            get: { vm.lastExportedProject?.selectedOutputLayout ?? .horizontal },
+            set: onSelectOutputLayout
+        ), label: label, symbolName: { $0.symbolName }))
+        .fixedSize()
+    }
+}
+
+extension CaptureLayout {
+    var formatTitle: String {
+        switch self {
+        case .vertical: "Vertical · 9:16"
+        case .horizontal: "Landscape · 16:9"
+        case .square: "Square · 1:1"
+        }
     }
 }

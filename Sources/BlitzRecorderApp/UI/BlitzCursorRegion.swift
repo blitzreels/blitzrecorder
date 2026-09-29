@@ -40,12 +40,28 @@ private struct BlitzCursorModifier: ViewModifier {
     let enabled: Bool
     @Environment(\.isEnabled) private var isEnabled
 
+    @ViewBuilder
     func body(content: Content) -> some View {
-        content.background {
-            BlitzCursorRegion(cursor: enabled && isEnabled ? cursor : nil)
-                .accessibilityHidden(true)
-                .allowsHitTesting(false)
+        if let style = nativeStyle {
+            content.pointerStyle(enabled && isEnabled ? style : .default)
+        } else {
+            content.background {
+                BlitzCursorRegion(cursor: enabled && isEnabled ? cursor : nil)
+                    .accessibilityHidden(true)
+                    .allowsHitTesting(false)
+            }
         }
+    }
+
+    private var nativeStyle: PointerStyle? {
+        if cursor === NSCursor.arrow { return .default }
+        if cursor === NSCursor.pointingHand { return .link }
+        if cursor === NSCursor.resizeLeftRight { return .columnResize }
+        if cursor === NSCursor.resizeUpDown { return .rowResize }
+        if cursor === NSCursor.crosshair { return .rectSelection }
+        if cursor === NSCursor.openHand { return .grabIdle }
+        if cursor === NSCursor.closedHand { return .grabActive }
+        return nil
     }
 }
 

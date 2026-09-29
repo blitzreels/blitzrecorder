@@ -121,7 +121,7 @@ struct EditorMotionPreview: View {
 
     private func cursor(_ request: Cursor) -> some View {
         Image(systemName: "cursorarrow")
-            .font(.system(size: request.size, weight: .medium))
+            .font(BlitzType.glyph(request.size))
             .foregroundStyle(.white)
             .shadow(color: .black.opacity(0.9), radius: 1, y: 1)
             .position(request.frame.point(request.location))

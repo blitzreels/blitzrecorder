@@ -109,7 +109,7 @@ final class VideoRenderPlacementTests: XCTestCase {
         ).activePlacements.first { $0.kind == .camera }
 
         XCTAssertRect(placement?.targetRect ?? .zero, equals: CGRect(x: 26, y: 86, width: 32, height: 64))
-        XCTAssertEqual(placement?.cornerRadius, 0)
+        XCTAssertEqual(placement?.cornerRadius ?? 0, 32 * 0.08, accuracy: 0.0001)
         XCTAssertEqual(placement?.videoPlacement.sourceCropAmount, CGPoint(x: 0.25, y: 0))
         XCTAssertEqual(placement?.videoPlacement.sourceCropPosition, CGPoint(x: 0.2, y: -0.1))
         XCTAssertEqual(placement?.videoPlacement.contentMode, .aspectFill)

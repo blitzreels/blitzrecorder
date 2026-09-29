@@ -13,6 +13,7 @@ struct EditorExportRecipe {
         let audioBitrate: Int
         let duration: Double
         var playbackRate: Double = 1.0
+        var destination: EditorExportDestination = .file
     }
 
     let profile: ExportPerformanceProfile
@@ -21,13 +22,14 @@ struct EditorExportRecipe {
     let estimatedSize: String
 
     static func make(_ request: Request) -> EditorExportRecipe {
+        let sharing = request.destination == .link
         let profile = ExportPerformanceProfile.resolved(
-            preset: request.preset,
+            preset: sharing ? .custom : request.preset,
             sourceResolution: request.sourceResolution,
             sourceFramesPerSecond: request.sourceFramesPerSecond,
-            customResolution: request.customResolution,
-            customFramesPerSecond: request.customFramesPerSecond,
-            customVideoQuality: request.customVideoQuality
+            customResolution: sharing ? (request.sourceResolution.height < 1080 ? request.sourceResolution : .p1080) : request.customResolution,
+            customFramesPerSecond: sharing ? request.sourceFramesPerSecond : request.customFramesPerSecond,
+            customVideoQuality: sharing ? .high : request.customVideoQuality
         )
         let dimensions = profile.resolution.dimensions(for: request.layout)
         let encoding = profile.videoQuality.encodingProfile(
@@ -132,5 +134,24 @@ struct EditorExportRecipe {
         let playbackRate = ExportPlaybackRate(clamping: rate)
         guard playbackRate != .normal else { return "" }
         return " · \(playbackRate.displayName)"
+    }
+}
+
+enum EditorExportLayouts {
+    struct Request {
+        let current: CaptureLayout
+        let additional: Set<CaptureLayout>
+    }
+
+    static func resolve(_ request: Request) -> [CaptureLayout] {
+        CaptureLayout.allCases.filter { $0 == request.current || request.additional.contains($0) }
+    }
+
+    static func title(_ layout: CaptureLayout) -> String {
+        switch layout {
+        case .vertical: "Vertical"
+        case .horizontal: "Landscape"
+        case .square: "Square"
+        }
     }
 }

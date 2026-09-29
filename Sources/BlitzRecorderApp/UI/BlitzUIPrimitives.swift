@@ -16,6 +16,38 @@ enum BlitzSymbols {
     static let videoQuality = "play.rectangle"
 }
 
+enum BlitzType {
+    static let largeTitle = Font.system(size: 24, weight: .semibold)
+    static let title = Font.system(size: 17, weight: .semibold)
+    static let headline = Font.system(size: 15, weight: .semibold)
+    static let section = Font.system(size: 13, weight: .semibold)
+    static let callout = Font.system(size: 13)
+    static let body = Font.system(size: 12)
+    static let label = Font.system(size: 12, weight: .medium)
+    static let strong = Font.system(size: 12, weight: .semibold)
+    static let caption = Font.system(size: 11)
+    static let captionEmphasis = Font.system(size: 11, weight: .medium)
+    static let footnote = Font.system(size: 10, weight: .medium)
+    static let numeric = Font.system(size: 11, weight: .medium).monospacedDigit()
+    static let countdown = Font.system(size: 120, weight: .bold, design: .rounded).monospacedDigit()
+
+    static func glyph(_ size: CGFloat) -> Font {
+        .system(size: size, weight: .medium)
+    }
+
+    static func symbol(_ size: CGFloat) -> Font {
+        .system(size: size, weight: .semibold)
+    }
+
+    static func control(_ size: CGFloat) -> Font {
+        .system(size: size, weight: .medium)
+    }
+
+    static func monogram(_ size: CGFloat) -> Font {
+        .system(size: size, weight: .semibold, design: .rounded)
+    }
+}
+
 struct BlitzSymbol: View {
     struct Configuration {
         let name: String
@@ -25,120 +57,12 @@ struct BlitzSymbol: View {
     let configuration: Configuration
 
     var body: some View {
-        Group {
-            if let glyph = BlitzGlyphKind(rawValue: configuration.name) {
-                BlitzGlyphShape(kind: glyph)
-                    .stroke(style: StrokeStyle(
-                        lineWidth: max(1.1, configuration.size * 1.6 / 24),
-                        lineCap: .round,
-                        lineJoin: .round
-                    ))
-            } else {
-                Image(systemName: configuration.name)
-                    .font(.system(size: configuration.size * 0.78, weight: .medium))
-                    .symbolRenderingMode(.monochrome)
-                    .symbolVariant(.none)
-            }
-        }
-        .frame(width: configuration.size, height: configuration.size)
-        .accessibilityHidden(true)
-    }
-}
-
-enum BlitzGlyphKind: String, CaseIterable {
-    case screen = "display"
-    case camera = "video"
-    case microphone = "mic"
-    case systemAudio = "speaker.wave.2"
-    case scenes = "rectangle.stack"
-    case layout = "rectangle.split.2x1"
-    case split = "rectangle.split.1x2"
-    case pictureInPicture = "pip"
-    case layers = "square.3.layers.3d"
-    case source = "macwindow"
-    case videoQuality = "play.rectangle"
-}
-
-struct BlitzGlyphShape: Shape {
-    let kind: BlitzGlyphKind
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        switch kind {
-        case .screen:
-            path.addRoundedRect(in: CGRect(x: 3, y: 4, width: 18, height: 13), cornerSize: CGSize(width: 2, height: 2))
-            path.move(to: CGPoint(x: 12, y: 17))
-            path.addLine(to: CGPoint(x: 12, y: 21))
-            path.move(to: CGPoint(x: 8, y: 21))
-            path.addLine(to: CGPoint(x: 16, y: 21))
-        case .source:
-            path.addRoundedRect(in: CGRect(x: 3, y: 4, width: 18, height: 16), cornerSize: CGSize(width: 2, height: 2))
-            path.move(to: CGPoint(x: 3, y: 8))
-            path.addLine(to: CGPoint(x: 21, y: 8))
-        case .videoQuality:
-            path.addRoundedRect(in: CGRect(x: 3, y: 5, width: 18, height: 14), cornerSize: CGSize(width: 2, height: 2))
-            path.move(to: CGPoint(x: 10, y: 9))
-            path.addLine(to: CGPoint(x: 15, y: 12))
-            path.addLine(to: CGPoint(x: 10, y: 15))
-            path.closeSubpath()
-        case .camera:
-            path.addRoundedRect(in: CGRect(x: 2.5, y: 5.5, width: 13.5, height: 13), cornerSize: CGSize(width: 3, height: 3))
-            path.move(to: CGPoint(x: 16, y: 10))
-            path.addLine(to: CGPoint(x: 21.5, y: 7))
-            path.addLine(to: CGPoint(x: 21.5, y: 17))
-            path.addLine(to: CGPoint(x: 16, y: 14))
-        case .microphone:
-            path.addRoundedRect(in: CGRect(x: 9, y: 3, width: 6, height: 12), cornerSize: CGSize(width: 3, height: 3))
-            path.move(to: CGPoint(x: 6, y: 11))
-            path.addLine(to: CGPoint(x: 6, y: 12))
-            path.addCurve(to: CGPoint(x: 18, y: 12), control1: CGPoint(x: 6, y: 20), control2: CGPoint(x: 18, y: 20))
-            path.addLine(to: CGPoint(x: 18, y: 11))
-            path.move(to: CGPoint(x: 12, y: 18))
-            path.addLine(to: CGPoint(x: 12, y: 21))
-            path.move(to: CGPoint(x: 9, y: 21))
-            path.addLine(to: CGPoint(x: 15, y: 21))
-        case .systemAudio:
-            path.move(to: CGPoint(x: 3, y: 10))
-            for point in [
-                CGPoint(x: 6, y: 10), CGPoint(x: 11, y: 6), CGPoint(x: 11, y: 18),
-                CGPoint(x: 6, y: 14), CGPoint(x: 3, y: 14)
-            ] {
-                path.addLine(to: point)
-            }
-            path.closeSubpath()
-            path.move(to: CGPoint(x: 15, y: 9))
-            path.addCurve(to: CGPoint(x: 15, y: 15), control1: CGPoint(x: 18, y: 10), control2: CGPoint(x: 18, y: 14))
-        case .scenes:
-            for origin in [CGPoint(x: 3, y: 3), CGPoint(x: 13, y: 3), CGPoint(x: 3, y: 13), CGPoint(x: 13, y: 13)] {
-                path.addRoundedRect(
-                    in: CGRect(origin: origin, size: CGSize(width: 8, height: 8)),
-                    cornerSize: CGSize(width: 2, height: 2)
-                )
-            }
-        case .layout:
-            path.addRoundedRect(in: CGRect(x: 3, y: 4, width: 7.5, height: 16), cornerSize: CGSize(width: 2, height: 2))
-            path.addRoundedRect(in: CGRect(x: 13.5, y: 4, width: 7.5, height: 16), cornerSize: CGSize(width: 2, height: 2))
-        case .split:
-            path.addRoundedRect(in: CGRect(x: 3, y: 4, width: 18, height: 6.5), cornerSize: CGSize(width: 2, height: 2))
-            path.addRoundedRect(in: CGRect(x: 3, y: 13.5, width: 18, height: 6.5), cornerSize: CGSize(width: 2, height: 2))
-        case .pictureInPicture:
-            path.addRoundedRect(in: CGRect(x: 3, y: 4, width: 18, height: 16), cornerSize: CGSize(width: 2, height: 2))
-            path.addRoundedRect(in: CGRect(x: 12, y: 12, width: 6, height: 5), cornerSize: CGSize(width: 1, height: 1))
-        case .layers:
-            path.move(to: CGPoint(x: 3, y: 7))
-            path.addLine(to: CGPoint(x: 12, y: 3))
-            path.addLine(to: CGPoint(x: 21, y: 7))
-            path.addLine(to: CGPoint(x: 12, y: 11))
-            path.closeSubpath()
-            path.move(to: CGPoint(x: 3, y: 12))
-            path.addLine(to: CGPoint(x: 12, y: 16))
-            path.addLine(to: CGPoint(x: 21, y: 12))
-            path.move(to: CGPoint(x: 3, y: 17))
-            path.addLine(to: CGPoint(x: 12, y: 21))
-            path.addLine(to: CGPoint(x: 21, y: 17))
-        }
-        return path.applying(CGAffineTransform(scaleX: rect.width / 24, y: rect.height / 24))
-            .offsetBy(dx: rect.minX, dy: rect.minY)
+        Image(systemName: configuration.name)
+            .font(BlitzType.symbol(configuration.size * 0.8))
+            .symbolRenderingMode(.monochrome)
+            .imageScale(.medium)
+            .frame(width: configuration.size, height: configuration.size)
+            .accessibilityHidden(true)
     }
 }
 
@@ -158,11 +82,15 @@ enum BlitzUI {
     static let primaryText = Color.white.opacity(0.92)
     static let supportingText = Color.white.opacity(0.72)
     static let secondaryText = Color.white.opacity(0.56)
+    static let tertiaryText = Color.white.opacity(0.38)
+    static let strongFill = Color.white.opacity(0.16)
+    static let strongStroke = Color.white.opacity(0.22)
     static let hoverFill = Color.white.opacity(0.075)
     static let controlRadius = BlitzControlMetrics.radius
     static let cardRadius: CGFloat = 12
+    static let surfaceRadius: CGFloat = 16
     static let separator = Color.white.opacity(0.08)
-    static let sceneCardRadius: CGFloat = 10
+    static let sceneCardRadius: CGFloat = 12
     static let scenePreviewFill = Color(white: 0.10)
     static let scenePreviewStroke = Color.white.opacity(0.3)
     static let screenPreviewFill = Color(white: 0.58)
@@ -174,20 +102,14 @@ enum BlitzUI {
     static let trackSystemAudio = Color(red: 0.36, green: 0.56, blue: 1.0)
 
     static func levelColor(active: Bool) -> Color {
-        active ? mint : Color.white.opacity(0.3)
+        active ? mint : tertiaryText
     }
 
-    static func sectionLabel(_ title: String, icon: String) -> some View {
-        HStack(spacing: 8) {
-            BlitzSymbol(configuration: .init(name: icon, size: 16))
-                .foregroundStyle(.white.opacity(0.62))
-                .frame(width: 16, height: 16)
-
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(BlitzUI.secondaryText)
-                .lineLimit(1)
-        }
+    static func sectionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(BlitzType.captionEmphasis)
+            .foregroundStyle(BlitzUI.secondaryText)
+            .lineLimit(1)
     }
 }
 
@@ -199,7 +121,7 @@ struct BlitzIconTile: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
+            RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous)
                 .fill(isSelected ? BlitzUI.mint.opacity(0.16) : BlitzUI.controlFill)
             if let icon {
                 Image(nsImage: icon)
@@ -209,7 +131,7 @@ struct BlitzIconTile: View {
                     .clipShape(.rect(cornerRadius: 4))
             } else {
                 BlitzSymbol(configuration: .init(name: symbolName, size: size * 0.82))
-                    .foregroundStyle(isSelected ? BlitzUI.mint : .white.opacity(0.78))
+                    .foregroundStyle(isSelected ? BlitzUI.mint : BlitzUI.supportingText)
             }
         }
         .frame(width: size, height: size)
@@ -244,8 +166,8 @@ struct BlitzScenePresetCard: View {
                 .padding(.horizontal, 4)
 
                 Text(preset.compactTitle)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(isSelected ? 0.96 : 0.72))
+                    .font(BlitzType.captionEmphasis)
+                    .foregroundStyle(isSelected ? BlitzUI.primaryText : BlitzUI.supportingText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
             }
@@ -273,17 +195,9 @@ struct BlitzScenePresetButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(
-                isSelected ? BlitzUI.mint.opacity(0.08) : .white.opacity(isHovering ? 0.075 : 0.045),
+                isSelected ? BlitzUI.selectedFill : (isHovering ? BlitzUI.hoverFill : BlitzUI.quietFill),
                 in: .rect(cornerRadius: BlitzUI.sceneCardRadius)
             )
-            .overlay {
-                RoundedRectangle(cornerRadius: BlitzUI.sceneCardRadius, style: .continuous)
-                    .strokeBorder(
-                        isSelected ? BlitzUI.mint.opacity(0.65) : .white.opacity(isHovering ? 0.18 : 0.1),
-                        lineWidth: 1
-                    )
-                    .allowsHitTesting(false)
-            }
             .contentShape(.rect(cornerRadius: BlitzUI.sceneCardRadius))
             .opacity(configuration.isPressed ? 0.8 : 1)
             .onHover { isHovering = $0 }
@@ -428,7 +342,7 @@ enum BlitzStatusTone: Equatable {
         switch self {
         case .live, .ready: return BlitzUI.mint
         case .warning: return BlitzUI.warning
-        case .muted: return Color.white.opacity(0.3)
+        case .muted: return BlitzUI.tertiaryText
         }
     }
 }
@@ -452,6 +366,10 @@ struct BlitzLevelMeter: View {
     var body: some View {
         Canvas { context, size in
             let values = levels.levels
+            context.fill(
+                Path(roundedRect: CGRect(x: 0, y: size.height / 2 - 1, width: size.width, height: 2), cornerRadius: 1),
+                with: .color(BlitzUI.separator)
+            )
             guard !values.isEmpty else { return }
 
             let recentMax = max(0.08, (values.suffix(16).max() ?? 0) * 0.86)
@@ -462,7 +380,8 @@ struct BlitzLevelMeter: View {
             let color = BlitzUI.levelColor(active: active)
 
             for (i, raw) in values.enumerated() {
-                let normalized = raw > 0.003 ? max(0.04, min(1, raw / recentMax)) : 0.02
+                guard raw > 0.003 else { continue }
+                let normalized = max(0.08, min(1, raw / recentMax))
                 let h = max(1.5, CGFloat(normalized) * size.height)
                 let x = CGFloat(i) * (barWidth + spacing)
                 let rect = CGRect(x: x, y: centerY - h / 2, width: barWidth, height: h)

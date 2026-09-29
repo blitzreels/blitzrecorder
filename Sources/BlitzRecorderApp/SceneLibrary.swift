@@ -453,6 +453,7 @@ extension SceneLayout: Codable {
         case screenFrame
         case cameraFrame
         case layerOrder
+        case cameraMask
     }
 
     init(from decoder: Decoder) throws {
@@ -460,7 +461,8 @@ extension SceneLayout: Codable {
         self.init(
             screenFrame: try container.decode(CGRect.self, forKey: .screenFrame),
             cameraFrame: try container.decode(CGRect.self, forKey: .cameraFrame),
-            layerOrder: try container.decode([SceneLayerKind].self, forKey: .layerOrder)
+            layerOrder: try container.decode([SceneLayerKind].self, forKey: .layerOrder),
+            cameraMask: try container.decodeIfPresent(SceneCameraMask.self, forKey: .cameraMask) ?? .rectangle
         )
     }
 
@@ -469,5 +471,6 @@ extension SceneLayout: Codable {
         try container.encode(screenFrame, forKey: .screenFrame)
         try container.encode(cameraFrame, forKey: .cameraFrame)
         try container.encode(layerOrder, forKey: .layerOrder)
+        try container.encode(cameraMask, forKey: .cameraMask)
     }
 }

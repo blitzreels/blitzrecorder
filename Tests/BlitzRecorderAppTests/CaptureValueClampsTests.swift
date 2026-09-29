@@ -693,19 +693,21 @@ final class RecordingStartGateTests: XCTestCase {
             PreviewStageDrawing.maskPath(for: CGRect(x: 0, y: 0, width: 10, height: 10), radius: 0),
             CGPath(rect: CGRect(x: 0, y: 0, width: 10, height: 10), transform: nil)
         )
-        let fullscreenRadius = PreviewStageDrawing.maskCornerRadius(
-            visibleRect: CGRect(x: 0, y: 0, width: 200, height: 200),
+        let fullscreenRadius = PreviewStageDrawing.maskCornerRadius(.init(
             isCamera: true,
+            rect: CGRect(x: 0, y: 0, width: 200, height: 200),
             isFullscreen: true,
-            isFullWidth: false
-        )
+            isFullWidth: false,
+            isCircle: false
+        ))
         XCTAssertEqual(fullscreenRadius, 0)
-        let cameraShape = PreviewStageDrawing.sourceShape(
+        let cameraShape = PreviewStageDrawing.sourceShape(.init(
             isCamera: true,
-            bounds: CGRect(x: 0, y: 0, width: 200, height: 200),
+            rect: CGRect(x: 0, y: 0, width: 200, height: 200),
             isFullscreen: true,
-            isFullWidth: false
-        )
+            isFullWidth: false,
+            isCircle: false
+        ))
         XCTAssertEqual(cameraShape.cornerRadius, 0)
         XCTAssertEqual(cameraShape.borderWidth, 0)
     }

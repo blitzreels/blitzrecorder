@@ -27,10 +27,8 @@ final class BlitzRecorderMCPServer {
     nonisolated static let endpoint = "/mcp"
     nonisolated static let workspaceEndpoint = "/webmcp"
     nonisolated static let endpointURL = URL(string: "http://127.0.0.1:\(port)\(endpoint)")!
-    nonisolated static let workspaceURL = URL(
-        string: "http://127.0.0.1:\(port)\(workspaceEndpoint)"
-    )!
     nonisolated static let codexSetupCommand = "codex mcp add blitzrecorder --url \(endpointURL.absoluteString)"
+    nonisolated static let claudeCodeSetupCommand = "claude mcp add --transport http blitzrecorder \(endpointURL.absoluteString)"
     nonisolated static let agentPluginConfiguration = """
     {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
@@ -47,8 +45,6 @@ final class BlitzRecorderMCPServer {
 
     private let projectService: MCPProjectService
     private let defaults: UserDefaults
-    private var server: Server?
-    private var transport: StatelessHTTPServerTransport?
     private var httpServer: LoopbackMCPHTTPServer?
     private(set) var isEnabled: Bool
     private(set) var status: BlitzRecorderMCPServerStatus
@@ -68,22 +64,63 @@ final class BlitzRecorderMCPServer {
             status = .disabled
             return
         }
-        guard server == nil else { return }
+        guard httpServer == nil else { return }
         status = .starting
 
-        let pipeline = StandardValidationPipeline(validators: [
+        let httpServer = LoopbackMCPHTTPServer(.init(
+            host: "127.0.0.1",
+            port: Self.port,
+            endpoint: Self.endpoint,
+            workspaceEndpoint: Self.workspaceEndpoint,
+            workspaceData: Self.workspaceData,
+            handleRequest: { [weak self] request in
+                guard let self else {
+                    return .error(statusCode: 503, .internalError("BlitzRecorder is unavailable."))
+                }
+                return await self.respond(to: request)
+            }
+        ))
+
+        do {
+            try await httpServer.start()
+            guard isEnabled else {
+                await httpServer.stop()
+                status = .disabled
+                return
+            }
+            self.httpServer = httpServer
+            status = .running
+            mcpLog.info("BlitzRecorder MCP listening on 127.0.0.1:\(Self.port)")
+        } catch {
+            status = .failed(error.localizedDescription)
+            mcpLog.error("BlitzRecorder MCP failed to start: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func respond(to request: HTTPRequest) async -> HTTPResponse {
+        let transport = StatelessHTTPServerTransport(validationPipeline: StandardValidationPipeline(validators: [
             OriginValidator.localhost(port: Self.port),
             AcceptHeaderValidator(mode: .jsonOnly),
             ContentTypeValidator(),
             ProtocolVersionValidator(),
-        ])
-        let transport = StatelessHTTPServerTransport(validationPipeline: pipeline)
+        ]))
+        let server = await makeServer()
+        do {
+            try await server.start(transport: transport)
+        } catch {
+            return .error(statusCode: 500, .internalError(error.localizedDescription))
+        }
+        let response = await transport.handleRequest(request)
+        await server.stop()
+        return response
+    }
+
+    private func makeServer() async -> Server {
         let server = Server(
             name: "blitzrecorder",
-            version: "0.1.0",
+            version: Self.serverVersion,
             capabilities: .init(tools: .init(listChanged: false))
         )
-
         await server.withMethodHandler(ListTools.self) { _ in
             .init(tools: Self.tools)
         }
@@ -115,43 +152,16 @@ final class BlitzRecorderMCPServer {
                 return Self.errorResult(error.localizedDescription)
             }
         }
+        return server
+    }
 
-        let httpServer = LoopbackMCPHTTPServer(.init(
-            host: "127.0.0.1",
-            port: Self.port,
-            endpoint: Self.endpoint,
-            workspaceEndpoint: Self.workspaceEndpoint,
-            workspaceData: Self.workspaceData,
-            transport: transport
-        ))
-
-        do {
-            try await server.start(transport: transport)
-            try await httpServer.start()
-            guard isEnabled else {
-                await httpServer.stop()
-                await server.stop()
-                status = .disabled
-                return
-            }
-            self.server = server
-            self.transport = transport
-            self.httpServer = httpServer
-            status = .running
-            mcpLog.info("BlitzRecorder MCP listening on 127.0.0.1:\(Self.port)")
-        } catch {
-            await server.stop()
-            status = .failed(error.localizedDescription)
-            mcpLog.error("BlitzRecorder MCP failed to start: \(error.localizedDescription, privacy: .public)")
-        }
+    nonisolated private static var serverVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
     }
 
     func stop() async {
         await httpServer?.stop()
-        await server?.stop()
         httpServer = nil
-        transport = nil
-        server = nil
         status = isEnabled ? .stopped : .disabled
     }
 

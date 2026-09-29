@@ -25,7 +25,7 @@ struct BlitzToggleStyle: ToggleStyle {
                 }
                 if presentation != .switchOnly {
                     configuration.label
-                        .font(.system(size: BlitzControlMetrics.fontSize(controlSize), weight: .medium))
+                        .font(BlitzType.control(BlitzControlMetrics.fontSize(controlSize)))
                         .foregroundStyle(BlitzUI.primaryText)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
@@ -81,14 +81,14 @@ struct BlitzToggleStyle: ToggleStyle {
                 .strokeBorder(isOn ? .clear : outline, lineWidth: 1)
             HStack {
                 Image(systemName: "checkmark")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(BlitzType.glyph(8))
                     .foregroundStyle(.black.opacity(0.72))
                     .opacity(isOn ? 1 : 0)
                 Spacer(minLength: 0)
             }
             .padding(.leading, 6)
             Circle()
-                .fill(isOn ? Color.white : Color.white.opacity(0.78))
+                .fill(isOn ? Color.white : BlitzUI.supportingText)
                 .frame(width: 16, height: 16)
                 .shadow(color: .black.opacity(0.18), radius: 1, y: 1)
                 .padding(3)
@@ -106,7 +106,7 @@ struct BlitzToggleStyle: ToggleStyle {
             }
             .overlay {
                 Image(systemName: "checkmark")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(BlitzType.glyph(10))
                     .foregroundStyle(.black.opacity(0.88))
                     .opacity(isOn ? 1 : 0)
             }
@@ -115,7 +115,7 @@ struct BlitzToggleStyle: ToggleStyle {
     }
 
     private var outline: Color {
-        .white.opacity(contrast == .increased ? 0.65 : (isEnabled && isHovering ? 0.32 : 0.18))
+        contrast == .increased ? BlitzUI.secondaryText : (isEnabled && isHovering ? BlitzUI.tertiaryText : BlitzUI.strongStroke)
     }
 }
 

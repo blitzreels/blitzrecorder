@@ -7,7 +7,7 @@ struct EditorTimelineSelectionCanvas: View {
         let viewport: EditorTimelineViewport
         let pixelsPerSecond: CGFloat
         let height: CGFloat
-        let isSilence: Bool
+        let tint: Color
     }
 
     let configuration: Configuration
@@ -15,7 +15,7 @@ struct EditorTimelineSelectionCanvas: View {
     var body: some View {
         Canvas { context, size in
             guard configuration.pixelsPerSecond > 0 else { return }
-            let color = configuration.isSilence ? Color.white : BlitzUI.mint
+            let color = configuration.tint
             var start: Int?
             let width = Int(ceil(size.width))
             for pixel in 0...width {
@@ -25,8 +25,8 @@ struct EditorTimelineSelectionCanvas: View {
                 if selected, start == nil { start = pixel }
                 if !selected, let first = start {
                     let rect = CGRect(x: first, y: 0, width: pixel - first, height: Int(configuration.height))
-                    context.fill(Path(rect), with: .color(color.opacity(0.1)))
-                    context.stroke(Path(rect.insetBy(dx: 1, dy: 1)), with: .color(color), lineWidth: 2)
+                    context.fill(Path(rect), with: .color(BlitzUI.cardFill))
+                    context.stroke(Path(rect.insetBy(dx: 0.5, dy: 0.5)), with: .color(color.opacity(0.85)), lineWidth: 1)
                     start = nil
                 }
             }

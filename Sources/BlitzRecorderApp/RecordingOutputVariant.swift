@@ -50,6 +50,7 @@ extension RecordingProject {
 struct EditorVariantExportRequest {
     let export: EditorExportRequest
     let layouts: [CaptureLayout]
+    let onCompletion: ([URL]) -> Void
 }
 
 extension RecorderViewModel {

@@ -37,12 +37,12 @@ struct EditorBackgroundMusicControl: View {
                 BlitzIconTile(symbolName: "music.note", isSelected: backgroundMusic != nil, size: 30)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(backgroundMusic?.url.lastPathComponent ?? "Background music")
-                        .font(.system(size: 11.5, weight: .bold))
+                        .font(BlitzType.section)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Text(backgroundMusic == nil ? "Optional" : "Loops through the full export")
-                        .font(.system(size: 9.5, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.42))
+                        .font(BlitzType.captionEmphasis)
+                        .foregroundStyle(BlitzUI.secondaryText)
                 }
                 Spacer(minLength: 0)
                 Button {
@@ -54,7 +54,8 @@ struct EditorBackgroundMusicControl: View {
                         persist("Remove Background Music")
                     }
                 } label: {
-                    Text(backgroundMusic == nil ? "Choose…" : "Remove")
+                    Label(backgroundMusic == nil ? "Choose…" : "Remove",
+                          systemImage: backgroundMusic == nil ? "plus" : "trash.fill")
                 }
                 .blitzButton(.secondary)
                 .controlSize(.small)
@@ -65,8 +66,8 @@ struct EditorBackgroundMusicControl: View {
             if backgroundMusic != nil {
                 HStack(spacing: 8) {
                     Image(systemName: "speaker.wave.1")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.52))
+                        .font(BlitzType.glyph(10))
+                        .foregroundStyle(BlitzUI.secondaryText)
                     Slider(
                         value: volumeBinding,
                         in: 0...1,
@@ -80,19 +81,17 @@ struct EditorBackgroundMusicControl: View {
                     .controlSize(.small)
                     .tint(BlitzUI.mint)
                     Text(volumeLabel)
-                        .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                        .font(BlitzType.captionEmphasis.monospacedDigit())
                         .monospacedDigit()
-                        .foregroundStyle(.white.opacity(0.62))
+                        .foregroundStyle(BlitzUI.supportingText)
                         .frame(width: 36, alignment: .trailing)
                 }
 
                 Text("Mixed during export with a smooth fade-out.")
-                    .font(.system(size: 9.5, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.42))
+                    .font(BlitzType.captionEmphasis)
+                    .foregroundStyle(BlitzUI.secondaryText)
             }
         }
-        .padding(10)
-        .background(BlitzUI.quietFill, in: .rect(cornerRadius: 10))
     }
 
     var volumeLabel: String {

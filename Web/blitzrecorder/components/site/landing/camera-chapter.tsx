@@ -3,10 +3,10 @@ import Link from "next/link";
 import { ArrowRight, Check } from "@/components/site/icons";
 import { JourneySectionView } from "@/components/site/journey-markers";
 import { Section } from "@/components/ui/layout";
-import { ChapterHeader, chapters } from "@/components/site/landing/chapter";
+import { ChapterHeader, ChapterPoints, chapters, type ChapterPoint } from "@/components/site/landing/chapter";
 import { assets } from "@/lib/assets";
 
-const steps = [
+const steps: ChapterPoint[] = [
   {
     title: "Pair with a code",
     body: "Open BlitzRecorder Camera on your iPhone, pick it on the Mac, and type the six digits. Same network, no account.",
@@ -27,8 +27,8 @@ export function CameraChapter() {
       <JourneySectionView area="landing" section="camera" payload={{ page: "home" }} />
       <ChapterHeader
         mark={chapters.camera}
-        title="Your iPhone is the best camera on your desk."
-        lede="Continuity Camera streams a compressed feed. BlitzRecorder Camera records the video on the iPhone itself, then hands your Mac the full file."
+        title="Use your iPhone as the camera."
+        lede="The iPhone records at full quality and sends the file to your Mac when you stop. Sharper than Continuity Camera."
         aside={
           <Link
             href="/ios"
@@ -80,15 +80,7 @@ export function CameraChapter() {
         </div>
       </div>
 
-      <ol className="mt-12 grid gap-8 sm:grid-cols-3">
-        {steps.map((step, index) => (
-          <li key={step.title} data-reveal className="border-t border-separator pt-5">
-            <span className="label-mono text-primary">{String(index + 1).padStart(2, "0")}</span>
-            <h3 className="mt-3 font-display text-lg font-bold tracking-[-0.01em]">{step.title}</h3>
-            <p className="mt-2 text-[15px] leading-6 text-muted-foreground">{step.body}</p>
-          </li>
-        ))}
-      </ol>
+      <ChapterPoints points={steps} />
     </Section>
   );
 }

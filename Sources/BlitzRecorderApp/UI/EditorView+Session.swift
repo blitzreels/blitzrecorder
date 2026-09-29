@@ -133,6 +133,7 @@ extension EditorView {
 
     @discardableResult
     func handleKeyboardShortcut(_ event: NSEvent) -> Bool {
+        guard vm.isEditorVisible else { return false }
         switch EditorKeyboardDispatch.action(
             EditorKeyboardSession.resolve(.init(
                 isShowingSettings: vm.isShowingSettings,
@@ -313,9 +314,9 @@ extension EditorView {
         _ = commitTimelineWrite(write)
     }
 
-    func extendClip(_ edits: TimelineEdits) {
+    func trimClip(_ edits: TimelineEdits) {
         guard playback.isReady, let project, edits != project.edits else { return }
-        _ = commitTimelineWrite(.init(edits: edits, actionName: "Extend Clip"))
+        _ = commitTimelineWrite(.init(edits: edits, actionName: "Trim Clip"))
     }
 
     func splitAtPlayhead() {
@@ -358,8 +359,6 @@ extension EditorView {
             if case .placed(let id) = selection { removePlacedItem(id) }
         case .removePrivacy:
             privacy.removeSelected()
-        case .toggleSilence:
-            if let selected = selection?.silenceSelection { silence.toggleRanges(selected.ranges) }
         case .toggleAsset:
             return toggleSelectedAsset()
         case .cutRange:

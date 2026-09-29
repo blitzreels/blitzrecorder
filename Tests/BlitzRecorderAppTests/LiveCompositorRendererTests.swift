@@ -173,6 +173,68 @@ final class LiveCompositorRendererTests: XCTestCase {
         XCTAssertEqual(color.blue, colorWithoutShadow.blue, accuracy: 3)
     }
 
+    func testCircleCameraMaskClipsCameraCornersInCompositedFrame() throws {
+        var settings = RecordingSettings()
+        settings.outputResolution = .p720
+        settings.layout = .horizontal
+        settings.canvasBackgroundStyle = .black
+        let dimensions = ScreenCaptureGeometry.outputDimensions(for: settings)
+        let cameraBuffer = try makePixelBuffer(
+            width: 320,
+            height: 180,
+            color: (blue: 0, green: 255, red: 0, alpha: 255)
+        )
+        let renderer = LiveCompositorRenderer()
+
+        func render(mask: SceneCameraMask) throws -> (output: CVPixelBuffer, target: CGRect) {
+            var layout = SceneLayout.cameraInsetLayout(for: .horizontal, shape: .circle, size: 0.3)
+            layout.cameraMask = mask
+            let scene = RecordingScene(
+                enabledSources: [.camera],
+                sceneLayout: layout,
+                canvasBackgroundStyle: .black,
+                fillsCanvasWhenOnlyVideoSource: false
+            )
+            let output = try makePixelBuffer(
+                width: dimensions.width,
+                height: dimensions.height,
+                color: (blue: 0, green: 0, red: 0, alpha: 0)
+            )
+            XCTAssertTrue(renderer.render(
+                screenBuffer: nil,
+                cameraBuffer: cameraBuffer,
+                scene: scene,
+                settings: settings,
+                to: output
+            ))
+            let target = SceneRenderGeometry(
+                canvas: CGRect(x: 0, y: 0, width: dimensions.width, height: dimensions.height),
+                scene: scene,
+                origin: .lowerLeft
+            ).targetRect(for: .camera)
+            return (output, target)
+        }
+
+        let circle = try render(mask: .circle)
+        let target = circle.target
+        let height = CGFloat(dimensions.height)
+        let side = min(target.width, target.height)
+        let cornerX = Int(target.minX + 3)
+        let cornerY = Int(height - target.maxY + 3)
+        let nearCornerX = Int(target.minX + side * 0.1)
+        let nearCornerY = Int(height - target.maxY + side * 0.1)
+        let centerX = Int(target.midX)
+        let centerY = Int(height - target.midY)
+
+        XCTAssertLessThan(sample(circle.output, x: nearCornerX, y: nearCornerY).green, 40)
+        XCTAssertGreaterThan(sample(circle.output, x: centerX, y: centerY).green, 200)
+
+        let rectangle = try render(mask: .rectangle)
+        XCTAssertGreaterThan(sample(rectangle.output, x: nearCornerX, y: nearCornerY).green, 200)
+        XCTAssertLessThan(sample(rectangle.output, x: cornerX, y: cornerY).green, 40,
+                          "Corner camera keeps the preview's rounded corners in the recording.")
+    }
+
     private func makePixelBuffer(
         width: Int,
         height: Int,

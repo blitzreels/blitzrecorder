@@ -7,14 +7,14 @@ struct NowPlayingMenuView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Image(systemName: "film")
-                    .font(.system(size: 22))
+                    .font(BlitzType.glyph(22))
                     .foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(playback.title)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(BlitzType.section)
                         .lineLimit(1)
                     Text(playback.isPlaying ? "Playing" : "Paused")
-                        .font(.system(size: 11))
+                        .font(BlitzType.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -33,7 +33,7 @@ struct NowPlayingMenuView: View {
                     playback.perform(.toggle)
                 } label: {
                     Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 22, weight: .semibold))
+                        .font(BlitzType.glyph(22))
                         .frame(width: 38, height: 32)
                 }
                 .accessibilityLabel(playback.isPlaying ? "Pause playback" : "Resume playback")
@@ -48,7 +48,7 @@ struct NowPlayingMenuView: View {
                 .help("Skip forward 10 seconds")
                 .pointingHandCursor()
             }
-            .font(.system(size: 18))
+            .font(BlitzType.title)
             .buttonStyle(.borderless)
             .frame(maxWidth: .infinity)
 
@@ -63,7 +63,7 @@ struct NowPlayingMenuView: View {
                 Spacer()
                 Text(time(playback.duration))
             }
-            .font(.system(size: 10, design: .monospaced))
+            .font(BlitzType.footnote.monospaced())
             .foregroundStyle(.secondary)
         }
         .padding(16)

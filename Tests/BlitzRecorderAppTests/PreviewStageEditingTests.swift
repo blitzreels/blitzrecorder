@@ -233,7 +233,8 @@ final class PreviewStageCropGeometryTests: XCTestCase {
                 layer: .screen,
                 startFrame: CGRect(x: 0, y: 0, width: 1, height: 1),
                 delta: CGPoint(x: 0.1, y: 0),
-                screenContentMode: .fill
+                screenContentMode: .fill,
+                locksAspectRatio: false
             )),
             .beginScreenCropPan(CGRect(x: 0.1, y: 0, width: 1, height: 1))
         )
@@ -245,6 +246,26 @@ final class PreviewStageCropGeometryTests: XCTestCase {
             ),
             CGPoint(x: 0.2, y: 0.2)
         )
+    }
+
+    func testRoundCameraEdgeResizeKeepsProportions() {
+        let start = CGRect(x: 0.5, y: 0.1, width: 0.3, height: 0.169)
+        let request = { (locks: Bool) in
+            PreviewStageDrag.tick(.init(
+                kind: .resize(.right),
+                layer: .camera,
+                startFrame: start,
+                delta: CGPoint(x: 0.06, y: 0),
+                screenContentMode: .fill,
+                locksAspectRatio: locks
+            ))
+        }
+        guard case .layerFrame(let locked) = request(true), case .layerFrame(let free) = request(false) else {
+            return XCTFail("Expected layer frames")
+        }
+        XCTAssertEqual(locked.width / locked.height, start.width / start.height, accuracy: 0.001)
+        XCTAssertGreaterThan(locked.width, start.width)
+        XCTAssertEqual(free.height, start.height, accuracy: 0.0001)
     }
 
     func testMouseDownBeginSelectsLayerWithoutDragWhenLocked() {

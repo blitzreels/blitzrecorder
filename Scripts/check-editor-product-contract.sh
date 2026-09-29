@@ -12,7 +12,7 @@ if ! rg -F 'ScenePreset.allCases.filter { $0.supports(captureLayout ?? .horizont
     failures=$((failures + 1))
 fi
 
-if ! rg -F 'options: RecordingSettings.supportedFrameRates.map' \
+if ! rg -F 'options: RecordingSettings.supportedFrameRates' \
     Sources/BlitzRecorderApp/UI/EditorExportPopover.swift >/dev/null; then
     echo "Editor FPS choices must use RecordingSettings.supportedFrameRates."
     failures=$((failures + 1))

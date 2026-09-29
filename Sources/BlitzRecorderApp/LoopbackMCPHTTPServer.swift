@@ -11,21 +11,19 @@ final class LoopbackMCPHTTPServer: @unchecked Sendable {
         let endpoint: String
         let workspaceEndpoint: String
         let workspaceData: Data
-        let transport: StatelessHTTPServerTransport
+        let handleRequest: @Sendable (HTTPRequest) async -> HTTPResponse
     }
 
     private let configuration: Configuration
-    private let transport: StatelessHTTPServerTransport
     private let eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: 1)
     private var channel: Channel?
 
     init(_ configuration: Configuration) {
         self.configuration = configuration
-        transport = configuration.transport
     }
 
     func start() async throws {
-        let transport = self.transport
+        let handleRequest = configuration.handleRequest
         let endpoint = configuration.endpoint
         let bootstrap = ServerBootstrap(group: eventLoopGroup)
             .serverChannelOption(ChannelOptions.backlog, value: 32)
@@ -33,7 +31,7 @@ final class LoopbackMCPHTTPServer: @unchecked Sendable {
             .childChannelInitializer { channel in
                 channel.pipeline.configureHTTPServerPipeline().flatMap {
                     channel.pipeline.addHandler(MCPHTTPChannelHandler(.init(
-                        transport: transport,
+                        handleRequest: handleRequest,
                         endpoint: endpoint,
                         workspaceEndpoint: self.configuration.workspaceEndpoint,
                         workspaceData: self.configuration.workspaceData
@@ -60,7 +58,7 @@ private final class MCPHTTPChannelHandler: ChannelInboundHandler, @unchecked Sen
     typealias OutboundOut = HTTPServerResponsePart
 
     struct Configuration {
-        let transport: StatelessHTTPServerTransport
+        let handleRequest: @Sendable (HTTPRequest) async -> HTTPResponse
         let endpoint: String
         let workspaceEndpoint: String
         let workspaceData: Data
@@ -147,7 +145,7 @@ private final class MCPHTTPChannelHandler: ChannelInboundHandler, @unchecked Sen
             body: bytes.isEmpty ? nil : Data(bytes),
             path: path
         )
-        let response = await configuration.transport.handleRequest(httpRequest)
+        let response = await configuration.handleRequest(httpRequest)
         write(.init(
             response: response,
             version: request.state.head.version,

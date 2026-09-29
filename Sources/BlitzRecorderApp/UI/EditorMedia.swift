@@ -74,7 +74,7 @@ struct EditorAsset: Identifiable, Equatable {
         case .camera: return BlitzUI.trackCamera
         case .microphone: return BlitzUI.trackMicrophone
         case .systemAudio: return BlitzUI.trackSystemAudio
-        case .other: return Color.white.opacity(0.5)
+        case .other: return BlitzUI.secondaryText
         }
     }
 
@@ -200,8 +200,8 @@ final class EditorMediaLibrary {
     private(set) var fileSizes: [String: String] = [:]
     private(set) var technicalMetadata: [String: EditorMediaTechnicalMetadata] = [:]
 
-    @ObservationIgnored private var loadingIDs: Set<String> = []
-    @ObservationIgnored private var filmstripLoadingCounts: [String: Int] = [:]
+    private(set) var loadingIDs: Set<String> = []
+    private(set) var filmstripLoadingCounts: [String: Int] = [:]
 
     func loadAssets(_ assets: [EditorAsset]) async {
         guard !Task.isCancelled else { return }
@@ -229,6 +229,7 @@ final class EditorMediaLibrary {
             }
             for await loaded in group {
                 guard !Task.isCancelled, let loaded else { continue }
+                loadingIDs.remove(loaded.id)
                 durations[loaded.id] = loaded.duration
                 fileSizes[loaded.id] = loaded.fileSize
                 technicalMetadata[loaded.id] = loaded.technicalMetadata

@@ -5,6 +5,7 @@ enum SettingsPane: Int, CaseIterable, Identifiable {
     case recording
     case devices
     case permissions
+    case accounts
     case agents
     case about
 
@@ -15,6 +16,7 @@ enum SettingsPane: Int, CaseIterable, Identifiable {
         case .recording: return "Recording"
         case .devices: return "iPhone Camera"
         case .permissions: return "Permissions"
+        case .accounts: return "Accounts"
         case .agents: return "Integrations"
         case .about: return "About"
         }
@@ -25,7 +27,8 @@ enum SettingsPane: Int, CaseIterable, Identifiable {
         case .recording: return "Files and transcripts"
         case .devices: return "iPhone camera and pairing"
         case .permissions: return "macOS capture permissions"
-        case .agents: return "Local MCP connections"
+        case .accounts: return "BlitzRecorder and BlitzReels"
+        case .agents: return "Connect AI agents over MCP"
         case .about: return "Version, help, and source code"
         }
     }
@@ -35,6 +38,7 @@ enum SettingsPane: Int, CaseIterable, Identifiable {
         case .recording: return "gearshape"
         case .devices: return "iphone.gen3"
         case .permissions: return "lock.shield"
+        case .accounts: return "person.crop.circle"
         case .agents: return "terminal"
         case .about: return "info.circle"
         }
@@ -58,31 +62,16 @@ struct SettingsView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
-                BlitzToolbarButton(configuration: .init(
-                    title: vm.settingsReturnTitle,
-                    symbolName: "chevron.left",
-                    showsTitle: true,
-                    action: vm.dismissSettings
-                ))
-                .help("Back to \(vm.settingsReturnTitle)")
-                .keyboardShortcut(.escape, modifiers: [])
-
-                Rectangle()
-                    .fill(BlitzUI.separator)
-                    .frame(width: 1, height: 18)
-
                 Text("Settings")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(BlitzType.section)
 
                 Spacer()
             }
-            .blitzWorkspaceToolbar()
+            .blitzWindowToolbar(showsUpdate: true)
 
             HStack(spacing: 0) {
                 sidebar
-                Rectangle()
-                    .fill(BlitzUI.separator)
-                    .frame(width: 1)
+                Rectangle().fill(BlitzUI.separator).frame(width: 1)
                 detail
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -93,63 +82,42 @@ struct SettingsView: View {
     }
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(spacing: 5) {
-                ForEach(SettingsPane.allCases) { pane in
-                    sidebarRow(pane)
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(SettingsPane.allCases) { pane in
+                let isSelected = vm.selectedSettingsPane == pane
+                Button { vm.selectedSettingsPane = pane } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: pane.systemImage)
+                            .symbolVariant(.fill)
+                            .font(BlitzType.glyph(12))
+                            .foregroundStyle(isSelected ? .black.opacity(0.85) : BlitzUI.supportingText)
+                            .frame(width: 24, height: 24)
+                            .background(isSelected ? BlitzUI.mint : BlitzUI.controlFill,
+                                        in: .rect(cornerRadius: 6))
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(pane.title)
+                                .font(BlitzType.label)
+                                .foregroundStyle(BlitzUI.primaryText)
+                            Text(pane.subtitle)
+                                .font(BlitzType.caption)
+                                .foregroundStyle(BlitzUI.secondaryText)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 8)
+                    .frame(height: 44)
+                    .contentShape(.rect)
                 }
+                .buttonStyle(BlitzSelectionButtonStyle(isSelected: isSelected))
+                .accessibilityAddTraits(isSelected ? [.isSelected] : [])
             }
-            .padding(.horizontal, 10)
-            .padding(.top, 24)
-
-            Spacer(minLength: 20)
-
-            HStack(spacing: 8) {
-                BlitzStatusDot(tone: .ready, diameter: 6)
-                Text("All features are free")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(BlitzUI.secondaryText)
-            }
-            .padding(.horizontal, 18)
-            .padding(.bottom, 18)
+            Spacer(minLength: 0)
         }
-        .frame(width: 196)
-        .background(Color.black.opacity(0.18))
-    }
-
-    private func sidebarRow(_ pane: SettingsPane) -> some View {
-        let issueCount = pane == .permissions
-            ? vm.recordingReadiness.blockers.count
-            : 0
-        let isSelected = vm.selectedSettingsPane == pane
-
-        return Button {
-            vm.selectedSettingsPane = pane
-        } label: {
-            HStack(spacing: 11) {
-                BlitzSymbol(configuration: .init(name: pane.systemImage, size: 18))
-                    .foregroundStyle(isSelected ? BlitzUI.mint : BlitzUI.secondaryText)
-                Text(pane.title)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
-
-                Spacer(minLength: 0)
-
-                if issueCount > 0 {
-                    Text("\(issueCount)")
-                        .font(.system(size: 9, weight: .bold, design: .rounded))
-                        .foregroundStyle(.black.opacity(0.82))
-                        .frame(minWidth: 18, minHeight: 18)
-                        .background(BlitzUI.warning, in: .circle)
-                }
-            }
-            .padding(.horizontal, 10)
-            .frame(height: 42)
-            .contentShape(.rect(cornerRadius: 10))
-        }
-        .buttonStyle(BlitzSelectionButtonStyle(isSelected: isSelected))
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-        .help(pane.subtitle)
-        .pointingHandCursor()
+        .padding(12)
+        .frame(width: 240)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Settings sections")
     }
 
     @ViewBuilder
@@ -161,6 +129,8 @@ struct SettingsView: View {
             RemoteCameraPage(vm: vm)
         case .permissions:
             PermissionsPage(vm: vm)
+        case .accounts:
+            AccountsSettingsPage(vm: vm)
         case .agents:
             AgentsSettingsPage(mcpServer: mcpServer)
         case .about:

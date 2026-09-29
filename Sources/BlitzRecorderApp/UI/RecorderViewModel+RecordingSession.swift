@@ -40,8 +40,12 @@ extension RecorderViewModel {
         case .paused:
             break
         case .finishing:
+            if previousState != .finishing { finishingStartedAt = Date() }
+            captureStopProgress = nil
             renderProgress = 0
         case .idle:
+            finishingStartedAt = nil
+            captureStopProgress = nil
             renderProgress = 0
         }
     }
@@ -131,6 +135,8 @@ extension RecorderViewModel {
             SceneLayout.screenSplitLayout(screenHeight: CGFloat($0))
         } ?? coordinator.settings.sceneLayout
         previewStage.enabledSources = coordinator.settings.visibleSources
+        previewStage.fillsCanvasWhenOnlyVideoSource =
+            coordinator.settings.enabledSources.intersection([.screen, .camera]).count == 1
         previewStage.screenSourceAspectRatio = coordinator.currentScreenSourceAspectRatio()
         previewStage.screenFillsSceneFrame = ScreenSourceGeometry.fillsSceneFrame(for: coordinator.settings)
         previewStage.screenCrop = coordinator.settings.screenCrop
@@ -254,11 +260,11 @@ extension RecorderViewModel {
     }
 
     var cameraInsetShape: CameraInsetShape {
-        SceneLayout.cameraInsetShape(for: settings.sceneLayout.cameraFrame, in: settings.layout)
+        settings.sceneLayout.cameraInsetShape(in: settings.layout)
     }
 
     var cameraInsetSize: Double {
-        Double(SceneLayout.cameraInsetSize(for: settings.sceneLayout.cameraFrame, in: settings.layout))
+        Double(settings.sceneLayout.cameraInsetSize(in: settings.layout))
     }
 
     var cameraInsetSizeRange: ClosedRange<Double> {
@@ -320,25 +326,53 @@ extension RecorderViewModel {
     }
 
     func chooseOutputFolder() {
-        guard state == .idle else { return }
+        chooseOutputFolder { _ in }
+    }
+
+    func chooseOutputFolder(completion: @escaping (Bool) -> Void) {
+        chooseStorageFolder(.init(kind: .exports, completion: completion))
+    }
+
+    func chooseSourceFolder() {
+        chooseStorageFolder(.init(kind: .sources, completion: { _ in }))
+    }
+
+    private struct StorageFolderSelection {
+        enum Kind { case exports, sources }
+        let kind: Kind
+        let completion: (Bool) -> Void
+    }
+
+    private func chooseStorageFolder(_ request: StorageFolderSelection) {
+        guard state == .idle else { request.completion(false); return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = true
-        panel.directoryURL = settings.outputDirectory
+        panel.directoryURL = request.kind == .sources ? settings.sourceStorage.url : settings.outputDirectory
+        panel.title = request.kind == .sources ? "Choose source library folder" : "Choose export folder"
         panel.prompt = "Choose"
-        panel.message = "Pick the folder where recordings will be saved."
-        let completion: (NSApplication.ModalResponse) -> Void = { [weak self] response in
-            guard response == .OK, let url = panel.url, let self, self.state == .idle else { return }
-            self.coordinator.setOutputDirectory(url)
+        panel.message = request.kind == .sources
+            ? "New source tracks are saved in a BlitzRecorder Source Takes subfolder here. Existing projects stay available in their current folders."
+            : "Choose where finished videos are saved. Source files and your library stay in place."
+        let responseHandler: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard response == .OK, let url = panel.url, let self, self.state == .idle else {
+                request.completion(false)
+                return
+            }
+            switch request.kind {
+            case .exports: self.coordinator.setOutputDirectory(url)
+            case .sources: self.coordinator.setSourceDirectory(url)
+            }
             self.syncSettings()
             self.refreshRecentProjects()
+            request.completion(true)
         }
-        if let window = NSApp.keyWindow {
-            panel.beginSheetModal(for: window, completionHandler: completion)
+        if let window = NSApp.mainWindow ?? NSApp.keyWindow {
+            panel.beginSheetModal(for: window, completionHandler: responseHandler)
         } else {
-            panel.begin(completionHandler: completion)
+            panel.begin(completionHandler: responseHandler)
         }
     }
 
@@ -453,16 +487,61 @@ extension RecorderViewModel {
     func primaryAction() {
         switch state {
         case .idle:
-            let readiness = coordinator.recordingReadiness()
-            guard readiness.isReady else {
-                resolveStartBlockers(readiness)
-                return
+            if countdownRemaining != nil {
+                cancelCountdown()
+            } else {
+                requestRecordingStart()
             }
-            coordinator.start()
         case .recording, .paused:
             coordinator.stop()
         case .starting, .finishing:
             break
+        }
+    }
+
+    func requestRecordingStart() {
+        guard state == .idle, countdownRemaining == nil else { return }
+        let readiness = coordinator.recordingReadiness()
+        guard readiness.isReady else {
+            resolveStartBlockers(readiness)
+            return
+        }
+        beginCountdown()
+    }
+
+    func setCountdownSeconds(_ seconds: Int) {
+        RecordingCountdownPreference().setSeconds(seconds)
+        countdownSeconds = RecordingCountdownPreference().seconds
+    }
+
+    func cancelCountdown() {
+        countdownTask?.cancel()
+        countdownTask = nil
+        countdownRemaining = nil
+    }
+
+    private func beginCountdown() {
+        guard state == .idle, countdownRemaining == nil, studioMode == .record else { return }
+        countdownTask?.cancel()
+        cancelScreenCropMode()
+        if isCameraCropModeEnabled { cancelCameraCropMode() }
+        guard countdownSeconds > 0 else {
+            coordinator.start()
+            return
+        }
+        countdownRemaining = countdownSeconds
+        countdownTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            for remaining in stride(from: self.countdownSeconds, to: 0, by: -1) {
+                self.countdownRemaining = remaining
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return }
+            }
+            self.countdownTask = nil
+            self.countdownRemaining = nil
+            guard self.state == .idle, self.studioMode == .record,
+                  self.coordinator.recordingReadiness().isReady else { return }
+            self.coordinator.start()
         }
     }
 
@@ -484,7 +563,7 @@ extension RecorderViewModel {
 
             let updatedReadiness = coordinator.recordingReadiness()
             if updatedReadiness.isReady {
-                coordinator.start()
+                beginCountdown()
             } else {
                 detailMessage = updatedReadiness.blockers.first?.sentence ?? updatedReadiness.detail
             }
@@ -515,6 +594,12 @@ extension RecorderViewModel {
         onPresentSettings?(.permissions)
     }
 
+    var recordingBlockerSummary: String? {
+        _ = permissionRefreshToken
+        let readiness = coordinator.recordingReadiness()
+        return readiness.isReady ? nil : readiness.blockers.shortSummary
+    }
+
     var recordingBlockerDetail: String? {
         let readiness = coordinator.recordingReadiness()
         return readiness.isReady ? nil : readiness.detail
@@ -543,7 +628,7 @@ extension RecorderViewModel {
             if remoteTransferProgress != nil {
                 return "Downloading iPhone Media"
             }
-            return finishingMessageTitle ?? "Saving Recording"
+            return captureStopProgress?.title ?? finishingMessageTitle ?? "Saving Recording"
         case .recording, .paused:
             return state == .paused ? "Paused" : "Recording"
         case .idle:
@@ -551,12 +636,13 @@ extension RecorderViewModel {
         }
     }
 
-    var sessionProgressValue: Double {
-        if state == .finishing,
-           let remoteTransferProgress {
-            return remoteTransferProgress.fraction
+    var sessionProgressValue: Double? {
+        if state == .finishing, let remoteTransferProgress { return remoteTransferProgress.fraction }
+        if let captureStopProgress { return captureStopProgress.fraction }
+        if detailMessage.hasPrefix("Exporting") || detailMessage.hasPrefix("Removing camera background") {
+            return renderProgress
         }
-        return renderProgress
+        return nil
     }
 
     var sessionProgressLabel: String {
@@ -564,7 +650,8 @@ extension RecorderViewModel {
            let remoteTransferProgress {
             return "\(Int((remoteTransferProgress.fraction * 100).rounded()))%"
         }
-        return renderProgressLabel
+        if let captureStopProgress { return captureStopProgress.label }
+        return sessionProgressValue == nil ? "" : renderProgressLabel
     }
 
     var sessionProgressDetail: String? {
@@ -575,7 +662,8 @@ extension RecorderViewModel {
         if let remoteTransferProgress {
             return byteProgressLabel(remoteTransferProgress)
         }
-        return sanitizedProgressMessage
+        if let captureStopProgress { return captureStopProgress.detail }
+        return "Your recording is being saved. Keep BlitzRecorder open."
     }
 
     var sanitizedProgressMessage: String? {

@@ -19,7 +19,7 @@ final class PreviewStageView: NSView {
     var cachedRenderGeometry: (request: PreviewStageLayout.RenderRequest, value: SceneRenderGeometry)?
     var cachedCameraCropGeometry: (request: PreviewStageLayout.RenderRequest, aspect: CGFloat, value: CameraCropGeometry)?
     var cachedScreenCropSourceFrame: (request: PreviewStageLayout.RenderRequest, aspect: CGFloat, value: CGRect)?
-    var cachedCameraFillFlags: (fullscreen: Bool, fullWidth: Bool)?
+    var cachedCameraFillFlags: (fullscreen: Bool, fullWidth: Bool, circle: Bool)?
     var lastLayoutPassKey: PreviewStagePassKeys.LayoutPassKey?
     var lastScreenShapeKey: PreviewStagePassKeys.SourceShapeKey?
     var lastCameraShapeKey: PreviewStagePassKeys.SourceShapeKey?
@@ -309,6 +309,13 @@ final class PreviewStageView: NSView {
         }
     }
 
+    var fillsCanvasWhenOnlyVideoSource = false {
+        didSet {
+            guard oldValue != fillsCanvasWhenOnlyVideoSource else { return }
+            relayoutCanvasImmediately()
+        }
+    }
+
     var sceneLayout = SceneLayout() {
         didSet {
             guard oldValue != sceneLayout else { return }
@@ -424,6 +431,7 @@ final class PreviewStageView: NSView {
             isCameraCropEditingEnabled: isCameraCropEditingEnabled,
             isScreenCropEditingEnabled: isScreenCropEditingEnabled,
             enabledSources: enabledSources,
+            fillsCanvasWhenOnlyVideoSource: fillsCanvasWhenOnlyVideoSource,
             cameraSourceAspectRatio: cameraPreview.currentSourceAspectRatio,
             sceneLayout: sceneLayout,
             screenFillsSceneFrame: screenFillsSceneFrame,

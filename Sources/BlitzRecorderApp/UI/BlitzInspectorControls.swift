@@ -19,7 +19,7 @@ struct BlitzVisualChoice<Preview: View>: View {
                     .clipShape(.rect(cornerRadius: 5))
                     .accessibilityHidden(true)
                 Text(configuration.title)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(BlitzType.captionEmphasis)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity)
@@ -55,11 +55,11 @@ struct BlitzInspectorDisclosure<Content: View>: View {
                     Spacer(minLength: 0)
                     if let detail = configuration.detail {
                         Text(detail)
-                            .font(.system(size: controlSize == .large ? 12 : 10))
+                            .font(controlSize == .large ? BlitzType.body : BlitzType.caption)
                             .foregroundStyle(controlSize == .large ? BlitzUI.supportingText : BlitzUI.secondaryText)
                     }
                     Image(systemName: configuration.isExpanded.wrappedValue ? "chevron.up" : "chevron.down")
-                        .font(.system(size: controlSize == .large ? 11 : 9, weight: .semibold))
+                        .font(BlitzType.glyph(controlSize == .large ? 11 : 9))
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -80,17 +80,16 @@ struct BlitzInspectorHeading: View {
     }
 
     let configuration: Configuration
-    @Environment(\.controlSize) private var controlSize
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(configuration.title)
-                .font(.system(size: controlSize == .large ? 14 : 12, weight: .semibold))
+                .font(BlitzType.section)
                 .foregroundStyle(BlitzUI.primaryText)
             Spacer(minLength: 0)
             if let detail = configuration.detail {
                 Text(detail)
-                    .font(.system(size: controlSize == .large ? 12 : 10, weight: .medium))
+                    .font(BlitzType.caption)
                     .foregroundStyle(BlitzUI.secondaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -116,13 +115,12 @@ struct BlitzInspectorSlider: View {
     var body: some View {
         HStack(spacing: 12) {
             Text(configuration.title)
-                .font(.system(size: controlSize == .large ? 13 : 11, weight: .medium))
+                .font(controlSize == .large ? BlitzType.section : BlitzType.captionEmphasis)
                 .foregroundStyle(controlSize == .large ? BlitzUI.supportingText : BlitzUI.secondaryText)
                 .frame(width: controlSize == .large ? 70 : 64, alignment: .leading)
             Slider(
-                value: configuration.value,
+                value: steppedValue,
                 in: configuration.range,
-                step: configuration.step,
                 onEditingChanged: configuration.onEditingChanged
             )
             .controlSize(.small)
@@ -131,7 +129,7 @@ struct BlitzInspectorSlider: View {
             .accessibilityValue(configuration.valueLabel)
             .accessibilityAction(named: "Reset", configuration.onReset)
             Text(configuration.valueLabel)
-                .font(.system(size: controlSize == .large ? 12 : 10, weight: .medium, design: .monospaced))
+                .font((controlSize == .large ? BlitzType.label : BlitzType.captionEmphasis).monospacedDigit())
                 .foregroundStyle(BlitzUI.primaryText)
                 .monospacedDigit()
                 .frame(width: controlSize == .large ? 48 : 38, alignment: .trailing)
@@ -141,6 +139,17 @@ struct BlitzInspectorSlider: View {
         .contextMenu {
             Button("Reset \(configuration.title.lowercased())", action: configuration.onReset)
         }
+    }
+
+    private var steppedValue: Binding<Double> {
+        Binding(
+            get: { configuration.value.wrappedValue },
+            set: { proposed in
+                let step = configuration.step
+                let snapped = step > 0 ? (proposed / step).rounded() * step : proposed
+                configuration.value.wrappedValue = min(configuration.range.upperBound, max(configuration.range.lowerBound, snapped))
+            }
+        )
     }
 }
 
@@ -162,10 +171,10 @@ struct BlitzBackgroundPicker: View {
                     .clipShape(.rect(cornerRadius: BlitzUI.controlRadius - 2))
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Background")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(BlitzType.captionEmphasis)
                         .foregroundStyle(BlitzUI.secondaryText)
                     Text(configuration.selection.displayName)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(BlitzType.label)
                         .foregroundStyle(BlitzUI.primaryText)
                         .lineLimit(1)
                 }

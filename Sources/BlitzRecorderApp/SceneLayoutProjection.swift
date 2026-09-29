@@ -125,6 +125,16 @@ enum SceneLayoutProjection {
         return rect.insetBy(dx: dx, dy: dy)
     }
 
+    static func circularCornerRadius(for rect: CGRect) -> CGFloat {
+        guard rect.width > 0, rect.height > 0 else { return 0 }
+        return min(rect.width, rect.height) / 2
+    }
+
+    static func cameraCornerRadius(for rect: CGRect) -> CGFloat {
+        guard rect.width > 0, rect.height > 0 else { return 0 }
+        return min(rect.width, rect.height) * 0.08
+    }
+
     static func sourceCornerRadius(for rect: CGRect, normalizedRadius: CGFloat) -> CGFloat {
         guard rect.width > 0, rect.height > 0 else { return 0 }
         return min(rect.width, rect.height) * min(0.12, max(0, normalizedRadius))

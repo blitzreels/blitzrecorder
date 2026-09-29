@@ -224,7 +224,7 @@ struct EditorCanvasLayerView: View {
                     EditorFrameRatioLabel.text(for: layer.displayAspectRatio),
                     systemImage: layer.isAspectRatioLocked ? "lock.fill" : "lock.open.fill"
                 )
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .font(BlitzType.footnote.monospaced())
                     .foregroundStyle(.white)
                     .padding(.horizontal, 7)
                     .frame(height: 22)

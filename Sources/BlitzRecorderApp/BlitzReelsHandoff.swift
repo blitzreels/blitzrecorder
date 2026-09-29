@@ -93,7 +93,7 @@ final class BlitzReelsHandoffController {
     }
 
     func restoreConnection() async {
-        guard !isWorking, connection.hasCredential, connection.account == nil else { return }
+        guard !isWorking, connection.hasCredential else { return }
         do { try await connection.reload() }
         catch {
             if case BlitzReelsHandoffError.accountSetup = error {

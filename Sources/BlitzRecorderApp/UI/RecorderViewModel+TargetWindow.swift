@@ -27,13 +27,18 @@ extension RecorderViewModel {
     }
 
     func setTargetWindowZoom(_ zoom: CGFloat) {
-        let previousZoom = max(0.001, targetWindowZoom)
-        targetWindowZoom = clampedTargetWindowZoom(zoom)
-        coordinator.setScreenContentMode(.fit)
-        coordinator.setScreenWindowZoom(targetWindowZoom)
-        scaleScreenLayer(aroundCenterBy: targetWindowZoom / previousZoom)
+        guard canAdjustScreenCapture else { return }
+        let canResizeWindow = supportsScreenWindowScaling
+        coordinator.cancelPendingScreenWindowFits()
+        let requestedZoom = clampedTargetWindowZoom(zoom)
+        if canResizeWindow {
+            if coordinator.settings.screenCrop != nil { coordinator.setScreenCrop(nil) }
+            if coordinator.settings.screenContentMode != .fit { coordinator.setScreenContentMode(.fit) }
+        }
+        coordinator.setScreenWindowZoom(requestedZoom)
+        targetWindowZoom = requestedZoom
         settings = coordinator.settings
-        guard settings.screenSourceBinding?.kind != .display else {
+        guard canResizeWindow else {
             cancelScheduledTargetWindowFit()
             syncSettings()
             return
@@ -45,12 +50,14 @@ extension RecorderViewModel {
 
     func applyTargetWindowZoom() {
         cancelScheduledTargetWindowFit()
+        guard canAdjustScreenCapture, supportsScreenWindowScaling else { return }
         fitCurrentScreenWindow(zoom: targetWindowZoom)
         syncSettings()
         refreshTargetWindow()
     }
 
     func fitCurrentScreenWindowToSlot() {
+        guard canAdjustScreenCapture, supportsScreenWindowScaling else { return }
         cancelScheduledTargetWindowFit()
         coordinator.setSceneLayer(
             .screen,
@@ -128,26 +135,31 @@ extension RecorderViewModel {
     }
 
     func scheduleTargetWindowFit() {
-        cancelScheduledTargetWindowFit()
-        let zoom = targetWindowZoom
         let context = scheduledTargetWindowFitContext()
+        guard targetWindowZoomTask == nil || pendingTargetWindowFitContext != context else { return }
+        cancelScheduledTargetWindowFit()
+        pendingTargetWindowFitContext = context
         targetWindowZoomTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 140_000_000)
+            try? await Task.sleep(for: .milliseconds(50))
             guard !Task.isCancelled, let self else { return }
+            self.targetWindowZoomTask = nil
+            self.pendingTargetWindowFitContext = nil
             guard self.scheduledTargetWindowFitContext() == context,
+                  self.canAdjustScreenCapture,
+                  self.supportsScreenWindowScaling,
                   self.screenCaptureAreaSelection == .activeWindow else {
                 return
             }
-            self.targetWindowZoomTask = nil
-            self.fitCurrentScreenWindow(zoom: zoom)
+            self.fitCurrentScreenWindow(zoom: self.targetWindowZoom)
             self.syncSettings()
-            self.refreshTargetWindow()
         }
     }
 
     func cancelScheduledTargetWindowFit() {
         targetWindowZoomTask?.cancel()
         targetWindowZoomTask = nil
+        pendingTargetWindowFitContext = nil
+        coordinator.cancelPendingScreenWindowFits()
     }
 
     var hasScheduledTargetWindowFit: Bool {
@@ -155,14 +167,20 @@ extension RecorderViewModel {
     }
 
     func prepareForWindowClose() {
+        cancelCountdown()
         cancelScheduledTargetWindowFit()
+        cancelPendingPermissionRequests()
     }
 
     private func scheduledTargetWindowFitContext() -> ScheduledTargetWindowFitContext {
         ScheduledTargetWindowFitContext(
             areaSelection: screenCaptureAreaSelection,
             screenSourceBinding: settings.screenSourceBinding,
-            usesPickedScreenContent: settings.usesPickedScreenContent
+            usesPickedScreenContent: settings.usesPickedScreenContent,
+            sceneID: coordinator.selectedSceneIDForCurrentLayout(),
+            layout: settings.layout,
+            screenFrame: settings.sceneLayout.screenFrame,
+            canvasPadding: settings.canvasPadding
         )
     }
 
@@ -177,21 +195,9 @@ extension RecorderViewModel {
         screenCaptureAreaSelection = .manualCrop
     }
 
-    private func scaleScreenLayer(aroundCenterBy ratio: CGFloat) {
-        guard canEditScene, abs(ratio - 1) > 0.0001 else { return }
-        coordinator.setSceneLayer(
-            .screen,
-            frame: SceneLayerResizing.scaled(
-                coordinator.settings.sceneLayout.screenFrame,
-                aroundCenterBy: ratio
-            )
-        )
-    }
-
     private func clampedTargetWindowZoom(_ zoom: CGFloat) -> CGFloat {
         ScreenSourceZoomGeometry.clamped(zoom)
     }
-
 
     var hasActiveScreenPickerSelection: Bool {
         coordinator.hasActiveScreenSourceSelection
@@ -226,8 +232,10 @@ extension RecorderViewModel {
     }
 
     func requestAccessibilityForWindowControls() {
-        Task {
+        startPermissionRequest { [weak self] in
+            guard let self else { return }
             let result = await coordinator.permissionGate.requestAccessibilityAccessForWindowControls()
+            guard !Task.isCancelled, result.status != .cancelled else { return }
             detailMessage = result.message
             refreshPermissionStatus()
             refreshTargetWindow()

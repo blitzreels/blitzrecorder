@@ -128,16 +128,20 @@ struct BlitzReelsCredentialStore {
     func clear() { SecItemDelete(query as CFDictionary) }
 }
 
-struct BlitzReelsWorkspace: Decodable, Identifiable, Hashable {
+struct BlitzReelsWorkspace: Codable, Identifiable, Hashable {
     let id: String
     let name: String
+    let plan: String?
+    let role: String?
+    let icon_url: String?
 }
 
-struct BlitzReelsAccount: Decodable {
-    struct User: Decodable {
+struct BlitzReelsAccount: Codable {
+    struct User: Codable {
         let id: String
         let email: String
         let display_name: String?
+        let avatar_url: String?
     }
     let user: User
     let workspaces: [BlitzReelsWorkspace]
@@ -246,6 +250,22 @@ final class BlitzReelsConnection {
         self.client = client
         self.store = .init(origin: client.origin)
         selectedWorkspaceID = UserDefaults.standard.string(forKey: "BlitzReelsWorkspace:\(client.origin.absoluteString)")
+        if store.load() != nil,
+           let data = UserDefaults.standard.data(forKey: accountKey),
+           let cached = try? JSONDecoder().decode(BlitzReelsAccount.self, from: data) {
+            account = cached
+        }
+    }
+
+    private var accountKey: String { "BlitzReelsAccount:\(client.origin.absoluteString)" }
+
+    private func setAccount(_ value: BlitzReelsAccount?) {
+        account = value
+        if let value, let data = try? JSONEncoder().encode(value) {
+            UserDefaults.standard.set(data, forKey: accountKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: accountKey)
+        }
     }
 
     var hasCredential: Bool { store.load() != nil }
@@ -264,15 +284,21 @@ final class BlitzReelsConnection {
         try await reload()
     }
 
+    func hostingAuthorization() async throws -> String {
+        try await connect()
+        return try await accessToken(forceRefresh: false)
+    }
+
     func reload() async throws {
         let result: BlitzReelsAccount
         do {
             result = try await send(.init(path: "api/blitzrecorder/connection", method: "GET", key: nil, body: nil))
         } catch {
-            account = nil
+            if case BlitzReelsHandoffError.signInAgain = error { setAccount(nil) }
+            if case BlitzReelsHandoffError.accountSetup = error { setAccount(nil) }
             throw error
         }
-        account = result
+        setAccount(result)
         if !result.workspaces.contains(where: { $0.id == selectedWorkspaceID }),
            let workspace = result.workspaces.first(where: { $0.id == result.default_workspace_id }) ?? result.workspaces.first {
             selectWorkspace(workspace.id)
@@ -280,7 +306,7 @@ final class BlitzReelsConnection {
     }
 
     func disconnect() async throws {
-        guard let credential = store.load() else { account = nil; return }
+        guard let credential = store.load() else { setAccount(nil); return }
         struct Revoked: Decodable { }
         do {
             let _: Revoked = try await send(.init(
@@ -290,7 +316,7 @@ final class BlitzReelsConnection {
         } catch BlitzReelsHandoffError.signInAgain {
         }
         store.clear()
-        account = nil
+        setAccount(nil)
     }
 
     func send<Response: Decodable>(_ request: BlitzReelsHTTPRequest) async throws -> Response {
@@ -304,7 +330,7 @@ final class BlitzReelsConnection {
             do { return try await client.send(authorized(renewed)) }
             catch BlitzReelsHandoffError.signInAgain {
                 store.clear()
-                account = nil
+                setAccount(nil)
                 throw BlitzReelsHandoffError.signInAgain
             }
         }
@@ -385,7 +411,7 @@ final class BlitzReelsConnection {
         do { return try await task.value }
         catch BlitzReelsHandoffError.signInAgain {
             store.clear()
-            account = nil
+            setAccount(nil)
             throw BlitzReelsHandoffError.signInAgain
         }
     }
