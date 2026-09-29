@@ -1,0 +1,1 @@
+ALTER TABLE hosting_assets ADD COLUMN IF NOT EXISTS source_ready BOOLEAN NOT NULL DEFAULT false;

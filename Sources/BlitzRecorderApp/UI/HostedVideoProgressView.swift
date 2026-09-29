@@ -7,18 +7,20 @@ struct HostedVideoProgressPresentation {
     let fraction: Double?
 
     static func exporting(_ progress: EditorExportStatus.Progress) -> Self {
-        .init(stage: 0, title: "Saving cloud copy", detail: progress.supplementaryDetail ?? "Rendering your edit at source quality.",
+        .init(stage: 0, title: "Saving cloud copy", detail: progress.supplementaryDetail ?? "Rendering your edit in high quality, up to 1080p.",
               fraction: progress.value)
     }
 
     static func transfer(_ progress: HostingClient.Progress) -> Self {
         switch progress {
+        case .optimizing(let fraction):
+            .init(stage: 0, title: "Preparing sharing copy", detail: "Creating a browser-ready MP4, up to 1080p. Your original stays unchanged.", fraction: fraction)
         case .preparing:
             .init(stage: 1, title: "Connecting to cloud", detail: "Your local copy is saved. Preparing a secure upload.", fraction: nil)
         case .uploading(let bytes):
             .init(stage: 1, title: "Uploading video", detail: bytes.detail, fraction: bytes.fraction)
         case .processing:
-            .init(stage: 2, title: "Preparing playback", detail: "Upload complete. Creating streaming quality options; your original is saved.", fraction: nil)
+            .init(stage: 2, title: "Checking video", detail: "Upload complete. Your link appears once playback is verified.", fraction: nil)
         }
     }
 }
@@ -44,7 +46,7 @@ struct HostedVideoProgressView: View {
                 .font(.system(size: 12)).foregroundStyle(BlitzUI.supportingText)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 16) {
-                ForEach(Array(["Save", "Upload", "Prepare playback"].enumerated()), id: \.offset) { item in
+                ForEach(Array(["Save", "Upload", "Check video"].enumerated()), id: \.offset) { item in
                     HStack(spacing: 5) {
                         Image(systemName: item.offset < presentation.stage ? "checkmark.circle.fill" : "\(item.offset + 1).circle")
                         Text(item.element)

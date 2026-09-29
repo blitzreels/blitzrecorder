@@ -102,6 +102,7 @@ struct HostingClient {
         let progress: @Sendable (Progress) async -> Void
     }
     enum Progress: Sendable, Equatable {
+        case optimizing(Double)
         case preparing
         case uploading(HostingUploadBytes)
         case processing
@@ -109,18 +110,20 @@ struct HostingClient {
 
     func upload(_ request: Upload) async throws -> URL {
         await request.progress(.preparing)
-        let values = try request.fileURL.resourceValues(forKeys: [.fileSizeKey])
+        let fileURL = try await HostingSharingCopy.prepare(.init(fileURL: request.fileURL, progress: request.progress))
+        await request.progress(.preparing)
+        let values = try fileURL.resourceValues(forKeys: [.fileSizeKey])
         guard let bytes = values.fileSize, bytes >= 16, bytes <= 5 * 1024 * 1024 * 1024,
-              ["mp4", "mov"].contains(request.fileURL.pathExtension.lowercased()) else {
+              ["mp4", "mov"].contains(fileURL.pathExtension.lowercased()) else {
             throw HostingFailure(message: "Choose an exported MP4 or MOV smaller than 5 GB.")
         }
-        let duration = try await AVURLAsset(url: request.fileURL).load(.duration).seconds
+        let duration = try await AVURLAsset(url: fileURL).load(.duration).seconds
         guard duration.isFinite, duration > 0, duration <= 3600 else {
             throw HostingFailure(message: "Sharing supports videos up to one hour long.")
         }
-        let key = try HostingExportMetadata.fingerprint(request.fileURL)
+        let key = try HostingExportMetadata.fingerprint(fileURL)
         let body: [String: Any] = ["title": String(request.metadata.title.prefix(160)), "bytes": bytes,
-            "duration": duration, "contentType": request.fileURL.pathExtension.lowercased() == "mov" ? "video/quicktime" : "video/mp4",
+            "duration": duration, "contentType": fileURL.pathExtension.lowercased() == "mov" ? "video/quicktime" : "video/mp4",
             "requestKey": key]
         let asset: HostingAsset = try await send(.init(route: "assets", token: request.token,
             body: JSONSerialization.data(withJSONObject: body)))
@@ -139,57 +142,60 @@ struct HostingClient {
             let uploaded = Set((state.uploadedParts ?? []).filter { part in
                 (1...parts).contains(part.number) && part.bytes == min(partBytes, bytes - (part.number - 1) * partBytes)
             }.map(\.number))
-            let handle = try FileHandle(forReadingFrom: request.fileURL)
+            let handle = try FileHandle(forReadingFrom: fileURL)
             defer { try? handle.close() }
-            var sent = uploaded.reduce(0) { $0 + min(partBytes, bytes - ($1 - 1) * partBytes) }
-            await request.progress(.uploading(.init(sent: Int64(sent), total: Int64(bytes))))
-            for number in 1...parts {
-                try Task.checkCancellation()
-                guard try HostingExportMetadata.fingerprint(request.fileURL) == key else {
-                    throw HostingFailure(message: "The video changed during upload. Export it again before sharing.")
-                }
-                let offset = (number - 1) * partBytes
-                let expected = min(partBytes, bytes - offset)
-                if !uploaded.contains(number) {
-                    try handle.seek(toOffset: UInt64(offset))
-                    var data = Data()
-                    while data.count < expected {
-                        guard let block = try handle.read(upToCount: expected - data.count), !block.isEmpty else {
-                            throw HostingFailure(message: "The exported video is incomplete.")
-                        }
-                        data.append(block)
-                    }
-                    for attempt in 0...2 {
-                        do {
-                            struct SignedPart: Decodable { let url: URL }
-                            let signed: SignedPart = try await send(.init(route: "assets/\(asset.id)/parts", token: request.token,
-                                body: JSONSerialization.data(withJSONObject: ["number": number])))
-                            guard signed.url.scheme == "https" ||
-                                    (signed.url.host == origin.host && ["localhost", "127.0.0.1"].contains(origin.host ?? "")) else {
-                                throw HostingFailure(message: "The upload requires a secure connection.")
-                            }
-                            var put = URLRequest(url: signed.url)
-                            put.httpMethod = "PUT"
-                            let response = try await uploadPart(.init(
-                                request: put, data: data, completedBytes: Int64(sent), totalBytes: Int64(bytes),
-                                progress: request.progress))
-                            guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
-                                throw HostingFailure(message: "The upload was interrupted. Resume to continue from the saved parts.")
-                            }
-                            break
-                        } catch {
-                            try Task.checkCancellation()
-                            if attempt == 2 { throw error }
-                            try await Task.sleep(for: .seconds(1 << attempt))
-                        }
-                    }
-                    sent += expected
-                    await request.progress(.uploading(.init(sent: Int64(sent), total: Int64(bytes))))
-                }
+            let sent = uploaded.reduce(0) { $0 + min(partBytes, bytes - ($1 - 1) * partBytes) }
+            let updates = AsyncStream<Progress>.makeStream(bufferingPolicy: .bufferingNewest(1))
+            let aggregate = HostingMultipartProgress(.init(sent: Int64(sent), total: Int64(bytes), continuation: updates.continuation))
+            let observer = Task {
+                for await progress in updates.stream { await request.progress(progress) }
             }
-            guard try HostingExportMetadata.fingerprint(request.fileURL) == key else {
+            await request.progress(.uploading(.init(sent: Int64(sent), total: Int64(bytes))))
+            do {
+                try await withThrowingTaskGroup(of: Void.self) { group in
+                    var active = 0
+                    for number in 1...parts where !uploaded.contains(number) {
+                        if active == 3 {
+                            try await group.next()
+                            active -= 1
+                        }
+                        try Task.checkCancellation()
+                        guard try HostingExportMetadata.fingerprint(fileURL) == key else {
+                            throw HostingFailure(message: "The video changed during upload. Export it again before sharing.")
+                        }
+                        let offset = (number - 1) * partBytes
+                        let expected = min(partBytes, bytes - offset)
+                        try handle.seek(toOffset: UInt64(offset))
+                        var data = Data()
+                        while data.count < expected {
+                            guard let block = try handle.read(upToCount: expected - data.count), !block.isEmpty else {
+                                throw HostingFailure(message: "The exported video is incomplete.")
+                            }
+                            data.append(block)
+                        }
+                        let part = ChunkUpload(number: number, assetID: asset.id, token: request.token, data: data) { progress in
+                            guard case .uploading(let bytes) = progress else { return }
+                            await aggregate.record(.init(number: number, sent: bytes.sent, expected: Int64(expected)))
+                        }
+                        group.addTask {
+                            try await uploadChunk(part)
+                            await aggregate.record(.init(number: number, sent: Int64(expected), expected: Int64(expected)))
+                        }
+                        active += 1
+                    }
+                    try await group.waitForAll()
+                }
+                updates.continuation.finish()
+                await observer.value
+            } catch {
+                updates.continuation.finish()
+                await observer.value
+                throw error
+            }
+            guard try HostingExportMetadata.fingerprint(fileURL) == key else {
                 throw HostingFailure(message: "The video changed during upload. Export it again before sharing.")
             }
+            try Task.checkCancellation()
             let _: HostingAsset = try await send(.init(route: "assets/\(asset.id)/complete", token: request.token, body: Data("{}".utf8)))
         }
         await request.progress(.processing)
@@ -202,6 +208,41 @@ struct HostingClient {
             try await Task.sleep(for: .seconds(3))
         }
         throw HostingFailure(message: "The video is still processing. Check again to retrieve the same link.")
+    }
+
+    private struct ChunkUpload {
+        let number: Int
+        let assetID: String
+        let token: String
+        let data: Data
+        let progress: @Sendable (Progress) async -> Void
+    }
+
+    private func uploadChunk(_ part: ChunkUpload) async throws {
+        for attempt in 0...2 {
+            try Task.checkCancellation()
+            do {
+                struct SignedPart: Decodable { let url: URL }
+                let signed: SignedPart = try await send(.init(route: "assets/\(part.assetID)/parts", token: part.token,
+                    body: JSONSerialization.data(withJSONObject: ["number": part.number])))
+                guard signed.url.scheme == "https" ||
+                        (signed.url.host == origin.host && ["localhost", "127.0.0.1"].contains(origin.host ?? "")) else {
+                    throw HostingFailure(message: "The upload requires a secure connection.")
+                }
+                var put = URLRequest(url: signed.url)
+                put.httpMethod = "PUT"
+                let response = try await uploadPart(.init(request: put, data: part.data,
+                    completedBytes: 0, totalBytes: Int64(part.data.count), progress: part.progress))
+                guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
+                    throw HostingFailure(message: "The upload was interrupted. Resume to continue from the saved parts.")
+                }
+                return
+            } catch {
+                try Task.checkCancellation()
+                if attempt == 2 { throw error }
+                try await Task.sleep(for: .seconds(1 << attempt))
+            }
+        }
     }
 
     private struct PartUpload {
@@ -231,6 +272,126 @@ struct HostingClient {
             await observer.value
             throw error
         }
+    }
+}
+
+enum HostingSharingCopy {
+    struct Request {
+        let fileURL: URL
+        let progress: @Sendable (HostingClient.Progress) async -> Void
+    }
+
+    static func prepare(_ request: Request) async throws -> URL {
+        try Task.checkCancellation()
+        let asset = AVURLAsset(url: request.fileURL)
+        let duration = try await asset.load(.duration).seconds
+        guard duration.isFinite, duration > 0, duration <= 3600,
+              let track = try await asset.loadTracks(withMediaType: .video).first else {
+            throw HostingFailure(message: "Sharing supports videos up to one hour long.")
+        }
+        let size = try await track.load(.naturalSize)
+        let transform = try await track.load(.preferredTransform)
+        let bounds = CGRect(origin: .zero, size: size).applying(transform)
+        let displaySize = bounds.size
+        let formats = try await track.load(.formatDescriptions)
+        let codec = formats.first.map(CMFormatDescriptionGetMediaSubType)
+        let audio = try await asset.loadTracks(withMediaType: .audio)
+        var compatibleAudio = true
+        for track in audio {
+            let formats = try await track.load(.formatDescriptions)
+            if !formats.allSatisfy({ CMFormatDescriptionGetMediaSubType($0) == kAudioFormatMPEG4AAC }) {
+                compatibleAudio = false
+            }
+        }
+        let compatibleVideo = min(displaySize.width, displaySize.height) <= 1080
+            && max(displaySize.width, displaySize.height) <= 1920 && codec == kCMVideoCodecType_H264 && compatibleAudio
+        if compatibleVideo, request.fileURL.pathExtension.lowercased() == "mp4", try hasFastStart(request.fileURL) {
+            return request.fileURL
+        }
+        let fingerprint = try HostingExportMetadata.fingerprint(request.fileURL)
+        let directory = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask,
+            appropriateFor: nil, create: true).appendingPathComponent("BlitzRecorder/Sharing1080-h264-v2", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let cached = directory.appendingPathComponent(fingerprint).appendingPathExtension("mp4")
+        if FileManager.default.fileExists(atPath: cached.path) { return cached }
+        let output = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension("mp4")
+        guard let exporter = AVAssetExportSession(asset: asset, presetName:
+            compatibleVideo ? AVAssetExportPresetPassthrough : AVAssetExportPresetHighestQuality) else {
+            throw HostingFailure(message: "This video could not be prepared for sharing.")
+        }
+        let scale = min(1, 1080 / min(displaySize.width, displaySize.height), 1920 / max(displaySize.width, displaySize.height))
+        let renderSize = CGSize(width: max(2, floor(displaySize.width * scale / 2) * 2),
+                                height: max(2, floor(displaySize.height * scale / 2) * 2))
+        let composition = AVMutableVideoComposition()
+        composition.renderSize = renderSize
+        let frameDuration = try await track.load(.minFrameDuration)
+        let fps = try await track.load(.nominalFrameRate)
+        composition.frameDuration = frameDuration.isNumeric && frameDuration.seconds > 0
+            ? frameDuration : CMTime(seconds: 1 / Double(max(1, fps)), preferredTimescale: 60_000)
+        let instruction = AVMutableVideoCompositionInstruction()
+        instruction.timeRange = CMTimeRange(start: .zero, duration: try await asset.load(.duration))
+        let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: track)
+        layer.setTransform(transform.concatenating(CGAffineTransform(translationX: -bounds.minX, y: -bounds.minY))
+            .concatenating(CGAffineTransform(scaleX: scale, y: scale)), at: .zero)
+        instruction.layerInstructions = [layer]
+        composition.instructions = [instruction]
+        if !compatibleVideo { exporter.videoComposition = composition }
+        exporter.shouldOptimizeForNetworkUse = true
+        exporter.metadata = []
+        await request.progress(.optimizing(0))
+        let progressTask = Task {
+            while !Task.isCancelled {
+                await request.progress(.optimizing(Double(exporter.progress)))
+                do { try await Task.sleep(for: .milliseconds(120)) } catch { return }
+            }
+        }
+        do {
+            try await withTaskCancellationHandler {
+                try Task.checkCancellation()
+                try await exporter.export(to: output, as: .mp4)
+            } onCancel: { exporter.cancelExport() }
+            progressTask.cancel()
+            await progressTask.value
+            try Task.checkCancellation()
+            guard try HostingExportMetadata.fingerprint(request.fileURL) == fingerprint else {
+                throw HostingFailure(message: "The video changed while preparing the sharing copy. Try again.")
+            }
+            if FileManager.default.fileExists(atPath: cached.path) {
+                try FileManager.default.removeItem(at: output)
+            } else {
+                try FileManager.default.moveItem(at: output, to: cached)
+            }
+            await request.progress(.optimizing(1))
+            return cached
+        } catch {
+            progressTask.cancel()
+            await progressTask.value
+            try? FileManager.default.removeItem(at: output)
+            throw error
+        }
+    }
+
+    private static func hasFastStart(_ url: URL) throws -> Bool {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let size = try handle.seekToEnd()
+        var position: UInt64 = 0
+        for _ in 0..<10_000 {
+            guard position <= size, size - position >= 8 else { return false }
+            try handle.seek(toOffset: position)
+            guard let header = try handle.read(upToCount: 16), header.count >= 8 else { return false }
+            var length = header.prefix(4).reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
+            if length == 1 {
+                guard header.count == 16 else { return false }
+                length = header.suffix(8).reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
+            } else if length == 0 { length = size - position }
+            guard length >= 8, length <= size - position else { return false }
+            let type = String(decoding: header[4..<8], as: UTF8.self)
+            if type == "mdat" { return false }
+            if type == "moov" { return true }
+            position += length
+        }
+        return false
     }
 }
 
@@ -303,5 +464,35 @@ struct HostingCredentialStore {
         guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else {
             throw HostingFailure(message: "The hosting connection could not be saved in Keychain.")
         }
+    }
+}
+
+actor HostingMultipartProgress {
+    struct Configuration {
+        let sent: Int64
+        let total: Int64
+        let continuation: AsyncStream<HostingClient.Progress>.Continuation
+    }
+    struct Update {
+        let number: Int
+        let sent: Int64
+        let expected: Int64
+    }
+    private let configuration: Configuration
+    private var sent: Int64
+    private var parts: [Int: Int64] = [:]
+
+    init(_ configuration: Configuration) {
+        self.configuration = configuration
+        sent = configuration.sent
+    }
+
+    func record(_ update: Update) {
+        let previous = parts[update.number, default: 0]
+        let current = max(previous, min(update.expected, max(0, update.sent)))
+        guard current > previous else { return }
+        parts[update.number] = current
+        sent += current - previous
+        configuration.continuation.yield(.uploading(.init(sent: min(configuration.total, sent), total: configuration.total)))
     }
 }

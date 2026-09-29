@@ -23,7 +23,8 @@ export default async function SharedVideoPage({ params }: { params: Promise<{ sl
       <Link href="/" className="font-display text-lg font-bold tracking-tight">blitzrecorder<span className="text-emerald-400">.</span></Link>
       <span className="text-xs text-zinc-500">Video sharing</span>
     </header>
-    <SharedPlayer key={asset.slug} source={`${base}/master.m3u8`} poster={`${base}/poster.jpg`}
+    <SharedPlayer key={asset.slug} source={`${base}/${asset.status === "ready" ? "master.m3u8" : "video.mp4"}`}
+      poster={asset.files.some((file) => file.path === "poster.jpg") ? `${base}/poster.jpg` : null}
       title={asset.title} width={asset.width} height={asset.height} duration={asset.duration ?? asset.declared_seconds}
       frameRate={asset.frame_rate} details={asset.viewer_details ?? EMPTY_DETAILS} />
   </main>;

@@ -30,9 +30,9 @@ test("only generated playback files can be delivered, never source or traversal 
 
 test("renditions preserve portrait and landscape geometry without upscaling", () => {
   const landscape = renditions({ duration: 10, width: 1920, height: 1080, hasAudio: true });
-  assert.deepEqual(landscape.map(({ width, height }) => [width, height]), [[852, 480], [1280, 720], [1920, 1080]]);
+  assert.deepEqual(landscape.map(({ width, height }) => [width, height]), [[1280, 720], [1920, 1080]]);
   const portrait = renditions({ duration: 10, width: 1080, height: 1920, hasAudio: false });
-  assert.deepEqual(portrait.map(({ width, height }) => [width, height]), [[480, 852], [720, 1280], [1080, 1920]]);
+  assert.deepEqual(portrait.map(({ width, height }) => [width, height]), [[720, 1280], [1080, 1920]]);
   assert.deepEqual(renditions({ duration: 10, width: 400, height: 300, hasAudio: false }).map(({ width, height }) => [width, height]), [[400, 300]]);
 });
 

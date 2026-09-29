@@ -4,7 +4,10 @@ export interface Env {
   DELIVERY_SECRET: string;
 }
 
-type Delivery = { prefix: string; files: { path: string; bytes: number; contentType: string }[]; ttl: number };
+type Delivery = {
+  prefix: string | null; files: { path: string; bytes: number; contentType: string }[]; ttl: number;
+  source?: { key: string; bytes: number } | null;
+};
 
 export function requestedRange({ header, size }: { header: string | null; size: number }): { offset: number; length: number } | null {
   if (!header) return null;
@@ -32,7 +35,11 @@ async function delivery({ slug, env }: { slug: string; env: Env }): Promise<Deli
   });
   if (!response.ok) return null;
   const data = await response.json<Delivery>();
-  if (!/^hosting\/[a-f0-9-]{36}\/[a-f0-9-]{36}\/streams\/[a-f0-9-]{36}\/$/.test(data.prefix)) return null;
+  if (data.prefix !== null && !/^hosting\/[a-f0-9-]{36}\/[a-f0-9-]{36}\/streams\/[a-f0-9-]{36}\/$/.test(data.prefix)) return null;
+  if (data.source && (!/^hosting\/[a-f0-9-]{36}\/[a-f0-9-]{36}\/source$/.test(data.source.key)
+    || !Number.isSafeInteger(data.source.bytes) || data.source.bytes <= 0)) return null;
+  if (data.source && data.prefix && !data.prefix.startsWith(data.source.key.replace(/source$/, "streams/"))) return null;
+  if (!data.prefix && !data.source) return null;
   await cache.put(cacheKey, Response.json(data, { headers: { "Cache-Control": "max-age=10" } }));
   return data;
 }
@@ -56,7 +63,9 @@ export async function serve({ request, env, ctx }: { request: Request; env: Env;
     console.error("Video delivery lookup failed", error instanceof Error ? error.message : "Unknown error");
     return new Response(null, { status: 503, headers });
   }
-  const file = allowed?.files.find((entry) => entry.path === filePath);
+  const source = filePath === "video.mp4" ? allowed?.source : null;
+  const file = source ? { path: filePath, bytes: source.bytes, contentType: "video/mp4" }
+    : allowed?.prefix ? allowed.files.find((entry) => entry.path === filePath) : null;
   if (!allowed || !file) return new Response(null, { status: 404, headers });
   let range: ReturnType<typeof requestedRange>;
   try { range = requestedRange({ header: request.headers.get("Range"), size: file.bytes }); }
@@ -64,7 +73,7 @@ export async function serve({ request, env, ctx }: { request: Request; env: Env;
     headers.set("Content-Range", `bytes */${file.bytes}`);
     return new Response(null, { status: 416, headers });
   }
-  const key = allowed.prefix + file.path;
+  const key = source?.key ?? allowed.prefix + file.path;
   if (range && request.headers.has("If-Range")) {
     const current = await env.MEDIA.head(key);
     if (!current) return new Response(null, { status: 404, headers });

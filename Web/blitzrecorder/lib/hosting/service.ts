@@ -153,7 +153,8 @@ export async function sharedAsset(slug: string): Promise<HostedAsset | null> {
   if (!/^[A-Za-z0-9_-]{24}$/.test(slug)) return null;
   const result = await hostingPool().query<HostedAsset>(
     `SELECT assets.* FROM hosting_assets assets JOIN hosting_accounts accounts ON accounts.id = assets.account_id
-     WHERE assets.slug = $1 AND assets.status = 'ready' AND accounts.active_until > now()`, [slug]);
+     WHERE assets.slug = $1 AND assets.status <> 'revoked'
+     AND (assets.status = 'ready' OR assets.source_ready) AND accounts.active_until > now()`, [slug]);
   return result.rows[0] ?? null;
 }
 

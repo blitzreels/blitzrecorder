@@ -10,7 +10,7 @@ import { usePlayback } from "./use-playback";
 import styles from "./player.module.css";
 
 export function SharedPlayer({ source, poster, title, width, height, duration, frameRate, details }: {
-  source: string; poster: string; title: string; width: number; height: number;
+  source: string; poster: string | null; title: string; width: number; height: number;
   duration: number; frameRate: number | null; details: VideoDetails;
 }) {
   const { videoRef, frameRef, ...playback } = usePlayback({ source, duration, details });
@@ -48,7 +48,7 @@ export function SharedPlayer({ source, poster, title, width, height, duration, f
           }
         }}>
         <div className={styles.screen} style={{ aspectRatio: `${width}/${height}` }}>
-          <video ref={videoRef} playsInline preload="metadata" poster={poster} aria-label={title}
+          <video ref={videoRef} playsInline preload="metadata" poster={poster ?? undefined} aria-label={title}
             onClick={() => void playback.toggle()} onDoubleClick={() => void playback.toggleFullscreen()} />
           {!state.playing && !playback.error && <button type="button" className={styles.bigPlay} aria-label={state.ended ? "Replay video" : "Play video"}
             disabled={!state.ready} onClick={() => void playback.toggle()}>

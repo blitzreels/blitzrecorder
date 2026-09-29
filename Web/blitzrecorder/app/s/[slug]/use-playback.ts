@@ -58,7 +58,9 @@ export function usePlayback({ source, duration, details }: { source: string; dur
     document.addEventListener("fullscreenchange", fullscreenChanged);
     element.addEventListener("enterpictureinpicture", pipChanged);
     element.addEventListener("leavepictureinpicture", pipChanged);
-    void import("hls.js").then(({ default: Hls }) => {
+    if (new URL(source, location.href).pathname.endsWith(".mp4")) {
+      element.src = source;
+    } else void import("hls.js").then(({ default: Hls }) => {
       if (disposed) return;
       if (!Hls.isSupported()) {
         if (element.canPlayType("application/vnd.apple.mpegurl")) element.src = source;
