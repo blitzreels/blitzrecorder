@@ -655,6 +655,35 @@ final class RecordingTranscriptTests: XCTestCase {
         XCTAssertEqual(transcript.wordCount(for: "Speaker 2"), guestWords.count)
     }
 
+    func testAssemblerDropsCallLeakTheMicrophoneDiarizerDidNotHear() {
+        let hostWords = (0..<10).map { index in
+            TranscriptWord(text: "moi\(index)", startTime: Double(index) * 0.3, endTime: Double(index) * 0.3 + 0.2,
+                           confidence: 0.9)
+        }
+        let guestWords = (0..<24).map { index in
+            TranscriptWord(text: "invite\(index)", startTime: 5 + Double(index) * 0.3,
+                           endTime: 5.2 + Double(index) * 0.3, confidence: 0.9)
+        }
+        let garbledLeak = guestWords.map { word in
+            TranscriptWord(text: "the", startTime: word.startTime + 0.05, endTime: word.endTime + 0.05, confidence: 0.4)
+        }
+        let transcript = RecordingTranscriptAssembler.assemble(.init(
+            mediaPath: "/tmp/quiet-leak.mov", generatedAt: Date(timeIntervalSince1970: 8_200), duration: 13,
+            confidence: 0.9, text: "", suggestedTitle: nil,
+            words: hostWords + garbledLeak + guestWords,
+            wordSources: Array(repeating: .microphone, count: hostWords.count + garbledLeak.count)
+                + Array(repeating: .systemAudio, count: guestWords.count),
+            diarizedIntervals: [
+                .init(speakerID: "mic-0", startTime: 0, endTime: 3.2, embedding: [1, 0, 0, 0]),
+                .init(speakerID: "sys-0", startTime: 4.9, endTime: 12.5, embedding: [0, 1, 0, 0]),
+            ]
+        ))
+
+        XCTAssertEqual(transcript.words?.map(\.text), (hostWords + guestWords).map(\.text))
+        XCTAssertEqual(transcript.speakers.map(\.name), ["You", ""])
+        XCTAssertEqual(transcript.wordCount(for: "Speaker 1"), hostWords.count)
+    }
+
     func testAssemblerKeepsOverlappingMicrophoneAndCallSpeech() {
         let you: [Float] = [1, 0, 0, 0]
         let alice: [Float] = [0, 1, 0, 0]

@@ -37,7 +37,8 @@ extension RecordingTranscriptAssembler {
         return zip(request.paired, keepsSystemWord).compactMap { item, kept in
             guard kept else { return nil }
             if item.1 == .microphone,
-               voices.isCallVoiceHeardOnSystem(.init(word: item.0, systemWords: keptSystemWords)) {
+               voices.isCallVoiceHeardOnSystem(.init(word: item.0, systemWords: keptSystemWords))
+                || voices.isCallLeak(.init(word: item.0, systemWords: keptSystemWords)) {
                 return nil
             }
             return item
@@ -214,6 +215,15 @@ extension RecordingTranscriptAssembler.TrackIntervals {
         return overlapsSameVoice || RecordingTranscriptAssembler.matchesWords(
             .init(word: request.word, candidates: request.systemWords)
         )
+    }
+
+    /// Speakers leaking into the microphone are often too quiet for its diarizer but still get transcribed,
+    /// so a microphone word without a microphone voice during call speech is the call, not you.
+    func isCallLeak(_ request: HeardOnSystemRequest) -> Bool {
+        guard voice(of: request.word, in: microphone) == nil else { return false }
+        return system.contains { interval in
+            interval.startTime < request.word.endTime + 0.25 && interval.endTime > request.word.startTime - 0.25
+        } || RecordingTranscriptAssembler.matchesWords(.init(word: request.word, candidates: request.systemWords))
     }
 
     private func voice(of word: TranscriptWord, in intervals: [DiarizedInterval]) -> String? {

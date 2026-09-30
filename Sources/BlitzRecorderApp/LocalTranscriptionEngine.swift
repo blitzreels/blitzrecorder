@@ -383,7 +383,7 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
         OfflineDiarizerConfig.default.withSpeakers(min: 1, max: 8)
     }
 
-    private static func words(_ timings: [TokenTiming]) -> [TranscriptWord] {
+    static func words(_ timings: [TokenTiming]) -> [TranscriptWord] {
         guard !timings.isEmpty else { return [] }
 
         var result: [TranscriptWord] = []
@@ -425,7 +425,7 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
         return result
     }
 
-    private static func intervals(
+    static func intervals(
         _ segments: [TimedSpeakerSegment],
         prefix: String
     ) -> [DiarizedInterval] {
