@@ -20,7 +20,7 @@ export const faqs: FaqItem[] = [
   },
   {
     q: "What does video hosting include?",
-    a: "Hosting is €9 a month plus tax: 50 GB of storage, 5 hours of new uploads every 30 days, and streaming up to 1080p. Each video can be up to an hour and 5 GB. Cancel from the app. Links stop when the subscription ends, and files are removed 30 days later.",
+    a: "Hosting is €9 a month plus tax: 50 GB of storage, 5 hours of new uploads every 30 days, and streaming up to 1080p. A single video can use your whole upload allowance, whatever its size. Cancel from the app. Links stop when the subscription ends, and files are removed 30 days later.",
   },
   {
     q: "Where do my recordings go?",
@@ -162,7 +162,7 @@ export const legalPages: Record<"terms" | "privacy" | "support", LegalPageData> 
       {
         title: "Optional video hosting",
         body:
-          "Video hosting is a separate subscription at €9 per month, excluding any applicable tax. It includes 50 GB of storage for uploaded videos and streaming versions, 5 hours of new uploads per rolling 30 days, and streaming up to 1080p. Each video can be up to one hour and 5 GB. The Mac app and local exports remain free. Your subscription renews monthly until cancelled; cancel from the app's hosting settings before renewal to keep access through the paid period.",
+          "Video hosting is a separate subscription at €9 per month, excluding any applicable tax. It includes 50 GB of storage for uploaded videos and streaming versions, 5 hours of new uploads per rolling 30 days, and streaming up to 1080p. A single video can use your whole upload allowance and storage. The Mac app and local exports remain free. Your subscription renews monthly until cancelled; cancel from the app's hosting settings before renewal to keep access through the paid period.",
       },
       {
         title: "Shared links and retention",

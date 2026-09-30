@@ -122,13 +122,12 @@ struct HostingClient {
         let fileURL = try await HostingSharingCopy.prepare(.init(fileURL: request.fileURL, progress: request.progress))
         await request.progress(.preparing)
         let values = try fileURL.resourceValues(forKeys: [.fileSizeKey])
-        guard let bytes = values.fileSize, bytes >= 16, bytes <= 5 * 1024 * 1024 * 1024,
-              fileURL.pathExtension.lowercased() == "mp4" else {
-            throw HostingFailure(message: "Choose an exported video smaller than 5 GB.")
+        guard let bytes = values.fileSize, bytes >= 16, fileURL.pathExtension.lowercased() == "mp4" else {
+            throw HostingFailure(message: "Choose an exported MP4 video.")
         }
         let duration = try await AVURLAsset(url: fileURL).load(.duration).seconds
-        guard duration.isFinite, duration > 0, duration <= 3600 else {
-            throw HostingFailure(message: "Sharing supports videos up to one hour long.")
+        guard duration.isFinite, duration > 0 else {
+            throw HostingFailure(message: "This video has no playable duration.")
         }
         let key = try HostingExportMetadata.fingerprint(fileURL)
         let video = try await HostingSharingCopy.playable(fileURL)
@@ -141,8 +140,9 @@ struct HostingClient {
         if asset.status == "ready", let path = asset.sharePath { return try shareURL(path) }
         if ["failed", "revoked"].contains(asset.status) { throw HostingFailure(message: asset.error ?? "This upload is no longer available. Export again to create a new link.") }
         struct Saved: Decodable { let saved: Bool }
-        let _: Saved = try await send(.init(route: "assets/\(asset.id)/details", token: request.token,
-                                            body: JSONEncoder().encode(request.metadata.details)))
+        // Transcript problems never block sharing the video.
+        let _: Saved? = try? await send(.init(route: "assets/\(asset.id)/details", token: request.token,
+                                              body: JSONEncoder().encode(request.metadata.details)))
         if asset.status == "uploading" {
             guard let partBytes = asset.partBytes, (1...64 * 1024 * 1024).contains(partBytes),
                   let parts = asset.parts, parts == (bytes + partBytes - 1) / partBytes else {
@@ -305,9 +305,9 @@ enum HostingSharingCopy {
         try Task.checkCancellation()
         let asset = AVURLAsset(url: request.fileURL)
         let duration = try await asset.load(.duration).seconds
-        guard duration.isFinite, duration > 0, duration <= 3600,
+        guard duration.isFinite, duration > 0,
               let track = try await asset.loadTracks(withMediaType: .video).first else {
-            throw HostingFailure(message: "Sharing supports videos up to one hour long.")
+            throw HostingFailure(message: "This video has no playable video track.")
         }
         let size = try await track.load(.naturalSize)
         let transform = try await track.load(.preferredTransform)

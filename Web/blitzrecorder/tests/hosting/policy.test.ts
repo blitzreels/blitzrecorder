@@ -28,6 +28,15 @@ test("a playable 1080p upload reserves only its own bytes and rejects anything l
   assert.throws(() => parseUploadInput({ ...valid, contentType: "video/quicktime", video }));
 });
 
+test("direct MP4 calls longer than an hour and larger than 5 GB are only bounded by the plan", () => {
+  const video = { width: 1920, height: 1080, frameRate: 30 };
+  const long = { ...valid, bytes: 20 * 1024 ** 3, duration: 5 * 3600, video };
+  assert.equal(parseUploadInput(long).duration, 5 * 3600);
+  assert.throws(() => parseUploadInput({ ...long, video: undefined }));
+  assert.throws(() => parseUploadInput({ ...long, duration: 24 * 3600 + 1 }));
+  assert.throws(() => parseUploadInput({ ...long, bytes: 10_001 * PART_BYTES }));
+});
+
 test("part sizes bind each signed URL to the expected file bounds", () => {
   assert.equal(partSize({ bytes: PART_BYTES * 2 + 17, number: 1 }), PART_BYTES);
   assert.equal(partSize({ bytes: PART_BYTES * 2 + 17, number: 3 }), 17);

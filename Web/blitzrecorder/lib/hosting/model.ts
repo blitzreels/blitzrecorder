@@ -5,6 +5,9 @@ export const PART_BYTES = 16 * 1024 * 1024;
 export const UPLOAD_SECONDS = 24 * 60 * 60;
 export const MAX_VIDEO_SECONDS = 60 * 60;
 export const MAX_SOURCE_BYTES = 5 * 1024 ** 3;
+/** Direct MP4s skip processing, so only R2's 10,000-part multipart limit and the plan quotas bound them. */
+export const MAX_DIRECT_BYTES = 10_000 * PART_BYTES;
+export const MAX_DIRECT_SECONDS = 24 * 60 * 60;
 export const DELIVERY_TTL_SECONDS = 10;
 export const POSTER_MAX_BYTES = 1024 ** 2;
 
@@ -109,11 +112,14 @@ export function parseUploadInput(body: unknown): UploadInput {
   if (typeof value.title !== "string" || !value.title.trim() || value.title.trim().length > 160) {
     throw new HostingError({ status: 400, message: "Choose a title of 1–160 characters." });
   }
-  if (typeof value.bytes !== "number" || !Number.isSafeInteger(value.bytes) || value.bytes < 16 || value.bytes > MAX_SOURCE_BYTES) {
-    throw new HostingError({ status: 400, message: "Choose a video smaller than 5 GB." });
+  const direct = value.video !== undefined;
+  if (typeof value.bytes !== "number" || !Number.isSafeInteger(value.bytes) || value.bytes < 16
+    || value.bytes > (direct ? MAX_DIRECT_BYTES : MAX_SOURCE_BYTES)) {
+    throw new HostingError({ status: 400, message: direct ? "This video is too large to share." : "Choose a video smaller than 5 GB." });
   }
-  if (typeof value.duration !== "number" || !Number.isFinite(value.duration) || value.duration <= 0 || value.duration > MAX_VIDEO_SECONDS) {
-    throw new HostingError({ status: 400, message: "Choose a video up to one hour long." });
+  if (typeof value.duration !== "number" || !Number.isFinite(value.duration) || value.duration <= 0
+    || value.duration > (direct ? MAX_DIRECT_SECONDS : MAX_VIDEO_SECONDS)) {
+    throw new HostingError({ status: 400, message: direct ? "Choose a video up to 24 hours long." : "Choose a video up to one hour long." });
   }
   if (value.contentType !== "video/mp4" && value.contentType !== "video/quicktime") {
     throw new HostingError({ status: 400, message: "Choose an exported MP4 or MOV video." });

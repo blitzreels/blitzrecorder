@@ -12,7 +12,8 @@ export type VideoDetails = {
 export const EMPTY_DETAILS: VideoDetails = {
   version: 1, summary: null, language: null, recordedAt: null, transcript: [], chapters: [],
 };
-export const DETAILS_MAX_BYTES = 768 * 1024;
+/** Vercel rejects function request bodies over 4.5 MB. */
+export const DETAILS_MAX_BYTES = 4 * 1024 * 1024;
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid video details.");
@@ -35,17 +36,17 @@ function time({ value, duration }: { value: unknown; duration: number }): number
 export function parseVideoDetails({ value, duration }: { value: unknown; duration: number }): VideoDetails {
   const data = record(value);
   if (data.version !== 1) throw new Error("Unsupported video details version.");
-  if (!Array.isArray(data.transcript) || data.transcript.length > 6000 || !Array.isArray(data.chapters) || data.chapters.length > 200) {
+  if (!Array.isArray(data.transcript) || !Array.isArray(data.chapters) || data.chapters.length > 1000) {
     throw new Error("Video details contain too many items or missing lists.");
   }
-  const transcript = data.transcript.map((item): TranscriptCue => {
+  const transcript = compactTranscript(data.transcript.map((item): TranscriptCue => {
     const cue = record(item);
     const start = time({ value: cue.start, duration });
     const end = time({ value: cue.end, duration });
     const content = text({ value: cue.text, max: 2000 });
     if (end <= start || !content) throw new Error("Transcript entries need text and a valid time range.");
     return { start, end, text: content, speaker: text({ value: cue.speaker, max: 100 }) };
-  }).sort((a, b) => a.start - b.start || a.end - b.end);
+  }).sort((a, b) => a.start - b.start || a.end - b.end));
   const chapters = data.chapters.map((item): VideoChapter => {
     const chapter = record(item);
     const start = time({ value: chapter.start, duration });

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { EMPTY_DETAILS, compactTranscript, parseVideoDetails, transcriptVTT, formatTime, activeChapter } from "../../lib/hosting/details";
+import { DETAILS_MAX_BYTES, EMPTY_DETAILS, compactTranscript, parseVideoDetails, transcriptVTT, formatTime, activeChapter } from "../../lib/hosting/details";
 import { localVideoDetails, projectLocalDetails } from "../../lib/hosting/local-details";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -62,10 +62,23 @@ test("metadata parsing allowlists public fields and rejects invalid or unbounded
   assert.deepEqual(parseVideoDetails({ value: { ...valid, mediaPath: "/private", speakers: [{ context: "Private context" }] }, duration: 10 }), valid);
   for (const value of [null, { ...valid, version: 2 }, { ...valid, language: "../../" }, { ...valid, recordedAt: "oops" },
     { ...valid, summary: "a".repeat(10001) }, { ...valid, transcript: [{ start: NaN, end: 2, text: "Hello" }] },
-    { ...valid, transcript: [{ start: 0, end: 11, text: "Hello" }] }, { ...valid, chapters: [{ start: 2, title: "A" }, { start: 2, title: "B" }] },
-    { ...valid, transcript: Array.from({ length: 6001 }, () => valid.transcript[0]) }]) {
+    { ...valid, transcript: [{ start: 0, end: 11, text: "Hello" }] }, { ...valid, chapters: [{ start: 2, title: "A" }, { start: 2, title: "B" }] }]) {
     assert.throws(() => parseVideoDetails({ value, duration: 10 }));
   }
+});
+
+test("a five-hour call uploaded word by word with many speakers fits the request limit and is stored as phrases", () => {
+  const duration = 5 * 3600;
+  const transcript = Array.from({ length: duration / 0.4 }, (_, index) => ({
+    start: index * 0.4, end: index * 0.4 + 0.3, text: index % 12 === 11 ? "fin." : "mot",
+    speaker: `Speaker ${Math.floor(index / 40) % 12 + 1}`,
+  }));
+  const body = JSON.stringify({ ...EMPTY_DETAILS, transcript });
+  assert.ok(new TextEncoder().encode(body).length < DETAILS_MAX_BYTES);
+  const parsed = parseVideoDetails({ value: JSON.parse(body), duration });
+  assert.equal(new Set(parsed.transcript.map((cue) => cue.speaker)).size, 12);
+  assert.equal(parsed.transcript.length, transcript.length / 10);
+  assert.equal(parsed.transcript[0].text, "mot mot mot mot mot mot mot mot mot mot mot fin.");
 });
 
 test("VTT text cannot inject cues or markup and timestamp rounding remains valid", () => {
