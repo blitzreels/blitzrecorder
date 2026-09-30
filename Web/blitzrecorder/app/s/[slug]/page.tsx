@@ -10,9 +10,10 @@ import { shareDescription } from "@/lib/hosting/brief";
 import { EMPTY_DETAILS, compactTranscript } from "@/lib/hosting/details";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = {
-  title: "Shared video", description: "Watch a video shared with BlitzRecorder.",
-  robots: { index: false, follow: false, noarchive: true }, referrer: "no-referrer",
+
+const privatePage: Metadata = {
+  robots: { index: false, follow: false, noarchive: true },
+  referrer: "no-referrer",
 };
 
 const loadShared = cache(async (slug: string) => {
@@ -22,7 +23,9 @@ const loadShared = cache(async (slug: string) => {
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const asset = await loadShared((await params).slug);
-  if (!asset?.width || !asset.height) return {};
+  if (!asset?.width || !asset.height) {
+    return { title: "Shared video", description: "Watch a video shared with BlitzRecorder.", ...privatePage };
+  }
   const stored = asset.viewer_details ?? EMPTY_DETAILS;
   const details = { ...stored, transcript: compactTranscript(stored.transcript) };
   const duration = asset.duration ?? asset.declared_seconds;
@@ -31,7 +34,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const poster = origin && asset.files.some((file) => file.path === "poster.jpg")
     ? `${new URL(origin).origin}/s/${asset.slug}/poster.jpg` : null;
   return {
-    title: asset.title, description,
+    title: asset.title, description, ...privatePage,
     openGraph: {
       title: asset.title, description, type: "website", url: `/s/${asset.slug}`,
       images: poster ? [{ url: poster, width: asset.width, height: asset.height, alt: asset.title }] : undefined,
