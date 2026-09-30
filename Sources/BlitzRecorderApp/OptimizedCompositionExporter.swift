@@ -13,6 +13,7 @@ struct OptimizedVideoSettingsRequest {
     var compressionQuality: Float?
     var usesAverageBitRate: Bool = true
     var maxKeyFrameInterval: Int?
+    var prioritizesSpeed = false
 
     init(
         width: Int,
@@ -23,7 +24,8 @@ struct OptimizedVideoSettingsRequest {
         codec: ExportVideoCodec = .hevc,
         compressionQuality: Float? = nil,
         usesAverageBitRate: Bool = true,
-        maxKeyFrameInterval: Int? = nil
+        maxKeyFrameInterval: Int? = nil,
+        prioritizesSpeed: Bool = false
     ) {
         self.width = width
         self.height = height
@@ -34,6 +36,7 @@ struct OptimizedVideoSettingsRequest {
         self.compressionQuality = compressionQuality
         self.usesAverageBitRate = usesAverageBitRate
         self.maxKeyFrameInterval = maxKeyFrameInterval
+        self.prioritizesSpeed = prioritizesSpeed
     }
 
     init(
@@ -52,7 +55,8 @@ struct OptimizedVideoSettingsRequest {
             codec: encoding.codec,
             compressionQuality: encoding.quality,
             usesAverageBitRate: encoding.usesAverageBitRate,
-            maxKeyFrameInterval: encoding.maxKeyFrameInterval
+            maxKeyFrameInterval: encoding.maxKeyFrameInterval,
+            prioritizesSpeed: encoding.prioritizesSpeed
         )
     }
 }
@@ -142,7 +146,7 @@ enum OptimizedCompositionExporter {
             )
             output.audioMix = audioMix
             output.alwaysCopiesSampleData = false
-            output.audioTimePitchAlgorithm = .spectral
+            output.audioTimePitchAlgorithm = encoding.prioritizesSpeed ? .timeDomain : .spectral
             guard reader.canAdd(output) else {
                 throw RecorderError.exportUnavailable
             }
@@ -212,20 +216,25 @@ enum OptimizedCompositionExporter {
         if request.codec.isMezzanine {
             outputSettings[AVVideoCompressionPropertiesKey] = compression
         } else {
-            compression[AVVideoAllowFrameReorderingKey] = true
+            compression[AVVideoAllowFrameReorderingKey] = !request.prioritizesSpeed
+            if request.prioritizesSpeed {
+                compression[kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality as String] = true
+            }
             if let profileLevel = request.codec.profileLevel {
                 compression[AVVideoProfileLevelKey] = profileLevel
             }
             if request.usesAverageBitRate {
                 compression[AVVideoAverageBitRateKey] = request.bitrate
             }
-            if let quality = request.compressionQuality {
+            if let quality = request.compressionQuality, !request.prioritizesSpeed {
                 compression[kVTCompressionPropertyKey_Quality as String] = quality
             }
-            compression[kVTCompressionPropertyKey_DataRateLimits as String] = [
-                request.bitrate / 8,
-                1
-            ]
+            if !request.prioritizesSpeed {
+                compression[kVTCompressionPropertyKey_DataRateLimits as String] = [
+                    request.bitrate / 8,
+                    1
+                ]
+            }
             if let maxKeyFrameInterval = request.maxKeyFrameInterval {
                 compression[AVVideoMaxKeyFrameIntervalKey] = maxKeyFrameInterval
             }

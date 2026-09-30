@@ -47,7 +47,7 @@ final class HostedVideoTests: XCTestCase {
         XCTAssertEqual(size, CGSize(width: 1920, height: 1080))
         XCTAssertEqual(fps, 30, accuracy: 0.1)
         XCTAssertEqual(duration.seconds, 0.8 / 1.3, accuracy: 0.1)
-        XCTAssertEqual(CMFormatDescriptionGetMediaSubType(try XCTUnwrap(formats.first)), kCMVideoCodecType_HEVC)
+        XCTAssertEqual(CMFormatDescriptionGetMediaSubType(try XCTUnwrap(formats.first)), kCMVideoCodecType_H264)
         let decoded = try await SyntheticRecording.inspectVideo(url)
         XCTAssertGreaterThan(decoded.frames, 15)
         if let directory = ProcessInfo.processInfo.environment["BLITZRECORDER_EXPORT_UI_PROOF"] {

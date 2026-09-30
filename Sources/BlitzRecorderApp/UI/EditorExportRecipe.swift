@@ -23,16 +23,16 @@ struct EditorExportRecipe {
 
     static func make(_ request: Request) -> EditorExportRecipe {
         let sharing = request.destination == .link
-        let profile = ExportPerformanceProfile.resolved(
-            preset: sharing ? .custom : request.preset,
+        let profile = sharing ? shareProfile(request) : ExportPerformanceProfile.resolved(
+            preset: request.preset,
             sourceResolution: request.sourceResolution,
             sourceFramesPerSecond: request.sourceFramesPerSecond,
-            customResolution: sharing ? (request.sourceResolution.height < 1080 ? request.sourceResolution : .p1080) : request.customResolution,
-            customFramesPerSecond: sharing ? request.sourceFramesPerSecond : request.customFramesPerSecond,
-            customVideoQuality: sharing ? .high : request.customVideoQuality
+            customResolution: request.customResolution,
+            customFramesPerSecond: request.customFramesPerSecond,
+            customVideoQuality: request.customVideoQuality
         )
         let dimensions = profile.resolution.dimensions(for: request.layout)
-        let encoding = profile.videoQuality.encodingProfile(
+        var encoding = profile.videoQuality.encodingProfile(
             baseBitrate: SocialVideoEncoding.videoBitrate(
                 resolution: profile.resolution,
                 fps: profile.framesPerSecond
@@ -42,6 +42,7 @@ struct EditorExportRecipe {
             width: dimensions.width,
             height: dimensions.height
         )
+        if sharing { encoding = encoding.prioritizingSpeed() }
         let summary: String
         if request.layoutCount > 1 {
             summary = "\(request.layoutCount) videos · \(profile.resolution.displayName) · \(profile.framesPerSecond) fps\(Self.speedSuffix(request.playbackRate))"
@@ -58,6 +59,16 @@ struct EditorExportRecipe {
                 layoutCount: max(1, request.layoutCount)
             )
         )
+    }
+
+    /// One hardware H.264 pass at the source rate, capped at 30 fps and 1080p. Already browser-ready, so sharing does not transcode again.
+    private static func shareProfile(_ request: Request) -> ExportPerformanceProfile {
+        let fps = request.sourceFramesPerSecond
+        return ExportPerformanceProfile(
+            preset: .fast,
+            resolution: request.sourceResolution.height < 1080 ? request.sourceResolution : .p1080,
+            framesPerSecond: min(30, max(1, fps)),
+            videoQuality: .web)
     }
 
     struct RestoredControls: Equatable {

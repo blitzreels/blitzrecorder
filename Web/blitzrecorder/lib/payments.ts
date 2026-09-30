@@ -56,7 +56,7 @@ export function getSiteUrl(requestUrl?: string): string {
     return `${url.protocol}//${url.host}`;
   }
 
-  return "http://localhost:3000";
+  return "http://localhost:3470";
 }
 
 export async function createEarlyPriceCheckoutSession({

@@ -3,9 +3,10 @@
 import { memo, useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { ArrowDown, Check, Copy, Search, X } from "lucide-react";
 import { activeChapter, formatTime, type TranscriptCue, type VideoDetails } from "@/lib/hosting/details";
+import type { TranscriptBrief } from "@/lib/hosting/brief";
 import styles from "./player.module.css";
 
-export type NotesTab = "transcript" | "chapters";
+export type NotesTab = "summary" | "transcript" | "chapters";
 
 /** Mirrors the speaker palette in ProjectTranscriptPanel.swift (mint, then system blue, purple, orange, pink, teal). */
 const SPEAKER_COLORS = ["var(--primary)", "#0a84ff", "#bf5af2", "#ff9f0a", "#ff375f", "#40c8e0"];
@@ -25,8 +26,8 @@ const CueRow = memo(function CueRow({ cue, index, active, speaker, query, onSeek
   </div>;
 });
 
-export function VideoNotes({ details, time, duration, ready, playing, tab, onTabChange, onSeek }: {
-  details: VideoDetails; time: number; duration: number; ready: boolean; playing: boolean;
+export function VideoNotes({ details, brief, time, duration, ready, playing, tab, onTabChange, onSeek }: {
+  details: VideoDetails; brief: TranscriptBrief; time: number; duration: number; ready: boolean; playing: boolean;
   tab: NotesTab; onTabChange: (tab: NotesTab) => void; onSeek: (input: { time: number }) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -77,10 +78,14 @@ export function VideoNotes({ details, time, duration, ready, playing, tab, onTab
       setCopied(true); window.setTimeout(() => setCopied(false), 2000);
     } catch { /* The transcript stays readable and selectable in the panel. */ }
   };
-  const tabs = ([{ key: "transcript", title: "Transcript", count: transcript.length },
+  const sectionIndex = activeChapter({
+    chapters: brief.sections.map((section) => ({ start: section.start, title: section.title, summary: null })), time,
+  });
+  const tabs = ([{ key: "summary", title: "Summary", count: brief.sections.length },
+    { key: "transcript", title: "Transcript", count: transcript.length },
     { key: "chapters", title: "Chapters", count: chapters.length }] as const).filter((item) => item.count > 0);
 
-  return <aside id="video-notes" className={styles.notes} aria-label="Transcript and chapters">
+  return <aside id="video-notes" className={styles.notes} aria-label="Summary, transcript, and chapters">
     <div className={styles.notesHeader}>
       {tabs.length > 1 ? <div className={styles.segmented} role="tablist" aria-label="Video content">
         {tabs.map((item) => <button key={item.key} type="button" role="tab" id={`tab-${item.key}`} aria-selected={tab === item.key}
@@ -88,9 +93,12 @@ export function VideoNotes({ details, time, duration, ready, playing, tab, onTab
           onKeyDown={(event) => {
             if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
             event.preventDefault();
-            const next = event.key === "Home" ? "transcript" : event.key === "End" ? "chapters" : tab === "transcript" ? "chapters" : "transcript";
+            const keys = tabs.map((entry) => entry.key);
+            const index = keys.indexOf(tab);
+            const next = event.key === "Home" ? keys[0] : event.key === "End" ? keys[keys.length - 1]
+              : keys[(index + (event.key === "ArrowRight" ? 1 : -1) + keys.length) % keys.length];
             onTabChange(next); document.getElementById(`tab-${next}`)?.focus();
-          }}>{item.title}{item.key === "chapters" && <span>{item.count}</span>}</button>)}
+          }}>{item.title}{item.key !== "transcript" && <span>{item.count}</span>}</button>)}
       </div> : <h2 className={styles.notesTitle}>{tabs[0]?.title}</h2>}
       {tab === "transcript" && <button type="button" className={styles.iconButtonQuiet} onClick={() => void copyTranscript()}
         aria-label={copied ? "Transcript copied" : "Copy transcript"} title="Copy transcript with timestamps">
@@ -98,7 +106,21 @@ export function VideoNotes({ details, time, duration, ready, playing, tab, onTab
       </button>}
     </div>
 
-    {tab === "transcript" ? <div role="tabpanel" id="panel-transcript" aria-labelledby={tabs.length > 1 ? "tab-transcript" : undefined}
+    {tab === "summary" ? <div role="tabpanel" id="panel-summary" aria-labelledby={tabs.length > 1 ? "tab-summary" : undefined}
+      aria-label={tabs.length > 1 ? undefined : "Summary"} className={styles.briefList}>
+      {brief.sections.map((section) => {
+        const current = brief.sections[sectionIndex]?.start === section.start;
+        return <div key={section.start} className={styles.briefSection} aria-current={current ? "true" : undefined}>
+          <button type="button" className={styles.briefTitle} disabled={!ready} onClick={() => onSeek({ time: section.start })}>
+            <strong>{section.title}</strong><time>{formatTime(section.start)}</time>
+          </button>
+          {section.lines.map((line, index) => <button key={`${line.start}-${index}`} type="button" className={styles.briefLine}
+            disabled={!ready} onClick={() => onSeek({ time: line.start })}>
+            {line.speaker ? `${line.speaker}: ` : ""}{line.text}
+          </button>)}
+        </div>;
+      })}
+    </div> : tab === "transcript" ? <div role="tabpanel" id="panel-transcript" aria-labelledby={tabs.length > 1 ? "tab-transcript" : undefined}
       aria-label={tabs.length > 1 ? undefined : "Transcript"} className={styles.notesBody}>
       <div className={styles.search}>
         <Search />

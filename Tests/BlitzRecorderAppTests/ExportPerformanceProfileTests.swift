@@ -79,7 +79,9 @@ final class ExportPerformanceProfileTests: XCTestCase {
         XCTAssertEqual(settings.exportEncoding?.codec, .h264)
         XCTAssertEqual(settings.finalVideoBitrate, 8_000_000)
         XCTAssertEqual(settings.finalAudioBitrate, 192_000)
-        XCTAssertEqual(settings.exportEncoding?.quality ?? -1, 0.75, accuracy: 0.001)
+        XCTAssertNil(settings.exportEncoding?.quality)
+        XCTAssertTrue(settings.exportEncoding?.prioritizesSpeed ?? false)
+        XCTAssertFalse(settings.exportEncoding?.prefersFullRangeRGB ?? true)
     }
 
     func testCompactCustomProfileStaysUnderTwoMegabitsAt1080p30() {

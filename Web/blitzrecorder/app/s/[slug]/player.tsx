@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Check, CircleAlert, Clock3, Link2, LoaderCircle, Play, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { languageLabel, transcriptBrief } from "@/lib/hosting/brief";
 import { activeChapter, formatTime, type VideoDetails } from "@/lib/hosting/details";
 import { PlayerControls } from "./player-controls";
 import { VideoNotes, type NotesTab } from "./video-notes";
@@ -23,8 +24,10 @@ export function SharedPlayer({ source, poster, title, width, height, duration, f
   const [copyError, setCopyError] = useState(false);
   const [idle, setIdle] = useState(false);
   const idleTimer = useRef<number | undefined>(undefined);
+  const brief = useMemo(() => transcriptBrief({ details, duration }), [details, duration]);
   const hasNotes = details.transcript.length > 0 || details.chapters.length > 0;
-  const [tab, setTab] = useState<NotesTab>(details.transcript.length ? "transcript" : "chapters");
+  const [tab, setTab] = useState<NotesTab>(brief.long && brief.sections.length ? "summary" : details.transcript.length ? "transcript" : "chapters");
+  const language = languageLabel(details.language);
   const chapterIndex = activeChapter({ chapters: details.chapters, time: state.time });
 
   const wake = () => {
@@ -111,17 +114,29 @@ export function SharedPlayer({ source, poster, title, width, height, duration, f
       {playback.notice && <p role="status" className={styles.notice}>{playback.notice}</p>}
 
       <div className={styles.videoInfo}>
-        <h1>{title}</h1>
+        <div className={styles.heading}>
+          {poster &&
+            // eslint-disable-next-line @next/next/no-img-element -- posters come from the signed media origin, not next/image
+            <img className={styles.posterThumb} src={poster} alt="" />}
+          <div className={styles.headingBody}>
+            <h1>{title}</h1>
+            <p className={styles.meta}>
+              <span>{formatTime(duration)}</span>
+              <span>{Math.max(width, height) >= 2160 ? "4K" : `${Math.min(width, height)}p`}</span>
+              {frameRate && <span>{Math.round(frameRate)} fps</span>}
+              {details.recordedAt && <time dateTime={details.recordedAt}>
+                {new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(details.recordedAt))}
+              </time>}
+              {language && <span>{language}</span>}
+              {brief.speakers.slice(0, 4).map((speaker) => <span key={speaker.name}>
+                {speaker.name}{brief.speakers.length > 1 ? ` ${speaker.percent}%` : ""}
+              </span>)}
+              {brief.speakers.length > 4 && <span>+{brief.speakers.length - 4}</span>}
+              {chapterIndex >= 0 && <span className={styles.metaChapter}>Chapter {chapterIndex + 1} of {details.chapters.length}</span>}
+            </p>
+          </div>
+        </div>
         <div className={styles.infoRow}>
-          <p className={styles.meta}>
-            <span>{formatTime(duration)}</span>
-            <span>{Math.max(width, height) >= 2160 ? "4K" : `${Math.min(width, height)}p`}</span>
-            {frameRate && <span>{Math.round(frameRate)} fps</span>}
-            {details.recordedAt && <time dateTime={details.recordedAt}>
-              {new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(details.recordedAt))}
-            </time>}
-            {chapterIndex >= 0 && <span className={styles.metaChapter}>Chapter {chapterIndex + 1} of {details.chapters.length}</span>}
-          </p>
           <div className={styles.shareActions}>
             {ownerActions}
             <Button variant="ghost" onClick={() => void share(true)} disabled={state.time < 1}
@@ -136,13 +151,13 @@ export function SharedPlayer({ source, poster, title, width, height, duration, f
         </div>
         <span role="status" className="sr-only">{copied ? "Link copied" : ""}</span>
         {copyError && <p role="alert" className={styles.notice}>Could not copy. Copy the link from your browser’s address bar.</p>}
-        {details.summary && <section className={styles.summary} aria-label="Video summary">
-          <h2>About this video</h2><p>{details.summary}</p>
+        {brief.lead && <section className={styles.summary} aria-label="Summary">
+          <h2>Summary</h2><p>{brief.lead}</p>
         </section>}
         {children}
       </div>
     </section>
-    {hasNotes && <VideoNotes details={details} time={state.time} duration={state.duration} ready={state.ready} playing={state.playing}
+    {hasNotes && <VideoNotes details={details} brief={brief} time={state.time} duration={state.duration} ready={state.ready} playing={state.playing}
       tab={tab} onTabChange={setTab} onSeek={playback.seek} />}
   </div>;
 }

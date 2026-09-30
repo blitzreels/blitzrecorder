@@ -10,7 +10,7 @@ final class EditorExportPresentationTests: XCTestCase {
         XCTAssertEqual(Set(EditorExportDestination.file.layouts(request)), Set(CaptureLayout.allCases))
     }
 
-    func testCloudCopyCapsResolutionWithoutUpscalingAndKeepsSourceFrameRate() {
+    func testCloudCopyCapsResolutionAndUsesOneFastH264Pass() {
         for resolution in OutputResolution.allCases {
             for fps in RecordingSettings.supportedFrameRates {
                 for layout in CaptureLayout.allCases {
@@ -21,9 +21,12 @@ final class EditorExportPresentationTests: XCTestCase {
                         playbackRate: 1.3, destination: .link)
                     let cloud = EditorExportRecipe.make(request)
                     XCTAssertEqual(cloud.profile.resolution, resolution == .p720 ? .p720 : .p1080)
-                    XCTAssertEqual(cloud.profile.framesPerSecond, fps)
-                    XCTAssertEqual(cloud.profile.videoQuality, .high)
-                    XCTAssertEqual(cloud.encoding.codec, .hevc)
+                    XCTAssertEqual(cloud.profile.framesPerSecond, min(30, fps))
+                    XCTAssertEqual(cloud.profile.videoQuality, .web)
+                    XCTAssertEqual(cloud.encoding.codec, .h264)
+                    XCTAssertTrue(cloud.encoding.prioritizesSpeed)
+                    XCTAssertNil(cloud.encoding.quality)
+                    XCTAssertFalse(cloud.encoding.prefersFullRangeRGB)
                     XCTAssertTrue(cloud.summary.contains("1.3×"))
                     var localRequest = request
                     localRequest.destination = .file

@@ -67,7 +67,7 @@ export function encodeArguments({ source, destination, ladder }: {
       const directory = path.join(destination, level.name);
       return [
         "-map", `[v${index}]`, "-map", "0:a:0?", "-sn", "-dn", "-map_metadata", "-1",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-profile:v", "high", "-pix_fmt", "yuv420p",
+        "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "20", "-profile:v", "high", "-pix_fmt", "yuv420p",
         "-maxrate", String(level.maxRate), "-bufsize", String(level.maxRate * 2),
         "-force_key_frames", "expr:gte(t,n_forced*4)", "-sc_threshold", "0",
         "-c:a", "aac", "-b:a", "160k", "-ac", "2", "-ar", "48000",

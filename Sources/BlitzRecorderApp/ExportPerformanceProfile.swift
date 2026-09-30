@@ -104,8 +104,9 @@ struct ExportPerformanceProfile: Equatable {
             width: dimensions.width,
             height: dimensions.height
         )
-        settings.customVideoBitrate = encoding.bitrate
-        settings.exportEncoding = encoding
+        let shareEncoding = videoQuality == .web ? encoding.prioritizingSpeed() : encoding
+        settings.customVideoBitrate = shareEncoding.bitrate
+        settings.exportEncoding = shareEncoding
         if let format = encoding.preferredFormat {
             settings.outputVideoFormat = format
         }

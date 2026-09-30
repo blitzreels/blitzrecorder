@@ -67,6 +67,17 @@ struct ExportEncodingProfile: Equatable {
     let prefersFullRangeRGB: Bool
     let preferredFormat: OutputVideoFormat?
     let sizeEstimateIsCeiling: Bool
+    var prioritizesSpeed = false
+
+    func prioritizingSpeed() -> ExportEncodingProfile {
+        var copy = self
+        copy.prioritizesSpeed = true
+        return ExportEncodingProfile(
+            codec: copy.codec, bitrate: copy.bitrate, quality: nil, usesAverageBitRate: true,
+            maxKeyFrameInterval: copy.maxKeyFrameInterval, audioBitrate: copy.audioBitrate,
+            prefersFullRangeRGB: false, preferredFormat: copy.preferredFormat ?? .mp4,
+            sizeEstimateIsCeiling: false, prioritizesSpeed: true)
+    }
 
     var detail: String {
         switch codec {
