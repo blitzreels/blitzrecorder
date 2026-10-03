@@ -1,6 +1,6 @@
 .shell { display:grid; grid-template-columns:288px minmax(0,1fr); gap:28px; align-items:start; width:100%; max-width:1880px; margin:0 auto; }
 
-.sidebar { position:sticky; top:16px; display:flex; flex-direction:column; height:calc(100dvh - 96px); min-height:460px; max-height:980px; overflow:hidden; }
+.sidebar { position:sticky; top:80px; display:flex; flex-direction:column; height:calc(100dvh - 96px); min-height:460px; max-height:980px; overflow:hidden; }
 .backdrop, .toggle, .close { display:none; }
 
 .head { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; padding:4px 8px 12px; }

@@ -5,18 +5,19 @@ import { useRouter } from "next/navigation";
 import { useActionState, useState, type ReactElement, type ReactNode } from "react";
 import { CircleAlert, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { videosPath } from "@/lib/hosting/paths";
 import { stopSharing, type HostingActionResult } from "@/lib/hosting/web-actions";
 
 const UNREACHABLE: HostingActionResult = { ok: false, error: "Can’t reach BlitzRecorder. Check your connection and try again." };
 
-/** Stopping the open video leaves its page, so the library route picks the next video to show. */
+/** Stopping the open video leaves its page for the library. */
 const StopSharingForm = ({ slug, current, onDone }: { slug: string; current: boolean; onDone: () => void }) => {
   const router = useRouter();
   const [state, action, pending] = useActionState<HostingActionResult | null>(async () => {
     const result = await stopSharing(slug).catch(() => UNREACHABLE);
     if (!result.ok) return result;
     onDone();
-    if (current) router.replace("/hosting/videos");
+    if (current) router.replace(videosPath);
     else router.refresh();
     return result;
   }, null);

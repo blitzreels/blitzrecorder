@@ -303,6 +303,11 @@ final class MCPProjectService {
         )
     }
 
+    func frame(_ request: MCPProjectFrameRequest) async throws -> MCPProjectFrameResponse {
+        let selected = try selectedProject(id: request.projectID)
+        return try await MCPProjectFrameRenderer.render(.init(project: selected.project, frame: request))
+    }
+
     func transcript(_ request: MCPTranscriptRequest) throws -> MCPTranscriptResponse {
         let selectedProject = try selectedProject(id: request.projectID)
         let transcriptURL = transcriptStore.locations(for: selectedProject.project).jsonURL

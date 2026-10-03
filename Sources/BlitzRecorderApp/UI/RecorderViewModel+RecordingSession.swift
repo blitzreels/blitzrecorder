@@ -133,7 +133,7 @@ extension RecorderViewModel {
         previewStage.captureLayout = coordinator.settings.layout
         previewStage.sceneLayout = screenSplitPreviewHeight.map {
             SceneLayout.screenSplitLayout(screenHeight: CGFloat($0))
-        } ?? coordinator.settings.sceneLayout
+        } ?? sideSplitPreviewLayout ?? coordinator.settings.sceneLayout
         previewStage.enabledSources = coordinator.settings.visibleSources
         previewStage.fillsCanvasWhenOnlyVideoSource =
             coordinator.settings.enabledSources.intersection([.screen, .camera]).count == 1
@@ -311,6 +311,67 @@ extension RecorderViewModel {
     func cancelScreenSplitPreview() {
         guard screenSplitPreviewHeight != nil else { return }
         screenSplitPreviewHeight = nil
+        previewStage.sceneLayout = coordinator.settings.sceneLayout
+        coordinator.previewSceneLayout(coordinator.settings.sceneLayout)
+    }
+
+    var showsSideSplitControl: Bool {
+        settings.layout != .vertical
+            && settings.visibleSources.isSuperset(of: [.screen, .camera])
+            && settings.sceneLayout.cameraSide != nil
+    }
+
+    var sideSplitCameraWidth: Double {
+        sideSplitPreviewWidth ?? Double(settings.sceneLayout.sideBySideCameraWidth
+            ?? SceneLayout.defaultSideBySideCameraWidth(for: settings.layout))
+    }
+
+    var sideSplitCameraIsLeft: Bool {
+        settings.sceneLayout.cameraSide != .right
+    }
+
+    private var sideSplitPreviewLayout: SceneLayout? {
+        guard let width = sideSplitPreviewWidth, let side = coordinator.settings.sceneLayout.cameraSide else { return nil }
+        return SceneLayout.sideBySideLayout(.init(cameraWidth: CGFloat(width), cameraSide: side))
+    }
+
+    func setSideSplitCameraWidth(_ width: Double) {
+        sideSplitPreviewWidth = nil
+        guard let side = settings.sceneLayout.cameraSide else { return }
+        coordinator.setSideBySideLayout(.init(cameraWidth: CGFloat(width), cameraSide: side))
+        syncSettingsAfterSceneChange()
+    }
+
+    var sideSplitCameraSide: SceneCameraSide {
+        settings.sceneLayout.cameraSide ?? .left
+    }
+
+    func setSideSplitCameraSide(_ side: SceneCameraSide) {
+        cancelSideSplitPreview()
+        coordinator.setSideBySideLayout(.init(cameraWidth: CGFloat(sideSplitCameraWidth), cameraSide: side))
+        syncSettingsAfterSceneChange()
+    }
+
+    func previewSideSplitCameraWidth(_ width: Double) {
+        guard canEditScene, showsSideSplitControl else { return }
+        sideSplitPreviewWidth = Double(SceneLayout.clampedSideBySideCameraWidth(CGFloat(width)))
+        guard let layout = sideSplitPreviewLayout else { return }
+        previewStage.sceneLayout = layout
+        coordinator.previewSceneLayout(layout)
+    }
+
+    func commitSideSplitPreview() {
+        guard let width = sideSplitPreviewWidth else { return }
+        guard canEditScene, showsSideSplitControl else {
+            cancelSideSplitPreview()
+            return
+        }
+        setSideSplitCameraWidth(width)
+    }
+
+    func cancelSideSplitPreview() {
+        guard sideSplitPreviewWidth != nil else { return }
+        sideSplitPreviewWidth = nil
         previewStage.sceneLayout = coordinator.settings.sceneLayout
         coordinator.previewSceneLayout(coordinator.settings.sceneLayout)
     }
@@ -548,14 +609,9 @@ extension RecorderViewModel {
     func resolveStartBlockers(_ readiness: RecordingReadiness) {
         Task {
             if shouldUseScreenPickerForStart(readiness) {
-                do {
-                    try await coordinator.pickScreenSource()
-                    syncSettings()
-                    detailMessage = RecorderStudioLabels.screenSelectedForSession
-                } catch {
-                    detailMessage = RecorderStudioLabels.screenPickerFailed(error)
-                    return
-                }
+                pickAndEnableScreenSource()
+                detailMessage = "Choose a screen or window, then press Record."
+                return
             }
 
             await coordinator.requestPermissionsForEnabledSources()

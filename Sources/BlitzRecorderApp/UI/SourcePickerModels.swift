@@ -188,32 +188,6 @@ struct ScreenCaptureSourcePickerModel {
     }
 
     var model: BlitzSourcePickerModel {
-        let actions = [
-            BlitzSourcePickerItem(
-                id: "screen:system-window-picker",
-                title: "Use macOS window picker…",
-                subtitle: nil,
-                systemImage: "rectangle.dashed",
-                icon: nil,
-                thumbnail: nil,
-                isSelected: vm.activePickedScreenContentKind == .application
-                    || vm.activePickedScreenContentKind == .window
-            ) {
-                vm.pickScreen()
-            },
-            BlitzSourcePickerItem(
-                id: "screen:system-display-picker",
-                title: "Use macOS display picker…",
-                subtitle: nil,
-                systemImage: BlitzSymbols.screen,
-                icon: nil,
-                thumbnail: nil,
-                isSelected: vm.activePickedScreenContentKind == .display
-            ) {
-                vm.pickFullScreen()
-            }
-        ]
-
         return BlitzSourcePickerModel(
             title: captureSourceLabel,
             subtitle: selectedScreenSourceKindLabel,
@@ -225,7 +199,7 @@ struct ScreenCaptureSourcePickerModel {
                 screenSourceSection((kind: .application, title: "Apps", group: .standard)),
                 screenSourceSection((kind: .window, title: "Windows", group: .standard))
             ],
-            actions: actions,
+            actions: [],
             layout: .thumbnails,
             enabled: enabled && vm.canAdjustScreenCapture,
             hiddenSections: [

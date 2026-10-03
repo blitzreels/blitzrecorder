@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 
 extension ProjectLibraryView {
@@ -75,6 +76,15 @@ extension ProjectLibraryView {
             )
             guard !Task.isCancelled else { return }
             let editedURL = ProjectLibraryPreviewMedia.editedVideoURL(for: recordingProject)
+            let waveformURL = editedURL ?? recordingProject.sources
+                .first { $0.role == "microphone" && $0.exists }
+                .map { URL(fileURLWithPath: $0.path) }
+            let waveformTask = Task { await ProjectLibraryWaveform.overview(of: waveformURL) }
+            Task { @MainActor in
+                let samples = await waveformTask.value
+                guard !Task.isCancelled, selectedProject?.id == project.id, !samples.isEmpty else { return }
+                playbackWaveformSamples = samples
+            }
             if let editedURL {
                 await projectPlayback.loadExported(url: editedURL, title: recordingProject.title)
             } else {
@@ -90,15 +100,10 @@ extension ProjectLibraryView {
             }
             playbackProjectID = project.id
             playbackProjectPath = project.projectPath
-
-            guard let editedURL, projectPlayback.isExportedPlayback else { return }
-            let waveformAsset = EditorAsset.output(url: editedURL)
-            await projectWaveformLibrary.loadAssets([waveformAsset])
-            guard !Task.isCancelled,
-                  selectedProject?.id == project.id else {
-                return
+            if editedURL == nil, abs(projectPlayback.outputDuration - projectPlayback.duration) > 0.25 {
+                waveformTask.cancel()
+                playbackWaveformSamples = []
             }
-            playbackWaveformSamples = projectWaveformLibrary.waveforms[waveformAsset.id] ?? []
         } catch {
             guard !Task.isCancelled else { return }
             playbackLoadError = error.localizedDescription
@@ -203,4 +208,13 @@ extension ProjectLibraryView {
         selectedProject?.projectPath ?? "inactive"
     }
 
+}
+
+enum ProjectLibraryWaveform {
+    static func overview(of url: URL?) async -> [Float] {
+        guard let url else { return [] }
+        let asset = AVURLAsset(url: url)
+        guard let duration = try? await asset.load(.duration), duration.seconds.isFinite else { return [] }
+        return await EditorAudioWaveform.load(.init(asset: asset, duration: duration.seconds))?.overview ?? []
+    }
 }

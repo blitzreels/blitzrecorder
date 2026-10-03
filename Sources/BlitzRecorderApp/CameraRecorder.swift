@@ -3,6 +3,8 @@ import CoreMedia
 import Foundation
 
 final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
+    typealias ThumbnailHandler = @MainActor (CMSampleBuffer) -> Void
+
     private let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "recorder.camera")
     private var writer: VideoFileWriter?
@@ -19,6 +21,8 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     private var blackFrameGenerator: CameraBlackFrameGenerator?
     private var blackFrameTimer: DispatchSourceTimer?
     private var lastForwardedPresentationTime: CMTime?
+    private var thumbnailHandler: ThumbnailHandler?
+    private var lastThumbnailTime = -TimeInterval.infinity
     var failureHandler: (@MainActor (Error) -> Void)?
 
     override init() {
@@ -54,6 +58,13 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             } catch {
                 NSLog("Camera prewarm failed: \(error.localizedDescription)")
             }
+        }
+    }
+
+    func setThumbnailHandler(_ handler: ThumbnailHandler?) {
+        queue.sync {
+            thumbnailHandler = handler
+            lastThumbnailTime = -TimeInterval.infinity
         }
     }
 
@@ -125,6 +136,7 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
                 if self.session.isRunning {
                     self.session.stopRunning()
                 }
+                self.lastThumbnailTime = -TimeInterval.infinity
                 continuation.resume()
             }
         }
@@ -135,6 +147,7 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
+        offerThumbnail(sampleBuffer)
         stopBlackFramesOnQueue()
         hasReportedActiveFailure = false
         prepareBlackFrameGeneratorIfNeeded(sampleBuffer)
@@ -182,6 +195,17 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
 
         appendRecordingSampleOnQueue(sampleBuffer)
         completeStartup(.success(()))
+    }
+
+    private func offerThumbnail(_ sampleBuffer: CMSampleBuffer) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard let thumbnailHandler,
+              now - lastThumbnailTime >= 1,
+              CMSampleBufferGetImageBuffer(sampleBuffer) != nil else { return }
+        lastThumbnailTime = now
+        Task { @MainActor in
+            thumbnailHandler(sampleBuffer)
+        }
     }
 
     func continueWithBlackFrames() {

@@ -25,6 +25,18 @@ final class EditorTranscriptTimelineTests: XCTestCase {
         XCTAssertNotEqual(items[0].id, items[1].id)
     }
 
+    func testSilenceMergingProtectsWordsSpeechRangesAndLegacyPhrases() {
+        var value = transcript()
+        value.speechRanges = [.init(startTime: 4, endTime: 5)]
+        XCTAssertTrue(value.silenceProtectedRanges.contains(.init(startTime: 1, endTime: 1.4)))
+        XCTAssertTrue(value.silenceProtectedRanges.contains(.init(startTime: 4, endTime: 5)))
+        value.words = nil
+        for segment in value.segments {
+            XCTAssertTrue(value.silenceProtectedRanges.contains(.init(startTime: segment.startTime, endTime: segment.endTime)))
+        }
+        XCTAssertTrue(value.silenceProtectedRanges.contains(.init(startTime: 4, endTime: 5)))
+    }
+
     func testLoudNonDialogueIsMarkedWithoutMarkingSpeechOrQuietGaps() {
         let items = EditorTranscriptTimeline.items(.init(
             transcript: transcript(), windows: [

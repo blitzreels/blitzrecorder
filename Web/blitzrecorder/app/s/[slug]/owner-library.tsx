@@ -6,11 +6,13 @@ import {
   createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode,
 } from "react";
 import { Check, Clapperboard, Link2, Link2Off, LoaderCircle, PanelLeft, Search, X } from "lucide-react";
+import { ListingButton } from "@/components/hosting/listing-button";
 import { SignOutButton, SignOutEverywhere } from "@/components/hosting/sign-out-button";
 import { formatTime } from "@/lib/hosting/details";
+import { sharePath, videosPath } from "@/lib/hosting/paths";
 import type { LibraryVideo } from "@/lib/hosting/web-session";
 import styles from "./owner-library.module.css";
-import { StopSharing } from "./stop-sharing";
+import { StopSharing } from "@/components/hosting/stop-sharing";
 
 type Drawer = { open: boolean; setOpen: (open: boolean) => void };
 
@@ -44,29 +46,35 @@ const LibraryRow = memo(function LibraryRow({ video, current, copied, onCopy, on
   video: LibraryVideo; current: boolean; copied: boolean; onCopy: (slug: string) => void; onNavigate: () => void;
 }) {
   const ready = video.status === "ready";
+  const shared = ready && video.listed;
+  const meta = video.status === "failed" ? "Failed" : !ready ? "Processing…" : video.listed ? shortDate(video.createdAt) : "Unlisted";
   const body = <>
     <span className={styles.thumb}>
       {video.poster
         // eslint-disable-next-line @next/next/no-img-element -- posters come from the signed media origin, not next/image
         ? <img src={video.poster} alt="" loading="lazy" decoding="async" />
-        : <span className={styles.thumbEmpty}>{ready ? <Clapperboard size={16} /> : <LoaderCircle size={16} className={styles.spin} />}</span>}
+        : <span className={styles.thumbEmpty}>{video.status === "queued" || video.status === "processing"
+          ? <LoaderCircle size={16} className={styles.spin} />
+          : <Clapperboard size={16} />}</span>}
       {video.duration ? <span className={styles.duration}>{formatTime(video.duration)}</span> : null}
     </span>
     <span className={styles.text}>
       <span className={styles.title}>{video.title}</span>
-      <span className={styles.meta}>{ready ? shortDate(video.createdAt) : "Processing…"}</span>
+      <span className={styles.meta}>{meta}</span>
     </span>
   </>;
   return <li className={styles.item}>
-    {ready
-      ? <Link href={`/s/${video.slug}`} prefetch={false} className={styles.row} aria-current={current ? "page" : undefined}
+    {shared
+      ? <Link href={sharePath(video.slug)} prefetch={false} className={styles.row} aria-current={current ? "page" : undefined}
         onClick={onNavigate}>{body}</Link>
-      : <div className={styles.row} data-disabled="true">{body}</div>}
+      : <div className={styles.row} data-disabled="true" aria-current={current ? "page" : undefined}>{body}</div>}
     <span className={styles.actions} data-copied={copied || undefined}>
-      {ready && <button type="button" className={styles.action} data-copied={copied || undefined}
+      {shared && <button type="button" className={styles.action} data-copied={copied || undefined}
         aria-label={copied ? "Link copied" : `Copy link to ${video.title}`} title="Copy link" onClick={() => onCopy(video.slug)}>
         {copied ? <Check size={14} /> : <Link2 size={14} />}
       </button>}
+      {ready && <ListingButton slug={video.slug} listed={video.listed} title={video.title} iconOnly
+        redirectOnUnlist={current ? videosPath : undefined} className={styles.action} />}
       <StopSharing slug={video.slug} title={video.title} current={current}
         trigger={<button type="button" className={styles.action} aria-label={`Stop sharing ${video.title}`} title="Stop sharing" />}>
         <Link2Off size={14} />
@@ -81,7 +89,7 @@ export const OwnerLibrary = ({ videos, currentSlug, email, sessions }: {
   const { open, setOpen } = useDrawer();
   const router = useRouter();
   const [query, setQuery] = useState("");
-  const processing = videos.some((video) => video.status !== "ready");
+  const processing = videos.some((video) => video.status === "queued" || video.status === "processing");
 
   useEffect(() => {
     if (!processing) return;
@@ -99,7 +107,7 @@ export const OwnerLibrary = ({ videos, currentSlug, email, sessions }: {
   const close = useCallback(() => setOpen(false), [setOpen]);
 
   const copy = useCallback((slug: string) => {
-    void navigator.clipboard.writeText(`${window.location.origin}/s/${slug}`).then(() => {
+    void navigator.clipboard.writeText(`${window.location.origin}${sharePath(slug)}`).then(() => {
       setCopied(slug);
       window.setTimeout(() => setCopied((value) => value === slug ? null : value), 1600);
     });

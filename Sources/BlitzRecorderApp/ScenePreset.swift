@@ -8,6 +8,9 @@ enum ScenePreset: String, CaseIterable {
     case cameraInset = "Camera Inset"
     case cameraFocus = "Camera Focus"
     case webcamLeft = "Webcam Left"
+    case cameraRight = "Camera Right"
+    case equalSplit = "Equal Split"
+    case screenInset = "Screen Inset"
     case screenFullscreen = "Screen Fullscreen"
     case webcamFullscreen = "Webcam Fullscreen"
 
@@ -16,6 +19,9 @@ enum ScenePreset: String, CaseIterable {
             .screenTop50,
             .cameraInset,
             .webcamLeft,
+            .cameraRight,
+            .equalSplit,
+            .screenInset,
             .screenFullscreen,
             .webcamFullscreen
         ]
@@ -36,7 +42,13 @@ enum ScenePreset: String, CaseIterable {
         case .cameraFocus:
             return "Speaker main"
         case .webcamLeft:
-            return "Camera left"
+            return "Side by side"
+        case .cameraRight:
+            return "Camera right"
+        case .equalSplit:
+            return "Equal split"
+        case .screenInset:
+            return "Screen inset"
         case .screenFullscreen:
             return "Screen 100%"
         case .webcamFullscreen:
@@ -51,7 +63,7 @@ extension ScenePreset {
         case .vertical:
             return .screenTop50
         case .horizontal, .square:
-            return .cameraInset
+            return .webcamLeft
         }
     }
 
@@ -63,13 +75,13 @@ extension ScenePreset {
             return [.vertical]
         case .screenTop70:
             return [.vertical]
-        case .cameraInset:
+        case .cameraInset, .screenInset:
             return [.vertical, .horizontal, .square]
         case .screenFocus:
             return [.vertical, .horizontal, .square]
         case .screenFullscreen, .webcamFullscreen:
             return [.vertical, .horizontal, .square]
-        case .webcamLeft:
+        case .webcamLeft, .cameraRight, .equalSplit:
             return [.horizontal, .square]
         case .cameraFocus:
             return []

@@ -2,9 +2,6 @@ import SwiftUI
 
 struct RecorderSceneStrip: View {
     @Bindable var vm: RecorderViewModel
-    @State private var renamingSceneID: UUID?
-    @State private var draftName = ""
-    @State private var deletingScene: RecordingSceneDefinition?
 
     private var isLive: Bool { vm.state == .recording || vm.state == .paused }
 
@@ -15,26 +12,35 @@ struct RecorderSceneStrip: View {
     }
 
     var body: some View {
-        HStack(spacing: 4) {
-            ForEach(Array(vm.currentScenes.enumerated()), id: \.element.id) { index, scene in
-                tile(.init(scene: scene, index: index))
+        ViewThatFits(in: .horizontal) {
+            sceneTiles
+                .fixedSize(horizontal: true, vertical: false)
+
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal) {
+                    sceneTiles
+                }
+                .frame(height: 72)
+                .onAppear {
+                    if let sceneID = vm.selectedSceneID { proxy.scrollTo(sceneID, anchor: .center) }
+                }
+                .onChange(of: vm.selectedSceneID) { _, sceneID in
+                    if let sceneID { proxy.scrollTo(sceneID, anchor: .center) }
+                }
             }
         }
         .padding(4)
         .background(BlitzUI.quietFill, in: .rect(cornerRadius: BlitzUI.cardRadius))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Scenes")
-        .confirmationDialog(
-            "Delete \(deletingScene?.name ?? "scene")?",
-            isPresented: Binding(get: { deletingScene != nil }, set: { if !$0 { deletingScene = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Delete scene", role: .destructive) {
-                if let deletingScene { vm.deleteScene(deletingScene.id) }
+    }
+
+    private var sceneTiles: some View {
+        HStack(spacing: 4) {
+            ForEach(Array(vm.currentScenes.enumerated()), id: \.element.id) { index, scene in
+                tile(.init(scene: scene, index: index))
+                    .id(scene.id)
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This removes the scene and its layout.")
         }
     }
 
@@ -52,13 +58,14 @@ struct RecorderSceneStrip: View {
         let isSelected = vm.selectedSceneID == scene.id
         return Button {
             vm.selectScene(scene.id)
+            vm.selectLayoutInspector()
         } label: {
             VStack(spacing: 5) {
                 BlitzSceneLayoutThumbnail(
                     layout: scene.layout,
-                    sceneLayout: scene.snapshot.sceneLayout,
-                    visibleSources: scene.snapshot.enabledVideoSources
-                        .intersection(vm.settings.enabledSources)
+                    sceneLayout: isSelected ? vm.settings.sceneLayout : scene.snapshot.sceneLayout,
+                    visibleSources: vm.settings.enabledSources
+                        .intersection([.screen, .camera])
                         .subtracting(scene.snapshot.hiddenVideoSources),
                     preview: livePreview
                 )
@@ -88,59 +95,12 @@ struct RecorderSceneStrip: View {
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .keyboardShortcut(tile.shortcut.map { KeyboardShortcut($0, modifiers: .command) })
         .help("\(isLive ? "Switch to" : "Use") \(scene.name)\(tile.shortcut == nil ? "" : " (⌘\(tile.index + 1))")")
-        .popover(isPresented: renameBinding(scene), arrowEdge: .top) {
-            renameField(scene)
-        }
         .contextMenu {
-            Group {
-                Button("Rename…") {
-                    draftName = scene.name
-                    renamingSceneID = scene.id
-                }
-                Button("Duplicate") {
-                    vm.selectScene(scene.id)
-                    vm.duplicateSelectedScene()
-                }
-                Button("Reset layout") {
-                    vm.selectScene(scene.id)
-                    vm.resetSceneLayout()
-                }
-                Divider()
-                Button("Delete…", role: .destructive) {
-                    deletingScene = scene
-                }
-                .disabled(vm.currentScenes.count <= 1)
+            Button("Reset layout") {
+                vm.selectScene(scene.id)
+                vm.resetSceneLayout()
             }
             .disabled(!vm.canEditScene)
         }
-    }
-
-    private func renameBinding(_ scene: RecordingSceneDefinition) -> Binding<Bool> {
-        Binding(
-            get: { renamingSceneID == scene.id },
-            set: { if !$0 { renamingSceneID = nil } }
-        )
-    }
-
-    private func renameField(_ scene: RecordingSceneDefinition) -> some View {
-        HStack(spacing: 8) {
-            TextField("Scene name", text: $draftName)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 180)
-                .onSubmit { commitRename(scene) }
-            Button("Save") { commitRename(scene) }
-                .blitzButton(.accent)
-                .keyboardShortcut(.defaultAction)
-        }
-        .padding(12)
-        .preferredColorScheme(.dark)
-    }
-
-    private func commitRename(_ scene: RecordingSceneDefinition) {
-        let name = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !name.isEmpty, name != scene.name {
-            vm.renameScene(scene.id, to: name)
-        }
-        renamingSceneID = nil
     }
 }

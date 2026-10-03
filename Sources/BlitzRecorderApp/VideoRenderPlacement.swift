@@ -231,6 +231,46 @@ enum SourceCropGeometry {
         )
     }
 
+    struct CropTransfer {
+        let amount: CGPoint
+        let position: CGPoint
+        let fromTarget: CGRect
+        let toTarget: CGRect
+        let sourceAspectRatio: CGFloat
+    }
+
+    static func transferredCrop(_ transfer: CropTransfer) -> (amount: CGPoint, position: CGPoint) {
+        let source = CGRect(x: 0, y: 0, width: transfer.sourceAspectRatio, height: 1)
+        guard transfer.sourceAspectRatio > 0,
+              transfer.fromTarget.width > 0, transfer.fromTarget.height > 0,
+              transfer.toTarget.width > 0, transfer.toTarget.height > 0 else {
+            return (transfer.amount, transfer.position)
+        }
+        let focus = cropRectangle(
+            source: source,
+            target: transfer.fromTarget,
+            sourceCropAmount: transfer.amount,
+            sourceCropPosition: transfer.position
+        )
+        let centered = cropRectangle(
+            source: source,
+            target: transfer.toTarget,
+            sourceCropAmount: transfer.amount,
+            sourceCropPosition: .zero
+        )
+        func position(focus: CGFloat, centered: CGFloat, slack: CGFloat) -> CGFloat {
+            guard slack > 0.0001 else { return 0 }
+            return clampedCropPosition((focus - centered) / slack)
+        }
+        return (
+            transfer.amount,
+            CGPoint(
+                x: position(focus: focus.midX, centered: centered.midX, slack: centered.minX - source.minX),
+                y: position(focus: focus.midY, centered: centered.midY, slack: centered.minY - source.minY)
+            )
+        )
+    }
+
     static func clampedCropAmount(_ amount: CGFloat) -> CGFloat {
         min(0.75, max(0, amount))
     }

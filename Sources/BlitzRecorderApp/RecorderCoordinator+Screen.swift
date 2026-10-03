@@ -160,10 +160,11 @@ extension RecorderCaptureRuntime {
             return []
         }
         screenThumbnailProvider.updateContent(content)
-        return ScreenSourceCatalog.options(
+        return ScreenSourceCatalog.options(.init(
             content: content,
-            recentBundleIdentifiers: screenSourcePickerRecents.bundleIdentifiers()
-        )
+            recentBundleIdentifiers: screenSourcePickerRecents.bundleIdentifiers(),
+            frontToBackWindowIDs: ScreenSourceCatalog.frontToBackWindowIDs()
+        ))
     }
 
     func screenSourceThumbnail(_ binding: ScreenSourceBinding) async -> NSImage? {

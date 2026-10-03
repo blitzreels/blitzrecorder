@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { hostingPool, transaction } from "./db";
+import { hostingPool, transaction, ensureListedColumn } from "./db";
 import {
   assertHostingEnabled, HostingError, PART_BYTES, POSTER_MAX_BYTES, UPLOAD_SECONDS, parseUploadInput,
   publicAsset, required, reservationBytes, type HostedAsset, type HostedFile, type HostingAccount,
@@ -174,9 +174,10 @@ export async function listAssets(account: HostingAccount) {
 export async function sharedAsset(slug: string): Promise<HostedAsset | null> {
   assertHostingEnabled();
   if (!/^[A-Za-z0-9_-]{24}$/.test(slug)) return null;
+  await ensureListedColumn();
   const result = await hostingPool().query<HostedAsset>(
     `SELECT assets.* FROM hosting_assets assets JOIN hosting_accounts accounts ON accounts.id = assets.account_id
-     WHERE assets.slug = $1 AND assets.status = 'ready' AND accounts.active_until > now()`, [slug]);
+     WHERE assets.slug = $1 AND assets.status = 'ready' AND assets.listed AND accounts.active_until > now()`, [slug]);
   return result.rows[0] ?? null;
 }
 

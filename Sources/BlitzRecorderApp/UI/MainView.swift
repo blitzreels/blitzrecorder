@@ -95,6 +95,7 @@ struct MainView: View {
                     }
 
                     SplitDividerOverlay(vm: vm)
+                    SideSplitDividerOverlay(vm: vm)
                     CropToolbarOverlay(vm: vm)
                     ShortFormSafeZoneOverlay(vm: vm)
 
@@ -165,6 +166,119 @@ enum ScreenSplitDividerGeometry {
     }
 }
 
+enum SideSplitDividerGeometry {
+    struct Drag {
+        let startWidth: Double
+        let translation: CGFloat
+        let canvasWidth: CGFloat
+        let cameraIsLeft: Bool
+        let layout: CaptureLayout
+    }
+
+    static func width(_ drag: Drag) -> Double {
+        guard drag.startWidth.isFinite, drag.translation.isFinite,
+              drag.canvasWidth.isFinite, drag.canvasWidth > 0 else {
+            return Double(SceneLayout.defaultSideBySideCameraWidth(for: drag.layout))
+        }
+        let delta = Double(drag.translation / drag.canvasWidth) * (drag.cameraIsLeft ? 1 : -1)
+        let clamped = Double(SceneLayout.clampedSideBySideCameraWidth(CGFloat(drag.startWidth + delta)))
+        let snapDistance = min(0.018, 6 / Double(drag.canvasWidth))
+        let portrait = Double(SceneLayout.portraitCameraWidth(for: drag.layout))
+        return [portrait, 0.5].first { abs($0 - clamped) <= snapDistance } ?? clamped
+    }
+}
+
+private struct SideSplitDividerOverlay: View {
+    @Bindable var vm: RecorderViewModel
+    @State private var dragOrigin: DragOrigin?
+    @State private var isHovering = false
+
+    private struct DragOrigin {
+        let width: Double
+        let canvasWidth: CGFloat
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            if vm.showsSideSplitControl, vm.canEditScene,
+               !vm.isScreenCropModeEnabled, !vm.isCameraCropModeEnabled,
+               !vm.previewCanvasFrame.isEmpty {
+                let canvas = vm.previewCanvasFrame
+                let dividerX = vm.sideSplitCameraIsLeft ? vm.sideSplitCameraWidth : 1 - vm.sideSplitCameraWidth
+                handle
+                    .frame(width: 28, height: max(0, canvas.height - 2))
+                    .contentShape(.rect)
+                    .gesture(DragGesture(minimumDistance: 2, coordinateSpace: .global)
+                        .onChanged { value in
+                            if dragOrigin == nil {
+                                dragOrigin = DragOrigin(width: vm.sideSplitCameraWidth, canvasWidth: canvas.width)
+                            }
+                            guard let dragOrigin else { return }
+                            vm.previewSideSplitCameraWidth(SideSplitDividerGeometry.width(.init(
+                                startWidth: dragOrigin.width,
+                                translation: value.translation.width,
+                                canvasWidth: dragOrigin.canvasWidth,
+                                cameraIsLeft: vm.sideSplitCameraIsLeft,
+                                layout: vm.settings.layout
+                            )))
+                        }
+                        .onEnded { _ in
+                            guard dragOrigin != nil else { return }
+                            vm.commitSideSplitPreview()
+                            dragOrigin = nil
+                        }
+                    )
+                    .onHover {
+                        isHovering = $0
+                        ($0 ? NSCursor.resizeLeftRight : NSCursor.arrow).set()
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Camera and screen divider")
+                    .accessibilityValue("\(Int((vm.sideSplitCameraWidth * 100).rounded())) percent camera")
+                    .accessibilityAdjustableAction { direction in
+                        switch direction {
+                        case .increment: vm.setSideSplitCameraWidth(vm.sideSplitCameraWidth + 0.05)
+                        case .decrement: vm.setSideSplitCameraWidth(vm.sideSplitCameraWidth - 0.05)
+                        @unknown default: break
+                        }
+                    }
+                    .help("Drag to share space between camera and screen")
+                    .position(
+                        x: canvas.minX + canvas.width * dividerX,
+                        y: proxy.size.height - canvas.midY
+                    )
+            }
+        }
+        .onChange(of: vm.selectedSceneID) { _, _ in cancelDrag() }
+        .onDisappear { cancelDrag() }
+    }
+
+    private var handle: some View {
+        ZStack {
+            Rectangle()
+                .fill(BlitzUI.mint.opacity(isHovering || dragOrigin != nil ? 0.8 : 0))
+                .frame(width: 1)
+            Capsule()
+                .fill(.black.opacity(0.7))
+                .frame(width: 18, height: 46)
+                .overlay {
+                    Capsule()
+                        .fill(isHovering || dragOrigin != nil ? BlitzUI.mint : BlitzUI.supportingText)
+                        .frame(width: 3, height: 24)
+                }
+        }
+    }
+
+    private func cancelDrag() {
+        dragOrigin = nil
+        vm.cancelSideSplitPreview()
+        if isHovering {
+            isHovering = false
+            NSCursor.arrow.set()
+        }
+    }
+}
+
 private struct SplitDividerOverlay: View {
     @Bindable var vm: RecorderViewModel
     @State private var dragOrigin: DragOrigin?
@@ -202,10 +316,6 @@ private struct SplitDividerOverlay: View {
                             dragOrigin = nil
                         }
                     )
-                    .position(
-                        x: canvas.midX,
-                        y: proxy.size.height - canvas.maxY + canvas.height * vm.screenSplitHeight
-                    )
                     .onHover {
                         isHovering = $0
                         ($0 ? NSCursor.resizeUpDown : NSCursor.arrow).set()
@@ -221,6 +331,10 @@ private struct SplitDividerOverlay: View {
                         }
                     }
                     .help("Drag to share space between screen and camera")
+                    .position(
+                        x: canvas.midX,
+                        y: proxy.size.height - canvas.maxY + canvas.height * vm.screenSplitHeight
+                    )
             }
         }
         .onChange(of: vm.selectedSceneID) { _, _ in cancelDrag() }

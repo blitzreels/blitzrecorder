@@ -13,7 +13,16 @@ struct SilenceRemovalSettings: Codable, Equatable, Sendable {
 
     static let standard = Self(intensity: 1, threshold: -42, automaticThreshold: true,
         minimumDuration: 0.5, paddingBefore: 0.3, paddingAfter: 0.3,
-        linkedPadding: true, minimumAudio: 0, customized: false)
+        linkedPadding: true, minimumAudio: defaultMinimumAudio(for: 1), customized: false)
+
+    static func defaultMinimumAudio(for intensity: Double) -> Double {
+        switch intensity {
+        case 1: 0.1
+        case 2: 0.2
+        case 3: 0.3
+        default: 0
+        }
+    }
 
     var sanitized: Self {
         var value = self

@@ -2,6 +2,28 @@ import AppKit
 import Foundation
 
 extension RecorderViewModel {
+    func restoreStudioPage(_ saved: StudioPagePreference.Saved) {
+        switch saved.page {
+        case .record:
+            studioMode = .record
+        case .projects:
+            studioMode = .projects
+        case .edit:
+            guard let entry = recentProjects.first(where: { $0.id == saved.projectID }) else {
+                studioMode = .projects
+                return
+            }
+            openProject(entry)
+        }
+    }
+
+    var savedStudioPage: StudioPagePreference.Saved {
+        StudioPagePreference.Saved(
+            page: .init(studioMode),
+            projectID: studioMode == .edit ? lastExportedProject?.id : nil
+        )
+    }
+
     func refreshRecentProjects() {
         recentProjects = TakeFileStore().loadProjectHistory(settings: settings).entries
         transcriptionController.syncProjects(recentProjects)

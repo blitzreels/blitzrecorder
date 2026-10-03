@@ -1,5 +1,33 @@
 import SwiftUI
 
+struct SilenceCutProposal {
+    struct Request {
+        let duration: Double
+        let baseCuts: [TimelineCut]
+        let transcriptCuts: [TimelineCut]
+        let saved: TimelineEdits
+        let suggestsPauses: Bool
+    }
+
+    let cuts: [TimelineCut]
+    let nonDialogueRanges: [EditorTimeRange]
+
+    init(_ request: Request) {
+        let restored = (request.baseCuts + request.saved.cuts).filter { !$0.isEnabled }.map {
+            SilenceOverride(id: $0.id, start: $0.start, end: $0.end, classification: .sound)
+        }
+        let suggestions = SilenceDetection.applyingOverrides(.init(
+            cuts: request.transcriptCuts, overrides: restored + request.saved.silenceOverrides
+        )).filter { $0.source == .automatic && $0.isEnabled }
+        let projection = EditorTimelineProjection(.init(duration: request.duration, cuts: request.saved.cuts))
+        let remaining = EditorTranscriptTimeline.remainingSilence(.init(cuts: suggestions, projection: projection))
+        nonDialogueRanges = remaining.map { .init(start: $0.start, end: $0.end) }
+        let proposedProjection = EditorTimelineProjection(.init(duration: request.duration, cuts: request.baseCuts))
+        let additions = EditorTranscriptTimeline.remainingSilence(.init(cuts: suggestions, projection: proposedProjection))
+        cuts = request.baseCuts + (request.suggestsPauses ? additions : [])
+    }
+}
+
 struct SilenceTimelineMetrics: Equatable {
     struct Request {
         let duration: Double

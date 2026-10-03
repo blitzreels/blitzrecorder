@@ -151,19 +151,36 @@ extension ProjectLibraryView {
     ) -> some View {
         let isOpening = openingProjectID == project.id
         return HStack(spacing: 8) {
-            BlitzGlassMenu(entries: projectMenuEntries(project), menuWidth: 220) {
+            ProjectAIPromptButton(context: .init(
+                projectId: project.id,
+                title: displayTitle(project),
+                recordedAt: project.recordedAt,
+                previewDurationSeconds: metadataByProjectID[project.id]?.durationSeconds,
+                previewQuality: metadataByProjectID[project.id]?.videoQuality?.label,
+                sources: metadataByProjectID[project.id]?.sourceRoles.sorted() ?? []
+            ))
+
+            Button {
+                showsProjectMenu.toggle()
+            } label: {
                 Image(systemName: "ellipsis")
                     .font(BlitzType.glyph(14))
-                    .foregroundStyle(BlitzUI.primaryText)
-                    .frame(width: 36, height: BlitzControlMetrics.height(.large))
             }
+            .blitzButton(.dock)
             .accessibilityLabel("More actions")
             .help("Rename, show in Finder, or move to Trash")
+            .popover(isPresented: $showsProjectMenu, arrowEdge: .bottom) {
+                BlitzMenuList(entries: projectMenuEntries(project), width: 220, maxHeight: 360) {
+                    showsProjectMenu = false
+                }
+                .preferredColorScheme(.dark)
+            }
 
             EditRecordingButton(configuration: .init(
                 title: "Edit recording",
                 isLoading: isOpening,
                 help: vm.state == .idle ? "Open this recording in the editor" : "Finish recording before editing a project",
+                placement: .page,
                 action: {
                     openingProjectID = project.id
                     Task {
@@ -173,7 +190,6 @@ extension ProjectLibraryView {
                     }
                 }
             ))
-            .controlSize(.large)
             .disabled(vm.state != .idle)
         }
         .disabled(vm.projectTrash.isWorking)

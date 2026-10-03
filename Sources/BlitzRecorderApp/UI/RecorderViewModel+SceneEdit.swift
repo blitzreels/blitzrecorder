@@ -89,16 +89,9 @@ extension RecorderViewModel {
     ) {
         switch activation {
         case .pickScreenThenApply:
-            Task { [self] in
-                do {
-                    try await coordinator.pickScreenSource()
-                    mutate()
-                    syncSettingsAfterSceneChange()
-                    detailMessage = RecorderStudioLabels.screenSelectedForSession
-                } catch {
-                    detailMessage = RecorderStudioLabels.screenPickerFailed(error)
-                }
-            }
+            mutate()
+            syncSettingsAfterSceneChange()
+            pickAndEnableScreenSource()
         case .apply:
             mutate()
             syncSettingsAfterSceneChange()
@@ -157,6 +150,11 @@ extension RecorderViewModel {
     func selectBackgroundLayer() {
         inspectorSelection = .canvas
         previewStage.isBackgroundLayerSelected = true
+    }
+
+    func selectLayoutInspector() {
+        inspectorSelection = .layout
+        previewStage.isBackgroundLayerSelected = false
     }
 
     func selectSource(_ source: CaptureSource) {

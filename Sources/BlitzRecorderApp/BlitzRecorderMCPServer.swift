@@ -139,6 +139,16 @@ final class BlitzRecorderMCPServer {
                 case "project_transcript":
                     let projectID = try Self.projectID(parameters.arguments)
                     return try await Self.result(projectService.transcript(.init(projectID: projectID)))
+                case "project_frame":
+                    let frame = try await projectService.frame(Self.frameRequest(parameters.arguments))
+                    let result = try Self.result(frame.metadata)
+                    return .init(
+                        content: result.content + [.image(
+                            data: frame.jpeg.base64EncodedString(), mimeType: "image/jpeg", annotations: nil, _meta: nil
+                        )],
+                        structuredContent: result.structuredContent,
+                        isError: false
+                    )
                 case "projects_export_as_is":
                     let request = try Self.exportStartRequest(parameters.arguments)
                     return try await Self.result(projectService.startExport(request))
@@ -281,6 +291,26 @@ final class BlitzRecorderMCPServer {
             )
         ),
         Tool(
+            name: "project_frame",
+            title: "Inspect a recorded video frame",
+            description: "Return a JPEG frame from a project's screen or camera track, without opening the app UI. "
+                + "timeSeconds uses the original project timeline, matching project_transcript before saved cuts. "
+                + "This is original source footage, not the edited composition. Use project_get to find available tracks.",
+            inputSchema: .object([
+                "type": "object",
+                "properties": .object([
+                    "projectId": .object(["type": "string", "description": "Project UUID from projects_list."]),
+                    "source": .object(["type": "string", "enum": ["screen", "camera"]]),
+                    "timeSeconds": .object(["type": "number", "minimum": 0]),
+                ]),
+                "required": ["projectId", "source", "timeSeconds"],
+                "additionalProperties": false,
+            ]),
+            annotations: .init(
+                readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false
+            )
+        ),
+        Tool(
             name: "projects_export_as_is",
             title: "Export projects as MP4",
             description: "Queue unchanged BlitzRecorder projects for sequential MP4 export.",
@@ -390,6 +420,22 @@ final class BlitzRecorderMCPServer {
 
     nonisolated private static func projectID(_ arguments: [String: Value]?) throws -> UUID {
         try uuid(.init(key: "projectId", arguments: arguments))
+    }
+
+    nonisolated private static func frameRequest(_ arguments: [String: Value]?) throws -> MCPProjectFrameRequest {
+        let projectID = try projectID(arguments)
+        guard let rawSource = arguments?["source"]?.stringValue,
+              let source = MCPProjectFrameSource(rawValue: rawSource) else {
+            throw MCPToolArgumentError.invalid("source must be screen or camera.")
+        }
+        let time: Double
+        switch arguments?["timeSeconds"] {
+        case .int(let value): time = Double(value)
+        case .double(let value): time = value
+        default: throw MCPProjectFrameError.invalidTime
+        }
+        guard time.isFinite, time >= 0 else { throw MCPProjectFrameError.invalidTime }
+        return .init(projectID: projectID, source: source, timeSeconds: time)
     }
 
     nonisolated private static func jobID(_ arguments: [String: Value]?) throws -> UUID {

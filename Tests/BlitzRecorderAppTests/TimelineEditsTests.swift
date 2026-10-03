@@ -130,10 +130,10 @@ final class TimelineEditsTests: XCTestCase {
         XCTAssertEqual(cuts[0].end, 1.7, accuracy: 0.001)
     }
 
-    func testShortAudioSpikesCanBeRemovedWithoutCuttingLongSpeech() {
+    func testShortQuietAudioSpikesCanBeRemovedWithoutCuttingLongSpeech() {
         let windows = (0..<200).map { index in
             SilenceWindow(start: Double(index) / 50, end: Double(index + 1) / 50,
-                decibels: (50..<150).contains(index) && !(95..<100).contains(index) ? -70 : -20)
+                decibels: (95..<100).contains(index) ? -34 : (50..<150).contains(index) ? -70 : -20)
         }
         let config = SilenceDetectionRequest(audioURL: URL(fileURLWithPath: "/unused"), takeDuration: 4,
             sourceOffset: 0, minimumSilence: 0.3, thresholdDB: -42, previousCuts: [],
@@ -246,5 +246,113 @@ final class TimelineEditsTests: XCTestCase {
         XCTAssertTrue(project.sources.contains { $0.role == "camera" && !$0.exists })
         XCTAssertEqual(project.sceneEvents.count, 1)
         XCTAssertEqual(project.portableSceneLayout.camera, .cameraPip)
+    }
+}
+
+final class NearbySilenceMergeTests: XCTestCase {
+    private struct Fixture {
+        var interruptionDB = -48.0
+        var interruptionDuration = 0.12
+        var minimumAudio = 0.2
+        var speechRanges: [RecordingTranscript.SpeechRange] = []
+        var previousCuts: [TimelineCut] = []
+        var overrides: [SilenceOverride] = []
+    }
+
+    private func cuts(_ fixture: Fixture) -> [TimelineCut] {
+        let windows = (0..<200).map { index in
+            let time = Double(index) / 50
+            let interruption = time >= 1.9 && time < 1.9 + fixture.interruptionDuration
+            let level = interruption ? fixture.interruptionDB : (1..<3).contains(time) ? -80.0 : -20.0
+            return SilenceWindow(start: time, end: Double(index + 1) / 50, decibels: level)
+        }
+        return SilenceDetection.cuts(.init(
+            windows: windows,
+            configuration: .init(
+                audioURL: URL(fileURLWithPath: "/unused"), takeDuration: 4, sourceOffset: 0,
+                minimumSilence: 0.15, thresholdDB: -60, previousCuts: fixture.previousCuts,
+                paddingBefore: 0.05, paddingAfter: 0.05, minimumAudio: fixture.minimumAudio,
+                overrides: fixture.overrides, speechRanges: fixture.speechRanges
+            )
+        ))
+    }
+
+    func testBriefQuietNoiseMergesAdjacentPauses() {
+        let detected = cuts(.init())
+        XCTAssertEqual(detected.count, 1)
+        XCTAssertEqual(detected.first?.start ?? 0, 1.05, accuracy: 0.001)
+        XCTAssertEqual(detected.first?.end ?? 0, 2.95, accuracy: 0.001)
+    }
+
+    func testLoudSoundAndLongerNoiseStaySeparate() {
+        XCTAssertEqual(cuts(.init(interruptionDB: -20)).count, 2)
+        XCTAssertEqual(cuts(.init(interruptionDuration: 0.4)).count, 2)
+    }
+
+    func testQuietRecognizedWordPreventsMerging() {
+        let detected = cuts(.init(speechRanges: [.init(startTime: 1.91, endTime: 2.01)]))
+        XCTAssertEqual(detected.count, 2)
+        let map = TimelineTimeMap(takeDuration: TimelineTimeMap.time(4), cuts: detected)
+        XCTAssertFalse(map.isRemoved(takeTime: 1.96))
+    }
+
+    func testZeroDisablesMerging() {
+        XCTAssertEqual(cuts(.init(minimumAudio: 0)).count, 2)
+    }
+
+    func testRestoredPauseDoesNotRestoreItsNeighborWhenMerging() {
+        let detected = cuts(.init(previousCuts: [
+            .init(start: 1.05, end: 1.85, kind: .silence, source: .automatic, isEnabled: false)
+        ]))
+        let map = TimelineTimeMap(takeDuration: TimelineTimeMap.time(4), cuts: detected)
+        XCTAssertFalse(map.isRemoved(takeTime: 1.5))
+        XCTAssertTrue(map.isRemoved(takeTime: 2.5))
+    }
+
+    func testMarkAsSoundProtectsTheInterruption() {
+        let detected = cuts(.init(overrides: [
+            .init(id: UUID(), start: 1.85, end: 2.1, classification: .sound)
+        ]))
+        let map = TimelineTimeMap(takeDuration: TimelineTimeMap.time(4), cuts: detected)
+        XCTAssertFalse(map.isRemoved(takeTime: 1.96))
+        XCTAssertTrue(map.isRemoved(takeTime: 1.5))
+        XCTAssertTrue(map.isRemoved(takeTime: 2.5))
+    }
+
+    func testDefaultSettingsEnableConservativeMerging() {
+        XCTAssertGreaterThan(SilenceRemovalSettings.standard.minimumAudio, 0)
+        XCTAssertLessThanOrEqual(SilenceRemovalSettings.standard.minimumAudio, 0.2)
+        XCTAssertEqual(SilenceRemovalSettings.defaultMinimumAudio(for: 1), 0.1)
+        XCTAssertEqual(SilenceRemovalSettings.defaultMinimumAudio(for: 2), 0.2)
+        XCTAssertEqual(SilenceRemovalSettings.defaultMinimumAudio(for: 3), 0.3)
+    }
+
+    func testSavedZeroAndCustomMergeDurationSurviveReopening() throws {
+        for interval in [0.0, 0.25] {
+            var settings = SilenceRemovalSettings.standard
+            settings.minimumAudio = interval
+            settings.customized = true
+            let saved = try JSONEncoder().encode(settings)
+            let reloaded = try JSONDecoder().decode(SilenceRemovalSettings.self, from: saved).sanitized
+            XCTAssertEqual(reloaded.minimumAudio, interval)
+        }
+    }
+
+    func testSeveralQuietInterruptionsBecomeOnePause() {
+        let windows = (0..<200).map { index in
+            let noise = (75..<80).contains(index) || (115..<125).contains(index)
+            return SilenceWindow(start: Double(index) / 50, end: Double(index + 1) / 50,
+                decibels: noise ? -48 : (50..<150).contains(index) ? -80 : -20)
+        }
+        let detected = SilenceDetection.cuts(.init(
+            windows: windows, configuration: .init(
+                audioURL: URL(fileURLWithPath: "/unused"), takeDuration: 4, sourceOffset: 0,
+                minimumSilence: 0.15, thresholdDB: -60, previousCuts: [],
+                paddingBefore: 0.05, paddingAfter: 0.05, minimumAudio: 0.3
+            )
+        ))
+        XCTAssertEqual(detected.count, 1)
+        XCTAssertEqual(detected.first?.start ?? 0, 1.05, accuracy: 0.001)
+        XCTAssertEqual(detected.first?.end ?? 0, 2.95, accuracy: 0.001)
     }
 }

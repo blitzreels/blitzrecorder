@@ -51,7 +51,7 @@ struct CameraImageControls: View {
             Image(systemName: "crop")
                 .font(BlitzType.glyph(11))
                 .foregroundStyle(mint)
-            Text("Cropping on canvas")
+            Text("Drag on the preview to crop")
                 .font(BlitzType.captionEmphasis)
                 .foregroundStyle(BlitzUI.supportingText)
             Spacer(minLength: 0)
@@ -64,7 +64,7 @@ struct CameraImageControls: View {
     private var cropActions: some View {
         HStack(spacing: 8) {
             Button(action: configuration.onBeginCrop) {
-                Label("Reposition", systemImage: "hand.draw.fill")
+                Label("Crop on preview", systemImage: "crop")
                     .frame(maxWidth: .infinity)
             }
             .blitzButton(.secondary)

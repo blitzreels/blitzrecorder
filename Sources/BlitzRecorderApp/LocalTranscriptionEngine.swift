@@ -77,7 +77,7 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
 
     private var asrManager: AsrManager?
     private var whisperManager: WhisperKit?
-    private var whisperModelFolder: URL?
+    private var loadedWhisperModel: TranscriptionSpeechModel?
     private var microphoneDiarizers: [TranscriptionSpeakerCount: OfflineDiarizerManager] = [:]
     private var systemDiarizer: OfflineDiarizerManager?
     private let modelStore = LocalTranscriptionModelStore()
@@ -86,6 +86,7 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
 
     func downloadModels(_ request: DownloadRequest) async throws {
         try modelStore.createRootDirectory()
+        var downloadedWhisper: URL?
         switch request.model {
         case .parakeet:
             let asrModels = try await AsrModels.downloadAndLoad(
@@ -99,25 +100,30 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
                 }
             )
             asrManager = AsrManager(config: Self.recognitionConfiguration, models: asrModels)
-        case .whisperMedium:
+        case .whisperMedium, .whisperLargeTurbo, .whisperLarge:
+            guard let variant = request.model.whisperVariant else { throw LocalTranscriptionError.modelNotInstalled }
+            let base = modelStore.whisperDownloadBase(request.model)
+            try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
             let folder = try await WhisperKit.download(
-                variant: "openai_whisper-medium",
-                downloadBase: modelStore.whisperDirectory,
+                variant: variant,
+                downloadBase: base,
                 progressCallback: { progress in
                     request.onUpdate(TranscriptionModelDownloadUpdate(
                         fractionCompleted: progress.fractionCompleted * 0.65,
-                        phase: "Downloading Whisper"
+                        phase: "Downloading \(request.model.title)"
                     ))
                 }
             )
-            request.onUpdate(.init(fractionCompleted: 0.65, phase: "Preparing Whisper"))
+            request.onUpdate(.init(fractionCompleted: 0.65, phase: "Preparing \(request.model.title)"))
+            if loadedWhisperModel != request.model { whisperManager = nil }
             whisperManager = try await WhisperKit(.init(
                 modelFolder: folder.path,
-                tokenizerFolder: modelStore.whisperDirectory,
+                tokenizerFolder: folder,
                 load: true,
                 download: false
             ))
-            whisperModelFolder = folder
+            loadedWhisperModel = request.model
+            downloadedWhisper = folder
         }
 
         let diarizerModels = try await OfflineDiarizerModels.load(
@@ -145,8 +151,8 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
 
         if request.model == .parakeet {
             try modelStore.markInstalled()
-        } else if let whisperModelFolder {
-            try modelStore.markWhisperInstalled(at: whisperModelFolder)
+        } else if let downloadedWhisper {
+            try modelStore.markWhisperInstalled(request.model, at: downloadedWhisper)
         }
         request.onUpdate(TranscriptionModelDownloadUpdate(
             fractionCompleted: 1,
@@ -184,7 +190,7 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
                 let result = try await asr.transcribe(track.audioURL, decoderState: &decoderState)
                 trackWords = Self.words(result.tokenTimings ?? [])
                 confidence = result.confidence
-            case .whisperMedium:
+            case .whisperMedium, .whisperLargeTurbo, .whisperLarge:
                 guard let whisper = managers.whisper else { throw LocalTranscriptionError.modelNotInstalled }
                 let results = try await whisper.transcribe(
                     audioPath: track.audioURL.path,
@@ -239,7 +245,7 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
     }
 
     func reassignSpeakers(_ request: SpeakerFixRequest) async throws -> RecordingTranscript {
-        guard modelStore.isInstalled(.parakeet) || modelStore.isInstalled(.whisperMedium) else {
+        guard TranscriptionSpeechModel.allCases.contains(where: { modelStore.isInstalled($0) }) else {
             throw LocalTranscriptionError.modelNotInstalled
         }
         request.onUpdate(TranscriptionEngineUpdate(stage: .preparingAudio))
@@ -305,10 +311,14 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
     func removeModels(_ model: TranscriptionSpeechModel) async throws {
         switch model {
         case .parakeet: asrManager = nil
-        case .whisperMedium: whisperManager = nil
+        case .whisperMedium, .whisperLargeTurbo, .whisperLarge:
+            if loadedWhisperModel == model {
+                whisperManager = nil
+                loadedWhisperModel = nil
+            }
         }
         try modelStore.removeModels(model)
-        if !modelStore.isInstalled(.parakeet) && !modelStore.isInstalled(.whisperMedium) {
+        if !TranscriptionSpeechModel.allCases.contains(where: { modelStore.isInstalled($0) }) {
             microphoneDiarizers = [:]
             systemDiarizer = nil
             try modelStore.removeDiarizationModels()
@@ -328,16 +338,18 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
             let asrModels = try await AsrModels.load(from: modelStore.asrDirectory, version: .v3)
             asrManager = AsrManager(config: Self.recognitionConfiguration, models: asrModels)
         }
-        if request.model == .whisperMedium && whisperManager == nil {
-            guard let folder = modelStore.whisperModelFolder else {
+        if request.model.whisperVariant != nil && loadedWhisperModel != request.model {
+            whisperManager = nil
+            guard let folder = modelStore.whisperModelFolder(request.model) else {
                 throw LocalTranscriptionError.modelNotInstalled
             }
             whisperManager = try await WhisperKit(.init(
                 modelFolder: folder.path,
-                tokenizerFolder: modelStore.whisperDirectory,
+                tokenizerFolder: folder,
                 load: true,
                 download: false
             ))
+            loadedWhisperModel = request.model
         }
         let diarizers = try await loadedDiarizers(request.speakerCount)
         return (asrManager, whisperManager, diarizers.microphone, diarizers.system)
@@ -519,12 +531,24 @@ struct LocalTranscriptionModelStore: LocalTranscriptionModelStoring {
         rootDirectory.appendingPathComponent("whisper-medium.txt")
     }
 
-    var whisperModelFolder: URL? {
-        guard let path = try? String(contentsOf: whisperMarkerURL, encoding: .utf8) else {
-            return nil
+    func whisperDownloadBase(_ model: TranscriptionSpeechModel) -> URL {
+        whisperDirectory.appendingPathComponent(model.rawValue, isDirectory: true)
+    }
+
+    private func whisperMarkerURL(_ model: TranscriptionSpeechModel) -> URL {
+        rootDirectory.appendingPathComponent("whisper-\(model.rawValue).txt")
+    }
+
+    func whisperModelFolder(_ model: TranscriptionSpeechModel) -> URL? {
+        var markers = [whisperMarkerURL(model)]
+        if model == .whisperMedium { markers.append(whisperMarkerURL) }
+        for marker in markers {
+            guard let path = try? String(contentsOf: marker, encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty else { continue }
+            let folder = URL(fileURLWithPath: path)
+            if FileManager.default.fileExists(atPath: folder.path) { return folder }
         }
-        let folder = URL(fileURLWithPath: path)
-        return FileManager.default.fileExists(atPath: folder.path) ? folder : nil
+        return nil
     }
 
     var markerURL: URL {
@@ -537,14 +561,11 @@ struct LocalTranscriptionModelStore: LocalTranscriptionModelStoring {
     }
 
     func isInstalled(_ model: TranscriptionSpeechModel) -> Bool {
-        switch model {
-        case .parakeet: isInstalled
-        case .whisperMedium: whisperModelFolder != nil
-        }
+        model.whisperVariant == nil ? isInstalled : whisperModelFolder(model) != nil
     }
 
     func installedSize(_ model: TranscriptionSpeechModel) -> Int64 {
-        let directory = model == .parakeet ? parakeetModelDirectory : whisperDirectory
+        let directory = model.whisperVariant == nil ? parakeetModelDirectory : (whisperModelFolder(model) ?? whisperDownloadBase(model))
         guard let enumerator = FileManager.default.enumerator(
             at: directory,
             includingPropertiesForKeys: [.fileSizeKey],
@@ -582,9 +603,12 @@ struct LocalTranscriptionModelStore: LocalTranscriptionModelStoring {
         try encoder.encode(marker).write(to: markerURL, options: .atomic)
     }
 
-    func markWhisperInstalled(at folder: URL) throws {
+    func markWhisperInstalled(_ model: TranscriptionSpeechModel, at folder: URL) throws {
         try createRootDirectory()
-        try folder.path.write(to: whisperMarkerURL, atomically: true, encoding: .utf8)
+        try folder.path.write(to: whisperMarkerURL(model), atomically: true, encoding: .utf8)
+        if model == .whisperMedium {
+            try folder.path.write(to: whisperMarkerURL, atomically: true, encoding: .utf8)
+        }
     }
 
     func removeModels(_ model: TranscriptionSpeechModel) throws {
@@ -596,12 +620,14 @@ struct LocalTranscriptionModelStore: LocalTranscriptionModelStoring {
             if FileManager.default.fileExists(atPath: markerURL.path) {
                 try FileManager.default.removeItem(at: markerURL)
             }
-        case .whisperMedium:
-            if FileManager.default.fileExists(atPath: whisperDirectory.path) {
-                try FileManager.default.removeItem(at: whisperDirectory)
+        case .whisperMedium, .whisperLargeTurbo, .whisperLarge:
+            if let folder = whisperModelFolder(model), FileManager.default.fileExists(atPath: folder.path) {
+                try FileManager.default.removeItem(at: folder)
             }
-            if FileManager.default.fileExists(atPath: whisperMarkerURL.path) {
-                try FileManager.default.removeItem(at: whisperMarkerURL)
+            for marker in [whisperMarkerURL(model), model == .whisperMedium ? whisperMarkerURL : nil].compactMap({ $0 }) {
+                if FileManager.default.fileExists(atPath: marker.path) {
+                    try FileManager.default.removeItem(at: marker)
+                }
             }
         }
     }

@@ -5,10 +5,17 @@ enum BlitzButtonEmphasis {
     case emphasized
     case secondary
     case quiet
+    case record
+    case dock
+    case prominent
+
+    var isDockControl: Bool { self == .record || self == .dock || self == .prominent }
 }
 
 enum BlitzControlMetrics {
     static let radius: CGFloat = 8
+    static let dockHeight: CGFloat = 44
+    static let dockRadius: CGFloat = BlitzUI.cardRadius
     static let rowHeight: CGFloat = 38
     static let toolbarHeight: CGFloat = 38
     static let detailedRowHeight: CGFloat = 64
@@ -54,24 +61,28 @@ struct BlitzButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(BlitzType.control(BlitzControlMetrics.fontSize(controlSize)))
+            .font(emphasis.isDockControl ? BlitzType.section : BlitzType.control(BlitzControlMetrics.fontSize(controlSize)))
             .symbolRenderingMode(.monochrome)
             .symbolVariant(.none)
-            .padding(.horizontal, BlitzControlMetrics.horizontalPadding(controlSize))
+            .padding(.horizontal, emphasis.isDockControl ? 18 : BlitzControlMetrics.horizontalPadding(controlSize))
             .padding(.vertical, 4)
-            .frame(minHeight: BlitzControlMetrics.height(controlSize))
+            .frame(minHeight: emphasis.isDockControl ? BlitzControlMetrics.dockHeight : BlitzControlMetrics.height(controlSize))
             .foregroundStyle(foregroundColor(configuration.role))
-            .background(fill, in: .rect(cornerRadius: BlitzControlMetrics.radius))
+            .background(fill, in: .rect(cornerRadius: radius, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: BlitzControlMetrics.radius)
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .strokeBorder(emphasis == .secondary ? BlitzUI.panelStroke : .clear, lineWidth: 1)
                     .allowsHitTesting(false)
             }
-            .blitzFocusRing(cornerRadius: BlitzControlMetrics.radius)
+            .blitzFocusRing(cornerRadius: radius)
             .opacity(isEnabled ? (configuration.isPressed ? 0.76 : 1) : 0.4)
-            .contentShape(.rect(cornerRadius: BlitzControlMetrics.radius))
+            .contentShape(.rect(cornerRadius: radius, style: .continuous))
             .onHover { isHovering = $0 }
             .pointingHandCursor()
+    }
+
+    private var radius: CGFloat {
+        emphasis.isDockControl ? BlitzControlMetrics.dockRadius : BlitzControlMetrics.radius
     }
 
     private func foregroundColor(_ role: ButtonRole?) -> Color {
@@ -80,6 +91,9 @@ struct BlitzButtonStyle: ButtonStyle {
         case .accent, .emphasized: return .black.opacity(0.88)
         case .secondary: return BlitzUI.primaryText
         case .quiet: return isHovering && isEnabled ? BlitzUI.primaryText : BlitzUI.secondaryText
+        case .record: return .white
+        case .dock: return BlitzUI.primaryText
+        case .prominent: return .black.opacity(0.88)
         }
     }
 
@@ -90,6 +104,9 @@ struct BlitzButtonStyle: ButtonStyle {
         case .emphasized: return hovered ? .white : BlitzUI.primaryText
         case .secondary: return hovered ? BlitzUI.hoverFill : BlitzUI.controlFill
         case .quiet: return hovered ? BlitzUI.quietFill : .clear
+        case .record: return BlitzUI.recordRed.opacity(hovered ? 1 : 0.9)
+        case .dock: return hovered ? BlitzUI.strongFill : BlitzUI.selectedFill
+        case .prominent: return hovered ? BlitzUI.mint.opacity(0.9) : BlitzUI.mint
         }
     }
 }

@@ -146,95 +146,129 @@ private struct DeviceCard: View {
     }
     private var isEnabled: Bool { vm.isSourceConfigured(source) }
     private var canPick: Bool { isEnabled && picker?.enabled == true }
+    private var isPickerPresented: Binding<Bool> {
+        source == .screen ? $vm.showsScreenSourcePicker : $showsPicker
+    }
 
     var body: some View {
-        HStack(spacing: 6) {
-            Button {
-                vm.selectSource(source)
-                if canPick { showsPicker = true }
-            } label: {
-                HStack(spacing: 10) {
-                    BlitzSymbol(configuration: .init(name: source.symbolName, size: 18))
-                        .symbolVariant(isSelected && isEnabled ? .fill : .none)
-                        .foregroundStyle(isSelected && isEnabled ? BlitzUI.mint : BlitzUI.secondaryText)
-                        .frame(width: 24, height: 28)
-
-                    VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Button {
+                    vm.selectSource(source)
+                } label: {
+                    HStack(spacing: 8) {
+                        BlitzSymbol(configuration: .init(name: source.symbolName, size: 15))
+                            .symbolVariant(isSelected && isEnabled ? .fill : .none)
+                            .foregroundStyle(isSelected && isEnabled ? BlitzUI.mint : BlitzUI.secondaryText)
+                            .frame(width: 20)
                         Text(title)
                             .font(BlitzType.label)
-                            .foregroundStyle(BlitzUI.primaryText)
+                            .foregroundStyle(isEnabled ? BlitzUI.primaryText : BlitzUI.secondaryText)
                             .lineLimit(1)
-                        HStack(spacing: 4) {
-                            Text(subtitleText)
-                                .font(BlitzType.caption)
-                                .foregroundStyle(subtitleColor)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                            if canPick {
-                                Image(systemName: "chevron.down")
-                                    .font(BlitzType.glyph(8))
-                                    .foregroundStyle(BlitzUI.secondaryText)
-                            }
-                        }
-                        if let levels {
-                            BlitzLevelMeter(levels: levels, active: status.tone == .active)
-                                .frame(height: 10)
-                                .padding(.top, 2)
-                                .accessibilityHidden(true)
-                        }
+                        Spacer(minLength: 0)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(height: 22)
+                    .contentShape(.rect)
                 }
-                .padding(.leading, 8)
-                .padding(.vertical, 8)
-                .contentShape(.rect(cornerRadius: BlitzUI.controlRadius))
-            }
-            .buttonStyle(.plain)
-            .disabled(!isEnabled)
-            .accessibilityLabel("\(title), \(subtitle)")
-            .accessibilityValue(status.label)
-            .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-            .help(canPick ? "Choose a different \(title.lowercased())" : "\(title): \(status.label)")
-            .pointingHandCursor()
-            .popover(isPresented: $showsPicker, arrowEdge: .trailing) {
-                if let picker {
-                    BlitzSourcePickerPopover(model: picker) { showsPicker = false }
-                        .preferredColorScheme(.dark)
-                }
+                .buttonStyle(.plain)
+                .disabled(!isEnabled)
+                .accessibilityLabel("\(title), \(subtitle)")
+                .accessibilityValue(status.label)
+                .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+                .help("\(title): \(status.label)")
+
+                Toggle("Record \(title)", isOn: Binding(
+                    get: { isEnabled },
+                    set: { _ in vm.toggleSource(source) }
+                ))
+                .toggleStyle(.blitzCompactSwitch)
+                .tint(BlitzUI.mint)
+                .disabled(vm.state != .idle)
+                .help(isEnabled ? "Stop recording \(title.lowercased())" : "Record \(title.lowercased())")
             }
 
-            Toggle("Record \(title)", isOn: Binding(
-                get: { isEnabled },
-                set: { _ in vm.toggleSource(source) }
-            ))
-            .toggleStyle(.blitzSwitchOnly)
-            .disabled(vm.state != .idle)
-            .tint(BlitzUI.mint)
-            .help(isEnabled ? "Stop recording \(title.lowercased())" : "Record \(title.lowercased())")
+            if isEnabled {
+                VStack(alignment: .leading, spacing: 6) {
+                    if canPick {
+                        pickerField
+                    } else {
+                        Text(subtitle)
+                            .font(BlitzType.caption)
+                            .foregroundStyle(BlitzUI.secondaryText)
+                            .lineLimit(1)
+                    }
+                    if let note {
+                        Text(note.text)
+                            .font(BlitzType.caption)
+                            .foregroundStyle(note.isWarning ? BlitzUI.warning : BlitzUI.tertiaryText)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let levels {
+                        BlitzLevelMeter(levels: levels, active: status.tone == .active)
+                            .frame(height: 8)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .padding(.leading, 28)
+            }
         }
-        .padding(.trailing, 8)
-        .frame(minHeight: 52)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             isSelected && isEnabled ? BlitzUI.selectedFill : (isHovering ? BlitzUI.quietFill : .clear),
             in: .rect(cornerRadius: BlitzUI.controlRadius)
         )
-        .opacity(isEnabled ? 1 : 0.55)
         .onHover { isHovering = $0 }
-        .onChange(of: canPick) { if !canPick { showsPicker = false } }
+        .onChange(of: canPick) { if !canPick { isPickerPresented.wrappedValue = false } }
     }
 
-    private var subtitleText: String {
-        guard isEnabled else { return "Off" }
-        if status.tone == .warning { return status.label }
-        if source == .screen || source == .camera, !vm.isSourceVisible(source) {
-            return "Hidden in this scene"
+    private var pickerField: some View {
+        Button {
+            vm.selectSource(source)
+            isPickerPresented.wrappedValue = true
+        } label: {
+            HStack(spacing: 6) {
+                if let icon = picker?.icon {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 14, height: 14)
+                }
+                Text(subtitle)
+                    .font(BlitzType.caption)
+                    .foregroundStyle(BlitzUI.supportingText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(BlitzType.glyph(9))
+                    .foregroundStyle(BlitzUI.secondaryText)
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 24)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        return subtitle
+        .buttonStyle(BlitzMenuTriggerStyle(isPresented: isPickerPresented.wrappedValue))
+        .accessibilityLabel("Choose \(title.lowercased())")
+        .accessibilityValue(subtitle)
+        .help(subtitle)
+        .popover(isPresented: isPickerPresented, arrowEdge: .trailing) {
+            if let picker {
+                BlitzSourcePickerPopover(model: picker) { isPickerPresented.wrappedValue = false }
+                    .preferredColorScheme(.dark)
+            }
+        }
     }
 
-    private var subtitleColor: Color {
-        status.tone == .warning && isEnabled ? BlitzUI.warning : BlitzUI.secondaryText
+    private var note: (text: String, isWarning: Bool)? {
+        if status.tone == .warning, status.label != subtitle { return (status.label, true) }
+        if source == .screen || source == .camera, !vm.isSourceVisible(source) {
+            return ("Hidden in this scene", false)
+        }
+        return nil
     }
 }
 

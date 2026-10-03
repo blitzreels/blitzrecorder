@@ -6,71 +6,90 @@ struct SceneLibrary: Codable, Equatable {
     var selectedSceneIDsByLayout: [CaptureLayout: UUID]
 
     static func defaultLibrary(currentSettings: RecordingSettings? = nil) -> SceneLibrary {
-        var library = SceneLibrary(
-            scenesByLayout: [
-                .vertical: defaultScenes(for: .vertical),
-                .horizontal: defaultScenes(for: .horizontal),
-                .square: defaultScenes(for: .square)
-            ],
-            selectedSceneIDsByLayout: [:]
-        )
-
-        for layout in CaptureLayout.allCases {
-            if let firstSceneID = library.scenesByLayout[layout]?.first?.id {
-                library.selectedSceneIDsByLayout[layout] = firstSceneID
-            }
-        }
-
-        if let currentSettings {
-            let layout = currentSettings.layout
-            var scenes = library.scenesByLayout[layout] ?? []
-            let currentScene = RecordingSceneDefinition(
-                id: scenes.first?.id ?? UUID(),
-                name: RecordingSceneDefinition.defaultName(for: currentSettings),
-                layout: layout,
-                snapshot: RecordingSceneSnapshot(settings: currentSettings)
-            )
-            if scenes.isEmpty {
-                scenes.append(currentScene)
-            } else {
-                scenes[0] = currentScene
-            }
-            library.scenesByLayout[layout] = scenes
-            library.selectedSceneIDsByLayout[layout] = currentScene.id
-        }
-
+        var library = SceneLibrary(scenesByLayout: [:], selectedSceneIDsByLayout: [:])
+        library.canonicalize()
+        guard let currentSettings,
+              var scenes = library.scenesByLayout[currentSettings.layout],
+              !scenes.isEmpty else { return library }
+        let index = scenes.firstIndex { $0.snapshot.selectedScenePreset == currentSettings.selectedScenePreset } ?? 0
+        var snapshot = RecordingSceneSnapshot(settings: currentSettings)
+        snapshot.enabledVideoSources = scenes[index].snapshot.enabledVideoSources
+        snapshot.hiddenVideoSources = scenes[index].snapshot.hiddenVideoSources
+        snapshot.selectedScenePreset = scenes[index].snapshot.selectedScenePreset
+        scenes[index].snapshot = snapshot
+        library.scenesByLayout[currentSettings.layout] = scenes
+        library.selectedSceneIDsByLayout[currentSettings.layout] = scenes[index].id
         return library
     }
 
-    mutating func ensureScenes(for layout: CaptureLayout) {
-        if scenesByLayout[layout]?.isEmpty != false {
-            scenesByLayout[layout] = Self.defaultScenes(for: layout)
+    static func presets(for layout: CaptureLayout) -> [ScenePreset] {
+        switch layout {
+        case .vertical:
+            return [.screenTop50, .cameraInset, .screenFullscreen, .webcamFullscreen]
+        case .horizontal, .square:
+            return [.webcamLeft, .cameraInset, .screenFullscreen, .webcamFullscreen]
         }
-        if selectedScene(layout: layout) == nil,
-           let firstSceneID = scenesByLayout[layout]?.first?.id {
-            selectedSceneIDsByLayout[layout] = firstSceneID
+    }
+
+    static func name(for preset: ScenePreset) -> String {
+        switch preset {
+        case .webcamLeft, .cameraRight: return "Screen + Camera"
+        case .cameraInset: return "Camera Inset"
+        case .screenTop50: return "Screen + Camera"
+        case .screenFullscreen: return "Screen"
+        case .webcamFullscreen: return "Camera"
+        default: return preset.rawValue
         }
     }
 
     @discardableResult
-    mutating func migrateCanonicalCameraNames() -> Bool {
-        let replacements = [
-            "Screen + Cam": "Screen + Camera",
-            "Cam Only": "Camera Only",
-            "Cam Corner": "Camera Inset",
-            "Cam Left": "Camera Left"
-        ]
-        var changed = false
+    mutating func canonicalize() -> Bool {
+        let original = self
         for layout in CaptureLayout.allCases {
-            guard var scenes = scenesByLayout[layout] else { continue }
-            for index in scenes.indices {
-                guard let replacement = replacements[scenes[index].name] else { continue }
-                scenes[index].name = replacement
-                changed = true
+            let existing = scenes(for: layout).map(Self.migratingCameraRight)
+            let selectedPreset = selectedScene(layout: layout)
+                .map(Self.migratingCameraRight)?.snapshot.selectedScenePreset
+            let scenes = Self.presets(for: layout).map { preset -> RecordingSceneDefinition in
+                let fresh = Self.makeScene(.init(layout: layout, preset: preset))
+                let matches = existing.filter { $0.snapshot.selectedScenePreset == preset }
+                let selectedMatch = matches.first { $0.id == selectedSceneIDsByLayout[layout] }
+                guard let match = selectedMatch ?? matches.first else {
+                    return fresh
+                }
+                var snapshot = match.snapshot
+                snapshot.enabledVideoSources = fresh.snapshot.enabledVideoSources
+                snapshot.hiddenVideoSources = fresh.snapshot.hiddenVideoSources
+                snapshot.sceneLayout = Self.migratingLegacySideBySideWidth(snapshot.sceneLayout, layout: layout)
+                return RecordingSceneDefinition(
+                    id: match.id,
+                    name: Self.name(for: preset),
+                    layout: layout,
+                    snapshot: snapshot
+                )
             }
             scenesByLayout[layout] = scenes
+            selectedSceneIDsByLayout[layout] = (scenes.first { $0.snapshot.selectedScenePreset == selectedPreset }
+                ?? scenes.first)?.id
         }
-        return changed
+        return self != original
+    }
+
+    private static func migratingLegacySideBySideWidth(_ sceneLayout: SceneLayout, layout: CaptureLayout) -> SceneLayout {
+        guard layout != .vertical,
+              let side = sceneLayout.cameraSide,
+              let width = sceneLayout.sideBySideCameraWidth,
+              [1.0 / 3.0, 0.4].contains(where: { abs($0 - width) < 0.002 }) else { return sceneLayout }
+        return SceneLayout.sideBySideLayout(.init(
+            cameraWidth: SceneLayout.defaultSideBySideCameraWidth(for: layout),
+            cameraSide: side
+        ))
+    }
+
+    private static func migratingCameraRight(_ scene: RecordingSceneDefinition) -> RecordingSceneDefinition {
+        guard scene.snapshot.selectedScenePreset == .cameraRight else { return scene }
+        var scene = scene
+        scene.snapshot.selectedScenePreset = .webcamLeft
+        return scene
     }
 
     func scenes(for layout: CaptureLayout) -> [RecordingSceneDefinition] {
@@ -96,170 +115,39 @@ struct SceneLibrary: Codable, Equatable {
     }
 
     mutating func updateSelectedScene(layout: CaptureLayout, snapshot: RecordingSceneSnapshot) {
-        ensureScenes(for: layout)
         guard let selectedID = selectedSceneIDsByLayout[layout],
               var scenes = scenesByLayout[layout],
               let index = scenes.firstIndex(where: { $0.id == selectedID }) else {
             return
         }
+        var snapshot = snapshot
+        snapshot.enabledVideoSources = scenes[index].snapshot.enabledVideoSources
+        snapshot.hiddenVideoSources = scenes[index].snapshot.hiddenVideoSources
+        snapshot.selectedScenePreset = scenes[index].snapshot.selectedScenePreset
         scenes[index].snapshot = snapshot
         scenesByLayout[layout] = scenes
     }
 
-    @discardableResult
-    mutating func createScene(
-        layout: CaptureLayout,
-        name: String,
-        snapshot: RecordingSceneSnapshot
-    ) -> RecordingSceneDefinition {
-        ensureScenes(for: layout)
-        let scene = RecordingSceneDefinition(
-            name: uniqueSceneName(name, layout: layout),
-            layout: layout,
-            snapshot: snapshot
-        )
-        scenesByLayout[layout, default: []].append(scene)
-        selectedSceneIDsByLayout[layout] = scene.id
-        return scene
+    private struct DefaultSceneRequest {
+        let layout: CaptureLayout
+        let preset: ScenePreset
     }
 
-    @discardableResult
-    mutating func duplicateScene(id: UUID, layout: CaptureLayout) -> RecordingSceneDefinition? {
-        ensureScenes(for: layout)
-        guard var scenes = scenesByLayout[layout],
-              let index = scenes.firstIndex(where: { $0.id == id }) else {
-            return nil
-        }
-        let original = scenes[index]
-        let duplicate = RecordingSceneDefinition(
-            name: uniqueSceneName("\(original.name) Copy", layout: layout),
-            layout: layout,
-            snapshot: original.snapshot
-        )
-        scenes.insert(duplicate, at: min(index + 1, scenes.count))
-        scenesByLayout[layout] = scenes
-        selectedSceneIDsByLayout[layout] = duplicate.id
-        return duplicate
-    }
-
-    @discardableResult
-    mutating func renameScene(id: UUID, layout: CaptureLayout, name: String) -> Bool {
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty,
-              var scenes = scenesByLayout[layout],
-              let index = scenes.firstIndex(where: { $0.id == id }) else {
-            return false
-        }
-        scenes[index].name = uniqueSceneName(trimmedName, layout: layout, ignoring: id)
-        scenesByLayout[layout] = scenes
-        return true
-    }
-
-    @discardableResult
-    mutating func deleteScene(id: UUID, layout: CaptureLayout) -> Bool {
-        ensureScenes(for: layout)
-        guard var scenes = scenesByLayout[layout],
-              scenes.count > 1,
-              let index = scenes.firstIndex(where: { $0.id == id }) else {
-            return false
-        }
-        scenes.remove(at: index)
-        scenesByLayout[layout] = scenes
-        if selectedSceneIDsByLayout[layout] == id {
-            let nextIndex = min(index, scenes.count - 1)
-            selectedSceneIDsByLayout[layout] = scenes[nextIndex].id
-        }
-        return true
-    }
-
-    @discardableResult
-    mutating func moveScene(id: UUID, layout: CaptureLayout, to targetIndex: Int) -> Bool {
-        ensureScenes(for: layout)
-        guard var scenes = scenesByLayout[layout],
-              let sourceIndex = scenes.firstIndex(where: { $0.id == id }) else {
-            return false
-        }
-        let scene = scenes.remove(at: sourceIndex)
-        let clampedIndex = min(max(targetIndex, 0), scenes.count)
-        scenes.insert(scene, at: clampedIndex)
-        scenesByLayout[layout] = scenes
-        return true
-    }
-
-    @discardableResult
-    mutating func resetScene(id: UUID, layout: CaptureLayout, snapshot: RecordingSceneSnapshot) -> Bool {
-        ensureScenes(for: layout)
-        guard var scenes = scenesByLayout[layout],
-              let index = scenes.firstIndex(where: { $0.id == id }) else {
-            return false
-        }
-        scenes[index].snapshot = snapshot
-        scenesByLayout[layout] = scenes
-        return true
-    }
-
-    private static func defaultScenes(for layout: CaptureLayout) -> [RecordingSceneDefinition] {
-        switch layout {
-        case .vertical:
-            return [
-                makeScene(name: "Screen + Camera", layout: .vertical, preset: .screenTop50),
-                makeScene(name: "Screen Only", layout: .vertical, preset: .screenFullscreen),
-                makeScene(name: "Camera Only", layout: .vertical, preset: .webcamFullscreen),
-                makeScene(name: "Camera Inset", layout: .vertical, preset: .cameraInset)
-            ]
-        case .horizontal, .square:
-            return [
-                makeScene(name: "Screen + Camera", layout: layout, preset: .cameraInset),
-                makeScene(name: "Screen Only", layout: layout, preset: .screenFullscreen),
-                makeScene(name: "Camera Only", layout: layout, preset: .webcamFullscreen),
-                makeScene(name: "Camera Left", layout: layout, preset: .webcamLeft)
-            ]
-        }
-    }
-
-    private static func makeScene(
-        name: String,
-        layout: CaptureLayout,
-        preset: ScenePreset
-    ) -> RecordingSceneDefinition {
+    private static func makeScene(_ request: DefaultSceneRequest) -> RecordingSceneDefinition {
+        let preset = request.preset
         var settings = RecordingSettings()
-        settings.layout = layout
+        settings.layout = request.layout
         settings.selectedScenePreset = preset
-        settings.sceneLayout = SceneLayout.presetLayout(preset, for: layout)
-        settings.enabledSources.insert(.screen)
-        settings.enabledSources.insert(.camera)
-        settings.hiddenSources.remove(.screen)
-        settings.hiddenSources.remove(.camera)
-
-        if preset == .screenFullscreen {
-            settings.hiddenSources.insert(.camera)
-        } else if preset == .webcamFullscreen {
-            settings.hiddenSources.insert(.screen)
-        }
+        settings.sceneLayout = SceneLayout.presetLayout(preset, for: request.layout)
+        settings.enabledSources.formUnion([.screen, .camera])
+        settings.hiddenSources.subtract([.screen, .camera])
+        settings.hiddenSources.formUnion(Set<CaptureSource>([.screen, .camera]).subtracting(preset.requiredVideoSources))
 
         return RecordingSceneDefinition(
-            name: name,
-            layout: layout,
+            name: name(for: preset),
+            layout: request.layout,
             snapshot: RecordingSceneSnapshot(settings: settings)
         )
-    }
-
-    private func uniqueSceneName(_ requestedName: String, layout: CaptureLayout, ignoring ignoredID: UUID? = nil) -> String {
-        let fallbackName = "Scene"
-        let baseName = requestedName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedBaseName = baseName.isEmpty ? fallbackName : baseName
-        let existingNames = Set((scenesByLayout[layout] ?? [])
-            .filter { $0.id != ignoredID }
-            .map(\.name))
-        guard existingNames.contains(normalizedBaseName) else {
-            return normalizedBaseName
-        }
-
-        var index = 2
-        while existingNames.contains("\(normalizedBaseName) \(index)") {
-            index += 1
-        }
-        return "\(normalizedBaseName) \(index)"
     }
 }
 
@@ -279,20 +167,6 @@ struct RecordingSceneDefinition: Identifiable, Codable, Equatable {
         self.name = name
         self.layout = layout
         self.snapshot = snapshot
-    }
-
-    static func defaultName(for settings: RecordingSettings) -> String {
-        let visible = settings.visibleSources
-        if visible.contains(.screen), visible.contains(.camera) {
-            return "Screen + Camera"
-        }
-        if visible.contains(.screen) {
-            return "Screen Only"
-        }
-        if visible.contains(.camera) {
-            return "Camera Only"
-        }
-        return "Scene"
     }
 }
 
@@ -353,26 +227,15 @@ struct RecordingSceneSnapshot: Codable, Equatable {
 
     func applying(to settings: RecordingSettings) -> RecordingSettings {
         var settings = settings
-        let audioSources = settings.enabledSources.subtracting(Self.videoSources)
-        let hiddenAudioSources = settings.hiddenSources.subtracting(Self.videoSources)
-        settings.enabledSources = audioSources.union(enabledVideoSources)
-        settings.hiddenSources = hiddenAudioSources.union(hiddenVideoSources)
+        settings.hiddenSources = settings.hiddenSources
+            .subtracting(Self.videoSources)
+            .union(hiddenVideoSources)
         settings.sceneLayout = sceneLayout
-        settings.canvasBackgroundStyle = canvasBackgroundStyle
-        settings.canvasBackgroundAnimated = canvasBackgroundAnimated
-            && canvasBackgroundStyle.supportsBackgroundAnimation
-        settings.canvasPadding = canvasPadding
-        settings.screenCornerRadius = screenCornerRadius
-        settings.screenShadowEnabled = screenShadowEnabled
-        settings.screenContentMode = screenContentMode
-        settings.screenWindowZoom = screenWindowZoom
-        settings.cameraContentMode = cameraContentMode
-        settings.cameraFramePadding = 0
-        settings.cameraShadowEnabled = cameraShadowEnabled
         settings.selectedScenePreset = selectedScenePreset
+        settings.screenWindowZoom = screenWindowZoom
+        settings.screenContentMode = screenContentMode
         settings.cameraCropAmount = cameraCropAmount
         settings.cameraCropPosition = cameraCropPosition
-        settings.selectedCameraID = selectedCameraID
         return settings
     }
 
@@ -416,6 +279,7 @@ struct RecordingSceneSnapshot: Codable, Equatable {
     private static let videoSources: Set<CaptureSource> = [.screen, .camera]
 }
 
+
 enum SceneLibraryStore {
     private static let key = "scene.library.v1"
 
@@ -425,10 +289,7 @@ enum SceneLibraryStore {
               var library = try? JSONDecoder().decode(SceneLibrary.self, from: data) else {
             return SceneLibrary.defaultLibrary(currentSettings: currentSettings)
         }
-        for layout in CaptureLayout.allCases {
-            library.ensureScenes(for: layout)
-        }
-        if library.migrateCanonicalCameraNames() {
+        if library.canonicalize() {
             save(library, defaults: defaults)
         }
         return library

@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 @MainActor
@@ -27,6 +28,7 @@ extension RecorderStudioConfiguration {
             onMessage?("Scenes are locked while saving.")
             return
         }
+        let previousSettings = settings
         saveCurrentSceneSnapshotIfNeeded()
         guard let scene = sceneLibrary.selectScene(id: id, layout: settings.layout) else { return }
         saveSceneLibrary()
@@ -35,6 +37,7 @@ extension RecorderStudioConfiguration {
         applySceneSnapshot(scene.snapshot)
         restoreScreenSourceSelection(screenSelection)
         settings.screenSourceAspectRatio = screenAspectRatio
+        carryCameraFraming(from: previousSettings)
         persist(saveSceneSnapshot: false)
         updateRecordingScene?(.sceneSwitch)
         onScreenCaptureConfigurationChanged?()
@@ -42,69 +45,6 @@ extension RecorderStudioConfiguration {
             onCameraConfigurationChanged?()
         }
         autoFitSelectedScreenWindow?()
-    }
-
-    func createSceneFromCurrentSettings(named name: String? = nil) {
-        guard sceneLibraryEditingIsAllowed() else { return }
-        saveCurrentSceneSnapshotIfNeeded()
-        let snapshot = currentRecordingSceneSnapshot()
-        let scene = sceneLibrary.createScene(
-            layout: settings.layout,
-            name: name ?? RecordingSceneDefinition.defaultName(for: settings),
-            snapshot: snapshot
-        )
-        saveSceneLibrary()
-        applySceneSnapshot(scene.snapshot)
-        persist(saveSceneSnapshot: false)
-        onScreenCaptureConfigurationChanged?()
-        onCameraConfigurationChanged?()
-        autoFitSelectedScreenWindow?()
-    }
-
-    func duplicateSelectedScene() {
-        guard sceneLibraryEditingIsAllowed() else { return }
-        saveCurrentSceneSnapshotIfNeeded()
-        guard let selectedSceneID = sceneLibrary.selectedSceneIDsByLayout[settings.layout],
-              let scene = sceneLibrary.duplicateScene(id: selectedSceneID, layout: settings.layout) else {
-            return
-        }
-        saveSceneLibrary()
-        applySceneSnapshot(scene.snapshot)
-        persist(saveSceneSnapshot: false)
-        onScreenCaptureConfigurationChanged?()
-        onCameraConfigurationChanged?()
-        autoFitSelectedScreenWindow?()
-    }
-
-    func renameScene(id: UUID, to name: String) {
-        guard sceneLibraryEditingIsAllowed() else { return }
-        guard sceneLibrary.renameScene(id: id, layout: settings.layout, name: name) else {
-            return
-        }
-        saveSceneLibrary()
-    }
-
-    func deleteScene(id: UUID) {
-        guard sceneLibraryEditingIsAllowed() else { return }
-        guard sceneLibrary.deleteScene(id: id, layout: settings.layout) else {
-            onMessage?("Keep at least one scene in this canvas format.")
-            return
-        }
-        saveSceneLibrary()
-        if let selectedScene = sceneLibrary.selectedScene(layout: settings.layout) {
-            applySceneSnapshot(selectedScene.snapshot)
-            persist(saveSceneSnapshot: false)
-            onScreenCaptureConfigurationChanged?()
-            onCameraConfigurationChanged?()
-        }
-    }
-
-    func moveScene(id: UUID, to index: Int) {
-        guard sceneLibraryEditingIsAllowed() else { return }
-        guard sceneLibrary.moveScene(id: id, layout: settings.layout, to: index) else {
-            return
-        }
-        saveSceneLibrary()
     }
 
     func setLayout(_ layout: CaptureLayout) {
@@ -121,9 +61,9 @@ extension RecorderStudioConfiguration {
             return
         }
         let preservedScreenSource = currentScreenSourceSelection()
+        let previousSettings = settings
         saveCurrentSceneSnapshotIfNeeded()
         settings.layout = layout
-        sceneLibrary.ensureScenes(for: layout)
         if let scene = sceneLibrary.selectedScene(layout: layout) {
             applySceneSnapshot(scene.snapshot)
         } else {
@@ -138,6 +78,7 @@ extension RecorderStudioConfiguration {
         }
         restoreScreenSourceSelection(preservedScreenSource)
         recomputeSelectedPresetLayoutForCurrentSource()
+        carryCameraFraming(from: previousSettings)
         saveSceneLibrary()
         persist(saveSceneSnapshot: false)
         onScreenCaptureConfigurationChanged?()
@@ -145,11 +86,29 @@ extension RecorderStudioConfiguration {
         autoFitSelectedScreenWindow?()
     }
 
-    private func sceneLibraryEditingIsAllowed() -> Bool {
-        guard state == .idle else {
-            onMessage?("Scene library editing is locked while recording.")
-            return false
+    func carryCameraFraming(from previous: RecordingSettings) {
+        func showsCamera(_ settings: RecordingSettings) -> Bool {
+            settings.enabledSources.contains(.camera)
+                && !settings.hiddenSources.contains(.camera)
+                && settings.cameraContentMode == .fill
         }
-        return true
+        guard showsCamera(previous), showsCamera(settings) else { return }
+        func canvasRect(_ frame: CGRect, layout: CaptureLayout) -> CGRect {
+            CGRect(
+                x: frame.minX * layout.aspectRatio,
+                y: frame.minY,
+                width: frame.width * layout.aspectRatio,
+                height: frame.height
+            )
+        }
+        let transferred = SourceCropGeometry.transferredCrop(.init(
+            amount: previous.cameraCropAmount,
+            position: previous.cameraCropPosition,
+            fromTarget: canvasRect(previous.sceneLayout.cameraFrame, layout: previous.layout),
+            toTarget: canvasRect(settings.sceneLayout.cameraFrame, layout: settings.layout),
+            sourceAspectRatio: cameraAspectRatio()
+        ))
+        settings.cameraCropAmount = transferred.amount
+        settings.cameraCropPosition = transferred.position
     }
 }

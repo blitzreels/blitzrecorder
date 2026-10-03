@@ -382,6 +382,7 @@ struct ProjectLibraryPlaybackControls: View {
 
 private struct ProjectPlaybackWaveform: View {
     @State private var hoverX: CGFloat?
+    @State private var isDragging = false
 
     private struct SeekRequest {
         let x: CGFloat
@@ -403,47 +404,41 @@ private struct ProjectPlaybackWaveform: View {
         GeometryReader { proxy in
             Canvas { context, size in
                 let playedWidth = size.width * progress
+                let midY = size.height / 2
                 if samples.isEmpty {
-                    let rail = CGRect(x: 0, y: size.height / 2 - 0.5, width: size.width, height: 1)
-                    context.fill(Path(rail), with: .color(BlitzUI.strongFill))
+                    let track = CGRect(x: 0, y: midY - 2, width: size.width, height: 4)
+                    context.fill(Path(roundedRect: track, cornerRadius: 2), with: .color(BlitzUI.strongFill))
+                    let played = CGRect(x: 0, y: midY - 2, width: playedWidth, height: 4)
+                    context.fill(Path(roundedRect: played, cornerRadius: 2), with: .color(BlitzUI.mint))
                 } else {
                     let slot = size.width / CGFloat(samples.count)
                     let barWidth = max(1, min(2.5, slot * 0.58))
                     let maxHeight = max(1, size.height - 4)
-
                     for (index, value) in samples.enumerated() {
                         let height = max(2, CGFloat(min(1, max(0, value))) * maxHeight)
                         let x = CGFloat(index) * slot + (slot - barWidth) / 2
-                        let bar = CGRect(
-                            x: x,
-                            y: (size.height - height) / 2,
-                            width: barWidth,
-                            height: height
-                        )
-                        let color = bar.midX <= playedWidth
-                            ? BlitzUI.mint.opacity(0.92)
-                            : BlitzUI.tertiaryText
-                        context.fill(
-                            Path(roundedRect: bar, cornerRadius: barWidth / 2),
-                            with: .color(color)
-                        )
+                        let bar = CGRect(x: x, y: midY - height / 2, width: barWidth, height: height)
+                        let color = bar.midX <= playedWidth ? BlitzUI.mint : BlitzUI.tertiaryText
+                        context.fill(Path(roundedRect: bar, cornerRadius: barWidth / 2), with: .color(color))
                     }
                 }
 
-                let playhead = CGRect(
-                    x: min(max(playedWidth - 0.5, 0), max(0, size.width - 1)),
-                    y: 1,
-                    width: 1,
-                    height: max(0, size.height - 2)
-                )
-                context.fill(
-                    Path(roundedRect: playhead, cornerRadius: 0.5),
-                    with: .color(BlitzUI.primaryText)
-                )
+                if let hoverX, !isDragging {
+                    let guide = CGRect(x: hoverX - 0.5, y: 2, width: 1, height: max(0, size.height - 4))
+                    context.fill(Path(guide), with: .color(BlitzUI.tertiaryText))
+                }
 
-                if let hoverX {
-                    let guide = CGRect(x: hoverX, y: 1, width: 1, height: max(0, size.height - 2))
-                    context.fill(Path(guide), with: .color(BlitzUI.mint.opacity(0.6)))
+                if samples.isEmpty {
+                    let diameter: CGFloat = hoverX != nil || isDragging ? 14 : 12
+                    let headX = 7 + (size.width - 14) * progress
+                    let knob = CGRect(x: headX - diameter / 2, y: midY - diameter / 2, width: diameter, height: diameter)
+                    context.fill(Path(ellipseIn: knob.insetBy(dx: -1, dy: -1)), with: .color(BlitzUI.panelBackground))
+                    context.fill(Path(ellipseIn: knob), with: .color(BlitzUI.primaryText))
+                } else {
+                    let headX = min(max(playedWidth, 1), size.width - 1)
+                    let head = CGRect(x: headX - 1, y: 0, width: 2, height: size.height)
+                    context.fill(Path(roundedRect: head.insetBy(dx: -1, dy: -1), cornerRadius: 2), with: .color(BlitzUI.panelBackground))
+                    context.fill(Path(roundedRect: head, cornerRadius: 1), with: .color(BlitzUI.primaryText))
                 }
             }
             .contentShape(.rect)
@@ -458,15 +453,11 @@ private struct ProjectPlaybackWaveform: View {
             .overlay(alignment: .topLeading) {
                 if let hoverX, duration > 0 {
                     Text(timeLabel(time(.init(x: hoverX, width: proxy.size.width))))
-                        .font(BlitzType.footnote.monospaced())
+                        .font(BlitzType.footnote.monospacedDigit())
                         .foregroundStyle(BlitzUI.primaryText)
-                        .frame(width: 56, height: 22)
-                        .background(BlitzUI.controlFill, in: .rect(cornerRadius: 5))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 5)
-                                .strokeBorder(BlitzUI.panelStroke, lineWidth: 1)
-                        }
-                        .offset(x: min(max(0, hoverX - 28), max(0, proxy.size.width - 56)), y: -24)
+                        .frame(width: 52, height: 20)
+                        .background(BlitzUI.panelBackground, in: .rect(cornerRadius: 6, style: .continuous))
+                        .offset(x: min(max(0, hoverX - 26), max(0, proxy.size.width - 52)), y: -26)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                 }
@@ -475,12 +466,14 @@ private struct ProjectPlaybackWaveform: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
+                        isDragging = true
                         onScrub(time(.init(
                             x: value.location.x,
                             width: proxy.size.width
                         )))
                     }
                     .onEnded { _ in
+                        isDragging = false
                         onScrubEnd()
                     }
             )

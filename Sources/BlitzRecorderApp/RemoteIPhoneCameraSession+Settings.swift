@@ -159,7 +159,7 @@ extension RemoteIPhoneCameraSession {
             for: settings.layout,
             screenAspectRatio: screenAspectRatio(),
             cameraAspectRatio: currentCameraSourceAspectRatio(settings: settings)
-        )
+        ).withCameraSide(settings.sceneLayout.cameraSide)
     }
 
     private func scheduleSettingsSend(_ remoteSettings: RemoteCameraSettings, serviceID: String) {

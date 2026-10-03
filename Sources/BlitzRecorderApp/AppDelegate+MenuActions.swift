@@ -145,14 +145,8 @@ extension AppDelegate {
     }
 
     @objc func pickScreen() {
-        Task {
-            do {
-                try await coordinator.pickScreenSource()
-                mainMenuBuilder?.rebuild()
-            } catch {
-                coordinator.onMessage?(RecorderStudioLabels.screenPickerFailed(error))
-            }
-        }
+        windowController?.showWindow(nil)
+        windowController?.viewModel.pickScreen()
     }
 
     @objc func selectScreenRegion() {

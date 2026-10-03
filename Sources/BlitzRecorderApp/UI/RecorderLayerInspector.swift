@@ -1,6 +1,7 @@
 import SwiftUI
 
 enum RecorderInspectorTab: CaseIterable, Hashable {
+    case layout
     case screen
     case camera
     case audio
@@ -8,15 +9,17 @@ enum RecorderInspectorTab: CaseIterable, Hashable {
 
     var title: String {
         switch self {
+        case .layout: return "Layout"
         case .screen: return "Screen"
         case .camera: return "Camera"
         case .audio: return "Audio"
-        case .background: return "Background"
+        case .background: return "Canvas"
         }
     }
 
     var symbolName: String {
         switch self {
+        case .layout: return "rectangle.split.2x1"
         case .screen: return BlitzSymbols.screen
         case .camera: return BlitzSymbols.camera
         case .audio: return "waveform"
@@ -27,6 +30,7 @@ enum RecorderInspectorTab: CaseIterable, Hashable {
     init(selection: RecorderInspectorSelection) {
         switch selection {
         case .canvas: self = .background
+        case .layout: self = .layout
         case .source(.screen): self = .screen
         case .source(.camera): self = .camera
         case .source(.microphone), .source(.systemAudio): self = .audio
@@ -87,6 +91,7 @@ struct RecorderLayerInspector: View {
     @ViewBuilder
     private var pane: some View {
         switch tab {
+        case .layout: layoutPane
         case .screen: screenPane
         case .camera: cameraPane
         case .audio: audioPane
@@ -97,21 +102,18 @@ struct RecorderLayerInspector: View {
     private var screenPane: some View {
         Group {
             notice(for: .screen)
-            EditorInspectorSection(configuration: .init(title: "Framing") {
+            EditorInspectorSection(configuration: .init(
+                title: vm.supportsScreenWindowScaling ? "App window" : "Screen framing"
+            ) {
                 ScreenSourceInspector(vm: vm, enabled: vm.isSourceConfigured(.screen))
             })
-            sceneSection(for: .screen)
+            hiddenNotice(for: .screen)
         }
     }
 
     private var cameraPane: some View {
         Group {
             notice(for: .camera)
-            if vm.isCameraInsetLayout && !vm.isCameraCropModeEnabled {
-                EditorInspectorSection(configuration: .init(title: "Corner") {
-                    CameraInsetFrameControls(vm: vm)
-                })
-            }
             EditorInspectorSection(configuration: .init(title: "Framing") {
                 CameraCropControls(vm: vm)
             })
@@ -127,7 +129,7 @@ struct RecorderLayerInspector: View {
                     .help("Add a soft shadow under the camera")
                 }
             })
-            sceneSection(for: .camera)
+            hiddenNotice(for: .camera)
         }
     }
 
@@ -198,40 +200,128 @@ struct RecorderLayerInspector: View {
         }
     }
 
-    private func sceneSection(for source: CaptureSource) -> some View {
-        let isVisible = vm.isSourceVisible(source)
-        let name = source == .screen ? "screen" : "camera"
-        return EditorInspectorSection(configuration: .init(title: "In \(vm.selectedSceneName)") {
-            HStack(spacing: 8) {
-                Button {
-                    vm.setSourceVisible(source, visible: !isVisible)
-                } label: {
-                    Label(isVisible ? "Hide" : "Show", systemImage: isVisible ? "eye.slash.fill" : "eye.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .disabled(!vm.isSourceConfigured(source))
-                .help(isVisible
-                    ? "Hide the \(name) in this scene. It keeps recording on its own track."
-                    : "Show the \(name) in this scene")
-                Button(action: vm.fitSelectedLayer) {
-                    Label("Fit", systemImage: "arrow.up.left.and.arrow.down.right")
-                        .frame(maxWidth: .infinity)
-                }
-                .help("Fit this layer to its space in the scene")
+    @ViewBuilder
+    private func hiddenNotice(for source: CaptureSource) -> some View {
+        if vm.isSourceConfigured(source), !vm.isSourceVisible(source) {
+            Text("Not shown in \(vm.selectedSceneName). It still records on its own track.")
+                .font(BlitzType.caption)
+                .foregroundStyle(BlitzUI.supportingText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var layoutPane: some View {
+        Group {
+            EditorInspectorSection(configuration: .init(title: vm.selectedSceneName) {
+                layoutControls
+            })
+            Divider()
+            VStack(alignment: .leading, spacing: 6) {
                 Button(action: vm.resetSceneLayout) {
-                    Label("Reset", systemImage: "arrow.counterclockwise")
-                        .frame(maxWidth: .infinity)
+                    Label("Reset layout", systemImage: "arrow.counterclockwise")
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .help("Put every layer of this scene back where it started")
+                .blitzButton(.quiet)
+                .help("Put the screen and camera back where this layout starts")
+                layoutCaption("Puts the screen and camera back where this layout starts.")
             }
-            .blitzButton(.secondary)
-            .disabled(!vm.canEditScene)
-            if !isVisible {
-                Text("Hidden here. Still recording on its own track.")
-                    .font(BlitzType.caption)
+        }
+        .disabled(!vm.canEditScene)
+    }
+
+    @ViewBuilder
+    private var layoutControls: some View {
+        switch vm.selectedScenePreset {
+        case .webcamLeft?, .cameraRight?:
+            sideBySideControls
+        case .screenTop50?:
+            stackedControls
+        case .cameraInset?:
+            CameraInsetFrameControls(vm: vm)
+        case .screenFullscreen?:
+            layoutCaption(vm.isSourceConfigured(.camera)
+                ? "Only your screen shows. Your camera still records on its own track."
+                : "Only your screen shows.")
+        case .webcamFullscreen?:
+            layoutCaption(vm.isSourceConfigured(.screen)
+                ? "Only your camera shows. Your screen still records on its own track."
+                : "Only your camera shows.")
+        default:
+            layoutCaption("Pick a layout in the scenes bar under the preview.")
+        }
+    }
+
+    @ViewBuilder
+    private var sideBySideControls: some View {
+        if vm.showsSideSplitControl {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Camera side")
+                    .font(BlitzType.captionEmphasis)
                     .foregroundStyle(BlitzUI.secondaryText)
+                BlitzSegmentedPicker(configuration: .init(
+                    title: "Camera side",
+                    options: [SceneCameraSide.left, .right],
+                    selection: Binding(
+                        get: { vm.sideSplitCameraSide },
+                        set: { vm.setSideSplitCameraSide($0) }
+                    ),
+                    label: { $0 == .left ? "Left" : "Right" }
+                ))
             }
-        })
+            BlitzInspectorSlider(configuration: .init(
+                title: "Width",
+                value: Binding(
+                    get: { vm.sideSplitCameraWidth },
+                    set: { vm.previewSideSplitCameraWidth($0) }
+                ),
+                range: Double(SceneLayout.minimumSideBySideCameraWidth)...Double(SceneLayout.maximumSideBySideCameraWidth),
+                step: 0.005,
+                valueLabel: "\(Int((vm.sideSplitCameraWidth * 100).rounded()))%",
+                onEditingChanged: { if !$0 { vm.commitSideSplitPreview() } },
+                onReset: {
+                    vm.setSideSplitCameraWidth(Double(SceneLayout.defaultSideBySideCameraWidth(for: vm.settings.layout)))
+                }
+            ))
+            .help("How wide the camera is. Reset goes back to a 9:16 camera.")
+            layoutCaption("Camera width. You can also drag the divider on the preview.")
+        } else {
+            unavailableLayoutCaption
+        }
+    }
+
+    @ViewBuilder
+    private var stackedControls: some View {
+        if vm.showsScreenSplitControl {
+            BlitzInspectorSlider(configuration: .init(
+                title: "Screen",
+                value: Binding(
+                    get: { vm.screenSplitHeight },
+                    set: { vm.previewScreenSplitHeight($0) }
+                ),
+                range: Double(SceneLayout.minimumScreenSplitHeight)...Double(SceneLayout.maximumScreenSplitHeight),
+                step: 0.005,
+                valueLabel: "\(Int((vm.screenSplitHeight * 100).rounded()))%",
+                onEditingChanged: { if !$0 { vm.commitScreenSplitPreview() } },
+                onReset: { vm.setScreenSplitHeight(Double(SceneLayout.defaultScreenSplitHeight)) }
+            ))
+            .help("How much of the height the screen takes")
+            layoutCaption("Screen height. You can also drag the divider on the preview.")
+        } else {
+            unavailableLayoutCaption
+        }
+    }
+
+    private var unavailableLayoutCaption: some View {
+        layoutCaption(vm.isSourceConfigured(.screen) && vm.isSourceConfigured(.camera)
+            ? "You moved things by hand. Reset the layout to get these controls back."
+            : "Turn on Screen and Camera in Sources to use this layout.")
+    }
+
+    private func layoutCaption(_ text: String) -> some View {
+        Text(text)
+            .font(BlitzType.caption)
+            .foregroundStyle(BlitzUI.supportingText)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private struct AudioSectionRequest {
@@ -260,6 +350,7 @@ struct RecorderLayerInspector: View {
 
     private func isEnabled(_ item: RecorderInspectorTab) -> Bool {
         switch item {
+        case .layout: return true
         case .screen: return vm.isSourceConfigured(.screen)
         case .camera: return vm.isSourceConfigured(.camera)
         case .audio: return vm.isSourceConfigured(.microphone) || vm.isSourceConfigured(.systemAudio)
@@ -269,15 +360,17 @@ struct RecorderLayerInspector: View {
 
     private func help(for item: RecorderInspectorTab) -> String {
         switch item {
+        case .layout: return "Where the screen and camera sit in this scene"
         case .screen: return "Screen framing in this scene"
         case .camera: return "Camera framing and effects"
         case .audio: return "Microphone and Mac audio volume"
-        case .background: return "Background and spacing"
+        case .background: return "Background, padding and guides"
         }
     }
 
     private func select(_ item: RecorderInspectorTab) {
         switch item {
+        case .layout: vm.selectLayoutInspector()
         case .screen: vm.selectSource(.screen)
         case .camera: vm.selectSource(.camera)
         case .audio: vm.selectSource(vm.isSourceConfigured(.microphone) ? .microphone : .systemAudio)

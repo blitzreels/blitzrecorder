@@ -234,7 +234,7 @@ struct RecordingSettingsPage: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 Text("Speech model").font(BlitzType.label).foregroundStyle(BlitzUI.primaryText)
-                HStack(spacing: 8) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
                     ForEach(TranscriptionSpeechModel.allCases, id: \.self) { model in
                         speechModelCard(model)
                     }

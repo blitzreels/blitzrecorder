@@ -10,6 +10,7 @@ struct ProjectReadyChip: View {
             title: "Edit recording",
             isLoading: false,
             help: "Open \(projectDetail) in the editor",
+            placement: .dock,
             action: { vm.openEditor() }
         ))
         .contextMenu {
@@ -35,22 +36,19 @@ struct SavedRecordingChip: View {
     let sourceTakeURL: URL?
     let warning: String?
     @State private var metadata = RecordingFileMetadata.empty
-    @State private var hovering = false
+    @State private var showsMenu = false
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             RecordingThumbnailButton(
                 image: metadata.thumbnail,
                 durationLabel: metadata.durationLabel,
-                height: 40,
-                help: "Play \(url.lastPathComponent)"
+                height: BlitzControlMetrics.dockHeight,
+                help: "Saved · \(savedDetail)\nClick to play"
             ) {
                 NSWorkspace.shared.open(url)
             }
-
-            SavedRecordingSummaryButton(detail: savedDetail, path: url.path) {
-                NSWorkspace.shared.activateFileViewerSelecting([url])
-            }
+            .accessibilityLabel("Play saved recording")
 
             if let warning {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -64,87 +62,74 @@ struct SavedRecordingChip: View {
                     title: "Edit",
                     isLoading: false,
                     help: "Open this recording in the editor",
+                    placement: .dock,
                     action: { vm.openEditor() }
                 ))
-                .controlSize(.small)
                 .fixedSize()
             }
 
-            if hovering {
-                DockDismissButton(help: "Clear and get ready for the next take") {
-                    vm.clearPostRecordingStatus()
+            Button {
+                showsMenu.toggle()
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(BlitzType.glyph(13))
+                    .foregroundStyle(BlitzUI.primaryText)
+            }
+            .blitzButton(.dock)
+            .fixedSize()
+            .accessibilityLabel("More actions")
+            .help("More actions")
+            .popover(isPresented: $showsMenu, arrowEdge: .top) {
+                BlitzMenuList(entries: menuEntries, width: 200, maxHeight: 320) {
+                    showsMenu = false
                 }
+                .preferredColorScheme(.dark)
             }
         }
-        .frame(maxWidth: 440, alignment: .leading)
-        .contentShape(.rect)
-        .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.15), value: hovering)
-        .contextMenu {
-            Button("Play") { NSWorkspace.shared.open(url) }
-            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-            Button("Rename…") { vm.renameLastExportedFile() }
-            if let sourceTakeURL {
-                Button("Edit recording") { vm.openEditor() }
-                Button("Show Source Files") {
-                    NSWorkspace.shared.activateFileViewerSelecting([sourceTakeURL])
-                }
-            }
-            Divider()
-            Button("Clear") { vm.clearPostRecordingStatus() }
-        }
+        .contextMenu { actions }
         .task(id: url) {
             metadata = .empty
             metadata = await RecordingFileMetadata.load(for: url)
         }
     }
 
-    private var savedDetail: String {
-        var parts = [url.lastPathComponent]
-        if metadata.thumbnail == nil, let durationLabel = metadata.durationLabel {
-            parts.append(durationLabel)
-        }
-        if let sizeLabel = metadata.sizeLabel {
-            parts.append(sizeLabel)
-        }
-        return parts.joined(separator: " · ")
-    }
-}
-
-private struct SavedRecordingSummaryButton: View {
-    let detail: String
-    let path: String
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 5) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(BlitzType.glyph(10))
-                        .foregroundStyle(BlitzUI.mint.opacity(0.9))
-                    Text("Recording saved")
-                        .font(BlitzType.strong)
-                        .foregroundStyle(BlitzUI.primaryText)
-                        .fixedSize()
-                }
-                Text(detail)
-                    .font(BlitzType.footnote)
-                    .monospacedDigit()
-                    .foregroundStyle(hovering ? BlitzUI.supportingText : BlitzUI.secondaryText)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+    @ViewBuilder
+    private var actions: some View {
+        Button("Play") { NSWorkspace.shared.open(url) }
+        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+        Button("Rename…") { vm.renameLastExportedFile() }
+        if let sourceTakeURL {
+            Button("Show Source Files") {
+                NSWorkspace.shared.activateFileViewerSelecting([sourceTakeURL])
             }
-            .contentShape(.rect)
         }
-        .buttonStyle(.plain)
-        .frame(minWidth: 120, maxWidth: 180, alignment: .leading)
-        .layoutPriority(-1)
-        .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: hovering)
-        .pointingHandCursor()
-        .help("Show in Finder — \(path)")
+        Divider()
+        Button("Clear") { vm.clearPostRecordingStatus() }
+    }
+
+    private var menuEntries: [BlitzMenuEntry] {
+        var items = [
+            BlitzMenuItem(title: "Play", systemImage: "play") { NSWorkspace.shared.open(url) },
+            BlitzMenuItem(title: "Show in Finder", systemImage: "folder") {
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            },
+            BlitzMenuItem(title: "Rename…", systemImage: "pencil") { vm.renameLastExportedFile() }
+        ]
+        if let sourceTakeURL {
+            items.append(BlitzMenuItem(title: "Show Source Files", systemImage: "square.stack.3d.up") {
+                NSWorkspace.shared.activateFileViewerSelecting([sourceTakeURL])
+            })
+        }
+        return items.map(BlitzMenuEntry.item) + [
+            .divider,
+            .item(BlitzMenuItem(title: "Clear", systemImage: "xmark") { vm.clearPostRecordingStatus() })
+        ]
+    }
+
+    private var savedDetail: String {
+        [url.lastPathComponent, metadata.durationLabel, metadata.sizeLabel]
+            .compactMap { $0 }
+            .joined(separator: " · ")
     }
 }
 
@@ -185,6 +170,15 @@ private struct RecordingThumbnailButton: View {
                     .opacity(hovering ? 1 : 0)
             }
             .frame(width: width, height: height)
+            .overlay(alignment: .topLeading) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(BlitzType.glyph(11))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.black, BlitzUI.mint)
+                    .padding(3)
+                    .opacity(hovering ? 0 : 1)
+                    .accessibilityLabel("Saved")
+            }
             .overlay(alignment: .bottomTrailing) {
                 if let durationLabel {
                     Text(durationLabel)
@@ -198,29 +192,8 @@ private struct RecordingThumbnailButton: View {
                         .opacity(hovering ? 0 : 1)
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: BlitzControlMetrics.dockRadius, style: .continuous))
             .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: hovering)
-        .pointingHandCursor()
-        .help(help)
-    }
-}
-
-private struct DockDismissButton: View {
-    let help: String
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "xmark")
-                .font(BlitzType.glyph(10))
-                .foregroundStyle(hovering ? BlitzUI.primaryText : BlitzUI.tertiaryText)
-                .frame(width: 22, height: 22)
-                .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

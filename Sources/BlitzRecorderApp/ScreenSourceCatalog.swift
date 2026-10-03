@@ -8,12 +8,30 @@ struct WindowSourceSelectionContext {
     let availableSources: [ScreenSourceOption]
 }
 
+struct ScreenSourceCatalogRequest {
+    let content: SCShareableContent
+    let recentBundleIdentifiers: [String]
+    let frontToBackWindowIDs: [CGWindowID]
+    var ownProcessID: pid_t = getpid()
+}
+
 enum ScreenSourceCatalog {
-    static func options(
-        content: SCShareableContent,
-        recentBundleIdentifiers: [String],
-        ownProcessID: pid_t = getpid()
-    ) -> [ScreenSourceOption] {
+    static func frontToBackWindowIDs() -> [CGWindowID] {
+        let info = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements],
+            kCGNullWindowID
+        ) as? [[String: Any]] ?? []
+        return info.compactMap { ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value }
+    }
+
+    static func options(_ request: ScreenSourceCatalogRequest) -> [ScreenSourceOption] {
+        let content = request.content
+        let recentBundleIdentifiers = request.recentBundleIdentifiers
+        let ownProcessID = request.ownProcessID
+        let stackIndex = Dictionary(
+            request.frontToBackWindowIDs.enumerated().map { ($1, $0) },
+            uniquingKeysWith: min
+        )
         let visibleWindows = content.windows.filter {
             $0.isOnScreen && $0.frame.width > 0 && $0.frame.height > 0
         }
@@ -21,6 +39,8 @@ enum ScreenSourceCatalog {
             .compactMapValues { windows in
                 windows.max { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
             }
+        let applicationActivity = Dictionary(grouping: visibleWindows) { $0.owningApplication?.processID }
+            .compactMapValues { windows in windows.compactMap { stackIndex[$0.windowID] }.min() }
         var applicationIcons: [pid_t: NSImage] = [:]
         for application in content.applications {
             guard application.processID != ownProcessID, primaryWindows[application.processID] != nil else { continue }
@@ -76,6 +96,7 @@ enum ScreenSourceCatalog {
                 subtitle: readableWindowTitle(primaryWindow.title) ?? "Main window",
                 systemImage: "macwindow.on.rectangle",
                 icon: applicationIcons[application.processID],
+                activityRank: applicationActivity[application.processID] ?? .max,
                 pickerPlacement: isUtility ? .utility : ScreenSourcePickerOrganization.placement(
                     ScreenSourcePickerPlacementRequest(
                         binding: binding,
@@ -118,6 +139,7 @@ enum ScreenSourceCatalog {
                 subtitle: applicationName ?? "Window",
                 systemImage: "app.window",
                 icon: application.flatMap { applicationIcons[$0.processID] },
+                activityRank: stackIndex[window.windowID] ?? .max,
                 pickerPlacement: isUtility ? .utility : ScreenSourcePickerOrganization.placement(
                     ScreenSourcePickerPlacementRequest(
                         binding: binding,
@@ -126,13 +148,8 @@ enum ScreenSourceCatalog {
                 )
             )
         }
-        .sorted { lhs, rhs in
-            let lhsLabel = "\(lhs.subtitle) \(lhs.title)"
-            let rhsLabel = "\(rhs.subtitle) \(rhs.title)"
-            return lhsLabel.localizedCaseInsensitiveCompare(rhsLabel) == .orderedAscending
-        }
 
-        return displayOptions + sortedApplicationOptions + windowOptions
+        return displayOptions + sortedApplicationOptions + ScreenSourcePickerOrganization.sorted(windowOptions)
     }
 
     static func preferredWindowBinding(

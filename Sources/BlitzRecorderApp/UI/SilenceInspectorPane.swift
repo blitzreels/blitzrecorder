@@ -30,7 +30,7 @@ struct SilenceInspectorPane: View {
         EditorInspectorPane(configuration: .init(
             title: "Silence removal",
             detail: "Shorten gaps between spoken phrases.",
-            showsFooter: !session.windows.isEmpty || session.hasRemovedSilence || session.error != nil,
+            showsFooter: session.showsActionsFooter,
             content: {
                 VStack(alignment: .leading, spacing: 16) {
                     summary
@@ -82,8 +82,9 @@ struct SilenceInspectorPane: View {
     private var summary: some View {
         VStack(alignment: .leading, spacing: 12) {
             if session.loading {
-                status("Analyzing audio…")
-                Text("Finding the quiet moments in your recording.")
+                Text("Reading audio tracks")
+                    .font(BlitzType.section)
+                Text("Silence counts and duration will appear when analysis finishes.")
                     .font(BlitzType.body)
                     .foregroundStyle(BlitzUI.supportingText)
             } else if session.windows.isEmpty {
@@ -114,13 +115,7 @@ struct SilenceInspectorPane: View {
                 }
                 .monospacedDigit()
                 Rectangle().fill(BlitzUI.separator).frame(height: 1)
-                if session.waitingForTranscript {
-                    status("Finishing speech analysis…")
-                    Text("Apply becomes available when all pauses are ready.")
-                        .font(BlitzType.caption).foregroundStyle(BlitzUI.supportingText)
-                } else if session.calculating || session.preparingPreview {
-                    status(session.calculating ? "Updating silences…" : "Preparing preview…")
-                } else {
+                if session.activity == nil {
                     Label {
                         Text(silenceCountLabel)
                     } icon: {
@@ -168,15 +163,6 @@ struct SilenceInspectorPane: View {
         return session.hasRemovedSilence && !session.hasChanges ? "\(count) removed" : count
     }
 
-    private func status(_ title: String) -> some View {
-        HStack(spacing: 8) {
-            ProgressView().controlSize(.mini)
-            Text(title)
-                .font(BlitzType.body)
-                .foregroundStyle(BlitzUI.supportingText)
-        }
-    }
-
     private var footer: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let error = session.error {
@@ -185,7 +171,7 @@ struct SilenceInspectorPane: View {
                     .foregroundStyle(BlitzUI.warning)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if !session.windows.isEmpty {
+            if session.activity != nil || !session.windows.isEmpty || session.hasRemovedSilence {
                 SilencePreviewToggle(session: session)
             }
         }
@@ -241,7 +227,7 @@ struct SilenceInspectorPane: View {
                     parameter(.init(title: "After speech", detail: nil, value: $session.paddingAfter, range: 0...1))
                 }
             }
-            parameter(.init(title: "Ignore short sounds", detail: "Skip brief audio spikes. Set to zero to keep them.",
+            parameter(.init(title: "Merge nearby pauses", detail: "Join pauses across brief quiet sounds. Detected speech stays separate. Set to zero to turn off.",
                             value: $session.minimumAudio, range: 0...0.5))
         }
         .disabled(session.isAuditioning || session.loading || session.windows.isEmpty || !session.suggestsPauses)

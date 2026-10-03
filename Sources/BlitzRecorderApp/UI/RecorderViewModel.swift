@@ -23,6 +23,7 @@ final class RecorderViewModel {
     var state: RecordingState = .idle
     var settings: RecordingSettings
     var detailMessage: String = ""
+    var showsScreenSourcePicker = false
     var isExportingVariants = false
     var isLivePreviewEnabled = LivePreviewPreference().isEnabled
     var variantExportIndex = 0
@@ -110,6 +111,7 @@ final class RecorderViewModel {
     var projectLibraryNavigation = ProjectLibraryNavigationState()
     let projectTrash = ProjectLibraryTrashController(operations: .live)
     var screenSplitPreviewHeight: Double?
+    var sideSplitPreviewWidth: Double?
     var previewCanvasFrame: CGRect = .zero
     var isCameraCropModeEnabled = false
     var isScreenCropModeEnabled = false

@@ -105,7 +105,11 @@ struct SceneLayout: Equatable {
             sceneLayout.cameraFrame = canvasFillingFrame(sourceAspectRatio: cameraAspectRatio, canvasAspectRatio: canvasAR)
             sceneLayout.layerOrder = [.camera, .screen]
             return sceneLayout
-        case .webcamLeft, .webcamFullscreen:
+        case .screenInset:
+            return screenInsetLayout(.init(layout: .vertical, screenAspectRatio: screenAspectRatio))
+        case .equalSplit:
+            return screenSplitLayout(screenHeight: defaultScreenSplitHeight, screenAspectRatio: screenAspectRatio)
+        case .webcamLeft, .cameraRight, .webcamFullscreen:
             var sceneLayout = SceneLayout()
             sceneLayout.screenFrame = canvasFillingFrame(sourceAspectRatio: screenAspectRatio, canvasAspectRatio: canvasAR)
             sceneLayout.cameraFrame = CGRect(x: 0, y: 0, width: 1, height: 1)
@@ -171,11 +175,24 @@ struct SceneLayout: Equatable {
             sceneLayout.layerOrder = [.camera, .screen]
             return sceneLayout
         case .webcamLeft:
-            var sceneLayout = SceneLayout()
-            sceneLayout.screenFrame = CGRect(x: 1.0 / 3.0, y: 0, width: 2.0 / 3.0, height: 1)
-            sceneLayout.cameraFrame = CGRect(x: 0, y: 0, width: 1.0 / 3.0, height: 1)
-            sceneLayout.layerOrder = [.screen, .camera]
-            return sceneLayout
+            return sideBySideLayout(.init(
+                cameraWidth: defaultSideBySideCameraWidth(for: request.layout),
+                cameraSide: .left
+            ))
+        case .cameraRight:
+            return landscapeStylePresetLayout(.init(
+                preset: .webcamLeft,
+                layout: request.layout,
+                screenAspectRatio: screenAspectRatio,
+                cameraAspectRatio: cameraAspectRatio
+            )).withCameraSide(.right)
+        case .equalSplit:
+            return SceneLayout(
+                screenFrame: CGRect(x: 0.5, y: 0, width: 0.5, height: 1),
+                cameraFrame: CGRect(x: 0, y: 0, width: 0.5, height: 1)
+            )
+        case .screenInset:
+            return screenInsetLayout(.init(layout: request.layout, screenAspectRatio: screenAspectRatio))
         case .screenFullscreen:
             var sceneLayout = SceneLayout()
             sceneLayout.screenFrame = CGRect(x: 0, y: 0, width: 1, height: 1)
@@ -194,6 +211,59 @@ struct SceneLayout: Equatable {
         }
     }
 
+    private struct ScreenInsetRequest {
+        let layout: CaptureLayout
+        let screenAspectRatio: CGFloat
+    }
+
+    private static func screenInsetLayout(_ request: ScreenInsetRequest) -> SceneLayout {
+        let container = request.layout == .vertical
+            ? CGRect(x: 0.06, y: 0.67, width: 0.88, height: 0.28)
+            : CGRect(x: 0.62, y: 0.60, width: 0.34, height: 0.34)
+        return SceneLayout(
+            screenFrame: fittedSourceFrame(
+                sourceAspectRatio: request.screenAspectRatio,
+                canvasAspectRatio: request.layout.aspectRatio,
+                in: container
+            ),
+            cameraFrame: CGRect(x: 0, y: 0, width: 1, height: 1),
+            layerOrder: [.camera, .screen]
+        )
+    }
+
+    static let maximumSideBySideCameraWidth: CGFloat = 0.6
+    static let minimumSideBySideCameraWidth: CGFloat = 0.2
+
+    static func defaultSideBySideCameraWidth(for layout: CaptureLayout) -> CGFloat {
+        min(0.4, portraitCameraWidth(for: layout))
+    }
+
+    static func portraitCameraWidth(for layout: CaptureLayout) -> CGFloat {
+        (9.0 / 16.0) / layout.aspectRatio
+    }
+
+    static func clampedSideBySideCameraWidth(_ width: CGFloat) -> CGFloat {
+        min(maximumSideBySideCameraWidth, max(minimumSideBySideCameraWidth, width))
+    }
+
+    struct SideBySideRequest {
+        let cameraWidth: CGFloat
+        let cameraSide: SceneCameraSide
+    }
+
+    static func sideBySideLayout(_ request: SideBySideRequest) -> SceneLayout {
+        let width = clampedSideBySideCameraWidth(request.cameraWidth)
+        var sceneLayout = SceneLayout()
+        sceneLayout.cameraFrame = CGRect(x: 0, y: 0, width: width, height: 1)
+        sceneLayout.screenFrame = CGRect(x: width, y: 0, width: 1 - width, height: 1)
+        sceneLayout.layerOrder = [.screen, .camera]
+        return sceneLayout.withCameraSide(request.cameraSide)
+    }
+
+    var sideBySideCameraWidth: CGFloat? {
+        guard cameraSide != nil else { return nil }
+        return cameraFrame.width
+    }
     static let cameraAspectRatio: CGFloat = 16.0 / 9.0
     static let defaultScreenAspectRatio: CGFloat = 16.0 / 9.0
     static let defaultScreenSplitHeight: CGFloat = 0.5
@@ -437,5 +507,32 @@ struct SceneLayout: Equatable {
 
     private func almostEqual(_ lhs: CGFloat, _ rhs: CGFloat) -> Bool {
         abs(lhs - rhs) < 0.0001
+    }
+}
+
+enum SceneCameraSide: Equatable {
+    case left
+    case right
+}
+
+extension SceneLayout {
+    var cameraSide: SceneCameraSide? {
+        let sideBySide = screenFrame.height >= 0.999
+            && cameraFrame.height >= 0.999
+            && (cameraFrame.maxX <= screenFrame.minX + 0.001 || screenFrame.maxX <= cameraFrame.minX + 0.001)
+        guard sideBySide else { return nil }
+        return cameraFrame.midX < screenFrame.midX ? .left : .right
+    }
+
+    func withCameraSide(_ side: SceneCameraSide?) -> SceneLayout {
+        guard let side, let current = cameraSide, current != side else { return self }
+        var mirrored = self
+        mirrored.screenFrame = Self.mirroredHorizontally(screenFrame)
+        mirrored.cameraFrame = Self.mirroredHorizontally(cameraFrame)
+        return mirrored
+    }
+
+    private static func mirroredHorizontally(_ frame: CGRect) -> CGRect {
+        CGRect(x: 1 - frame.maxX, y: frame.minY, width: frame.width, height: frame.height)
     }
 }

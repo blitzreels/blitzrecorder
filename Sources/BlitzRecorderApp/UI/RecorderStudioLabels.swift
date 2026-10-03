@@ -58,10 +58,6 @@ enum RecorderStudioLabels {
     static let screenSelectedForSession = "Screen selected for this session."
     static let screenSourceSaved = "Screen source saved."
 
-    static func screenPickerFailed(_ error: Error) -> String {
-        "Screen picker failed: \(error.localizedDescription)"
-    }
-
     static func screenSourceActivationMessage(
         usesPickedScreenContent: Bool,
         hasPersistentBinding: Bool

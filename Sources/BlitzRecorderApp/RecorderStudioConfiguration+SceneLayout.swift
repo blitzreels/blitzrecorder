@@ -168,6 +168,16 @@ extension RecorderStudioConfiguration {
         autoFitSelectedScreenWindow?()
     }
 
+    func setSideBySideLayout(_ request: SceneLayout.SideBySideRequest) {
+        guard sceneChangeIsAllowed() else { return }
+        guard settings.sceneLayout.cameraSide != nil else { return }
+        settings.sceneLayout = SceneLayout.sideBySideLayout(request)
+        persist()
+        updateRecordingScene?(.cut)
+        onScreenCaptureConfigurationChanged?()
+        autoFitSelectedScreenWindow?()
+    }
+
     func setCameraInset(
         alignment: CameraInsetAlignment,
         shape: CameraInsetShape,

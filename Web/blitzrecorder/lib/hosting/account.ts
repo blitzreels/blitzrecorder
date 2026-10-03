@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { getSiteUrl, getStripe } from "../payments";
 import { hostingPool, transaction } from "./db";
 import { HostingError, newAccessToken, required, tokenHash, type HostingAccount } from "./model";
+import { billingPath } from "./paths";
 import { HOSTING_PLAN } from "./plan";
 
 export type HostingIdentity = { id: string; email: string };
@@ -93,7 +94,7 @@ export async function billingURL(account: HostingAccount) {
       subscriptionEnded = ["canceled", "incomplete_expired"].includes(subscription.status);
       if (!subscriptionEnded) {
         const portal = await stripe.billingPortal.sessions.create({
-          customer: row.stripe_customer_id, return_url: `${site}/hosting/complete`,
+          customer: row.stripe_customer_id, return_url: `${site}${billingPath}`,
           configuration: required("HOSTING_STRIPE_PORTAL_CONFIGURATION_ID"),
         });
         return { url: portal.url };
@@ -121,7 +122,7 @@ export async function billingURL(account: HostingAccount) {
       integration_identifier: "blitzrecorder_hosting_qmzpxrta",
       branding_settings: { display_name: "BlitzRecorder", button_color: "#00e69b", border_style: "rounded" },
       custom_text: { submit: { message: "BlitzRecorder video hosting. Your local recordings and exports remain free." } },
-      success_url: `${site}/hosting/complete`, cancel_url: `${site}/hosting/complete?cancelled=1`,
+      success_url: `${site}${billingPath}`, cancel_url: `${site}${billingPath}?cancelled=1`,
     }, { idempotencyKey: `hosting-checkout:${account.id}:${row.checkout_session_id ?? "first"}` });
     if (!session.url) throw new HostingError({ status: 503, message: "The subscription page could not be opened." });
     await db.query("UPDATE hosting_accounts SET checkout_session_id=$2,checkout_url=$3,checkout_expires_at=to_timestamp($4) WHERE id=$1",

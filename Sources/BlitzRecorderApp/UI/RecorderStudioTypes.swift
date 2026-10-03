@@ -36,6 +36,7 @@ enum SourceSelection: CaseIterable, Equatable {
 enum RecorderInspectorSelection: Hashable {
     case source(CaptureSource)
     case canvas
+    case layout
 
     static func initial(settings: RecordingSettings) -> RecorderInspectorSelection {
         let visibleSources = settings.visibleSources

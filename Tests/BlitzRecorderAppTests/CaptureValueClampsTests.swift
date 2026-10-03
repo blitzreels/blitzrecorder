@@ -490,21 +490,19 @@ final class RecordingStartGateTests: XCTestCase {
 
     func testSceneSnapshotApplyAndExportPreset() {
         var sceneSettings = RecordingSettings()
-        sceneSettings.enabledSources = [.screen, .microphone]
-        sceneSettings.cameraFramePadding = 12
+        sceneSettings.enabledSources = [.screen, .camera, .microphone]
         sceneSettings.selectedCameraID = "old"
         var snapshot = RecordingSceneSnapshot(settings: sceneSettings)
-        snapshot.enabledVideoSources = [.camera]
+        snapshot.hiddenVideoSources = [.screen]
+        snapshot.selectedScenePreset = .webcamFullscreen
         snapshot.selectedCameraID = "cam-2"
-        snapshot.canvasBackgroundAnimated = true
         snapshot.canvasBackgroundStyle = .black
         let applied = snapshot.applying(to: sceneSettings)
-        XCTAssertTrue(applied.enabledSources.contains(.microphone))
-        XCTAssertTrue(applied.enabledSources.contains(.camera))
-        XCTAssertFalse(applied.enabledSources.contains(.screen))
-        XCTAssertEqual(applied.selectedCameraID, "cam-2")
-        XCTAssertEqual(applied.cameraFramePadding, 0)
-        XCTAssertFalse(applied.canvasBackgroundAnimated)
+        XCTAssertEqual(applied.enabledSources, [.screen, .camera, .microphone])
+        XCTAssertEqual(applied.hiddenSources, [.screen])
+        XCTAssertEqual(applied.selectedScenePreset, .webcamFullscreen)
+        XCTAssertEqual(applied.selectedCameraID, "old")
+        XCTAssertEqual(applied.canvasBackgroundStyle, sceneSettings.canvasBackgroundStyle)
         XCTAssertFalse(snapshot.restoresConcreteScreenSource)
         snapshot.usesPickedScreenContent = true
         XCTAssertTrue(snapshot.restoresConcreteScreenSource)

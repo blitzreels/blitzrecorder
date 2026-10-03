@@ -10,13 +10,17 @@ struct AgentsSettingsPage: View {
             VStack(alignment: .leading, spacing: 28) {
                 SettingsPageHeader(.init(
                     title: "Integrations",
-                    detail: "Connect local AI agents to projects, transcripts, and MP4 exports.",
+                    detail: "Connect local AI agents to projects, video frames, transcripts, and MP4 exports.",
                     status: .init(title: statusTitle, isActive: mcpServer.status == .running)
                 ))
                 .padding(.bottom, 4)
 
                 serverSection
                 connectSection
+                SettingsRowLabel(.init(
+                    title: "Start from a recording",
+                    detail: "In Projects, select a video and choose Copy AI context. Paste it into your AI chat alongside your own request."
+                ))
             }
             .settingsPageContent()
         }
@@ -29,7 +33,7 @@ struct AgentsSettingsPage: View {
             Toggle(isOn: enabledBinding) {
                 SettingsRowLabel(.init(
                     title: "Allow local agents",
-                    detail: "Let local agents read projects and transcripts and create exports."
+                    detail: "Let local agents read projects, video frames, and transcripts and create exports."
                 ))
             }
             .toggleStyle(.blitzSwitch)

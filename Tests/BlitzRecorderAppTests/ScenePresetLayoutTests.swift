@@ -111,11 +111,12 @@ final class ScenePresetLayoutTests: XCTestCase {
         XCTAssertEqual(layout.layerOrder, [.camera, .screen])
     }
 
-    func testWebcamLeftUsesLeftThirdAndScreenRightTwoThirdsInHorizontalCanvas() {
+    func testWebcamLeftUsesPortraitCameraColumnInHorizontalCanvas() {
         let layout = SceneLayout.presetLayout(.webcamLeft, for: .horizontal)
+        let width: CGFloat = 81.0 / 256.0
 
-        XCTAssertRect(layout.cameraFrame, equals: CGRect(x: 0, y: 0, width: 1.0 / 3.0, height: 1))
-        XCTAssertRect(layout.screenFrame, equals: CGRect(x: 1.0 / 3.0, y: 0, width: 2.0 / 3.0, height: 1))
+        XCTAssertRect(layout.cameraFrame, equals: CGRect(x: 0, y: 0, width: width, height: 1))
+        XCTAssertRect(layout.screenFrame, equals: CGRect(x: width, y: 0, width: 1 - width, height: 1))
         XCTAssertEqual(layout.layerOrder, [.screen, .camera])
     }
 
@@ -326,4 +327,84 @@ private func XCTAssertRect(
     XCTAssertEqual(actual.origin.y, expected.origin.y, accuracy: 0.0001, file: file, line: line)
     XCTAssertEqual(actual.size.width, expected.size.width, accuracy: 0.0001, file: file, line: line)
     XCTAssertEqual(actual.size.height, expected.size.height, accuracy: 0.0001, file: file, line: line)
+}
+
+final class AdditionalScenePresetTests: XCTestCase {
+    func testCameraRightMirrorsCameraLeftWithoutGapsOrOverlap() {
+        for canvas in [CaptureLayout.horizontal, .square] {
+            let left = SceneLayout.presetLayout(.webcamLeft, for: canvas)
+            let right = SceneLayout.presetLayout(.cameraRight, for: canvas)
+            XCTAssertEqual(right.cameraFrame.width, left.cameraFrame.width)
+            XCTAssertEqual(right.screenFrame.width, left.screenFrame.width)
+            XCTAssertEqual(right.cameraFrame.maxX, 1, accuracy: 0.0001)
+            XCTAssertEqual(right.screenFrame.minX, 0)
+            XCTAssertEqual(right.screenFrame.maxX, right.cameraFrame.minX)
+            XCTAssertEqual(right.cameraFrame.height, 1)
+            XCTAssertEqual(right.screenFrame.height, 1)
+            XCTAssertEqual(right.layerOrder, left.layerOrder)
+        }
+        XCTAssertFalse(ScenePreset.cameraRight.supports(.vertical))
+    }
+
+    func testEqualSplitGivesEachSourceHalfTheCanvas() {
+        for canvas in [CaptureLayout.horizontal, .square] {
+            let layout = SceneLayout.presetLayout(.equalSplit, for: canvas)
+            XCTAssertEqual(layout.cameraFrame, CGRect(x: 0, y: 0, width: 0.5, height: 1))
+            XCTAssertEqual(layout.screenFrame, CGRect(x: 0.5, y: 0, width: 0.5, height: 1))
+            XCTAssertNil(layout.screenSplitHeight)
+        }
+        XCTAssertFalse(ScenePreset.equalSplit.supports(.vertical))
+    }
+
+    func testScreenInsetKeepsWholeScreenAboveFullCanvasCameraForEveryAspectRatio() {
+        for canvas in CaptureLayout.allCases {
+            for screenRatio: CGFloat in [16.0 / 9.0, 4.0 / 3.0, 9.0 / 16.0] {
+                for cameraRatio: CGFloat in [16.0 / 9.0, 9.0 / 16.0] {
+                    let layout = SceneLayout.presetLayout(
+                        .screenInset,
+                        for: canvas,
+                        screenAspectRatio: screenRatio,
+                        cameraAspectRatio: cameraRatio
+                    )
+                    XCTAssertEqual(layout.cameraFrame, CGRect(x: 0, y: 0, width: 1, height: 1))
+                    XCTAssertTrue(layout.cameraFrame.contains(layout.screenFrame))
+                    XCTAssertGreaterThan(layout.screenFrame.minY, 0.5)
+                    XCTAssertLessThan(layout.screenFrame.width * layout.screenFrame.height, 0.25)
+                    XCTAssertEqual(
+                        layout.screenFrame.width * canvas.aspectRatio / layout.screenFrame.height,
+                        screenRatio,
+                        accuracy: 0.0001
+                    )
+                    XCTAssertEqual(layout.layerOrder, [.camera, .screen])
+                    XCTAssertTrue(ScenePreset.screenInset.supports(canvas))
+                }
+            }
+        }
+    }
+
+    func testNewPresetsRestoreBothSourcesAndSurviveSettingsReload() throws {
+        let suite = "AdditionalScenePresetTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        for preset in [ScenePreset.cameraRight, .equalSplit, .screenInset] {
+            for canvas in CaptureLayout.allCases where preset.supports(canvas) {
+                var settings = RecordingSettings()
+                settings.layout = canvas
+                settings.enabledSources = [.camera, .microphone]
+                settings.hiddenSources = [.screen, .camera]
+                let applied = RecordingSceneMutation.applyingPreset(
+                    preset,
+                    to: settings,
+                    screenAspectRatio: 16.0 / 9.0,
+                    cameraAspectRatio: 16.0 / 9.0
+                )
+                XCTAssertTrue(applied.visibleSources.isSuperset(of: [.screen, .camera]))
+                XCTAssertTrue(applied.enabledSources.contains(.microphone))
+                RecordingSettingsStore.save(applied, defaults: defaults)
+                let reloaded = RecordingSettingsStore.load(defaults: defaults)
+                XCTAssertEqual(reloaded.selectedScenePreset, preset)
+                XCTAssertEqual(reloaded.sceneLayout, applied.sceneLayout)
+            }
+        }
+    }
 }

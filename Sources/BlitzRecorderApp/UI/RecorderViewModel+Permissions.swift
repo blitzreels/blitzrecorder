@@ -139,40 +139,24 @@ extension RecorderViewModel {
     }
 
     func pickAndEnableScreenSource() {
-        Task {
-            do {
-                try await coordinator.pickScreenSource()
-                syncSettings()
-                selectLayer(.screen)
-                if settings.usesPickedScreenContent, settings.screenSourceBinding != nil {
-                    detailMessage = RecorderStudioLabels.screenSourceActivationMessage(
-                        usesPickedScreenContent: true,
-                        hasPersistentBinding: true
-                    )
-                } else {
-                    detailMessage = RecorderStudioLabels.screenSourceActivationMessage(
-                        usesPickedScreenContent: settings.usesPickedScreenContent,
-                        hasPersistentBinding: false
-                    )
-                }
-            } catch {
-                detailMessage = RecorderStudioLabels.screenPickerFailed(error)
-            }
+        guard coordinator.hasScreenCaptureAccess() else {
+            applyScreenRecordingPermission()
+            return
         }
+        if !isSourceConfigured(.screen) {
+            coordinator.addSource(.screen)
+            syncSettings()
+        }
+        selectSource(.screen)
+        showsScreenSourcePicker = true
     }
 
     func pickAndEnableSystemAudioSource() {
-        Task {
-            do {
-                try await coordinator.pickScreenContent()
-                coordinator.addSource(.systemAudio)
-                syncSettings()
-                selectSource(.systemAudio)
-                detailMessage = "Mac audio source selected for this session."
-            } catch {
-                detailMessage = RecorderStudioLabels.screenPickerFailed(error)
-            }
-        }
+        coordinator.addSource(.systemAudio)
+        syncSettings()
+        selectSource(.systemAudio)
+        detailMessage = "Mac audio records through the screen source. Choose a screen or window."
+        pickAndEnableScreenSource()
     }
 
     func applyScreenRecordingPermission() {

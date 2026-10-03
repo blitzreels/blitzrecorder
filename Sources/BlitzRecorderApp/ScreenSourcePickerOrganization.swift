@@ -155,6 +155,9 @@ enum ScreenSourcePickerOrganization {
             if lhs.pickerPlacement.sortRank != rhs.pickerPlacement.sortRank {
                 return lhs.pickerPlacement.sortRank < rhs.pickerPlacement.sortRank
             }
+            if lhs.activityRank != rhs.activityRank {
+                return lhs.activityRank < rhs.activityRank
+            }
             return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
         }
     }

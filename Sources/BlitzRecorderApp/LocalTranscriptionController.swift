@@ -22,25 +22,43 @@ protocol LocalTranscriptionModelStoring: Sendable {
 enum TranscriptionSpeechModel: String, CaseIterable, Sendable {
     case parakeet
     case whisperMedium
+    case whisperLargeTurbo
+    case whisperLarge
+
+    /// WhisperKit repo id. Nil for the Parakeet ASR model.
+    var whisperVariant: String? {
+        switch self {
+        case .parakeet: nil
+        case .whisperMedium: "openai_whisper-medium"
+        case .whisperLargeTurbo: "openai_whisper-large-v3_turbo"
+        case .whisperLarge: "openai_whisper-large-v3"
+        }
+    }
 
     var title: String {
         switch self {
         case .parakeet: "Parakeet v3"
         case .whisperMedium: "Whisper Medium"
+        case .whisperLargeTurbo: "Whisper Large Turbo"
+        case .whisperLarge: "Whisper Large"
         }
     }
 
     var detail: String {
         switch self {
         case .parakeet: "Fast, multilingual; automatic language only"
-        case .whisperMedium: "Multilingual; supports a French language lock"
+        case .whisperMedium: "Multilingual; supports a language lock"
+        case .whisperLargeTurbo: "Large-v3 accuracy, faster than full Large"
+        case .whisperLarge: "Highest accuracy on long calls"
         }
     }
 
     var plainDetail: String {
         switch self {
         case .parakeet: "Fastest. Detects the language on its own."
-        case .whisperMedium: "Slower. Lets you pick the language."
+        case .whisperMedium: "Clearer. Lets you pick the language."
+        case .whisperLargeTurbo: "Much more accurate. Large download, still practical."
+        case .whisperLarge: "Most accurate. Largest download and the slowest pass."
         }
     }
 }

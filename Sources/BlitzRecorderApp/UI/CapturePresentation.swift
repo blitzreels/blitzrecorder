@@ -58,11 +58,6 @@ extension ScreenSourceBinding {
     }
 }
 
-enum SceneMoveDirection {
-    case up
-    case down
-}
-
 extension CaptureLayout {
     var symbolName: String {
         switch self {
@@ -98,7 +93,8 @@ extension ScenePreset {
         case .screenFocus: return "rectangle.inset.filled"
         case .cameraInset: return BlitzSymbols.pictureInPicture
         case .cameraFocus: return "person.crop.rectangle"
-        case .webcamLeft: return BlitzSymbols.layout
+        case .webcamLeft, .cameraRight, .equalSplit: return BlitzSymbols.layout
+        case .screenInset: return BlitzSymbols.pictureInPicture
         case .screenFullscreen: return BlitzSymbols.screen
         case .webcamFullscreen: return BlitzSymbols.camera
         }

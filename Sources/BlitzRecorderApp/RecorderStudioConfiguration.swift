@@ -113,7 +113,7 @@ final class RecorderStudioConfiguration {
             for: settings.layout,
             screenAspectRatio: screenAspectRatio(),
             cameraAspectRatio: cameraAspectRatio()
-        )
+        ).withCameraSide(settings.sceneLayout.cameraSide)
     }
 
     func applyFittedScreenWindowArrangement(

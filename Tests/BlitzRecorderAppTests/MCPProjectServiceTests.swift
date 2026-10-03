@@ -1,8 +1,82 @@
+import AVFoundation
+import AppKit
+import MCP
 import XCTest
 @testable import BlitzRecorderApp
 
 @MainActor
 final class MCPProjectServiceTests: XCTestCase {
+    func testFrameReturnsImageAtTranscriptTimeWithCaptureOffsets() async throws {
+        let fixture = try makeFixture(editorState: .empty)
+        let source = try XCTUnwrap(fixture.project.sources.first(where: { $0.role == "screen" }))
+        let writer = try VideoFileWriter(
+            url: URL(fileURLWithPath: source.path), width: 640, height: 320,
+            bitrate: 1_000_000, fps: 30, outputFormat: .mov
+        )
+        let generator = try CameraBlackFrameGenerator(.init(
+            width: 640, height: 320,
+            pixelFormat: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange, framesPerSecond: 30
+        ))
+        for frame in 0..<60 {
+            writer.append(try XCTUnwrap(generator.sampleBuffer(at: CMTime(value: Int64(frame), timescale: 30))))
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        _ = try await writer.finish()
+        let url = URL(fileURLWithPath: fixture.project.projectPath)
+        var saved = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        saved["timelineTrimOffsetSeconds"] = 1
+        saved["sourceTimelineOffsetSeconds"] = ["screen": 0.25]
+        try JSONSerialization.data(withJSONObject: saved).write(to: url)
+
+        let frame = try await fixture.service.frame(.init(
+            projectID: fixture.project.id, source: .screen, timeSeconds: 0.5
+        ))
+        let decoded = try XCTUnwrap(NSBitmapImageRep(data: frame.jpeg))
+        XCTAssertEqual(decoded.pixelsWide, 640)
+        XCTAssertEqual(decoded.pixelsHigh, 320)
+        XCTAssertEqual(frame.metadata.projectID, fixture.project.id)
+        XCTAssertEqual(frame.metadata.actualTimeSeconds, 0.5, accuracy: 1.0 / 30)
+        XCTAssertEqual(frame.metadata.sourceTimelineEndSeconds, 1.25, accuracy: 1.0 / 30)
+
+        let server = BlitzRecorderMCPServer(coordinator: fixture.coordinator)
+        let body = #"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"project_frame","arguments":{"projectId":"\#(fixture.project.id.uuidString)","source":"screen","timeSeconds":0.5}}}"#
+        let response = await server.respond(to: HTTPRequest(method: "POST", headers: [
+            "Content-Type": "application/json", "Accept": "application/json",
+            "Origin": "http://localhost:\(BlitzRecorderMCPServer.port)",
+            "MCP-Protocol-Version": "2025-06-18"
+        ], body: Data(body.utf8), path: BlitzRecorderMCPServer.endpoint))
+        let responseData = try XCTUnwrap(response.bodyData)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: responseData) as? [String: Any])
+        let result = try XCTUnwrap(json["result"] as? [String: Any])
+        XCTAssertEqual(result["isError"] as? Bool, false)
+        let contents = try XCTUnwrap(result["content"] as? [[String: Any]])
+        let image = try XCTUnwrap(contents.first { $0["type"] as? String == "image" })
+        XCTAssertEqual(image["mimeType"] as? String, "image/jpeg")
+        let base64 = try XCTUnwrap(image["data"] as? String)
+        XCTAssertNotNil(Data(base64Encoded: base64).flatMap(NSBitmapImageRep.init(data:)))
+
+        do {
+            _ = try await fixture.service.frame(.init(projectID: fixture.project.id, source: .screen, timeSeconds: 10))
+            XCTFail("Out-of-range frames must fail instead of returning a different moment.")
+        } catch MCPProjectFrameError.outsideSource {}
+    }
+
+    func testFrameReportsMissingVideoAndRejectsInvalidTime() async throws {
+        let fixture = try makeFixture(editorState: .empty)
+        do {
+            _ = try await fixture.service.frame(.init(projectID: fixture.project.id, source: .screen, timeSeconds: 0))
+            XCTFail("Missing footage must return an error.")
+        } catch MCPProjectFrameError.missingSource(let role) {
+            XCTAssertEqual(role, "screen")
+        }
+        for time in [-1, Double.infinity, Double.nan] {
+            do {
+                _ = try await fixture.service.frame(.init(projectID: fixture.project.id, source: .screen, timeSeconds: time))
+                XCTFail("Invalid timestamps must fail.")
+            } catch MCPProjectFrameError.invalidTime {}
+        }
+    }
+
     func testExportAsIsUsesMP4AndSavedEditorRecipe() throws {
         let fixture = try makeFixture(editorState: .init(
             hiddenVideoSources: [SceneLayerKind.camera.rawValue],
@@ -172,6 +246,7 @@ final class MCPProjectServiceTests: XCTestCase {
 
     private struct Fixture {
         let service: MCPProjectService
+        let coordinator: RecorderCoordinator
         let project: RecordingProject
         let outputDirectory: URL
     }
@@ -205,6 +280,7 @@ final class MCPProjectServiceTests: XCTestCase {
         coordinator.setOutputDirectory(outputDirectory)
         return Fixture(
             service: MCPProjectService(coordinator: coordinator),
+            coordinator: coordinator,
             project: project,
             outputDirectory: outputDirectory
         )

@@ -43,6 +43,16 @@ struct RecordingTranscript: Codable, Equatable, Identifiable, Sendable {
         text.split(whereSeparator: \.isWhitespace).count
     }
 
+    var silenceProtectedRanges: [SpeechRange] {
+        let spoken: [SpeechRange]
+        if let words, !words.isEmpty {
+            spoken = words.map { .init(startTime: $0.startTime, endTime: $0.endTime) }
+        } else {
+            spoken = segments.map { .init(startTime: $0.startTime, endTime: $0.endTime) }
+        }
+        return spoken + (speechRanges ?? [])
+    }
+
     var segmentCount: Int {
         segments.count
     }

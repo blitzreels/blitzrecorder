@@ -97,6 +97,9 @@ final class RecorderCoordinator {
     var onLocalCameraPreviewSampleBuffer: ((CMSampleBuffer, Int, Int) -> Void)? {
         didSet { capture.onLocalCameraPreviewSampleBuffer = onLocalCameraPreviewSampleBuffer }
     }
+    var onLocalCameraThumbnailSampleBuffer: CameraRecorder.ThumbnailHandler? {
+        didSet { capture.cameraRecorder.setThumbnailHandler(onLocalCameraThumbnailSampleBuffer) }
+    }
     var onRemoteCameraPreviewFrame: ((CGImage) -> Void)?
     var onRemoteCameraPreviewSampleBuffer: ((CMSampleBuffer, Int, Int) -> Void)?
     var onRemoteCameraPreviewReset: ((String) -> Void)?

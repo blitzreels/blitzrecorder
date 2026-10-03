@@ -8,6 +8,7 @@ struct BlitzToggleStyle: ToggleStyle {
     }
 
     let presentation: Presentation
+    var isCompact = false
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.controlSize) private var controlSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -74,7 +75,8 @@ struct BlitzToggleStyle: ToggleStyle {
     }
 
     private func switchTrack(isOn: Bool) -> some View {
-        ZStack(alignment: isOn ? .trailing : .leading) {
+        let knob: CGFloat = isCompact ? 12 : 16
+        return ZStack(alignment: isOn ? .trailing : .leading) {
             Capsule()
                 .fill(isOn ? BlitzUI.mint : BlitzUI.controlFill)
             Capsule()
@@ -83,17 +85,17 @@ struct BlitzToggleStyle: ToggleStyle {
                 Image(systemName: "checkmark")
                     .font(BlitzType.glyph(8))
                     .foregroundStyle(.black.opacity(0.72))
-                    .opacity(isOn ? 1 : 0)
+                    .opacity(isOn && !isCompact ? 1 : 0)
                 Spacer(minLength: 0)
             }
             .padding(.leading, 6)
             Circle()
                 .fill(isOn ? Color.white : BlitzUI.supportingText)
-                .frame(width: 16, height: 16)
+                .frame(width: knob, height: knob)
                 .shadow(color: .black.opacity(0.18), radius: 1, y: 1)
-                .padding(3)
+                .padding(isCompact ? 2 : 3)
         }
-        .frame(width: 38, height: 22)
+        .frame(width: isCompact ? 28 : 38, height: isCompact ? 16 : 22)
         .fixedSize()
     }
 
@@ -122,5 +124,6 @@ struct BlitzToggleStyle: ToggleStyle {
 extension ToggleStyle where Self == BlitzToggleStyle {
     static var blitzSwitch: BlitzToggleStyle { .init(presentation: .switchRow) }
     static var blitzSwitchOnly: BlitzToggleStyle { .init(presentation: .switchOnly) }
+    static var blitzCompactSwitch: BlitzToggleStyle { .init(presentation: .switchOnly, isCompact: true) }
     static var blitzCheckbox: BlitzToggleStyle { .init(presentation: .checkbox) }
 }

@@ -64,6 +64,7 @@ struct ProjectLibraryView: View {
     @Bindable var vm: RecorderViewModel
     @Bindable var sharing = HostedVideoShareController.shared
     @State var openingProjectID: UUID?
+    @State var showsProjectMenu = false
     @State private var projectsPendingDeletion: [RecordingProjectHistory.Entry] = []
     @State private var projectPendingRename: RecordingProjectHistory.Entry?
     @State private var projectTitleDraft = ""

@@ -17,14 +17,13 @@ final class SilenceEditingSession {
     var paddingBefore = 0.3
     var paddingAfter = 0.3
     var linkedPadding = true
-    var minimumAudio = 0.0
+    var minimumAudio = SilenceRemovalSettings.standard.minimumAudio
     var customized = false
     private var previousIntensity = 1.0
     private(set) var skipSilence = false
     private(set) var cuts: [TimelineCut] = []
     private var baseCuts: [TimelineCut] = []
     private var transcript: RecordingTranscript?
-    private var includesTranscriptSuggestions = true
     private(set) var loadingTranscript = false
     private(set) var isAuditioning = false
     @ObservationIgnored private var auditionTask: Task<Void, Never>?
@@ -55,6 +54,43 @@ final class SilenceEditingSession {
     var canClassify: Bool { active && !isAuditioning && !loading && !calculating && !windows.isEmpty }
     var waitingForTranscript: Bool {
         loadingTranscript || request.map { $0.vm.transcriptionController.jobStatuses[$0.project.projectPath]?.isRunning == true } == true
+    }
+
+    enum Activity: Equatable {
+        case analyzingAudio
+        case analyzingSpeech
+        case updatingSilences
+        case preparingPreview
+
+        var title: String {
+            switch self {
+            case .analyzingAudio: "Analyzing audio…"
+            case .analyzingSpeech: "Analyzing speech…"
+            case .updatingSilences: "Updating silence cuts…"
+            case .preparingPreview: "Preparing playback…"
+            }
+        }
+
+        var detail: String {
+            switch self {
+            case .analyzingAudio: "Checking the audio tracks for quiet moments."
+            case .analyzingSpeech: "Identifying speech before the silence cuts are ready."
+            case .updatingSilences: "Recalculating cuts with your current settings."
+            case .preparingPreview: "Loading the edited timeline."
+            }
+        }
+    }
+
+    var activity: Activity? {
+        if loading { return .analyzingAudio }
+        if waitingForTranscript { return .analyzingSpeech }
+        if calculating { return .updatingSilences }
+        if preparingPreview { return .preparingPreview }
+        return nil
+    }
+
+    var showsActionsFooter: Bool {
+        activity != nil || !windows.isEmpty || hasRemovedSilence || error != nil
     }
 
     var settingsSnapshot: SilenceRemovalSettings {
@@ -97,7 +133,6 @@ final class SilenceEditingSession {
             if settingsChanged || previous.project.edits.cuts != request.project.edits.cuts
                 || previous.project.edits.silenceOverrides != request.project.edits.silenceOverrides {
                 baseCuts = request.project.edits.cuts
-                includesTranscriptSuggestions = !usesSavedSilenceCuts
                 refreshTranscriptCuts()
                 updateMetrics()
                 if !usesSavedSilenceCuts { recalculate() }
@@ -110,7 +145,6 @@ final class SilenceEditingSession {
         self.request = request
         active = true
         restoreSettings(request.project.edits.silenceSettings)
-        includesTranscriptSuggestions = !usesSavedSilenceCuts
         duration = request.playback.duration
         baseCuts = request.project.edits.cuts
         windows = []
@@ -207,7 +241,6 @@ final class SilenceEditingSession {
         preparingPreview = false
         skipSilence = false
         baseCuts = edits.cuts
-        includesTranscriptSuggestions = false
         updateMetrics()
         return true
     }
@@ -236,18 +269,16 @@ final class SilenceEditingSession {
             minimumDuration = 0.5
             paddingBefore = 0.3
             paddingAfter = 0.3
-            minimumAudio = 0
         case 2:
             minimumDuration = 0.3
             paddingBefore = 0.15
             paddingAfter = 0.15
-            minimumAudio = 0
         default:
             minimumDuration = 0.15
             paddingBefore = 0.05
             paddingAfter = 0.05
-            minimumAudio = 0
         }
+        minimumAudio = SilenceRemovalSettings.defaultMinimumAudio(for: intensity.rounded())
         recalculate()
     }
 
@@ -277,13 +308,13 @@ final class SilenceEditingSession {
             audioURL: sourceURL ?? URL(fileURLWithPath: "/"), takeDuration: duration, sourceOffset: sourceOffset,
             minimumSilence: minimumDuration, thresholdDB: threshold, previousCuts: cuts,
             paddingBefore: paddingBefore, paddingAfter: paddingAfter, minimumAudio: minimumAudio,
-            overrides: request?.vm.lastExportedProject?.edits.silenceOverrides ?? [])
+            overrides: request?.vm.lastExportedProject?.edits.silenceOverrides ?? [],
+            speechRanges: transcript?.silenceProtectedRanges ?? [])
     }
 
     func recalculate() {
         guard active, !loading, !windows.isEmpty else { return }
         calculationTask?.cancel()
-        includesTranscriptSuggestions = true
         error = nil
         calculating = true
         refreshTranscriptCuts()
@@ -381,6 +412,9 @@ final class SilenceEditingSession {
         self.transcript = transcript
         refreshTranscriptCuts()
         updateMetrics()
+        if minimumAudio > 0, !usesSavedSilenceCuts || baseCuts != request?.vm.lastExportedProject?.edits.cuts {
+            recalculate()
+        }
     }
 
     private func refreshTranscriptCuts() {
@@ -414,12 +448,12 @@ final class SilenceEditingSession {
 
     private func updateMetrics() {
         let saved = request?.vm.lastExportedProject?.edits ?? .empty
-        let suggestions = SilenceDetection.applyingOverrides(.init(
-            cuts: transcriptCuts, overrides: saved.silenceOverrides)).filter { $0.source == .automatic && $0.isEnabled }
-        let projection = EditorTimelineProjection(.init(duration: duration, cuts: saved.cuts))
-        let remaining = EditorTranscriptTimeline.remainingSilence(.init(cuts: suggestions, projection: projection))
-        nonDialogueRanges = remaining.map { .init(start: $0.start, end: $0.end) }
-        cuts = baseCuts + (suggestsPauses && includesTranscriptSuggestions ? remaining : [])
+        let proposal = SilenceCutProposal(.init(
+            duration: duration, baseCuts: baseCuts, transcriptCuts: transcriptCuts, saved: saved,
+            suggestsPauses: suggestsPauses
+        ))
+        nonDialogueRanges = proposal.nonDialogueRanges
+        cuts = proposal.cuts
         metrics = SilenceTimelineMetrics(
             .init(
                 duration: duration, proposed: cuts,

@@ -321,7 +321,7 @@ extension ScenePreset {
         case .cameraInset:
             return "Picture in picture"
         case .webcamLeft:
-            return "Side by side"
+            return "Camera left"
         case .screenFullscreen:
             return "Screen only"
         case .webcamFullscreen:

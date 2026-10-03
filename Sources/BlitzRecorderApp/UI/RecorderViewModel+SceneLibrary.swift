@@ -3,6 +3,7 @@ import Foundation
 extension RecorderViewModel {
     func setLayout(_ layout: CaptureLayout) {
         cancelScreenSplitPreview()
+        cancelSideSplitPreview()
         coordinator.setLayout(layout)
         sceneLibraryRevision += 1
         syncSettingsAfterSceneChange()
@@ -10,6 +11,7 @@ extension RecorderViewModel {
 
     func selectScene(_ id: UUID) {
         cancelScreenSplitPreview()
+        cancelSideSplitPreview()
         coordinator.selectScene(id: id)
         sceneLibraryRevision += 1
         syncSettingsAfterSceneChange()
@@ -17,51 +19,13 @@ extension RecorderViewModel {
 
     func selectSceneAcrossLayouts(_ id: UUID) {
         cancelScreenSplitPreview()
+        cancelSideSplitPreview()
         if let target = coordinator.layout(ofSceneID: id), target != settings.layout {
             coordinator.setLayout(target)
         }
         coordinator.selectScene(id: id)
         sceneLibraryRevision += 1
         syncSettingsAfterSceneChange()
-    }
-
-    func createScene() {
-        cancelScreenSplitPreview()
-        coordinator.createSceneFromCurrentSettings()
-        sceneLibraryRevision += 1
-        syncSettingsAfterSceneChange()
-    }
-
-    func duplicateSelectedScene() {
-        cancelScreenSplitPreview()
-        coordinator.duplicateSelectedScene()
-        sceneLibraryRevision += 1
-        syncSettingsAfterSceneChange()
-    }
-
-    func renameScene(_ id: UUID, to name: String) {
-        coordinator.renameScene(id: id, to: name)
-        sceneLibraryRevision += 1
-        syncSettingsAfterSceneChange()
-    }
-
-    func deleteScene(_ id: UUID) {
-        coordinator.deleteScene(id: id)
-        sceneLibraryRevision += 1
-        syncSettingsAfterSceneChange()
-    }
-
-    func moveScene(_ id: UUID, direction: SceneMoveDirection) {
-        guard let currentIndex = currentScenes.firstIndex(where: { $0.id == id }) else { return }
-        let targetIndex: Int
-        switch direction {
-        case .up:
-            targetIndex = currentIndex - 1
-        case .down:
-            targetIndex = currentIndex + 1
-        }
-        coordinator.moveScene(id: id, to: targetIndex)
-        sceneLibraryRevision += 1
     }
 
     var canSwitchScene: Bool {
@@ -85,6 +49,10 @@ extension RecorderViewModel {
     var selectedSceneID: UUID? {
         _ = sceneLibraryRevision
         return coordinator.selectedSceneIDForCurrentLayout()
+    }
+
+    var selectedScenePreset: ScenePreset? {
+        currentScenes.first { $0.id == selectedSceneID }?.snapshot.selectedScenePreset
     }
 
     var selectedSceneName: String {

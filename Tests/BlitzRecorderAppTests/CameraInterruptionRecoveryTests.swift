@@ -4,6 +4,40 @@ import CoreVideo
 import XCTest
 
 final class CameraInterruptionRecoveryTests: XCTestCase {
+    @MainActor
+    func testCameraFramesReachSceneThumbnailsWithoutARecordingWriter() async throws {
+        let recorder = CameraRecorder()
+        let preview = CameraPreviewView()
+        let thumbnailReady = expectation(description: "Camera scene thumbnail")
+        var deliveredFrameCount = 0
+        preview.thumbnailSampler.onImage = { image in
+            XCTAssertEqual(image.width, 180)
+            XCTAssertEqual(image.height, 90)
+            thumbnailReady.fulfill()
+        }
+        recorder.setThumbnailHandler { sampleBuffer in
+            deliveredFrameCount += 1
+            preview.thumbnailSampler.offer(sampleBuffer)
+        }
+        let generator = try CameraBlackFrameGenerator(.init(
+            width: 640,
+            height: 320,
+            pixelFormat: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+            framesPerSecond: 30
+        ))
+        let sampleBuffer = try XCTUnwrap(generator.sampleBuffer(at: .zero))
+        let output = AVCaptureVideoDataOutput()
+        let connection = AVCaptureConnection(inputPorts: [], output: output)
+
+        recorder.captureOutput(output, didOutput: sampleBuffer, from: connection)
+        recorder.captureOutput(output, didOutput: sampleBuffer, from: connection)
+
+        await fulfillment(of: [thumbnailReady], timeout: 3)
+        XCTAssertEqual(deliveredFrameCount, 1)
+        XCTAssertFalse(preview.hasPreviewContent)
+        recorder.setThumbnailHandler(nil)
+    }
+
     func testCameraInterruptionContinuesWithBlackFramesWhenScreenRemainsHealthy() {
         let decision = CaptureFailureRecovery.decision(.init(
             source: .camera,

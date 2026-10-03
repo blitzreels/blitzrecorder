@@ -2,27 +2,18 @@ import SwiftUI
 
 struct PauseButton: View {
     @Bindable var vm: RecorderViewModel
-    @State private var hovering = false
 
     var body: some View {
         Button {
             vm.togglePause()
         } label: {
-            ZStack {
-                Circle()
-                    .fill(hovering && isEnabled ? BlitzUI.strongFill : BlitzUI.selectedFill)
-                Image(systemName: symbol)
-                    .font(BlitzType.glyph(15))
-                    .foregroundStyle(BlitzUI.primaryText)
-            }
-            .frame(width: 48, height: 48)
-            .contentShape(.circle)
+            Image(systemName: symbol)
+                .font(BlitzType.glyph(15))
+                .foregroundStyle(BlitzUI.primaryText)
+                .frame(width: BlitzControlMetrics.dockHeight - 36)
         }
-        .buttonStyle(BlitzPressButtonStyle())
+        .blitzButton(.dock)
         .disabled(!isEnabled)
-        .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: hovering)
-        .pointingHandCursor()
         .accessibilityLabel(helpText)
         .help(helpText)
     }
@@ -43,29 +34,21 @@ struct PauseButton: View {
 struct RecordButton: View {
     @Bindable var vm: RecorderViewModel
 
-    @State private var isHovering = false
-
     var body: some View {
         Button {
             vm.primaryAction()
         } label: {
-            HStack(spacing: 9) {
+            HStack(spacing: 8) {
                 recordGlyph
                 Text(actionTitle)
                     .font(BlitzType.section)
                     .foregroundStyle(.white)
             }
-            .padding(.horizontal, 20)
-            .frame(minWidth: vm.state == .idle ? 128 : 100, minHeight: 48)
-            .background(buttonFill, in: .capsule)
-            .shadow(color: BlitzUI.recordRed.opacity(isHovering && enabled ? 0.45 : 0.25), radius: 12, y: 3)
-            .contentShape(.capsule)
+            .frame(minWidth: vm.state == .idle ? 92 : 64)
         }
-        .buttonStyle(BlitzPressButtonStyle())
+        .blitzButton(.record)
         .opacity(dimmed ? 0.5 : 1)
         .disabled(!enabled)
-        .onHover { isHovering = $0 }
-        .pointingHandCursor()
         .help(vm.recordingBlockerDetail ?? helpText)
     }
 
@@ -79,11 +62,11 @@ struct RecordButton: View {
         case .idle:
             Circle()
                 .fill(.white)
-                .frame(width: 12, height: 12)
+                .frame(width: 10, height: 10)
         case .recording, .paused:
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(BlitzUI.primaryText)
-                .frame(width: 12, height: 12)
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(.white)
+                .frame(width: 10, height: 10)
         case .starting:
             ProgressView()
                 .controlSize(.small)
@@ -91,10 +74,6 @@ struct RecordButton: View {
             ProgressView()
                 .controlSize(.small)
         }
-    }
-
-    private var buttonFill: Color {
-        BlitzUI.recordRed.opacity(isHovering && enabled ? 1 : 0.88)
     }
 
     private var helpText: String {

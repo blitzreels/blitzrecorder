@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import Image from "next/image";
+import { Menu, X } from "lucide-react";
 import { DownloadButton, GitHubLink } from "@/components/site/download-button";
-import { assets } from "@/lib/assets";
-import { cn } from "@/lib/utils";
+import { NavItem, SiteHeader } from "@/components/site/site-header";
+import { Button } from "@/components/ui/button";
+import { videosPath } from "@/lib/hosting/paths";
 
 const links = [
   { href: "/#record", label: "Record" },
@@ -14,10 +14,12 @@ const links = [
   { href: "/#export", label: "Export" },
   { href: "/#share", label: "Share" },
   { href: "/#free", label: "Free" },
+  { href: videosPath, label: "Videos" },
 ];
 
 export function SiteNav() {
   const [scrolled, setScrolled] = useState(false);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
@@ -26,41 +28,26 @@ export function SiteNav() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  return (
-    <header
-      className={cn(
-        "fixed inset-x-0 top-0 z-50 border-b transition-colors duration-300",
-        scrolled ? "glass border-separator" : "border-transparent",
-      )}
-    >
-      <div className="mx-auto flex h-16 w-[min(1180px,calc(100%-32px))] items-center">
-        <Link href="/" className="flex items-center gap-2.5">
-          <Image src={assets.macIcon} width={30} height={30} alt="" className="rounded-[22%]" />
-          <span className="hidden font-display text-[17px] font-bold tracking-[-0.02em] min-[360px]:inline">
-            BlitzRecorder
-          </span>
-        </Link>
-        <nav
-          className="ml-auto hidden items-center gap-7 text-sm text-muted-foreground md:flex"
-          aria-label="Sections"
-        >
-          {links.map((link) => (
-            <Link key={link.href} className="transition-colors hover:text-foreground" href={link.href}>
-              {link.label}
-            </Link>
-          ))}
-        </nav>
-        <div className="ml-auto flex items-center gap-4 md:ml-8">
-          <Link
-            href="/hosting/videos"
-            className="text-sm text-muted-foreground transition-colors hover:text-foreground max-[359px]:hidden"
-          >
-            Your videos
-          </Link>
-          <GitHubLink className="hidden text-muted-foreground transition-colors hover:text-foreground sm:inline-flex" />
-          <DownloadButton label="Download" source="nav" size="default" className="" />
-        </div>
-      </div>
-    </header>
-  );
+  return <SiteHeader
+    position="fixed"
+    tone={open ? "opaque" : scrolled ? "solid" : "clear"}
+    nav={<nav className="ml-4 hidden items-center lg:flex" aria-label="Sections">
+      {links.map((link) => <NavItem key={link.href} href={link.href}>{link.label}</NavItem>)}
+    </nav>}
+    trailing={<>
+      <Button type="button" size="icon" variant="ghost" className="lg:hidden" aria-expanded={open} aria-label={open ? "Close menu" : "Open menu"}
+        onClick={() => setOpen((value) => !value)}>
+        {open ? <X /> : <Menu />}
+      </Button>
+      <GitHubLink className="inline-flex size-8 items-center justify-center rounded-control text-muted-foreground transition-colors hover:bg-fill-quiet hover:text-foreground" />
+      <DownloadButton label="Download" source="nav" size="default" className="" />
+    </>}
+    menu={open ? <nav className="border-t border-separator px-4 py-2 lg:hidden" aria-label="Sections">
+      <ul className="mx-auto flex w-[min(1180px,calc(100%-32px))] flex-col py-1">
+        {links.map((link) => <li key={link.href}>
+          <NavItem href={link.href} className="h-10 w-full" onClick={() => setOpen(false)}>{link.label}</NavItem>
+        </li>)}
+      </ul>
+    </nav> : null}
+  />;
 }

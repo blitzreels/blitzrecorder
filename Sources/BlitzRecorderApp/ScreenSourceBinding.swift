@@ -75,6 +75,7 @@ struct ScreenSourceOption: Equatable, Identifiable {
     let subtitle: String
     let systemImage: String
     let icon: NSImage?
+    var activityRank: Int = .max
     var pickerPlacement: ScreenSourcePickerPlacement = .standard
 
     var id: String { binding.id }
@@ -84,6 +85,7 @@ struct ScreenSourceOption: Equatable, Identifiable {
             && lhs.title == rhs.title
             && lhs.subtitle == rhs.subtitle
             && lhs.systemImage == rhs.systemImage
+            && lhs.activityRank == rhs.activityRank
             && lhs.pickerPlacement == rhs.pickerPlacement
     }
 }

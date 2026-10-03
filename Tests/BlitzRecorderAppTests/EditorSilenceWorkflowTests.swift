@@ -220,6 +220,10 @@ final class EditorSilenceWorkflowTests: XCTestCase {
         let player = try XCTUnwrap(playback.videoPlayer(for: .screen))
         XCTAssertTrue(playback.isPlaying)
         session.prepare(.init(vm: vm, playback: playback, project: project))
+        XCTAssertEqual(session.activity, .analyzingAudio)
+        XCTAssertTrue(session.windows.isEmpty)
+        XCTAssertTrue(session.showsActionsFooter)
+        XCTAssertFalse(session.canApply)
         XCTAssertEqual(session.audioSourcePaths, [fixture.take.audioURL.path])
         XCTAssertTrue(playback.isPlaying)
         XCTAssertFalse(session.skipSilence)
@@ -229,6 +233,7 @@ final class EditorSilenceWorkflowTests: XCTestCase {
         }
         XCTAssertFalse(session.loading)
         XCTAssertFalse(session.calculating)
+        XCTAssertNil(session.activity)
         XCTAssertNil(session.error)
         XCTAssertTrue(session.canApply)
         XCTAssertGreaterThan(session.metrics.removedDuration, 1)
@@ -239,6 +244,9 @@ final class EditorSilenceWorkflowTests: XCTestCase {
         session.paddingBefore = 0.2
         session.paddingAfter = 0.2
         session.setSuggestionsEnabled(false)
+        XCTAssertEqual(session.activity, .updatingSilences)
+        XCTAssertTrue(session.showsActionsFooter)
+        XCTAssertFalse(session.canApply)
         try await settle(session)
         XCTAssertTrue(session.cuts.isEmpty)
         XCTAssertFalse(session.suggestsPauses)
@@ -252,6 +260,8 @@ final class EditorSilenceWorkflowTests: XCTestCase {
         session.selectPacing(.natural)
         try await settle(session)
         session.setTranscriptLoading(true)
+        XCTAssertEqual(session.activity, .analyzingSpeech)
+        XCTAssertTrue(session.showsActionsFooter)
         XCTAssertFalse(session.canApply)
         XCTAssertFalse(session.apply())
         XCTAssertEqual(try Data(contentsOf: fixture.take.projectURL), originalData)
@@ -261,6 +271,9 @@ final class EditorSilenceWorkflowTests: XCTestCase {
             words: [.init(text: "hello", startTime: 0, endTime: 2, confidence: 0.95)],
             diarizedIntervals: [.init(speakerID: "speaker", startTime: 0, endTime: 10)])))
         session.setTranscriptLoading(false)
+        try await settle(session)
+        XCTAssertNil(session.activity)
+        XCTAssertTrue(session.canApply)
         session.customized = true
         session.minimumDuration = 0.4
         session.paddingBefore = 0.2
@@ -274,6 +287,8 @@ final class EditorSilenceWorkflowTests: XCTestCase {
         XCTAssertFalse(session.loading)
         XCTAssertEqual(session.cuts, suggestedCuts)
         XCTAssertTrue(session.apply())
+        XCTAssertNil(session.activity)
+        XCTAssertTrue(session.showsActionsFooter)
         XCTAssertFalse(session.canApply)
         XCTAssertEqual(vm.editorUndoTitle, "Undo Remove Silence")
         XCTAssertEqual(try store.loadRecordingProject(at: fixture.take.projectURL).edits.cuts, suggestedCuts)
@@ -283,8 +298,9 @@ final class EditorSilenceWorkflowTests: XCTestCase {
             confidence: 0.95, text: "hello", suggestedTitle: nil,
             words: [.init(text: "hello", startTime: 0, endTime: 2, confidence: 0.95)],
             diarizedIntervals: [.init(speakerID: "speaker", startTime: 0, endTime: 2)])))
-        XCTAssertFalse(session.canApply)
-        XCTAssertEqual(session.cuts, suggestedCuts)
+        XCTAssertTrue(session.canApply)
+        XCTAssertGreaterThan(session.cuts.count, suggestedCuts.count)
+        XCTAssertEqual(try store.loadRecordingProject(at: fixture.take.projectURL).edits.cuts, suggestedCuts)
         let editedProject = try XCTUnwrap(vm.lastExportedProject)
         let reopenedSession = SilenceEditingSession()
         reopenedSession.prepare(.init(vm: vm, playback: playback, project: editedProject))
@@ -553,6 +569,7 @@ final class EditorSilenceWorkflowTests: XCTestCase {
             confidence: 0.95, text: "hello", suggestedTitle: nil,
             words: [.init(text: "hello", startTime: 0, endTime: 2, confidence: 0.95)],
             diarizedIntervals: [.init(speakerID: "speaker", startTime: 0, endTime: 2)])))
+        try await settle(session)
         XCTAssertTrue(session.canRemoveNonDialogue)
         XCTAssertEqual(session.classification(.init(start: 6, end: 7)), .silence)
         XCTAssertEqual(try store.loadRecordingProject(at: fixture.take.projectURL).edits, project.edits)
@@ -595,5 +612,82 @@ final class EditorSilenceWorkflowTests: XCTestCase {
         XCTAssertFalse(session.loading)
         XCTAssertFalse(session.calculating)
         XCTAssertNil(session.error)
+    }
+}
+
+final class SilenceCutProposalTests: XCTestCase {
+    func testTranscriptArrivingAfterAnAppliedPassOffersRemainingSilence() {
+        var saved = TimelineEdits.empty
+        saved.silenceRemovalApplied = true
+        saved.cuts = [.init(start: 2, end: 4, kind: .silence, source: .automatic)]
+        let transcriptCuts = [TimelineCut(start: 6, end: 8, kind: .silence, source: .automatic)]
+        let proposal = SilenceCutProposal(.init(
+            duration: 10, baseCuts: saved.cuts, transcriptCuts: transcriptCuts, saved: saved,
+            suggestsPauses: true
+        ))
+        let metrics = SilenceTimelineMetrics(.init(duration: 10, proposed: proposal.cuts, saved: saved.cuts))
+        XCTAssertTrue(metrics.hasChanges)
+        XCTAssertEqual(metrics.removedDuration, 4, accuracy: 0.001)
+        XCTAssertTrue(TimelineTimeMap(takeDuration: TimelineTimeMap.time(10), cuts: proposal.cuts).isRemoved(takeTime: 7))
+    }
+
+    func testApplyingAndReopeningDoesNotOfferTheSameTranscriptCutsAgain() {
+        var saved = TimelineEdits.empty
+        saved.silenceRemovalApplied = true
+        saved.cuts = [.init(start: 2, end: 4, kind: .silence, source: .automatic)]
+        let transcriptCuts = [TimelineCut(start: 6, end: 8, kind: .silence, source: .automatic)]
+        saved.cuts = SilenceCutProposal(.init(
+            duration: 10, baseCuts: saved.cuts, transcriptCuts: transcriptCuts, saved: saved, suggestsPauses: true
+        )).cuts
+        let reopened = SilenceCutProposal(.init(
+            duration: 10, baseCuts: saved.cuts, transcriptCuts: transcriptCuts, saved: saved, suggestsPauses: true
+        ))
+        XCTAssertEqual(reopened.cuts, saved.cuts)
+        XCTAssertTrue(reopened.nonDialogueRanges.isEmpty)
+        XCTAssertFalse(SilenceTimelineMetrics(.init(duration: 10, proposed: reopened.cuts, saved: saved.cuts)).hasChanges)
+    }
+
+    func testRestoredRangesAndSoundOverridesAreProtectedFromLaterTranscriptSuggestions() throws {
+        var saved = TimelineEdits.empty
+        saved.silenceRemovalApplied = true
+        saved.cuts = [.init(start: 2, end: 8, kind: .silence, source: .automatic)]
+        saved = try XCTUnwrap(EditorTimeRange.restoring(.init(
+            range: .init(start: 3, end: 4), edits: saved, takeDuration: 10
+        )))
+        saved.silenceOverrides = [.init(id: UUID(), start: 8, end: 9, classification: .sound)]
+        let proposal = SilenceCutProposal(.init(
+            duration: 10, baseCuts: saved.cuts,
+            transcriptCuts: [.init(start: 2, end: 9, kind: .silence, source: .automatic)],
+            saved: saved, suggestsPauses: true
+        ))
+        let map = TimelineTimeMap(takeDuration: TimelineTimeMap.time(10), cuts: proposal.cuts)
+        XCTAssertFalse(map.isRemoved(takeTime: 3.5))
+        XCTAssertFalse(map.isRemoved(takeTime: 8.5))
+        XCTAssertTrue(map.isRemoved(takeTime: 2.5))
+        XCTAssertTrue(map.isRemoved(takeTime: 4.5))
+        XCTAssertEqual(proposal.cuts, saved.cuts)
+        XCTAssertTrue(proposal.nonDialogueRanges.isEmpty)
+    }
+
+    func testPendingAudioCutsCoverTranscriptSuggestionsWithoutDuplicates() {
+        let base = [TimelineCut(start: 2, end: 8, kind: .silence, source: .automatic)]
+        let proposal = SilenceCutProposal(.init(
+            duration: 10, baseCuts: base,
+            transcriptCuts: [.init(start: 3, end: 7, kind: .silence, source: .automatic)],
+            saved: .empty, suggestsPauses: true
+        ))
+        XCTAssertEqual(proposal.cuts, base)
+    }
+
+    func testDisabledDetectionKeepsSavedEditsWithoutAddingTranscriptCuts() {
+        var saved = TimelineEdits.empty
+        saved.cuts = [.init(start: 2, end: 4, kind: .manual, source: .user)]
+        let proposal = SilenceCutProposal(.init(
+            duration: 10, baseCuts: saved.cuts,
+            transcriptCuts: [.init(start: 6, end: 8, kind: .silence, source: .automatic)],
+            saved: saved, suggestsPauses: false
+        ))
+        XCTAssertEqual(proposal.cuts, saved.cuts)
+        XCTAssertFalse(SilenceTimelineMetrics(.init(duration: 10, proposed: proposal.cuts, saved: saved.cuts)).hasChanges)
     }
 }

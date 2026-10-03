@@ -21,7 +21,7 @@ final class BlitzRecorderMCPServerTests: XCTestCase {
         let list = try await send(server, #"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#)
         let tools = try XCTUnwrap((list["result"] as? [String: Any])?["tools"] as? [[String: Any]])
         XCTAssertEqual(tools.compactMap { $0["name"] as? String },
-                       ["projects_list", "project_get", "project_transcript", "projects_export_as_is", "export_status"])
+                       ["projects_list", "project_get", "project_transcript", "project_frame", "projects_export_as_is", "export_status"])
 
         let call = try await send(server, #"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"projects_list","arguments":{"limit":1}}}"#)
         let result = try XCTUnwrap(call["result"] as? [String: Any], "\(call)")
@@ -39,5 +39,25 @@ final class BlitzRecorderMCPServerTests: XCTestCase {
         XCTAssertEqual(response.statusCode, 200)
         let data = try XCTUnwrap(response.bodyData)
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    @MainActor
+    func testFrameToolRejectsInvalidArguments() async throws {
+        let suite = "MCPFrameArguments.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let coordinator = RecorderCoordinator(accessController: AccessController(defaults: defaults), defaults: defaults)
+        let server = BlitzRecorderMCPServer(coordinator: coordinator)
+        let id = UUID().uuidString
+        for arguments in [
+            #"{"projectId":"\#(id)","source":"microphone","timeSeconds":0}"#,
+            #"{"projectId":"\#(id)","source":"screen","timeSeconds":-1}"#,
+            #"{"projectId":"\#(id)","source":"screen","timeSeconds":"0"}"#,
+            #"{"projectId":"\#(id)","source":"screen"}"#
+        ] {
+            let response = try await send(server, #"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"project_frame","arguments":\#(arguments)}}"#)
+            let result = try XCTUnwrap(response["result"] as? [String: Any])
+            XCTAssertEqual(result["isError"] as? Bool, true)
+        }
     }
 }

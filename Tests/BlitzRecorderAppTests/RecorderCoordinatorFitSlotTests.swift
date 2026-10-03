@@ -39,7 +39,6 @@ final class RecorderCoordinatorFitSlotTests: XCTestCase {
 
         XCTAssertRect(coordinator.settings.sceneLayout.screenFrame, equals: settings.sceneLayout.screenFrame)
         XCTAssertRect(coordinator.settings.sceneLayout.cameraFrame, equals: settings.sceneLayout.cameraFrame)
-        XCTAssertNil(coordinator.settings.selectedScenePreset)
     }
 
     func testChangingLayoutClearsStaleScreenCrop() {
@@ -87,14 +86,14 @@ final class RecorderCoordinatorFitSlotTests: XCTestCase {
         coordinator.setLayout(.horizontal)
 
         let expectedLayout = SceneLayout.presetLayout(
-            .cameraInset,
+            .webcamLeft,
             for: .horizontal,
             screenAspectRatio: 1.25,
             cameraAspectRatio: coordinator.currentCameraSourceAspectRatio()
         )
         XCTAssertEqual(coordinator.settings.layout, .horizontal)
         XCTAssertEqual(coordinator.settings.screenSourceBinding, appBinding)
-        XCTAssertEqual(coordinator.settings.selectedScenePreset, .cameraInset)
+        XCTAssertEqual(coordinator.settings.selectedScenePreset, .webcamLeft)
         XCTAssertRect(coordinator.settings.sceneLayout.screenFrame, equals: expectedLayout.screenFrame)
         XCTAssertRect(coordinator.settings.sceneLayout.cameraFrame, equals: expectedLayout.cameraFrame)
     }
@@ -329,7 +328,12 @@ final class RecorderCoordinatorFitSlotTests: XCTestCase {
 
         XCTAssertRect(
             coordinator.settings.sceneLayout.screenFrame,
-            equals: CGRect(x: 1.0 / 3.0, y: 0, width: 2.0 / 3.0, height: 1)
+            equals: CGRect(
+                x: SceneLayout.defaultSideBySideCameraWidth(for: .horizontal),
+                y: 0,
+                width: 1 - SceneLayout.defaultSideBySideCameraWidth(for: .horizontal),
+                height: 1
+            )
         )
         XCTAssertEqual(
             coordinator.settings.sceneLayout.screenFrame.minX,
@@ -468,23 +472,22 @@ final class RecorderCoordinatorFitSlotTests: XCTestCase {
         XCTAssertFalse(persisted.hiddenSources.contains(.camera))
     }
 
-    func testCameraInsetRestartsPreviewsWhenHiddenSourcesBecomeVisible() {
+    func testCameraInsetRestartsCameraPreviewWhenCameraBecomesVisible() throws {
         let defaults = temporaryDefaults()
         var settings = RecordingSettings()
         settings.layout = .vertical
         settings.enabledSources = [.screen, .camera, .microphone]
-        settings.hiddenSources = [.screen, .camera]
         RecordingSettingsStore.save(settings, defaults: defaults)
 
         let coordinator = RecorderCoordinator(
             accessController: AccessController(defaults: defaults),
             defaults: defaults
         )
-        var screenConfigurationChangeCount = 0
+        let screenScene = try XCTUnwrap(coordinator.sceneLibrary.scenes(for: .vertical)
+            .first { $0.snapshot.selectedScenePreset == .screenFullscreen })
+        coordinator.selectScene(id: screenScene.id)
+        XCTAssertTrue(coordinator.settings.hiddenSources.contains(.camera))
         var cameraConfigurationChangeCount = 0
-        coordinator.onScreenCaptureConfigurationChanged = {
-            screenConfigurationChangeCount += 1
-        }
         coordinator.onCameraConfigurationChanged = {
             cameraConfigurationChangeCount += 1
         }
@@ -493,7 +496,6 @@ final class RecorderCoordinatorFitSlotTests: XCTestCase {
 
         XCTAssertFalse(coordinator.settings.hiddenSources.contains(.screen))
         XCTAssertFalse(coordinator.settings.hiddenSources.contains(.camera))
-        XCTAssertEqual(screenConfigurationChangeCount, 1)
         XCTAssertEqual(cameraConfigurationChangeCount, 1)
     }
 
@@ -587,7 +589,8 @@ final class RecorderCoordinatorFitSlotTests: XCTestCase {
             XCTAssertTrue(coordinator.settings.enabledSources.contains(.camera), file: file, line: line)
             XCTAssertFalse(coordinator.settings.hiddenSources.contains(.screen), file: file, line: line)
             XCTAssertTrue(coordinator.settings.hiddenSources.contains(.camera), file: file, line: line)
-        case .stackedHalves, .screenTop50, .screenTop70, .screenFocus, .cameraInset, .cameraFocus, .webcamLeft:
+        case .stackedHalves, .screenTop50, .screenTop70, .screenFocus, .cameraInset, .cameraFocus,
+             .webcamLeft, .cameraRight, .equalSplit, .screenInset:
             XCTAssertTrue(coordinator.settings.enabledSources.contains(.screen), file: file, line: line)
             XCTAssertTrue(coordinator.settings.enabledSources.contains(.camera), file: file, line: line)
             XCTAssertFalse(coordinator.settings.hiddenSources.contains(.screen), file: file, line: line)

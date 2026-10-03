@@ -19,6 +19,7 @@ struct RecordingOutputVariant: Codable, Equatable, Identifiable {
                 : video == [.camera] ? .webcamFullscreen : .defaultPreset(for: request.layout)
             scene.sceneLayout = SceneLayout.presetLayout(preset, for: request.layout,
                 screenAspectRatio: scene.screenSourceGeometry.aspectRatio())
+                .withCameraSide(scene.sceneLayout.cameraSide)
             scene.screenContentMode = .fit
             return RecordingProject.SceneEventSnapshot(.init(time: event.time, scene: scene, transition: event.transition))
         }

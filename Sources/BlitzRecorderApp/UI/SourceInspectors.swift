@@ -63,13 +63,17 @@ struct ScreenContentModeControl: View {
                 Button {
                     vm.beginScreenCropMode()
                 } label: {
-                    Label("Reposition", systemImage: "hand.draw.fill")
+                    Label("Crop on preview", systemImage: "crop")
                         .frame(maxWidth: .infinity)
                 }
                 .blitzButton(.secondary)
                 .disabled(!enabled || !vm.canEditScene)
                 .pointingHandCursor()
                 .help("Drag and resize the visible screen area on the preview")
+                Text("Choose which part of your screen shows.")
+                    .font(BlitzType.caption)
+                    .foregroundStyle(BlitzUI.supportingText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .opacity(enabled ? 1 : 0.55)
@@ -89,14 +93,19 @@ private struct ScreenSourceFramingControl: View {
                     vm.requestAccessibilityForWindowControls()
                 }
             } label: {
-                Label("Fit window to scene", systemImage: "rectangle.arrowtriangle.2.inward")
+                Label("Fit window to this layout", systemImage: "macwindow")
                     .frame(maxWidth: .infinity)
             }
             .blitzButton(.secondary)
-            .help("Resize the selected window to this scene so its whole width and height stay visible.")
+            .help("Resize the app window on your Mac so it fills its space in this layout.")
+
+            Text("Happens on its own when you switch layouts. Use this after you resize the window yourself.")
+                .font(BlitzType.caption)
+                .foregroundStyle(BlitzUI.supportingText)
+                .fixedSize(horizontal: false, vertical: true)
 
             BlitzInspectorSlider(configuration: .init(
-                title: "Text size",
+                title: "Content size",
                 value: Binding(
                     get: { Double(vm.targetWindowZoom) },
                     set: { vm.setTargetWindowZoom(CGFloat($0)) }
@@ -109,6 +118,11 @@ private struct ScreenSourceFramingControl: View {
             ))
             .disabled(!vm.hasAccessibilityAccessForWindowControls)
             .help("Resize the source window so its content looks bigger or smaller. The screen frame in your scene stays put.")
+
+            Text("Larger values make text and controls bigger in the video by resizing the app window.")
+                .font(BlitzType.caption)
+                .foregroundStyle(BlitzUI.supportingText)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .disabled(!enabled || !vm.canEditScene || vm.isScreenCropModeEnabled)
     }

@@ -11,6 +11,7 @@ struct SilenceDetectionRequest: Sendable {
     var paddingAfter: Double = 0.18
     var minimumAudio: Double = 0
     var overrides: [SilenceOverride] = []
+    var speechRanges: [RecordingTranscript.SpeechRange] = []
 }
 
 struct SilenceWindow: Equatable, Sendable {
@@ -115,13 +116,9 @@ enum SilenceDetection {
         }
         if let start { ranges.append((start, end)) }
         if config.minimumAudio > 0, ranges.count > 1 {
-            var merged: [(Double, Double)] = []
-            for range in ranges {
-                if let last = merged.last, range.0 - last.1 < config.minimumAudio {
-                    merged[merged.count - 1] = (last.0, range.1)
-                } else { merged.append(range) }
-            }
-            ranges = merged
+            ranges = mergingQuietInterruptions(.init(
+                ranges: ranges, windows: request.windows, configuration: config
+            ))
         }
         let detected = ranges.compactMap { range -> TimelineCut? in
             let tick = 1.0 / 600
@@ -140,6 +137,54 @@ enum SilenceDetection {
             cuts: config.previousCuts.filter { $0.source == .user } + detected,
             overrides: config.overrides
         ))
+    }
+
+    private struct MergeRequest {
+        let ranges: [(Double, Double)]
+        let windows: [SilenceWindow]
+        let configuration: SilenceDetectionRequest
+    }
+
+    private static func mergingQuietInterruptions(_ request: MergeRequest) -> [(Double, Double)] {
+        let config = request.configuration
+        let speech = config.speechRanges.filter {
+            $0.startTime.isFinite && $0.endTime.isFinite && $0.endTime > $0.startTime
+        }.sorted { $0.startTime < $1.startTime }
+        let kept = config.previousCuts.filter { !$0.isEnabled }.map { ($0.start, $0.end) }
+            + config.overrides.filter { $0.classification == .sound }.map { ($0.start, $0.end) }
+        let quietLimit = min(-30, config.thresholdDB + 12)
+        let tick = 1.0 / 600
+        var merged: [(Double, Double)] = []
+        var speechIndex = 0
+        var windowIndex = 0
+        for range in request.ranges {
+            guard let last = merged.last, range.0 - last.1 <= config.minimumAudio + tick else {
+                merged.append(range)
+                continue
+            }
+            while speechIndex < speech.count, speech[speechIndex].endTime <= last.1 { speechIndex += 1 }
+            let containsSpeech = speechIndex < speech.count && speech[speechIndex].startTime < range.0
+            let containsKeptRange = kept.contains { $0.0 < range.1 && $0.1 > last.0 }
+            while windowIndex < request.windows.count, request.windows[windowIndex].end <= last.1 { windowIndex += 1 }
+            var index = windowIndex
+            var coveredUntil = last.1
+            var isQuiet = true
+            while index < request.windows.count, request.windows[index].start < range.0 {
+                let window = request.windows[index]
+                if !window.decibels.isFinite || window.decibels > quietLimit || window.start > coveredUntil + tick {
+                    isQuiet = false
+                    break
+                }
+                coveredUntil = max(coveredUntil, window.end)
+                index += 1
+            }
+            if !containsSpeech, !containsKeptRange, isQuiet, coveredUntil >= range.0 - tick {
+                merged[merged.count - 1] = (last.0, range.1)
+            } else {
+                merged.append(range)
+            }
+        }
+        return merged
     }
 
     private static func coveringTimeline(_ windows: [SilenceWindow], duration: Double) -> [SilenceWindow] {

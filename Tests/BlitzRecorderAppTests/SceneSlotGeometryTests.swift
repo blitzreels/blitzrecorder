@@ -190,7 +190,7 @@ final class SceneSlotGeometryTests: XCTestCase {
         XCTAssertRect(plan.screenCrop, equals: CGRect(x: 0.341875, y: 0, width: 0.31625, height: 0.5))
     }
 
-    func testHorizontalWebcamLeftFitsWindowToTwoThirdsScreenSlot() {
+    func testHorizontalWebcamLeftFitsWindowToScreenSlotBesidePortraitCamera() {
         let layout = SceneLayout.presetLayout(.webcamLeft, for: .horizontal)
 
         let plan = TargetWindowFitting.plan(
@@ -201,15 +201,12 @@ final class SceneSlotGeometryTests: XCTestCase {
             enabledSources: [.screen, .camera]
         )
 
-        XCTAssertRect(
-            plan.screenSlot,
-            equals: CGRect(x: 1.0 / 3.0, y: 0, width: 2.0 / 3.0, height: 1)
-        )
+        let width: CGFloat = 81.0 / 256.0
+        XCTAssertRect(plan.screenSlot, equals: CGRect(x: width, y: 0, width: 1 - width, height: 1))
         XCTAssertRect(
             plan.windowFrame,
-            equals: CGRect(x: 533.3333333333, y: 0, width: 1066.6666666667, height: 900)
+            equals: CGRect(x: 1600 * width, y: 0, width: 1600 * (1 - width), height: 900)
         )
-        XCTAssertEqual(plan.windowFrame.width / plan.windowFrame.height, 32.0 / 27.0, accuracy: 0.000001)
     }
 
     func testTargetWindowFittingPlanZoomInUsesSmallerSourceWindow() {

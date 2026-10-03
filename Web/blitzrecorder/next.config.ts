@@ -12,6 +12,9 @@ const nextConfig: NextConfig = {
       { source: "/terms.html", destination: "/terms", permanent: true },
       // People type /pricing; the license claim now lives on home.
       { source: "/pricing", destination: "/#license", permanent: false },
+      { source: "/hosting/videos", destination: "/videos", permanent: false },
+      { source: "/hosting/sign-in", destination: "/sign-in", permanent: false },
+      { source: "/hosting/complete", destination: "/billing", permanent: false },
       // www → apex
       {
         source: "/:path*",

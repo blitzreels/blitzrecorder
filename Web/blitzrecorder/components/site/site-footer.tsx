@@ -5,6 +5,7 @@ import { VersionTag } from "@/components/site/download-button";
 import { assets } from "@/lib/assets";
 import { ALGOMAX_URL } from "@/lib/content";
 import { BlitzReelsLink } from "@/components/site/blitzreels-link";
+import { videosPath } from "@/lib/hosting/paths";
 import { GITHUB_REPO_URL, RELEASES_URL } from "@/lib/release";
 
 type FooterLink =
@@ -15,7 +16,7 @@ type FooterLink =
 const productLinks: FooterLink[] = [
   { kind: "internal", label: "Mac app", href: "/macos" },
   { kind: "internal", label: "iPhone camera", href: "/ios" },
-  { kind: "internal", label: "Your shared videos", href: "/hosting/videos" },
+  { kind: "internal", label: "Your shared videos", href: videosPath },
   { kind: "external", label: "Windows Studio", href: RELEASES_URL },
   { kind: "external", label: "Release notes", href: RELEASES_URL },
 ];

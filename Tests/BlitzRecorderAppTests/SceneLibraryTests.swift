@@ -2,23 +2,107 @@ import CoreGraphics
 @testable import BlitzRecorderApp
 import XCTest
 
+final class SceneLibraryDefaultLayoutTests: XCTestCase {
+    func testWideCanvasesStartOnCameraLeftWithFixedLayouts() throws {
+        let library = SceneLibrary.defaultLibrary()
+        for canvas in [CaptureLayout.horizontal, .square] {
+            let scenes = library.scenes(for: canvas)
+            XCTAssertEqual(scenes.map(\.name), ["Screen + Camera", "Camera Inset", "Screen", "Camera"])
+            let first = try XCTUnwrap(scenes.first)
+            XCTAssertEqual(first.snapshot.selectedScenePreset, .webcamLeft)
+            XCTAssertEqual(library.selectedScene(layout: canvas)?.id, first.id)
+            let width = SceneLayout.defaultSideBySideCameraWidth(for: canvas)
+            XCTAssertEqual(first.snapshot.sceneLayout.cameraFrame, CGRect(x: 0, y: 0, width: width, height: 1))
+            XCTAssertEqual(first.snapshot.sceneLayout.screenFrame, CGRect(x: width, y: 0, width: 1 - width, height: 1))
+        }
+        XCTAssertEqual(
+            library.scenes(for: .vertical).map(\.name),
+            ["Screen + Camera", "Camera Inset", "Screen", "Camera"]
+        )
+    }
+
+    func testWideCameraColumnIsPortraitNineBySixteen() {
+        XCTAssertEqual(SceneLayout.defaultSideBySideCameraWidth(for: .horizontal), 81.0 / 256.0, accuracy: 0.0001)
+        XCTAssertEqual(SceneLayout.defaultSideBySideCameraWidth(for: .square), 0.4, accuracy: 0.0001)
+    }
+
+    func testSideBySideWidthIsClampedAndKeepsCameraSide() {
+        let right = SceneLayout.sideBySideLayout(.init(cameraWidth: 0.9, cameraSide: .right))
+        XCTAssertEqual(right.cameraSide, .right)
+        XCTAssertEqual(right.sideBySideCameraWidth ?? 0, SceneLayout.maximumSideBySideCameraWidth, accuracy: 0.0001)
+        XCTAssertEqual(right.screenFrame.minX, 0, accuracy: 0.0001)
+    }
+
+    func testLegacyDefaultCameraWidthMigratesToPortraitWidth() {
+        var library = SceneLibrary.defaultLibrary()
+        library.scenesByLayout[.horizontal]?[0].snapshot.sceneLayout = SceneLayout.sideBySideLayout(
+            .init(cameraWidth: 0.4, cameraSide: .right)
+        )
+        library.canonicalize()
+        let migrated = library.scenes(for: .horizontal)[0].snapshot.sceneLayout
+        XCTAssertEqual(migrated.cameraSide, .right)
+        XCTAssertEqual(migrated.sideBySideCameraWidth ?? 0, 81.0 / 256.0, accuracy: 0.0001)
+    }
+
+    func testEachFixedLayoutShowsOnlyItsSources() {
+        let scenes = SceneLibrary.defaultLibrary().scenes(for: .horizontal)
+        XCTAssertEqual(scenes[2].snapshot.hiddenVideoSources, [.camera])
+        XCTAssertEqual(scenes[3].snapshot.hiddenVideoSources, [.screen])
+        for scene in scenes.prefix(2) {
+            XCTAssertTrue(scene.snapshot.hiddenVideoSources.isEmpty)
+        }
+    }
+
+    func testCanonicalizeRepairsDriftedScenesAndKeepsLayoutTweaks() throws {
+        var library = SceneLibrary.defaultLibrary()
+        var scenes = library.scenes(for: .horizontal)
+        scenes[3].name = "Camera Only"
+        scenes[3].snapshot.selectedScenePreset = .webcamLeft
+        scenes[3].snapshot.hiddenVideoSources = []
+        scenes[1].snapshot.sceneLayout.cameraFrame.size.width = 0.45
+        scenes[0].snapshot.hiddenVideoSources = [.camera]
+        let custom = RecordingSceneDefinition(name: "My demo", layout: .horizontal, snapshot: scenes[2].snapshot)
+        library.scenesByLayout[.horizontal] = scenes + [custom]
+        library.selectedSceneIDsByLayout[.horizontal] = scenes[3].id
+
+        XCTAssertTrue(library.canonicalize())
+        let repaired = library.scenes(for: .horizontal)
+        XCTAssertEqual(repaired.map(\.name), ["Screen + Camera", "Camera Inset", "Screen", "Camera"])
+        XCTAssertEqual(repaired[0].id, scenes[3].id)
+        XCTAssertEqual(repaired[1].snapshot.sceneLayout.cameraFrame.width, 0.45, accuracy: 0.0001)
+        XCTAssertTrue(repaired[0].snapshot.hiddenVideoSources.isEmpty)
+        XCTAssertEqual(repaired[3].snapshot.selectedScenePreset, .webcamFullscreen)
+        XCTAssertEqual(repaired[3].snapshot.hiddenVideoSources, [.screen])
+        XCTAssertEqual(library.selectedScene(layout: .horizontal)?.id, repaired[0].id)
+        XCTAssertFalse(library.canonicalize())
+    }
+
+    func testStoreRepairsAndPersistsLegacyLibraries() throws {
+        let suite = "SceneLibraryDefaultLayoutTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var legacy = SceneLibrary.defaultLibrary()
+        legacy.scenesByLayout[.vertical]?[0].name = "Screen + Cam"
+        let duplicate = legacy.scenes(for: .vertical)[0]
+        legacy.scenesByLayout[.vertical]?.append(duplicate)
+        SceneLibraryStore.save(legacy, defaults: defaults)
+
+        let loaded = SceneLibraryStore.load(defaults: defaults, currentSettings: RecordingSettings())
+        XCTAssertEqual(loaded.scenes(for: .vertical).map(\.name), ["Screen + Camera", "Camera Inset", "Screen", "Camera"])
+        XCTAssertEqual(SceneLibraryStore.load(defaults: defaults, currentSettings: RecordingSettings()), loaded)
+    }
+}
+
 @MainActor
 final class SceneLibraryTests: XCTestCase {
-    func testDefaultLibrarySeedsCurrentSceneFromExistingSettings() {
+    func testDefaultLibrarySelectsTheSceneMatchingCurrentPreset() {
         var settings = RecordingSettings()
-        settings.layout = .vertical
-        settings.selectedScenePreset = nil
-        settings.canvasBackgroundAnimated = true
-        settings.sceneLayout.screenFrame = CGRect(x: 0, y: 0.3, width: 1, height: 0.7)
-        settings.sceneLayout.cameraFrame = CGRect(x: 0.1, y: 0.05, width: 0.8, height: 0.22)
+        settings.layout = .horizontal
+        settings.selectedScenePreset = .cameraRight
 
         let library = SceneLibrary.defaultLibrary(currentSettings: settings)
-        let selected = library.selectedScene(layout: .vertical)
 
-        XCTAssertEqual(selected?.name, "Screen + Camera")
-        XCTAssertEqual(selected?.snapshot.canvasBackgroundAnimated, true)
-        XCTAssertEqual(selected?.snapshot.sceneLayout.screenFrame, settings.sceneLayout.screenFrame)
-        XCTAssertEqual(selected?.snapshot.sceneLayout.cameraFrame, settings.sceneLayout.cameraFrame)
+        XCTAssertEqual(library.selectedScene(layout: .horizontal)?.name, "Screen + Camera")
     }
 
     func testSceneSnapshotDecodesMissingCanvasBackgroundAnimatedAsFalse() throws {
@@ -224,112 +308,29 @@ final class SceneLibraryTests: XCTestCase {
         XCTAssertEqual(coordinator.settings.layout, .horizontal)
     }
 
-    func testCoordinatorSceneSwitchRestoresSceneCameraDeviceAndCrop() {
+    func testSceneSwitchChangesLayoutButKeepsCameraDeviceAndBackground() {
         let defaults = temporaryDefaults()
-        var currentSettings = RecordingSettings()
-        currentSettings.layout = .vertical
-        currentSettings.selectedCameraID = "current-camera"
-        currentSettings.cameraCropAmount = CGPoint(x: 0.22, y: 0.11)
-        currentSettings.cameraCropPosition = CGPoint(x: -0.18, y: 0.31)
-        RecordingSettingsStore.save(currentSettings, defaults: defaults)
-
-        var currentSceneSettings = currentSettings
-        currentSceneSettings.sceneLayout.cameraFrame = CGRect(x: 0.06, y: 0.62, width: 0.34, height: 0.25)
-        var staleSceneSettings = currentSettings
-        staleSceneSettings.selectedCameraID = "stale-camera"
-        staleSceneSettings.screenSourceBinding = .display(id: "old-display")
-        staleSceneSettings.cameraCropAmount = .zero
-        staleSceneSettings.cameraCropPosition = .zero
-        staleSceneSettings.sceneLayout.cameraFrame = CGRect(x: 0.58, y: 0.08, width: 0.32, height: 0.24)
-
-        let currentScene = RecordingSceneDefinition(
-            name: "Current",
-            layout: .vertical,
-            snapshot: RecordingSceneSnapshot(settings: currentSceneSettings)
-        )
-        let staleScene = RecordingSceneDefinition(
-            name: "Stale",
-            layout: .vertical,
-            snapshot: RecordingSceneSnapshot(settings: staleSceneSettings)
-        )
-        let library = SceneLibrary(
-            scenesByLayout: [.vertical: [currentScene, staleScene]],
-            selectedSceneIDsByLayout: [.vertical: currentScene.id]
-        )
-        SceneLibraryStore.save(library, defaults: defaults)
-
+        var settings = RecordingSettings()
+        settings.layout = .horizontal
+        settings.selectedCameraID = "current-camera"
+        settings.canvasBackgroundStyle = .graphite
+        RecordingSettingsStore.save(settings, defaults: defaults)
         let coordinator = RecorderCoordinator(
             accessController: AccessController(defaults: defaults),
             defaults: defaults
         )
+        let scenes = coordinator.sceneLibrary.scenes(for: .horizontal)
 
-        coordinator.selectScene(id: staleScene.id)
+        coordinator.selectScene(id: scenes[3].id)
+        XCTAssertEqual(coordinator.settings.selectedScenePreset, .webcamFullscreen)
+        XCTAssertTrue(coordinator.settings.hiddenSources.contains(.screen))
+        XCTAssertEqual(coordinator.settings.selectedCameraID, "current-camera")
+        XCTAssertEqual(coordinator.settings.canvasBackgroundStyle, .graphite)
 
-        XCTAssertEqual(coordinator.settings.sceneLayout.cameraFrame, staleSceneSettings.sceneLayout.cameraFrame)
-        XCTAssertEqual(coordinator.settings.selectedCameraID, "stale-camera")
-        XCTAssertEqual(coordinator.settings.screenSourceBinding, currentSettings.screenSourceBinding)
-        XCTAssertEqual(coordinator.settings.cameraCropAmount, .zero)
-        XCTAssertEqual(coordinator.settings.cameraCropPosition, .zero)
-    }
-
-    func testSceneLibraryCreatesDuplicateRenamesReordersAndDeletesScenes() {
-        var settings = RecordingSettings()
-        settings.layout = .vertical
-        let snapshot = RecordingSceneSnapshot(settings: settings)
-        var library = SceneLibrary.defaultLibrary(currentSettings: settings)
-
-        let created = library.createScene(layout: .vertical, name: "Demo", snapshot: snapshot)
-        XCTAssertEqual(library.selectedScene(layout: .vertical)?.id, created.id)
-        XCTAssertEqual(library.scenes(for: .vertical).last?.name, "Demo")
-
-        let duplicate = library.duplicateScene(id: created.id, layout: .vertical)
-        XCTAssertEqual(duplicate?.name, "Demo Copy")
-        XCTAssertEqual(library.selectedScene(layout: .vertical)?.id, duplicate?.id)
-
-        XCTAssertTrue(library.renameScene(id: duplicate!.id, layout: .vertical, name: "  Polished Demo  "))
-        XCTAssertEqual(library.selectedScene(layout: .vertical)?.name, "Polished Demo")
-
-        XCTAssertTrue(library.moveScene(id: duplicate!.id, layout: .vertical, to: 0))
-        XCTAssertEqual(library.scenes(for: .vertical).first?.id, duplicate?.id)
-
-        XCTAssertTrue(library.deleteScene(id: duplicate!.id, layout: .vertical))
-        XCTAssertNotEqual(library.selectedScene(layout: .vertical)?.id, duplicate?.id)
-        XCTAssertFalse(library.scenes(for: .vertical).contains { $0.id == duplicate?.id })
-    }
-
-    func testSceneLibraryKeepsAtLeastOneScenePerLayout() {
-        var settings = RecordingSettings()
-        settings.layout = .horizontal
-        var library = SceneLibrary(
-            scenesByLayout: [
-                .horizontal: [
-                    RecordingSceneDefinition(
-                        name: "Only Scene",
-                        layout: .horizontal,
-                        snapshot: RecordingSceneSnapshot(settings: settings)
-                    )
-                ]
-            ],
-            selectedSceneIDsByLayout: [:]
-        )
-        library.selectedSceneIDsByLayout[.horizontal] = library.scenes(for: .horizontal)[0].id
-
-        XCTAssertFalse(library.deleteScene(id: library.scenes(for: .horizontal)[0].id, layout: .horizontal))
-        XCTAssertEqual(library.scenes(for: .horizontal).count, 1)
-    }
-
-    func testSceneLibraryMigratesLegacyCameraNames() {
-        var library = SceneLibrary.defaultLibrary()
-        library.scenesByLayout[.vertical]?[0].name = "Screen + Cam"
-        library.scenesByLayout[.vertical]?[2].name = "Cam Only"
-        library.scenesByLayout[.vertical]?[3].name = "Cam Corner"
-
-        XCTAssertTrue(library.migrateCanonicalCameraNames())
-        XCTAssertEqual(
-            library.scenes(for: .vertical).map(\.name),
-            ["Screen + Camera", "Screen Only", "Camera Only", "Camera Inset"]
-        )
-        XCTAssertFalse(library.migrateCanonicalCameraNames())
+        coordinator.selectScene(id: scenes[0].id)
+        XCTAssertEqual(coordinator.settings.selectedScenePreset, .webcamLeft)
+        XCTAssertFalse(coordinator.settings.hiddenSources.contains(.screen))
+        XCTAssertFalse(coordinator.settings.hiddenSources.contains(.camera))
     }
 
     private func temporaryDefaults() -> UserDefaults {

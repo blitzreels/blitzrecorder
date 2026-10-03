@@ -124,6 +124,7 @@ final class RecorderSceneInspectorTests: XCTestCase {
     func testInsetAndOverlappingLayoutsDoNotAcquireSplitControls() {
         var settings = customizedSplitSettings()
         settings.sceneLayout = SceneLayout.presetLayout(.cameraInset, for: .vertical)
+        settings.selectedScenePreset = .cameraInset
         let setup = makeFixture(settings)
         defer { setup.defaults.removePersistentDomain(forName: setup.suite) }
         XCTAssertFalse(setup.viewModel.showsScreenSplitControl)
@@ -144,8 +145,6 @@ final class RecorderSceneInspectorTests: XCTestCase {
                 setup.viewModel.selectScene(sceneID)
                 XCTAssertEqual(setup.viewModel.inspectorSelection, .source(source))
             }
-            setup.viewModel.duplicateSelectedScene()
-            XCTAssertEqual(setup.viewModel.inspectorSelection, .source(source))
         }
 
         setup.viewModel.selectBackgroundLayer()

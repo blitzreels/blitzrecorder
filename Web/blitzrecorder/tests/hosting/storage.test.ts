@@ -13,7 +13,7 @@ import { getStripe } from "../../lib/payments";
 import { syncHostingBilling } from "../../lib/hosting/billing";
 import { HOSTING_PLAN } from "../../lib/hosting/plan";
 import { cleanupExpired } from "../../lib/hosting/processor";
-import { stopSharingVideo } from "../../lib/hosting/web-session";
+import { ownerLibrary, setVideoListing, stopSharingVideo } from "../../lib/hosting/web-session";
 
 const database = process.env.HOSTING_TEST_DATABASE_URL;
 const integration = database ? test : test.skip;
@@ -39,6 +39,7 @@ test.before(async () => {
   await hostingPool().query(await readFile(new URL("../../migrations/003-hosting-accounts.sql", import.meta.url), "utf8"));
   await hostingPool().query(await readFile(new URL("../../migrations/004-hosting-usage.sql", import.meta.url), "utf8"));
   await hostingPool().query(await readFile(new URL("../../migrations/006-hosting-processing-progress.sql", import.meta.url), "utf8"));
+  await hostingPool().query(await readFile(new URL("../../migrations/007-hosting-listed.sql", import.meta.url), "utf8"));
   r2().middlewareStack.add(() => async (args) => {
     const value = args.input as { Key?: string };
     if (value.Key?.startsWith("hosting-jobs/") && failJobNotification) {
@@ -162,6 +163,29 @@ integration("a 1080p MP4 plays as soon as its upload completes, with no processi
   assert.equal(shared?.width, 1920);
   assert.equal(shared?.duration, input.duration);
   await assert.rejects(uploadPoster({ account: owner, id: upload.id, body: { jpeg: "" } }), { status: 409 });
+});
+
+integration("unlisting hides the public link and keeps the video in the library", async () => {
+  process.env.HOSTING_MEDIA_ORIGIN = "https://media.test";
+  const owner = await account({ limit: 1024 ** 3, active: true });
+  const stranger = await account({ limit: 1024 ** 3, active: true });
+  const { id } = await beginUpload({ account: owner, body: { ...input, requestKey: "u".repeat(20) } });
+  const { slug } = (await hostingPool().query<{ slug: string }>(
+    "UPDATE hosting_assets SET status='ready', files=$2::jsonb WHERE id=$1 RETURNING slug",
+    [id, JSON.stringify([{ path: "poster.jpg", bytes: 12 }])])).rows[0];
+  assert.ok(await sharedAsset(slug));
+  assert.equal(await setVideoListing({ account: stranger, slug, listed: false }), false);
+  assert.equal(await setVideoListing({ account: owner, slug, listed: false }), true);
+  assert.equal(await sharedAsset(slug), null);
+  const hidden = (await ownerLibrary(owner)).find((video) => video.slug === slug);
+  assert.equal(hidden?.listed, false);
+  assert.equal(hidden?.status, "ready");
+  assert.equal(hidden?.poster, null);
+  assert.equal(await setVideoListing({ account: owner, slug, listed: true }), true);
+  assert.ok(await sharedAsset(slug));
+  const restored = (await ownerLibrary(owner)).find((video) => video.slug === slug);
+  assert.equal(restored?.listed, true);
+  assert.equal(restored?.poster, "https://media.test/s/" + slug + "/poster.jpg");
 });
 
 integration("stopping a share from the web only works for the owner and ends the public link", async () => {

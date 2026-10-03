@@ -1,10 +1,16 @@
 import SwiftUI
 
 struct EditRecordingButton: View {
+    enum Placement {
+        case dock
+        case page
+    }
+
     struct Configuration {
         let title: String
         let isLoading: Bool
         let help: String
+        let placement: Placement
         let action: () -> Void
     }
 
@@ -28,8 +34,7 @@ struct EditRecordingButton: View {
             }
             .fixedSize()
         }
-        .blitzButton(.accent)
-        .pointingHandCursor()
+        .blitzButton(configuration.placement == .dock ? .dock : .prominent)
         .disabled(configuration.isLoading)
         .accessibilityLabel(configuration.isLoading ? "Opening recording" : configuration.title)
         .help(configuration.help)

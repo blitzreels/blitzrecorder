@@ -100,6 +100,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         viewModel.onStudioModeChanged = { [weak self] mode in
             self?.syncIdleCaptureResources(for: mode)
+            self?.saveStudioPage()
         }
         viewModel.onLivePreviewChanged = { [weak self] _ in
             guard let self else { return }
@@ -107,6 +108,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         viewModel.onProjectOpened = { [weak self] in
             self?.showEditorAfterOpeningProject()
+            self?.saveStudioPage()
         }
         coordinator.onAudioLevel = { [weak self] source, level in
             guard let self,
@@ -134,6 +136,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             self.previewStage.cameraPreview.isHidden = false
             self.previewStage.cameraPreview.enqueuePreviewSampleBuffer(sampleBuffer, width: width, height: height)
             self.cameraPreviewDeviceID = self.coordinator.settings.selectedCameraID
+        }
+        coordinator.onLocalCameraThumbnailSampleBuffer = { [weak self] sampleBuffer in
+            guard let self,
+                  self.previewFramesAreAllowed,
+                  self.coordinator.settings.enabledSources.contains(.camera),
+                  !self.coordinator.isRemoteCameraSelected else { return }
+            self.previewStage.cameraPreview.thumbnailSampler.offer(sampleBuffer)
         }
         coordinator.onRemoteCameraPreviewFrame = { [weak self] image in
             guard let self, self.remoteCameraPreviewFramesAreAllowed else { return }
@@ -191,6 +200,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.minSize = Self.minimumWindowContentSize
 
         viewModel.applyState(coordinator.state)
+        if let saved = StudioPagePreference(defaults: .standard).load() {
+            viewModel.restoreStudioPage(saved)
+        }
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -357,6 +369,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.deminiaturize(nil)
         window.makeKeyAndOrderFront(nil)
         window.makeMain()
+    }
+
+    private func saveStudioPage() {
+        StudioPagePreference(defaults: .standard).save(viewModel.savedStudioPage)
     }
 
     private func showEditorAfterOpeningProject() {

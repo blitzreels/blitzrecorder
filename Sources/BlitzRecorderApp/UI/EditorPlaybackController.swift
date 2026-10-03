@@ -101,6 +101,8 @@ final class EditorPlaybackController: NowPlayingPlayback {
     @ObservationIgnored private var loadedProjectPath: String?
     @ObservationIgnored private var loadedMediaSignature: EditorPlaybackMediaSignature?
     @ObservationIgnored private var isScrubbing = false
+    @ObservationIgnored private var resumesAfterScrub = false
+    @ObservationIgnored private var seekGeneration = 0
     @ObservationIgnored private var lastAudiblePlaybackVolume: Double = 1
     @ObservationIgnored private var readinessContinuation: AsyncStream<Void>.Continuation?
     @ObservationIgnored private var loadGeneration = 0 {
@@ -478,6 +480,9 @@ final class EditorPlaybackController: NowPlayingPlayback {
 
     func togglePlayback() {
         guard isReady, masterPlayer != nil else { return }
+        seekGeneration += 1
+        isScrubbing = false
+        resumesAfterScrub = false
         if isPlaying {
             pauseAll()
             isPlaying = false
@@ -493,7 +498,9 @@ final class EditorPlaybackController: NowPlayingPlayback {
     func play(from seconds: Double) {
         guard isReady, masterPlayer != nil else { return }
         currentTime = clampedTime(seconds)
+        seekGeneration += 1
         isScrubbing = false
+        resumesAfterScrub = false
         isPlaying = playAll()
     }
 
@@ -553,6 +560,11 @@ final class EditorPlaybackController: NowPlayingPlayback {
 
     func scrub(to seconds: Double) {
         guard isReady else { return }
+        if !isScrubbing, isPlaying {
+            pauseAll()
+            resumesAfterScrub = true
+        }
+        seekGeneration += 1
         isScrubbing = true
         let clamped = clampedTime(seconds)
         currentTime = clamped
@@ -571,15 +583,34 @@ final class EditorPlaybackController: NowPlayingPlayback {
 
     func endScrub() {
         guard isScrubbing else { return }
-        isScrubbing = false
-        seek(to: currentTime)
+        settle(at: currentTime)
     }
 
     func seek(to seconds: Double) {
         guard isReady else { return }
+        if isPlaying, !isScrubbing {
+            pauseAll()
+            resumesAfterScrub = true
+        }
+        isScrubbing = true
+        settle(at: seconds)
+    }
+
+    private func settle(at seconds: Double) {
         let clamped = clampedTime(seconds)
         currentTime = clamped
-        seekAll(to: clamped, precise: true)
+        seekGeneration += 1
+        let generation = seekGeneration
+        let load = loadGeneration
+        Task { @MainActor [weak self] in
+            await self?.seekAllPrecisely(to: clamped)
+            guard let self, self.seekGeneration == generation, self.loadGeneration == load else { return }
+            self.isScrubbing = false
+            if self.resumesAfterScrub {
+                self.resumesAfterScrub = false
+                self.isPlaying = self.playAll()
+            }
+        }
     }
 
     private func seekAll(to seconds: Double, precise: Bool) {

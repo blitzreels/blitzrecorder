@@ -30,6 +30,19 @@ final class ScreenSourcePickerOrganizationTests: XCTestCase {
         )
     }
 
+    func testMostRecentlyActiveSourceSortsFirstWithinAGroup() {
+        let ranked = [("Arc", 4), ("Zed", 0), ("Google Chrome", 1), ("Calendar", Int.max)].map { name, rank in
+            var option = option(OptionRequest(name: name, bundleIdentifier: "test.\(name)"))
+            option.activityRank = rank
+            return option
+        }
+
+        XCTAssertEqual(
+            ScreenSourcePickerOrganization.sorted(ranked).map(\.title),
+            ["Zed", "Google Chrome", "Arc", "Calendar"]
+        )
+    }
+
     func testRecentAppMovesAheadOfBuiltInSuggestions() {
         let safari = option(OptionRequest(name: "Safari", bundleIdentifier: "com.apple.Safari"))
         let placement = ScreenSourcePickerOrganization.placement(

@@ -36,26 +36,6 @@ extension RecorderCoordinator {
         studio.selectScene(id: id)
     }
 
-    func createSceneFromCurrentSettings(named name: String? = nil) {
-        studio.createSceneFromCurrentSettings(named: name)
-    }
-
-    func duplicateSelectedScene() {
-        studio.duplicateSelectedScene()
-    }
-
-    func renameScene(id: UUID, to name: String) {
-        studio.renameScene(id: id, to: name)
-    }
-
-    func deleteScene(id: UUID) {
-        studio.deleteScene(id: id)
-    }
-
-    func moveScene(id: UUID, to index: Int) {
-        studio.moveScene(id: id, to: index)
-    }
-
     func setLayout(_ layout: CaptureLayout) {
         studio.setLayout(layout)
     }
@@ -190,6 +170,10 @@ extension RecorderCoordinator {
 
     func setScreenSplitHeight(_ height: CGFloat) {
         studio.setScreenSplitHeight(height)
+    }
+
+    func setSideBySideLayout(_ request: SceneLayout.SideBySideRequest) {
+        studio.setSideBySideLayout(request)
     }
 
     func setCameraInset(
