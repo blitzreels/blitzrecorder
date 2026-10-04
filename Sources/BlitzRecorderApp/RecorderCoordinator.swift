@@ -55,6 +55,7 @@ final class RecorderCoordinator {
     var hasActivePickedScreenContent: Bool { capture.hasActivePickedScreenContent }
     var hasActiveScreenSourceSelection: Bool { capture.hasActiveScreenSourceSelection }
     var activePickedScreenContentKind: ScreenSourceBinding.Kind? { capture.activePickedScreenContentKind }
+    var isSwitchingScreenSource: Bool { capture.screenReconfiguration.pickerTransactionTask != nil }
 
     var onStateChanged: ((RecordingState) -> Void)? {
         didSet { capture.onStateChanged = onStateChanged }

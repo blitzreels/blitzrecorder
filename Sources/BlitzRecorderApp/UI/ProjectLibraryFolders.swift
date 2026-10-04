@@ -134,6 +134,16 @@ extension ProjectLibraryView {
                 .foregroundStyle(BlitzUI.secondaryText)
                 .monospacedDigit()
                 .accessibilityLabel(count == 1 ? "1 recording" : "\(count) recordings")
+            Button {
+                folderNameDraft = node.path.name
+                folderPrompt = .rename(node.path)
+            } label: {
+                Image(systemName: "pencil")
+            }
+            .blitzButton(.quiet)
+            .controlSize(.mini)
+            .help("Rename \(node.path.displayPath)")
+            .accessibilityLabel("Rename folder \(node.path.displayPath)")
             if !node.isNumbered {
                 recordButton(.init(target: target, isTarget: vm.folderRecordTarget == target,
                                    help: "Record into \(node.path.displayPath)"))
@@ -335,6 +345,12 @@ extension ProjectLibraryView {
             message: projects.count == 1 ? "Removed from folder" : "Removed \(projects.count) recordings from folder",
             folderRename: nil
         ))
+    }
+
+    func folderPromptAffectedCount(_ prompt: ProjectFolderPrompt) -> Int {
+        guard case .rename(let path) = prompt else { return 0 }
+        let index = folderIndex
+        return vm.recentProjects.filter { index.resolved($0).folder?.hasPrefix(path) == true }.count
     }
 
     func commitFolderPrompt(_ prompt: ProjectFolderPrompt) {

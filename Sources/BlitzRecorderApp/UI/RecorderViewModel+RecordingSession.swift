@@ -190,6 +190,7 @@ extension RecorderViewModel {
         async let screenSources = coordinator.availableScreenSources()
         availableDisplays = await displays
         availableScreenSources = await screenSources
+        refreshScreenSourceAvailability()
     }
 
     func screenSourceThumbnail(_ binding: ScreenSourceBinding) async -> NSImage? {

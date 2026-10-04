@@ -26,7 +26,7 @@ extension RecorderCaptureRuntime {
     func setScreenSource(_ binding: ScreenSourceBinding, autoFitWindowZoom: CGFloat? = nil) {
         guard state.allowsScreenContentPickerPresentation else { return }
         if state == .recording || state == .paused {
-            switchRecordingScreenSource(binding)
+            switchRecordingScreenSource(.init(binding: binding, autoFitWindowZoom: autoFitWindowZoom))
             return
         }
         cancelPendingScreenWindowFits()
@@ -37,7 +37,13 @@ extension RecorderCaptureRuntime {
         }
     }
 
-    func switchRecordingScreenSource(_ binding: ScreenSourceBinding) {
+    struct RecordingScreenSourceRequest {
+        let binding: ScreenSourceBinding
+        let autoFitWindowZoom: CGFloat?
+    }
+
+    func switchRecordingScreenSource(_ request: RecordingScreenSourceRequest) {
+        let binding = request.binding
         let previousTransaction = screenReconfiguration.pickerTransactionTask
         let previousConfiguration = screenReconfiguration.configurationTask
         let transactionID = UUID()
@@ -71,6 +77,9 @@ extension RecorderCaptureRuntime {
                 updateRecordingSceneTimeline(transition: .cut)
                 onScreenCaptureConfigurationChanged?()
                 onMessage?(RecordingStopCopy.screenSwitched(binding.displayName))
+                if let zoom = request.autoFitWindowZoom, binding.kind != .display {
+                    autoFitScreenSourceWindow(binding, zoom: zoom)
+                }
             } catch {
                 settings = previousSettings
                 screenSourceSelection.restoreRuntimeState(previousSelection)

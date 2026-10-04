@@ -156,6 +156,17 @@ struct ScreenSourceGeometry: Equatable {
 }
 
 enum RecordingSourceSuggestion {
+    static func isRecordableWindow(_ info: [String: Any]) -> Bool {
+        guard let window = ShortsWindowArranger.WindowCandidate(info: info), window.alpha > 0 else { return false }
+        return !ScreenSourcePickerOrganization.isUtilityWindow(.init(
+            size: window.bounds.size,
+            layer: window.layer,
+            isSystemWindow: ScreenSourceCatalog.isIgnoredWindow(
+                bundleIdentifier: nil, applicationName: window.ownerName, title: window.title
+            )
+        ))
+    }
+
     struct Request {
         let current: ScreenSourceBinding?
         let candidate: ScreenSourceBinding

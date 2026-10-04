@@ -64,11 +64,10 @@ struct MainView: View {
             vm.refreshRecentProjects()
         }
         .task(id: vm.state) {
-            vm.refreshScreenSuggestion()
-            while vm.state == .recording && !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1))
-                guard !Task.isCancelled else { return }
+            while !Task.isCancelled {
+                vm.refreshScreenSourceAvailability()
                 vm.refreshScreenSuggestion()
+                try? await Task.sleep(for: .seconds(1))
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in

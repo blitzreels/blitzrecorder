@@ -158,6 +158,7 @@ struct ScreenCaptureSourcePickerModel {
 
     private var selectedScreenSourceIcon: NSImage? {
         selectedScreenSourceOption?.icon
+            ?? vm.settings.screenSourceBinding.flatMap { ScreenSourceCatalog.appIcon(for: $0) }
     }
 
     private var selectedScreenSourceOption: ScreenSourceOption? {

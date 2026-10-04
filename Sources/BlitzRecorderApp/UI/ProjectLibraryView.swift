@@ -72,7 +72,6 @@ struct ProjectLibraryView: View {
     @State var showsProjectMenu = false
     @State private var projectsPendingDeletion: [RecordingProjectHistory.Entry] = []
     @State private var projectPendingRename: RecordingProjectHistory.Entry?
-    @State private var projectTitleDraft = ""
     @State var titleGenerationProjectID: UUID?
     let metadataStore = ProjectLibraryMetadataStore.shared
     var metadataByProjectID: [UUID: ProjectLibraryMetadata] { metadataStore.metadata }
@@ -179,37 +178,24 @@ struct ProjectLibraryView: View {
         } message: { projects in
             Text(deletionAlertMessage(projects))
         }
-        .alert(
-            "Rename recording",
-            isPresented: renameConfirmationBinding,
-            presenting: projectPendingRename
-        ) { project in
-            TextField("Video title", text: $projectTitleDraft)
-            Button("Cancel", role: .cancel) {
-                projectPendingRename = nil
-            }
-            Button("Rename") {
-                vm.renameProject(ProjectLibraryRenameRequest(
-                    project: project,
-                    title: projectTitleDraft
+        .sheet(isPresented: renameConfirmationBinding) {
+            if let project = projectPendingRename {
+                ProjectRecordingRenameEditor(.init(
+                    project: project, index: folderIndex, library: vm.recentProjects,
+                    onSave: { title in
+                        vm.moveProjects(.init(titles: [project.id: title], message: "Renamed recording", folderRename: nil))
+                        projectPendingRename = nil
+                    },
+                    onCancel: { projectPendingRename = nil }
                 ))
-                projectPendingRename = nil
             }
-            .disabled(
-                projectTitleDraft
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                    .isEmpty
-            )
-        } message: { _ in
-            Text("This title is used in Projects and as the default export filename.")
         }
-        .alert(folderPrompt?.title ?? "", isPresented: folderPromptBinding, presenting: folderPrompt) { prompt in
-            TextField("Folder name", text: $folderNameDraft)
-            Button("Cancel", role: .cancel) { folderPrompt = nil }
-            Button(prompt.actionTitle) { commitFolderPrompt(prompt) }
-                .disabled(!ProjectFolderPath.isValidName(folderNameDraft))
-        } message: { _ in
-            Text("Recordings in this folder are named Folder - Title, so files and exports stay grouped.")
+        .sheet(item: $folderPrompt) { prompt in
+            ProjectFolderNameEditor(
+                prompt: prompt, name: $folderNameDraft,
+                affectedCount: folderPromptAffectedCount(prompt),
+                onSave: { commitFolderPrompt(prompt) }, onCancel: { folderPrompt = nil }
+            )
         }
         .alert("Project action failed", isPresented: projectErrorBinding) {
             Button("OK") {
@@ -413,15 +399,6 @@ struct ProjectLibraryView: View {
         )
     }
 
-    private var folderPromptBinding: Binding<Bool> {
-        Binding(
-            get: { folderPrompt != nil },
-            set: { isPresented in
-                if !isPresented { folderPrompt = nil }
-            }
-        )
-    }
-
     private var renameConfirmationBinding: Binding<Bool> {
         Binding(
             get: { projectPendingRename != nil },
@@ -436,7 +413,6 @@ struct ProjectLibraryView: View {
     func beginRename(
         _ project: RecordingProjectHistory.Entry
     ) {
-        projectTitleDraft = project.title
         projectPendingRename = project
     }
 

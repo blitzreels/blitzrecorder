@@ -328,6 +328,10 @@ enum ScreenSourceCatalog {
         return collapsed
     }
 
+    static func appIcon(for binding: ScreenSourceBinding) -> NSImage? {
+        appIcon(bundleIdentifier: binding.bundleIdentifier, processID: binding.processID)
+    }
+
     private static func appIcon(bundleIdentifier: String?, processID: pid_t?) -> NSImage? {
         if let processID,
            let icon = NSRunningApplication(processIdentifier: processID)?.icon {

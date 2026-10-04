@@ -25,25 +25,9 @@ enum RecordingHUDAnchor: String, CaseIterable {
         return CGPoint(x: x.rounded(), y: y.rounded())
     }
 
-    struct SnapRequest {
+    struct PositionRequest {
         let panelFrame: CGRect
         let visibleFrame: CGRect
-        let threshold: CGFloat
-    }
-
-    static func snapTarget(_ request: SnapRequest) -> RecordingHUDAnchor? {
-        let screen = request.visibleFrame
-        let panel = request.panelFrame
-        let candidates: [(RecordingHUDAnchor, CGPoint, CGPoint)] = [
-            (.topCenter, CGPoint(x: panel.midX, y: panel.maxY), CGPoint(x: screen.midX, y: screen.maxY)),
-            (.topLeft, CGPoint(x: panel.minX, y: panel.maxY), CGPoint(x: screen.minX, y: screen.maxY)),
-            (.topRight, CGPoint(x: panel.maxX, y: panel.maxY), CGPoint(x: screen.maxX, y: screen.maxY)),
-            (.bottomLeft, CGPoint(x: panel.minX, y: panel.minY), CGPoint(x: screen.minX, y: screen.minY)),
-            (.bottomRight, CGPoint(x: panel.maxX, y: panel.minY), CGPoint(x: screen.maxX, y: screen.minY))
-        ]
-        let nearest = candidates.map { ($0.0, hypot($0.1.x - $0.2.x, $0.1.y - $0.2.y)) }.min { $0.1 < $1.1 }
-        guard let nearest, nearest.1 <= request.threshold else { return nil }
-        return nearest.0
     }
 
     struct FreeOriginRequest {
@@ -61,7 +45,7 @@ enum RecordingHUDAnchor: String, CaseIterable {
         return CGPoint(x: x.rounded(), y: y.rounded())
     }
 
-    static func normalizedTopLeft(_ request: SnapRequest) -> CGPoint {
+    static func normalizedTopLeft(_ request: PositionRequest) -> CGPoint {
         CGPoint(
             x: (request.panelFrame.minX - request.visibleFrame.minX) / max(1, request.visibleFrame.width),
             y: (request.panelFrame.maxY - request.visibleFrame.minY) / max(1, request.visibleFrame.height)
@@ -81,9 +65,18 @@ final class RecordingHUDModel {
     var isHovering = false
     var isPeeking = false
     var openPopovers = 0
-    var isDragging = false
+    var isDragging = false {
+        didSet {
+            if isDragging && !oldValue {
+                expansionDuringDrag = isHovering || isPeeking || openPopovers > 0
+            } else if !isDragging {
+                expansionDuringDrag = nil
+            }
+        }
+    }
+    private var expansionDuringDrag: Bool?
 
-    var isExpanded: Bool { (isHovering || isPeeking || openPopovers > 0) && !isDragging }
+    var isExpanded: Bool { expansionDuringDrag ?? (isHovering || isPeeking || openPopovers > 0) }
 
     private static let anchorKey = "recordingHUD.anchor"
     private static let freeKey = "recordingHUD.freeTopLeft"
@@ -103,7 +96,6 @@ final class RecordingHUDController {
     private var panel: NSPanel?
     private var screen: NSScreen?
     private var contentSize = CGSize(width: 220, height: 40)
-    private var dragOffset: CGPoint?
     private static let margin: CGFloat = 10
 
     init(viewModel: RecorderViewModel) {
@@ -160,7 +152,9 @@ final class RecordingHUDController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = true
-        panel.isMovable = false
+        panel.isMovable = true
+        panel.title = "Recording controls"
+        panel.setAccessibilityLabel("Recording controls")
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = true
@@ -179,7 +173,7 @@ final class RecordingHUDController {
     private func place(animated: Bool) {
         guard let panel, let visible = (screen ?? panel.screen ?? NSScreen.main)?.visibleFrame else { return }
         let origin = model.anchor == .free
-            ? RecordingHUDAnchor.freeOrigin(.init(topLeft: model.freeTopLeft, size: contentSize, visibleFrame: visible, margin: Self.margin))
+            ? RecordingHUDAnchor.freeOrigin(.init(topLeft: model.freeTopLeft, size: contentSize, visibleFrame: visible, margin: 0))
             : model.anchor.origin(.init(size: contentSize, visibleFrame: visible, margin: Self.margin))
         let frame = NSRect(origin: origin, size: contentSize)
         if animated {
@@ -194,31 +188,25 @@ final class RecordingHUDController {
     }
 
     private func dragChanged() {
-        guard let panel else { return }
-        let mouse = NSEvent.mouseLocation
-        if dragOffset == nil {
-            dragOffset = CGPoint(x: mouse.x - panel.frame.minX, y: mouse.y - panel.frame.minY)
-            model.isDragging = true
-        }
-        guard let offset = dragOffset else { return }
-        panel.setFrameOrigin(NSPoint(x: mouse.x - offset.x, y: mouse.y - offset.y))
+        guard !model.isDragging else { return }
+        model.isDragging = true
     }
 
     private func dragEnded() {
-        dragOffset = nil
-        model.isDragging = false
-        guard let panel else { return }
+        guard let panel else {
+            model.isDragging = false
+            return
+        }
         let center = CGPoint(x: panel.frame.midX, y: panel.frame.midY)
         screen = NSScreen.screens.first { $0.frame.contains(center) } ?? screen
-        guard let visible = screen?.visibleFrame else { return }
-        let request = RecordingHUDAnchor.SnapRequest(panelFrame: panel.frame, visibleFrame: visible, threshold: 64)
-        if let anchor = RecordingHUDAnchor.snapTarget(request) {
-            model.anchor = anchor
-        } else {
-            model.freeTopLeft = RecordingHUDAnchor.normalizedTopLeft(request)
+        if let visible = screen?.visibleFrame {
+            model.freeTopLeft = RecordingHUDAnchor.normalizedTopLeft(.init(
+                panelFrame: panel.frame, visibleFrame: visible
+            ))
             model.anchor = .free
         }
-        place(animated: true)
+        model.isDragging = false
+        place(animated: false)
     }
 }
 
@@ -232,12 +220,14 @@ struct RecordingHUDView: View {
     @Bindable var vm: RecorderViewModel
     @Bindable var model: RecordingHUDModel
     let actions: RecordingHUDActions
+    @State private var isDragHovering = false
     @State private var isIdle = false
     @State private var collapseTask: Task<Void, Never>?
     @State private var idleTask: Task<Void, Never>?
 
     private var hasPrompt: Bool {
-        vm.autoSwitchNotice != nil || (vm.suggestedScreenSource != nil && vm.state == .recording)
+        vm.unavailableScreenSourceNotice != nil || vm.autoSwitchNotice != nil
+            || (vm.suggestedScreenSource != nil && vm.state == .recording)
     }
 
     private var isWide: Bool { model.isExpanded || hasPrompt }
@@ -260,6 +250,13 @@ struct RecordingHUDView: View {
         .opacity(isIdle && !isWide ? 0.5 : 1)
         .onGeometryChange(for: CGSize.self) { $0.size } action: { actions.resize($0) }
         .onHover(perform: hover)
+        .onChange(of: model.isDragging) { _, dragging in
+            if dragging {
+                collapseTask?.cancel()
+                idleTask?.cancel()
+                isIdle = false
+            }
+        }
         .onAppear(perform: scheduleIdle)
         .environment(\.colorScheme, .dark)
         .animation(.spring(duration: 0.28, bounce: 0.12), value: model.isExpanded)
@@ -268,6 +265,7 @@ struct RecordingHUDView: View {
     }
 
     private func hover(_ hovering: Bool) {
+        guard !model.isDragging else { return }
         collapseTask?.cancel()
         idleTask?.cancel()
         isIdle = false
@@ -297,13 +295,37 @@ struct RecordingHUDView: View {
     }
 
     private var bar: some View {
-        HStack(spacing: 10) {
-            status
-            if vm.settings.enabledSources.contains(.microphone) {
-                RecordingHUDMeter(levels: vm.micLevels, isActive: vm.state == .recording)
-                    .help(vm.selectedMicrophoneDisplayName)
+        HStack(spacing: 4) {
+            HStack(spacing: 10) {
+                VStack(spacing: 3) {
+                    ForEach(0..<3) { _ in
+                        HStack(spacing: 3) {
+                            Circle().frame(width: 3, height: 3)
+                            Circle().frame(width: 3, height: 3)
+                        }
+                    }
+                }
+                .frame(width: 12, height: 18)
+                .foregroundStyle(isDragHovering ? BlitzUI.primaryText : BlitzUI.secondaryText)
+                .accessibilityHidden(true)
+                status
+                if vm.settings.enabledSources.contains(.microphone) {
+                    RecordingHUDMeter(levels: vm.micLevels, isActive: vm.state == .recording)
+                        .help(vm.selectedMicrophoneDisplayName)
+                }
+                if isWide { Spacer(minLength: 8) }
             }
-            if isWide { Spacer(minLength: 8) }
+            .padding(.horizontal, 10)
+            .frame(height: 40)
+            .background(isDragHovering || model.isDragging ? BlitzUI.hoverFill : BlitzUI.quietFill, in: .capsule)
+            .contentShape(.capsule)
+            .gesture(WindowDragGesture()
+                .onChanged { _ in actions.dragChanged() }
+                .onEnded { _ in actions.dragEnded() })
+            .allowsWindowActivationEvents(true)
+            .blitzCursor(model.isDragging ? .closedHand : .openHand)
+            .onHover { isDragHovering = $0 }
+            .help("Drag to move recording controls")
             controls
             if !isWide {
                 Image(systemName: model.anchor.isBottom ? "chevron.up" : "chevron.down")
@@ -313,13 +335,9 @@ struct RecordingHUDView: View {
                     .accessibilityHidden(true)
             }
         }
-        .padding(.leading, 14)
+        .padding(.leading, 4)
         .padding(.trailing, 5)
         .frame(height: 40)
-        .contentShape(.rect)
-        .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .global)
-            .onChanged { _ in actions.dragChanged() }
-            .onEnded { _ in actions.dragEnded() })
         .help(model.isExpanded ? "Drag to move" : "Hover to change scene, screen and mic. Drag to move.")
     }
 
@@ -364,25 +382,51 @@ struct RecordingHUDView: View {
 
     @ViewBuilder
     private var prompt: some View {
+        if let missing = vm.unavailableScreenSourceNotice {
+            promptRow {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(BlitzUI.recordRed)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(missing.title).foregroundStyle(BlitzUI.recordRed)
+                    Text(missing.detail).foregroundStyle(BlitzUI.secondaryText)
+                        .font(BlitzType.caption)
+                        .fixedSize(horizontal: false, vertical: true)
+                    BlitzSourcePicker(model: ScreenCaptureSourcePickerModel(vm: vm, enabled: vm.canAdjustScreenCapture).model)
+                }
+            }
+        }
         if let notice = vm.autoSwitchNotice {
             promptRow {
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(BlitzUI.mint)
-                Text(notice).foregroundStyle(BlitzUI.primaryText).lineLimit(1)
+                RecordingSourceAppIcon(binding: notice)
+                    .frame(width: 24, height: 24)
+                Text("Switching to \(notice.applicationName ?? notice.displayName)…")
+                    .foregroundStyle(BlitzUI.primaryText).lineLimit(1)
                 Spacer(minLength: 0)
             }
         } else if let suggestion = vm.suggestedScreenSource, vm.state == .recording {
             promptRow {
-                Text("Record \(suggestion.applicationName ?? suggestion.displayName)?")
-                    .foregroundStyle(BlitzUI.primaryText)
-                    .lineLimit(1)
-                    .help(suggestion.displayName)
-                Spacer(minLength: 8)
-                Button("Keep", action: vm.dismissScreenSuggestion)
-                    .blitzButton(.quiet)
-                    .controlSize(.small)
-                Button("Switch", action: vm.acceptScreenSuggestion)
-                    .blitzButton(.accent)
-                    .controlSize(.small)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("You changed windows. Record this one?")
+                        .foregroundStyle(BlitzUI.primaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 8) {
+                        RecordingSourceAppIcon(binding: suggestion)
+                            .frame(width: 24, height: 24)
+                        Text(suggestion.displayName)
+                            .foregroundStyle(BlitzUI.secondaryText)
+                            .lineLimit(2)
+                            .help(suggestion.displayName)
+                    }
+                    HStack {
+                        Button("Not now", action: vm.dismissScreenSuggestion)
+                            .blitzButton(.quiet)
+                            .controlSize(.small)
+                        Spacer(minLength: 8)
+                        Button("Use this window", action: vm.acceptScreenSuggestion)
+                            .blitzButton(.accent)
+                            .controlSize(.small)
+                    }
+                }
             }
         }
     }
@@ -486,7 +530,7 @@ struct RecordingHUDView: View {
         .disabled(vm.settings.screenSourceBinding?.kind == .display)
         .help(vm.settings.screenSourceBinding?.kind == .display
             ? "You're recording a whole display, so every window is already in the video"
-            : "Record whichever window you bring to the front")
+            : "On: switch and fit the active window automatically. Off: ask before switching.")
     }
 }
 
@@ -543,6 +587,7 @@ private struct RecordingHUDIconButton: View {
                 .contentShape(.circle)
         }
         .buttonStyle(BlitzPressButtonStyle())
+        .pointingHandCursor(enabled: configuration.isEnabled)
         .disabled(!configuration.isEnabled)
         .onHover { isHovering = $0 }
         .help(configuration.help)
@@ -567,10 +612,17 @@ private struct RecordingHUDPickerRow: View {
             isPresented = true
         } label: {
             HStack(spacing: 10) {
-                Image(systemName: configuration.symbol)
-                    .font(BlitzType.symbol(12))
-                    .foregroundStyle(BlitzUI.secondaryText)
-                    .frame(width: 20)
+                if let icon = configuration.model.icon {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 20, height: 20)
+                } else {
+                    Image(systemName: configuration.symbol)
+                        .font(BlitzType.symbol(12))
+                        .foregroundStyle(BlitzUI.secondaryText)
+                        .frame(width: 20)
+                }
                 Text(configuration.title)
                     .font(BlitzType.label)
                     .foregroundStyle(BlitzUI.primaryText)
@@ -592,6 +644,7 @@ private struct RecordingHUDPickerRow: View {
             .contentShape(.rect)
         }
         .buttonStyle(BlitzPressButtonStyle())
+        .pointingHandCursor(enabled: configuration.model.enabled)
         .disabled(!configuration.model.enabled)
         .onHover { isHovering = $0 }
         .help(configuration.model.title)
@@ -621,5 +674,21 @@ private struct RecordingHUDDot: View {
                 withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { dimmed = true }
             }
             .accessibilityHidden(true)
+    }
+}
+
+private struct RecordingSourceAppIcon: View {
+    let binding: ScreenSourceBinding
+
+    var body: some View {
+        Group {
+            if let icon = ScreenSourceCatalog.appIcon(for: binding) {
+                Image(nsImage: icon).resizable().scaledToFit()
+            } else {
+                Image(systemName: binding.kind == .display ? "display" : "macwindow")
+                    .foregroundStyle(BlitzUI.secondaryText)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }

@@ -95,11 +95,17 @@ final class RecorderViewModel {
     var elapsedSeconds: Int = 0
     var captureStopProgress: CaptureStopProgress?
     var finishingStartedAt: Date?
+    var unavailableScreenSource: ScreenSourceBinding?
     var suggestedScreenSource: ScreenSourceBinding?
     var followsActiveWindow = FollowActiveWindowPreference().isEnabled {
-        didSet { FollowActiveWindowPreference().setEnabled(followsActiveWindow) }
+        didSet {
+            FollowActiveWindowPreference().setEnabled(followsActiveWindow)
+            pendingFollowKey = nil
+            suggestedScreenSource = nil
+            dismissedScreenSuggestion = nil
+        }
     }
-    var autoSwitchNotice: String?
+    var autoSwitchNotice: ScreenSourceBinding?
     @ObservationIgnored var pendingFollowKey: String?
     @ObservationIgnored var autoSwitchNoticeTask: Task<Void, Never>?
     var dismissedScreenSuggestion: String?

@@ -4,23 +4,35 @@ import XCTest
 
 @MainActor
 final class RecordingHUDTests: XCTestCase {
-    func testSnapsOnlyNearAnchorsAndOtherwisePlacesFreely() {
-        let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
-        XCTAssertEqual(RecordingHUDAnchor.snapTarget(.init(
-            panelFrame: CGRect(x: 610, y: 840, width: 220, height: 40), visibleFrame: screen, threshold: 64)), .topCenter)
-        XCTAssertEqual(RecordingHUDAnchor.snapTarget(.init(
-            panelFrame: CGRect(x: 1200, y: 20, width: 220, height: 40), visibleFrame: screen, threshold: 64)), .bottomRight)
-        let middle = RecordingHUDAnchor.SnapRequest(
-            panelFrame: CGRect(x: 500, y: 400, width: 220, height: 40), visibleFrame: screen, threshold: 64)
-        XCTAssertNil(RecordingHUDAnchor.snapTarget(middle))
-        let topLeft = RecordingHUDAnchor.normalizedTopLeft(middle)
-        XCTAssertEqual(RecordingHUDAnchor.freeOrigin(.init(
-            topLeft: topLeft, size: CGSize(width: 220, height: 40), visibleFrame: screen, margin: 10)), CGPoint(x: 500, y: 400))
-        XCTAssertEqual(RecordingHUDAnchor.freeOrigin(.init(
-            topLeft: CGPoint(x: 0.9, y: 0.05), size: CGSize(width: 340, height: 300), visibleFrame: screen, margin: 10)),
-            CGPoint(x: 1090, y: 10))
-        XCTAssertEqual(RecordingHUDAnchor.topCenter.origin(.init(
-            size: CGSize(width: 340, height: 300), visibleFrame: screen, margin: 10)), CGPoint(x: 550, y: 590))
+    func testFreeDropPositionSurvivesResizingAndNearEdgePlacement() {
+        for screen in [CGRect(x: 0, y: 0, width: 1440, height: 900),
+                       CGRect(x: -1920, y: 300, width: 1920, height: 1080)] {
+            for offset in [CGPoint(x: 2, y: 4), CGPoint(x: 500, y: 400), CGPoint(x: 620, y: 850)] {
+                let origin = CGPoint(x: screen.minX + offset.x, y: screen.minY + offset.y)
+                let panel = CGRect(origin: origin, size: CGSize(width: 220, height: 40))
+                let position = RecordingHUDAnchor.normalizedTopLeft(.init(panelFrame: panel, visibleFrame: screen))
+                XCTAssertEqual(RecordingHUDAnchor.freeOrigin(.init(
+                    topLeft: position, size: panel.size, visibleFrame: screen, margin: 0)), origin)
+            }
+            let position = RecordingHUDAnchor.normalizedTopLeft(.init(
+                panelFrame: CGRect(x: screen.minX + 500, y: screen.minY + 400, width: 340, height: 300),
+                visibleFrame: screen))
+            XCTAssertEqual(RecordingHUDAnchor.freeOrigin(.init(
+                topLeft: position, size: CGSize(width: 220, height: 40), visibleFrame: screen, margin: 0)),
+                CGPoint(x: screen.minX + 500, y: screen.minY + 660))
+        }
+    }
+
+    func testStartingDragKeepsExpandedBarStable() {
+        let model = RecordingHUDModel()
+        model.isHovering = true
+        XCTAssertTrue(model.isExpanded)
+        model.isDragging = true
+        XCTAssertTrue(model.isExpanded, "Starting a drag must not collapse the bar beneath the pointer")
+        model.isHovering = false
+        XCTAssertTrue(model.isExpanded, "Moving beyond the old bounds must not collapse the drag surface")
+        model.isDragging = false
+        XCTAssertFalse(model.isExpanded)
     }
 
     func testSettingsAspectNeverOverridesLiveFrames() {
@@ -41,17 +53,19 @@ final class RecordingHUDTests: XCTestCase {
         vm.settings.screenSourceBinding = ScreenSourceBinding(kind: .window, displayID: nil, bundleIdentifier: "com.google.Chrome",
             applicationName: "Google Chrome", processID: 1, windowID: 1, windowTitle: "LinkedIn")
         for index in 0..<32 { vm.micLevels.append(Float(abs(sin(Double(index) / 2))) * 0.9) }
-        let notion = ScreenSourceBinding(kind: .window, displayID: nil, bundleIdentifier: "notion.id",
-            applicationName: "Notion", processID: 2, windowID: 2, windowTitle: "Plan")
+        let notion = ScreenSourceBinding(kind: .window, displayID: nil, bundleIdentifier: "com.openai.codex",
+            applicationName: "ChatGPT", processID: nil, windowID: 2, windowTitle: "Plan")
         let states: [(String, Bool, ScreenSourceBinding?, RecordingHUDAnchor)] = [
             ("compact", false, nil, .topCenter), ("expanded", true, nil, .topCenter),
-            ("prompt", false, notion, .topCenter), ("bottom", true, nil, .bottomRight)
+            ("prompt", false, notion, .topCenter), ("bottom", true, nil, .bottomRight),
+            ("missing", false, nil, .topCenter)
         ]
         for (name, expanded, suggestion, anchor) in states {
             let model = RecordingHUDModel()
             model.anchor = anchor
             model.isHovering = expanded
             vm.suggestedScreenSource = suggestion
+            vm.unavailableScreenSource = name == "missing" ? vm.settings.screenSourceBinding : nil
             let view = RecordingHUDView(vm: vm, model: model, actions: .init(resize: { _ in }, dragChanged: {}, dragEnded: {}))
                 .padding(24)
                 .background(Color(red: 0.86, green: 0.88, blue: 0.92))

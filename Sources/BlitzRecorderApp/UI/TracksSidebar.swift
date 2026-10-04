@@ -82,6 +82,10 @@ struct SourcesSidebar: View {
             return SourceRowStatus(label: "Off", tone: .muted)
         }
 
+        if source == .screen, let notice = vm.unavailableScreenSourceNotice {
+            return SourceRowStatus(label: notice.title, tone: .warning)
+        }
+
         if let recordingStatus = recordingStateStatus {
             return recordingStatus
         }
@@ -240,7 +244,8 @@ private struct DeviceCard: View {
                 }
                 Text(subtitle)
                     .font(BlitzType.caption)
-                    .foregroundStyle(BlitzUI.supportingText)
+                    .foregroundStyle(source == .screen && vm.unavailableScreenSourceNotice != nil
+                        ? BlitzUI.recordRed : BlitzUI.supportingText)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: 4)
@@ -291,7 +296,7 @@ private struct DeviceReadinessNote: View {
                 Text(notice.title)
                     .font(BlitzType.captionEmphasis)
             }
-            .foregroundStyle(notice.isWaiting ? BlitzUI.supportingText : BlitzUI.warning)
+            .foregroundStyle(notice.isWaiting ? BlitzUI.supportingText : notice.color)
             Text(notice.detail)
                 .font(BlitzType.caption)
                 .foregroundStyle(BlitzUI.secondaryText)
