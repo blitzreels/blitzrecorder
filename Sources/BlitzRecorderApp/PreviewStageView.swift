@@ -179,11 +179,13 @@ final class PreviewStageView: NSView {
     }
 
     private var lastLiveFrameAspectTime: CFTimeInterval = 0
+    private var liveFrameAspect = AspectRatioStabilizer()
     static let liveFrameAspectHold: CFTimeInterval = 0.5
 
     func applyLiveFrameAspectRatio(_ aspectRatio: CGFloat) {
+        if CACurrentMediaTime() - lastLiveFrameAspectTime > Self.liveFrameAspectHold { liveFrameAspect.reset() }
         lastLiveFrameAspectTime = CACurrentMediaTime()
-        screenSourceAspectRatio = aspectRatio
+        screenSourceAspectRatio = liveFrameAspect.feed(aspectRatio)
     }
 
     func applySettingsAspectRatio(_ aspectRatio: CGFloat) {

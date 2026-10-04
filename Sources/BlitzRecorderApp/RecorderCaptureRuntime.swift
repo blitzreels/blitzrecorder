@@ -64,6 +64,7 @@ final class RecorderCaptureRuntime {
     var screenWindowGeometryRevision = 0
     var screenWindowFitRevision = 0
     var windowFitLoopGuard = WindowFitLoopGuard()
+    var screenFrameAspect = AspectRatioStabilizer()
     var committedRecordingSettings: RecordingSettings?
     var localCameraRuntimeState: LocalCameraRuntimeState = .unchecked
     var activeMicrophoneDeviceID: String?
@@ -325,8 +326,7 @@ final class RecorderCaptureRuntime {
         }
         screenRecorder.onPreviewFrame = { [weak self] frame in
             guard let self, self.state == .starting || self.state == .recording || self.state == .paused else { return }
-            self.studio.noteScreenSourceAspectRatio(frame.sourceAspectRatio)
-            self.onLiveScreenPreviewFrame?(frame)
+            self.forwardLiveScreenFrame(.init(frame: frame, producer: "screen recorder"))
         }
         takeRecording.setLiveCompositorScreenPreviewHandler { [weak self] frame in
             guard let self,
@@ -334,8 +334,28 @@ final class RecorderCaptureRuntime {
                   self.settings.visibleSources.contains(.screen) else {
                 return
             }
-            self.studio.noteScreenSourceAspectRatio(frame.sourceAspectRatio)
-            self.onLiveScreenPreviewFrame?(frame)
+            self.forwardLiveScreenFrame(.init(frame: frame, producer: "compositor"))
         }
+    }
+}
+
+struct LiveScreenFrameDelivery {
+    let frame: ScreenPreviewFrame
+    let producer: String
+}
+
+extension RecorderCaptureRuntime {
+    func forwardLiveScreenFrame(_ delivery: LiveScreenFrameDelivery) {
+        let raw = delivery.frame.sourceAspectRatio
+        let previous = screenFrameAspect.stable
+        let stable = screenFrameAspect.feed(raw)
+        if let previous, abs(previous - raw) > AspectRatioStabilizer.tolerance {
+            layoutLog.notice("frame aspect \(raw, format: .fixed(precision: 4)) from \(delivery.producer, privacy: .public) \(delivery.frame.width)x\(delivery.frame.height) held=\(stable, format: .fixed(precision: 4))")
+        }
+        studio.noteScreenSourceAspectRatio(stable)
+        onLiveScreenPreviewFrame?(ScreenPreviewFrame(
+            sampleBuffer: delivery.frame.sampleBuffer, width: delivery.frame.width,
+            height: delivery.frame.height, sourceAspectRatio: stable
+        ))
     }
 }
