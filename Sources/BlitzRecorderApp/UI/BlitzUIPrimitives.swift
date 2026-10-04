@@ -74,6 +74,7 @@ enum BlitzUI {
     static let panelStroke = Color.white.opacity(0.10)
     static let canvasBackground = Color(red: 0.035, green: 0.035, blue: 0.043)
     static let panelBackground = Color(white: 0.105)
+    static let overlayFill = Color(white: 0.07).opacity(0.94)
     static let projectLibraryBackground = Color(red: 0.055, green: 0.055, blue: 0.063)
     static let quietFill = Color.white.opacity(0.045)
     static let selectedFill = Color.white.opacity(0.10)
