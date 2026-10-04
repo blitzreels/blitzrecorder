@@ -189,6 +189,7 @@ extension RecorderViewModel {
 
     func setScreenSource(_ binding: ScreenSourceBinding) {
         cancelScheduledTargetWindowFit()
+        coordinator.resetWindowFitLoopGuard()
         if binding.kind == .application {
             lastApplicationScreenSourceBinding = binding
         }

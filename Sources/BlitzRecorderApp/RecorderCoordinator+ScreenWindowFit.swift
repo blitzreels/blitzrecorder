@@ -33,8 +33,27 @@ extension RecorderCaptureRuntime {
         }
     }
 
+    func admitWindowFit(_ request: WindowFitAdmission) -> Bool {
+        let decision = windowFitLoopGuard.admit(.init(key: request.key, now: Date()))
+        layoutLog.notice("window fit \(request.reason, privacy: .public) key=\(request.key, privacy: .public) decision=\(String(describing: decision), privacy: .public) state=\(String(describing: self.state), privacy: .public)")
+        switch decision {
+        case .allow:
+            return true
+        case .pauseNow:
+            onMessage?("This window keeps going back to its own size, so automatic fitting is paused for this take. Use Fit window to try again.")
+            return false
+        case .paused:
+            return false
+        }
+    }
+
+    func resetWindowFitLoopGuard() {
+        windowFitLoopGuard.reset()
+    }
+
     func fitFrontWindowForShorts(zoom: CGFloat) {
         guard sceneChangeIsAllowed() else { return }
+        guard admitWindowFit(.init(key: "front", reason: "front window")) else { return }
         let revision = beginScreenWindowFit()
         guard ensureAccessibilityForWindowControls() else { return }
 
@@ -64,6 +83,7 @@ extension RecorderCaptureRuntime {
 
     func fitScreenSourceWindow(_ binding: ScreenSourceBinding, zoom: CGFloat) {
         guard sceneChangeIsAllowed() else { return }
+        guard admitWindowFit(.init(key: binding.id, reason: "source window")) else { return }
         guard ensureAccessibilityForWindowControls() else { return }
         let revision = beginScreenWindowFit()
 
@@ -98,6 +118,7 @@ extension RecorderCaptureRuntime {
             return
         }
         guard ensureAccessibilityForWindowControls() else { return }
+        guard admitWindowFit(.init(key: "picked", reason: "picked window")) else { return }
         let revision = beginScreenWindowFit()
 
         Task { [weak self, pickedScreenFilter] in
@@ -136,6 +157,7 @@ extension RecorderCaptureRuntime {
 
     func autoFitScreenSourceWindow(_ binding: ScreenSourceBinding, zoom: CGFloat) {
         guard permissionGate.hasAccessibilityAccess else { return }
+        guard admitWindowFit(.init(key: binding.id, reason: "auto source window")) else { return }
         let revision = beginScreenWindowFit()
         Task { [weak self, binding] in
             guard let self else { return }
@@ -308,6 +330,7 @@ extension RecorderCaptureRuntime {
               permissionGate.hasAccessibilityAccess else {
             return
         }
+        guard admitWindowFit(.init(key: "picked", reason: "auto picked window")) else { return }
         let revision = beginScreenWindowFit()
         _ = await fitPickedScreenWindow(
             filter,
@@ -362,4 +385,9 @@ extension RecorderCaptureRuntime {
             return false
         }
     }
+}
+
+struct WindowFitAdmission {
+    let key: String
+    let reason: String
 }

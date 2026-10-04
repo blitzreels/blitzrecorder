@@ -9,6 +9,7 @@ import ScreenCaptureKit
 extension RecorderCaptureRuntime {
     func start(takeTitle: String?) {
         guard state == .idle else { return }
+        windowFitLoopGuard.reset()
         let readiness = recordingReadiness()
         guard readiness.isReady else {
             onMessage?(RecordingStartCopy.blockedMessage(enabledSourcesEmpty: settings.enabledSources.isEmpty))

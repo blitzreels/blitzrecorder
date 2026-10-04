@@ -171,6 +171,7 @@ final class PreviewStageView: NSView {
     var screenSourceAspectRatio: CGFloat = SceneLayout.defaultScreenAspectRatio {
         didSet {
             if oldValue != screenSourceAspectRatio {
+                layoutLog.notice("preview screen aspect \(oldValue, format: .fixed(precision: 4)) -> \(self.screenSourceAspectRatio, format: .fixed(precision: 4))")
                 needsLayout = true
                 needsDisplay = true
             }
@@ -401,6 +402,9 @@ final class PreviewStageView: NSView {
         super.layout()
 
         let key = layoutPassKey()
+        if let previous = lastLayoutPassKey, previous != key {
+            layoutLog.notice("preview relayout changed=\(LayoutPassKeyDiff.changedFields(.init(previous: previous, next: key)), privacy: .public)")
+        }
         if lastLayoutPassKey == key {
             if canvasBackgroundAnimated {
                 updateBackgroundAnimation()
@@ -487,5 +491,23 @@ final class PreviewStageView: NSView {
         selectionOverlay.needsDisplay = true
         outlineOverlay.needsDisplay = true
         invalidateResizeCursorRects()
+    }
+}
+
+enum LayoutPassKeyDiff {
+    struct Request {
+        let previous: PreviewStagePassKeys.LayoutPassKey
+        let next: PreviewStagePassKeys.LayoutPassKey
+    }
+
+    static func changedFields(_ request: Request) -> String {
+        let next = Dictionary(Mirror(reflecting: request.next).children.compactMap { child in
+            child.label.map { ($0, String(describing: child.value)) }
+        }, uniquingKeysWith: { lhs, _ in lhs })
+        return Mirror(reflecting: request.previous).children.compactMap { child -> String? in
+            guard let label = child.label, let value = next[label] else { return nil }
+            let old = String(describing: child.value)
+            return old == value ? nil : "\(label): \(old.prefix(80)) -> \(value.prefix(80))"
+        }.joined(separator: " | ")
     }
 }

@@ -313,6 +313,9 @@ extension RecorderStudioConfiguration {
 
     func noteScreenSourceAspectRatio(_ aspectRatio: CGFloat) {
         guard aspectRatio > 0 else { return }
+        if let current = currentPickedScreenSourceAspectRatio, abs(current - aspectRatio) > 0.0005 {
+            layoutLog.notice("source aspect \(current, format: .fixed(precision: 4)) -> \(aspectRatio, format: .fixed(precision: 4))")
+        }
         currentPickedScreenSourceAspectRatio = aspectRatio
     }
 

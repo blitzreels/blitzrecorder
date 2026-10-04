@@ -250,6 +250,7 @@
 		813C871BAD85A8D100AB102A /* ProjectLibraryFolders.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0049D5913897B7F4F5E389E4 /* ProjectLibraryFolders.swift */; };
 		8154D06CEC7FD53E960E3A0D /* ProjectLibraryMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C513901203063B6AD6BA1C7 /* ProjectLibraryMetadata.swift */; };
 		81FAB0A6F06C7894B0FE1AFB /* TranscriptionAudioPreparer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6D38913E3317CED07C12E0D /* TranscriptionAudioPreparer.swift */; };
+		83786B9AF16D478DC9A38ACF /* WindowFitLoopGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61F98DCB400BEC7D2933C071 /* WindowFitLoopGuard.swift */; };
 		845046894FACBE3729A0E99C /* RecordingStartGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B947C6A9F2F85E1C20D6E61E /* RecordingStartGate.swift */; };
 		85AE251C64B8786201EC8EFA /* CameraRecordingPlaybackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0B9CFB19622D3BD42D242F0 /* CameraRecordingPlaybackView.swift */; };
 		85B0EF4C33A020619EE3B12D /* LiveCompositedRecorder+CaptureSources.swift in Sources */ = {isa = PBXBuildFile; fileRef = A56D1CC10AFE765AFB281E88 /* LiveCompositedRecorder+CaptureSources.swift */; };
@@ -671,6 +672,7 @@
 		5FF925B2D85D386384E2AAB8 /* ScreenContentPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenContentPicker.swift; sourceTree = "<group>"; };
 		608C1D0DF429D8E9633A2805 /* Icon-App-83.5x83.5@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icon-App-83.5x83.5@2x.png"; sourceTree = "<group>"; };
 		60B1535883979A466954CDC8 /* EditorTranscriptLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorTranscriptLayout.swift; sourceTree = "<group>"; };
+		61F98DCB400BEC7D2933C071 /* WindowFitLoopGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowFitLoopGuard.swift; sourceTree = "<group>"; };
 		63DFA05DC7FA197E3C1D38DC /* VideoFileWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoFileWriter.swift; sourceTree = "<group>"; };
 		63FA3E77B37170FDCBA342D9 /* RemoteCameraControlsPane+Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RemoteCameraControlsPane+Settings.swift"; sourceTree = "<group>"; };
 		64F9961CFB7B6D3208909438 /* ThirdPartyNotices.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = ThirdPartyNotices.md; sourceTree = "<group>"; };
@@ -1254,6 +1256,7 @@
 				89C234682C25D96E06D1B6FE /* VideoProjectImporter.swift */,
 				4BA4502EFEB3F0DBC5CD9F27 /* VideoRenderPlacement.swift */,
 				AE6D20375E6D4A4F39372889 /* VoiceCleanup.swift */,
+				61F98DCB400BEC7D2933C071 /* WindowFitLoopGuard.swift */,
 				31B58A3F21779A07EC229CD5 /* WindowZoomGeometry.swift */,
 				5813BE339C674C57F52F255D /* Resources */,
 				653132B68C105FB83D6D21AB /* UI */,
@@ -2078,6 +2081,7 @@
 				F9C2D2DF54369B99E8D36A4F /* VideoProjectImporter.swift in Sources */,
 				2F1FC492608165BCAFC33B17 /* VideoRenderPlacement.swift in Sources */,
 				F775D4B643781BCAB219F430 /* VoiceCleanup.swift in Sources */,
+				83786B9AF16D478DC9A38ACF /* WindowFitLoopGuard.swift in Sources */,
 				07726FB42080310972E59860 /* WindowZoomGeometry.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

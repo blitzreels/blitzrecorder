@@ -251,6 +251,7 @@ final class RecorderCoordinator {
     }
     func fitPickedScreenWindowToSlot(zoom: CGFloat) { capture.fitPickedScreenWindowToSlot(zoom: zoom) }
     func cancelPendingScreenWindowFits() { capture.cancelPendingScreenWindowFits() }
+    func resetWindowFitLoopGuard() { capture.resetWindowFitLoopGuard() }
     func zoomScreenSourceContent(_ direction: AppContentZoomDirection) {
         capture.zoomScreenSourceContent(direction)
     }

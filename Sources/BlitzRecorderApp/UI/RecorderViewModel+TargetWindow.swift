@@ -58,6 +58,7 @@ extension RecorderViewModel {
 
     func fitCurrentScreenWindowToSlot() {
         guard canAdjustScreenCapture, supportsScreenWindowScaling else { return }
+        coordinator.resetWindowFitLoopGuard()
         cancelScheduledTargetWindowFit()
         coordinator.setSceneLayer(
             .screen,

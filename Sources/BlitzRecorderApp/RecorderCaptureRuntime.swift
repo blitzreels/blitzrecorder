@@ -63,6 +63,7 @@ final class RecorderCaptureRuntime {
     var screenContentSelectionRevision = 0
     var screenWindowGeometryRevision = 0
     var screenWindowFitRevision = 0
+    var windowFitLoopGuard = WindowFitLoopGuard()
     var committedRecordingSettings: RecordingSettings?
     var localCameraRuntimeState: LocalCameraRuntimeState = .unchecked
     var activeMicrophoneDeviceID: String?
@@ -144,6 +145,7 @@ final class RecorderCaptureRuntime {
         _ arrangement: ShortsWindowArrangement,
         shouldUpdateCapture: Bool
     ) {
+        layoutLog.notice("window fit applied app=\(arrangement.appName, privacy: .public) frame=\(String(describing: arrangement.frame), privacy: .public) updatesCapture=\(shouldUpdateCapture)")
         screenWindowGeometryRevision += 1
         studio.applyFittedScreenWindowArrangement(arrangement, shouldUpdateCapture: shouldUpdateCapture)
     }

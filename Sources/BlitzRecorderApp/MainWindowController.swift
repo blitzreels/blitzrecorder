@@ -117,6 +117,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             self.viewModel.appendAudioLevel(level, source: source)
         }
         coordinator.onScreenCaptureConfigurationChanged = { [weak self] in
+            layoutLog.notice("screen capture configuration changed, restarting preview")
             self?.restartScreenPreview()
         }
         coordinator.onLiveScreenPreviewFrame = { [weak self] frame in
