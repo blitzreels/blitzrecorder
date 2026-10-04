@@ -124,7 +124,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             guard let self,
                   self.previewFramesAreAllowed,
                   self.coordinator.settings.visibleSources.contains(.screen) else { return }
-            self.previewStage.screenSourceAspectRatio = frame.sourceAspectRatio
+            self.previewStage.applyLiveFrameAspectRatio(frame.sourceAspectRatio)
             self.previewStage.screenPreview.enqueuePreviewSampleBuffer(frame.sampleBuffer)
         }
         coordinator.onCameraConfigurationChanged = { [weak self] in
@@ -185,7 +185,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         previewStage.fillsCanvasWhenOnlyVideoSource =
             coordinator.settings.enabledSources.intersection([.screen, .camera]).count == 1
         previewStage.sceneLayout = coordinator.settings.sceneLayout
-        previewStage.screenSourceAspectRatio = coordinator.currentScreenSourceAspectRatio()
+        previewStage.applySettingsAspectRatio(coordinator.currentScreenSourceAspectRatio())
         previewStage.showsRuleOfThirdsOverlay = coordinator.settings.showsRuleOfThirdsOverlay
         previewStage.socialSafeZoneOverlay = coordinator.settings.socialSafeZoneOverlay
         previewStage.canvasBackgroundStyle = coordinator.settings.canvasBackgroundStyle

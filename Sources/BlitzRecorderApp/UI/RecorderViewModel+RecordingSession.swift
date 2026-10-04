@@ -156,7 +156,7 @@ extension RecorderViewModel {
         previewStage.enabledSources = coordinator.settings.visibleSources
         previewStage.fillsCanvasWhenOnlyVideoSource =
             coordinator.settings.enabledSources.intersection([.screen, .camera]).count == 1
-        previewStage.screenSourceAspectRatio = coordinator.currentScreenSourceAspectRatio()
+        previewStage.applySettingsAspectRatio(coordinator.currentScreenSourceAspectRatio())
         previewStage.screenFillsSceneFrame = ScreenSourceGeometry.fillsSceneFrame(for: coordinator.settings)
         previewStage.screenCrop = coordinator.settings.screenCrop
         previewStage.cameraCropAmount = coordinator.settings.cameraCropAmount

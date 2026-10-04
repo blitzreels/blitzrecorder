@@ -4,15 +4,30 @@ import XCTest
 
 @MainActor
 final class RecordingHUDTests: XCTestCase {
-    func testSnapsToNearestAnchorAndKeepsEdgeFixed() {
+    func testSnapsOnlyNearAnchorsAndOtherwisePlacesFreely() {
         let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
-        XCTAssertEqual(RecordingHUDAnchor.nearest(.init(center: CGPoint(x: 700, y: 860), visibleFrame: screen)), .topCenter)
-        XCTAssertEqual(RecordingHUDAnchor.nearest(.init(center: CGPoint(x: 1300, y: 80), visibleFrame: screen)), .bottomRight)
-        let size = CGSize(width: 340, height: 300)
-        XCTAssertEqual(RecordingHUDAnchor.topCenter.origin(.init(size: size, visibleFrame: screen, margin: 10)),
-                       CGPoint(x: 550, y: 590))
-        XCTAssertEqual(RecordingHUDAnchor.bottomLeft.origin(.init(size: size, visibleFrame: screen, margin: 10)),
-                       CGPoint(x: 10, y: 10))
+        XCTAssertEqual(RecordingHUDAnchor.snapTarget(.init(
+            panelFrame: CGRect(x: 610, y: 840, width: 220, height: 40), visibleFrame: screen, threshold: 64)), .topCenter)
+        XCTAssertEqual(RecordingHUDAnchor.snapTarget(.init(
+            panelFrame: CGRect(x: 1200, y: 20, width: 220, height: 40), visibleFrame: screen, threshold: 64)), .bottomRight)
+        let middle = RecordingHUDAnchor.SnapRequest(
+            panelFrame: CGRect(x: 500, y: 400, width: 220, height: 40), visibleFrame: screen, threshold: 64)
+        XCTAssertNil(RecordingHUDAnchor.snapTarget(middle))
+        let topLeft = RecordingHUDAnchor.normalizedTopLeft(middle)
+        XCTAssertEqual(RecordingHUDAnchor.freeOrigin(.init(
+            topLeft: topLeft, size: CGSize(width: 220, height: 40), visibleFrame: screen, margin: 10)), CGPoint(x: 500, y: 400))
+        XCTAssertEqual(RecordingHUDAnchor.freeOrigin(.init(
+            topLeft: CGPoint(x: 0.9, y: 0.05), size: CGSize(width: 340, height: 300), visibleFrame: screen, margin: 10)),
+            CGPoint(x: 1090, y: 10))
+        XCTAssertEqual(RecordingHUDAnchor.topCenter.origin(.init(
+            size: CGSize(width: 340, height: 300), visibleFrame: screen, margin: 10)), CGPoint(x: 550, y: 590))
+    }
+
+    func testSettingsAspectNeverOverridesLiveFrames() {
+        let stage = PreviewStageView()
+        stage.applyLiveFrameAspectRatio(1.8156)
+        stage.applySettingsAspectRatio(2.0833)
+        XCTAssertEqual(stage.screenSourceAspectRatio, 1.8156, accuracy: 0.0001)
     }
 
     func testRendersEveryState() throws {

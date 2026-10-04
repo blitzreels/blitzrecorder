@@ -115,7 +115,7 @@ extension MainWindowController {
                     guard let self, self.screenPreviewStartRevision == previewStartRevision else { return }
                     self.screenPreviewRecoveryAttempts = 0
                     self.cancelScreenPreviewWatchdog()
-                    self.previewStage.screenSourceAspectRatio = frame.sourceAspectRatio
+                    self.previewStage.applyLiveFrameAspectRatio(frame.sourceAspectRatio)
                     self.previewStage.screenPreview.enqueuePreviewSampleBuffer(frame.sampleBuffer)
                 }
                 guard self.screenPreviewStartRevision == previewStartRevision else { return }

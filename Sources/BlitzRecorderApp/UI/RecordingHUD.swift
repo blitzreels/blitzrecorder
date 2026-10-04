@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 enum RecordingHUDAnchor: String, CaseIterable {
-    case topCenter, topLeft, topRight, bottomLeft, bottomRight
+    case topCenter, topLeft, topRight, bottomLeft, bottomRight, free
 
     var isBottom: Bool { self == .bottomLeft || self == .bottomRight }
 
@@ -17,7 +17,7 @@ enum RecordingHUDAnchor: String, CaseIterable {
         let size = request.size
         let margin = request.margin
         let x: CGFloat = switch self {
-        case .topCenter: frame.midX - size.width / 2
+        case .topCenter, .free: frame.midX - size.width / 2
         case .topLeft, .bottomLeft: frame.minX + margin
         case .topRight, .bottomRight: frame.maxX - size.width - margin
         }
@@ -25,24 +25,47 @@ enum RecordingHUDAnchor: String, CaseIterable {
         return CGPoint(x: x.rounded(), y: y.rounded())
     }
 
-    struct NearestRequest {
-        let center: CGPoint
+    struct SnapRequest {
+        let panelFrame: CGRect
         let visibleFrame: CGRect
+        let threshold: CGFloat
     }
 
-    static func nearest(_ request: NearestRequest) -> RecordingHUDAnchor {
-        let frame = request.visibleFrame
-        let points: [(RecordingHUDAnchor, CGPoint)] = [
-            (.topCenter, CGPoint(x: frame.midX, y: frame.maxY)),
-            (.topLeft, CGPoint(x: frame.minX, y: frame.maxY)),
-            (.topRight, CGPoint(x: frame.maxX, y: frame.maxY)),
-            (.bottomLeft, CGPoint(x: frame.minX, y: frame.minY)),
-            (.bottomRight, CGPoint(x: frame.maxX, y: frame.minY))
+    static func snapTarget(_ request: SnapRequest) -> RecordingHUDAnchor? {
+        let screen = request.visibleFrame
+        let panel = request.panelFrame
+        let candidates: [(RecordingHUDAnchor, CGPoint, CGPoint)] = [
+            (.topCenter, CGPoint(x: panel.midX, y: panel.maxY), CGPoint(x: screen.midX, y: screen.maxY)),
+            (.topLeft, CGPoint(x: panel.minX, y: panel.maxY), CGPoint(x: screen.minX, y: screen.maxY)),
+            (.topRight, CGPoint(x: panel.maxX, y: panel.maxY), CGPoint(x: screen.maxX, y: screen.maxY)),
+            (.bottomLeft, CGPoint(x: panel.minX, y: panel.minY), CGPoint(x: screen.minX, y: screen.minY)),
+            (.bottomRight, CGPoint(x: panel.maxX, y: panel.minY), CGPoint(x: screen.maxX, y: screen.minY))
         ]
-        return points.min { lhs, rhs in
-            hypot(lhs.1.x - request.center.x, lhs.1.y - request.center.y)
-                < hypot(rhs.1.x - request.center.x, rhs.1.y - request.center.y)
-        }?.0 ?? .topCenter
+        let nearest = candidates.map { ($0.0, hypot($0.1.x - $0.2.x, $0.1.y - $0.2.y)) }.min { $0.1 < $1.1 }
+        guard let nearest, nearest.1 <= request.threshold else { return nil }
+        return nearest.0
+    }
+
+    struct FreeOriginRequest {
+        let topLeft: CGPoint
+        let size: CGSize
+        let visibleFrame: CGRect
+        let margin: CGFloat
+    }
+
+    static func freeOrigin(_ request: FreeOriginRequest) -> CGPoint {
+        let frame = request.visibleFrame.insetBy(dx: request.margin, dy: request.margin)
+        let x = min(max(request.visibleFrame.minX + request.topLeft.x * request.visibleFrame.width, frame.minX), frame.maxX - request.size.width)
+        let top = request.visibleFrame.minY + request.topLeft.y * request.visibleFrame.height
+        let y = min(max(top - request.size.height, frame.minY), frame.maxY - request.size.height)
+        return CGPoint(x: x.rounded(), y: y.rounded())
+    }
+
+    static func normalizedTopLeft(_ request: SnapRequest) -> CGPoint {
+        CGPoint(
+            x: (request.panelFrame.minX - request.visibleFrame.minX) / max(1, request.visibleFrame.width),
+            y: (request.panelFrame.maxY - request.visibleFrame.minY) / max(1, request.visibleFrame.height)
+        )
     }
 }
 
@@ -52,16 +75,24 @@ final class RecordingHUDModel {
     var anchor: RecordingHUDAnchor {
         didSet { UserDefaults.standard.set(anchor.rawValue, forKey: Self.anchorKey) }
     }
+    var freeTopLeft: CGPoint {
+        didSet { UserDefaults.standard.set([freeTopLeft.x, freeTopLeft.y], forKey: Self.freeKey) }
+    }
     var isHovering = false
+    var isPeeking = false
     var openPopovers = 0
     var isDragging = false
 
-    var isExpanded: Bool { (isHovering || openPopovers > 0) && !isDragging }
+    var isExpanded: Bool { (isHovering || isPeeking || openPopovers > 0) && !isDragging }
 
     private static let anchorKey = "recordingHUD.anchor"
+    private static let freeKey = "recordingHUD.freeTopLeft"
+    static let taughtKey = "recordingHUD.taughtHover"
 
     init() {
         anchor = UserDefaults.standard.string(forKey: Self.anchorKey).flatMap(RecordingHUDAnchor.init) ?? .topCenter
+        let stored = UserDefaults.standard.array(forKey: Self.freeKey) as? [Double] ?? []
+        freeTopLeft = stored.count == 2 ? CGPoint(x: stored[0], y: stored[1]) : CGPoint(x: 0.4, y: 1)
     }
 }
 
@@ -97,6 +128,17 @@ final class RecordingHUDController {
         screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
         place(animated: false)
         panel.orderFrontRegardless()
+        teachHoverOnce()
+    }
+
+    private func teachHoverOnce() {
+        guard !UserDefaults.standard.bool(forKey: RecordingHUDModel.taughtKey) else { return }
+        UserDefaults.standard.set(true, forKey: RecordingHUDModel.taughtKey)
+        model.isPeeking = true
+        Task { @MainActor [model] in
+            try? await Task.sleep(for: .seconds(3))
+            model.isPeeking = false
+        }
     }
 
     private func makePanel() -> NSPanel {
@@ -136,7 +178,9 @@ final class RecordingHUDController {
 
     private func place(animated: Bool) {
         guard let panel, let visible = (screen ?? panel.screen ?? NSScreen.main)?.visibleFrame else { return }
-        let origin = model.anchor.origin(.init(size: contentSize, visibleFrame: visible, margin: Self.margin))
+        let origin = model.anchor == .free
+            ? RecordingHUDAnchor.freeOrigin(.init(topLeft: model.freeTopLeft, size: contentSize, visibleFrame: visible, margin: Self.margin))
+            : model.anchor.origin(.init(size: contentSize, visibleFrame: visible, margin: Self.margin))
         let frame = NSRect(origin: origin, size: contentSize)
         if animated {
             NSAnimationContext.runAnimationGroup { context in
@@ -167,7 +211,13 @@ final class RecordingHUDController {
         let center = CGPoint(x: panel.frame.midX, y: panel.frame.midY)
         screen = NSScreen.screens.first { $0.frame.contains(center) } ?? screen
         guard let visible = screen?.visibleFrame else { return }
-        model.anchor = RecordingHUDAnchor.nearest(.init(center: center, visibleFrame: visible))
+        let request = RecordingHUDAnchor.SnapRequest(panelFrame: panel.frame, visibleFrame: visible, threshold: 64)
+        if let anchor = RecordingHUDAnchor.snapTarget(request) {
+            model.anchor = anchor
+        } else {
+            model.freeTopLeft = RecordingHUDAnchor.normalizedTopLeft(request)
+            model.anchor = .free
+        }
         place(animated: true)
     }
 }
@@ -255,6 +305,13 @@ struct RecordingHUDView: View {
             }
             if isWide { Spacer(minLength: 8) }
             controls
+            if !isWide {
+                Image(systemName: model.anchor.isBottom ? "chevron.up" : "chevron.down")
+                    .font(BlitzType.symbol(9))
+                    .foregroundStyle(BlitzUI.tertiaryText)
+                    .padding(.trailing, 6)
+                    .accessibilityHidden(true)
+            }
         }
         .padding(.leading, 14)
         .padding(.trailing, 5)
@@ -263,7 +320,7 @@ struct RecordingHUDView: View {
         .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .global)
             .onChanged { _ in actions.dragChanged() }
             .onEnded { _ in actions.dragEnded() })
-        .help("Drag to move")
+        .help(model.isExpanded ? "Drag to move" : "Hover to change scene, screen and mic. Drag to move.")
     }
 
     private var status: some View {
@@ -341,6 +398,11 @@ struct RecordingHUDView: View {
 
     private var details: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if model.isPeeking {
+                Text("Hover the bar anytime to change scene, screen and mic.")
+                    .font(BlitzType.caption)
+                    .foregroundStyle(BlitzUI.secondaryText)
+            }
             if vm.currentScenes.count > 1 { scenes }
             VStack(spacing: 2) {
                 if vm.settings.enabledSources.contains(.screen) {
