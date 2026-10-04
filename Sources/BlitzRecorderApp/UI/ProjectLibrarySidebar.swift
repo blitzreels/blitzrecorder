@@ -196,6 +196,7 @@ extension ProjectLibraryView {
         return ProjectLibrarySidebarRow(configuration: .init(
             title: title, metadata: metadata,
             lessonNumber: request.folderTitle?.code.map { ProjectLessonCode.number($0.lesson) },
+            reservesLessonGutter: request.folderTitle != nil,
             isDuplicateLesson: request.isDuplicateLesson,
             detail: [request.groupsByDay
                 ? project.recordedAt.formatted(date: .omitted, time: .shortened)
@@ -280,6 +281,7 @@ private struct ProjectLibrarySidebarRow: View {
         let title: String
         let metadata: ProjectLibraryMetadata
         let lessonNumber: String?
+        let reservesLessonGutter: Bool
         let isDuplicateLesson: Bool
         let detail: String
         let match: String?
@@ -297,15 +299,18 @@ private struct ProjectLibrarySidebarRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             if let lessonNumber = configuration.lessonNumber {
                 Text(lessonNumber)
                     .font(BlitzType.captionEmphasis)
                     .monospacedDigit()
                     .foregroundStyle(configuration.isDuplicateLesson ? BlitzUI.warning : BlitzUI.secondaryText)
-                    .frame(width: 20, alignment: .trailing)
+                    .frame(width: 20, alignment: .center)
+                    .fixedSize()
                     .accessibilityLabel("Lesson \(lessonNumber)")
                     .help(configuration.isDuplicateLesson ? "Another recording uses this lesson number" : "Lesson \(lessonNumber)")
+            } else if configuration.reservesLessonGutter {
+                Color.clear.frame(width: 20, height: 1).accessibilityHidden(true)
             }
             ProjectLibraryThumbnail(configuration: .init(
                 metadata: configuration.metadata, width: 96, height: 54, cornerRadius: 6, showsDuration: true
@@ -323,14 +328,17 @@ private struct ProjectLibrarySidebarRow: View {
                 }
                 HStack(spacing: 6) {
                     Text(configuration.detail).lineLimit(1)
+                    Spacer(minLength: 0)
                     if configuration.isExported {
                         Image(systemName: "checkmark.circle.fill")
+                            .frame(width: 24)
                             .foregroundStyle(BlitzUI.mint)
                             .accessibilityLabel("Exported")
                             .help("An export is saved in this project's history")
                     }
                     if configuration.isShared {
                         Image(systemName: "link")
+                            .frame(width: 24)
                             .foregroundStyle(BlitzUI.mint)
                             .accessibilityLabel("Shared")
                             .help("Has a watch link")
@@ -339,7 +347,7 @@ private struct ProjectLibrarySidebarRow: View {
                 .font(BlitzType.caption)
                 .foregroundStyle(BlitzUI.secondaryText)
             }
-            Spacer(minLength: 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)

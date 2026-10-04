@@ -46,50 +46,64 @@ extension ProjectLibraryView {
 
     func folderNode(_ request: FolderNodeRequest) -> AnyView {
         let node = request.node
-        return AnyView(DisclosureGroup(isExpanded: Binding(
-            get: { !collapsedFolderIDs.contains(node.id) },
-            set: { expanded in
-                if expanded { collapsedFolderIDs.remove(node.id) } else { collapsedFolderIDs.insert(node.id) }
-            }
-        )) {
-            ForEach(node.children) { child in
-                folderNode(.init(node: child, index: request.index, sharedProjectPaths: request.sharedProjectPaths))
-            }
-            ForEach(node.modules) { module in
-                moduleHeader(.init(node: node, module: module))
-                if module.projects.isEmpty {
-                    emptyRow(.init(id: "empty-\(node.id)-\(module.id)",
-                                   destination: .folder(path: node.path, module: module.id, before: nil)))
+        return AnyView(Group {
+            HStack(spacing: 8) {
+                Button {
+                    if collapsedFolderIDs.contains(node.id) { collapsedFolderIDs.remove(node.id) }
+                    else { collapsedFolderIDs.insert(node.id) }
+                } label: {
+                    Image(systemName: collapsedFolderIDs.contains(node.id) ? "chevron.right" : "chevron.down")
+                        .font(BlitzType.glyph(10))
+                        .frame(width: 12, height: 24)
                 }
-                ForEach(module.projects, id: \.id) { project in
+                .buttonStyle(BlitzPressButtonStyle())
+                .accessibilityLabel("\(collapsedFolderIDs.contains(node.id) ? "Expand" : "Collapse") \(node.path.name)")
+                folderLabel(node)
+            }
+            .padding(.horizontal, 6)
+            .padding(.leading, CGFloat(node.path.segments.count - 1) * 14)
+            if !collapsedFolderIDs.contains(node.id) {
+                ForEach(node.children) { child in
+                    folderNode(.init(node: child, index: request.index, sharedProjectPaths: request.sharedProjectPaths))
+                }
+                ForEach(node.modules) { module in
+                    moduleHeader(.init(node: node, module: module))
+                    if module.projects.isEmpty {
+                        emptyRow(.init(id: "empty-\(node.id)-\(module.id)",
+                                       destination: .folder(path: node.path, module: module.id, before: nil)))
+                        .padding(.leading, 50 + CGFloat(node.path.segments.count - 1) * 14)
+                    }
+                    ForEach(module.projects, id: \.id) { project in
+                        projectRow(.init(
+                            project: project, groupsByDay: false,
+                            isShared: request.sharedProjectPaths.contains(project.projectPath),
+                            folderTitle: request.index.resolved(project),
+                            isDuplicateLesson: module.duplicateLessonIDs.contains(project.id)
+                        ))
+                        .padding(.leading, 20 + CGFloat(node.path.segments.count - 1) * 14)
+                        .background(dropFill("row-\(project.id)"), in: .rect(cornerRadius: BlitzUI.controlRadius))
+                        .projectDropTarget(.init(id: "row-\(project.id)", target: $dropTargetID) { ids in
+                            dropProjects(.init(ids: ids, destination: .folder(path: node.path, module: module.id, before: project.id)))
+                        })
+                    }
+                }
+                ForEach(node.projects, id: \.id) { project in
                     projectRow(.init(
                         project: project, groupsByDay: false,
                         isShared: request.sharedProjectPaths.contains(project.projectPath),
-                        folderTitle: request.index.resolved(project),
-                        isDuplicateLesson: module.duplicateLessonIDs.contains(project.id)
+                        folderTitle: request.index.resolved(project), isDuplicateLesson: false
                     ))
+                    .padding(.leading, 20 + CGFloat(node.path.segments.count - 1) * 14)
                     .background(dropFill("row-\(project.id)"), in: .rect(cornerRadius: BlitzUI.controlRadius))
                     .projectDropTarget(.init(id: "row-\(project.id)", target: $dropTargetID) { ids in
-                        dropProjects(.init(ids: ids, destination: .folder(path: node.path, module: module.id, before: project.id)))
+                        dropProjects(.init(ids: ids, destination: .folder(path: node.path, module: nil, before: nil)))
                     })
                 }
+                if node.children.isEmpty && node.modules.isEmpty && node.projects.isEmpty {
+                    emptyRow(.init(id: "empty-\(node.id)", destination: .folder(path: node.path, module: nil, before: nil)))
+                        .padding(.leading, 50 + CGFloat(node.path.segments.count - 1) * 14)
+                }
             }
-            ForEach(node.projects, id: \.id) { project in
-                projectRow(.init(
-                    project: project, groupsByDay: false,
-                    isShared: request.sharedProjectPaths.contains(project.projectPath),
-                    folderTitle: request.index.resolved(project), isDuplicateLesson: false
-                ))
-                .background(dropFill("row-\(project.id)"), in: .rect(cornerRadius: BlitzUI.controlRadius))
-                .projectDropTarget(.init(id: "row-\(project.id)", target: $dropTargetID) { ids in
-                    dropProjects(.init(ids: ids, destination: .folder(path: node.path, module: nil, before: nil)))
-                })
-            }
-            if node.children.isEmpty && node.modules.isEmpty && node.projects.isEmpty {
-                emptyRow(.init(id: "empty-\(node.id)", destination: .folder(path: node.path, module: nil, before: nil)))
-            }
-        } label: {
-            folderLabel(node)
         })
     }
 
@@ -103,7 +117,7 @@ extension ProjectLibraryView {
             .font(BlitzType.caption)
             .foregroundStyle(BlitzUI.secondaryText)
             .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 6)
             .background(dropFill(request.id), in: .rect(cornerRadius: BlitzUI.controlRadius))
             .projectDropTarget(.init(id: request.id, target: $dropTargetID) { ids in
                 dropProjects(.init(ids: ids, destination: request.destination))
@@ -121,9 +135,10 @@ extension ProjectLibraryView {
     private func folderLabel(_ node: ProjectFolderTree.Node) -> some View {
         let count = node.allProjects.count
         let target = recordTarget(node)
-        return HStack(spacing: 8) {
+        return HStack(spacing: 10) {
             Image(systemName: "folder.fill")
                 .foregroundStyle(BlitzUI.secondaryText)
+                .frame(width: 20)
             Text(node.path.name)
                 .font(BlitzType.strong)
                 .foregroundStyle(BlitzUI.primaryText)
@@ -139,6 +154,7 @@ extension ProjectLibraryView {
                 folderPrompt = .rename(node.path)
             } label: {
                 Image(systemName: "pencil")
+                    .frame(width: 8)
             }
             .blitzButton(.quiet)
             .controlSize(.mini)
@@ -150,7 +166,6 @@ extension ProjectLibraryView {
             }
         }
         .padding(.vertical, 4)
-        .padding(.horizontal, 4)
         .background(dropFill("folder-\(node.id)"), in: .rect(cornerRadius: BlitzUI.controlRadius))
         .contentShape(.rect)
         .projectDropTarget(.init(id: "folder-\(node.id)", target: $dropTargetID) { ids in
@@ -172,7 +187,7 @@ extension ProjectLibraryView {
         } label: {
             Image(systemName: request.isTarget ? "record.circle.fill" : "record.circle")
                 .foregroundStyle(request.isTarget ? BlitzUI.mint : BlitzUI.secondaryText)
-                .frame(width: 22, height: 22)
+                .frame(width: 24, height: 24)
         }
         .buttonStyle(BlitzPressButtonStyle())
         .disabled(vm.state != .idle)
@@ -204,9 +219,9 @@ extension ProjectLibraryView {
             recordButton(.init(target: target, isTarget: vm.folderRecordTarget == target,
                                help: "Record the next lesson in \(name)"))
         }
-        .padding(.top, 6)
-        .padding(.horizontal, 8)
-        .frame(minHeight: 26)
+        .padding(.horizontal, 6)
+        .padding(.leading, 50 + CGFloat(request.node.path.segments.count - 1) * 14)
+        .frame(minHeight: 32)
         .background(dropFill(dropID), in: .rect(cornerRadius: BlitzUI.controlRadius))
         .contentShape(.rect)
         .projectDropTarget(.init(id: dropID, target: $dropTargetID) { ids in
