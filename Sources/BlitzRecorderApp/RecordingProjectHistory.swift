@@ -26,11 +26,26 @@ enum RecordingProjectDisplayTitle {
         return "Recording at \(createdAt.formatted(date: .omitted, time: .shortened))"
     }
 
-    static func timestampDate(from rawTitle: String) -> Date? {
+    private static let timestampFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .autoupdatingCurrent
         formatter.dateFormat = "yyyy-MM-dd-HH-mm-ss"
-        return formatter.date(from: String(rawTitle.prefix(19)))
+        return formatter
+    }()
+
+    static func timestampDate(from rawTitle: String) -> Date? {
+        let prefix = Array(rawTitle.utf8.prefix(19))
+        guard prefix.count == 19 else { return nil }
+        for (index, character) in prefix.enumerated() {
+            switch index {
+            case 4, 7, 10, 13, 16:
+                guard character == 45 else { return nil }
+            default:
+                guard (48...57).contains(character) else { return nil }
+            }
+        }
+        return timestampFormatter.date(from: String(decoding: prefix, as: UTF8.self))
     }
 }
 

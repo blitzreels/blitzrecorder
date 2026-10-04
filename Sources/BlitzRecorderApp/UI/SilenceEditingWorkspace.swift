@@ -31,6 +31,7 @@ final class SilenceEditingSession {
     private(set) var nonDialogueRanges: [EditorTimeRange] = []
     private(set) var windows: [SilenceWindow] = []
     private(set) var loading = false
+    private(set) var scanProgress: Double?
     private(set) var preparingPreview = false
     private(set) var calculating = false
     private(set) var metrics = SilenceTimelineMetrics(.init(duration: 0, proposed: [], saved: []))
@@ -79,6 +80,14 @@ final class SilenceEditingSession {
             case .preparingPreview: "Loading the edited timeline."
             }
         }
+    }
+
+    var transcriptStatus: TranscriptionJobStatus? {
+        request.flatMap { $0.vm.transcriptionController.jobStatuses[$0.project.projectPath] }
+    }
+
+    var transcriptDetail: String? {
+        request.flatMap { $0.vm.transcriptionController.jobDetails[$0.project.projectPath] }
     }
 
     var activity: Activity? {
@@ -171,14 +180,23 @@ final class SilenceEditingSession {
             : source.role == "microphone"
                 ? "Microphone" : source.role == "systemAudio" ? "Mac audio" : "Recording audio"
         loading = true
-        let configs = sources.map { source in
-            SilenceDetectionRequest(
+        scanProgress = 0
+        let currentGeneration = generation
+        let configs = sources.enumerated().map { index, source in
+            var config = SilenceDetectionRequest(
                 audioURL: URL(fileURLWithPath: source.path), takeDuration: duration,
                 sourceOffset: request.project.sourceOffset(forRole: source.role)
                     - request.project.timelineTrimOffsetSeconds,
                 minimumSilence: minimumDuration, thresholdDB: threshold, previousCuts: cuts)
+            let count = Double(sources.count)
+            config.onProgress = { [weak self] fraction in
+                Task { @MainActor in
+                    guard let self, self.generation == currentGeneration, self.loading else { return }
+                    self.scanProgress = max(self.scanProgress ?? 0, (Double(index) + fraction) / count)
+                }
+            }
+            return config
         }
-        let currentGeneration = generation
         analysisTask = Task {
             do {
                 let task = Task.detached(priority: .utility) {
@@ -191,6 +209,7 @@ final class SilenceEditingSession {
                 guard !Task.isCancelled, currentGeneration == generation else { return }
                 windows = result
                 loading = false
+                scanProgress = nil
                 if automaticThreshold { threshold = SilenceDetection.suggestedThreshold(result) }
                 refreshTranscriptCuts()
                 if usesSavedSilenceCuts { updateMetrics() }
@@ -198,6 +217,7 @@ final class SilenceEditingSession {
             } catch {
                 guard !Task.isCancelled, currentGeneration == generation else { return }
                 loading = false
+                scanProgress = nil
                 self.error = error.localizedDescription
             }
         }
@@ -213,6 +233,7 @@ final class SilenceEditingSession {
         isAuditioning = false
         calculating = false
         loading = false
+        scanProgress = nil
         preparingPreview = false
     }
 

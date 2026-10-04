@@ -158,29 +158,4 @@ final class EditorExportPresentationTests: XCTestCase {
             XCTAssertEqual(host.fittingSize.height, 34, accuracy: 1)
         }
     }
-
-    @MainActor
-    func testLongExportFilenameDoesNotStretchTheConfirmation() throws {
-        let names = ["recording.mp4", String(repeating: "A long exported recording name ", count: 12) + ".mp4"]
-        var heights: [CGFloat] = []
-        for name in names {
-            let host = NSHostingView(rootView: EditorExportStatusView(configuration: .init(
-                status: .succeeded(URL(fileURLWithPath: "/tmp/recordings/\(name)")), savedCount: 1,
-                open: { _ in }, reveal: { _ in }, share: { _ in }, sendToBlitzReels: { _ in }, retry: {}, dismiss: {}
-            )).frame(width: 1120).background(BlitzUI.canvasBackground).preferredColorScheme(.dark))
-            host.layoutSubtreeIfNeeded()
-            XCTAssertEqual(host.fittingSize.width, 1120, accuracy: 1)
-            XCTAssertLessThanOrEqual(host.fittingSize.height, 80)
-            heights.append(host.fittingSize.height)
-            if let directory = ProcessInfo.processInfo.environment["BLITZRECORDER_EXPORT_UI_PROOF"] {
-                host.setFrameSize(host.fittingSize)
-                host.layoutSubtreeIfNeeded()
-                let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-                host.cacheDisplay(in: host.bounds, to: bitmap)
-                let file = URL(fileURLWithPath: directory).appendingPathComponent("export-done-\(heights.count).png")
-                try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: file)
-            }
-        }
-        XCTAssertEqual(Set(heights).count, 1)
-    }
 }

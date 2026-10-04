@@ -46,6 +46,7 @@ struct MainView: View {
                 }
             }
         }
+        .environment(\.workspaceRecorder, vm)
         .background(BlitzUI.panelBackground)
         .ignoresSafeArea(.container, edges: .top)
         .onChange(of: vm.studioMode, initial: true) { _, mode in
@@ -61,6 +62,14 @@ struct MainView: View {
             vm.syncSettings()
             vm.refreshTargetWindow()
             vm.refreshRecentProjects()
+        }
+        .task(id: vm.state) {
+            vm.refreshScreenSuggestion()
+            while vm.state == .recording && !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+                vm.refreshScreenSuggestion()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             vm.refreshTargetWindow()
@@ -591,7 +600,10 @@ private struct CaptureCommandBar: View {
     @Bindable var vm: RecorderViewModel
 
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 12) {
+            FolderRecordTargetMenu(vm: vm)
+                .frame(maxWidth: 220, alignment: .leading)
+                .padding(.leading, 40)
             Spacer(minLength: 16)
             RecordingQualityShortcut(vm: vm)
         }

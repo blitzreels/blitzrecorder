@@ -16,8 +16,8 @@ struct EditorTimelineWrite {
     ) -> Self? {
         guard let next = EditorTimeRange.removingTogether(.init(
             ranges: ranges, kind: .manual, edits: edits, takeDuration: takeDuration
-        )), let seek = ranges.map(\.start).min() else { return nil }
-        return Self(edits: next, actionName: "Cut Range", seek: seek, clearSelection: true)
+        )) else { return nil }
+        return Self(edits: next, actionName: "Cut Range", clearSelection: true)
     }
 
     static func restoringTogether(
@@ -27,8 +27,8 @@ struct EditorTimelineWrite {
     ) -> Self? {
         guard let next = EditorTimeRange.restoringTogether(.init(
             ranges: ranges, kind: .manual, edits: edits, takeDuration: takeDuration
-        )), let seek = ranges.map(\.start).min() else { return nil }
-        return Self(edits: next, actionName: "Restore Range", seek: seek, clearSelection: true)
+        )) else { return nil }
+        return Self(edits: next, actionName: "Restore Range", clearSelection: true)
     }
 
     static func splittingClip(

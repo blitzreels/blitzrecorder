@@ -127,7 +127,7 @@ final class TakeRecordingRuntimeTests: XCTestCase {
                 localCamera: false,
                 microphone: true,
                 stopLocalCameraSession: false,
-                stopScreenPreview: false
+                stopScreenPreview: true
             )
         )
         let localLive = TakeStartPlan.make(settings: settings, isRemoteCameraSelected: false)
@@ -138,7 +138,7 @@ final class TakeRecordingRuntimeTests: XCTestCase {
                 localCamera: true,
                 microphone: true,
                 stopLocalCameraSession: localLive.usesLiveCompositor,
-                stopScreenPreview: localLive.usesLiveCompositor
+                stopScreenPreview: true
             )
         )
     }

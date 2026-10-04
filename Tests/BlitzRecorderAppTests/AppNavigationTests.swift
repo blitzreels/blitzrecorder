@@ -106,3 +106,39 @@ final class AppNavigationTests: XCTestCase {
         }
     }
 }
+
+extension AppNavigationTests {
+    func testExportCompletionDoesNotChangePageOrInterruptANewRecording() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let vm = fixture.vm
+        vm.applyExportProject(URL(fileURLWithPath: fixture.entry.projectPath))
+        vm.exportProgress = 0.6
+        vm.applyState(.recording)
+        XCTAssertEqual(vm.exportProgress, 0.6)
+        vm.showProjects()
+        vm.applySavedRecordingOutput(.init(url: fixture.directory.appendingPathComponent("export.mp4"),
+            sourceDirectory: URL(fileURLWithPath: fixture.entry.takeDirectoryPath), warning: nil))
+        vm.applyExportProject(nil)
+        XCTAssertEqual(vm.studioMode, .projects)
+        XCTAssertEqual(vm.state, .recording)
+        XCTAssertNotNil(vm.lastExportSucceededURL)
+        XCTAssertFalse(vm.isExporting)
+        vm.applyState(.idle)
+    }
+
+    func testFinishingAnExportDoesNotChangeRecordingPreparationState() {
+        let session = RecordingSession()
+        XCTAssertTrue(session.beginExport())
+        XCTAssertTrue(session.beginPreparation(.init(outputDirectoryAccess: OutputDirectoryAccess(
+            url: FileManager.default.temporaryDirectory, usesSecurityScopedBookmark: false))))
+        XCTAssertEqual(session.state, .starting)
+        session.finishExport()
+        XCTAssertEqual(session.state, .starting)
+        XCTAssertFalse(session.isExporting)
+        XCTAssertTrue(session.beginExport())
+        XCTAssertEqual(session.state, .starting)
+        session.finishExport()
+        session.failPreparation()
+    }
+}

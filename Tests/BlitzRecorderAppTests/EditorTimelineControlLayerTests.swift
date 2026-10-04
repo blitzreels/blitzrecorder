@@ -26,7 +26,7 @@ final class EditorTimelineControlLayerTests: XCTestCase {
     }
 
     @MainActor
-    func testSelectionOutlineLeavesOnlyTheClipTrimGripInteractive() async throws {
+    func testSelectionOutlineLeavesOnlyTheTwoClipTrimGripsInteractive() async throws {
         let host = NSHostingView(rootView: SelectedClipFixture().preferredColorScheme(.dark))
         host.frame = NSRect(x: 0, y: 0, width: 220, height: 180)
         let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
@@ -37,9 +37,11 @@ final class EditorTimelineControlLayerTests: XCTestCase {
         host.layoutSubtreeIfNeeded()
         let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: bitmap)
-        let grip = try sample(.init(bitmap: bitmap, x: 78, y: 32))
-        XCTAssertGreaterThan(grip.redComponent, 0.6)
-        XCTAssertGreaterThan(grip.blueComponent, 0.6)
+        for x: CGFloat in [6, 74] {
+            let grip = try sample(.init(bitmap: bitmap, x: x, y: 32))
+            XCTAssertGreaterThan(grip.redComponent, 0.6)
+            XCTAssertGreaterThan(grip.blueComponent, 0.6)
+        }
         for y: CGFloat in [85, 128, 160] {
             let color = try sample(.init(bitmap: bitmap, x: 78, y: y))
             XCTAssertLessThan(color.redComponent, 0.15)

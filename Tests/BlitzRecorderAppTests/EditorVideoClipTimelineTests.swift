@@ -487,7 +487,7 @@ final class EditorVideoClipTimelineTests: XCTestCase {
         XCTAssertEqual(EditorTimelineClipPointer.at(request(395)), .resize)
         XCTAssertEqual(EditorTimelineClipPointer.at(request(400)), .resize)
         XCTAssertEqual(EditorTimelineClipPointer.at(request(403)), .resize)
-        XCTAssertEqual(EditorTimelineClipPointer.at(request(404)), .pointingHand)
+        XCTAssertEqual(EditorTimelineClipPointer.at(request(404)), .resize)
         XCTAssertEqual(EditorTimelineClipPointer.at(request(500)), .pointingHand)
         XCTAssertEqual(EditorTimelineClipPointer.at(request(1_000)), .arrow)
         XCTAssertEqual(
@@ -514,5 +514,48 @@ final class EditorVideoClipTimelineTests: XCTestCase {
             XCTAssertEqual(pointer(8 * pixelsPerSecond + 3), .resize)
             XCTAssertEqual(pointer(8 * pixelsPerSecond + 4), .arrow)
         }
+    }
+}
+
+extension EditorVideoClipTimelineTests {
+    func testLeftEdgeRestoresOnlyTheGapAndPreservesPreviousClip() throws {
+        var edits = TimelineEdits.empty
+        edits.cuts = [.init(start: 2, end: 5, kind: .manual, source: .user)]
+        edits.videoSplits = [2, 5]
+        let result = EditorClipSpine.dragLeft(.init(edits: edits, clip: .init(start: 5, end: 8),
+            previousClipEnd: 2, duration: 10, delta: -20))
+        let restored = try XCTUnwrap(result.edits)
+        XCTAssertEqual(result.selection, .init(start: 2, end: 8))
+        XCTAssertTrue(restored.enabledCuts.isEmpty)
+        let clips = EditorClipSpine.layout(.init(edits: restored, duration: 10)).clips
+        XCTAssertEqual(clips.first?.range, .init(start: 0, end: 2))
+        XCTAssertEqual(clips.count, 2)
+    }
+
+    func testLeftTrimReversesWithoutChangingItsOriginOrScale() throws {
+        var edits = TimelineEdits.empty
+        edits.cuts = [.init(start: 2, end: 5, kind: .manual, source: .user)]
+        var session = EditorClipTrimSession()
+        let origin = EditorClipTrimSession.Origin(edits: edits, clip: .init(start: 5, end: 8),
+            nextClipStart: nil, pixelsPerSecond: 100, duration: 10, edge: .left, previousClipEnd: 2)
+        session.beginTrim(.init(origin: origin, displayDuration: 7))
+        XCTAssertEqual(session.applyTrim(translationWidth: -200), .init(start: 3, end: 8))
+        XCTAssertEqual(session.applyTrim(translationWidth: 500), .init(start: 7.9, end: 8))
+        XCTAssertEqual(session.origin, origin)
+        XCTAssertEqual(session.lockedDisplayDuration, 7)
+        XCTAssertEqual(session.applyTrim(translationWidth: 0), origin.clip)
+        XCTAssertNil(session.finish())
+    }
+
+    func testDeletingAndRestoringDoNotRequestASeekToTheSelection() throws {
+        let cut = try XCTUnwrap(EditorTimelineWrite.cuttingTogether(
+            ranges: [.init(start: 1, end: 3)], edits: .empty, takeDuration: 10))
+        XCTAssertNil(cut.seek)
+        XCTAssertTrue(cut.clearSelection)
+        XCTAssertEqual(cut.edits.enabledCuts.first?.start, 1)
+        let restore = try XCTUnwrap(EditorTimelineWrite.restoringTogether(
+            ranges: [.init(start: 1, end: 3)], edits: cut.edits, takeDuration: 10))
+        XCTAssertNil(restore.seek)
+        XCTAssertTrue(restore.edits.enabledCuts.isEmpty)
     }
 }

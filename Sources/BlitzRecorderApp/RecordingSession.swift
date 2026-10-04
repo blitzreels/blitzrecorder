@@ -19,6 +19,7 @@ final class RecordingSession {
     private(set) var state: RecordingState = .idle {
         didSet { onStateChanged?(state) }
     }
+    private(set) var isExporting = false
     private(set) var lastTake: RecordingTake?
     private var activeTakeSettings: RecordingSettings?
     private var outputDirectoryAccess: OutputDirectoryAccess?
@@ -78,14 +79,13 @@ final class RecordingSession {
     }
 
     func beginExport() -> Bool {
-        guard state == .idle else { return false }
-        state = .finishing
+        guard !isExporting else { return false }
+        isExporting = true
         return true
     }
 
     func finishExport() {
-        guard state == .finishing else { return }
-        state = .idle
+        isExporting = false
     }
 
     func clearLastTake() {

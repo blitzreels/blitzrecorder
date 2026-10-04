@@ -25,7 +25,7 @@ final class EditorPaneProofTests: XCTestCase {
         vm.lastExportedSourceTakeURL = takeURL
         vm.refreshLastExportedProject()
         vm.studioMode = .edit
-        let tabs: [EditorInspectorTab] = [.layout, .silence, .text, .zoom, .privacy, .audio]
+        let tabs: [EditorInspectorTab] = [.layout, .silence, .captions, .text, .zoom, .privacy, .audio]
         for (index, tab) in (tabs + [.silence, .silence]).enumerated() {
             if index == tabs.count + 1 { vm.lastExportSucceededURL = nil }
             if index == tabs.count {

@@ -9,6 +9,7 @@ struct EditorInspector: View {
     var persistEditorState: (String) -> Void
     var privacy: PrivacyEditingSession
     var silence: SilenceEditingSession
+    var transcript: RecordingTranscript?
     var project: RecordingProject?
     var sceneEvents: [RecordingSceneEvent]
     var captureLayout: CaptureLayout?
@@ -56,6 +57,8 @@ struct EditorInspector: View {
             case .silence:
                 SilenceInspectorPane(session: silence)
 
+            case .captions:
+                EditorCaptionsInspector(configuration: .init(vm: vm, playback: playback, transcript: transcript))
             case .text:
                 EditorTextInspector(configuration: .init(
                     vm: vm, playback: playback, preview: scenePresetPreview,

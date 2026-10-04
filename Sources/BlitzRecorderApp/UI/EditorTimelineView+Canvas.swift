@@ -47,7 +47,8 @@ extension EditorTimelineView {
                                         onSelect: clickVideoClip,
                                         onHover: { hoveredClipRange = $0 },
                                         onBeginTrim: { origin in
-                                            clipTrim.beginTrim(.init(origin: origin, displayDuration: projection.duration))
+                                            if !clipTrim.isActive { playback.pauseForEditing() }
+                                            clipTrim.beginTrim(.init(origin: origin, displayDuration: layoutDuration))
                                         },
                                         onTrim: previewClipTrim,
                                         onEndTrim: commitClipTrim,

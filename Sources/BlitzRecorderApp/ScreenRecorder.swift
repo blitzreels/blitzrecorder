@@ -22,6 +22,9 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
     private var startupTimeoutTask: Task<Void, Never>?
     private var hasProducedStartupFrame = false
     private var hasReportedActiveFailure = false
+    var onPreviewFrame: ScreenPreviewer.FrameHandler?
+    private var lastPreviewTime: UInt64 = 0
+
     var failureHandler: (@MainActor (Error) -> Void)?
 
     var activeScreenCaptureStream: SCStream? {
@@ -186,7 +189,21 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
             return
         }
         writer?.append(sampleBuffer)
+        publishPreviewFrame(sampleBuffer)
         completeStartup(.success(()))
+    }
+
+    func publishPreviewFrame(_ sampleBuffer: CMSampleBuffer) {
+        let now = DispatchTime.now().uptimeNanoseconds
+        if now - lastPreviewTime >= 33_333_333, let handler = onPreviewFrame,
+            let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
+            lastPreviewTime = now
+            let width = CVPixelBufferGetWidth(buffer)
+            let height = CVPixelBufferGetHeight(buffer)
+            let frame = ScreenPreviewFrame(sampleBuffer: sampleBuffer, width: width, height: height,
+                sourceAspectRatio: CGFloat(width) / CGFloat(max(1, height)))
+            Task { @MainActor in handler(frame) }
+        }
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {

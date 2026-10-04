@@ -239,7 +239,9 @@ extension RecorderCaptureRuntime {
         guard request.selectionPolicy.accepts(persistentBinding?.kind) else {
             throw RecorderError.screenWindowRequired
         }
-        let filter = ScreenCaptureGeometry.normalizedPickedFilter(pickedFilter)
+        let filter = await ScreenCaptureGeometry.excludingOwnApplication(
+            ScreenCaptureGeometry.normalizedPickedFilter(pickedFilter)
+        )
         let pickedAspectRatio = ScreenCaptureGeometry.pickedContentAspectRatio(for: filter)
         let previousSettings = settings
         let previousSelectionState = screenSourceSelection.runtimeState()

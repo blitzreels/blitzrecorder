@@ -7,7 +7,7 @@ import ScreenCaptureKit
 
 @MainActor
 extension RecorderCaptureRuntime {
-    func start() {
+    func start(takeTitle: String?) {
         guard state == .idle else { return }
         let readiness = recordingReadiness()
         guard readiness.isReady else {
@@ -70,7 +70,7 @@ extension RecorderCaptureRuntime {
                         throw RecorderError.microphoneUnavailable
                     }
                 }
-                let take = try takeFileStore.createTake(settings: recordingSettings)
+                let take = try takeFileStore.createTake(.init(settings: recordingSettings, date: Date(), title: takeTitle))
                 createdTake = take
                 recordingSession.noteActiveTake(
                     RecordingSessionActiveTake(take: take, settings: recordingSettings)

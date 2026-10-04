@@ -372,14 +372,9 @@ extension EditorView {
     }
 
     func deleteSelectedSegment() {
-        guard playback.isReady, case .segment(let index) = selection,
-            let range = EditorTimeRange.segment(.init(
-                eventTimes: sceneEvents.map(\.time), index: index, duration: timelineDuration
-            ))
-        else { return }
+        guard playback.isReady, case .segment(let index) = selection else { return }
         playback.pauseForEditing()
         if vm.deleteProjectSegment(.init(index: index, duration: timelineDuration)) {
-            pendingRangeCutSeek = range.start
             selection = nil
         } else {
             editErrorMessage = vm.detailMessage

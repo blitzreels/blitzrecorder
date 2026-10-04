@@ -1,12 +1,16 @@
 import Foundation
 
 struct EditorClipTrimSession: Equatable {
+    enum Edge: String { case left, right }
+
     struct Origin: Equatable {
         let edits: TimelineEdits
         let clip: EditorTimeRange
         let nextClipStart: Double?
         let pixelsPerSecond: CGFloat
         let duration: Double
+        var edge: Edge = .right
+        var previousClipEnd: Double? = nil
     }
 
     struct BeginRequest {
@@ -34,9 +38,13 @@ struct EditorClipTrimSession: Equatable {
 
     mutating func applyTrim(translationWidth: CGFloat) -> EditorTimeRange? {
         guard let origin else { return nil }
-        let dragged = EditorClipSpine.dragRight(.init(
+        let delta = Double(translationWidth / origin.pixelsPerSecond)
+        let dragged = origin.edge == .left ? EditorClipSpine.dragLeft(.init(
+            edits: origin.edits, clip: origin.clip, previousClipEnd: origin.previousClipEnd,
+            duration: origin.duration, delta: delta
+        )) : EditorClipSpine.dragRight(.init(
             edits: origin.edits, clip: origin.clip, nextClipStart: origin.nextClipStart,
-            duration: origin.duration, delta: Double(translationWidth / origin.pixelsPerSecond)
+            duration: origin.duration, delta: delta
         ))
         draft = dragged.edits
         return dragged.selection

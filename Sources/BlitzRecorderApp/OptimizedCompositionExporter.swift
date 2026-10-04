@@ -277,7 +277,7 @@ enum OptimizedCompositionExporter {
                     progressHandler: progressHandler
                 )
 
-                videoInput.requestMediaDataWhenReady(on: DispatchQueue(label: "blitzrecorder.optimized-export.video")) {
+                videoInput.requestMediaDataWhenReady(on: DispatchQueue(label: "blitzrecorder.optimized-export.video", qos: .utility)) {
                     videoPump.pumpVideo()
                 }
 
@@ -291,7 +291,7 @@ enum OptimizedCompositionExporter {
                     performanceMonitor: performanceMonitor,
                     progressHandler: nil
                 )
-                audioInput.requestMediaDataWhenReady(on: DispatchQueue(label: "blitzrecorder.optimized-export.audio")) {
+                audioInput.requestMediaDataWhenReady(on: DispatchQueue(label: "blitzrecorder.optimized-export.audio", qos: .utility)) {
                     audioPump.pumpAudio()
                 }
             }
@@ -309,6 +309,7 @@ private final class ExportSamplePump: @unchecked Sendable {
     private let durationSeconds: Double
     private let performanceMonitor: ExportPerformanceMonitor?
     private let progressHandler: (@MainActor (Double) -> Void)?
+    private var lastProgressTime: TimeInterval = 0
 
     init(
         output: AVAssetReaderOutput,
@@ -352,7 +353,9 @@ private final class ExportSamplePump: @unchecked Sendable {
             }
             let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
             performanceMonitor?.didWriteVideoFrame(at: presentationTime)
-            if presentationTime.isValid {
+            let now = ProcessInfo.processInfo.systemUptime
+            if presentationTime.isValid, now - lastProgressTime >= 0.15 {
+                lastProgressTime = now
                 let progress = min(0.99, max(0, presentationTime.seconds / durationSeconds))
                 Task { @MainActor in
                     progressHandler?(progress)

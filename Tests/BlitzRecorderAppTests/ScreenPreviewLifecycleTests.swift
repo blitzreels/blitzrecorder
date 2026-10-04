@@ -191,3 +191,46 @@ final class ScreenPreviewLifecycleTests: XCTestCase {
         XCTAssertTrue(message.contains("Screen Recording permission required"))
     }
 }
+
+final class RecordingSourceSuggestionTests: XCTestCase {
+    func testSuggestionsExcludeCurrentWindowAppDisplayAndRecorder() {
+        let candidate = ScreenSourceBinding(kind: .window, displayID: nil, bundleIdentifier: "test.browser",
+            applicationName: "Browser", processID: 42, windowID: 12, windowTitle: "A tab")
+        XCTAssertTrue(RecordingSourceSuggestion.shouldSuggest(.init(current: nil, candidate: candidate, ownProcessID: 1)))
+        XCTAssertFalse(RecordingSourceSuggestion.shouldSuggest(.init(current: candidate, candidate: candidate,
+            ownProcessID: 1)))
+        XCTAssertFalse(RecordingSourceSuggestion.shouldSuggest(.init(current: nil, candidate: candidate, ownProcessID: 42)))
+        XCTAssertFalse(RecordingSourceSuggestion.shouldSuggest(.init(current: .display(id: "1"), candidate: candidate,
+            ownProcessID: 1)))
+        var application = candidate
+        application.kind = .application
+        application.windowID = nil
+        XCTAssertFalse(RecordingSourceSuggestion.shouldSuggest(.init(current: application, candidate: candidate,
+            ownProcessID: 1)))
+        var otherWindow = candidate
+        otherWindow.windowID = 99
+        XCTAssertTrue(RecordingSourceSuggestion.shouldSuggest(.init(current: otherWindow, candidate: candidate,
+            ownProcessID: 1)))
+    }
+}
+
+final class RecordingScreenPreviewTests: XCTestCase {
+    @MainActor
+    func testRecordingFramesReachCanvasPreviewWithoutASeparateCaptureStream() async throws {
+        let fixture = try SyntheticRecording()
+        let recorder = ScreenRecorder()
+        let received = expectation(description: "Recording frame forwarded to canvas")
+        var count = 0
+        recorder.onPreviewFrame = { frame in
+            count += 1
+            XCTAssertEqual(frame.width, 640)
+            XCTAssertEqual(frame.height, 360)
+            XCTAssertEqual(frame.sourceAspectRatio, 16.0 / 9, accuracy: 0.001)
+            received.fulfill()
+        }
+        recorder.publishPreviewFrame(try fixture.videoSample(at: 0))
+        recorder.publishPreviewFrame(try fixture.videoSample(at: 1))
+        await fulfillment(of: [received], timeout: 3)
+        XCTAssertEqual(count, 1)
+    }
+}

@@ -154,3 +154,19 @@ struct ScreenSourceGeometry: Equatable {
         )
     }
 }
+
+enum RecordingSourceSuggestion {
+    struct Request {
+        let current: ScreenSourceBinding?
+        let candidate: ScreenSourceBinding
+        let ownProcessID: Int32
+    }
+
+    static func shouldSuggest(_ request: Request) -> Bool {
+        guard request.candidate.processID != request.ownProcessID,
+            request.current?.kind != .display else { return false }
+        if request.current?.kind == .application,
+            request.current?.processID == request.candidate.processID { return false }
+        return request.current?.id != request.candidate.id
+    }
+}

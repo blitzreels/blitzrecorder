@@ -63,6 +63,11 @@ struct ProjectLibraryNavigationState: Equatable {
 struct ProjectLibraryView: View {
     @Bindable var vm: RecorderViewModel
     @Bindable var sharing = HostedVideoShareController.shared
+    let folderStore = ProjectFolderStore.shared
+    @State var collapsedFolderIDs: Set<String> = []
+    @State var dropTargetID: String?
+    @State var folderPrompt: ProjectFolderPrompt?
+    @State var folderNameDraft = ""
     @State var openingProjectID: UUID?
     @State var showsProjectMenu = false
     @State private var projectsPendingDeletion: [RecordingProjectHistory.Entry] = []
@@ -94,26 +99,30 @@ struct ProjectLibraryView: View {
         VStack(spacing: 0) {
             commandBar
                 .blitzWindowToolbar(showsUpdate: false)
-            if vm.projectLibraryNavigation.section == .shared {
-                HostedVideoLibraryView(controller: sharing, showRecordings: {
-                    vm.projectLibraryNavigation.section = .recordings
-                }, thumbnail: { video in
-                    guard let path = sharing.projectPath(for: video),
-                          let project = vm.recentProjects.first(where: { $0.projectPath == path }) else { return nil }
-                    return metadataByProjectID[project.id]?.thumbnail
-                })
-            } else {
-            trashStatusBar
+            ZStack {
+                VStack(spacing: 0) {
+                    trashStatusBar
+                    folderStatusBar
+                    HStack(spacing: 0) {
+                        projectSidebar
+                        Rectangle().fill(BlitzUI.hoverFill).frame(width: 1)
+                        projectDetail
+                    }
+                }
+                .opacity(workPolicy.loadsLocalProjects ? 1 : 0)
+                .disabled(!workPolicy.loadsLocalProjects)
+                .allowsHitTesting(workPolicy.loadsLocalProjects)
+                .accessibilityHidden(!workPolicy.loadsLocalProjects)
 
-            HStack(spacing: 0) {
-                projectSidebar
-
-                Rectangle()
-                    .fill(BlitzUI.hoverFill)
-                    .frame(width: 1)
-
-                projectDetail
-            }
+                if vm.projectLibraryNavigation.section == .shared {
+                    HostedVideoLibraryView(controller: sharing, showRecordings: {
+                        vm.projectLibraryNavigation.section = .recordings
+                    }, thumbnail: { video in
+                        guard let path = sharing.projectPath(for: video),
+                              let project = vm.recentProjects.first(where: { $0.projectPath == path }) else { return nil }
+                        return metadataByProjectID[project.id]?.thumbnail
+                    })
+                }
             }
         }
         .background(BlitzUI.projectLibraryBackground)
@@ -122,11 +131,11 @@ struct ProjectLibraryView: View {
             transaction.disablesAnimations = true
         }
         .task {
-            vm.refreshRecentProjects()
+            vm.refreshProjectsInBackground()
             selectFirstProjectIfNeeded()
             await sharing.refresh()
         }
-        .task(id: vm.recentProjects.map(\.id)) {
+        .task(id: metadataTaskID) {
             await loadMetadata()
         }
         .task(id: transcriptSearchTaskID) {
@@ -138,6 +147,9 @@ struct ProjectLibraryView: View {
         .task(id: playbackTaskID) {
             await loadSelectedPlayback()
         }
+        .task(id: waveformTaskID) {
+            await loadSelectedWaveform()
+        }
         .task(id: mediaTaskID) {
             await loadSelectedMediaAssets()
         }
@@ -145,7 +157,12 @@ struct ProjectLibraryView: View {
             if !vm.projectTrash.isWorking { selectFirstProjectIfNeeded() }
         }
         .onChange(of: vm.projectLibraryNavigation.section) {
-            if vm.projectLibraryNavigation.section == .shared { projectPlayback.pauseForEditing() }
+            if vm.projectLibraryNavigation.section == .shared {
+                isSearchFocused = false
+                showsProjectMenu = false
+                showsFilters = false
+                projectPlayback.teardown()
+            }
         }
         .onDisappear {
             projectPlayback.teardown()
@@ -186,6 +203,14 @@ struct ProjectLibraryView: View {
         } message: { _ in
             Text("This title is used in Projects and as the default export filename.")
         }
+        .alert(folderPrompt?.title ?? "", isPresented: folderPromptBinding, presenting: folderPrompt) { prompt in
+            TextField("Folder name", text: $folderNameDraft)
+            Button("Cancel", role: .cancel) { folderPrompt = nil }
+            Button(prompt.actionTitle) { commitFolderPrompt(prompt) }
+                .disabled(!ProjectFolderPath.isValidName(folderNameDraft))
+        } message: { _ in
+            Text("Recordings in this folder are named Folder - Title, so files and exports stay grouped.")
+        }
         .alert("Project action failed", isPresented: projectErrorBinding) {
             Button("OK") {
                 vm.projectLibraryError = nil
@@ -209,6 +234,12 @@ struct ProjectLibraryView: View {
             Spacer(minLength: 16)
 
             AppUpdateToolbarButton()
+
+            Button("Import video…", systemImage: "square.and.arrow.down", action: vm.chooseVideoToImport)
+                .blitzButton(.secondary)
+                .disabled(vm.videoImportProgress != nil || vm.projectTrash.isWorking)
+                .keyboardShortcut("i", modifiers: .command)
+                .help("Create an editable project from an MP4, MOV, or M4V video (⌘I)")
 
             Button(action: vm.showRecorder) {
                 HStack(spacing: 8) {
@@ -265,6 +296,37 @@ struct ProjectLibraryView: View {
         }
     }
 
+    @ViewBuilder
+    private var folderStatusBar: some View {
+        if let status = vm.folderExportStatus {
+            HStack(spacing: 12) {
+                ProgressView().controlSize(.small)
+                Text(status)
+                    .font(BlitzType.label)
+                    .foregroundStyle(BlitzUI.secondaryText)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+            }
+            .blitzWorkspaceToolbar()
+        } else if let undo = vm.folderMoveUndo {
+            HStack(spacing: 12) {
+                BlitzSymbol(configuration: .init(name: "folder", size: 16))
+                Text(undo.message)
+                    .font(BlitzType.label)
+                    .foregroundStyle(BlitzUI.secondaryText)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Button("Undo") { vm.undoFolderMove() }
+                    .blitzButton(.secondary)
+                BlitzToolbarButton(configuration: .init(
+                    title: "Dismiss", symbolName: "xmark", showsTitle: false,
+                    action: { vm.folderMoveUndo = nil }
+                ))
+            }
+            .blitzWorkspaceToolbar()
+        }
+    }
+
     func displayTitle(
         _ project: RecordingProjectHistory.Entry
     ) -> String {
@@ -294,7 +356,7 @@ struct ProjectLibraryView: View {
               let selectedProjectID = vm.projectLibraryNavigation.selectedProjectIDs.first else {
             return nil
         }
-        return filteredProjects.first { $0.id == selectedProjectID }
+        return vm.recentProjects.first { $0.id == selectedProjectID }
     }
 
     var selectedTranscript: RecordingTranscript? {
@@ -329,7 +391,8 @@ struct ProjectLibraryView: View {
     func projects(
         for selection: Set<UUID>
     ) -> [RecordingProjectHistory.Entry] {
-        filteredProjects.filter { selection.contains($0.id) }
+        let candidates = selection.count == 1 ? vm.recentProjects : filteredProjects
+        return candidates.filter { selection.contains($0.id) }
     }
 
     func queueDeletion(
@@ -346,6 +409,15 @@ struct ProjectLibraryView: View {
                 if !isPresented {
                     vm.projectLibraryError = nil
                 }
+            }
+        )
+    }
+
+    private var folderPromptBinding: Binding<Bool> {
+        Binding(
+            get: { folderPrompt != nil },
+            set: { isPresented in
+                if !isPresented { folderPrompt = nil }
             }
         )
     }

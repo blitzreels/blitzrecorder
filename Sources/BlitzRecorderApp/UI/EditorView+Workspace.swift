@@ -12,7 +12,7 @@ extension EditorView {
                 vm.selectOutputLayout($0)
             },
             exportButton: AnyView(HStack(spacing: 8) {
-                Button(action: openSharing) { Label("Share", systemImage: "link") }
+                Button(action: openSharing) { Label("Share", systemImage: "link").lineLimit(1).fixedSize() }
                 .blitzButton(.secondary)
                 .controlSize(.large)
                 .disabled(project == nil)
@@ -193,17 +193,17 @@ extension EditorView {
         if vm.isExportingVariants {
             return .exporting(.init(
                 title: "Exporting format \(vm.variantExportIndex) of \(vm.variantExportTotal)",
-                percentage: vm.sessionProgressLabel,
-                detail: vm.sessionProgressDetail,
-                value: (Double(max(0, vm.variantExportIndex - 1)) + vm.renderProgress) / Double(max(1, vm.variantExportTotal))
+                percentage: vm.exportProgressLabel,
+                detail: nil,
+                value: (Double(max(0, vm.variantExportIndex - 1)) + vm.exportProgress) / Double(max(1, vm.variantExportTotal))
             ))
         }
-        if vm.state == .finishing {
+        if vm.isExporting {
             return .exporting(.init(
-                title: vm.sessionProgressTitle,
-                percentage: vm.sessionProgressLabel,
-                detail: vm.sessionProgressDetail,
-                value: vm.sessionProgressValue
+                title: "Exporting video",
+                percentage: vm.exportProgressLabel,
+                detail: nil,
+                value: vm.exportProgress
             ))
         }
         if let error = vm.lastExportError { return .failed(error) }

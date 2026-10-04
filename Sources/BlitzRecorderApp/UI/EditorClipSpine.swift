@@ -23,6 +23,43 @@ enum EditorClipSpine {
         var delta: Double = 0
     }
 
+    struct LeftEdgeRequest {
+        let edits: TimelineEdits
+        let clip: EditorTimeRange
+        let previousClipEnd: Double?
+        let duration: Double
+        let delta: Double
+    }
+
+    static func dragLeft(_ request: LeftEdgeRequest) -> DragRightResult {
+        let unchanged = DragRightResult(edits: nil, selection: request.clip)
+        guard request.delta.isFinite, request.duration.isFinite,
+            request.clip.start >= 0, request.clip.end <= request.duration,
+            request.clip.end > request.clip.start,
+            request.previousClipEnd?.isFinite != false,
+            (request.previousClipEnd ?? 0) <= request.clip.start else { return unchanged }
+        let start = TimelineTimeMap.time(request.clip.start).seconds
+        let limit = TimelineTimeMap.time(max(0, request.previousClipEnd ?? 0)).seconds
+        let newStart = TimelineTimeMap.time(min(max(limit, start + request.delta),
+            max(start, request.clip.end - 0.1))).seconds
+        if newStart > start {
+            guard let edits = EditorTimeRange.removing(.init(
+                range: .init(start: start, end: newStart), edits: request.edits, takeDuration: request.duration
+            )) else { return unchanged }
+            return .init(edits: edits, selection: .init(start: newStart, end: request.clip.end))
+        }
+        guard newStart < start, var edits = EditorTimeRange.restoring(.init(
+            range: .init(start: newStart, end: start), edits: request.edits, takeDuration: request.duration
+        )) else { return unchanged }
+        edits.videoSplits = edits.videoSplits.filter { $0.isFinite && ($0 <= newStart || $0 > start) }
+        if request.previousClipEnd != nil, newStart == limit,
+            !edits.videoSplits.contains(where: { TimelineTimeMap.time($0).seconds == newStart }) {
+            edits.videoSplits.append(newStart)
+            edits.videoSplits.sort()
+        }
+        return .init(edits: edits, selection: .init(start: newStart, end: request.clip.end))
+    }
+
     static func layout(_ request: Request) -> EditorVideoClipLayout {
         let projection = EditorTimelineProjection(.init(duration: request.duration, cuts: request.edits.cuts))
         return EditorVideoClipLayout(.init(projection: projection, splits: boundaries(request)))

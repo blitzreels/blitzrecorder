@@ -21,20 +21,17 @@ struct EditorExportControls: View {
             isPresented.toggle()
         } label: {
             HStack(spacing: 6) {
-                ZStack {
-                    ProgressView().controlSize(.mini).tint(.black).opacity(vm.state == .finishing ? 1 : 0)
-                    Image(systemName: "square.and.arrow.down").opacity(vm.state == .finishing ? 0 : 1)
-                }
-                .frame(width: 14, height: 14)
-                Text(vm.state == .finishing ? "Exporting…" : "Export")
+                Image(systemName: "square.and.arrow.down")
+                    .frame(width: 14, height: 14)
+                Text("Export")
                     .frame(minWidth: 62, alignment: .leading)
             }
             .accessibilityElement(children: .combine)
         }
         .blitzButton(.accent)
         .controlSize(.large)
-        .disabled(project == nil || vm.state != .idle)
-        .help("Save a video file to your Mac")
+        .disabled(project == nil || vm.state != .idle || vm.isExporting)
+        .help(vm.isExporting ? "An export is already running. Progress is shown at the top." : "Save a video file to your Mac")
         .popover(isPresented: $isPresented, arrowEdge: .top) {
             popover
         }
@@ -91,7 +88,7 @@ struct EditorExportControls: View {
             estimatedSizeCaption: recipe.encoding.estimatedSizeCaption,
             encodingDetail: recipe.encoding.detail,
             directory: vm.settings.outputDirectory,
-            canExport: project != nil && vm.state == .idle && !vm.isExportingVariants,
+            canExport: project != nil && vm.state == .idle && !vm.isExporting,
             export: export,
             chooseFolder: {
                 isPresented = false

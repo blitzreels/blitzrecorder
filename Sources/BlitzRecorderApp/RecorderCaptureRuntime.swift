@@ -85,6 +85,8 @@ final class RecorderCaptureRuntime {
     var onRecordingRecovery: ((RecordingRecoveryOutput) -> Void)?
     var onCaptureStopProgress: ((CaptureStopProgress?) -> Void)?
     var onRenderProgress: ((Double) -> Void)?
+    var onExportProgress: ((Double) -> Void)?
+    var onExportProjectChanged: ((URL?) -> Void)?
     var onExportFailure: ((String?) -> Void)?
     var onScreenCaptureConfigurationChanged: (() -> Void)?
     var onCameraConfigurationChanged: (() -> Void)?
@@ -318,6 +320,11 @@ final class RecorderCaptureRuntime {
                 return
             }
             self.onLocalCameraPreviewSampleBuffer?(sampleBuffer, width, height)
+        }
+        screenRecorder.onPreviewFrame = { [weak self] frame in
+            guard let self, self.state == .starting || self.state == .recording || self.state == .paused else { return }
+            self.studio.noteScreenSourceAspectRatio(frame.sourceAspectRatio)
+            self.onLiveScreenPreviewFrame?(frame)
         }
         takeRecording.setLiveCompositorScreenPreviewHandler { [weak self] frame in
             guard let self,

@@ -12,6 +12,7 @@ struct SilenceDetectionRequest: Sendable {
     var minimumAudio: Double = 0
     var overrides: [SilenceOverride] = []
     var speechRanges: [RecordingTranscript.SpeechRange] = []
+    var onProgress: (@Sendable (Double) -> Void)? = nil
 }
 
 struct SilenceWindow: Equatable, Sendable {
@@ -37,8 +38,10 @@ enum SilenceDetection {
             AVSampleRateKey: 16_000, AVNumberOfChannelsKey: 1
         ])
         reader.add(output)
+        let totalSeconds = (try? await asset.load(.duration).seconds).flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
         guard reader.startReading() else { throw reader.error ?? SilenceDetectionError.noAudio }
         defer { reader.cancelReading() }
+        var reported = 0.0
         var windows: [SilenceWindow] = []
         var sum = 0.0
         var count = 0
@@ -53,6 +56,13 @@ enum SilenceDetection {
             }
             guard copied == kCMBlockBufferNoErr else { throw SilenceDetectionError.noAudio }
             let sampleTime = CMSampleBufferGetPresentationTimeStamp(sample).seconds
+            if let totalSeconds, let onProgress = request.onProgress {
+                let fraction = min(1, max(0, (sampleTime + Double(values.count) / 16_000) / totalSeconds))
+                if fraction - reported >= 0.01 {
+                    reported = fraction
+                    onProgress(fraction)
+                }
+            }
             for (index, value) in values.enumerated() {
                 let time = sampleTime + Double(index) / 16_000 + request.sourceOffset
                 if count == 0 { windowStart = time }

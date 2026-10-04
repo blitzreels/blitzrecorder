@@ -286,6 +286,7 @@ struct TimelineEdits: Equatable, Sendable {
     var videoSplits: [Double] = []
     var silenceRemovalApplied: Bool = false
     var silenceSettings: SilenceRemovalSettings?
+    var captions: CaptionTrack = .empty
 
     static let empty = TimelineEdits(cuts: [], textOverlays: [], zoom: .empty)
 

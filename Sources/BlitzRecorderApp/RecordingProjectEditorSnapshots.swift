@@ -262,6 +262,7 @@ extension RecordingProject {
     struct TimelineEditsSnapshot: Codable, Equatable {
         let cuts: [CutSnapshot]
         let textOverlays: [TextOverlaySnapshot]
+        let captions: CaptionTrack
         let zoom: ZoomTrackSnapshot
         let videoSplits: [Double]
         let silenceRemovalApplied: Bool
@@ -279,6 +280,7 @@ extension RecordingProject {
         init(cuts: [CutSnapshot], textOverlays: [TextOverlaySnapshot], zoom: ZoomTrackSnapshot) {
             self.cuts = cuts
             self.textOverlays = textOverlays
+            self.captions = .empty
             self.zoom = zoom
             self.videoSplits = []
             self.silenceRemovalApplied = false
@@ -295,6 +297,7 @@ extension RecordingProject {
         init(_ edits: TimelineEdits) {
             cuts = edits.cuts.map(CutSnapshot.init)
             textOverlays = edits.textOverlays.map(TextOverlaySnapshot.init)
+            captions = edits.captions
             zoom = ZoomTrackSnapshot(edits.zoom)
             videoSplits = edits.videoSplits
             silenceRemovalApplied = edits.silenceRemovalApplied
@@ -312,6 +315,7 @@ extension RecordingProject {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             cuts = try container.decodeIfPresent([CutSnapshot].self, forKey: .cuts) ?? []
             textOverlays = try container.decodeIfPresent([TextOverlaySnapshot].self, forKey: .textOverlays) ?? []
+            captions = try container.decodeIfPresent(CaptionTrack.self, forKey: .captions) ?? .empty
             zoom = try container.decodeIfPresent(ZoomTrackSnapshot.self, forKey: .zoom) ?? .empty
             videoSplits = try container.decodeIfPresent([Double].self, forKey: .videoSplits) ?? []
             silenceRemovalApplied = try container.decodeIfPresent(Bool.self, forKey: .silenceRemovalApplied)
@@ -340,12 +344,13 @@ extension RecordingProject {
                 voiceCleanup: voiceCleanup,
                 videoSplits: videoSplits,
                 silenceRemovalApplied: silenceRemovalApplied,
-                silenceSettings: silenceSettings
+                silenceSettings: silenceSettings,
+                captions: captions
             )
         }
 
         var isEmpty: Bool {
-            silenceSettings == nil && videoSplits.isEmpty && !silenceRemovalApplied && cuts.isEmpty && textOverlays.isEmpty && zoom.keyframes.isEmpty && silenceOverrides.isEmpty
+            captions == .empty && silenceSettings == nil && videoSplits.isEmpty && !silenceRemovalApplied && cuts.isEmpty && textOverlays.isEmpty && zoom.keyframes.isEmpty && silenceOverrides.isEmpty
                 && cursorStyle == .standard && !cameraFollowsZoom && privacyMasks.isEmpty && outputVariants.isEmpty && activeOutputLayout == nil && voiceCleanup == .disabled
         }
     }

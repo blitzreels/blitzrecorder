@@ -137,7 +137,23 @@ enum ProjectLibraryMetadataLoader {
         let existingSources: [RecordingProject.SourceFile]
     }
 
+    struct LoadRequest {
+        let entry: RecordingProjectHistory.Entry
+        let generatesThumbnails: Bool
+    }
+
+    private struct ThumbnailRequest {
+        let url: URL?
+        let generatesThumbnail: Bool
+    }
+
     static func load(_ entry: RecordingProjectHistory.Entry) async -> ProjectLibraryMetadata {
+        await load(.init(entry: entry, generatesThumbnails: true))
+    }
+
+    static func load(_ request: LoadRequest) async -> ProjectLibraryMetadata {
+        guard !Task.isCancelled else { return .empty }
+        let entry = request.entry
         guard let project = try? TakeFileStore().loadRecordingProject(
             at: URL(fileURLWithPath: entry.projectPath)
         ) else {
@@ -152,7 +168,7 @@ enum ProjectLibraryMetadataLoader {
             existingSources: existingSources
         ))
 
-        async let thumbnail = thumbnail(for: previewURL)
+        async let thumbnail = thumbnail(.init(url: previewURL, generatesThumbnail: request.generatesThumbnails))
         async let videoDetails = videoDetails(for: previewURL)
         let details = await videoDetails
 
@@ -180,12 +196,13 @@ enum ProjectLibraryMetadataLoader {
         return nil
     }
 
-    private static func thumbnail(for url: URL?) async -> NSImage? {
-        guard let url else { return nil }
+    private static func thumbnail(_ request: ThumbnailRequest) async -> NSImage? {
+        guard !Task.isCancelled, let url = request.url else { return nil }
         let cacheURL = MediaFileFingerprint(url: url).map {
             thumbnailCacheDirectory.appendingPathComponent("\($0.cacheKey).jpg")
         }
         if let cacheURL, let cached = NSImage(contentsOf: cacheURL) { return cached }
+        guard request.generatesThumbnail, !Task.isCancelled else { return nil }
         let generated = await generatedThumbnail(for: url)
         if let cacheURL, let generated,
            let tiff = generated.tiffRepresentation,
@@ -209,23 +226,27 @@ enum ProjectLibraryMetadataLoader {
         generator.requestedTimeToleranceAfter = CMTime(seconds: 0.5, preferredTimescale: 600)
 
         let duration = try? await asset.load(.duration)
-        var bestImage: CGImage?
-        var bestScore = -Double.infinity
-        for seconds in ProjectThumbnailSampling.times(duration: duration?.seconds ?? 0) {
-            guard !Task.isCancelled else { return nil }
-            let time = CMTime(seconds: seconds, preferredTimescale: 600)
-            guard let image = try? await generator.image(at: time).image else { continue }
-            let score = ProjectThumbnailSampling.detailScore(image)
-            if score > bestScore {
-                bestImage = image
-                bestScore = score
+        return await withTaskCancellationHandler {
+            var bestImage: CGImage?
+            var bestScore = -Double.infinity
+            for seconds in ProjectThumbnailSampling.times(duration: duration?.seconds ?? 0) {
+                guard !Task.isCancelled else { return nil }
+                let time = CMTime(seconds: seconds, preferredTimescale: 600)
+                guard let image = try? await generator.image(at: time).image else { continue }
+                let score = ProjectThumbnailSampling.detailScore(image)
+                if score > bestScore {
+                    bestImage = image
+                    bestScore = score
+                }
             }
+            guard let image = bestImage else { return nil }
+            return NSImage(
+                cgImage: image,
+                size: NSSize(width: image.width, height: image.height)
+            )
+        } onCancel: {
+            generator.cancelAllCGImageGeneration()
         }
-        guard let image = bestImage else { return nil }
-        return NSImage(
-            cgImage: image,
-            size: NSSize(width: image.width, height: image.height)
-        )
     }
 
     private struct VideoDetails {
@@ -298,9 +319,25 @@ final class ProjectLibraryMetadataStore {
 
     private(set) var metadata: [UUID: ProjectLibraryMetadata] = [:]
     @ObservationIgnored private var loadedVersions: [UUID: Date] = [:]
+    @ObservationIgnored private var thumbnailVersions: [UUID: Date] = [:]
+
+    struct LoadRequest {
+        let entry: RecordingProjectHistory.Entry
+        let generatesThumbnails: Bool
+    }
+
+    struct StoreRequest {
+        let values: [(RecordingProjectHistory.Entry, ProjectLibraryMetadata)]
+        let generatesThumbnails: Bool
+    }
+
+    func needsLoad(_ request: LoadRequest) -> Bool {
+        metadata[request.entry.id] == nil || loadedVersions[request.entry.id] != request.entry.updatedAt
+            || (request.generatesThumbnails && thumbnailVersions[request.entry.id] != request.entry.updatedAt)
+    }
 
     func needsLoad(_ entry: RecordingProjectHistory.Entry) -> Bool {
-        metadata[entry.id] == nil || loadedVersions[entry.id] != entry.updatedAt
+        needsLoad(.init(entry: entry, generatesThumbnails: true))
     }
 
     func retain(_ entries: [RecordingProjectHistory.Entry]) {
@@ -308,14 +345,23 @@ final class ProjectLibraryMetadataStore {
         guard metadata.keys.contains(where: { !ids.contains($0) }) else { return }
         metadata = metadata.filter { ids.contains($0.key) }
         loadedVersions = loadedVersions.filter { ids.contains($0.key) }
+        thumbnailVersions = thumbnailVersions.filter { ids.contains($0.key) }
     }
 
     func store(_ loaded: [(RecordingProjectHistory.Entry, ProjectLibraryMetadata)]) {
-        guard !loaded.isEmpty else { return }
+        store(.init(values: loaded, generatesThumbnails: true))
+    }
+
+    func store(_ request: StoreRequest) {
+        guard !request.values.isEmpty else { return }
         var next = metadata
-        for (entry, value) in loaded {
-            next[entry.id] = value
+        for (entry, value) in request.values {
+            next[entry.id] = ProjectLibraryMetadata(
+                thumbnail: value.thumbnail ?? (request.generatesThumbnails ? nil : next[entry.id]?.thumbnail),
+                durationSeconds: value.durationSeconds, sourceSummary: value.sourceSummary,
+                sizeBytes: value.sizeBytes, videoQuality: value.videoQuality, sourceRoles: value.sourceRoles)
             loadedVersions[entry.id] = entry.updatedAt
+            if request.generatesThumbnails { thumbnailVersions[entry.id] = entry.updatedAt }
         }
         metadata = next
     }

@@ -54,7 +54,14 @@ final class EditorPlaybackController: NowPlayingPlayback {
     private(set) var previewSceneRevision = 0
     private(set) var playbackRate = EditorPlaybackRate.normal
     private(set) var playbackVolume: Double = 1
-    private(set) var edits = TimelineEdits.empty
+    private(set) var edits = TimelineEdits.empty {
+        didSet {
+            if oldValue.captions != edits.captions || oldValue.cuts != edits.cuts {
+                captionTimeline = CaptionTimeline(.init(track: edits.captions, cuts: edits.cuts))
+            }
+        }
+    }
+    private(set) var captionTimeline = CaptionTimeline.empty
     private(set) var privacyMaskPreview: PrivacyMask?
 
     func setPrivacyMaskPreview(_ mask: PrivacyMask?) {

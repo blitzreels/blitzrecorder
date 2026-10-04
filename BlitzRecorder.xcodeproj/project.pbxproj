@@ -59,6 +59,7 @@
 		1B1D88C03CE1201036B4EB17 /* RecorderCoordinator+Export.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DD0CC0892A310C67DFCB081 /* RecorderCoordinator+Export.swift */; };
 		1BCE8178142741BE3F9E7239 /* RecordingExportCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12C01089001D2FA81C066BD8 /* RecordingExportCopy.swift */; };
 		1BD545BA438EE15419DEC030 /* RecorderSceneStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05D1E90A71FE0B4F549C0B0 /* RecorderSceneStrip.swift */; };
+		1C2C8EB1E1DEA6CDC41B9AE5 /* SilencePanePresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9C6AFB3C15B8EF3AE14B92A /* SilencePanePresentation.swift */; };
 		1C65BA25CEB11C54A9ED8777 /* ProjectLibraryLoading.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E758B6A7A158B2018E5F5D6 /* ProjectLibraryLoading.swift */; };
 		1CBE4E07FA9A62ABDDFFFCBE /* LoopbackMCPHTTPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78707D5EA665946440499A4F /* LoopbackMCPHTTPServer.swift */; };
 		1CDA73783292ECE7A8FF1612 /* RecordingQualityPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36FDA345165B1588A1A1C46B /* RecordingQualityPresentation.swift */; };
@@ -131,6 +132,7 @@
 		4373581AEFDF028D260F3E9B /* EditorExportRecipe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 306738F99B9EE332C3B469BD /* EditorExportRecipe.swift */; };
 		43F22994D1D27ED3C8AE3393 /* AppNavigationSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B66FF9199D568EC9206B006 /* AppNavigationSidebar.swift */; };
 		4439235B2F7508C9AAD93420 /* RecordingSessionStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 196158336D20A57A0F6843F8 /* RecordingSessionStatus.swift */; };
+		445E895293355C77C1901233 /* FollowActiveWindowPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9CD4AC791291D0F9CD291E6 /* FollowActiveWindowPreference.swift */; };
 		4500D8F27570EDD3C5A6AF51 /* Icon-App-40x40@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = 3FE11F27E5DE4841BE14BA9C /* Icon-App-40x40@3x.png */; };
 		4504E67820206144BBC01E1E /* HostedVideoShareController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C7FD4D7907E24E8A3EFB064 /* HostedVideoShareController.swift */; };
 		4517711BD3C2A9049C5D1B9B /* ScreenWindowFit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EAEAD9E6932E541D6C387D6 /* ScreenWindowFit.swift */; };
@@ -208,6 +210,7 @@
 		6C19EE0E179EE9F98A989F07 /* Icon-App-60x60@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = 22C9C8798507FE9C762F9B05 /* Icon-App-60x60@3x.png */; };
 		6C82075BB163287DCC9C4128 /* ScreenSourceZoomGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A47BD5A895C47A35F90E55E4 /* ScreenSourceZoomGeometry.swift */; };
 		6D9621E16D12733A5362D494 /* Icon-App-29x29@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 22E17A18C1909AA6D1AA7892 /* Icon-App-29x29@2x.png */; };
+		6E2813DBC9A7937EE7682235 /* ClockDuration.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1ADD59983BDAB5A87E00B2E /* ClockDuration.swift */; };
 		6F14515DD7E61AC15DF1F821 /* Icon-App-1024x1024@1x.png in Resources */ = {isa = PBXBuildFile; fileRef = E0F09271C8CD7EBD6A632211 /* Icon-App-1024x1024@1x.png */; };
 		6F42D3C3AFDA846AAFCE8600 /* ProjectExportPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24711045F8FD34C2C68CFA1C /* ProjectExportPlacement.swift */; };
 		701B38EF25F5CA62A0DA90FE /* RemoteCameraPendingImportStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC52824E9F8F79A69C9317A3 /* RemoteCameraPendingImportStore.swift */; };
@@ -224,7 +227,6 @@
 		770F10CF810DB819A2A84D86 /* PreviewAnimation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E3A756F3237DA2CD876F8F3 /* PreviewAnimation.swift */; };
 		77D4395649ED58C7EC8C90C3 /* EditorPrivacyCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = C710AA7FEB1FC3BEAF5AEA42 /* EditorPrivacyCanvas.swift */; };
 		77D8C9BE0D9AD219E0872607 /* ShortsWindowArrangement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BDE90AB47A5374404D0C967 /* ShortsWindowArrangement.swift */; };
-		77D92A8D6410584EB6A71652 /* SilencePreviewToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 099E952115603C82DA269B2B /* SilencePreviewToggle.swift */; };
 		7990612FD746A51027A17110 /* ProjectExportRenderPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC53630727CC213ADE4457A8 /* ProjectExportRenderPlan.swift */; };
 		79E33861CC1FCCDBFE52B288 /* CameraCropGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADADA12AC2441CDB80875FB2 /* CameraCropGeometry.swift */; };
 		7A15AE0CF4989A5327D7170C /* CompanionAppIcon.png in Resources */ = {isa = PBXBuildFile; fileRef = 2DE122FB5E184432C74A4AD3 /* CompanionAppIcon.png */; };
@@ -234,6 +236,7 @@
 		7A793761608E2DE6014499C0 /* EditorAssetTracks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E979A3CA96A20D353ED3791 /* EditorAssetTracks.swift */; };
 		7BB54387D8F35A8872C4488F /* BlitzCursorRegion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C36DFBC9805C14FEAF05C5A /* BlitzCursorRegion.swift */; };
 		7C7D5C63BF3B6DDDDB190E5D /* ProjectLibraryBulkSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09883437A1300C00688F9C8A /* ProjectLibraryBulkSelection.swift */; };
+		7C8A2DB8D277B6F74DD4963A /* CaptionRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAE34022C0A908DE5C2EA2DE /* CaptionRenderer.swift */; };
 		7CF0C3CB5B7CB95A419BBD9C /* CaptureDeviceEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 803914A1AF20A7592FD8902E /* CaptureDeviceEvent.swift */; };
 		7D075FA886BFA359022787DE /* TimelineEdits.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F4634F9F810A38D73D39E10 /* TimelineEdits.swift */; };
 		7DA63524904FAEDF417A8B25 /* EditorSceneTimelineItemPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6B6088FD7EB2D2CBB87569F /* EditorSceneTimelineItemPresentation.swift */; };
@@ -244,6 +247,7 @@
 		80618C7ED4F4D00DDF8F2691 /* RemoteIPhoneCameraSession+Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 688D65B449F60FC190B99921 /* RemoteIPhoneCameraSession+Settings.swift */; };
 		80B081722552DD49733F1C97 /* SecurityScopedResourceAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55CB7B7CD6963F5CB1191308 /* SecurityScopedResourceAccess.swift */; };
 		80C15CB2CA957AAE41A828EE /* CaptureDeviceMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C71EAEE01DC5E2B50B7D6D90 /* CaptureDeviceMonitor.swift */; };
+		813C871BAD85A8D100AB102A /* ProjectLibraryFolders.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0049D5913897B7F4F5E389E4 /* ProjectLibraryFolders.swift */; };
 		8154D06CEC7FD53E960E3A0D /* ProjectLibraryMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C513901203063B6AD6BA1C7 /* ProjectLibraryMetadata.swift */; };
 		81FAB0A6F06C7894B0FE1AFB /* TranscriptionAudioPreparer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6D38913E3317CED07C12E0D /* TranscriptionAudioPreparer.swift */; };
 		845046894FACBE3729A0E99C /* RecordingStartGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B947C6A9F2F85E1C20D6E61E /* RecordingStartGate.swift */; };
@@ -273,6 +277,7 @@
 		92A8F1E5DFA3D1D1C649BD18 /* EditorTimelineChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0DC673073BFD41778A12F88 /* EditorTimelineChrome.swift */; };
 		9347F7A4554F7058133DA280 /* RecorderLayerInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E70077018A6AD8F0C63A25B /* RecorderLayerInspector.swift */; };
 		93B12F4750931A5ED62D1AD0 /* EditorLayoutInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A19A7E219EA1F79992977E1 /* EditorLayoutInspector.swift */; };
+		941BB3ED5DB6591E307BCF6F /* SilencePaneViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C9B14F6958423BD7137394E /* SilencePaneViews.swift */; };
 		942EEADC3604B0F65DFD44F7 /* RecordingProject.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0119EFA00F1CF0F6D0B302B5 /* RecordingProject.swift */; };
 		94F56C773AFAB1FE1D8E0CB6 /* SceneSplitPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBC017517A686039F530C5A3 /* SceneSplitPolicy.swift */; };
 		955D2FEC2A10C56470478DF8 /* RemoteCameraSessionRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = B06685039EC976A93E2CA591 /* RemoteCameraSessionRuntime.swift */; };
@@ -298,8 +303,10 @@
 		A4DA6A0A11D5C4C7FF65B0CD /* AccessController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A87F89F897D05BE172CACD4 /* AccessController.swift */; };
 		A4F8BAFADD3740831768E750 /* PreviewStagePassKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066E61D64AF79CCBADD9660F /* PreviewStagePassKeys.swift */; };
 		A51D03BA4A2D109B6E5D297C /* BlitzSourcePickerPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55483FAC0E290F86BED04728 /* BlitzSourcePickerPopover.swift */; };
+		A5AA7A6155D72EB13B4CADD0 /* RecorderViewModel+ProjectFolders.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9821027940DE4A6E3EC1300E /* RecorderViewModel+ProjectFolders.swift */; };
 		A83D092AE07602025A588A68 /* HostedVideoProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C268D4593C512DA5601742EF /* HostedVideoProgressView.swift */; };
 		A8D383C5AB924A390E500848 /* SettingsDesign.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48081E102665978E0EA8A29B /* SettingsDesign.swift */; };
+		A97172B0D3B63E584B91C3D8 /* CaptionTrack.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3220746ECDFEB69FCA69C61A /* CaptionTrack.swift */; };
 		A9CD3C4B4B9207AEA5260A6D /* EditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7732B1135DD948B4D5E8B799 /* EditorView.swift */; };
 		A9DDF100515536B7BFBAF4CC /* EditorKeyboardShortcutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E93AC35825DD8F786C7FC1A /* EditorKeyboardShortcutView.swift */; };
 		AA1276EDF0B201E36B12C43B /* EditorMotionPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = F190EEE0CFB3B0FA46994B6F /* EditorMotionPreview.swift */; };
@@ -311,6 +318,7 @@
 		AEE02AF3CE2812C9BFAC9E76 /* NowPlayingMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B55C9C1E5462423C3FF14E8F /* NowPlayingMenuView.swift */; };
 		AFA9BFF9EAFFE54F9ED6B4D4 /* RecordingScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BB31137DD455A033760EDDD /* RecordingScene.swift */; };
 		B03F19AF7810660DDF340D06 /* EditorView+Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E2E08C93DFA40E8B28AD166 /* EditorView+Session.swift */; };
+		B0534E02A15D13C2067DEA3B /* RecorderViewModel+VideoImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32AD4E67D5F249DCCA32A521 /* RecorderViewModel+VideoImport.swift */; };
 		B059D9A3DBBF0037AA5AEA5F /* RecorderCoordinator+RemoteCamera.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CCB66E82DA327791037C191 /* RecorderCoordinator+RemoteCamera.swift */; };
 		B0E04EE0AAA8400BD491E22C /* ExportVideoQuality.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD438796CEBF64395FF86524 /* ExportVideoQuality.swift */; };
 		B17E5F01BE8D2275BBA23CA6 /* LocalDevelopmentRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E686A4654F35F26EBDC5C73 /* LocalDevelopmentRuntime.swift */; };
@@ -335,6 +343,7 @@
 		BC1D4F7BA8000449B17AD23B /* EditorPlaybackController.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACD4C67B3EBB11AF24366A46 /* EditorPlaybackController.swift */; };
 		BC3D10C83D416C0AB919C2CB /* PreviewStageOverlays.swift in Sources */ = {isa = PBXBuildFile; fileRef = C416B7FFC5F28DE710ADDEEC /* PreviewStageOverlays.swift */; };
 		BCDF6803892C8BFD142AE33C /* TakeFinalizationPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69CB126FF9CFAE56D26BF14A /* TakeFinalizationPlan.swift */; };
+		BCDFFC867BA6D1C8EC6AA99D /* ProjectFolders.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07EE741199239718EDD6B39E /* ProjectFolders.swift */; };
 		BFBD3383A2DAEC42BC4CC080 /* PreviewStageView+LayerAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF4994840D345DD2356FF6DD /* PreviewStageView+LayerAppearance.swift */; };
 		C01CCB0C00CE62C79BCB7A63 /* BlitzReelsConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 570ADB8F885F88F742352CA7 /* BlitzReelsConnection.swift */; };
 		C2537CB5ED18BE3A61F41CFD /* EditorExportStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4EDCCC30D2B90EF21D0B6D6 /* EditorExportStatusView.swift */; };
@@ -381,6 +390,7 @@
 		DAB31102737C23D034611030 /* CameraBackgroundMatte.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E1732A1ECDF12DB2E78724F /* CameraBackgroundMatte.swift */; };
 		DAC31D67D6D6E8E2371AB354 /* EditorVideoCuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C8F73F20251ADAE6CB39F9D /* EditorVideoCuts.swift */; };
 		DAD213348C5E16CF5FEF5C57 /* AudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2248443A01D2163DFC7D86B /* AudioRecorder.swift */; };
+		DB669F99F1011AD6A945A4F8 /* RecordingHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E7700B08E3188747F0C19BA /* RecordingHUD.swift */; };
 		DB78A0ADF3B996C49E879CC6 /* RecordingTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = F86AF6C930DD1496088FBA04 /* RecordingTranscript.swift */; };
 		DD417A07DB43DF8AE57DB52F /* RemoteCameraControlsCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = B060732C87238C96C1C779D2 /* RemoteCameraControlsCopy.swift */; };
 		DE4A3EF73E3AC722CD829734 /* EditorShortcutHelp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02C7C78B6BE000B3BECFC593 /* EditorShortcutHelp.swift */; };
@@ -437,6 +447,7 @@
 		F0BEDF8D3D675397DF106BED /* EditorTimelineIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF7AA6775CD9E4045F73B9AA /* EditorTimelineIndex.swift */; };
 		F1396837DB126EA037D4C5A6 /* LiveCompositedRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DD2D53F68151268BBF78971 /* LiveCompositedRecorder.swift */; };
 		F3D26B44D1F187EC7F2A20FD /* RemoteCameraControlClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F898EC06577C4ED278F8270E /* RemoteCameraControlClient.swift */; };
+		F52A3F29F761A551A4F71EA9 /* EditorCaptionsInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 898124E1830DD6B5D53E7F5E /* EditorCaptionsInspector.swift */; };
 		F541F6AE12E8A7E2E0C32874 /* EditorTimelineSelectionCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 442D877BC814F551B05D68B6 /* EditorTimelineSelectionCanvas.swift */; };
 		F559ABC57632774B7E6CDDE8 /* TimelineEditingPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24E4E679B69913FFC0BAA1E1 /* TimelineEditingPanel.swift */; };
 		F5EFD1996F50D699635F1A31 /* BlitzReelsHandoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41D34D68DE9D3ADBA1C8ED2A /* BlitzReelsHandoff.swift */; };
@@ -448,6 +459,7 @@
 		F7DE49B7640305A0F1028EBF /* Icon-App-29x29@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = F2C9DB3ABBA5039834746019 /* Icon-App-29x29@3x.png */; };
 		F87ED999B34A4A432CB78E79 /* EditorTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543EEA02D1AD9DF70DC4B748 /* EditorTimeline.swift */; };
 		F8A7276167ED0DB587789E48 /* BlitzMenuTriggerStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C2D3005DBA15181BD36E2F5 /* BlitzMenuTriggerStyle.swift */; };
+		F9C2D2DF54369B99E8D36A4F /* VideoProjectImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89C234682C25D96E06D1B6FE /* VideoProjectImporter.swift */; };
 		FA7C09252D902A292608EC7F /* BlitzFormDropdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1136EF85E19BEE1DD4B2306D /* BlitzFormDropdown.swift */; };
 		FADC927B0C0F958B344AD031 /* TopBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = E05365504237C77482D2D528 /* TopBar.swift */; };
 		FB8760FE4C71C86875090448 /* RecordingSceneInterpolation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B52BB0C24820184F5CD15248 /* RecordingSceneInterpolation.swift */; };
@@ -466,6 +478,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		0049D5913897B7F4F5E389E4 /* ProjectLibraryFolders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectLibraryFolders.swift; sourceTree = "<group>"; };
 		0119EFA00F1CF0F6D0B302B5 /* RecordingProject.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingProject.swift; sourceTree = "<group>"; };
 		0128AD2160E76B37FD3535C1 /* Icon-App-76x76@1x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icon-App-76x76@1x.png"; sourceTree = "<group>"; };
 		023F0DB3A26E07F7FFDFD950 /* PreviewStageLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewStageLayout.swift; sourceTree = "<group>"; };
@@ -478,10 +491,10 @@
 		066E61D64AF79CCBADD9660F /* PreviewStagePassKeys.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewStagePassKeys.swift; sourceTree = "<group>"; };
 		06E2325565C591E13D226B54 /* MediaTime+CMTime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MediaTime+CMTime.swift"; sourceTree = "<group>"; };
 		07CD152B0ECBB2FB3262FF89 /* ScreenSourceThumbnailProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenSourceThumbnailProvider.swift; sourceTree = "<group>"; };
+		07EE741199239718EDD6B39E /* ProjectFolders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectFolders.swift; sourceTree = "<group>"; };
 		092C6CD29B57A181B7E9A794 /* EditorCompositedPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorCompositedPlayerView.swift; sourceTree = "<group>"; };
 		09470A8CC9D7E60C483A4A16 /* Merger+Audio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Merger+Audio.swift"; sourceTree = "<group>"; };
 		09883437A1300C00688F9C8A /* ProjectLibraryBulkSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectLibraryBulkSelection.swift; sourceTree = "<group>"; };
-		099E952115603C82DA269B2B /* SilencePreviewToggle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SilencePreviewToggle.swift; sourceTree = "<group>"; };
 		09AE61A419888742DFF16A3F /* RecorderViewModel+Crop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecorderViewModel+Crop.swift"; sourceTree = "<group>"; };
 		0A604C4BEA3BC85330E4A540 /* CameraRecordingLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraRecordingLibrary.swift; sourceTree = "<group>"; };
 		0B0C45F6C968C6FDB081916C /* EditorSourceZoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorSourceZoom.swift; sourceTree = "<group>"; };
@@ -572,6 +585,8 @@
 		3161A5D9D057388525E1676E /* OptimizedCompositionExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OptimizedCompositionExporter.swift; sourceTree = "<group>"; };
 		318CB4C0AC50ABED17667E5C /* RecorderViewModel+RecordingSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecorderViewModel+RecordingSession.swift"; sourceTree = "<group>"; };
 		31B58A3F21779A07EC229CD5 /* WindowZoomGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowZoomGeometry.swift; sourceTree = "<group>"; };
+		3220746ECDFEB69FCA69C61A /* CaptionTrack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptionTrack.swift; sourceTree = "<group>"; };
+		32AD4E67D5F249DCCA32A521 /* RecorderViewModel+VideoImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecorderViewModel+VideoImport.swift"; sourceTree = "<group>"; };
 		344FA7ADEC3C022C061186BC /* EditorTranscriptTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorTranscriptTimeline.swift; sourceTree = "<group>"; };
 		36CB35216953239AE7A87D46 /* PrivacyCanvasGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyCanvasGeometry.swift; sourceTree = "<group>"; };
 		36FDA345165B1588A1A1C46B /* RecordingQualityPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingQualityPresentation.swift; sourceTree = "<group>"; };
@@ -622,6 +637,7 @@
 		4DD0CC0892A310C67DFCB081 /* RecorderCoordinator+Export.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecorderCoordinator+Export.swift"; sourceTree = "<group>"; };
 		4E2575685270153BF4904E1C /* AppSupportActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSupportActions.swift; sourceTree = "<group>"; };
 		4E70077018A6AD8F0C63A25B /* RecorderLayerInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecorderLayerInspector.swift; sourceTree = "<group>"; };
+		4E7700B08E3188747F0C19BA /* RecordingHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingHUD.swift; sourceTree = "<group>"; };
 		508581437852289F85312E19 /* EditorBackgroundMusic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorBackgroundMusic.swift; sourceTree = "<group>"; };
 		52B83725F8A5FFC9359DAC79 /* EditorSessionMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorSessionMetrics.swift; sourceTree = "<group>"; };
 		52E73866451224D3F9BC7C29 /* RecorderCoordinator+Take.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecorderCoordinator+Take.swift"; sourceTree = "<group>"; };
@@ -682,6 +698,7 @@
 		7979A2FEA1E6C8D9E561590A /* PermissionsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsPage.swift; sourceTree = "<group>"; };
 		7A6E6D8D07D172B2207CD019 /* RecordingTranscriptAssembler+EchoFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecordingTranscriptAssembler+EchoFilter.swift"; sourceTree = "<group>"; };
 		7ACC050709539DC35A6DF041 /* ScreenCropPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenCropPicker.swift; sourceTree = "<group>"; };
+		7C9B14F6958423BD7137394E /* SilencePaneViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SilencePaneViews.swift; sourceTree = "<group>"; };
 		7CCE4EDD1B5432A3FDF27FF8 /* SilenceTimelineSegments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SilenceTimelineSegments.swift; sourceTree = "<group>"; };
 		7E1C870F2BFD10CD87CE0407 /* SourceInspectors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceInspectors.swift; sourceTree = "<group>"; };
 		7E72DB54F04E9DCAF454D01B /* ProjectTranscriptStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectTranscriptStatus.swift; sourceTree = "<group>"; };
@@ -703,6 +720,8 @@
 		87DC73110328FD1C2C210001 /* BlitzRecorderDomain */ = {isa = PBXFileReference; lastKnownFileType = folder; name = BlitzRecorderDomain; path = Packages/BlitzRecorderDomain; sourceTree = SOURCE_ROOT; };
 		88F1B665FE7C2D4018699421 /* EditorTimelineView+Gutter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EditorTimelineView+Gutter.swift"; sourceTree = "<group>"; };
 		8916FA6B173D85AA107F0F4B /* EditorVideoClipTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorVideoClipTimeline.swift; sourceTree = "<group>"; };
+		898124E1830DD6B5D53E7F5E /* EditorCaptionsInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorCaptionsInspector.swift; sourceTree = "<group>"; };
+		89C234682C25D96E06D1B6FE /* VideoProjectImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoProjectImporter.swift; sourceTree = "<group>"; };
 		8A1D0C76A7412930EC3EC0D5 /* RecorderViewModel+ProjectLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecorderViewModel+ProjectLibrary.swift"; sourceTree = "<group>"; };
 		8A3F5E84A6E1406CC8173BAE /* RecorderViewModel+ScreenPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecorderViewModel+ScreenPicker.swift"; sourceTree = "<group>"; };
 		8A4A9C21A96C5C39318B3129 /* SilenceInspectorPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SilenceInspectorPane.swift; sourceTree = "<group>"; };
@@ -725,6 +744,7 @@
 		96E4D4F202CFD85E93C5589A /* EditorWorkspaceSplitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorWorkspaceSplitView.swift; sourceTree = "<group>"; };
 		9709DAC2AC9D61FB2E99F58E /* EditRecordingButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditRecordingButton.swift; sourceTree = "<group>"; };
 		97EC2C3A90A2029D106A4742 /* BlitzRecorderCamera.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = BlitzRecorderCamera.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9821027940DE4A6E3EC1300E /* RecorderViewModel+ProjectFolders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecorderViewModel+ProjectFolders.swift"; sourceTree = "<group>"; };
 		98F1CF26FE31B50273BC7E0A /* RecordingProjectLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingProjectLibrary.swift; sourceTree = "<group>"; };
 		99CDE235C1BEF3116588254E /* HostedVideoDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostedVideoDetails.swift; sourceTree = "<group>"; };
 		9A70DA82391C31287E955269 /* PreviewStageView+Background.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PreviewStageView+Background.swift"; sourceTree = "<group>"; };
@@ -742,6 +762,7 @@
 		9FC51915A9AEE8E96309CCD2 /* CompanionConnectionSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionConnectionSession.swift; sourceTree = "<group>"; };
 		9FFCF52C09FE3323E774D457 /* ExportLeadingFrame.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportLeadingFrame.swift; sourceTree = "<group>"; };
 		A0D60F8E642E44BBB1452ED4 /* RecordingSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingSession.swift; sourceTree = "<group>"; };
+		A1ADD59983BDAB5A87E00B2E /* ClockDuration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClockDuration.swift; sourceTree = "<group>"; };
 		A1EC4232463B2C78F013EE4F /* RecordingUploadSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingUploadSource.swift; sourceTree = "<group>"; };
 		A22D8E402D928BF8CDCD1A7A /* DirectMovieWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectMovieWriter.swift; sourceTree = "<group>"; };
 		A2C652E33DE18197087921B1 /* ScreenSourceBinding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenSourceBinding.swift; sourceTree = "<group>"; };
@@ -879,6 +900,7 @@
 		E8807AA6EA5A9C4AD1E699D6 /* TranscriptCopyButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptCopyButton.swift; sourceTree = "<group>"; };
 		E8A337C302AB6EA7D5DFF4D8 /* RecorderError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecorderError.swift; sourceTree = "<group>"; };
 		E94B4D025D3B3C36EB2037D7 /* Icon-App-20x20@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icon-App-20x20@2x.png"; sourceTree = "<group>"; };
+		E9CD4AC791291D0F9CD291E6 /* FollowActiveWindowPreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowActiveWindowPreference.swift; sourceTree = "<group>"; };
 		EA9DDC7A5C982E6E0E273F74 /* TranscriptArtifactStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptArtifactStore.swift; sourceTree = "<group>"; };
 		EABEAAE34D685BBA7B3F014D /* IdleCameraPreviewPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdleCameraPreviewPolicy.swift; sourceTree = "<group>"; };
 		EB27F5FEEEAC98E7830F3197 /* EditorCameraCropViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorCameraCropViews.swift; sourceTree = "<group>"; };
@@ -909,7 +931,9 @@
 		F86AF6C930DD1496088FBA04 /* RecordingTranscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingTranscript.swift; sourceTree = "<group>"; };
 		F898EC06577C4ED278F8270E /* RemoteCameraControlClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCameraControlClient.swift; sourceTree = "<group>"; };
 		F8C23077593D0C93E395CF96 /* RecorderCoordinator+SceneStudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecorderCoordinator+SceneStudio.swift"; sourceTree = "<group>"; };
+		F9C6AFB3C15B8EF3AE14B92A /* SilencePanePresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SilencePanePresentation.swift; sourceTree = "<group>"; };
 		FA97E5B014262F9FC1810A5E /* RightSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RightSidebar.swift; sourceTree = "<group>"; };
+		FAE34022C0A908DE5C2EA2DE /* CaptionRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptionRenderer.swift; sourceTree = "<group>"; };
 		FB6BEACA926130990735502C /* PreviewStageView+Pointer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PreviewStageView+Pointer.swift"; sourceTree = "<group>"; };
 		FC8EAA13CAA91BAF3EF2C066 /* OutputResolution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputResolution.swift; sourceTree = "<group>"; };
 		FD44EE91F9D868CB46375872 /* TopBarPopovers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopBarPopovers.swift; sourceTree = "<group>"; };
@@ -1019,6 +1043,8 @@
 				2931510D30453218C0B4EBCE /* CanvasBackgroundRendering.swift */,
 				5E17E36AB4297B54094D3F54 /* CanvasBackgroundStyle.swift */,
 				F0576B5D1D2D96E4AB85AA1B /* CanvasBackgroundStyle+Descriptor.swift */,
+				FAE34022C0A908DE5C2EA2DE /* CaptionRenderer.swift */,
+				3220746ECDFEB69FCA69C61A /* CaptionTrack.swift */,
 				CFDB718940D8BF8E9FD48849 /* CaptureClockRateEstimator.swift */,
 				B6BC1F317A70086067984FEB /* CaptureDeviceCatalog.swift */,
 				803914A1AF20A7592FD8902E /* CaptureDeviceEvent.swift */,
@@ -1027,6 +1053,7 @@
 				BF8093BC24019D6C2D6C9E09 /* CaptureSourceRun.swift */,
 				4CE63DC562BD67D0A258F07C /* CaptureStopProgress.swift */,
 				2E5B81E1C162C2178896A5ED /* CaptureValueClamps.swift */,
+				A1ADD59983BDAB5A87E00B2E /* ClockDuration.swift */,
 				1A98B55F86349B18A461FA6E /* CursorPresentation.swift */,
 				EFD77F0983DFFD571CEC44BF /* CursorPresentationLoader.swift */,
 				3C30DDDA2C2779FD2CB22C94 /* CursorZoom.swift */,
@@ -1040,6 +1067,7 @@
 				8B80882C0FC53A2C32749457 /* ExportPerformanceProfile.swift */,
 				CD438796CEBF64395FF86524 /* ExportVideoQuality.swift */,
 				4198A76E3E054053D90551EB /* FinalExportPlan.swift */,
+				E9CD4AC791291D0F9CD291E6 /* FollowActiveWindowPreference.swift */,
 				B6275D66990191AA7B014A3A /* HardwareVideoEncoderSupport.swift */,
 				99CDE235C1BEF3116588254E /* HostedVideoDetails.swift */,
 				5C7FD4D7907E24E8A3EFB064 /* HostedVideoShareController.swift */,
@@ -1107,6 +1135,7 @@
 				4110466BFECBC7CB67568D66 /* ProjectAIPrompt.swift */,
 				24711045F8FD34C2C68CFA1C /* ProjectExportPlacement.swift */,
 				AC53630727CC213ADE4457A8 /* ProjectExportRenderPlan.swift */,
+				07EE741199239718EDD6B39E /* ProjectFolders.swift */,
 				2F454716F2820AA696C2B78A /* ProjectTranscriptSearch.swift */,
 				E6635064CF7091C0BA4A72BA /* RecorderCaptureRuntime.swift */,
 				2BFE2052D456A7B066B9BA15 /* RecorderCoordinator.swift */,
@@ -1222,6 +1251,7 @@
 				A706E0A2F2F781F0DD283717 /* TranscriptSegmentBuilder.swift */,
 				8136A0D1083855CADDB2D986 /* TranscriptSpeakerReassignment.swift */,
 				63DFA05DC7FA197E3C1D38DC /* VideoFileWriter.swift */,
+				89C234682C25D96E06D1B6FE /* VideoProjectImporter.swift */,
 				4BA4502EFEB3F0DBC5CD9F27 /* VideoRenderPlacement.swift */,
 				AE6D20375E6D4A4F39372889 /* VoiceCleanup.swift */,
 				31B58A3F21779A07EC229CD5 /* WindowZoomGeometry.swift */,
@@ -1291,6 +1321,7 @@
 				EB27F5FEEEAC98E7830F3197 /* EditorCameraCropViews.swift */,
 				0EEEEEA2E2E27A92EC39CC85 /* EditorCanvasEditing.swift */,
 				2DF6827C0F71B16A1C608A58 /* EditorCanvasStage.swift */,
+				898124E1830DD6B5D53E7F5E /* EditorCaptionsInspector.swift */,
 				C613C04AC6CFE1D6DB000518 /* EditorClipSpine.swift */,
 				95D2600EACAF8380BF660B04 /* EditorClipTrimSession.swift */,
 				092C6CD29B57A181B7E9A794 /* EditorCompositedPlayerView.swift */,
@@ -1369,6 +1400,7 @@
 				14A67806D0D636ED65D1D575 /* ProjectLibraryDetailView.swift */,
 				8EB6ABEFF4CAE635D634D7CC /* ProjectLibraryFilters.swift */,
 				1CD1A3BA7ADB327137DE65FA /* ProjectLibraryFiltersView.swift */,
+				0049D5913897B7F4F5E389E4 /* ProjectLibraryFolders.swift */,
 				9E758B6A7A158B2018E5F5D6 /* ProjectLibraryLoading.swift */,
 				668ED889DFFA96F84774E455 /* ProjectLibraryMediaList.swift */,
 				3C513901203063B6AD6BA1C7 /* ProjectLibraryMetadata.swift */,
@@ -1390,6 +1422,7 @@
 				09AE61A419888742DFF16A3F /* RecorderViewModel+Crop.swift */,
 				2EC055AFF475F3BC9B599865 /* RecorderViewModel+EditorProject.swift */,
 				6566436E662AD2F7A87AED66 /* RecorderViewModel+Permissions.swift */,
+				9821027940DE4A6E3EC1300E /* RecorderViewModel+ProjectFolders.swift */,
 				8A1D0C76A7412930EC3EC0D5 /* RecorderViewModel+ProjectLibrary.swift */,
 				318CB4C0AC50ABED17667E5C /* RecorderViewModel+RecordingSession.swift */,
 				B9BDBF569EFEBEC1138DFE62 /* RecorderViewModel+RecordingSettings.swift */,
@@ -1398,7 +1431,9 @@
 				E56F316D7142DBECC0BE4DDD /* RecorderViewModel+SceneLibrary.swift */,
 				8A3F5E84A6E1406CC8173BAE /* RecorderViewModel+ScreenPicker.swift */,
 				F853C001F713598D909FA963 /* RecorderViewModel+TargetWindow.swift */,
+				32AD4E67D5F249DCCA32A521 /* RecorderViewModel+VideoImport.swift */,
 				D6456F84DED22B81F974CB00 /* RecordingAccessCover.swift */,
+				4E7700B08E3188747F0C19BA /* RecordingHUD.swift */,
 				196158336D20A57A0F6843F8 /* RecordingSessionStatus.swift */,
 				4DB4DE9FB977DF9A22D4CC79 /* RecordingSettingsPage.swift */,
 				27B62960001E78B13D241B8F /* RecoveryAvailableView.swift */,
@@ -1415,7 +1450,8 @@
 				CDFCD84CCE46E764ABA15084 /* SettingsView.swift */,
 				ED62443126325FAE7A5E93FE /* SilenceEditingWorkspace.swift */,
 				8A4A9C21A96C5C39318B3129 /* SilenceInspectorPane.swift */,
-				099E952115603C82DA269B2B /* SilencePreviewToggle.swift */,
+				F9C6AFB3C15B8EF3AE14B92A /* SilencePanePresentation.swift */,
+				7C9B14F6958423BD7137394E /* SilencePaneViews.swift */,
 				7010DD871B1B29DCB889ED0F /* SilenceSegmentSelection.swift */,
 				7CCE4EDD1B5432A3FDF27FF8 /* SilenceTimelineSegments.swift */,
 				7E1C870F2BFD10CD87CE0407 /* SourceInspectors.swift */,
@@ -1680,6 +1716,8 @@
 				7DC01889D49EFC15DF82D772 /* CanvasBackgroundRendering.swift in Sources */,
 				CD9F29577C20DD329130D169 /* CanvasBackgroundStyle+Descriptor.swift in Sources */,
 				0BC9D97D5207118324CD887D /* CanvasBackgroundStyle.swift in Sources */,
+				7C8A2DB8D277B6F74DD4963A /* CaptionRenderer.swift in Sources */,
+				A97172B0D3B63E584B91C3D8 /* CaptionTrack.swift in Sources */,
 				ADC0E0E45F0361C6B32EC07E /* CaptureClockRateEstimator.swift in Sources */,
 				40E200CA6485F495F0E4A391 /* CaptureDeviceCatalog.swift in Sources */,
 				7CF0C3CB5B7CB95A419BBD9C /* CaptureDeviceEvent.swift in Sources */,
@@ -1689,6 +1727,7 @@
 				D8E34D92C42C8EDAEC584B1E /* CaptureSourceRun.swift in Sources */,
 				3571FD1FC04EB0DB46C622C8 /* CaptureStopProgress.swift in Sources */,
 				36CC98F75E78F7E5B2EB8762 /* CaptureValueClamps.swift in Sources */,
+				6E2813DBC9A7937EE7682235 /* ClockDuration.swift in Sources */,
 				DEE916079062399199A85E9E /* CursorPresentation.swift in Sources */,
 				5C5AE6261BA98CF87B6E6EC5 /* CursorPresentationLoader.swift in Sources */,
 				129EC10AF6648BE4843F825B /* CursorZoom.swift in Sources */,
@@ -1704,6 +1743,7 @@
 				B56E6E1F18180DF46D365ECD /* EditorCameraCropViews.swift in Sources */,
 				14DC167137FB8B247A3275C2 /* EditorCanvasEditing.swift in Sources */,
 				733AA9D5FF826F4F1EEA248D /* EditorCanvasStage.swift in Sources */,
+				F52A3F29F761A551A4F71EA9 /* EditorCaptionsInspector.swift in Sources */,
 				EE039FDB09635226887B6AAE /* EditorClipSpine.swift in Sources */,
 				C30A47558A1DDE3E38D6BADF /* EditorClipTrimSession.swift in Sources */,
 				8B6A6DDC255E409660325EDC /* EditorCompositedPlayerView.swift in Sources */,
@@ -1771,6 +1811,7 @@
 				3D4EFC4AE0036F57FFD3B00C /* ExportPerformanceProfile.swift in Sources */,
 				B0E04EE0AAA8400BD491E22C /* ExportVideoQuality.swift in Sources */,
 				E548C2AE781F78FCCCA858F9 /* FinalExportPlan.swift in Sources */,
+				445E895293355C77C1901233 /* FollowActiveWindowPreference.swift in Sources */,
 				B8D345079168EE0347E8428F /* HardwareVideoEncoderSupport.swift in Sources */,
 				CFC3F8ADD9ED2D6309D3EE96 /* HostedVideoDetails.swift in Sources */,
 				1DC7056914EB392DDFE1FA91 /* HostedVideoLibraryView.swift in Sources */,
@@ -1849,10 +1890,12 @@
 				5A27FAB8CED11F6DE2466D77 /* ProjectAIPromptButton.swift in Sources */,
 				6F42D3C3AFDA846AAFCE8600 /* ProjectExportPlacement.swift in Sources */,
 				7990612FD746A51027A17110 /* ProjectExportRenderPlan.swift in Sources */,
+				BCDFFC867BA6D1C8EC6AA99D /* ProjectFolders.swift in Sources */,
 				7C7D5C63BF3B6DDDDB190E5D /* ProjectLibraryBulkSelection.swift in Sources */,
 				653B7BD0F1B09607B946C534 /* ProjectLibraryDetailView.swift in Sources */,
 				4EE1075326390CB1ED9CE060 /* ProjectLibraryFilters.swift in Sources */,
 				E01A75712F9D37B02785DB1C /* ProjectLibraryFiltersView.swift in Sources */,
+				813C871BAD85A8D100AB102A /* ProjectLibraryFolders.swift in Sources */,
 				1C65BA25CEB11C54A9ED8777 /* ProjectLibraryLoading.swift in Sources */,
 				55CFED434EDFABEBDF8498AA /* ProjectLibraryMediaList.swift in Sources */,
 				8154D06CEC7FD53E960E3A0D /* ProjectLibraryMetadata.swift in Sources */,
@@ -1889,6 +1932,7 @@
 				59241A276C3CC1B7270AA630 /* RecorderViewModel+Crop.swift in Sources */,
 				91CB0044999A9C7FC6125134 /* RecorderViewModel+EditorProject.swift in Sources */,
 				265BCD198FC7046B2499CCE6 /* RecorderViewModel+Permissions.swift in Sources */,
+				A5AA7A6155D72EB13B4CADD0 /* RecorderViewModel+ProjectFolders.swift in Sources */,
 				031C3F9A57396F64068F6BA3 /* RecorderViewModel+ProjectLibrary.swift in Sources */,
 				8E9603E54C90B4CD4FC54E9E /* RecorderViewModel+RecordingSession.swift in Sources */,
 				551491A0C230873143EAB25A /* RecorderViewModel+RecordingSettings.swift in Sources */,
@@ -1897,11 +1941,13 @@
 				E0079EFC5038ED24442E350B /* RecorderViewModel+SceneLibrary.swift in Sources */,
 				B1DE8263F01E08C482BF97B8 /* RecorderViewModel+ScreenPicker.swift in Sources */,
 				99F3754F75F5E310ACF5E01B /* RecorderViewModel+TargetWindow.swift in Sources */,
+				B0534E02A15D13C2067DEA3B /* RecorderViewModel+VideoImport.swift in Sources */,
 				57925EAFDA4264020FACAB0E /* RecorderViewModel.swift in Sources */,
 				0DD547778C5A6071E46F07E5 /* RecordingAccessCover.swift in Sources */,
 				50A22D4984A3B9325115029F /* RecordingAppIcon.swift in Sources */,
 				3856437C1111ECDF414B10D4 /* RecordingCountdownPreference.swift in Sources */,
 				1BCE8178142741BE3F9E7239 /* RecordingExportCopy.swift in Sources */,
+				DB669F99F1011AD6A945A4F8 /* RecordingHUD.swift in Sources */,
 				5D399EE97B13C5C0021CF579 /* RecordingOutputVariant.swift in Sources */,
 				942EEADC3604B0F65DFD44F7 /* RecordingProject.swift in Sources */,
 				08A5489B1F6A3ABCBF813D13 /* RecordingProjectEditorSnapshots.swift in Sources */,
@@ -1991,7 +2037,8 @@
 				70A5CBBE8C914DADDDF1883D /* SilenceDetection.swift in Sources */,
 				FD35975BCB25B8EE4D0B3D57 /* SilenceEditingWorkspace.swift in Sources */,
 				EB3F1634C76F11C1E9E4DCE3 /* SilenceInspectorPane.swift in Sources */,
-				77D92A8D6410584EB6A71652 /* SilencePreviewToggle.swift in Sources */,
+				1C2C8EB1E1DEA6CDC41B9AE5 /* SilencePanePresentation.swift in Sources */,
+				941BB3ED5DB6591E307BCF6F /* SilencePaneViews.swift in Sources */,
 				1AA8E2730F3E352C34D0ACB6 /* SilenceRemovalSettings.swift in Sources */,
 				E294C54D05D2339C7C00AC09 /* SilenceSegmentSelection.swift in Sources */,
 				0F90AD33DAA793523DFA4CB5 /* SilenceTimelineSegments.swift in Sources */,
@@ -2028,6 +2075,7 @@
 				81FAB0A6F06C7894B0FE1AFB /* TranscriptionAudioPreparer.swift in Sources */,
 				15B97577D5AF8DCB2F381FA2 /* TranscriptionRenamer.swift in Sources */,
 				9A1F14395DBE916B8634AA87 /* VideoFileWriter.swift in Sources */,
+				F9C2D2DF54369B99E8D36A4F /* VideoProjectImporter.swift in Sources */,
 				2F1FC492608165BCAFC33B17 /* VideoRenderPlacement.swift in Sources */,
 				F775D4B643781BCAB219F430 /* VoiceCleanup.swift in Sources */,
 				07726FB42080310972E59860 /* WindowZoomGeometry.swift in Sources */,

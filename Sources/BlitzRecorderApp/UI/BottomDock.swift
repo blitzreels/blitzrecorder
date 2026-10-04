@@ -61,7 +61,7 @@ private struct RecordingActionRow: View {
             case .idle:
                 RecordButton(vm: vm)
 
-                if let blocker = vm.recordingBlockerSummary, vm.lastRecoveryOutput == nil {
+                if let blocker = vm.dockRecordingBlockerSummary, vm.lastRecoveryOutput == nil {
                     Button(action: vm.primaryAction) {
                         Label(blocker, systemImage: "exclamationmark.circle.fill")
                             .font(BlitzType.captionEmphasis)

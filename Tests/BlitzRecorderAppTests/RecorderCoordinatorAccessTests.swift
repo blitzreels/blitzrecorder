@@ -237,8 +237,11 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         session.failPreparation()
         XCTAssertEqual(session.state, .idle)
         XCTAssertTrue(session.beginExport())
-        XCTAssertEqual(session.state, .finishing)
+        XCTAssertTrue(session.isExporting)
+        XCTAssertEqual(session.state, .idle)
+        XCTAssertFalse(session.beginExport())
         session.finishExport()
+        XCTAssertFalse(session.isExporting)
         XCTAssertEqual(session.state, .idle)
     }
 
@@ -1256,7 +1259,7 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
             coordinator.removeSource(source)
         }
 
-        coordinator.start()
+        coordinator.start(takeTitle: nil)
 
         XCTAssertEqual(coordinator.state, .idle)
         XCTAssertEqual(messages, ["Start failed: Select at least one source before recording."])

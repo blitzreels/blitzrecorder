@@ -5,7 +5,19 @@ import Foundation
 struct TakeFileStore {
     private static let projectHistoryLock = NSRecursiveLock()
 
+    struct TakeCreationRequest {
+        let settings: RecordingSettings
+        let date: Date
+        let title: String?
+    }
+
     func createTake(settings: RecordingSettings, date: Date = Date()) throws -> RecordingTake {
+        try createTake(.init(settings: settings, date: date, title: nil))
+    }
+
+    func createTake(_ request: TakeCreationRequest) throws -> RecordingTake {
+        let settings = request.settings
+        let date = request.date
         let formatter = Self.takeDateFormatter()
 
         let scratchRoot = scratchRoot(for: settings)
@@ -22,12 +34,12 @@ struct TakeFileStore {
             systemAudioURL: scratchDirectory.appendingPathComponent("system-audio.\(settings.effectiveSourceAudioFormat.fileExtension)"),
             transcriptURL: scratchDirectory.appendingPathComponent("transcript.txt"),
             finalVideoURL: finalVideoURL(
-                slug: Self.defaultSlug(for: scratchDirectory),
+                slug: request.title.map(ProjectExportFilename.slug(from:)) ?? Self.defaultSlug(for: scratchDirectory),
                 settings: settings,
                 outputFormat: settings.outputVideoFormat
             ),
             outputVideoFormat: settings.outputVideoFormat,
-            titleSlug: nil
+            titleSlug: request.title
         )
         if settings.savesSourceFiles {
             try writeSourceTakeManifest(for: take, settings: settings, finalVideoURL: nil)
@@ -210,6 +222,31 @@ struct TakeFileStore {
         )
         try upsertProjectHistory(renamedProject, settings: request.settings)
         return renamedProject
+    }
+
+    struct CompletedExportRequest {
+        let projectURL: URL
+        let record: RecordingProject.ExportRecord
+        let settings: RecordingSettings
+    }
+
+    func recordCompletedExport(_ request: CompletedExportRequest) throws {
+        let project = try loadRecordingProject(at: request.projectURL)
+        var exports = project.exports.filter { $0.path != request.record.path }
+        exports.append(request.record)
+        exports.sort { $0.createdAt < $1.createdAt }
+        let updated = RecordingProject(
+            version: project.version, id: project.id, createdAt: project.createdAt, updatedAt: Date(),
+            title: project.title, projectPath: project.projectPath, takeDirectoryPath: project.takeDirectoryPath,
+            finalVideoPath: request.record.path, settings: project.settings, sources: project.sources,
+            sceneEvents: project.sceneEvents, chapters: project.chapters, editorTimeline: project.editorTimeline,
+            editorState: project.editorState, exports: exports,
+            timelineTrimOffsetSeconds: project.timelineTrimOffsetSeconds,
+            sourceTimelineOffsetSeconds: project.sourceTimelineOffsetSeconds,
+            timelineEdits: project.timelineEdits, analysis: project.analysis
+        )
+        try Self.projectEncoder().encode(updated).write(to: request.projectURL, options: .atomic)
+        try upsertProjectHistory(updated, settings: request.settings)
     }
 
     @discardableResult

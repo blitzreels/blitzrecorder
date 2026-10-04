@@ -16,6 +16,15 @@ extension RecorderViewModel {
         onLivePreviewChanged?(enabled)
     }
 
+    func applyExportProject(_ url: URL?) {
+        activeExportProjectURL = url
+        if url != nil {
+            exportProgress = 0
+            lastExportError = nil
+            lastExportSucceededURL = nil
+        }
+    }
+
     func applyState(_ newState: RecordingState) {
         let previousState = state
         state = newState
@@ -55,6 +64,16 @@ extension RecorderViewModel {
     }
 
     func applySavedRecordingOutput(_ output: SavedRecordingOutput) {
+        if activeExportProjectURL?.deletingLastPathComponent() == output.sourceDirectory {
+            lastExportError = nil
+            lastExportSucceededURL = output.url
+            refreshProjectsInBackground()
+            if lastExportedSourceTakeURL == output.sourceDirectory {
+                lastExportedURL = output.url
+                refreshLastExportedProject()
+            }
+            return
+        }
         let keepsEditorOpen = studioMode == .edit
         lastExportError = nil
         lastExportSucceededURL = output.url
@@ -440,8 +459,7 @@ extension RecorderViewModel {
     func generateAutomaticProjectTitle(
         _ completion: CompletedTranscription
     ) {
-        guard transcriptionController.isAutomaticEnabled,
-              case .project(let projectURL) = completion.source,
+        guard case .project(let projectURL) = completion.source,
               automaticTitleTasks[projectURL.path] == nil else {
             return
         }
@@ -451,14 +469,20 @@ extension RecorderViewModel {
             do {
                 let fileStore = TakeFileStore()
                 let project = try fileStore.loadRecordingProject(at: projectURL)
-                guard RecordingProjectDisplayTitle.isUntitled(project.title) else { return }
-                let title = try await TitleGenerator().title(
+                let importedTitle = VideoProjectImporter.Metadata.load(for: project)?.initialTitle
+                let folderPrefix = ProjectFolderTitle.untitledPrefix(project.title)
+                guard transcriptionController.isAutomaticEnabled || importedTitle != nil,
+                      folderPrefix != nil || RecordingProjectDisplayTitle.isUntitled(project.title)
+                        || project.title == importedTitle
+                else { return }
+                let generatedTitle = try await TitleGenerator().title(
                     TitleGenerator.TranscriptTitleRequest(
                         transcript: completion.transcript.text
                     )
                 )
+                let title = (folderPrefix ?? "") + generatedTitle
                 let currentProject = try fileStore.loadRecordingProject(at: projectURL)
-                guard RecordingProjectDisplayTitle.isUntitled(currentProject.title) else { return }
+                guard currentProject.title == project.title else { return }
                 let renamedProject = try fileStore.renameProject(
                     RecordingProjectRenameRequest(
                         projectURL: projectURL,
@@ -587,7 +611,7 @@ extension RecorderViewModel {
         cancelScreenCropMode()
         if isCameraCropModeEnabled { cancelCameraCropMode() }
         guard countdownSeconds > 0 else {
-            coordinator.start()
+            coordinator.start(takeTitle: nextTakeTitle())
             return
         }
         countdownRemaining = countdownSeconds
@@ -602,7 +626,7 @@ extension RecorderViewModel {
             self.countdownRemaining = nil
             guard self.state == .idle, self.studioMode == .record,
                   self.coordinator.recordingReadiness().isReady else { return }
-            self.coordinator.start()
+            self.coordinator.start(takeTitle: self.nextTakeTitle())
         }
     }
 
@@ -650,10 +674,12 @@ extension RecorderViewModel {
         onPresentSettings?(.permissions)
     }
 
-    var recordingBlockerSummary: String? {
+    var dockRecordingBlockerSummary: String? {
         _ = permissionRefreshToken
         let readiness = coordinator.recordingReadiness()
-        return readiness.isReady ? nil : readiness.blockers.shortSummary
+        guard !readiness.isReady,
+              !readiness.blockers.contains(where: { sourceReadinessNotice($0.source) != nil }) else { return nil }
+        return readiness.blockers.shortSummary
     }
 
     var recordingBlockerDetail: String? {

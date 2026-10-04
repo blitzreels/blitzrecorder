@@ -77,6 +77,13 @@ final class RecorderCoordinator {
     var onRenderProgress: ((Double) -> Void)? {
         didSet { capture.onRenderProgress = onRenderProgress }
     }
+    var isExporting: Bool { capture.recordingSession.isExporting }
+    var onExportProgress: ((Double) -> Void)? {
+        didSet { capture.onExportProgress = onExportProgress }
+    }
+    var onExportProjectChanged: ((URL?) -> Void)? {
+        didSet { capture.onExportProjectChanged = onExportProjectChanged }
+    }
     var onExportFailure: ((String?) -> Void)? {
         didSet { capture.onExportFailure = onExportFailure }
     }
@@ -187,7 +194,7 @@ final class RecorderCoordinator {
     func availableCameras() -> [SourceOption] { capture.availableCameras() }
     func availableMicrophones() -> [SourceOption] { capture.availableMicrophones() }
     func selectedMicrophoneName() -> String { capture.selectedMicrophoneName() }
-    func start() { capture.start() }
+    func start(takeTitle: String?) { capture.start(takeTitle: takeTitle) }
     func pause() { capture.pause() }
     func resume() { capture.resume() }
     func stop() { capture.stop() }

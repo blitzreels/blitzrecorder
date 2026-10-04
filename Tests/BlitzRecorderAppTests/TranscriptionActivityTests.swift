@@ -32,11 +32,11 @@ final class TranscriptionActivityTests: XCTestCase {
         let engine = ActivityTranscriptionEngine(.init(transcript: transcript, onStarted: { started.fulfill() }))
         let controller = LocalTranscriptionController(.init(engine: engine, modelStore: InstalledSpeechModelStore(),
             artifactStore: artifacts, fileStore: fileStore, defaults: defaults))
-        controller.syncProjects(history)
+        await controller.syncProjects(history).value
         XCTAssertEqual(controller.status(for: entry), .ready(locations.jsonURL))
         controller.retry(.project(take.projectURL))
         try await waitFor { controller.status(for: entry) == .loadingModels }
-        controller.syncProjects(history)
+        await controller.syncProjects(history).value
         XCTAssertEqual(controller.status(for: entry), .loadingModels)
         XCTAssertNotNil(controller.jobStartedAt[entry.projectPath])
         XCTAssertEqual(try artifacts.load(from: locations.jsonURL).text, "Saved words")

@@ -72,6 +72,10 @@ final class RecorderViewModel {
 
     var recentProjects: [RecordingProjectHistory.Entry] = []
     var projectLibraryError: String?
+    var folderRecordTarget: ProjectFolderRecordTarget?
+    var folderExportStatus: String?
+    var folderMoveUndo: ProjectFolderMoveUndo?
+    var exportFollowUp: EditorExportFollowUp?
 
     var canShowProjects: Bool {
         !projectTrash.isWorking
@@ -91,6 +95,22 @@ final class RecorderViewModel {
     var elapsedSeconds: Int = 0
     var captureStopProgress: CaptureStopProgress?
     var finishingStartedAt: Date?
+    var suggestedScreenSource: ScreenSourceBinding?
+    var followsActiveWindow = FollowActiveWindowPreference().isEnabled {
+        didSet { FollowActiveWindowPreference().setEnabled(followsActiveWindow) }
+    }
+    var autoSwitchNotice: String?
+    @ObservationIgnored var pendingFollowKey: String?
+    @ObservationIgnored var autoSwitchNoticeTask: Task<Void, Never>?
+    var dismissedScreenSuggestion: String?
+    var exportProgress: Double = 0
+    var exportProgressLabel: String { "\(Int((exportProgress * 100).rounded()))%" }
+    var activeExportProjectURL: URL?
+    var isExporting: Bool { activeExportProjectURL != nil || isExportingVariants }
+    @ObservationIgnored var projectRefreshTask: Task<Void, Never>?
+    var videoImportProgress: VideoProjectImporter.Progress?
+    var videoImportError: String?
+    @ObservationIgnored var videoImportTask: Task<Void, Never>?
     var renderProgress: Double = 0
     let elapsedClock = RecordingElapsedClock()
 

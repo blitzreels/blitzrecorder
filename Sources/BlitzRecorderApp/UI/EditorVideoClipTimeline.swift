@@ -3,7 +3,6 @@ import SwiftUI
 
 enum EditorTimelineClipPointer: Equatable {
     static let handleWidth: CGFloat = 12
-    static let handleLeadingWidth: CGFloat = 8
 
     case arrow
     case pointingHand
@@ -31,6 +30,11 @@ enum EditorTimelineClipPointer: Equatable {
         if request.isTrimming { return .resize }
         guard request.pixelsPerSecond.isFinite, request.pixelsPerSecond > 0, request.x.isFinite else {
             return .arrow
+        }
+        if let clip = request.layout.clip(at: Double((request.x + request.edgeWidth / 3) / request.pixelsPerSecond)) {
+            let startX = CGFloat(clip.start) * request.pixelsPerSecond
+            if request.x >= startX,
+                request.x < startX + request.edgeWidth { return .resize }
         }
         let trailingWidth = request.edgeWidth / 3
         if let edgeClip = request.layout.clip(at: Double((request.x - trailingWidth) / request.pixelsPerSecond)) {
@@ -253,7 +257,8 @@ struct EditorVideoClipStrip: View {
         .overlay(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
                 ForEach(trimmableRuns(runs)) { run in
-                    trimHandle(run)
+                    trimHandle(.init(run: run, edge: .left))
+                    trimHandle(.init(run: run, edge: .right))
                 }
             }
             .frame(width: configuration.width, height: configuration.height, alignment: .leading)
@@ -261,7 +266,7 @@ struct EditorVideoClipStrip: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Video clips")
         .accessibilityValue("\(configuration.layout.clips.count) clips")
-        .help("⌘B splits this clip at the playhead, including Screen, Camera, and audio. Drag a clip’s right edge left to shorten it or right to restore cut footage up to the next clip. Click a clip to select it; Delete removes it from all source tracks.")
+        .help("⌘B splits this clip at the playhead, including Screen, Camera, and audio. Drag either clip edge inward to shorten or outward to restore adjacent cut footage. Click a clip to select it; Delete removes it from all source tracks.")
     }
 
     private func isSelected(_ run: EditorVideoClipLayout.Run) -> Bool {
@@ -284,24 +289,31 @@ struct EditorVideoClipStrip: View {
                 width: CGFloat(clip.end - clip.start) * configuration.pixelsPerSecond
             )]
         }
-        return runs.filter { run in
-            let endX = CGFloat(run.clip.end) * configuration.pixelsPerSecond
-            guard endX >= configuration.viewport.lowerBound,
-                endX <= configuration.viewport.upperBound else { return false }
-            return EditorVideoCuts.canTrimRight(.init(
-                edits: configuration.edits, clip: run.clip.range,
-                nextClipStart: nextClipStart(run.clip), duration: configuration.duration
-            ))
-        }
+        return runs
     }
 
     private func nextClipStart(_ clip: EditorVideoClipLayout.Clip) -> Double? {
         configuration.layout.next(after: clip)?.range.start
     }
 
-    private func trimHandle(_ run: EditorVideoClipLayout.Run) -> some View {
-        let isActive = hoveredHandle == run.clip.id || configuration.trimOrigin?.clip.start == run.clip.range.start
+    private struct HandleRequest {
+        let run: EditorVideoClipLayout.Run
+        let edge: EditorClipTrimSession.Edge
+    }
+
+    private func trimHandle(_ request: HandleRequest) -> some View {
+        let run = request.run
+        let edge = request.edge
+        let origin = configuration.trimOrigin
+        let isTrimming = origin?.clip == run.clip.range && origin?.edge == edge
+        let isActive = hoveredHandle == run.clip.id || isTrimming
         let showsHandle = isSelected(run) || isActive || isHovered(run)
+        let selected = configuration.selectedRanges.first
+        let shift = isTrimming ? (edge == .left
+            ? (selected?.start ?? run.clip.range.start) - run.clip.range.start
+            : (selected?.end ?? run.clip.range.end) - run.clip.range.end) : 0
+        let time = (edge == .left ? run.clip.start : run.clip.end) + shift
+        let previousEnd = configuration.layout.clips.last { $0.range.end <= run.clip.range.start }?.range.end
         return EditorTimelineGrip(tint: BlitzUI.mint, isActive: isActive)
         .opacity(showsHandle ? 1 : 0)
         .frame(width: EditorTimelineClipPointer.handleWidth, height: configuration.height)
@@ -316,7 +328,8 @@ struct EditorVideoClipStrip: View {
                     configuration.onBeginTrim(.init(
                         edits: configuration.edits, clip: run.clip.range,
                         nextClipStart: nextClipStart(run.clip),
-                        pixelsPerSecond: configuration.pixelsPerSecond, duration: configuration.duration
+                        pixelsPerSecond: configuration.pixelsPerSecond, duration: configuration.duration,
+                        edge: edge, previousClipEnd: previousEnd
                     ))
                     configuration.onTrim(value.translation.width)
                 }
@@ -326,11 +339,12 @@ struct EditorVideoClipStrip: View {
                 }
         )
         .fixedSize()
-        .help("Drag left to shorten this clip; drag right to restore cut footage up to the next clip. Screen, Camera, and audio stay in sync.")
-        .accessibilityLabel("Trim \(run.clip.title)")
-        .accessibilityValue("Drag left to shorten or right to restore cut footage")
-        .timelineControl(id: "trim-\(run.clip.id.ticks)")
-        .offset(x: CGFloat(run.clip.end) * configuration.pixelsPerSecond - EditorTimelineClipPointer.handleLeadingWidth)
+        .help("Drag inward to shorten or outward to restore adjacent cut footage. All source tracks stay in sync.")
+        .accessibilityLabel("Trim \(edge.rawValue) edge of \(run.clip.title)")
+        .accessibilityValue("Drag inward to shorten or outward to restore cut footage")
+        .timelineControl(id: "trim-\(run.clip.id.ticks)-\(edge.rawValue)")
+        .offset(x: CGFloat(time) * configuration.pixelsPerSecond - (edge == .right
+            ? EditorTimelineClipPointer.handleWidth : 0))
     }
 
     private func cancelTrim() {

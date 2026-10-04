@@ -64,7 +64,7 @@ extension AppDelegate {
 
     @objc func startRecording() {
         guard let windowController else {
-            coordinator.start()
+            coordinator.start(takeTitle: nil)
             return
         }
         windowController.requestRecordingStart()

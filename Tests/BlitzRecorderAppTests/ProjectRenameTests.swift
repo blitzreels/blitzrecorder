@@ -127,3 +127,33 @@ final class ProjectRenameTests: XCTestCase {
         XCTAssertEqual(loaded.entries.map(\.id), [newerRecording.id, olderRecording.id])
     }
 }
+
+extension ProjectRenameTests {
+    func testExportCompletionPreservesRenameAndEditsMadeWhileRendering() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var settings = RecordingSettings()
+        settings.outputDirectory = directory
+        settings.savesSourceFiles = true
+        let store = TakeFileStore()
+        let take = try store.createTake(settings: settings)
+        _ = try store.renameProject(.init(projectURL: take.projectURL, title: "New course title", settings: settings))
+        let record = RecordingProject.ExportRecord(id: UUID(), createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            path: directory.appendingPathComponent("old-export-name.mp4").path,
+            format: "mp4", resolution: "1080p", framesPerSecond: 30, quality: "high", fileSizeBytes: 100)
+        var edits = TimelineEdits.empty
+        edits.cuts = [.init(start: 2, end: 3, kind: .manual, source: .user)]
+        let before = try store.updateProjectTimelineEdits(.init(
+            projectURL: take.projectURL, edits: edits, baseSettings: settings))
+        try store.recordCompletedExport(.init(projectURL: take.projectURL, record: record, settings: settings))
+        let after = try store.loadRecordingProject(at: take.projectURL)
+        XCTAssertEqual(after.title, "New course title")
+        XCTAssertEqual(after.settings, before.settings)
+        XCTAssertEqual(after.sceneEvents, before.sceneEvents)
+        XCTAssertEqual(after.editorState, before.editorState)
+        XCTAssertEqual(after.edits, before.edits)
+        XCTAssertEqual(after.exports, [record])
+        XCTAssertEqual(after.finalVideoPath, record.path)
+        XCTAssertEqual(store.loadProjectHistory(settings: settings).entries.first?.title, after.title)
+    }
+}

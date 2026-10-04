@@ -4,6 +4,31 @@ import XCTest
 
 final class LocalTranscriptionControllerTests: XCTestCase {
     @MainActor
+    func testImportedSilentVideoDoesNotDownloadModelsOrStartTranscription() async throws {
+        let fixture = try SyntheticRecording()
+        let source = fixture.root.appendingPathComponent("Silent.mov")
+        try await fixture.writeVideo(.init(url: source, frames: 5))
+        let project = try await VideoProjectImporter().importVideo(.init(url: source, settings: fixture.settings, onProgress: { _ in }))
+        let engine = LocalTranscriptionEngineSpy(onTranscriptionStarted: { XCTFail("Silent media cannot be transcribed") })
+        let suiteName = "ImportedSilentVideo.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.set(false, forKey: "transcription.automatic.enabled")
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let controller = LocalTranscriptionController(.init(engine: engine, modelStore: LocalTranscriptionModelStoreStub(),
+            artifactStore: TranscriptArtifactStore(), fileStore: TakeFileStore(), defaults: defaults))
+        let entries = TakeFileStore().loadProjectHistory(settings: fixture.settings).entries
+        let entry = try XCTUnwrap(entries.first { $0.id == project.id })
+        await controller.syncProjects(entries).value
+        XCTAssertEqual(controller.status(for: entry), .noAudio)
+        controller.retry(.project(URL(fileURLWithPath: project.projectPath)))
+        let downloads = await engine.downloadCount
+        let transcriptions = await engine.transcriptionCount
+        XCTAssertEqual(downloads, 0)
+        XCTAssertEqual(transcriptions, 0)
+        XCTAssertEqual(controller.status(for: entry), .noAudio)
+    }
+
+    @MainActor
     func testManualRequestDownloadsOnceAndTranscribesWhenAutomaticIsOff() async {
         let transcriptionStarted = expectation(description: "Transcription started")
         let engine = LocalTranscriptionEngineSpy(
@@ -71,6 +96,49 @@ final class LocalTranscriptionControllerTests: XCTestCase {
         XCTAssertEqual(transcribedRequest?.language, .french)
         XCTAssertEqual(transcribedRequest?.speakerCount, .two)
         XCTAssertEqual(defaults.string(forKey: "transcription.speech.model"), "whisperMedium")
+    }
+
+    @MainActor
+    func testLibraryStatusScanReturnsImmediatelyAndCancelledScanCannotOverwriteNewerStatus() async throws {
+        let fixture = try SyntheticRecording()
+        let suite = "TranscriptionScan.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defaults.set(false, forKey: "transcription.automatic.enabled")
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let controller = LocalTranscriptionController(.init(
+            engine: LocalTranscriptionEngineSpy(onTranscriptionStarted: { XCTFail("Automatic transcription is off") }),
+            modelStore: LocalTranscriptionModelStoreStub(), artifactStore: TranscriptArtifactStore(),
+            fileStore: TakeFileStore(), defaults: defaults))
+        let entry = try XCTUnwrap(TakeFileStore().loadProjectHistory(settings: fixture.settings).entries.first)
+        let old = controller.syncProjects(Array(repeating: entry, count: 500))
+        XCTAssertTrue(controller.jobStatuses.isEmpty, "Library navigation must not wait for disk inspection")
+        old.cancel()
+        controller.jobStatuses[entry.projectPath] = .transcribing
+        await old.value
+        XCTAssertEqual(controller.status(for: entry), .transcribing)
+        controller.jobStatuses[entry.projectPath] = nil
+        await controller.syncProjects([entry]).value
+        XCTAssertEqual(controller.status(for: entry), .waitingForModel)
+    }
+
+    @MainActor
+    func testManualRequestIsKeptWhenAutomaticInspectionIsAlreadyPending() async throws {
+        let fixture = try SyntheticRecording()
+        let started = expectation(description: "Manual request starts after inspection")
+        let engine = LocalTranscriptionEngineSpy(onTranscriptionStarted: { started.fulfill() })
+        let suite = "PendingManualInspection.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let controller = LocalTranscriptionController(.init(engine: engine,
+            modelStore: LocalTranscriptionModelStoreStub(), artifactStore: TranscriptArtifactStore(),
+            fileStore: TakeFileStore(), defaults: defaults))
+        controller.enqueueProject(fixture.take.projectURL)
+        controller.retry(.project(fixture.take.projectURL))
+        await fulfillment(of: [started], timeout: 2)
+        let downloads = await engine.downloadCount
+        let transcriptions = await engine.transcriptionCount
+        XCTAssertEqual(downloads, 1)
+        XCTAssertEqual(transcriptions, 1)
     }
 
 }

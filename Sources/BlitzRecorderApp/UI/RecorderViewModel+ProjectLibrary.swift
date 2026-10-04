@@ -24,7 +24,23 @@ extension RecorderViewModel {
         )
     }
 
+    func refreshProjectsInBackground() {
+        guard projectRefreshTask == nil else { return }
+        let settings = settings
+        projectRefreshTask = Task { [weak self] in
+            let entries = await Task.detached(priority: .utility) {
+                TakeFileStore().loadProjectHistory(settings: settings).entries
+            }.value
+            guard let self, !Task.isCancelled else { return }
+            self.projectRefreshTask = nil
+            if self.recentProjects != entries { self.recentProjects = entries }
+            self.transcriptionController.syncProjects(entries)
+        }
+    }
+
     func refreshRecentProjects() {
+        projectRefreshTask?.cancel()
+        projectRefreshTask = nil
         recentProjects = TakeFileStore().loadProjectHistory(settings: settings).entries
         transcriptionController.syncProjects(recentProjects)
     }
@@ -36,8 +52,8 @@ extension RecorderViewModel {
 
     func showProjects() {
         guard canShowProjects else { return }
-        refreshRecentProjects()
         studioMode = .projects
+        refreshProjectsInBackground()
     }
 
     func revealProject(_ project: RecordingProjectHistory.Entry) {
@@ -83,7 +99,7 @@ extension RecorderViewModel {
             )
             renameProject(ProjectLibraryRenameRequest(
                 project: request.project,
-                title: title
+                title: titleKeepingFolder(request, generated: title)
             ))
         } catch {
             projectLibraryError = "Title generation failed: \(error.localizedDescription)"
@@ -157,6 +173,10 @@ extension RecorderViewModel {
 
     func deleteProjects(_ projects: [RecordingProjectHistory.Entry]) async {
         guard !projects.isEmpty, !projectTrash.isWorking, state == .idle else { return }
+        guard !projects.contains(where: { $0.projectPath == activeExportProjectURL?.path }) else {
+            projectLibraryError = "Wait for this project's export to finish before moving its sources to Trash."
+            return
+        }
         projectLibraryError = nil
         let previousOrder = filteredLibraryProjects.map(\.id)
         let query = projectLibraryNavigation.searchText
@@ -211,6 +231,7 @@ extension RecorderViewModel {
     }
 
     func exportLastProject(_ request: EditorExportRequest) {
+        guard !isExporting else { return }
         guard let projectURL = lastExportedProjectURL, let project = lastExportedProject else {
             detailMessage = "No editable project is available for this recording."
             return
@@ -235,7 +256,7 @@ extension RecorderViewModel {
 
     func exportOutputVariants(_ request: EditorVariantExportRequest) {
         guard let projectURL = lastExportedProjectURL, let project = lastExportedProject, state == .idle,
-              !isExportingVariants, !request.layouts.isEmpty else { return }
+              !isExporting, !request.layouts.isEmpty else { return }
         isExportingVariants = true
         variantExportIndex = 0
         variantExportTotal = request.layouts.count

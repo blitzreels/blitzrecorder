@@ -39,24 +39,28 @@ extension RecorderCaptureRuntime {
     }
 
     func exportProjectForAgent(_ request: ProjectExportRequest) async throws -> SavedRecordingOutput {
+        guard state == .idle || recordingSession.lastTake?.projectURL != request.projectURL else {
+            throw RecorderError.mediaWriteFailed(RecordingExportCopy.waitForRecording)
+        }
         guard recordingSession.beginExport() else {
-            let message = RecordingExportCopy.waitForRecording
+            let message = "An export is already running."
             onMessage?(message)
             throw RecorderError.mediaWriteFailed(message)
         }
 
-        onRenderProgress?(0)
+        onExportProjectChanged?(request.projectURL)
+        onExportProgress?(0)
         onExportFailure?(nil)
         onMessage?(RecordingExportCopy.exporting(request.outputFormat))
 
         defer {
             recordingSession.finishExport()
-            refreshAudioLevelMonitoring()
+            onExportProjectChanged?(nil)
         }
 
         do {
             let savedOutput = try await performProjectExport(request)
-            onRenderProgress?(1)
+            onExportProgress?(1)
             onSavedRecording?(savedOutput)
             onMessage?(savedOutput.userMessage)
             return savedOutput
@@ -75,19 +79,22 @@ extension RecorderCaptureRuntime {
         access.start()
         defer { access.stop() }
 
-        let project = try takeFileStore.loadRecordingProject(at: request.projectURL)
+        let baseSettings = settings
+        let project = try await Task.detached(priority: .utility) {
+            try TakeFileStore().loadRecordingProject(at: request.projectURL)
+        }.value
         let captureOutputFormat = ProjectExportRenderPlan.captureOutputFormat(
             project: project,
-            fallback: settings.outputVideoFormat
+            fallback: baseSettings.outputVideoFormat
         )
         let captureSettings = takeFileStore.recordingSettings(
             from: project,
-            baseSettings: settings,
+            baseSettings: baseSettings,
             outputFormat: captureOutputFormat
         )
         let exportSettings = takeFileStore.recordingSettings(
             from: project,
-            baseSettings: settings,
+            baseSettings: baseSettings,
             outputFormat: request.outputFormat
         )
         let outputAccess = try takeFileStore.prepareOutputDirectory(settings: exportSettings)
@@ -116,7 +123,7 @@ extension RecorderCaptureRuntime {
             backgroundMusic: request.backgroundMusic,
             destinationURL: request.destinationURL,
             progressHandler: { [weak self] progress in
-                self?.onRenderProgress?(progress)
+                self?.onExportProgress?(progress)
             },
             timelineEdits: outputProject.edits,
             playbackRate: request.playbackRate
@@ -134,16 +141,9 @@ extension RecorderCaptureRuntime {
             renderSettings: context.renderSettings,
             fileSizeBytes: resourceValues?.fileSize.map(Int64.init)
         )
-        try takeFileStore.writeRecordingProject(
-            for: context.take,
-            settings: context.captureSettings,
-            sceneEvents: context.originalSceneEvents,
-            finalVideoURL: url,
-            chapters: project.chapters,
-            editorTimeline: project.editorTimeline,
-            editorState: project.editorState,
-            exportRecord: exportRecord
-        )
+        try takeFileStore.recordCompletedExport(.init(
+            projectURL: request.projectURL, record: exportRecord, settings: context.captureSettings
+        ))
         await HostingExportMetadata.save(.init(fileURL: url, project: outputProject, playbackRate: request.playbackRate))
         return ProjectExportRenderPlan.savedOutput(url: url, take: context.take)
     }

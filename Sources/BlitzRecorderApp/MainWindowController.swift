@@ -30,6 +30,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var screenPreviewRecoverySignature: ScreenCaptureSignature?
     var screenPreviewRecoveryAttempts = 0
     private var currentRecordingState: RecordingState = .idle
+    private lazy var recordingHUD = RecordingHUDController(viewModel: viewModel)
     var idlePreviewRestartTask: Task<Void, Never>?
     var studioModeCaptureResourceTask: Task<Void, Never>?
     var idlePreviewIsAllowed: Bool {
@@ -290,6 +291,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let previousState = currentRecordingState
         currentRecordingState = state
         viewModel.applyState(state)
+        recordingHUD.update(for: state)
         switch state {
         case .idle:
             refreshPermissionGate()

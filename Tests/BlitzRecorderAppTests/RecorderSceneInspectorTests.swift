@@ -152,7 +152,7 @@ final class RecorderSceneInspectorTests: XCTestCase {
         XCTAssertTrue(setup.viewModel.isBackgroundLayerSelected)
     }
 
-    func testProjectsKeepSelectionSearchAndDetailTabWhenReturningFromRecorder() throws {
+    func testProjectsKeepSelectionSearchAndDetailTabWhenReturningFromRecorder() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         var settings = customizedSplitSettings()
         settings.outputDirectory = directory
@@ -165,6 +165,7 @@ final class RecorderSceneInspectorTests: XCTestCase {
         _ = try TakeFileStore().createTake(settings: settings)
         _ = try TakeFileStore().createTake(settings: settings)
         setup.viewModel.showProjects()
+        await setup.viewModel.projectRefreshTask?.value
         let selectedID = try XCTUnwrap(setup.viewModel.recentProjects.last?.id)
         let navigation = ProjectLibraryNavigationState(
             selectedProjectIDs: [selectedID], searchText: "Recording"
@@ -173,6 +174,7 @@ final class RecorderSceneInspectorTests: XCTestCase {
 
         setup.viewModel.showRecorder()
         setup.viewModel.showProjects()
+        await setup.viewModel.projectRefreshTask?.value
         setup.viewModel.projectLibraryNavigation.reconcileSelection(
             availableProjectIDs: setup.viewModel.recentProjects.map(\.id)
         )

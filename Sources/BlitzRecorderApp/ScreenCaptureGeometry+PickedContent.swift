@@ -20,6 +20,22 @@ extension ScreenCaptureGeometry {
         return SCContentFilter(desktopIndependentWindow: window)
     }
 
+    static func excludingOwnApplication(_ filter: SCContentFilter) async -> SCContentFilter {
+        guard #available(macOS 15.2, *),
+              filter.style == .display,
+              filter.includedApplications.isEmpty,
+              let display = filter.includedDisplays.first,
+              let content = try? await SCShareableContent.current else {
+            return filter
+        }
+        let ownProcess = getpid()
+        return SCContentFilter(
+            display: content.displays.first { $0.displayID == display.displayID } ?? display,
+            excludingApplications: content.applications.filter { $0.processID == ownProcess },
+            exceptingWindows: []
+        )
+    }
+
     static func pickedSourceRect(request: PickedScreenSourceRectRequest) -> CGRect? {
         if usesAutomaticFullWindowSourceRect(for: request.settings) {
             return nil

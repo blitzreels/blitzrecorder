@@ -113,6 +113,7 @@ enum TranscriptionModelState: Equatable {
 
 enum TranscriptionJobStatus: Equatable {
     case notGenerated
+    case noAudio
     case waitingForModel
     case queued
     case preparingAudio
@@ -127,6 +128,8 @@ enum TranscriptionJobStatus: Equatable {
         switch self {
         case .notGenerated:
             return "Generate transcript"
+        case .noAudio:
+            return "No audio track"
         case .waitingForModel:
             return "Model required"
         case .queued:
@@ -152,7 +155,7 @@ enum TranscriptionJobStatus: Equatable {
         switch self {
         case .queued, .preparingAudio, .loadingModels, .transcribing, .diarizing, .saving:
             return true
-        case .notGenerated, .waitingForModel, .ready, .failed:
+        case .notGenerated, .noAudio, .waitingForModel, .ready, .failed:
             return false
         }
     }
@@ -261,6 +264,52 @@ final class LocalTranscriptionController {
     @ObservationIgnored private var knownSources: [String: TranscriptionMediaSource] = [:]
     @ObservationIgnored private var pendingManualSources: [String: TranscriptionMediaSource] = [:]
     @ObservationIgnored private var tasks: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored private var inspectionTasks: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored private var inspectionRequests: [String: EnqueueRequest] = [:]
+    @ObservationIgnored private var sourceInspections: [String: SourceInspection] = [:]
+    @ObservationIgnored private var projectSyncTask: Task<Void, Never>?
+
+    private struct SourceInspection: Sendable {
+        let transcriptURL: URL?
+        let hasTranscript: Bool
+        let hasNoAudio: Bool
+    }
+
+    private struct InspectionRequest {
+        let source: TranscriptionMediaSource
+        let fileStore: TakeFileStore
+        let artifactStore: TranscriptArtifactStore
+    }
+
+    nonisolated private static func inspect(_ request: InspectionRequest) -> SourceInspection {
+        let url: URL?
+        var hasNoAudio = false
+        switch request.source {
+        case .recording(let recordingURL):
+            url = request.artifactStore.locations(for: recordingURL).jsonURL
+        case .project(let projectURL):
+            let project = try? request.fileStore.loadRecordingProject(at: projectURL)
+            url = project.map { request.artifactStore.locations(for: $0).jsonURL }
+            if let project, VideoProjectImporter.Metadata.load(for: project) != nil {
+                hasNoAudio = !project.sources.contains {
+                    ["microphone", "systemAudio"].contains($0.role) && $0.exists
+                }
+            }
+        }
+        return SourceInspection(transcriptURL: url,
+            hasTranscript: url.map { FileManager.default.fileExists(atPath: $0.path) } ?? false,
+            hasNoAudio: hasNoAudio)
+    }
+
+    private func inspectSource(_ source: TranscriptionMediaSource) async -> SourceInspection {
+        let request = InspectionRequest(source: source, fileStore: fileStore, artifactStore: artifactStore)
+        let task = Task.detached(priority: .utility) { Self.inspect(request) }
+        return await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+    }
 
     init(_ dependencies: Dependencies = .live) {
         self.engine = dependencies.engine
@@ -334,17 +383,50 @@ final class LocalTranscriptionController {
         }
     }
 
-    func syncProjects(_ projects: [RecordingProjectHistory.Entry]) {
-        for project in projects {
-            let source = TranscriptionMediaSource.project(
-                URL(fileURLWithPath: project.projectPath)
-            )
-            knownSources[source.key] = source
-            refreshStatus(source)
+    @discardableResult
+    func syncProjects(_ projects: [RecordingProjectHistory.Entry]) -> Task<Void, Never> {
+        projectSyncTask?.cancel()
+        let sources = projects.map { TranscriptionMediaSource.project(URL(fileURLWithPath: $0.projectPath)) }
+        for source in sources { knownSources[source.key] = source }
+        let previousStatuses = jobStatuses
+        let fileStore = fileStore
+        let artifactStore = artifactStore
+        let task = Task { [weak self] in
+            let scan = Task.detached(priority: .utility) {
+                var inspections: [String: SourceInspection] = [:]
+                for source in sources {
+                    guard !Task.isCancelled else { break }
+                    inspections[source.key] = Self.inspect(.init(
+                        source: source, fileStore: fileStore, artifactStore: artifactStore))
+                }
+                return inspections
+            }
+            let inspections = await withTaskCancellationHandler {
+                await scan.value
+            } onCancel: {
+                scan.cancel()
+            }
+            guard let self, !Task.isCancelled else { return }
+            var statuses = self.jobStatuses
+            for (key, inspection) in inspections {
+                guard self.tasks[key] == nil, self.inspectionTasks[key] == nil,
+                      statuses[key] == previousStatuses[key] else { continue }
+                self.sourceInspections[key] = inspection
+                if inspection.hasTranscript, let url = inspection.transcriptURL {
+                    statuses[key] = .ready(url)
+                } else if inspection.hasNoAudio {
+                    statuses[key] = .noAudio
+                } else if !self.modelState.isReady {
+                    statuses[key] = .waitingForModel
+                } else if case .ready = statuses[key] {
+                    statuses[key] = .notGenerated
+                }
+            }
+            if statuses != self.jobStatuses { self.jobStatuses = statuses }
+            if self.isAutomaticEnabled { self.enqueueKnownSources() }
         }
-        if isAutomaticEnabled {
-            enqueueKnownSources()
-        }
+        projectSyncTask = task
+        return task
     }
 
     func enqueueProject(_ projectURL: URL) {
@@ -360,7 +442,7 @@ final class LocalTranscriptionController {
     }
 
     func isUpdatingTranscript(_ project: RecordingProjectHistory.Entry) -> Bool {
-        tasks[project.projectPath] != nil || isFixingSpeakers(project)
+        tasks[project.projectPath] != nil || inspectionTasks[project.projectPath] != nil || isFixingSpeakers(project)
     }
 
     func canFixSpeakers(_ project: RecordingProjectHistory.Entry) -> Bool {
@@ -392,7 +474,30 @@ final class LocalTranscriptionController {
     private func enqueue(_ request: EnqueueRequest) {
         let source = request.source
         knownSources[source.key] = source
-        guard tasks[source.key] == nil, speakerFixDetails[source.key] == nil else { return }
+        guard tasks[source.key] == nil, speakerFixDetails[source.key] == nil,
+              isAutomaticEnabled || request.force else { return }
+        guard let inspection = sourceInspections[source.key] else {
+            inspectionRequests[source.key] = .init(source: source,
+                force: request.force || inspectionRequests[source.key]?.force == true)
+            guard inspectionTasks[source.key] == nil else { return }
+            inspectionTasks[source.key] = Task { [weak self] in
+                guard let self else { return }
+                let inspection = await self.inspectSource(source)
+                self.inspectionTasks[source.key] = nil
+                let pending = self.inspectionRequests.removeValue(forKey: source.key) ?? request
+                guard !Task.isCancelled else { return }
+                self.sourceInspections[source.key] = inspection
+                if inspection.hasTranscript, let url = inspection.transcriptURL {
+                    self.jobStatuses[source.key] = .ready(url)
+                }
+                self.enqueue(pending)
+            }
+            return
+        }
+        if inspection.hasNoAudio {
+            jobStatuses[source.key] = .noAudio
+            return
+        }
         if !request.force, isTranscriptReady(source.key) {
             return
         }
@@ -434,7 +539,7 @@ final class LocalTranscriptionController {
                         }
                     )
                 )
-                markReady(source)
+                await markReady(source)
                 onTranscriptionCompleted?(CompletedTranscription(
                     source: source,
                     transcript: transcript
@@ -470,18 +575,10 @@ final class LocalTranscriptionController {
         )
     }
 
-    private func refreshStatus(_ source: TranscriptionMediaSource) {
-        guard tasks[source.key] == nil else { return }
-        if let transcriptURL = transcriptURL(source),
-           FileManager.default.fileExists(atPath: transcriptURL.path) {
-            jobStatuses[source.key] = .ready(transcriptURL)
-        } else if !modelState.isReady {
-            jobStatuses[source.key] = .waitingForModel
-        }
-    }
-
-    private func markReady(_ source: TranscriptionMediaSource) {
-        guard let transcriptURL = transcriptURL(source) else {
+    private func markReady(_ source: TranscriptionMediaSource) async {
+        let inspection = await inspectSource(source)
+        sourceInspections[source.key] = inspection
+        guard let transcriptURL = inspection.transcriptURL else {
             jobStatuses[source.key] = .failed(
                 LocalTranscriptionError.transcriptUnavailable.localizedDescription
             )
@@ -495,18 +592,6 @@ final class LocalTranscriptionController {
             return true
         }
         return false
-    }
-
-    private func transcriptURL(_ source: TranscriptionMediaSource) -> URL? {
-        switch source {
-        case .recording(let recordingURL):
-            return artifactStore.locations(for: recordingURL).jsonURL
-        case .project(let projectURL):
-            guard let project = try? fileStore.loadRecordingProject(at: projectURL) else {
-                return nil
-            }
-            return artifactStore.locations(for: project).jsonURL
-        }
     }
 
     private func apply(_ request: UpdateRequest) {

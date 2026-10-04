@@ -8,18 +8,21 @@ final class RecordingAppIconController {
     }
 
     private let configuration: Configuration
+    private let baseImage: NSImage
     private var isRecording: Bool?
-    private lazy var recordingImage = RecordingAppIcon.badged(configuration.baseImage)
+    private lazy var recordingImage = RecordingAppIcon.badged(baseImage)
 
     init(_ configuration: Configuration) {
         self.configuration = configuration
+        self.baseImage = configuration.baseImage.tiffRepresentation.flatMap(NSImage.init(data:))
+            ?? (configuration.baseImage.copy() as! NSImage)
     }
 
     func update(_ state: RecordingState) {
         let recording = state == .recording
         guard recording != isRecording else { return }
         isRecording = recording
-        configuration.applyImage(recording ? recordingImage : configuration.baseImage)
+        configuration.applyImage(recording ? recordingImage : baseImage)
     }
 }
 

@@ -41,7 +41,7 @@ extension ProjectLibraryView {
             if let startedAt = vm.transcriptionController.jobStartedAt[request.project.projectPath] {
                 ActivityElapsedTime(startedAt: startedAt)
             }
-            if !request.status.isRunning {
+            if !request.status.isRunning, request.status != .noAudio {
                 Button(transcriptActionTitle(request.status)) {
                     performTranscriptAction(request.project)
                 }
@@ -177,7 +177,7 @@ extension ProjectLibraryView {
             ))
         case .waitingForModel:
             requestTranscript(project)
-        case .queued, .preparingAudio, .loadingModels, .transcribing, .diarizing, .saving:
+        case .noAudio, .queued, .preparingAudio, .loadingModels, .transcribing, .diarizing, .saving:
             break
         }
     }
@@ -200,6 +200,8 @@ extension ProjectLibraryView {
             return "Retry Transcript"
         case .notGenerated:
             return "Generate Transcript"
+        case .noAudio:
+            return "No audio track"
         case .waitingForModel:
             return "Download Model"
         case .queued, .preparingAudio, .loadingModels, .transcribing, .diarizing, .saving:
@@ -219,6 +221,8 @@ extension ProjectLibraryView {
             return "Speech model required"
         case .notGenerated:
             return "No transcript"
+        case .noAudio:
+            return "No audio track"
         case .queued, .preparingAudio, .loadingModels, .transcribing, .diarizing, .saving:
             return status.label
         }
@@ -232,7 +236,7 @@ extension ProjectLibraryView {
             return BlitzUI.mint.opacity(0.84)
         case .failed:
             return BlitzUI.warning
-        case .notGenerated, .waitingForModel,
+        case .notGenerated, .noAudio, .waitingForModel,
              .queued, .preparingAudio, .loadingModels, .transcribing, .diarizing, .saving:
             return BlitzUI.tertiaryText
         }
@@ -250,6 +254,8 @@ extension ProjectLibraryView {
             return "Download the local speech model to find speakers and segments."
         case .notGenerated:
             return "Generate timed text and speaker diarization locally."
+        case .noAudio:
+            return "This video has no audio track. You can still edit and export it."
         case .queued:
             return "Waiting for local transcription to start."
         case .preparingAudio:

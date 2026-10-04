@@ -154,4 +154,38 @@ final class ProjectLibraryPlaybackPresentationTests: XCTestCase {
             fileSizeBytes: 1_024
         )
     }
+    func testSharedLibraryNeverStartsLocalMediaWork() {
+        for exporting in [false, true] {
+            let policy = ProjectLibraryWorkPolicy(section: .shared, isExporting: exporting)
+            XCTAssertFalse(policy.loadsLocalProjects)
+            XCTAssertFalse(policy.preparesPlayback)
+            XCTAssertFalse(policy.generatesThumbnails)
+            XCTAssertFalse(policy.analyzesAudio)
+        }
+    }
+
+    func testExportAutomaticallyPreparesPlaybackWhileDeferringBackgroundAnalysis() {
+        let automatic = ProjectLibraryWorkPolicy(section: .recordings, isExporting: true)
+        XCTAssertTrue(automatic.loadsLocalProjects)
+        XCTAssertTrue(automatic.preparesPlayback)
+        XCTAssertFalse(automatic.generatesThumbnails)
+        XCTAssertFalse(automatic.analyzesAudio)
+        let finished = ProjectLibraryWorkPolicy(section: .recordings, isExporting: false)
+        XCTAssertTrue(finished.preparesPlayback)
+        XCTAssertTrue(finished.generatesThumbnails)
+        XCTAssertTrue(finished.analyzesAudio)
+    }
+
+    @MainActor
+    func testMetadataLoadedDuringExportStillGeneratesThumbnailAfterExport() throws {
+        let fixture = try SyntheticRecording()
+        let entry = try XCTUnwrap(TakeFileStore().loadProjectHistory(settings: fixture.settings).entries.first)
+        let store = ProjectLibraryMetadataStore()
+        store.store(.init(values: [(entry, .empty)], generatesThumbnails: false))
+        XCTAssertFalse(store.needsLoad(.init(entry: entry, generatesThumbnails: false)))
+        XCTAssertTrue(store.needsLoad(entry))
+        store.store([(entry, .empty)])
+        XCTAssertFalse(store.needsLoad(entry))
+    }
+
 }

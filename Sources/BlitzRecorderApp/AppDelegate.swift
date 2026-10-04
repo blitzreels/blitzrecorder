@@ -61,7 +61,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
         }
 
         coordinator.onStateChanged = { [weak self] state in
-            self?.updateController.installationBlockedReason = state == .idle ? nil : "Finish recording before restarting."
+            self?.updateController.installationBlockedReason = state != .idle
+                ? "Finish recording before restarting."
+                : self?.coordinator.isExporting == true ? "Finish exporting before restarting." : nil
             if state == .starting { NowPlayingController.shared.suspendForRecording() }
             self?.windowController?.update(for: state)
             self?.updateStatusItem(for: state)
@@ -86,6 +88,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
         }
         coordinator.onCaptureStopProgress = { [weak self] progress in
             self?.windowController?.updateCaptureStopProgress(progress)
+        }
+        coordinator.onExportProgress = { [weak self] progress in
+            self?.windowController?.viewModel.exportProgress = min(1, max(0, progress))
+        }
+        coordinator.onExportProjectChanged = { [weak self] projectURL in
+            self?.windowController?.viewModel.applyExportProject(projectURL)
+            self?.updateController.installationBlockedReason = self?.coordinator.state != .idle
+                ? "Finish recording before restarting."
+                : projectURL != nil ? "Finish exporting before restarting." : nil
         }
         coordinator.onRenderProgress = { [weak self] progress in
             self?.windowController?.updateRenderProgress(progress)

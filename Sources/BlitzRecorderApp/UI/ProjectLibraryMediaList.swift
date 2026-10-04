@@ -146,7 +146,7 @@ extension ProjectLibraryView {
 
     @ViewBuilder
     private func mediaAssetVisual(_ asset: EditorAsset) -> some View {
-        if asset.isVideo, let frame = projectWaveformLibrary.filmstrips[asset.id]?.first {
+        if asset.isVideo, let frame = projectWaveformLibrary.posters[asset.id] {
             Image(decorative: frame, scale: 1)
                 .resizable()
                 .scaledToFit()

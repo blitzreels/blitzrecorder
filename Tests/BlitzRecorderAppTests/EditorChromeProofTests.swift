@@ -5,8 +5,8 @@ import XCTest
 
 final class EditorChromeProofTests: XCTestCase {
     @MainActor
-    func testInspectorTabsKeepOneRowWithDistinctSymbols() throws {
-        let tabs: [EditorInspectorTab] = [.layout, .silence, .text, .zoom, .privacy, .audio]
+    func testInspectorTabsKeepDistinctSymbolsAtNarrowWidths() throws {
+        let tabs: [EditorInspectorTab] = [.layout, .silence, .captions, .text, .zoom, .privacy, .audio]
         XCTAssertEqual(Set(tabs.map(\.systemImage)).count, tabs.count, "Each editor tool needs its own symbol.")
         for tab in tabs {
             XCTAssertNotNil(NSImage(systemSymbolName: tab.systemImage, accessibilityDescription: nil), tab.rawValue)

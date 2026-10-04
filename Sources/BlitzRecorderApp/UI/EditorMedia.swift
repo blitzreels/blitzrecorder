@@ -203,44 +203,73 @@ final class EditorMediaLibrary {
     private(set) var loadingIDs: Set<String> = []
     private(set) var filmstripLoadingCounts: [String: Int] = [:]
 
-    func loadAssets(_ assets: [EditorAsset]) async {
-        guard !Task.isCancelled else { return }
-        let pending = assets.filter {
-            $0.exists
-                && $0.isPlayable
-                && (durations[$0.id] == nil || technicalMetadata[$0.id] == nil)
-                && !loadingIDs.contains($0.id)
-        }
-        guard !pending.isEmpty else { return }
-        loadingIDs.formUnion(pending.map(\.id))
-        defer { loadingIDs.subtract(pending.map(\.id)) }
+    enum LoadPurpose: Int, Sendable {
+        case metadata
+        case library
+        case editor
+    }
 
+    struct AssetLoadRequest {
+        let assets: [EditorAsset]
+        let purpose: LoadPurpose
+    }
+
+    private struct MediaLoadRequest {
+        let asset: EditorAsset
+        let purpose: LoadPurpose
+    }
+
+    @ObservationIgnored private var loadedPurposes: [String: LoadPurpose] = [:]
+    @ObservationIgnored private var loadTokens: [String: UUID] = [:]
+
+    func loadAssets(_ assets: [EditorAsset]) async {
+        await loadAssets(.init(assets: assets, purpose: .editor))
+    }
+
+    func loadAssets(_ request: AssetLoadRequest) async {
+        guard !Task.isCancelled else { return }
+        let pending = request.assets.filter {
+            $0.exists && $0.isPlayable
+                && (loadedPurposes[$0.id]?.rawValue ?? -1) < request.purpose.rawValue
+        }
+        let token = UUID()
+        let concurrency = request.purpose == .editor ? 2 : 1
         await withTaskGroup(of: EditorLoadedMedia?.self) { group in
-            for asset in pending {
-                group.addTask {
-                    await Self.load(asset: asset)
+            var nextIndex = 0
+            @MainActor func enqueueNext() {
+                guard !Task.isCancelled, nextIndex < pending.count else { return }
+                let asset = pending[nextIndex]
+                nextIndex += 1
+                loadingIDs.insert(asset.id)
+                loadTokens[asset.id] = token
+                group.addTask(priority: .utility) {
+                    await Self.load(.init(asset: asset, purpose: request.purpose))
                 }
-                if asset.isVideo {
-                    group.addTask {
-                        await self.loadFilmstrip(request: .init(assetID: asset.id, url: asset.url, frameCount: 16))
-                        return nil
+            }
+            for _ in 0..<concurrency { enqueueNext() }
+            for await loaded in group {
+                if let loaded, !Task.isCancelled, loadTokens[loaded.id] == token {
+                    durations[loaded.id] = loaded.duration
+                    fileSizes[loaded.id] = loaded.fileSize
+                    technicalMetadata[loaded.id] = loaded.technicalMetadata
+                    loadedPurposes[loaded.id] = request.purpose
+                    if let poster = loaded.poster { posters[loaded.id] = poster }
+                    if let waveform = loaded.waveform {
+                        waveforms[loaded.id] = waveform.overview
+                        timelineWaveforms[loaded.id] = waveform
                     }
                 }
+                enqueueNext()
             }
-            for await loaded in group {
-                guard !Task.isCancelled, let loaded else { continue }
-                loadingIDs.remove(loaded.id)
-                durations[loaded.id] = loaded.duration
-                fileSizes[loaded.id] = loaded.fileSize
-                technicalMetadata[loaded.id] = loaded.technicalMetadata
-                if let poster = loaded.poster {
-                    posters[loaded.id] = poster
-                }
-                if let waveform = loaded.waveform {
-                    waveforms[loaded.id] = waveform.overview
-                    timelineWaveforms[loaded.id] = waveform
-                }
-            }
+        }
+        for asset in pending where loadTokens[asset.id] == token {
+            loadTokens[asset.id] = nil
+            loadingIDs.remove(asset.id)
+        }
+        guard request.purpose == .editor else { return }
+        for asset in request.assets where asset.exists && asset.isVideo {
+            guard !Task.isCancelled else { return }
+            await loadFilmstrip(request: .init(assetID: asset.id, url: asset.url, frameCount: 16))
         }
     }
 
@@ -265,7 +294,9 @@ final class EditorMediaLibrary {
         filmstrips[request.assetID] = frames
     }
 
-    nonisolated private static func load(asset: EditorAsset) async -> EditorLoadedMedia? {
+    nonisolated private static func load(_ request: MediaLoadRequest) async -> EditorLoadedMedia? {
+        guard !Task.isCancelled else { return nil }
+        let asset = request.asset
         let avAsset = AVURLAsset(url: asset.url)
         guard let duration = try? await avAsset.load(.duration) else { return nil }
         let seconds = duration.seconds.isFinite ? max(0, duration.seconds) : 0
@@ -282,7 +313,8 @@ final class EditorMediaLibrary {
         var waveform: EditorAudioWaveform?
         let technicalMetadata = await technicalMetadata(asset)
 
-        if asset.isVideo {
+        guard !Task.isCancelled else { return nil }
+        if asset.isVideo, request.purpose != .metadata {
             let generator = AVAssetImageGenerator(asset: avAsset)
             generator.appliesPreferredTrackTransform = true
             generator.maximumSize = CGSize(width: 0, height: 120)
@@ -290,9 +322,14 @@ final class EditorMediaLibrary {
             generator.requestedTimeToleranceAfter = CMTime(seconds: 0.5, preferredTimescale: 600)
 
             let posterTime = CMTime(seconds: min(0.1, seconds), preferredTimescale: 600)
-            poster = try? await generator.image(at: posterTime).image
-            waveform = await EditorAudioWaveform.load(.init(asset: avAsset, duration: seconds))
-        } else if asset.isAudio {
+            poster = await withTaskCancellationHandler {
+                try? await generator.image(at: posterTime).image
+            } onCancel: {
+                generator.cancelAllCGImageGeneration()
+            }
+        }
+        guard !Task.isCancelled else { return nil }
+        if request.purpose == .editor || (asset.isAudio && request.purpose == .library) {
             waveform = await EditorAudioWaveform.load(.init(asset: avAsset, duration: seconds))
         }
 

@@ -197,7 +197,9 @@ private struct DeviceCard: View {
                             .foregroundStyle(BlitzUI.secondaryText)
                             .lineLimit(1)
                     }
-                    if let note {
+                    if let notice = vm.sourceReadinessNotice(source) {
+                        DeviceReadinessNote(notice: notice, vm: vm)
+                    } else if let note {
                         Text(note.text)
                             .font(BlitzType.caption)
                             .foregroundStyle(note.isWarning ? BlitzUI.warning : BlitzUI.tertiaryText)
@@ -269,6 +271,40 @@ private struct DeviceCard: View {
             return ("Hidden in this scene", false)
         }
         return nil
+    }
+}
+
+private struct DeviceReadinessNote: View {
+    let notice: SourceReadinessNotice
+    @Bindable var vm: RecorderViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 5) {
+                if notice.isWaiting {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(BlitzType.glyph(9))
+                        .accessibilityHidden(true)
+                }
+                Text(notice.title)
+                    .font(BlitzType.captionEmphasis)
+            }
+            .foregroundStyle(notice.isWaiting ? BlitzUI.supportingText : BlitzUI.warning)
+            Text(notice.detail)
+                .font(BlitzType.caption)
+                .foregroundStyle(BlitzUI.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            if let action = notice.action {
+                Button(action.title) { vm.resolveSourceReadiness(action) }
+                    .blitzButton(.secondary)
+                    .controlSize(.small)
+                    .disabled(vm.isRequestingPermissions)
+            }
+        }
+        .padding(.top, 2)
+        .accessibilityElement(children: .contain)
     }
 }
 

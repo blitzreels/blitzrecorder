@@ -600,7 +600,7 @@ private enum BlitzRecorderMCPConnectionTestError: LocalizedError {
     }
 }
 
-private extension String {
+extension String {
     var nilIfEmpty: String? {
         isEmpty ? nil : self
     }

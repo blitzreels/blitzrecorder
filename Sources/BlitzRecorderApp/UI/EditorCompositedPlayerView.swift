@@ -74,6 +74,8 @@ final class EditorCompositedPlayerView: NSView {
 
     private var privacyLayers: [UUID: CALayer] = [:]
     private var textLayers: [UUID: CALayer] = [:]
+    private let captionLayer = CALayer()
+    private var renderedCaptionRequest: CaptionRenderRequest?
     private var renderedTextRequests: [UUID: TimelineOverlayImageRequest] = [:]
     private struct TextRenderState: Equatable {
         let overlays: [TextOverlay]
@@ -175,6 +177,42 @@ final class EditorCompositedPlayerView: NSView {
         )
     }
 
+    private struct CaptionRefresh {
+        let time: Double
+        let canvasSize: CGSize
+    }
+
+    private func refreshCaptions(_ request: CaptionRefresh) {
+        guard let controller else { return }
+        let renderRequest = controller.captionTimeline.cue(at: request.time).map {
+            CaptionRenderRequest(.init(cue: $0, track: controller.edits.captions, canvasSize: renderSize))
+        }
+        performWithoutUIAnimation {
+            guard let renderRequest else {
+                captionLayer.isHidden = true
+                renderedCaptionRequest = nil
+                return
+            }
+            if captionLayer.superlayer == nil {
+                captionLayer.actions = disabledActions
+                captionLayer.zPosition = 110
+                canvasLayer.addSublayer(captionLayer)
+            }
+            guard let sprite = CaptionRenderer.sprite(renderRequest) else {
+                captionLayer.isHidden = true
+                return
+            }
+            captionLayer.isHidden = false
+            if renderedCaptionRequest != renderRequest {
+                captionLayer.contents = sprite.image
+                renderedCaptionRequest = renderRequest
+            }
+            captionLayer.frame = sprite.frame.applying(.init(
+                scaleX: request.canvasSize.width / renderSize.width,
+                y: request.canvasSize.height / renderSize.height))
+        }
+    }
+
     func refresh() {
         guard let controller, controller.isReady, renderSize.width > 0, renderSize.height > 0 else { return }
         let time = controller.displayTime()
@@ -199,6 +237,7 @@ final class EditorCompositedPlayerView: NSView {
             screenPlayer: controller.videoPlayer(for: .screen).map(ObjectIdentifier.init),
             cameraPlayer: controller.videoPlayer(for: .camera).map(ObjectIdentifier.init)
         )
+        refreshCaptions(.init(time: time, canvasSize: canvasFrame.size))
         let visibleOverlays = controller.edits.textOverlays.filter { $0.isVisible(at: time) }
         let textState = TextRenderState(overlays: visibleOverlays,
             opacities: visibleOverlays.map { Float($0.opacity(at: time)) },

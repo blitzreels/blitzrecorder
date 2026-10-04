@@ -41,7 +41,7 @@ enum RecordingStartAccess {
             localCamera: enabledSources.contains(.camera) && !plan.usesRemoteCamera,
             microphone: enabledSources.contains(.microphone),
             stopLocalCameraSession: plan.usesLiveCompositor && enabledSources.contains(.camera),
-            stopScreenPreview: plan.usesLiveCompositor && enabledSources.contains(.screen)
+            stopScreenPreview: enabledSources.contains(.screen)
         )
     }
 }

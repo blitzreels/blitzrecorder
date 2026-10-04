@@ -59,6 +59,11 @@ struct EditorView: View {
             EditorWorkspaceSplitView(showsSourceTracks: showsSourceTracks) {
                 playerColumn
                     .background(BlitzUI.canvasBackground)
+                    .onChange(of: vm.exportFollowUp) { _, followUp in
+                        guard let followUp else { return }
+                        vm.exportFollowUp = nil
+                        handleExportFollowUp(followUp)
+                    }
                     .overlay(alignment: .bottom) {
                         editorNotice
                             .padding(.horizontal, 20)
@@ -94,6 +99,7 @@ struct EditorView: View {
                     persistEditorState: persistEditorState,
                     privacy: privacy,
                     silence: silence,
+                    transcript: transcript,
                     project: project,
                     sceneEvents: sceneEvents,
                     captureLayout: captureLayout,
@@ -269,18 +275,13 @@ struct EditorView: View {
 
 
     enum EditorNoticeKey: Hashable {
-        case none, uploading, exporting, succeeded, failed
+        case none, uploading
     }
 
     var noticeKey: EditorNoticeKey {
         let sharing = HostedVideoShareController.shared
         if sharing.isRunning, sharing.transferProgress != nil { return showsHostingShare ? .none : .uploading }
-        guard let exportStatus, !(showsHostingShare && preparesHostedExport) else { return .none }
-        switch exportStatus {
-        case .exporting: return .exporting
-        case .succeeded: return .succeeded
-        case .failed: return .failed
-        }
+        return .none
     }
 
     @ViewBuilder var editorNotice: some View {
@@ -301,37 +302,20 @@ struct EditorView: View {
                 .editorNoticeSurface()
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-        case .exporting, .succeeded, .failed:
-            if let exportStatus {
-                EditorExportStatusView(configuration: .init(
-                    status: exportStatus,
-                    savedCount: max(1, vm.variantExportURLs.count),
-                    open: { NSWorkspace.shared.open($0) },
-                    reveal: { url in
-                        let urls = vm.variantExportURLs.count > 1 ? vm.variantExportURLs : [url]
-                        NSWorkspace.shared.activateFileViewerSelecting(urls)
-                    },
-                    share: { url in
-                        preparesHostedExport = false
-                        HostedVideoShareController.shared.select(.init(fileURL: url, projectPath: project?.projectPath))
-                        showsHostingShare = true
-                    },
-                    sendToBlitzReels: { url in
-                        guard let project else { return }
-                        BlitzReelsHandoffController.shared.selectExport(.init(
-                            fileURL: url, project: project, settings: vm.settings
-                        ))
-                        inspectorTab = .blitzReels
-                    },
-                    retry: prepareExport,
-                    dismiss: {
-                        vm.lastExportSucceededURL = nil
-                        vm.lastExportError = nil
-                        vm.variantExportURLs = []
-                    }
-                ))
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
+        }
+    }
+
+    private func handleExportFollowUp(_ followUp: EditorExportFollowUp) {
+        switch followUp {
+        case .share(let url):
+            preparesHostedExport = false
+            HostedVideoShareController.shared.select(.init(fileURL: url, projectPath: project?.projectPath))
+            showsHostingShare = true
+        case .sendToBlitzReels(let url):
+            guard let project else { return }
+            BlitzReelsHandoffController.shared.selectExport(.init(fileURL: url, project: project, settings: vm.settings))
+            showsHostingShare = false
+            inspectorTab = .blitzReels
         }
     }
 

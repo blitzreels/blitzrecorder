@@ -33,17 +33,20 @@ final class MetalExportInstruction: NSObject, AVVideoCompositionInstructionProto
     let sourceDescriptors: [MetalExportSourceDescriptor]
 
     let edits: TimelineEdits
+    let captionTimeline: CaptionTimeline
     let timeMap: TimelineTimeMap
     let cursorTrack: CursorPresentationTrack
 
     init(_ request: MetalExportInstructionRequest) {
         edits = request.edits
+        captionTimeline = CaptionTimeline(.init(track: request.edits.captions, cuts: request.edits.cuts))
         timeMap = request.timeMap
         cursorTrack = request.cursorTrack
         timeRange = request.timeRange
         scene = request.scene
         settings = request.settings
         containsTweening = request.scene.canvasBackgroundAnimated || request.edits.zoom.isActive
+            || !captionTimeline.cues.isEmpty
             || !request.edits.privacyMasks.isEmpty || !request.edits.textOverlays.isEmpty || !request.cursorTrack.isEmpty
         sourceDescriptors = request.activeLayerOrder.compactMap { kind in
             request.sourceDescriptors.first { $0.kind == kind }
@@ -77,7 +80,7 @@ final class MetalExportVideoCompositor: NSObject, AVVideoCompositing, @unchecked
 
     private let renderQueue = DispatchQueue(
         label: "blitzrecorder.export.metal-compositor",
-        qos: .userInitiated,
+        qos: .utility,
         attributes: .concurrent
     )
     private let renderGroup = DispatchGroup()
@@ -159,12 +162,16 @@ final class MetalExportVideoCompositor: NSObject, AVVideoCompositing, @unchecked
         var scene = TimelineOverlayRenderer.scene(.init(scene: instruction.scene, edits: instruction.edits, time: takeTime))
         if instruction.edits.zoom.isActive { scene.screenCropPosition.y *= -1 }
         let size = request.renderContext.size
-        let overlays = instruction.edits.textOverlays.compactMap { overlay -> CIImage? in
+        var overlays = instruction.edits.textOverlays.compactMap { overlay -> CIImage? in
             guard overlay.opacity(at: takeTime) > 0,
                   let image = TimelineOverlayRenderer.image(.init(overlay: overlay, size: size)) else { return nil }
             return CIImage(cgImage: image).applyingFilter("CIColorMatrix", parameters: [
                 "inputAVector": CIVector(x: 0, y: 0, z: 0, w: overlay.opacity(at: takeTime))
             ])
+        }
+        if let cue = instruction.captionTimeline.cue(at: takeTime),
+           let sprite = CaptionRenderer.sprite(.init(.init(cue: cue, track: instruction.edits.captions, canvasSize: size))) {
+            overlays.append(sprite.compositedImage(canvasSize: size))
         }
         let rendered = renderer.render(LiveCompositorImageRenderRequest(
             screenFrame: screenFrame,
