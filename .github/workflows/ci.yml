@@ -48,6 +48,30 @@ jobs:
           swift test --package-path Packages/BlitzRecorderTransport
           swift build --package-path Apps/WindowsStudio
 
+      - name: Collect Test Crash Reports
+        if: failure()
+        run: |
+          mkdir -p build/TestDiagnostics
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          import shutil
+
+          destination = Path("build/TestDiagnostics")
+          for root in [Path.home() / "Library/Logs/DiagnosticReports", Path("/Library/Logs/DiagnosticReports")]:
+              if root.exists():
+                  for report in root.rglob("*"):
+                      if report.is_file() and report.suffix in {".ips", ".crash"}:
+                          shutil.copy2(report, destination / report.name)
+          PYTHON
+
+      - name: Upload Test Crash Reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: swift-test-crash-reports
+          path: build/TestDiagnostics
+          if-no-files-found: warn
+
       - name: App Store Connect Local Checks
         run: |
           set -euo pipefail
