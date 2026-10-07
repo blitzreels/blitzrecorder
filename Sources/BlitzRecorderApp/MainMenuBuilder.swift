@@ -205,6 +205,14 @@ final class MainMenuBuilder {
         submenu.addItem(menuItem("Copy Diagnostics", action: #selector(MenuActionsTarget.copyDiagnostics)))
         submenu.addItem(.separator())
         submenu.addItem(menuItem("Privacy Policy", action: #selector(MenuActionsTarget.openPrivacyPolicy)))
+        submenu.addItem(.separator())
+        submenu.addItem(.sectionHeader(title: "More from BlitzReels"))
+        for app in FamilyApp.all {
+            let link = menuItem(app.name, action: #selector(FamilyAppLinks.open(_:)), target: FamilyAppLinks.shared)
+            link.representedObject = app.url
+            link.toolTip = app.detail
+            submenu.addItem(link)
+        }
         NSApp.helpMenu = submenu
         item.submenu = submenu
         return item

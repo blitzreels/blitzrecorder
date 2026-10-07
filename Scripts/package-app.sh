@@ -156,6 +156,9 @@ cp "$ROOT/Sources/BlitzRecorderApp/PrivacyInfo.xcprivacy" "$APP/Contents/Resourc
 cp "$ROOT/Sources/BlitzRecorderApp/Resources/WebMCPWorkspace.html" "$APP/Contents/Resources/WebMCPWorkspace.html"
 cp "$ROOT/Resources/CompanionAppIcon.png" "$APP/Contents/Resources/CompanionAppIcon.png"
 cp "$ROOT/Resources/BlitzReelsWordmarkWhite.png" "$APP/Contents/Resources/BlitzReelsWordmarkWhite.png"
+for family_icon in BlitzCleanAppIcon BlitzReelsAppIcon; do
+  cp "$ROOT/Resources/$family_icon.png" "$APP/Contents/Resources/$family_icon.png"
+done
 for integration_icon in IntegrationClaude IntegrationCodex; do
   cp "$ROOT/Resources/$integration_icon.png" "$APP/Contents/Resources/$integration_icon.png"
 done

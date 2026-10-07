@@ -48,6 +48,10 @@ targets:
         buildPhase: resources
       - path: Resources/BlitzReelsWordmarkWhite.png
         buildPhase: resources
+      - path: Resources/BlitzCleanAppIcon.png
+        buildPhase: resources
+      - path: Resources/BlitzReelsAppIcon.png
+        buildPhase: resources
       - path: Resources/IntegrationClaude.png
         buildPhase: resources
       - path: Resources/IntegrationCodex.png

@@ -87,6 +87,8 @@ struct AboutSettingsPage: View {
                 }
                 .settingsSection(.init(title: "Resources", detail: nil, systemImage: "book.closed"))
 
+                FamilyAppsSection()
+
                 HStack(spacing: 18) {
                     Link("Website", destination: AppLinks.landingPage)
                     Link("Privacy", destination: AppLinks.privacy)
