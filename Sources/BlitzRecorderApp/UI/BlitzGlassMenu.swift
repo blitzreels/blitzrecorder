@@ -66,20 +66,21 @@ struct BlitzGlassMenu<Label: View>: View {
             if !isEnabled { isPresented = false }
         }
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-            BlitzMenuList(entries: entries, width: menuWidth, maxHeight: adaptivePopoverMaxHeight) {
+            BlitzMenuList(entries: entries, width: menuWidth, maxHeight: BlitzMenuList.adaptiveMaxHeight) {
                 isPresented = false
             }
             .preferredColorScheme(.dark)
         }
     }
 
-    private var adaptivePopoverMaxHeight: CGFloat {
-        let visibleHeight = NSScreen.main?.visibleFrame.height ?? 720
-        return min(520, max(260, visibleHeight - 120))
-    }
 }
 
 struct BlitzMenuList: View {
+    static var adaptiveMaxHeight: CGFloat {
+        let visibleHeight = NSScreen.main?.visibleFrame.height ?? 720
+        return min(520, max(260, visibleHeight - 120))
+    }
+
     let entries: [BlitzMenuEntry]
     let width: CGFloat
     let maxHeight: CGFloat
@@ -125,9 +126,7 @@ struct BlitzMenuList: View {
                                     .padding(.horizontal, 8)
                                     .frame(height: BlitzControlMetrics.dividerHeight)
                             case .section(let title):
-                                Text(title)
-                                    .font(BlitzType.captionEmphasis)
-                                    .foregroundStyle(BlitzUI.secondaryText)
+                                BlitzUI.sectionLabel(title)
                                     .padding(.horizontal, 10)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .frame(height: BlitzControlMetrics.sectionHeight)

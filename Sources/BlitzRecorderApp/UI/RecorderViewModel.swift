@@ -75,6 +75,9 @@ final class RecorderViewModel {
     var folderRecordTarget: ProjectFolderRecordTarget?
     var folderExportStatus: String?
     var folderMoveUndo: ProjectFolderMoveUndo?
+    var folderPrompt: ProjectFolderPrompt?
+    var folderNameDraft = ""
+    var expandedFolderIDs: Set<String> = []
     var exportFollowUp: EditorExportFollowUp?
 
     var canShowProjects: Bool {
@@ -96,6 +99,7 @@ final class RecorderViewModel {
     var captureStopProgress: CaptureStopProgress?
     var finishingStartedAt: Date?
     var unavailableScreenSource: ScreenSourceBinding?
+    @ObservationIgnored var screenSourceAvailabilityTracker = ScreenSourceAvailabilityTracker()
     var suggestedScreenSource: ScreenSourceBinding?
     var followsActiveWindow = FollowActiveWindowPreference().isEnabled {
         didSet {
@@ -165,21 +169,27 @@ final class RecorderViewModel {
 
     var canUndoEditor: Bool {
         _ = editorHistoryRevision
+        if studioMode == .projects && !isShowingSettings { return transcriptUndoManager.canUndo }
         return studioMode == .edit && !isShowingSettings && editorHistory.canUndo
     }
 
     var canRedoEditor: Bool {
         _ = editorHistoryRevision
+        if studioMode == .projects && !isShowingSettings { return transcriptUndoManager.canRedo }
         return studioMode == .edit && !isShowingSettings && editorHistory.canRedo
     }
 
     var editorUndoTitle: String {
-        editorHistory.undoTitle
+        if studioMode == .projects { return transcriptUndoManager.undoMenuItemTitle }
+        return editorHistory.undoTitle
     }
 
     var editorRedoTitle: String {
-        editorHistory.redoTitle
+        if studioMode == .projects { return transcriptUndoManager.redoMenuItemTitle }
+        return editorHistory.redoTitle
     }
+
+    @ObservationIgnored let transcriptUndoManager = UndoManager()
 
     var selectedLayer: SceneLayerKind {
         inspectorSelection.sceneLayer ?? previewStage.selectedLayer
@@ -349,11 +359,11 @@ final class RecorderViewModel {
             guard let self, self.canApplyCanvasEdit else { return }
             self.finishSceneLayerResize(layer)
         }
-        previewStage.onCameraCropChanged = { [weak self] amount, position in
+        previewStage.onCameraCropChanged = { [weak self] crop in
             guard let self, self.canApplyCanvasEdit else { return }
-            self.coordinator.setCameraCropAmount(amount)
-            self.coordinator.setCameraCropPosition(position)
+            self.coordinator.setCameraCrop(crop)
             self.settings = self.coordinator.settings
+            self.previewStage.cameraContentMode = self.coordinator.settings.cameraContentMode
             self.previewStage.cameraCropAmount = self.coordinator.settings.cameraCropAmount
             self.previewStage.cameraCropPosition = self.coordinator.settings.cameraCropPosition
         }

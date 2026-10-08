@@ -115,7 +115,7 @@ final class PreviewStageView: NSView {
     var onCropToolbarFrameChanged: ((CGRect?) -> Void)?
     var onScreenLayerFrameChanged: ((CGRect?) -> Void)?
     var onCanvasFrameChanged: ((CGRect) -> Void)?
-    var onCameraCropChanged: ((CGPoint, CGPoint) -> Void)?
+    var onCameraCropChanged: ((CameraCropControl) -> Void)?
     var onScreenCropChanged: ((CGRect?) -> Void)?
     var onScreenCropPanRequested: (() -> Void)?
     var renderedCanvasAspectRatio: CGFloat {

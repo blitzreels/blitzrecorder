@@ -42,7 +42,7 @@ final class TranscriptTitleGeneratorTests: XCTestCase {
             from: "Today we are building a responsive project library for large displays."
         )
 
-        XCTAssertEqual(title, "Building responsive project library large displays")
+        XCTAssertEqual(title, "Building a responsive project library for large displays")
     }
 
     func testFallbackTitleUsesRecurringTopicAcrossWholeCall() {
@@ -51,6 +51,17 @@ final class TranscriptTitleGeneratorTests: XCTestCase {
 
         let title = TitleGenerator.fallbackTitle(from: transcript)
 
-        XCTAssertEqual(title, "Discussed retention onboarding activation welcome everyone")
+        XCTAssertEqual(title, "Retention onboarding activation")
+    }
+
+    func testFallbackExcludesSpeakerLabelsAndPreservesProductSpelling() {
+        let title = TitleGenerator.fallbackTitle(from:
+            "[00:00] Alice: Hello everyone.\n\n[00:10] Alice: Connecting BlitzReels to the Instagram API.")
+        XCTAssertEqual(title, "Connecting BlitzReels to the Instagram API")
+    }
+
+    func testFrenchTitlePrefixIsRemoved() {
+        XCTAssertEqual(TitleGenerator.sanitizeGeneratedTitle("Titre : Connecter BlitzReels à Instagram"),
+                       "Connecter BlitzReels à Instagram")
     }
 }

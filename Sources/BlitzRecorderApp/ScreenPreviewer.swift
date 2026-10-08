@@ -51,8 +51,10 @@ final class ScreenPreviewer: NSObject, SCStreamOutput, SCStreamDelegate, @unchec
                 configuration.sourceRect = sourceRect
             }
         } else {
-            let content = try await SCShareableContent.current
-            let source = try ScreenCaptureGeometry.screenSource(for: settings, content: content)
+            let source = try await ScreenSourceLookup.resolve {
+                let content = try await SCShareableContent.current
+                return try ScreenCaptureGeometry.screenSource(for: settings, content: content)
+            }
             filter = source.filter
             resolvedBinding = source.binding
             let screenSourceGeometry = source.geometry

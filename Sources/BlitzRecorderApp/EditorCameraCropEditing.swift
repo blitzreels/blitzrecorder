@@ -136,6 +136,12 @@ enum EditorCameraCropSession {
         let eventIndex: Int
         let amount: CGPoint
         let position: CGPoint
+
+        func apply(to scene: inout RecordingScene) {
+            scene.cameraCropAmount = amount
+            scene.cameraCropPosition = position
+            scene.cameraContentMode = .fill
+        }
     }
 
     static func commit(_ draft: EditorCameraCropDraft) -> Commit {

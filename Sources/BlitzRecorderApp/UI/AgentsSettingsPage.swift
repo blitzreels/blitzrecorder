@@ -3,7 +3,6 @@ import SwiftUI
 
 struct AgentsSettingsPage: View {
     @Bindable var mcpServer: BlitzRecorderMCPServer
-    @State private var copiedValue: String?
 
     var body: some View {
         ScrollView {
@@ -195,10 +194,7 @@ struct AgentsSettingsPage: View {
             Text(value)
                 .font(BlitzType.captionEmphasis.monospaced())
                 .textSelection(.enabled)
-            Button(copiedValue == value ? "Copied" : "Copy") {
-                copy(value)
-            }
-            .blitzButton(.secondary)
+            copyButton(value)
         }
     }
 
@@ -213,24 +209,20 @@ struct AgentsSettingsPage: View {
             }
             .background(.black.opacity(0.28), in: .rect(cornerRadius: BlitzUI.controlRadius))
 
-            Button(copiedValue == value ? "Copied" : "Copy") {
-                copy(value)
-            }
-            .blitzButton(.secondary)
-            .padding(.top, 5)
+            copyButton(value)
+                .padding(.top, 5)
         }
     }
 
-    private func copy(_ value: String) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        guard pasteboard.setString(value, forType: .string) else { return }
-        copiedValue = value
-        Task {
-            try? await Task.sleep(for: .seconds(2))
-            guard copiedValue == value else { return }
-            copiedValue = nil
-        }
+    private func copyButton(_ value: String) -> some View {
+        BlitzCopyButton(configuration: .init(
+            text: value,
+            title: "Copy",
+            accessibilityLabel: "Copy",
+            help: "Copy to the clipboard",
+            emphasis: .secondary,
+            width: .fit
+        ))
     }
 }
 

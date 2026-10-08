@@ -26,6 +26,7 @@ struct ProjectLibraryNavigationState: Equatable {
         case shared = "Shared"
     }
     var section: Section = .recordings
+    var folderScope: ProjectFolderScope?
     var selectedProjectIDs: Set<UUID> = []
     var searchText = ""
     var filters = ProjectLibraryFilters()
@@ -63,13 +64,8 @@ struct ProjectLibraryNavigationState: Equatable {
 struct ProjectLibraryView: View {
     @Bindable var vm: RecorderViewModel
     @Bindable var sharing = HostedVideoShareController.shared
-    let folderStore = ProjectFolderStore.shared
-    @State var collapsedFolderIDs: Set<String> = []
     @State var dropTargetID: String?
-    @State var folderPrompt: ProjectFolderPrompt?
-    @State var folderNameDraft = ""
     @State var openingProjectID: UUID?
-    @State var showsProjectMenu = false
     @State private var projectsPendingDeletion: [RecordingProjectHistory.Entry] = []
     @State private var projectPendingRename: RecordingProjectHistory.Entry?
     @State var titleGenerationProjectID: UUID?
@@ -97,7 +93,7 @@ struct ProjectLibraryView: View {
     var body: some View {
         VStack(spacing: 0) {
             commandBar
-                .blitzWindowToolbar(showsUpdate: false)
+                .blitzWindowToolbar()
             ZStack {
                 VStack(spacing: 0) {
                     trashStatusBar
@@ -152,13 +148,15 @@ struct ProjectLibraryView: View {
         .task(id: mediaTaskID) {
             await loadSelectedMediaAssets()
         }
+        .onReceive(NotificationCenter.default.publisher(for: TranscriptSpeakerUndo.didChange)) { _ in
+            Task { await loadSelectedTranscript() }
+        }
         .onChange(of: filteredProjects.map(\.id)) {
             if !vm.projectTrash.isWorking { selectFirstProjectIfNeeded() }
         }
         .onChange(of: vm.projectLibraryNavigation.section) {
             if vm.projectLibraryNavigation.section == .shared {
                 isSearchFocused = false
-                showsProjectMenu = false
                 showsFilters = false
                 projectPlayback.teardown()
             }
@@ -181,7 +179,7 @@ struct ProjectLibraryView: View {
         .sheet(isPresented: renameConfirmationBinding) {
             if let project = projectPendingRename {
                 ProjectRecordingRenameEditor(.init(
-                    project: project, index: folderIndex, library: vm.recentProjects,
+                    project: project, index: vm.folderIndex, library: vm.recentProjects,
                     onSave: { title in
                         vm.moveProjects(.init(titles: [project.id: title], message: "Renamed recording", folderRename: nil))
                         projectPendingRename = nil
@@ -189,13 +187,6 @@ struct ProjectLibraryView: View {
                     onCancel: { projectPendingRename = nil }
                 ))
             }
-        }
-        .sheet(item: $folderPrompt) { prompt in
-            ProjectFolderNameEditor(
-                prompt: prompt, name: $folderNameDraft,
-                affectedCount: folderPromptAffectedCount(prompt),
-                onSave: { commitFolderPrompt(prompt) }, onCancel: { folderPrompt = nil }
-            )
         }
         .alert("Project action failed", isPresented: projectErrorBinding) {
             Button("OK") {
@@ -206,47 +197,25 @@ struct ProjectLibraryView: View {
         }
     }
 
+    private var commandBarTitle: String {
+        if vm.projectLibraryNavigation.section == .shared { return ProjectLibraryNavigationState.Section.shared.rawValue }
+        return vm.projectLibraryNavigation.folderScope?.title ?? ProjectLibraryNavigationState.Section.recordings.rawValue
+    }
+
     private var commandBar: some View {
         HStack(spacing: 12) {
-            Text("Projects")
+            Text(commandBarTitle)
                 .font(BlitzType.section)
                 .foregroundStyle(BlitzUI.primaryText)
-            BlitzSegmentedPicker(configuration: .init(
-                title: "Project library", options: ProjectLibraryNavigationState.Section.allCases,
-                selection: $vm.projectLibraryNavigation.section, label: { $0.rawValue }
-            ))
-            .fixedSize()
+                .lineLimit(1)
 
             Spacer(minLength: 16)
-
-            AppUpdateToolbarButton()
 
             Button("Import video…", systemImage: "square.and.arrow.down", action: vm.chooseVideoToImport)
                 .blitzButton(.secondary)
                 .disabled(vm.videoImportProgress != nil || vm.projectTrash.isWorking)
                 .keyboardShortcut("i", modifiers: .command)
                 .help("Create an editable project from an MP4, MOV, or M4V video (⌘I)")
-
-            Button(action: vm.showRecorder) {
-                HStack(spacing: 8) {
-                    if vm.state == .idle {
-                        Image(systemName: "plus")
-                    } else {
-                        Image(systemName: "record.circle.fill").foregroundStyle(BlitzUI.recordRed)
-                    }
-                    Text(vm.state == .idle ? "New recording" : "Return to recording")
-                    Text("⌘N")
-                        .font(BlitzType.caption)
-                        .foregroundStyle(BlitzUI.secondaryText)
-                        .accessibilityHidden(true)
-                }
-            }
-            .blitzButton(.secondary)
-            .disabled(vm.projectTrash.isWorking)
-            .keyboardShortcut("n", modifiers: .command)
-            .help("Set up a new recording (⌘N)")
-            .accessibilityLabel(vm.state == .idle ? "New recording" : "Return to recording")
-            .pointingHandCursor(enabled: !vm.projectTrash.isWorking)
         }
     }
 
@@ -325,9 +294,12 @@ struct ProjectLibraryView: View {
 
     var filteredProjects: [RecordingProjectHistory.Entry] {
         let titleMatches = Set(vm.filteredLibraryProjects.map(\.id))
+        let scope = vm.projectLibraryNavigation.folderScope
+        let index = vm.folderIndex
         return vm.projectLibraryNavigation.filters.apply(.init(
             projects: vm.recentProjects.filter { entry in
-                titleMatches.contains(entry.id) || transcriptMatches[entry.id] != nil
+                (titleMatches.contains(entry.id) || transcriptMatches[entry.id] != nil)
+                    && scope.map { $0.contains(index.resolved(entry)) } != false
             }, metadata: metadataByProjectID,
             transcriptReadyIDs: Set(vm.recentProjects.compactMap { project in
                 if case .ready = vm.transcriptionController.status(for: project) { return project.id }

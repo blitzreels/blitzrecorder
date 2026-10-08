@@ -35,10 +35,12 @@ struct EditorInspectorPane<Content: View, Footer: View>: View {
                     configuration.content()
                 }
                 .padding(.horizontal, EditorInspectorMetrics.horizontalPadding)
-                .padding(.vertical, EditorInspectorMetrics.verticalPadding)
+                .padding(.top, EditorInspectorMetrics.verticalPadding)
+                .padding(.bottom, EditorInspectorMetrics.verticalPadding + BlitzScrollFade.height)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollIndicators(.never)
+            .blitzScrollFade(edges: configuration.showsFooter ? .bottom : [])
             if configuration.showsFooter {
                 VStack(alignment: .leading, spacing: 10) {
                     configuration.footer()
@@ -77,5 +79,27 @@ struct EditorInspectorSection<Content: View>: View {
             configuration.content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+enum BlitzScrollFade {
+    static let height: CGFloat = 28
+}
+
+extension View {
+    func blitzScrollFade(edges: VerticalEdge.Set) -> some View {
+        mask {
+            VStack(spacing: 0) {
+                if edges.contains(.top) {
+                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                        .frame(height: BlitzScrollFade.height)
+                }
+                Color.black
+                if edges.contains(.bottom) {
+                    LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                        .frame(height: BlitzScrollFade.height)
+                }
+            }
+        }
     }
 }

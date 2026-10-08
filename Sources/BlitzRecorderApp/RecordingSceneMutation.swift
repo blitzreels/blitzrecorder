@@ -23,6 +23,9 @@ enum RecordingSceneMutation {
         )
         settings.enabledSources.insert(.screen)
         settings.enabledSources.insert(.camera)
+        if preset.requiredVideoSources.contains(.camera) {
+            settings.cameraContentMode = .fill
+        }
         switch preset {
         case .webcamFullscreen:
             settings.hiddenSources.remove(.camera)
@@ -73,6 +76,7 @@ enum RecordingSceneMutation {
     ) -> RecordingSettings {
         var settings = settings
         settings.selectedScenePreset = .screenTop50
+        settings.cameraContentMode = .fill
         settings.sceneLayout = SceneLayout.screenSplitLayout(
             screenHeight: height,
             screenAspectRatio: screenAspectRatio

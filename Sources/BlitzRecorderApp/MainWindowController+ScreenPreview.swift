@@ -68,7 +68,7 @@ extension MainWindowController {
 
     func startScreenPreview() {
         guard !LocalDevelopmentRuntime.disablesIdleCapture() else { return }
-        guard idlePreviewIsAllowed else { return }
+        guard coordinator.state == .idle, idlePreviewIsAllowed else { return }
         if coordinator.settings.hiddenSources.contains(.screen) {
             cancelScreenPreviewWatchdog()
             refreshPermissionGate()
@@ -112,7 +112,8 @@ extension MainWindowController {
             guard let self else { return }
             do {
                 try await coordinator.startScreenPreview { [weak self] frame in
-                    guard let self, self.screenPreviewStartRevision == previewStartRevision else { return }
+                    guard let self, self.coordinator.state == .idle,
+                          self.screenPreviewStartRevision == previewStartRevision else { return }
                     self.screenPreviewRecoveryAttempts = 0
                     self.cancelScreenPreviewWatchdog()
                     self.previewStage.applyLiveFrameAspectRatio(frame.sourceAspectRatio)

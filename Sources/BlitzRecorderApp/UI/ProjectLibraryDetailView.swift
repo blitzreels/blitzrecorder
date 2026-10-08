@@ -107,9 +107,16 @@ extension ProjectLibraryView {
         let status = vm.transcriptionController.status(for: project)
         let recordedAt = project.recordedAt
         let metadata = metadataByProjectID[project.id] ?? .empty
+        let presentation = ProjectTitlePresentation(.init(title: displayTitle(project), known: vm.folderIndex.known))
         return HStack(alignment: .center, spacing: 20) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(displayTitle(project))
+                if let context = presentation.context {
+                    Text(context)
+                        .font(BlitzType.captionEmphasis)
+                        .foregroundStyle(BlitzUI.secondaryText)
+                        .lineLimit(1)
+                }
+                Text(presentation.title)
                     .font(BlitzType.largeTitle)
                     .foregroundStyle(BlitzUI.primaryText)
                     .lineLimit(2)
@@ -160,21 +167,14 @@ extension ProjectLibraryView {
                 sources: metadataByProjectID[project.id]?.sourceRoles.sorted() ?? []
             ))
 
-            Button {
-                showsProjectMenu.toggle()
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(BlitzType.glyph(14))
-            }
-            .blitzButton(.dock)
-            .accessibilityLabel("More actions")
-            .help("Rename, show in Finder, or move to Trash")
-            .popover(isPresented: $showsProjectMenu, arrowEdge: .bottom) {
-                BlitzMenuList(entries: projectMenuEntries(project), width: 220, maxHeight: 360) {
-                    showsProjectMenu = false
-                }
-                .preferredColorScheme(.dark)
-            }
+            BlitzOverflowMenu(configuration: .init(
+                entries: projectMenuEntries(project),
+                menuWidth: 220,
+                placement: .dock,
+                isBusy: false,
+                accessibilityLabel: "More actions",
+                help: "Rename, show in Finder, or move to Trash"
+            ))
 
             EditRecordingButton(configuration: .init(
                 title: "Edit recording",
@@ -202,8 +202,7 @@ extension ProjectLibraryView {
         ]
         if let url = sharing.sharedURL(forProject: project.projectPath) {
             entries.append(.item(.init(title: "Copy watch link", systemImage: "doc.on.doc.fill", action: {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                BlitzClipboard.copyInBackground(url.absoluteString)
             })))
         }
         entries += [

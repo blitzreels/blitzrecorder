@@ -5,9 +5,9 @@ extension EditorTimelineView {
         Group {
             if headerWidth >= Self.singleRowHeaderWidth {
                 HStack(spacing: 16) {
-                    editActions
+                    editActions(compact: false)
                     Spacer(minLength: 0)
-                    listeningAndZoomControls
+                    listeningAndZoomControls(compact: false)
                         .frame(maxWidth: max(0, (headerWidth - transportWidth) / 2 - 48), alignment: .trailing)
                 }
                 .overlay {
@@ -15,12 +15,21 @@ extension EditorTimelineView {
                         .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { transportWidth = $0 }
                 }
                 .blitzWorkspaceToolbar()
+            } else if headerWidth >= Self.compactRowHeaderWidth {
+                HStack(spacing: 12) {
+                    editActions(compact: true)
+                    Spacer(minLength: 0)
+                    playbackControls.fixedSize()
+                    Spacer(minLength: 0)
+                    listeningAndZoomControls(compact: true).fixedSize()
+                }
+                .blitzWorkspaceToolbar()
             } else {
                 VStack(spacing: 0) {
                     HStack {
-                        editActions
+                        editActions(compact: true)
                         Spacer(minLength: 0)
-                        listeningAndZoomControls.fixedSize()
+                        listeningAndZoomControls(compact: true).fixedSize()
                     }
                     .blitzWorkspaceToolbar()
                     playbackControls
@@ -33,8 +42,9 @@ extension EditorTimelineView {
     }
 
     private static let singleRowHeaderWidth: CGFloat = 1_120
+    private static let compactRowHeaderWidth: CGFloat = 840
 
-    private var editActions: some View {
+    private func editActions(compact: Bool) -> some View {
         HStack(spacing: 6) {
             Button(action: onSplit) { Label("Split", systemImage: "scissors") }
                 .blitzButton(.secondary)
@@ -51,7 +61,7 @@ extension EditorTimelineView {
             BlitzGlassMenu(entries: selectionEntries, menuWidth: 280) {
                 HStack(spacing: 6) {
                     Image(systemName: "selection.pin.in.out").font(BlitzType.glyph(12))
-                    Text("Range").font(BlitzType.label)
+                    if !compact { Text("Range").font(BlitzType.label) }
                     BlitzMenuChevron()
                 }
                 .foregroundStyle(BlitzUI.primaryText)
@@ -61,6 +71,7 @@ extension EditorTimelineView {
             .accessibilityLabel("Range actions")
             .help("Mark, restore, or classify a time range")
         }
+        .labelStyle(EditorHeaderLabelStyle(compact: compact))
         .controlSize(.small)
         .fixedSize(horizontal: true, vertical: false)
     }
@@ -163,11 +174,11 @@ extension EditorTimelineView {
         .fixedSize()
     }
 
-    private var listeningAndZoomControls: some View {
-        HStack(spacing: 12) {
+    private func listeningAndZoomControls(compact: Bool) -> some View {
+        HStack(spacing: compact ? 8 : 12) {
             BlitzPlaybackVolumeControl(configuration: .init(
                 volume: Binding(get: { playback.playbackVolume }, set: { playback.setPlaybackVolume($0) }),
-                sliderWidth: 64...140, onToggleMute: { playback.togglePlaybackMute() }
+                sliderWidth: compact ? 56...56 : 64...140, onToggleMute: { playback.togglePlaybackMute() }
             ))
             .disabled(!isInteractive || playback.muteableSources.isEmpty)
             Rectangle().fill(BlitzUI.separator).frame(width: 1, height: 18).accessibilityHidden(true)
@@ -179,13 +190,14 @@ extension EditorTimelineView {
                 )
                     .controlSize(.small)
                     .tint(BlitzUI.mint)
-                    .frame(minWidth: 88, idealWidth: 88, maxWidth: 200)
+                    .frame(minWidth: compact ? 64 : 88, idealWidth: compact ? 64 : 88, maxWidth: compact ? 64 : 200)
                     .accessibilityLabel("Timeline zoom")
                     .accessibilityValue(String(format: "%.2f×", zoomLevel))
                     .help("Timeline zoom (⌘− / ⌘+). Fit with F.")
                 zoomButton(.init(symbol: "plus.magnifyingglass", title: "Zoom in", help: "Zoom in (⌘+)", factor: 1.5))
             }
             Button { zoomLevel = 1 } label: { Label("Fit", systemImage: "arrow.left.and.right") }
+                .labelStyle(EditorHeaderLabelStyle(compact: compact))
                 .blitzButton(.secondary)
                 .controlSize(.small)
                 .disabled(zoomLevel == 1)
@@ -197,6 +209,7 @@ extension EditorTimelineView {
                 .controlSize(.small)
                 .accessibilityLabel("Keyboard shortcuts")
                 .help("Keyboard shortcuts (?)")
+                .popover(isPresented: $showsShortcuts, arrowEdge: .bottom) { EditorShortcutHelp() }
         }
     }
 
@@ -230,5 +243,17 @@ extension EditorTimelineView {
         let value = time.isFinite ? min(projection.duration, max(0, time)) : 0
         let label = MediaTimecode.label(.init(time: value, duration: projection.duration))
         return label + String(format: ".%02d", Int((value * 100).rounded(.down)) % 100)
+    }
+}
+
+struct EditorHeaderLabelStyle: LabelStyle {
+    let compact: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        if compact {
+            IconOnlyLabelStyle().makeBody(configuration: configuration)
+        } else {
+            TitleAndIconLabelStyle().makeBody(configuration: configuration)
+        }
     }
 }

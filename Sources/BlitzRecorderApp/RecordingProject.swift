@@ -5,6 +5,7 @@ struct SourceTakeManifest: Codable, Equatable {
     struct SourceFile: Codable, Equatable {
         let role: String
         let path: String
+        var bookmarkData: Data? = nil
     }
 
     let version: Int
@@ -21,8 +22,14 @@ struct SourceTakeManifest: Codable, Equatable {
 struct RecordingProject: Codable, Equatable {
     struct SourceFile: Codable, Equatable {
         let role: String
-        let path: String
-        let exists: Bool
+        var path: String
+        var exists: Bool
+        var bookmarkData: Data? = nil
+        var resourceAccess: RecordingSourceAccess? = nil
+
+        enum CodingKeys: String, CodingKey {
+            case role, path, exists, bookmarkData
+        }
     }
 
     struct SettingsSnapshot: Codable, Equatable {

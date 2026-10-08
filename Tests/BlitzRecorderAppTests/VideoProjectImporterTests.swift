@@ -38,6 +38,8 @@ final class VideoProjectImporterTests: XCTestCase {
         XCTAssertEqual(project.settings.outputResolution, OutputResolution.p2160.rawValue)
         XCTAssertEqual(project.settings.framesPerSecond, 60)
         let imported = try XCTUnwrap(project.sources.first { $0.role == "camera" })
+        XCTAssertEqual(URL(fileURLWithPath: imported.path).resolvingSymlinksInPath(), source.resolvingSymlinksInPath())
+        XCTAssertNotNil(imported.bookmarkData)
         XCTAssertEqual(try Data(contentsOf: source), try Data(contentsOf: URL(fileURLWithPath: imported.path)))
         let metadata = try XCTUnwrap(VideoProjectImporter.Metadata.load(for: project))
         XCTAssertEqual(metadata.width, 3840)
@@ -89,7 +91,10 @@ final class VideoProjectImporterTests: XCTestCase {
         let camera = try XCTUnwrap(project.sources.first { $0.role == "camera" })
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: camera.path)), original)
         XCTAssertEqual(try Data(contentsOf: source), original)
-        XCTAssertNotEqual(camera.path, source.path)
+        XCTAssertEqual(URL(fileURLWithPath: camera.path).resolvingSymlinksInPath(), source.resolvingSymlinksInPath())
+        XCTAssertNotNil(camera.bookmarkData)
+        let projectFiles = try FileManager.default.contentsOfDirectory(atPath: project.takeDirectoryPath)
+        XCTAssertFalse(projectFiles.contains { ["mp4", "mov", "m4v"].contains(URL(fileURLWithPath: $0).pathExtension) })
         let audio = try XCTUnwrap(project.sources.first { $0.role == "microphone" })
         let audioTracks = try await AVURLAsset(url: URL(fileURLWithPath: audio.path)).loadTracks(withMediaType: .audio)
         XCTAssertEqual(audioTracks.count, 1)
@@ -99,7 +104,10 @@ final class VideoProjectImporterTests: XCTestCase {
         XCTAssertEqual(metadata.duration, 2, accuracy: 0.05)
         XCTAssertEqual(metadata.framesPerSecond, 30, accuracy: 0.1)
         XCTAssertTrue(store.loadProjectHistory(settings: fixture.settings).entries.contains { $0.id == project.id })
-        try FileManager.default.removeItem(at: source)
+        let entry = try XCTUnwrap(store.loadProjectHistory(settings: fixture.settings).entries.first { $0.id == project.id })
+        let libraryMetadata = await ProjectLibraryMetadataLoader.load(.init(entry: entry, generatesThumbnails: false))
+        let audioSize = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: audio.path)[.size] as? NSNumber)
+        XCTAssertEqual(libraryMetadata.sizeBytes, audioSize.int64Value)
         let reopened = try store.loadRecordingProject(at: URL(fileURLWithPath: project.projectPath))
         XCTAssertEqual(reopened, project)
         let prepared = try await TranscriptionAudioPreparer().prepare(.project(URL(fileURLWithPath: project.projectPath)))
@@ -127,6 +135,12 @@ final class VideoProjectImporterTests: XCTestCase {
         let exportedAudio = try await exportedAsset.loadTracks(withMediaType: .audio)
         XCTAssertEqual(exportedDuration.seconds, 1.5, accuracy: 0.05)
         XCTAssertEqual(exportedAudio.count, 1)
+        try store.writeRecordingProject(for: take, settings: settings,
+            sceneEvents: store.sceneEvents(from: reopened), finalVideoURL: exported)
+        let exportedProject = try store.loadRecordingProject(at: URL(fileURLWithPath: project.projectPath))
+        XCTAssertEqual(exportedProject.sources.first { $0.role == "camera" }.map { URL(fileURLWithPath: $0.path).resolvingSymlinksInPath() }, source.resolvingSymlinksInPath())
+        XCTAssertNotNil(exportedProject.sources.first { $0.role == "camera" }?.bookmarkData)
+        XCTAssertEqual(try Data(contentsOf: source), original)
     }
 
     func testPortraitTransformAndSilentVideoSurviveImportAndExport() async throws {
@@ -176,7 +190,7 @@ final class VideoProjectImporterTests: XCTestCase {
         let source = try await makeMovie(.init(fixture: fixture, portrait: false, audio: false))
         let task = Task {
             try await VideoProjectImporter().importVideo(.init(url: source, settings: fixture.settings, onProgress: { progress in
-                if progress.stage == "Copying video" { withUnsafeCurrentTask { $0?.cancel() } }
+                if progress.stage == "Creating project" { withUnsafeCurrentTask { $0?.cancel() } }
             }))
         }
         do {
@@ -196,6 +210,97 @@ final class VideoProjectImporterTests: XCTestCase {
         XCTAssertNotEqual(first.id, second.id)
         XCTAssertNotEqual(first.takeDirectoryPath, second.takeDirectoryPath)
         XCTAssertEqual(first.title, second.title)
+        XCTAssertEqual(first.sources.first { $0.role == "camera" }.map { URL(fileURLWithPath: $0.path).resolvingSymlinksInPath() }, source.resolvingSymlinksInPath())
+        XCTAssertEqual(second.sources.first { $0.role == "camera" }.map { URL(fileURLWithPath: $0.path).resolvingSymlinksInPath() }, source.resolvingSymlinksInPath())
+    }
+
+    func testBookmarkFollowsMovedOriginalAfterReopening() async throws {
+        let fixture = try SyntheticRecording()
+        let source = try await makeMovie(.init(fixture: fixture, portrait: false, audio: false))
+        let project = try await VideoProjectImporter().importVideo(.init(url: source, settings: fixture.settings, onProgress: { _ in }))
+        let moved = fixture.root.appendingPathComponent("Renamed original.mp4")
+        try FileManager.default.moveItem(at: source, to: moved)
+        let reopened = try TakeFileStore().loadRecordingProject(at: URL(fileURLWithPath: project.projectPath))
+        let camera = try XCTUnwrap(reopened.sources.first { $0.role == "camera" })
+        XCTAssertEqual(URL(fileURLWithPath: camera.path).resolvingSymlinksInPath(), moved.resolvingSymlinksInPath())
+        XCTAssertTrue(camera.exists)
+        XCTAssertNotNil(camera.resourceAccess)
+        XCTAssertNotNil(camera.bookmarkData)
+        let store = TakeFileStore()
+        let settings = store.recordingSettings(from: reopened, baseSettings: fixture.settings, outputFormat: .mp4)
+        let take = store.recordingTake(from: reopened, settings: settings, outputFormat: .mp4)
+        let playback = try await Merger.editorPlaybackComposition(take: take, settings: settings,
+            sceneEvents: store.sceneEvents(from: reopened))
+        XCTAssertEqual(playback.duration.seconds, 2, accuracy: 0.05)
+        XCTAssertEqual(playback.sourceReferences.first.map { URL(fileURLWithPath: $0.path).resolvingSymlinksInPath() }, moved.resolvingSymlinksInPath())
+    }
+
+    func testMissingOriginalReportsAnErrorAndKeepsTranscriptionAudio() async throws {
+        let fixture = try SyntheticRecording()
+        let source = try await makeMovie(.init(fixture: fixture, portrait: false, audio: true))
+        let project = try await VideoProjectImporter().importVideo(.init(url: source, settings: fixture.settings, onProgress: { _ in }))
+        try FileManager.default.removeItem(at: source)
+        let store = TakeFileStore()
+        let reopened = try store.loadRecordingProject(at: URL(fileURLWithPath: project.projectPath))
+        XCTAssertFalse(try XCTUnwrap(reopened.sources.first { $0.role == "camera" }).exists)
+        let prepared = try await TranscriptionAudioPreparer().prepare(.project(URL(fileURLWithPath: project.projectPath)))
+        defer { for track in prepared.tracks { try? FileManager.default.removeItem(at: track.audioURL) } }
+        XCTAssertEqual(prepared.tracks.count, 1)
+        let settings = store.recordingSettings(from: reopened, baseSettings: fixture.settings, outputFormat: .mp4)
+        let take = store.recordingTake(from: reopened, settings: settings, outputFormat: .mp4)
+        do {
+            _ = try await Merger.editorPlaybackComposition(take: take, settings: settings,
+                sceneEvents: store.sceneEvents(from: reopened))
+            XCTFail("A missing linked video must not play an audio-only timeline")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("original video"))
+        }
+        do {
+            _ = try await Merger.exportFinalVideo(take: take, settings: settings)
+            XCTFail("A missing linked video must not export")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("original video"))
+        }
+    }
+
+    func testDeletingImportedProjectLeavesOriginalVideoUntouched() async throws {
+        let fixture = try SyntheticRecording()
+        let source = try await makeMovie(.init(fixture: fixture, portrait: false, audio: true))
+        let original = try Data(contentsOf: source)
+        let project = try await VideoProjectImporter().importVideo(.init(url: source, settings: fixture.settings, onProgress: { _ in }))
+        let store = TakeFileStore()
+        let entry = try XCTUnwrap(store.loadProjectHistory(settings: fixture.settings).entries.first { $0.id == project.id })
+        _ = try store.deleteProject(.init(project: entry, settings: fixture.settings, disposition: .permanent))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: project.takeDirectoryPath))
+        XCTAssertEqual(try Data(contentsOf: source), original)
+    }
+
+    func testExportCannotOverwriteLinkedOriginal() async throws {
+        let fixture = try SyntheticRecording()
+        let source = try await makeMovie(.init(fixture: fixture, portrait: false, audio: true))
+        let original = try Data(contentsOf: source)
+        let project = try await VideoProjectImporter().importVideo(.init(url: source, settings: fixture.settings, onProgress: { _ in }))
+        let store = TakeFileStore()
+        let settings = store.recordingSettings(from: project, baseSettings: fixture.settings, outputFormat: .mp4)
+        let take = store.recordingTake(from: project, settings: settings, outputFormat: .mp4)
+        do {
+            _ = try await Merger.exportFinalVideo(.init(take: take, settings: settings,
+                sceneEvents: store.sceneEvents(from: project), backgroundMusic: nil, destinationURL: source,
+                progressHandler: nil, timelineEdits: .empty))
+            XCTFail("Export must preserve the linked original")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("original video intact"))
+        }
+        XCTAssertEqual(try Data(contentsOf: source), original)
+    }
+
+    func testLegacySourceWithoutBookmarkStillDecodes() throws {
+        let data = Data(#"{"role":"camera","path":"/legacy/video.mov","exists":true}"#.utf8)
+        let source = try JSONDecoder().decode(RecordingProject.SourceFile.self, from: data)
+        XCTAssertEqual(source.path, "/legacy/video.mov")
+        XCTAssertTrue(source.exists)
+        XCTAssertNil(source.bookmarkData)
+        XCTAssertNil(source.resourceAccess)
     }
 
     private struct MovieRequest {

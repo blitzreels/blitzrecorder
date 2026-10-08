@@ -68,7 +68,7 @@ extension RecordingTranscriptAssembler {
     static func voiceClusterLabels(_ intervals: [DiarizedInterval]) -> [String: String] {
         var clusters: [VoiceCluster] = []
         var byID: [String: Int] = [:]
-        for interval in intervals where !interval.embedding.isEmpty {
+        for interval in intervals where !interval.embedding.isEmpty && interval.embedding.allSatisfy(\.isFinite) {
             let weight = max(interval.endTime - interval.startTime, 0.001)
             let weighted = interval.embedding.map { $0 * Float(weight) }
             if let index = byID[interval.speakerID] {
@@ -80,7 +80,7 @@ extension RecordingTranscriptAssembler {
             }
         }
         mergeClosestClusters(&clusters)
-        attachMinorClusters(&clusters)
+        clusters = attachingMinorClusters(.init(clusters: clusters, intervals: intervals))
         var labels: [String: String] = [:]
         for cluster in clusters {
             for member in cluster.members.keys { labels[member] = cluster.label }
@@ -103,7 +103,13 @@ extension RecordingTranscriptAssembler {
         }
     }
 
-    private static func attachMinorClusters(_ clusters: inout [VoiceCluster]) {
+    private struct MinorClusterRequest {
+        let clusters: [VoiceCluster]
+        let intervals: [DiarizedInterval]
+    }
+
+    private static func attachingMinorClusters(_ request: MinorClusterRequest) -> [VoiceCluster] {
+        let clusters = request.clusters
         let largest = clusters.map(\.duration).max() ?? 0
         let isMinor = { (cluster: VoiceCluster) in cluster.duration < largest * speakerFixMinorClusterShare }
         let minors = clusters.filter(isMinor).sorted { $0.duration < $1.duration }
@@ -113,13 +119,28 @@ extension RecordingTranscriptAssembler {
             let nearest = majors.indices.min {
                 cosineDistance(minor.sum, majors[$0].sum) < cosineDistance(minor.sum, majors[$1].sum)
             }
-            if let nearest, cosineDistance(minor.sum, majors[nearest].sum) <= speakerFixAttachCosineDistance {
+            let isCrossTrack = nearest.map { index in
+                isMicrophoneSpeaker(minor.label) != isMicrophoneSpeaker(majors[index].label)
+            } ?? false
+            let overlapsOtherTrack = nearest.map { index in
+                let minorIntervals = request.intervals.filter { minor.members[$0.speakerID] != nil }
+                let majorIntervals = request.intervals.filter { majors[index].members[$0.speakerID] != nil }
+                let overlap = minorIntervals.reduce(0.0) { total, interval in
+                    total + majorIntervals.reduce(0.0) { subtotal, major in
+                        subtotal + max(0, min(interval.endTime, major.endTime) - max(interval.startTime, major.startTime))
+                    }
+                }
+                return overlap >= minor.duration * 0.5
+            } ?? false
+            let threshold = isCrossTrack && overlapsOtherTrack
+                ? speakerFixAttachCosineDistance : speakerFixMergeCosineDistance
+            if let nearest, cosineDistance(minor.sum, majors[nearest].sum) <= threshold {
                 majors[nearest].absorb(minor)
             } else {
                 remaining.append(minor)
             }
         }
-        clusters = majors + remaining
+        return majors + remaining
     }
 
     static func cosineDistance(_ a: [Float], _ b: [Float]) -> Float {
@@ -274,15 +295,22 @@ extension RecordingTranscriptAssembler {
             return left.newID < right.newID
         }
         var names: [String: String] = [:]
+        var previousIDs: [String: String] = [:]
         var usedPreviousIDs: Set<String> = []
         for pair in pairs where names[pair.newID] == nil && !usedPreviousIDs.contains(pair.previousID) {
             names[pair.newID] = previousNames[pair.previousID]
+            previousIDs[pair.newID] = pair.previousID
             usedPreviousIDs.insert(pair.previousID)
         }
         var transcript = request.reassigned
         transcript.speakers = transcript.speakers.map { speaker in
             guard let name = names[speaker.id] else { return speaker }
-            return RecordingTranscript.Speaker(id: speaker.id, name: name, context: speaker.context)
+            var renamed = speaker
+            renamed.name = name
+            let previous = request.previous.speakers.first { $0.id == previousIDs[speaker.id] }
+            renamed.context = previous?.context ?? speaker.context
+            renamed.savedVoiceID = previous?.savedVoiceID
+            return renamed
         }
         return transcript
     }

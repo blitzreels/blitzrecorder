@@ -73,8 +73,10 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
             configuration = streamConfigurationForPickedContent(settings: settings, filter: pickedFilter)
         } else {
             currentPickedFilter = nil
-            let content = try await SCShareableContent.current
-            let source = try ScreenCaptureGeometry.screenSource(for: settings, content: content)
+            let source = try await ScreenSourceLookup.resolve {
+                let content = try await SCShareableContent.current
+                return try ScreenCaptureGeometry.screenSource(for: settings, content: content)
+            }
             currentDisplay = source.display
             dimensions = ScreenCaptureGeometry.screenCaptureDimensions(
                 for: settings,
@@ -128,8 +130,10 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
             return
         }
 
-        let content = try await SCShareableContent.current
-        let source = try ScreenCaptureGeometry.screenSource(for: settings, content: content)
+        let source = try await ScreenSourceLookup.resolve {
+            let content = try await SCShareableContent.current
+            return try ScreenCaptureGeometry.screenSource(for: settings, content: content)
+        }
         currentPickedFilter = nil
         currentDisplay = source.display
         try await stream.updateContentFilter(source.filter)

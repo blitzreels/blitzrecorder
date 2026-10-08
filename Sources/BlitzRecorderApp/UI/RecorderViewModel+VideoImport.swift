@@ -10,7 +10,7 @@ extension RecorderViewModel {
         panel.allowsMultipleSelection = false
         panel.allowedContentTypes = ["mp4", "mov", "m4v"].compactMap { UTType(filenameExtension: $0) }
         panel.prompt = "Import video"
-        panel.message = "Copy a video into your project library to edit it. Transcript and title generation run locally afterward."
+        panel.message = "Edit and transcribe the video in its current location without copying it. Keep the original file available for playback and export."
         let handler: (NSApplication.ModalResponse) -> Void = { [weak self] response in
             guard response == .OK, let url = panel.url, let self else { return }
             self.videoImportTask = Task { await self.importVideo(url) }

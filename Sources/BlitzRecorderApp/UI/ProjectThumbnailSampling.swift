@@ -1,33 +1,55 @@
+import AVFoundation
 import CoreGraphics
+import CoreImage
 import Foundation
 
 enum ProjectThumbnailSampling {
-    static func times(duration: Double) -> [Double] {
-        guard duration.isFinite, duration > 0 else { return [0] }
-        let last = max(0, duration - 0.1)
-        return Array(Set([min(2, duration * 0.1), duration * 0.25, duration * 0.6].map { min(last, $0) })).sorted()
+    struct Request {
+        let url: URL
+        let startSeconds: Double
     }
 
-    static func detailScore(_ image: CGImage) -> Double {
-        let width = 64
-        let height = 36
-        var pixels = [UInt8](repeating: 0, count: width * height)
-        pixels.withUnsafeMutableBytes { bytes in
-            guard let context = CGContext(
-                data: bytes.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width,
-                space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue
-            ) else { return }
-            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+    static func firstFrame(_ request: Request) async -> CGImage? {
+        guard !Task.isCancelled else { return nil }
+        let asset = AVURLAsset(url: request.url)
+        guard let track = try? await asset.loadTracks(withMediaType: .video).first,
+              let range = try? await track.load(.timeRange) else { return nil }
+        guard request.startSeconds.isFinite else { return nil }
+        let time = CMTimeMaximum(range.start, CMTime(seconds: max(0, request.startSeconds), preferredTimescale: 60_000))
+        guard CMTimeCompare(time, CMTimeRangeGetEnd(range)) < 0 else { return nil }
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 640, height: 360)
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+        let image: CGImage? = await withTaskCancellationHandler {
+            guard !Task.isCancelled else { return nil }
+            return try? await generator.image(at: time).image
+        } onCancel: {
+            generator.cancelAllCGImageGeneration()
         }
-        let mean = pixels.reduce(0.0) { $0 + Double($1) } / Double(pixels.count)
-        let variance = pixels.reduce(0.0) { $0 + pow(Double($1) - mean, 2) } / Double(pixels.count)
-        var edges = 0.0
-        for row in 0..<height {
-            for column in 1..<width {
-                let index = row * width + column
-                edges += abs(Double(pixels[index]) - Double(pixels[index - 1]))
-            }
-        }
-        return variance + edges / Double(pixels.count) * 8
+        if let image { return image }
+        guard !Task.isCancelled,
+              let transform = try? await track.load(.preferredTransform),
+              let reader = try? AVAssetReader(asset: asset) else { return nil }
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+        ])
+        reader.timeRange = CMTimeRange(start: time, end: CMTimeRangeGetEnd(range))
+        output.alwaysCopiesSampleData = false
+        guard reader.canAdd(output) else { return nil }
+        reader.add(output)
+        guard reader.startReading() else { return nil }
+        defer { reader.cancelReading() }
+        guard !Task.isCancelled,
+              let sample = output.copyNextSampleBuffer(),
+              let pixels = CMSampleBufferGetImageBuffer(sample) else { return nil }
+        let frame = CIImage(cvPixelBuffer: pixels).transformed(by: transform)
+        let extent = frame.extent
+        guard extent.width > 0, extent.height > 0 else { return nil }
+        let scale = min(1, 640 / extent.width, 360 / extent.height)
+        let scaled = frame.transformed(by: .init(translationX: -extent.minX, y: -extent.minY))
+            .transformed(by: .init(scaleX: scale, y: scale))
+        return CIContext().createCGImage(scaled, from: scaled.extent)
     }
 }

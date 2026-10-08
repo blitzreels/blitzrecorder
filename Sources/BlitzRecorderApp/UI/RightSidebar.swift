@@ -40,7 +40,7 @@ struct CameraImageControls: View {
                 onEditingChanged: configuration.onCropZoomEditingChanged,
                 onReset: configuration.onResetCrop
             ))
-            .help("Zoom into the camera image")
+            .help("Zoom into the camera image and fill its frame")
 
             cropActions
         }
@@ -51,7 +51,7 @@ struct CameraImageControls: View {
             Image(systemName: "crop")
                 .font(BlitzType.glyph(11))
                 .foregroundStyle(mint)
-            Text("Drag on the preview to crop")
+            Text("Drag to crop. Done fills the camera frame.")
                 .font(BlitzType.captionEmphasis)
                 .foregroundStyle(BlitzUI.supportingText)
             Spacer(minLength: 0)
@@ -69,7 +69,7 @@ struct CameraImageControls: View {
             }
             .blitzButton(.secondary)
             .pointingHandCursor()
-            .help("Drag the camera image on the preview to choose what shows")
+            .help("Choose the area that fills the camera frame. Done applies it; Cancel keeps the current framing.")
 
             Button(action: configuration.onResetCrop) {
                 Label("Reset zoom", systemImage: "arrow.counterclockwise")
@@ -272,9 +272,7 @@ struct CameraDiagramRow<Value: Hashable>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(BlitzType.captionEmphasis)
-                .foregroundStyle(BlitzUI.secondaryText)
+            BlitzUI.sectionLabel(title)
             CameraDiagramPicker(
                 options: options,
                 selection: $selection,
@@ -339,23 +337,15 @@ struct SourceFramingPicker: View {
     @Binding var selection: CameraContentMode
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(CameraContentMode.allCases, id: \.self) { mode in
-                BlitzTab(configuration: .init(
-                    title: mode == .fill ? "Fill" : "Fit",
-                    symbolName: nil,
-                    isSelected: selection == mode,
-                    expands: true,
-                    action: { selection = mode }
-                ))
-                .help(mode == .fill
-                    ? "Fill the frame, cropping the source edges."
-                    : "Keep the entire source visible without cropping.")
-            }
-        }
-        .blitzTabGroup()
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Source framing")
+        BlitzSegmentedPicker(configuration: .init(
+            title: "Source framing",
+            options: CameraContentMode.allCases,
+            selection: $selection,
+            label: { $0 == .fill ? "Fill" : "Fit" },
+            help: { $0 == .fill
+                ? "Fill the frame, cropping the source edges."
+                : "Keep the entire source visible without cropping." }
+        ))
     }
 }
 

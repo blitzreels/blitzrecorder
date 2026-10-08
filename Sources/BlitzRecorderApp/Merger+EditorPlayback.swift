@@ -119,7 +119,8 @@ extension Merger {
                     renderSize: renderSize,
                     renderSegments: renderSegments
                 )
-            }
+            },
+            sourceReferences: take.sourceReferences
         )
     }
 

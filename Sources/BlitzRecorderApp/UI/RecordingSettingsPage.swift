@@ -6,6 +6,7 @@ struct RecordingSettingsPage: View {
     @State private var storageDetail = ""
     @State private var storageUnavailable = false
     @AppStorage(BlitzPreviewPreferences.animatePreviewsKey) private var animatePreviews = true
+    @AppStorage(TranscriptionVocabulary.defaultsKey) private var transcriptionVocabulary = ""
 
     private var canEdit: Bool {
         vm.state == .idle
@@ -273,6 +274,27 @@ struct RecordingSettingsPage: View {
             }
             .frame(minHeight: 56)
             .settingsRow()
+
+            SettingsRowDivider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                SettingsRowLabel(.init(
+                    title: "Names and vocabulary",
+                    detail: "Whisper uses these spellings and saved speaker names as hints. Separate terms with commas."
+                ))
+                TextField("People, brands, technical terms", text: $transcriptionVocabulary)
+                    .textFieldStyle(.plain)
+                    .font(BlitzType.body)
+                    .padding(10)
+                    .background(BlitzUI.controlFill, in: .rect(cornerRadius: BlitzUI.controlRadius))
+                    .disabled(vm.transcriptionController.selectedModel == .parakeet)
+                if vm.transcriptionController.selectedModel == .parakeet {
+                    Text("Select a Whisper model to use vocabulary hints.")
+                        .font(BlitzType.caption)
+                        .foregroundStyle(BlitzUI.secondaryText)
+                }
+            }
+            .padding(.vertical, 14)
         }
         .settingsSection(.init(
             title: "Transcripts",

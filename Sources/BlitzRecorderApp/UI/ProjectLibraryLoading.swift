@@ -83,7 +83,9 @@ extension ProjectLibraryView {
             guard let transcript = try? artifactStore.load(from: artifactStore.locations(for: recordingProject).jsonURL) else {
                 return nil
             }
-            return transcript.mappedToEditedTimeline(TimelineTimeMap(
+            let profiles = (try? await SpeakerVoiceStore.shared.profiles()) ?? []
+            let identified = SpeakerIdentity.suggestingNames(.init(transcript: transcript, profiles: profiles))
+            return identified.mappedToEditedTimeline(TimelineTimeMap(
                 takeDuration: MediaTime(seconds: max(transcript.duration, 0)), cuts: recordingProject.edits.enabledCuts))
         }.value
         guard !Task.isCancelled else { return }

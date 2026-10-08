@@ -1,5 +1,32 @@
 import AppKit
 
+struct ScreenSourceAvailabilityTracker {
+    struct Update {
+        let binding: ScreenSourceBinding
+        let isPresent: Bool
+        let now: Date
+    }
+
+    private var sourceID: String?
+    private var missingSince: Date?
+
+    mutating func unavailableSource(_ update: Update) -> ScreenSourceBinding? {
+        if sourceID != update.binding.runtimeID {
+            sourceID = update.binding.runtimeID
+            missingSince = nil
+        }
+        if update.isPresent {
+            missingSince = nil
+            return nil
+        }
+        guard let missingSince else {
+            missingSince = update.now
+            return nil
+        }
+        return update.now.timeIntervalSince(missingSince) >= 2 ? update.binding : nil
+    }
+}
+
 struct ScreenSourceWindowPresence {
     let binding: ScreenSourceBinding
     let windows: [[String: Any]]
@@ -34,6 +61,7 @@ extension RecorderViewModel {
 
     func refreshScreenSourceAvailability() {
         guard isSourceConfigured(.screen), let binding = settings.screenSourceBinding else {
+            screenSourceAvailabilityTracker = ScreenSourceAvailabilityTracker()
             unavailableScreenSource = nil
             return
         }
@@ -46,11 +74,14 @@ extension RecorderViewModel {
             isPresent = ScreenWindowFit.processID(forApplicationBinding: binding) != nil
         case .display:
             guard let displayID = binding.displayID.flatMap(UInt32.init) else {
+                screenSourceAvailabilityTracker = ScreenSourceAvailabilityTracker()
                 unavailableScreenSource = nil
                 return
             }
             isPresent = CGDisplayIsOnline(displayID) != 0
         }
-        unavailableScreenSource = isPresent ? nil : binding
+        unavailableScreenSource = screenSourceAvailabilityTracker.unavailableSource(.init(
+            binding: binding, isPresent: isPresent, now: Date()
+        ))
     }
 }

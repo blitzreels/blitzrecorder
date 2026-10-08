@@ -13,6 +13,7 @@ final class EditorCameraCropEditingTests: XCTestCase {
         var settings = RecordingSettings()
         settings.outputDirectory = outputDirectory
         settings.enabledSources = [.camera]
+        settings.cameraContentMode = .fit
 
         let store = TakeFileStore()
         let take = try store.createTake(settings: settings)
@@ -22,14 +23,18 @@ final class EditorCameraCropEditingTests: XCTestCase {
             eventIndex: 0,
             baseSettings: settings
         ) { scene in
-            scene.cameraCropAmount = CGPoint(x: 0.42, y: 0.42)
-            scene.cameraCropPosition = CGPoint(x: 0.65, y: -0.3)
+            EditorCameraCropSession.Commit(
+                eventIndex: 0,
+                amount: CGPoint(x: 0.42, y: 0.42),
+                position: CGPoint(x: 0.65, y: -0.3)
+            ).apply(to: &scene)
         }
 
         let reloadedProject = try store.loadRecordingProject(at: take.projectURL)
         let reloadedScene = try XCTUnwrap(store.sceneEvents(from: reloadedProject).first?.scene)
         XCTAssertEqual(reloadedScene.cameraCropAmount, CGPoint(x: 0.42, y: 0.42))
         XCTAssertEqual(reloadedScene.cameraCropPosition, CGPoint(x: 0.65, y: -0.3))
+        XCTAssertEqual(reloadedScene.cameraContentMode, .fill)
     }
 
     func testPresentationShrinksCanvasToRevealFullLandscapeCameraDuringVerticalCropEditing() throws {

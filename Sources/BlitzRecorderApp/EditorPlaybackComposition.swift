@@ -29,6 +29,7 @@ struct EditorPlaybackComposition {
     let audioInputs: [AudioInput]
     let videoAssets: [SceneLayerKind: AVComposition]
     let makeInstructions: (Set<SceneLayerKind>, [FinalExportRenderSegment]) -> [AVMutableVideoCompositionInstruction]
+    var sourceReferences: [RecordingProject.SourceFile] = []
 
     func playerItem(
         hiding hiddenKinds: Set<SceneLayerKind> = [],
@@ -71,7 +72,8 @@ struct EditorPlaybackComposition {
             sourceAspectRatios: sourceAspectRatios,
             audioInputs: audioInputs,
             videoAssets: videoAssets,
-            makeInstructions: makeInstructions
+            makeInstructions: makeInstructions,
+            sourceReferences: sourceReferences
         )
     }
 

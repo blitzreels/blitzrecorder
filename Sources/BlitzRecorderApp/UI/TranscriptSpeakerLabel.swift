@@ -2,16 +2,15 @@ import SwiftUI
 
 struct TranscriptSpeakerLabel: View {
     struct Configuration {
-        let name: String
-        let currentName: String
+        let speaker: RecordingTranscript.Speaker
         let color: Color
-        let onRename: (String) -> Void
+        let onRename: (TranscriptSpeakerRenameRequest) -> Void
     }
 
     let configuration: Configuration
     @State private var isRenaming = false
-    @State private var isHovering = false
     @State private var draft = ""
+    @State private var rememberVoice = false
     @FocusState private var isFieldFocused: Bool
 
     var body: some View {
@@ -20,24 +19,23 @@ struct TranscriptSpeakerLabel: View {
                 Circle()
                     .fill(configuration.color.opacity(0.75))
                     .frame(width: 5, height: 5)
-                Text(configuration.name)
+                Text(configuration.speaker.displayName)
                     .font(BlitzType.captionEmphasis)
-                    .foregroundStyle(isHovering || isRenaming ? BlitzUI.primaryText : BlitzUI.secondaryText)
+                    .foregroundStyle(BlitzUI.secondaryText)
                     .lineLimit(1)
+                if let suggestion = configuration.speaker.identitySuggestion {
+                    Text("\(suggestion.name)? · \(suggestion.label)")
+                        .font(BlitzType.caption)
+                        .foregroundStyle(BlitzUI.mint)
+                        .lineLimit(1)
+                }
             }
-            .padding(.horizontal, 6)
-            .frame(height: 20)
-            .background(isHovering || isRenaming ? BlitzUI.hoverFill : .clear,
-                        in: .rect(cornerRadius: BlitzUI.controlRadius))
-            .contentShape(.rect)
         }
-        .buttonStyle(BlitzPressButtonStyle())
-        .padding(.leading, -6)
-        .onHover { isHovering = $0 }
-        .pointingHandCursor()
-        .help("Rename \(configuration.name)")
-        .accessibilityLabel("Speaker \(configuration.name)")
-        .accessibilityHint("Rename this speaker")
+        .blitzButton(.quiet)
+        .controlSize(.mini)
+        .help("Rename \(configuration.speaker.displayName) or remember their voice")
+        .accessibilityLabel("Speaker \(configuration.speaker.displayName)")
+        .accessibilityHint("Rename this speaker or review a suggested identity")
         .contextMenu {
             Button("Rename Speaker…", systemImage: "pencil", action: beginRename)
         }
@@ -51,6 +49,15 @@ struct TranscriptSpeakerLabel: View {
             Text("Rename speaker")
                 .font(BlitzType.section)
                 .foregroundStyle(BlitzUI.primaryText)
+            if let suggestion = configuration.speaker.identitySuggestion {
+                Text("Suggested: \(suggestion.name) · \(suggestion.label)")
+                    .font(BlitzType.body)
+                    .foregroundStyle(BlitzUI.mint)
+                Text(suggestion.evidence)
+                    .font(BlitzType.caption)
+                    .foregroundStyle(BlitzUI.secondaryText)
+                    .lineLimit(4)
+            }
             TextField("Name", text: $draft)
                 .textFieldStyle(.plain)
                 .font(BlitzType.body)
@@ -67,6 +74,24 @@ struct TranscriptSpeakerLabel: View {
                 .font(BlitzType.caption)
                 .foregroundStyle(BlitzUI.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
+            Toggle("Remember this voice on this Mac", isOn: $rememberVoice)
+                .toggleStyle(.blitzCheckbox)
+                .disabled(configuration.speaker.voice?.isUsable != true)
+            Text(configuration.speaker.voice?.isUsable == true
+                 ? "Suggest this name in future recordings. Saved only when you choose Save."
+                 : "Run Fix speakers to collect a voice sample. At least three seconds of speech are needed.")
+                .font(BlitzType.caption)
+                .foregroundStyle(BlitzUI.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            if configuration.speaker.savedVoiceID != nil {
+                Button("Forget saved voice", role: .destructive) {
+                    isRenaming = false
+                    configuration.onRename(.init(speakerID: configuration.speaker.id,
+                                                 name: configuration.speaker.name, voiceMemory: .forget))
+                }
+                .blitzButton(.secondary)
+                .controlSize(.small)
+            }
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
                 Button { isRenaming = false } label: { Label("Cancel", systemImage: "xmark") }
@@ -74,25 +99,32 @@ struct TranscriptSpeakerLabel: View {
                     .keyboardShortcut(.cancelAction)
                 Button(action: commit) { Label("Save", systemImage: "checkmark") }
                     .blitzButton(.accent)
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                              || (rememberVoice && draft.trimmingCharacters(in: .whitespacesAndNewlines) == "You"))
                     .keyboardShortcut(.defaultAction)
             }
         }
         .padding(16)
-        .frame(width: 280)
+        .frame(width: 340)
         .background(BlitzUI.panelBackground)
         .onAppear { isFieldFocused = true }
     }
 
     private func beginRename() {
-        draft = configuration.currentName
+        draft = configuration.speaker.identitySuggestion?.name ?? configuration.speaker.name
+        rememberVoice = configuration.speaker.savedVoiceID != nil
         isRenaming = true
     }
 
     private func commit() {
         isRenaming = false
         let name = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard name != configuration.currentName.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
-        configuration.onRename(name)
+        guard !name.isEmpty else { return }
+        configuration.onRename(.init(speakerID: configuration.speaker.id, name: name,
+                                     voiceMemory: rememberVoice ? .remember : .unchanged,
+                                     profileID: configuration.speaker.savedVoiceID
+                                        ?? (name == configuration.speaker.identitySuggestion?.name
+                                            ? configuration.speaker.identitySuggestion?.profileID : nil)))
     }
 }
 

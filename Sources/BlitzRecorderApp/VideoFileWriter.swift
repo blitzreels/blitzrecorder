@@ -11,7 +11,7 @@ final class VideoFileWriter: @unchecked Sendable {
     private let timelineStartTime: CMTime?
 
     private var firstPresentationTime: CMTime?
-    private var lastPresentationTime: CMTime?
+    private var lastWrittenPresentationTime: CMTime?
     private var pauseStartedAt: CMTime?
     private var pauseOffset = CMTime.zero
     private var paused = false
@@ -34,9 +34,12 @@ final class VideoFileWriter: @unchecked Sendable {
     ) throws {
         self.url = url
         self.timelineStartTime = timelineStartTime
-        try? FileManager.default.removeItem(at: url)
-
+        guard !FileManager.default.fileExists(atPath: url.path) else {
+            throw CocoaError(.fileWriteFileExists, userInfo: [NSFilePathErrorKey: url.path])
+        }
         writer = try AVAssetWriter(outputURL: url, fileType: outputFormat.avFileType)
+        writer.movieFragmentInterval = CMTime(seconds: 10, preferredTimescale: 600)
+        writer.initialMovieFragmentInterval = CMTime(seconds: 1, preferredTimescale: 600)
 
         let compression: [String: Any] = [
             AVVideoAverageBitRateKey: bitrate,
@@ -66,12 +69,15 @@ final class VideoFileWriter: @unchecked Sendable {
             guard !self.finished, CMSampleBufferDataIsReady(sampleBuffer) else {
                 return
             }
-
-            let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-            guard presentationTime.isValid else {
+            guard self.writer.status != .failed else {
+                self.failWriting(self.writer.error ?? RecorderError.writerNotReady)
                 return
             }
-            self.lastPresentationTime = presentationTime
+
+            let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+            guard presentationTime.isNumeric else {
+                return
+            }
 
             if self.firstPresentationTime == nil {
                 self.firstPresentationTime = Self.recordingBaseline(
@@ -94,8 +100,16 @@ final class VideoFileWriter: @unchecked Sendable {
                 return
             }
 
+            let outputTime = CMSampleBufferGetPresentationTimeStamp(adjusted)
+            guard outputTime.isNumeric else { return }
+            if let lastWrittenPresentationTime = self.lastWrittenPresentationTime,
+               CMTimeCompare(outputTime, lastWrittenPresentationTime) <= 0 {
+                return
+            }
+
             if self.input.append(adjusted) {
                 self.wroteSample = true
+                self.lastWrittenPresentationTime = outputTime
             } else {
                 self.failWriting(
                     self.writer.error ?? RecorderError.mediaWriteFailed("Video writer rejected a sample.")
@@ -105,18 +119,20 @@ final class VideoFileWriter: @unchecked Sendable {
     }
 
     func pause() {
+        let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
         queue.async {
             guard !self.paused else { return }
             self.paused = true
-            self.pauseStartedAt = self.lastPresentationTime
+            self.pauseStartedAt = hostTime
         }
     }
 
     func resume() {
+        let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
         queue.async {
             guard self.paused else { return }
-            if let start = self.pauseStartedAt, let end = self.lastPresentationTime {
-                let delta = CMTimeSubtract(end, start)
+            if let start = self.pauseStartedAt {
+                let delta = CMTimeSubtract(hostTime, start)
                 if delta.isValid, delta.seconds > 0 {
                     self.pauseOffset = CMTimeAdd(self.pauseOffset, delta)
                 }
@@ -131,8 +147,10 @@ final class VideoFileWriter: @unchecked Sendable {
             queue.async {
                 guard self.finalization.begin(continuation) else { return }
                 self.finished = true
+                if self.writer.status == .failed, self.writeError == nil {
+                    self.failWriting(self.writer.error ?? RecorderError.writerNotReady)
+                }
                 if let writeError = self.writeError {
-                    try? FileManager.default.removeItem(at: self.url)
                     self.finalization.complete(.failure(writeError))
                     return
                 }
@@ -146,7 +164,6 @@ final class VideoFileWriter: @unchecked Sendable {
                 self.writer.finishWriting {
                     self.queue.async {
                         guard self.writer.status == .completed else {
-                            try? FileManager.default.removeItem(at: self.url)
                             self.finalization.complete(.failure(self.writer.error ?? RecorderError.writerNotReady))
                             return
                         }
@@ -160,8 +177,10 @@ final class VideoFileWriter: @unchecked Sendable {
     private func failWriting(_ error: Error) {
         writeError = error
         finished = true
-        writer.cancelWriting()
-        try? FileManager.default.removeItem(at: url)
+        if !wroteSample {
+            writer.cancelWriting()
+            try? FileManager.default.removeItem(at: url)
+        }
         guard !hasReportedFailure else { return }
         hasReportedFailure = true
         let onFailure = onFailure

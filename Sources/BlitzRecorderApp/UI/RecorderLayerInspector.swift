@@ -68,24 +68,16 @@ struct RecorderLayerInspector: View {
     }
 
     private var tabBar: some View {
-        HStack(spacing: 2) {
-            ForEach(RecorderInspectorTab.allCases, id: \.self) { item in
-                BlitzTab(configuration: .init(
-                    title: item.title,
-                    symbolName: item.symbolName,
-                    symbolPlacement: .above,
-                    isSelected: tab == item,
-                    expands: true,
-                    action: { select(item) }
-                ))
-                .disabled(!isEnabled(item))
-                .help(help(for: item))
-            }
-        }
-        .controlSize(.mini)
-        .padding(6)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Scene settings")
+        BlitzToolTabBar(configuration: .init(
+            title: "Scene settings",
+            options: RecorderInspectorTab.allCases,
+            selection: tab,
+            label: { $0.title },
+            symbolName: { $0.symbolName },
+            help: { help(for: $0) },
+            isOptionEnabled: { isEnabled($0) },
+            select: { select($0) }
+        ))
     }
 
     @ViewBuilder
@@ -255,9 +247,7 @@ struct RecorderLayerInspector: View {
     private var sideBySideControls: some View {
         if vm.showsSideSplitControl {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Camera side")
-                    .font(BlitzType.captionEmphasis)
-                    .foregroundStyle(BlitzUI.secondaryText)
+                BlitzUI.sectionLabel("Camera side")
                 BlitzSegmentedPicker(configuration: .init(
                     title: "Camera side",
                     options: [SceneCameraSide.left, .right],
@@ -404,9 +394,7 @@ struct SceneBackgroundSwatchRow: View {
 
     private func swatchSection(_ section: SwatchSection) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(section.title)
-                .font(BlitzType.captionEmphasis)
-                .foregroundStyle(BlitzUI.secondaryText)
+            BlitzUI.sectionLabel(section.title)
             LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
                 ForEach(section.styles, id: \.self) { style in
                     swatch(style)

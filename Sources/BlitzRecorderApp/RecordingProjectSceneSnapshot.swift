@@ -260,6 +260,9 @@ extension RecordingScene {
         }
 
         scene.enabledSources = audioSources.union(correction.videoSources)
+        if correction.videoSources.contains(.camera) {
+            scene.cameraContentMode = .fill
+        }
         scene.sceneLayout = SceneLayout.presetLayout(
             preset,
             for: layout,

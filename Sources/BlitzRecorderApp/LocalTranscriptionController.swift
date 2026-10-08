@@ -449,6 +449,15 @@ final class LocalTranscriptionController {
         !isUpdatingTranscript(project) && modelStates.values.contains(where: \.isReady)
     }
 
+    func beginSpeakerEdit(_ project: RecordingProjectHistory.Entry) throws {
+        guard !isUpdatingTranscript(project) else { throw LocalTranscriptionError.transcriptBusy }
+        speakerFixDetails[project.projectPath] = "Saving speaker"
+    }
+
+    func endSpeakerEdit(_ project: RecordingProjectHistory.Entry) {
+        speakerFixDetails[project.projectPath] = nil
+    }
+
     func fixSpeakers(_ project: RecordingProjectHistory.Entry) async throws -> RecordingTranscript {
         let key = project.projectPath
         guard !isUpdatingTranscript(project) else { throw LocalTranscriptionError.transcriptBusy }

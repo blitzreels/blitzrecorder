@@ -5,6 +5,9 @@ import Foundation
 
 extension Merger {
     static func availableVideoSources(for take: RecordingTake, settings: RecordingSettings) async throws -> [VideoSource] {
+        for source in take.sourceReferences where !source.exists || !FileManager.default.isReadableFile(atPath: source.path) {
+            throw RecorderError.mediaWriteFailed("The original video \(URL(fileURLWithPath: source.path).lastPathComponent) is unavailable. Reconnect its drive or restore the file to continue playback and export.")
+        }
         var sources: [VideoSource] = []
         let capturedSources = settings.enabledSources
         let screenAsset = capturedSources.contains(.screen) ? await readableVideoAsset(kind: "screen", url: take.screenURL) : nil

@@ -5,7 +5,10 @@ extension EditorView {
     var toolbar: some View {
         EditorToolbar(
             vm: vm,
-            title: project?.displayTitle ?? "Last recording",
+            title: ProjectTitlePresentation(.init(
+                title: project?.displayTitle ?? "Last recording",
+                known: vm.folderIndex.known
+            )),
             onFillWindow: fillWindow,
             onSelectOutputLayout: {
                 playback.pauseForEditing()

@@ -218,15 +218,15 @@ struct HostedVideoSharePanel: View {
                         .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
                 }
                 Spacer(minLength: 8)
-                BlitzGlassMenu(entries: accountEntries, menuWidth: 200) {
-                    Image(systemName: "ellipsis")
-                        .font(BlitzType.glyph(12))
-                        .foregroundStyle(BlitzUI.supportingText)
-                        .frame(width: 28, height: BlitzControlMetrics.height(.small))
-                        .background(BlitzUI.controlFill, in: .rect(cornerRadius: BlitzControlMetrics.radius))
-                }
-                .accessibilityLabel("Account options")
-                .help("Account options")
+                BlitzOverflowMenu(configuration: .init(
+                    entries: accountEntries,
+                    menuWidth: 200,
+                    placement: .inline,
+                    isBusy: false,
+                    accessibilityLabel: "Account options",
+                    help: "Account options"
+                ))
+                .controlSize(.small)
                 .disabled(controller.accountOperation != nil || controller.isRunning || isSaving)
             }
             .padding(.top, 14)
@@ -315,7 +315,7 @@ struct HostedVideoSharePanel: View {
                 Text("Watch link")
                     .font(BlitzType.strong).foregroundStyle(BlitzUI.secondaryText)
                 Spacer(minLength: 8)
-                Circle().fill(BlitzUI.mint).frame(width: 6, height: 6)
+                BlitzStatusDot(tone: .live, diameter: 6)
                 Text("Live").font(BlitzType.captionEmphasis).foregroundStyle(BlitzUI.supportingText)
             }
             .accessibilityElement(children: .combine)
@@ -325,7 +325,8 @@ struct HostedVideoSharePanel: View {
                 .lineLimit(1).truncationMode(.tail)
                 .textSelection(.enabled)
                 .help(url.absoluteString)
-            HostedVideoCopyLinkButton(url: url)
+            BlitzCopyButton(configuration: .watchLink(.init(url: url, title: "Copy link", emphasis: .accent, width: .fill)))
+                .controlSize(.large)
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 8) { readyActions(url) }
                 VStack(spacing: 8) { readyActions(url) }

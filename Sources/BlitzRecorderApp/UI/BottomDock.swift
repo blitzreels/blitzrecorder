@@ -83,9 +83,6 @@ private struct RecordingActionRow: View {
                         sourceTakeURL: vm.lastExportedSourceTakeURL,
                         warning: vm.lastExportWarning
                     )
-                } else if vm.lastPostRecordingProjectOutput != nil {
-                    TransportDivider()
-                    ProjectReadyChip(vm: vm)
                 }
             case .starting:
                 ProgressView()

@@ -479,17 +479,21 @@ struct TakeFileStore {
 
     private func sourceFiles(for take: RecordingTake) -> [SourceTakeManifest.SourceFile] {
         sourceRoleURLs(for: take).map { role, url in
-            SourceTakeManifest.SourceFile(role: role, path: url.path)
+            SourceTakeManifest.SourceFile(role: role, path: url.path,
+                bookmarkData: take.sourceReferences.first { $0.role == role }?.bookmarkData)
         }
     }
 
     private func projectSourceFiles(for take: RecordingTake) -> [RecordingProject.SourceFile] {
         sourceRoleURLs(for: take).map { role, url in
-            RecordingProject.SourceFile(
+            var source = RecordingProject.SourceFile(
                 role: role,
                 path: url.path,
-                exists: FileManager.default.fileExists(atPath: url.path)
+                exists: FileManager.default.fileExists(atPath: url.path),
+                bookmarkData: take.sourceReferences.first { $0.role == role }?.bookmarkData
             )
+            source.resolveExternalReference()
+            return source
         }
     }
 

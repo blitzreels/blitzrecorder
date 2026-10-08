@@ -19,6 +19,7 @@ final class DirectMovieWriter: @unchecked Sendable {
     private let finalization = MediaWriterFinalization()
     private var finished = false
     private var wroteVideo = false
+    private var lastWrittenVideoTime: CMTime?
     private var writeError: Error?
     private var hasReportedFailure = false
     var onFailure: (@MainActor (Error) -> Void)?
@@ -26,10 +27,11 @@ final class DirectMovieWriter: @unchecked Sendable {
     init(take: RecordingTake, settings: RecordingSettings) throws {
         finalURL = take.finalVideoURL
         temporaryURL = take.scratchDirectory
-            .appendingPathComponent(".direct-export-\(UUID().uuidString).\(take.outputVideoFormat.fileExtension)")
-        try? FileManager.default.removeItem(at: temporaryURL)
+            .appendingPathComponent("interrupted-recording-\(UUID().uuidString).\(take.outputVideoFormat.fileExtension)")
 
         writer = try AVAssetWriter(outputURL: temporaryURL, fileType: take.outputVideoFormat.avFileType)
+        writer.movieFragmentInterval = CMTime(seconds: 10, preferredTimescale: 600)
+        writer.initialMovieFragmentInterval = CMTime(seconds: 1, preferredTimescale: 600)
 
         let dimensions = ScreenCaptureGeometry.outputDimensions(for: settings)
         let compression: [String: Any] = [
@@ -81,8 +83,17 @@ final class DirectMovieWriter: @unchecked Sendable {
 
     func appendVideo(sourceTime: CMTime, render: @escaping (CVPixelBuffer) -> Bool) {
         queue.async {
-            guard !self.finished, !self.paused, sourceTime.isValid else { return }
+            guard !self.finished, !self.paused, sourceTime.isNumeric else { return }
+            guard self.writer.status != .failed else {
+                self.failWriting(self.writer.error ?? RecorderError.writerNotReady)
+                return
+            }
             let presentationTime = self.presentationTime(for: sourceTime)
+            guard presentationTime.isNumeric else { return }
+            if let lastWrittenVideoTime = self.lastWrittenVideoTime,
+               CMTimeCompare(presentationTime, lastWrittenVideoTime) <= 0 {
+                return
+            }
             guard self.videoInput.isReadyForMoreMediaData,
                   let pool = self.adaptor.pixelBufferPool else {
                 return
@@ -97,6 +108,7 @@ final class DirectMovieWriter: @unchecked Sendable {
 
             if self.adaptor.append(pixelBuffer, withPresentationTime: presentationTime) {
                 self.wroteVideo = true
+                self.lastWrittenVideoTime = presentationTime
             } else {
                 self.failWriting(
                     self.writer.error ?? RecorderError.mediaWriteFailed("Direct movie writer rejected a video frame.")
@@ -157,8 +169,10 @@ final class DirectMovieWriter: @unchecked Sendable {
             queue.async {
                 guard self.finalization.begin(continuation) else { return }
                 self.finished = true
+                if self.writer.status == .failed, self.writeError == nil {
+                    self.failWriting(self.writer.error ?? RecorderError.writerNotReady)
+                }
                 if let writeError = self.writeError {
-                    try? FileManager.default.removeItem(at: self.temporaryURL)
                     self.finalization.complete(.failure(writeError))
                     return
                 }
@@ -173,7 +187,6 @@ final class DirectMovieWriter: @unchecked Sendable {
                 self.writer.finishWriting {
                     self.queue.async {
                         guard self.writer.status == .completed else {
-                            try? FileManager.default.removeItem(at: self.temporaryURL)
                             self.finalization.complete(.failure(self.writer.error ?? RecorderError.writerNotReady))
                             return
                         }
@@ -197,8 +210,10 @@ final class DirectMovieWriter: @unchecked Sendable {
     private func failWriting(_ error: Error) {
         writeError = error
         finished = true
-        writer.cancelWriting()
-        try? FileManager.default.removeItem(at: temporaryURL)
+        if !wroteVideo {
+            writer.cancelWriting()
+            try? FileManager.default.removeItem(at: temporaryURL)
+        }
         guard !hasReportedFailure else { return }
         hasReportedFailure = true
         let onFailure = onFailure

@@ -1014,7 +1014,7 @@ final class RecordingTranscriptSpeakerFixTests: XCTestCase {
         let labels = RecordingTranscriptAssembler.voiceClusterLabels([
             .init(speakerID: "mic-0", startTime: 0, endTime: 100, embedding: host),
             .init(speakerID: "sys-0", startTime: 100, endTime: 200, embedding: guest),
-            .init(speakerID: "mic-1", startTime: 200, endTime: 205, embedding: guestOnMicrophone),
+            .init(speakerID: "mic-1", startTime: 150, endTime: 155, embedding: guestOnMicrophone),
             .init(speakerID: "sys-1", startTime: 205, endTime: 210, embedding: promo),
         ])
         XCTAssertEqual(labels["mic-1"], "sys-0", "A short echo of the guest on the microphone is the guest.")
@@ -1089,17 +1089,13 @@ final class RecordingTranscriptSpeakerFixTests: XCTestCase {
 final class ProjectLibraryPosterPolicyTests: XCTestCase {
     func testExportedPosterStaysUntilFirstFrameIsReady() {
         XCTAssertFalse(ProjectLibraryPosterPolicy.hasVisibleVideo(.init(
-            exportedPlayerIsReadyForDisplay: false, isPlaying: true, currentTime: 3)))
+            exportedPlayerIsReadyForDisplay: false)))
         XCTAssertTrue(ProjectLibraryPosterPolicy.hasVisibleVideo(.init(
-            exportedPlayerIsReadyForDisplay: true, isPlaying: false, currentTime: 0)))
+            exportedPlayerIsReadyForDisplay: true)))
     }
 
-    func testCompositedPosterStaysUntilPlaybackMoves() {
-        XCTAssertFalse(ProjectLibraryPosterPolicy.hasVisibleVideo(.init(
-            exportedPlayerIsReadyForDisplay: nil, isPlaying: false, currentTime: 0)))
+    func testReadyCompositedPlaybackRevealsOpeningSceneWithoutPressingPlay() {
         XCTAssertTrue(ProjectLibraryPosterPolicy.hasVisibleVideo(.init(
-            exportedPlayerIsReadyForDisplay: nil, isPlaying: true, currentTime: 0)))
-        XCTAssertTrue(ProjectLibraryPosterPolicy.hasVisibleVideo(.init(
-            exportedPlayerIsReadyForDisplay: nil, isPlaying: false, currentTime: 12)))
+            exportedPlayerIsReadyForDisplay: nil)))
     }
 }

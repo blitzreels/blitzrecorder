@@ -545,7 +545,7 @@ private struct RecordingHUDSurface: View {
     }
 }
 
-private struct RecordingHUDMeter: View {
+struct RecordingHUDMeter: View {
     let levels: TrackLevels
     let isActive: Bool
 
@@ -564,7 +564,7 @@ private struct RecordingHUDMeter: View {
     }
 }
 
-private struct RecordingHUDIconButton: View {
+struct RecordingHUDIconButton: View {
     struct Configuration {
         let symbol: String
         let fill: Color
@@ -660,14 +660,12 @@ private struct RecordingHUDPickerRow: View {
     }
 }
 
-private struct RecordingHUDDot: View {
+struct RecordingHUDDot: View {
     @State private var dimmed = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Circle()
-            .fill(BlitzUI.recordRed)
-            .frame(width: 8, height: 8)
+        BlitzStatusDot(tone: .recording, diameter: 8)
             .opacity(dimmed ? 0.35 : 1)
             .onAppear {
                 guard !reduceMotion else { return }

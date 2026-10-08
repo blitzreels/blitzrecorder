@@ -65,6 +65,12 @@ enum Merger {
             withIntermediateDirectories: true
         )
         let outputURL = request.destinationURL ?? TakeFileStore().uniqueFileURL(take.finalVideoURL)
+        let outputPath = outputURL.standardizedFileURL.resolvingSymlinksInPath().path
+        guard !take.sourceReferences.contains(where: {
+            URL(fileURLWithPath: $0.path).standardizedFileURL.resolvingSymlinksInPath().path == outputPath
+        }) else {
+            throw RecorderError.mediaWriteFailed("Choose a different export filename to keep the original video intact.")
+        }
         let outputDirectory = outputURL.deletingLastPathComponent()
         try fileManager.createDirectory(
             at: outputDirectory,

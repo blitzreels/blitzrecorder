@@ -1,28 +1,6 @@
 import AppKit
 import SwiftUI
 
-struct EditorFrameRatioButton: View {
-    let title: String
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(BlitzType.footnote)
-                .foregroundStyle(isSelected ? BlitzUI.mint : BlitzUI.supportingText)
-                .frame(maxWidth: .infinity, minHeight: 30)
-                .background(
-                    isSelected ? BlitzUI.selectedFill : BlitzUI.quietFill,
-                    in: .rect(cornerRadius: BlitzUI.controlRadius)
-                )
-                .contentShape(.rect(cornerRadius: BlitzUI.controlRadius))
-        }
-        .buttonStyle(.plain)
-        .pointingHandCursor()
-    }
-}
-
 enum EditorFrameRatioPreset: String, CaseIterable, Identifiable {
     case source
     case landscape
@@ -82,8 +60,8 @@ enum EditorFrameRatioLabel {
 
 enum EditorFrameRatio {
     static let columns: [GridItem] = [
-        GridItem(.flexible(), spacing: 6),
-        GridItem(.flexible(), spacing: 6),
+        GridItem(.flexible(), spacing: 2),
+        GridItem(.flexible(), spacing: 2),
         GridItem(.flexible())
     ]
 

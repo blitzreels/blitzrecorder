@@ -2,8 +2,10 @@ import AppKit
 
 enum MainWindowChrome {
     static let toolbarHeight: CGFloat = 52
-    static let navigationWidth: CGFloat = 64
-    static let toolbarLeadingInset: CGFloat = 40
+    static let sidebarWidth: CGFloat = 216
+    static let trafficLightsWidth: CGFloat = 78
+    static let sidebarToggleWidth: CGFloat = 52
+    static let studioExitWidth: CGFloat = 104
 
     @MainActor
     static func configure(_ window: NSWindow) {

@@ -52,7 +52,7 @@ struct EditorView: View {
         let tracks = assetTracks
         return VStack(spacing: 0) {
             toolbar
-                .blitzWindowToolbar(showsUpdate: true)
+                .blitzWindowToolbar()
 
             divider
 

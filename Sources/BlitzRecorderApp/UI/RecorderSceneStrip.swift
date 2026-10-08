@@ -80,9 +80,7 @@ struct RecorderSceneStrip: View {
             .frame(width: 84, height: 60)
             .overlay(alignment: .topTrailing) {
                 if isSelected && isLive {
-                    Circle()
-                        .fill(BlitzUI.recordRed)
-                        .frame(width: 6, height: 6)
+                    BlitzStatusDot(tone: .recording, diameter: 6)
                         .padding(6)
                         .accessibilityHidden(true)
                 }

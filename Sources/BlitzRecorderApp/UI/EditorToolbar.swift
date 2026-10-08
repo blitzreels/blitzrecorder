@@ -2,26 +2,26 @@ import SwiftUI
 
 struct EditorToolbar: View {
     @Bindable var vm: RecorderViewModel
-    var title: String
+    var title: ProjectTitlePresentation
     var onFillWindow: () -> Void
     var onSelectOutputLayout: (CaptureLayout) -> Void
     var exportButton: AnyView
 
     var body: some View {
         HStack(spacing: 0) {
-            Button("Projects", action: vm.showProjects)
-                .blitzButton(.quiet)
-                .controlSize(.small)
-                .help("Open projects")
-            Text("/")
-                .foregroundStyle(BlitzUI.secondaryText)
-                .padding(.horizontal, 8)
-
-            Text(title)
-                .font(BlitzType.headline)
-                .foregroundStyle(BlitzUI.primaryText)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            VStack(alignment: .leading, spacing: 1) {
+                if let context = title.context {
+                    Text(context)
+                        .font(BlitzType.footnote)
+                        .foregroundStyle(BlitzUI.secondaryText)
+                        .lineLimit(1)
+                }
+                Text(title.title)
+                    .font(BlitzType.headline)
+                    .foregroundStyle(BlitzUI.primaryText)
+                    .lineLimit(1)
+            }
+                .truncationMode(.tail)
                 .layoutPriority(1)
                 .allowsWindowActivationEvents(true)
                 .onTapGesture(count: 2, perform: onFillWindow)

@@ -382,7 +382,7 @@ final class PreviewStageViewTests: XCTestCase {
         view.enabledSources = [.camera]
         view.layoutSubtreeIfNeeded()
         var commits = 0
-        view.onCameraCropChanged = { _, _ in commits += 1 }
+        view.onCameraCropChanged = { _ in commits += 1 }
         view.beginCameraCropEditing()
         view.updateCameraCropDraft(amount: CGPoint(x: 0.1, y: 0.1))
         view.sceneID = UUID()

@@ -8,33 +8,16 @@ struct EditorInspectorTabBar: View {
     private let tabs: [EditorInspectorTab] = [.layout, .silence, .captions, .text, .zoom, .privacy, .audio]
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            row(tabs).fixedSize(horizontal: true, vertical: false).frame(maxWidth: .infinity)
-            VStack(spacing: 2) {
-                row(Array(tabs.prefix(4)))
-                row(Array(tabs.suffix(3)))
-            }
-        }
-        .controlSize(.mini)
-        .padding(6)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Editor tools")
-    }
-
-    private func row(_ tabs: [EditorInspectorTab]) -> some View {
-        HStack(spacing: 2) {
-            ForEach(tabs, id: \.self) { tab in
-                BlitzTab(configuration: .init(
-                    title: tab.rawValue,
-                    symbolName: tab.systemImage,
-                    symbolPlacement: .above,
-                    isSelected: selection == tab,
-                    expands: true,
-                    action: { selection = tab }
-                ))
-                .help(tab == .layout ? "Scene layout and canvas" : tab.rawValue)
-            }
-        }
+        BlitzToolTabBar(configuration: .init(
+            title: "Editor tools",
+            options: tabs,
+            selection: selection,
+            label: { $0.rawValue },
+            symbolName: { $0.systemImage },
+            help: { $0 == .layout ? "Scene layout and canvas" : $0.rawValue },
+            isOptionEnabled: { _ in true },
+            select: { selection = $0 }
+        ))
     }
 }
 

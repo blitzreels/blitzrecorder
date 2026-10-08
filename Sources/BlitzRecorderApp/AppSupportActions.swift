@@ -80,10 +80,13 @@ Diagnostics:
     }
 
     static func copyDiagnostics(_ diagnostics: String) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(diagnostics, forType: .string)
+        Task { @MainActor in
+            guard await BlitzClipboard.copy(diagnostics) else { return }
+            showDiagnosticsCopiedAlert()
+        }
+    }
 
+    private static func showDiagnosticsCopiedAlert() {
         let alert = NSAlert()
         alert.messageText = "Diagnostics copied"
         alert.informativeText = "Paste them into a GitHub issue or support email when you want help. No diagnostics are sent automatically."

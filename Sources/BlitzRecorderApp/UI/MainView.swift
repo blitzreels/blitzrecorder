@@ -11,6 +11,8 @@ struct MainView: View {
     @Bindable var vm: RecorderViewModel
     private let mcpServer: BlitzRecorderMCPServer
     @State private var retainsEditor = false
+    @AppStorage("appSidebarHidden") private var isSidebarHidden = false
+    @State private var studioExitDestination: AppSidebarDestination = .recordings
 
     init(configuration: Configuration) {
         vm = configuration.viewModel
@@ -19,9 +21,10 @@ struct MainView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            AppNavigationSidebar(vm: vm)
-            Rectangle().fill(BlitzUI.separator).frame(width: 1)
-                .padding(.top, MainWindowChrome.toolbarHeight)
+            if !isSidebarHidden && !isInStudio {
+                AppSidebar(vm: vm)
+                Rectangle().fill(BlitzUI.separator).frame(width: 1)
+            }
             ZStack {
                 backgroundLayer
                 recorderContent()
@@ -46,11 +49,42 @@ struct MainView: View {
                 }
             }
         }
+        .overlay(alignment: .topLeading) {
+            Group {
+                if isInStudio {
+                    StudioExitButton(configuration: .init(destination: studioExitDestination) {
+                        vm.showSidebarDestination(studioExitDestination)
+                    })
+                } else {
+                    AppSidebarToggle(isSidebarHidden: $isSidebarHidden)
+                }
+            }
+            .frame(height: MainWindowChrome.toolbarHeight)
+            .padding(.leading, MainWindowChrome.trafficLightsWidth)
+        }
+        .overlay(alignment: .bottomTrailing) {
+            ExportResultToast(vm: vm)
+                .padding(.trailing, 16)
+                .padding(.bottom, 44)
+        }
+        .background { AppSidebarShortcuts(vm: vm) }
+        .environment(\.windowToolbarLeadingInset, toolbarLeadingInset)
         .environment(\.workspaceRecorder, vm)
         .background(BlitzUI.panelBackground)
         .ignoresSafeArea(.container, edges: .top)
         .onChange(of: vm.studioMode, initial: true) { _, mode in
             if mode == .edit { retainsEditor = true }
+        }
+        .onChange(of: vm.sidebarDestination) { previous, destination in
+            guard destination == .record, previous != .settings else { return }
+            studioExitDestination = previous == .editor ? .editor : .recordings
+        }
+        .sheet(item: $vm.folderPrompt) { prompt in
+            ProjectFolderNameEditor(
+                prompt: prompt, name: $vm.folderNameDraft,
+                affectedCount: vm.folderPromptAffectedCount(prompt),
+                onSave: { vm.commitFolderPrompt(prompt) }, onCancel: { vm.folderPrompt = nil }
+            )
         }
         .overlay {
             if vm.showsFirstRunOnboarding && !vm.isShowingSettings {
@@ -75,10 +109,20 @@ struct MainView: View {
         }
     }
 
+    private var isInStudio: Bool {
+        vm.studioMode == .record && !vm.isShowingSettings
+    }
+
+    private var toolbarLeadingInset: CGFloat {
+        if isInStudio { return MainWindowChrome.trafficLightsWidth + MainWindowChrome.studioExitWidth }
+        if isSidebarHidden { return MainWindowChrome.trafficLightsWidth + MainWindowChrome.sidebarToggleWidth }
+        return 16
+    }
+
     private func recorderContent() -> some View {
         VStack(spacing: 0) {
             CaptureCommandBar(vm: vm)
-                .blitzWindowToolbar(showsUpdate: true)
+                .blitzWindowToolbar()
             recordContent()
         }
     }
@@ -545,9 +589,7 @@ private struct RecordingQualityShortcut: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Resolution")
-                    .font(BlitzType.captionEmphasis)
-                    .foregroundStyle(BlitzUI.secondaryText)
+                BlitzUI.sectionLabel("Resolution")
                 BlitzSegmentedPicker(configuration: .init(
                     title: "Recording resolution",
                     options: OutputResolution.allCases,
@@ -557,9 +599,7 @@ private struct RecordingQualityShortcut: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Source FPS")
-                    .font(BlitzType.captionEmphasis)
-                    .foregroundStyle(BlitzUI.secondaryText)
+                BlitzUI.sectionLabel("Source FPS")
                 BlitzSegmentedPicker(configuration: .init(
                     title: "Source FPS",
                     options: RecordingSettings.supportedFrameRates,
@@ -602,7 +642,6 @@ private struct CaptureCommandBar: View {
         HStack(spacing: 12) {
             FolderRecordTargetMenu(vm: vm)
                 .frame(maxWidth: 220, alignment: .leading)
-                .padding(.leading, 40)
             Spacer(minLength: 16)
             RecordingQualityShortcut(vm: vm)
         }

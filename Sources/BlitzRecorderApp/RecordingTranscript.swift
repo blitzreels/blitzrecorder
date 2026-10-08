@@ -5,6 +5,9 @@ struct RecordingTranscript: Codable, Equatable, Identifiable, Sendable {
         let id: String
         var name: String
         var context: String
+        var voice: SpeakerVoice? = nil
+        var identitySuggestion: SpeakerIdentitySuggestion? = nil
+        var savedVoiceID: UUID? = nil
 
         var displayName: String {
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -213,6 +216,14 @@ struct RecordingTranscript: Codable, Equatable, Identifiable, Sendable {
 struct TranscriptSpeakerRenameRequest {
     let speakerID: String
     let name: String
+    var voiceMemory: VoiceMemoryAction = .unchanged
+    var profileID: UUID? = nil
+
+    enum VoiceMemoryAction: Sendable {
+        case unchanged
+        case remember
+        case forget
+    }
 }
 
 extension RecordingTranscript {
@@ -221,11 +232,10 @@ extension RecordingTranscript {
         var transcript = self
         transcript.speakers = speakers.map { speaker in
             guard speaker.id == request.speakerID else { return speaker }
-            return Speaker(
-                id: speaker.id,
-                name: request.name.trimmingCharacters(in: .whitespacesAndNewlines),
-                context: speaker.context
-            )
+            var renamed = speaker
+            renamed.name = request.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            renamed.identitySuggestion = nil
+            return renamed
         }
         return transcript
     }

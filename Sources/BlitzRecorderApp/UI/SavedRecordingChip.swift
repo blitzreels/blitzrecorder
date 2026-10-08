@@ -2,41 +2,12 @@ import AppKit
 import AVFoundation
 import SwiftUI
 
-struct ProjectReadyChip: View {
-    @Bindable var vm: RecorderViewModel
-
-    var body: some View {
-        EditRecordingButton(configuration: .init(
-            title: "Edit recording",
-            isLoading: false,
-            help: "Open \(projectDetail) in the editor",
-            placement: .dock,
-            action: { vm.openEditor() }
-        ))
-        .contextMenu {
-            Button("Edit recording") { vm.openEditor() }
-            Button("Show Source Files") {
-                vm.revealLastSourceTracks()
-            }
-            Divider()
-            Button("Clear") { vm.clearPostRecordingStatus() }
-        }
-    }
-
-    private var projectDetail: String {
-        vm.lastPostRecordingProjectOutput?.sourceDirectory.lastPathComponent
-            ?? vm.lastExportedSourceTakeURL?.lastPathComponent
-            ?? "Editable source project"
-    }
-}
-
 struct SavedRecordingChip: View {
     @Bindable var vm: RecorderViewModel
     let url: URL
     let sourceTakeURL: URL?
     let warning: String?
     @State private var metadata = RecordingFileMetadata.empty
-    @State private var showsMenu = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -68,43 +39,20 @@ struct SavedRecordingChip: View {
                 .fixedSize()
             }
 
-            Button {
-                showsMenu.toggle()
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(BlitzType.glyph(13))
-                    .foregroundStyle(BlitzUI.primaryText)
-            }
-            .blitzButton(.dock)
-            .fixedSize()
-            .accessibilityLabel("More actions")
-            .help("More actions")
-            .popover(isPresented: $showsMenu, arrowEdge: .top) {
-                BlitzMenuList(entries: menuEntries, width: 200, maxHeight: 320) {
-                    showsMenu = false
-                }
-                .preferredColorScheme(.dark)
-            }
+            BlitzOverflowMenu(configuration: .init(
+                entries: menuEntries,
+                menuWidth: 200,
+                placement: .dock,
+                isBusy: false,
+                accessibilityLabel: "More actions",
+                help: "Play, show in Finder, rename, or clear"
+            ))
         }
-        .contextMenu { actions }
+        .contextMenu { BlitzContextMenuItems(entries: menuEntries) }
         .task(id: url) {
             metadata = .empty
             metadata = await RecordingFileMetadata.load(for: url)
         }
-    }
-
-    @ViewBuilder
-    private var actions: some View {
-        Button("Play") { NSWorkspace.shared.open(url) }
-        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-        Button("Rename…") { vm.renameLastExportedFile() }
-        if let sourceTakeURL {
-            Button("Show Source Files") {
-                NSWorkspace.shared.activateFileViewerSelecting([sourceTakeURL])
-            }
-        }
-        Divider()
-        Button("Clear") { vm.clearPostRecordingStatus() }
     }
 
     private var menuEntries: [BlitzMenuEntry] {
@@ -133,7 +81,7 @@ struct SavedRecordingChip: View {
     }
 }
 
-private struct RecordingThumbnailButton: View {
+struct RecordingThumbnailButton: View {
     let image: NSImage?
     let durationLabel: String?
     var height: CGFloat = 68

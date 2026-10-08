@@ -317,9 +317,7 @@ struct RemoteCameraPage: View {
 
     private func connectionField(_ field: ConnectionField) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(field == .address ? "iPhone address" : "Port")
-                .font(BlitzType.captionEmphasis)
-                .foregroundStyle(BlitzUI.secondaryText)
+            BlitzUI.sectionLabel(field == .address ? "iPhone address" : "Port")
             TextField(
                 field == .address ? "192.168.1.10" : "Port",
                 text: field == .address ? $vm.directRemoteCameraHost : $vm.directRemoteCameraPort

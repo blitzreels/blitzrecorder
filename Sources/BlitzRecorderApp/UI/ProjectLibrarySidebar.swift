@@ -69,18 +69,6 @@ extension ProjectLibraryView {
                     }
                     .background(BlitzUI.panelBackground)
                 }
-
-                Button {
-                    folderNameDraft = ""
-                    folderPrompt = .create(parent: nil, moving: [])
-                } label: {
-                    Image(systemName: "folder.badge.plus")
-                        .frame(width: 18)
-                }
-                .blitzButton(.secondary)
-                .disabled(!workPolicy.loadsLocalProjects || vm.projectTrash.isWorking)
-                .accessibilityLabel("New folder")
-                .help("New folder")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -106,42 +94,38 @@ extension ProjectLibraryView {
             let visibleProjects = filteredProjects
             let sharedProjectPaths = Set(visibleProjects.map(\.projectPath).filter { sharing.sharedURL(forProject: $0) != nil })
             let hasQuery = !vm.projectLibraryNavigation.searchText.isEmpty || vm.projectLibraryNavigation.filters.activeCount > 0
-            let index = folderIndex
-            let folders = ProjectFolderTree.roots(.init(projects: visibleProjects, index: index, includesEmpty: !hasQuery))
-            let looseGroups = ProjectLibraryDayGroups.groups(.init(
-                projects: visibleProjects.filter { index.resolved($0).folder == nil },
-                groupsByDay: vm.projectLibraryNavigation.filters.sort.isChronological,
-                now: Date(), calendar: .current
-            ))
+            let index = vm.folderIndex
             List(selection: $vm.projectLibraryNavigation.selectedProjectIDs) {
-                if !folders.isEmpty {
-                    Section {
-                        ForEach(folders) { node in
-                            folderNode(.init(node: node, index: index, sharedProjectPaths: sharedProjectPaths))
-                        }
-                    } header: {
-                        sidebarHeader("Folders")
+                if let scope = vm.projectLibraryNavigation.folderScope {
+                    let nodes = ProjectFolderTree.roots(.init(projects: visibleProjects, index: index, includesEmpty: !hasQuery))
+                        .flatMap(\.flattened)
+                    ForEach(nodes.first { $0.path == scope.path }?.flattened ?? []) { node in
+                        folderSections(.init(node: node, scope: scope, index: index,
+                                             sharedProjectPaths: sharedProjectPaths, showsEmpty: !hasQuery))
                     }
-                }
-                ForEach(looseGroups, id: \.title) { group in
-                    Section {
-                        ForEach(group.projects, id: \.id) { project in
-                            projectRow(.init(project: project, groupsByDay: group.groupsByDay,
-                                isShared: sharedProjectPaths.contains(project.projectPath),
-                                folderTitle: nil, isDuplicateLesson: false))
-                            .projectDropTarget(.init(id: "loose-\(project.id)", target: $dropTargetID) { ids in
-                                dropProjects(.init(ids: ids, destination: .loose))
-                            })
-                        }
-                    } header: {
-                        let title = group.title.isEmpty && !folders.isEmpty ? "Recordings" : group.title
-                        if !title.isEmpty {
-                            sidebarHeader(title)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(dropFill("loose-header-\(title)"))
-                                .projectDropTarget(.init(id: "loose-header-\(title)", target: $dropTargetID) { ids in
-                                    dropProjects(.init(ids: ids, destination: .loose))
-                                })
+                } else {
+                    let groups = ProjectLibraryDayGroups.groups(.init(
+                        projects: visibleProjects,
+                        groupsByDay: vm.projectLibraryNavigation.filters.sort.isChronological,
+                        now: Date(), calendar: .current
+                    ))
+                    ForEach(groups, id: \.title) { group in
+                        Section {
+                            ForEach(group.projects, id: \.id) { project in
+                                let resolved = index.resolved(project)
+                                projectRow(.init(
+                                    project: project, groupsByDay: group.groupsByDay,
+                                    isShared: sharedProjectPaths.contains(project.projectPath),
+                                    title: resolved.folder == nil ? displayTitle(project) : ProjectFolderTitle.baseTitle(resolved.title),
+                                    lessonNumber: nil,
+                                    context: resolved.folder.map { folder in
+                                        ([folder.name] + [resolved.code?.formatted].compactMap { $0 }).joined(separator: " · ")
+                                    },
+                                    isDuplicateLesson: false
+                                ))
+                            }
+                        } header: {
+                            if !group.title.isEmpty { BlitzUI.sectionLabel(group.title) }
                         }
                     }
                 }
@@ -179,35 +163,30 @@ extension ProjectLibraryView {
         let project: RecordingProjectHistory.Entry
         let groupsByDay: Bool
         let isShared: Bool
-        let folderTitle: ProjectFolderTitle?
+        let title: String
+        let lessonNumber: String?
+        let context: String?
         let isDuplicateLesson: Bool
     }
 
-    private func sidebarHeader(_ title: String) -> some View {
-        Text(title)
-            .font(BlitzType.captionEmphasis)
-            .foregroundStyle(BlitzUI.secondaryText)
-    }
 
     func projectRow(_ request: RowRequest) -> some View {
         let project = request.project
         let metadata = metadataByProjectID[project.id] ?? .empty
-        let title = request.folderTitle.map { ProjectFolderTitle.baseTitle($0.title) } ?? displayTitle(project)
         return ProjectLibrarySidebarRow(configuration: .init(
-            title: title, metadata: metadata,
-            lessonNumber: request.folderTitle?.code.map { ProjectLessonCode.number($0.lesson) },
-            reservesLessonGutter: request.folderTitle != nil,
+            title: request.title, metadata: metadata,
+            lessonNumber: request.lessonNumber,
             isDuplicateLesson: request.isDuplicateLesson,
-            detail: [request.groupsByDay
+            detail: [request.context, request.groupsByDay
                 ? project.recordedAt.formatted(date: .omitted, time: .shortened)
                 : project.recordedAt.formatted(date: .abbreviated, time: .omitted),
                 metadata.videoQuality?.label.components(separatedBy: " · ").first
             ].compactMap { $0 }.joined(separator: " · "),
             match: transcriptMatches[project.id]?.first.map { "\(SilenceTime.label($0.time)) · \($0.text)" },
             isShared: request.isShared,
-            isExported: !(project.exports ?? []).isEmpty || project.finalVideoPath != nil,
             isSelected: vm.projectLibraryNavigation.selectedProjectIDs.contains(project.id)
         ))
+        .listRowInsets(ProjectLibrarySidebarLayout.rowInsets)
         .tag(project.id)
         .draggable(project.id.uuidString)
     }
@@ -221,9 +200,8 @@ extension ProjectLibraryView {
         Group {
             if projects.count == 1, let project = projects.first {
                 if let url = sharing.sharedURL(forProject: project.projectPath) {
-                    Button("Copy share link") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                    Button("Copy watch link") {
+                        BlitzClipboard.copyInBackground(url.absoluteString)
                     }
                     Button("Open shared video") { NSWorkspace.shared.open(url) }
                     Divider()
@@ -247,7 +225,7 @@ extension ProjectLibraryView {
 
             if !projects.isEmpty {
                 Divider()
-                moveToFolderMenu(projects)
+                ProjectMoveToFolderMenu(vm: vm, projects: projects)
                 Divider()
                 Button {
                     vm.revealProjects(projects)
@@ -276,17 +254,19 @@ extension ProjectLibraryView {
     }
 }
 
-private struct ProjectLibrarySidebarRow: View {
+enum ProjectLibrarySidebarLayout {
+    static let rowInsets = EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8)
+}
+
+struct ProjectLibrarySidebarRow: View {
     struct Configuration {
         let title: String
         let metadata: ProjectLibraryMetadata
         let lessonNumber: String?
-        let reservesLessonGutter: Bool
         let isDuplicateLesson: Bool
         let detail: String
         let match: String?
         let isShared: Bool
-        let isExported: Bool
         let isSelected: Bool
     }
 
@@ -299,7 +279,7 @@ private struct ProjectLibrarySidebarRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             if let lessonNumber = configuration.lessonNumber {
                 Text(lessonNumber)
                     .font(BlitzType.captionEmphasis)
@@ -309,8 +289,7 @@ private struct ProjectLibrarySidebarRow: View {
                     .fixedSize()
                     .accessibilityLabel("Lesson \(lessonNumber)")
                     .help(configuration.isDuplicateLesson ? "Another recording uses this lesson number" : "Lesson \(lessonNumber)")
-            } else if configuration.reservesLessonGutter {
-                Color.clear.frame(width: 20, height: 1).accessibilityHidden(true)
+
             }
             ProjectLibraryThumbnail(configuration: .init(
                 metadata: configuration.metadata, width: 96, height: 54, cornerRadius: 6, showsDuration: true
@@ -329,17 +308,11 @@ private struct ProjectLibrarySidebarRow: View {
                 HStack(spacing: 6) {
                     Text(configuration.detail).lineLimit(1)
                     Spacer(minLength: 0)
-                    if configuration.isExported {
-                        Image(systemName: "checkmark.circle.fill")
-                            .frame(width: 24)
-                            .foregroundStyle(BlitzUI.mint)
-                            .accessibilityLabel("Exported")
-                            .help("An export is saved in this project's history")
-                    }
                     if configuration.isShared {
                         Image(systemName: "link")
-                            .frame(width: 24)
-                            .foregroundStyle(BlitzUI.mint)
+                            .font(BlitzType.symbol(10))
+                            .frame(width: 12)
+                            .foregroundStyle(BlitzUI.secondaryText)
                             .accessibilityLabel("Shared")
                             .help("Has a watch link")
                     }

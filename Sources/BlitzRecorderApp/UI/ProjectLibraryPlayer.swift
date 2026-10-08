@@ -126,9 +126,7 @@ struct ProjectLibraryPlayerSurface: View {
         return !ProjectLibraryPosterPolicy.hasVisibleVideo(.init(
             exportedPlayerIsReadyForDisplay: configuration.controller.filePlayer.map {
                 readyForDisplayPlayer == ObjectIdentifier($0)
-            },
-            isPlaying: configuration.controller.isPlaying,
-            currentTime: configuration.controller.nowPlayingTime
+            }
         ))
     }
 
@@ -161,7 +159,18 @@ struct ProjectLibraryPlayerSurface: View {
                 .allowsHitTesting(false)
 
             if !isPlaybackReady {
-                loadingStatus
+                if configuration.fallbackThumbnail != nil, configuration.loadError == nil {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                        .padding(8)
+                        .background(.black.opacity(0.55), in: .circle)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        .accessibilityLabel("Preparing playback")
+                } else {
+                    loadingStatus
+                }
             }
         }
         .frame(width: playerLayout.videoSize.width, height: playerLayout.videoSize.height)
@@ -177,7 +186,7 @@ struct ProjectLibraryPlayerSurface: View {
         if let fallbackThumbnail = configuration.fallbackThumbnail {
             Image(nsImage: fallbackThumbnail)
                 .resizable()
-                .scaledToFill()
+                .scaledToFit()
                 .frame(width: playerLayout.videoSize.width, height: playerLayout.videoSize.height)
                 .clipped()
                 .accessibilityHidden(true)
@@ -220,8 +229,6 @@ struct ProjectLibraryPlayerSurface: View {
 
 struct ProjectLibraryPosterRequest {
     let exportedPlayerIsReadyForDisplay: Bool?
-    let isPlaying: Bool
-    let currentTime: Double
 }
 
 enum ProjectLibraryPosterPolicy {
@@ -229,7 +236,7 @@ enum ProjectLibraryPosterPolicy {
         if let isReady = request.exportedPlayerIsReadyForDisplay {
             return isReady
         }
-        return request.isPlaying || request.currentTime > 0
+        return true
     }
 }
 
@@ -380,7 +387,7 @@ struct ProjectLibraryPlaybackControls: View {
 
 }
 
-private struct ProjectPlaybackWaveform: View {
+struct ProjectPlaybackWaveform: View {
     @State private var hoverX: CGFloat?
     @State private var isDragging = false
 

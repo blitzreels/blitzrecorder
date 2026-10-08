@@ -41,25 +41,23 @@ extension ProjectLibraryView {
                     startedAt: vm.transcriptionController.jobStartedAt[project.projectPath]
                 ))
             } else if let transcript = selectedTranscript {
-                TranscriptCopyButton(.init(
-                    markdown: transcript.markdownText(title: displayTitle(project)),
-                    appearance: .compact
+                BlitzCopyButton(configuration: .init(
+                    text: transcript.markdownText(title: displayTitle(project)),
+                    title: "Copy",
+                    accessibilityLabel: "Copy transcript",
+                    help: "Copy the full transcript with headings, speakers, and timestamps",
+                    emphasis: .secondary,
+                    width: .fit
                 ))
-                BlitzGlassMenu(entries: transcriptMenuEntries(.init(project: project, transcript: transcript, status: status)),
-                               menuWidth: 220) {
-                    Group {
-                        if titleGenerationProjectID == project.id
-                            || vm.transcriptionController.isFixingSpeakers(project) {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Image(systemName: "ellipsis").font(BlitzType.glyph(13))
-                        }
-                    }
-                    .foregroundStyle(BlitzUI.primaryText)
-                    .frame(width: 30, height: BlitzControlMetrics.height(.small))
-                }
-                .accessibilityLabel("Transcript actions")
-                .help("Generate a title, fix speakers, or retranscribe")
+                BlitzOverflowMenu(configuration: .init(
+                    entries: transcriptMenuEntries(.init(project: project, transcript: transcript, status: status)),
+                    menuWidth: 220,
+                    placement: .inline,
+                    isBusy: titleGenerationProjectID == project.id || vm.transcriptionController.isFixingSpeakers(project),
+                    accessibilityLabel: "Transcript actions",
+                    help: "Generate a title, fix speakers, or retranscribe"
+                ))
+                .controlSize(.small)
             }
         }
     }
@@ -96,9 +94,15 @@ extension ProjectLibraryView {
 
     private func renameSpeaker(_ request: ProjectTranscriptSpeakerRenameRequest) {
         Task {
-            guard await vm.renameTranscriptSpeaker(request),
-                  let transcript = transcriptByProjectID[request.project.id] else { return }
-            transcriptByProjectID[request.project.id] = transcript.renamingSpeaker(request.rename)
+            guard let transcript = await vm.renameTranscriptSpeaker(request) else { return }
+            isSearchFocused = false
+            NSApp.keyWindow?.makeFirstResponder(nil)
+            if var displayed = transcriptByProjectID[request.project.id] {
+                displayed.speakers = displayed.speakers.map { speaker in
+                    transcript.speakers.first { $0.id == speaker.id } ?? speaker
+                }
+                transcriptByProjectID[request.project.id] = displayed
+            }
         }
     }
 
@@ -133,8 +137,7 @@ extension ProjectLibraryView {
                         inlineTranscriptRow(TranscriptRowRequest(
                             segment: segment,
                             transcript: transcript,
-                            showsSpeaker: transcript.speakerCount > 1
-                                && (index == 0 || segments[index - 1].speakerID != segment.speakerID)
+                            showsSpeaker: index == 0 || segments[index - 1].speakerID != segment.speakerID
                         ))
                     }
                 }
@@ -184,15 +187,15 @@ extension ProjectLibraryView {
             VStack(alignment: .leading, spacing: 6) {
                 if request.showsSpeaker {
                     TranscriptSpeakerLabel(configuration: .init(
-                        name: request.transcript.speakerName(for: request.segment.speakerID),
-                        currentName: request.transcript.speakers
-                            .first { $0.id == request.segment.speakerID }?.name ?? "",
+                        speaker: request.transcript.speakers
+                            .first { $0.id == request.segment.speakerID }
+                            ?? .init(id: request.segment.speakerID, name: "", context: ""),
                         color: speakerColor(speakerIndex),
-                        onRename: { name in
+                        onRename: { rename in
                             guard let project = selectedProject else { return }
                             renameSpeaker(ProjectTranscriptSpeakerRenameRequest(
                                 project: project,
-                                rename: .init(speakerID: request.segment.speakerID, name: name)
+                                rename: rename
                             ))
                         }
                     ))

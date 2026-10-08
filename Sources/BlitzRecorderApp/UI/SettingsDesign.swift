@@ -35,7 +35,7 @@ struct SettingsPageHeader: View {
 
             if let status = configuration.status {
                 HStack(spacing: 6) {
-                    Circle().fill(status.isActive ? BlitzUI.mint : BlitzUI.secondaryText).frame(width: 6, height: 6)
+                    BlitzStatusDot(tone: status.isActive ? .ready : .muted, diameter: 6)
                     Text(status.title)
                         .font(BlitzType.label)
                         .foregroundStyle(status.isActive ? BlitzUI.primaryText : BlitzUI.secondaryText)

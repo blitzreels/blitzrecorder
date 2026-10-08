@@ -151,7 +151,7 @@ struct AccountsSettingsPage: View {
                     .settingsRow()
                     SettingsRowDivider()
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Upload to").font(BlitzType.captionEmphasis).foregroundStyle(BlitzUI.secondaryText)
+                        BlitzUI.sectionLabel("Upload to")
                         if account.workspaces.isEmpty {
                             Text("Create or join a workspace in BlitzReels to send recordings.")
                                 .font(BlitzType.body).foregroundStyle(BlitzUI.secondaryText)

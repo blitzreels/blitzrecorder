@@ -37,6 +37,38 @@ final class AppNavigationTests: XCTestCase {
         XCTAssertTrue(vm.canRedoEditor)
     }
 
+    func testSidebarDestinationsRoundTripBetweenEditorAndLibrary() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let vm = fixture.vm
+        vm.openProject(fixture.entry)
+        let projectID = try XCTUnwrap(vm.lastExportedProject?.id)
+        XCTAssertEqual(vm.sidebarDestination, .editor)
+
+        vm.showSidebarDestination(.shared)
+        XCTAssertEqual(vm.studioMode, .projects)
+        XCTAssertEqual(vm.sidebarDestination, .shared)
+
+        let folder = try XCTUnwrap(ProjectFolderPath(["Formation IA"]))
+        vm.showSidebarDestination(.folder(.init(path: folder, module: nil)))
+        XCTAssertEqual(vm.projectLibraryNavigation.section, .recordings)
+        XCTAssertEqual(vm.sidebarDestination, .folder(.init(path: folder, module: nil)))
+
+        vm.showSidebarDestination(.settings)
+        XCTAssertEqual(vm.sidebarDestination, .settings)
+        vm.showSidebarDestination(.recordings)
+        XCTAssertFalse(vm.isShowingSettings)
+        XCTAssertNil(vm.projectLibraryNavigation.folderScope)
+        XCTAssertEqual(vm.sidebarDestination, .recordings)
+
+        vm.showSidebarDestination(.editor)
+        XCTAssertTrue(vm.isEditorVisible)
+        XCTAssertEqual(vm.lastExportedProject?.id, projectID)
+
+        vm.showSidebarDestination(.record)
+        XCTAssertEqual(vm.sidebarDestination, .record)
+    }
+
     func testBrowsingPagesDuringCaptureKeepsItsStateAndBlocksOpeningAnotherTake() throws {
         let fixture = try Fixture()
         defer { fixture.cleanup() }

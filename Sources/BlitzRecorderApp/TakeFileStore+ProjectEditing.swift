@@ -31,7 +31,8 @@ extension TakeFileStore {
                     source,
                     CMTime(seconds: max(0, seconds), preferredTimescale: 600)
                 )
-            })
+            }),
+            sourceReferences: project.sources.filter { $0.bookmarkData != nil }
         )
     }
 

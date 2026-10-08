@@ -88,7 +88,8 @@ enum RecordingTranscriptAssembler {
             hasSeparateTracks: request.words.contains { $0.1 != .mixed },
             speechRanges: request.intervals.map {
                 .init(startTime: $0.startTime, endTime: $0.endTime)
-            }
+            },
+            voiceIntervals: request.trackIntervals.all
         ))
     }
 
@@ -124,13 +125,21 @@ enum RecordingTranscriptAssembler {
         let words: [AssignedWord]
         let hasSeparateTracks: Bool
         let speechRanges: [RecordingTranscript.SpeechRange]
+        let voiceIntervals: [DiarizedInterval]
     }
 
     static func assignedTranscript(_ request: AssignmentRequest) -> RecordingTranscript {
         let assignedWords = request.words
-        let stabilizedWords = request.hasSeparateTracks
+        let candidateWords = request.hasSeparateTracks
             ? stabilizedPerTrack(assignedWords)
             : stabilizedSpeakerAssignments(.init(words: assignedWords, minimumWords: 100))
+        let evidencedIDs = Set(request.voiceIntervals.filter {
+            !$0.embedding.isEmpty && $0.embedding.allSatisfy(\.isFinite)
+                && $0.embedding.contains { $0 != 0 }
+        }.map(\.speakerID))
+        let stabilizedWords = zip(assignedWords, candidateWords).map { original, stabilized in
+            evidencedIDs.contains(original.rawSpeakerID) ? original : stabilized
+        }
         let normalizedSpeakerIDs = normalizedSpeakerIDs(for: stabilizedWords)
         let normalizedWords = stabilizedWords.map { assignedWord in
             TranscriptSegmentBuilder.SpeakerWord(
@@ -146,7 +155,8 @@ enum RecordingTranscriptAssembler {
                 RecordingTranscript.Speaker(
                     id: displayID,
                     name: microphoneSpeakerCount == 1 && isMicrophoneSpeaker(rawID) ? "You" : "",
-                    context: ""
+                    context: "",
+                    voice: speakerVoice(request.voiceIntervals.filter { $0.speakerID == rawID })
                 )
             }
 
@@ -177,6 +187,26 @@ enum RecordingTranscriptAssembler {
     struct AssignedWord {
         let word: TranscriptWord
         let rawSpeakerID: String
+    }
+
+    static func speakerVoice(_ intervals: [DiarizedInterval]) -> SpeakerVoice? {
+        let valid = intervals.filter {
+            $0.embedding.count == 256 && $0.embedding.allSatisfy(\.isFinite)
+                && $0.startTime.isFinite && $0.endTime.isFinite && $0.endTime > $0.startTime
+        }
+        guard !valid.isEmpty else { return nil }
+        var sum = Array(repeating: Float.zero, count: 256)
+        var duration: TimeInterval = 0
+        for interval in valid {
+            let norm = interval.embedding.reduce(Float.zero) { $0 + $1 * $1 }.squareRoot()
+            guard norm.isFinite, norm > 0 else { continue }
+            let weight = interval.endTime - interval.startTime
+            duration += weight
+            for index in sum.indices { sum[index] += interval.embedding[index] / norm * Float(weight) }
+        }
+        let norm = sum.reduce(Float.zero) { $0 + $1 * $1 }.squareRoot()
+        guard norm.isFinite, norm > 0 else { return nil }
+        return SpeakerVoice(embedding: sum.map { $0 / norm }, duration: duration)
     }
 
     static func speakerID(

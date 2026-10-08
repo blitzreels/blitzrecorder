@@ -279,17 +279,20 @@ struct EditorLayoutInspector: View {
                         .background(BlitzUI.mint.opacity(0.10), in: .capsule)
                 }
 
-                LazyVGrid(columns: EditorFrameRatio.columns, spacing: 6) {
+                LazyVGrid(columns: EditorFrameRatio.columns, spacing: 2) {
                     ForEach(EditorFrameRatio.availablePresets(sourceRatio: sourceRatio)) { preset in
-                        let isSelected = preset == selectedPreset
-                        EditorFrameRatioButton(
+                        BlitzTab(configuration: .init(
                             title: preset.title,
-                            isSelected: isSelected
-                        ) {
-                            applyFrameRatio(.init(kind: kind, preset: preset))
-                        }
+                            symbolName: nil,
+                            isSelected: preset == selectedPreset,
+                            expands: true,
+                            action: { applyFrameRatio(.init(kind: kind, preset: preset)) }
+                        ))
                     }
                 }
+                .blitzTabGroup()
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Frame aspect ratio")
 
                 Toggle("Lock aspect ratio", isOn: aspectRatioLockBinding(for: kind))
                     .font(BlitzType.captionEmphasis)
@@ -333,6 +336,7 @@ struct EditorLayoutInspector: View {
                 eventIndex: index,
                 { scene in
                     scene.sceneLayout = layout
+                    scene.cameraContentMode = .fill
                     scene.enabledSources.formUnion([.screen, .camera])
                     scene.sourceOpacities[.screen] = 1
                     scene.sourceOpacities[.camera] = 1
@@ -397,6 +401,7 @@ struct EditorLayoutInspector: View {
             playback.pauseForEditing()
         }
         cameraZoomDraft = clamped
+        scene.cameraContentMode = .fill
         scene.cameraCropAmount = EditorSourceZoom.amount(clamped)
         if clamped < 0.001 {
             scene.cameraCropPosition = .zero
@@ -408,6 +413,7 @@ struct EditorLayoutInspector: View {
         guard let zoom = cameraZoomDraft else { return }
         let index = currentEventIndex
         let succeeded = vm.applyProjectSceneEdit(eventIndex: index) { scene in
+            scene.cameraContentMode = .fill
             scene.cameraCropAmount = EditorSourceZoom.amount(zoom)
             if zoom < 0.001 {
                 scene.cameraCropPosition = .zero

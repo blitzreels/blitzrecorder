@@ -89,9 +89,10 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
         var downloadedWhisper: URL?
         switch request.model {
         case .parakeet:
-            let asrModels = try await AsrModels.downloadAndLoad(
-                to: modelStore.asrDirectory,
-                version: .v3,
+            try await ModelHub.download(
+                .parakeetV3,
+                to: modelStore.rootDirectory,
+                variant: ParakeetEncoderPrecision.int8.rawValue,
                 progressHandler: { progress in
                     request.onUpdate(TranscriptionModelDownloadUpdate(
                         fractionCompleted: progress.fractionCompleted * 0.65,
@@ -99,6 +100,8 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
                     ))
                 }
             )
+            try modelStore.validateParakeetModels()
+            let asrModels = try await AsrModels.load(from: modelStore.asrDirectory, version: .v3)
             asrManager = AsrManager(config: Self.recognitionConfiguration, models: asrModels)
         case .whisperMedium, .whisperLargeTurbo, .whisperLarge:
             guard let variant = request.model.whisperVariant else { throw LocalTranscriptionError.modelNotInstalled }
@@ -177,6 +180,8 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
         var words: [TranscriptWord] = []
         var wordSources: [RecordingTranscriptAssembler.WordSource] = []
         var confidences: [Float] = []
+        let savedProfiles = (try? await SpeakerVoiceStore.shared.profiles()) ?? []
+        let vocabulary = TranscriptionVocabulary.prompt(savedProfiles.map(\.name))
 
         for (index, track) in preparedAudio.tracks.enumerated() {
             request.onUpdate(TranscriptionEngineUpdate(.init(stage: .transcribing,
@@ -196,7 +201,12 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
                     audioPath: track.audioURL.path,
                     decodeOptions: DecodingOptions(
                         language: request.language.whisperCode,
+                        skipSpecialTokens: true,
                         wordTimestamps: true,
+                        promptTokens: vocabulary.isEmpty ? nil : managers.whisper?.tokenizer.map {
+                            Array($0.encode(text: vocabulary).suffix(160))
+                        },
+                        suppressBlank: true,
                         chunkingStrategy: .vad
                     )
                 )
@@ -222,7 +232,7 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
             onUpdate: request.onUpdate
         ))
 
-        let transcript = RecordingTranscriptAssembler.assemble(
+        let assembled = RecordingTranscriptAssembler.assemble(
             RecordingTranscriptAssembler.Request(
                 mediaPath: preparedAudio.mediaPath,
                 generatedAt: Date(),
@@ -236,6 +246,11 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
             )
         )
 
+        let profiles = (try? await SpeakerVoiceStore.shared.profiles()) ?? []
+        let previous = try? artifactStore.load(from: preparedAudio.artifactLocations.jsonURL)
+        let named = previous.map { SpeakerIdentity.preservingNames(.init(transcript: assembled, previous: $0)) }
+            ?? assembled
+        let transcript = SpeakerIdentity.suggestingNames(.init(transcript: named, profiles: profiles))
         request.onUpdate(TranscriptionEngineUpdate(stage: .saving))
         try artifactStore.save(TranscriptArtifactStore.SaveRequest(
             transcript: transcript,
@@ -264,10 +279,12 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
             system: diarizers.system,
             onUpdate: request.onUpdate
         ))
-        let reassigned = try RecordingTranscriptAssembler.reassignSpeakers(.init(
+        let assembled = try RecordingTranscriptAssembler.reassignSpeakers(.init(
             transcript: transcript,
             diarizedIntervals: intervals
         ))
+        let profiles = (try? await SpeakerVoiceStore.shared.profiles()) ?? []
+        let reassigned = SpeakerIdentity.suggestingNames(.init(transcript: assembled, profiles: profiles))
         request.onUpdate(TranscriptionEngineUpdate(stage: .saving))
         try artifactStore.save(TranscriptArtifactStore.SaveRequest(
             transcript: reassigned,
@@ -276,12 +293,36 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
         return reassigned
     }
 
+    func detectVoices(_ request: SpeakerFixRequest) async throws -> RecordingTranscript {
+        guard TranscriptionSpeechModel.allCases.contains(where: { modelStore.isInstalled($0) }) else {
+            throw LocalTranscriptionError.modelNotInstalled
+        }
+        try Task.checkCancellation()
+        request.onUpdate(.init(stage: .preparingAudio))
+        let prepared = try await audioPreparer.prepare(request.source)
+        defer {
+            for track in prepared.tracks { try? FileManager.default.removeItem(at: track.audioURL) }
+        }
+        try Task.checkCancellation()
+        request.onUpdate(.init(stage: .loadingModels))
+        let diarizers = try await loadedDiarizers(.automatic)
+        let intervals = try await diarizedIntervals(.init(
+            tracks: prepared.tracks, microphone: diarizers.microphone, system: diarizers.system,
+            onUpdate: request.onUpdate
+        ))
+        try Task.checkCancellation()
+        return VoiceDiscoveryAnalysis.transcript(.init(
+            intervals: intervals, mediaPath: prepared.mediaPath, duration: prepared.duration
+        ))
+    }
+
     private func diarizedIntervals(_ request: DiarizationRequest) async throws -> [DiarizedInterval] {
         request.onUpdate(TranscriptionEngineUpdate(stage: .diarizing))
         let mixedTrackCount = request.tracks.filter { $0.source == .mixed }.count
         var mixedIndex = 0
         var intervals: [DiarizedInterval] = []
         for (index, track) in request.tracks.enumerated() {
+            try Task.checkCancellation()
             request.onUpdate(TranscriptionEngineUpdate(.init(stage: .diarizing,
                 source: track.source, index: index, total: request.tracks.count)))
             let prefix: String
@@ -300,6 +341,7 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
             }
             do {
                 let diarizationResult = try await diarizer.process(track.audioURL)
+                try Task.checkCancellation()
                 intervals.append(contentsOf: Self.intervals(diarizationResult.segments, prefix: prefix))
             } catch OfflineDiarizationError.noSpeechDetected {
                 continue
@@ -335,6 +377,7 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
             throw LocalTranscriptionError.modelNotInstalled
         }
         if request.model == .parakeet && asrManager == nil {
+            try modelStore.validateParakeetModels()
             let asrModels = try await AsrModels.load(from: modelStore.asrDirectory, version: .v3)
             asrManager = AsrManager(config: Self.recognitionConfiguration, models: asrModels)
         }
@@ -478,6 +521,7 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
 
 enum LocalTranscriptionError: LocalizedError {
     case modelNotInstalled
+    case incompleteModel(String)
     case transcriptUnavailable
     case transcriptBusy
 
@@ -485,6 +529,8 @@ enum LocalTranscriptionError: LocalizedError {
         switch self {
         case .modelNotInstalled:
             return "Download the transcription model in Settings."
+        case .incompleteModel(let file):
+            return "The transcription model is incomplete (\(file)). Download it again in Settings."
         case .transcriptUnavailable:
             return "The transcript is unavailable."
         case .transcriptBusy:
@@ -501,7 +547,13 @@ struct LocalTranscriptionModelStore: LocalTranscriptionModelStoring {
         let diarizationModel: String
     }
 
-    var rootDirectory: URL {
+    let rootDirectory: URL
+
+    init(rootDirectory: URL = Self.defaultRootDirectory) {
+        self.rootDirectory = rootDirectory
+    }
+
+    private static var defaultRootDirectory: URL {
         let applicationSupport = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
@@ -558,6 +610,13 @@ struct LocalTranscriptionModelStore: LocalTranscriptionModelStoring {
     var isInstalled: Bool {
         FileManager.default.fileExists(atPath: markerURL.path)
             && AsrModels.modelsExist(at: asrDirectory, version: .v3)
+            && (try? validateParakeetModels()) != nil
+    }
+
+    func validateParakeetModels() throws {
+        for name in ModelNames.ASR.requiredModelsV3().sorted() {
+            try CompiledTranscriptionModel.validate(parakeetModelDirectory.appendingPathComponent(name))
+        }
     }
 
     func isInstalled(_ model: TranscriptionSpeechModel) -> Bool {

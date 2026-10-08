@@ -3,6 +3,15 @@ import Foundation
 
 @MainActor
 extension RecorderStudioConfiguration {
+    func setCameraCrop(_ crop: CameraCropControl) {
+        guard sceneChangeIsAllowed() else { return }
+        settings.cameraCropAmount = SourceCropGeometry.clampedAmount(crop.amount)
+        settings.cameraCropPosition = SourceCropGeometry.clampedPosition(crop.position)
+        settings.cameraContentMode = .fill
+        persist()
+        updateRecordingScene?(.cut)
+    }
+
     func setSceneLayer(
         _ kind: SceneLayerKind,
         frame: CGRect,

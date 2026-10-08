@@ -135,6 +135,7 @@ struct BlitzSegmentedPicker<Value: Hashable>: View {
         let label: (Value) -> String
         var symbolName: (Value) -> String? = { _ in nil }
         var isOptionEnabled: (Value) -> Bool = { _ in true }
+        var help: (Value) -> String? = { _ in nil }
     }
 
     let configuration: Configuration
@@ -150,11 +151,59 @@ struct BlitzSegmentedPicker<Value: Hashable>: View {
                     action: { configuration.selection.wrappedValue = value }
                 ))
                 .disabled(!configuration.isOptionEnabled(value))
+                .help(configuration.help(value) ?? "")
             }
         }
         .blitzTabGroup()
         .accessibilityElement(children: .contain)
         .accessibilityLabel(configuration.title)
+    }
+}
+
+struct BlitzToolTabBar<Value: Hashable>: View {
+    struct Configuration {
+        let title: String
+        let options: [Value]
+        let selection: Value
+        let label: (Value) -> String
+        let symbolName: (Value) -> String
+        let help: (Value) -> String
+        let isOptionEnabled: (Value) -> Bool
+        let select: (Value) -> Void
+    }
+
+    let configuration: Configuration
+
+    var body: some View {
+        let split = (configuration.options.count + 1) / 2
+        ViewThatFits(in: .horizontal) {
+            row(configuration.options).fixedSize(horizontal: true, vertical: false).frame(maxWidth: .infinity)
+            VStack(spacing: 2) {
+                row(Array(configuration.options.prefix(split)))
+                row(Array(configuration.options.dropFirst(split)))
+            }
+        }
+        .controlSize(.mini)
+        .padding(6)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(configuration.title)
+    }
+
+    private func row(_ options: [Value]) -> some View {
+        HStack(spacing: 2) {
+            ForEach(options, id: \.self) { option in
+                BlitzTab(configuration: .init(
+                    title: configuration.label(option),
+                    symbolName: configuration.symbolName(option),
+                    symbolPlacement: .above,
+                    isSelected: configuration.selection == option,
+                    expands: true,
+                    action: { configuration.select(option) }
+                ))
+                .disabled(!configuration.isOptionEnabled(option))
+                .help(configuration.help(option))
+            }
+        }
     }
 }
 

@@ -171,6 +171,12 @@ extension RecorderViewModel {
     }
 
     func undoEditor() {
+        if studioMode == .projects {
+            guard canUndoEditor else { return }
+            transcriptUndoManager.undo()
+            notifyEditorHistoryChanged()
+            return
+        }
         guard canUndoEditor,
               let entry = editorHistory.popUndo(),
               let currentProject = lastExportedProject else { return }
@@ -187,6 +193,12 @@ extension RecorderViewModel {
     }
 
     func redoEditor() {
+        if studioMode == .projects {
+            guard canRedoEditor else { return }
+            transcriptUndoManager.redo()
+            notifyEditorHistoryChanged()
+            return
+        }
         guard canRedoEditor,
               let entry = editorHistory.popRedo(),
               let currentProject = lastExportedProject else { return }

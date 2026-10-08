@@ -4,20 +4,15 @@ struct RecordingOutputPicker: View {
     @Bindable var vm: RecorderViewModel
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(CaptureLayout.allCases, id: \.self) { layout in
-                BlitzTab(configuration: .init(
-                    title: layout.formatTitle,
-                    symbolName: layout.symbolName,
-                    isSelected: vm.settings.layout == layout,
-                    expands: false,
-                    action: { vm.setLayout(layout) }
-                ))
-                .help("Record \(layout.shortLabel) video")
-            }
-        }
-        .blitzTabGroup()
+        BlitzSegmentedPicker(configuration: .init(
+            title: "Recording output aspect ratio",
+            options: CaptureLayout.allCases,
+            selection: Binding(get: { vm.settings.layout }, set: { vm.setLayout($0) }),
+            label: { $0.formatTitle },
+            symbolName: { $0.symbolName },
+            help: { "Record \($0.shortLabel) video" }
+        ))
+        .fixedSize()
         .disabled(vm.state != .idle)
-        .help("Recording output aspect ratio")
     }
 }

@@ -162,9 +162,7 @@ struct BlitzSourcePickerPopover: View {
 
     private func sourceSection(_ section: BlitzSourcePickerSection) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(section.title)
-                .font(BlitzType.captionEmphasis)
-                .foregroundStyle(BlitzUI.secondaryText)
+            BlitzUI.sectionLabel(section.title)
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                 ForEach(section.items) { item in
                     BlitzSourcePickerThumbnailCard(item: item, previewRevision: previewRevision, dismiss: dismiss)

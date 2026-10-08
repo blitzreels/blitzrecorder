@@ -326,7 +326,10 @@ extension RecorderCaptureRuntime {
               settings.screenSourceBinding?.isConcreteSelection == true else {
             return nil
         }
-        let content = try await SCShareableContent.current
-        return try ScreenCaptureGeometry.screenSource(for: settings, content: content).filter
+        let source = try await ScreenSourceLookup.resolve {
+            let content = try await SCShareableContent.current
+            return try ScreenCaptureGeometry.screenSource(for: settings, content: content)
+        }
+        return source.filter
     }
 }

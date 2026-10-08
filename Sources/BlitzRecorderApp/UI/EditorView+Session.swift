@@ -434,8 +434,7 @@ extension EditorView {
         guard let draft = cameraCropDraft else { return }
         let commit = EditorCameraCropSession.commit(draft)
         let succeeded = vm.applyProjectSceneEdit(eventIndex: commit.eventIndex) { scene in
-            scene.cameraCropAmount = commit.amount
-            scene.cameraCropPosition = commit.position
+            commit.apply(to: &scene)
         }
         cameraCropDraft = nil
         if !succeeded {

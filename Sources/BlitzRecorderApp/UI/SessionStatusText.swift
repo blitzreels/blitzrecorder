@@ -29,9 +29,7 @@ struct ElapsedTimeText: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Circle()
-                .fill(isPaused ? BlitzUI.warning : BlitzUI.recordRed)
-                .frame(width: 7, height: 7)
+            BlitzStatusDot(tone: isPaused ? .warning : .recording, diameter: 7)
 
             Text(elapsed)
                 .font(BlitzType.title.monospaced())

@@ -143,6 +143,7 @@ struct RecordingTake {
     let titleSlug: String?
     var timelineTrimOffset: CMTime = .zero
     var sourceTimelineOffsets: [CaptureSource: CMTime] = [:]
+    var sourceReferences: [RecordingProject.SourceFile] = []
 
     var sourceManifestURL: URL {
         scratchDirectory.appendingPathComponent("take.json")

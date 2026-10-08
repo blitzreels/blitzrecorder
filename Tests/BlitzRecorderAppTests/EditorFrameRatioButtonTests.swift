@@ -7,11 +7,13 @@ final class EditorFrameRatioButtonTests: XCTestCase {
     @MainActor
     func testEntireVisibleSurfacePressesButton() throws {
         var pressCount = 0
-        let host = NSHostingView(rootView: EditorFrameRatioButton(
+        let host = NSHostingView(rootView: BlitzTab(configuration: .init(
             title: "4:3",
+            symbolName: nil,
             isSelected: false,
+            expands: true,
             action: { pressCount += 1 }
-        ))
+        )))
         host.frame = CGRect(x: 0, y: 0, width: 120, height: 30)
         let window = NSWindow(
             contentRect: host.frame,

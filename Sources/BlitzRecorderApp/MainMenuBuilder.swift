@@ -51,6 +51,9 @@ final class MainMenuBuilder {
         submenu.addItem(updateItem)
         submenu.addItem(.separator())
         submenu.addItem(menuItem("Settings…", action: #selector(MenuActionsTarget.showSettings), keyEquivalent: ","))
+#if DEBUG
+        submenu.addItem(uiKitMenuItem())
+#endif
         submenu.addItem(.separator())
         submenu.addItem(menuItem("Hide BlitzRecorder", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h", target: NSApp))
         let hideOthers = menuItem("Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h", target: NSApp)
@@ -193,6 +196,15 @@ final class MainMenuBuilder {
         item.submenu = submenu
         return item
     }
+
+#if DEBUG
+    private func uiKitMenuItem() -> NSMenuItem {
+        let item = menuItem("UI Kit", action: #selector(BlitzUIKitWindow.show), keyEquivalent: "k",
+                            target: BlitzUIKitWindow.shared)
+        item.keyEquivalentModifierMask = [.command, .option]
+        return item
+    }
+#endif
 
     private func helpMenuItem() -> NSMenuItem {
         let item = NSMenuItem(title: "Help", action: nil, keyEquivalent: "")

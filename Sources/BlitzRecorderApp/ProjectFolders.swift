@@ -409,3 +409,42 @@ struct ProjectFolderRecordTarget: Hashable {
     let path: ProjectFolderPath
     let module: Int?
 }
+
+struct ProjectTitlePresentation: Equatable {
+    struct Request {
+        let title: String
+        let known: Set<ProjectFolderPath>
+    }
+
+    let title: String
+    let context: String?
+
+    init(_ request: Request) {
+        let resolved = ProjectFolderIndex.parse(.init(title: request.title, known: request.known))
+        title = ProjectFolderTitle.baseTitle(resolved.title)
+        let lesson = resolved.code.map {
+            "Module \(ProjectLessonCode.number($0.module)) · Lesson \(ProjectLessonCode.number($0.lesson))"
+        }
+        let parts = [resolved.folder?.displayPath, lesson].compactMap { $0 }
+        context = parts.isEmpty ? nil : parts.joined(separator: " › ")
+    }
+}
+
+struct ProjectFolderScope: Hashable {
+    let path: ProjectFolderPath
+    let module: Int?
+
+    var title: String {
+        module.map { "\(path.displayPath) › Module \(ProjectLessonCode.number($0))" } ?? path.displayPath
+    }
+
+    func contains(_ resolved: ProjectFolderTitle) -> Bool {
+        guard let folder = resolved.folder, folder.hasPrefix(path) else { return false }
+        guard let module else { return true }
+        return folder == path && resolved.code?.module == module
+    }
+
+    func replacingPrefix(_ request: ProjectFolderPath.PrefixReplacement) -> ProjectFolderScope {
+        .init(path: path.replacingPrefix(request), module: module)
+    }
+}

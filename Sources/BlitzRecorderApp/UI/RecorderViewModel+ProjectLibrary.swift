@@ -115,28 +115,73 @@ extension RecorderViewModel {
         }
     }
 
-    func renameTranscriptSpeaker(_ request: ProjectTranscriptSpeakerRenameRequest) async -> Bool {
+    func renameTranscriptSpeaker(_ request: ProjectTranscriptSpeakerRenameRequest) async -> RecordingTranscript? {
         guard !transcriptionController.isUpdatingTranscript(request.project) else {
             projectLibraryError = LocalTranscriptionError.transcriptBusy.localizedDescription
-            return false
+            return nil
         }
         let projectURL = URL(fileURLWithPath: request.project.projectPath)
         let rename = request.rename
         do {
-            try await Task.detached(priority: .userInitiated) {
+            try transcriptionController.beginSpeakerEdit(request.project)
+            defer { transcriptionController.endSpeakerEdit(request.project) }
+            let result = try await Task.detached(priority: .userInitiated) {
                 let project = try TakeFileStore().loadRecordingProject(at: projectURL)
                 let artifactStore = TranscriptArtifactStore()
                 let locations = artifactStore.locations(for: project)
-                let transcript = try artifactStore.load(from: locations.jsonURL)
-                try artifactStore.save(.init(
-                    transcript: transcript.renamingSpeaker(rename),
-                    locations: locations
-                ))
+                let original = try artifactStore.load(from: locations.jsonURL)
+                var transcript = original.renamingSpeaker(rename)
+                if let index = transcript.speakers.firstIndex(where: { $0.id == rename.speakerID }) {
+                    let speaker = original.speakers[index]
+                    switch rename.voiceMemory {
+                    case .unchanged:
+                        if let id = rename.profileID {
+                            transcript.speakers[index].savedVoiceID = id
+                        } else if let suggestion = speaker.identitySuggestion, suggestion.name == rename.name {
+                            transcript.speakers[index].savedVoiceID = suggestion.profileID
+                        }
+                    case .remember:
+                        guard let voice = speaker.voice else {
+                            throw SpeakerVoiceStore.VoiceMemoryError.insufficientSpeech
+                        }
+                        let id = try await SpeakerVoiceStore.shared.remember(.init(
+                            name: rename.name, voice: voice,
+                            profileID: speaker.savedVoiceID
+                                ?? rename.profileID
+                                ?? (speaker.identitySuggestion?.name == rename.name ? speaker.identitySuggestion?.profileID : nil)
+                        ))
+                        transcript.speakers[index].savedVoiceID = id
+                    case .forget:
+                        if let id = speaker.savedVoiceID { try await SpeakerVoiceStore.shared.forget(id) }
+                        transcript.speakers[index].savedVoiceID = nil
+                    }
+                }
+                try artifactStore.save(.init(transcript: transcript, locations: locations))
+                if rename.voiceMemory == .remember,
+                   let id = transcript.speakers.first(where: { $0.id == rename.speakerID })?.savedVoiceID,
+                   let sample = try? await SpeakerSampleBuilder.shared.make(.init(
+                       project: project, transcript: transcript, speakerID: rename.speakerID
+                   )) {
+                    defer { try? FileManager.default.removeItem(at: sample.url) }
+                    try? await SpeakerVoiceStore.shared.savePreview(.init(profileID: id, sample: sample))
+                }
+                return (original, transcript, locations)
             }.value
-            return true
+            if let before = result.0.speakers.first(where: { $0.id == rename.speakerID }),
+               let after = result.1.speakers.first(where: { $0.id == rename.speakerID }), before != after {
+                TranscriptSpeakerUndo.shared.register(.init(
+                    locations: result.2, before: before, after: after, manager: transcriptUndoManager,
+                    isAvailable: { [weak self] in
+                        self?.transcriptionController.isUpdatingTranscript(request.project) == false
+                    },
+                    onError: { [weak self] in self?.projectLibraryError = $0.localizedDescription }
+                ))
+                onEditorHistoryChanged?()
+            }
+            return result.1
         } catch {
             projectLibraryError = "Renaming the speaker failed: \(error.localizedDescription)"
-            return false
+            return nil
         }
     }
 

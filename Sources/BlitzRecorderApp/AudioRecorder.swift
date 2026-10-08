@@ -14,6 +14,7 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     private var finishContinuation: CheckedContinuation<MediaWriterCompletion, Error>?
     private var didRequestRecording = false
     private var clockRateEstimator = CaptureClockRateEstimator()
+    private var pauseController = AudioRecordingPauseController()
     private var normalizationFormat: SourceAudioFormat = .aac
     private var normalizationBitrate = 192_000
     private var pendingClockNormalization: AudioClockNormalizationRequest?
@@ -58,6 +59,7 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
                 finishContinuation = nil
                 didRequestRecording = false
                 clockRateEstimator.reset()
+                pauseController = AudioRecordingPauseController()
                 normalizationFormat = settings.effectiveSourceAudioFormat
                 normalizationBitrate = settings.finalAudioBitrate
                 pendingClockNormalization = nil
@@ -123,16 +125,14 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
 
     func pause() {
         queue.async {
-            guard self.fileOutput?.isRecording == true else { return }
-            self.fileOutput?.pauseRecording()
+            guard let output = self.fileOutput, self.pauseController.pause(output) else { return }
             self.clockRateEstimator.pause()
         }
     }
 
     func resume() {
         queue.async {
-            guard self.fileOutput?.isRecordingPaused == true else { return }
-            self.fileOutput?.resumeRecording()
+            guard let output = self.fileOutput, self.pauseController.resume(output) else { return }
             self.clockRateEstimator.resume()
         }
     }
@@ -219,7 +219,7 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         queue.async {
             self.levelPublisher.publish(from: sampleBuffer)
             if self.fileOutput?.isRecording == true,
-               self.fileOutput?.isRecordingPaused == false,
+               !self.pauseController.isPaused,
                let sampleDuration = Self.sampleDuration(of: sampleBuffer) {
                 self.clockRateEstimator.observe(.init(
                     sampleDuration: sampleDuration,
@@ -406,4 +406,30 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
 private struct AudioFileOutputSettingsRequest {
     let device: AVCaptureDevice
     let settings: RecordingSettings
+}
+
+protocol AudioFilePauseRecording: AnyObject {
+    var isRecording: Bool { get }
+    func pauseRecording()
+    func resumeRecording()
+}
+
+extension AVCaptureAudioFileOutput: AudioFilePauseRecording {}
+
+struct AudioRecordingPauseController {
+    private(set) var isPaused = false
+
+    mutating func pause(_ output: any AudioFilePauseRecording) -> Bool {
+        guard !isPaused, output.isRecording else { return false }
+        isPaused = true
+        output.pauseRecording()
+        return true
+    }
+
+    mutating func resume(_ output: any AudioFilePauseRecording) -> Bool {
+        guard isPaused else { return false }
+        isPaused = false
+        output.resumeRecording()
+        return true
+    }
 }

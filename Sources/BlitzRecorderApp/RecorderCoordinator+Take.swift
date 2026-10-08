@@ -37,6 +37,7 @@ extension RecorderCaptureRuntime {
             var createdTake: RecordingTake?
             var remoteStartCommandSent = false
             do {
+                await stopScreenPreview()
                 await prepareAudioLevelMonitoringForRecording()
                 guard !settings.enabledSources.isEmpty else {
                     throw RecorderError.noSourcesSelected
@@ -96,9 +97,6 @@ extension RecorderCaptureRuntime {
                 if startPlan.usesLiveCompositor {
                     if access.stopLocalCameraSession {
                         await cameraRecorder.stopSession()
-                    }
-                    if access.stopScreenPreview {
-                        await stopScreenPreview()
                     }
                     let hostStartTime = try await takeRecording.startLiveCompositedTake(
                         take: take,

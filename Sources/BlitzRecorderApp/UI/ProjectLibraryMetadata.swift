@@ -145,6 +145,7 @@ enum ProjectLibraryMetadataLoader {
     private struct ThumbnailRequest {
         let url: URL?
         let generatesThumbnail: Bool
+        let startSeconds: Double
     }
 
     static func load(_ entry: RecordingProjectHistory.Entry) async -> ProjectLibraryMetadata {
@@ -168,7 +169,12 @@ enum ProjectLibraryMetadataLoader {
             existingSources: existingSources
         ))
 
-        async let thumbnail = thumbnail(.init(url: previewURL, generatesThumbnail: request.generatesThumbnails))
+        let source = existingSources.first { $0.path == previewURL?.path }
+        let captureSource: CaptureSource = source?.role == "camera" ? .camera : .screen
+        let startSeconds = source == nil ? 0 : max(0,
+            project.timelineTrimOffsetSeconds - (project.sourceTimelineOffsetSeconds[captureSource.rawValue] ?? 0))
+        async let thumbnail = thumbnail(.init(
+            url: previewURL, generatesThumbnail: request.generatesThumbnails, startSeconds: startSeconds))
         async let videoDetails = videoDetails(for: previewURL)
         let details = await videoDetails
 
@@ -199,11 +205,12 @@ enum ProjectLibraryMetadataLoader {
     private static func thumbnail(_ request: ThumbnailRequest) async -> NSImage? {
         guard !Task.isCancelled, let url = request.url else { return nil }
         let cacheURL = MediaFileFingerprint(url: url).map {
-            thumbnailCacheDirectory.appendingPathComponent("\($0.cacheKey).jpg")
+            thumbnailCacheDirectory.appendingPathComponent("\($0.cacheKey)-\(request.startSeconds.bitPattern).jpg")
         }
         if let cacheURL, let cached = NSImage(contentsOf: cacheURL) { return cached }
         guard request.generatesThumbnail, !Task.isCancelled else { return nil }
-        let generated = await generatedThumbnail(for: url)
+        let frame = await ProjectThumbnailSampling.firstFrame(.init(url: url, startSeconds: request.startSeconds))
+        let generated = frame.map { NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height)) }
         if let cacheURL, let generated,
            let tiff = generated.tiffRepresentation,
            let data = NSBitmapImageRep(data: tiff)?.representation(using: .jpeg, properties: [.compressionFactor: 0.82]) {
@@ -214,40 +221,7 @@ enum ProjectLibraryMetadataLoader {
     }
 
     private static let thumbnailCacheDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("BlitzRecorder/ProjectThumbnails-v1", isDirectory: true)
-
-    private static func generatedThumbnail(for url: URL) async -> NSImage? {
-        let asset = AVURLAsset(url: url)
-        guard let tracks = try? await asset.loadTracks(withMediaType: .video), !tracks.isEmpty else { return nil }
-        let generator = AVAssetImageGenerator(asset: asset)
-        generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(width: 640, height: 360)
-        generator.requestedTimeToleranceBefore = CMTime(seconds: 0.5, preferredTimescale: 600)
-        generator.requestedTimeToleranceAfter = CMTime(seconds: 0.5, preferredTimescale: 600)
-
-        let duration = try? await asset.load(.duration)
-        return await withTaskCancellationHandler {
-            var bestImage: CGImage?
-            var bestScore = -Double.infinity
-            for seconds in ProjectThumbnailSampling.times(duration: duration?.seconds ?? 0) {
-                guard !Task.isCancelled else { return nil }
-                let time = CMTime(seconds: seconds, preferredTimescale: 600)
-                guard let image = try? await generator.image(at: time).image else { continue }
-                let score = ProjectThumbnailSampling.detailScore(image)
-                if score > bestScore {
-                    bestImage = image
-                    bestScore = score
-                }
-            }
-            guard let image = bestImage else { return nil }
-            return NSImage(
-                cgImage: image,
-                size: NSSize(width: image.width, height: image.height)
-            )
-        } onCancel: {
-            generator.cancelAllCGImageGeneration()
-        }
-    }
+        .appendingPathComponent("BlitzRecorder/ProjectThumbnails-v2", isDirectory: true)
 
     private struct VideoDetails {
         let duration: Double?
@@ -300,7 +274,8 @@ enum ProjectLibraryMetadataLoader {
         _ sources: [RecordingProject.SourceFile]
     ) -> Int64? {
         let totalBytes = sources.reduce(into: Int64(0)) { result, source in
-            guard let attributes = try? FileManager.default.attributesOfItem(
+            guard source.bookmarkData == nil,
+            let attributes = try? FileManager.default.attributesOfItem(
                 atPath: source.path
             ),
             let size = attributes[.size] as? NSNumber else {

@@ -334,6 +334,7 @@ extension ScenePreset {
 }
 
 enum BlitzStatusTone: Equatable {
+    case recording
     case live
     case ready
     case warning
@@ -341,6 +342,7 @@ enum BlitzStatusTone: Equatable {
 
     var color: Color {
         switch self {
+        case .recording: return BlitzUI.recordRed
         case .live, .ready: return BlitzUI.mint
         case .warning: return BlitzUI.warning
         case .muted: return BlitzUI.tertiaryText

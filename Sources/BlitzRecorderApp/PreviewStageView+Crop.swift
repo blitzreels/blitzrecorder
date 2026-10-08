@@ -86,9 +86,10 @@ extension PreviewStageView {
         isCameraCropEditingEnabled = false
         cameraCropDraftAmount = nil
         cameraCropDraftPosition = nil
+        cameraContentMode = .fill
         cameraCropAmount = crop.0
         cameraCropPosition = crop.1
-        onCameraCropChanged?(crop.0, crop.1)
+        onCameraCropChanged?(CameraCropControl(amount: crop.0, position: crop.1))
     }
 
     func cancelCameraCropEditing() {

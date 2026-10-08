@@ -29,18 +29,13 @@ struct RemoteCameraControlsPane: View {
     }
 
     private var tabPicker: some View {
-        HStack(spacing: 2) {
-            ForEach(RemoteCameraControlsTab.allCases, id: \.self) { tab in
-                BlitzTab(configuration: .init(
-                    title: tab.title,
-                    symbolName: tab.symbolName,
-                    isSelected: selectedTab == tab,
-                    expands: true,
-                    action: { selectedTab = tab }
-                ))
-            }
-        }
-        .blitzTabGroup()
+        BlitzSegmentedPicker(configuration: .init(
+            title: "Camera controls",
+            options: RemoteCameraControlsTab.allCases,
+            selection: $selectedTab,
+            label: { $0.title },
+            symbolName: { $0.symbolName }
+        ))
     }
 
     @ViewBuilder

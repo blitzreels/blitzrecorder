@@ -248,7 +248,7 @@ struct HostedVideoLibraryView: View {
             }
             HStack(spacing: 8) {
                 if let url {
-                    HostedVideoCopyButton(url: url)
+                    BlitzCopyButton(configuration: .watchLink(.init(url: url, title: "Copy link", emphasis: .secondary, width: .fixed(84))))
                     Button { NSWorkspace.shared.open(url) } label: {
                         Label("Open", systemImage: "safari.fill")
                     }

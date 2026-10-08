@@ -65,6 +65,7 @@ final class RecorderCaptureRuntime {
     var screenWindowFitRevision = 0
     var windowFitLoopGuard = WindowFitLoopGuard()
     var screenFrameAspect = AspectRatioStabilizer()
+    private var idleScreenPreviewRevision = 0
     var committedRecordingSettings: RecordingSettings?
     var localCameraRuntimeState: LocalCameraRuntimeState = .unchecked
     var activeMicrophoneDeviceID: String?
@@ -185,26 +186,26 @@ final class RecorderCaptureRuntime {
     }
 
     func startScreenPreview(frameHandler: @escaping ScreenPreviewer.FrameHandler) async throws {
-        guard state != .idle || idleCaptureResourcesEnabled else { return }
+        guard state == .idle, idleCaptureResourcesEnabled else { return }
         var previewSettings = settings
         if isEditingScreenCrop {
             previewSettings.screenCrop = nil
         }
-        let sourceBinding = previewSettings.screenSourceBinding
-        let resolvedBinding = try await screenPreviewer.start(
+        _ = try await screenPreviewer.start(
             settings: previewSettings,
             filter: pickedScreenFilter(for: previewSettings),
-            frameHandler: { [weak self] frame in
-                self?.studio.noteScreenSourceAspectRatio(frame.sourceAspectRatio)
-                frameHandler(frame)
-            }
+            frameHandler: idleScreenPreviewHandler(frameHandler)
         )
-        if !previewSettings.usesPickedScreenContent,
-           sourceBinding?.kind == .application,
-           settings.screenSourceBinding == sourceBinding,
-           let resolvedBinding, resolvedBinding.kind == .window {
-            settings.screenSourceBinding = resolvedBinding
-            persistSettings()
+    }
+
+    func idleScreenPreviewHandler(_ frameHandler: @escaping ScreenPreviewer.FrameHandler) -> ScreenPreviewer.FrameHandler {
+        idleScreenPreviewRevision += 1
+        let revision = idleScreenPreviewRevision
+        return { [weak self] frame in
+            guard let self, self.state == .idle, self.idleCaptureResourcesEnabled,
+                  self.idleScreenPreviewRevision == revision else { return }
+            self.studio.noteScreenSourceAspectRatio(frame.sourceAspectRatio)
+            frameHandler(frame)
         }
     }
 
@@ -213,6 +214,7 @@ final class RecorderCaptureRuntime {
     }
 
     func stopScreenPreview() async {
+        idleScreenPreviewRevision += 1
         try? await screenPreviewer.stop()
     }
 

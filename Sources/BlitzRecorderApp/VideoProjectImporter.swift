@@ -77,8 +77,12 @@ struct VideoProjectImporter {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var completed = false
         defer { if !completed { try? FileManager.default.removeItem(at: directory) } }
-        let sourceURL = directory.appendingPathComponent("video." + request.url.pathExtension.lowercased())
-        try await copyVideo(.init(source: request.url, destination: sourceURL, onProgress: request.onProgress))
+        try Task.checkCancellation()
+        let sourceURL = request.url
+        let bookmark = try sourceURL.bookmarkData(options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
+            includingResourceValuesForKeys: nil, relativeTo: nil)
+        var source = RecordingProject.SourceFile(role: "camera", path: sourceURL.path, exists: true, bookmarkData: bookmark)
+        source.resolveExternalReference()
         let audioURL = directory.appendingPathComponent("audio.m4a")
         if !audioTracks.isEmpty {
             await request.onProgress(.init(filename: filename, stage: "Preparing audio", fraction: nil))
@@ -86,6 +90,7 @@ struct VideoProjectImporter {
         }
         try Task.checkCancellation()
         await request.onProgress(.init(filename: filename, stage: "Creating project", fraction: nil))
+        try Task.checkCancellation()
         let title = request.url.deletingPathExtension().lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
         let initialTitle = title.isEmpty ? "Imported video" : title
         let metadata = Metadata(originalFilename: filename, initialTitle: initialTitle, width: width, height: height,
@@ -96,44 +101,13 @@ struct VideoProjectImporter {
             cameraURL: sourceURL, audioURL: audioURL, systemAudioURL: directory.appendingPathComponent("system-audio.m4a"),
             transcriptURL: directory.appendingPathComponent("transcript.txt"),
             finalVideoURL: store.finalVideoURL(slug: initialTitle, settings: settings, outputFormat: .mp4),
-            outputVideoFormat: .mp4, titleSlug: initialTitle)
+            outputVideoFormat: .mp4, titleSlug: initialTitle, sourceReferences: [source])
         try store.writeSourceTakeManifest(for: take, settings: settings, finalVideoURL: nil)
         try store.writeRecordingProject(for: take, settings: settings,
             sceneEvents: [.init(time: 0, scene: RecordingScene(settings: settings))], finalVideoURL: nil)
         let project = try store.loadRecordingProject(at: take.projectURL)
         completed = true
         return project
-    }
-
-    private struct CopyRequest {
-        let source: URL
-        let destination: URL
-        let onProgress: @Sendable (Progress) async -> Void
-    }
-
-    private func copyVideo(_ request: CopyRequest) async throws {
-        let total = try request.source.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        let input = try FileHandle(forReadingFrom: request.source)
-        defer { try? input.close() }
-        guard FileManager.default.createFile(atPath: request.destination.path, contents: nil) else {
-            throw RecorderError.mediaWriteFailed("Could not create the imported video in your project library.")
-        }
-        let output = try FileHandle(forWritingTo: request.destination)
-        defer { try? output.close() }
-        var copied = 0
-        var lastUpdate = -Double.infinity
-        while true {
-            try Task.checkCancellation()
-            guard let data = try input.read(upToCount: 4 * 1024 * 1024), !data.isEmpty else { break }
-            try output.write(contentsOf: data)
-            copied += data.count
-            let now = ProcessInfo.processInfo.systemUptime
-            if now - lastUpdate >= 0.1 || copied == total {
-                await request.onProgress(.init(filename: request.source.lastPathComponent, stage: "Copying video",
-                    fraction: total > 0 ? min(1, Double(copied) / Double(total)) : nil))
-                lastUpdate = now
-            }
-        }
     }
 
     private struct AudioRequest {
