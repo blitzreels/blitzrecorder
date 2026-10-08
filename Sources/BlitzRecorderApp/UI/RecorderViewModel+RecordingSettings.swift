@@ -69,6 +69,12 @@ extension RecorderViewModel {
         syncSettings()
     }
 
+    func setRecorderUIIncluded(_ included: Bool) {
+        coordinator.setRecorderUIIncluded(included)
+        syncSettings()
+        Task { [weak self] in await self?.refreshSources() }
+    }
+
     func setCursorIncluded(_ included: Bool) {
         coordinator.setCursorIncluded(included)
         syncSettings()

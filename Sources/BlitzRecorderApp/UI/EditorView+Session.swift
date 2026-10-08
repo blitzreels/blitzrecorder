@@ -137,7 +137,7 @@ extension EditorView {
         switch EditorKeyboardDispatch.action(
             EditorKeyboardSession.resolve(.init(
                 isShowingSettings: vm.isShowingSettings,
-                isExportPopoverPresented: isExportPopoverPresented,
+                isExportPopoverPresented: vm.isEditorExportPresented,
                 showsTimelineShortcuts: showsTimelineShortcuts,
                 isFinishing: vm.state == .finishing,
                 isPlaybackReady: playback.isReady,

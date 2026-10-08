@@ -47,6 +47,21 @@ struct RecordingSettingsPage: View {
 
     private var livePreviewSection: some View {
         VStack(spacing: 0) {
+            Toggle(isOn: Binding(
+                get: { vm.settings.includesRecorderUI },
+                set: { vm.setRecorderUIIncluded($0) }
+            )) {
+                SettingsRowLabel(.init(
+                    title: "Record BlitzRecorder UI",
+                    detail: "Include BlitzRecorder in display recordings and choose its window as a screen source."
+                ))
+            }
+            .toggleStyle(.blitzSwitch)
+            .settingsRow()
+            .disabled(!canEdit)
+
+            SettingsRowDivider()
+
             Toggle(
                 isOn: Binding(
                     get: { vm.isLivePreviewEnabled },

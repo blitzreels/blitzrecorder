@@ -68,6 +68,7 @@ enum ScreenContentPickerSelectionPolicy {
 struct ScreenContentPickerRequest {
     let activeStream: SCStream?
     let selectionPolicy: ScreenContentPickerSelectionPolicy
+    let includesRecorderUI: Bool
 }
 
 struct PickScreenContentRequest {
@@ -145,7 +146,8 @@ final class ScreenContentPicker: NSObject, @preconcurrency SCContentSharingPicke
             let picker = SCContentSharingPicker.shared
             var configuration = SCContentSharingPickerConfiguration()
             configuration.allowedPickerModes = request.selectionPolicy.allowedModes
-            configuration.excludedBundleIDs = [Bundle.main.bundleIdentifier].compactMap { $0 }
+            configuration.excludedBundleIDs = RecorderUICapturePolicy(includesRecorderUI: request.includesRecorderUI)
+                .excludedBundleIDs(Bundle.main.bundleIdentifier)
             configuration.allowsChangingSelectedContent = true
 
             picker.configuration = configuration

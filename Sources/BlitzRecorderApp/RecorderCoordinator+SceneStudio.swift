@@ -88,6 +88,10 @@ extension RecorderCoordinator {
         studio.setSocialSafeZoneOverlay(overlay)
     }
 
+    func setRecorderUIIncluded(_ included: Bool) {
+        studio.setRecorderUIIncluded(included)
+    }
+
     func setCursorIncluded(_ included: Bool) {
         studio.setCursorIncluded(included)
     }

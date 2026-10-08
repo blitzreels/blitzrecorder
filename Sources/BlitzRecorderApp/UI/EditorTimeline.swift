@@ -89,7 +89,7 @@ struct EditorTimelineView: View {
     }
 
     private var displayedEdits: TimelineEdits {
-        clipTrim.origin?.edits ?? project?.edits ?? .empty
+        clipTrim.edits(committed: project?.edits ?? .empty)
     }
 
     var body: some View {

@@ -32,6 +32,7 @@ extension RecorderViewModel {
         syncPreviewInteractionState()
         switch newState {
         case .starting:
+            isEditorExportPresented = false
             renderProgress = 0
             detailMessage = RecordingStartCopy.preparing
             lastExportedURL = nil

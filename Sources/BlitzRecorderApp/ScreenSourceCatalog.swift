@@ -12,6 +12,7 @@ struct ScreenSourceCatalogRequest {
     let content: SCShareableContent
     let recentBundleIdentifiers: [String]
     let frontToBackWindowIDs: [CGWindowID]
+    let includesRecorderUI: Bool
     var ownProcessID: pid_t = getpid()
 }
 
@@ -27,7 +28,8 @@ enum ScreenSourceCatalog {
     static func options(_ request: ScreenSourceCatalogRequest) -> [ScreenSourceOption] {
         let content = request.content
         let recentBundleIdentifiers = request.recentBundleIdentifiers
-        let ownProcessID = request.ownProcessID
+        let recorderUI = RecorderUICapturePolicy(
+            includesRecorderUI: request.includesRecorderUI, ownProcessID: request.ownProcessID)
         let stackIndex = Dictionary(
             request.frontToBackWindowIDs.enumerated().map { ($1, $0) },
             uniquingKeysWith: min
@@ -43,7 +45,7 @@ enum ScreenSourceCatalog {
             .compactMapValues { windows in windows.compactMap { stackIndex[$0.windowID] }.min() }
         var applicationIcons: [pid_t: NSImage] = [:]
         for application in content.applications {
-            guard application.processID != ownProcessID, primaryWindows[application.processID] != nil else { continue }
+            guard !recorderUI.excludes(processID: application.processID), primaryWindows[application.processID] != nil else { continue }
             applicationIcons[application.processID] = appIcon(
                 bundleIdentifier: application.bundleIdentifier,
                 processID: application.processID
@@ -61,7 +63,7 @@ enum ScreenSourceCatalog {
         var applicationKeys: Set<String> = []
         let applicationOptions = content.applications.compactMap { application -> ScreenSourceOption? in
             let applicationName = readableApplicationName(application.applicationName)
-            guard application.processID != ownProcessID,
+            guard !recorderUI.excludes(processID: application.processID),
                   let applicationName else {
                 return nil
             }
@@ -110,7 +112,7 @@ enum ScreenSourceCatalog {
         let windowOptions = visibleWindows.compactMap { window -> ScreenSourceOption? in
             let application = window.owningApplication
             let applicationName = readableApplicationName(application?.applicationName)
-            guard application?.processID != ownProcessID else {
+            guard !recorderUI.excludes(processID: application?.processID) else {
                 return nil
             }
             let isUtility = ScreenSourcePickerOrganization.isUtilityWindow(.init(

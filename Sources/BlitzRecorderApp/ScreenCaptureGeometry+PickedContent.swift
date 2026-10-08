@@ -20,7 +20,13 @@ extension ScreenCaptureGeometry {
         return SCContentFilter(desktopIndependentWindow: window)
     }
 
-    static func excludingOwnApplication(_ filter: SCContentFilter) async -> SCContentFilter {
+    struct RecorderVisibilityRequest {
+        let filter: SCContentFilter
+        let includesRecorderUI: Bool
+    }
+
+    static func applyingRecorderVisibility(_ request: RecorderVisibilityRequest) async -> SCContentFilter {
+        let filter = request.filter
         guard #available(macOS 15.2, *),
               filter.style == .display,
               filter.includedApplications.isEmpty,
@@ -28,10 +34,10 @@ extension ScreenCaptureGeometry {
               let content = try? await SCShareableContent.current else {
             return filter
         }
-        let ownProcess = getpid()
+        let policy = RecorderUICapturePolicy(includesRecorderUI: request.includesRecorderUI)
         return SCContentFilter(
             display: content.displays.first { $0.displayID == display.displayID } ?? display,
-            excludingApplications: content.applications.filter { $0.processID == ownProcess },
+            excludingApplications: content.applications.filter { policy.excludes(processID: $0.processID) },
             exceptingWindows: []
         )
     }

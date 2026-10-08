@@ -76,8 +76,8 @@ enum ScreenCaptureGeometry {
                 ?? display(from: content.displays, settings: settings) else {
                 throw RecorderError.noDisplay
             }
-            let ownProcess = getpid()
-            let excludedApplications = content.applications.filter { $0.processID == ownProcess }
+            let policy = RecorderUICapturePolicy(includesRecorderUI: settings.includesRecorderUI)
+            let excludedApplications = content.applications.filter { policy.excludes(processID: $0.processID) }
             let filter = SCContentFilter(
                 display: display,
                 excludingApplications: excludedApplications,

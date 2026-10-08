@@ -27,24 +27,30 @@ extension RecorderCaptureRuntime {
             persistSettings()
             updateRecordingSceneIfNeeded()
             onScreenCaptureConfigurationChanged?()
-            onMessage?(arrangement.screenItemMessage)
+            publishWindowFitMessage(arrangement.screenItemMessage)
         } catch {
-            onMessage?(error.localizedDescription)
+            publishWindowFitMessage(error.localizedDescription)
         }
     }
 
     func admitWindowFit(_ request: WindowFitAdmission) -> Bool {
-        let decision = windowFitLoopGuard.admit(.init(key: request.key, now: Date()))
+        let decision = windowFitLoopGuard.admit(.init(key: request.key, now: Date(), origin: request.origin))
         layoutLog.notice("window fit \(request.reason, privacy: .public) key=\(request.key, privacy: .public) decision=\(String(describing: decision), privacy: .public) state=\(String(describing: self.state), privacy: .public)")
         switch decision {
         case .allow:
+            publishWindowFitMessage("Resizing source window…")
             return true
         case .pauseNow:
-            onMessage?("This window keeps going back to its own size, so automatic fitting is paused for this take. Use Fit window to try again.")
+            publishWindowFitMessage("This window keeps going back to its own size, so automatic fitting is paused for this take. Use Fit window to try again.")
             return false
         case .paused:
             return false
         }
+    }
+
+    func publishWindowFitMessage(_ message: String) {
+        onScreenWindowFitMessage?(message)
+        onMessage?(message)
     }
 
     func resetWindowFitLoopGuard() {
@@ -53,7 +59,7 @@ extension RecorderCaptureRuntime {
 
     func fitFrontWindowForShorts(zoom: CGFloat) {
         guard sceneChangeIsAllowed() else { return }
-        guard admitWindowFit(.init(key: "front", reason: "front window")) else { return }
+        guard admitWindowFit(.init(key: "front", reason: "front window", origin: .userInitiated)) else { return }
         let revision = beginScreenWindowFit()
         guard ensureAccessibilityForWindowControls() else { return }
 
@@ -73,17 +79,17 @@ extension RecorderCaptureRuntime {
                 persistSettings()
                 updateRecordingSceneIfNeeded()
                 onScreenCaptureConfigurationChanged?()
-                onMessage?(arrangement.message)
+                publishWindowFitMessage(arrangement.message)
             } catch {
                 guard self.screenWindowFitRevision == revision else { return }
-                onMessage?(error.localizedDescription)
+                publishWindowFitMessage(error.localizedDescription)
             }
         }
     }
 
     func fitScreenSourceWindow(_ binding: ScreenSourceBinding, zoom: CGFloat) {
         guard sceneChangeIsAllowed() else { return }
-        guard admitWindowFit(.init(key: binding.id, reason: "source window")) else { return }
+        guard admitWindowFit(.init(key: binding.id, reason: "source window", origin: .userInitiated)) else { return }
         guard ensureAccessibilityForWindowControls() else { return }
         let revision = beginScreenWindowFit()
 
@@ -97,11 +103,11 @@ extension RecorderCaptureRuntime {
                 ) else { return }
                 guard self.isCurrentScreenSourceWindowFit(revision, binding: binding) else { return }
                 self.applyFittedScreenWindowArrangement(arrangement, shouldUpdateCapture: true)
-                self.onMessage?(arrangement.resizedMessage)
+                self.publishWindowFitMessage(arrangement.resizedMessage)
             } catch {
                 guard self.isCurrentScreenSourceWindowFit(revision, binding: binding) else { return }
                 self.onScreenCaptureConfigurationChanged?()
-                self.onMessage?(error.localizedDescription)
+                self.publishWindowFitMessage(error.localizedDescription)
             }
         }
     }
@@ -110,15 +116,15 @@ extension RecorderCaptureRuntime {
         guard sceneChangeIsAllowed() else { return }
         guard settings.usesPickedScreenContent,
               let pickedScreenFilter = screenSourceSelection.pickedContentFilter else {
-            onMessage?("Pick a screen source before resizing its window.")
+            publishWindowFitMessage("Pick a screen source before resizing its window.")
             return
         }
         guard settings.screenSourceBinding?.kind != .display else {
-            onMessage?("A display has no source window to resize. Use Screen framing instead.")
+            publishWindowFitMessage("A display has no source window to resize. Use Screen framing instead.")
             return
         }
         guard ensureAccessibilityForWindowControls() else { return }
-        guard admitWindowFit(.init(key: "picked", reason: "picked window")) else { return }
+        guard admitWindowFit(.init(key: "picked", reason: "picked window", origin: .userInitiated)) else { return }
         let revision = beginScreenWindowFit()
 
         Task { [weak self, pickedScreenFilter] in
@@ -139,7 +145,7 @@ extension RecorderCaptureRuntime {
         Task { [weak self] in
             guard let self else { return }
             guard let processID = await self.targetProcessIDForScreenContentZoom() else {
-                self.onMessage?("Select an app or window before changing app content size.")
+                self.publishWindowFitMessage("Select an app or window before changing app content size.")
                 return
             }
             guard self.screenSourceActionContext() == context else { return }
@@ -148,16 +154,16 @@ extension RecorderCaptureRuntime {
                 direction: direction,
                 processID: processID
             )) else {
-                self.onMessage?("Could not map the app content shortcut for this keyboard.")
+                self.publishWindowFitMessage("Could not map the app content shortcut for this keyboard.")
                 return
             }
-            self.onMessage?("\(direction.messageVerb) selected app content.")
+            self.publishWindowFitMessage("\(direction.messageVerb) selected app content.")
         }
     }
 
     func autoFitScreenSourceWindow(_ binding: ScreenSourceBinding, zoom: CGFloat) {
         guard permissionGate.hasAccessibilityAccess else { return }
-        guard admitWindowFit(.init(key: binding.id, reason: "auto source window")) else { return }
+        guard admitWindowFit(.init(key: binding.id, reason: "auto source window", origin: .automatic)) else { return }
         let revision = beginScreenWindowFit()
         Task { [weak self, binding] in
             guard let self else { return }
@@ -171,10 +177,10 @@ extension RecorderCaptureRuntime {
                 }) else { return }
                 guard self.isCurrentScreenSourceWindowFit(revision, binding: binding) else { return }
                 self.applyFittedScreenWindowArrangement(arrangement, shouldUpdateCapture: true)
-                self.onMessage?(arrangement.resizedMessage)
+                self.publishWindowFitMessage(arrangement.resizedMessage)
             } catch {
                 guard self.isCurrentScreenSourceWindowFit(revision, binding: binding) else { return }
-                self.onMessage?(error.localizedDescription)
+                self.publishWindowFitMessage(error.localizedDescription)
             }
         }
     }
@@ -287,9 +293,9 @@ extension RecorderCaptureRuntime {
                 widthDelta: widthDelta,
                 heightDelta: heightDelta
             )
-            onMessage?(arrangement.resizedMessage)
+            publishWindowFitMessage(arrangement.resizedMessage)
         } catch {
-            onMessage?(error.localizedDescription)
+            publishWindowFitMessage(error.localizedDescription)
         }
     }
 
@@ -303,9 +309,9 @@ extension RecorderCaptureRuntime {
                 width: width,
                 height: height
             )
-            onMessage?(arrangement.resizedMessage)
+            publishWindowFitMessage(arrangement.resizedMessage)
         } catch {
-            onMessage?(error.localizedDescription)
+            publishWindowFitMessage(error.localizedDescription)
         }
     }
 
@@ -318,7 +324,7 @@ extension RecorderCaptureRuntime {
             guard let self else { return }
             let result = await permissionGate.requestAccessibilityAccessForWindowControls()
             if result.status == .needsSettings {
-                onMessage?(result.message)
+                publishWindowFitMessage(result.message)
             }
         }
 
@@ -330,7 +336,7 @@ extension RecorderCaptureRuntime {
               permissionGate.hasAccessibilityAccess else {
             return
         }
-        guard admitWindowFit(.init(key: "picked", reason: "auto picked window")) else { return }
+        guard admitWindowFit(.init(key: "picked", reason: "auto picked window", origin: .automatic)) else { return }
         let revision = beginScreenWindowFit()
         _ = await fitPickedScreenWindow(
             filter,
@@ -372,7 +378,7 @@ extension RecorderCaptureRuntime {
             applyFittedScreenWindowArrangement(arrangement, shouldUpdateCapture: false)
             if shouldUpdateCapture {
                 onScreenCaptureConfigurationChanged?()
-                onMessage?(arrangement.resizedMessage)
+                publishWindowFitMessage(arrangement.resizedMessage)
             }
             return true
         } catch {
@@ -380,7 +386,7 @@ extension RecorderCaptureRuntime {
                 return false
             }
             if shouldUpdateCapture {
-                onMessage?(error.localizedDescription)
+                publishWindowFitMessage(error.localizedDescription)
             }
             return false
         }
@@ -390,4 +396,5 @@ extension RecorderCaptureRuntime {
 struct WindowFitAdmission {
     let key: String
     let reason: String
+    let origin: WindowFitLoopGuard.Origin
 }

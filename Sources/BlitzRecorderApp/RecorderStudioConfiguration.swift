@@ -225,6 +225,20 @@ final class RecorderStudioConfiguration {
         onSocialSafeZoneOverlayChanged?(overlay)
     }
 
+    func setRecorderUIIncluded(_ included: Bool) {
+        guard state == .idle else { return }
+        settings.includesRecorderUI = included
+        let binding = settings.screenSourceBinding
+        let capturesRecorder = binding?.processID == getpid()
+            || (binding?.bundleIdentifier != nil && binding?.bundleIdentifier == Bundle.main.bundleIdentifier)
+        if !included, capturesRecorder {
+            applyIdleScreenSource(.display(id: binding?.displayID ?? settings.selectedDisplayID))
+        } else {
+            persist()
+            onScreenCaptureConfigurationChanged?()
+        }
+    }
+
     func setCursorIncluded(_ included: Bool) {
         settings.includeCursor = included
         persist()

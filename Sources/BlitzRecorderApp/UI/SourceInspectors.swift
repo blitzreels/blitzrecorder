@@ -123,6 +123,13 @@ private struct ScreenSourceFramingControl: View {
                 .font(BlitzType.caption)
                 .foregroundStyle(BlitzUI.supportingText)
                 .fixedSize(horizontal: false, vertical: true)
+
+            if let message = vm.screenWindowFitMessage {
+                Text(message)
+                    .font(BlitzType.caption)
+                    .foregroundStyle(BlitzUI.supportingText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .disabled(!enabled || !vm.canEditScene || vm.isScreenCropModeEnabled)
     }

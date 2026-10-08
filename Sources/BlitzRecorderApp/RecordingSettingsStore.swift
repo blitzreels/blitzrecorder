@@ -18,6 +18,7 @@ enum RecordingSettingsStore {
         static let showsRuleOfThirdsOverlay = "recording.showsRuleOfThirdsOverlay"
         static let socialSafeZoneOverlay = "recording.socialSafeZoneOverlay"
         static let includeCursor = "recording.includeCursor"
+        static let includesRecorderUI = "recording.includesRecorderUI"
         static let enabledSources = "recording.enabledSources"
         static let hiddenSources = "recording.hiddenSources"
         static let screenSourceBinding = "recording.screenSourceBinding"
@@ -118,6 +119,8 @@ enum RecordingSettingsStore {
         if defaults.object(forKey: Key.includeCursor) != nil {
             settings.includeCursor = defaults.bool(forKey: Key.includeCursor)
         }
+
+        settings.includesRecorderUI = defaults.bool(forKey: Key.includesRecorderUI)
 
         if let rawSources = defaults.stringArray(forKey: Key.enabledSources) {
             let sources = Set(rawSources.compactMap(CaptureSource.init(rawValue:)))
@@ -304,6 +307,7 @@ enum RecordingSettingsStore {
         defaults.set(settings.showsRuleOfThirdsOverlay, forKey: Key.showsRuleOfThirdsOverlay)
         defaults.set(settings.socialSafeZoneOverlay.rawValue, forKey: Key.socialSafeZoneOverlay)
         defaults.set(settings.includeCursor, forKey: Key.includeCursor)
+        defaults.set(settings.includesRecorderUI, forKey: Key.includesRecorderUI)
         defaults.set(settings.enabledSources.map(\.rawValue).sorted(), forKey: Key.enabledSources)
         defaults.set(settings.hiddenSources.map(\.rawValue).sorted(), forKey: Key.hiddenSources)
         if let screenSourceBinding = settings.screenSourceBinding,

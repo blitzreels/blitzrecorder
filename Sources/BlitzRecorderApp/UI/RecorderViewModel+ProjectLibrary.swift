@@ -378,4 +378,10 @@ extension RecorderViewModel {
     func closeEditor() {
         studioMode = .record
     }
+
+    func openEditorForExport() {
+        openEditor()
+        guard studioMode == .edit else { return }
+        isEditorExportPresented = true
+    }
 }

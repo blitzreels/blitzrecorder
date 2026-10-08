@@ -396,6 +396,36 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         }
     }
 
+    func testFinishedProjectCanOpenEditorAndExportBeforeAnyVideoExport() throws {
+        let defaults = temporaryDefaults()
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults),
+            defaults: defaults
+        )
+        let vm = RecorderViewModel(coordinator: coordinator, previewStage: PreviewStageView())
+        var settings = RecordingSettings()
+        settings.outputDirectory = temporaryDirectory()
+        settings.savesSourceFiles = true
+        let take = try TakeFileStore().createTake(settings: settings)
+        vm.applyPostRecordingProjectOutput(.init(
+            projectURL: take.projectURL,
+            sourceDirectory: take.scratchDirectory,
+            warning: nil
+        ))
+
+        XCTAssertNil(vm.lastExportedURL)
+        XCTAssertTrue(vm.canOpenEditor)
+        XCTAssertEqual(vm.studioMode, .record)
+        vm.openEditor()
+        XCTAssertEqual(vm.studioMode, .edit)
+        XCTAssertFalse(vm.isEditorExportPresented)
+        vm.closeEditor()
+        vm.openEditorForExport()
+        XCTAssertEqual(vm.studioMode, .edit)
+        XCTAssertTrue(vm.isEditorExportPresented)
+        XCTAssertEqual(vm.lastExportedSourceTakeURL, take.scratchDirectory)
+    }
+
     func testViewModelKeepsEditorOpenAfterProjectExport() throws {
         let defaults = temporaryDefaults()
         let coordinator = RecorderCoordinator(

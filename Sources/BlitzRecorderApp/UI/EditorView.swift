@@ -28,7 +28,6 @@ struct EditorView: View {
     @State var backgroundMusicBookmarkData: Data?
     @State var additionalExportLayouts: Set<CaptureLayout> = []
     @State var loadedProjectID: UUID?
-    @State var isExportPopoverPresented = false
     @State var reloadTask: Task<Void, Never>?
     @State var sceneEvents: [RecordingSceneEvent] = []
     @State var layoutDraft: EditorLayoutDraft?
@@ -227,7 +226,7 @@ struct EditorView: View {
             guard !visible else { return }
             playback.pauseForEditing()
             NowPlayingController.shared.deactivate(playback)
-            isExportPopoverPresented = false
+            vm.isEditorExportPresented = false
             showsTimelineShortcuts = false
             privacy.cancelGesture()
         }

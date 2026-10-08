@@ -41,12 +41,12 @@ struct RecordButton: View {
             HStack(spacing: 8) {
                 recordGlyph
                 Text(actionTitle)
-                    .font(BlitzType.section)
                     .foregroundStyle(.white)
             }
-            .frame(minWidth: vm.state == .idle ? 92 : 64)
+            .frame(minWidth: 112)
         }
         .blitzButton(.record)
+        .controlSize(.extraLarge)
         .opacity(dimmed ? 0.5 : 1)
         .disabled(!enabled)
         .help(vm.recordingBlockerDetail ?? helpText)
@@ -62,11 +62,11 @@ struct RecordButton: View {
         case .idle:
             Circle()
                 .fill(.white)
-                .frame(width: 10, height: 10)
+                .frame(width: 14, height: 14)
         case .recording, .paused:
             RoundedRectangle(cornerRadius: 2, style: .continuous)
                 .fill(.white)
-                .frame(width: 10, height: 10)
+                .frame(width: 14, height: 14)
         case .starting:
             ProgressView()
                 .controlSize(.small)

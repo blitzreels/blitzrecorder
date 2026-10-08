@@ -15,6 +15,7 @@ enum BlitzButtonEmphasis {
 enum BlitzControlMetrics {
     static let radius: CGFloat = 8
     static let dockHeight: CGFloat = 44
+    static let prominentDockHeight: CGFloat = 56
     static let dockRadius: CGFloat = BlitzUI.cardRadius
     static let rowHeight: CGFloat = 38
     static let toolbarHeight: CGFloat = 38
@@ -61,12 +62,18 @@ struct BlitzButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(emphasis.isDockControl ? BlitzType.section : BlitzType.control(BlitzControlMetrics.fontSize(controlSize)))
+            .font(emphasis.isDockControl
+                ? BlitzType.control(controlSize == .extraLarge ? 16 : 13)
+                : BlitzType.control(BlitzControlMetrics.fontSize(controlSize)))
             .symbolRenderingMode(.monochrome)
             .symbolVariant(.none)
-            .padding(.horizontal, emphasis.isDockControl ? 18 : BlitzControlMetrics.horizontalPadding(controlSize))
+            .padding(.horizontal, emphasis.isDockControl
+                ? (controlSize == .extraLarge ? 24 : 18)
+                : BlitzControlMetrics.horizontalPadding(controlSize))
             .padding(.vertical, 4)
-            .frame(minHeight: emphasis.isDockControl ? BlitzControlMetrics.dockHeight : BlitzControlMetrics.height(controlSize))
+            .frame(minHeight: emphasis.isDockControl
+                ? (controlSize == .extraLarge ? BlitzControlMetrics.prominentDockHeight : BlitzControlMetrics.dockHeight)
+                : BlitzControlMetrics.height(controlSize))
             .foregroundStyle(foregroundColor(configuration.role))
             .background(fill, in: .rect(cornerRadius: radius, style: .continuous))
             .overlay {

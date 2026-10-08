@@ -172,7 +172,8 @@ extension RecorderCaptureRuntime {
         return ScreenSourceCatalog.options(.init(
             content: content,
             recentBundleIdentifiers: screenSourcePickerRecents.bundleIdentifiers(),
-            frontToBackWindowIDs: ScreenSourceCatalog.frontToBackWindowIDs()
+            frontToBackWindowIDs: ScreenSourceCatalog.frontToBackWindowIDs(),
+            includesRecorderUI: settings.includesRecorderUI
         ))
     }
 
@@ -238,7 +239,8 @@ extension RecorderCaptureRuntime {
     func performScreenContentPick(_ request: PickScreenContentRequest) async throws {
         let pickedFilter = try await screenContentPicker.pick(.init(
             activeStream: takeRecording.activeScreenCaptureStream,
-            selectionPolicy: request.selectionPolicy
+            selectionPolicy: request.selectionPolicy,
+            includesRecorderUI: settings.includesRecorderUI
         ))
         let persistentBinding = await ScreenCaptureGeometry.persistentBinding(forPickedContent: pickedFilter)
         screenSourcePickerRecents.record(persistentBinding)
@@ -248,9 +250,10 @@ extension RecorderCaptureRuntime {
         guard request.selectionPolicy.accepts(persistentBinding?.kind) else {
             throw RecorderError.screenWindowRequired
         }
-        let filter = await ScreenCaptureGeometry.excludingOwnApplication(
-            ScreenCaptureGeometry.normalizedPickedFilter(pickedFilter)
-        )
+        let filter = await ScreenCaptureGeometry.applyingRecorderVisibility(.init(
+            filter: ScreenCaptureGeometry.normalizedPickedFilter(pickedFilter),
+            includesRecorderUI: settings.includesRecorderUI
+        ))
         let pickedAspectRatio = ScreenCaptureGeometry.pickedContentAspectRatio(for: filter)
         let previousSettings = settings
         let previousSelectionState = screenSourceSelection.runtimeState()
@@ -320,7 +323,8 @@ extension RecorderCaptureRuntime {
             return nil
         }
         if let pickedFilter = pickedScreenFilter(for: settings) {
-            return pickedFilter
+            return await ScreenCaptureGeometry.applyingRecorderVisibility(.init(
+                filter: pickedFilter, includesRecorderUI: settings.includesRecorderUI))
         }
         guard permissionGate.hasScreenCaptureAccess,
               settings.screenSourceBinding?.isConcreteSelection == true else {

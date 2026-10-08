@@ -11,6 +11,7 @@ extension MainWindowController {
         let screenCrop: CGRect?
         let framesPerSecond: Int
         let includeCursor: Bool
+        let includesRecorderUI: Bool
         let isEditingCrop: Bool
     }
 
@@ -29,6 +30,7 @@ extension MainWindowController {
             screenCrop: settings.screenCrop,
             framesPerSecond: settings.framesPerSecond,
             includeCursor: settings.includeCursor,
+            includesRecorderUI: settings.includesRecorderUI,
             isEditingCrop: viewModel.isScreenCropModeEnabled
         )
     }

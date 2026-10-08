@@ -63,6 +63,9 @@ final class RecorderCoordinator {
     var onMessage: ((String) -> Void)? {
         didSet { capture.onMessage = onMessage }
     }
+    var onScreenWindowFitMessage: ((String) -> Void)? {
+        didSet { capture.onScreenWindowFitMessage = onScreenWindowFitMessage }
+    }
     var onSavedRecording: ((SavedRecordingOutput) -> Void)? {
         didSet { capture.onSavedRecording = onSavedRecording }
     }

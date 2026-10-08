@@ -172,6 +172,7 @@ struct EditorVideoClipStrip: View {
     @Environment(\.isEnabled) private var isEnabled
     @State private var pointer = EditorTimelineClipPointer.arrow
     @State private var hoveredHandle: EditorVideoClipLayout.Clip.ID?
+    @State private var trimHandleRun: EditorVideoClipLayout.Run?
 
     var body: some View {
         let runs = configuration.layout.runs(.init(
@@ -228,6 +229,9 @@ struct EditorVideoClipStrip: View {
             }
         }
         .onDisappear { cancelTrim() }
+        .onChange(of: configuration.trimOrigin) { _, origin in
+            if origin == nil { trimHandleRun = nil }
+        }
         .overlay(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
                 ForEach(runs.filter { $0.width >= 28 }) { run in
@@ -279,15 +283,8 @@ struct EditorVideoClipStrip: View {
     }
 
     private func trimmableRuns(_ runs: [EditorVideoClipLayout.Run]) -> [EditorVideoClipLayout.Run] {
-        if let trimOrigin = configuration.trimOrigin,
-            let clip = configuration.layout.clips.first(where: {
-                abs($0.range.start - trimOrigin.clip.start) <= 1.0 / 600
-            }) {
-            return [.init(
-                clip: clip,
-                x: CGFloat(clip.start) * configuration.pixelsPerSecond - configuration.viewport.lowerBound,
-                width: CGFloat(clip.end - clip.start) * configuration.pixelsPerSecond
-            )]
+        if configuration.trimOrigin != nil, let trimHandleRun {
+            return [trimHandleRun]
         }
         return runs
     }
@@ -325,6 +322,7 @@ struct EditorVideoClipStrip: View {
         .highPriorityGesture(
             DragGesture(minimumDistance: 3, coordinateSpace: .global)
                 .onChanged { value in
+                    if configuration.trimOrigin == nil { trimHandleRun = run }
                     configuration.onBeginTrim(.init(
                         edits: configuration.edits, clip: run.clip.range,
                         nextClipStart: nextClipStart(run.clip),
@@ -351,6 +349,7 @@ struct EditorVideoClipStrip: View {
         configuration.onCancelTrim()
         configuration.onHover(nil)
         hoveredHandle = nil
+        trimHandleRun = nil
         pointer = .arrow
     }
 }

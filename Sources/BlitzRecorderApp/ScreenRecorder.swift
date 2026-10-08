@@ -62,6 +62,8 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         let dimensions: (width: Int, height: Int)
 
         if let pickedFilter {
+            let pickedFilter = await ScreenCaptureGeometry.applyingRecorderVisibility(.init(
+                filter: pickedFilter, includesRecorderUI: settings.includesRecorderUI))
             filter = pickedFilter
             currentPickedFilter = pickedFilter
             currentDisplay = nil
@@ -119,6 +121,8 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         self.settings = settings
 
         if let pickedFilter {
+            let pickedFilter = await ScreenCaptureGeometry.applyingRecorderVisibility(.init(
+                filter: pickedFilter, includesRecorderUI: settings.includesRecorderUI))
             currentPickedFilter = pickedFilter
             currentDisplay = nil
             try await stream.updateContentFilter(pickedFilter)

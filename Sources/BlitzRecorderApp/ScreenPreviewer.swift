@@ -35,6 +35,8 @@ final class ScreenPreviewer: NSObject, SCStreamOutput, SCStreamDelegate, @unchec
         let resolvedBinding: ScreenSourceBinding?
 
         if let pickedFilter {
+            let pickedFilter = await ScreenCaptureGeometry.applyingRecorderVisibility(.init(
+                filter: pickedFilter, includesRecorderUI: settings.includesRecorderUI))
             filter = pickedFilter
             resolvedBinding = await ScreenCaptureGeometry.persistentBinding(forPickedContent: pickedFilter)
             let screenSourceGeometry = ScreenCaptureGeometry.screenSourceGeometry(for: settings, pickedFilter: pickedFilter)

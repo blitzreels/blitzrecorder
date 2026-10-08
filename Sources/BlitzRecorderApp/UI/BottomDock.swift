@@ -10,6 +10,9 @@ struct BottomDock: View {
                 if let recovery = vm.lastRecoveryOutput {
                     RecoveryAvailableView(vm: vm, recovery: recovery)
                         .floatingRecordingNotice()
+                } else if vm.canOpenEditor, vm.lastExportedURL == nil {
+                    SavedProjectActions(vm: vm)
+                        .floatingRecordingNotice()
                 }
             }
 
@@ -26,9 +29,64 @@ struct BottomDock: View {
                 }
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: vm.state)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: vm.canStartRecording)
+    }
+}
+
+private struct SavedProjectActions: View {
+    @Bindable var vm: RecorderViewModel
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 16) {
+                summary
+                Spacer(minLength: 8)
+                actions
+            }
+            .fixedSize(horizontal: true, vertical: false)
+
+            VStack(alignment: .leading, spacing: 12) {
+                summary
+                actions
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var summary: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label("Recording saved", systemImage: "checkmark.circle.fill")
+                .font(BlitzType.section)
+                .foregroundStyle(BlitzUI.mint)
+            Text(vm.lastExportedProject?.displayTitle ?? "Your recording")
+                .font(BlitzType.caption)
+                .foregroundStyle(BlitzUI.supportingText)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            if let warning = vm.lastExportWarning {
+                Text(warning)
+                    .font(BlitzType.caption)
+                    .foregroundStyle(BlitzUI.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var actions: some View {
+        HStack(spacing: 10) {
+            Button("Edit", systemImage: "slider.horizontal.3", action: vm.openEditor)
+                .blitzButton(.emphasized)
+                .help("Open this recording in the editor")
+            Button("Export", systemImage: "square.and.arrow.down", action: vm.openEditorForExport)
+                .blitzButton(.accent)
+                .disabled(vm.isExporting)
+                .help("Choose export settings and save a video file to your Mac")
+        }
+        .controlSize(.large)
+        .fixedSize()
     }
 }
 
@@ -149,8 +207,7 @@ private struct RecordingActionRow: View {
     private var savedExportURL: URL? {
         if forcesSavedChip { return vm.lastExportedURL }
         guard vm.state == .idle,
-              vm.lastRecoveryOutput == nil,
-              vm.canStartRecording else { return nil }
+              vm.lastRecoveryOutput == nil else { return nil }
         return vm.lastExportedURL
     }
 }

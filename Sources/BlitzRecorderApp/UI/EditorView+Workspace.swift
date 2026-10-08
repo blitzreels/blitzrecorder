@@ -24,7 +24,7 @@ extension EditorView {
                 EditorExportControls(
                 vm: vm,
                 project: project,
-                isPresented: $isExportPopoverPresented,
+                isPresented: $vm.isEditorExportPresented,
                 additionalExportLayouts: $additionalExportLayouts,
                 selectedExportPreset: $selectedExportPreset,
                 selectedFormat: $selectedFormat,
@@ -140,7 +140,7 @@ extension EditorView {
     }
 
     func prepareExport() {
-        isExportPopoverPresented = false
+        vm.isEditorExportPresented = false
         showsHostingShare = false
         exportVideo(to: .file)
     }
@@ -154,7 +154,7 @@ extension EditorView {
     func exportVideo(to destination: EditorExportDestination) {
         guard !vm.isExportingVariants else { return }
         let profile = exportRecipe(for: destination).profile
-        isExportPopoverPresented = false
+        vm.isEditorExportPresented = false
         let request = EditorExportRequest(
             outputFormat: destination == .link ? .mp4 : profile.videoQuality.resolvedOutputFormat(selectedFormat),
             performanceProfile: profile,

@@ -6,8 +6,10 @@ extension EditorTimelineView {
         let layoutDuration = clipTrim.lockedDisplayDuration
             ?? EditorTimelineZoom.fitDuration(
                 anchor: zoomFitDuration, zoom: zoomLevel, current: projection.duration)
-        let pxPerSecond = pixelsPerSecond(.init(trackViewport: trackViewport, duration: layoutDuration))
-        let contentWidth = max(CGFloat(projection.duration) * pxPerSecond, trackViewport)
+        let pxPerSecond = clipTrim.origin?.pixelsPerSecond
+            ?? pixelsPerSecond(.init(trackViewport: trackViewport, duration: layoutDuration))
+        let contentDuration = max(projection.duration, clipTrim.lockedContentDuration ?? 0)
+        let contentWidth = max(CGFloat(contentDuration) * pxPerSecond, trackViewport)
         let viewport = EditorTimelineViewport.resolve(.init(
             offset: scrollOffset,
             viewportWidth: trackViewport,
@@ -47,7 +49,10 @@ extension EditorTimelineView {
                                         onSelect: clickVideoClip,
                                         onHover: { hoveredClipRange = $0 },
                                         onBeginTrim: { origin in
-                                            if !clipTrim.isActive { playback.pauseForEditing() }
+                                            if !clipTrim.isActive {
+                                                playback.pauseForEditing()
+                                                zoomFitDuration = layoutDuration
+                                            }
                                             clipTrim.beginTrim(.init(origin: origin, displayDuration: layoutDuration))
                                         },
                                         onTrim: previewClipTrim,
@@ -137,6 +142,7 @@ extension EditorTimelineView {
                         scrollToFocus(.init(pixelsPerSecond: pxPerSecond, contentWidth: contentWidth, trackViewport: trackViewport))
                     }
                     .onChange(of: projection.duration) { old, new in
+                        guard !clipTrim.isActive else { return }
                         zoomFitDuration = EditorTimelineZoom.anchoredFitDuration(
                             currentAnchor: zoomFitDuration, oldDuration: old, zoom: zoomLevel)
                         let fit = EditorTimelineZoom.fitDuration(

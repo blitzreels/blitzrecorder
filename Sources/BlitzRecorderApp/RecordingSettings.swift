@@ -30,6 +30,7 @@ struct RecordingSettings {
     var showsRuleOfThirdsOverlay: Bool = false
     var socialSafeZoneOverlay: SocialVideoSafeZone = .none
     var includeCursor: Bool = true
+    var includesRecorderUI: Bool = false
     var enabledSources: Set<CaptureSource> = [.screen, .camera, .microphone]
     var hiddenSources: Set<CaptureSource> = []
     var usesPickedScreenContent: Bool = false

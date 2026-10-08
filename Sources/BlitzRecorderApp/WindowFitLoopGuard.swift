@@ -16,12 +16,23 @@ struct WindowFitLoopGuard {
     struct Request {
         let key: String
         let now: Date
+        let origin: Origin
+    }
+
+    enum Origin {
+        case automatic
+        case userInitiated
     }
 
     private var attempts: [String: [Date]] = [:]
     private var pausedKeys: Set<String> = []
 
     mutating func admit(_ request: Request) -> Decision {
+        if request.origin == .userInitiated {
+            attempts[request.key] = nil
+            pausedKeys.remove(request.key)
+            return .allow
+        }
         guard !pausedKeys.contains(request.key) else { return .paused }
         let recent = (attempts[request.key] ?? []).filter { request.now.timeIntervalSince($0) < Self.interval }
         guard recent.count < Self.limit else {

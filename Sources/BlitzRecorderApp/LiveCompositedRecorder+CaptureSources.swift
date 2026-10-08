@@ -19,6 +19,8 @@ extension LiveCompositedRecorder {
         let screenSourceGeometry: ScreenSourceGeometry
         let display: SCDisplay?
         if let pickedFilter {
+            let pickedFilter = await ScreenCaptureGeometry.applyingRecorderVisibility(.init(
+                filter: pickedFilter, includesRecorderUI: settings.includesRecorderUI))
             display = nil
             screenSourceGeometry = ScreenCaptureGeometry.screenSourceGeometry(for: settings, pickedFilter: pickedFilter)
             configuration = screenStreamConfiguration(
@@ -52,6 +54,8 @@ extension LiveCompositedRecorder {
         let sourceRect: CGRect?
         let screenSourceGeometry: ScreenSourceGeometry
         if let pickedFilter {
+            let pickedFilter = await ScreenCaptureGeometry.applyingRecorderVisibility(.init(
+                filter: pickedFilter, includesRecorderUI: settings.includesRecorderUI))
             self.pickedScreenFilter = pickedFilter
             screenDisplay = nil
             filter = pickedFilter

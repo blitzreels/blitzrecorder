@@ -23,6 +23,8 @@ final class RecorderViewModel {
     var state: RecordingState = .idle
     var settings: RecordingSettings
     var detailMessage: String = ""
+    var screenWindowFitMessage: String?
+    var isEditorExportPresented = false
     var showsScreenSourcePicker = false
     var isExportingVariants = false
     var isLivePreviewEnabled = LivePreviewPreference().isEnabled
@@ -305,6 +307,9 @@ final class RecorderViewModel {
         previewStage.sceneID = coordinator.selectedSceneIDForCurrentLayout()
         self.showsFirstRunOnboarding = ProcessInfo.processInfo.environment["BLITZRECORDER_FORCE_ONBOARDING"] == "1"
             || !UserDefaults.standard.bool(forKey: Self.firstRunOnboardingKey)
+        coordinator.onScreenWindowFitMessage = { [weak self] message in
+            self?.screenWindowFitMessage = message
+        }
         transcriptionController.onTranscriptionCompleted = { [weak self] completion in
             self?.generateAutomaticProjectTitle(completion)
         }

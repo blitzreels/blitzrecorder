@@ -21,6 +21,7 @@ struct EditorClipTrimSession: Equatable {
     private(set) var origin: Origin?
     private(set) var draft: TimelineEdits?
     private(set) var lockedDisplayDuration: Double?
+    private(set) var lockedContentDuration: Double?
 
     var isActive: Bool { origin != nil }
 
@@ -34,6 +35,7 @@ struct EditorClipTrimSession: Equatable {
             request.displayDuration.isFinite, request.displayDuration > 0 else { return }
         self.origin = origin
         lockedDisplayDuration = request.displayDuration
+        lockedContentDuration = EditorTimelineProjection(.init(duration: origin.duration, cuts: origin.edits.cuts)).duration
     }
 
     mutating func applyTrim(translationWidth: CGFloat) -> EditorTimeRange? {
@@ -55,6 +57,7 @@ struct EditorClipTrimSession: Equatable {
         origin = nil
         draft = nil
         lockedDisplayDuration = nil
+        lockedContentDuration = nil
         return result
     }
 }
