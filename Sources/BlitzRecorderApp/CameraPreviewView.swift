@@ -7,6 +7,7 @@ final class CameraPreviewView: NSView {
     let thumbnailSampler = LivePreviewThumbnailSampler()
     private let imageLayer = CALayer()
     private var previewLayer: AVCaptureVideoPreviewLayer?
+    private var previewLayerHasFrame = false
     private var sampleBufferLayer: AVSampleBufferDisplayLayer?
     private var sourceAspectRatio: CGFloat = SceneLayout.cameraAspectRatio {
         didSet { syncPreviewLayerFrame() }
@@ -26,7 +27,9 @@ final class CameraPreviewView: NSView {
     var contentMode: VideoRenderContentMode = .aspectFill {
         didSet { syncPreviewLayerFrame() }
     }
-    var hasPreviewContent: Bool { previewLayer != nil || sampleBufferLayer != nil || imageLayer.contents != nil }
+    var hasPreviewContent: Bool {
+        (previewLayer != nil && previewLayerHasFrame) || sampleBufferLayer != nil || imageLayer.contents != nil
+    }
     var currentSourceAspectRatio: CGFloat { sourceAspectRatio }
     var messageFrameForTesting: CGRect { unavailableOverlay.convert(unavailableOverlay.messageFrameForTesting, to: self) }
     var messageBackgroundFrameForTesting: CGRect { unavailableOverlay.frame }
@@ -94,12 +97,21 @@ final class CameraPreviewView: NSView {
         sampleBufferLayer?.removeFromSuperlayer()
         sampleBufferLayer = nil
         previewLayer = layer
+        previewLayerHasFrame = false
         imageLayer.contents = nil
         sourceAspectRatio = Self.sourceAspectRatio(for: layer) ?? SceneLayout.cameraAspectRatio
         layer.videoGravity = .resizeAspectFill
         layer.actions = previewLayerNoResizeActions
         syncPreviewLayerFrame()
         self.layer?.insertSublayer(layer, at: 0)
+        unavailableOverlay.apply(message: "Starting camera")
+    }
+
+    func noteCaptureFrame(_ sampleBuffer: CMSampleBuffer) {
+        guard previewLayer != nil,
+              let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        previewLayerHasFrame = true
+        sourceAspectRatio = CGFloat(CVPixelBufferGetWidth(pixelBuffer)) / max(1, CGFloat(CVPixelBufferGetHeight(pixelBuffer)))
         hideUnavailableOverlay()
     }
 

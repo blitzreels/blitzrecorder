@@ -125,6 +125,7 @@ final class RecorderViewModel {
     let elapsedClock = RecordingElapsedClock()
 
     @ObservationIgnored var onPresentSettings: ((SettingsPane?) -> Void)?
+    @ObservationIgnored var onRetryCameraPreview: (() -> Void)?
     @ObservationIgnored var onProjectOpened: (() -> Void)?
     @ObservationIgnored var onFillEditorWindow: (() -> Void)?
     @ObservationIgnored var onStudioModeChanged: ((StudioMode) -> Void)?

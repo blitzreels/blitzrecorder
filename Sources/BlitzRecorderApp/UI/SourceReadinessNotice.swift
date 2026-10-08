@@ -10,6 +10,7 @@ struct SourceReadinessNotice: Equatable {
         case chooseScreen
         case screenSettings
         case requestCamera
+        case retryCamera
         case cameraSettings
         case requestMicrophone
         case microphoneSettings
@@ -20,6 +21,7 @@ struct SourceReadinessNotice: Equatable {
             case .chooseScreen: "Choose screen or window"
             case .screenSettings, .cameraSettings, .microphoneSettings: "Open System Settings"
             case .requestCamera: "Allow camera"
+            case .retryCamera: "Retry camera"
             case .requestMicrophone: "Allow microphone"
             case .manageDevices: "Connect iPhone"
             }
@@ -64,8 +66,8 @@ struct SourceReadinessNotice: Equatable {
             let isStarting = blocker.status == "starting"
             return .init(title: isStarting ? "Starting camera" : "Camera unavailable",
                 detail: isStarting ? "The camera preview is starting."
-                    : "Choose another camera below, or close the app using this camera.",
-                action: nil, isWaiting: isStarting, severity: .warning)
+                    : "No camera video received. Reconnect your camera or iPhone, then retry. Close other apps using it.",
+                action: isStarting ? nil : .retryCamera, isWaiting: isStarting, severity: .warning)
         case "Remote iPhone":
             return .init(title: "iPhone disconnected", detail: blocker.recovery,
                 action: .manageDevices, isWaiting: false, severity: .warning)
@@ -98,6 +100,7 @@ extension RecorderViewModel {
         case .chooseScreen: pickScreen()
         case .screenSettings: openScreenRecordingSettings()
         case .requestCamera: requestCameraAccessFromCover()
+        case .retryCamera: onRetryCameraPreview?()
         case .cameraSettings: openCameraSettings()
         case .requestMicrophone: requestMicrophoneAccessFromCover()
         case .microphoneSettings: openMicrophoneSettings()

@@ -2,20 +2,72 @@ import AppKit
 import AVFoundation
 
 extension MainWindowController {
-    func restartCameraPreview() {
+    func restartCameraPreview(isRecovery: Bool = false) {
         viewModel.syncSettings()
         guard coordinator.state == .idle,
               idlePreviewIsAllowed else { return }
+        if !isRecovery { cameraPreviewRecoveryAttempts = 0 }
         if coordinator.isRemoteCameraSelected {
             startCameraPreview()
             return
         }
         invalidateCameraPreviewStart()
+        let restartRevision = cameraPreviewStartRevision
         previewStage.cameraPreview.setMessage("Restarting camera")
+        coordinator.setLocalCameraRuntimeState(.starting)
+        viewModel.refreshPermissionStatus()
+        refreshPermissionGate()
         Task {
             await coordinator.stopCameraPreview()
-            guard idlePreviewIsAllowed else { return }
+            guard cameraPreviewStartRevision == restartRevision,
+                  coordinator.state == .idle,
+                  IdleCameraPreviewPolicy.shouldStart(currentIdleCameraPreviewRequest()) else { return }
             startCameraPreview()
+        }
+    }
+
+    func noteCameraPreviewFrame() {
+        guard coordinator.state == .idle,
+              idlePreviewIsAllowed,
+              !coordinator.isRemoteCameraSelected,
+              coordinator.settings.visibleSources.contains(.camera),
+              previewStage.cameraPreview.hasPreviewContent else { return }
+        let wasStarting = isStartingCameraPreview
+        isStartingCameraPreview = false
+        coordinator.setLocalCameraRuntimeState(.ready)
+        scheduleCameraPreviewWatchdog()
+        if wasStarting {
+            viewModel.refreshPermissionStatus()
+            refreshPermissionGate()
+        }
+    }
+
+    private func scheduleCameraPreviewWatchdog() {
+        cameraPreviewWatchdogTask?.cancel()
+        let startRevision = cameraPreviewStartRevision
+        cameraPreviewWatchdogTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(5))
+            } catch {
+                return
+            }
+            guard let self,
+                  self.cameraPreviewStartRevision == startRevision,
+                  self.coordinator.state == .idle,
+                  IdleCameraPreviewPolicy.shouldStart(self.currentIdleCameraPreviewRequest()),
+                  !self.coordinator.isRemoteCameraSelected,
+                  self.coordinator.settings.visibleSources.contains(.camera) else { return }
+            if self.cameraPreviewRecoveryAttempts < 1 {
+                self.cameraPreviewRecoveryAttempts += 1
+                self.restartCameraPreview(isRecovery: true)
+                return
+            }
+            self.invalidateCameraPreviewStart()
+            self.previewStage.cameraPreview.setMessage("No camera video. Retry camera in Sources.")
+            self.coordinator.setLocalCameraRuntimeState(.unavailable("No camera video received"))
+            self.viewModel.refreshPermissionStatus()
+            self.refreshPermissionGate()
+            await self.coordinator.stopCameraPreview()
         }
     }
 
@@ -28,6 +80,8 @@ extension MainWindowController {
     }
 
     private func stopIdleCameraPreview(message: String) {
+        invalidateCameraPreviewStart()
+        cameraPreviewRecoveryAttempts = 0
         coordinator.setLocalCameraRuntimeState(.unchecked)
         Task { await coordinator.stopCameraPreview() }
         previewStage.cameraPreview.setMessage(message)
@@ -132,10 +186,10 @@ extension MainWindowController {
         cameraPreviewStartRevision += 1
         let startRevision = cameraPreviewStartRevision
         coordinator.setLocalCameraRuntimeState(.starting)
+        scheduleCameraPreviewWatchdog()
+        viewModel.refreshPermissionStatus()
         refreshPermissionGate()
-        if !previewStage.cameraPreview.hasPreviewContent {
-            previewStage.cameraPreview.setMessage("Starting camera")
-        }
+        previewStage.cameraPreview.setMessage("Starting camera")
         Task {
             do {
                 if coordinator.settings.removesCameraBackgroundAfterRecording {
@@ -148,17 +202,18 @@ extension MainWindowController {
                             return
                         }
                         self.previewStage.cameraPreview.setPreviewImage(image)
+                        self.noteCameraPreviewFrame()
                     }
-                    guard cameraPreviewStartRevision == startRevision,
-                          IdleCameraPreviewPolicy.shouldStart(currentIdleCameraPreviewRequest()),
+                    guard cameraPreviewStartRevision == startRevision else { return }
+                    guard IdleCameraPreviewPolicy.shouldStart(currentIdleCameraPreviewRequest()),
                           coordinator.settings.visibleSources.contains(.camera) else {
                         await coordinator.stopCameraPreview()
                         return
                     }
                 } else {
                     let layer = try await coordinator.cameraPreviewLayer()
-                    guard cameraPreviewStartRevision == startRevision,
-                          IdleCameraPreviewPolicy.shouldStart(currentIdleCameraPreviewRequest()),
+                    guard cameraPreviewStartRevision == startRevision else { return }
+                    guard IdleCameraPreviewPolicy.shouldStart(currentIdleCameraPreviewRequest()),
                           coordinator.settings.visibleSources.contains(.camera) else {
                         await coordinator.stopCameraPreview()
                         previewStage.cameraPreview.setMessage("Camera source off")
@@ -169,17 +224,19 @@ extension MainWindowController {
                     }
                     previewStage.cameraPreview.setPreviewLayer(layer)
                 }
-                isStartingCameraPreview = false
                 cameraPreviewDeviceID = coordinator.settings.selectedCameraID
-                coordinator.setLocalCameraRuntimeState(.ready)
+                noteCameraPreviewFrame()
                 refreshPermissionGate()
             } catch {
                 guard cameraPreviewStartRevision == startRevision,
                       idlePreviewIsAllowed else { return }
                 isStartingCameraPreview = false
                 cameraPreviewDeviceID = nil
+                cameraPreviewWatchdogTask?.cancel()
+                cameraPreviewWatchdogTask = nil
                 previewStage.cameraPreview.setMessage("Camera unavailable")
                 coordinator.setLocalCameraRuntimeState(.unavailable(error.localizedDescription))
+                viewModel.refreshPermissionStatus()
                 viewModel.applyMessage("Camera preview failed: \(error.localizedDescription)")
                 refreshPermissionGate()
             }

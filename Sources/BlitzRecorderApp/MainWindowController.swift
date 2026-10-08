@@ -24,6 +24,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var isStartingCameraPreview = false
     var cameraPreviewDeviceID: String?
     var cameraPreviewStartRevision = 0
+    var cameraPreviewWatchdogTask: Task<Void, Never>?
+    var cameraPreviewRecoveryAttempts = 0
     var lastStartedScreenCaptureSignature: ScreenCaptureSignature?
     var screenPreviewStartRevision = 0
     var screenPreviewWatchdogTask: Task<Void, Never>?
@@ -96,6 +98,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         viewModel.onPresentSettings = { [weak self] pane in
             self?.presentSettings(selecting: pane)
         }
+        viewModel.onRetryCameraPreview = { [weak self] in
+            self?.restartCameraPreview()
+        }
         viewModel.onFillEditorWindow = { [weak self] in
             self?.fillEditorWindow()
         }
@@ -145,6 +150,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                   self.coordinator.settings.enabledSources.contains(.camera),
                   !self.coordinator.isRemoteCameraSelected else { return }
             self.previewStage.cameraPreview.thumbnailSampler.offer(sampleBuffer)
+            guard self.coordinator.state != .idle
+                || !self.coordinator.settings.removesCameraBackgroundAfterRecording else { return }
+            self.previewStage.cameraPreview.noteCaptureFrame(sampleBuffer)
+            self.noteCameraPreviewFrame()
         }
         coordinator.onRemoteCameraPreviewFrame = { [weak self] image in
             guard let self, self.remoteCameraPreviewFramesAreAllowed else { return }
@@ -278,6 +287,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     deinit {
         idlePreviewRestartTask?.cancel()
+        cameraPreviewWatchdogTask?.cancel()
         screenPreviewWatchdogTask?.cancel()
         for observer in cameraDeviceObservers {
             NotificationCenter.default.removeObserver(observer)

@@ -4,6 +4,29 @@ import XCTest
 
 @MainActor
 final class CameraFramingRegressionTests: XCTestCase {
+    func testResetLayoutRestoresPortraitCameraFromPersistedFit() throws {
+        let suite = "CameraFramingRegressionTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let studio = RecorderStudioConfiguration(defaults: defaults)
+        studio.settings.layout = .horizontal
+        studio.applyScenePreset(.webcamLeft)
+        studio.setCameraContentMode(.fit)
+
+        studio.resetSceneLayout()
+
+        let restored = RecorderStudioConfiguration(defaults: defaults).settings
+        XCTAssertEqual(studio.settings.cameraContentMode, .fill)
+        XCTAssertEqual(restored.cameraContentMode, .fill)
+        let view = makeFitPreview()
+        view.sceneLayout = restored.sceneLayout
+        view.cameraContentMode = restored.cameraContentMode
+        view.layoutSubtreeIfNeeded()
+        let frame = view.renderedCameraFrameForTesting
+        XCTAssertGreaterThan(frame.height, frame.width)
+        XCTAssertEqual(frame.height, view.canvasFrame.height, accuracy: 0.001)
+    }
+
     func testCropFromFitFillsSideBySideSlotAndPersistsAcrossCameraToggleAndReload() throws {
         let suite = "CameraFramingRegressionTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

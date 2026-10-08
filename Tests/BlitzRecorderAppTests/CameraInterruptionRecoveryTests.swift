@@ -5,6 +5,53 @@ import XCTest
 
 final class CameraInterruptionRecoveryTests: XCTestCase {
     @MainActor
+    func testCameraLayerWithoutFramesKeepsStartingMessageVisible() {
+        let preview = CameraPreviewView()
+        preview.setMessage("Starting camera")
+
+        preview.setPreviewLayer(AVCaptureVideoPreviewLayer())
+
+        XCTAssertFalse(preview.hasPreviewContent)
+        XCTAssertFalse(preview.isUnavailableOverlayHiddenForTesting)
+    }
+
+    @MainActor
+    func testActualCameraFrameMakesPreviewReadyAndRestartClearsReadiness() async throws {
+        let preview = CameraPreviewView()
+        let recorder = CameraRecorder()
+        let frameReady = expectation(description: "Actual camera frame")
+        preview.setPreviewLayer(AVCaptureVideoPreviewLayer())
+        recorder.setThumbnailHandler { sampleBuffer in
+            preview.noteCaptureFrame(sampleBuffer)
+            frameReady.fulfill()
+        }
+        let generator = try CameraBlackFrameGenerator(.init(
+            width: 640,
+            height: 320,
+            pixelFormat: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+            framesPerSecond: 30
+        ))
+        let sampleBuffer = try XCTUnwrap(generator.sampleBuffer(at: .zero))
+        let output = AVCaptureVideoDataOutput()
+        let connection = AVCaptureConnection(inputPorts: [], output: output)
+
+        recorder.captureOutput(output, didOutput: sampleBuffer, from: connection)
+        await fulfillment(of: [frameReady], timeout: 3)
+
+        XCTAssertTrue(preview.hasPreviewContent)
+        XCTAssertTrue(preview.isUnavailableOverlayHiddenForTesting)
+        XCTAssertEqual(preview.currentSourceAspectRatio, 2)
+        preview.setPreviewLayer(AVCaptureVideoPreviewLayer())
+        XCTAssertFalse(preview.hasPreviewContent)
+        XCTAssertFalse(preview.isUnavailableOverlayHiddenForTesting)
+        preview.setMessage("Preview paused")
+        preview.noteCaptureFrame(sampleBuffer)
+        XCTAssertFalse(preview.hasPreviewContent)
+        XCTAssertFalse(preview.isUnavailableOverlayHiddenForTesting)
+        recorder.setThumbnailHandler(nil)
+    }
+
+    @MainActor
     func testCameraFramesReachSceneThumbnailsWithoutARecordingWriter() async throws {
         let recorder = CameraRecorder()
         let preview = CameraPreviewView()

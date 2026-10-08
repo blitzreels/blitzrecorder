@@ -128,6 +128,7 @@ extension RecorderStudioConfiguration {
     func resetSceneLayout() {
         guard sceneChangeIsAllowed() else { return }
         settings.selectedScenePreset = nil
+        settings.cameraContentMode = .fill
         settings.sceneLayout = SceneLayout.defaultLayout(
             for: settings.layout,
             screenAspectRatio: screenAspectRatio(),

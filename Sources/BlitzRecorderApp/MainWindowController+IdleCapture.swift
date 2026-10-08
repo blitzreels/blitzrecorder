@@ -58,6 +58,7 @@ extension MainWindowController {
         cancelScreenPreviewWatchdog()
         lastStartedScreenCaptureSignature = nil
         invalidateCameraPreviewStart()
+        cameraPreviewRecoveryAttempts = 0
         previewStage.screenPreview.setMessage("Preview paused")
         previewStage.cameraPreview.setMessage("Preview paused")
         coordinator.setLocalCameraRuntimeState(.unchecked)
@@ -74,6 +75,8 @@ extension MainWindowController {
     }
 
     func invalidateCameraPreviewStart() {
+        cameraPreviewWatchdogTask?.cancel()
+        cameraPreviewWatchdogTask = nil
         cameraPreviewStartRevision += 1
         isStartingCameraPreview = false
         cameraPreviewDeviceID = nil

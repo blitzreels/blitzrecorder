@@ -2,6 +2,33 @@ import XCTest
 @testable import BlitzRecorderApp
 
 final class SourceReadinessNoticeTests: XCTestCase {
+    func testCameraWithoutVideoOffersRetryAndConnectionGuidance() throws {
+        let notice = try XCTUnwrap(SourceReadinessNotice.resolve(.init(source: .camera, blockers: [
+            .init(source: .camera, permission: "Camera availability", status: "unavailable", recovery: "No video.")
+        ])))
+        XCTAssertEqual(notice.action?.title, "Retry camera")
+        XCTAssertTrue(notice.detail.contains("iPhone"))
+        XCTAssertFalse(notice.isWaiting)
+    }
+
+    @MainActor
+    func testRetryCameraUsesPreviewRecoveryAction() throws {
+        let suite = "SourceReadinessNoticeTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let coordinator = RecorderCoordinator(accessController: AccessController(defaults: defaults), defaults: defaults)
+        let vm = RecorderViewModel(coordinator: coordinator, previewStage: PreviewStageView())
+        var retries = 0
+        vm.onRetryCameraPreview = { retries += 1 }
+
+        vm.resolveSourceReadiness(.retryCamera)
+
+        XCTAssertEqual(retries, 1)
+        vm.applyState(.recording)
+        vm.resolveSourceReadiness(.retryCamera)
+        XCTAssertEqual(retries, 1)
+    }
+
     func testMissingSelectionAsksForSourceInsteadOfPermission() throws {
         for source in [CaptureSource.screen, .systemAudio] {
             let notice = try XCTUnwrap(SourceReadinessNotice.resolve(.init(source: source, blockers: [
