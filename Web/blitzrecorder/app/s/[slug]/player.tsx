@@ -2,26 +2,30 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Check, CircleAlert, Clock3, Link2, LoaderCircle, Play, RotateCcw } from "lucide-react";
+import { CircleAlert, History, LoaderCircle, Play, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { languageLabel, transcriptBrief } from "@/lib/hosting/brief";
 import { activeChapter, formatTime, type VideoDetails } from "@/lib/hosting/details";
 import { PlayerControls } from "./player-controls";
 import { VideoNotes, type NotesTab } from "./video-notes";
-import { usePlayback } from "./use-playback";
+import { SPEEDS, usePlayback } from "./use-playback";
+import { SharePopover } from "./share-popover";
 import { TRY_URL } from "./try-url";
 import styles from "./player.module.css";
 
-const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+const SHORTCUTS: [string, string][] = [
+  ["Space or K", "Play or pause"], ["J / L", "Back or forward 10 s"], ["← / →", "Back or forward 5 s"],
+  ["↑ / ↓", "Volume"], ["M", "Mute"], ["< / >", "Slower or faster"], ["0 – 9", "Jump to 0% – 90%"],
+  ["C", "Captions"], ["F", "Fullscreen"], ["?", "Show shortcuts"],
+];
 
-export function SharedPlayer({ source, poster, title, width, height, duration, frameRate, details, ownerActions, children }: {
-  source: string; poster: string; title: string; width: number; height: number;
+export function SharedPlayer({ slug, source, poster, title, width, height, duration, frameRate, details, ownerActions, children }: {
+  slug: string; source: string; poster: string; title: string; width: number; height: number;
   duration: number; frameRate: number | null; details: VideoDetails; ownerActions?: ReactNode; children?: ReactNode;
 }) {
-  const { videoRef, frameRef, ...playback } = usePlayback({ source, duration, details });
+  const { videoRef, frameRef, ...playback } = usePlayback({ slug, source, duration, details });
   const { state } = playback;
-  const [copied, setCopied] = useState<"link" | "time" | null>(null);
-  const [copyError, setCopyError] = useState(false);
+  const [shortcuts, setShortcuts] = useState(false);
   const [idle, setIdle] = useState(false);
   const idleTimer = useRef<number | undefined>(undefined);
   const brief = useMemo(() => transcriptBrief({ details, duration }), [details, duration]);
@@ -37,16 +41,6 @@ export function SharedPlayer({ source, poster, title, width, height, duration, f
   };
   useEffect(() => () => window.clearTimeout(idleTimer.current), []);
 
-  const share = async (atTime: boolean) => {
-    const url = new URL(location.href);
-    url.search = "";
-    if (atTime) url.searchParams.set("t", String(Math.floor(state.time)));
-    try {
-      await navigator.clipboard.writeText(url.href);
-      setCopied(atTime ? "time" : "link"); setCopyError(false);
-      window.setTimeout(() => setCopied(null), 2200);
-    } catch { setCopyError(true); }
-  };
   const showChapters = () => {
     setTab("chapters");
     document.getElementById("video-notes")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -61,6 +55,8 @@ export function SharedPlayer({ source, poster, title, width, height, duration, f
           if ((event.target as HTMLElement).closest("input, textarea, [role=menu], [role=tab]")) return;
           if (event.altKey || event.ctrlKey || event.metaKey) return;
           const key = event.key.toLowerCase();
+          if (key === "?") { event.preventDefault(); setShortcuts((current) => !current); return; }
+          if (key === "escape" && shortcuts) { event.preventDefault(); setShortcuts(false); return; }
           if ((event.target as HTMLElement).closest("button") && (key === " " || key === "enter")) return;
           if (/^[0-9]$/.test(key)) { event.preventDefault(); playback.seek({ time: state.duration * Number(key) / 10 }); return; }
           wake();
@@ -89,10 +85,21 @@ export function SharedPlayer({ source, poster, title, width, height, duration, f
         <div className={styles.screen} style={{ aspectRatio: `${width}/${height}` }}>
           <video ref={videoRef} playsInline preload="metadata" poster={poster || undefined} aria-label={title}
             onClick={() => void playback.toggle()} onDoubleClick={() => void playback.toggleFullscreen()} />
-          {!state.playing && !state.ended && !playback.error && <button type="button" className={styles.bigPlay}
+          {!state.playing && !state.ended && !playback.error && !shortcuts && <button type="button" className={styles.bigPlay}
             aria-label="Play video" disabled={!state.ready} onClick={() => void playback.toggle()}>
             {!state.ready ? <LoaderCircle className="animate-spin" /> : <Play fill="currentColor" />}
           </button>}
+          {playback.resume !== null && !state.playing && !state.ended && !playback.error && state.ready && !shortcuts &&
+            <button type="button" className={styles.resumeChip} onClick={() => void playback.resumePlayback()}>
+              <History /><span>Resume at <span className="tabular-nums">{formatTime(playback.resume)}</span></span>
+            </button>}
+          {shortcuts && <div className={styles.shortcuts} role="dialog" aria-label="Keyboard shortcuts">
+            <div className={styles.shortcutsHead}>
+              <h2>Keyboard shortcuts</h2>
+              <button type="button" className={styles.iconButton} aria-label="Close shortcuts" onClick={() => setShortcuts(false)}><X /></button>
+            </div>
+            <dl>{SHORTCUTS.map(([keys, action]) => <div key={keys}><dt>{action}</dt><dd><kbd>{keys}</kbd></dd></div>)}</dl>
+          </div>}
           {state.ended && !playback.error && <div className={styles.endCard}>
             <p>Recorded and edited with BlitzRecorder</p>
             <h2>Make your own videos like this, free.</h2>
@@ -109,15 +116,12 @@ export function SharedPlayer({ source, poster, title, width, height, duration, f
           </div>}
         </div>
         <PlayerControls playback={playback} speeds={SPEEDS} chapters={details.chapters}
-          hasTranscript={details.transcript.length > 0} onShowChapters={showChapters} />
+          hasTranscript={details.transcript.length > 0} onShowChapters={showChapters} onShowShortcuts={() => setShortcuts(true)} />
       </div>
       {playback.notice && <p role="status" className={styles.notice}>{playback.notice}</p>}
 
       <div className={styles.videoInfo}>
         <div className={styles.heading}>
-          {poster &&
-            // eslint-disable-next-line @next/next/no-img-element -- posters come from the signed media origin, not next/image
-            <img className={styles.posterThumb} src={poster} alt="" />}
           <div className={styles.headingBody}>
             <h1>{title}</h1>
             <p className={styles.meta}>
@@ -128,36 +132,25 @@ export function SharedPlayer({ source, poster, title, width, height, duration, f
                 {new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(details.recordedAt))}
               </time>}
               {language && <span>{language}</span>}
-              {brief.speakers.slice(0, 4).map((speaker) => <span key={speaker.name}>
-                {speaker.name}{brief.speakers.length > 1 ? ` ${speaker.percent}%` : ""}
-              </span>)}
-              {brief.speakers.length > 4 && <span>+{brief.speakers.length - 4}</span>}
+              {brief.speakers.length > 0 && <span>
+                {brief.speakers.slice(0, 3).map((speaker) => speaker.name).join(", ")}
+                {brief.speakers.length > 3 ? ` +${brief.speakers.length - 3}` : ""}
+              </span>}
               {chapterIndex >= 0 && <span className={styles.metaChapter}>Chapter {chapterIndex + 1} of {details.chapters.length}</span>}
             </p>
           </div>
-        </div>
-        <div className={styles.infoRow}>
           <div className={styles.shareActions}>
             {ownerActions}
-            <Button variant="ghost" onClick={() => void share(true)} disabled={state.time < 1}
-              title="Copy a link that starts at the current moment">
-              {copied === "time" ? <Check /> : <Clock3 />}
-              <span className="tabular-nums">{copied === "time" ? "Copied" : `Copy at ${formatTime(state.time)}`}</span>
-            </Button>
-            <Button variant="outline" onClick={() => void share(false)}>
-              {copied === "link" ? <Check /> : <Link2 />}{copied === "link" ? "Copied" : "Copy link"}
-            </Button>
+            <SharePopover title={title} time={state.time} />
           </div>
         </div>
-        <span role="status" className="sr-only">{copied ? "Link copied" : ""}</span>
-        {copyError && <p role="alert" className={styles.notice}>Could not copy. Copy the link from your browser’s address bar.</p>}
         {brief.lead && <section className={styles.summary} aria-label="Summary">
           <h2>Summary</h2><p>{brief.lead}</p>
         </section>}
         {children}
       </div>
     </section>
-    {hasNotes && <VideoNotes details={details} brief={brief} time={state.time} duration={state.duration} ready={state.ready} playing={state.playing}
+    {hasNotes && <VideoNotes title={title} details={details} brief={brief} time={state.time} duration={state.duration} ready={state.ready} playing={state.playing}
       tab={tab} onTabChange={setTab} onSeek={playback.seek} />}
   </div>;
 }

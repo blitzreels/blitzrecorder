@@ -89,6 +89,7 @@ export function ShareChapter() {
             uploads every {HOSTING_PLAN.uploadWindowDays} days. The app and local exports stay free.
           </p>
         }
+        align="center"
       />
 
       <div data-reveal className="panel app-surface mt-10 grid overflow-hidden rounded-card sm:mt-14 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -202,7 +203,7 @@ export function ShareChapter() {
         </div>
       </div>
 
-      <ChapterPoints points={points} />
+      <ChapterPoints points={points} layout="columns" />
     </Section>
   );
 }

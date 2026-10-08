@@ -7,15 +7,17 @@ import { NavItem, SiteHeader } from "@/components/site/site-header";
 import { Button } from "@/components/ui/button";
 import { videosPath } from "@/lib/hosting/paths";
 
-const links = [
-  { href: "/#record", label: "Record" },
-  { href: "/#camera", label: "iPhone" },
-  { href: "/#edit", label: "Edit" },
-  { href: "/#export", label: "Export" },
-  { href: "/#share", label: "Share" },
-  { href: "/#free", label: "Free" },
-  { href: videosPath, label: "Videos" },
+/** Homepage sections, also linked from pages that live outside the homepage. */
+export const homeLinks = [
+  { href: "/#record", label: "Recording" },
+  { href: "/#camera", label: "iPhone camera" },
+  { href: "/#edit", label: "Editing" },
+  { href: "/#share", label: "Sharing" },
+  { href: "/#free", label: "Pricing" },
+  { href: "/#faq", label: "FAQ" },
 ];
+
+const links = [...homeLinks, { href: videosPath, label: "My videos" }];
 
 export function SiteNav() {
   const [scrolled, setScrolled] = useState(false);

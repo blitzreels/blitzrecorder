@@ -105,6 +105,7 @@ export function RecordChapter() {
         title="Frame the shot first."
         lede="Pick 9:16 or 16:9 and a layout before you press record. The preview is the export."
         aside={null}
+        align="split"
       />
 
       <div data-reveal className="panel app-surface mt-10 grid overflow-hidden rounded-card sm:mt-14 lg:grid-cols-[minmax(0,1fr)_300px]">
@@ -205,7 +206,7 @@ export function RecordChapter() {
         </div>
       </div>
 
-      <ChapterPoints points={points} />
+      <ChapterPoints points={points} layout="columns" />
     </Section>
   );
 }

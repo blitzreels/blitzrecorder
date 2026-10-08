@@ -5,7 +5,7 @@ import { ArrowUpRight } from "@/components/site/icons";
 import { BlitzReelsLink } from "@/components/site/blitzreels-link";
 import { JourneySectionView } from "@/components/site/journey-markers";
 import { Section } from "@/components/ui/layout";
-import { ChapterHeader, ChapterPoints, chapters, type ChapterPoint } from "@/components/site/landing/chapter";
+import { ChapterBand, ChapterHeader, ChapterPoints, chapters, type ChapterPoint } from "@/components/site/landing/chapter";
 import { TAKE_SECONDS, formatTime, silentSeconds } from "@/components/site/landing/edit-chapter";
 import { trackJourneyEvent } from "@/lib/journey-events";
 import { cn } from "@/lib/utils";
@@ -44,7 +44,8 @@ export function ExportChapter() {
   const megabytes = (MEGABITS[resolution][fps] * seconds) / 8;
 
   return (
-    <Section id="export" className="scroll-mt-24 py-16 sm:py-20">
+    <ChapterBand>
+    <Section id="export" className="scroll-mt-24 py-20 sm:py-28">
       <JourneySectionView area="landing" section="export" payload={{ page: "home" }} />
       <ChapterHeader
         mark={chapters.export}
@@ -59,6 +60,7 @@ export function ExportChapter() {
             <ArrowUpRight className="size-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
           </BlitzReelsLink>
         }
+        align="split"
       />
 
       <div data-reveal className="panel app-surface mt-10 rounded-card p-5 sm:mt-14 sm:p-7">
@@ -110,8 +112,9 @@ export function ExportChapter() {
         </dl>
       </div>
 
-      <ChapterPoints points={points} />
+      <ChapterPoints points={points} layout="columns" />
     </Section>
+    </ChapterBand>
   );
 }
 

@@ -7,7 +7,7 @@ import { ownerLibrary, viewerAccount } from "@/lib/hosting/web-session";
 import { activeSessionCount } from "@/lib/hosting/account";
 import { SharedVideoView, type SharedViewer } from "./shared-video-view";
 import { shareDescription } from "@/lib/hosting/brief";
-import { EMPTY_DETAILS, compactTranscript } from "@/lib/hosting/details";
+import { EMPTY_DETAILS, shareDetails } from "@/lib/hosting/details";
 
 export const dynamic = "force-dynamic";
 
@@ -26,9 +26,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   if (!asset?.width || !asset.height) {
     return { title: "Shared video", description: "Watch a video shared with BlitzRecorder.", ...privatePage };
   }
-  const stored = asset.viewer_details ?? EMPTY_DETAILS;
-  const details = { ...stored, transcript: compactTranscript(stored.transcript) };
   const duration = asset.duration ?? asset.declared_seconds;
+  const details = shareDetails({ details: asset.viewer_details ?? EMPTY_DETAILS, duration });
   const description = shareDescription({ details, duration });
   const origin = process.env.HOSTING_MEDIA_ORIGIN;
   const poster = origin && asset.files.some((file) => file.path === "poster.jpg")
@@ -57,9 +56,10 @@ export default async function SharedVideoPage({ params }: { params: Promise<{ sl
   const viewer: SharedViewer | null = account && { email: account.email, library, sessions };
   const base = `${new URL(required("HOSTING_MEDIA_ORIGIN")).origin}/s/${slug}`;
   const has = (path: string) => asset.files.some((file) => file.path === path);
-  const details = asset.viewer_details ?? EMPTY_DETAILS;
+  const duration = asset.duration ?? asset.declared_seconds;
+  const details = shareDetails({ details: asset.viewer_details ?? EMPTY_DETAILS, duration });
   return <SharedVideoView slug={asset.slug} source={`${base}/${has("video.mp4") ? "video.mp4" : "master.m3u8"}`}
     poster={has("poster.jpg") ? `${base}/poster.jpg` : ""}
-    title={asset.title} width={asset.width} height={asset.height} duration={asset.duration ?? asset.declared_seconds}
-    frameRate={asset.frame_rate} details={{ ...details, transcript: compactTranscript(details.transcript) }} viewer={viewer} />;
+    title={asset.title} width={asset.width} height={asset.height} duration={duration}
+    frameRate={asset.frame_rate} details={details} viewer={viewer} />;
 }

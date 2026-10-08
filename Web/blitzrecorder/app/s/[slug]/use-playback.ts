@@ -9,8 +9,20 @@ type MediaState = {
   buffered: number; volume: number; muted: boolean; speed: number; ended: boolean;
 };
 type WebkitVideo = HTMLVideoElement & { webkitEnterFullscreen?: () => void };
+type Prefs = { volume: number; muted: boolean; speed: number; captions: boolean };
 
-export function usePlayback({ source, duration, details }: { source: string; duration: number; details: VideoDetails }) {
+export const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+const PREFS_KEY = "blitzrecorder.player";
+const resumeKey = (slug: string) => `blitzrecorder.resume.${slug}`;
+
+function readStored<T>(key: string): T | null {
+  try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : null; } catch { return null; }
+}
+function writeStored({ key, value }: { key: string; value: unknown }) {
+  try { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, JSON.stringify(value)); } catch {}
+}
+
+export function usePlayback({ slug, source, duration, details }: { slug: string; source: string; duration: number; details: VideoDetails }) {
   const video = useRef<HTMLVideoElement>(null);
   const frame = useRef<HTMLDivElement>(null);
   const hls = useRef<Hls | null>(null);
@@ -24,6 +36,7 @@ export function usePlayback({ source, duration, details }: { source: string; dur
   const [fullscreen, setFullscreen] = useState(false);
   const [pip, setPip] = useState(false);
   const [canPip, setCanPip] = useState(false);
+  const [resume, setResume] = useState<number | null>(null);
   const [state, setState] = useState<MediaState>({ playing: false, ready: false, waiting: false,
     time: 0, duration, buffered: 0, volume: 1, muted: false, speed: 1, ended: false });
 
@@ -31,7 +44,16 @@ export function usePlayback({ source, duration, details }: { source: string; dur
     const element = video.current;
     if (!element) return;
     let disposed = false;
-    let requestedStart = resumeAt.current || Number(new URL(location.href).searchParams.get("t"));
+    const linkedStart = Number(new URL(location.href).searchParams.get("t"));
+    let requestedStart = resumeAt.current || linkedStart;
+    const prefs = readStored<Prefs>(PREFS_KEY);
+    if (prefs) {
+      if (Number.isFinite(prefs.volume)) element.volume = Math.min(1, Math.max(0, prefs.volume));
+      element.muted = Boolean(prefs.muted);
+      if (SPEEDS.includes(prefs.speed)) element.defaultPlaybackRate = element.playbackRate = prefs.speed;
+    }
+    const offerResume = !requestedStart;
+    let savedAt = 0;
     resumeAt.current = 0;
     if (!Number.isFinite(requestedStart) || requestedStart < 0) requestedStart = 0;
     const sync = () => {
@@ -45,11 +67,26 @@ export function usePlayback({ source, duration, details }: { source: string; dur
         buffered, volume: element.volume, muted: element.muted, speed: element.playbackRate, ended: element.ended });
     };
     const loaded = () => {
+      if (prefs) setCaptions(Boolean(prefs.captions));
+      const saved = readStored<number>(resumeKey(slug));
+      const length = Number.isFinite(element.duration) ? element.duration : duration;
+      if (offerResume && typeof saved === "number" && saved > 5 && saved < length - 10) setResume(saved);
       if (requestedStart > 0) element.currentTime = Math.min(requestedStart, Math.max(0, element.duration - 0.05));
       requestedStart = 0;
       setCanPip(Boolean(document.pictureInPictureEnabled && element.requestPictureInPicture));
       sync();
     };
+    const remember = () => {
+      if (element.ended) { writeStored({ key: resumeKey(slug), value: null }); return; }
+      if (Math.abs(element.currentTime - savedAt) < 4 && !element.paused) return;
+      savedAt = element.currentTime;
+      writeStored({ key: resumeKey(slug), value: element.currentTime > 5 ? Math.floor(element.currentTime) : null });
+    };
+    const keepPrefs = () => {
+      const current = readStored<Prefs>(PREFS_KEY);
+      writeStored({ key: PREFS_KEY, value: { captions: current?.captions ?? false, volume: element.volume, muted: element.muted, speed: element.playbackRate } });
+    };
+    const started = () => setResume(null);
     const failed = () => {
       if (disposed) return;
       setError(navigator.onLine
@@ -61,6 +98,9 @@ export function usePlayback({ source, duration, details }: { source: string; dur
     events.forEach((event) => element.addEventListener(event, sync));
     element.addEventListener("loadedmetadata", loaded);
     element.addEventListener("error", failed);
+    ["timeupdate", "pause", "ended"].forEach((event) => element.addEventListener(event, remember));
+    ["volumechange", "ratechange"].forEach((event) => element.addEventListener(event, keepPrefs));
+    ["play", "seeking"].forEach((event) => element.addEventListener(event, started));
     const fullscreenChanged = () => setFullscreen(document.fullscreenElement === frame.current);
     const pipChanged = () => setPip(document.pictureInPictureElement === element);
     document.addEventListener("fullscreenchange", fullscreenChanged);
@@ -92,6 +132,9 @@ export function usePlayback({ source, duration, details }: { source: string; dur
       events.forEach((event) => element.removeEventListener(event, sync));
       element.removeEventListener("loadedmetadata", loaded);
       element.removeEventListener("error", failed);
+      ["timeupdate", "pause", "ended"].forEach((event) => element.removeEventListener(event, remember));
+      ["volumechange", "ratechange"].forEach((event) => element.removeEventListener(event, keepPrefs));
+      ["play", "seeking"].forEach((event) => element.removeEventListener(event, started));
       document.removeEventListener("fullscreenchange", fullscreenChanged);
       element.removeEventListener("enterpictureinpicture", pipChanged);
       element.removeEventListener("leavepictureinpicture", pipChanged);
@@ -100,7 +143,7 @@ export function usePlayback({ source, duration, details }: { source: string; dur
       element.removeAttribute("src");
       element.load();
     };
-  }, [source, duration, attempt]);
+  }, [slug, source, duration, attempt]);
 
   useEffect(() => {
     const element = video.current;
@@ -166,9 +209,22 @@ export function usePlayback({ source, duration, details }: { source: string; dur
     window.addEventListener("online", online);
     return () => window.removeEventListener("online", online);
   }, [error]);
-  return { videoRef: video, frameRef: frame, state, error, notice, levels, quality, captions, fullscreen, pip, canPip,
+  const toggleCaptions = () => setCaptions((current) => {
+    const prefs = readStored<Prefs>(PREFS_KEY);
+    const element = video.current;
+    writeStored({ key: PREFS_KEY, value: { volume: element?.volume ?? 1, muted: element?.muted ?? false,
+      speed: element?.playbackRate ?? 1, ...prefs, captions: !current } });
+    return !current;
+  });
+  const resumePlayback = async () => {
+    if (resume === null) return;
+    seek({ time: resume });
+    setResume(null);
+    await toggle();
+  };
+  return { videoRef: video, frameRef: frame, state, error, notice, levels, quality, captions, fullscreen, pip, canPip, resume,
     seek, toggle, changeSpeed, changeVolume, toggleMute, changeQuality, toggleFullscreen, togglePip,
-    toggleCaptions: () => setCaptions((current) => !current), retry };
+    toggleCaptions, resumePlayback, retry };
 }
 
 export type Playback = Omit<ReturnType<typeof usePlayback>, "videoRef" | "frameRef">;

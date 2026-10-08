@@ -79,6 +79,7 @@ export function EditChapter() {
         title="Cut the pauses in one click."
         lede="Every take opens on a timeline with the screen, camera, and audio on separate tracks, so you can edit it again later. Try it below."
         aside={null}
+        align="center"
       />
 
       <div data-reveal className="panel app-surface mt-10 overflow-hidden rounded-card sm:mt-14">
@@ -126,7 +127,7 @@ export function EditChapter() {
         </div>
       </div>
 
-      <ChapterPoints points={points} />
+      <ChapterPoints points={points} layout="numbered" />
     </Section>
   );
 }

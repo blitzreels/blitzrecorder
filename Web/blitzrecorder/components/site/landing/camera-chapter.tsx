@@ -3,12 +3,14 @@ import Link from "next/link";
 import { ArrowRight, Check } from "@/components/site/icons";
 import { JourneySectionView } from "@/components/site/journey-markers";
 import { Section } from "@/components/ui/layout";
-import { ChapterHeader, chapters } from "@/components/site/landing/chapter";
+import { ChapterBand, ChapterHeader, chapters } from "@/components/site/landing/chapter";
 import { assets } from "@/lib/assets";
 
 export function CameraChapter() {
   return (
-    <Section id="camera" className="scroll-mt-24 py-16 sm:py-20">
+    <ChapterBand>
+    <Section id="camera" className="scroll-mt-24 py-20 sm:py-28">
+      <div className="grid gap-12 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:items-center lg:gap-16">
       <JourneySectionView area="landing" section="camera" payload={{ page: "home" }} />
       <ChapterHeader
         mark={chapters.camera}
@@ -23,9 +25,10 @@ export function CameraChapter() {
             <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
           </Link>
         }
+        align="stack"
       />
 
-      <div data-reveal className="panel app-surface mt-10 grid overflow-hidden rounded-card sm:mt-14 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <div data-reveal className="panel app-surface grid overflow-hidden rounded-card sm:grid-cols-[minmax(0,1fr)_260px]">
         <div className="relative grid min-h-[440px] place-items-center bg-background px-4 pt-14 pb-10 sm:min-h-[560px]">
           <Phone className="w-[200px]" />
           <span className="label-mono absolute top-4 left-4 text-muted-foreground">iPhone</span>
@@ -64,7 +67,9 @@ export function CameraChapter() {
           </InspectorSection>
         </div>
       </div>
+      </div>
     </Section>
+    </ChapterBand>
   );
 }
 

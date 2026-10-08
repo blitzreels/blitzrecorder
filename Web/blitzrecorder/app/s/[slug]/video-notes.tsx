@@ -1,8 +1,9 @@
 "use client";
 
-import { memo, useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
-import { ArrowDown, Check, Copy, Search, X } from "lucide-react";
-import { activeChapter, formatTime, type TranscriptCue, type VideoDetails } from "@/lib/hosting/details";
+import { memo, useCallback, useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { Menu } from "@base-ui/react/menu";
+import { ArrowDown, Check, Copy, Download, Ellipsis, Search, X } from "lucide-react";
+import { activeChapter, formatTime, transcriptSRT, transcriptText, type TranscriptCue, type VideoDetails } from "@/lib/hosting/details";
 import type { TranscriptBrief } from "@/lib/hosting/brief";
 import styles from "./player.module.css";
 
@@ -11,23 +12,68 @@ export type NotesTab = "summary" | "transcript" | "chapters";
 /** Mirrors the speaker palette in ProjectTranscriptPanel.swift (mint, then system blue, purple, orange, pink, teal). */
 const SPEAKER_COLORS = ["var(--primary)", "#0a84ff", "#bf5af2", "#ff9f0a", "#ff375f", "#40c8e0"];
 
-const CueRow = memo(function CueRow({ cue, index, active, speaker, query, onSeek }: {
-  cue: TranscriptCue; index: number; active: boolean; speaker: { name: string; color: string } | null;
-  query: string; onSeek: (index: number) => void;
+type Block = { speaker: string | null; cues: { cue: TranscriptCue; index: number }[] };
+
+/** Consecutive lines from one speaker read as one paragraph; a paragraph closes after 45 s or a long pause. */
+function paragraphs(items: { cue: TranscriptCue; index: number }[]): Block[] {
+  const blocks: Block[] = [];
+  for (const item of items) {
+    const block = blocks.at(-1);
+    const last = block?.cues.at(-1);
+    if (block && last && block.speaker === item.cue.speaker && item.index === last.index + 1
+      && item.cue.start - block.cues[0].cue.start < 45 && item.cue.start - last.cue.end < 3) block.cues.push(item);
+    else blocks.push({ speaker: item.cue.speaker, cues: [item] });
+  }
+  return blocks;
+}
+
+function highlight({ text, query }: { text: string; query: string }) {
+  const at = query ? text.toLocaleLowerCase().indexOf(query.toLocaleLowerCase()) : -1;
+  return at < 0 ? text : <>{text.slice(0, at)}<mark>{text.slice(at, at + query.length)}</mark>{text.slice(at + query.length)}</>;
+}
+
+const Paragraph = memo(function Paragraph({ block, active, color, named, query, onSeek }: {
+  block: Block; active: number; color: string | null; named: boolean; query: string; onSeek: (index: number) => void;
 }) {
-  const at = query ? cue.text.toLocaleLowerCase().indexOf(query.toLocaleLowerCase()) : -1;
-  return <div className={styles.cueGroup} data-speaker-start={speaker ? "true" : undefined}>
-    {speaker && <p className={styles.speaker}><span style={{ background: speaker.color }} />{speaker.name}</p>}
-    <button type="button" className={styles.cue} data-cue={index} aria-current={active ? "true" : undefined}
-      aria-label={`${formatTime(cue.start)}${cue.speaker ? `, ${cue.speaker}` : ""}: ${cue.text}`} onClick={() => onSeek(index)}>
-      <time>{formatTime(cue.start)}</time>
-      <span>{at < 0 ? cue.text : <>{cue.text.slice(0, at)}<mark>{cue.text.slice(at, at + query.length)}</mark>{cue.text.slice(at + query.length)}</>}</span>
+  const first = block.cues[0];
+  const current = active >= 0;
+  const compact = block.cues.length === 1 && first.cue.text.length <= 24;
+  return <div className={styles.paragraph} data-current={current ? "true" : undefined} data-compact={compact ? "true" : undefined}>
+    <button type="button" className={styles.paragraphHead} onClick={() => onSeek(first.index)}
+      aria-label={`Play from ${formatTime(first.cue.start)}${block.speaker ? `, ${block.speaker}` : ""}`}>
+      {named && block.speaker && <span className={styles.avatar} style={{ background: color ?? undefined }} aria-hidden="true">
+        {block.speaker.trim().charAt(0).toLocaleUpperCase()}
+      </span>}
+      {named && block.speaker && <strong>{block.speaker}</strong>}
+      <time>{formatTime(first.cue.start)}</time>
     </button>
+    <p className={styles.paragraphText} onClick={(event) => {
+      if (window.getSelection()?.toString()) return;
+      const cue = (event.target as HTMLElement).closest<HTMLElement>("[data-cue]");
+      if (cue) onSeek(Number(cue.dataset.cue));
+    }}>
+      {block.cues.map(({ cue, index }) => <span key={index} data-cue={index} aria-current={index === active ? "true" : undefined}>
+        {highlight({ text: cue.text, query })}{" "}
+      </span>)}
+    </p>
   </div>;
 });
 
-export function VideoNotes({ details, brief, time, duration, ready, playing, tab, onTabChange, onSeek }: {
-  details: VideoDetails; brief: TranscriptBrief; time: number; duration: number; ready: boolean; playing: boolean;
+function download({ name, text, type }: { name: string; text: string; type: string }) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function fileName(title: string): string {
+  return title.normalize("NFKD").replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-").toLowerCase().slice(0, 60) || "transcript";
+}
+
+export function VideoNotes({ title, details, brief, time, duration, ready, playing, tab, onTabChange, onSeek }: {
+  title: string; details: VideoDetails; brief: TranscriptBrief; time: number; duration: number; ready: boolean; playing: boolean;
   tab: NotesTab; onTabChange: (tab: NotesTab) => void; onSeek: (input: { time: number }) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -70,14 +116,18 @@ export function VideoNotes({ details, brief, time, duration, ready, playing, tab
     if (follow && !deferredQuery && tab === "transcript" && active >= 0) followActive();
   }, [active, follow, deferredQuery, tab]);
 
-  const seekCue = (index: number) => { if (!ready) return; setFollow(true); onSeek({ time: transcript[index].start }); };
+  const seekCue = useCallback((index: number) => {
+    if (!ready) return;
+    setFollow(true);
+    onSeek({ time: transcript[index].start });
+  }, [ready, transcript, onSeek]);
   const copyTranscript = async () => {
-    const lines = transcript.map((cue) => `[${formatTime(cue.start)}]${speakers.size > 1 && cue.speaker ? ` ${cue.speaker}:` : ""} ${cue.text}`);
     try {
-      await navigator.clipboard.writeText(lines.join("\n"));
+      await navigator.clipboard.writeText(transcriptText(transcript));
       setCopied(true); window.setTimeout(() => setCopied(false), 2000);
     } catch { /* The transcript stays readable and selectable in the panel. */ }
   };
+  const blocks = useMemo(() => paragraphs(filtered), [filtered]);
   const sectionIndex = activeChapter({
     chapters: brief.sections.map((section) => ({ start: section.start, title: section.title, summary: null })), time,
   });
@@ -100,10 +150,26 @@ export function VideoNotes({ details, brief, time, duration, ready, playing, tab
             onTabChange(next); document.getElementById(`tab-${next}`)?.focus();
           }}>{item.title}{item.key !== "transcript" && <span>{item.count}</span>}</button>)}
       </div> : <h2 className={styles.notesTitle}>{tabs[0]?.title}</h2>}
-      {tab === "transcript" && <button type="button" className={styles.iconButtonQuiet} onClick={() => void copyTranscript()}
-        aria-label={copied ? "Transcript copied" : "Copy transcript"} title="Copy transcript with timestamps">
-        {copied ? <Check /> : <Copy />}
-      </button>}
+      {tab === "transcript" && <Menu.Root>
+        <Menu.Trigger className={styles.iconButtonQuiet} aria-label="Transcript options">
+          {copied ? <Check /> : <Ellipsis />}
+        </Menu.Trigger>
+        <Menu.Portal>
+          <Menu.Positioner side="bottom" align="end" sideOffset={6} collisionPadding={12} className="z-[60]">
+            <Menu.Popup className={styles.notesMenu}>
+              <Menu.Item className={styles.notesMenuItem} onClick={() => void copyTranscript()}><Copy />Copy transcript</Menu.Item>
+              <Menu.Item className={styles.notesMenuItem}
+                onClick={() => download({ name: `${fileName(title)}.txt`, text: transcriptText(transcript), type: "text/plain" })}>
+                <Download />Download as text
+              </Menu.Item>
+              <Menu.Item className={styles.notesMenuItem}
+                onClick={() => download({ name: `${fileName(title)}.srt`, text: transcriptSRT(transcript), type: "application/x-subrip" })}>
+                <Download />Download subtitles (.srt)
+              </Menu.Item>
+            </Menu.Popup>
+          </Menu.Positioner>
+        </Menu.Portal>
+      </Menu.Root>}
     </div>
 
     {tab === "summary" ? <div role="tabpanel" id="panel-summary" aria-labelledby={tabs.length > 1 ? "tab-summary" : undefined}
@@ -132,11 +198,12 @@ export function VideoNotes({ details, brief, time, duration, ready, playing, tab
       </div>
       <div className={styles.transcriptWrap}>
         <div ref={list} className={styles.transcriptList} onWheel={() => setFollow(false)} onTouchMove={() => setFollow(false)}>
-          {filtered.map(({ cue, index }, position) => {
-            const previous = filtered[position - 1]?.cue;
-            const showSpeaker = speakers.size > 1 && cue.speaker && (!previous || previous.speaker !== cue.speaker);
-            return <CueRow key={index} cue={cue} index={index} active={index === active} query={deferredQuery} onSeek={seekCue}
-              speaker={showSpeaker && cue.speaker ? { name: cue.speaker, color: speakers.get(cue.speaker)! } : null} />;
+          {blocks.map((block) => {
+            const first = block.cues[0].index;
+            const last = block.cues.at(-1)!.index;
+            return <Paragraph key={first} block={block} active={active >= first && active <= last ? active : -1}
+              color={block.speaker ? speakers.get(block.speaker) ?? null : null} named={speakers.size > 1}
+              query={deferredQuery} onSeek={seekCue} />;
           })}
           {!filtered.length && <p className={styles.empty}>No passages match “{query}”.</p>}
         </div>

@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import type { TranscriptCue, VideoDetails } from "@/lib/hosting/details";
+import { shareDetails, type TranscriptCue, type VideoDetails } from "@/lib/hosting/details";
 import { SharedVideoView } from "../[slug]/shared-video-view";
 
 const DURATION = 30.3;
@@ -33,12 +33,14 @@ function fixture(): VideoDetails {
     const at = Math.round((start / 1900) * 26 * 10) / 10;
     return { start: at, end: Math.min(DURATION, at + 1.4), text, speaker };
   });
-  return { version: 1, summary: null, language: "fr", recordedAt: "2026-09-12T15:04:00.000Z", transcript, chapters: [] };
+  const chapters = ["Pricing", "Bonus cap", "Fixed fee", "New accounts", "Platforms", "Tracking", "Brief", "Next steps"]
+    .map((title, index) => ({ start: index * 3.6, title, summary: null }));
+  return { version: 1, summary: null, language: "fr", recordedAt: "2026-09-12T15:04:00.000Z", transcript, chapters };
 }
 
 export default function SharePreviewPage() {
   if (process.env.NODE_ENV === "production") notFound();
   return <SharedVideoView slug="preview" source="/videos/presentation.mp4" poster="/media/presentation-poster.webp"
     title="Pricing review — annual plan" width={1920} height={1080} duration={DURATION} frameRate={60}
-    details={fixture()} viewer={null} />;
+    details={shareDetails({ details: fixture(), duration: DURATION })} viewer={null} />;
 }

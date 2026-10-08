@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { Link2Off } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ListingButton } from "@/components/hosting/listing-button";
@@ -13,7 +12,7 @@ import styles from "./owner-library.module.css";
 import { SharedPlayer } from "./player";
 import { StopSharing } from "@/components/hosting/stop-sharing";
 import { TryBlitzRecorderCard } from "./try-blitzrecorder";
-import { TRY_URL } from "./try-url";
+import { ShareNavActions, ShareNavLinks } from "./share-nav";
 
 /** `library` and `sessions` are only loaded when the viewer owns the video. */
 export type SharedViewer = { email: string | null; library: LibraryVideo[] | null; sessions: number };
@@ -23,7 +22,7 @@ export function SharedVideoView({ slug, source, poster, title, width, height, du
   duration: number; frameRate: number | null; details: VideoDetails; viewer: SharedViewer | null;
 }) {
   const library = viewer?.library ?? null;
-  const player = <SharedPlayer key={slug} source={source} poster={poster} title={title} width={width} height={height}
+  const player = <SharedPlayer key={slug} slug={slug} source={source} poster={poster} title={title} width={width} height={height}
     duration={duration} frameRate={frameRate} details={details}
     ownerActions={library && <>
       <ListingButton slug={slug} listed title={title} redirectOnUnlist={videosPath}
@@ -41,21 +40,13 @@ export function SharedVideoView({ slug, source, poster, title, width, height, du
         compact={Boolean(library)}
         innerClassName={bar}
         leading={library ? <OwnerLibraryToggle count={library.length} /> : undefined}
-        nav={<nav aria-label="Account"><NavItem href={videosPath}>Videos</NavItem></nav>}
-        trailing={!viewer ? <>
-          <Button size="sm" variant="ghost" render={<Link href={`${signInPath}?next=${sharePath(slug)}`} prefetch={false} />}>
-            Sign in
-          </Button>
-          <Button size="sm" render={<Link href={TRY_URL} />}>
-            <span className="sm:hidden">Try free</span>
-            <span className="hidden sm:inline">Try BlitzRecorder free</span>
-          </Button>
-        </> : !library ? <SignOutButton className={cn(buttonVariants({ variant: "outline", size: "sm" }))} /> : <>
+        nav={viewer ? <nav aria-label="Account"><NavItem href={videosPath}>Videos</NavItem></nav> : <ShareNavLinks />}
+        trailing={!viewer ? <ShareNavActions signInHref={`${signInPath}?next=${sharePath(slug)}`} /> : !library ? <SignOutButton className={cn(buttonVariants({ variant: "outline", size: "sm" }))} /> : <>
           <span className="hidden max-w-52 truncate text-[13px] text-faint md:inline" title={viewer.email ?? undefined}>{viewer.email}</span>
           <SignOutButton className={cn(buttonVariants({ variant: "outline", size: "sm" }))} />
         </>}
       />
-      <div className="px-4 pb-16 sm:px-6 lg:px-8">
+      <div className="px-4 pt-4 pb-16 sm:px-6 sm:pt-6 lg:px-8">
         {library
           ? <div className={styles.shell}>
             <OwnerLibrary videos={library} currentSlug={slug} email={viewer?.email ?? null} sessions={viewer?.sessions ?? 0} />

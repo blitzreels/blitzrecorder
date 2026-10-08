@@ -67,7 +67,7 @@ export function Hero() {
             controls
             playsInline
             preload="metadata"
-            aria-label="A 30-second film showing BlitzRecorder recording, transcribing, and exporting a take"
+            aria-label="A 30-second film: BlitzRecorder records your screen, an app, and your face, cuts the pauses, and exports the video"
             onPlay={(event) =>
               trackJourneyEvent({
                 eventName: "landing_film_played",

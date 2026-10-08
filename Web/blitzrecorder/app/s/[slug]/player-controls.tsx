@@ -3,7 +3,7 @@
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import {
   Captions, Check, ChevronDown, ChevronRight, Maximize, Minimize, Pause, PictureInPicture2, Play, RotateCcw, RotateCw,
-  Volume1, Volume2, VolumeX,
+  Keyboard, Volume1, Volume2, VolumeX,
 } from "lucide-react";
 import { activeChapter, formatTime, type VideoChapter } from "@/lib/hosting/details";
 import type { Playback } from "./use-playback";
@@ -46,8 +46,9 @@ function MenuItem({ checked, onSelect, children }: { checked: boolean; onSelect:
   </button>;
 }
 
-export function PlayerControls({ playback, speeds, chapters, hasTranscript, onShowChapters }: {
-  playback: Playback; speeds: number[]; chapters: VideoChapter[]; hasTranscript: boolean; onShowChapters: () => void;
+export function PlayerControls({ playback, speeds, chapters, hasTranscript, onShowChapters, onShowShortcuts }: {
+  playback: Playback; speeds: number[]; chapters: VideoChapter[]; hasTranscript: boolean;
+  onShowChapters: () => void; onShowShortcuts: () => void;
 }) {
   const { state } = playback;
   const [menu, setMenu] = useState<MenuKey | null>(null);
@@ -130,6 +131,8 @@ export function PlayerControls({ playback, speeds, chapters, hasTranscript, onSh
             checked={playback.quality === level.index}
             onSelect={() => { playback.changeQuality({ index: level.index }); setMenu(null); }}>{level.label}</MenuItem>)}
         </ControlMenu>}
+        <button type="button" className={`${styles.iconButton} ${styles.shortcutsButton}`} aria-label="Keyboard shortcuts"
+          title="Keyboard shortcuts (?)" onClick={onShowShortcuts}><Keyboard /></button>
         {playback.canPip && <button type="button" className={`${styles.iconButton} ${styles.pip}`} aria-label="Picture in picture"
           aria-pressed={playback.pip} title="Picture in picture" onClick={() => void playback.togglePip()}><PictureInPicture2 /></button>}
         <button type="button" className={styles.iconButton} aria-label={playback.fullscreen ? "Exit fullscreen" : "Fullscreen"}

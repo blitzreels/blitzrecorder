@@ -102,6 +102,23 @@ export function formatTime(seconds: number): string {
   return `${hours ? `${hours}:` : ""}${String(Math.floor(total / 60) % 60).padStart(hours ? 2 : 1, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
+const CHAPTER_MIN_VIDEO = 120;
+const CHAPTER_MIN_LENGTH = 30;
+
+/** Drops chapters a viewer can't use: none under two minutes, none shorter than 30 s or a tenth of the video. */
+export function readableChapters({ chapters, duration }: { chapters: VideoChapter[]; duration: number }): VideoChapter[] {
+  if (!Number.isFinite(duration) || duration < CHAPTER_MIN_VIDEO) return [];
+  const span = Math.max(CHAPTER_MIN_LENGTH, duration / 10);
+  const kept: VideoChapter[] = [];
+  for (const chapter of [...chapters].sort((a, b) => a.start - b.start)) {
+    if (duration - chapter.start < span / 2) break;
+    const last = kept.at(-1);
+    if (!last) kept.push({ ...chapter, start: chapter.start < span ? 0 : chapter.start });
+    else if (chapter.start - last.start >= span) kept.push(chapter);
+  }
+  return kept.length >= 2 ? kept : [];
+}
+
 export function activeChapter({ chapters, time }: { chapters: VideoChapter[]; time: number }): number {
   let low = 0;
   let high = chapters.length;
@@ -113,11 +130,27 @@ export function activeChapter({ chapters, time }: { chapters: VideoChapter[]; ti
   return low - 1;
 }
 
+function cueStamp({ seconds, separator }: { seconds: number; separator: "." | "," }): string {
+  const ms = Math.round(seconds * 1000);
+  return `${String(Math.floor(ms / 3600000)).padStart(2, "0")}:${String(Math.floor(ms / 60000) % 60).padStart(2, "0")}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}${separator}${String(ms % 1000).padStart(3, "0")}`;
+}
+
 export function transcriptVTT(cues: TranscriptCue[]): string {
-  const stamp = (seconds: number) => {
-    const ms = Math.round(seconds * 1000);
-    return `${String(Math.floor(ms / 3600000)).padStart(2, "0")}:${String(Math.floor(ms / 60000) % 60).padStart(2, "0")}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}.${String(ms % 1000).padStart(3, "0")}`;
-  };
   const escape = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replace(/\s+/g, " ");
-  return `WEBVTT\n\n${cues.map((cue, index) => `${index + 1}\n${stamp(cue.start)} --> ${stamp(cue.end)}\n${escape(cue.text)}\n`).join("\n")}`;
+  return `WEBVTT\n\n${cues.map((cue, index) => `${index + 1}\n${cueStamp({ seconds: cue.start, separator: "." })} --> ${cueStamp({ seconds: cue.end, separator: "." })}\n${escape(cue.text)}\n`).join("\n")}`;
+}
+
+export function transcriptSRT(cues: TranscriptCue[]): string {
+  return cues.map((cue, index) => `${index + 1}\n${cueStamp({ seconds: cue.start, separator: "," })} --> ${cueStamp({ seconds: cue.end, separator: "," })}\n${cue.text.replace(/\s+/g, " ")}\n`).join("\n");
+}
+
+/** Plain text with timestamps; speaker names only when more than one person talks. */
+export function transcriptText(cues: TranscriptCue[]): string {
+  const named = new Set(cues.map((cue) => cue.speaker).filter(Boolean)).size > 1;
+  return cues.map((cue) => `[${formatTime(cue.start)}]${named && cue.speaker ? ` ${cue.speaker}:` : ""} ${cue.text}`).join("\n");
+}
+
+/** What a share page shows: phrases instead of words, and only chapters worth navigating. */
+export function shareDetails({ details, duration }: { details: VideoDetails; duration: number }): VideoDetails {
+  return { ...details, transcript: compactTranscript(details.transcript), chapters: readableChapters({ chapters: details.chapters, duration }) };
 }

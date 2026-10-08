@@ -4,7 +4,7 @@ import blitzreelsWordmark from "@/public/logos/blitzreels-wordmark-white.png";
 import editor from "@/public/media/editor.webp";
 import screenTake from "@/public/media/screen.webp";
 import cameraTake from "@/public/media/camera.webp";
-import presentationPoster from "@/public/media/presentation-poster.webp";
+import presentationPoster from "@/public/media/blitzrecorder-film-poster.webp";
 
 export const assets = {
   iosIcon,
@@ -16,4 +16,4 @@ export const assets = {
   presentationPoster,
 };
 
-export const presentationFilm = "/videos/presentation.mp4";
+export const presentationFilm = "/videos/blitzrecorder-film.mp4";
