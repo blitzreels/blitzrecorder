@@ -43,6 +43,9 @@ enum RecordingSettingsStore {
         static let cameraContentMode = "scene.cameraContentMode"
         static let cameraFramePadding = "scene.cameraFramePadding"
         static let cameraShadowEnabled = "scene.cameraShadowEnabled"
+        static let screenCornerRadius = "scene.screenCornerRadius"
+        static let screenShadowEnabled = "scene.screenShadowEnabled"
+        static let cameraCornerRadius = "scene.cameraCornerRadius"
         static let screenFrame = "scene.screenFrame"
         static let cameraFrame = "scene.cameraFrame"
         static let layerOrder = "scene.layerOrder"
@@ -180,6 +183,15 @@ enum RecordingSettingsStore {
         defaults.removeObject(forKey: Key.cameraFramePadding)
         if defaults.object(forKey: Key.cameraShadowEnabled) != nil {
             settings.cameraShadowEnabled = defaults.bool(forKey: Key.cameraShadowEnabled)
+        }
+        if defaults.object(forKey: Key.screenCornerRadius) != nil {
+            settings.screenCornerRadius = CaptureValueClamps.screenCornerRadius(CGFloat(defaults.double(forKey: Key.screenCornerRadius)))
+        }
+        if defaults.object(forKey: Key.screenShadowEnabled) != nil {
+            settings.screenShadowEnabled = defaults.bool(forKey: Key.screenShadowEnabled)
+        }
+        if defaults.object(forKey: Key.cameraCornerRadius) != nil {
+            settings.cameraCornerRadius = CaptureValueClamps.cameraCornerRadius(CGFloat(defaults.double(forKey: Key.cameraCornerRadius)))
         }
         settings.sceneLayout = SceneLayout.defaultLayout(for: settings.layout)
         let savedScreenFrame = rect(for: Key.screenFrame, defaults: defaults)
@@ -363,6 +375,9 @@ enum RecordingSettingsStore {
         defaults.set(settings.cameraContentMode.rawValue, forKey: Key.cameraContentMode)
         defaults.removeObject(forKey: Key.cameraFramePadding)
         defaults.set(settings.cameraShadowEnabled, forKey: Key.cameraShadowEnabled)
+        defaults.set(CaptureValueClamps.screenCornerRadius(settings.screenCornerRadius), forKey: Key.screenCornerRadius)
+        defaults.set(settings.screenShadowEnabled, forKey: Key.screenShadowEnabled)
+        defaults.set(CaptureValueClamps.cameraCornerRadius(settings.cameraCornerRadius), forKey: Key.cameraCornerRadius)
         defaults.set(string(from: settings.sceneLayout.screenFrame), forKey: Key.screenFrame)
         defaults.set(string(from: settings.sceneLayout.cameraFrame), forKey: Key.cameraFrame)
         defaults.set(settings.sceneLayout.layerOrder.map(\.rawValue), forKey: Key.layerOrder)

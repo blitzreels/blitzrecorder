@@ -572,10 +572,12 @@ final class EditorSilenceWorkflowTests: XCTestCase {
         try await settle(session)
         XCTAssertTrue(session.canRemoveNonDialogue)
         XCTAssertEqual(session.classification(.init(start: 6, end: 7)), .silence)
+        XCTAssertTrue(session.transcriptItems.contains { $0.kind == .nonDialogue && $0.range.start < 7 && $0.range.end > 6 })
         XCTAssertEqual(try store.loadRecordingProject(at: fixture.take.projectURL).edits, project.edits)
         session.classify(.init(range: .init(start: 6, end: 7), classification: .sound))
         let protectedEdits = try store.loadRecordingProject(at: fixture.take.projectURL).edits
         XCTAssertEqual(session.classification(.init(start: 6, end: 7)), .sound)
+        XCTAssertFalse(session.transcriptItems.contains { $0.kind == .nonDialogue && $0.range.start < 7 && $0.range.end > 6 })
         session.removeNonDialogue()
         let removed = try store.loadRecordingProject(at: fixture.take.projectURL).edits
         let map = TimelineTimeMap(takeDuration: TimelineTimeMap.time(10), cuts: removed.cuts)
@@ -590,6 +592,9 @@ final class EditorSilenceWorkflowTests: XCTestCase {
         session.prepare(.init(vm: vm, playback: playback, project: try XCTUnwrap(vm.lastExportedProject)))
         try await settle(session)
         XCTAssertFalse(session.canRemoveNonDialogue)
+        let displayed = EditorTranscriptLayout(.init(items: session.transcriptItems,
+            projection: .init(.init(duration: 10, cuts: removed.cuts))))
+        XCTAssertFalse(displayed.items.contains { $0.source.kind == .nonDialogue })
     }
 
     func testOlderProjectsDecodeWithoutClassificationOverrides() throws {

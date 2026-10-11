@@ -51,6 +51,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
         }
     }
     private(set) var mutedSources: Set<CaptureSource> = []
+    private(set) var audioLevels = EditorAudioLevels.unity
     private(set) var previewSceneRevision = 0
     private(set) var playbackRate = EditorPlaybackRate.normal
     private(set) var playbackVolume: Double = 1
@@ -73,6 +74,26 @@ final class EditorPlaybackController: NowPlayingPlayback {
         edits.privacyMasks = masks
         setPrivacyMaskPreview(nil)
     }
+    struct TextFramePreview {
+        let id: EditorPlacedItem.ID
+        let frame: CGRect
+    }
+
+    func previewTextFrame(_ preview: TextFramePreview) {
+        if preview.id.kind == .text, let index = edits.textOverlays.firstIndex(where: { $0.id == preview.id.value }) {
+            edits.textOverlays[index].frame = preview.frame
+        } else if preview.id.kind == .caption {
+            edits.captions.frame = preview.frame
+        }
+        previewSceneRevision &+= 1
+    }
+
+    func restoreTextPreview(_ source: TimelineEdits) {
+        edits.textOverlays = source.textOverlays
+        edits.captions = source.captions
+        previewSceneRevision &+= 1
+    }
+
     private(set) var cursorTrack = CursorPresentationTrack.empty
     var outputDuration: Double { timeMap.outputDuration.seconds }
     private var timeMap: TimelineTimeMap {
@@ -179,6 +200,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
         edits = .empty
         hiddenKinds = []
         mutedSources = []
+        audioLevels = .unity
         loadedProjectPath = nil
         loadedMediaSignature = nil
         previewSceneOverride = nil
@@ -431,7 +453,10 @@ final class EditorPlaybackController: NowPlayingPlayback {
         let mix = AVMutableAudioMix()
         mix.inputParameters = audioMixTracks.map { entry in
             let params = AVMutableAudioMixInputParameters(track: entry.track)
-            params.setVolume(mutedSources.contains(entry.source) ? 0 : entry.baseVolume, at: .zero)
+            EditorAudioVolumeAutomation.apply(.init(parameters: params, source: entry.source,
+                baseVolume: mutedSources.contains(entry.source) ? 0
+                    : entry.baseVolume * Float(audioLevels.volume(for: entry.source)),
+                regions: audioLevels.regions, timeMap: timeMap))
             return params
         }
         return mix
@@ -679,6 +704,22 @@ final class EditorPlaybackController: NowPlayingPlayback {
         audioPlayer?.volume = Float(playbackVolume)
     }
 
+    func setTrackVolume(_ change: EditorTrackVolumeChange) {
+        guard muteableSources.contains(change.source) else { return }
+        audioLevels.setVolume(change)
+        audioPlayer?.currentItem?.audioMix = audioMix()
+    }
+
+    func setAudioRegionVolume(_ region: EditorAudioVolumeRegion) {
+        audioLevels.setRegion(region)
+        audioPlayer?.currentItem?.audioMix = audioMix()
+    }
+
+    func restoreAudioLevels(_ levels: EditorAudioLevels) {
+        audioLevels = levels
+        audioPlayer?.currentItem?.audioMix = audioMix()
+    }
+
     func togglePlaybackMute() {
         setPlaybackVolume(playbackVolume > 0 ? 0 : lastAudiblePlaybackVolume)
     }
@@ -686,6 +727,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
     func applyEditorState(_ state: RecordingProject.EditorStateSnapshot) {
         hiddenKinds = Set(state.hiddenVideoSources.compactMap(SceneLayerKind.init(rawValue:)))
         mutedSources = Set(state.mutedAudioSources.compactMap(CaptureSource.init(rawValue:)))
+        audioLevels = state.audioLevels ?? .unity
         hiddenKinds.formIntersection(hideableKinds)
         mutedSources.formIntersection(muteableSources)
         applyPreviewDuration()

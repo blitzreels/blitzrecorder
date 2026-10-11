@@ -320,29 +320,20 @@ private struct BlitzUIKitNavigation: View {
             HStack(alignment: .top, spacing: 28) {
                 VStack(alignment: .leading, spacing: 2) {
                     BlitzUI.sectionLabel("Library").padding(.horizontal, 8).padding(.bottom, 4)
-                    row(.init(item: item("Recordings", "film.stack", detail: nil, trailing: "24"), depth: 0, isSelected: true,
-                              isDropTarget: false, tint: nil, pulses: false, disclosure: nil, action: {}))
-                    row(.init(item: item("Shared", "link", detail: nil, trailing: nil), depth: 0, isSelected: false,
-                              isDropTarget: false, tint: nil, pulses: false, disclosure: nil, action: {}))
-                    row(.init(item: item("Editor", "scissors", detail: "trailer", trailing: nil), depth: 0, isSelected: false,
-                              isDropTarget: false, tint: nil, pulses: false, disclosure: nil, action: {}))
+                    row(.init(item: item("Recordings", "film.stack", detail: nil, trailing: "24"),
+                              isSelected: true, isDropTarget: false, action: {}))
+                    row(.init(item: item("Shared", "link", detail: nil, trailing: nil),
+                              isSelected: false, isDropTarget: false, action: {}))
+                    row(.init(item: item("Editor", "scissors", detail: "trailer", trailing: nil),
+                              isSelected: false, isDropTarget: false, action: {}))
                     BlitzUI.sectionLabel("Folders").padding(.horizontal, 8).padding(.vertical, 4).padding(.top, 10)
-                    row(.init(item: item("Formation IA", "folder", detail: nil, trailing: "12"), depth: 0, isSelected: false,
-                              isDropTarget: false, tint: nil, pulses: false,
-                              disclosure: .init(isExpanded: true, toggle: {}), action: {}))
-                    row(.init(item: item("Module 01", "rectangle.stack", detail: nil, trailing: "4"), depth: 1, isSelected: false,
-                              isDropTarget: true, tint: nil, pulses: false, disclosure: nil, action: {}))
-                    row(.init(item: item("Module 02", "rectangle.stack", detail: nil, trailing: "8"), depth: 1, isSelected: false,
-                              isDropTarget: false, tint: BlitzUI.warning, pulses: false, disclosure: nil, action: {}))
-                    row(.init(item: item("Client X", "folder", detail: nil, trailing: "3"), depth: 0, isSelected: false,
-                              isDropTarget: false, tint: nil, pulses: false,
-                              disclosure: .init(isExpanded: false, toggle: {}), action: {}))
+                    row(.init(item: item("Formation IA", "folder", detail: nil, trailing: "12"),
+                              isSelected: false, isDropTarget: true, action: {}))
+                    row(.init(item: item("Client X", "folder", detail: nil, trailing: "3"),
+                              isSelected: false, isDropTarget: false, action: {}))
                     Spacer().frame(height: 12)
-                    row(.init(item: item("Recording", "record.circle.fill", detail: "02:41", trailing: nil), depth: 0,
-                              isSelected: false, isDropTarget: false, tint: BlitzUI.recordRed, pulses: true,
-                              disclosure: nil, action: {}))
-                    row(.init(item: item("Settings", "gearshape", detail: nil, trailing: "⌘,"), depth: 0, isSelected: false,
-                              isDropTarget: false, tint: nil, pulses: false, disclosure: nil, action: {}))
+                    row(.init(item: item("Settings", "gearshape", detail: nil, trailing: "⌘,"),
+                              isSelected: false, isDropTarget: false, action: {}))
                 }
                 .padding(10)
                 .frame(width: MainWindowChrome.sidebarWidth)
@@ -360,7 +351,7 @@ private struct BlitzUIKitNavigation: View {
                         }
                         BlitzUIKitSpecimen(label: "AppUpdateBadge") { AppUpdateBadge() }
                     }
-                    Text("Row states: selected · drop target (Module 01) · warning tint (Module 02) · live pulse (Recording)")
+                    Text("Row states: selected (Recordings) · drop target (Formation IA)")
                         .font(BlitzType.caption)
                         .foregroundStyle(BlitzUI.secondaryText)
                         .frame(width: 320, alignment: .leading)

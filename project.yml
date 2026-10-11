@@ -40,6 +40,8 @@ targets:
     deploymentTarget: "15.0"
     sources:
       - path: Sources/BlitzRecorderApp
+        excludes:
+          - Resources/BlitzRecorderMCPBridge
       - path: Resources/BlitzRecorder.icns
         buildPhase: resources
       - path: Resources/BlitzRecorderDev.icns
@@ -55,6 +57,9 @@ targets:
       - path: Resources/IntegrationClaude.png
         buildPhase: resources
       - path: Resources/IntegrationCodex.png
+        buildPhase: resources
+      - path: Sources/BlitzRecorderApp/Resources/BlitzRecorderMCPBridge
+        type: folder
         buildPhase: resources
     resources:
       - path: Resources/AppIcon.png
@@ -87,8 +92,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: dev.blitzreels.blitzrecorder
         INFOPLIST_FILE: Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: ""
-        MARKETING_VERSION: "0.35.0"
-        CURRENT_PROJECT_VERSION: "45"
+        MARKETING_VERSION: "0.36.0"
+        CURRENT_PROJECT_VERSION: "46"
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
       configs:
         Debug:
@@ -155,8 +160,8 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: ""
         TARGETED_DEVICE_FAMILY: "1,2"
-        MARKETING_VERSION: "0.35.0"
-        CURRENT_PROJECT_VERSION: "45"
+        MARKETING_VERSION: "0.36.0"
+        CURRENT_PROJECT_VERSION: "46"
 
 schemes:
   BlitzRecorder:

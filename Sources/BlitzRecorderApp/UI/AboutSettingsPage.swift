@@ -45,7 +45,7 @@ struct AboutSettingsPage: View {
                 .settingsRow()
 
                 VStack(spacing: 0) {
-                    HStack {
+                    BlitzAdaptiveRow() {
                         SettingsRowLabel(.init(title: "App updates", detail: updates.detail))
                         Button(updates.actionTitle) {
                             updates.checkForUpdates(nil)
@@ -64,21 +64,21 @@ struct AboutSettingsPage: View {
                         .settingsRow()
                     }
                     SettingsRowDivider()
-                    HStack {
+                    BlitzAdaptiveRow() {
                         SettingsRowLabel(.init(title: "What’s new", detail: "See the latest changes and releases."))
                         Link("Release Notes", destination: AppUpdateController.releaseNotesURL)
                             .blitzButton(.secondary)
                     }
                     .settingsRow()
                     SettingsRowDivider()
-                    HStack {
+                    BlitzAdaptiveRow() {
                         SettingsRowLabel(.init(title: "Help", detail: "Get help with recording and editing."))
                         Link("Support", destination: AppLinks.support)
                             .blitzButton(.secondary)
                     }
                     .settingsRow()
                     SettingsRowDivider()
-                    HStack {
+                    BlitzAdaptiveRow() {
                         SettingsRowLabel(.init(title: "Open source", detail: "Available under the AGPLv3 license."))
                         Link("Source Code", destination: URL(string: "https://github.com/blitzreels/blitzrecorder")!)
                             .blitzButton(.secondary)

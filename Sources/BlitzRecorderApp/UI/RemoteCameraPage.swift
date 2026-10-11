@@ -58,17 +58,18 @@ struct RemoteCameraPage: View {
 
     private var setupSummary: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack(spacing: 18) {
-                phoneIcon
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("A better camera. Right beside you.")
-                        .font(BlitzType.title)
-                    Text("Record on your iPhone. Frame the shot and control the camera from your Mac.")
-                        .font(BlitzType.body)
-                        .foregroundStyle(BlitzUI.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
+            BlitzAdaptiveRow(.init(minimumContentWidth: 320)) {
+                HStack(spacing: 18) {
+                    phoneIcon
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("A better camera. Right beside you.")
+                            .font(BlitzType.title)
+                        Text("Record on your iPhone. Frame the shot and control the camera from your Mac.")
+                            .font(BlitzType.body)
+                            .foregroundStyle(BlitzUI.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                Spacer(minLength: 0)
                 Link(destination: BlitzRecorderProductIdentity.companionInstallURL) {
                     Label("Get iPhone app", systemImage: "arrow.up.right")
                 }
@@ -108,7 +109,7 @@ struct RemoteCameraPage: View {
     }
 
     private var setupGuide: some View {
-        HStack(alignment: .top, spacing: 20) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 20)], alignment: .leading, spacing: 20) {
             setupStep(.init(number: 1, title: "Open the app", detail: "Launch BlitzRecorder Camera on your iPhone."))
             setupStep(.init(number: 2, title: "Use the same Wi-Fi", detail: "Keep your iPhone and Mac on one network."))
             setupStep(.init(number: 3, title: "Pair below", detail: "Select your iPhone and enter its six-digit code."))
@@ -135,10 +136,9 @@ struct RemoteCameraPage: View {
 
     private var nearbyDevices: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
+            BlitzAdaptiveRow() {
                 Text("Nearby iPhones")
                     .font(BlitzType.section)
-                Spacer()
                 Button {
                     vm.startRemoteCameraDiscovery()
                 } label: {
@@ -178,20 +178,21 @@ struct RemoteCameraPage: View {
     }
 
     private func deviceRow(_ device: RemoteCameraDeviceSummary) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "iphone.gen3")
-                .font(BlitzType.glyph(21))
-                .foregroundStyle(device.isSelected ? BlitzUI.mint : BlitzUI.secondaryText)
-                .frame(width: 36, height: 42)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(device.name)
-                    .font(BlitzType.callout)
-                Text(device.detail)
-                    .font(BlitzType.caption)
-                    .foregroundStyle(BlitzUI.secondaryText)
-                    .lineLimit(2)
+        BlitzAdaptiveRow() {
+            HStack(spacing: 12) {
+                Image(systemName: "iphone.gen3")
+                    .font(BlitzType.glyph(21))
+                    .foregroundStyle(device.isSelected ? BlitzUI.mint : BlitzUI.secondaryText)
+                    .frame(width: 36, height: 42)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(device.name)
+                        .font(BlitzType.callout)
+                    Text(device.detail)
+                        .font(BlitzType.caption)
+                        .foregroundStyle(BlitzUI.secondaryText)
+                        .lineLimit(2)
+                }
             }
-            Spacer(minLength: 12)
             SettingsStatusBadge(configuration: .init(
                 title: device.status,
                 tone: device.isReady ? .ready : .muted
@@ -209,21 +210,22 @@ struct RemoteCameraPage: View {
     }
 
     private var connectedSummary: some View {
-        HStack(spacing: 16) {
-            phoneIcon
-            VStack(alignment: .leading, spacing: 6) {
-                Text(vm.selectedRemoteCameraName ?? "iPhone camera")
-                    .font(BlitzType.title)
-                Text(vm.selectedRemoteCameraDeviceDescription)
-                    .font(BlitzType.body)
-                    .foregroundStyle(BlitzUI.secondaryText)
-                    .lineLimit(2)
-                SettingsStatusBadge(configuration: .init(
-                    title: vm.selectedRemoteCameraStatus ?? "Waiting for connection",
-                    tone: selectedDevice?.isReady == true ? .ready : .warning
-                ))
+        BlitzAdaptiveRow(.init(minimumContentWidth: 320)) {
+            HStack(spacing: 16) {
+                phoneIcon
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(vm.selectedRemoteCameraName ?? "iPhone camera")
+                        .font(BlitzType.title)
+                    Text(vm.selectedRemoteCameraDeviceDescription)
+                        .font(BlitzType.body)
+                        .foregroundStyle(BlitzUI.secondaryText)
+                        .lineLimit(2)
+                    SettingsStatusBadge(configuration: .init(
+                        title: vm.selectedRemoteCameraStatus ?? "Waiting for connection",
+                        tone: selectedDevice?.isReady == true ? .ready : .warning
+                    ))
+                }
             }
-            Spacer(minLength: 8)
             Button(showsDevicePicker ? "Hide devices" : "Change iPhone") {
                 showsDevicePicker.toggle()
             }
@@ -234,41 +236,43 @@ struct RemoteCameraPage: View {
     }
 
     private var cameraWorkspace: some View {
-        HStack(alignment: .top, spacing: 20) {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Camera preview")
-                    .font(BlitzType.section)
-                ZStack {
-                    Color.black
-                    CameraPreviewRepresentable(view: vm.remoteCameraPreviewSurface)
-                        .aspectRatio(vm.remoteCameraPreviewAspectRatio, contentMode: .fit)
-                    if !vm.hasRemoteCameraPreviewImage {
-                        VStack(spacing: 10) {
-                            Image(systemName: "iphone.gen3")
-                                .font(BlitzType.glyph(28))
-                            Text("Waiting for video")
-                                .font(BlitzType.label)
-                            Text("Keep the iPhone app open.")
-                                .font(BlitzType.caption)
-                        }
-                        .foregroundStyle(BlitzUI.secondaryText)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(.black.opacity(0.85))
-                    }
-                }
-                .frame(height: 310)
-                .clipShape(.rect(cornerRadius: BlitzUI.cardRadius))
-                Text(vm.selectedRemoteCameraReviewStatus)
-                    .font(BlitzType.caption)
-                    .foregroundStyle(BlitzUI.secondaryText)
-                RemoteCameraOrientationControl(vm: vm, usesPanelBackground: true)
-            }
-            .frame(width: 260)
-
+        BlitzAdaptiveRow(.init(minimumContentWidth: 260, spacing: 20)) {
+            cameraPreview
             RemoteCameraControlsPane(vm: vm, showsStatusHeader: false)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .frame(width: 280, alignment: .topLeading)
         }
         .settingsSurface()
+    }
+
+    private var cameraPreview: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Camera preview")
+                .font(BlitzType.section)
+            ZStack {
+                Color.black
+                CameraPreviewRepresentable(view: vm.remoteCameraPreviewSurface)
+                    .aspectRatio(vm.remoteCameraPreviewAspectRatio, contentMode: .fit)
+                if !vm.hasRemoteCameraPreviewImage {
+                    VStack(spacing: 10) {
+                        Image(systemName: "iphone.gen3")
+                            .font(BlitzType.glyph(28))
+                        Text("Waiting for video")
+                            .font(BlitzType.label)
+                        Text("Keep the iPhone app open.")
+                            .font(BlitzType.caption)
+                    }
+                    .foregroundStyle(BlitzUI.secondaryText)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.black.opacity(0.85))
+                }
+            }
+            .frame(height: 310)
+            .clipShape(.rect(cornerRadius: BlitzUI.cardRadius))
+            Text(vm.selectedRemoteCameraReviewStatus)
+                .font(BlitzType.caption)
+                .foregroundStyle(BlitzUI.secondaryText)
+            RemoteCameraOrientationControl(vm: vm, usesPanelBackground: true)
+        }
     }
 
     private var directConnection: some View {
@@ -297,7 +301,7 @@ struct RemoteCameraPage: View {
                 Text("If discovery cannot find your iPhone, enter the address and port shown in its app.")
                     .font(BlitzType.body)
                     .foregroundStyle(BlitzUI.secondaryText)
-                HStack(alignment: .bottom, spacing: 10) {
+                BlitzAdaptiveRow(.init(minimumContentWidth: 200)) {
                     connectionField(.address)
                     connectionField(.port)
                         .frame(width: 90)

@@ -34,6 +34,21 @@ extension RecorderViewModel {
         syncSettingsAfterSceneChange()
     }
 
+    func setScreenCornerRadius(_ radius: CGFloat) {
+        coordinator.setScreenCornerRadius(radius)
+        syncSettingsAfterSceneChange()
+    }
+
+    func setCameraCornerRadius(_ radius: CGFloat) {
+        coordinator.setCameraCornerRadius(radius)
+        syncSettingsAfterSceneChange()
+    }
+
+    func setScreenShadowEnabled(_ enabled: Bool) {
+        coordinator.setScreenShadowEnabled(enabled)
+        syncSettingsAfterSceneChange()
+    }
+
     func setCameraInsetAlignment(_ alignment: CameraInsetAlignment) {
         setCameraInset(
             alignment: alignment,

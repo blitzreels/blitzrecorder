@@ -68,7 +68,7 @@ enum ProjectExportRenderPlan {
         return RenderContext(
             captureSettings: captureSettings,
             renderSettings: settings(
-                exportSettings: exportSettings,
+                exportSettings: (outputProject.editorState.audioLevels ?? .unity).applying(to: exportSettings),
                 profile: request.performanceProfile,
                 outputLayout: CaptureLayout(rawValue: outputProject.settings.layout),
                 mutedAudioSources: request.mutedAudioSources,

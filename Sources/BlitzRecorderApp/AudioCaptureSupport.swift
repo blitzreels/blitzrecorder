@@ -102,7 +102,12 @@ enum SystemAudioStreamConfiguration {
         return pickedFilter
     }
 
-    static func configuration(streamName: String) -> SCStreamConfiguration {
+    struct ConfigurationRequest {
+        let streamName: String
+        let includesRecorderUI: Bool
+    }
+
+    static func configuration(_ request: ConfigurationRequest) -> SCStreamConfiguration {
         let configuration = SCStreamConfiguration()
         configuration.width = 2
         configuration.height = 2
@@ -111,10 +116,10 @@ enum SystemAudioStreamConfiguration {
         configuration.queueDepth = 2
         configuration.showsCursor = false
         configuration.capturesAudio = true
-        configuration.excludesCurrentProcessAudio = true
+        configuration.excludesCurrentProcessAudio = !request.includesRecorderUI
         configuration.sampleRate = 48_000
         configuration.channelCount = 2
-        configuration.streamName = streamName
+        configuration.streamName = request.streamName
         return configuration
     }
 }

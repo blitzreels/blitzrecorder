@@ -199,12 +199,23 @@ struct CanvasAppearance {
 extension CanvasBackgroundStyle {
     var appearance: CanvasAppearance { CanvasAppearance(style: self) }
 
-    var supportsBackgroundAnimation: Bool { !isSystemWallpaper && self != .black }
+    var supportsBackgroundAnimation: Bool { !isImageBased && base != .black && solidColor == nil }
+
+    var isImageBased: Bool { isSystemWallpaper || customImageURL != nil }
 
     var isSystemWallpaper: Bool { !systemWallpaperCandidates.isEmpty }
 
+
+    static let pickerWallpapers: [CanvasBackgroundStyle] = {
+        let installed = allCases.filter { style in
+            style != .macOSSonomaHorizon
+                && style.systemWallpaperCandidates.contains { FileManager.default.fileExists(atPath: $0) }
+        }
+        return Array(installed.prefix(installed.count < 4 ? installed.count : installed.count / 4 * 4))
+    }()
+
     var isSeasonalWallpaper: Bool {
-        switch self {
+        switch base {
         case .seasonalSpringAurora,
              .seasonalSummerCoast,
              .seasonalAutumnSonoma,
@@ -217,7 +228,7 @@ extension CanvasBackgroundStyle {
     }
 
     var isStudioWallpaper: Bool {
-        switch self {
+        switch base {
         case .studioGraphiteGlass,
              .studioPaperWhite,
              .studioSoftSpotlight:
@@ -228,7 +239,7 @@ extension CanvasBackgroundStyle {
     }
 
     fileprivate var systemWallpaperCandidates: [String] {
-        switch self {
+        switch base {
         case .macOSSonoma:
             return [
                 "/System/Library/Desktop Pictures/Sonoma.heic",
@@ -269,8 +280,9 @@ extension CanvasBackgroundStyle {
     }
 
     fileprivate func systemWallpaperImage(pixelWidth: Int, pixelHeight: Int) -> CGImage? {
-        guard let source = SystemWallpaperImageCache.sourceImage(
-            for: systemWallpaperCandidates,
+        let candidates = customImageURL.map { [$0.path] } ?? systemWallpaperCandidates
+        guard !candidates.isEmpty, let source = SystemWallpaperImageCache.sourceImage(
+            for: candidates,
             minimumLongEdge: min(pixelWidth, pixelHeight)
         ) else {
             return nil
@@ -279,7 +291,8 @@ extension CanvasBackgroundStyle {
             source,
             pixelWidth: pixelWidth,
             pixelHeight: pixelHeight,
-            representative: descriptor.representative.cgColor
+            representative: descriptor.representative.cgColor,
+            blurFraction: blur.radiusFraction
         )
     }
 }

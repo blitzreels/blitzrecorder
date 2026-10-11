@@ -8,7 +8,7 @@ struct PauseButton: View {
             vm.togglePause()
         } label: {
             Image(systemName: symbol)
-                .font(BlitzType.glyph(15))
+                .font(BlitzType.glyph(13))
                 .foregroundStyle(BlitzUI.primaryText)
                 .frame(width: BlitzControlMetrics.dockHeight - 36)
         }
@@ -38,12 +38,12 @@ struct RecordButton: View {
         Button {
             vm.primaryAction()
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 recordGlyph
                 Text(actionTitle)
                     .foregroundStyle(.white)
             }
-            .frame(minWidth: 112)
+            .frame(minWidth: 132)
         }
         .blitzButton(.record)
         .controlSize(.extraLarge)
@@ -57,16 +57,16 @@ struct RecordButton: View {
         switch vm.state {
         case .idle where vm.countdownRemaining != nil:
             Image(systemName: "xmark")
-                .font(BlitzType.glyph(12))
+                .font(BlitzType.glyph(13))
                 .foregroundStyle(.white)
         case .idle:
             Circle()
                 .fill(.white)
-                .frame(width: 14, height: 14)
+                .frame(width: 15, height: 15)
         case .recording, .paused:
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
                 .fill(.white)
-                .frame(width: 14, height: 14)
+                .frame(width: 15, height: 15)
         case .starting:
             ProgressView()
                 .controlSize(.small)

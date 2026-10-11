@@ -44,7 +44,6 @@ extension RecorderViewModel {
         case .recordings: showLibrary(.init(section: .recordings, folderScope: nil))
         case .shared: showLibrary(.init(section: .shared, folderScope: nil))
         case .folder(let scope):
-            expandedFolderIDs.formUnion(scope.path.ancestorsAndSelf.map(\.id))
             showLibrary(.init(section: .recordings, folderScope: scope))
         case .editor: openEditor()
         case .record: showRecorder()
@@ -68,8 +67,26 @@ extension RecorderViewModel {
         }
     }
 
+    func startNewRecording() {
+        guard state == .idle, countdownRemaining == nil else { return showRecorder() }
+        switch sidebarDestination {
+        case .folder(let scope):
+            recordInFolder(recordTarget(scope))
+        case .recordings, .shared:
+            folderRecordTarget = nil
+            showRecorder()
+        case .editor, .record, .settings:
+            showRecorder()
+        }
+    }
+
+    var newRecordingFolder: ProjectFolderScope? {
+        guard state == .idle, case .folder(let scope) = sidebarDestination else { return nil }
+        return scope
+    }
+
     var canOpenEditorFromSidebar: Bool {
-        canOpenEditor && state == .idle && !projectTrash.isWorking
+        canOpenEditor && canOpenProjectEditor
     }
 }
 
@@ -86,6 +103,11 @@ struct AppSidebar: View {
     var body: some View {
         let selection = vm.sidebarDestination
         VStack(alignment: .leading, spacing: 0) {
+            AppSidebarRecordButton(vm: vm)
+                .padding(.horizontal, 10)
+                .padding(.top, 4)
+                .padding(.bottom, 12)
+
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
                     sectionHeader("Library")
@@ -100,8 +122,8 @@ struct AppSidebar: View {
                     }
 
                     foldersHeader.padding(.top, 14)
-                    ForEach(vm.folderTree.flatMap { visibleNodes($0) }, id: \.id) { entry in
-                        folderTreeRow(entry, selection)
+                    ForEach(vm.folderTree, id: \.id) { node in
+                        folderRow(node, selection)
                     }
                 }
                 .padding(.horizontal, 10)
@@ -115,10 +137,6 @@ struct AppSidebar: View {
                     AppUpdateSidebarCard()
                         .padding(.bottom, 8)
                 }
-                row(.init(destination: .record, title: recordingTitle,
-                          symbol: vm.state == .idle ? "record.circle" : "record.circle.fill",
-                          detail: recordingDetail, trailing: nil,
-                          enabled: !vm.projectTrash.isWorking), selection)
                 row(.init(destination: .settings, title: "Settings", symbol: "gearshape",
                           detail: nil, trailing: "⌘,", enabled: true), selection)
             }
@@ -161,96 +179,30 @@ struct AppSidebar: View {
         .padding(.bottom, 4)
     }
 
-    private enum FolderTreeEntry: Identifiable {
-        case folder(ProjectFolderTree.Node)
-        case module(ProjectFolderTree.Node, ProjectFolderTree.Module)
-
-        var id: String {
-            switch self {
-            case .folder(let node): node.id
-            case .module(let node, let module): "\(node.id)#\(module.id)"
-            }
-        }
-    }
-
-    private func visibleNodes(_ node: ProjectFolderTree.Node) -> [FolderTreeEntry] {
-        guard vm.expandedFolderIDs.contains(node.id) else { return [.folder(node)] }
-        return [.folder(node)] + node.modules.map { .module(node, $0) } + node.children.flatMap { visibleNodes($0) }
-    }
-
-    @ViewBuilder
-    private func folderTreeRow(_ entry: FolderTreeEntry, _ selection: AppSidebarDestination) -> some View {
-        switch entry {
-        case .folder(let node):
-            let hasChildren = !node.modules.isEmpty || !node.children.isEmpty
-            let dropID = "sidebar-folder-\(node.id)"
-            AppSidebarRow(configuration: .init(
-                item: .init(destination: .folder(.init(path: node.path, module: nil)), title: node.path.name,
-                            symbol: "folder", detail: nil, trailing: "\(node.allProjects.count)",
-                            enabled: vm.canShowProjects),
-                depth: node.path.segments.count - 1,
-                isSelected: selection == .folder(.init(path: node.path, module: nil)),
-                isDropTarget: dropTargetID == dropID,
-                tint: nil, pulses: false,
-                disclosure: hasChildren ? .init(isExpanded: vm.expandedFolderIDs.contains(node.id), toggle: {
-                    if vm.expandedFolderIDs.contains(node.id) { vm.expandedFolderIDs.remove(node.id) }
-                    else { vm.expandedFolderIDs.insert(node.id) }
-                }) : nil,
-                action: { vm.showSidebarDestination(.folder(.init(path: node.path, module: nil))) }
-            ))
-            .projectDropTarget(.init(id: dropID, target: $dropTargetID) { ids in
-                vm.dropProjects(.init(ids: ids, destination: vm.folderDestination(node)))
-            })
-            .contextMenu { ProjectFolderMenu(vm: vm, node: node) }
-            .help("Drop recordings here to move them into \(node.path.displayPath)")
-        case .module(let node, let module):
-            let scope = ProjectFolderScope(path: node.path, module: module.id)
-            let dropID = "sidebar-module-\(node.id)-\(module.id)"
-            AppSidebarRow(configuration: .init(
-                item: .init(destination: .folder(scope), title: "Module \(ProjectLessonCode.number(module.id))",
-                            symbol: "rectangle.stack", detail: nil, trailing: "\(module.projects.count)",
-                            enabled: vm.canShowProjects),
-                depth: node.path.segments.count,
-                isSelected: selection == .folder(scope),
-                isDropTarget: dropTargetID == dropID,
-                tint: module.duplicateLessonIDs.isEmpty ? nil : BlitzUI.warning, pulses: false,
-                disclosure: nil,
-                action: { vm.showSidebarDestination(.folder(scope)) }
-            ))
-            .projectDropTarget(.init(id: dropID, target: $dropTargetID) { ids in
-                vm.dropProjects(.init(ids: ids, destination: .folder(path: node.path, module: module.id, before: nil)))
-            })
-            .contextMenu { ProjectModuleMenu(vm: vm, node: node, module: module) }
-        }
-    }
-
-    private var recordingTitle: String {
-        switch vm.state {
-        case .idle: "Record"
-        case .paused: "Paused"
-        case .starting, .recording, .finishing: "Recording"
-        }
-    }
-
-    private var recordingDetail: String? {
-        switch vm.state {
-        case .idle: nil
-        case .recording: vm.formattedElapsed
-        case .paused: vm.formattedElapsed
-        case .starting: "Starting…"
-        case .finishing: "Saving…"
-        }
+    private func folderRow(_ node: ProjectFolderTree.Node, _ selection: AppSidebarDestination) -> some View {
+        let scope = ProjectFolderScope(path: node.path, module: nil)
+        let dropID = "sidebar-folder-\(node.id)"
+        let isSelected = if case .folder(let selected) = selection { selected.path.hasPrefix(node.path) } else { false }
+        return AppSidebarRow(configuration: .init(
+            item: .init(destination: .folder(scope), title: node.path.name,
+                        symbol: "folder", detail: nil, trailing: "\(node.allProjects.count)",
+                        enabled: vm.canShowProjects),
+            isSelected: isSelected,
+            isDropTarget: dropTargetID == dropID,
+            action: { vm.showSidebarDestination(.folder(scope)) }
+        ))
+        .projectDropTarget(.init(id: dropID, target: $dropTargetID) { ids in
+            vm.dropProjects(.init(ids: ids, destination: vm.folderDestination(node)))
+        })
+        .contextMenu { ProjectFolderMenu(vm: vm, node: node) }
+        .help("Drop recordings here to move them into \(node.path.displayPath)")
     }
 
     private func row(_ item: AppSidebarRow.Item, _ selection: AppSidebarDestination) -> some View {
         AppSidebarRow(configuration: .init(
             item: item,
-            depth: 0,
             isSelected: item.destination == selection,
             isDropTarget: false,
-            tint: item.destination == .record ? BlitzUI.recordRed : nil,
-            pulses: item.destination == .record && vm.state == .recording,
-            disclosure: nil,
             action: { vm.showSidebarDestination(item.destination) }
         ))
     }
@@ -266,19 +218,10 @@ struct AppSidebarRow: View {
         let enabled: Bool
     }
 
-    struct Disclosure {
-        let isExpanded: Bool
-        let toggle: () -> Void
-    }
-
     struct Configuration {
         let item: Item
-        let depth: Int
         let isSelected: Bool
         let isDropTarget: Bool
-        let tint: Color?
-        let pulses: Bool
-        let disclosure: Disclosure?
         let action: () -> Void
     }
 
@@ -299,8 +242,7 @@ struct AppSidebarRow: View {
                     Image(systemName: item.symbol)
                         .font(BlitzType.symbol(13))
                         .symbolVariant(configuration.isSelected ? .fill : .none)
-                        .foregroundStyle(configuration.tint ?? (configuration.isSelected ? BlitzUI.primaryText : BlitzUI.secondaryText))
-                        .symbolEffect(.pulse, options: .repeating, isActive: configuration.pulses)
+                        .foregroundStyle(configuration.isSelected ? BlitzUI.primaryText : BlitzUI.secondaryText)
                         .frame(width: 18)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(item.title)
@@ -324,8 +266,7 @@ struct AppSidebarRow: View {
                             .foregroundStyle(BlitzUI.tertiaryText)
                     }
                 }
-                .padding(.leading, 8 + CGFloat(configuration.depth) * AppSidebarRow.indent)
-                .padding(.trailing, configuration.disclosure == nil ? 8 : 2)
+                .padding(.horizontal, 8)
                 .frame(minHeight: 28)
                 .padding(.vertical, item.detail == nil ? 0 : 3)
                 .contentShape(.rect)
@@ -335,26 +276,89 @@ struct AppSidebarRow: View {
             .accessibilityAddTraits(configuration.isSelected ? .isSelected : [])
             .accessibilityLabel(item.title)
             .accessibilityValue(item.detail ?? item.trailing ?? "")
-
-            if let disclosure = configuration.disclosure {
-                Button(action: disclosure.toggle) {
-                    Image(systemName: "chevron.right")
-                        .font(BlitzType.symbol(9))
-                        .foregroundStyle(BlitzUI.tertiaryText)
-                        .rotationEffect(.degrees(disclosure.isExpanded ? 90 : 0))
-                        .frame(width: 20, height: 28)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(BlitzPressButtonStyle())
-                .accessibilityLabel("\(disclosure.isExpanded ? "Collapse" : "Expand") \(item.title)")
-            }
         }
         .background(fill, in: .rect(cornerRadius: BlitzUI.controlRadius))
         .opacity(item.enabled ? 1 : 0.45)
         .onHover { isHovering = $0 }
     }
+}
 
-    static let indent: CGFloat = 14
+struct AppSidebarRecordButton: View {
+    @Bindable var vm: RecorderViewModel
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: vm.startNewRecording) {
+            HStack(spacing: 10) {
+                glyph.frame(width: 18)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .font(BlitzType.section)
+                        .monospacedDigit()
+                    if let detail {
+                        Text(detail)
+                            .font(BlitzType.caption)
+                            .foregroundStyle(BlitzUI.supportingText)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                Spacer(minLength: 4)
+                if vm.state == .idle {
+                    Text("⌘N")
+                        .font(BlitzType.captionEmphasis)
+                        .foregroundStyle(BlitzUI.secondaryText)
+                }
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+            .background(BlitzUI.recordRed.opacity(isHovering ? 1 : 0.9),
+                        in: .rect(cornerRadius: BlitzUI.controlRadius, style: .continuous))
+            .contentShape(.rect(cornerRadius: BlitzUI.controlRadius, style: .continuous))
+        }
+        .buttonStyle(BlitzPressButtonStyle())
+        .disabled(vm.projectTrash.isWorking)
+        .onHover { isHovering = $0 }
+        .pointingHandCursor()
+        .help(vm.state == .idle ? "Open the studio to record (⌘N)" : "Back to the studio")
+        .accessibilityLabel(detail.map { "\(title), \($0)" } ?? title)
+    }
+
+    @ViewBuilder
+    private var glyph: some View {
+        switch vm.state {
+        case .idle:
+            Circle().fill(.white).frame(width: 11, height: 11)
+        case .recording:
+            Image(systemName: "circle.fill")
+                .font(BlitzType.glyph(11))
+                .symbolEffect(.pulse, options: .repeating, isActive: true)
+        case .paused:
+            Image(systemName: "pause.fill").font(BlitzType.glyph(11))
+        case .starting, .finishing:
+            ProgressView().controlSize(.small).tint(.white)
+        }
+    }
+
+    private var title: String {
+        switch vm.state {
+        case .idle: "Record"
+        case .recording, .paused: vm.formattedElapsed
+        case .starting: "Starting…"
+        case .finishing: "Saving…"
+        }
+    }
+
+    private var detail: String? {
+        switch vm.state {
+        case .idle: vm.newRecordingFolder.map { "Into \($0.title)" }
+        case .recording: "Recording"
+        case .paused: "Paused"
+        case .starting, .finishing: nil
+        }
+    }
 }
 
 struct AppSidebarShortcuts: View {
@@ -362,7 +366,7 @@ struct AppSidebarShortcuts: View {
 
     var body: some View {
         ZStack {
-            shortcut(.init(title: "New Recording", key: "n", modifiers: .command) { vm.showSidebarDestination(.record) })
+            shortcut(.init(title: "New Recording", key: "n", modifiers: .command) { vm.startNewRecording() })
             shortcut(.init(title: "Show Recordings", key: "1", modifiers: .command) { vm.showSidebarDestination(.recordings) })
             shortcut(.init(title: "Show Shared", key: "2", modifiers: .command) { vm.showSidebarDestination(.shared) })
             shortcut(.init(title: "Show Editor", key: "3", modifiers: .command) {

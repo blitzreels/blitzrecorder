@@ -23,7 +23,7 @@ extension ProjectLibraryView {
         _ project: RecordingProjectHistory.Entry
     ) -> some View {
         let status = vm.transcriptionController.status(for: project)
-        return HStack(alignment: .center, spacing: 8) {
+        return BlitzAdaptiveRow(.init(minimumContentWidth: 220, spacing: 8)) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Transcript").font(BlitzType.section).foregroundStyle(BlitzUI.primaryText)
                 Text(vm.transcriptionController.speakerFixDetails[project.projectPath]
@@ -31,9 +31,8 @@ extension ProjectLibraryView {
                      ?? transcriptStatusLabel(status))
                     .font(BlitzType.caption)
                     .foregroundStyle(BlitzUI.secondaryText)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 8)
             if status.isRunning || status == .waitingForModel {
                 TranscriptionActivityView(configuration: .init(
                     status: status,

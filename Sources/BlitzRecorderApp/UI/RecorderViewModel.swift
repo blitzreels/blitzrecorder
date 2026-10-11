@@ -79,7 +79,6 @@ final class RecorderViewModel {
     var folderMoveUndo: ProjectFolderMoveUndo?
     var folderPrompt: ProjectFolderPrompt?
     var folderNameDraft = ""
-    var expandedFolderIDs: Set<String> = []
     var exportFollowUp: EditorExportFollowUp?
 
     var canShowProjects: Bool {
@@ -128,6 +127,10 @@ final class RecorderViewModel {
 
     @ObservationIgnored var onPresentSettings: ((SettingsPane?) -> Void)?
     @ObservationIgnored var onRetryCameraPreview: (() -> Void)?
+    var hasSeparateEditorWindow = false
+    @ObservationIgnored var onOpenEditorWindow: ((EditorWindowRequest) -> Void)?
+    @ObservationIgnored var onRouteEditorProject: ((RecordingProjectHistory.Entry) -> Bool)?
+    @ObservationIgnored var onShowRecorder: (() -> Void)?
     @ObservationIgnored var onProjectOpened: (() -> Void)?
     @ObservationIgnored var onFillEditorWindow: (() -> Void)?
     @ObservationIgnored var onStudioModeChanged: ((StudioMode) -> Void)?
@@ -137,7 +140,6 @@ final class RecorderViewModel {
     @ObservationIgnored var editorHistory = EditorProjectHistory()
     var editorHistoryRevision = 0
     var inspectorSelection: RecorderInspectorSelection = .canvas
-    var liveSceneThumbnails = LiveSceneThumbnails()
     var countdownRemaining: Int?
     var countdownSeconds = RecordingCountdownPreference().seconds
     var countdownTask: Task<Void, Never>?
@@ -307,9 +309,6 @@ final class RecorderViewModel {
         previewStage.sceneID = coordinator.selectedSceneIDForCurrentLayout()
         self.showsFirstRunOnboarding = ProcessInfo.processInfo.environment["BLITZRECORDER_FORCE_ONBOARDING"] == "1"
             || !UserDefaults.standard.bool(forKey: Self.firstRunOnboardingKey)
-        coordinator.onScreenWindowFitMessage = { [weak self] message in
-            self?.screenWindowFitMessage = message
-        }
         transcriptionController.onTranscriptionCompleted = { [weak self] completion in
             self?.generateAutomaticProjectTitle(completion)
         }
@@ -322,13 +321,6 @@ final class RecorderViewModel {
         remoteCameraPreviewSurface.setMessage("Waiting for iPhone preview")
         if let selectedLayer = inspectorSelection.sceneLayer {
             previewStage.selectedLayer = selectedLayer
-        }
-
-        previewStage.screenPreview.thumbnailSampler.onImage = { [weak self] image in
-            self?.liveSceneThumbnails.screen = image
-        }
-        previewStage.cameraPreview.thumbnailSampler.onImage = { [weak self] image in
-            self?.liveSceneThumbnails.camera = image
         }
 
         previewStage.onLayerSelected = { [weak self] kind in

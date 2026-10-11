@@ -130,9 +130,11 @@ enum SceneLayoutProjection {
         return min(rect.width, rect.height) / 2
     }
 
-    static func cameraCornerRadius(for rect: CGRect) -> CGFloat {
+    static let defaultCameraCornerRadius: CGFloat = 0.08
+
+    static func cameraCornerRadius(for rect: CGRect, normalizedRadius: CGFloat) -> CGFloat {
         guard rect.width > 0, rect.height > 0 else { return 0 }
-        return min(rect.width, rect.height) * 0.08
+        return min(rect.width, rect.height) * CaptureValueClamps.cameraCornerRadius(normalizedRadius)
     }
 
     static func sourceCornerRadius(for rect: CGRect, normalizedRadius: CGFloat) -> CGFloat {

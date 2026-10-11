@@ -112,7 +112,7 @@ extension LiveCompositedRecorder {
             configuration.showMouseClicks = true
         }
         configuration.capturesAudio = settings.enabledSources.contains(.systemAudio)
-        configuration.excludesCurrentProcessAudio = true
+        configuration.excludesCurrentProcessAudio = !settings.includesRecorderUI
         configuration.sampleRate = 48_000
         configuration.channelCount = 2
         configuration.scalesToFit = true

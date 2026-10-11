@@ -56,8 +56,22 @@ extension RecorderViewModel {
     }
 
     var selectedSceneName: String {
-        _ = sceneLibraryRevision
-        return coordinator.selectedSceneName()
+        guard let scene = currentScenes.first(where: { $0.id == selectedSceneID }) else { return "Scene" }
+        return sceneLabel(scene)
+    }
+
+    func sceneLayout(_ scene: RecordingSceneDefinition) -> SceneLayout {
+        scene.id == selectedSceneID ? settings.sceneLayout : scene.snapshot.sceneLayout
+    }
+
+    func sceneVisibleSources(_ scene: RecordingSceneDefinition) -> Set<CaptureSource> {
+        settings.enabledSources
+            .intersection([.screen, .camera])
+            .subtracting(scene.snapshot.hiddenVideoSources)
+    }
+
+    func sceneLabel(_ scene: RecordingSceneDefinition) -> String {
+        sceneLayout(scene).arrangementName(visibleSources: sceneVisibleSources(scene))
     }
 
 }

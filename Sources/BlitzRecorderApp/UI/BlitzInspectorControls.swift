@@ -193,19 +193,19 @@ struct BlitzBackgroundPicker: View {
             if !isEnabled { isPresented = false }
         }
         .popover(isPresented: $isPresented, arrowEdge: .leading) {
-            VStack(alignment: .leading, spacing: 14) {
-                BlitzInspectorHeading(configuration: .init(title: "Background", detail: nil))
-                BlitzBackgroundPalette(
-                    configuration: .init(
-                        selection: configuration.selection,
-                        onSelect: {
-                            configuration.onSelect($0)
-                            isPresented = false
-                        }
-                    ))
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    BlitzInspectorHeading(configuration: .init(title: "Background", detail: nil))
+                    BlitzBackgroundPalette(
+                        configuration: .init(
+                            selection: configuration.selection,
+                            onSelect: configuration.onSelect
+                        ))
+                }
+                .padding(16)
             }
-            .padding(16)
-            .frame(width: 320)
+            .scrollIndicators(.never)
+            .frame(width: 320, height: 560)
         }
     }
 }
@@ -219,35 +219,6 @@ struct BlitzBackgroundPalette: View {
     let configuration: Configuration
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 40, maximum: 64), spacing: 8)], spacing: 8) {
-            ForEach(CanvasBackgroundStyle.allCases, id: \.self) { style in
-                let isSelected = configuration.selection == style
-                Button {
-                    configuration.onSelect(style)
-                } label: {
-                    CanvasBackgroundSwatchCache.image(style)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(height: 32)
-                        .clipped()
-                        .clipShape(.rect(cornerRadius: BlitzUI.controlRadius - 3))
-                        .padding(3)
-                        .frame(maxWidth: .infinity)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(BlitzSelectionButtonStyle(isSelected: isSelected))
-                .overlay {
-                    RoundedRectangle(cornerRadius: BlitzUI.controlRadius)
-                        .strokeBorder(isSelected ? BlitzUI.mint : BlitzUI.panelStroke, lineWidth: 1)
-                        .allowsHitTesting(false)
-                }
-                .accessibilityLabel(style.displayName)
-                .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-                .help(style.displayName)
-                .pointingHandCursor()
-            }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Canvas background")
+        CanvasBackgroundChooser(configuration: .init(selection: configuration.selection, onSelect: configuration.onSelect))
     }
 }

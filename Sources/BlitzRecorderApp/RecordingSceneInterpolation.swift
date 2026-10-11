@@ -21,6 +21,7 @@ extension RecordingScene {
             cameraContentMode: progress < 1 ? cameraContentMode : target.cameraContentMode,
             cameraFramePadding: 0,
             cameraShadowEnabled: progress < 1 ? cameraShadowEnabled : target.cameraShadowEnabled,
+            cameraCornerRadius: cameraCornerRadius + (target.cameraCornerRadius - cameraCornerRadius) * progress,
             sourceOpacities: interpolatedSourceOpacities(to: target, sources: enabledSources, progress: progress)
         )
     }

@@ -7,7 +7,7 @@ extension ProjectLibraryView {
             projects.map { metadataByProjectID[$0.id] ?? .empty }
         )
         return VStack(spacing: 18) {
-            HStack(alignment: .center, spacing: 24) {
+            BlitzAdaptiveRow() {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("\(projects.count) projects selected")
                         .font(BlitzType.largeTitle)
@@ -18,7 +18,6 @@ extension ProjectLibraryView {
                         .foregroundStyle(BlitzUI.tertiaryText)
                 }
 
-                Spacer(minLength: 16)
 
                 HStack(spacing: 8) {
                     bulkMetric(.init(
@@ -47,7 +46,7 @@ extension ProjectLibraryView {
             }
             .frame(maxHeight: 520)
 
-            HStack(spacing: 10) {
+            BlitzAdaptiveRow(.init(minimumContentWidth: 160)) {
                 ProjectLibraryActionButton(configuration: .init(
                     title: "Show in Finder",
                     systemImage: "folder",

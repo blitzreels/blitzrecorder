@@ -60,6 +60,10 @@ final class AppShellProofTests: XCTestCase {
             }
         }
 
+        vm.startNewRecording()
+        try await snap("record-into-folder", wait: .seconds(2))
+        vm.folderRecordTarget = nil
+
         vm.showSidebarDestination(.shared)
         try await snap("shared", wait: .seconds(2))
 
@@ -84,8 +88,22 @@ final class AppShellProofTests: XCTestCase {
 
         vm.showSidebarDestination(.record)
         try await snap("record", wait: .seconds(2))
+        vm.selectBackgroundLayer()
+        vm.setCanvasBackgroundStyle(.ocean)
+        vm.setCanvasPadding(0.06)
+        vm.setScreenCornerRadius(0.025)
+        vm.setScreenShadowEnabled(true)
+        try await snap("record-canvas", wait: .seconds(2))
+        vm.setCanvasBackgroundStyle(.peach)
+        RunLoop.main.run(until: Date().addingTimeInterval(1))
+        try await snap("record-canvas-bright", wait: .seconds(1))
+        vm.setCanvasBackgroundStyle(.solid(NSColor(srgbRed: 0.98, green: 0.82, blue: 0.20, alpha: 1)))
+        RunLoop.main.run(until: Date().addingTimeInterval(1))
+        try await snap("record-canvas-color", wait: .seconds(1))
         vm.applyState(.recording)
         try await snap("record-live", wait: .seconds(1))
+        vm.showSidebarDestination(.recordings)
+        try await snap("recordings-while-recording", wait: .seconds(1))
         vm.applyState(.idle)
     }
 }

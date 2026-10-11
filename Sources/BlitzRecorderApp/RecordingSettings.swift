@@ -10,6 +10,7 @@ struct RecordingStorageLocation: Codable, Equatable {
 
 struct RecordingSettings {
     var voiceCleanup: VoiceCleanupSettings = .disabled
+    var audioVolumeRegions: [EditorAudioVolumeRegion] = []
     static let supportedFrameRates = [24, 30, 60]
     static let minExportVideoBitrate = 400_000
     static let minCustomVideoBitrate = 2_000_000
@@ -54,6 +55,7 @@ struct RecordingSettings {
     var cameraContentMode: CameraContentMode = .fill
     var cameraFramePadding: CGFloat = 0
     var cameraShadowEnabled: Bool = false
+    var cameraCornerRadius: CGFloat = SceneLayoutProjection.defaultCameraCornerRadius
     var sceneLayout = SceneLayout()
     var selectedScenePreset: ScenePreset?
     var projectLibrary: RecordingStorageLocation?

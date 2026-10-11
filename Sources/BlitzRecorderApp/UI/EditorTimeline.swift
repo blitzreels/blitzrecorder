@@ -24,6 +24,8 @@ struct EditorTimelineView: View {
     let mutedAssetIDs: Set<String>
     let toggleableAssetIDs: Set<String>
     let onToggleTrack: (EditorAsset) -> Void
+    let onChangeTrackVolume: (EditorTrackVolumeChange) -> Bool
+    let onChangeAudioRegion: (EditorAudioVolumeRegion) -> Bool
     let onSplit: () -> Void
     let onDeleteSelection: () -> Void
     let deleteAction: EditorDeleteRouting.Action?
@@ -61,7 +63,7 @@ struct EditorTimelineView: View {
     @State var clipTrim = EditorClipTrimSession()
     @State var zoomFitDuration: Double = 0
 
-    let gutterWidth: CGFloat = 180
+    let gutterWidth: CGFloat = 210
     let rulerHeight: CGFloat = 30
     let chaptersRowHeight: CGFloat = 32
     let segmentsRowHeight: CGFloat = 38
@@ -125,8 +127,10 @@ struct EditorTimelineView: View {
             ))
         }
         .onChange(of: transcript, initial: true) { updateTranscriptItems() }
-        .onChange(of: silence.windows) { updateTranscriptItems() }
-        .onChange(of: silence.threshold) { updateTranscriptItems() }
+        .onChange(of: silence.transcriptItems) {
+            transcriptItems = silence.transcriptItems
+            updateTranscriptLayout()
+        }
         .onChange(of: duration) {
             zoomFitDuration = 0
             updateTranscriptItems()
@@ -145,13 +149,9 @@ struct EditorTimelineView: View {
     }
 
     private func updateTranscriptItems() {
-        transcriptItems = transcript.map {
-            EditorTranscriptTimeline.items(.init(
-                transcript: $0, windows: silence.windows, threshold: silence.threshold, duration: duration
-            ))
-        } ?? []
-        updateTranscriptLayout()
         silence.setTranscript(transcript)
+        transcriptItems = silence.transcriptItems
+        updateTranscriptLayout()
     }
 
     private func updateSilenceSegments() {

@@ -69,18 +69,20 @@ struct FamilyAppsSection: View {
 
             VStack(spacing: 0) {
                 ForEach(FamilyApp.all) { app in
-                    HStack(spacing: 12) {
-                        Group {
-                            if let icon = app.icon {
-                                Image(nsImage: icon).resizable().scaledToFit()
-                            } else {
-                                RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous).fill(BlitzUI.controlFill)
+                    BlitzAdaptiveRow() {
+                        HStack(spacing: 12) {
+                            Group {
+                                if let icon = app.icon {
+                                    Image(nsImage: icon).resizable().scaledToFit()
+                                } else {
+                                    RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous).fill(BlitzUI.controlFill)
+                                }
                             }
+                            .frame(width: 32, height: 32)
+                            .clipShape(RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous))
+                            .accessibilityHidden(true)
+                            SettingsRowLabel(.init(title: app.name, detail: app.detail))
                         }
-                        .frame(width: 32, height: 32)
-                        .clipShape(RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous))
-                        .accessibilityHidden(true)
-                        SettingsRowLabel(.init(title: app.name, detail: app.detail))
                         Link(app.actionTitle, destination: app.url)
                             .blitzButton(.secondary)
                     }

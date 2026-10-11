@@ -19,7 +19,7 @@ struct SpeakersSettingsPage: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                HStack(alignment: .top, spacing: 16) {
+                BlitzAdaptiveRow() {
                     SettingsPageHeader(.init(
                         title: "Speakers",
                         detail: "Familiar voices, recognized across your recordings.",
@@ -105,34 +105,37 @@ struct SpeakersSettingsPage: View {
     }
 
     private func speakerRow(_ profile: SavedSpeakerVoice) -> some View {
-        HStack(spacing: 14) {
-            BlitzRemoteIcon(configuration: .init(
-                name: profile.name, seed: profile.id.uuidString, imageURL: nil, size: 36, isCircle: false
-            ))
+        BlitzAdaptiveRow() {
+            HStack(spacing: 14) {
+                BlitzRemoteIcon(configuration: .init(
+                    name: profile.name, seed: profile.id.uuidString, imageURL: nil, size: 36, isCircle: false
+                ))
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text(profile.name)
-                    .font(BlitzType.headline)
-                    .lineLimit(1)
-                if model.preparingID == profile.id {
-                    Text("Preparing voice sample…")
-                        .font(BlitzType.caption)
-                        .foregroundStyle(BlitzUI.secondaryText)
-                } else if let preview = profile.preview, model.availableSamples.contains(profile.id) {
-                    Text(preview.sourceTitle)
-                        .font(BlitzType.caption)
-                        .foregroundStyle(BlitzUI.secondaryText)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help("Sample from \(preview.sourceTitle)")
-                } else {
-                    Text("No voice sample")
-                        .font(BlitzType.caption)
-                        .foregroundStyle(BlitzUI.secondaryText)
-                        .help("Remember this voice again from a transcript to add a sample.")
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(profile.name)
+                        .font(BlitzType.headline)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if model.preparingID == profile.id {
+                        Text("Preparing voice sample…")
+                            .font(BlitzType.caption)
+                            .foregroundStyle(BlitzUI.secondaryText)
+                    } else if let preview = profile.preview, model.availableSamples.contains(profile.id) {
+                        Text(preview.sourceTitle)
+                            .font(BlitzType.caption)
+                            .foregroundStyle(BlitzUI.secondaryText)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .help("Sample from \(preview.sourceTitle)")
+                    } else {
+                        Text("No voice sample")
+                            .font(BlitzType.caption)
+                            .foregroundStyle(BlitzUI.secondaryText)
+                            .help("Remember this voice again from a transcript to add a sample.")
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
 
             if model.preparingID == profile.id {
                 ProgressView().controlSize(.small)

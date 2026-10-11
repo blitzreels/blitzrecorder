@@ -1,4 +1,5 @@
 import AppKit
+import CoreImage
 import ImageIO
 
 enum SystemWallpaperImageCache {
@@ -33,11 +34,12 @@ enum SystemWallpaperImageCache {
         _ image: CGImage,
         pixelWidth: Int,
         pixelHeight: Int,
-        representative: CGColor
+        representative: CGColor,
+        blurFraction: CGFloat
     ) -> CGImage? {
         let width = max(1, pixelWidth)
         let height = max(1, pixelHeight)
-        let key = RenderKey(sourceID: ObjectIdentifier(image), width: width, height: height)
+        let key = RenderKey(sourceID: ObjectIdentifier(image), width: width, height: height, blurFraction: blurFraction)
         lock.lock()
         if let cached = renderCache[key] {
             lock.unlock()
@@ -72,7 +74,8 @@ enum SystemWallpaperImageCache {
         ctx.interpolationQuality = .high
         ctx.draw(image, in: drawRect)
 
-        guard let rendered = ctx.makeImage() else { return nil }
+        guard let filled = ctx.makeImage(),
+              let rendered = blurred(filled, radius: blurFraction * CGFloat(max(width, height))) else { return nil }
         lock.lock()
         renderCache[key] = rendered
         if renderCache.count > 80 {
@@ -94,5 +97,17 @@ enum SystemWallpaperImageCache {
         var sourceID: ObjectIdentifier
         var width: Int
         var height: Int
+        var blurFraction: CGFloat
+    }
+
+    private static let blurContext = CIContext(options: [.cacheIntermediates: false])
+
+    private static func blurred(_ image: CGImage, radius: CGFloat) -> CGImage? {
+        guard radius > 0.5 else { return image }
+        let input = CIImage(cgImage: image)
+        let output = input.clampedToExtent()
+            .applyingGaussianBlur(sigma: Double(radius))
+            .cropped(to: input.extent)
+        return blurContext.createCGImage(output, from: input.extent) ?? image
     }
 }

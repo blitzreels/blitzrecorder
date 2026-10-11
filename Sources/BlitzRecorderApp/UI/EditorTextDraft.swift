@@ -58,7 +58,7 @@ struct EditorTextDraft {
         let existing = original.flatMap { $0.style.preset == preset ? $0 : nil }
         return TextOverlay(
             id: original?.id ?? UUID(), start: range.start, end: range.end,
-            text: String(content.prefix(500)),
+            text: content,
             frame: existing?.frame ?? TextOverlay.defaultFrame(for: preset),
             style: existing?.style ?? .preset(preset),
             fadeSeconds: fades ? (original.flatMap { $0.fadeSeconds > 0 ? $0.fadeSeconds : nil } ?? 0.25) : 0

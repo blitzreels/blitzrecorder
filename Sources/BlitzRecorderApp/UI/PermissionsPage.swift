@@ -59,28 +59,29 @@ struct PermissionsPage: View {
     }
 
     private var accessSummary: some View {
-        HStack(spacing: 16) {
-            Image(systemName: needsAccess ? "lock.shield" : "checkmark.shield")
-                .font(BlitzType.glyph(25))
-                .foregroundStyle(needsAccess ? BlitzUI.warning : BlitzUI.mint)
-                .frame(width: 50, height: 50)
-                .background(
-                    (needsAccess ? BlitzUI.warning : BlitzUI.mint).opacity(0.08),
-                    in: .rect(cornerRadius: BlitzUI.cardRadius)
-                )
+        BlitzAdaptiveRow(.init(minimumContentWidth: 320)) {
+            HStack(spacing: 16) {
+                Image(systemName: needsAccess ? "lock.shield" : "checkmark.shield")
+                    .font(BlitzType.glyph(25))
+                    .foregroundStyle(needsAccess ? BlitzUI.warning : BlitzUI.mint)
+                    .frame(width: 50, height: 50)
+                    .background(
+                        (needsAccess ? BlitzUI.warning : BlitzUI.mint).opacity(0.08),
+                        in: .rect(cornerRadius: BlitzUI.cardRadius)
+                    )
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text(!hasEnabledSources ? "No capture sources enabled" : needsAccess ? "Review capture access" : "Your capture access is ready")
-                    .font(BlitzType.title)
-                    .foregroundStyle(BlitzUI.primaryText)
-                Text(!hasEnabledSources ? "Enable a source in the recorder to check its access." : needsAccess
-                     ? "Some enabled sources need your permission before recording."
-                     : "All enabled sources have the permissions they need.")
-                    .font(BlitzType.body)
-                    .foregroundStyle(BlitzUI.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(!hasEnabledSources ? "No capture sources enabled" : needsAccess ? "Review capture access" : "Your capture access is ready")
+                        .font(BlitzType.title)
+                        .foregroundStyle(BlitzUI.primaryText)
+                    Text(!hasEnabledSources ? "Enable a source in the recorder to check its access." : needsAccess
+                         ? "Some enabled sources need your permission before recording."
+                         : "All enabled sources have the permissions they need.")
+                        .font(BlitzType.body)
+                        .foregroundStyle(BlitzUI.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            Spacer(minLength: 12)
             Button {
                 vm.refreshPermissionStatus()
             } label: {
@@ -93,32 +94,34 @@ struct PermissionsPage: View {
     }
 
     private func permissionRow(_ row: PermissionStatusRow) -> some View {
-        HStack(spacing: 12) {
-            BlitzSymbol(configuration: .init(name: row.symbol, size: 19))
-                .foregroundStyle(BlitzUI.secondaryText)
-                .frame(width: 36, height: 36)
-                .background(BlitzUI.quietFill, in: .rect(cornerRadius: BlitzUI.controlRadius))
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 7) {
-                    Text(row.title == "System Audio" ? "Mac audio" : row.title)
-                        .font(BlitzType.callout)
-                        .foregroundStyle(BlitzUI.primaryText)
-                    if row.isOptional {
-                        Text("Optional")
-                            .font(BlitzType.footnote)
-                            .foregroundStyle(BlitzUI.secondaryText)
-                    }
-                }
-                Text(purpose(row))
-                    .font(BlitzType.body)
+        BlitzAdaptiveRow() {
+            HStack(spacing: 12) {
+                BlitzSymbol(configuration: .init(name: row.symbol, size: 19))
                     .foregroundStyle(BlitzUI.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: 36, height: 36)
+                    .background(BlitzUI.quietFill, in: .rect(cornerRadius: BlitzUI.controlRadius))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 7) {
+                        Text(row.title == "System Audio" ? "Mac audio" : row.title)
+                            .font(BlitzType.callout)
+                            .foregroundStyle(BlitzUI.primaryText)
+                        if row.isOptional {
+                            Text("Optional")
+                                .font(BlitzType.footnote)
+                                .foregroundStyle(BlitzUI.secondaryText)
+                        }
+                    }
+                    Text(purpose(row))
+                        .font(BlitzType.body)
+                        .foregroundStyle(BlitzUI.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
 
             SettingsStatusBadge(configuration: .init(title: statusTitle(row), tone: statusTone(row)))
-                .frame(width: 100, alignment: .trailing)
 
             Button(actionTitle(for: row)) {
                 manage(row)

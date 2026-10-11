@@ -223,7 +223,7 @@ final class HostedVideoAccountTests: XCTestCase {
         try await proof(.init(view: AnyView(HostedVideoLibraryView(controller: fixture.controller, showRecordings: {}, thumbnail: { _ in nil })),
             size: .init(width: 1000, height: 680), name: "shared-library-loading"))
         await fixture.controller.refresh()
-        for width in [620.0, 1000.0] {
+        for width in [480.0, 620.0, 1000.0] {
             let host = NSHostingView(rootView: HostedVideoLibraryView(controller: fixture.controller, showRecordings: {}, thumbnail: { _ in nil })
                 .frame(width: width, height: 680).preferredColorScheme(.dark))
             host.setFrameSize(host.fittingSize)

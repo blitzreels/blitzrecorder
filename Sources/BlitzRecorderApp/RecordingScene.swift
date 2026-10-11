@@ -18,6 +18,7 @@ struct RecordingScene: Equatable {
     var cameraContentMode: CameraContentMode
     var cameraFramePadding: CGFloat
     var cameraShadowEnabled: Bool
+    var cameraCornerRadius: CGFloat
     var sourceOpacities: [CaptureSource: CGFloat]
     var fillsCanvasWhenOnlyVideoSource: Bool
 
@@ -39,6 +40,7 @@ struct RecordingScene: Equatable {
             cameraContentMode: settings.cameraContentMode,
             cameraFramePadding: 0,
             cameraShadowEnabled: settings.cameraShadowEnabled,
+            cameraCornerRadius: settings.cameraCornerRadius,
             fillsCanvasWhenOnlyVideoSource: settings.enabledSources.intersection([.screen, .camera]).count == 1
         )
     }
@@ -60,6 +62,7 @@ struct RecordingScene: Equatable {
         cameraContentMode: CameraContentMode = .fill,
         cameraFramePadding: CGFloat = 0,
         cameraShadowEnabled: Bool = false,
+        cameraCornerRadius: CGFloat = SceneLayoutProjection.defaultCameraCornerRadius,
         sourceOpacities: [CaptureSource: CGFloat] = [:],
         fillsCanvasWhenOnlyVideoSource: Bool = false
     ) {
@@ -79,6 +82,7 @@ struct RecordingScene: Equatable {
         self.cameraContentMode = cameraContentMode
         self.cameraFramePadding = 0
         self.cameraShadowEnabled = cameraShadowEnabled
+        self.cameraCornerRadius = cameraCornerRadius
         self.sourceOpacities = sourceOpacities
         self.fillsCanvasWhenOnlyVideoSource = fillsCanvasWhenOnlyVideoSource
     }

@@ -9,17 +9,24 @@ extension AppDelegate {
         AppSupportActions.showAboutPanel()
     }
 
-    var canUndoEditor: Bool { windowController?.canUndoEditor ?? false }
-    var canRedoEditor: Bool { windowController?.canRedoEditor ?? false }
-    var editorUndoTitle: String { windowController?.editorUndoTitle ?? "Undo" }
-    var editorRedoTitle: String { windowController?.editorRedoTitle ?? "Redo" }
+    var activeEditorViewModel: RecorderViewModel? {
+        if let editorWindowController, (NSApp.keyWindow ?? NSApp.mainWindow) === editorWindowController.window {
+            return editorWindowController.viewModel
+        }
+        return windowController?.viewModel
+    }
+
+    var canUndoEditor: Bool { activeEditorViewModel?.canUndoEditor ?? false }
+    var canRedoEditor: Bool { activeEditorViewModel?.canRedoEditor ?? false }
+    var editorUndoTitle: String { activeEditorViewModel?.editorUndoTitle ?? "Undo" }
+    var editorRedoTitle: String { activeEditorViewModel?.editorRedoTitle ?? "Redo" }
 
     @objc func undoEditor() {
-        windowController?.undoEditor()
+        activeEditorViewModel?.undoEditor()
     }
 
     @objc func redoEditor() {
-        windowController?.redoEditor()
+        activeEditorViewModel?.redoEditor()
     }
 
     @objc func checkForUpdates() {

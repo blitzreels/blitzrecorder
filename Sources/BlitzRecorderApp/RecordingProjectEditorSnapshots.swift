@@ -384,6 +384,7 @@ extension RecordingProject {
         let backgroundMusicBookmarkData: Data?
         let backgroundMusicVolume: Double?
         let exportRecipe: ExportRecipeSnapshot?
+        var audioLevels: EditorAudioLevels? = nil
 
         static let empty = EditorStateSnapshot(
             hiddenVideoSources: [],

@@ -196,6 +196,7 @@ final class EditorMediaLibrary {
     private(set) var filmstrips: [String: [CGImage]] = [:]
     private(set) var waveforms: [String: [Float]] = [:]
     private(set) var timelineWaveforms: [String: EditorAudioWaveform] = [:]
+    private(set) var audioActivity: [String: EditorAudioActivity.State] = [:]
     private(set) var durations: [String: Double] = [:]
     private(set) var fileSizes: [String: String] = [:]
     private(set) var technicalMetadata: [String: EditorMediaTechnicalMetadata] = [:]
@@ -221,6 +222,40 @@ final class EditorMediaLibrary {
 
     @ObservationIgnored private var loadedPurposes: [String: LoadPurpose] = [:]
     @ObservationIgnored private var loadTokens: [String: UUID] = [:]
+    @ObservationIgnored private var activityTokens: [String: UUID] = [:]
+    @ObservationIgnored private let analyzeAudio: @Sendable (EditorAsset) async throws -> [EditorTimeRange]
+
+    init(analyzeAudio: @escaping @Sendable (EditorAsset) async throws -> [EditorTimeRange] = {
+        try await EditorAudioActivity.load($0)
+    }) {
+        self.analyzeAudio = analyzeAudio
+    }
+
+    func retryAudioActivity(_ asset: EditorAsset) async {
+        guard !Task.isCancelled, case .failed = audioActivity[asset.id] else { return }
+        await analyzeAudioActivity(asset)
+    }
+
+    private func analyzeAudioActivity(_ asset: EditorAsset) async {
+        guard !Task.isCancelled, asset.kind == .systemAudio else { return }
+        let previous: EditorAudioActivity.State?
+        if case .loading = audioActivity[asset.id] { previous = nil }
+        else { previous = audioActivity[asset.id] }
+        let token = UUID()
+        activityTokens[asset.id] = token
+        audioActivity[asset.id] = .loading
+        do {
+            let ranges = try await analyzeAudio(asset)
+            try Task.checkCancellation()
+            guard activityTokens[asset.id] == token else { return }
+            audioActivity[asset.id] = .ready(ranges)
+        } catch {
+            guard activityTokens[asset.id] == token else { return }
+            audioActivity[asset.id] = Task.isCancelled || error is CancellationError
+                ? previous : .failed(error.localizedDescription)
+        }
+        activityTokens[asset.id] = nil
+    }
 
     func loadAssets(_ assets: [EditorAsset]) async {
         await loadAssets(.init(assets: assets, purpose: .editor))
@@ -267,6 +302,14 @@ final class EditorMediaLibrary {
             loadingIDs.remove(asset.id)
         }
         guard request.purpose == .editor else { return }
+        await withTaskGroup(of: Void.self) { group in
+            for asset in request.assets where asset.kind == .systemAudio {
+                switch audioActivity[asset.id] {
+                case .ready, .failed: break
+                case .loading, nil: group.addTask { await self.analyzeAudioActivity(asset) }
+                }
+            }
+        }
         for asset in request.assets where asset.exists && asset.isVideo {
             guard !Task.isCancelled else { return }
             await loadFilmstrip(request: .init(assetID: asset.id, url: asset.url, frameCount: 16))

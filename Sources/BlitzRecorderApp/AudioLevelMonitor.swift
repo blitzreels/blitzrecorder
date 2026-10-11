@@ -77,7 +77,9 @@ final class SystemAudioLevelMonitor: NSObject, SCStreamOutput, SCStreamDelegate 
         try await stop()
 
         let filter = try SystemAudioStreamConfiguration.contentFilter(request.pickedScreenFilter)
-        let configuration = SystemAudioStreamConfiguration.configuration(streamName: "BlitzRecorder System Audio Monitor")
+        let configuration = SystemAudioStreamConfiguration.configuration(.init(
+            streamName: "BlitzRecorder System Audio Monitor", includesRecorderUI: request.settings.includesRecorderUI
+        ))
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
         try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
         try await stream.startCapture()

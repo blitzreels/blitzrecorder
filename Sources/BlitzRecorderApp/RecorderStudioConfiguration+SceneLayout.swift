@@ -98,6 +98,27 @@ extension RecorderStudioConfiguration {
         updateRecordingScene?(.cut)
     }
 
+    func setScreenCornerRadius(_ radius: CGFloat) {
+        guard sceneChangeIsAllowed() else { return }
+        settings.screenCornerRadius = CaptureValueClamps.screenCornerRadius(radius)
+        persist()
+        updateRecordingScene?(.cut)
+    }
+
+    func setCameraCornerRadius(_ radius: CGFloat) {
+        guard sceneChangeIsAllowed() else { return }
+        settings.cameraCornerRadius = CaptureValueClamps.cameraCornerRadius(radius)
+        persist()
+        updateRecordingScene?(.cut)
+    }
+
+    func setScreenShadowEnabled(_ enabled: Bool) {
+        guard sceneChangeIsAllowed() else { return }
+        settings.screenShadowEnabled = enabled
+        persist()
+        updateRecordingScene?(.cut)
+    }
+
     func setCameraShadowEnabled(_ enabled: Bool) {
         guard sceneChangeIsAllowed() else { return }
         settings.cameraShadowEnabled = enabled
@@ -127,13 +148,23 @@ extension RecorderStudioConfiguration {
 
     func resetSceneLayout() {
         guard sceneChangeIsAllowed() else { return }
-        settings.selectedScenePreset = nil
         settings.cameraContentMode = .fill
-        settings.sceneLayout = SceneLayout.defaultLayout(
-            for: settings.layout,
-            screenAspectRatio: screenAspectRatio(),
-            cameraAspectRatio: cameraAspectRatio()
-        )
+        if let preset = sceneLibrary.selectedScene(layout: settings.layout)?.snapshot.selectedScenePreset,
+           preset.supports(settings.layout) {
+            settings = RecordingSceneMutation.applyingPreset(
+                preset,
+                to: settings,
+                screenAspectRatio: screenAspectRatio(),
+                cameraAspectRatio: cameraAspectRatio()
+            )
+        } else {
+            settings.selectedScenePreset = nil
+            settings.sceneLayout = SceneLayout.defaultLayout(
+                for: settings.layout,
+                screenAspectRatio: screenAspectRatio(),
+                cameraAspectRatio: cameraAspectRatio()
+            )
+        }
         persist()
         updateRecordingScene?(.sceneSwitch)
         onScreenCaptureConfigurationChanged?()

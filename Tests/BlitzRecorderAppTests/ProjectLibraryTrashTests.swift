@@ -217,6 +217,38 @@ final class ProjectLibraryTrashTests: XCTestCase {
         XCTAssertEqual(vm.projectLibraryNavigation.selectedProjectIDs, [fixture.project.id])
     }
 
+    @MainActor
+    func testBlockedBatchDeletionReportsWhyAndPreservesSelection() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let suite = "ProjectLibraryTrashTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let coordinator = RecorderCoordinator(
+            accessController: AccessController(defaults: defaults), defaults: defaults)
+        let vm = RecorderViewModel(coordinator: coordinator, previewStage: PreviewStageView())
+        vm.settings = fixture.settings
+        vm.refreshRecentProjects()
+        vm.projectLibraryNavigation.selectedProjectIDs = [fixture.project.id]
+
+        for state in [RecordingState.starting, .recording, .paused, .finishing] {
+            vm.state = state
+            vm.projectLibraryError = nil
+            await vm.deleteProjects([fixture.project])
+            XCTAssertNotNil(vm.projectLibraryError, "Blocked deletion must explain why it did not run: \(state)")
+            XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.take.projectURL.path))
+            XCTAssertEqual(vm.projectLibraryNavigation.selectedProjectIDs, [fixture.project.id])
+            XCTAssertFalse(vm.projectTrash.isWorking)
+        }
+
+        vm.state = .idle
+        await vm.deleteProjects([fixture.project])
+        XCTAssertNil(vm.projectLibraryError)
+        XCTAssertTrue(vm.recentProjects.isEmpty)
+        await vm.restoreTrashedProjects()
+        XCTAssertEqual(vm.recentProjects.map(\.id), [fixture.project.id])
+    }
+
     func testLibraryMatchingAndTrashCopy() {
         let keep = Self.entry("Keep this take")
         let matchTitle = Self.entry("Safari window")

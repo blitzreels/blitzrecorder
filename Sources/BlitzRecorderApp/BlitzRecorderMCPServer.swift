@@ -16,7 +16,7 @@ enum BlitzRecorderMCPServerStatus: Equatable {
 enum BlitzRecorderMCPConnectionTestStatus: Equatable {
     case notRun
     case testing
-    case succeeded(Date)
+    case succeeded(MCPConnectionVerification)
     case failed(String)
 }
 
@@ -28,7 +28,7 @@ final class BlitzRecorderMCPServer {
     nonisolated static let workspaceEndpoint = "/webmcp"
     nonisolated static let endpointURL = URL(string: "http://127.0.0.1:\(port)\(endpoint)")!
     nonisolated static let codexSetupCommand = "codex mcp add blitzrecorder --url \(endpointURL.absoluteString)"
-    nonisolated static let claudeCodeSetupCommand = "claude mcp add --transport http blitzrecorder \(endpointURL.absoluteString)"
+    nonisolated static let claudeCodeSetupCommand = "claude mcp add --scope user --transport http blitzrecorder \(endpointURL.absoluteString)"
     nonisolated static let agentPluginConfiguration = """
     {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
@@ -49,6 +49,7 @@ final class BlitzRecorderMCPServer {
     private(set) var isEnabled: Bool
     private(set) var status: BlitzRecorderMCPServerStatus
     private(set) var connectionTestStatus = BlitzRecorderMCPConnectionTestStatus.notRun
+    private(set) var lastClientHandshake: MCPClientHandshake?
 
     init(coordinator: RecorderCoordinator) {
         let defaults = UserDefaults.standard
@@ -111,6 +112,17 @@ final class BlitzRecorderMCPServer {
             return .error(statusCode: 500, .internalError(error.localizedDescription))
         }
         let response = await transport.handleRequest(request)
+        if response.statusCode == 200, let responseData = response.bodyData,
+           let reply = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any],
+           reply["result"] is [String: Any], reply["error"] == nil,
+           let body = request.body,
+           let message = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+           message["method"] as? String == "initialize",
+           let parameters = message["params"] as? [String: Any],
+           let client = parameters["clientInfo"] as? [String: Any],
+           let name = client["name"] as? String, name != "blitzrecorder-settings" {
+            lastClientHandshake = MCPClientHandshake(name: String(name.prefix(100)), date: Date())
+        }
         await server.stop()
         return response
     }
@@ -173,6 +185,8 @@ final class BlitzRecorderMCPServer {
         await httpServer?.stop()
         httpServer = nil
         status = isEnabled ? .stopped : .disabled
+        lastClientHandshake = nil
+        connectionTestStatus = .notRun
     }
 
     func setEnabled(_ enabled: Bool) async {
@@ -188,11 +202,19 @@ final class BlitzRecorderMCPServer {
     }
 
     func testConnection() async {
+        guard status == .running, connectionTestStatus != .testing else { return }
         connectionTestStatus = .testing
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 10
+        configuration.timeoutIntervalForResource = 30
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
         do {
-            try await BlitzRecorderMCPConnectionTester.test(Self.endpointURL)
-            connectionTestStatus = .succeeded(Date())
+            let count = try await MCPConnectionProbe.test(.init(endpoint: Self.endpointURL, session: session))
+            guard status == .running else { return }
+            connectionTestStatus = .succeeded(.init(date: Date(), toolCount: count))
         } catch {
+            guard status == .running else { return }
             connectionTestStatus = .failed(error.localizedDescription)
         }
     }
@@ -547,56 +569,6 @@ final class BlitzRecorderMCPServer {
             content: [.text(text: message, annotations: nil, _meta: nil)],
             isError: true
         )
-    }
-}
-
-private enum BlitzRecorderMCPConnectionTester {
-    private struct Response: Decodable {
-        struct Result: Decodable {
-            struct ServerInfo: Decodable {
-                let name: String
-            }
-
-            let serverInfo: ServerInfo
-        }
-
-        let result: Result?
-    }
-
-    static func test(_ endpoint: URL) async throws {
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("http://localhost:\(BlitzRecorderMCPServer.port)", forHTTPHeaderField: "Origin")
-        request.httpBody = Data(
-            """
-            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"blitzrecorder-settings","version":"1.0"}}}
-            """.utf8
-        )
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200 else {
-            throw BlitzRecorderMCPConnectionTestError.unreachable
-        }
-        let payload = try JSONDecoder().decode(Response.self, from: data)
-        guard payload.result?.serverInfo.name == "blitzrecorder" else {
-            throw BlitzRecorderMCPConnectionTestError.invalidResponse
-        }
-    }
-}
-
-private enum BlitzRecorderMCPConnectionTestError: LocalizedError {
-    case unreachable
-    case invalidResponse
-
-    var errorDescription: String? {
-        switch self {
-        case .unreachable:
-            return "The local MCP server did not respond."
-        case .invalidResponse:
-            return "The local MCP server returned an invalid response."
-        }
     }
 }
 

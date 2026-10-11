@@ -18,13 +18,19 @@ struct BottomDock: View {
 
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 16) {
-                    RecorderSceneStrip(vm: vm)
+                    RecorderSceneStrip(vm: vm, density: .regular)
+                    RecordingActionRow(vm: vm)
+                }
+                .fixedSize(horizontal: true, vertical: false)
+
+                HStack(spacing: 16) {
+                    RecorderSceneStrip(vm: vm, density: .compact)
                     RecordingActionRow(vm: vm)
                 }
                 .fixedSize(horizontal: true, vertical: false)
 
                 VStack(spacing: 10) {
-                    RecorderSceneStrip(vm: vm)
+                    RecorderSceneStrip(vm: vm, density: .regular)
                     RecordingActionRow(vm: vm)
                 }
             }

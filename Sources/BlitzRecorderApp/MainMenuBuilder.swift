@@ -188,6 +188,9 @@ final class MainMenuBuilder {
     private func windowMenuItem() -> NSMenuItem {
         let item = NSMenuItem(title: "Window", action: nil, keyEquivalent: "")
         let submenu = NSMenu(title: "Window")
+        submenu.addItem(menuItem("Open Editor Window", action: #selector(MenuActionsTarget.showEditorWindow)))
+        submenu.addItem(menuItem("Show Recorder", action: #selector(MenuActionsTarget.showRecorderWindow)))
+        submenu.addItem(.separator())
         submenu.addItem(menuItem("Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m", target: nil))
         submenu.addItem(menuItem("Zoom", action: #selector(NSWindow.performZoom(_:)), target: nil))
         submenu.addItem(.separator())
@@ -295,6 +298,8 @@ final class MainMenuBuilder {
 @MainActor
 @objc protocol MenuActionsTarget: AnyObject {
     func showAbout()
+    func showEditorWindow()
+    func showRecorderWindow()
     var canUndoEditor: Bool { get }
     var canRedoEditor: Bool { get }
     var editorUndoTitle: String { get }

@@ -27,8 +27,8 @@ enum CaptionPosition: String, Codable, CaseIterable, Sendable {
 
 struct CaptionCue: Codable, Equatable, Identifiable, Sendable {
     let id: UUID
-    let start: Double
-    let end: Double
+    var start: Double
+    var end: Double
     var text: String
     var words: [TranscriptWord]
 }
@@ -39,6 +39,7 @@ struct CaptionTrack: Codable, Equatable, Sendable {
     var size = CaptionSize.medium
     var position = CaptionPosition.bottom
     var shadow = true
+    var frame: CGRect? = nil
     var cues: [CaptionCue] = []
 
     static let empty = CaptionTrack()
@@ -136,12 +137,30 @@ struct CaptionTimeline: Equatable, Sendable {
                 result.append(.init(id: cue.id, start: start, end: end, text: text, words: []))
             }
         }
-        let sorted = result.sorted { $0.start < $1.start }
-        cues = sorted.enumerated().compactMap { index, cue in
-            let end = index + 1 < sorted.count ? min(cue.end, sorted[index + 1].start) : cue.end
-            guard end > cue.start else { return nil }
-            return .init(id: cue.id, start: cue.start, end: end, text: cue.text, words: [])
+        cues = Self.resolvingOverlaps(result)
+    }
+
+    private static func resolvingOverlaps(_ source: [CaptionCue]) -> [CaptionCue] {
+        let sorted = source.sorted { $0.start < $1.start }
+        let boundaries = Array(Set(sorted.flatMap { [$0.start, $0.end] })).sorted()
+        var active: [Int] = []
+        var next = 0
+        var result: [CaptionCue] = []
+        for (start, end) in zip(boundaries, boundaries.dropFirst()) {
+            while next < sorted.count, sorted[next].start <= start {
+                active.append(next)
+                next += 1
+            }
+            while let index = active.last, sorted[index].end <= start { active.removeLast() }
+            guard let index = active.last else { continue }
+            let cue = sorted[index]
+            if let last = result.last, last.id == cue.id, last.text == cue.text, last.end == start {
+                result[result.count - 1].end = end
+            } else {
+                result.append(.init(id: cue.id, start: start, end: end, text: cue.text, words: []))
+            }
         }
+        return result
     }
 
     func cue(at time: Double) -> CaptionCue? {

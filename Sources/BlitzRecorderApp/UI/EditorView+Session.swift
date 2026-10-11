@@ -225,6 +225,7 @@ extension EditorView {
             privacy.configure(.init(vm: vm, playback: playback))
             if privacy.selectedID != id.value { privacy.select(id.value) }
         case .text: inspectorTab = .text
+        case .caption: inspectorTab = .captions
         case .zoom: inspectorTab = .zoom
         }
         let projection = EditorTimelineProjection(.init(duration: timelineDuration, cuts: project.edits.cuts))

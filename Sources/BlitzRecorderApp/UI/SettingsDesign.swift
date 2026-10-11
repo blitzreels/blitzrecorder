@@ -19,10 +19,11 @@ struct SettingsPageHeader: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
+        BlitzAdaptiveRow() {
             VStack(alignment: .leading, spacing: 4) {
                 Text(configuration.title)
                     .font(BlitzType.largeTitle)
+                    .fixedSize(horizontal: false, vertical: true)
                     .foregroundStyle(BlitzUI.primaryText)
 
                 Text(configuration.detail)
@@ -30,8 +31,6 @@ struct SettingsPageHeader: View {
                     .foregroundStyle(BlitzUI.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
-
-            Spacer(minLength: 16)
 
             if let status = configuration.status {
                 HStack(spacing: 6) {
@@ -43,6 +42,7 @@ struct SettingsPageHeader: View {
                 .padding(.horizontal, 10)
                 .frame(height: 28)
                 .background(BlitzUI.controlFill, in: .capsule)
+                .fixedSize()
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -100,12 +100,11 @@ struct SettingsRowLabel: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(configuration.title)
                 .font(BlitzType.callout)
+                .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(BlitzUI.supportingText)
             Text(configuration.detail)
                 .font(BlitzType.body)
                 .foregroundStyle(BlitzUI.secondaryText)
-                .lineLimit(2)
-                .truncationMode(.middle)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -139,6 +138,7 @@ struct SettingsStatusBadge: View {
         .padding(.horizontal, 9)
         .frame(height: 26)
         .background(configuration.tone.color.opacity(0.08), in: .capsule)
+        .fixedSize()
     }
 }
 

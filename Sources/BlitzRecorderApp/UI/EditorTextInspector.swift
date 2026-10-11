@@ -70,9 +70,6 @@ struct EditorTextInspector: View {
                 }
                 .focused($isTextFocused)
                 .accessibilityLabel("Overlay text")
-                .onChange(of: draft.text) { _, value in
-                    if value.count > 500 { draft.text = String(value.prefix(500)) }
-                }
             HStack(alignment: .top, spacing: 4) {
                 ForEach(TextOverlayPreset.allCases, id: \.self) { preset in
                     BlitzVisualChoice(configuration: .init(

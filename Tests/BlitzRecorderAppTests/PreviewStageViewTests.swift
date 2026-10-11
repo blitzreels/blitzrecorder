@@ -464,6 +464,27 @@ final class PreviewStageViewTests: XCTestCase {
         XCTAssertTrue(view.isCameraCropEditingEnabled)
     }
 
+    func testPaddedScreenShowsRoundedCornersAndShadow() {
+        let view = PreviewStageView()
+        view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
+        view.captureLayout = .horizontal
+        view.enabledSources = [.screen]
+        view.fillsCanvasWhenOnlyVideoSource = true
+        view.canvasPadding = 0.06
+        view.screenCornerRadius = 0.025
+        view.screenShadowEnabled = true
+
+        view.layoutSubtreeIfNeeded()
+
+        XCTAssertGreaterThan(view.renderedScreenCornerRadiusForTesting, 0)
+        XCTAssertGreaterThan(view.renderedScreenShadowOpacityForTesting, 0)
+
+        view.canvasPadding = 0
+        view.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(view.renderedScreenShadowOpacityForTesting, 0)
+    }
+
     func testCameraShadowUsesUnclippedStageLayer() {
         let view = PreviewStageView()
         view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
@@ -699,14 +720,20 @@ final class PreviewStageViewTests: XCTestCase {
             rect: rect,
             isFullscreen: false,
             isFullWidth: false,
-            isCircle: true
+            isCircle: true,
+            isFloating: true,
+            screenCornerRadius: 0,
+            cameraCornerRadius: SceneLayoutProjection.defaultCameraCornerRadius
         ))
         let maskRadius = PreviewStageDrawing.maskCornerRadius(.init(
             isCamera: true,
             rect: rect,
             isFullscreen: false,
             isFullWidth: false,
-            isCircle: true
+            isCircle: true,
+            isFloating: true,
+            screenCornerRadius: 0,
+            cameraCornerRadius: SceneLayoutProjection.defaultCameraCornerRadius
         ))
 
         XCTAssertEqual(shape.cornerRadius, 60)
@@ -737,6 +764,9 @@ final class PreviewStageViewTests: XCTestCase {
         ).targetRect(for: .camera)
         XCTAssertRect(view.renderedCameraFrameForTesting, equals: expectedFrame)
         XCTAssertLessThan(expectedFrame.width, canvas.width)
+        XCTAssertEqual(view.cameraPreview.layer?.borderWidth, 0)
+        view.screenCornerRadius = 0.06
+        view.layoutSubtreeIfNeeded()
         XCTAssertEqual(view.cameraPreview.layer?.borderWidth, 1)
     }
 

@@ -25,14 +25,16 @@ extension Merger {
                 url: take.audioURL,
                 volume: Float(settings.microphoneGain),
                 sourceStart: sourceStart(.microphone),
-                activeTakeStart: activeTakeStart(.microphone)
+                activeTakeStart: activeTakeStart(.microphone),
+                volumeRegions: settings.audioVolumeRegions
             ),
             ExpectedAudioSource(
                 source: .systemAudio,
                 url: take.systemAudioURL,
                 volume: Float(settings.systemAudioGain),
                 sourceStart: sourceStart(.systemAudio),
-                activeTakeStart: activeTakeStart(.systemAudio)
+                activeTakeStart: activeTakeStart(.systemAudio),
+                volumeRegions: settings.audioVolumeRegions
             )
         ]
     }
@@ -92,7 +94,8 @@ extension Merger {
         }
 
         let parameters = AVMutableAudioMixInputParameters(track: compositionAudioTrack)
-        parameters.setVolume(max(0, min(2, audioSource.volume)), at: .zero)
+        EditorAudioVolumeAutomation.apply(.init(parameters: parameters, source: audioSource.source,
+            baseVolume: audioSource.volume, regions: audioSource.volumeRegions, timeMap: timeMap))
         return parameters
     }
 
@@ -199,6 +202,7 @@ extension Merger {
         let volume: Float
         var sourceStart: CMTime = .zero
         var activeTakeStart: CMTime = .zero
+        var volumeRegions: [EditorAudioVolumeRegion] = []
 
         var displayName: String {
             switch source {

@@ -117,12 +117,13 @@ struct SettingsView: View {
                             Text(pane.subtitle)
                                 .font(BlitzType.caption)
                                 .foregroundStyle(BlitzUI.secondaryText)
-                                .lineLimit(1)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 8)
-                    .frame(height: 44)
+                    .padding(.vertical, 6)
+                    .frame(minHeight: 44)
                     .contentShape(.rect)
                 }
                 .buttonStyle(BlitzSelectionButtonStyle(isSelected: isSelected))

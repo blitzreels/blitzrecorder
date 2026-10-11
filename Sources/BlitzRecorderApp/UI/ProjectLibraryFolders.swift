@@ -170,34 +170,42 @@ extension View {
     }
 }
 
-struct FolderRecordTargetMenu: View {
+struct FolderRecordTargetChip: View {
     @Bindable var vm: RecorderViewModel
 
     var body: some View {
-        let nodes = vm.folderTree.flatMap(\.flattened)
-        if !nodes.isEmpty || vm.folderRecordTarget != nil {
-            let targets = nodes.flatMap { node -> [ProjectFolderRecordTarget] in
-                node.isNumbered
-                    ? (node.modules.isEmpty ? [1] : node.modules.map(\.id)).map { .init(path: node.path, module: $0) }
-                    : [.init(path: node.path, module: nil)]
-            }
-            let options: [BlitzDropdownOption<ProjectFolderRecordTarget?>] = [.init(value: nil, title: "Save to Projects", detail: nil)]
-                + targets.map { .init(value: $0, title: vm.recordTargetLabel($0), detail: vm.recordTargetDetail($0)) }
-            HStack(spacing: 6) {
-                Image(systemName: vm.folderRecordTarget == nil ? "folder" : "folder.fill")
+        if let target = vm.folderRecordTarget {
+            HStack(spacing: 8) {
+                Image(systemName: "folder.fill")
                     .font(BlitzType.symbol(12))
-                    .foregroundStyle(vm.folderRecordTarget == nil ? BlitzUI.secondaryText : BlitzUI.mint)
+                    .foregroundStyle(BlitzUI.mint)
                     .accessibilityHidden(true)
-                BlitzDropdown(configuration: .init(
-                    title: "Save next take to folder",
-                    selection: $vm.folderRecordTarget,
-                    options: options, menuWidth: 340, width: .content
-                ))
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(vm.recordTargetLabel(target))
+                        .font(BlitzType.label)
+                        .foregroundStyle(BlitzUI.primaryText)
+                    if let detail = vm.recordTargetDetail(target) {
+                        Text(detail)
+                            .font(BlitzType.caption)
+                            .foregroundStyle(BlitzUI.secondaryText)
+                    }
+                }
+                .lineLimit(1)
+                .truncationMode(.middle)
+                Button {
+                    vm.folderRecordTarget = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(BlitzType.symbol(10))
+                        .frame(width: 18, height: 18)
+                }
+                .blitzButton(.quiet)
+                .controlSize(.mini)
+                .disabled(vm.countdownRemaining != nil || vm.state != .idle)
+                .help("Save the next take to Recordings instead")
+                .accessibilityLabel("Stop saving into \(target.path.name)")
             }
-            .disabled(vm.countdownRemaining != nil || vm.state != .idle)
-            .help(vm.folderRecordTarget == nil
-                ? "Save the next take into a folder"
-                : "The next take is saved in this folder and named after it")
+            .help("The next take is saved in this folder and named after it")
         }
     }
 }

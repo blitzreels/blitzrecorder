@@ -22,6 +22,14 @@ extension RecorderViewModel {
         .init(path: node.path, module: node.isNumbered ? node.lastModule : nil)
     }
 
+    func recordTarget(_ scope: ProjectFolderScope) -> ProjectFolderRecordTarget {
+        if let module = scope.module { return .init(path: scope.path, module: module) }
+        guard let node = folderTree.flatMap(\.flattened).first(where: { $0.path == scope.path }) else {
+            return .init(path: scope.path, module: nil)
+        }
+        return recordTarget(node)
+    }
+
     func presentFolderPrompt(_ prompt: ProjectFolderPrompt) {
         if case .rename(let path) = prompt { folderNameDraft = path.name } else { folderNameDraft = "" }
         folderPrompt = prompt
@@ -29,7 +37,6 @@ extension RecorderViewModel {
 
     func addModule(_ node: ProjectFolderTree.Node) {
         ProjectFolderStore.shared.pinModule(.init(path: node.path, module: node.nextModule))
-        expandedFolderIDs.insert(node.id)
     }
 
     func numberAsLessons(_ node: ProjectFolderTree.Node) {
@@ -117,7 +124,6 @@ extension RecorderViewModel {
         case .create(let parent, let moving):
             guard let path = parent?.appending(name) ?? ProjectFolderPath([name]) else { return }
             ProjectFolderStore.shared.pin(path)
-            expandedFolderIDs.formUnion((path.parent?.ancestorsAndSelf ?? []).map(\.id))
             if !moving.isEmpty {
                 moveIntoFolder(.init(projects: moving, destination: .folder(path: path, module: nil, before: nil), path: path))
             }
@@ -133,9 +139,6 @@ extension RecorderViewModel {
             if let scope = projectLibraryNavigation.folderScope, scope.path.hasPrefix(from) {
                 projectLibraryNavigation.folderScope = scope.replacingPrefix(replacement)
             }
-            expandedFolderIDs = Set(expandedFolderIDs.map { id in
-                id == from.id || id.hasPrefix(from.id + "/") ? to.id + id.dropFirst(from.id.count) : id
-            })
         }
     }
 }

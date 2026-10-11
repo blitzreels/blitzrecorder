@@ -1,31 +1,47 @@
 import SwiftUI
 
 struct RecorderSceneStrip: View {
+    enum Density {
+        case regular
+        case compact
+
+        var showsTitle: Bool { self == .regular }
+        var tileWidth: CGFloat { self == .regular ? 96 : 88 }
+        var thumbnailSize: CGSize { self == .regular ? CGSize(width: 58, height: 34) : CGSize(width: 52, height: 30) }
+    }
+
     @Bindable var vm: RecorderViewModel
+    let density: Density
 
     private var isLive: Bool { vm.state == .recording || vm.state == .paused }
 
-    private var livePreview: BlitzScenePreview? {
-        let frames = vm.liveSceneThumbnails
-        guard frames.screen != nil || frames.camera != nil else { return nil }
-        return BlitzScenePreview(screen: frames.screen, camera: frames.camera, background: vm.settings.canvasBackgroundStyle)
-    }
-
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            sceneTiles
-                .fixedSize(horizontal: true, vertical: false)
+        HStack(spacing: 6) {
+            if density.showsTitle {
+                Text("Scenes")
+                    .font(BlitzType.footnote)
+                    .foregroundStyle(BlitzUI.tertiaryText)
+                    .fixedSize()
+                    .padding(.leading, 6)
+                    .accessibilityHidden(true)
+            }
 
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal) {
-                    sceneTiles
-                }
-                .frame(height: 72)
-                .onAppear {
-                    if let sceneID = vm.selectedSceneID { proxy.scrollTo(sceneID, anchor: .center) }
-                }
-                .onChange(of: vm.selectedSceneID) { _, sceneID in
-                    if let sceneID { proxy.scrollTo(sceneID, anchor: .center) }
+            ViewThatFits(in: .horizontal) {
+                sceneTiles
+                    .fixedSize(horizontal: true, vertical: false)
+
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal) {
+                        sceneTiles
+                    }
+                    .scrollIndicators(.never)
+                    .frame(height: Tile.height)
+                    .onAppear {
+                        if let sceneID = vm.selectedSceneID { proxy.scrollTo(sceneID, anchor: .center) }
+                    }
+                    .onChange(of: vm.selectedSceneID) { _, sceneID in
+                        if let sceneID { proxy.scrollTo(sceneID, anchor: .center) }
+                    }
                 }
             }
         }
@@ -45,11 +61,13 @@ struct RecorderSceneStrip: View {
     }
 
     private struct Tile {
+        static let height: CGFloat = 64
+
         let scene: RecordingSceneDefinition
         let index: Int
 
-        var shortcut: KeyEquivalent? {
-            index < 9 ? KeyEquivalent(Character("\(index + 1)")) : nil
+        var shortcutDigit: Character? {
+            index < 9 ? Character("\(index + 1)") : nil
         }
     }
 
@@ -60,28 +78,34 @@ struct RecorderSceneStrip: View {
             vm.selectScene(scene.id)
             vm.selectLayoutInspector()
         } label: {
-            VStack(spacing: 5) {
+            VStack(spacing: 6) {
                 BlitzSceneLayoutThumbnail(
                     layout: scene.layout,
-                    sceneLayout: isSelected ? vm.settings.sceneLayout : scene.snapshot.sceneLayout,
-                    visibleSources: vm.settings.enabledSources
-                        .intersection([.screen, .camera])
-                        .subtracting(scene.snapshot.hiddenVideoSources),
-                    preview: livePreview
+                    sceneLayout: vm.sceneLayout(scene),
+                    visibleSources: vm.sceneVisibleSources(scene)
                 )
-                .frame(width: 58, height: 34)
+                .frame(width: density.thumbnailSize.width, height: density.thumbnailSize.height)
+                .opacity(isSelected ? 1 : 0.62)
 
-                Text(scene.name)
-                    .font(BlitzType.captionEmphasis)
-                    .foregroundStyle(isSelected ? BlitzUI.primaryText : BlitzUI.secondaryText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                HStack(spacing: 4) {
+                    if isSelected && isLive {
+                        BlitzStatusDot(tone: .recording, diameter: 6)
+                            .accessibilityHidden(true)
+                    }
+                    Text(vm.sceneLabel(scene))
+                        .font(BlitzType.captionEmphasis)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
             }
-            .frame(width: 84, height: 60)
+            .frame(width: density.tileWidth, height: Tile.height)
             .overlay(alignment: .topTrailing) {
-                if isSelected && isLive {
-                    BlitzStatusDot(tone: .recording, diameter: 6)
-                        .padding(6)
+                if let digit = tile.shortcutDigit {
+                    Text("⌘\(String(digit))")
+                        .font(BlitzType.shortcutBadge)
+                        .foregroundStyle(isSelected ? BlitzUI.secondaryText : BlitzUI.tertiaryText)
+                        .padding(.top, 4)
+                        .padding(.trailing, 4)
                         .accessibilityHidden(true)
                 }
             }
@@ -89,16 +113,26 @@ struct RecorderSceneStrip: View {
         .buttonStyle(BlitzSelectionButtonStyle(isSelected: isSelected))
         .disabled(!vm.canSwitchScene && !isSelected)
         .pointingHandCursor()
-        .accessibilityLabel(scene.name)
+        .accessibilityLabel("Scene \(tile.index + 1), \(vm.sceneLabel(scene))\(isSelected && isLive ? ", live" : "")")
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-        .keyboardShortcut(tile.shortcut.map { KeyboardShortcut($0, modifiers: .command) })
-        .help("\(isLive ? "Switch to" : "Use") \(scene.name)\(tile.shortcut == nil ? "" : " (⌘\(tile.index + 1))")")
+        .keyboardShortcut(tile.shortcutDigit.map { KeyboardShortcut(KeyEquivalent($0), modifiers: .command) })
+        .help(helpText(tile))
         .contextMenu {
-            Button("Reset layout") {
+            Button("Reset Scene") {
                 vm.selectScene(scene.id)
                 vm.resetSceneLayout()
             }
             .disabled(!vm.canEditScene)
         }
+    }
+
+    private func helpText(_ tile: Tile) -> String {
+        let shortcut = tile.shortcutDigit.map { " (⌘\(String($0)))" } ?? ""
+        let label = vm.sceneLabel(tile.scene)
+        let remembers = "Move the camera anytime, even while recording. This scene remembers where you put it."
+        if isLive {
+            return "Cut to \(label)\(shortcut). \(remembers)"
+        }
+        return "Start on \(label)\(shortcut). \(remembers)"
     }
 }

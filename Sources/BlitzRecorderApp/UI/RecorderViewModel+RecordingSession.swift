@@ -171,6 +171,9 @@ extension RecorderViewModel {
         previewStage.cameraContentMode = coordinator.settings.cameraContentMode
         previewStage.cameraFramePadding = coordinator.settings.cameraFramePadding
         previewStage.cameraShadowEnabled = coordinator.settings.cameraShadowEnabled
+        previewStage.screenCornerRadius = coordinator.settings.screenCornerRadius
+        previewStage.screenShadowEnabled = coordinator.settings.screenShadowEnabled
+        previewStage.cameraCornerRadius = coordinator.settings.cameraCornerRadius
         previewStage.isBackgroundLayerSelected = isBackgroundLayerSelected
     }
 
@@ -274,6 +277,10 @@ extension RecorderViewModel {
 
     var isCameraInsetLayout: Bool {
         SceneLayout.isCameraInsetFrame(settings.sceneLayout.cameraFrame)
+    }
+
+    var cameraFloats: Bool {
+        settings.sceneLayout.cameraFloats(visibleSources: settings.visibleSources)
     }
 
     var cameraInsetAlignment: CameraInsetAlignment {

@@ -29,6 +29,7 @@ enum BlitzType {
     static let captionEmphasis = Font.system(size: 11, weight: .medium)
     static let footnote = Font.system(size: 10, weight: .medium)
     static let numeric = Font.system(size: 11, weight: .medium).monospacedDigit()
+    static let shortcutBadge = Font.system(size: 9, weight: .semibold).monospacedDigit()
     static let countdown = Font.system(size: 120, weight: .bold, design: .rounded).monospacedDigit()
 
     static func glyph(_ size: CGFloat) -> Font {
@@ -94,8 +95,10 @@ enum BlitzUI {
     static let sceneCardRadius: CGFloat = 12
     static let scenePreviewFill = Color(white: 0.10)
     static let scenePreviewStroke = Color.white.opacity(0.3)
-    static let screenPreviewFill = Color(white: 0.58)
-    static let cameraPreviewFill = mint.opacity(0.75)
+    static let screenPreviewFill = Color(white: 0.30)
+    static let cameraPreviewFill = Color(white: 0.62)
+    static let screenPreviewGlyph = Color.white.opacity(0.5)
+    static let cameraPreviewGlyph = Color.black.opacity(0.55)
 
     static let trackScreen = Color.cyan
     static let trackCamera = Color.teal
@@ -301,10 +304,13 @@ struct BlitzSceneThumbnailLayer: View {
                     .frame(width: proxy.size.width, height: proxy.size.height)
                     .clipped()
             } else {
-                BlitzUI.screenPreviewFill
+                (kind == .camera ? BlitzUI.cameraPreviewFill : BlitzUI.screenPreviewFill)
                     .overlay {
-                        if kind == .camera {
-                            BlitzUI.cameraPreviewFill
+                        let glyphSize = min(proxy.size.width, proxy.size.height) * 0.5
+                        if glyphSize >= 6 {
+                            Image(systemName: kind == .camera ? "person.fill" : BlitzSymbols.source)
+                                .font(BlitzType.symbol(min(glyphSize, 14)))
+                                .foregroundStyle(kind == .camera ? BlitzUI.cameraPreviewGlyph : BlitzUI.screenPreviewGlyph)
                         }
                     }
             }

@@ -45,7 +45,7 @@ final class EditorPlacedItemTests: XCTestCase {
         let source = edits
         let id = EditorPlacedItem.ID(kind: .mask, value: source.privacyMasks[0].id)
         let changed = try XCTUnwrap(EditorPlacedItemEditing.changing(.init(edits: source,
-            change: .init(id: id, timing: .init(start: 2, end: 9)))))
+            change: .init(id: id, timing: .init(start: 2, end: 9), gesture: .trimEnd))))
         XCTAssertEqual(changed.privacyMasks[0].frame, source.privacyMasks[0].frame)
         XCTAssertEqual(changed.privacyMasks[0].style, source.privacyMasks[0].style)
         XCTAssertEqual(changed.privacyMasks[0].start, 2)
@@ -91,7 +91,7 @@ final class EditorPlacedItemTests: XCTestCase {
         let projection = EditorTimelineProjection(.init(duration: 10, cuts: source.cuts))
         let timing = EditorPlacedItemEditing.timing(.init(item: item, delta: 6, gesture: .move, projection: projection))
         let changed = try XCTUnwrap(EditorPlacedItemEditing.changing(.init(edits: source,
-            change: .init(id: item.id, timing: timing))))
+            change: .init(id: item.id, timing: timing, gesture: .move))))
         XCTAssertEqual(changed.zoom.keyframes.map(\.time), [3, 8])
         XCTAssertEqual(changed.zoom.keyframes.last?.id, item.id.value)
         XCTAssertEqual(changed.zoom.keyframes.last?.amount, 0)
@@ -132,7 +132,7 @@ final class EditorPlacedItemTests: XCTestCase {
         let variant = try XCTUnwrap(vm.editorProject?.edits)
         let id = EditorPlacedItem.ID(kind: .text, value: variant.textOverlays[0].id)
         let changed = try XCTUnwrap(EditorPlacedItemEditing.changing(.init(edits: variant,
-            change: .init(id: id, timing: .init(start: 2, end: 9)))))
+            change: .init(id: id, timing: .init(start: 2, end: 9), gesture: .trimEnd))))
         XCTAssertTrue(vm.applyOutputTextEdits(.init(edits: changed, actionName: "Change Item Timing")))
         var saved = try store.loadRecordingProject(at: take.projectURL)
         XCTAssertEqual(saved.edits.textOverlays[0].start, 1)

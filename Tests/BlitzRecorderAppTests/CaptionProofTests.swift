@@ -53,7 +53,7 @@ final class CaptionProofTests: XCTestCase {
                     .frame(maxWidth: .infinity, maxHeight: .infinity).background(BlitzUI.canvasBackground)
                 VStack(spacing: 0) {
                     EditorInspectorTabBar(selection: .constant(.captions))
-                    EditorCaptionsInspector(configuration: .init(vm: vm, playback: EditorPlaybackController(), transcript: nil))
+                    EditorCaptionsInspector(configuration: .init(vm: vm, playback: EditorPlaybackController(), transcript: nil, selectedID: .constant(nil)))
                 }.frame(width: 312).background(BlitzUI.panelBackground)
             }.frame(width: 1180, height: 850).preferredColorScheme(.dark))
             let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1180, height: 850),

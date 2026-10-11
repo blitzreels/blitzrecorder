@@ -224,7 +224,16 @@ extension EditorTimelineView {
         ))
     }
 
+    @ViewBuilder
     func assetTrack(_ request: AssetTrackRequest) -> some View {
+        if request.asset.kind == .systemAudio {
+            systemAudioTrack(request)
+        } else {
+            continuousAssetTrack(request)
+        }
+    }
+
+    private func continuousAssetTrack(_ request: AssetTrackRequest) -> some View {
         let asset = request.asset
         let rowHeight = self.rowHeight(for: asset)
         let sourceDuration = library.durations[asset.id] ?? duration

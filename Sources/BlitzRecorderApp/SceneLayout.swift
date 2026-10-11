@@ -536,3 +536,32 @@ extension SceneLayout {
         CGRect(x: 1 - frame.maxX, y: frame.minY, width: frame.width, height: frame.height)
     }
 }
+
+extension SceneLayout {
+    private func visibleFrames(_ visibleSources: Set<CaptureSource>) -> [SceneLayerKind: CGRect] {
+        resolvedItems(enabledSources: visibleSources, fillsCanvasWhenOnlyVideoSource: false)
+            .reduce(into: [SceneLayerKind: CGRect]()) { $0[$1.kind] = $1.normalizedFrame.standardized }
+    }
+
+    func cameraFloats(visibleSources: Set<CaptureSource>) -> Bool {
+        let frames = visibleFrames(visibleSources)
+        guard let camera = frames[.camera] else { return false }
+        if Self.isCameraInsetFrame(camera) { return true }
+        guard let screen = frames[.screen] else { return false }
+        return camera.liesMostlyInside(screen)
+    }
+
+    func arrangementName(visibleSources: Set<CaptureSource>) -> String {
+        let frames = visibleFrames(visibleSources)
+        switch (frames[.screen], frames[.camera]) {
+        case (_?, _?):
+            return cameraFloats(visibleSources: visibleSources) ? "Camera Inset" : "Screen + Camera"
+        case (_?, nil):
+            return "Screen"
+        case (nil, _?):
+            return "Camera"
+        case (nil, nil):
+            return "Empty"
+        }
+    }
+}

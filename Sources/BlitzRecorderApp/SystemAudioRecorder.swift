@@ -100,7 +100,9 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
         }
 
         let filter = try SystemAudioStreamConfiguration.contentFilter(request.pickedScreenFilter)
-        let configuration = SystemAudioStreamConfiguration.configuration(streamName: "BlitzRecorder System Audio")
+        let configuration = SystemAudioStreamConfiguration.configuration(.init(
+            streamName: "BlitzRecorder System Audio", includesRecorderUI: request.settings.includesRecorderUI
+        ))
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
         try stream.attachAudioOutput(.init(output: self, sampleHandlerQueue: queue))
         try await stream.startCapture()

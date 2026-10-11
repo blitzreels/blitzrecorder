@@ -80,9 +80,37 @@ enum EditorTranscriptTimeline {
         let projection: EditorTimelineProjection
     }
 
+    struct ClassificationRequest {
+        let items: [EditorTranscriptItem]
+        let cuts: [TimelineCut]
+    }
+
+    static func classifiedItems(_ request: ClassificationRequest) -> [EditorTranscriptItem] {
+        let ranges = merged(request.cuts.filter { $0.kind == .silence && $0.isEnabled }.map {
+            EditorTimeRange(start: $0.start, end: $0.end)
+        })
+        var result: [EditorTranscriptItem] = []
+        var index = 0
+        for item in request.items {
+            guard item.kind == .nonDialogue else {
+                result.append(.init(id: result.count, range: item.range, text: item.text, kind: item.kind))
+                continue
+            }
+            while index < ranges.count, ranges[index].end <= item.range.start { index += 1 }
+            for range in ranges.dropFirst(index) {
+                guard range.start < item.range.end else { break }
+                let overlap = EditorTimeRange(start: max(range.start, item.range.start), end: min(range.end, item.range.end))
+                if ((overlap.end - overlap.start) * 600).rounded() >= 1 {
+                    result.append(.init(id: result.count, range: overlap, text: item.text, kind: item.kind))
+                }
+            }
+        }
+        return result
+    }
+
     static func remainingSilence(_ request: RemainingSilence) -> [TimelineCut] {
         request.cuts.filter {
-            request.projection.displayTime($0.end) - request.projection.displayTime($0.start) >= 1.0 / 600
+            ((request.projection.displayTime($0.end) - request.projection.displayTime($0.start)) * 600).rounded() >= 1
         }
     }
 

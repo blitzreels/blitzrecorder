@@ -19,10 +19,6 @@ extension RecorderStudioConfiguration {
         sceneLibrary.selectedSceneIDsByLayout[settings.layout]
     }
 
-    func selectedSceneName() -> String {
-        sceneLibrary.selectedScene(layout: settings.layout)?.name ?? "Scene"
-    }
-
     func selectScene(id: UUID) {
         guard allowsSceneChanges else {
             onMessage?("Scenes are locked while saving.")

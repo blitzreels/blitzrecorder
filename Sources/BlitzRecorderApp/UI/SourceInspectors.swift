@@ -63,7 +63,8 @@ struct ScreenContentModeControl: View {
                 Button {
                     vm.beginScreenCropMode()
                 } label: {
-                    Label("Crop on preview", systemImage: "crop")
+                    Label("Crop", systemImage: "crop")
+                        .lineLimit(1)
                         .frame(maxWidth: .infinity)
                 }
                 .blitzButton(.secondary)

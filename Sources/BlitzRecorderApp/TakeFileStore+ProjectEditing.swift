@@ -63,6 +63,7 @@ extension TakeFileStore {
         settings.cameraContentMode = CameraContentMode(rawValue: project.settings.cameraContentMode) ?? settings.cameraContentMode
         settings.cameraFramePadding = 0
         settings.cameraShadowEnabled = project.settings.cameraShadowEnabled
+        settings.cameraCornerRadius = project.settings.cameraCornerRadius.map { CGFloat($0) } ?? SceneLayoutProjection.defaultCameraCornerRadius
         settings.savesSourceFiles = true
 
         if let firstScene = sceneEvents(from: project).first?.scene {
@@ -74,6 +75,7 @@ extension TakeFileStore {
             settings.cameraCropPosition = firstScene.cameraCropPosition
             settings.screenCornerRadius = firstScene.screenCornerRadius
             settings.screenShadowEnabled = firstScene.screenShadowEnabled
+            settings.cameraCornerRadius = firstScene.cameraCornerRadius
             settings.screenContentMode = firstScene.screenContentMode
         }
         return settings

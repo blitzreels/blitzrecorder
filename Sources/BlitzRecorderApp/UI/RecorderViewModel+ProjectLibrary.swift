@@ -46,6 +46,7 @@ extension RecorderViewModel {
     }
 
     func showRecorder() {
+        if let onShowRecorder { onShowRecorder(); return }
         guard !projectTrash.isWorking else { return }
         studioMode = .record
     }
@@ -185,8 +186,18 @@ extension RecorderViewModel {
         }
     }
 
+    var canOpenProjectEditor: Bool {
+        !projectTrash.isWorking && (state == .idle || onRouteEditorProject != nil)
+    }
+
     func openProject(_ project: RecordingProjectHistory.Entry) {
-        guard !projectTrash.isWorking, state == .idle else { return }
+        guard !projectTrash.isWorking else { return }
+        if coordinator.state != .idle, coordinator.lastTake?.projectURL.path == project.projectPath {
+            detailMessage = "Finish recording this take before editing it."
+            return
+        }
+        if onRouteEditorProject?(project) == true { return }
+        guard state == .idle else { return }
         if lastExportedProject?.id == project.id {
             openEditor()
             return
@@ -217,7 +228,15 @@ extension RecorderViewModel {
     }
 
     func deleteProjects(_ projects: [RecordingProjectHistory.Entry]) async {
-        guard !projects.isEmpty, !projectTrash.isWorking, state == .idle else { return }
+        guard !projectTrash.isWorking else { return }
+        guard !projects.isEmpty else {
+            projectLibraryError = "No recordings were selected. Select the recordings and try again."
+            return
+        }
+        if let reason = projectTrashBlockingReason {
+            projectLibraryError = reason
+            return
+        }
         guard !projects.contains(where: { $0.projectPath == activeExportProjectURL?.path }) else {
             projectLibraryError = "Wait for this project's export to finish before moving its sources to Trash."
             return
@@ -254,8 +273,22 @@ extension RecorderViewModel {
         reportProjectTrashFailures(outcome.failures)
     }
 
+    var projectTrashBlockingReason: String? {
+        switch coordinator.state == .idle ? state : coordinator.state {
+        case .idle: nil
+        case .starting: "A recording is starting. Stop it before moving or restoring projects."
+        case .recording: "Stop the current recording before moving or restoring projects."
+        case .paused: "The current recording is paused. Stop it before moving or restoring projects."
+        case .finishing: "Wait for the current recording to finish saving, then try again."
+        }
+    }
+
     func restoreTrashedProjects() async {
-        guard projectTrash.canRestore, state == .idle else { return }
+        guard projectTrash.canRestore else { return }
+        if let reason = projectTrashBlockingReason {
+            projectLibraryError = reason
+            return
+        }
         projectLibraryError = nil
         let outcome = await projectTrash.restoreLastBatch()
         refreshRecentProjects()
@@ -363,8 +396,22 @@ extension RecorderViewModel {
         lastExportedProject != nil || lastExportedProjectURL != nil
     }
 
+    func openEditorWindow() {
+        onOpenEditorWindow?(.init(
+            project: hasSeparateEditorWindow ? nil : currentEditorHistoryEntry,
+            presentsExport: false
+        ))
+    }
+
+    var currentEditorHistoryEntry: RecordingProjectHistory.Entry? {
+        guard let path = lastExportedProjectURL?.path else { return nil }
+        return recentProjects.first { $0.projectPath == path }
+    }
+
     func openEditor() {
-        guard state == .idle, !projectTrash.isWorking else { return }
+        guard !projectTrash.isWorking else { return }
+        if let project = currentEditorHistoryEntry, onRouteEditorProject?(project) == true { return }
+        guard state == .idle else { return }
         if lastExportedProject == nil {
             clearEditorHistory()
             refreshLastExportedProject()
@@ -380,6 +427,10 @@ extension RecorderViewModel {
     }
 
     func openEditorForExport() {
+        if hasSeparateEditorWindow, let project = currentEditorHistoryEntry {
+            onOpenEditorWindow?(.init(project: project, presentsExport: true))
+            return
+        }
         openEditor()
         guard studioMode == .edit else { return }
         isEditorExportPresented = true

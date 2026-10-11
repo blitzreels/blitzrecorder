@@ -235,6 +235,12 @@ extension RecorderViewModel {
         notifyEditorHistoryChanged()
     }
 
+    func moveEditorHistory(to destination: RecorderViewModel) {
+        destination.editorHistory = editorHistory
+        destination.notifyEditorHistoryChanged()
+        clearEditorHistory()
+    }
+
     private func notifyEditorHistoryChanged() {
         editorHistoryRevision &+= 1
         onEditorHistoryChanged?()

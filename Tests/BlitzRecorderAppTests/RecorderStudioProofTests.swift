@@ -61,5 +61,7 @@ final class RecorderStudioProofTests: XCTestCase {
         try await snap("studio-landscape-camera")
         window.setContentSize(CGSize(width: 1120, height: 760))
         try await snap("studio-landscape-min")
+        window.setContentSize(CGSize(width: 1200, height: 785))
+        try await snap("studio-landscape-1200")
     }
 }

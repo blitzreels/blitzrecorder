@@ -18,5 +18,7 @@ final class ProjectAIPromptTests: XCTestCase {
         XCTAssertTrue(text.contains("without computer use"))
         XCTAssertTrue(text.contains("before saved cuts"))
         XCTAssertFalse(text.contains("projects_export_as_is"))
+        XCTAssertTrue(text.contains("This text does not install an MCP connection"))
+        XCTAssertTrue(text.contains("cloud or mobile chat cannot access"))
     }
 }

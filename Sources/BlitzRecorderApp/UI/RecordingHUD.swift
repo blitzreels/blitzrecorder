@@ -244,7 +244,7 @@ struct RecordingHUDView: View {
                 if model.isExpanded { divider; details }
             }
         }
-        .frame(width: isWide ? 340 : nil)
+        .frame(width: hasPrompt ? 400 : isWide ? 340 : nil)
         .fixedSize()
         .background(RecordingHUDSurface())
         .opacity(isIdle && !isWide ? 0.5 : 1)
@@ -405,29 +405,38 @@ struct RecordingHUDView: View {
             }
         } else if let suggestion = vm.suggestedScreenSource, vm.state == .recording {
             promptRow {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("You changed windows. Record this one?")
-                        .foregroundStyle(BlitzUI.primaryText)
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("This window isn’t being recorded", systemImage: "exclamationmark.triangle.fill")
+                        .font(BlitzType.section)
+                        .foregroundStyle(BlitzUI.warning)
                         .fixedSize(horizontal: false, vertical: true)
+                    if let current = vm.settings.screenSourceBinding {
+                        Text("Still recording: \(current.displayName)")
+                            .font(BlitzType.caption)
+                            .foregroundStyle(BlitzUI.primaryText)
+                            .lineLimit(2)
+                            .help(current.displayName)
+                    }
                     HStack(spacing: 8) {
                         RecordingSourceAppIcon(binding: suggestion)
-                            .frame(width: 24, height: 24)
+                            .frame(width: 32, height: 32)
                         Text(suggestion.displayName)
                             .foregroundStyle(BlitzUI.secondaryText)
                             .lineLimit(2)
                             .help(suggestion.displayName)
                     }
                     HStack {
-                        Button("Not now", action: vm.dismissScreenSuggestion)
+                        Button("Keep current", action: vm.dismissScreenSuggestion)
                             .blitzButton(.quiet)
                             .controlSize(.small)
                         Spacer(minLength: 8)
-                        Button("Use this window", action: vm.acceptScreenSuggestion)
+                        Button("Switch to this window", action: vm.acceptScreenSuggestion)
                             .blitzButton(.accent)
-                            .controlSize(.small)
+                            .controlSize(.regular)
                     }
                 }
             }
+            .background(BlitzUI.warning.opacity(0.1))
         }
     }
 
@@ -472,11 +481,7 @@ struct RecordingHUDView: View {
     }
 
     private var scenes: some View {
-        let frames = vm.liveSceneThumbnails
-        let preview = frames.screen != nil || frames.camera != nil
-            ? BlitzScenePreview(screen: frames.screen, camera: frames.camera, background: vm.settings.canvasBackgroundStyle)
-            : nil
-        return HStack(spacing: 6) {
+        HStack(spacing: 6) {
             ForEach(vm.currentScenes.prefix(4)) { scene in
                 let isSelected = vm.selectedSceneID == scene.id
                 Button {
@@ -485,13 +490,11 @@ struct RecordingHUDView: View {
                     VStack(spacing: 5) {
                         BlitzSceneLayoutThumbnail(
                             layout: scene.layout,
-                            sceneLayout: isSelected ? vm.settings.sceneLayout : scene.snapshot.sceneLayout,
-                            visibleSources: vm.settings.enabledSources.intersection([.screen, .camera])
-                                .subtracting(scene.snapshot.hiddenVideoSources),
-                            preview: preview
+                            sceneLayout: vm.sceneLayout(scene),
+                            visibleSources: vm.sceneVisibleSources(scene)
                         )
                         .frame(height: 36)
-                        Text(scene.name)
+                        Text(vm.sceneLabel(scene))
                             .font(BlitzType.footnote)
                             .minimumScaleFactor(0.8)
                             .foregroundStyle(isSelected ? BlitzUI.primaryText : BlitzUI.secondaryText)
@@ -505,7 +508,7 @@ struct RecordingHUDView: View {
                 }
                 .buttonStyle(BlitzPressButtonStyle())
                 .disabled(!vm.canSwitchScene && !isSelected)
-                .help(scene.name)
+                .help(vm.sceneLabel(scene))
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }

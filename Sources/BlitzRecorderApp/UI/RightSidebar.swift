@@ -64,7 +64,8 @@ struct CameraImageControls: View {
     private var cropActions: some View {
         HStack(spacing: 8) {
             Button(action: configuration.onBeginCrop) {
-                Label("Crop on preview", systemImage: "crop")
+                Label("Crop", systemImage: "crop")
+                    .lineLimit(1)
                     .frame(maxWidth: .infinity)
             }
             .blitzButton(.secondary)
@@ -73,6 +74,7 @@ struct CameraImageControls: View {
 
             Button(action: configuration.onResetCrop) {
                 Label("Reset zoom", systemImage: "arrow.counterclockwise")
+                    .lineLimit(1)
                     .frame(maxWidth: .infinity)
             }
             .blitzButton(.secondary)

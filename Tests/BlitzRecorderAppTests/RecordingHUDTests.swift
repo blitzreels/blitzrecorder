@@ -73,7 +73,8 @@ final class RecordingHUDTests: XCTestCase {
             host.appearance = NSAppearance(named: .darkAqua)
             host.setFrameSize(host.fittingSize)
             host.layoutSubtreeIfNeeded()
-            XCTAssertLessThan(host.fittingSize.width, 420)
+            if suggestion != nil || name == "missing" { XCTAssertEqual(host.fittingSize.width, 448) }
+            XCTAssertLessThanOrEqual(host.fittingSize.width, 448)
             guard let directory = ProcessInfo.processInfo.environment["BLITZRECORDER_SILENCE_UI_PROOF"] else { continue }
             let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
             host.cacheDisplay(in: host.bounds, to: bitmap)

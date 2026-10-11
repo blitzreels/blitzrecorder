@@ -13,13 +13,14 @@ final class PreviewStageView: NSView {
     let screenPreview = ScreenPreviewView()
     let cameraPreview = CameraPreviewView()
     let cameraShadowLayer = CALayer()
+    let screenShadowLayer = CALayer()
     let canvasBackgroundLayer = CALayer()
     var renderedBackgroundKey: BackgroundRenderKey?
     var requestedBackgroundKey: BackgroundRenderKey?
     var cachedRenderGeometry: (request: PreviewStageLayout.RenderRequest, value: SceneRenderGeometry)?
     var cachedCameraCropGeometry: (request: PreviewStageLayout.RenderRequest, aspect: CGFloat, value: CameraCropGeometry)?
     var cachedScreenCropSourceFrame: (request: PreviewStageLayout.RenderRequest, aspect: CGFloat, value: CGRect)?
-    var cachedCameraFillFlags: (fullscreen: Bool, fullWidth: Bool, circle: Bool)?
+    var cachedCameraFillFlags: (fullscreen: Bool, fullWidth: Bool, circle: Bool, floating: Bool)?
     var lastLayoutPassKey: PreviewStagePassKeys.LayoutPassKey?
     var lastScreenShapeKey: PreviewStagePassKeys.SourceShapeKey?
     var lastCameraShapeKey: PreviewStagePassKeys.SourceShapeKey?
@@ -126,6 +127,8 @@ final class PreviewStageView: NSView {
     var renderedScreenFrameForTesting: CGRect { screenPreview.frame }
     var renderedCameraFrameForTesting: CGRect { cameraPreview.frame }
     var renderedCameraShadowOpacityForTesting: Float { cameraShadowLayer.shadowOpacity }
+    var renderedScreenShadowOpacityForTesting: Float { screenShadowLayer.shadowOpacity }
+    var renderedScreenCornerRadiusForTesting: CGFloat { screenPreview.layer?.cornerRadius ?? 0 }
     var renderedCameraContentMasksToBoundsForTesting: Bool { cameraPreview.layer?.masksToBounds == true }
     var renderedSelectionFrameForTesting: CGRect? { selectionOverlay.selectionFrame }
     var renderedSelectionShowsResizeHandlesForTesting: Bool { selectionOverlay.showsResizeHandles }
@@ -292,6 +295,27 @@ final class PreviewStageView: NSView {
         }
     }
 
+    var screenCornerRadius: CGFloat = 0 {
+        didSet {
+            guard oldValue != screenCornerRadius else { return }
+            relayoutCanvasImmediately()
+        }
+    }
+
+    var screenShadowEnabled: Bool = false {
+        didSet {
+            guard oldValue != screenShadowEnabled else { return }
+            relayoutCanvasImmediately()
+        }
+    }
+
+    var cameraCornerRadius: CGFloat = SceneLayoutProjection.defaultCameraCornerRadius {
+        didSet {
+            guard oldValue != cameraCornerRadius else { return }
+            relayoutCanvasImmediately()
+        }
+    }
+
     var showsRuleOfThirdsOverlay: Bool = false {
         didSet {
             guard oldValue != showsRuleOfThirdsOverlay else { return }
@@ -379,6 +403,12 @@ final class PreviewStageView: NSView {
         cameraShadowLayer.shadowOffset = CGSize(width: 0, height: -8)
         cameraShadowLayer.shadowOpacity = 0
         layer?.addSublayer(cameraShadowLayer)
+        screenShadowLayer.actions = cameraShadowLayer.actions
+        screenShadowLayer.shadowColor = NSColor.black.cgColor
+        screenShadowLayer.shadowRadius = 28
+        screenShadowLayer.shadowOffset = CGSize(width: 0, height: -12)
+        screenShadowLayer.shadowOpacity = 0
+        layer?.addSublayer(screenShadowLayer)
 
         screenPreview.translatesAutoresizingMaskIntoConstraints = true
         cameraPreview.translatesAutoresizingMaskIntoConstraints = true
@@ -463,7 +493,10 @@ final class PreviewStageView: NSView {
             screenContentMode: screenContentMode,
             cameraContentMode: cameraContentMode,
             cameraFramePadding: cameraFramePadding,
-            cameraShadowEnabled: cameraShadowEnabled
+            cameraShadowEnabled: cameraShadowEnabled,
+            screenCornerRadius: screenCornerRadius,
+            screenShadowEnabled: screenShadowEnabled,
+            cameraCornerRadius: cameraCornerRadius
         )
     }
 

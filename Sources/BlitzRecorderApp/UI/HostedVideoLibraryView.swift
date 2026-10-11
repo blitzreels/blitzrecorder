@@ -55,13 +55,12 @@ struct HostedVideoLibraryView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
+        BlitzAdaptiveRow(.init(minimumContentWidth: 300)) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Shared videos").font(BlitzType.largeTitle)
                 Text("Your watch links, together in one place.")
                     .font(BlitzType.callout).foregroundStyle(BlitzUI.supportingText)
             }
-            Spacer()
             if controller.isConnected {
                 Button { Task { await controller.refresh() } } label: {
                     ZStack {
@@ -77,6 +76,8 @@ struct HostedVideoLibraryView: View {
                 Button { showsAccount.toggle() } label: {
                     Label(controller.account?.email ?? "Account", systemImage: "person.crop.circle.fill")
                         .lineLimit(1)
+                        .frame(maxWidth: 220)
+                        .help(controller.account?.email ?? "Account")
                 }
                 .blitzButton(.secondary)
                 .accessibilityLabel("Account")
@@ -149,11 +150,12 @@ struct HostedVideoLibraryView: View {
     }
 
     private func noticeRow(_ notice: Notice) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: notice.symbol).foregroundStyle(BlitzUI.warning)
-            Text(notice.text).font(BlitzType.body).foregroundStyle(BlitzUI.primaryText)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 8)
+        BlitzAdaptiveRow() {
+            HStack(spacing: 10) {
+                Image(systemName: notice.symbol).foregroundStyle(BlitzUI.warning)
+                Text(notice.text).font(BlitzType.body).foregroundStyle(BlitzUI.primaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Button(notice.action.title, action: notice.action.run)
                 .blitzButton(.secondary).controlSize(.small)
                 .disabled(isSyncing)

@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
     let accessController = AccessController()
     lazy var coordinator = RecorderCoordinator(accessController: accessController)
     var windowController: MainWindowController?
+    var editorWindowController: EditorWindowController?
     var statusItem: NSStatusItem?
     var recordingAppIcon: RecordingAppIconController?
     var recordingStatusMenuItem: NSMenuItem?
@@ -56,6 +57,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
             updateController: updateController
         ))
         self.windowController = windowController
+        windowController.viewModel.onOpenEditorWindow = { [weak self] request in
+            self?.presentEditorWindow(request)
+        }
+        windowController.viewModel.onRouteEditorProject = { [weak self] project in
+            guard let self, self.editorWindowController != nil || self.coordinator.state != .idle else { return false }
+            self.presentEditorWindow(.init(project: project, presentsExport: false))
+            return true
+        }
         windowController.onEditorHistoryChanged = { [weak self] in
             self?.mainMenuBuilder?.rebuild()
         }
@@ -76,6 +85,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
         }
         coordinator.onSavedRecording = { [weak self] output in
             self?.windowController?.applySavedRecordingOutput(output)
+            if let editor = self?.editorWindowController?.viewModel,
+               editor.lastExportedSourceTakeURL == output.sourceDirectory {
+                editor.applySavedRecordingOutput(output)
+            }
             self?.rebuildMenu()
         }
         coordinator.onPostRecordingProject = { [weak self] output in
@@ -91,9 +104,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
         }
         coordinator.onExportProgress = { [weak self] progress in
             self?.windowController?.viewModel.exportProgress = min(1, max(0, progress))
+            self?.editorWindowController?.viewModel.exportProgress = min(1, max(0, progress))
         }
         coordinator.onExportProjectChanged = { [weak self] projectURL in
             self?.windowController?.viewModel.applyExportProject(projectURL)
+            self?.editorWindowController?.viewModel.applyExportProject(projectURL)
             self?.updateController.installationBlockedReason = self?.coordinator.state != .idle
                 ? "Finish recording before restarting."
                 : projectURL != nil ? "Finish exporting before restarting." : nil
@@ -103,6 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
         }
         coordinator.onExportFailure = { [weak self] message in
             self?.windowController?.applyExportFailure(message)
+            self?.editorWindowController?.viewModel.applyExportFailure(message)
         }
         coordinator.onRuleOfThirdsOverlayChanged = { [weak self] visible in
             self?.windowController?.syncRuleOfThirdsOverlay()

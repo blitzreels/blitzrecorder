@@ -3,28 +3,37 @@ import SwiftUI
 
 struct AgentsSettingsPage: View {
     @Bindable var mcpServer: BlitzRecorderMCPServer
+    @State private var provider = MCPClientProvider.claudeDesktop
+    @State private var clientStatus = MCPClientSetup.Status.missing
+    @State private var isConnecting = false
+    @State private var setupMessage: String?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 SettingsPageHeader(.init(
                     title: "Integrations",
-                    detail: "Connect local AI agents to projects, video frames, transcripts, and MP4 exports.",
+                    detail: "Connect an AI client to recordings, transcripts, video frames, and exports on this Mac.",
                     status: .init(title: statusTitle, isActive: mcpServer.status == .running)
                 ))
-                .padding(.bottom, 4)
-
                 serverSection
                 connectSection
                 SettingsRowLabel(.init(
-                    title: "Start from a recording",
-                    detail: "In Projects, select a video and choose Copy AI context. Paste it into your AI chat alongside your own request."
+                    title: "Use it in your next conversation",
+                    detail: "Ask your client to list BlitzRecorder recordings. For one video, choose Copy AI context in Recordings and paste it with your request. Copying context does not install a connection."
                 ))
             }
             .settingsPageContent()
         }
         .background(BlitzUI.projectLibraryBackground)
-        .foregroundStyle(.white)
+        .foregroundStyle(BlitzUI.primaryText)
+        .task(id: provider) {
+            setupMessage = nil
+            let selected = provider
+            let status = await MCPClientSetup.status(.init(provider: selected, home: FileManager.default.homeDirectoryForCurrentUser))
+            guard !Task.isCancelled, selected == provider else { return }
+            clientStatus = status
+        }
     }
 
     private var serverSection: some View {
@@ -32,115 +41,149 @@ struct AgentsSettingsPage: View {
             Toggle(isOn: enabledBinding) {
                 SettingsRowLabel(.init(
                     title: "Allow local agents",
-                    detail: "Let local agents read projects, video frames, and transcripts and create exports."
+                    detail: "Connected clients can read recordings and transcripts, inspect frames, and create exports. Keep BlitzRecorder running while using them."
                 ))
             }
             .toggleStyle(.blitzSwitch)
             .settingsRow()
-
-
             SettingsRowDivider()
-
-            HStack(alignment: .center, spacing: 16) {
-                SettingsRowLabel(.init(
-                    title: "Local endpoint",
-                    detail: "Streamable HTTP on this Mac only."
-                ))
-
-                Spacer(minLength: 16)
-
+            BlitzAdaptiveRow() {
+                SettingsRowLabel(.init(title: "Local endpoint", detail: "Streamable HTTP on this Mac only."))
                 copyableValue(BlitzRecorderMCPServer.endpointURL.absoluteString)
             }
             .settingsRow()
-
             SettingsRowDivider()
-
-            HStack(alignment: .center, spacing: 16) {
-                SettingsRowLabel(.init(
-                    title: "Connection test",
-                    detail: connectionTestDetail
-                ))
-
-                Spacer(minLength: 16)
-
-                Button(connectionTestButtonTitle) {
-                    Task {
-                        await mcpServer.testConnection()
-                    }
+            BlitzAdaptiveRow() {
+                SettingsRowLabel(.init(title: "Server check", detail: connectionTestDetail))
+                Button(isTestingConnection ? "Testing…" : "Test server") {
+                    Task { await mcpServer.testConnection() }
                 }
                 .blitzButton(.secondary)
-                .pointingHandCursor()
                 .disabled(mcpServer.status != .running || isTestingConnection)
             }
             .settingsRow()
+            SettingsRowDivider()
+            SettingsRowLabel(.init(
+                title: "Client activity",
+                detail: mcpServer.lastClientHandshake.map {
+                    "\($0.name) connected at \($0.date.formatted(date: .omitted, time: .shortened)). This is the latest handshake, not a permanent connection."
+                } ?? "No client handshake observed since this server started. The server check does not count as a client connection."
+            ))
+            .settingsRow()
         }
-        .settingsSection(.init(
-            title: "Local agent server",
-            detail: statusDetail,
-            systemImage: "antenna.radiowaves.left.and.right"
-        ))
+        .settingsSection(.init(title: "Local agent server", detail: statusDetail, systemImage: "antenna.radiowaves.left.and.right"))
     }
 
     private var connectSection: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 8) {
-                IntegrationProviderTitle(configuration: .init(title: "Claude Code", imageName: "IntegrationClaude",
-                                                              fallbackSymbol: "sparkle"))
-                Text("Run once in Terminal, then start a new Claude Code session.")
-                    .font(BlitzType.caption)
-                    .foregroundStyle(BlitzUI.secondaryText)
-                copyableCode(BlitzRecorderMCPServer.claudeCodeSetupCommand)
-            }
+        VStack(alignment: .leading, spacing: 0) {
+            BlitzDropdown(configuration: .init(
+                title: "AI client", selection: $provider,
+                options: MCPClientProvider.allCases.map { .init(value: $0, title: $0.title, detail: nil) },
+                menuWidth: 320
+            ))
+            .disabled(isConnecting)
             .settingsRow()
-
             SettingsRowDivider()
-
-            VStack(alignment: .leading, spacing: 8) {
-                IntegrationProviderTitle(configuration: .init(title: "Codex", imageName: "IntegrationCodex",
-                                                              fallbackSymbol: "chevron.left.forwardslash.chevron.right"))
-                Text("Run once, then start a new Codex task so the tools are discovered.")
-                    .font(BlitzType.caption)
-                    .foregroundStyle(BlitzUI.secondaryText)
-                copyableCode(BlitzRecorderMCPServer.codexSetupCommand)
-            }
-            .settingsRow()
-
-            SettingsRowDivider()
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    IntegrationProviderTitle(configuration: .init(title: "Agent Plugin 1.0", imageName: nil,
-                                                                  fallbackSymbol: "puzzlepiece.extension.fill"))
-                    Spacer()
-                    Link(
-                        "Open guide",
-                        destination: URL(string: "https://agent-plugins.org/plugin-authors")!
-                    )
+            VStack(alignment: .leading, spacing: 14) {
+                SettingsRowLabel(.init(title: provider.title, detail: provider.detail))
+                if provider.canInstallConfiguration {
+                    BlitzAdaptiveRow() {
+                        Text(clientStatus.detail)
+                            .font(BlitzType.caption)
+                            .foregroundStyle(BlitzUI.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button(isConnecting ? "Connecting…" : "Connect \(provider.title)") {
+                            Task { await connectClient() }
+                        }
+                        .blitzButton(.secondary)
+                        .disabled(isConnecting || mcpServer.status != .running || clientStatus == .configured || clientStatus == .conflict)
+                    }
+                    if let path = provider.relativeConfigurationPath {
+                        Text("User configuration: ~/\(path)")
+                            .font(BlitzType.footnote)
+                            .foregroundStyle(BlitzUI.tertiaryText)
+                            .textSelection(.enabled)
+                    }
+                    DisclosureGroup("Manual setup") {
+                        copyableCode(provider.setupCommand ?? provider.configurationText)
+                            .padding(.top, 10)
+                    }
                     .font(BlitzType.captionEmphasis)
+                } else if provider == .claudeDesktop {
+                    Button(isConnecting ? "Preparing…" : "Install Claude extension…") {
+                        Task { await connectClient() }
+                    }
+                    .blitzButton(.secondary)
+                    .disabled(isConnecting || mcpServer.status != .running)
+                    Text("Claude opens an installation prompt. Enable the extension there, then start a new conversation. Keep BlitzRecorder open.")
+                        .font(BlitzType.caption)
+                        .foregroundStyle(BlitzUI.secondaryText)
+                } else if provider == .other {
+                    copyableCode(provider.configurationText)
+                    if let directory = MCPDesktopExtension.resourceDirectory {
+                        Text("For stdio clients with Node.js 18 or later:")
+                            .font(BlitzType.caption)
+                            .foregroundStyle(BlitzUI.secondaryText)
+                        copyableCode(stdioConfiguration(directory))
+                    }
                 }
-                Text("Use this portable mcp.json entry in a compatible agent plugin.")
-                    .font(BlitzType.caption)
-                    .foregroundStyle(.secondary)
-                copyableCode(BlitzRecorderMCPServer.agentPluginConfiguration)
+                if mcpServer.status != .running, provider != .cloud {
+                    Text("Turn on Allow local agents and wait for the server to be ready before connecting.")
+                        .font(BlitzType.caption)
+                        .foregroundStyle(BlitzUI.secondaryText)
+                }
+                if let setupMessage {
+                    Text(setupMessage)
+                        .font(BlitzType.captionEmphasis)
+                        .foregroundStyle(BlitzUI.primaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.updatesFrequently)
+                }
             }
             .settingsRow()
         }
         .settingsSection(.init(
-            title: "Connect an agent",
-            detail: "Copy one setup command into your local agent",
+            title: "Connect your AI client",
+            detail: "Set up each client once. Tools are discovered after it connects; local apps are not registered automatically.",
             systemImage: "link"
         ))
     }
 
-    private var enabledBinding: Binding<Bool> {
-        Binding(
-            get: { mcpServer.isEnabled },
-            set: { enabled in
-                Task {
-                    await mcpServer.setEnabled(enabled)
+    private func connectClient() async {
+        guard !isConnecting else { return }
+        isConnecting = true
+        setupMessage = nil
+        defer { isConnecting = false }
+        do {
+            if provider == .claudeDesktop {
+                let bundle = try await MCPDesktopExtension.createBundle()
+                if NSWorkspace.shared.open(bundle) {
+                    setupMessage = "Extension installation opened. Complete Claude's prompt to grant access; installation is not yet verified."
+                } else {
+                    NSWorkspace.shared.activateFileViewerSelecting([bundle])
+                    setupMessage = "Extension ready in Finder. In Claude, open Settings > Extensions > Advanced settings > Install Extension and select BlitzRecorder.mcpb."
                 }
+            } else {
+                let request = MCPClientSetup.Request(provider: provider, home: FileManager.default.homeDirectoryForCurrentUser)
+                try await MCPClientSetup.install(request)
+                clientStatus = await MCPClientSetup.status(request)
+                setupMessage = "Connection saved. Start a new session in \(provider.title), approve the tools, then ask it to list BlitzRecorder recordings."
             }
-        )
+        } catch {
+            setupMessage = error.localizedDescription
+        }
+    }
+
+    private func stdioConfiguration(_ directory: URL) -> String {
+        let value: [String: Any] = ["mcpServers": ["blitzrecorder": [
+            "command": "node", "args": [directory.appendingPathComponent("bridge.cjs").path]
+        ]]]
+        let data = try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        return data.map { String(decoding: $0, as: UTF8.self) } ?? ""
+    }
+
+    private var enabledBinding: Binding<Bool> {
+        Binding(get: { mcpServer.isEnabled }, set: { enabled in Task { await mcpServer.setEnabled(enabled) } })
     }
 
     private var statusTitle: String {
@@ -155,45 +198,28 @@ struct AgentsSettingsPage: View {
 
     private var statusDetail: String {
         switch mcpServer.status {
-        case .disabled:
-            "Turn on local agent access to connect."
-        case .stopped:
-            "The server is not listening."
-        case .starting:
-            "Opening the local endpoint."
-        case .running:
-            "Ready for local agent connections."
-        case .failed(let message):
-            message
+        case .disabled: "Turn on local agent access to connect."
+        case .stopped: "The server is not listening."
+        case .starting: "Opening the local endpoint."
+        case .running: "Server available. Each AI client still needs its own connection."
+        case .failed(let message): message
         }
     }
 
-    private var isTestingConnection: Bool {
-        mcpServer.connectionTestStatus == .testing
-    }
-
-    private var connectionTestButtonTitle: String {
-        isTestingConnection ? "Testing…" : "Test connection"
-    }
+    private var isTestingConnection: Bool { mcpServer.connectionTestStatus == .testing }
 
     private var connectionTestDetail: String {
         switch mcpServer.connectionTestStatus {
-        case .notRun:
-            "Verify the complete local MCP handshake."
-        case .testing:
-            "Connecting to the local endpoint."
-        case .succeeded(let date):
-            "Connected at \(date.formatted(date: .omitted, time: .shortened))."
-        case .failed(let message):
-            message
+        case .notRun: "Check the handshake, tool discovery, and a read-only library request. This does not configure your client."
+        case .testing: "Checking the handshake, recording tools, and library access…"
+        case .succeeded(let result): "Server verified: \(result.toolCount) tools and library access at \(result.date.formatted(date: .omitted, time: .shortened))."
+        case .failed(let message): message
         }
     }
 
     private func copyableValue(_ value: String) -> some View {
         HStack(spacing: 8) {
-            Text(value)
-                .font(BlitzType.captionEmphasis.monospaced())
-                .textSelection(.enabled)
+            Text(value).font(BlitzType.captionEmphasis.monospaced()).textSelection(.enabled)
             copyButton(value)
         }
     }
@@ -207,53 +233,15 @@ struct AgentsSettingsPage: View {
                     .fixedSize(horizontal: true, vertical: false)
                     .padding(10)
             }
-            .background(.black.opacity(0.28), in: .rect(cornerRadius: BlitzUI.controlRadius))
-
-            copyButton(value)
-                .padding(.top, 5)
+            .background(BlitzUI.controlFill, in: .rect(cornerRadius: BlitzUI.controlRadius))
+            copyButton(value).padding(.top, 5)
         }
     }
 
     private func copyButton(_ value: String) -> some View {
         BlitzCopyButton(configuration: .init(
-            text: value,
-            title: "Copy",
-            accessibilityLabel: "Copy",
-            help: "Copy to the clipboard",
-            emphasis: .secondary,
-            width: .fit
+            text: value, title: "Copy", accessibilityLabel: "Copy setup", help: "Copy to the clipboard",
+            emphasis: .secondary, width: .fit
         ))
-    }
-}
-
-private struct IntegrationProviderTitle: View {
-    struct Configuration {
-        let title: String
-        let imageName: String?
-        let fallbackSymbol: String
-    }
-
-    let configuration: Configuration
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Group {
-                if let name = configuration.imageName,
-                   let url = Bundle.main.url(forResource: name, withExtension: "png"),
-                   let image = NSImage(contentsOf: url) {
-                    Image(nsImage: image).resizable().interpolation(.high)
-                } else {
-                    Image(systemName: configuration.fallbackSymbol)
-                        .font(BlitzType.glyph(13))
-                        .foregroundStyle(BlitzUI.supportingText)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(BlitzUI.controlFill, in: .rect(cornerRadius: 6))
-                }
-            }
-            .frame(width: 24, height: 24)
-            .clipShape(.rect(cornerRadius: 6))
-            .accessibilityHidden(true)
-            Text(configuration.title).font(BlitzType.strong)
-        }
     }
 }

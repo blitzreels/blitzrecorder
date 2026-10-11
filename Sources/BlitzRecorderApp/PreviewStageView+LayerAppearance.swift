@@ -13,7 +13,10 @@ extension PreviewStageView {
             isCamera: isCamera,
             isFullscreen: isCamera ? isFullscreenCameraPreview : false,
             isFullWidth: isCamera ? isFullWidthCameraPreview : false,
-            isCircle: isCamera ? isCircularCameraPreview : false
+            isCircle: isCamera ? isCircularCameraPreview : false,
+            isFloating: isCamera ? isFloatingCameraPreview : false,
+            screenCornerRadius: screenCornerRadius,
+            cameraCornerRadius: cameraCornerRadius
         )
         if isCamera {
             if lastCameraMaskKey == key { return }
@@ -34,7 +37,10 @@ extension PreviewStageView {
             rect: visibleRect,
             isFullscreen: isFullscreenCameraPreview,
             isFullWidth: isFullWidthCameraPreview,
-            isCircle: isCircularCameraPreview
+            isCircle: isCircularCameraPreview,
+            isFloating: isFloatingCameraPreview,
+            screenCornerRadius: screenCornerRadius,
+            cameraCornerRadius: cameraCornerRadius
         ))
         let mask = isCamera ? cameraCanvasMask : screenCanvasMask
         CATransaction.begin()
@@ -62,8 +68,13 @@ extension PreviewStageView {
             isFullscreen: isCamera ? isFullscreenCameraPreview : false,
             isFullWidth: isCamera ? isFullWidthCameraPreview : false,
             isCircle: isCamera ? isCircularCameraPreview : false,
+            isFloating: isCamera ? isFloatingCameraPreview : false,
             cameraShadowEnabled: cameraShadowEnabled,
-            isCameraCropEditingEnabled: isCameraCropEditingEnabled
+            isCameraCropEditingEnabled: isCameraCropEditingEnabled,
+            screenCornerRadius: screenCornerRadius,
+            screenShadowEnabled: screenShadowEnabled,
+            cameraCornerRadius: cameraCornerRadius,
+            canvasFrame: canvasFrame
         )
         if isCamera {
             if lastCameraShapeKey == key { return }
@@ -78,7 +89,10 @@ extension PreviewStageView {
             rect: view.bounds,
             isFullscreen: isCamera ? isFullscreenCameraPreview : false,
             isFullWidth: isCamera ? isFullWidthCameraPreview : false,
-            isCircle: isCamera ? isCircularCameraPreview : false
+            isCircle: isCamera ? isCircularCameraPreview : false,
+            isFloating: isCamera ? isFloatingCameraPreview : false,
+            screenCornerRadius: screenCornerRadius,
+            cameraCornerRadius: cameraCornerRadius
         ))
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -88,9 +102,27 @@ extension PreviewStageView {
                 layer.shadowOpacity = 0
                 layer.shadowPath = nil
                 applyCameraShadow(frame: view.frame, cornerRadius: shape.cornerRadius)
+            } else {
+                applyScreenShadow(frame: view.frame)
             }
         }
         CATransaction.commit()
+    }
+
+    func applyScreenShadow(frame: NSRect) {
+        let visible = frame.intersection(canvasFrame)
+        let fillsCanvas = visible.insetBy(dx: -1, dy: -1).contains(canvasFrame)
+        guard screenShadowEnabled, !isScreenCropEditingEnabled, !visible.isEmpty, !fillsCanvas else {
+            screenShadowLayer.shadowOpacity = 0
+            screenShadowLayer.shadowPath = nil
+            return
+        }
+        screenShadowLayer.frame = visible
+        screenShadowLayer.shadowOpacity = 0.42
+        screenShadowLayer.shadowPath = PreviewStageDrawing.maskPath(
+            for: CGRect(origin: .zero, size: visible.size),
+            radius: SceneLayoutProjection.sourceCornerRadius(for: visible, normalizedRadius: screenCornerRadius)
+        )
     }
 
     func applyCameraShadow(frame: NSRect, cornerRadius: CGFloat) {

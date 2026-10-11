@@ -58,7 +58,12 @@ struct EditorInspector: View {
                 SilenceInspectorPane(session: silence)
 
             case .captions:
-                EditorCaptionsInspector(configuration: .init(vm: vm, playback: playback, transcript: transcript))
+                EditorCaptionsInspector(configuration: .init(vm: vm, playback: playback, transcript: transcript, selectedID: Binding(get: {
+                    if case .placed(let id) = selection, id.kind == .caption { return id.value }
+                    return nil
+                }, set: { value in
+                    selection = value.map { .placed(.init(kind: .caption, value: $0)) }
+                })))
             case .text:
                 EditorTextInspector(configuration: .init(
                     vm: vm, playback: playback, preview: scenePresetPreview,

@@ -60,8 +60,7 @@ struct RecorderLayerInspector: View {
             }
             .scrollIndicators(.never)
         }
-        .frame(minWidth: 264, idealWidth: 280, maxWidth: 280)
-        .frame(maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(BlitzUI.panelBackground)
         .foregroundStyle(BlitzUI.primaryText)
         .tint(BlitzUI.mint)
@@ -111,7 +110,17 @@ struct RecorderLayerInspector: View {
             })
             EditorInspectorSection(configuration: .init(title: "Effects") {
                 CameraSourceInspector(vm: vm, enabled: vm.isSourceConfigured(.camera))
-                if vm.isCameraInsetLayout {
+                if vm.cameraFloats {
+                    presetRow(.init(
+                        title: "Corners",
+                        options: CameraCornerPreset.allCases,
+                        selection: Binding(
+                            get: { CameraCornerPreset.nearest(vm.settings.cameraCornerRadius) },
+                            set: { vm.setCameraCornerRadius($0.value) }
+                        ),
+                        label: \.title
+                    ))
+                    .disabled(!vm.canEditScene)
                     Toggle("Shadow", isOn: Binding(
                         get: { vm.settings.cameraShadowEnabled },
                         set: { vm.setCameraShadowEnabled($0) }
@@ -119,6 +128,8 @@ struct RecorderLayerInspector: View {
                     .toggleStyle(.blitzSwitch)
                     .disabled(!vm.canEditScene)
                     .help("Add a soft shadow under the camera")
+                } else if vm.settings.visibleSources.isSuperset(of: [.screen, .camera]) {
+                    layoutCaption("Corners match the screen. Change them in Canvas, next to Padding.")
                 }
             })
             hiddenNotice(for: .camera)
@@ -147,29 +158,44 @@ struct RecorderLayerInspector: View {
             EditorInspectorSection(configuration: .init(title: "Background") {
                 SceneBackgroundSwatchRow(vm: vm)
                 if vm.settings.canvasBackgroundStyle.supportsBackgroundAnimation {
-                    Toggle("Slowly move the colors", isOn: Binding(
+                    Toggle("Gentle motion", isOn: Binding(
                         get: { vm.settings.canvasBackgroundAnimated },
                         set: { vm.setCanvasBackgroundAnimated($0) }
                     ))
                     .toggleStyle(.blitzSwitch)
                     .disabled(!vm.canEditScene)
+                    .help("Slowly drift the gradient colors while you record")
                 }
             })
-            EditorInspectorSection(configuration: .init(title: "Spacing and guides") {
-                BlitzInspectorSlider(configuration: .init(
+            EditorInspectorSection(configuration: .init(title: "Frame") {
+                presetRow(.init(
                     title: "Padding",
-                    value: Binding(
-                        get: { Double(vm.settings.canvasPadding) },
-                        set: { vm.setCanvasPadding(CGFloat($0)) }
+                    options: CanvasPaddingPreset.allCases,
+                    selection: Binding(
+                        get: { CanvasPaddingPreset.nearest(vm.settings.canvasPadding) },
+                        set: { vm.setCanvasPadding($0.value) }
                     ),
-                    range: 0...0.12,
-                    step: 0.005,
-                    valueLabel: "\(Int((vm.settings.canvasPadding / 0.12 * 100).rounded()))%",
-                    onEditingChanged: { _ in },
-                    onReset: { vm.setCanvasPadding(0) }
+                    label: \.title
                 ))
-                .disabled(!vm.canEditScene)
-                Toggle("Show framing guides", isOn: Binding(
+                presetRow(.init(
+                    title: "Corners",
+                    options: ScreenCornerPreset.allCases,
+                    selection: Binding(
+                        get: { ScreenCornerPreset.nearest(vm.settings.screenCornerRadius) },
+                        set: { vm.setScreenCornerRadius($0.value) }
+                    ),
+                    label: \.title
+                ))
+                Toggle("Shadow", isOn: Binding(
+                    get: { vm.settings.screenShadowEnabled },
+                    set: { vm.setScreenShadowEnabled($0) }
+                ))
+                .toggleStyle(.blitzSwitch)
+                .help("Lift the screen off the background. Shows when there is padding.")
+            })
+            .disabled(!vm.canEditScene)
+            EditorInspectorSection(configuration: .init(title: "Guides") {
+                Toggle("Rule of thirds", isOn: Binding(
                     get: { vm.settings.showsRuleOfThirdsOverlay },
                     set: { vm.setRuleOfThirds($0) }
                 ))
@@ -177,11 +203,30 @@ struct RecorderLayerInspector: View {
                 .disabled(!vm.canEditScene)
                 .help("Show rule-of-thirds lines on the preview. They are never recorded.")
                 if vm.settings.layout == .vertical {
-                    Toggle("Show app safe zones", isOn: $showsSafeZones)
+                    Toggle("App safe zones", isOn: $showsSafeZones)
                         .toggleStyle(.blitzSwitch)
                         .help("Shade where TikTok, Reels and Shorts put captions and buttons. Never recorded.")
                 }
             })
+        }
+    }
+
+    private struct PresetRow<Value: Hashable> {
+        let title: String
+        let options: [Value]
+        let selection: Binding<Value>
+        let label: (Value) -> String
+    }
+
+    private func presetRow<Value: Hashable>(_ row: PresetRow<Value>) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(row.title)
+                .font(BlitzType.label)
+                .foregroundStyle(BlitzUI.supportingText)
+            BlitzSegmentedPicker(configuration: .init(
+                title: row.title, options: row.options, selection: row.selection, label: row.label
+            ))
+            .controlSize(.small)
         }
     }
 
@@ -369,66 +414,89 @@ struct RecorderLayerInspector: View {
     }
 }
 
+private enum CanvasPaddingPreset: CaseIterable {
+    case none, small, medium, large
+
+    var value: CGFloat {
+        switch self {
+        case .none: 0
+        case .small: 0.03
+        case .medium: 0.06
+        case .large: 0.10
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .none: "None"
+        case .small: "Small"
+        case .medium: "Medium"
+        case .large: "Large"
+        }
+    }
+
+    static func nearest(_ value: CGFloat) -> Self {
+        allCases.min { abs($0.value - value) < abs($1.value - value) } ?? .none
+    }
+}
+
+private enum CameraCornerPreset: CaseIterable {
+    case sharp, soft, round
+
+    var value: CGFloat {
+        switch self {
+        case .sharp: 0
+        case .soft: SceneLayoutProjection.defaultCameraCornerRadius
+        case .round: 0.18
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .sharp: "Sharp"
+        case .soft: "Soft"
+        case .round: "Round"
+        }
+    }
+
+    static func nearest(_ value: CGFloat) -> Self {
+        allCases.min { abs($0.value - value) < abs($1.value - value) } ?? .soft
+    }
+}
+
+private enum ScreenCornerPreset: CaseIterable {
+    case sharp, soft, round
+
+    var value: CGFloat {
+        switch self {
+        case .sharp: 0
+        case .soft: 0.025
+        case .round: 0.06
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .sharp: "Sharp"
+        case .soft: "Soft"
+        case .round: "Round"
+        }
+    }
+
+    static func nearest(_ value: CGFloat) -> Self {
+        allCases.min { abs($0.value - value) < abs($1.value - value) } ?? .sharp
+    }
+}
+
 struct SceneBackgroundSwatchRow: View {
     @Bindable var vm: RecorderViewModel
 
-    private let columns = [GridItem(.adaptive(minimum: 36, maximum: 40), spacing: 8, alignment: .leading)]
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            swatchSection(.init(title: "Gradients", styles: CanvasBackgroundStyle.allCases.filter {
-                !$0.isSystemWallpaper && !$0.isSeasonalWallpaper && !$0.isStudioWallpaper
-            }))
-            swatchSection(.init(title: "macOS", styles: CanvasBackgroundStyle.allCases.filter(\.isSystemWallpaper)))
-            swatchSection(.init(title: "Seasons", styles: CanvasBackgroundStyle.allCases.filter(\.isSeasonalWallpaper)))
-            swatchSection(.init(title: "Studio", styles: CanvasBackgroundStyle.allCases.filter(\.isStudioWallpaper)))
-        }
+        CanvasBackgroundChooser(configuration: .init(
+            selection: vm.settings.canvasBackgroundStyle,
+            onSelect: { vm.setCanvasBackgroundStyle($0) }
+        ))
         .disabled(!vm.canEditScene)
         .opacity(vm.canEditScene ? 1 : 0.52)
-    }
-
-    private struct SwatchSection {
-        let title: String
-        let styles: [CanvasBackgroundStyle]
-    }
-
-    private func swatchSection(_ section: SwatchSection) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            BlitzUI.sectionLabel(section.title)
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-                ForEach(section.styles, id: \.self) { style in
-                    swatch(style)
-                }
-            }
-        }
-    }
-
-    private func swatch(_ style: CanvasBackgroundStyle) -> some View {
-        let isSelected = vm.settings.canvasBackgroundStyle == style
-        return Button {
-            vm.setCanvasBackgroundStyle(style)
-        } label: {
-            CanvasBackgroundSwatchCache.image(style)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 36, height: 36)
-                .clipShape(.rect(cornerRadius: BlitzUI.controlRadius))
-                .padding(3)
-                .background(isSelected ? BlitzUI.selectedFill : .clear, in: .rect(cornerRadius: BlitzUI.cardRadius))
-                .overlay(alignment: .bottomTrailing) {
-                    if isSelected {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(BlitzType.glyph(13))
-                            .foregroundStyle(BlitzUI.mint)
-                            .background(Circle().fill(.black))
-                            .offset(x: 2, y: 2)
-                    }
-                }
-                .contentShape(.rect(cornerRadius: BlitzUI.cardRadius))
-        }
-        .buttonStyle(.plain)
-        .pointingHandCursor()
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-        .help(style.displayName)
     }
 }

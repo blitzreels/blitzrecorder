@@ -30,7 +30,7 @@ struct EditorTranscriptLayout: Equatable {
         items = request.items.compactMap { item in
             let start = request.projection.displayTime(item.range.start)
             let end = request.projection.displayTime(item.range.end)
-            return end > start ? Item(source: item, start: start, end: end) : nil
+            return ((end - start) * 600).rounded() >= 1 ? Item(source: item, start: start, end: end) : nil
         }
     }
 

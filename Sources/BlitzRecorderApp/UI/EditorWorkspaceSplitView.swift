@@ -4,11 +4,39 @@ struct EditorPaneSizing: Equatable {
     enum Pane {
         case inspector
         case timeline
+        case recorderInspector
 
-        var defaultSize: Double { self == .inspector ? 360 : 380 }
-        var minimum: Double { self == .inspector ? 312 : 180 }
-        var maximum: Double { self == .inspector ? 640 : 600 }
-        var previewMinimum: Double { self == .inspector ? 360 : 200 }
+        var defaultSize: Double {
+            switch self {
+            case .inspector: 360
+            case .timeline: 380
+            case .recorderInspector: 320
+            }
+        }
+
+        var minimum: Double {
+            switch self {
+            case .inspector: 312
+            case .timeline: 180
+            case .recorderInspector: 272
+            }
+        }
+
+        var maximum: Double {
+            switch self {
+            case .inspector: 640
+            case .timeline: 600
+            case .recorderInspector: 460
+            }
+        }
+
+        var previewMinimum: Double {
+            switch self {
+            case .inspector: 360
+            case .timeline: 200
+            case .recorderInspector: 620
+            }
+        }
     }
 
     struct Request {
@@ -103,5 +131,41 @@ struct EditorWorkspaceSplitView<Preview: View, Inspector: View, Timeline: View>:
             }
         }
         .onChange(of: showsSourceTracks) { timelineHeightDraft = nil }
+    }
+}
+
+struct RecorderInspectorSplitView<Stage: View, Inspector: View>: View {
+    @ViewBuilder let stage: () -> Stage
+    @ViewBuilder let inspector: () -> Inspector
+
+    @AppStorage("recorder.inspectorWidth") private var savedInspectorWidth = EditorPaneSizing.Pane.recorderInspector.defaultSize
+    @State private var inspectorWidthDraft: Double?
+
+    var body: some View {
+        GeometryReader { proxy in
+            let inspectorSize = EditorPaneSizing.resolve(.init(
+                pane: .recorderInspector,
+                preferred: inspectorWidthDraft ?? savedInspectorWidth,
+                available: proxy.size.width
+            ))
+            HStack(spacing: 0) {
+                stage()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                BlitzPaneDivider(configuration: .init(
+                    axis: .horizontal,
+                    label: "Inspector width",
+                    value: Binding(get: { inspectorSize.value }, set: { inspectorWidthDraft = $0 }),
+                    bounds: inspectorSize.bounds,
+                    defaultValue: EditorPaneSizing.Pane.recorderInspector.defaultSize,
+                    onCommit: {
+                        savedInspectorWidth = inspectorWidthDraft ?? inspectorSize.value
+                        inspectorWidthDraft = nil
+                    }
+                ))
+                inspector()
+                    .frame(width: inspectorSize.value)
+                    .frame(maxHeight: .infinity)
+            }
+        }
     }
 }

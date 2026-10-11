@@ -17,10 +17,15 @@ enum PreviewStageDrawing {
         let isFullscreen: Bool
         let isFullWidth: Bool
         let isCircle: Bool
+        let isFloating: Bool
+        let screenCornerRadius: CGFloat
+        let cameraCornerRadius: CGFloat
     }
 
     static func maskCornerRadius(_ request: SourceShapeRequest) -> CGFloat {
-        request.isCamera ? PreviewStageLayout.cameraPreviewCornerRadius(request) : 0
+        request.isCamera
+            ? PreviewStageLayout.cameraPreviewCornerRadius(request)
+            : SceneLayoutProjection.sourceCornerRadius(for: request.rect, normalizedRadius: request.screenCornerRadius)
     }
 
     struct SourceShape: Equatable {
@@ -40,7 +45,7 @@ enum PreviewStageDrawing {
                 isCircle: request.isCircle
             )
         }
-        let radius = SceneLayoutProjection.sourceCornerRadius(for: request.rect, normalizedRadius: 0)
+        let radius = SceneLayoutProjection.sourceCornerRadius(for: request.rect, normalizedRadius: request.screenCornerRadius)
         return SourceShape(cornerRadius: radius, borderWidth: radius > 0 ? 1 : 0, borderAlpha: 0.14, isCircle: false)
     }
 

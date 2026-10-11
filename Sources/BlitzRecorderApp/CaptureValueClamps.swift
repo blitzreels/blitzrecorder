@@ -9,6 +9,14 @@ enum CaptureValueClamps {
         min(0.16, max(0, padding))
     }
 
+    static func cameraCornerRadius(_ radius: CGFloat) -> CGFloat {
+        min(0.25, max(0, radius))
+    }
+
+    static func screenCornerRadius(_ radius: CGFloat) -> CGFloat {
+        min(0.12, max(0, radius))
+    }
+
     static func normalizedRect(_ rect: CGRect) -> CGRect {
         let rect = rect.standardized
         let x = min(1, max(0, rect.minX))

@@ -3,6 +3,16 @@ import XCTest
 @testable import BlitzRecorderApp
 
 final class RecorderUICaptureTests: XCTestCase {
+    func testTutorialCaptureIncludesEditorPlaybackAudioOnlyWhenEnabled() {
+        for included in [false, true] {
+            let configuration = SystemAudioStreamConfiguration.configuration(.init(
+                streamName: "Tutorial test", includesRecorderUI: included
+            ))
+            XCTAssertTrue(configuration.capturesAudio)
+            XCTAssertEqual(configuration.excludesCurrentProcessAudio, !included)
+        }
+    }
+
     func testRecorderUIIsExcludedByDefaultAndPreferenceRoundTrips() {
         let name = "RecorderUICaptureTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!

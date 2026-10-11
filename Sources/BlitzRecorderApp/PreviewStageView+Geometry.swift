@@ -61,13 +61,14 @@ extension PreviewStageView {
         return value
     }
 
-    var cameraFillFlags: (fullscreen: Bool, fullWidth: Bool, circle: Bool) {
+    var cameraFillFlags: (fullscreen: Bool, fullWidth: Bool, circle: Bool, floating: Bool) {
         if let cachedCameraFillFlags { return cachedCameraFillFlags }
         let geometry = renderGeometry(in: canvasFrame)
         let flags = (
             fullscreen: geometry.isFullCanvasFrame(for: .camera),
             fullWidth: geometry.isFullCanvasWidth(for: .camera),
-            circle: geometry.rendersCircularCamera
+            circle: geometry.rendersCircularCamera,
+            floating: geometry.cameraFloats
         )
         cachedCameraFillFlags = flags
         return flags
@@ -87,6 +88,10 @@ extension PreviewStageView {
 
     var isCircularCameraPreview: Bool {
         cameraFillFlags.circle
+    }
+
+    var isFloatingCameraPreview: Bool {
+        cameraFillFlags.floating
     }
 
     func normalized(_ frame: NSRect, in canvas: NSRect) -> CGRect {

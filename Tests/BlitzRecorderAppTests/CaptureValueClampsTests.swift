@@ -696,7 +696,10 @@ final class RecordingStartGateTests: XCTestCase {
             rect: CGRect(x: 0, y: 0, width: 200, height: 200),
             isFullscreen: true,
             isFullWidth: false,
-            isCircle: false
+            isCircle: false,
+            isFloating: true,
+            screenCornerRadius: 0,
+            cameraCornerRadius: SceneLayoutProjection.defaultCameraCornerRadius
         ))
         XCTAssertEqual(fullscreenRadius, 0)
         let cameraShape = PreviewStageDrawing.sourceShape(.init(
@@ -704,7 +707,10 @@ final class RecordingStartGateTests: XCTestCase {
             rect: CGRect(x: 0, y: 0, width: 200, height: 200),
             isFullscreen: true,
             isFullWidth: false,
-            isCircle: false
+            isCircle: false,
+            isFloating: true,
+            screenCornerRadius: 0,
+            cameraCornerRadius: SceneLayoutProjection.defaultCameraCornerRadius
         ))
         XCTAssertEqual(cameraShape.cornerRadius, 0)
         XCTAssertEqual(cameraShape.borderWidth, 0)

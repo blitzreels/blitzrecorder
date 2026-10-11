@@ -148,13 +148,10 @@ extension RecorderCaptureRuntime {
         return ProjectExportRenderPlan.savedOutput(url: url, take: context.take)
     }
 
-    func mutatingIdleProject<T>(_ body: () throws -> T) throws -> T {
-        guard state == .idle else {
-            throw RecorderError.mediaWriteFailed(
-                "Wait for the current recording task to finish before editing the project."
-            )
+    func ensureProjectCanBeEdited(_ projectURL: URL) throws {
+        guard state == .idle || recordingSession.lastTake?.projectURL.standardizedFileURL != projectURL.standardizedFileURL else {
+            throw RecorderError.mediaWriteFailed("Finish recording this take before editing it.")
         }
-        return try body()
     }
 
     func updateProjectScene(
@@ -162,16 +159,15 @@ extension RecorderCaptureRuntime {
         eventIndex: Int,
         correction: RecordingProjectSceneCorrection
     ) throws -> RecordingProject {
-        try mutatingIdleProject {
-            let project = try takeFileStore.updateProjectSceneEvent(
-                at: projectURL,
-                eventIndex: eventIndex,
-                correction: correction,
-                baseSettings: settings
-            )
-            onMessage?("Updated project source segment.")
-            return project
-        }
+        try ensureProjectCanBeEdited(projectURL)
+        let project = try takeFileStore.updateProjectSceneEvent(
+            at: projectURL,
+            eventIndex: eventIndex,
+            correction: correction,
+            baseSettings: settings
+        )
+        onMessage?("Updated project source segment.")
+        return project
     }
 
     func updateProjectScene(
@@ -179,50 +175,45 @@ extension RecorderCaptureRuntime {
         eventIndex: Int,
         mutate: (inout RecordingScene) -> Void
     ) throws -> RecordingProject {
-        try mutatingIdleProject {
-            try takeFileStore.updateProjectScene(
-                at: projectURL,
-                eventIndex: eventIndex,
-                baseSettings: settings,
-                mutate: mutate
-            )
-        }
+        try ensureProjectCanBeEdited(projectURL)
+        return try takeFileStore.updateProjectScene(
+            at: projectURL,
+            eventIndex: eventIndex,
+            baseSettings: settings,
+            mutate: mutate
+        )
     }
 
     func insertProjectSceneEvent(at projectURL: URL, time: Double) throws -> RecordingProject {
-        try mutatingIdleProject {
-            try takeFileStore.insertProjectSceneEvent(
-                at: projectURL,
-                time: time,
-                baseSettings: settings
-            )
-        }
+        try ensureProjectCanBeEdited(projectURL)
+        return try takeFileStore.insertProjectSceneEvent(
+            at: projectURL,
+            time: time,
+            baseSettings: settings
+        )
     }
 
     func removeProjectSceneEvent(at projectURL: URL, eventIndex: Int) throws -> RecordingProject {
-        try mutatingIdleProject {
-            try takeFileStore.removeProjectSceneEvent(
-                at: projectURL,
-                eventIndex: eventIndex,
-                baseSettings: settings
-            )
-        }
+        try ensureProjectCanBeEdited(projectURL)
+        return try takeFileStore.removeProjectSceneEvent(
+            at: projectURL,
+            eventIndex: eventIndex,
+            baseSettings: settings
+        )
     }
 
     func restoreProjectSceneTimeline(
         _ request: RecordingProjectSceneRestoreRequest
     ) throws -> RecordingProject {
-        try mutatingIdleProject {
-            try takeFileStore.restoreProjectSceneTimeline(request)
-        }
+        try ensureProjectCanBeEdited(request.projectURL)
+        return try takeFileStore.restoreProjectSceneTimeline(request)
     }
 
     func updateProjectEditorState(
         _ request: RecordingProjectEditorStateUpdateRequest
     ) throws -> RecordingProject {
-        try mutatingIdleProject {
-            try takeFileStore.updateProjectEditorState(request)
-        }
+        try ensureProjectCanBeEdited(request.projectURL)
+        return try takeFileStore.updateProjectEditorState(request)
     }
 
     func zoomIn() {

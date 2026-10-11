@@ -94,6 +94,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: window)
 
         window.delegate = self
+        coordinator.onScreenWindowFitMessage = { [weak self] message in
+            self?.viewModel.screenWindowFitMessage = message
+        }
 
         viewModel.onPresentSettings = { [weak self] pane in
             self?.presentSettings(selecting: pane)
@@ -149,7 +152,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                   self.previewFramesAreAllowed,
                   self.coordinator.settings.enabledSources.contains(.camera),
                   !self.coordinator.isRemoteCameraSelected else { return }
-            self.previewStage.cameraPreview.thumbnailSampler.offer(sampleBuffer)
             guard self.coordinator.state != .idle
                 || !self.coordinator.settings.removesCameraBackgroundAfterRecording else { return }
             self.previewStage.cameraPreview.noteCaptureFrame(sampleBuffer)
@@ -199,6 +201,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         previewStage.socialSafeZoneOverlay = coordinator.settings.socialSafeZoneOverlay
         previewStage.canvasBackgroundStyle = coordinator.settings.canvasBackgroundStyle
         previewStage.canvasPadding = coordinator.settings.canvasPadding
+        previewStage.screenCornerRadius = coordinator.settings.screenCornerRadius
+        previewStage.screenShadowEnabled = coordinator.settings.screenShadowEnabled
+        previewStage.cameraCornerRadius = coordinator.settings.cameraCornerRadius
 
         let host = NSHostingView(rootView: MainView(configuration: .init(viewModel: viewModel, mcpServer: mcpServer))
             .environmentObject(configuration.updateController)
@@ -252,6 +257,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             return false
         }
         return true
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        onEditorHistoryChanged?()
     }
 
     func windowWillClose(_ notification: Notification) {

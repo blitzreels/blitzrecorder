@@ -68,7 +68,7 @@ struct BlitzButtonStyle: ButtonStyle {
             .symbolRenderingMode(.monochrome)
             .symbolVariant(.none)
             .padding(.horizontal, emphasis.isDockControl
-                ? (controlSize == .extraLarge ? 24 : 18)
+                ? (controlSize == .extraLarge ? 26 : 18)
                 : BlitzControlMetrics.horizontalPadding(controlSize))
             .padding(.vertical, 4)
             .frame(minHeight: emphasis.isDockControl

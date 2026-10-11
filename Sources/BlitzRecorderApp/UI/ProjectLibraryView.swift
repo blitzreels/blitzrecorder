@@ -96,6 +96,7 @@ struct ProjectLibraryView: View {
                 .blitzWindowToolbar()
             ZStack {
                 VStack(spacing: 0) {
+                    projectActionErrorBar
                     trashStatusBar
                     folderStatusBar
                     HStack(spacing: 0) {
@@ -188,13 +189,6 @@ struct ProjectLibraryView: View {
                 ))
             }
         }
-        .alert("Project action failed", isPresented: projectErrorBinding) {
-            Button("OK") {
-                vm.projectLibraryError = nil
-            }
-        } message: {
-            Text(vm.projectLibraryError ?? "Unknown error.")
-        }
     }
 
     private var commandBarTitle: String {
@@ -203,19 +197,38 @@ struct ProjectLibraryView: View {
     }
 
     private var commandBar: some View {
-        HStack(spacing: 12) {
+        BlitzAdaptiveRow() {
             Text(commandBarTitle)
                 .font(BlitzType.section)
                 .foregroundStyle(BlitzUI.primaryText)
-                .lineLimit(1)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .help(commandBarTitle)
 
-            Spacer(minLength: 16)
 
             Button("Import video…", systemImage: "square.and.arrow.down", action: vm.chooseVideoToImport)
                 .blitzButton(.secondary)
                 .disabled(vm.videoImportProgress != nil || vm.projectTrash.isWorking)
                 .keyboardShortcut("i", modifiers: .command)
                 .help("Create an editable project from an MP4, MOV, or M4V video (⌘I)")
+        }
+    }
+
+    @ViewBuilder
+    private var projectActionErrorBar: some View {
+        if let error = vm.projectLibraryError {
+            BlitzAdaptiveRow() {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(BlitzType.label)
+                    .foregroundStyle(BlitzUI.primaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.updatesFrequently)
+                Button("Dismiss") {
+                    vm.projectLibraryError = nil
+                }
+                .blitzButton(.secondary)
+            }
+            .blitzWorkspaceToolbar()
         }
     }
 
@@ -357,18 +370,12 @@ struct ProjectLibraryView: View {
         _ projects: [RecordingProjectHistory.Entry]
     ) {
         guard !vm.projectTrash.isWorking, !projects.isEmpty else { return }
+        if let reason = vm.projectTrashBlockingReason {
+            vm.projectLibraryError = reason
+            return
+        }
+        vm.projectLibraryError = nil
         projectsPendingDeletion = projects
-    }
-
-    private var projectErrorBinding: Binding<Bool> {
-        Binding(
-            get: { vm.projectLibraryError != nil },
-            set: { isPresented in
-                if !isPresented {
-                    vm.projectLibraryError = nil
-                }
-            }
-        )
     }
 
     private var renameConfirmationBinding: Binding<Bool> {

@@ -80,7 +80,7 @@ struct RecordingSettingsPage: View {
 
             SettingsRowDivider()
 
-            HStack(spacing: 16) {
+            BlitzAdaptiveRow() {
                 SettingsRowLabel(.init(
                     title: "Countdown",
                     detail: "Time to get ready after you press Record. Click Record or press Esc to cancel."
@@ -250,7 +250,7 @@ struct RecordingSettingsPage: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 Text("Speech model").font(BlitzType.label).foregroundStyle(BlitzUI.primaryText)
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 8)], spacing: 8) {
                     ForEach(TranscriptionSpeechModel.allCases, id: \.self) { model in
                         speechModelCard(model)
                     }
@@ -261,14 +261,13 @@ struct RecordingSettingsPage: View {
 
             SettingsRowDivider()
 
-            HStack(alignment: .center, spacing: 18) {
+            BlitzAdaptiveRow() {
                 SettingsRowLabel(.init(
                     title: "Language",
                     detail: vm.transcriptionController.selectedModel == .parakeet
                         ? "Detected automatically for each recording."
                         : "Pick a language if Automatic guesses wrong."
                 ))
-                Spacer(minLength: 16)
                 if vm.transcriptionController.selectedModel == .parakeet {
                     Label("Automatic", systemImage: "globe")
                         .font(BlitzType.label)
@@ -350,12 +349,11 @@ struct RecordingSettingsPage: View {
     }
 
     private var speechModelStatus: some View {
-        HStack(spacing: 12) {
+        BlitzAdaptiveRow() {
             switch vm.transcriptionController.modelState {
             case .notDownloaded:
                 Text("Download once to transcribe on this Mac.")
                     .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
-                Spacer(minLength: 8)
                 Button { vm.transcriptionController.downloadModels() } label: {
                     Label("Download", systemImage: "arrow.down.circle.fill")
                 }
@@ -369,7 +367,6 @@ struct RecordingSettingsPage: View {
                 Label("\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)) installed",
                       systemImage: "checkmark.seal.fill")
                     .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
-                Spacer(minLength: 8)
                 Button { vm.transcriptionController.removeModels() } label: {
                     Label("Remove", systemImage: "trash.fill")
                 }
@@ -377,8 +374,7 @@ struct RecordingSettingsPage: View {
                 .controlSize(.small)
             case .failed(let message):
                 Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .font(BlitzType.caption).foregroundStyle(BlitzUI.warning).lineLimit(2)
-                Spacer(minLength: 8)
+                    .font(BlitzType.caption).foregroundStyle(BlitzUI.warning).fixedSize(horizontal: false, vertical: true)
                 Button { vm.transcriptionController.downloadModels() } label: {
                     Label("Try again", systemImage: "arrow.clockwise")
                 }
@@ -386,20 +382,19 @@ struct RecordingSettingsPage: View {
                 .controlSize(.small)
             }
         }
-        .frame(height: BlitzControlMetrics.height(.small))
+        .frame(minHeight: BlitzControlMetrics.height(.small))
     }
 
     private var qualitySection: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .center, spacing: 18) {
+                BlitzAdaptiveRow() {
                     SettingsRowLabel(.init(
                         title: "Video bitrate",
                         detail: vm.settings.customVideoBitrate == nil
                             ? "Automatic · \(qualityPresentation.finalBitrateLabel) for your resolution and frame rate."
                             : "Custom · Higher keeps more detail and makes bigger files."
                     ))
-                    Spacer(minLength: 16)
                     BlitzSegmentedPicker(configuration: .init(
                         title: "Video bitrate",
                         options: [false, true],
@@ -434,13 +429,11 @@ struct RecordingSettingsPage: View {
             .disabled(!canEdit)
             SettingsRowDivider()
 
-            HStack(alignment: .center, spacing: 18) {
+            BlitzAdaptiveRow() {
                 SettingsRowLabel(.init(
                     title: "Audio quality",
                     detail: vm.settings.audioQuality.plainDescription
                 ))
-
-                Spacer(minLength: 16)
 
                 BlitzDropdown(configuration: .init(
                     title: "Audio quality",
@@ -457,13 +450,11 @@ struct RecordingSettingsPage: View {
             if vm.settings.savesSourceFiles {
                 SettingsRowDivider()
 
-                HStack(alignment: .center, spacing: 18) {
+                BlitzAdaptiveRow() {
                     SettingsRowLabel(.init(
                         title: "Source audio format",
                         detail: vm.settings.sourceAudioFormat.plainDescription
                     ))
-
-                    Spacer(minLength: 16)
 
                     BlitzDropdown(configuration: .init(
                         title: "Source audio format",

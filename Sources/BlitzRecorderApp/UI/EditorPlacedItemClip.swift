@@ -13,6 +13,8 @@ struct EditorPlacedItemClip: View {
         let remove: (EditorPlacedItem.ID) -> Void
     }
     let configuration: Configuration
+    @State private var dragOrigin: EditorPlacedItemEditing.Drag?
+    @State private var dragScale: CGFloat = 1
     @State private var draft: EditorPlacedItem.Timing?
     @State private var isHovering = false
     @State private var hoveredHandle: EditorPlacedItemEditing.Gesture?
@@ -28,6 +30,7 @@ struct EditorPlacedItemClip: View {
         switch item.id.kind {
         case .mask: .orange
         case .text: .cyan
+        case .caption: .cyan
         case .zoom: .purple
         case .music: .pink
         }
@@ -63,14 +66,16 @@ struct EditorPlacedItemClip: View {
         .onTapGesture { configuration.select(item.id) }
         .gesture(drag(.move), isEnabled: configuration.isInteractive && item.canChangeTiming)
         .overlay {
-            if configuration.isSelected, item.canChangeTiming, !item.isPoint, width >= 24 {
+            if configuration.isSelected, item.canChangeTiming, !item.isPoint {
                 HStack {
                     handle(.trimStart)
                     Spacer(minLength: 0)
                     handle(.trimEnd)
                 }
+                .frame(width: max(36, width))
             }
         }
+        .zIndex(configuration.isSelected ? 10 : 0)
         .opacity(item.isEnabled ? 1 : 0.4)
         .offset(x: start - (item.isPoint ? 8 : 0))
         .accessibilityElement(children: .ignore)
@@ -80,7 +85,7 @@ struct EditorPlacedItemClip: View {
         .accessibilityAction { configuration.select(item.id) }
         .help(!item.canChangeTiming ? "Loops throughout the export. Select to change music or volume."
               : item.isPoint ? "Drag to move this zoom point. Delete removes it."
-              : "Drag to move. Select and drag either edge to change duration. Delete removes this item.")
+              : "\(item.title)\nDrag to move. Select and drag either edge to change duration. Delete removes this item.")
         .contextMenu {
             Button("Edit", systemImage: "slider.horizontal.3") { configuration.select(item.id) }
             Button("Remove", systemImage: "trash", role: .destructive) { configuration.remove(item.id) }
@@ -102,16 +107,22 @@ struct EditorPlacedItemClip: View {
     private func drag(_ gesture: EditorPlacedItemEditing.Gesture) -> some Gesture {
         DragGesture(minimumDistance: 3, coordinateSpace: .global)
             .onChanged { value in
-                if draft == nil { configuration.select(item.id) }
-                draft = EditorPlacedItemEditing.timing(.init(item: item,
-                    delta: Double(value.translation.width / configuration.pixelsPerSecond), gesture: gesture,
-                    projection: configuration.projection))
+                if dragOrigin == nil {
+                    dragOrigin = .init(item: item, delta: 0, gesture: gesture, projection: configuration.projection)
+                    dragScale = configuration.pixelsPerSecond
+                    configuration.select(item.id)
+                }
+                guard let origin = dragOrigin else { return }
+                draft = EditorPlacedItemEditing.timing(.init(item: origin.item,
+                    delta: Double(value.translation.width / max(0.001, dragScale)), gesture: origin.gesture,
+                    projection: origin.projection))
             }
             .onEnded { _ in
-                if let draft, draft != item.timing {
-                    configuration.change(.init(id: item.id, timing: draft))
+                if let draft, let dragOrigin, draft != item.timing {
+                    configuration.change(.init(id: item.id, timing: draft, gesture: dragOrigin.gesture))
                 }
                 draft = nil
+                dragOrigin = nil
             }
     }
 }

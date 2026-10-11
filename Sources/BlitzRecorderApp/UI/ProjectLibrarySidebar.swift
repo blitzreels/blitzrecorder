@@ -214,7 +214,7 @@ extension ProjectLibraryView {
                 Button("Edit recording") {
                     vm.openProject(project)
                 }
-                .disabled(vm.state != .idle)
+                .disabled(!vm.canOpenProjectEditor)
 
                 Button {
                     beginRename(project)

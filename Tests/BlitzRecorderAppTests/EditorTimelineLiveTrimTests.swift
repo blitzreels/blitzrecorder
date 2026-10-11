@@ -142,6 +142,8 @@ private struct LiveTrimFixture: View {
             duration: 14, playback: model.playback, selection: $model.selection, onSeek: { _ in }, onSeekEnded: {},
             onTogglePlayback: {}, onPlaybackRateChange: { _ in }, isInteractive: true,
             hiddenAssetIDs: [], mutedAssetIDs: [], toggleableAssetIDs: [], onToggleTrack: { _ in },
+            onChangeTrackVolume: { _ in false },
+            onChangeAudioRegion: { _ in false },
             onSplit: {}, onDeleteSelection: {}, deleteAction: nil, onDeleteSegment: {}, canDeleteSegment: false,
             onJoinSegment: {}, onRestoreRange: {}, onTrimClip: model.commit, onMarkIn: {}, onMarkOut: {},
             zoomLevel: $model.zoom, showsShortcuts: $model.showsShortcuts, showsSourceTracks: $model.showsSourceTracks,

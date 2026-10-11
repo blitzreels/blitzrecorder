@@ -50,6 +50,7 @@ struct RecordingProject: Codable, Equatable {
         let cameraContentMode: String
         let cameraFramePadding: Double
         let cameraShadowEnabled: Bool
+        let cameraCornerRadius: Double?
     }
 
     struct ExportRecord: Codable, Equatable, Identifiable {
@@ -332,5 +333,6 @@ extension RecordingProject.SettingsSnapshot {
         self.cameraContentMode = settings.cameraContentMode.rawValue
         self.cameraFramePadding = Double(settings.cameraFramePadding)
         self.cameraShadowEnabled = settings.cameraShadowEnabled
+        self.cameraCornerRadius = Double(settings.cameraCornerRadius)
     }
 }

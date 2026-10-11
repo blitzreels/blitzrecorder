@@ -53,7 +53,8 @@ let package = Package(
             resources: [
                 .copy("PrivacyInfo.xcprivacy"),
                 .copy("ThirdPartyNotices.md"),
-                .copy("Resources/WebMCPWorkspace.html")
+                .copy("Resources/WebMCPWorkspace.html"),
+                .copy("Resources/BlitzRecorderMCPBridge")
             ],
             swiftSettings: appSwiftSettings,
             linkerSettings: [

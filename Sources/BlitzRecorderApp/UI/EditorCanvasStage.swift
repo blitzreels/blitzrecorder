@@ -4,6 +4,7 @@ struct EditorCanvasStage: View {
     var playback: EditorPlaybackController
     var inspectorTab: EditorInspectorTab
     var privacy: PrivacyEditingSession
+    var textCanvas: EditorTextCanvas.Configuration
     var cameraCropDraft: EditorCameraCropDraft?
     var layoutDraft: EditorLayoutDraft?
     var canvasAspectRatio: CGFloat
@@ -36,6 +37,9 @@ struct EditorCanvasStage: View {
             }
 
             overlay
+            if playback.isReady, inspectorTab != .privacy, cameraCropDraft == nil {
+                EditorTextCanvas(configuration: textCanvas)
+            }
         }
         .aspectRatio(canvasAspectRatio, contentMode: .fit)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

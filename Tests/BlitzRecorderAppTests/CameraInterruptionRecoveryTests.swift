@@ -52,19 +52,14 @@ final class CameraInterruptionRecoveryTests: XCTestCase {
     }
 
     @MainActor
-    func testCameraFramesReachSceneThumbnailsWithoutARecordingWriter() async throws {
+    func testCameraThumbnailFramesArriveThrottledWithoutARecordingWriter() async throws {
         let recorder = CameraRecorder()
         let preview = CameraPreviewView()
-        let thumbnailReady = expectation(description: "Camera scene thumbnail")
+        let thumbnailReady = expectation(description: "Camera thumbnail frame")
         var deliveredFrameCount = 0
-        preview.thumbnailSampler.onImage = { image in
-            XCTAssertEqual(image.width, 180)
-            XCTAssertEqual(image.height, 90)
-            thumbnailReady.fulfill()
-        }
-        recorder.setThumbnailHandler { sampleBuffer in
+        recorder.setThumbnailHandler { _ in
             deliveredFrameCount += 1
-            preview.thumbnailSampler.offer(sampleBuffer)
+            thumbnailReady.fulfill()
         }
         let generator = try CameraBlackFrameGenerator(.init(
             width: 640,

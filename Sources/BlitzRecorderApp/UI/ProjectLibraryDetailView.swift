@@ -104,60 +104,96 @@ extension ProjectLibraryView {
     private func detailHeader(
         _ project: RecordingProjectHistory.Entry
     ) -> some View {
-        let status = vm.transcriptionController.status(for: project)
-        let recordedAt = project.recordedAt
-        let metadata = metadataByProjectID[project.id] ?? .empty
-        let presentation = ProjectTitlePresentation(.init(title: displayTitle(project), known: vm.folderIndex.known))
-        return HStack(alignment: .center, spacing: 20) {
-            VStack(alignment: .leading, spacing: 6) {
-                if let context = presentation.context {
-                    Text(context)
-                        .font(BlitzType.captionEmphasis)
-                        .foregroundStyle(BlitzUI.secondaryText)
-                        .lineLimit(1)
-                }
-                Text(presentation.title)
-                    .font(BlitzType.largeTitle)
-                    .foregroundStyle(BlitzUI.primaryText)
-                    .lineLimit(2)
-                    .onTapGesture(count: 2) { beginRename(project) }
-                    .help("Double-click to rename")
-
-                HStack(spacing: 8) {
-                    Text(recordedAt.formatted(date: .abbreviated, time: .shortened))
-                        .help("Recorded \(recordedAt.formatted(date: .long, time: .shortened))")
-                    if let duration = metadata.durationLabel {
-                        Text("·")
-                        Text(duration).monospacedDigit()
-                    }
-                    Text("·")
-                    if status.isRunning {
-                        ProgressView().controlSize(.mini)
-                            .accessibilityLabel(status.label)
-                    }
-                    Text(transcriptStatusLabel(status))
-                        .foregroundStyle(transcriptStatusColor(status))
-                }
-                .font(BlitzType.body)
-                .foregroundStyle(BlitzUI.secondaryText)
-                if let url = sharing.sharedURL(forProject: project.projectPath) {
-                    HostedVideoLinkActions(url: url).controlSize(.small)
-                }
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 24) {
+                detailHeading(project)
+                    .frame(minWidth: 340, maxWidth: .infinity, alignment: .leading)
+                detailActions(project)
+                    .fixedSize()
             }
-
-            Spacer(minLength: 0)
-
-            detailActions(project)
-                .fixedSize()
+            VStack(alignment: .leading, spacing: 18) {
+                detailHeading(project)
+                detailActions(project)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .contextMenu { projectContextMenu([project.id]) }
     }
 
-    private func detailActions(
-        _ project: RecordingProjectHistory.Entry
-    ) -> some View {
-        let isOpening = openingProjectID == project.id
-        return HStack(spacing: 8) {
+    private func detailHeading(_ project: RecordingProjectHistory.Entry) -> some View {
+        let status = vm.transcriptionController.status(for: project)
+        let recordedAt = project.recordedAt
+        let metadata = metadataByProjectID[project.id] ?? .empty
+        let presentation = ProjectTitlePresentation(.init(title: displayTitle(project), known: vm.folderIndex.known))
+        return VStack(alignment: .leading, spacing: 8) {
+            if let context = presentation.context {
+                Text(context)
+                    .font(BlitzType.captionEmphasis)
+                    .foregroundStyle(BlitzUI.secondaryText)
+                    .lineLimit(1)
+            }
+            Text(presentation.title)
+                .font(BlitzType.largeTitle)
+                .foregroundStyle(BlitzUI.primaryText)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .onTapGesture(count: 2) { beginRename(project) }
+                .help("\(presentation.title)\nDouble-click to rename")
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    Text(recordedAt.formatted(date: .abbreviated, time: .shortened))
+                    if let duration = metadata.durationLabel {
+                        Text("·")
+                        Text(duration).monospacedDigit()
+                    }
+                }
+                .fixedSize(horizontal: true, vertical: false)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(recordedAt.formatted(date: .abbreviated, time: .shortened))
+                    if let duration = metadata.durationLabel { Text(duration).monospacedDigit() }
+                }
+            }
+            .font(BlitzType.body)
+            .foregroundStyle(BlitzUI.secondaryText)
+            .help("Recorded \(recordedAt.formatted(date: .long, time: .shortened))")
+
+            HStack(spacing: 6) {
+                if status.isRunning {
+                    ProgressView().controlSize(.mini)
+                        .accessibilityHidden(true)
+                        .fixedSize()
+                }
+                Text(transcriptStatusLabel(status))
+                    .lineLimit(1)
+                    .foregroundStyle(transcriptStatusColor(status))
+            }
+            .font(BlitzType.body)
+            .accessibilityElement(children: .combine)
+            if let url = sharing.sharedURL(forProject: project.projectPath) {
+                HostedVideoLinkActions(url: url).controlSize(.small)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func detailActions(_ project: RecordingProjectHistory.Entry) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                editRecordingAction(project)
+                detailUtilities(project)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            VStack(alignment: .leading, spacing: 8) {
+                editRecordingAction(project)
+                detailUtilities(project)
+            }
+        }
+        .disabled(vm.projectTrash.isWorking)
+    }
+
+    private func detailUtilities(_ project: RecordingProjectHistory.Entry) -> some View {
+        HStack(spacing: 8) {
             ProjectAIPromptButton(context: .init(
                 projectId: project.id,
                 title: displayTitle(project),
@@ -166,7 +202,6 @@ extension ProjectLibraryView {
                 previewQuality: metadataByProjectID[project.id]?.videoQuality?.label,
                 sources: metadataByProjectID[project.id]?.sourceRoles.sorted() ?? []
             ))
-
             BlitzOverflowMenu(configuration: .init(
                 entries: projectMenuEntries(project),
                 menuWidth: 220,
@@ -175,24 +210,25 @@ extension ProjectLibraryView {
                 accessibilityLabel: "More actions",
                 help: "Rename, show in Finder, or move to Trash"
             ))
-
-            EditRecordingButton(configuration: .init(
-                title: "Edit recording",
-                isLoading: isOpening,
-                help: vm.state == .idle ? "Open this recording in the editor" : "Finish recording before editing a project",
-                placement: .page,
-                action: {
-                    openingProjectID = project.id
-                    Task {
-                        await Task.yield()
-                        vm.openProject(project)
-                        openingProjectID = nil
-                    }
-                }
-            ))
-            .disabled(vm.state != .idle)
         }
-        .disabled(vm.projectTrash.isWorking)
+    }
+
+    private func editRecordingAction(_ project: RecordingProjectHistory.Entry) -> some View {
+        EditRecordingButton(configuration: .init(
+            title: "Edit recording",
+            isLoading: openingProjectID == project.id,
+            help: "Open this recording in the editor",
+            placement: .page,
+            action: {
+                openingProjectID = project.id
+                Task {
+                    await Task.yield()
+                    vm.openProject(project)
+                    openingProjectID = nil
+                }
+            }
+        ))
+        .disabled(!vm.canOpenProjectEditor)
     }
 
     private func projectMenuEntries(_ project: RecordingProjectHistory.Entry) -> [BlitzMenuEntry] {

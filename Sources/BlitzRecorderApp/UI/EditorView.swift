@@ -147,6 +147,8 @@ struct EditorView: View {
                 mutedAssetIDs: tracks.mutedIDs,
                 toggleableAssetIDs: tracks.toggleableIDs,
                 onToggleTrack: { toggleTrack($0) },
+                onChangeTrackVolume: vm.changeEditorTrackVolume,
+                onChangeAudioRegion: vm.changeEditorAudioRegion,
                 onSplit: splitTimelineSelection,
                 onDeleteSelection: { _ = deleteSelection() },
                 deleteAction: EditorDeleteRouting.action(.init(

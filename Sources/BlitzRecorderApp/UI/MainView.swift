@@ -33,7 +33,7 @@ struct MainView: View {
                     .allowsHitTesting(vm.studioMode == .record && !vm.isShowingSettings)
                     .accessibilityHidden(vm.studioMode != .record || vm.isShowingSettings)
 
-                if (retainsEditor || vm.studioMode == .edit) && vm.canOpenEditor {
+                if (retainsEditor || vm.studioMode == .edit) && vm.canOpenEditor && !vm.hasSeparateEditorWindow {
                     EditorView(vm: vm)
                         .id(vm.lastExportedProject?.id)
                         .opacity(vm.isEditorVisible ? 1 : 0)
@@ -100,9 +100,17 @@ struct MainView: View {
         .task(id: vm.state) {
             while !Task.isCancelled {
                 vm.refreshScreenSourceAvailability()
-                vm.refreshScreenSuggestion()
                 try? await Task.sleep(for: .seconds(1))
             }
+        }
+        .task(id: vm.state) {
+            while !Task.isCancelled {
+                vm.refreshScreenSuggestion()
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+        }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didActivateApplicationNotification)) { _ in
+            vm.refreshScreenSuggestion()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             vm.refreshTargetWindow()
@@ -132,67 +140,68 @@ struct MainView: View {
             SourcesSidebar(vm: vm)
             Rectangle().fill(BlitzUI.separator).frame(width: 1)
 
-            VStack(spacing: 12) {
-                ZStack(alignment: .top) {
-                    PreviewStageRepresentable(view: vm.previewStage)
-                        .accessibilityElement()
-                        .accessibilityLabel("Scene preview, \(vm.selectedSceneName)")
-                        .accessibilityHint("Use the actions to choose which layer to edit.")
-                        .accessibilityAction(named: "Edit screen") { vm.selectSource(.screen) }
-                        .accessibilityAction(named: "Edit camera") { vm.selectSource(.camera) }
-                        .accessibilityAction(named: "Edit background") { vm.selectBackgroundLayer() }
+            RecorderInspectorSplitView {
+                VStack(spacing: 12) {
+                    ZStack(alignment: .top) {
+                        PreviewStageRepresentable(view: vm.previewStage)
+                            .accessibilityElement()
+                            .accessibilityLabel("Scene preview, \(vm.selectedSceneName)")
+                            .accessibilityHint("Use the actions to choose which layer to edit.")
+                            .accessibilityAction(named: "Edit screen") { vm.selectSource(.screen) }
+                            .accessibilityAction(named: "Edit camera") { vm.selectSource(.camera) }
+                            .accessibilityAction(named: "Edit background") { vm.selectBackgroundLayer() }
 
-                    if vm.screenNeedsPicking {
-                        ScreenPickPromptOverlay(vm: vm)
-                    }
+                        if vm.screenNeedsPicking {
+                            ScreenPickPromptOverlay(vm: vm)
+                        }
 
-                    SplitDividerOverlay(vm: vm)
-                    SideSplitDividerOverlay(vm: vm)
-                    CropToolbarOverlay(vm: vm)
-                    ShortFormSafeZoneOverlay(vm: vm)
+                        SplitDividerOverlay(vm: vm)
+                        SideSplitDividerOverlay(vm: vm)
+                        CropToolbarOverlay(vm: vm)
+                        ShortFormSafeZoneOverlay(vm: vm)
 
-                    if let remaining = vm.countdownRemaining {
-                        RecordingCountdownOverlay(configuration: .init(
-                            remaining: remaining,
-                            onCancel: vm.cancelCountdown
-                        ))
-                    }
+                        if let remaining = vm.countdownRemaining {
+                            RecordingCountdownOverlay(configuration: .init(
+                                remaining: remaining,
+                                onCancel: vm.cancelCountdown
+                            ))
+                        }
 
-                    if vm.state == .idle && !vm.isLivePreviewEnabled {
-                        Color.black
-                            .overlay {
-                                VStack(spacing: 12) {
-                                    Image(systemName: "eye.slash")
-                                        .font(BlitzType.glyph(28))
-                                        .foregroundStyle(BlitzUI.mint)
-                                    Text("Live preview is off")
-                                        .font(BlitzType.title)
-                                    Text("Mac camera, microphone, screen, and system audio start when you record.")
-                                        .font(BlitzType.body)
-                                        .foregroundStyle(BlitzUI.secondaryText)
-                                        .multilineTextAlignment(.center)
-                                    Button("Turn on preview") {
-                                        vm.setLivePreviewEnabled(true)
+                        if vm.state == .idle && !vm.isLivePreviewEnabled {
+                            Color.black
+                                .overlay {
+                                    VStack(spacing: 12) {
+                                        Image(systemName: "eye.slash")
+                                            .font(BlitzType.glyph(28))
+                                            .foregroundStyle(BlitzUI.mint)
+                                        Text("Live preview is off")
+                                            .font(BlitzType.title)
+                                        Text("Mac camera, microphone, screen, and system audio start when you record.")
+                                            .font(BlitzType.body)
+                                            .foregroundStyle(BlitzUI.secondaryText)
+                                            .multilineTextAlignment(.center)
+                                        Button("Turn on preview") {
+                                            vm.setLivePreviewEnabled(true)
+                                        }
+                                        .blitzButton(.secondary)
+                                        .padding(.top, 4)
                                     }
-                                    .blitzButton(.secondary)
-                                    .padding(.top, 4)
+                                    .padding(24)
                                 }
-                                .padding(24)
-                            }
+                        }
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    BottomDock(vm: vm)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                BottomDock(vm: vm)
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
+                .padding(.bottom, 12)
+                .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
+                .background(BlitzUI.canvasBackground)
+            } inspector: {
+                RecorderLayerInspector(vm: vm)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 14)
-            .padding(.bottom, 12)
-            .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
-            .background(BlitzUI.canvasBackground)
-
-            Rectangle().fill(BlitzUI.separator).frame(width: 1)
-            RecorderLayerInspector(vm: vm)
         }
         .frame(maxHeight: .infinity)
     }
@@ -639,14 +648,11 @@ private struct CaptureCommandBar: View {
     @Bindable var vm: RecorderViewModel
 
     var body: some View {
-        HStack(spacing: 12) {
-            FolderRecordTargetMenu(vm: vm)
-                .frame(maxWidth: 220, alignment: .leading)
-            Spacer(minLength: 16)
-            RecordingQualityShortcut(vm: vm)
-        }
-        .overlay {
+        BlitzAdaptiveRow(.init(minimumContentWidth: 180)) {
+            FolderRecordTargetChip(vm: vm)
+                .frame(maxWidth: 240, alignment: .leading)
             RecordingOutputPicker(vm: vm)
+            RecordingQualityShortcut(vm: vm)
         }
     }
 }

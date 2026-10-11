@@ -69,6 +69,12 @@ extension EditorTimelineView {
                                 ProgressView().controlSize(.mini)
                                     .help(asset.isAudio ? "Preparing waveform" : "Preparing thumbnails")
                             }
+                            if let source = EditorAssetTracks.audioSource(asset.kind) {
+                                EditorTrackVolumeControl(configuration: .init(
+                                    title: asset.title, source: source, playback: playback,
+                                    onCommit: onChangeTrackVolume))
+                                    .disabled(!isInteractive)
+                            }
                             EditorTimelineTrackToggle(configuration: .init(
                                 title: asset.title, isVideo: asset.isVideo, isOff: isOff,
                                 isInteractive: isInteractive, onToggle: { onToggleTrack(asset) }))

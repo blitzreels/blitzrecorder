@@ -28,10 +28,6 @@ extension RecorderCoordinator {
         studio.selectedSceneIDForCurrentLayout()
     }
 
-    func selectedSceneName() -> String {
-        studio.selectedSceneName()
-    }
-
     func selectScene(id: UUID) {
         studio.selectScene(id: id)
     }
@@ -162,6 +158,18 @@ extension RecorderCoordinator {
 
     func setCameraShadowEnabled(_ enabled: Bool) {
         studio.setCameraShadowEnabled(enabled)
+    }
+
+    func setScreenCornerRadius(_ radius: CGFloat) {
+        studio.setScreenCornerRadius(radius)
+    }
+
+    func setCameraCornerRadius(_ radius: CGFloat) {
+        studio.setCameraCornerRadius(radius)
+    }
+
+    func setScreenShadowEnabled(_ enabled: Bool) {
+        studio.setScreenShadowEnabled(enabled)
     }
 
     func setSceneLayout(_ sceneLayout: SceneLayout) {

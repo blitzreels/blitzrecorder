@@ -86,7 +86,8 @@ extension EditorView {
                 framesPerSecond: selectedExportFramesPerSecond,
                 quality: selectedExportQuality.rawValue,
                 playbackRate: selectedExportPlaybackRate.value
-            )
+            ),
+            audioLevels: playback.audioLevels == .unity ? nil : playback.audioLevels
         )
     }
 
@@ -219,6 +220,7 @@ extension EditorView {
             playback: playback,
             inspectorTab: inspectorTab,
             privacy: privacy,
+            textCanvas: .init(vm: vm, playback: playback, selection: $selection, error: $editErrorMessage),
             cameraCropDraft: cameraCropDraft,
             layoutDraft: layoutDraft,
             canvasAspectRatio: canvasAspectRatio,

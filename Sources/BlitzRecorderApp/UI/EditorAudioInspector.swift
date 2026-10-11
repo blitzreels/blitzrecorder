@@ -16,6 +16,18 @@ struct EditorAudioInspector: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+                Text("Track volume").font(BlitzType.section)
+                Text("Saved for playback and export.")
+                    .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
+                ForEach([CaptureSource.microphone, .systemAudio], id: \.self) { source in
+                    if configuration.playback.muteableSources.contains(source) {
+                        EditorTrackVolumeSlider(configuration: .init(
+                            title: source == .microphone ? "Microphone" : "Mac audio",
+                            source: source, playback: configuration.playback,
+                            onCommit: configuration.vm.changeEditorTrackVolume))
+                    }
+                }
+                Rectangle().fill(BlitzUI.separator).frame(height: 1)
                 Text("Voice cleanup").font(BlitzType.section)
                 Text("Reduce steady background noise in the microphone track. Processing stays on this Mac.")
                     .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)

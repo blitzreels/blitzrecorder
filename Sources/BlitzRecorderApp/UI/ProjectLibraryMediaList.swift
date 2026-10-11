@@ -14,7 +14,7 @@ extension ProjectLibraryView {
         let captureAssets = mediaAssets.filter { $0.kind != .output }
         let outputAssets = mediaAssets.filter { $0.kind == .output }
         VStack(alignment: .leading, spacing: 24) {
-            HStack(spacing: 16) {
+            BlitzAdaptiveRow() {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Files").font(BlitzType.section).foregroundStyle(BlitzUI.primaryText)
                     Text(mediaCaptureSummary(captureAssets))
@@ -22,7 +22,6 @@ extension ProjectLibraryView {
                         .foregroundStyle(BlitzUI.secondaryText)
                 }
 
-                Spacer(minLength: 12)
 
                 Button {
                     vm.revealProject(project)

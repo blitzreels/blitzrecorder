@@ -47,6 +47,10 @@ struct SceneRenderPlacementPolicy {
         isCircularCamera(normalizedFrame: normalizedFrame(for: .camera))
     }
 
+    var cameraFloats: Bool {
+        scene.sceneLayout.cameraFloats(visibleSources: scene.renderedSources)
+    }
+
     func videoPlacement(
         for kind: SceneLayerKind,
         sourceCropAmount: CGPoint? = nil,
@@ -102,9 +106,15 @@ struct SceneRenderPlacementPolicy {
         if isCircularCamera(normalizedFrame: request.normalizedFrame) {
             return SceneLayoutProjection.circularCornerRadius(for: request.targetRect)
         }
+        guard cameraFloats else {
+            return SceneLayoutProjection.sourceCornerRadius(
+                for: request.targetRect,
+                normalizedRadius: scene.screenCornerRadius
+            )
+        }
         let frame = request.normalizedFrame
         guard !frame.isAlmostFullCanvasFrame, !frame.isAlmostFullCanvasWidth else { return 0 }
-        return SceneLayoutProjection.cameraCornerRadius(for: request.targetRect)
+        return SceneLayoutProjection.cameraCornerRadius(for: request.targetRect, normalizedRadius: scene.cameraCornerRadius)
     }
 
     private func isCircularCamera(normalizedFrame: CGRect) -> Bool {

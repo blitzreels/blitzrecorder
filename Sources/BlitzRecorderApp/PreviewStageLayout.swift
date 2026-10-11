@@ -76,7 +76,10 @@ enum PreviewStageLayout {
         if request.isCircle {
             return SceneLayoutProjection.circularCornerRadius(for: request.rect)
         }
+        guard request.isFloating else {
+            return SceneLayoutProjection.sourceCornerRadius(for: request.rect, normalizedRadius: request.screenCornerRadius)
+        }
         if request.isFullscreen || request.isFullWidth { return 0 }
-        return SceneLayoutProjection.cameraCornerRadius(for: request.rect)
+        return SceneLayoutProjection.cameraCornerRadius(for: request.rect, normalizedRadius: request.cameraCornerRadius)
     }
 }

@@ -28,6 +28,8 @@ final class SilenceEditingSession {
     private(set) var isAuditioning = false
     @ObservationIgnored private var auditionTask: Task<Void, Never>?
     private var transcriptCuts: [TimelineCut] = []
+    private var detectedTranscriptItems: [EditorTranscriptItem] = []
+    private(set) var transcriptItems: [EditorTranscriptItem] = []
     private(set) var nonDialogueRanges: [EditorTimeRange] = []
     private(set) var windows: [SilenceWindow] = []
     private(set) var loading = false
@@ -158,6 +160,8 @@ final class SilenceEditingSession {
         baseCuts = request.project.edits.cuts
         windows = []
         transcriptCuts = []
+        detectedTranscriptItems = []
+        transcriptItems = []
         nonDialogueRanges = []
         error = nil
         skipSilence = false
@@ -439,12 +443,12 @@ final class SilenceEditingSession {
     }
 
     private func refreshTranscriptCuts() {
-        transcriptCuts = transcript.map {
+        detectedTranscriptItems = transcript.map {
             EditorTranscriptTimeline.items(.init(transcript: $0, windows: windows, threshold: threshold, duration: duration,
                     paddingBefore: paddingBefore, paddingAfter: paddingAfter, minimumSilence: minimumDuration))
-                .filter { $0.kind == .nonDialogue }
-                .map { .init(start: $0.range.start, end: $0.range.end, kind: .silence, source: .automatic) }
         } ?? []
+        transcriptCuts = detectedTranscriptItems.filter { $0.kind == .nonDialogue }
+            .map { .init(start: $0.range.start, end: $0.range.end, kind: .silence, source: .automatic) }
     }
 
     var canRemoveNonDialogue: Bool {
@@ -475,6 +479,7 @@ final class SilenceEditingSession {
         ))
         nonDialogueRanges = proposal.nonDialogueRanges
         cuts = proposal.cuts
+        transcriptItems = EditorTranscriptTimeline.classifiedItems(.init(items: detectedTranscriptItems, cuts: cuts))
         metrics = SilenceTimelineMetrics(
             .init(
                 duration: duration, proposed: cuts,

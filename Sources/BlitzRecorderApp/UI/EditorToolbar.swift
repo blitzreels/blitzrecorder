@@ -8,7 +8,7 @@ struct EditorToolbar: View {
     var exportButton: AnyView
 
     var body: some View {
-        HStack(spacing: 0) {
+        BlitzAdaptiveRow(.init(minimumContentWidth: 200)) {
             VStack(alignment: .leading, spacing: 1) {
                 if let context = title.context {
                     Text(context)
@@ -19,14 +19,15 @@ struct EditorToolbar: View {
                 Text(title.title)
                     .font(BlitzType.headline)
                     .foregroundStyle(BlitzUI.primaryText)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .help(title.title)
             }
                 .truncationMode(.tail)
                 .layoutPriority(1)
                 .allowsWindowActivationEvents(true)
                 .onTapGesture(count: 2, perform: onFillWindow)
 
-            Spacer(minLength: 12)
             ViewThatFits(in: .horizontal) {
                 formatPicker { $0.formatTitle }
                 formatPicker { $0.shortLabel }
@@ -34,11 +35,16 @@ struct EditorToolbar: View {
             .controlSize(.small)
             .help("Choose the output aspect ratio")
             .disabled(vm.state != .idle)
-            Spacer(minLength: 12)
-                .contentShape(.rect)
-                .allowsWindowActivationEvents(true)
-                .onTapGesture(count: 2, perform: onFillWindow)
 
+            if vm.onOpenEditorWindow != nil {
+                Button(action: vm.openEditorWindow) {
+                    Image(systemName: "macwindow.on.rectangle")
+                }
+                .blitzButton(.quiet)
+                .accessibilityLabel("Open Editor Window")
+                .help("Move this editor into a separate window")
+                .padding(.trailing, 8)
+            }
             exportButton
         }
     }

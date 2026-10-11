@@ -11,7 +11,8 @@ private struct BlitzWindowToolbarModifier: ViewModifier {
                 .padding(.leading, leadingInset)
                 .padding(.trailing, 16)
                 .frame(maxWidth: .infinity)
-                .frame(height: MainWindowChrome.toolbarHeight)
+                .padding(.vertical, 8)
+                .frame(minHeight: MainWindowChrome.toolbarHeight)
                 .background {
                     BlitzUI.panelBackground
                         .contentShape(.rect)
@@ -33,28 +34,35 @@ private struct GlobalVideoImportStatusBar: View {
 
     var body: some View {
         if vm.videoImportProgress != nil || vm.videoImportError != nil {
-            HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 12) {
                 if let progress = vm.videoImportProgress {
-                    Text("\(progress.stage) · \(progress.filename)").lineLimit(1)
-                    ProgressView(value: progress.fraction)
-                        .progressViewStyle(.linear)
-                        .tint(BlitzUI.mint)
-                        .frame(minWidth: 80, maxWidth: 220)
-                        .accessibilityLabel(progress.stage)
-                    if let fraction = progress.fraction {
-                        Text("\(Int((fraction * 100).rounded()))%").monospacedDigit()
+                    BlitzAdaptiveRow() {
+                        Text("\(progress.stage) · \(progress.filename)")
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .help(progress.filename)
+                        ProgressView(value: progress.fraction)
+                            .progressViewStyle(.linear)
+                            .tint(BlitzUI.mint)
+                            .frame(minWidth: 80, maxWidth: 220)
+                            .accessibilityLabel(progress.stage)
+                        if let fraction = progress.fraction {
+                            Text("\(Int((fraction * 100).rounded()))%").monospacedDigit()
+                        }
+                        Button("Cancel") { vm.videoImportTask?.cancel() }
+                            .blitzButton(.secondary)
                     }
-                    Spacer(minLength: 0)
-                    Button("Cancel") { vm.videoImportTask?.cancel() }
-                        .blitzButton(.secondary)
                 } else if let error = vm.videoImportError {
-                    Image(systemName: "exclamationmark.triangle").foregroundStyle(BlitzUI.warning)
-                    Text("Import failed: \(error)").lineLimit(2)
-                    Spacer(minLength: 0)
-                    Button("Try again", action: vm.chooseVideoToImport).blitzButton(.secondary)
-                    Button { vm.videoImportError = nil } label: { Image(systemName: "xmark") }
-                        .blitzButton(.quiet)
-                        .accessibilityLabel("Dismiss import error")
+                    BlitzAdaptiveRow() {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle").foregroundStyle(BlitzUI.warning)
+                            Text("Import failed: \(error)").fixedSize(horizontal: false, vertical: true)
+                        }
+                        Button("Try again", action: vm.chooseVideoToImport).blitzButton(.secondary)
+                        Button { vm.videoImportError = nil } label: { Image(systemName: "xmark") }
+                            .blitzButton(.quiet)
+                            .accessibilityLabel("Dismiss import error")
+                    }
                 }
             }
             .font(BlitzType.caption)
@@ -106,7 +114,7 @@ private struct GlobalExportProgressBar: View {
 
     var body: some View {
         if vm.isExporting {
-            HStack(spacing: 12) {
+            BlitzAdaptiveRow() {
                 Text("Exporting \(projectTitle)")
                     .lineLimit(1)
                 ProgressView(value: progress)
@@ -115,7 +123,6 @@ private struct GlobalExportProgressBar: View {
                     .frame(minWidth: 80, maxWidth: 220)
                 Text("\(Int((progress * 100).rounded()))%")
                     .monospacedDigit()
-                Spacer(minLength: 0)
             }
             .font(BlitzType.caption)
             .controlSize(.small)

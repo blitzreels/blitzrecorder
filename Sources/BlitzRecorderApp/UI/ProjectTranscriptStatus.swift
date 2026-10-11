@@ -20,23 +20,24 @@ extension ProjectLibraryView {
     private func transcriptJobState(
         _ request: TranscriptUnavailableRequest
     ) -> some View {
-        HStack(spacing: 12) {
-            if request.status.isRunning {
-                ProgressView()
-                    .controlSize(.small)
-            }
+        BlitzAdaptiveRow() {
+            HStack(spacing: 12) {
+                if request.status.isRunning {
+                    ProgressView()
+                        .controlSize(.small)
+                }
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(transcriptStatusLabel(request.status))
-                    .font(BlitzType.strong)
-                    .foregroundStyle(BlitzUI.supportingText)
-                Text(vm.transcriptionController.jobDetails[request.project.projectPath]
-                     ?? transcriptUnavailableDetail(request.status))
-                    .font(BlitzType.footnote)
-                    .foregroundStyle(BlitzUI.tertiaryText)
-            }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(transcriptStatusLabel(request.status))
+                        .font(BlitzType.strong)
+                        .foregroundStyle(BlitzUI.supportingText)
+                    Text(vm.transcriptionController.jobDetails[request.project.projectPath]
+                         ?? transcriptUnavailableDetail(request.status))
+                        .font(BlitzType.footnote)
+                        .foregroundStyle(BlitzUI.tertiaryText)
+                }
 
-            Spacer(minLength: 0)
+            }
 
             if let startedAt = vm.transcriptionController.jobStartedAt[request.project.projectPath] {
                 ActivityElapsedTime(startedAt: startedAt)
@@ -112,48 +113,49 @@ extension ProjectLibraryView {
     private func transcriptionModelCard(
         _ configuration: TranscriptionModelCardConfiguration
     ) -> some View {
-        HStack(alignment: .top, spacing: 14) {
-            Image(systemName: configuration.systemImage)
-                .font(BlitzType.glyph(19))
-                .foregroundStyle(
-                    configuration.errorMessage == nil
-                        ? BlitzUI.mint
-                        : BlitzUI.warning
-                )
-                .frame(width: 26, height: 26)
+        BlitzAdaptiveRow() {
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: configuration.systemImage)
+                    .font(BlitzType.glyph(19))
+                    .foregroundStyle(
+                        configuration.errorMessage == nil
+                            ? BlitzUI.mint
+                            : BlitzUI.warning
+                    )
+                    .frame(width: 26, height: 26)
 
-            VStack(alignment: .leading, spacing: 7) {
-                Text(configuration.title)
-                    .font(BlitzType.strong)
-                    .foregroundStyle(BlitzUI.supportingText)
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(configuration.title)
+                        .font(BlitzType.strong)
+                        .foregroundStyle(BlitzUI.supportingText)
 
-                Text(configuration.detail)
-                    .font(BlitzType.footnote)
-                    .foregroundStyle(BlitzUI.tertiaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if let progress = configuration.progress {
-                    ProgressView(value: progress)
-                        .tint(BlitzUI.mint)
-                        .frame(maxWidth: 360)
-                }
-
-                if let progressLabel = configuration.progressLabel {
-                    Text(progressLabel)
-                        .font(BlitzType.footnote.monospaced())
-                        .monospacedDigit()
-                        .foregroundStyle(BlitzUI.secondaryText)
-                }
-
-                if let errorMessage = configuration.errorMessage {
-                    Text(errorMessage)
+                    Text(configuration.detail)
                         .font(BlitzType.footnote)
-                        .foregroundStyle(BlitzUI.warning)
+                        .foregroundStyle(BlitzUI.tertiaryText)
                         .fixedSize(horizontal: false, vertical: true)
-                }
-            }
 
-            Spacer(minLength: 12)
+                    if let progress = configuration.progress {
+                        ProgressView(value: progress)
+                            .tint(BlitzUI.mint)
+                            .frame(maxWidth: 360)
+                    }
+
+                    if let progressLabel = configuration.progressLabel {
+                        Text(progressLabel)
+                            .font(BlitzType.footnote.monospaced())
+                            .monospacedDigit()
+                            .foregroundStyle(BlitzUI.secondaryText)
+                    }
+
+                    if let errorMessage = configuration.errorMessage {
+                        Text(errorMessage)
+                            .font(BlitzType.footnote)
+                            .foregroundStyle(BlitzUI.warning)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+            }
 
             if let actionTitle = configuration.actionTitle,
                let action = configuration.action {

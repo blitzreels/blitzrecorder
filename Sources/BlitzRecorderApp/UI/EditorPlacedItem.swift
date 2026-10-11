@@ -1,7 +1,7 @@
 import Foundation
 
 struct EditorPlacedItem: Identifiable, Equatable {
-    enum Kind: Hashable { case mask, text, zoom, music }
+    enum Kind: Hashable { case mask, text, caption, zoom, music }
     struct ID: Hashable {
         let kind: Kind
         let value: UUID
@@ -13,7 +13,7 @@ struct EditorPlacedItem: Identifiable, Equatable {
         func previewTime(_ projection: EditorTimelineProjection) -> Double {
             let visibleStart = projection.displayTime(start)
             let visibleDuration = max(0, projection.displayTime(end) - visibleStart)
-            return projection.takeTime(visibleStart + min(0.01, visibleDuration / 2))
+            return projection.takeTime(visibleStart + min(0.3, visibleDuration / 2))
         }
     }
     let id: ID
@@ -58,6 +58,14 @@ struct EditorPlacedTrack: Identifiable, Equatable {
             return Self(id: text.id.uuidString, title: "\(text.style.preset.displayName) \(index + 1)",
                         symbol: item.symbol, items: [item])
         }
+        if !edits.captions.cues.isEmpty {
+            rows.append(Self(id: "captions", title: "Captions", symbol: "captions.bubble",
+                items: edits.captions.cues.map { cue in
+                    EditorPlacedItem(id: .init(kind: .caption, value: cue.id), title: cue.text,
+                        symbol: "captions.bubble", timing: .init(start: cue.start, end: cue.end),
+                        isEnabled: edits.captions.isEnabled)
+                }))
+        }
         if !edits.zoom.keyframes.isEmpty {
             rows.append(Self(id: "zoom", title: "Zoom", symbol: "plus.magnifyingglass",
                 items: edits.zoom.keyframes.map { point in
@@ -82,6 +90,7 @@ enum EditorPlacedItemEditing {
     struct Change {
         let id: EditorPlacedItem.ID
         let timing: EditorPlacedItem.Timing
+        let gesture: Gesture
     }
     struct Mutation {
         let edits: TimelineEdits
@@ -115,6 +124,13 @@ enum EditorPlacedItemEditing {
             edits.textOverlays[index].end = time
             edits.textOverlays.insert(.init(id: UUID(), start: time, end: original.end, text: original.text,
                 frame: original.frame, style: original.style, fadeSeconds: original.fadeSeconds), at: index + 1)
+        case .caption:
+            guard let index = edits.captions.cues.firstIndex(where: { $0.id == request.id.value }) else { return nil }
+            let original = edits.captions.cues[index]
+            guard time > original.start + 0.05, time < original.end - 0.05 else { return nil }
+            edits.captions.cues[index].end = time
+            edits.captions.cues.insert(.init(id: UUID(), start: time, end: original.end,
+                text: original.text, words: original.words), at: index + 1)
         case .zoom, .music: return nil
         }
         return edits
@@ -162,6 +178,17 @@ enum EditorPlacedItemEditing {
             guard timing.end > timing.start, let index = edits.textOverlays.firstIndex(where: { $0.id == id }) else { return nil }
             edits.textOverlays[index].start = timing.start
             edits.textOverlays[index].end = timing.end
+        case .caption:
+            guard timing.end > timing.start, let index = edits.captions.cues.firstIndex(where: { $0.id == id }) else { return nil }
+            if request.change.gesture == .move, !edits.captions.cues[index].words.isEmpty {
+                let words = movedCaptionWords(.init(cue: edits.captions.cues[index], timing: timing,
+                    cuts: edits.enabledCuts))
+                edits.captions.cues[index].words = words
+                edits.captions.cues[index].text = CaptionGenerator.text(words)
+            }
+            edits.captions.cues[index].start = timing.start
+            edits.captions.cues[index].end = timing.end
+            edits.captions.cues.sort { $0.start < $1.start }
         case .zoom:
             guard let index = edits.zoom.keyframes.firstIndex(where: { $0.id == id }) else { return nil }
             edits.zoom.keyframes[index].time = timing.start
@@ -170,12 +197,40 @@ enum EditorPlacedItemEditing {
         return edits
     }
 
+    private struct CaptionMove {
+        let cue: CaptionCue
+        let timing: EditorPlacedItem.Timing
+        let cuts: [TimelineCut]
+    }
+
+    private static func movedCaptionWords(_ request: CaptionMove) -> [TranscriptWord] {
+        let cue = request.cue
+        let projection = EditorTimelineProjection(.init(duration: max(cue.end, request.timing.end), cuts: request.cuts))
+        let start = projection.displayTime(request.timing.start)
+        let end = projection.displayTime(request.timing.end)
+        let offset = start - projection.displayTime(cue.start)
+        return cue.words.compactMap { word in
+            let sourceStart = max(cue.start, word.startTime)
+            let sourceEnd = min(cue.end, word.endTime)
+            guard sourceEnd > sourceStart else { return nil }
+            let wordStart = projection.displayTime(sourceStart)
+            let wordEnd = projection.displayTime(sourceEnd)
+            guard wordEnd > wordStart else { return nil }
+            let fragments = projection.visibleFragments(.init(start: max(start, wordStart + offset),
+                end: min(end, wordEnd + offset)))
+            guard let first = fragments.first, let last = fragments.last else { return nil }
+            return TranscriptWord(text: word.text, startTime: first.takeStart, endTime: last.takeEnd,
+                confidence: word.confidence, speakerID: word.speakerID)
+        }
+    }
+
     static func removing(_ request: Removal) -> TimelineEdits {
         var edits = request.edits
         switch request.id.kind {
         case .music: break
         case .mask: edits.privacyMasks.removeAll { $0.id == request.id.value }
         case .text: edits.textOverlays.removeAll { $0.id == request.id.value }
+        case .caption: edits.captions.cues.removeAll { $0.id == request.id.value }
         case .zoom: edits.zoom.keyframes.removeAll { $0.id == request.id.value }
         }
         return edits

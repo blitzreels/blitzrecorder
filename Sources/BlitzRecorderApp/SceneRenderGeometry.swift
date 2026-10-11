@@ -60,6 +60,10 @@ struct SceneRenderGeometry {
         placementPolicy.rendersCircularCamera
     }
 
+    var cameraFloats: Bool {
+        placementPolicy.cameraFloats
+    }
+
     func isFullCanvasFrame(for kind: SceneLayerKind) -> Bool {
         normalizedFrame(for: kind).isAlmostFullCanvasFrame
     }
@@ -149,6 +153,13 @@ extension CGRect {
 
     var isAlmostFullCanvasWidth: Bool {
         abs(minX) <= 0.0001 && abs(width - 1) <= 0.0001
+    }
+
+    func liesMostlyInside(_ other: CGRect) -> Bool {
+        let frame = standardized
+        let overlap = frame.intersection(other.standardized)
+        let area = frame.width * frame.height
+        return !overlap.isNull && area > 0 && overlap.width * overlap.height > area * 0.5
     }
 }
 

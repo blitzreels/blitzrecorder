@@ -9,6 +9,7 @@ struct CaptionRenderRequest: Equatable {
     let position: CaptionPosition
     let shadow: Bool
     let canvasSize: CGSize
+    let normalizedFrame: CGRect?
 
     struct Input {
         let cue: CaptionCue
@@ -23,6 +24,7 @@ struct CaptionRenderRequest: Equatable {
         position = input.track.position
         shadow = input.track.shadow
         canvasSize = input.canvasSize
+        normalizedFrame = input.track.frame
     }
 }
 
@@ -43,7 +45,7 @@ enum CaptionRenderer {
         let canvas = request.canvasSize
         guard canvas.width.isFinite, canvas.height.isFinite, canvas.width >= 16, canvas.height >= 16,
               canvas.width <= 16_384, canvas.height <= 16_384, !request.text.isEmpty else { return nil }
-        let key = "\(request.text)|\(request.style)|\(request.size)|\(request.shadow)|\(canvas)" as NSString
+        let key = "\(request.text)|\(request.style)|\(request.size)|\(request.shadow)|\(request.normalizedFrame?.size ?? .zero)|\(canvas)" as NSString
         let image: CGImage
         if let cached = cache.object(forKey: key) { image = cached }
         else {
@@ -52,6 +54,10 @@ enum CaptionRenderer {
             cache.totalCostLimit = 32 * 1024 * 1024
             cache.countLimit = 64
             cache.setObject(image, forKey: key, cost: image.bytesPerRow * image.height)
+        }
+        if let frame = request.normalizedFrame {
+            return .init(image: image, frame: CGRect(x: frame.minX * canvas.width, y: frame.minY * canvas.height,
+                width: CGFloat(image.width), height: CGFloat(image.height)))
         }
         let margin = canvas.height * 0.08
         return .init(image: image, frame: CGRect(
@@ -64,29 +70,19 @@ enum CaptionRenderer {
         let shortSide = min(request.canvasSize.width, request.canvasSize.height)
         let padding = shortSide * 0.012
         let outer = shortSide * 0.01
-        let maxWidth = request.canvasSize.width * 0.86 - 2 * (padding + outer)
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .center
-        paragraph.lineBreakMode = .byWordWrapping
-        var fontSize = shortSide * request.size.fraction
-        var text: NSAttributedString
-        var setter: CTFramesetter
-        var measured: CGSize
-        repeat {
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: fontSize, weight: .semibold),
-                .foregroundColor: NSColor.white, .paragraphStyle: paragraph
-            ]
-            text = NSAttributedString(string: String(request.text.prefix(320)), attributes: attributes)
-            setter = CTFramesetterCreateWithAttributedString(text)
-            measured = CTFramesetterSuggestFrameSizeWithConstraints(setter, CFRange(), nil,
-                CGSize(width: maxWidth, height: .greatestFiniteMagnitude), nil)
-            if measured.height <= fontSize * 2.6 || fontSize <= shortSide * 0.022 { break }
-            fontSize *= 0.9
-        } while true
-        let textSize = CGSize(width: ceil(min(maxWidth, measured.width)) + 2, height: ceil(measured.height) + 2)
-        let imageSize = CGSize(width: ceil(textSize.width + 2 * (padding + outer)),
-                               height: ceil(textSize.height + 2 * (padding + outer)))
+        let available = request.normalizedFrame.map {
+            CGSize(width: max(16, $0.width * request.canvasSize.width), height: max(16, $0.height * request.canvasSize.height))
+        } ?? CGSize(width: request.canvasSize.width * 0.86, height: request.canvasSize.height * 0.3)
+        let inset = min(padding + outer, min(available.width, available.height) * 0.1)
+        let fitted = FittedTextLayout.resolve(.init(text: request.text,
+            fontSize: shortSide * request.size.fraction, weight: .semibold, color: .white,
+            alignment: .center, bounds: CGSize(width: max(1, available.width - 2 * inset),
+                height: max(1, available.height - 2 * inset))))
+        let text = fitted.text
+        let setter = CTFramesetterCreateWithAttributedString(text)
+        let textSize = fitted.size
+        let imageSize = CGSize(width: floor(available.width),
+            height: request.normalizedFrame == nil ? ceil(textSize.height + 2 * inset) : floor(available.height))
         guard let context = CGContext(data: nil, width: Int(imageSize.width), height: Int(imageSize.height),
             bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
@@ -102,7 +98,7 @@ enum CaptionRenderer {
             context.fillPath()
             context.restoreGState()
         }
-        let rect = CGRect(x: outer + padding, y: outer + padding, width: textSize.width, height: textSize.height)
+        let rect = CGRect(x: inset, y: (imageSize.height - textSize.height) / 2, width: textSize.width, height: textSize.height)
         let path = CGPath(rect: rect, transform: nil)
         if request.style == .outline {
             let border = NSMutableAttributedString(attributedString: text)

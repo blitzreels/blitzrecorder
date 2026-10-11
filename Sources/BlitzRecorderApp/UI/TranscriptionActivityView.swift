@@ -14,11 +14,13 @@ struct TranscriptionActivityView: View {
             if configuration.status.isRunning { ProgressView().controlSize(.small) }
             VStack(alignment: .leading, spacing: 3) {
                 Text(configuration.status.label)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let detail = configuration.detail {
                     Text(detail).font(BlitzType.footnote)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            if let startedAt = configuration.startedAt { ActivityElapsedTime(startedAt: startedAt) }
+            if let startedAt = configuration.startedAt { ActivityElapsedTime(startedAt: startedAt).fixedSize() }
         }
         .font(BlitzType.caption)
         .foregroundStyle(BlitzUI.secondaryText)

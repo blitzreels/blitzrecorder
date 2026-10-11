@@ -22,6 +22,9 @@ enum PreviewStagePassKeys {
         let cameraContentMode: CameraContentMode
         let cameraFramePadding: CGFloat
         let cameraShadowEnabled: Bool
+        let screenCornerRadius: CGFloat
+        let screenShadowEnabled: Bool
+        let cameraCornerRadius: CGFloat
     }
 
     struct SourceShapeKey: Equatable {
@@ -30,8 +33,13 @@ enum PreviewStagePassKeys {
         let isFullscreen: Bool
         let isFullWidth: Bool
         let isCircle: Bool
+        let isFloating: Bool
         let cameraShadowEnabled: Bool
         let isCameraCropEditingEnabled: Bool
+        let screenCornerRadius: CGFloat
+        let screenShadowEnabled: Bool
+        let cameraCornerRadius: CGFloat
+        let canvasFrame: CGRect
     }
 
     struct SelectionOverlayKey: Equatable {
@@ -74,5 +82,8 @@ enum PreviewStagePassKeys {
         let isFullscreen: Bool
         let isFullWidth: Bool
         let isCircle: Bool
+        let isFloating: Bool
+        let screenCornerRadius: CGFloat
+        let cameraCornerRadius: CGFloat
     }
 }

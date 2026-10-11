@@ -45,15 +45,16 @@ struct AccountsSettingsPage: View {
                 if !hosting.hasCheckedAccount {
                     placeholderRow
                 } else if hosting.isConnected {
-                    HStack(spacing: 12) {
-                        BlitzAccountAvatar(configuration: .init(
-                            name: hosting.account?.email ?? "BlitzRecorder", imageURL: nil, size: 34
-                        ))
-                        SettingsRowLabel(.init(
-                            title: hosting.account?.email ?? "BlitzRecorder account",
-                            detail: hosting.isSubscribed ? "Hosting active" : "Free account · Local recording stays free"
-                        ))
-                        Spacer(minLength: 16)
+                    BlitzAdaptiveRow() {
+                        HStack(spacing: 12) {
+                            BlitzAccountAvatar(configuration: .init(
+                                name: hosting.account?.email ?? "BlitzRecorder", imageURL: nil, size: 34
+                            ))
+                            SettingsRowLabel(.init(
+                                title: hosting.account?.email ?? "BlitzRecorder account",
+                                detail: hosting.isSubscribed ? "Hosting active" : "Free account · Local recording stays free"
+                            ))
+                        }
                         Button { Task { await hosting.openBilling() } } label: {
                             Label(hosting.isSubscribed ? "Manage plan" : "Enable sharing",
                                   systemImage: hosting.isSubscribed ? "creditcard.fill" : "sparkles")
@@ -63,12 +64,11 @@ struct AccountsSettingsPage: View {
                     }
                     .settingsRow()
                     SettingsRowDivider()
-                    HStack(spacing: 16) {
+                    BlitzAdaptiveRow() {
                         SettingsRowLabel(.init(
                             title: "Shared videos",
                             detail: hosting.videos.count == 1 ? "1 watch link" : "\(hosting.videos.count) watch links"
                         ))
-                        Spacer(minLength: 16)
                         Button {
                             vm.projectLibraryNavigation.section = .shared
                             vm.showProjects()
@@ -77,12 +77,11 @@ struct AccountsSettingsPage: View {
                     }
                     .settingsRow()
                     SettingsRowDivider()
-                    HStack(spacing: 16) {
+                    BlitzAdaptiveRow() {
                         SettingsRowLabel(.init(
                             title: "Sign out",
                             detail: "Your recordings stay on this Mac. Watch links keep working."
                         ))
-                        Spacer(minLength: 16)
                         Button { Task { await hosting.disconnect() } } label: {
                             Label(hosting.accountOperation == .signingOut ? "Signing out…" : "Sign out",
                                   systemImage: "rectangle.portrait.and.arrow.right")
@@ -92,12 +91,11 @@ struct AccountsSettingsPage: View {
                     }
                     .settingsRow()
                     SettingsRowDivider()
-                    HStack(spacing: 16) {
+                    BlitzAdaptiveRow() {
                         SettingsRowLabel(.init(
                             title: "Sign out everywhere",
                             detail: "Also signs out other Macs and any browser using this account."
                         ))
-                        Spacer(minLength: 16)
                         Button { Task { await hosting.disconnect(everywhere: true) } } label: {
                             Text(hosting.accountOperation == .signingOutEverywhere ? "Signing out…" : "Sign out everywhere")
                         }
@@ -129,17 +127,18 @@ struct AccountsSettingsPage: View {
             }
             VStack(spacing: 0) {
                 if let account = reels.connection.account {
-                    HStack(spacing: 12) {
-                        BlitzAccountAvatar(configuration: .init(
-                            name: account.user.display_name ?? account.user.email,
-                            imageURL: account.user.avatar_url.flatMap(URL.init(string:)),
-                            size: 34
-                        ))
-                        SettingsRowLabel(.init(
-                            title: account.user.display_name ?? account.user.email,
-                            detail: account.user.display_name == nil ? "Connected" : "\(account.user.email) · Connected"
-                        ))
-                        Spacer(minLength: 16)
+                    BlitzAdaptiveRow() {
+                        HStack(spacing: 12) {
+                            BlitzAccountAvatar(configuration: .init(
+                                name: account.user.display_name ?? account.user.email,
+                                imageURL: account.user.avatar_url.flatMap(URL.init(string:)),
+                                size: 34
+                            ))
+                            SettingsRowLabel(.init(
+                                title: account.user.display_name ?? account.user.email,
+                                detail: account.user.display_name == nil ? "Connected" : "\(account.user.email) · Connected"
+                            ))
+                        }
                         Button {
                             NSWorkspace.shared.open(reels.connection.client.origin.appendingPathComponent("dashboard/settings"))
                         } label: {
@@ -165,12 +164,11 @@ struct AccountsSettingsPage: View {
                     }
                     .padding(.vertical, 12)
                     SettingsRowDivider()
-                    HStack(spacing: 16) {
+                    BlitzAdaptiveRow() {
                         SettingsRowLabel(.init(
                             title: "Disconnect",
                             detail: "Stop sending recordings to BlitzReels from this Mac."
                         ))
-                        Spacer(minLength: 16)
                         Button(action: reels.disconnect) {
                             Label("Disconnect", systemImage: "xmark.circle.fill")
                         }
@@ -179,12 +177,11 @@ struct AccountsSettingsPage: View {
                     }
                     .settingsRow()
                 } else {
-                    HStack(spacing: 16) {
+                    BlitzAdaptiveRow() {
                         SettingsRowLabel(.init(
                             title: reels.connection.hasCredential ? "Reconnect BlitzReels" : "Connect BlitzReels",
                             detail: "Send an exported MP4 to BlitzReels to add captions and B-roll."
                         ))
-                        Spacer(minLength: 16)
                         Button(action: reels.connect) {
                             HStack(spacing: 6) {
                                 if reels.isWorking { ProgressView().controlSize(.small) }
@@ -233,7 +230,7 @@ struct AccountsSettingsPage: View {
                     .foregroundStyle(request.isSelected ? BlitzUI.mint : BlitzUI.secondaryText)
             }
             .padding(.horizontal, 8)
-            .frame(height: 44)
+            .frame(minHeight: 44)
             .contentShape(.rect)
         }
         .buttonStyle(BlitzSelectionButtonStyle(isSelected: request.isSelected))

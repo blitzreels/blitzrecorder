@@ -27,6 +27,34 @@ final class CameraFramingRegressionTests: XCTestCase {
         XCTAssertEqual(frame.height, view.canvasFrame.height, accuracy: 0.001)
     }
 
+    func testResetSceneRestoresTheSelectedScenesOwnPreset() throws {
+        let suite = "CameraFramingRegressionTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let studio = RecorderStudioConfiguration(defaults: defaults)
+        studio.setLayout(.vertical)
+        let cameraScene = try XCTUnwrap(studio.scenesForCurrentLayout().first {
+            $0.snapshot.selectedScenePreset == .webcamFullscreen
+        })
+        studio.selectScene(id: cameraScene.id)
+        studio.setCameraContentMode(.fit)
+
+        studio.resetSceneLayout()
+
+        XCTAssertEqual(studio.settings.selectedScenePreset, .webcamFullscreen)
+        XCTAssertEqual(studio.settings.cameraContentMode, .fill)
+        XCTAssertTrue(studio.settings.hiddenSources.contains(.screen))
+        XCTAssertEqual(
+            studio.settings.sceneLayout,
+            SceneLayout.presetLayout(
+                .webcamFullscreen,
+                for: .vertical,
+                screenAspectRatio: studio.screenAspectRatio(),
+                cameraAspectRatio: studio.cameraAspectRatio()
+            )
+        )
+    }
+
     func testCropFromFitFillsSideBySideSlotAndPersistsAcrossCameraToggleAndReload() throws {
         let suite = "CameraFramingRegressionTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

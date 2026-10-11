@@ -5,13 +5,17 @@ struct EditorCaptionsInspector: View {
         let vm: RecorderViewModel
         let playback: EditorPlaybackController
         let transcript: RecordingTranscript?
+        let selectedID: Binding<UUID?>
     }
 
     let configuration: Configuration
     @State private var isGenerating = false
     @State private var pendingProject: String?
     @State private var error: String?
-    @State private var selectedID: UUID?
+    private var selectedID: UUID? {
+        get { configuration.selectedID.wrappedValue }
+        nonmutating set { configuration.selectedID.wrappedValue = newValue }
+    }
     @State private var draft = ""
     @State private var showsReplaceConfirmation = false
 
@@ -36,6 +40,8 @@ struct EditorCaptionsInspector: View {
             },
             footer: { footer }
         ))
+        .onAppear { loadSelectedText() }
+        .onChange(of: selectedID) { loadSelectedText() }
         .onChange(of: configuration.transcript) { generateWhenReady() }
         .onChange(of: status) { generateWhenReady() }
         .onChange(of: project?.projectPath) {
@@ -72,7 +78,12 @@ struct EditorCaptionsInspector: View {
                 selection: binding(\.size), label: { $0.title }))
             Text("Position").font(BlitzType.section)
             BlitzSegmentedPicker(configuration: .init(title: "Caption position", options: CaptionPosition.allCases,
-                selection: binding(\.position), label: { $0.title }))
+                selection: Binding(get: { track.position }, set: { value in
+                    var updated = track
+                    updated.position = value
+                    updated.frame = nil
+                    apply(.init(track: updated, actionName: "Move Captions"))
+                }), label: { $0.title }))
             Toggle("Shadow", isOn: binding(\.shadow)).toggleStyle(.blitzSwitch)
         }
     }
@@ -89,9 +100,6 @@ struct EditorCaptionsInspector: View {
                     .padding(10)
                     .background(BlitzUI.cardFill, in: .rect(cornerRadius: BlitzUI.controlRadius))
                     .accessibilityLabel("Edit caption text")
-                    .onChange(of: draft) { _, value in
-                        if value.count > 160 { draft = String(value.prefix(160)) }
-                    }
                 HStack {
                     Button("Cancel") { selectedID = nil }.blitzButton(.secondary)
                     Button("Save text", action: saveText).blitzButton(.accent)
@@ -107,7 +115,7 @@ struct EditorCaptionsInspector: View {
                         configuration.playback.seek(to: cue.start)
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(cue.text).font(BlitzType.body).lineLimit(2)
+                            Text(cue.text).font(BlitzType.body).fixedSize(horizontal: false, vertical: true)
                             Text("\(SilenceTime.label(cue.start))–\(SilenceTime.label(cue.end))")
                                 .font(BlitzType.caption.monospacedDigit()).foregroundStyle(BlitzUI.secondaryText)
                         }
@@ -212,6 +220,10 @@ struct EditorCaptionsInspector: View {
             updated.isEnabled = true
             apply(.init(track: updated, actionName: "Generate Captions"))
         }
+    }
+
+    private func loadSelectedText() {
+        if let selectedID, let cue = track.cues.first(where: { $0.id == selectedID }) { draft = cue.text }
     }
 
     private func saveText() {

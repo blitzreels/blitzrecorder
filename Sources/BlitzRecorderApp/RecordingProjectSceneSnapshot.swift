@@ -85,6 +85,7 @@ extension RecordingProject {
         let cameraContentMode: String
         let cameraFramePadding: Double
         let cameraShadowEnabled: Bool
+        let cameraCornerRadius: Double?
         let sourceOpacities: [String: Double]
         let fillsCanvasWhenOnlyVideoSource: Bool?
 
@@ -105,6 +106,7 @@ extension RecordingProject {
             self.cameraContentMode = scene.cameraContentMode.rawValue
             self.cameraFramePadding = Double(scene.cameraFramePadding)
             self.cameraShadowEnabled = scene.cameraShadowEnabled
+            self.cameraCornerRadius = Double(scene.cameraCornerRadius)
             self.sourceOpacities = Dictionary(uniqueKeysWithValues: scene.sourceOpacities.map { source, opacity in
                 (source.rawValue, Double(opacity))
             })
@@ -234,6 +236,7 @@ extension RecordingScene {
             cameraContentMode: CameraContentMode(rawValue: snapshot.cameraContentMode) ?? .fill,
             cameraFramePadding: 0,
             cameraShadowEnabled: snapshot.cameraShadowEnabled,
+            cameraCornerRadius: snapshot.cameraCornerRadius.map { CGFloat($0) } ?? SceneLayoutProjection.defaultCameraCornerRadius,
             sourceOpacities: Dictionary(uniqueKeysWithValues: snapshot.sourceOpacities.compactMap { key, value in
                 guard let source = CaptureSource(rawValue: key) else { return nil }
                 return (source, CGFloat(value))
