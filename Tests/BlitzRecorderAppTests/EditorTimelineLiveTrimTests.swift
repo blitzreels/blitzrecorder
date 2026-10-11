@@ -23,7 +23,9 @@ final class EditorTimelineLiveTrimTests: XCTestCase {
             let start = edge == .right ? 0.0 : 7.0
             let id = EditorVideoClipLayout.Clip.ID(takeStart: start)
             let gripID = "trim-\(id.ticks)-\(edge.rawValue)"
-            let host = NSHostingView(rootView: LiveTrimFixture(model: model).preferredColorScheme(.dark))
+            let host = NSHostingView(rootView: LiveTrimFixture(model: model)
+                .preferredColorScheme(.dark)
+                .allowsWindowActivationEvents(true))
             host.frame = CGRect(x: 0, y: 0, width: 1100, height: 400)
             let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
             window.contentView = host
