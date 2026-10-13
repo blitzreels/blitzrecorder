@@ -82,7 +82,7 @@ export async function processNext(): Promise<boolean> {
 
 export async function cleanupExpired() {
   await hostingPool().query(
-    `UPDATE hosting_assets SET status='revoked',updated_at=now() WHERE status<>'revoked' AND account_id IN
+    `UPDATE hosting_assets SET status='revoked',updated_at=now() WHERE status<>'revoked' AND media_origin IS NULL AND account_id IN
      (SELECT id FROM hosting_accounts WHERE active_until<=now()
       AND COALESCE(inactive_since,active_until)<now()-$1*interval '1 day')`, [HOSTING_PLAN.retentionDaysAfterExpiry]);
   await hostingPool().query(
@@ -92,8 +92,10 @@ export async function cleanupExpired() {
   const expired = await hostingPool().query<HostedAsset>(
     "SELECT * FROM hosting_assets WHERE status='revoked' AND (lease_until IS NULL OR lease_until<now()) LIMIT 50");
   for (const asset of expired.rows) {
-    await abortUpload(asset);
-    await deletePrefix(`hosting/${asset.account_id}/${asset.id}/`);
+    if (!asset.media_origin) {
+      await abortUpload(asset);
+      await deletePrefix(`hosting/${asset.account_id}/${asset.id}/`);
+    }
     await hostingPool().query("DELETE FROM hosting_assets WHERE id=$1 AND status='revoked'", [asset.id]);
   }
 }

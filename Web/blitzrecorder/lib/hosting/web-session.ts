@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
-import { hostingPool, ensureListedColumn } from "./db";
-import { required, type AssetStatus, type HostingAccount } from "./model";
+import { hostingPool, ensureAssetColumns } from "./db";
+import { mediaURL, type AssetStatus, type HostingAccount } from "./model";
 import { accountForToken } from "./account";
 import { HOSTING_PLAN } from "./plan";
 
@@ -14,6 +14,7 @@ export const SESSION_TOKEN = /^brh_[A-Za-z0-9_-]{43}$/;
 
 export type LibraryVideo = {
   slug: string; title: string; status: AssetStatus; listed: boolean; duration: number | null; createdAt: string; poster: string | null;
+  storage: "blitzrecorder" | "cloudflare";
 };
 
 export async function sessionToken(): Promise<string | null> {
@@ -39,7 +40,7 @@ export async function hostingStanding(account: HostingAccount): Promise<{ subscr
 
 /** Returns false when the video is not this account's or was already revoked. */
 export async function stopSharingVideo({ account, slug }: { account: HostingAccount; slug: string }): Promise<boolean> {
-  await ensureListedColumn();
+  await ensureAssetColumns();
   const result = await hostingPool().query(
     `UPDATE hosting_assets SET status='revoked', updated_at=now()
      WHERE slug=$1 AND account_id=$2 AND status IN ('queued','processing','ready','failed')`, [slug, account.id]);
@@ -48,7 +49,7 @@ export async function stopSharingVideo({ account, slug }: { account: HostingAcco
 
 /** Turns the public link off or back on. The file stays hosted. */
 export async function setVideoListing({ account, slug, listed }: { account: HostingAccount; slug: string; listed: boolean }): Promise<boolean> {
-  await ensureListedColumn();
+  await ensureAssetColumns();
   const result = await hostingPool().query(
     `UPDATE hosting_assets SET listed=$3, updated_at=now()
      WHERE slug=$1 AND account_id=$2 AND status='ready'`, [slug, account.id, listed]);
@@ -56,14 +57,14 @@ export async function setVideoListing({ account, slug, listed }: { account: Host
 }
 
 export async function ownerLibrary(account: HostingAccount): Promise<LibraryVideo[]> {
-  await ensureListedColumn();
-  const media = new URL(required("HOSTING_MEDIA_ORIGIN")).origin;
+  await ensureAssetColumns();
   const rows = await hostingPool().query<{
-    slug: string; title: string; status: AssetStatus; listed: boolean; duration: number | null; declared_seconds: number; created_at: Date; has_poster: boolean;
-  }>(`SELECT slug, title, status, listed, duration, declared_seconds, created_at, files @> '[{"path":"poster.jpg"}]'::jsonb AS has_poster
+    id: string; media_origin: string | null; slug: string; title: string; status: AssetStatus; listed: boolean; duration: number | null; declared_seconds: number; created_at: Date; has_poster: boolean;
+  }>(`SELECT id, media_origin, slug, title, status, listed, duration, declared_seconds, created_at, files @> '[{"path":"poster.jpg"}]'::jsonb AS has_poster
       FROM hosting_assets WHERE account_id=$1 AND status IN ('queued','processing','ready','failed') ORDER BY created_at DESC LIMIT 200`, [account.id]);
   return rows.rows.map((row) => ({
     slug: row.slug, title: row.title, status: row.status, listed: row.listed, duration: row.duration ?? row.declared_seconds,
-    createdAt: row.created_at.toISOString(), poster: row.status === "ready" && row.listed && row.has_poster ? `${media}/s/${row.slug}/poster.jpg` : null,
+    createdAt: row.created_at.toISOString(), poster: row.status === "ready" && row.listed && row.has_poster ? mediaURL({ asset: row, path: "poster.jpg" }) : null,
+    storage: row.media_origin ? "cloudflare" : "blitzrecorder",
   }));
 }

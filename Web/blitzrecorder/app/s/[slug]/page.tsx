@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { cache } from "react";
 import { notFound } from "next/navigation";
 import { sharedAsset } from "@/lib/hosting/service";
-import { required } from "@/lib/hosting/model";
+import { mediaURL } from "@/lib/hosting/model";
 import { ownerLibrary, viewerAccount } from "@/lib/hosting/web-session";
 import { activeSessionCount } from "@/lib/hosting/account";
 import { SharedVideoView, type SharedViewer } from "./shared-video-view";
@@ -29,9 +29,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const duration = asset.duration ?? asset.declared_seconds;
   const details = shareDetails({ details: asset.viewer_details ?? EMPTY_DETAILS, duration });
   const description = shareDescription({ details, duration });
-  const origin = process.env.HOSTING_MEDIA_ORIGIN;
-  const poster = origin && asset.files.some((file) => file.path === "poster.jpg")
-    ? `${new URL(origin).origin}/s/${asset.slug}/poster.jpg` : null;
+  const poster = (asset.media_origin || process.env.HOSTING_MEDIA_ORIGIN) && asset.files.some((file) => file.path === "poster.jpg")
+    ? mediaURL({ asset, path: "poster.jpg" }) : null;
   return {
     title: asset.title, description, ...privatePage,
     openGraph: {
@@ -54,12 +53,11 @@ export default async function SharedVideoPage({ params }: { params: Promise<{ sl
   const [library, sessions] = account && owner
     ? await Promise.all([ownerLibrary(account), activeSessionCount(account)]) : [null, 0];
   const viewer: SharedViewer | null = account && { email: account.email, library, sessions };
-  const base = `${new URL(required("HOSTING_MEDIA_ORIGIN")).origin}/s/${slug}`;
   const has = (path: string) => asset.files.some((file) => file.path === path);
   const duration = asset.duration ?? asset.declared_seconds;
   const details = shareDetails({ details: asset.viewer_details ?? EMPTY_DETAILS, duration });
-  return <SharedVideoView slug={asset.slug} source={`${base}/${has("video.mp4") ? "video.mp4" : "master.m3u8"}`}
-    poster={has("poster.jpg") ? `${base}/poster.jpg` : ""}
+  return <SharedVideoView slug={asset.slug} source={mediaURL({ asset, path: has("video.mp4") ? "video.mp4" : "master.m3u8" })}
+    poster={has("poster.jpg") ? mediaURL({ asset, path: "poster.jpg" }) : ""}
     title={asset.title} width={asset.width} height={asset.height} duration={duration}
     frameRate={asset.frame_rate} details={details} viewer={viewer} />;
 }

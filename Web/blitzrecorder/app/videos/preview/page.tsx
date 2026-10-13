@@ -6,10 +6,10 @@ import { VideoLibrary } from "../library";
 const sample = "/videos/presentation.mp4";
 
 const videos: Array<LibraryVideo & { clip: { src: string; start: number } }> = [
-  { slug: "preview", title: "Product walkthrough", status: "ready", listed: true, duration: 30.3, createdAt: "2026-10-02T18:00:00.000Z", poster: "/media/presentation-poster.webp", clip: { src: sample, start: 1 } },
-  { slug: "preview-unlisted-video1", title: "Investor call", status: "ready", listed: false, duration: 30.3, createdAt: "2026-10-02T16:00:00.000Z", poster: "/media/camera.webp", clip: { src: sample, start: 8 } },
-  { slug: "preview-processing-vid01", title: "Studio tour", status: "processing", listed: true, duration: 30.3, createdAt: "2026-10-02T15:00:00.000Z", poster: "/media/screen.webp", clip: { src: sample, start: 16 } },
-  { slug: "preview-failed-video-001", title: "Friday sync", status: "failed", listed: true, duration: 30.3, createdAt: "2026-10-02T12:00:00.000Z", poster: "/media/editor.webp", clip: { src: sample, start: 22 } },
+  { slug: "preview", title: "Product walkthrough", status: "ready", listed: true, storage: "cloudflare", duration: 30.3, createdAt: "2026-10-02T18:00:00.000Z", poster: "/media/presentation-poster.webp", clip: { src: sample, start: 1 } },
+  { slug: "preview-unlisted-video1", title: "Investor call", status: "ready", listed: false, storage: "blitzrecorder", duration: 30.3, createdAt: "2026-10-02T16:00:00.000Z", poster: "/media/camera.webp", clip: { src: sample, start: 8 } },
+  { slug: "preview-processing-vid01", title: "Studio tour", status: "processing", listed: true, storage: "blitzrecorder", duration: 30.3, createdAt: "2026-10-02T15:00:00.000Z", poster: "/media/screen.webp", clip: { src: sample, start: 16 } },
+  { slug: "preview-failed-video-001", title: "Friday sync", status: "failed", listed: true, storage: "blitzrecorder", duration: 30.3, createdAt: "2026-10-02T12:00:00.000Z", poster: "/media/editor.webp", clip: { src: sample, start: 22 } },
 ];
 
 /** Local fixture. Production 404s. Sign out only flips this page; it does not touch a real session. */

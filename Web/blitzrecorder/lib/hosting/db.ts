@@ -12,14 +12,15 @@ export function hostingPool(): Pool {
   return state.hostingPool;
 }
 
-let listedColumn: Promise<void> | null = null;
+let assetColumns: Promise<void> | null = null;
 
-/** Idempotent so a library deploy does not wait on a separate migration run. */
-export function ensureListedColumn(): Promise<void> {
-  listedColumn ??= hostingPool().query(
-    "ALTER TABLE hosting_assets ADD COLUMN IF NOT EXISTS listed BOOLEAN NOT NULL DEFAULT true",
-  ).then(() => undefined);
-  return listedColumn;
+/** Idempotent so a deploy does not wait on a separate migration run. */
+export function ensureAssetColumns(): Promise<void> {
+  assetColumns ??= hostingPool().query(
+    `ALTER TABLE hosting_assets ADD COLUMN IF NOT EXISTS listed BOOLEAN NOT NULL DEFAULT true,
+     ADD COLUMN IF NOT EXISTS media_origin TEXT`,
+  ).then(() => undefined, (error) => { assetColumns = null; throw error; });
+  return assetColumns;
 }
 
 export async function transaction<T>(operation: (client: PoolClient) => Promise<T>): Promise<T> {

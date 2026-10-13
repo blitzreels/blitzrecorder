@@ -1,13 +1,15 @@
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { hostingPool, transaction, ensureListedColumn } from "./db";
+import { hostingPool, transaction, ensureAssetColumns } from "./db";
 import {
   assertHostingEnabled, HostingError, PART_BYTES, POSTER_MAX_BYTES, UPLOAD_SECONDS, parseUploadInput,
   publicAsset, required, reservationBytes, type HostedAsset, type HostedFile, type HostingAccount,
 } from "./model";
 import { createUpload, completeUpload, objectBytes, signPart, uploadData, uploadParts, signalJob } from "./r2";
 import { parseVideoDetails } from "./details";
+import { ownStorageBytes } from "./own-storage";
 import { accountForToken } from "./account";
 import { HOSTING_PLAN } from "./plan";
+import { setVideoListing } from "./web-session";
 import type { PoolClient } from "pg";
 
 async function requireUploadAllowance({ db, accountID, duration }: { db: PoolClient; accountID: string; duration: number }) {
@@ -20,8 +22,8 @@ async function requireUploadAllowance({ db, accountID, duration }: { db: PoolCli
 }
 
 export async function updateDetails({ account, id, body }: { account: HostingAccount; id: string; body: unknown }) {
-  requirePaid(account);
   const asset = await ownedAsset({ account, id });
+  if (!asset.media_origin) requirePaid(account);
   if (asset.status === "revoked") throw new HostingError({ status: 409, message: "This video has been removed." });
   let details;
   try { details = parseVideoDetails({ value: body, duration: asset.duration ?? asset.declared_seconds }); }
@@ -39,6 +41,7 @@ export async function authenticate(request: Request): Promise<HostingAccount> {
   if (!token) throw new HostingError({ status: 401, message: "Connect your hosting account to continue." });
   const account = await accountForToken(token);
   if (!account) throw new HostingError({ status: 401, message: "Your hosting connection has expired." });
+  await ensureAssetColumns();
   return account;
 }
 
@@ -60,35 +63,42 @@ export async function beginUpload({ account, body }: { account: HostingAccount; 
   const input = parseUploadInput(body);
   const asset = await transaction(async (db) => {
     const current = await db.query<HostingAccount>("SELECT * FROM hosting_accounts WHERE id = $1 FOR UPDATE", [account.id]);
-    requirePaid(current.rows[0]);
+    const own = input.mediaOrigin !== null;
+    if (!own) requirePaid(current.rows[0]);
     const prior = await db.query<HostedAsset>(
       "SELECT * FROM hosting_assets WHERE account_id = $1 AND request_key = $2", [account.id, input.requestKey]);
     if (prior.rows[0]) {
       const saved = prior.rows[0];
-      if (Number(saved.declared_bytes) !== input.bytes || saved.declared_seconds !== input.duration || saved.title !== input.title || saved.content_type !== input.contentType) {
+      if (Number(saved.declared_bytes) !== input.bytes || saved.declared_seconds !== input.duration || saved.title !== input.title
+        || saved.content_type !== input.contentType || saved.media_origin !== input.mediaOrigin) {
         throw new HostingError({ status: 409, message: "This upload request belongs to another file." });
       }
       return saved;
     }
-    await requireUploadAllowance({ db, accountID: account.id, duration: input.duration });
-    const usage = await db.query<{ bytes: string }>(
-      "SELECT COALESCE(SUM(CASE WHEN stored_bytes > 0 THEN stored_bytes ELSE reserved_bytes END),0)::text AS bytes FROM hosting_assets WHERE account_id = $1", [account.id]);
     const reservation = reservationBytes(input);
-    if (Number(usage.rows[0].bytes) + reservation > Number(current.rows[0].storage_limit)) {
-      throw new HostingError({ status: 413, message: "Your hosting storage is full. Remove a video or increase your plan." });
+    if (!own) {
+      await requireUploadAllowance({ db, accountID: account.id, duration: input.duration });
+      const usage = await db.query<{ bytes: string }>(
+        `SELECT COALESCE(SUM(CASE WHEN stored_bytes > 0 THEN stored_bytes ELSE reserved_bytes END),0)::text AS bytes
+         FROM hosting_assets WHERE account_id = $1 AND media_origin IS NULL`, [account.id]);
+      if (Number(usage.rows[0].bytes) + reservation > Number(current.rows[0].storage_limit)) {
+        throw new HostingError({ status: 413, message: "Your hosting storage is full. Remove a video or increase your plan." });
+      }
     }
     const id = randomUUID();
-    const prefix = input.video ? `hosting/${account.id}/${id}/streams/${randomUUID()}/` : null;
+    const prefix = input.video && !own ? `hosting/${account.id}/${id}/streams/${randomUUID()}/` : null;
+    const sourceKey = own ? `own/${id}/video.mp4` : prefix ? `${prefix}video.mp4` : `hosting/${account.id}/${id}/source`;
     const created = await db.query<HostedAsset>(
       `INSERT INTO hosting_assets (id,slug,account_id,request_key,title,status,content_type,source_key,
-       declared_bytes,declared_seconds,reserved_bytes,expires_at,stream_prefix,width,height,frame_rate,video_codec)
-       VALUES ($1,$2,$3,$4,$5,'uploading',$6,$7,$8,$9,$10,now() + $11 * interval '1 second',$12,$13,$14,$15,$16) RETURNING *`,
+       declared_bytes,declared_seconds,reserved_bytes,expires_at,stream_prefix,width,height,frame_rate,video_codec,media_origin)
+       VALUES ($1,$2,$3,$4,$5,'uploading',$6,$7,$8,$9,$10,now() + $11 * interval '1 second',$12,$13,$14,$15,$16,$17) RETURNING *`,
       [id, randomBytes(18).toString("base64url"), account.id, input.requestKey, input.title, input.contentType,
-        prefix ? `${prefix}video.mp4` : `hosting/${account.id}/${id}/source`, input.bytes, input.duration, reservation, UPLOAD_SECONDS,
-        prefix, input.video?.width ?? null, input.video?.height ?? null, input.video?.frameRate ?? null, input.video ? "h264" : null]);
+        sourceKey, input.bytes, input.duration, reservation, UPLOAD_SECONDS,
+        prefix, input.video?.width ?? null, input.video?.height ?? null, input.video?.frameRate ?? null, input.video ? "h264" : null,
+        input.mediaOrigin]);
     return created.rows[0];
   });
-  if (asset.status === "uploading" && !asset.upload_id) {
+  if (asset.status === "uploading" && !asset.upload_id && !asset.media_origin) {
     await transaction(async (db) => {
       const locked = (await db.query<HostedAsset>("SELECT * FROM hosting_assets WHERE id = $1 FOR UPDATE", [asset.id])).rows[0];
       if (locked.status !== "uploading" || locked.upload_id) return;
@@ -102,6 +112,7 @@ export async function beginUpload({ account, body }: { account: HostingAccount; 
 export async function preparePart({ account, id, number }: { account: HostingAccount; id: string; number: number }) {
   requirePaid(account);
   const asset = await ownedAsset({ account, id });
+  requireHostedByUs(asset);
   if (asset.status !== "uploading" || !asset.upload_id || asset.expires_at.getTime() <= Date.now()) {
     throw new HostingError({ status: 409, message: "This upload is no longer active." });
   }
@@ -111,6 +122,7 @@ export async function preparePart({ account, id, number }: { account: HostingAcc
 export async function uploadPoster({ account, id, body }: { account: HostingAccount; id: string; body: unknown }) {
   requirePaid(account);
   const asset = await ownedAsset({ account, id });
+  requireHostedByUs(asset);
   if (asset.status !== "uploading" || !asset.stream_prefix) throw new HostingError({ status: 409, message: "This upload is no longer active." });
   const encoded = (body as { jpeg?: unknown } | null)?.jpeg;
   const data = typeof encoded === "string" ? Buffer.from(encoded, "base64") : Buffer.alloc(0);
@@ -123,13 +135,14 @@ export async function uploadPoster({ account, id, body }: { account: HostingAcco
 
 export async function resumeUpload({ account, id }: { account: HostingAccount; id: string }) {
   const asset = await ownedAsset({ account, id });
-  const parts = asset.status === "uploading" && asset.upload_id ? await uploadParts(asset) : [];
+  const parts = asset.status === "uploading" && asset.upload_id && !asset.media_origin ? await uploadParts(asset) : [];
   return { ...publicAsset(asset), uploadedParts: parts.map((part) => ({ number: part.PartNumber, bytes: part.Size })) };
 }
 
 export async function finishUpload({ account, id }: { account: HostingAccount; id: string }) {
+  const owned = await ownedAsset({ account, id });
+  if (owned.media_origin) return finishOwnUpload(owned);
   requirePaid(account);
-  await ownedAsset({ account, id });
   const result = await transaction(async (db) => {
     const current = (await db.query<HostingAccount>("SELECT * FROM hosting_accounts WHERE id=$1 FOR UPDATE", [account.id])).rows[0];
     requirePaid(current);
@@ -159,6 +172,45 @@ export async function finishUpload({ account, id }: { account: HostingAccount; i
   return result;
 }
 
+function requireHostedByUs(asset: HostedAsset) {
+  if (asset.media_origin) throw new HostingError({ status: 409, message: "This video uploads to your Cloudflare storage." });
+}
+
+/** The Mac app uploads straight to the owner's worker; we only confirm the file is there before publishing the link. */
+async function finishOwnUpload(asset: HostedAsset) {
+  if (["ready", "failed", "revoked"].includes(asset.status)) return publicAsset(asset);
+  if (asset.expires_at.getTime() <= Date.now()) throw new HostingError({ status: 409, message: "This upload is no longer active." });
+  const origin = asset.media_origin!;
+  const [video, poster] = await Promise.all([
+    ownStorageBytes({ origin, id: asset.id, path: "video.mp4" }),
+    ownStorageBytes({ origin, id: asset.id, path: "poster.jpg" }),
+  ]);
+  if (video !== Number(asset.declared_bytes)) {
+    throw new HostingError({ status: 409, message: "Your Cloudflare storage doesn’t have the whole video yet. Resume the upload." });
+  }
+  const files: HostedFile[] = [{ path: "video.mp4", bytes: video, contentType: "video/mp4" },
+    ...(poster ? [{ path: "poster.jpg", bytes: poster, contentType: "image/jpeg" }] : [])];
+  const ready = await hostingPool().query<HostedAsset>(
+    `UPDATE hosting_assets SET status='ready', files=$2::jsonb, stored_bytes=$3, duration=declared_seconds, updated_at=now()
+     WHERE id=$1 AND status='uploading' RETURNING *`, [asset.id, JSON.stringify(files), files.reduce((sum, file) => sum + file.bytes, 0)]);
+  return publicAsset(ready.rows[0] ?? await ownedAssetByID(asset.id));
+}
+
+async function ownedAssetByID(id: string): Promise<HostedAsset> {
+  return (await hostingPool().query<HostedAsset>("SELECT * FROM hosting_assets WHERE id=$1", [id])).rows[0];
+}
+
+/** Hides or restores the public link without touching the file. Same rule as the web library. */
+export async function setAssetListing({ account, id, body }: { account: HostingAccount; id: string; body: unknown }) {
+  const asset = await ownedAsset({ account, id });
+  const listed = (body as { listed?: unknown } | null)?.listed;
+  if (typeof listed !== "boolean") throw new HostingError({ status: 400, message: "Choose whether the link is listed." });
+  if (!await setVideoListing({ account, slug: asset.slug, listed })) {
+    throw new HostingError({ status: 409, message: "Only ready videos can be listed. Refresh and try again." });
+  }
+  return publicAsset(await ownedAsset({ account, id }));
+}
+
 export async function revokeAsset({ account, id }: { account: HostingAccount; id: string }) {
   await ownedAsset({ account, id });
   await hostingPool().query("UPDATE hosting_assets SET status = 'revoked', updated_at = now() WHERE id = $1 AND account_id = $2", [id, account.id]);
@@ -174,10 +226,11 @@ export async function listAssets(account: HostingAccount) {
 export async function sharedAsset(slug: string): Promise<HostedAsset | null> {
   assertHostingEnabled();
   if (!/^[A-Za-z0-9_-]{24}$/.test(slug)) return null;
-  await ensureListedColumn();
+  await ensureAssetColumns();
   const result = await hostingPool().query<HostedAsset>(
     `SELECT assets.* FROM hosting_assets assets JOIN hosting_accounts accounts ON accounts.id = assets.account_id
-     WHERE assets.slug = $1 AND assets.status = 'ready' AND assets.listed AND accounts.active_until > now()`, [slug]);
+     WHERE assets.slug = $1 AND assets.status = 'ready' AND assets.listed
+       AND (assets.media_origin IS NOT NULL OR accounts.active_until > now())`, [slug]);
   return result.rows[0] ?? null;
 }
 

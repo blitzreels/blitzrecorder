@@ -12,5 +12,6 @@ export const HOSTING_PLAN = {
 } as const;
 
 export function hostingPlan() {
-  return { ...HOSTING_PLAN, available: process.env.BLITZRECORDER_HOSTING_ENABLED === "true" && Boolean(process.env.HOSTING_STRIPE_PRICE_ID) };
+  const enabled = process.env.BLITZRECORDER_HOSTING_ENABLED === "true";
+  return { ...HOSTING_PLAN, available: enabled && Boolean(process.env.HOSTING_STRIPE_PRICE_ID), ownStorage: enabled };
 }

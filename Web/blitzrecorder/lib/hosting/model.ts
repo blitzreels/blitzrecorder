@@ -10,6 +10,8 @@ export const MAX_DIRECT_BYTES = 10_000 * PART_BYTES;
 export const MAX_DIRECT_SECONDS = 24 * 60 * 60;
 export const DELIVERY_TTL_SECONDS = 10;
 export const POSTER_MAX_BYTES = 1024 ** 2;
+/** The media worker the Mac app deploys into the owner's own Cloudflare account. */
+export const OWN_STORAGE_ORIGIN = /^https:\/\/blitzrecorder-media\.[a-z0-9-]{1,63}\.workers\.dev$/;
 
 export class HostingError extends Error {
   readonly status: number;
@@ -71,6 +73,8 @@ export type HostedAsset = {
   frame_rate: number | null;
   video_codec: string | null;
   viewer_details: VideoDetails;
+  media_origin: string | null;
+  listed: boolean;
   error: string | null;
   created_at: Date;
 };
@@ -88,6 +92,7 @@ export type UploadInput = {
   duration: number;
   contentType: "video/mp4" | "video/quicktime";
   requestKey: string;
+  mediaOrigin: string | null;
   video?: PlayableVideo;
 };
 
@@ -127,7 +132,12 @@ export function parseUploadInput(body: unknown): UploadInput {
   if (typeof value.requestKey !== "string" || !/^[A-Za-z0-9_-]{16,100}$/.test(value.requestKey)) {
     throw new HostingError({ status: 400, message: "A stable upload request key is required." });
   }
-  const input: UploadInput = { title: value.title.trim(), bytes: value.bytes, duration: value.duration, contentType: value.contentType, requestKey: value.requestKey };
+  const mediaOrigin = value.mediaOrigin ?? null;
+  if (mediaOrigin !== null && (typeof mediaOrigin !== "string" || !OWN_STORAGE_ORIGIN.test(mediaOrigin) || !direct)) {
+    throw new HostingError({ status: 400, message: "Reconnect your Cloudflare storage in BlitzRecorder and try again." });
+  }
+  const input: UploadInput = { title: value.title.trim(), bytes: value.bytes, duration: value.duration, contentType: value.contentType,
+    requestKey: value.requestKey, mediaOrigin };
   if (value.video === undefined) return input;
   if (input.contentType !== "video/mp4") throw new HostingError({ status: 400, message: "Share an MP4 video." });
   return { ...input, video: parsePlayableVideo(value.video) };
@@ -156,5 +166,13 @@ export function publicAsset(asset: HostedAsset) {
     duration: asset.duration, width: asset.width, height: asset.height,
     bytes: Number(asset.stored_bytes), error: asset.error,
     progress: asset.status === "processing" ? asset.processing_progress ?? null : null,
+    storage: asset.media_origin ? "cloudflare" : "blitzrecorder",
+    listed: asset.listed,
   };
+}
+
+/** Our videos stream from the shared media worker; own-storage videos from the owner's worker. */
+export function mediaURL({ asset, path }: { asset: Pick<HostedAsset, "id" | "slug" | "media_origin">; path: string }): string {
+  if (asset.media_origin) return `${asset.media_origin}/v/${asset.id}/${path}`;
+  return `${new URL(required("HOSTING_MEDIA_ORIGIN")).origin}/s/${asset.slug}/${path}`;
 }

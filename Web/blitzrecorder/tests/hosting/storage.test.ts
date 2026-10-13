@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Pool } from "pg";
-import { beginUpload, authenticate, ownedAsset, revokeAsset, sharedAsset, updateDetails, finishUpload, uploadPoster } from "../../lib/hosting/service";
+import { beginUpload, authenticate, ownedAsset, revokeAsset, setAssetListing, sharedAsset, updateDetails, finishUpload, uploadPoster } from "../../lib/hosting/service";
 import { EMPTY_DETAILS } from "../../lib/hosting/details";
 import { hostingPool } from "../../lib/hosting/db";
 import { newAccessToken, tokenHash, parseUploadInput, publicAsset, reservationBytes, type HostingAccount } from "../../lib/hosting/model";
@@ -40,6 +40,7 @@ test.before(async () => {
   await hostingPool().query(await readFile(new URL("../../migrations/004-hosting-usage.sql", import.meta.url), "utf8"));
   await hostingPool().query(await readFile(new URL("../../migrations/006-hosting-processing-progress.sql", import.meta.url), "utf8"));
   await hostingPool().query(await readFile(new URL("../../migrations/007-hosting-listed.sql", import.meta.url), "utf8"));
+  await hostingPool().query(await readFile(new URL("../../migrations/008-hosting-own-storage.sql", import.meta.url), "utf8"));
   r2().middlewareStack.add(() => async (args) => {
     const value = args.input as { Key?: string };
     if (value.Key?.startsWith("hosting-jobs/") && failJobNotification) {
@@ -277,4 +278,49 @@ integration("unrelated subscriptions leave the existing app billing flow untouch
   const retrieve = t.mock.method(getStripe().subscriptions, "retrieve", async () => { throw new Error("Unexpected Stripe call"); });
   await syncHostingBilling({ type: "customer.subscription.updated", data: { object: { id: "unrelated", metadata: {} } } } as Stripe.Event);
   assert.equal(retrieve.mock.callCount(), 0);
+});
+
+integration("own Cloudflare storage shares for free, skips our quotas, and survives the paid-plan cleanup", async (t) => {
+  const owner = await account({ limit: 1, active: false });
+  const mediaOrigin = "https://blitzrecorder-media.owner.workers.dev";
+  const body = { ...input, requestKey: "o".repeat(20), mediaOrigin, video: { width: 1280, height: 720, frameRate: 30 } };
+  await assert.rejects(beginUpload({ account: owner, body: { ...body, mediaOrigin: undefined } }), { status: 402 });
+  const asset = await beginUpload({ account: owner, body });
+  const stored = await ownedAsset({ account: owner, id: asset.id });
+  assert.equal(stored.media_origin, mediaOrigin);
+  assert.equal(stored.upload_id, null);
+  await assert.rejects(uploadPoster({ account: owner, id: asset.id, body: { jpeg: "" } }), { status: 402 });
+  let sizes: Record<string, number | null> = { "video.mp4": 1000, "poster.jpg": 2048 };
+  t.mock.method(globalThis, "fetch", async (url: string) => {
+    const bytes = sizes[url.split("/").at(-1)!];
+    return new Response(null, { status: bytes === null ? 404 : 200, headers: bytes === null ? {} : { "content-length": String(bytes) } });
+  });
+  await assert.rejects(finishUpload({ account: owner, id: asset.id }), { status: 409 });
+  sizes = { "video.mp4": input.bytes, "poster.jpg": null };
+  const ready = await finishUpload({ account: owner, id: asset.id });
+  assert.equal(ready.status, "ready");
+  assert.equal(ready.storage, "cloudflare");
+  const shared = await sharedAsset(stored.slug);
+  assert.deepEqual(shared?.files, [{ path: "video.mp4", bytes: input.bytes, contentType: "video/mp4" }]);
+  await updateDetails({ account: owner, id: asset.id, body: { ...EMPTY_DETAILS, summary: "Free link" } });
+  await hostingPool().query("UPDATE hosting_accounts SET active_until=to_timestamp(0),inactive_since=now()-interval '90 days' WHERE id=$1", [owner.id]);
+  await cleanupExpired();
+  assert.equal((await ownedAsset({ account: owner, id: asset.id })).status, "ready");
+});
+
+integration("the Mac hides and restores a link with the same rule as the web library", async (t) => {
+  const owner = await account({ limit: 1, active: false });
+  const body = { ...input, requestKey: "l".repeat(20), mediaOrigin: "https://blitzrecorder-media.owner.workers.dev",
+    video: { width: 1280, height: 720, frameRate: 30 } };
+  const asset = await beginUpload({ account: owner, body });
+  await assert.rejects(setAssetListing({ account: owner, id: asset.id, body: { listed: false } }), { status: 409 });
+  t.mock.method(globalThis, "fetch", async (url: string) => url.endsWith("video.mp4")
+    ? new Response(null, { headers: { "content-length": String(input.bytes) } }) : new Response(null, { status: 404 }));
+  await finishUpload({ account: owner, id: asset.id });
+  const { slug } = await ownedAsset({ account: owner, id: asset.id });
+  await assert.rejects(setAssetListing({ account: owner, id: asset.id, body: { listed: "no" } }), { status: 400 });
+  assert.equal((await setAssetListing({ account: owner, id: asset.id, body: { listed: false } })).listed, false);
+  assert.equal(await sharedAsset(slug), null);
+  assert.equal((await setAssetListing({ account: owner, id: asset.id, body: { listed: true } })).listed, true);
+  assert.ok(await sharedAsset(slug));
 });

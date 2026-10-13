@@ -50,7 +50,7 @@ const VideoCard = ({ video, copied, onCopy }: {
   </div>;
   const heading = <div className="flex flex-col gap-1 px-3 pt-3">
     <h2 className="line-clamp-2 text-sm font-medium text-pretty">{video.title}</h2>
-    <p className={`text-xs ${video.status === "failed" ? "text-warning" : "text-faint"}`}>{statusLabel(video)} · {shortDate(video.createdAt)}</p>
+    <p className={`text-xs ${video.status === "failed" ? "text-warning" : "text-faint"}`}>{statusLabel(video)}{video.storage === "cloudflare" ? " · Your Cloudflare" : ""} · {shortDate(video.createdAt)}</p>
   </div>;
   return <article className="flex flex-col overflow-hidden rounded-card bg-card">
     {shared ? <Link href={sharePath(video.slug)} aria-label={`Open ${video.title}`}
