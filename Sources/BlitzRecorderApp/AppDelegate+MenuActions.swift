@@ -94,6 +94,11 @@ extension AppDelegate {
         viewModel.setLivePreviewEnabled(!viewModel.isLivePreviewEnabled)
     }
 
+    @objc func showCommandMenu() {
+        guard let viewModel = windowController?.viewModel else { return }
+        BlitzCommandMenuPanel.shared.toggle(viewModel)
+    }
+
     @objc func toggleRuleOfThirds() {
         coordinator.setRuleOfThirdsOverlayVisible(!coordinator.settings.showsRuleOfThirdsOverlay)
     }

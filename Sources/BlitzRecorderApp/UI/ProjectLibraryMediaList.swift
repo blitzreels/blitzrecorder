@@ -58,89 +58,70 @@ extension ProjectLibraryView {
     }
 
     private func mediaAssetList(_ configuration: MediaAssetListConfiguration) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 10) {
             Text(configuration.title)
                 .font(BlitzType.strong)
                 .foregroundStyle(BlitzUI.primaryText)
-                .padding(.bottom, 4)
-
-            ForEach(configuration.assets) { asset in
-                mediaAssetRow(asset)
-
-                if asset.id != configuration.assets.last?.id {
-                    Rectangle()
-                        .fill(BlitzUI.separator)
-                        .frame(height: 1)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 172, maximum: 260), spacing: 14, alignment: .top)],
+                      alignment: .leading, spacing: 16) {
+                ForEach(configuration.assets) { asset in
+                    mediaAssetTile(asset)
                 }
             }
         }
     }
 
-    private func mediaAssetRow(_ asset: EditorAsset) -> some View {
+    /// One capture: its picture or waveform, a name, and one line of facts. Click to show it in Finder.
+    private func mediaAssetTile(_ asset: EditorAsset) -> some View {
         let details = projectWaveformLibrary.technicalMetadata[asset.id]
-        let duration = projectWaveformLibrary.durations[asset.id]
-            .map(ProjectLibraryMetadata.durationLabel) ?? "—"
-        let fileSize = projectWaveformLibrary.fileSizes[asset.id] ?? "—"
+        let duration = projectWaveformLibrary.durations[asset.id].map(ProjectLibraryMetadata.durationLabel)
+        let fileSize = projectWaveformLibrary.fileSizes[asset.id]
         let format = details?.format ?? asset.url.pathExtension.uppercased()
-        return HStack(spacing: 16) {
-            mediaAssetVisual(asset)
-                .frame(width: 144, height: 81)
-                .background(BlitzUI.quietFill, in: .rect(cornerRadius: BlitzUI.controlRadius))
-                .clipShape(.rect(cornerRadius: BlitzUI.controlRadius))
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Text(mediaAssetTitle(asset))
-                        .font(BlitzType.strong)
-                        .foregroundStyle(BlitzUI.primaryText)
-
-                    if projectWaveformLibrary.loadingIDs.contains(asset.id)
-                        || projectWaveformLibrary.filmstripLoadingCounts[asset.id] != nil {
-                        ProgressView().controlSize(.mini)
-                            .help(asset.isAudio ? "Preparing waveform" : "Preparing media previews")
+        let isLoading = projectWaveformLibrary.loadingIDs.contains(asset.id)
+            || projectWaveformLibrary.filmstripLoadingCounts[asset.id] != nil
+        let facts = [duration, details?.quality.components(separatedBy: " · ").first, fileSize].compactMap { $0 }
+        return Button {
+            NSWorkspace.shared.activateFileViewerSelecting([asset.url])
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                mediaAssetVisual(asset)
+                    .frame(maxWidth: .infinity)
+                    .aspectRatio(16 / 9, contentMode: .fit)
+                    .background(BlitzUI.controlFill)
+                    .clipShape(.rect(cornerRadius: BlitzUI.cardRadius, style: .continuous))
+                    .overlay { BlitzEdgeHighlight(cornerRadius: BlitzUI.cardRadius) }
+                    .overlay(alignment: .topTrailing) {
+                        if isLoading {
+                            ProgressView().controlSize(.mini).padding(8)
+                        }
                     }
-                    if !asset.exists {
-                        Text("Missing file")
-                            .font(BlitzType.caption)
-                            .foregroundStyle(BlitzUI.warning)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(mediaAssetTitle(asset))
+                            .font(BlitzType.label)
+                            .foregroundStyle(BlitzUI.primaryText)
+                            .lineLimit(1)
+                        if !asset.exists {
+                            Text("Missing")
+                                .font(BlitzType.caption)
+                                .foregroundStyle(BlitzUI.warning)
+                        }
                     }
-
-                    Spacer(minLength: 8)
-
-                    Text(duration)
-                        .font(BlitzType.caption.monospaced())
-                        .foregroundStyle(BlitzUI.secondaryText)
-                }
-
-                if let details {
-                    Text(details.quality)
+                    Text(facts.isEmpty ? format : facts.joined(separator: " · "))
                         .font(BlitzType.caption)
                         .foregroundStyle(BlitzUI.secondaryText)
-                        .lineLimit(2)
+                        .monospacedDigit()
+                        .lineLimit(1)
                 }
-
-                Text("\(format) · \(fileSize) · \(asset.url.lastPathComponent)")
-                    .font(BlitzType.caption)
-                    .foregroundStyle(BlitzUI.secondaryText)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(asset.url.lastPathComponent)
+                .padding(.horizontal, 2)
             }
-
-            Button {
-                NSWorkspace.shared.activateFileViewerSelecting([asset.url])
-            } label: {
-                BlitzSymbol(configuration: .init(name: "folder", size: 16))
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(BlitzSelectionButtonStyle(isSelected: false))
-            .disabled(!asset.exists)
-            .pointingHandCursor(enabled: asset.exists)
-            .accessibilityLabel("Show \(mediaAssetTitle(asset)) in Finder")
-            .help("Show \(asset.url.lastPathComponent) in Finder")
+            .contentShape(.rect)
         }
-        .padding(.vertical, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .buttonStyle(BlitzPressButtonStyle())
+        .disabled(!asset.exists)
+        .help([details?.quality, "\(format) · \(asset.url.lastPathComponent)", "Click to show in Finder"]
+            .compactMap { $0 }.joined(separator: "\n"))
+        .accessibilityLabel("\(mediaAssetTitle(asset)), show in Finder")
     }
 
     @ViewBuilder

@@ -22,7 +22,7 @@ struct ExportResultToast: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.snappy(duration: 0.25), value: isVisible)
+        .animation(.snappy(duration: 0.18), value: isVisible)
         .task(id: dismissTaskID) {
             guard isVisible, vm.lastExportError == nil, !isHovering else { return }
             try? await Task.sleep(for: Self.successLifetime)

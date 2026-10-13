@@ -236,24 +236,28 @@ extension ProjectLibraryView {
     }
 
     private var detailEmptyState: some View {
-        VStack(spacing: 8) {
-            Text(vm.recentProjects.isEmpty ? "No projects yet" : (filteredProjects.isEmpty ? "No projects found" : "Select a project"))
-                .font(BlitzType.title)
-            Text(
-                vm.recentProjects.isEmpty
-                    ? (vm.projectTrash.canRestore ? "Restore a project above or start a new recording." : "Start a new recording to create your first project.")
-                    : (filteredProjects.isEmpty ? "Try a different search or clear the filters." : "Choose a recording from the library.")
-            )
-            .font(BlitzType.body)
-            .foregroundStyle(.secondary)
-            if filteredProjects.isEmpty, vm.projectLibraryNavigation.filters.activeCount > 0 {
-                Button("Clear filters") {
+        let hasFilters = filteredProjects.isEmpty && vm.projectLibraryNavigation.filters.activeCount > 0
+        let configuration: BlitzEmptyState.Configuration
+        if vm.recentProjects.isEmpty {
+            configuration = .init(
+                symbol: "record.circle", title: "No recordings yet",
+                detail: vm.projectTrash.canRestore
+                    ? "Restore a recording above or start a new one."
+                    : "Your first recording will show up here.",
+                action: .init(title: "New Recording", run: vm.startNewRecording))
+        } else if filteredProjects.isEmpty {
+            configuration = .init(
+                symbol: "magnifyingglass", title: "No recordings found",
+                detail: "Try a different search or clear the filters.",
+                action: hasFilters ? .init(title: "Clear filters", run: {
                     vm.projectLibraryNavigation.filters = .init(sort: vm.projectLibraryNavigation.filters.sort)
-                }
-                .blitzButton(.secondary)
-            }
+                }) : nil)
+        } else {
+            configuration = .init(symbol: "film.stack", title: "Select a recording",
+                                  detail: "Choose one from the list to play it.", action: nil)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(BlitzUI.projectLibraryBackground)
+        return BlitzEmptyState(configuration: configuration)
+            .background(BlitzUI.projectLibraryBackground)
     }
+
 }

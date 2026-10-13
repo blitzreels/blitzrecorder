@@ -25,7 +25,7 @@ struct SilenceSummaryCard: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(BlitzUI.quietFill, in: .rect(cornerRadius: BlitzUI.cardRadius))
-        .animation(.easeOut(duration: 0.2), value: presentation)
+        .animation(.easeOut(duration: 0.15), value: presentation)
     }
 
     private var timeline: some View {
@@ -333,7 +333,7 @@ struct SilenceFooterActions: View {
                 caption(applyCaption)
             }
         }
-        .animation(.easeOut(duration: 0.2), value: presentation)
+        .animation(.easeOut(duration: 0.15), value: presentation)
     }
 
     private var applyTitle: String {

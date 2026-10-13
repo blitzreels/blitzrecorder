@@ -67,7 +67,7 @@ struct EditorView: View {
                         editorNotice
                             .padding(.horizontal, 20)
                             .padding(.bottom, 20)
-                            .animation(.spring(duration: 0.32, bounce: 0.12), value: noticeKey)
+                            .animation(.spring(duration: 0.18, bounce: 0), value: noticeKey)
                     }
             } inspector: {
                 if showsHostingShare {

@@ -248,6 +248,7 @@
 		74A0C95F0E800B9AFE544801 /* ScreenSourceSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D05905500F435DF815D3BF5 /* ScreenSourceSelection.swift */; };
 		759EEDADCAD9C9FE9DE0FCDF /* BlitzIllustratedLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D55F44E3356BA5548A85DEB9 /* BlitzIllustratedLabel.swift */; };
 		75C2C84B3A7689C588133C82 /* Bridges.swift in Sources */ = {isa = PBXBuildFile; fileRef = C01E875419DBF6E4251472D2 /* Bridges.swift */; };
+		76DAC20B9EB352891158F61A /* CommandMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = E878202D7851D30F836A72DB /* CommandMenu.swift */; };
 		770F10CF810DB819A2A84D86 /* PreviewAnimation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E3A756F3237DA2CD876F8F3 /* PreviewAnimation.swift */; };
 		77D4395649ED58C7EC8C90C3 /* EditorPrivacyCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = C710AA7FEB1FC3BEAF5AEA42 /* EditorPrivacyCanvas.swift */; };
 		77D8C9BE0D9AD219E0872607 /* ShortsWindowArrangement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BDE90AB47A5374404D0C967 /* ShortsWindowArrangement.swift */; };
@@ -996,6 +997,7 @@
 		E6635064CF7091C0BA4A72BA /* RecorderCaptureRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecorderCaptureRuntime.swift; sourceTree = "<group>"; };
 		E6D807EF231F4157A5240F20 /* ShortsWindowArranger+Accessibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ShortsWindowArranger+Accessibility.swift"; sourceTree = "<group>"; };
 		E8668DEB813B9F10CB7D283D /* LocalCameraUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCameraUsage.swift; sourceTree = "<group>"; };
+		E878202D7851D30F836A72DB /* CommandMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandMenu.swift; sourceTree = "<group>"; };
 		E8A337C302AB6EA7D5DFF4D8 /* RecorderError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecorderError.swift; sourceTree = "<group>"; };
 		E94B4D025D3B3C36EB2037D7 /* Icon-App-20x20@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icon-App-20x20@2x.png"; sourceTree = "<group>"; };
 		E9974B2228C2DFB4920EAB8F /* HostedSharingWelcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostedSharingWelcome.swift; sourceTree = "<group>"; };
@@ -1458,6 +1460,7 @@
 				84CACA73918D8BBFFBA1F363 /* CanvasBackgroundChooser.swift */,
 				B0BC5E247861070478B0DCAF /* CanvasColorPicker.swift */,
 				8CE39DC9FBEF73BEB58E8D35 /* CapturePresentation.swift */,
+				E878202D7851D30F836A72DB /* CommandMenu.swift */,
 				5E979A3CA96A20D353ED3791 /* EditorAssetTracks.swift */,
 				AF318B5382A1104CF3127AFA /* EditorAudioInspector.swift */,
 				E24DD0F58226E45403D02800 /* EditorAudioWaveform.swift */,
@@ -1906,6 +1909,7 @@
 				36CC98F75E78F7E5B2EB8762 /* CaptureValueClamps.swift in Sources */,
 				6E2813DBC9A7937EE7682235 /* ClockDuration.swift in Sources */,
 				5514284D48B2BCE2BD311445 /* CloudflareStorage.swift in Sources */,
+				76DAC20B9EB352891158F61A /* CommandMenu.swift in Sources */,
 				A64001F7DE93EEF9450CD53D /* CompiledTranscriptionModel.swift in Sources */,
 				DEE916079062399199A85E9E /* CursorPresentation.swift in Sources */,
 				5C5AE6261BA98CF87B6E6EC5 /* CursorPresentationLoader.swift in Sources */,

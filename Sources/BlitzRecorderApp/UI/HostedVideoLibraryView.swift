@@ -110,12 +110,7 @@ struct HostedVideoLibraryView: View {
             notice
             searchField
             if isLoading {
-                VStack(spacing: 10) {
-                    ProgressView().controlSize(.small)
-                    Text("Loading shared videos").font(BlitzType.body).foregroundStyle(BlitzUI.secondaryText)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityElement(children: .combine)
+                BlitzLoadingState(title: "Loading shared videos")
             } else if controller.videos.isEmpty && controller.libraryMessage == nil {
                 empty(.init(symbol: "link", title: "Your next video belongs here",
                     detail: "Open a recording, then choose Share to create its watch page.",
@@ -158,7 +153,7 @@ struct HostedVideoLibraryView: View {
     private struct Notice {
         let symbol: String
         let text: String
-        let action: Empty.Action
+        let action: BlitzEmptyState.Action
     }
 
     private func noticeRow(_ notice: Notice) -> some View {
@@ -289,33 +284,7 @@ struct HostedVideoLibraryView: View {
         return parts.joined(separator: " · ")
     }
 
-    private struct Empty {
-        struct Action {
-            let title: String
-            let run: () -> Void
-        }
-        let symbol: String
-        let title: String
-        let detail: String
-        let action: Action?
-    }
-
-    private func empty(_ content: Empty) -> some View {
-        VStack(spacing: 8) {
-            Image(systemName: content.symbol).font(BlitzType.symbol(20))
-                .foregroundStyle(BlitzUI.tertiaryText)
-                .padding(.bottom, 4)
-            Text(content.title).font(BlitzType.headline)
-            Text(content.detail).font(BlitzType.body).foregroundStyle(BlitzUI.secondaryText)
-                .multilineTextAlignment(.center)
-            if let action = content.action {
-                Button(action.title, action: action.run)
-                    .blitzButton(.secondary).padding(.top, 8)
-                    .disabled(isSyncing)
-            }
-        }
-        .frame(maxWidth: 320)
-        .padding(32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    private func empty(_ content: BlitzEmptyState.Configuration) -> some View {
+        BlitzEmptyState(configuration: content).disabled(isSyncing)
     }
 }

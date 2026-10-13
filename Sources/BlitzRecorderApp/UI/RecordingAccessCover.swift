@@ -55,8 +55,8 @@ struct RecordingAccessCover: View {
 
                 permissionCard
                     .frame(maxWidth: 520)
-                    .animation(.smooth(duration: 0.35), value: readyCount)
-                    .animation(.smooth(duration: 0.35), value: vm.screenAccessAwaitingRestart)
+                    .animation(.smooth(duration: 0.15), value: readyCount)
+                    .animation(.smooth(duration: 0.15), value: vm.screenAccessAwaitingRestart)
 
                 statusLine
                     .padding(.top, 20)
@@ -158,14 +158,14 @@ struct RecordingAccessCover: View {
         }
         .padding(.vertical, 6)
         .blitzGlassSurface(cornerRadius: BlitzUI.surfaceRadius)
-        .shadow(color: BlitzUI.deepShadow, radius: 28, y: 14)
+        .shadow(color: BlitzUI.deepShadow, radius: 14, y: 6)
     }
 
     @ViewBuilder
     private var statusLine: some View {
         Group {
             if isReady {
-                Label("Permissions ready — continue to the recorder", systemImage: "checkmark.circle.fill")
+                Label("You’re all set. Continue to the recorder.", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(accent)
             } else if requiredCount > 0 {
                 Text("\(readyCount) of \(requiredCount) permissions ready")
@@ -176,7 +176,7 @@ struct RecordingAccessCover: View {
             }
         }
         .font(BlitzType.strong)
-        .animation(.smooth(duration: 0.3), value: readyCount)
+        .animation(.smooth(duration: 0.15), value: readyCount)
     }
 
     private var footer: some View {

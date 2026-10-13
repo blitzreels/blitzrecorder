@@ -176,6 +176,8 @@ final class MainMenuBuilder {
     private func viewMenuItem() -> NSMenuItem {
         let item = NSMenuItem(title: "View", action: nil, keyEquivalent: "")
         let submenu = NSMenu(title: "View")
+        submenu.addItem(menuItem("Command Menu…", action: #selector(MenuActionsTarget.showCommandMenu), keyEquivalent: "k"))
+        submenu.addItem(.separator())
         let livePreview = menuItem("Live Preview", action: #selector(MenuActionsTarget.toggleLivePreview), keyEquivalent: "l")
         livePreview.keyEquivalentModifierMask = [.command, .option]
         livePreview.state = LivePreviewPreference().isEnabled ? .on : .off
@@ -332,6 +334,7 @@ final class MainMenuBuilder {
     func pickScreen()
     func toggleRuleOfThirds()
     func toggleLivePreview()
+    func showCommandMenu()
     func zoomIn()
     func zoomOut()
     func resetZoom()

@@ -126,3 +126,63 @@ struct BlitzMaterialBackground: NSViewRepresentable {
         }
     }
 }
+
+/// The one empty / error state: a quiet symbol, a title, a sentence, and at most one way forward.
+struct BlitzEmptyState: View {
+    struct Action {
+        let title: String
+        let run: () -> Void
+    }
+
+    struct Configuration {
+        let symbol: String
+        let title: String
+        let detail: String
+        let action: Action?
+    }
+
+    let configuration: Configuration
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: configuration.symbol)
+                .font(BlitzType.symbol(20))
+                .foregroundStyle(BlitzUI.tertiaryText)
+                .padding(.bottom, 4)
+            Text(configuration.title)
+                .font(BlitzType.headline)
+                .foregroundStyle(BlitzUI.primaryText)
+                .multilineTextAlignment(.center)
+            Text(configuration.detail)
+                .font(BlitzType.body)
+                .foregroundStyle(BlitzUI.secondaryText)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            if let action = configuration.action {
+                Button(action.title, action: action.run)
+                    .blitzButton(.secondary)
+                    .padding(.top, 8)
+            }
+        }
+        .frame(maxWidth: 320)
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// The one loading state: a small spinner and what is loading, centered.
+struct BlitzLoadingState: View {
+    let title: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            ProgressView().controlSize(.small)
+            Text(title)
+                .font(BlitzType.body)
+                .foregroundStyle(BlitzUI.secondaryText)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
+    }
+}

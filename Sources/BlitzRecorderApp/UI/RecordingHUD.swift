@@ -259,9 +259,9 @@ struct RecordingHUDView: View {
         }
         .onAppear(perform: scheduleIdle)
         .environment(\.colorScheme, .dark)
-        .animation(.spring(duration: 0.28, bounce: 0.12), value: model.isExpanded)
+        .animation(.spring(duration: 0.18, bounce: 0), value: model.isExpanded)
         .animation(.easeOut(duration: 0.18), value: hasPrompt)
-        .animation(.easeOut(duration: 0.4), value: isIdle)
+        .animation(.easeOut(duration: 0.18), value: isIdle)
     }
 
     private func hover(_ hovering: Bool) {
@@ -502,8 +502,13 @@ struct RecordingHUDView: View {
                     }
                     .padding(6)
                     .frame(maxWidth: .infinity)
-                    .background(isSelected ? BlitzUI.strongFill : BlitzUI.quietFill,
-                                in: .rect(cornerRadius: BlitzUI.controlRadius))
+                    .background {
+                        if isSelected {
+                            BlitzSelectedBackground(cornerRadius: BlitzUI.controlRadius)
+                        } else {
+                            RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous).fill(BlitzUI.quietFill)
+                        }
+                    }
                     .contentShape(.rect)
                 }
                 .buttonStyle(BlitzPressButtonStyle())
@@ -540,11 +545,11 @@ struct RecordingHUDView: View {
 private struct RecordingHUDSurface: View {
     var body: some View {
         RoundedRectangle(cornerRadius: 20, style: .continuous)
-            .fill(BlitzUI.overlayFill)
+            .fill(.regularMaterial)
             .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .strokeBorder(BlitzUI.separator, lineWidth: 1)
+                RoundedRectangle(cornerRadius: 20, style: .continuous).fill(BlitzUI.glassTint)
             }
+            .overlay { BlitzEdgeHighlight(cornerRadius: 20) }
     }
 }
 
