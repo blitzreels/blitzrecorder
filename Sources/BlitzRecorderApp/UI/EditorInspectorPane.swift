@@ -54,7 +54,7 @@ struct EditorInspectorPane<Content: View, Footer: View>: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(BlitzUI.panelBackground)
+        .background(BlitzMaterialBackground(kind: .sidebar))
         .foregroundStyle(BlitzUI.primaryText)
         .buttonStyle(BlitzButtonStyle(.secondary))
         .controlSize(.regular)

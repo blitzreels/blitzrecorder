@@ -27,6 +27,12 @@ struct SourcesSidebar: View {
         .background(BlitzMaterialBackground(kind: .sidebar))
     }
 
+    private var screenSubtitle: String {
+        guard vm.hasActiveScreenPickerSelection else { return "Choose screen or window" }
+        let name = vm.selectedScreenSourceDisplayName.trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? "Window closed" : name
+    }
+
     private var displayedSources: [CaptureSource] {
         [.screen, .camera, .microphone, .systemAudio]
     }
@@ -38,7 +44,7 @@ struct SourcesSidebar: View {
             DeviceCard(
                 source: .screen,
                 title: "Screen",
-                subtitle: vm.hasActiveScreenPickerSelection ? vm.selectedScreenSourceDisplayName : "Choose screen or window",
+                subtitle: screenSubtitle,
                 status: sourceStatus(for: .screen),
                 picker: ScreenCaptureSourcePickerModel(vm: vm, enabled: vm.isSourceConfigured(.screen)).model,
                 levels: nil,

@@ -56,7 +56,7 @@ final class CameraCutoutPreviewer: NSObject, AVCaptureVideoDataOutputSampleBuffe
         from connection: AVCaptureConnection
     ) {
         let now = CFAbsoluteTimeGetCurrent()
-        guard now - lastFrameTime >= 1.0 / 15.0,
+        guard now - lastFrameTime >= 1.0 / 30.0,
               let frameHandler,
               let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
             return

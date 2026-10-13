@@ -62,12 +62,7 @@ struct EditorTextInspector: View {
                 .textFieldStyle(.plain)
                 .font(BlitzType.section)
                 .padding(12)
-                .background(BlitzUI.cardFill, in: .rect(cornerRadius: BlitzControlMetrics.radius))
-                .overlay {
-                    RoundedRectangle(cornerRadius: BlitzControlMetrics.radius)
-                        .strokeBorder(isTextFocused ? BlitzUI.accent.opacity(0.7) : BlitzUI.panelStroke, lineWidth: 1)
-                        .allowsHitTesting(false)
-                }
+                .blitzFieldChrome(isFocused: isTextFocused)
                 .focused($isTextFocused)
                 .accessibilityLabel("Overlay text")
             HStack(alignment: .top, spacing: 4) {

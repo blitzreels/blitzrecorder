@@ -19,7 +19,11 @@ enum CameraBackgroundMatte {
             var maskImage = CIImage(cvPixelBuffer: maskPixelBuffer)
             let scaleX = originalImage.extent.width / max(1, maskImage.extent.width)
             let scaleY = originalImage.extent.height / max(1, maskImage.extent.height)
-            maskImage = maskImage.transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
+            maskImage = maskImage
+                .transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
+                .clampedToExtent()
+                .applyingGaussianBlur(sigma: 1.5)
+                .cropped(to: originalImage.extent)
 
             let transparentBackground = transparentImage(matching: originalImage)
             guard let blend = CIFilter(name: "CIBlendWithMask") else {
