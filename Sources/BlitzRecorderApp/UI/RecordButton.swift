@@ -31,8 +31,14 @@ struct PauseButton: View {
     }
 }
 
+extension EnvironmentValues {
+    /// Set by the dock when space is tight: controls drop their titles instead of wrapping onto a second row.
+    @Entry var blitzDockIsCompact = false
+}
+
 struct RecordButton: View {
     @Bindable var vm: RecorderViewModel
+    @Environment(\.blitzDockIsCompact) private var isCompact
 
     var body: some View {
         Button {
@@ -40,15 +46,18 @@ struct RecordButton: View {
         } label: {
             HStack(spacing: 10) {
                 recordGlyph
-                Text(actionTitle)
-                    .foregroundStyle(.white)
+                if !isCompact {
+                    Text(actionTitle)
+                        .foregroundStyle(.white)
+                }
             }
-            .frame(minWidth: 132)
+            .frame(minWidth: isCompact ? 20 : 132)
         }
         .blitzButton(.record)
         .controlSize(.extraLarge)
         .opacity(dimmed ? 0.5 : 1)
         .disabled(!enabled)
+        .accessibilityLabel(actionTitle)
         .help(vm.recordingBlockerDetail ?? helpText)
     }
 

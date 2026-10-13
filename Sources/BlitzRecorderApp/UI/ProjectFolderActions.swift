@@ -160,7 +160,7 @@ struct ProjectFolderMenu: View {
         } else {
             Button("Number as Lessons", systemImage: "list.number") { vm.numberAsLessons(node) }
         }
-        Button("Rename Folder…", systemImage: "pencil") { vm.presentFolderPrompt(.rename(node.path)) }
+        Button("Rename Folder…", systemImage: "square.and.pencil") { vm.presentFolderPrompt(.rename(node.path)) }
         Divider()
         Button("Export All", systemImage: "square.and.arrow.up") { vm.exportFolder(node.allProjects) }
             .disabled(node.allProjects.isEmpty || vm.isExporting || vm.folderExportStatus != nil || vm.state != .idle)
@@ -189,24 +189,3 @@ struct ProjectModuleMenu: View {
     }
 }
 
-struct ProjectMoveToFolderMenu: View {
-    @Bindable var vm: RecorderViewModel
-    let projects: [RecordingProjectHistory.Entry]
-
-    var body: some View {
-        let folders = vm.folderTree.flatMap(\.flattened)
-        let index = vm.folderIndex
-        Menu("Move to Folder") {
-            ForEach(folders) { node in
-                Button(node.path.displayPath) {
-                    vm.moveIntoFolder(.init(projects: projects, destination: vm.folderDestination(node), path: node.path))
-                }
-            }
-            if !folders.isEmpty { Divider() }
-            Button("New Folder…") { vm.presentFolderPrompt(.create(parent: nil, moving: projects)) }
-        }
-        if projects.contains(where: { index.resolved($0).folder != nil }) {
-            Button("Remove from Folder", systemImage: "folder.badge.minus") { vm.removeFromFolder(projects) }
-        }
-    }
-}

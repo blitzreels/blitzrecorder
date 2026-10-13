@@ -119,7 +119,6 @@ struct BlitzSourcePicker: View {
             BlitzSourcePickerPopover(model: model) {
                 isPresented = false
             }
-            .preferredColorScheme(.dark)
         }
     }
 
@@ -134,7 +133,7 @@ struct BlitzSourcePicker: View {
                 .clipShape(.rect(cornerRadius: BlitzUI.controlRadius))
         } else {
             BlitzSymbol(configuration: .init(name: model.systemImage, size: 22))
-                .foregroundStyle(model.enabled ? BlitzUI.mint : BlitzUI.tertiaryText)
+                .foregroundStyle(model.enabled ? BlitzUI.accent : BlitzUI.tertiaryText)
                 .frame(width: 34, height: 34)
         }
     }
@@ -184,7 +183,7 @@ struct BlitzSourcePickerThumbnailCard: View {
                 if item.isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(BlitzType.glyph(14))
-                        .foregroundStyle(BlitzUI.mint)
+                        .foregroundStyle(BlitzUI.accent)
                         .background(Circle().fill(.black))
                         .padding(6)
                         .allowsHitTesting(false)
@@ -242,7 +241,7 @@ struct BlitzSourcePickerThumbnailCard: View {
 
                     Image(systemName: item.isSelected ? "checkmark.circle.fill" : "circle")
                         .font(BlitzType.glyph(16))
-                        .foregroundStyle(item.isSelected ? BlitzUI.mint : BlitzUI.supportingText)
+                        .foregroundStyle(item.isSelected ? BlitzUI.accent : BlitzUI.onMediaSecondaryText)
                         .shadow(color: .black.opacity(0.7), radius: 3)
                 }
                 Spacer(minLength: 0)

@@ -59,8 +59,8 @@ extension MainWindowController {
         lastStartedScreenCaptureSignature = nil
         invalidateCameraPreviewStart()
         cameraPreviewRecoveryAttempts = 0
-        previewStage.screenPreview.setMessage("Preview paused")
-        previewStage.cameraPreview.setMessage("Preview paused")
+        previewStage.screenPreview.showPaused()
+        previewStage.cameraPreview.showPaused()
         coordinator.setLocalCameraRuntimeState(.unchecked)
         viewModel.micLevels.clear()
         viewModel.sysLevels.clear()
@@ -115,9 +115,11 @@ extension MainWindowController {
         }
         if let blocker = readiness.blockers.first {
             if blocker.permission == "Camera availability" {
-                return blocker.status == "starting"
-                    ? "Starting camera preview."
-                    : "Camera unavailable. Choose another camera or close the app using it."
+                switch blocker.status {
+                case "starting": return "Starting camera preview."
+                case "waiting": return "Waiting for a camera. Wake your iPhone or plug one in."
+                default: return "Camera unavailable. Choose another camera or close the app using it."
+                }
             }
             return "\(blocker.source.rawValue) permission required."
         }

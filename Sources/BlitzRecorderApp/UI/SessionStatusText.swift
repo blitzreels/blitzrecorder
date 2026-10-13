@@ -72,7 +72,7 @@ struct FinishingProgressStatus: View {
             if let progress {
                 ProgressView(value: progress)
                     .progressViewStyle(.linear)
-                    .tint(BlitzUI.mint)
+                    .tint(BlitzUI.accent)
             }
             HStack(alignment: .top, spacing: 8) {
                 if let detail {

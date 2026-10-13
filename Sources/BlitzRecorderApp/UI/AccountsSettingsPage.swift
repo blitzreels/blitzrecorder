@@ -29,6 +29,14 @@ struct AccountsSettingsPage: View {
         }
     }
 
+    private var accountDetail: String {
+        switch hosting.activeStorage {
+        case .blitzrecorder: "BlitzRecorder Hosting active"
+        case .cloudflare: "Free sharing from your Cloudflare"
+        case nil: "Free account · Local recording stays free"
+        }
+    }
+
     private var blitzRecorderSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
@@ -52,17 +60,25 @@ struct AccountsSettingsPage: View {
                             ))
                             SettingsRowLabel(.init(
                                 title: hosting.account?.email ?? "BlitzRecorder account",
-                                detail: hosting.isSubscribed ? "Hosting active" : "Free account · Local recording stays free"
+                                detail: accountDetail
                             ))
                         }
-                        Button { Task { await hosting.openBilling() } } label: {
-                            Label(hosting.isSubscribed ? "Manage plan" : "Enable sharing",
-                                  systemImage: hosting.isSubscribed ? "creditcard.fill" : "sparkles")
+                        if hosting.isSubscribed {
+                            Button { Task { await hosting.openBilling() } } label: {
+                                Label("Manage plan", systemImage: "creditcard")
+                            }
+                            .blitzButton(.secondary)
+                            .disabled(hosting.isPerformingAccountAction)
                         }
-                        .blitzButton(hosting.isSubscribed ? .secondary : .accent)
-                        .disabled(hosting.isPerformingAccountAction)
                     }
                     .settingsRow()
+                    if let plan = hosting.plan, plan.offersSharing, !hosting.canShare {
+                        SettingsRowDivider()
+                        HostedSharingPlanPicker(controller: hosting, plan: plan).settingsRow()
+                    } else if hosting.cloudflare != nil {
+                        SettingsRowDivider()
+                        HostedSharingStorageSummary(controller: hosting).settingsRow()
+                    }
                     SettingsRowDivider()
                     BlitzAdaptiveRow() {
                         SettingsRowLabel(.init(
@@ -72,7 +88,7 @@ struct AccountsSettingsPage: View {
                         Button {
                             vm.projectLibraryNavigation.section = .shared
                             vm.showProjects()
-                        } label: { Label("Open", systemImage: "film.stack.fill") }
+                        } label: { Label("Open", systemImage: "film.stack") }
                         .blitzButton(.secondary)
                     }
                     .settingsRow()
@@ -106,9 +122,7 @@ struct AccountsSettingsPage: View {
                 } else {
                     HostedVideoSharePanel(controller: hosting, context: .account, preparation: nil,
                                           newExport: {}, close: {}, showLibrary: {})
-                        .frame(height: 200)
-                        .padding(.horizontal, -16)
-                        .clipShape(.rect(cornerRadius: BlitzUI.cardRadius))
+                        .settingsRow()
                 }
                 if let message = hosting.accountMessage {
                     SettingsRowDivider()
@@ -142,7 +156,7 @@ struct AccountsSettingsPage: View {
                         Button {
                             NSWorkspace.shared.open(reels.connection.client.origin.appendingPathComponent("dashboard/settings"))
                         } label: {
-                            Label("Manage", systemImage: "arrow.up.right.square.fill")
+                            Label("Manage", systemImage: "arrow.up.right.square")
                         }
                         .blitzButton(.secondary)
                         .help("Open your BlitzReels settings in the browser")
@@ -170,7 +184,7 @@ struct AccountsSettingsPage: View {
                             detail: "Stop sending recordings to BlitzReels from this Mac."
                         ))
                         Button(action: reels.disconnect) {
-                            Label("Disconnect", systemImage: "xmark.circle.fill")
+                            Label("Disconnect", systemImage: "xmark.circle")
                         }
                         .blitzButton(.secondary)
                         .disabled(reels.isWorking)
@@ -227,7 +241,7 @@ struct AccountsSettingsPage: View {
                 Spacer(minLength: 8)
                 Image(systemName: request.isSelected ? "checkmark.circle.fill" : "circle")
                     .font(BlitzType.glyph(15))
-                    .foregroundStyle(request.isSelected ? BlitzUI.mint : BlitzUI.secondaryText)
+                    .foregroundStyle(request.isSelected ? BlitzUI.accent : BlitzUI.secondaryText)
             }
             .padding(.horizontal, 8)
             .frame(minHeight: 44)

@@ -70,11 +70,11 @@ struct EditorMotionPreview: View {
                 screen.opacity(0.4)
                 if enabled {
                     Circle()
-                        .stroke(BlitzUI.mint.opacity(0.85 - frame.pulse * 0.4), lineWidth: 1.5)
+                        .stroke(BlitzUI.accent.opacity(0.85 - frame.pulse * 0.4), lineWidth: 1.5)
                         .frame(width: 15 + frame.pulse * 20, height: 15 + frame.pulse * 20)
                         .position(frame.point(CGPoint(x: 0.51, y: 0.47)))
                     Circle()
-                        .fill(BlitzUI.mint.opacity(0.18))
+                        .fill(BlitzUI.accent.opacity(0.18))
                         .frame(width: 16, height: 16)
                         .position(frame.point(CGPoint(x: 0.51, y: 0.47)))
                 }
@@ -93,7 +93,7 @@ struct EditorMotionPreview: View {
                     .scaleEffect(enabled ? 1 + (amount - 1) * frame.pulse : 1, anchor: .init(x: 0.65, y: 0.4))
                 if enabled {
                     RoundedRectangle(cornerRadius: 3)
-                        .strokeBorder(BlitzUI.mint, lineWidth: 1.5)
+                        .strokeBorder(BlitzUI.accent, lineWidth: 1.5)
                         .frame(width: frame.size.width * 0.42, height: frame.size.height * 0.5)
                         .position(frame.point(CGPoint(x: 0.65, y: 0.4)))
                 }
@@ -143,7 +143,7 @@ struct EditorMotionPreview: View {
                     path.addLine(to: request.frame.point(point))
                 }
             }
-            context.stroke(path, with: .color(request.smooth ? BlitzUI.mint : BlitzUI.secondaryText), style: .init(
+            context.stroke(path, with: .color(request.smooth ? BlitzUI.accent : BlitzUI.secondaryText), style: .init(
                 lineWidth: 1.5, lineCap: .round, lineJoin: .round, dash: request.smooth ? [] : [2, 3]
             ))
         }

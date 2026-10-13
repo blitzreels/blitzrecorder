@@ -74,7 +74,7 @@ struct EditorBackgroundMusicControl: View {
                         }
                     )
                     .controlSize(.small)
-                    .tint(BlitzUI.mint)
+                    .tint(BlitzUI.accent)
                     Text(volumeLabel)
                         .font(BlitzType.captionEmphasis.monospacedDigit())
                         .monospacedDigit()

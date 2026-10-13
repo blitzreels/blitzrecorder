@@ -32,20 +32,16 @@ extension ProjectLibraryView {
                         .help("Clear search")
                     }
                 }
-                .padding(.horizontal, 11)
-                .frame(height: BlitzControlMetrics.height(.regular))
-                .background(BlitzUI.controlFill, in: .rect(cornerRadius: BlitzControlMetrics.radius))
-                .overlay {
-                    RoundedRectangle(cornerRadius: BlitzControlMetrics.radius, style: .continuous)
-                        .strokeBorder(isSearchFocused ? BlitzUI.mint.opacity(0.65) : BlitzUI.panelStroke, lineWidth: 1)
-                }
+                .padding(.horizontal, 12)
+                .frame(height: 36)
+                .blitzFieldChrome(isFocused: isSearchFocused)
 
                 Button {
                     showsFilters.toggle()
                 } label: {
                     Image(systemName: vm.projectLibraryNavigation.filters.activeCount == 0
                           ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
-                        .foregroundStyle(vm.projectLibraryNavigation.filters.activeCount == 0 ? BlitzUI.primaryText : BlitzUI.mint)
+                        .foregroundStyle(vm.projectLibraryNavigation.filters.activeCount == 0 ? BlitzUI.primaryText : BlitzUI.accent)
                         .frame(width: 18)
                 }
                 .blitzButton(.secondary)
@@ -55,19 +51,7 @@ extension ProjectLibraryView {
                     : "\(vm.projectLibraryNavigation.filters.activeCount) filters")
                 .help("Sort and filter recordings")
                 .popover(isPresented: $showsFilters, arrowEdge: .bottom) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Sort").font(BlitzType.section)
-                            BlitzDropdown(configuration: .init(
-                                title: "Sort projects", selection: $vm.projectLibraryNavigation.filters.sort,
-                                options: ProjectLibraryFilters.Sort.allCases.map { .init(value: $0, title: $0.rawValue, detail: nil) },
-                                menuWidth: 220
-                            ))
-                        }
-                        .padding([.horizontal, .top], 16)
-                        ProjectLibraryFiltersView(filters: $vm.projectLibraryNavigation.filters)
-                    }
-                    .background(BlitzUI.panelBackground)
+                    ProjectLibraryFiltersView(filters: $vm.projectLibraryNavigation.filters)
                 }
             }
             .padding(.horizontal, 12)
@@ -88,8 +72,6 @@ extension ProjectLibraryView {
                 .padding(.horizontal, 14)
                 .padding(.bottom, 8)
             }
-
-            Rectangle().fill(BlitzUI.separator).frame(height: 1)
 
             let visibleProjects = filteredProjects
             let sharedProjectPaths = Set(visibleProjects.map(\.projectPath).filter { sharing.sharedURL(forProject: $0) != nil })
@@ -132,15 +114,15 @@ extension ProjectLibraryView {
             }
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
-            .background(BlitzUI.projectLibraryBackground)
+            .background(Color.clear)
             .prefersDefaultFocus(true, in: libraryFocus)
             .defaultFocus($isSearchFocused, false)
             .onDeleteCommand {
                 guard workPolicy.loadsLocalProjects else { return }
                 queueDeletion(projects(for: vm.projectLibraryNavigation.selectedProjectIDs))
             }
-            .contextMenu(forSelectionType: UUID.self) { selection in
-                projectContextMenu(selection)
+            .contextMenu(forSelectionType: UUID.self) { _ in
+                EmptyView()
             } primaryAction: { selection in
                 let projects = projects(for: selection)
                 if !vm.projectTrash.isWorking, projects.count == 1, let project = projects.first {
@@ -148,8 +130,8 @@ extension ProjectLibraryView {
                 }
             }
         }
-        .frame(width: 340)
-        .background(BlitzUI.projectLibraryBackground)
+        .frame(width: ProjectLibrarySidebarLayout.width)
+        .background(BlitzMaterialBackground(kind: .content))
         .focusScope(libraryFocus)
         .onAppear {
             isSearchFocused = false
@@ -182,80 +164,70 @@ extension ProjectLibraryView {
                 : project.recordedAt.formatted(date: .abbreviated, time: .omitted),
                 metadata.videoQuality?.label.components(separatedBy: " · ").first
             ].compactMap { $0 }.joined(separator: " · "),
-            match: transcriptMatches[project.id]?.first.map { "\(SilenceTime.label($0.time)) · \($0.text)" },
+            match: transcriptMatches[project.id]?.first.map { "\(ProjectLibraryMetadata.durationLabel($0.time)) · \($0.text)" },
             isShared: request.isShared,
             isSelected: vm.projectLibraryNavigation.selectedProjectIDs.contains(project.id)
         ))
+        .blitzContextMenu(projectMenu(project.id))
         .listRowInsets(ProjectLibrarySidebarLayout.rowInsets)
         .tag(project.id)
         .draggable(project.id.uuidString)
     }
 
-    @ViewBuilder
-    func projectContextMenu(
-        _ selection: Set<UUID>
-    ) -> some View {
+    func projectMenu(_ id: UUID?) -> BlitzContextMenu {
+        BlitzContextMenu(willOpen: {
+            if let id, !vm.projectLibraryNavigation.selectedProjectIDs.contains(id) {
+                vm.projectLibraryNavigation.selectedProjectIDs = [id]
+            }
+        }, entries: {
+            projectMenuEntries(id.map { vm.projectLibraryNavigation.selectedProjectIDs.contains($0)
+                ? vm.projectLibraryNavigation.selectedProjectIDs : [$0] } ?? vm.projectLibraryNavigation.selectedProjectIDs)
+        })
+    }
+
+    func projectMenuEntries(_ selection: Set<UUID>) -> [BlitzMenuEntry] {
         let projects = projects(for: selection)
-
-        Group {
-            if projects.count == 1, let project = projects.first {
-                if let url = sharing.sharedURL(forProject: project.projectPath) {
-                    Button("Copy watch link") {
-                        BlitzClipboard.copyInBackground(url.absoluteString)
-                    }
-                    Button("Open shared video") { NSWorkspace.shared.open(url) }
-                    Divider()
-                }
-                if let path = project.exports?.max(by: { $0.createdAt < $1.createdAt })?.path ?? project.finalVideoPath {
-                    Button("Show latest export in Finder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
-                    }
-                }
-                Button("Edit recording") {
-                    vm.openProject(project)
-                }
-                .disabled(!vm.canOpenProjectEditor)
-
-                Button {
-                    beginRename(project)
-                } label: {
-                    Label("Rename", systemImage: "pencil")
-                }
+        guard !projects.isEmpty, !vm.projectTrash.isWorking else { return [] }
+        var entries: [BlitzMenuEntry] = []
+        if projects.count == 1, let project = projects.first {
+            entries.append(.item(.init(title: "Edit Recording", systemImage: "scissors",
+                                       isEnabled: vm.canOpenProjectEditor, action: { vm.openProject(project) })))
+            entries.append(.item(.init(title: "Rename…", systemImage: "square.and.pencil", action: { beginRename(project) })))
+            if let url = sharing.sharedURL(forProject: project.projectPath) {
+                entries.append(.item(.init(title: "Copy Watch Link", systemImage: "link",
+                                           action: { BlitzClipboard.copyInBackground(url.absoluteString) })))
             }
-
-            if !projects.isEmpty {
-                Divider()
-                ProjectMoveToFolderMenu(vm: vm, projects: projects)
-                Divider()
-                Button {
-                    vm.revealProjects(projects)
-                } label: {
-                    Label(
-                        projects.count == 1 ? "Show in Finder" : "Show Selected in Finder",
-                        systemImage: "folder"
-                    )
-                }
-
-                Divider()
-
-                Button(role: .destructive) {
-                    queueDeletion(projects)
-                } label: {
-                    Label(
-                        projects.count == 1
-                            ? "Move to Trash"
-                            : "Move \(projects.count) Projects to Trash",
-                        systemImage: "trash"
-                    )
-                }
-            }
+            entries.append(.divider)
         }
-        .disabled(vm.projectTrash.isWorking)
+        entries.append(.item(.init(title: projects.count == 1 ? "Show in Finder" : "Show \(projects.count) in Finder",
+                                   systemImage: "folder", action: { vm.revealProjects(projects) })))
+        entries.append(.section("Move to folder"))
+        for node in vm.folderTree.flatMap(\.flattened) {
+            entries.append(.item(.init(title: node.path.displayPath, systemImage: "folder", action: {
+                vm.moveIntoFolder(.init(projects: projects, destination: vm.folderDestination(node), path: node.path))
+            })))
+        }
+        entries.append(.item(.init(title: "New Folder…", systemImage: "folder.badge.plus",
+                                   action: { vm.presentFolderPrompt(.create(parent: nil, moving: projects)) })))
+        if projects.contains(where: { vm.folderIndex.resolved($0).folder != nil }) {
+            entries.append(.item(.init(title: "Remove from Folder", systemImage: "folder.badge.minus",
+                                       action: { vm.removeFromFolder(projects) })))
+        }
+        entries.append(.divider)
+        entries.append(.item(.init(title: projects.count == 1 ? "Move to Trash" : "Move \(projects.count) to Trash",
+                                   systemImage: "trash", isDestructive: true, action: { queueDeletion(projects) })))
+        return entries
     }
 }
 
 enum ProjectLibrarySidebarLayout {
+    static let width: CGFloat = 360
     static let rowInsets = EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8)
+    static let rowPadding: CGFloat = 6
+    static let thumbnailRadius: CGFloat = 6
+    /// Concentric with the thumbnail: inner radius plus padding.
+    static let rowRadius: CGFloat = thumbnailRadius + rowPadding
+    static let thumbnailSize = CGSize(width: 96, height: 54)
 }
 
 struct ProjectLibrarySidebarRow: View {
@@ -273,36 +245,44 @@ struct ProjectLibrarySidebarRow: View {
     let configuration: Configuration
     @State private var isHovering = false
 
-    private var rowFill: Color {
-        if configuration.isSelected { return BlitzUI.selectedFill }
-        return isHovering ? BlitzUI.hoverFill : .clear
+    @ViewBuilder private var rowBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: Layout.rowRadius, style: .continuous)
+        if configuration.isSelected {
+            BlitzSelectedBackground(cornerRadius: Layout.rowRadius)
+        } else {
+            shape.fill(isHovering ? BlitzUI.quietFill : .clear)
+        }
     }
 
+    private typealias Layout = ProjectLibrarySidebarLayout
+
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             if let lessonNumber = configuration.lessonNumber {
                 Text(lessonNumber)
                     .font(BlitzType.captionEmphasis)
                     .monospacedDigit()
-                    .foregroundStyle(configuration.isDuplicateLesson ? BlitzUI.warning : BlitzUI.secondaryText)
-                    .frame(width: 20, alignment: .center)
+                    .foregroundStyle(configuration.isDuplicateLesson ? BlitzUI.warning : BlitzUI.tertiaryText)
+                    .frame(width: 18, alignment: .center)
                     .fixedSize()
                     .accessibilityLabel("Lesson \(lessonNumber)")
                     .help(configuration.isDuplicateLesson ? "Another recording uses this lesson number" : "Lesson \(lessonNumber)")
 
             }
             ProjectLibraryThumbnail(configuration: .init(
-                metadata: configuration.metadata, width: 96, height: 54, cornerRadius: 6, showsDuration: true
+                metadata: configuration.metadata, width: Layout.thumbnailSize.width, height: Layout.thumbnailSize.height,
+                cornerRadius: Layout.thumbnailRadius, showsDuration: false
             ))
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(configuration.title)
-                    .font(BlitzType.strong)
+                    .font(BlitzType.navigation)
                     .foregroundStyle(BlitzUI.primaryText)
                     .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let match = configuration.match {
                     Text(match)
                         .font(BlitzType.caption)
-                        .foregroundStyle(BlitzUI.mint)
+                        .foregroundStyle(BlitzUI.accent)
                         .lineLimit(2)
                 }
                 HStack(spacing: 6) {
@@ -311,10 +291,13 @@ struct ProjectLibrarySidebarRow: View {
                     if configuration.isShared {
                         Image(systemName: "link")
                             .font(BlitzType.symbol(10))
-                            .frame(width: 12)
-                            .foregroundStyle(BlitzUI.secondaryText)
                             .accessibilityLabel("Shared")
                             .help("Has a watch link")
+                    }
+                    if let duration = configuration.metadata.durationSeconds {
+                        Text(ProjectLibraryMetadata.durationLabel(duration))
+                            .monospacedDigit()
+                            .foregroundStyle(BlitzUI.secondaryText)
                     }
                 }
                 .font(BlitzType.caption)
@@ -322,9 +305,9 @@ struct ProjectLibrarySidebarRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
-        .background(rowFill, in: .rect(cornerRadius: BlitzUI.controlRadius))
+        .padding(Layout.rowPadding)
+        .frame(minHeight: Layout.thumbnailSize.height + Layout.rowPadding * 2)
+        .background { rowBackground }
         .background(ProjectLibraryListHighlightSuppressor())
         .contentShape(.rect)
         .onHover { isHovering = $0 }

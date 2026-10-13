@@ -35,7 +35,7 @@ struct AboutSettingsPage: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Label("Free. All features included.", systemImage: "checkmark.circle.fill")
                         .font(BlitzType.headline)
-                        .foregroundStyle(BlitzUI.mint)
+                        .foregroundStyle(BlitzUI.accent)
                     Text("Unlimited recording and exports, iPhone camera, 4K, and 60 fps.")
                     Text("No account, payment, or license key needed.")
                         .foregroundStyle(BlitzUI.secondaryText)

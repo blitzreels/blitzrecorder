@@ -7,13 +7,12 @@ enum BlitzButtonEmphasis {
     case quiet
     case record
     case dock
-    case prominent
 
-    var isDockControl: Bool { self == .record || self == .dock || self == .prominent }
+    var isDockControl: Bool { self == .record || self == .dock }
 }
 
 enum BlitzControlMetrics {
-    static let radius: CGFloat = 8
+    static let radius: CGFloat = 10
     static let dockHeight: CGFloat = 44
     static let prominentDockHeight: CGFloat = 56
     static let dockRadius: CGFloat = BlitzUI.cardRadius
@@ -67,6 +66,7 @@ struct BlitzButtonStyle: ButtonStyle {
                 : BlitzType.control(BlitzControlMetrics.fontSize(controlSize)))
             .symbolRenderingMode(.monochrome)
             .symbolVariant(.none)
+            .labelStyle(BlitzControlLabelStyle())
             .padding(.horizontal, emphasis.isDockControl
                 ? (controlSize == .extraLarge ? 26 : 18)
                 : BlitzControlMetrics.horizontalPadding(controlSize))
@@ -77,12 +77,16 @@ struct BlitzButtonStyle: ButtonStyle {
             .foregroundStyle(foregroundColor(configuration.role))
             .background(fill, in: .rect(cornerRadius: radius, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(emphasis == .secondary ? BlitzUI.panelStroke : .clear, lineWidth: 1)
-                    .allowsHitTesting(false)
+                if emphasis != .quiet {
+                    BlitzEdgeHighlight(cornerRadius: radius)
+                        .opacity(emphasis == .secondary || emphasis == .dock ? 1 : 0.7)
+                }
             }
+            .shadow(color: glow, radius: isEnabled ? 6 : 0, y: 2)
             .blitzFocusRing(cornerRadius: radius)
-            .opacity(isEnabled ? (configuration.isPressed ? 0.76 : 1) : 0.4)
+            .scaleEffect(configuration.isPressed && isEnabled ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
+            .opacity(isEnabled ? (configuration.isPressed ? 0.86 : 1) : 0.4)
             .contentShape(.rect(cornerRadius: radius, style: .continuous))
             .onHover { isHovering = $0 }
             .pointingHandCursor()
@@ -95,25 +99,49 @@ struct BlitzButtonStyle: ButtonStyle {
     private func foregroundColor(_ role: ButtonRole?) -> Color {
         if role == .destructive { return BlitzUI.recordRed }
         switch emphasis {
-        case .accent, .emphasized: return .black.opacity(0.88)
+        case .accent: return BlitzUI.onAccent
+        case .emphasized: return BlitzUI.inverseText
         case .secondary: return BlitzUI.primaryText
         case .quiet: return isHovering && isEnabled ? BlitzUI.primaryText : BlitzUI.secondaryText
         case .record: return .white
         case .dock: return BlitzUI.primaryText
-        case .prominent: return .black.opacity(0.88)
         }
     }
 
-    private var fill: Color {
+    private var fill: AnyShapeStyle {
         let hovered = isHovering && isEnabled
         switch emphasis {
-        case .accent: return hovered ? BlitzUI.mint.opacity(0.9) : BlitzUI.mint
-        case .emphasized: return hovered ? .white : BlitzUI.primaryText
-        case .secondary: return hovered ? BlitzUI.hoverFill : BlitzUI.controlFill
-        case .quiet: return hovered ? BlitzUI.quietFill : .clear
-        case .record: return BlitzUI.recordRed.opacity(hovered ? 1 : 0.9)
-        case .dock: return hovered ? BlitzUI.strongFill : BlitzUI.selectedFill
-        case .prominent: return hovered ? BlitzUI.mint.opacity(0.9) : BlitzUI.mint
+        case .accent:
+            return AnyShapeStyle(LinearGradient(colors: [BlitzUI.accentHighlight, BlitzUI.accent],
+                                                startPoint: .top, endPoint: .bottom).opacity(hovered ? 0.92 : 1))
+        case .emphasized: return AnyShapeStyle(hovered ? BlitzUI.supportingText : BlitzUI.primaryText)
+        case .secondary:
+            return AnyShapeStyle(LinearGradient(colors: [hovered ? BlitzUI.strongFill : BlitzUI.raisedFillTop,
+                                                         hovered ? BlitzUI.hoverFill : BlitzUI.raisedFillBottom],
+                                                startPoint: .top, endPoint: .bottom))
+        case .quiet: return AnyShapeStyle(hovered ? BlitzUI.quietFill : .clear)
+        case .record:
+            return AnyShapeStyle(LinearGradient(colors: [BlitzUI.recordRedHighlight, BlitzUI.recordRed],
+                                                startPoint: .top, endPoint: .bottom).opacity(hovered ? 1 : 0.94))
+        case .dock: return AnyShapeStyle(hovered ? BlitzUI.strongFill : BlitzUI.selectedFill)
+        }
+    }
+
+    private var glow: Color {
+        switch emphasis {
+        case .accent: BlitzUI.accentGlow
+        case .record: BlitzUI.recordGlow
+        case .emphasized, .secondary, .quiet, .dock: .clear
+        }
+    }
+}
+
+/// Icons sit one weight above the label so they never look hairline next to medium text.
+struct BlitzControlLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 6) {
+            configuration.icon.fontWeight(.semibold)
+            configuration.title
         }
     }
 }

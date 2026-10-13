@@ -39,9 +39,6 @@ struct SettingsPageHeader: View {
                         .font(BlitzType.label)
                         .foregroundStyle(status.isActive ? BlitzUI.primaryText : BlitzUI.secondaryText)
                 }
-                .padding(.horizontal, 10)
-                .frame(height: 28)
-                .background(BlitzUI.controlFill, in: .capsule)
                 .fixedSize()
             }
         }
@@ -61,9 +58,6 @@ private struct SettingsSectionModifier: ViewModifier {
     func body(content: Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 8) {
-                BlitzSymbol(configuration: .init(name: configuration.systemImage, size: 18))
-                    .symbolVariant(.fill)
-                    .foregroundStyle(BlitzUI.secondaryText)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(configuration.title)
                         .font(BlitzType.section)
@@ -135,9 +129,6 @@ struct SettingsStatusBadge: View {
                 .lineLimit(1)
         }
         .foregroundStyle(configuration.tone == .muted ? BlitzUI.secondaryText : configuration.tone.color)
-        .padding(.horizontal, 9)
-        .frame(height: 26)
-        .background(configuration.tone.color.opacity(0.08), in: .capsule)
         .fixedSize()
     }
 }
@@ -147,12 +138,7 @@ private struct SettingsSurfaceModifier: ViewModifier {
         content
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(BlitzUI.cardFill, in: .rect(cornerRadius: BlitzUI.cardRadius))
-            .overlay {
-                RoundedRectangle(cornerRadius: BlitzUI.cardRadius)
-                    .strokeBorder(BlitzUI.separator, lineWidth: 1)
-                    .allowsHitTesting(false)
-            }
+            .background(BlitzUI.cardFill, in: .rect(cornerRadius: BlitzUI.cardRadius, style: .continuous))
     }
 }
 
@@ -160,12 +146,7 @@ private struct SettingsCardModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(.horizontal, 16)
-            .background(BlitzUI.cardFill, in: .rect(cornerRadius: BlitzUI.cardRadius))
-            .overlay {
-                RoundedRectangle(cornerRadius: BlitzUI.cardRadius)
-                    .strokeBorder(BlitzUI.separator, lineWidth: 1)
-                    .allowsHitTesting(false)
-            }
+            .background(BlitzUI.cardFill, in: .rect(cornerRadius: BlitzUI.cardRadius, style: .continuous))
     }
 }
 

@@ -178,6 +178,11 @@ final class CameraPreviewView: NSView {
         unavailableOverlay.apply(message: message)
     }
 
+    /// Keeps the last frame on screen, dimmed, while idle previews pause in the background.
+    func showPaused() {
+        unavailableOverlay.apply(message: "Paused")
+    }
+
     private func hideUnavailableOverlay() {
         unavailableOverlay.apply(message: "")
     }

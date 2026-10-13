@@ -36,7 +36,7 @@ extension View {
             .padding(.vertical, 12)
             .frame(maxWidth: 720)
             .background(.regularMaterial, in: .rect(cornerRadius: BlitzUI.cardRadius))
-            .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
+            .shadow(color: BlitzUI.deepShadow, radius: 18, y: 8)
             .environment(\.colorScheme, .dark)
     }
 }

@@ -13,6 +13,8 @@ final class PreviewStageView: NSView {
     let screenPreview = ScreenPreviewView()
     let cameraPreview = CameraPreviewView()
     let cameraShadowLayer = CALayer()
+    let canvasShadowLayer = CALayer()
+    private var accentObserver: NSObjectProtocol?
     let screenShadowLayer = CALayer()
     let canvasBackgroundLayer = CALayer()
     var renderedBackgroundKey: BackgroundRenderKey?
@@ -368,6 +370,8 @@ final class PreviewStageView: NSView {
         }
     }
 
+    static let canvasCornerRadius: CGFloat = 12
+
     init() {
         super.init(frame: .zero)
         wantsLayer = true
@@ -377,10 +381,28 @@ final class PreviewStageView: NSView {
         canvasBackgroundLayer.backgroundColor = canvasBackgroundStyle.appearance.solidCGColor
         canvasBackgroundLayer.contentsGravity = .resize
         canvasBackgroundLayer.zPosition = -1
-        canvasBackgroundLayer.cornerRadius = 8
+        canvasBackgroundLayer.cornerRadius = Self.canvasCornerRadius
+        canvasBackgroundLayer.cornerCurve = .continuous
         canvasBackgroundLayer.masksToBounds = true
-        canvasBackgroundLayer.borderWidth = 1.5
-        canvasBackgroundLayer.borderColor = NSColor.white.withAlphaComponent(0.20).cgColor
+        canvasBackgroundLayer.borderWidth = 1
+        canvasShadowLayer.zPosition = -2
+        canvasShadowLayer.shadowColor = NSColor.black.cgColor
+        canvasShadowLayer.shadowRadius = 20
+        canvasShadowLayer.shadowOffset = CGSize(width: 0, height: -8)
+        canvasShadowLayer.actions = ["frame": NSNull(), "bounds": NSNull(), "position": NSNull(), "shadowPath": NSNull()]
+        layer?.addSublayer(canvasShadowLayer)
+        accentObserver = NotificationCenter.default.addObserver(
+            forName: .blitzAccentChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.applyChromeAppearance()
+                self.selectionOverlay.needsDisplay = true
+                self.outlineOverlay.needsDisplay = true
+                self.safeZoneOverlay.needsDisplay = true
+                self.needsDisplay = true
+            }
+        }
         canvasBackgroundLayer.actions = [
             "frame": NSNull(),
             "bounds": NSNull(),
@@ -439,6 +461,27 @@ final class PreviewStageView: NSView {
         cameraCanvasMask.fillColor = NSColor.white.cgColor
     }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyChromeAppearance()
+    }
+
+    /// Layer colors are CGColors, which do not follow the appearance on their own.
+    func applyChromeAppearance() {
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        canvasShadowLayer.shadowOpacity = isDark ? 0.4 : 0.12
+        CATransaction.commit()
+        updateCanvasSelectionAffordance()
+    }
+
+    func resolvedCGColor(_ color: NSColor) -> CGColor {
+        var resolved = color.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance { resolved = color.cgColor }
+        return resolved
+    }
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
@@ -463,6 +506,11 @@ final class PreviewStageView: NSView {
                 in: bounds.insetBy(dx: resizeHandleOutset + 12, dy: resizeHandleOutset + 12)
             )
             canvasBackgroundLayer.frame = canvasFrame
+            canvasShadowLayer.frame = canvasFrame
+            canvasShadowLayer.shadowPath = CGPath(
+                roundedRect: CGRect(origin: .zero, size: canvasFrame.size),
+                cornerWidth: Self.canvasCornerRadius, cornerHeight: Self.canvasCornerRadius, transform: nil
+            )
             refreshCanvasBackground()
             applyLayerOrder()
             applySceneFrames()
@@ -508,6 +556,7 @@ final class PreviewStageView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        applyChromeAppearance()
         updateBackgroundAnimation()
     }
 

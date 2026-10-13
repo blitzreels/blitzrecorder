@@ -60,7 +60,7 @@ extension EditorTimelineView {
     }
 
     var selectionTint: Color {
-        guard let ranges = selection?.rangeSelection?.displayRanges, !ranges.isEmpty else { return BlitzUI.mint }
+        guard let ranges = selection?.rangeSelection?.displayRanges, !ranges.isEmpty else { return BlitzUI.accent }
         let onlySilence = ranges.allSatisfy { range in
             let segments = SilenceTimelineSegments.overlapping(.init(
                 segments: silenceSegments, start: range.start, end: range.end,
@@ -70,7 +70,7 @@ extension EditorTimelineView {
                 first.range.start <= range.start, last.range.end >= range.end else { return false }
             return segments.allSatisfy { $0.classification == .silence }
         }
-        return onlySilence ? BlitzUI.recordRed : BlitzUI.mint
+        return onlySilence ? BlitzUI.recordRed : BlitzUI.accent
     }
 
     func isPlacedTrack(at y: CGFloat) -> Bool {

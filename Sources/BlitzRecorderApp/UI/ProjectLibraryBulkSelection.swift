@@ -84,7 +84,7 @@ extension ProjectLibraryView {
         HStack(spacing: 10) {
             Image(systemName: configuration.systemImage)
                 .font(BlitzType.glyph(13))
-                .foregroundStyle(BlitzUI.mint)
+                .foregroundStyle(BlitzUI.accent)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(configuration.title)
@@ -126,7 +126,7 @@ extension ProjectLibraryView {
 
                         Label("View project", systemImage: "arrow.up.right")
                             .font(BlitzType.footnote)
-                            .foregroundStyle(BlitzUI.primaryText)
+                            .foregroundStyle(.white)
                             .padding(.horizontal, 10)
                             .frame(height: 28)
                             .background(.black.opacity(0.72), in: .capsule)
@@ -188,7 +188,7 @@ extension ProjectLibraryView {
         }
         .pointingHandCursor()
         .help("View \(displayTitle(project))")
-        .contextMenu { projectContextMenu(vm.projectLibraryNavigation.selectedProjectIDs) }
+        .blitzContextMenu(projectMenu(nil))
     }
 
     private func projectThumbnail(

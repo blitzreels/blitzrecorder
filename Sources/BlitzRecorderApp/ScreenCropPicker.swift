@@ -192,10 +192,10 @@ private final class ScreenCropPickerView: NSView {
             NSColor.clear.setFill()
             selection.fill(using: .clear)
 
-            NSColor(calibratedRed: 0.09, green: 1.0, blue: 0.65, alpha: 0.16).setFill()
+            BlitzThemeStore.shared.accent.nsAccent.withAlphaComponent(0.16).setFill()
             selection.fill()
 
-            NSColor(calibratedRed: 0.09, green: 1.0, blue: 0.65, alpha: 1).setStroke()
+            BlitzThemeStore.shared.accent.nsAccent.setStroke()
             let border = NSBezierPath(rect: selection.insetBy(dx: 0.5, dy: 0.5))
             border.lineWidth = 2
             border.stroke()
@@ -311,7 +311,7 @@ private final class ScreenCropPickerView: NSView {
             width: size.width + 18,
             height: size.height + 10
         )
-        NSColor(calibratedRed: 0.09, green: 1.0, blue: 0.65, alpha: 1).setFill()
+        BlitzThemeStore.shared.accent.nsAccent.setFill()
         NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).fill()
         text.draw(at: CGPoint(x: rect.minX + 9, y: rect.minY + 5), withAttributes: attributes)
     }
@@ -333,7 +333,7 @@ private final class ScreenCropPickerView: NSView {
     }
 
     private func drawHandles(in frame: CGRect) {
-        NSColor(calibratedRed: 0.09, green: 1.0, blue: 0.65, alpha: 1).setFill()
+        BlitzThemeStore.shared.accent.nsAccent.setFill()
         for handle in resizeHandles(for: frame).values {
             NSBezierPath(roundedRect: handle, xRadius: 3, yRadius: 3).fill()
         }

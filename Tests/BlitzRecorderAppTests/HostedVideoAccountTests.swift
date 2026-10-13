@@ -220,16 +220,16 @@ final class HostedVideoAccountTests: XCTestCase {
         failed["error"] = "The uploaded file could not be decoded. Export it again to retry."
         failed["sharePath"] = NSNull()
         fixture.server.assets = [libraryVideo(), processing, failed]
-        try await proof(.init(view: AnyView(HostedVideoLibraryView(controller: fixture.controller, showRecordings: {}, thumbnail: { _ in nil })),
+        try await proof(.init(view: AnyView(HostedVideoLibraryView(controller: fixture.controller, showRecordings: {}, thumbnail: { _ in nil }, showcase: [])),
             size: .init(width: 1000, height: 680), name: "shared-library-loading"))
         await fixture.controller.refresh()
         for width in [480.0, 620.0, 1000.0] {
-            let host = NSHostingView(rootView: HostedVideoLibraryView(controller: fixture.controller, showRecordings: {}, thumbnail: { _ in nil })
+            let host = NSHostingView(rootView: HostedVideoLibraryView(controller: fixture.controller, showRecordings: {}, thumbnail: { _ in nil }, showcase: [])
                 .frame(width: width, height: 680).preferredColorScheme(.dark))
             host.setFrameSize(host.fittingSize)
             host.layoutSubtreeIfNeeded()
             XCTAssertEqual(host.fittingSize.width, width, accuracy: 1)
-            try await proof(.init(view: AnyView(HostedVideoLibraryView(controller: fixture.controller, showRecordings: {}, thumbnail: { _ in nil })),
+            try await proof(.init(view: AnyView(HostedVideoLibraryView(controller: fixture.controller, showRecordings: {}, thumbnail: { _ in nil }, showcase: [])),
                 size: .init(width: width, height: 680), name: "shared-library-\(Int(width))"))
         }
     }

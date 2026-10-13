@@ -65,7 +65,7 @@ struct EditorSystemAudioChunk: View {
         }
         .frame(width: max(1, end - start), height: configuration.height)
         .clipShape(.rect(cornerRadius: 5))
-        .overlay { RoundedRectangle(cornerRadius: 5).strokeBorder(showsVolume ? BlitzUI.mint : BlitzUI.trackSystemAudio, lineWidth: 1) }
+        .overlay { RoundedRectangle(cornerRadius: 5).strokeBorder(showsVolume ? BlitzUI.accent : BlitzUI.trackSystemAudio, lineWidth: 1) }
         .contentShape(.rect)
         .pointingHandCursor()
         .onTapGesture { showsVolume = true }

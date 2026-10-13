@@ -29,10 +29,14 @@ struct BlitzSelectionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .foregroundStyle(isSelected ? BlitzUI.primaryText : BlitzUI.secondaryText)
-            .background(
-                isSelected ? BlitzUI.selectedFill : (isEnabled && isHovering ? BlitzUI.quietFill : Color.clear),
-                in: .rect(cornerRadius: BlitzUI.controlRadius)
-            )
+            .background {
+                if isSelected {
+                    BlitzSelectedBackground(cornerRadius: BlitzUI.controlRadius)
+                } else {
+                    RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous)
+                        .fill(isEnabled && isHovering ? BlitzUI.quietFill : Color.clear)
+                }
+            }
             .contentShape(.rect(cornerRadius: BlitzUI.controlRadius))
             .blitzFocusRing(cornerRadius: BlitzUI.controlRadius)
             .opacity(isEnabled ? (configuration.isPressed ? 0.72 : 1) : 0.38)
@@ -110,7 +114,7 @@ struct BlitzTab: View {
                 if let symbolName = configuration.symbolName {
                     BlitzSymbol(configuration: .init(name: symbolName, size: 16))
                         .symbolVariant(configuration.isSelected ? .fill : .none)
-                        .foregroundStyle(configuration.isSelected ? BlitzUI.mint : BlitzUI.secondaryText)
+                        .foregroundStyle(configuration.isSelected ? BlitzUI.accent : BlitzUI.secondaryText)
                 }
                 Text(configuration.title)
                     .font(configuration.symbolPlacement == .above ? BlitzType.footnote : controlSize == .large ? BlitzType.control(13) : BlitzType.captionEmphasis)
@@ -174,36 +178,47 @@ struct BlitzToolTabBar<Value: Hashable>: View {
 
     let configuration: Configuration
 
+    /// A labeled tool rail on the inspector's outer edge (as in Descript, Riverside, VEED):
+    /// every tool keeps its name, and the rail scales to any number of tools without crowding.
+    static var railWidth: CGFloat { 64 }
+
     var body: some View {
-        let split = (configuration.options.count + 1) / 2
-        ViewThatFits(in: .horizontal) {
-            row(configuration.options).fixedSize(horizontal: true, vertical: false).frame(maxWidth: .infinity)
+        ScrollView(.vertical) {
             VStack(spacing: 2) {
-                row(Array(configuration.options.prefix(split)))
-                row(Array(configuration.options.dropFirst(split)))
+                ForEach(configuration.options, id: \.self) { option in
+                    let isSelected = configuration.selection == option
+                    Button { configuration.select(option) } label: {
+                        VStack(spacing: 4) {
+                            BlitzSymbol(configuration: .init(name: configuration.symbolName(option), size: 18))
+                                .symbolVariant(isSelected ? .fill : .none)
+                                .foregroundStyle(isSelected ? BlitzUI.accent : BlitzUI.secondaryText)
+                            Text(configuration.label(option))
+                                .font(BlitzType.footnote)
+                                .foregroundStyle(isSelected ? BlitzUI.primaryText : BlitzUI.secondaryText)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        }
+                        .frame(width: Self.railWidth - 12, height: 50)
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(BlitzSelectionButtonStyle(isSelected: isSelected))
+                    .disabled(!configuration.isOptionEnabled(option))
+                    .help(configuration.help(option) == configuration.label(option)
+                          ? configuration.label(option)
+                          : "\(configuration.label(option)): \(configuration.help(option))")
+                    .accessibilityLabel(configuration.label(option))
+                    .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+                }
             }
+            .padding(.vertical, 10)
+            .frame(width: Self.railWidth)
         }
-        .controlSize(.mini)
-        .padding(6)
+        .scrollIndicators(.never)
+        .frame(width: Self.railWidth)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(BlitzUI.insetWell)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(configuration.title)
-    }
-
-    private func row(_ options: [Value]) -> some View {
-        HStack(spacing: 2) {
-            ForEach(options, id: \.self) { option in
-                BlitzTab(configuration: .init(
-                    title: configuration.label(option),
-                    symbolName: configuration.symbolName(option),
-                    symbolPlacement: .above,
-                    isSelected: configuration.selection == option,
-                    expands: true,
-                    action: { configuration.select(option) }
-                ))
-                .disabled(!configuration.isOptionEnabled(option))
-                .help(configuration.help(option))
-            }
-        }
     }
 }
 
@@ -211,7 +226,12 @@ private struct BlitzTabGroupModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(3)
-            .background(BlitzUI.quietFill, in: .rect(cornerRadius: BlitzUI.controlRadius + 3))
+            .background(BlitzUI.insetWell, in: .rect(cornerRadius: BlitzUI.controlRadius + 3, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: BlitzUI.controlRadius + 3, style: .continuous)
+                    .strokeBorder(BlitzUI.separator, lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
     }
 }
 
@@ -221,7 +241,7 @@ private struct BlitzFocusRing: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: cornerRadius + 3, style: .continuous)
-            .strokeBorder(isFocused ? BlitzUI.mint : .clear, lineWidth: 2)
+            .strokeBorder(isFocused ? BlitzUI.accent : .clear, lineWidth: 2)
             .padding(-3)
             .allowsHitTesting(false)
     }

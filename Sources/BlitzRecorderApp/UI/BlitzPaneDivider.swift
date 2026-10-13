@@ -3,8 +3,12 @@ import SwiftUI
 
 struct BlitzPaneDivider: View {
     static let thickness: Double = 8
+    /// Which side of the divider the resized pane sits on.
+    enum PaneSide { case leading, trailing }
+
     struct Configuration {
         let axis: Axis
+        let paneSide: PaneSide
         let label: String
         let value: Binding<Double>
         let bounds: ClosedRange<Double>
@@ -23,10 +27,10 @@ struct BlitzPaneDivider: View {
         ZStack {
             Rectangle().fill(BlitzUI.projectLibraryBackground)
             Rectangle()
-                .fill(isActive ? BlitzUI.mint.opacity(0.45) : BlitzUI.separator)
+                .fill(isActive ? BlitzUI.accent.opacity(0.45) : BlitzUI.separator)
                 .frame(width: adjustsWidth ? 1 : nil, height: adjustsWidth ? nil : 1)
             Capsule()
-                .fill(isActive ? BlitzUI.mint : BlitzUI.secondaryText.opacity(0.45))
+                .fill(isActive ? BlitzUI.accent : BlitzUI.secondaryText.opacity(0.45))
                 .frame(width: adjustsWidth ? 3 : 28, height: adjustsWidth ? 28 : 3)
         }
         .frame(
@@ -44,7 +48,7 @@ struct BlitzPaneDivider: View {
                     if dragOrigin == nil { dragOrigin = configuration.value.wrappedValue }
                     guard let dragOrigin else { return }
                     let translation = adjustsWidth ? value.translation.width : value.translation.height
-                    update(dragOrigin - translation)
+                    update(configuration.paneSide == .leading ? dragOrigin + translation : dragOrigin - translation)
                 }
                 .onEnded { _ in
                     guard dragOrigin != nil else { return }

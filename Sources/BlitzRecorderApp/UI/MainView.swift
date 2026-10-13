@@ -13,6 +13,9 @@ struct MainView: View {
     @State private var retainsEditor = false
     @AppStorage("appSidebarHidden") private var isSidebarHidden = false
     @State private var studioExitDestination: AppSidebarDestination = .recordings
+    @AppStorage("recorder.sourcesWidth") private var savedSourcesWidth = 232.0
+    @State private var sourcesWidthDraft: Double?
+    private static let sourcesWidthRange = 200.0...380.0
 
     init(configuration: Configuration) {
         vm = configuration.viewModel
@@ -23,7 +26,8 @@ struct MainView: View {
         HStack(spacing: 0) {
             if !isSidebarHidden && !isInStudio {
                 AppSidebar(vm: vm)
-                Rectangle().fill(BlitzUI.separator).frame(width: 1)
+                    .shadow(color: BlitzUI.elevationShadow, radius: 8, x: 2)
+                    .zIndex(1)
             }
             ZStack {
                 backgroundLayer
@@ -138,7 +142,20 @@ struct MainView: View {
     private func recordContent() -> some View {
         HStack(alignment: .top, spacing: 0) {
             SourcesSidebar(vm: vm)
-            Rectangle().fill(BlitzUI.separator).frame(width: 1)
+                .frame(width: sourcesWidthDraft ?? savedSourcesWidth)
+                .zIndex(1)
+            BlitzPaneDivider(configuration: .init(
+                axis: .horizontal,
+                paneSide: .leading,
+                label: "Sources width",
+                value: Binding(get: { sourcesWidthDraft ?? savedSourcesWidth }, set: { sourcesWidthDraft = $0 }),
+                bounds: Self.sourcesWidthRange,
+                defaultValue: 232,
+                onCommit: {
+                    savedSourcesWidth = sourcesWidthDraft ?? savedSourcesWidth
+                    sourcesWidthDraft = nil
+                }
+            ))
 
             RecorderInspectorSplitView {
                 VStack(spacing: 12) {
@@ -168,12 +185,12 @@ struct MainView: View {
                         }
 
                         if vm.state == .idle && !vm.isLivePreviewEnabled {
-                            Color.black
+                            BlitzUI.canvasBackground
                                 .overlay {
                                     VStack(spacing: 12) {
                                         Image(systemName: "eye.slash")
                                             .font(BlitzType.glyph(28))
-                                            .foregroundStyle(BlitzUI.mint)
+                                            .foregroundStyle(BlitzUI.accent)
                                         Text("Live preview is off")
                                             .font(BlitzType.title)
                                         Text("Mac camera, microphone, screen, and system audio start when you record.")
@@ -317,14 +334,14 @@ private struct SideSplitDividerOverlay: View {
     private var handle: some View {
         ZStack {
             Rectangle()
-                .fill(BlitzUI.mint.opacity(isHovering || dragOrigin != nil ? 0.8 : 0))
+                .fill(BlitzUI.accent.opacity(isHovering || dragOrigin != nil ? 0.8 : 0))
                 .frame(width: 1)
             Capsule()
                 .fill(.black.opacity(0.7))
                 .frame(width: 18, height: 46)
                 .overlay {
                     Capsule()
-                        .fill(isHovering || dragOrigin != nil ? BlitzUI.mint : BlitzUI.supportingText)
+                        .fill(isHovering || dragOrigin != nil ? BlitzUI.accent : BlitzUI.supportingText)
                         .frame(width: 3, height: 24)
                 }
         }
@@ -405,14 +422,14 @@ private struct SplitDividerOverlay: View {
     private var handle: some View {
         ZStack {
             Rectangle()
-                .fill(BlitzUI.mint.opacity(isHovering || dragOrigin != nil ? 0.8 : 0))
+                .fill(BlitzUI.accent.opacity(isHovering || dragOrigin != nil ? 0.8 : 0))
                 .frame(height: 1)
             Capsule()
                 .fill(.black.opacity(0.7))
                 .frame(width: 46, height: 18)
                 .overlay {
                     Capsule()
-                        .fill(isHovering || dragOrigin != nil ? BlitzUI.mint : BlitzUI.supportingText)
+                        .fill(isHovering || dragOrigin != nil ? BlitzUI.accent : BlitzUI.supportingText)
                         .frame(width: 24, height: 3)
                 }
         }
@@ -501,7 +518,7 @@ private struct ScreenPickPrompt: View {
         }
         .blitzButton(.emphasized)
         .controlSize(.large)
-        .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+        .shadow(color: BlitzUI.elevationShadow, radius: 12, y: 4)
         .pointingHandCursor()
         .help("Choose an app window and fit it to the current scene")
     }
@@ -542,7 +559,7 @@ struct CropFloatingToolbar: View {
         .pointingHandCursor()
         .padding(8)
         .background(.regularMaterial, in: .rect(cornerRadius: BlitzUI.cardRadius))
-        .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+        .shadow(color: BlitzUI.elevationShadow, radius: 12, y: 4)
     }
 }
 
@@ -623,7 +640,6 @@ private struct RecordingQualityShortcut: View {
         .disabled(vm.state != .idle)
         .padding(16)
         .frame(width: 288)
-        .preferredColorScheme(.dark)
     }
 
     private var qualityPresentation: RecordingQualityPresentation {
@@ -652,8 +668,50 @@ private struct CaptureCommandBar: View {
             FolderRecordTargetChip(vm: vm)
                 .frame(maxWidth: 240, alignment: .leading)
             RecordingOutputPicker(vm: vm)
+            CanvasGuidesMenu(vm: vm)
             RecordingQualityShortcut(vm: vm)
         }
+    }
+}
+
+/// Preview-only guides live with the preview controls, not in the canvas settings: they are never recorded.
+private struct CanvasGuidesMenu: View {
+    @Bindable var vm: RecorderViewModel
+    @AppStorage(ShortFormSafeZone.preferenceKey) private var showsSafeZones = false
+
+    private var showsSafeZoneOption: Bool { vm.settings.layout == .vertical }
+    private var anyGuideOn: Bool {
+        vm.settings.showsRuleOfThirdsOverlay || (showsSafeZoneOption && showsSafeZones)
+    }
+
+    var body: some View {
+        BlitzGlassMenu(entries: entries, menuWidth: 240) {
+            HStack(spacing: 7) {
+                BlitzSymbol(configuration: .init(name: "squareshape.split.3x3", size: 16))
+                    .foregroundStyle(anyGuideOn ? BlitzUI.accent : BlitzUI.secondaryText)
+                Text("Guides")
+                    .font(BlitzType.label)
+                    .foregroundStyle(BlitzUI.primaryText)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: BlitzControlMetrics.toolbarHeight)
+        }
+        .disabled(!vm.canEditScene)
+        .help("Preview guides. They are never recorded.")
+    }
+
+    private var entries: [BlitzMenuEntry] {
+        var entries: [BlitzMenuEntry] = [
+            .item(.init(title: "Rule of thirds", subtitle: "Lines to help you frame the shot",
+                        systemImage: "squareshape.split.3x3", isSelected: vm.settings.showsRuleOfThirdsOverlay,
+                        action: { vm.setRuleOfThirds(!vm.settings.showsRuleOfThirdsOverlay) }))
+        ]
+        if showsSafeZoneOption {
+            entries.append(.item(.init(title: "App safe zones", subtitle: "Where TikTok, Reels and Shorts put buttons",
+                                       systemImage: "iphone", isSelected: showsSafeZones,
+                                       action: { showsSafeZones.toggle() })))
+        }
+        return entries
     }
 }
 

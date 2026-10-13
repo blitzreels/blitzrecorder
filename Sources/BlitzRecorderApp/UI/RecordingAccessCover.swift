@@ -8,7 +8,7 @@ import SwiftUI
 struct RecordingAccessCover: View {
     @Bindable var vm: RecorderViewModel
 
-    private let accent = BlitzUI.mint
+    private var accent: Color { BlitzUI.accent }
 
     private var sourceRows: [PermissionStatusRow] {
         vm.permissionStatusRows.filter { $0.source != nil }
@@ -116,7 +116,7 @@ struct RecordingAccessCover: View {
             VStack(spacing: 6) {
                 Text("Welcome to BlitzRecorder")
                     .font(BlitzType.largeTitle)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(BlitzUI.primaryText)
                 Text("Allow a few permissions and you're ready to record.")
                     .font(BlitzType.callout)
                     .foregroundStyle(BlitzUI.secondaryText)
@@ -158,7 +158,7 @@ struct RecordingAccessCover: View {
         }
         .padding(.vertical, 6)
         .blitzGlassSurface(cornerRadius: BlitzUI.surfaceRadius)
-        .shadow(color: .black.opacity(0.34), radius: 28, y: 14)
+        .shadow(color: BlitzUI.deepShadow, radius: 28, y: 14)
     }
 
     @ViewBuilder

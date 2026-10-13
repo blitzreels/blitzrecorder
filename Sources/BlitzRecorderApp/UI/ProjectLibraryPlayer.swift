@@ -81,6 +81,9 @@ struct ProjectLibraryPlayerSurface: View {
     let configuration: Configuration
     @State private var readyForDisplayPlayer: ObjectIdentifier?
 
+    /// Wide players carry their transport inside the frame; narrow (portrait) ones keep it underneath.
+    private var overlaysTransport: Bool { playerLayout.videoSize.width >= 520 }
+
     private var isPlaybackReady: Bool {
         configuration.isCurrentProject && configuration.controller.isReady
     }
@@ -104,21 +107,35 @@ struct ProjectLibraryPlayerSurface: View {
     }
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             videoSurface
-
-            ProjectLibraryPlaybackControls(configuration: .init(
-                controller: configuration.controller,
-                waveformSamples: configuration.waveformSamples
-            ))
-            .frame(width: playerLayout.transportWidth)
-            .opacity(isPlaybackReady ? 1 : 0)
-            .disabled(!isPlaybackReady)
-            .accessibilityHidden(!isPlaybackReady)
+                .overlay(alignment: .bottom) {
+                    if overlaysTransport, isPlaybackReady {
+                        transport
+                            .padding(.leading, 7)
+                            .padding(.trailing, 10)
+                            .frame(height: 48)
+                            .blitzGlass(cornerRadius: BlitzUI.surfaceRadius - 2)
+                            .padding(12)
+                    }
+                }
+            if !overlaysTransport {
+                transport.frame(width: playerLayout.transportWidth)
+            }
         }
         .frame(width: playerLayout.transportWidth)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Project playback")
+    }
+
+    private var transport: some View {
+        ProjectLibraryPlaybackControls(configuration: .init(
+            controller: configuration.controller,
+            waveformSamples: configuration.waveformSamples
+        ))
+        .opacity(isPlaybackReady ? 1 : 0)
+        .disabled(!isPlaybackReady)
+        .accessibilityHidden(!isPlaybackReady)
     }
 
     private var showsPoster: Bool {
@@ -174,11 +191,9 @@ struct ProjectLibraryPlayerSurface: View {
             }
         }
         .frame(width: playerLayout.videoSize.width, height: playerLayout.videoSize.height)
-        .clipShape(.rect(cornerRadius: BlitzUI.controlRadius))
-        .overlay {
-            RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous)
-                .strokeBorder(BlitzUI.separator, lineWidth: 1)
-        }
+        .clipShape(.rect(cornerRadius: BlitzUI.surfaceRadius, style: .continuous))
+        .overlay { BlitzEdgeHighlight(cornerRadius: BlitzUI.surfaceRadius) }
+        .shadow(color: BlitzUI.deepShadow, radius: 16, y: 8)
     }
 
     @ViewBuilder
@@ -203,11 +218,11 @@ struct ProjectLibraryPlayerSurface: View {
 
                 Text("Playback unavailable")
                     .font(BlitzType.section)
-                    .foregroundStyle(BlitzUI.primaryText)
+                    .foregroundStyle(BlitzUI.onMediaText)
 
                 Text(loadError)
                     .font(BlitzType.footnote)
-                    .foregroundStyle(BlitzUI.secondaryText)
+                    .foregroundStyle(BlitzUI.onMediaSecondaryText)
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 360)
@@ -218,7 +233,7 @@ struct ProjectLibraryPlayerSurface: View {
 
                 Text("Preparing playback")
                     .font(BlitzType.captionEmphasis)
-                    .foregroundStyle(BlitzUI.supportingText)
+                    .foregroundStyle(BlitzUI.onMediaSecondaryText)
             }
         }
         .padding(16)
@@ -273,6 +288,8 @@ private struct ProjectLibraryExportedPlayer: NSViewRepresentable {
             super.init(frame: frameRect)
             wantsLayer = true
             playerLayer.videoGravity = .resizeAspect
+            playerLayer.actions = ["bounds": NSNull(), "position": NSNull(), "frame": NSNull(),
+                                   "opacity": NSNull(), "contents": NSNull()]
             layer?.addSublayer(playerLayer)
         }
 
@@ -298,7 +315,10 @@ private struct ProjectLibraryExportedPlayer: NSViewRepresentable {
 
         override func layout() {
             super.layout()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
             playerLayer.frame = bounds
+            CATransaction.commit()
         }
     }
 }
@@ -328,11 +348,13 @@ struct ProjectLibraryPlaybackControls: View {
             } label: {
                 Image(systemName: configuration.controller.isPlaying ? "pause.fill" : "play.fill")
                     .font(BlitzType.glyph(12))
-                    .foregroundStyle(BlitzUI.primaryText)
-                    .offset(x: configuration.controller.isPlaying ? 0 : 1)
-                    .frame(width: 18, height: 24)
+                    .foregroundStyle(BlitzUI.inverseText)
+                    .offset(x: configuration.controller.isPlaying ? 0 : 1.5)
+                    .frame(width: 34, height: 34)
+                    .background(BlitzUI.primaryText, in: .circle)
+                    .shadow(color: BlitzUI.elevationShadow, radius: 6, y: 2)
             }
-            .buttonStyle(BlitzButtonStyle(.secondary))
+            .buttonStyle(BlitzPressButtonStyle())
             .keyboardShortcut(.space, modifiers: [])
             .pointingHandCursor()
             .accessibilityLabel(configuration.controller.isPlaying ? "Pause" : "Play")
@@ -364,11 +386,6 @@ struct ProjectLibraryPlaybackControls: View {
                 .monospacedDigit()
                 .foregroundStyle(BlitzUI.supportingText)
                 .fixedSize()
-
-            Rectangle()
-                .fill(BlitzUI.separator)
-                .frame(width: 1, height: 20)
-                .padding(.horizontal, 2)
 
             BlitzSegmentedPicker(configuration: .init(
                 title: "Playback speed",
@@ -416,7 +433,7 @@ struct ProjectPlaybackWaveform: View {
                     let track = CGRect(x: 0, y: midY - 2, width: size.width, height: 4)
                     context.fill(Path(roundedRect: track, cornerRadius: 2), with: .color(BlitzUI.strongFill))
                     let played = CGRect(x: 0, y: midY - 2, width: playedWidth, height: 4)
-                    context.fill(Path(roundedRect: played, cornerRadius: 2), with: .color(BlitzUI.mint))
+                    context.fill(Path(roundedRect: played, cornerRadius: 2), with: .color(BlitzUI.accent))
                 } else {
                     let slot = size.width / CGFloat(samples.count)
                     let barWidth = max(1, min(2.5, slot * 0.58))
@@ -425,7 +442,7 @@ struct ProjectPlaybackWaveform: View {
                         let height = max(2, CGFloat(min(1, max(0, value))) * maxHeight)
                         let x = CGFloat(index) * slot + (slot - barWidth) / 2
                         let bar = CGRect(x: x, y: midY - height / 2, width: barWidth, height: height)
-                        let color = bar.midX <= playedWidth ? BlitzUI.mint : BlitzUI.tertiaryText
+                        let color = bar.midX <= playedWidth ? BlitzUI.accent : BlitzUI.tertiaryText
                         context.fill(Path(roundedRect: bar, cornerRadius: barWidth / 2), with: .color(color))
                     }
                 }
@@ -548,34 +565,5 @@ struct ProjectLibraryActionButton: View {
         .buttonStyle(BlitzButtonStyle(configuration.tone == .primary ? .accent : .secondary))
         .disabled(configuration.isLoading)
         .pointingHandCursor()
-    }
-}
-
-struct ProjectLibraryIconActionButtonConfiguration {
-    enum Tone: Equatable {
-        case secondary
-        case destructive
-    }
-
-    let title: String
-    let systemImage: String
-    let tone: Tone
-    let action: () -> Void
-}
-
-struct ProjectLibraryIconActionButton: View {
-    let configuration: ProjectLibraryIconActionButtonConfiguration
-
-    var body: some View {
-        Button(
-            role: configuration.tone == .destructive ? .destructive : nil,
-            action: configuration.action
-        ) {
-            BlitzSymbol(configuration: .init(name: configuration.systemImage, size: 16))
-        }
-        .buttonStyle(BlitzButtonStyle(.secondary))
-        .pointingHandCursor()
-        .help(configuration.title)
-        .accessibilityLabel(configuration.title)
     }
 }

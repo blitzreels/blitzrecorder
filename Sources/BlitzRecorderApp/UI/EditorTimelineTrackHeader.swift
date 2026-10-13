@@ -39,7 +39,7 @@ struct EditorTimelineTrackHeader<Accessory: View>: View {
                     in: .rect(cornerRadius: BlitzUI.controlRadius))
         .overlay(alignment: .leading) {
             if configuration.isSelected {
-                Capsule().fill(BlitzUI.mint)
+                Capsule().fill(BlitzUI.accent)
                     .frame(width: 2, height: min(20, configuration.height - 8))
                     .allowsHitTesting(false)
             }

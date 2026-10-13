@@ -22,8 +22,8 @@ struct BlitzUIKitLoading: View {
                 }
                 BlitzUIKitSpecimen(label: "ProgressView · linear determinate / indeterminate") {
                     VStack(spacing: 10) {
-                        ProgressView(value: 0.62).progressViewStyle(.linear).tint(BlitzUI.mint)
-                        ProgressView().progressViewStyle(.linear).tint(BlitzUI.mint)
+                        ProgressView(value: 0.62).progressViewStyle(.linear).tint(BlitzUI.accent)
+                        ProgressView().progressViewStyle(.linear).tint(BlitzUI.accent)
                     }
                     .frame(width: 220)
                 }

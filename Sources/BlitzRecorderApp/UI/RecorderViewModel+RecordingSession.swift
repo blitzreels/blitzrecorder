@@ -14,6 +14,7 @@ extension RecorderViewModel {
             sysLevels.clear()
         }
         onLivePreviewChanged?(enabled)
+        NotificationCenter.default.post(name: .livePreviewChanged, object: nil)
     }
 
     func applyExportProject(_ url: URL?) {

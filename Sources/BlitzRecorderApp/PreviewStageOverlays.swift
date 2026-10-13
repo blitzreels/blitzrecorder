@@ -53,7 +53,7 @@ final class SceneSelectionOverlayView: NSView {
             drawCropSourceOutline(sourceFrame)
         }
 
-        let strokeColor = Brand.primary
+        let strokeColor = BlitzThemeStore.shared.accent.nsAccent
         strokeColor.setStroke()
         let outerPath = NSBezierPath(rect: frame.insetBy(dx: 0.5, dy: 0.5))
         outerPath.lineWidth = isCropMode ? 2 : 1.5
@@ -227,7 +227,7 @@ final class SafeZoneOverlayView: NSView {
         NSColor.black.withAlphaComponent(0.58).setFill()
         [topRect, bottomRect, leftRect, rightRect].forEach { NSBezierPath(rect: $0).fill() }
 
-        let mint = NSColor(red: 0.09, green: 1.0, blue: 0.65, alpha: 1)
+        let mint = BlitzThemeStore.shared.accent.nsAccent
         mint.setStroke()
         let safePath = NSBezierPath(roundedRect: safeRect.insetBy(dx: 0.75, dy: 0.75), xRadius: 8, yRadius: 8)
         safePath.lineWidth = 1.75
@@ -297,7 +297,7 @@ final class SafeZoneOverlayView: NSView {
         let x = safeRect.minX + 8
         let y = safeRect.maxY - chipHeight - 8
         let rect = CGRect(x: x, y: y, width: chipWidth, height: chipHeight)
-        let mint = NSColor(red: 0.09, green: 1.0, blue: 0.65, alpha: 1)
+        let mint = BlitzThemeStore.shared.accent.nsAccent
 
         NSColor.black.withAlphaComponent(0.78).setFill()
         NSBezierPath(roundedRect: rect, xRadius: chipHeight / 2, yRadius: chipHeight / 2).fill()

@@ -207,10 +207,10 @@ struct EditorCanvasLayerView: View {
         ZStack {
             if layer.isSelected {
                 Rectangle()
-                    .stroke(BlitzUI.mint, lineWidth: 1.5)
+                    .stroke(BlitzUI.accent, lineWidth: 1.5)
             } else if isHovering {
                 Rectangle()
-                    .stroke(BlitzUI.mint.opacity(0.82), lineWidth: 1.25)
+                    .stroke(BlitzUI.accent.opacity(0.82), lineWidth: 1.25)
             }
         }
         .overlay {
@@ -249,7 +249,7 @@ struct EditorCanvasLayerView: View {
 
     private func horizontalEdgeHandle(alignment: Alignment) -> some View {
         RoundedRectangle(cornerRadius: 2, style: .continuous)
-            .fill(BlitzUI.mint)
+            .fill(BlitzUI.accent)
             .frame(width: 24, height: 6)
             .overlay {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
@@ -261,7 +261,7 @@ struct EditorCanvasLayerView: View {
 
     private func verticalEdgeHandle(alignment: Alignment) -> some View {
         RoundedRectangle(cornerRadius: 2, style: .continuous)
-            .fill(BlitzUI.mint)
+            .fill(BlitzUI.accent)
             .frame(width: 6, height: 24)
             .overlay {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
@@ -279,7 +279,7 @@ struct EditorCanvasLayerView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: alignment) {
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(BlitzUI.mint)
+                    .fill(BlitzUI.accent)
                     .frame(width: 12, height: 12)
                     .overlay {
                         RoundedRectangle(cornerRadius: 3, style: .continuous)

@@ -40,13 +40,13 @@ struct EditorPlacedItemClip: View {
         ZStack {
             if item.isPoint {
                 Image(systemName: "diamond.fill").font(BlitzType.glyph(13))
-                    .foregroundStyle(configuration.isSelected || isHovering ? BlitzUI.mint : tint)
+                    .foregroundStyle(configuration.isSelected || isHovering ? BlitzUI.accent : tint)
             } else {
                 RoundedRectangle(cornerRadius: 5)
                     .fill(tint.opacity(configuration.isSelected || isHovering ? 0.3 : 0.15))
                     .overlay {
                         RoundedRectangle(cornerRadius: 5)
-                            .strokeBorder(configuration.isSelected ? BlitzUI.mint : tint.opacity(isHovering ? 1 : 0.6),
+                            .strokeBorder(configuration.isSelected ? BlitzUI.accent : tint.opacity(isHovering ? 1 : 0.6),
                                           lineWidth: configuration.isSelected || isHovering ? 2 : 1)
                     }
                 HStack(spacing: 5) {
@@ -94,7 +94,7 @@ struct EditorPlacedItemClip: View {
     }
 
     private func handle(_ gesture: EditorPlacedItemEditing.Gesture) -> some View {
-        EditorTimelineGrip(tint: BlitzUI.mint, isActive: hoveredHandle == gesture)
+        EditorTimelineGrip(tint: BlitzUI.accent, isActive: hoveredHandle == gesture)
             .frame(width: 12, height: configuration.height)
             .contentShape(.rect)
             .blitzCursor(.resizeLeftRight)

@@ -84,7 +84,8 @@ struct RecorderMain {
         }
 
         let app = NSApplication.shared
-        app.appearance = NSAppearance(named: .darkAqua)
+        NSScroller.useOverlayScrollersAppWide()
+        MainActor.assumeIsolated { BlitzThemeStore.shared.applyAppearance() }
         let delegate = AppDelegate()
         appDelegate = delegate
         app.delegate = delegate

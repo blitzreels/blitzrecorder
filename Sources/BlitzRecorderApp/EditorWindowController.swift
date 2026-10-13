@@ -51,7 +51,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
             guard let window, let frame = window.screen?.visibleFrame else { return }
             window.setFrame(frame, display: true, animate: true)
         }
-        let host = NSHostingView(rootView: EditorWindowView(vm: viewModel).preferredColorScheme(.dark))
+        let host = NSHostingView(rootView: EditorWindowView(vm: viewModel))
         host.sizingOptions = []
         host.autoresizingMask = [.width, .height]
         window.contentView = host

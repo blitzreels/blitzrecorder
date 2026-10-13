@@ -39,7 +39,7 @@ struct BlitzReelsHandoffPanel: View {
                     if let account = handoff.connection.account {
                         VStack(alignment: .leading, spacing: 8) {
                             Label(account.user.email, systemImage: "checkmark.circle.fill")
-                                .font(BlitzType.caption).foregroundStyle(BlitzUI.mint)
+                                .font(BlitzType.caption).foregroundStyle(BlitzUI.accent)
                                 .lineLimit(2).textSelection(.enabled)
                             BlitzDropdown(configuration: .init(
                                 title: "BlitzReels workspace",
@@ -76,7 +76,7 @@ struct BlitzReelsHandoffPanel: View {
                     if handoff.isWorking {
                         if let progress = handoff.progress {
                             VStack(alignment: .leading, spacing: 8) {
-                                ProgressView(value: progress).tint(BlitzUI.mint)
+                                ProgressView(value: progress).tint(BlitzUI.accent)
                                 Text("\(Int(progress * 100))% uploaded").font(BlitzType.caption).monospacedDigit()
                             }
                         } else {
@@ -177,7 +177,7 @@ private struct RecordingUploadChoice: View {
                     Text(metadata).font(BlitzType.caption.monospacedDigit()).foregroundStyle(BlitzUI.secondaryText)
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(BlitzType.glyph(18)).foregroundStyle(isSelected ? BlitzUI.mint : BlitzUI.secondaryText)
+                    .font(BlitzType.glyph(18)).foregroundStyle(isSelected ? BlitzUI.accent : BlitzUI.secondaryText)
             }.padding(10)
         }.buttonStyle(BlitzSelectionButtonStyle(isSelected: isSelected)).accessibilityAddTraits(
             isSelected ? .isSelected : []

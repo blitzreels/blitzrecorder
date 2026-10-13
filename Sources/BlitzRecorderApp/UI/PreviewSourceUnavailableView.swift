@@ -20,12 +20,14 @@ enum PreviewUnavailableLayout {
 enum PreviewUnavailablePresentation: Equatable {
     case empty
     case loading
+    case paused
     case unavailable
 
     static func from(message: String) -> Self {
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return .empty }
         let text = trimmed.lowercased()
+        if text == "paused" { return .paused }
         if text.contains("starting")
             || text.contains("restarting")
             || text.contains("waiting")
@@ -174,7 +176,8 @@ final class PreviewUnavailableOverlay: NSView {
         } else {
             spinner.stopAnimation(nil)
         }
-        iconView.isHidden = loading || compact
+        iconView.isHidden = loading || compact || presentation == .paused
+        fillLayer.backgroundColor = NSColor.black.withAlphaComponent(presentation == .paused ? 0.22 : 0.42).cgColor
         label.stringValue = trimmed
         label.font = .systemFont(ofSize: compact ? 11 : 12, weight: .semibold)
         stack.spacing = compact ? 6 : 10

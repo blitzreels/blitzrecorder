@@ -124,7 +124,7 @@ struct BlitzInspectorSlider: View {
                 onEditingChanged: configuration.onEditingChanged
             )
             .controlSize(.small)
-            .tint(BlitzUI.mint)
+            .tint(BlitzUI.accent)
             .accessibilityLabel(configuration.title)
             .accessibilityValue(configuration.valueLabel)
             .accessibilityAction(named: "Reset", configuration.onReset)

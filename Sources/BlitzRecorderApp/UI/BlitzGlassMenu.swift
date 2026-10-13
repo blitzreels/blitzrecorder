@@ -69,7 +69,6 @@ struct BlitzGlassMenu<Label: View>: View {
             BlitzMenuList(entries: entries, width: menuWidth, maxHeight: BlitzMenuList.adaptiveMaxHeight) {
                 isPresented = false
             }
-            .preferredColorScheme(.dark)
         }
     }
 
@@ -203,7 +202,7 @@ struct BlitzMenuRow: View {
                         .frame(width: 18, height: 18)
                         .clipShape(.rect(cornerRadius: 4))
                 } else if let systemImage = item.systemImage {
-                    BlitzSymbol(configuration: .init(name: systemImage, size: 16))
+                    BlitzSymbol(configuration: .init(name: systemImage, size: 14))
                         .foregroundStyle(iconColor)
                         .frame(width: 18, height: 18)
                 }
@@ -230,7 +229,7 @@ struct BlitzMenuRow: View {
                 if item.selection != nil {
                     Image(systemName: "checkmark")
                         .font(BlitzType.glyph(11))
-                        .foregroundStyle(BlitzUI.mint)
+                        .foregroundStyle(BlitzUI.accent)
                         .opacity(item.isSelected ? 1 : 0)
                         .accessibilityHidden(true)
                 }

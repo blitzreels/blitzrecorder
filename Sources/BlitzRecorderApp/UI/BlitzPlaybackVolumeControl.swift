@@ -30,7 +30,7 @@ struct BlitzPlaybackVolumeControl: View {
             )
             .help(configuration.volume.wrappedValue == 0 ? "Restore listening volume" : "Mute preview playback")
             Slider(value: configuration.volume, in: 0...1)
-                .tint(BlitzUI.mint)
+                .tint(BlitzUI.accent)
                 .controlSize(.small)
                 .frame(minWidth: configuration.sliderWidth.lowerBound, idealWidth: configuration.sliderWidth.lowerBound,
                        maxWidth: configuration.sliderWidth.upperBound)

@@ -8,25 +8,25 @@ struct EditorPaneSizing: Equatable {
 
         var defaultSize: Double {
             switch self {
-            case .inspector: 360
+            case .inspector: 420
             case .timeline: 380
-            case .recorderInspector: 320
+            case .recorderInspector: 384
             }
         }
 
         var minimum: Double {
             switch self {
-            case .inspector: 312
+            case .inspector: 372
             case .timeline: 180
-            case .recorderInspector: 272
+            case .recorderInspector: 336
             }
         }
 
         var maximum: Double {
             switch self {
-            case .inspector: 640
+            case .inspector: 700
             case .timeline: 600
-            case .recorderInspector: 460
+            case .recorderInspector: 524
             }
         }
 
@@ -100,7 +100,7 @@ struct EditorWorkspaceSplitView<Preview: View, Inspector: View, Timeline: View>:
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .clipped()
                     BlitzPaneDivider(configuration: .init(
-                        axis: .horizontal, label: "Inspector width",
+                        axis: .horizontal, paneSide: .trailing, label: "Inspector width",
                         value: Binding(get: { inspectorSize.value }, set: { inspectorWidthDraft = $0 }),
                         bounds: inspectorSize.bounds, defaultValue: EditorPaneSizing.Pane.inspector.defaultSize,
                         onCommit: {
@@ -114,6 +114,7 @@ struct EditorWorkspaceSplitView<Preview: View, Inspector: View, Timeline: View>:
                 BlitzPaneDivider(
                     configuration: .init(
                         axis: .vertical,
+                        paneSide: .trailing,
                         label: "Timeline height",
                         value: Binding(get: { timelineSize.value }, set: { timelineHeightDraft = $0 }),
                         bounds: timelineSize.bounds,
@@ -153,6 +154,7 @@ struct RecorderInspectorSplitView<Stage: View, Inspector: View>: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 BlitzPaneDivider(configuration: .init(
                     axis: .horizontal,
+                    paneSide: .trailing,
                     label: "Inspector width",
                     value: Binding(get: { inspectorSize.value }, set: { inspectorWidthDraft = $0 }),
                     bounds: inspectorSize.bounds,

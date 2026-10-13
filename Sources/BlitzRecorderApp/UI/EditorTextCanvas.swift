@@ -119,7 +119,7 @@ private struct EditorTextCanvasItem: View {
 
     var body: some View {
         Rectangle().fill(.clear)
-            .overlay { Rectangle().strokeBorder(BlitzUI.mint.opacity(configuration.isSelected ? 1 : isHovering ? 0.6 : 0), lineWidth: 1.5) }
+            .overlay { Rectangle().strokeBorder(BlitzUI.accent.opacity(configuration.isSelected ? 1 : isHovering ? 0.6 : 0), lineWidth: 1.5) }
             .frame(width: frame.width * size.width, height: frame.height * size.height)
             .contentShape(.rect)
             .blitzCursor(origin == nil ? .openHand : .closedHand)
@@ -129,7 +129,7 @@ private struct EditorTextCanvasItem: View {
             .overlay {
                 if configuration.isSelected {
                     ForEach(EditorTextFrameEditing.Handle.allCases, id: \.self) { handle in
-                        Rectangle().fill(BlitzUI.mint)
+                        Rectangle().fill(BlitzUI.accent)
                             .frame(width: 8, height: 8)
                             .padding(5).contentShape(.rect)
                             .blitzCursor(handle == .top || handle == .bottom ? .resizeUpDown : .resizeLeftRight)

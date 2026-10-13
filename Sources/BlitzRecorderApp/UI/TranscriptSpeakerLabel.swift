@@ -26,7 +26,7 @@ struct TranscriptSpeakerLabel: View {
                 if let suggestion = configuration.speaker.identitySuggestion {
                     Text("\(suggestion.name)? · \(suggestion.label)")
                         .font(BlitzType.caption)
-                        .foregroundStyle(BlitzUI.mint)
+                        .foregroundStyle(BlitzUI.accent)
                         .lineLimit(1)
                 }
             }
@@ -37,7 +37,7 @@ struct TranscriptSpeakerLabel: View {
         .accessibilityLabel("Speaker \(configuration.speaker.displayName)")
         .accessibilityHint("Rename this speaker or review a suggested identity")
         .contextMenu {
-            Button("Rename Speaker…", systemImage: "pencil", action: beginRename)
+            Button("Rename Speaker…", systemImage: "square.and.pencil", action: beginRename)
         }
         .popover(isPresented: $isRenaming, arrowEdge: .bottom) {
             renameEditor
@@ -52,7 +52,7 @@ struct TranscriptSpeakerLabel: View {
             if let suggestion = configuration.speaker.identitySuggestion {
                 Text("Suggested: \(suggestion.name) · \(suggestion.label)")
                     .font(BlitzType.body)
-                    .foregroundStyle(BlitzUI.mint)
+                    .foregroundStyle(BlitzUI.accent)
                 Text(suggestion.evidence)
                     .font(BlitzType.caption)
                     .foregroundStyle(BlitzUI.secondaryText)
@@ -139,7 +139,7 @@ struct TranscriptTimestampButton: View {
             Text(timestamp)
                 .font(BlitzType.caption.monospaced())
                 .monospacedDigit()
-                .foregroundStyle(isActive ? BlitzUI.mint : BlitzUI.secondaryText)
+                .foregroundStyle(isActive ? BlitzUI.accent : BlitzUI.secondaryText)
                 .frame(width: 52, height: 24, alignment: .leading)
         }
         .buttonStyle(BlitzSelectionButtonStyle(isSelected: false))

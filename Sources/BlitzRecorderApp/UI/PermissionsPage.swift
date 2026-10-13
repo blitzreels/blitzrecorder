@@ -63,10 +63,10 @@ struct PermissionsPage: View {
             HStack(spacing: 16) {
                 Image(systemName: needsAccess ? "lock.shield" : "checkmark.shield")
                     .font(BlitzType.glyph(25))
-                    .foregroundStyle(needsAccess ? BlitzUI.warning : BlitzUI.mint)
+                    .foregroundStyle(needsAccess ? BlitzUI.warning : BlitzUI.accent)
                     .frame(width: 50, height: 50)
                     .background(
-                        (needsAccess ? BlitzUI.warning : BlitzUI.mint).opacity(0.08),
+                        (needsAccess ? BlitzUI.warning : BlitzUI.accent).opacity(0.08),
                         in: .rect(cornerRadius: BlitzUI.cardRadius)
                     )
 

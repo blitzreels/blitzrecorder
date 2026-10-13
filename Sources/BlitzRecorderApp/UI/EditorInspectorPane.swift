@@ -58,7 +58,7 @@ struct EditorInspectorPane<Content: View, Footer: View>: View {
         .foregroundStyle(BlitzUI.primaryText)
         .buttonStyle(BlitzButtonStyle(.secondary))
         .controlSize(.regular)
-        .tint(BlitzUI.mint)
+        .tint(BlitzUI.accent)
     }
 }
 

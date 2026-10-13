@@ -116,72 +116,32 @@ struct BlitzCopyButton: View {
     }
 }
 
-struct BlitzOverflowMenu: View {
-    enum Placement {
-        case inline
-        case dock
-    }
-
-    struct Configuration {
-        let entries: [BlitzMenuEntry]
-        let menuWidth: CGFloat
-        let placement: Placement
-        let isBusy: Bool
-        let accessibilityLabel: String
-        let help: String
-    }
-
-    let configuration: Configuration
-    @State private var isPresented = false
-    @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.controlSize) private var controlSize
+/// Secondary actions shown as labeled quiet buttons, never hidden behind a ⋯ menu.
+/// Pair it with `.contextMenu { BlitzContextMenuItems(entries:) }` so right-click offers the same actions.
+struct BlitzInlineActions: View {
+    let entries: [BlitzMenuEntry]
 
     var body: some View {
-        trigger
-            .accessibilityLabel(configuration.accessibilityLabel)
-            .help(configuration.help)
-            .onChange(of: isEnabled) {
-                if !isEnabled { isPresented = false }
-            }
-            .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-                BlitzMenuList(
-                    entries: configuration.entries,
-                    width: configuration.menuWidth,
-                    maxHeight: BlitzMenuList.adaptiveMaxHeight
-                ) {
-                    isPresented = false
-                }
-                .preferredColorScheme(.dark)
-            }
-    }
-
-    @ViewBuilder
-    private var trigger: some View {
-        switch configuration.placement {
-        case .dock:
-            Button { isPresented.toggle() } label: {
-                glyph.foregroundStyle(BlitzUI.primaryText)
-            }
-            .blitzButton(.dock)
-            .fixedSize()
-        case .inline:
-            let side = BlitzControlMetrics.height(controlSize)
-            Button { isPresented.toggle() } label: {
-                glyph
-                    .foregroundStyle(BlitzUI.supportingText)
-                    .frame(width: side, height: side)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(BlitzMenuTriggerStyle(isPresented: isPresented))
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 2) { buttons }
+            VStack(alignment: .leading, spacing: 2) { buttons }
         }
+        .blitzButton(.quiet)
     }
 
-    @ViewBuilder
-    private var glyph: some View {
-        if configuration.isBusy {
-            ProgressView().controlSize(.small)
-        } else {
-            Image(systemName: "ellipsis").font(BlitzType.glyph(13))
+    @ViewBuilder private var buttons: some View {
+        ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
+            if case .item(let item) = entry {
+                Button(role: item.isDestructive ? .destructive : nil, action: item.action) {
+                    if let systemImage = item.systemImage {
+                        Label(item.title, systemImage: systemImage)
+                    } else {
+                        Text(item.title)
+                    }
+                }
+                .disabled(!item.isEnabled)
+                .help(item.subtitle ?? item.title)
+            }
         }
     }
 }

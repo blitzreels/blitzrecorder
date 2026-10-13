@@ -5,8 +5,10 @@ struct HostedVideoLibraryView: View {
     @Bindable var controller: HostedVideoShareController
     let showRecordings: () -> Void
     let thumbnail: (HostedLibraryVideo) -> NSImage?
+    let showcase: [HostedSharingShowcaseItem]
     @State private var search = ""
     @State private var showsAccount = false
+    @State private var stopping: HostedLibraryVideo?
 
     private var matchingVideos: [HostedLibraryVideo] {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -27,20 +29,23 @@ struct HostedVideoLibraryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
             if controller.hasCheckedAccount && !controller.isConnected {
-                HostedVideoSharePanel(controller: controller, context: .account, preparation: nil,
-                    newExport: {}, close: {}, showLibrary: {})
-                    .frame(maxWidth: 420, maxHeight: 520)
-                    .clipShape(.rect(cornerRadius: BlitzUI.cardRadius))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .padding(.top, 24)
+                HostedSharingWelcome(controller: controller, showcase: showcase)
             } else {
+                header
                 library
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .foregroundStyle(BlitzUI.primaryText)
+        .confirmationDialog("Stop sharing “\(stopping?.title ?? "")”?", isPresented: Binding(
+            get: { stopping != nil }, set: { if !$0 { stopping = nil } }), presenting: stopping) { video in
+            Button("Stop sharing", role: .destructive) { Task { await controller.stopSharing(video) } }
+        } message: { video in
+            Text(video.isOwnStorage
+                 ? "The link stops working and the video is deleted from your Cloudflare. Your recording stays on this Mac."
+                 : "The link stops working for everyone. Your recording stays on this Mac.")
+        }
         .task { await controller.refresh() }
         .task(id: controller.videos.contains(where: \.isProcessing)) {
             guard controller.videos.contains(where: \.isProcessing) else { return }
@@ -62,6 +67,12 @@ struct HostedVideoLibraryView: View {
                     .font(BlitzType.callout).foregroundStyle(BlitzUI.supportingText)
             }
             if controller.isConnected {
+                if controller.libraryMessage != nil, !controller.videos.isEmpty {
+                    Text(controller.libraryUpdatedAt.map { "Offline · synced \($0.formatted(date: .omitted, time: .shortened))" }
+                         ?? "Offline")
+                        .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
+                        .help("Couldn’t refresh. Showing your last synced videos.")
+                }
                 Button { Task { await controller.refresh() } } label: {
                     ZStack {
                         ProgressView().controlSize(.small).opacity(isSyncing ? 1 : 0)
@@ -74,7 +85,7 @@ struct HostedVideoLibraryView: View {
                 .accessibilityLabel(isSyncing ? "Syncing shared videos" : "Refresh shared videos")
                 .help(syncedHelp)
                 Button { showsAccount.toggle() } label: {
-                    Label(controller.account?.email ?? "Account", systemImage: "person.crop.circle.fill")
+                    Label(controller.account?.email ?? "Account", systemImage: "person.crop.circle")
                         .lineLimit(1)
                         .frame(maxWidth: 220)
                         .help(controller.account?.email ?? "Account")
@@ -82,9 +93,7 @@ struct HostedVideoLibraryView: View {
                 .blitzButton(.secondary)
                 .accessibilityLabel("Account")
                 .popover(isPresented: $showsAccount, arrowEdge: .bottom) {
-                    HostedVideoSharePanel(controller: controller, context: .account, preparation: nil,
-                        newExport: {}, close: {}, showLibrary: {})
-                        .frame(width: 320, height: 300)
+                    HostedAccountPopover(controller: controller)
                 }
             }
         }
@@ -101,14 +110,20 @@ struct HostedVideoLibraryView: View {
             notice
             searchField
             if isLoading {
-                placeholderRows
+                VStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading shared videos").font(BlitzType.body).foregroundStyle(BlitzUI.secondaryText)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityElement(children: .combine)
             } else if controller.videos.isEmpty && controller.libraryMessage == nil {
                 empty(.init(symbol: "link", title: "Your next video belongs here",
                     detail: "Open a recording, then choose Share to create its watch page.",
                     action: .init(title: "Choose a recording", run: showRecordings)))
             } else if controller.videos.isEmpty {
-                empty(.init(symbol: "wifi.exclamationmark", title: "Shared videos unavailable",
-                    detail: "Refresh when your connection is back.", action: nil))
+                empty(.init(symbol: "wifi.slash", title: "Can’t reach your shared videos",
+                    detail: "Check your connection, then try again.",
+                    action: .init(title: "Try again", run: { Task { await controller.refresh() } })))
             } else if matchingVideos.isEmpty {
                 empty(.init(symbol: "magnifyingglass", title: "No matching videos",
                     detail: "Try another title.", action: nil))
@@ -133,13 +148,10 @@ struct HostedVideoLibraryView: View {
                 .padding(14)
                 .background(BlitzUI.cardFill, in: .rect(cornerRadius: BlitzUI.cardRadius))
                 .padding(.horizontal, 24)
-        } else if let message = controller.libraryMessage ?? controller.accountMessage {
-            noticeRow(.init(symbol: "exclamationmark.triangle", text: message,
-                action: .init(title: "Retry", run: { Task { await controller.refreshVideos() } })))
-        } else if !controller.isSubscribed, controller.isConnected {
-            noticeRow(.init(symbol: "exclamationmark.triangle",
-                text: "Your hosting plan is inactive. Enable it to make your watch links available again.",
-                action: .init(title: "Manage hosting", run: { showsAccount = true })))
+        } else if !controller.isSubscribed, controller.isConnected, controller.videos.contains(where: { !$0.isOwnStorage }) {
+            noticeRow(.init(symbol: "pause.circle",
+                text: "Your hosting plan is off, so these links don’t play right now.",
+                action: .init(title: "Turn on", run: { showsAccount = true })))
         }
     }
 
@@ -152,8 +164,8 @@ struct HostedVideoLibraryView: View {
     private func noticeRow(_ notice: Notice) -> some View {
         BlitzAdaptiveRow() {
             HStack(spacing: 10) {
-                Image(systemName: notice.symbol).foregroundStyle(BlitzUI.warning)
-                Text(notice.text).font(BlitzType.body).foregroundStyle(BlitzUI.primaryText)
+                Image(systemName: notice.symbol).foregroundStyle(BlitzUI.secondaryText)
+                Text(notice.text).font(BlitzType.body).foregroundStyle(BlitzUI.supportingText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Button(notice.action.title, action: notice.action.run)
@@ -161,7 +173,7 @@ struct HostedVideoLibraryView: View {
                 .disabled(isSyncing)
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(BlitzUI.warning.opacity(0.10), in: .rect(cornerRadius: BlitzControlMetrics.radius))
+        .background(BlitzUI.quietFill, in: .rect(cornerRadius: BlitzUI.cardRadius))
         .padding(.horizontal, 24)
     }
 
@@ -182,24 +194,6 @@ struct HostedVideoLibraryView: View {
 
     private static let gridColumns = [GridItem(.adaptive(minimum: 260, maximum: 360), spacing: 20, alignment: .top)]
 
-    private var placeholderRows: some View {
-        LazyVGrid(columns: Self.gridColumns, alignment: .leading, spacing: 20) {
-            ForEach(0..<6, id: \.self) { index in
-                VStack(alignment: .leading, spacing: 10) {
-                    RoundedRectangle(cornerRadius: BlitzUI.cardRadius).fill(BlitzUI.controlFill)
-                        .aspectRatio(16 / 9, contentMode: .fit)
-                    RoundedRectangle(cornerRadius: 3).fill(BlitzUI.controlFill)
-                        .frame(width: [180, 140, 200, 160, 120, 190][index], height: 11)
-                    RoundedRectangle(cornerRadius: 3).fill(BlitzUI.quietFill).frame(width: 110, height: 9)
-                }
-            }
-        }
-        .padding(.horizontal, 24)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Loading shared videos")
-        .frame(maxHeight: .infinity, alignment: .top)
-    }
-
     private func card(_ video: HostedLibraryVideo) -> some View {
         let url = controller.watchURL(video)
         return VStack(alignment: .leading, spacing: 10) {
@@ -215,9 +209,10 @@ struct HostedVideoLibraryView: View {
                 if video.isProcessing {
                     Color.black.opacity(0.45)
                     VStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
+                        ProgressView().controlSize(.small).tint(BlitzUI.onMediaText)
                         Text(video.statusLabel).font(BlitzType.captionEmphasis)
                     }
+                    .foregroundStyle(BlitzUI.onMediaText)
                 } else if video.status == "failed" {
                     Color.black.opacity(0.45)
                     Label(video.statusLabel, systemImage: "exclamationmark.triangle.fill")
@@ -226,15 +221,6 @@ struct HostedVideoLibraryView: View {
             }
             .aspectRatio(16 / 9, contentMode: .fit)
             .clipShape(.rect(cornerRadius: BlitzUI.cardRadius))
-            .overlay(alignment: .bottomTrailing) {
-                if let duration = video.duration, duration.isFinite, duration > 0 {
-                    Text(SilenceTime.label(duration))
-                        .font(BlitzType.captionEmphasis.monospacedDigit())
-                        .padding(.horizontal, 6).padding(.vertical, 3)
-                        .background(.black.opacity(0.65), in: .rect(cornerRadius: 5))
-                        .padding(8)
-                }
-            }
             .contentShape(.rect(cornerRadius: BlitzUI.cardRadius))
             .onTapGesture { if let url { NSWorkspace.shared.open(url) } }
             .pointingHandCursor(enabled: url != nil)
@@ -249,27 +235,56 @@ struct HostedVideoLibraryView: View {
                     .help(video.error ?? "")
             }
             HStack(spacing: 8) {
-                if let url {
+                if let url, video.isShared {
                     BlitzCopyButton(configuration: .watchLink(.init(url: url, title: "Copy link", emphasis: .secondary, width: .fixed(84))))
                     Button { NSWorkspace.shared.open(url) } label: {
-                        Label("Open", systemImage: "safari.fill")
+                        Label("Open", systemImage: "safari")
                     }
                     .blitzButton(.secondary)
                     .help("Open the watch page in your browser")
+                } else if video.status == "ready" {
+                    Button { Task { await controller.setListed(.init(video: video, listed: true)) } } label: {
+                        Label("Show link", systemImage: "eye")
+                    }
+                    .blitzButton(.secondary)
+                    .help("Turn the watch link back on")
+                }
+                Spacer(minLength: 0)
+                if controller.changingVideos.contains(video.id) {
+                    ProgressView().controlSize(.small)
+                } else if ["ready", "failed", "queued", "processing"].contains(video.status) {
+                    BlitzInlineActions(entries: videoEntries(video))
                 }
             }
             .controlSize(.small)
-            .disabled(!controller.isSubscribed)
+            .disabled(!controller.isSubscribed && !video.isOwnStorage)
             .frame(height: BlitzControlMetrics.height(.small), alignment: .leading)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(video.title)
     }
 
+    private func videoEntries(_ video: HostedLibraryVideo) -> [BlitzMenuEntry] {
+        var entries: [BlitzMenuEntry] = []
+        if video.status == "ready" {
+            let listed = video.listed != false
+            entries.append(.item(.init(title: listed ? "Hide link" : "Show link", systemImage: listed ? "eye.slash.fill" : "eye.fill",
+                action: { Task { await controller.setListed(.init(video: video, listed: !listed)) } })))
+            entries.append(.divider)
+        }
+        entries.append(.item(.init(title: "Stop sharing…", systemImage: "xmark.circle", isDestructive: true,
+            action: { stopping = video })))
+        return entries
+    }
+
     private func detail(_ video: HostedLibraryVideo) -> String {
         if video.status == "failed", let error = video.error { return error }
         if video.status == "uploading" { return "Upload incomplete · Resume from the recording’s Share panel" }
         var parts = [video.statusLabel]
+        if let duration = video.duration, duration.isFinite, duration > 0 {
+            parts.append(ProjectLibraryMetadata.durationLabel(duration))
+        }
+        if video.isOwnStorage { parts.append("Your Cloudflare") }
         if let width = video.width, let height = video.height { parts.append("\(width) × \(height)") }
         return parts.joined(separator: " · ")
     }
@@ -286,17 +301,20 @@ struct HostedVideoLibraryView: View {
     }
 
     private func empty(_ content: Empty) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: content.symbol).font(BlitzType.glyph(28))
-                .foregroundStyle(BlitzUI.secondaryText)
-            Text(content.title).font(BlitzType.title)
-            Text(content.detail).font(BlitzType.callout).foregroundStyle(BlitzUI.supportingText)
+        VStack(spacing: 8) {
+            Image(systemName: content.symbol).font(BlitzType.symbol(20))
+                .foregroundStyle(BlitzUI.tertiaryText)
+                .padding(.bottom, 4)
+            Text(content.title).font(BlitzType.headline)
+            Text(content.detail).font(BlitzType.body).foregroundStyle(BlitzUI.secondaryText)
                 .multilineTextAlignment(.center)
             if let action = content.action {
                 Button(action.title, action: action.run)
-                    .blitzButton(.accent).controlSize(.large).padding(.top, 6)
+                    .blitzButton(.secondary).padding(.top, 8)
+                    .disabled(isSyncing)
             }
         }
+        .frame(maxWidth: 320)
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

@@ -13,8 +13,15 @@ struct ProjectLibraryThumbnail: View {
 
     var body: some View {
     ZStack(alignment: .bottomTrailing) {
-        Color.black.opacity(0.3)
+        BlitzUI.controlFill
         if let thumbnail = configuration.metadata.thumbnail {
+            Image(nsImage: thumbnail)
+                .resizable()
+                .scaledToFill()
+                .frame(width: configuration.width, height: configuration.height)
+                .blur(radius: 8)
+                .brightness(-0.12)
+                .accessibilityHidden(true)
             Image(nsImage: thumbnail)
                 .resizable()
                 .scaledToFit()
@@ -42,7 +49,7 @@ struct ProjectLibraryThumbnail: View {
            let duration = configuration.metadata.durationSeconds {
             BlitzTimecode(configuration: .init(time: duration, duration: duration))
                 .font(BlitzType.footnote.monospaced())
-                .foregroundStyle(BlitzUI.primaryText)
+                .foregroundStyle(BlitzUI.onMediaText)
                 .padding(.horizontal, 4)
                 .frame(height: 18)
                 .background(.black.opacity(0.8), in: .rect(cornerRadius: 4))
@@ -56,7 +63,7 @@ struct ProjectLibraryThumbnail: View {
             cornerRadius: configuration.cornerRadius,
             style: .continuous
         )
-        .stroke(BlitzUI.panelStroke, lineWidth: 1)
+        .strokeBorder(BlitzUI.separator, lineWidth: 1)
     }
     }
 }

@@ -71,7 +71,7 @@ struct EditorPlaybackControls: View {
                 Button(action: configuration.onTogglePlayback) {
                     Image(systemName: configuration.isPlaying ? "pause.fill" : "play.fill")
                         .font(BlitzType.glyph(13))
-                        .foregroundStyle(.black.opacity(0.88))
+                        .foregroundStyle(BlitzUI.inverseText)
                         .offset(x: configuration.isPlaying ? 0 : 1)
                         .frame(width: 32, height: 32)
                         .background(BlitzUI.primaryText, in: Circle())

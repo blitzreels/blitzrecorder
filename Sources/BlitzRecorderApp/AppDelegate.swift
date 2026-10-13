@@ -141,6 +141,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
 
         buildStatusItem()
         updateStatusItem(for: coordinator.state)
+        NotificationCenter.default.addObserver(forName: .livePreviewChanged, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.rebuildMenu()
+                self?.mainMenuBuilder?.rebuild()
+            }
+        }
         Task {
             await mcpServer.start()
         }

@@ -204,7 +204,7 @@ private struct CanvasBackgroundActionTile: View {
                         Text(configuration.title)
                             .font(BlitzType.footnote)
                     }
-                    .foregroundStyle(BlitzUI.primaryText)
+                    .foregroundStyle(configuration.fill == nil ? BlitzUI.primaryText : BlitzUI.onMediaText)
                     .shadow(color: .black.opacity(configuration.fill == nil ? 0 : 0.5), radius: 2)
                 }
             }

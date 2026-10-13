@@ -71,12 +71,7 @@ struct EditorView: View {
                     }
             } inspector: {
                 if showsHostingShare {
-                    VStack(spacing: 0) {
-                    EditorInspectorTabBar(selection: Binding(get: { .blitzReels }, set: { tab in
-                        showsHostingShare = false
-                        inspectorTab = tab
-                    }))
-                    Rectangle().fill(BlitzUI.separator).frame(height: 1)
+                    HStack(spacing: 0) {
                     HostedVideoSharePanel(controller: .shared, context: .project(path: project?.projectPath,
                         title: project?.displayTitle ?? "Video"), preparation: preparesHostedExport ? .init(
                         title: project?.displayTitle ?? "Video", summary: exportRecipe(for: .link).summary,
@@ -86,6 +81,10 @@ struct EditorView: View {
                         vm.projectLibraryNavigation.section = .shared
                         vm.showProjects()
                     })
+                    EditorInspectorTabBar(selection: Binding(get: { .blitzReels }, set: { tab in
+                        showsHostingShare = false
+                        inspectorTab = tab
+                    }))
                     }
                     .background(BlitzUI.panelBackground)
                 } else {

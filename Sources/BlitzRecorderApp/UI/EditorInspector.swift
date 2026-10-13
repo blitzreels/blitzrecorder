@@ -32,9 +32,8 @@ struct EditorInspector: View {
     var zoomSelection: Binding<UUID?>
 
     var body: some View {
-        VStack(spacing: 0) {
-            EditorInspectorTabBar(selection: $inspectorTab)
-            divider
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
             switch inspectorTab {
             case .audio:
                 EditorInspectorPane(configuration: .init(
@@ -114,6 +113,9 @@ struct EditorInspector: View {
                     footer: { EmptyView() }
                 ))
             }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            EditorInspectorTabBar(selection: $inspectorTab)
         }
     }
 
@@ -122,9 +124,4 @@ struct EditorInspector: View {
         return sceneEvents.indices.contains(index) ? sceneEvents[index].scene : nil
     }
 
-    private var divider: some View {
-        Rectangle()
-            .fill(BlitzUI.separator)
-            .frame(height: 1)
-    }
 }

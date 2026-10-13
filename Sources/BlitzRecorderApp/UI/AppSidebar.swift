@@ -106,7 +106,7 @@ struct AppSidebar: View {
             AppSidebarRecordButton(vm: vm)
                 .padding(.horizontal, 10)
                 .padding(.top, 4)
-                .padding(.bottom, 12)
+                .padding(.bottom, 18)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
@@ -121,7 +121,7 @@ struct AppSidebar: View {
                                   enabled: vm.canOpenEditorFromSidebar), selection)
                     }
 
-                    foldersHeader.padding(.top, 14)
+                    foldersHeader.padding(.top, 18)
                     ForEach(vm.folderTree, id: \.id) { node in
                         folderRow(node, selection)
                     }
@@ -137,6 +137,7 @@ struct AppSidebar: View {
                     AppUpdateSidebarCard()
                         .padding(.bottom, 8)
                 }
+                AppSidebarLivePreviewToggle(vm: vm)
                 row(.init(destination: .settings, title: "Settings", symbol: "gearshape",
                           detail: nil, trailing: "⌘,", enabled: true), selection)
             }
@@ -146,15 +147,15 @@ struct AppSidebar: View {
         .padding(.top, MainWindowChrome.toolbarHeight)
         .frame(width: MainWindowChrome.sidebarWidth)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(BlitzUI.panelBackground)
+        .background(BlitzMaterialBackground(kind: .sidebar))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("App navigation")
     }
 
     private func sectionHeader(_ title: String) -> some View {
         BlitzUI.sectionLabel(title)
-            .padding(.horizontal, 8)
-            .padding(.bottom, 4)
+            .padding(.horizontal, AppSidebarRow.inset)
+            .padding(.bottom, 6)
     }
 
     private var foldersHeader: some View {
@@ -174,9 +175,9 @@ struct AppSidebar: View {
             .help("New folder")
             .accessibilityLabel("New folder")
         }
-        .padding(.leading, 8)
-        .padding(.trailing, 2)
-        .padding(.bottom, 4)
+        .padding(.leading, AppSidebarRow.inset)
+        .padding(.trailing, 4)
+        .padding(.bottom, 6)
     }
 
     private func folderRow(_ node: ProjectFolderTree.Node, _ selection: AppSidebarDestination) -> some View {
@@ -225,28 +226,35 @@ struct AppSidebarRow: View {
         let action: () -> Void
     }
 
+    static let inset: CGFloat = 10
+    static let height: CGFloat = 32
+
     let configuration: Configuration
     @State private var isHovering = false
 
     private var item: Item { configuration.item }
 
-    private var fill: Color {
-        if configuration.isSelected || configuration.isDropTarget { return BlitzUI.selectedFill }
-        return isHovering && item.enabled ? BlitzUI.hoverFill : .clear
+    @ViewBuilder private var background: some View {
+        let shape = RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous)
+        if configuration.isSelected || configuration.isDropTarget {
+            BlitzSelectedBackground(cornerRadius: BlitzUI.controlRadius)
+        } else {
+            shape.fill(isHovering && item.enabled ? BlitzUI.quietFill : .clear)
+        }
     }
 
     var body: some View {
         HStack(spacing: 0) {
             Button(action: configuration.action) {
-                HStack(spacing: 9) {
+                HStack(spacing: 10) {
                     Image(systemName: item.symbol)
-                        .font(BlitzType.symbol(13))
+                        .font(BlitzType.symbol(14))
                         .symbolVariant(configuration.isSelected ? .fill : .none)
-                        .foregroundStyle(configuration.isSelected ? BlitzUI.primaryText : BlitzUI.secondaryText)
-                        .frame(width: 18)
+                        .foregroundStyle(configuration.isSelected ? BlitzUI.accent : BlitzUI.secondaryText)
+                        .frame(width: 20)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(item.title)
-                            .font(configuration.isSelected ? BlitzType.strong : BlitzType.label)
+                            .font(BlitzType.navigation)
                             .foregroundStyle(configuration.isSelected ? BlitzUI.primaryText : BlitzUI.supportingText)
                             .lineLimit(1)
                         if let detail = item.detail {
@@ -266,8 +274,8 @@ struct AppSidebarRow: View {
                             .foregroundStyle(BlitzUI.tertiaryText)
                     }
                 }
-                .padding(.horizontal, 8)
-                .frame(minHeight: 28)
+                .padding(.horizontal, Self.inset)
+                .frame(minHeight: Self.height)
                 .padding(.vertical, item.detail == nil ? 0 : 3)
                 .contentShape(.rect)
             }
@@ -277,9 +285,37 @@ struct AppSidebarRow: View {
             .accessibilityLabel(item.title)
             .accessibilityValue(item.detail ?? item.trailing ?? "")
         }
-        .background(fill, in: .rect(cornerRadius: BlitzUI.controlRadius))
+        .background { background }
         .opacity(item.enabled ? 1 : 0.45)
         .onHover { isHovering = $0 }
+    }
+}
+
+struct AppSidebarLivePreviewToggle: View {
+    @Bindable var vm: RecorderViewModel
+
+    var body: some View {
+        Toggle(isOn: Binding(get: { vm.isLivePreviewEnabled }, set: { vm.setLivePreviewEnabled($0) })) {
+            HStack(spacing: 10) {
+                Image(systemName: vm.isLivePreviewEnabled ? "eye" : "eye.slash")
+                    .font(BlitzType.symbol(14))
+                    .foregroundStyle(BlitzUI.secondaryText)
+                    .frame(width: 20)
+                Text("Live preview")
+                    .font(BlitzType.navigation)
+                    .foregroundStyle(BlitzUI.supportingText)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+        }
+        .toggleStyle(.blitzSwitch)
+        .controlSize(.mini)
+        .padding(.horizontal, AppSidebarRow.inset)
+        .frame(minHeight: AppSidebarRow.height)
+        .disabled(vm.state != .idle)
+        .help(vm.state == .idle
+              ? "Pause camera, microphone, screen, and audio previews while idle (⌥⌘L). Recording still works."
+              : "Change live preview after this recording")
     }
 }
 
@@ -290,40 +326,34 @@ struct AppSidebarRecordButton: View {
     var body: some View {
         Button(action: vm.startNewRecording) {
             HStack(spacing: 10) {
-                glyph.frame(width: 18)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title)
-                        .font(BlitzType.section)
-                        .monospacedDigit()
-                    if let detail {
-                        Text(detail)
-                            .font(BlitzType.caption)
-                            .foregroundStyle(BlitzUI.supportingText)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                }
+                glyph.frame(width: 20)
+                Text(title)
+                    .font(BlitzType.section)
+                    .monospacedDigit()
+                    .lineLimit(1)
                 Spacer(minLength: 4)
-                if vm.state == .idle {
-                    Text("⌘N")
-                        .font(BlitzType.captionEmphasis)
-                        .foregroundStyle(BlitzUI.secondaryText)
-                }
+                Text(trailing)
+                    .font(BlitzType.captionEmphasis)
+                    .opacity(0.75)
+                    .lineLimit(1)
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
-            .background(BlitzUI.recordRed.opacity(isHovering ? 1 : 0.9),
+            .frame(maxWidth: .infinity, minHeight: 36, maxHeight: 36, alignment: .leading)
+            .background(LinearGradient(colors: [BlitzUI.recordRedHighlight, BlitzUI.recordRed],
+                                       startPoint: .top, endPoint: .bottom).opacity(isHovering ? 1 : 0.94),
                         in: .rect(cornerRadius: BlitzUI.controlRadius, style: .continuous))
+            .overlay { BlitzEdgeHighlight(cornerRadius: BlitzUI.controlRadius).opacity(0.8) }
+            .shadow(color: BlitzUI.recordGlow, radius: 6, y: 2)
             .contentShape(.rect(cornerRadius: BlitzUI.controlRadius, style: .continuous))
         }
         .buttonStyle(BlitzPressButtonStyle())
         .disabled(vm.projectTrash.isWorking)
         .onHover { isHovering = $0 }
         .pointingHandCursor()
-        .help(vm.state == .idle ? "Open the studio to record (⌘N)" : "Back to the studio")
-        .accessibilityLabel(detail.map { "\(title), \($0)" } ?? title)
+        .help(help)
+        .accessibilityLabel(title)
+        .accessibilityHint(help)
     }
 
     @ViewBuilder
@@ -351,13 +381,18 @@ struct AppSidebarRecordButton: View {
         }
     }
 
-    private var detail: String? {
+    private var trailing: String {
         switch vm.state {
-        case .idle: vm.newRecordingFolder.map { "Into \($0.title)" }
+        case .idle: "⌘N"
         case .recording: "Recording"
         case .paused: "Paused"
-        case .starting, .finishing: nil
+        case .starting, .finishing: ""
         }
+    }
+
+    private var help: String {
+        guard vm.state == .idle else { return "Back to the studio" }
+        return vm.newRecordingFolder.map { "Record into \($0.title) (⌘N)" } ?? "Open the studio to record (⌘N)"
     }
 }
 

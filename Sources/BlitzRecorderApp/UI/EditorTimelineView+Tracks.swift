@@ -272,7 +272,7 @@ extension EditorTimelineView {
         .frame(width: width, height: rowHeight)
         .clipShape(shape)
         .overlay {
-            shape.strokeBorder(isSelected ? BlitzUI.mint : asset.tint.opacity(0.28), lineWidth: isSelected ? 2 : 1)
+            shape.strokeBorder(isSelected ? BlitzUI.accent : asset.tint.opacity(0.28), lineWidth: isSelected ? 2 : 1)
                 .allowsHitTesting(false)
         }
         .contentShape(shape)

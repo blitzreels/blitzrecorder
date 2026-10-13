@@ -2,11 +2,6 @@ import AppKit
 import SwiftUI
 
 extension ProjectLibraryView {
-    private struct MetadataBlockConfiguration {
-        let title: String
-        let value: String
-    }
-
     @ViewBuilder
     var projectDetail: some View {
         if vm.projectLibraryNavigation.selectedProjectIDs.count > 1 {
@@ -16,8 +11,7 @@ extension ProjectLibraryView {
                 detailHeader(project)
                     .padding(.horizontal, 32)
                     .padding(.top, 22)
-                    .padding(.bottom, 18)
-                Rectangle().fill(BlitzUI.separator).frame(height: 1)
+                    .padding(.bottom, 6)
                 GeometryReader { proxy in
                     if proxy.size.width >= Self.splitDetailWidth {
                         let transcriptWidth = min(440, max(340, proxy.size.width * 0.38))
@@ -61,7 +55,15 @@ extension ProjectLibraryView {
                     }
                 }
             }
+            .background(alignment: .top) {
+                BlitzAmbientGlow(image: metadataByProjectID[project.id]?.thumbnail)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 480)
+                    .clipped()
+                    .mask(LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom))
+            }
             .background(BlitzUI.projectLibraryBackground)
+            .clipped()
         } else {
             detailEmptyState
         }
@@ -117,7 +119,7 @@ extension ProjectLibraryView {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .contextMenu { projectContextMenu([project.id]) }
+        .blitzContextMenu(projectMenu(project.id))
     }
 
     private func detailHeading(_ project: RecordingProjectHistory.Entry) -> some View {
@@ -125,13 +127,9 @@ extension ProjectLibraryView {
         let recordedAt = project.recordedAt
         let metadata = metadataByProjectID[project.id] ?? .empty
         let presentation = ProjectTitlePresentation(.init(title: displayTitle(project), known: vm.folderIndex.known))
+        let facts = [recordedAt.formatted(date: .abbreviated, time: .shortened), metadata.durationLabel, presentation.context]
+            .compactMap { $0 }
         return VStack(alignment: .leading, spacing: 8) {
-            if let context = presentation.context {
-                Text(context)
-                    .font(BlitzType.captionEmphasis)
-                    .foregroundStyle(BlitzUI.secondaryText)
-                    .lineLimit(1)
-            }
             Text(presentation.title)
                 .font(BlitzType.largeTitle)
                 .foregroundStyle(BlitzUI.primaryText)
@@ -140,36 +138,22 @@ extension ProjectLibraryView {
                 .onTapGesture(count: 2) { beginRename(project) }
                 .help("\(presentation.title)\nDouble-click to rename")
 
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) {
-                    Text(recordedAt.formatted(date: .abbreviated, time: .shortened))
-                    if let duration = metadata.durationLabel {
-                        Text("·")
-                        Text(duration).monospacedDigit()
-                    }
-                }
-                .fixedSize(horizontal: true, vertical: false)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(recordedAt.formatted(date: .abbreviated, time: .shortened))
-                    if let duration = metadata.durationLabel { Text(duration).monospacedDigit() }
-                }
-            }
-            .font(BlitzType.body)
-            .foregroundStyle(BlitzUI.secondaryText)
-            .help("Recorded \(recordedAt.formatted(date: .long, time: .shortened))")
-
             HStack(spacing: 6) {
+                Text(facts.joined(separator: " · "))
+                    .foregroundStyle(BlitzUI.secondaryText)
+                    .monospacedDigit()
+                    .lineLimit(2)
+                    .help("Recorded \(recordedAt.formatted(date: .long, time: .shortened))")
+                Text("·").foregroundStyle(BlitzUI.tertiaryText)
                 if status.isRunning {
-                    ProgressView().controlSize(.mini)
-                        .accessibilityHidden(true)
-                        .fixedSize()
+                    ProgressView().controlSize(.mini).accessibilityHidden(true)
                 }
                 Text(transcriptStatusLabel(status))
+                    .foregroundStyle(transcriptStatusColor(status) == BlitzUI.warning ? BlitzUI.warning : BlitzUI.secondaryText)
                     .lineLimit(1)
-                    .foregroundStyle(transcriptStatusColor(status))
+                    .fixedSize()
             }
             .font(BlitzType.body)
-            .accessibilityElement(children: .combine)
             if let url = sharing.sharedURL(forProject: project.projectPath) {
                 HostedVideoLinkActions(url: url).controlSize(.small)
             }
@@ -202,15 +186,22 @@ extension ProjectLibraryView {
                 previewQuality: metadataByProjectID[project.id]?.videoQuality?.label,
                 sources: metadataByProjectID[project.id]?.sourceRoles.sorted() ?? []
             ))
-            BlitzOverflowMenu(configuration: .init(
-                entries: projectMenuEntries(project),
-                menuWidth: 220,
-                placement: .dock,
-                isBusy: false,
-                accessibilityLabel: "More actions",
-                help: "Rename, show in Finder, or move to Trash"
-            ))
+            BlitzInlineActions(entries: projectActions(project))
         }
+    }
+
+    private func projectActions(_ project: RecordingProjectHistory.Entry) -> [BlitzMenuEntry] {
+        var entries: [BlitzMenuEntry] = [
+            .item(.init(title: "Rename", subtitle: "Rename this recording (or double-click the title)",
+                        systemImage: "square.and.pencil", action: { beginRename(project) }))
+        ]
+        if let url = sharing.sharedURL(forProject: project.projectPath) {
+            entries.append(.item(.init(title: "Copy link", subtitle: "Copy the watch link", systemImage: "link",
+                                       action: { BlitzClipboard.copyInBackground(url.absoluteString) })))
+        }
+        entries.append(.item(.init(title: "Delete", subtitle: "Move to Trash (⌫)", systemImage: "trash",
+                                   isDestructive: true, action: { queueDeletion([project]) })))
+        return entries
     }
 
     private func editRecordingAction(_ project: RecordingProjectHistory.Entry) -> some View {
@@ -231,64 +222,17 @@ extension ProjectLibraryView {
         .disabled(!vm.canOpenProjectEditor)
     }
 
-    private func projectMenuEntries(_ project: RecordingProjectHistory.Entry) -> [BlitzMenuEntry] {
-        var entries: [BlitzMenuEntry] = [
-            .item(.init(title: "Rename", systemImage: "pencil", action: { beginRename(project) })),
-            .item(.init(title: "Show in Finder", systemImage: "folder.fill", action: { vm.revealProject(project) }))
-        ]
-        if let url = sharing.sharedURL(forProject: project.projectPath) {
-            entries.append(.item(.init(title: "Copy watch link", systemImage: "doc.on.doc.fill", action: {
-                BlitzClipboard.copyInBackground(url.absoluteString)
-            })))
-        }
-        entries += [
-            .divider,
-            .item(.init(title: "Move to Trash", systemImage: "trash.fill", isDestructive: true,
-                        action: { queueDeletion([project]) }))
-        ]
-        return entries
-    }
-
     private func detailMetadata(
         _ project: RecordingProjectHistory.Entry
     ) -> some View {
         let metadata = metadataByProjectID[project.id] ?? .empty
-        return VStack(alignment: .leading, spacing: 16) {
-            Rectangle()
-                .fill(BlitzUI.separator)
-                .frame(height: 1)
-
-            HStack(alignment: .top, spacing: 24) {
-                metadataBlock(MetadataBlockConfiguration(
-                    title: "Video quality",
-                    value: metadata.videoQuality?.label ?? "—"
-                ))
-                .help(metadata.videoQuality?.detail ?? "No readable video metadata")
-                metadataBlock(MetadataBlockConfiguration(
-                    title: "Sources",
-                    value: metadata.sourceSummary
-                ))
-                metadataBlock(MetadataBlockConfiguration(
-                    title: "Project size",
-                    value: metadata.sizeLabel ?? "—"
-                ))
-            }
-        }
-    }
-
-    private func metadataBlock(
-        _ configuration: MetadataBlockConfiguration
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(configuration.title)
-                .font(BlitzType.caption)
-                .foregroundStyle(BlitzUI.secondaryText)
-            Text(configuration.value)
-                .font(BlitzType.strong)
-                .foregroundStyle(BlitzUI.primaryText)
-                .lineLimit(2)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        let facts = [metadata.videoQuality?.label, metadata.sourceSummary, metadata.sizeLabel].compactMap { $0 }
+        return Text(facts.joined(separator: " · "))
+            .font(BlitzType.body)
+            .foregroundStyle(BlitzUI.secondaryText)
+            .monospacedDigit()
+            .fixedSize(horizontal: false, vertical: true)
+            .help(metadata.videoQuality?.detail ?? "No readable video metadata")
     }
 
     private var detailEmptyState: some View {

@@ -103,9 +103,9 @@ struct RemoteCameraPage: View {
     private var phoneIcon: some View {
         Image(systemName: "iphone.gen3.radiowaves.left.and.right")
             .font(BlitzType.glyph(30))
-            .foregroundStyle(BlitzUI.mint)
+            .foregroundStyle(BlitzUI.accent)
             .frame(width: 64, height: 64)
-            .background(BlitzUI.mint.opacity(0.08), in: .rect(cornerRadius: BlitzUI.surfaceRadius))
+            .background(BlitzUI.accent.opacity(0.08), in: .rect(cornerRadius: BlitzUI.surfaceRadius))
     }
 
     private var setupGuide: some View {
@@ -182,7 +182,7 @@ struct RemoteCameraPage: View {
             HStack(spacing: 12) {
                 Image(systemName: "iphone.gen3")
                     .font(BlitzType.glyph(21))
-                    .foregroundStyle(device.isSelected ? BlitzUI.mint : BlitzUI.secondaryText)
+                    .foregroundStyle(device.isSelected ? BlitzUI.accent : BlitzUI.secondaryText)
                     .frame(width: 36, height: 42)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(device.name)
@@ -261,7 +261,7 @@ struct RemoteCameraPage: View {
                         Text("Keep the iPhone app open.")
                             .font(BlitzType.caption)
                     }
-                    .foregroundStyle(BlitzUI.secondaryText)
+                    .foregroundStyle(BlitzUI.onMediaSecondaryText)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(.black.opacity(0.85))
                 }
@@ -333,7 +333,7 @@ struct RemoteCameraPage: View {
             .background(BlitzUI.quietFill, in: .rect(cornerRadius: BlitzUI.controlRadius))
             .overlay {
                 RoundedRectangle(cornerRadius: BlitzUI.controlRadius)
-                    .strokeBorder(focusedField == field ? BlitzUI.mint.opacity(0.6) : BlitzUI.separator, lineWidth: 1)
+                    .strokeBorder(focusedField == field ? BlitzUI.accent.opacity(0.6) : BlitzUI.separator, lineWidth: 1)
                     .allowsHitTesting(false)
             }
             .focused($focusedField, equals: field)

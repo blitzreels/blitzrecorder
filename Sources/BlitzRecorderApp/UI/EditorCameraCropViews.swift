@@ -74,7 +74,7 @@ struct EditorCameraCropSelectionOverlay: View {
                 .offset(x: presentation.sourceFrame.minX, y: presentation.sourceFrame.minY)
 
             Rectangle()
-                .stroke(BlitzUI.mint, lineWidth: 2)
+                .stroke(BlitzUI.accent, lineWidth: 2)
                 .frame(width: presentation.cropFrame.width, height: presentation.cropFrame.height)
                 .overlay { cropHandles }
                 .offset(x: presentation.cropFrame.minX, y: presentation.cropFrame.minY)
@@ -93,7 +93,7 @@ struct EditorCameraCropSelectionOverlay: View {
 
     private func cropHandle(alignment: Alignment) -> some View {
         RoundedRectangle(cornerRadius: 3, style: .continuous)
-            .fill(BlitzUI.mint)
+            .fill(BlitzUI.accent)
             .frame(width: 12, height: 12)
             .overlay {
                 RoundedRectangle(cornerRadius: 3, style: .continuous)

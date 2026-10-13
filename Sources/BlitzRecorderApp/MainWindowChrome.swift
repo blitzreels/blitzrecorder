@@ -16,6 +16,6 @@ enum MainWindowChrome {
         let toolbar = NSToolbar(identifier: "BlitzRecorder.MainWindow")
         toolbar.allowsUserCustomization = false
         window.toolbar = toolbar
-        window.backgroundColor = NSColor(white: 0.105, alpha: 1)
+        window.backgroundColor = BlitzThemeStore.panelNSColor
     }
 }

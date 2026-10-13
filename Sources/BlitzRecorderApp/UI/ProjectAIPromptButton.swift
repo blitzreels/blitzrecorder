@@ -9,7 +9,7 @@ struct ProjectAIPromptButton: View {
             title: "Copy AI context",
             accessibilityLabel: "Copy AI context",
             help: "Copy video details and MCP access instructions. Add your own request when you paste.",
-            emphasis: .dock,
+            emphasis: .secondary,
             width: .fit
         ))
     }

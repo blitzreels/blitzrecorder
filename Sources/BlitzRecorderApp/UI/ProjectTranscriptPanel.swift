@@ -3,7 +3,7 @@ import SwiftUI
 extension ProjectLibraryView {
     private func speakerColor(_ index: Int) -> Color {
         let colors: [Color] = [
-            BlitzUI.mint,
+            BlitzUI.accent,
             .blue,
             .purple,
             .orange,
@@ -32,6 +32,10 @@ extension ProjectLibraryView {
                     .font(BlitzType.caption)
                     .foregroundStyle(BlitzUI.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
+                if let transcript = selectedTranscript, !(status.isRunning || status == .waitingForModel) {
+                    transcriptActions(.init(project: project, transcript: transcript, status: status))
+                        .padding(.top, 6)
+                }
             }
             if status.isRunning || status == .waitingForModel {
                 TranscriptionActivityView(configuration: .init(
@@ -48,15 +52,6 @@ extension ProjectLibraryView {
                     emphasis: .secondary,
                     width: .fit
                 ))
-                BlitzOverflowMenu(configuration: .init(
-                    entries: transcriptMenuEntries(.init(project: project, transcript: transcript, status: status)),
-                    menuWidth: 220,
-                    placement: .inline,
-                    isBusy: titleGenerationProjectID == project.id || vm.transcriptionController.isFixingSpeakers(project),
-                    accessibilityLabel: "Transcript actions",
-                    help: "Generate a title, fix speakers, or retranscribe"
-                ))
-                .controlSize(.small)
             }
         }
     }
@@ -65,6 +60,14 @@ extension ProjectLibraryView {
         let project: RecordingProjectHistory.Entry
         let transcript: RecordingTranscript
         let status: TranscriptionJobStatus
+    }
+
+    private func transcriptActions(_ request: TranscriptMenuRequest) -> some View {
+        BlitzInlineActions(entries: transcriptMenuEntries(request))
+            .controlSize(.small)
+            .disabled(titleGenerationProjectID == request.project.id
+                      || vm.transcriptionController.isFixingSpeakers(request.project))
+            .contextMenu { BlitzContextMenuItems(entries: transcriptMenuEntries(request)) }
     }
 
     private func transcriptMenuEntries(_ request: TranscriptMenuRequest) -> [BlitzMenuEntry] {
@@ -80,7 +83,7 @@ extension ProjectLibraryView {
                 }
             })),
             .item(.init(title: "Fix speakers", subtitle: "Find who is talking again, keep the words",
-                        systemImage: "person.2.wave.2.fill",
+                        systemImage: "person.2.wave.2",
                         isEnabled: vm.transcriptionController.canFixSpeakers(request.project)
                             && !(request.transcript.words ?? []).isEmpty,
                         action: { fixSpeakers(request.project) })),
@@ -125,7 +128,7 @@ extension ProjectLibraryView {
                 if !matches.isEmpty {
                     Text("\(matches.count) matching moments · Click a timestamp to play")
                         .font(BlitzType.body)
-                        .foregroundStyle(BlitzUI.mint)
+                        .foregroundStyle(BlitzUI.accent)
                 }
                 if transcript.segments.isEmpty {
                     Text(transcript.text).font(BlitzType.callout).textSelection(.enabled)

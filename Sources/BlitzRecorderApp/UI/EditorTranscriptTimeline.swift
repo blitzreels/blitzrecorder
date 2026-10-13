@@ -152,7 +152,7 @@ struct EditorTranscriptStrip: View {
                 let selected = isSelected(run, in: selectedRanges)
                 let hovered = hoveredRange.map { range in run.items.contains { $0.source.range == range } } ?? false
                 let isSilence = run.kind == .nonDialogue
-                let tint = isSilence ? BlitzUI.recordRed : BlitzUI.mint
+                let tint = isSilence ? BlitzUI.recordRed : BlitzUI.accent
                 let inset: CGFloat = run.width >= 8 ? 0.5 : 0
                 let rect = CGRect(
                     x: run.x + inset, y: 8, width: max(1, run.width - inset * 2), height: size.height - 16)
@@ -165,7 +165,7 @@ struct EditorTranscriptStrip: View {
                 }
                 guard run.width >= 28 else { continue }
                 let label = context.resolve(Text(run.text).font(BlitzType.captionEmphasis)
-                    .foregroundStyle(selected && !isSilence ? .white : tint))
+                    .foregroundStyle(selected && !isSilence ? BlitzUI.primaryText : tint))
                 if label.measure(in: CGSize(width: .infinity, height: rect.height)).width <= rect.width - 8 {
                     var clipped = context
                     clipped.clip(to: path)

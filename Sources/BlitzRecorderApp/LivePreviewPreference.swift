@@ -1,5 +1,9 @@
 import Foundation
 
+extension Notification.Name {
+    static let livePreviewChanged = Notification.Name("BlitzRecorder.livePreviewChanged")
+}
+
 struct LivePreviewPreference {
     static let key = "recording.livePreview.enabled"
 

@@ -35,7 +35,7 @@ struct ExportResultToast: View {
         HStack(spacing: 10) {
             Image(systemName: vm.lastExportError == nil ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                 .font(BlitzType.symbol(14))
-                .foregroundStyle(vm.lastExportError == nil ? BlitzUI.mint : BlitzUI.warning)
+                .foregroundStyle(vm.lastExportError == nil ? BlitzUI.accent : BlitzUI.warning)
             Text(vm.lastExportError.map { "Export failed: " + $0 } ?? savedTitle)
                 .font(BlitzType.label)
                 .foregroundStyle(BlitzUI.primaryText)
@@ -65,7 +65,7 @@ struct ExportResultToast: View {
         .padding(.trailing, 8)
         .padding(.vertical, 8)
         .background(.regularMaterial, in: .capsule)
-        .shadow(color: .black.opacity(0.35), radius: 18, y: 6)
+        .shadow(color: BlitzUI.deepShadow, radius: 18, y: 6)
         .onHover { isHovering = $0 }
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isStaticText)

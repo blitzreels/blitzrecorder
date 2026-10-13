@@ -11,14 +11,20 @@ struct HostedLibraryVideo: Codable, Identifiable, Equatable {
     let height: Int?
     let bytes: Int64
     let error: String?
+    /// "cloudflare" when the file lives in the owner's account. Older servers omit it.
+    let storage: String?
+    /// False when the owner hid the link. Older servers omit it.
+    let listed: Bool?
+
+    var isOwnStorage: Bool { storage == "cloudflare" }
+    var isShared: Bool { status == "ready" && listed != false }
 
     var isProcessing: Bool { ["queued", "processing"].contains(status) }
     var statusLabel: String {
         switch status {
-        case "ready": "Ready to share"
+        case "ready": listed == false ? "Unlisted" : "Shared"
         case "uploading": "Upload incomplete"
-        case "queued": "Waiting to process"
-        case "processing": "Preparing playback"
+        case "queued", "processing": "Processing"
         case "failed": "Processing failed"
         case "revoked": "Removed"
         default: "Checking status"
@@ -30,6 +36,7 @@ struct HostedLibraryVideo: Codable, Identifiable, Equatable {
 @Observable
 final class HostedVideoShareController {
     enum AccountOperation { case checking, sendingCode, verifyingCode, openingBilling, signingOut, signingOutEverywhere }
+    enum Storage: String { case blitzrecorder, cloudflare }
     struct Account: Codable, Equatable {
         let active: Bool
         let email: String?
@@ -67,6 +74,12 @@ final class HostedVideoShareController {
     private(set) var isRefreshingVideos = false
     private(set) var libraryMessage: String?
     private(set) var libraryUpdatedAt: Date?
+    private(set) var cloudflare: CloudflareStorageConnection?
+    private(set) var cloudflareStep: CloudflareSetupStep?
+    private(set) var cloudflareFailure: CloudflareSetupFailure?
+    private(set) var preferredStorage: Storage
+    /// Videos with a listing or stop-sharing request in flight.
+    private(set) var changingVideos: Set<String> = []
     @ObservationIgnored private var libraryEmail: String?
     @ObservationIgnored private var refreshAfterUpload = false
     private var projectShares: [ProjectShare] = []
@@ -83,16 +96,32 @@ final class HostedVideoShareController {
     @ObservationIgnored private let credentials: HostingCredentialStore
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var billingTask: Task<Void, Never>?
+    @ObservationIgnored private var cloudflareTask: Task<Void, Never>?
+    @ObservationIgnored private let cloudflareStore = CloudflareStorageStore()
+    @ObservationIgnored private let cloudflareSetup = CloudflareSetup.configured
 
     var isConnected: Bool { account != nil }
     var isPerformingAccountAction: Bool { accountOperation != nil && accountOperation != .checking }
     var isSubscribed: Bool { account?.active == true }
+    var isConnectingCloudflare: Bool { cloudflareStep != nil }
+    var canShare: Bool { activeStorage != nil }
+    /// Where the next link uploads. A user with both keeps the one they picked last.
+    var activeStorage: Storage? {
+        switch (isSubscribed, cloudflare != nil) {
+        case (true, true): preferredStorage
+        case (true, false): .blitzrecorder
+        case (false, true): .cloudflare
+        case (false, false): nil
+        }
+    }
     var isSigningOut: Bool { accountOperation == .signingOut || accountOperation == .signingOutEverywhere }
     var message: String? { transferMessage ?? accountMessage }
 
     init(client: HostingClient) {
         self.client = client
         credentials = .init(origin: client.origin)
+        cloudflare = cloudflareStore.load()
+        preferredStorage = UserDefaults.standard.string(forKey: "HostingStorage").flatMap(Storage.init) ?? .blitzrecorder
         if credentials.load() != nil,
            let data = UserDefaults.standard.data(forKey: snapshotKey),
            let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) {
@@ -181,7 +210,7 @@ final class HostedVideoShareController {
                 : "Unable to refresh your account. Check your connection and try again."
             return
         }
-        guard plan?.available == true else { return }
+        guard plan?.offersSharing == true else { return }
         guard let token = credentials.load() else {
             setAccount(nil)
             clearLibrary()
@@ -254,8 +283,47 @@ final class HostedVideoShareController {
         } catch { accountMessage = error.localizedDescription }
     }
 
+    func useStorage(_ storage: Storage) {
+        preferredStorage = storage
+        UserDefaults.standard.set(storage.rawValue, forKey: "HostingStorage")
+    }
+
+    func connectCloudflare(token: String) {
+        let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard cloudflareTask == nil, !token.isEmpty else { return }
+        cloudflareFailure = nil
+        cloudflareStep = .checkingToken
+        cloudflareTask = Task {
+            defer { cloudflareTask = nil; cloudflareStep = nil }
+            do {
+                let connection = try await cloudflareSetup.connect(.init(token: token, progress: { [weak self] step in
+                    self?.cloudflareStep = step
+                }))
+                try cloudflareStore.save(connection)
+                cloudflare = connection
+                useStorage(.cloudflare)
+            } catch is CancellationError {
+            } catch let failure as CloudflareSetupFailure {
+                cloudflareFailure = failure
+            } catch {
+                cloudflareFailure = .init(message: error.localizedDescription, fixURL: nil, fixTitle: nil)
+            }
+        }
+    }
+
+    func cancelCloudflareSetup() { cloudflareTask?.cancel() }
+
+    /// Links already shared keep playing: the player and videos stay in the user's Cloudflare account.
+    func forgetCloudflare() {
+        guard !isRunning else { return }
+        cloudflareStore.clear()
+        cloudflare = nil
+        cloudflareFailure = nil
+    }
+
     func start() {
-        guard !isRunning, !isSigningOut, isSubscribed, let fileURL, let token = credentials.load() else { return }
+        guard !isRunning, !isSigningOut, let storage = activeStorage, let fileURL, let token = credentials.load() else { return }
+        let destination: HostingClient.Destination = if storage == .cloudflare, let cloudflare { .cloudflare(cloudflare) } else { .blitzrecorder }
         isRunning = true
         transferMessage = nil
         shareURL = nil
@@ -274,7 +342,7 @@ final class HostedVideoShareController {
             }
             do {
                 shareURL = try await client.upload(.init(fileURL: fileURL, token: token, metadata: metadata,
-                    progress: { update in await MainActor.run { self.transferProgress = update } }))
+                    destination: destination, progress: { update in await MainActor.run { self.transferProgress = update } }))
                 if let shareURL, let projectPath {
                     rememberShare(.init(projectPath: projectPath, url: shareURL))
                 }
@@ -295,6 +363,39 @@ final class HostedVideoShareController {
     }
 
     func pause() { task?.cancel() }
+
+    struct ListingChange {
+        let video: HostedLibraryVideo
+        let listed: Bool
+    }
+
+    func setListed(_ change: ListingChange) async {
+        guard !changingVideos.contains(change.video.id), let token = credentials.load() else { return }
+        changingVideos.insert(change.video.id)
+        defer { changingVideos.remove(change.video.id) }
+        do {
+            let _: HostedLibraryVideo = try await client.send(.init(route: "assets/\(change.video.id)/listing", token: token,
+                body: JSONSerialization.data(withJSONObject: ["listed": change.listed])))
+            libraryMessage = nil
+        } catch { libraryMessage = error.localizedDescription }
+        await refreshVideos()
+    }
+
+    /// The link stops everywhere. A Cloudflare video is also deleted from the owner's bucket.
+    func stopSharing(_ video: HostedLibraryVideo) async {
+        guard !changingVideos.contains(video.id), let token = credentials.load() else { return }
+        changingVideos.insert(video.id)
+        defer { changingVideos.remove(video.id) }
+        do {
+            struct Revoked: Decodable { let revoked: Bool }
+            let _: Revoked = try await client.delete(.init(route: "assets/\(video.id)", token: token, body: nil))
+            if video.isOwnStorage, let cloudflare {
+                try? await CloudflareMediaClient(connection: cloudflare, session: .shared).delete(assetID: video.id)
+            }
+            libraryMessage = nil
+        } catch { libraryMessage = error.localizedDescription }
+        await refreshVideos()
+    }
 
     func watchURL(_ video: HostedLibraryVideo) -> URL? {
         guard video.status == "ready", let path = video.sharePath else { return nil }

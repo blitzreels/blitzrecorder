@@ -257,8 +257,8 @@ extension EditorTimelineView {
                 let start = CGFloat(projection.displayTime(range.start)) * pxPerSecond
                 let end = CGFloat(projection.displayTime(range.end)) * pxPerSecond
                 let path = Path(CGRect(x: start, y: top, width: max(0, end - start), height: height))
-                context.fill(path, with: .color(BlitzUI.mint.opacity(0.08)))
-                context.stroke(path, with: .color(BlitzUI.mint), lineWidth: 1.5)
+                context.fill(path, with: .color(BlitzUI.accent.opacity(0.08)))
+                context.stroke(path, with: .color(BlitzUI.accent), lineWidth: 1.5)
             }
         }
         .allowsHitTesting(false)

@@ -69,7 +69,7 @@ struct EditorTimelineGrip: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: 3)
-            .fill(Color(white: isActive ? 0.2 : 0.12))
+            .fill(isActive ? BlitzUI.strongFill : BlitzUI.hoverFill)
             .overlay {
                 RoundedRectangle(cornerRadius: 3)
                     .strokeBorder(isActive ? BlitzUI.strongStroke : BlitzUI.panelStroke, lineWidth: 1)
@@ -80,7 +80,7 @@ struct EditorTimelineGrip: View {
                     .frame(width: 2, height: 12)
             }
             .frame(width: 8, height: 24)
-            .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+            .shadow(color: BlitzUI.elevationShadow, radius: 2, y: 1)
     }
 }
 

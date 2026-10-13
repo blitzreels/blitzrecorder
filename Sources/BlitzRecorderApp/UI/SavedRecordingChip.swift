@@ -39,14 +39,20 @@ struct SavedRecordingChip: View {
                 .fixedSize()
             }
 
-            BlitzOverflowMenu(configuration: .init(
-                entries: menuEntries,
-                menuWidth: 200,
-                placement: .dock,
-                isBusy: false,
-                accessibilityLabel: "More actions",
-                help: "Play, show in Finder, rename, or clear"
-            ))
+            Button { NSWorkspace.shared.activateFileViewerSelecting([url]) } label: {
+                Image(systemName: "folder")
+            }
+            .blitzButton(.dock)
+            .fixedSize()
+            .accessibilityLabel("Show in Finder")
+            .help("Show in Finder. Right-click for more.")
+            Button(action: vm.clearPostRecordingStatus) {
+                Image(systemName: "xmark")
+            }
+            .blitzButton(.dock)
+            .fixedSize()
+            .accessibilityLabel("Clear")
+            .help("Clear")
         }
         .contextMenu { BlitzContextMenuItems(entries: menuEntries) }
         .task(id: url) {
@@ -61,7 +67,7 @@ struct SavedRecordingChip: View {
             BlitzMenuItem(title: "Show in Finder", systemImage: "folder") {
                 NSWorkspace.shared.activateFileViewerSelecting([url])
             },
-            BlitzMenuItem(title: "Rename…", systemImage: "pencil") { vm.renameLastExportedFile() }
+            BlitzMenuItem(title: "Rename…", systemImage: "square.and.pencil") { vm.renameLastExportedFile() }
         ]
         if let sourceTakeURL {
             items.append(BlitzMenuItem(title: "Show Source Files", systemImage: "square.stack.3d.up") {
@@ -122,7 +128,7 @@ struct RecordingThumbnailButton: View {
                 Image(systemName: "checkmark.circle.fill")
                     .font(BlitzType.glyph(11))
                     .symbolRenderingMode(.palette)
-                    .foregroundStyle(.black, BlitzUI.mint)
+                    .foregroundStyle(BlitzUI.onAccent, BlitzUI.accent)
                     .padding(3)
                     .opacity(hovering ? 0 : 1)
                     .accessibilityLabel("Saved")
@@ -132,7 +138,7 @@ struct RecordingThumbnailButton: View {
                     Text(durationLabel)
                         .font(BlitzType.footnote)
                         .monospacedDigit()
-                        .foregroundStyle(BlitzUI.primaryText)
+                        .foregroundStyle(BlitzUI.onMediaText)
                         .padding(.horizontal, 4)
                         .padding(.vertical, 2)
                         .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 4, style: .continuous))

@@ -45,8 +45,6 @@ struct RecorderSceneStrip: View {
                 }
             }
         }
-        .padding(4)
-        .background(BlitzUI.quietFill, in: .rect(cornerRadius: BlitzUI.cardRadius))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Scenes")
     }
@@ -99,16 +97,6 @@ struct RecorderSceneStrip: View {
                 }
             }
             .frame(width: density.tileWidth, height: Tile.height)
-            .overlay(alignment: .topTrailing) {
-                if let digit = tile.shortcutDigit {
-                    Text("⌘\(String(digit))")
-                        .font(BlitzType.shortcutBadge)
-                        .foregroundStyle(isSelected ? BlitzUI.secondaryText : BlitzUI.tertiaryText)
-                        .padding(.top, 4)
-                        .padding(.trailing, 4)
-                        .accessibilityHidden(true)
-                }
-            }
         }
         .buttonStyle(BlitzSelectionButtonStyle(isSelected: isSelected))
         .disabled(!vm.canSwitchScene && !isSelected)

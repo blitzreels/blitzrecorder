@@ -4,7 +4,6 @@ enum RecorderInspectorTab: CaseIterable, Hashable {
     case layout
     case screen
     case camera
-    case audio
     case background
 
     var title: String {
@@ -12,7 +11,6 @@ enum RecorderInspectorTab: CaseIterable, Hashable {
         case .layout: return "Layout"
         case .screen: return "Screen"
         case .camera: return "Camera"
-        case .audio: return "Audio"
         case .background: return "Canvas"
         }
     }
@@ -22,7 +20,6 @@ enum RecorderInspectorTab: CaseIterable, Hashable {
         case .layout: return "rectangle.split.2x1"
         case .screen: return BlitzSymbols.screen
         case .camera: return BlitzSymbols.camera
-        case .audio: return "waveform"
         case .background: return "photo"
         }
     }
@@ -33,25 +30,25 @@ enum RecorderInspectorTab: CaseIterable, Hashable {
         case .layout: self = .layout
         case .source(.screen): self = .screen
         case .source(.camera): self = .camera
-        case .source(.microphone), .source(.systemAudio): self = .audio
+        case .source(.microphone), .source(.systemAudio): self = .layout
         }
     }
 }
 
 struct RecorderLayerInspector: View {
     @Bindable var vm: RecorderViewModel
-    @AppStorage(ShortFormSafeZone.preferenceKey) private var showsSafeZones = false
 
     private var tab: RecorderInspectorTab {
         RecorderInspectorTab(selection: vm.inspectorSelection)
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            tabBar
-            Rectangle().fill(BlitzUI.separator).frame(height: 1)
+        HStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: EditorInspectorMetrics.sectionSpacing) {
+                    Text(tab.title)
+                        .font(BlitzType.title)
+                        .foregroundStyle(BlitzUI.primaryText)
                     pane
                 }
                 .padding(.horizontal, 16)
@@ -59,11 +56,12 @@ struct RecorderLayerInspector: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollIndicators(.never)
+            tabBar
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(BlitzUI.panelBackground)
+        .background(BlitzMaterialBackground(kind: .sidebar))
         .foregroundStyle(BlitzUI.primaryText)
-        .tint(BlitzUI.mint)
+        .tint(BlitzUI.accent)
     }
 
     private var tabBar: some View {
@@ -85,14 +83,12 @@ struct RecorderLayerInspector: View {
         case .layout: layoutPane
         case .screen: screenPane
         case .camera: cameraPane
-        case .audio: audioPane
         case .background: backgroundPane
         }
     }
 
     private var screenPane: some View {
         Group {
-            notice(for: .screen)
             EditorInspectorSection(configuration: .init(
                 title: vm.supportsScreenWindowScaling ? "App window" : "Screen framing"
             ) {
@@ -104,7 +100,6 @@ struct RecorderLayerInspector: View {
 
     private var cameraPane: some View {
         Group {
-            notice(for: .camera)
             EditorInspectorSection(configuration: .init(title: "Framing") {
                 CameraCropControls(vm: vm)
             })
@@ -129,27 +124,10 @@ struct RecorderLayerInspector: View {
                     .disabled(!vm.canEditScene)
                     .help("Add a soft shadow under the camera")
                 } else if vm.settings.visibleSources.isSuperset(of: [.screen, .camera]) {
-                    layoutCaption("Corners match the screen. Change them in Canvas, next to Padding.")
+                    layoutCaption("Corners match the screen. Change them in Layout, under Style.")
                 }
             })
             hiddenNotice(for: .camera)
-        }
-    }
-
-    private var audioPane: some View {
-        Group {
-            audioSection(.init(
-                title: "Microphone",
-                source: .microphone,
-                levels: vm.micLevels,
-                gain: Binding(get: { vm.settings.microphoneGain }, set: { vm.setMicrophoneGain($0) })
-            ))
-            audioSection(.init(
-                title: "Mac audio",
-                source: .systemAudio,
-                levels: vm.sysLevels,
-                gain: Binding(get: { vm.settings.systemAudioGain }, set: { vm.setSystemAudioGain($0) })
-            ))
         }
     }
 
@@ -167,7 +145,7 @@ struct RecorderLayerInspector: View {
                     .help("Slowly drift the gradient colors while you record")
                 }
             })
-            EditorInspectorSection(configuration: .init(title: "Frame") {
+            EditorInspectorSection(configuration: .init(title: "Spacing") {
                 presetRow(.init(
                     title: "Padding",
                     options: CanvasPaddingPreset.allCases,
@@ -177,37 +155,8 @@ struct RecorderLayerInspector: View {
                     ),
                     label: \.title
                 ))
-                presetRow(.init(
-                    title: "Corners",
-                    options: ScreenCornerPreset.allCases,
-                    selection: Binding(
-                        get: { ScreenCornerPreset.nearest(vm.settings.screenCornerRadius) },
-                        set: { vm.setScreenCornerRadius($0.value) }
-                    ),
-                    label: \.title
-                ))
-                Toggle("Shadow", isOn: Binding(
-                    get: { vm.settings.screenShadowEnabled },
-                    set: { vm.setScreenShadowEnabled($0) }
-                ))
-                .toggleStyle(.blitzSwitch)
-                .help("Lift the screen off the background. Shows when there is padding.")
             })
             .disabled(!vm.canEditScene)
-            EditorInspectorSection(configuration: .init(title: "Guides") {
-                Toggle("Rule of thirds", isOn: Binding(
-                    get: { vm.settings.showsRuleOfThirdsOverlay },
-                    set: { vm.setRuleOfThirds($0) }
-                ))
-                .toggleStyle(.blitzSwitch)
-                .disabled(!vm.canEditScene)
-                .help("Show rule-of-thirds lines on the preview. They are never recorded.")
-                if vm.settings.layout == .vertical {
-                    Toggle("App safe zones", isOn: $showsSafeZones)
-                        .toggleStyle(.blitzSwitch)
-                        .help("Shade where TikTok, Reels and Shorts put captions and buttons. Never recorded.")
-                }
-            })
         }
     }
 
@@ -231,13 +180,6 @@ struct RecorderLayerInspector: View {
     }
 
     @ViewBuilder
-    private func notice(for source: CaptureSource) -> some View {
-        if let notice = vm.sourceReadinessNotice(source), notice.action != .chooseScreen {
-            SourceReadinessNoticeView(notice: notice, vm: vm)
-        }
-    }
-
-    @ViewBuilder
     private func hiddenNotice(for source: CaptureSource) -> some View {
         if vm.isSourceConfigured(source), !vm.isSourceVisible(source) {
             Text("Not shown in \(vm.selectedSceneName). It still records on its own track.")
@@ -251,6 +193,23 @@ struct RecorderLayerInspector: View {
         Group {
             EditorInspectorSection(configuration: .init(title: vm.selectedSceneName) {
                 layoutControls
+            })
+            EditorInspectorSection(configuration: .init(title: "Style") {
+                presetRow(.init(
+                    title: "Corners",
+                    options: ScreenCornerPreset.allCases,
+                    selection: Binding(
+                        get: { ScreenCornerPreset.nearest(vm.settings.screenCornerRadius) },
+                        set: { vm.setScreenCornerRadius($0.value) }
+                    ),
+                    label: \.title
+                ))
+                Toggle("Shadow", isOn: Binding(
+                    get: { vm.settings.screenShadowEnabled },
+                    set: { vm.setScreenShadowEnabled($0) }
+                ))
+                .toggleStyle(.blitzSwitch)
+                .help("Lift the screen off the background. Shows when the canvas has padding.")
             })
             Divider()
             VStack(alignment: .leading, spacing: 6) {
@@ -359,36 +318,11 @@ struct RecorderLayerInspector: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    private struct AudioSectionRequest {
-        let title: String
-        let source: CaptureSource
-        let levels: TrackLevels
-        let gain: Binding<Double>
-    }
-
-    private func audioSection(_ request: AudioSectionRequest) -> some View {
-        EditorInspectorSection(configuration: .init(title: request.title) {
-            if vm.isSourceConfigured(request.source) {
-                AudioSourceInspector(
-                    source: request.source,
-                    levels: request.levels,
-                    gain: request.gain,
-                    vm: vm
-                )
-            } else {
-                Text("Off. Turn it on in Sources to record it.")
-                    .font(BlitzType.body)
-                    .foregroundStyle(BlitzUI.secondaryText)
-            }
-        })
-    }
-
     private func isEnabled(_ item: RecorderInspectorTab) -> Bool {
         switch item {
         case .layout: return true
         case .screen: return vm.isSourceConfigured(.screen)
         case .camera: return vm.isSourceConfigured(.camera)
-        case .audio: return vm.isSourceConfigured(.microphone) || vm.isSourceConfigured(.systemAudio)
         case .background: return true
         }
     }
@@ -398,7 +332,6 @@ struct RecorderLayerInspector: View {
         case .layout: return "Where the screen and camera sit in this scene"
         case .screen: return "Screen framing in this scene"
         case .camera: return "Camera framing and effects"
-        case .audio: return "Microphone and Mac audio volume"
         case .background: return "Background, padding and guides"
         }
     }
@@ -408,7 +341,6 @@ struct RecorderLayerInspector: View {
         case .layout: vm.selectLayoutInspector()
         case .screen: vm.selectSource(.screen)
         case .camera: vm.selectSource(.camera)
-        case .audio: vm.selectSource(vm.isSourceConfigured(.microphone) ? .microphone : .systemAudio)
         case .background: vm.selectBackgroundLayer()
         }
     }

@@ -73,7 +73,7 @@ extension ProjectLibraryView {
             transcriptionModelCard(.init(
                 title: "Downloading speech model",
                 detail: "Keep BlitzRecorder open. Transcription starts when the model is ready.",
-                systemImage: "arrow.down.circle.fill",
+                systemImage: "arrow.down.circle",
                 errorMessage: nil,
                 progress: progress,
                 progressLabel: "\(phase) · \(Int((progress * 100).rounded()))%",
@@ -119,7 +119,7 @@ extension ProjectLibraryView {
                     .font(BlitzType.glyph(19))
                     .foregroundStyle(
                         configuration.errorMessage == nil
-                            ? BlitzUI.mint
+                            ? BlitzUI.accent
                             : BlitzUI.warning
                     )
                     .frame(width: 26, height: 26)
@@ -136,7 +136,7 @@ extension ProjectLibraryView {
 
                     if let progress = configuration.progress {
                         ProgressView(value: progress)
-                            .tint(BlitzUI.mint)
+                            .tint(BlitzUI.accent)
                             .frame(maxWidth: 360)
                     }
 
@@ -235,7 +235,7 @@ extension ProjectLibraryView {
     ) -> Color {
         switch status {
         case .ready:
-            return BlitzUI.mint.opacity(0.84)
+            return BlitzUI.accent.opacity(0.84)
         case .failed:
             return BlitzUI.warning
         case .notGenerated, .noAudio, .waitingForModel,

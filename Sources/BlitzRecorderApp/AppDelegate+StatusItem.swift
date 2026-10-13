@@ -56,6 +56,10 @@ extension AppDelegate {
         case .starting, .finishing:
             break
         }
+        if coordinator.state == .idle {
+            let livePreview = menu.addItem(withTitle: "Live Preview", action: #selector(toggleLivePreview), keyEquivalent: "")
+            livePreview.state = LivePreviewPreference().isEnabled ? .on : .off
+        }
         menu.addItem(withTitle: "Show BlitzRecorder", action: #selector(showWindow), keyEquivalent: "")
         menu.addItem(.separator())
 

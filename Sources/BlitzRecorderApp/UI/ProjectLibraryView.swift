@@ -16,10 +16,6 @@ struct ProjectTranscriptSpeakerRenameRequest {
     let rename: TranscriptSpeakerRenameRequest
 }
 
-enum ProjectLibrarySymbols {
-    static let media = "film.stack"
-}
-
 struct ProjectLibraryNavigationState: Equatable {
     enum Section: String, CaseIterable {
         case recordings = "Recordings"
@@ -71,6 +67,14 @@ struct ProjectLibraryView: View {
     @State var titleGenerationProjectID: UUID?
     let metadataStore = ProjectLibraryMetadataStore.shared
     var metadataByProjectID: [UUID: ProjectLibraryMetadata] { metadataStore.metadata }
+
+    private var sharingShowcase: [HostedSharingShowcaseItem] {
+        Array(vm.recentProjects.lazy.compactMap { entry -> HostedSharingShowcaseItem? in
+            guard let metadata = metadataByProjectID[entry.id], let image = metadata.thumbnail else { return nil }
+            return .init(id: entry.id, title: ProjectFolderTitle.baseTitle(entry.title),
+                         duration: metadata.durationLabel, image: image)
+        }.prefix(3))
+    }
     @State var showsFilters = false
     @State var transcriptSearch = ProjectTranscriptSearch()
     @State var transcriptMatches: [UUID: [ProjectTranscriptMatch]] = [:]
@@ -101,7 +105,8 @@ struct ProjectLibraryView: View {
                     folderStatusBar
                     HStack(spacing: 0) {
                         projectSidebar
-                        Rectangle().fill(BlitzUI.hoverFill).frame(width: 1)
+                            .shadow(color: BlitzUI.elevationShadow, radius: 8, x: 2)
+                            .zIndex(1)
                         projectDetail
                     }
                 }
@@ -117,7 +122,7 @@ struct ProjectLibraryView: View {
                         guard let path = sharing.projectPath(for: video),
                               let project = vm.recentProjects.first(where: { $0.projectPath == path }) else { return nil }
                         return metadataByProjectID[project.id]?.thumbnail
-                    })
+                    }, showcase: sharingShowcase)
                 }
             }
         }

@@ -47,6 +47,7 @@ enum LocalCameraRuntimeState: Equatable {
 
     case unchecked
     case starting
+    case waitingForDevice
     case ready
     case unavailable(String)
 
@@ -66,6 +67,13 @@ enum LocalCameraRuntimeState: Equatable {
                 permission: "Camera availability",
                 status: "starting",
                 recovery: "Wait for the camera preview before recording."
+            )
+        case .waitingForDevice:
+            blocker = PermissionBlocker(
+                source: .camera,
+                permission: "Camera availability",
+                status: "waiting",
+                recovery: "Bring your iPhone close and lock it, or plug in a camera. It connects on its own."
             )
         case .unavailable(let reason):
             blocker = PermissionBlocker(
@@ -113,7 +121,11 @@ extension Array where Element == PermissionBlocker {
             return "Pick a screen or app to record"
         }
         if let cameraBlocker = first(where: { $0.permission == "Camera availability" }) {
-            return cameraBlocker.status == "starting" ? "Camera is starting" : "Camera unavailable"
+            switch cameraBlocker.status {
+            case "starting": return "Camera is starting"
+            case "waiting": return "Waiting for a camera"
+            default: return "Camera unavailable"
+            }
         }
         if contains(where: { $0.source == .screen }),
            !contains(where: { $0.source == .systemAudio }) {

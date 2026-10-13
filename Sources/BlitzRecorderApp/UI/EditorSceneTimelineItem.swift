@@ -42,7 +42,7 @@ struct EditorSceneTimelineItem: View {
         .background(isHovering ? BlitzUI.hoverFill : isActive ? BlitzUI.trackCamera.opacity(0.12) : BlitzUI.cardFill, in: shape)
         .overlay {
             shape.strokeBorder(
-                isSelected || isHovering ? BlitzUI.mint : (isActive ? BlitzUI.panelStroke : BlitzUI.separator),
+                isSelected || isHovering ? BlitzUI.accent : (isActive ? BlitzUI.panelStroke : BlitzUI.separator),
                 lineWidth: isSelected || isHovering ? 2 : 1
             )
             .allowsHitTesting(false)
@@ -50,7 +50,7 @@ struct EditorSceneTimelineItem: View {
         .overlay(alignment: .leading) {
             if isActive {
                 RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                    .fill(BlitzUI.mint)
+                    .fill(BlitzUI.accent)
                     .frame(width: 3)
                     .padding(.vertical, 5)
                     .padding(.leading, 2)

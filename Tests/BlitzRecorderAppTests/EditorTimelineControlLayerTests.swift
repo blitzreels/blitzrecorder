@@ -279,7 +279,7 @@ private struct SelectedClipFixture: View {
             .overlay(alignment: .topLeading) {
                 EditorTimelineRangeHighlight(configuration: .init(
                     range: .init(start: 0, end: 4), projection: projection, pixelsPerSecond: 20,
-                    height: 180, tint: BlitzUI.mint))
+                    height: 180, tint: BlitzUI.accent))
             }
             .overlayPreferenceValue(EditorTimelineControlKey.self) { controls in
                 GeometryReader { geometry in

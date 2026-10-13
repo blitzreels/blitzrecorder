@@ -12,7 +12,7 @@ struct SourcesSidebar: View {
                     .padding(.horizontal, 4)
                     .help("Every source that is on is recorded on its own track, even when a scene hides it.")
 
-                VStack(spacing: 4) {
+                VStack(spacing: 2) {
                     ForEach(displayedSources, id: \.self) { source in
                         deviceCard(for: source)
                     }
@@ -22,9 +22,9 @@ struct SourcesSidebar: View {
             .padding(.vertical, 14)
         }
         .scrollIndicators(.automatic)
-        .frame(minWidth: 216, idealWidth: 232, maxWidth: 232)
+        .frame(maxWidth: .infinity)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(BlitzUI.panelBackground)
+        .background(BlitzMaterialBackground(kind: .sidebar))
     }
 
     private var displayedSources: [CaptureSource] {
@@ -42,6 +42,7 @@ struct SourcesSidebar: View {
                 status: sourceStatus(for: .screen),
                 picker: ScreenCaptureSourcePickerModel(vm: vm, enabled: vm.isSourceConfigured(.screen)).model,
                 levels: nil,
+                gain: nil,
                 vm: vm
             )
         case .camera:
@@ -52,6 +53,7 @@ struct SourcesSidebar: View {
                 status: sourceStatus(for: .camera),
                 picker: CameraSourcePickerModel(vm: vm, enabled: vm.isSourceConfigured(.camera)).model,
                 levels: nil,
+                gain: nil,
                 vm: vm
             )
         case .microphone:
@@ -62,6 +64,7 @@ struct SourcesSidebar: View {
                 status: sourceStatus(for: .microphone),
                 picker: MicrophoneSourcePickerModel(vm: vm, enabled: vm.isSourceConfigured(.microphone)).model,
                 levels: vm.micLevels,
+                gain: Binding(get: { vm.settings.microphoneGain }, set: { vm.setMicrophoneGain($0) }),
                 vm: vm
             )
         case .systemAudio:
@@ -72,6 +75,7 @@ struct SourcesSidebar: View {
                 status: sourceStatus(for: .systemAudio),
                 picker: nil,
                 levels: vm.sysLevels,
+                gain: Binding(get: { vm.settings.systemAudioGain }, set: { vm.setSystemAudioGain($0) }),
                 vm: vm
             )
         }
@@ -140,6 +144,7 @@ private struct DeviceCard: View {
     let status: SourceRowStatus
     let picker: BlitzSourcePickerModel?
     let levels: TrackLevels?
+    let gain: Binding<Double>?
     @Bindable var vm: RecorderViewModel
     @State private var isHovering = false
     @State private var showsPicker = false
@@ -160,18 +165,24 @@ private struct DeviceCard: View {
                 Button {
                     vm.selectSource(source)
                 } label: {
-                    HStack(spacing: 8) {
-                        BlitzSymbol(configuration: .init(name: source.symbolName, size: 15))
+                    HStack(spacing: 9) {
+                        BlitzSymbol(configuration: .init(name: source.symbolName, size: 16))
                             .symbolVariant(isSelected && isEnabled ? .fill : .none)
-                            .foregroundStyle(isSelected && isEnabled ? BlitzUI.mint : BlitzUI.secondaryText)
+                            .foregroundStyle(isSelected && isEnabled ? BlitzUI.accent : BlitzUI.supportingText)
                             .frame(width: 20)
                         Text(title)
-                            .font(BlitzType.label)
+                            .font(BlitzType.section)
                             .foregroundStyle(isEnabled ? BlitzUI.primaryText : BlitzUI.secondaryText)
                             .lineLimit(1)
+                        if isEnabled {
+                            Circle()
+                                .fill(statusColor)
+                                .frame(width: 6, height: 6)
+                                .accessibilityHidden(true)
+                        }
                         Spacer(minLength: 0)
                     }
-                    .frame(height: 22)
+                    .frame(height: 26)
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
@@ -186,7 +197,7 @@ private struct DeviceCard: View {
                     set: { _ in vm.toggleSource(source) }
                 ))
                 .toggleStyle(.blitzCompactSwitch)
-                .tint(BlitzUI.mint)
+                .tint(BlitzUI.accent)
                 .disabled(vm.state != .idle)
                 .help(isEnabled ? "Stop recording \(title.lowercased())" : "Record \(title.lowercased())")
             }
@@ -212,22 +223,44 @@ private struct DeviceCard: View {
                     }
                     if let levels {
                         BlitzLevelMeter(levels: levels, active: status.tone == .active)
-                            .frame(height: 8)
+                            .frame(height: 6)
                             .accessibilityHidden(true)
                     }
+                    if let gain {
+                        BlitzInspectorSlider(configuration: .init(
+                            title: "Volume",
+                            value: gain,
+                            range: 0...2,
+                            step: 0.01,
+                            valueLabel: "\(Int((gain.wrappedValue * 100).rounded()))%",
+                            onEditingChanged: { _ in },
+                            onReset: { gain.wrappedValue = 1 }
+                        ))
+                        .controlSize(.small)
+                        .disabled(vm.state != .idle)
+                        .accessibilityLabel("\(title) volume")
+                    }
                 }
-                .padding(.leading, 28)
+                .padding(.top, 2)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            isSelected && isEnabled ? BlitzUI.selectedFill : (isHovering ? BlitzUI.quietFill : .clear),
-            in: .rect(cornerRadius: BlitzUI.controlRadius)
-        )
+        .background {
+            RoundedRectangle(cornerRadius: BlitzUI.cardRadius, style: .continuous)
+                .fill(isSelected && isEnabled ? BlitzUI.selectedFill : (isHovering ? BlitzUI.quietFill : .clear))
+        }
         .onHover { isHovering = $0 }
         .onChange(of: canPick) { if !canPick { isPickerPresented.wrappedValue = false } }
+    }
+
+    private var statusColor: Color {
+        switch status.tone {
+        case .active: BlitzUI.accent
+        case .warning: BlitzUI.warning
+        case .muted: BlitzUI.tertiaryText
+        }
     }
 
     private var pickerField: some View {
@@ -245,7 +278,7 @@ private struct DeviceCard: View {
                 Text(subtitle)
                     .font(BlitzType.caption)
                     .foregroundStyle(source == .screen && vm.unavailableScreenSourceNotice != nil
-                        ? BlitzUI.recordRed : BlitzUI.supportingText)
+                        ? BlitzUI.warning : BlitzUI.primaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: 4)
@@ -254,8 +287,8 @@ private struct DeviceCard: View {
                     .foregroundStyle(BlitzUI.secondaryText)
                     .accessibilityHidden(true)
             }
-            .padding(.horizontal, 8)
-            .frame(height: 24)
+            .padding(.horizontal, 9)
+            .frame(height: 28)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .buttonStyle(BlitzMenuTriggerStyle(isPresented: isPickerPresented.wrappedValue))
@@ -265,7 +298,6 @@ private struct DeviceCard: View {
         .popover(isPresented: isPickerPresented, arrowEdge: .trailing) {
             if let picker {
                 BlitzSourcePickerPopover(model: picker) { isPickerPresented.wrappedValue = false }
-                    .preferredColorScheme(.dark)
             }
         }
     }
@@ -284,8 +316,8 @@ private struct DeviceReadinessNote: View {
     @Bindable var vm: RecorderViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 5) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
                 if notice.isWaiting {
                     ProgressView().controlSize(.mini)
                 } else {
@@ -295,21 +327,27 @@ private struct DeviceReadinessNote: View {
                 }
                 Text(notice.title)
                     .font(BlitzType.captionEmphasis)
+                    .lineLimit(1)
             }
-            .foregroundStyle(notice.isWaiting ? BlitzUI.supportingText : notice.color)
-            Text(notice.detail)
-                .font(BlitzType.caption)
-                .foregroundStyle(BlitzUI.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
+            .foregroundStyle(notice.isWaiting ? BlitzUI.supportingText : BlitzUI.warning)
+            if notice.isWaiting {
+                Text(notice.detail)
+                    .font(BlitzType.caption)
+                    .foregroundStyle(BlitzUI.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let action = notice.action {
                 Button(action.title) { vm.resolveSourceReadiness(action) }
                     .blitzButton(.secondary)
                     .controlSize(.small)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .disabled(vm.isRequestingPermissions)
             }
         }
         .padding(.top, 2)
+        .help(notice.detail)
         .accessibilityElement(children: .contain)
+        .accessibilityHint(notice.detail)
     }
 }
 

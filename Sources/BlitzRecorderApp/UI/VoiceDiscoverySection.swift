@@ -77,7 +77,7 @@ struct VoiceDiscoverySection: View {
                 }
             }
             if discovery.isScanning {
-                ProgressView(value: Double(update.checked), total: Double(max(update.total, 1))).tint(BlitzUI.mint)
+                ProgressView(value: Double(update.checked), total: Double(max(update.total, 1))).tint(BlitzUI.accent)
                 if let title = update.currentTitle {
                     Text(title).font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText).lineLimit(1)
                 }
@@ -125,20 +125,13 @@ struct VoiceDiscoverySection: View {
             .popover(isPresented: Binding(get: { naming?.id == candidate.id }, set: { if !$0 { naming = nil } })) {
                 namingEditor(candidate)
             }
-            BlitzOverflowMenu(configuration: .init(
-                entries: [
+            BlitzInlineActions(entries: [
                     .item(.init(title: "Open recording", systemImage: "film", action: { openRecording(candidate.reference.project) })),
                     .item(.init(title: "Dismiss for now", systemImage: "xmark", action: {
                         if player.playingID == candidate.id { player.stop() }
                         discovery.dismiss(candidate.id)
                     }))
-                ],
-                menuWidth: 210,
-                placement: .inline,
-                isBusy: false,
-                accessibilityLabel: "Actions for \(candidate.title)",
-                help: "Open the recording or dismiss this voice"
-            ))
+                ])
             .controlSize(.small)
         }
         .settingsRow()

@@ -62,6 +62,9 @@ struct SourceReadinessNotice: Equatable {
         case "Microphone":
             return .init(title: "Microphone permission needed", detail: blocker.recovery,
                 action: blocker.status == "not determined" ? .requestMicrophone : .microphoneSettings, isWaiting: false, severity: .warning)
+        case "Camera availability" where blocker.status == "waiting":
+            return .init(title: "Waiting for a camera", detail: blocker.recovery,
+                action: nil, isWaiting: true, severity: .warning)
         case "Camera availability":
             let isStarting = blocker.status == "starting"
             return .init(title: isStarting ? "Starting camera" : "Camera unavailable",
@@ -106,33 +109,5 @@ extension RecorderViewModel {
         case .microphoneSettings: openMicrophoneSettings()
         case .manageDevices: showSettings(.devices)
         }
-    }
-}
-
-struct SourceReadinessNoticeView: View {
-    let notice: SourceReadinessNotice
-    @Bindable var vm: RecorderViewModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                if notice.isWaiting { ProgressView().controlSize(.mini) }
-                Text(notice.title)
-                    .font(BlitzType.label)
-                    .foregroundStyle(notice.isWaiting ? BlitzUI.primaryText : notice.color)
-            }
-            Text(notice.detail)
-                .font(BlitzType.caption)
-                .foregroundStyle(BlitzUI.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-            if let action = notice.action {
-                Button(action.title) { vm.resolveSourceReadiness(action) }
-                    .blitzButton(.secondary)
-                    .controlSize(.small)
-                    .disabled(vm.isRequestingPermissions)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, 6)
     }
 }

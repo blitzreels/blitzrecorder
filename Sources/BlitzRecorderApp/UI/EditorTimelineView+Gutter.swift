@@ -27,7 +27,7 @@ extension EditorTimelineView {
         VStack(spacing: 6) {
             if duration > 0 {
                 EditorTimelineTrackHeader(configuration: .init(
-                    title: "Video", symbol: "film.stack", tint: BlitzUI.mint, status: nil,
+                    title: "Video", symbol: "film.stack", tint: BlitzUI.accent, status: nil,
                     height: clipRowHeight, isSelected: false, isInteractive: isInteractive, onSelect: nil,
                     accessory: { Color.clear.frame(width: 30) }
                 ))

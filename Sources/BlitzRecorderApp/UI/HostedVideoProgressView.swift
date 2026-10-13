@@ -40,7 +40,7 @@ struct HostedVideoProgressView: View {
             }
             ProgressView(value: presentation.fraction)
                 .progressViewStyle(.linear)
-                .tint(BlitzUI.mint)
+                .tint(BlitzUI.accent)
                 .accessibilityLabel(presentation.title)
             Text(presentation.detail)
                 .font(BlitzType.body).foregroundStyle(BlitzUI.supportingText)

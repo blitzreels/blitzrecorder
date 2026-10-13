@@ -58,7 +58,7 @@ extension ProjectLibraryView {
                         context: nil,
                         isDuplicateLesson: module.duplicateLessonIDs.contains(project.id)
                     ))
-                    .background(dropFill("row-\(project.id)"), in: .rect(cornerRadius: BlitzUI.controlRadius))
+                    .background(dropFill("row-\(project.id)"), in: .rect(cornerRadius: ProjectLibrarySidebarLayout.rowRadius))
                     .projectDropTarget(.init(id: "row-\(project.id)", target: $dropTargetID) { ids in
                         vm.dropProjects(.init(ids: ids, destination: .folder(path: node.path, module: module.id, before: project.id)))
                     })
@@ -81,7 +81,7 @@ extension ProjectLibraryView {
                             title: ProjectFolderTitle.baseTitle(request.index.resolved(project).title),
                             lessonNumber: nil, context: nil, isDuplicateLesson: false
                         ))
-                        .background(dropFill("row-\(project.id)"), in: .rect(cornerRadius: BlitzUI.controlRadius))
+                        .background(dropFill("row-\(project.id)"), in: .rect(cornerRadius: ProjectLibrarySidebarLayout.rowRadius))
                         .projectDropTarget(.init(id: "row-\(project.id)", target: $dropTargetID) { ids in
                             vm.dropProjects(.init(ids: ids, destination: .folder(path: node.path, module: nil, before: nil)))
                         })
@@ -178,7 +178,7 @@ struct FolderRecordTargetChip: View {
             HStack(spacing: 8) {
                 Image(systemName: "folder.fill")
                     .font(BlitzType.symbol(12))
-                    .foregroundStyle(BlitzUI.mint)
+                    .foregroundStyle(BlitzUI.accent)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(vm.recordTargetLabel(target))

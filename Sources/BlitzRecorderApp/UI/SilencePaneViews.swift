@@ -51,7 +51,7 @@ struct SilenceSummaryCard: View {
                 ProgressView().controlSize(.mini)
                 Text(presentation.phase.statusTitle).foregroundStyle(BlitzUI.supportingText)
             case .applied:
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(BlitzUI.mint)
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(BlitzUI.accent)
                 Text("Pauses cut").foregroundStyle(BlitzUI.supportingText)
             case .proposed:
                 Image(systemName: "scissors").foregroundStyle(BlitzUI.supportingText)
@@ -117,7 +117,7 @@ struct SilenceSummaryCard: View {
                        label: presentation.pauseCount == 1 ? "Pause" : "Pauses", tint: BlitzUI.primaryText))
             stat(.init(value: savedValue,
                        label: "Time saved",
-                       tint: presentation.hasResult && presentation.removedDuration > 0 ? BlitzUI.mint : BlitzUI.primaryText))
+                       tint: presentation.hasResult && presentation.removedDuration > 0 ? BlitzUI.accent : BlitzUI.primaryText))
             stat(.init(value: presentation.hasResult ? "\(presentation.shorterPercent)%" : "–",
                        label: "Shorter", tint: BlitzUI.primaryText))
         }
@@ -213,7 +213,7 @@ struct SilenceTakeStrip: View {
         guard width > 0 else { return }
         let rect = CGRect(x: 0, y: 0, width: width, height: request.size.height)
         request.context.fill(Path(roundedRect: rect, cornerRadius: 6, style: .continuous),
-                             with: .color(BlitzUI.mint.opacity(0.85)))
+                             with: .color(BlitzUI.accent.opacity(0.85)))
     }
 
     private struct DrawRequest {

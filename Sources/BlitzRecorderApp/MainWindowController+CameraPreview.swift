@@ -234,11 +234,44 @@ extension MainWindowController {
                 cameraPreviewDeviceID = nil
                 cameraPreviewWatchdogTask?.cancel()
                 cameraPreviewWatchdogTask = nil
+                if case .noCamera = error as? RecorderError,
+                   LocalCameraSessionConfiguration.selectedCamera(settings: coordinator.settings) == nil {
+                    waitForCameraDevice()
+                    return
+                }
                 previewStage.cameraPreview.setMessage("Camera unavailable")
                 coordinator.setLocalCameraRuntimeState(.unavailable(error.localizedDescription))
                 viewModel.refreshPermissionStatus()
                 viewModel.applyMessage("Camera preview failed: \(error.localizedDescription)")
                 refreshPermissionGate()
+            }
+        }
+    }
+
+    private func waitForCameraDevice() {
+        previewStage.cameraPreview.setMessage("Waiting for a camera")
+        coordinator.setLocalCameraRuntimeState(.waitingForDevice)
+        viewModel.refreshPermissionStatus()
+        refreshPermissionGate()
+        cameraDeviceWaitTask?.cancel()
+        cameraDeviceWaitTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(3))
+                } catch {
+                    return
+                }
+                guard let self,
+                      self.coordinator.state == .idle,
+                      self.idlePreviewIsAllowed,
+                      !self.coordinator.isRemoteCameraSelected,
+                      self.coordinator.settings.visibleSources.contains(.camera),
+                      !self.isStartingCameraPreview,
+                      !self.previewStage.cameraPreview.hasPreviewContent else { return }
+                if LocalCameraSessionConfiguration.selectedCamera(settings: self.coordinator.settings) != nil {
+                    self.startCameraPreview()
+                    return
+                }
             }
         }
     }

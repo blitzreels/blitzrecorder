@@ -21,7 +21,6 @@ final class BlitzUIKitWindow: NSObject {
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1180, height: 860),
                               styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
         window.title = "UI Kit"
-        window.appearance = NSAppearance(named: .darkAqua)
         window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: BlitzUIKitView())
         window.center()
@@ -58,7 +57,6 @@ struct BlitzUIKitContent: View {
         ("navigation", AnyView(BlitzUIKitNavigation())), ("library-rows", AnyView(BlitzUIKitLibrary())),
         ("library-parts", AnyView(BlitzUIKitLibraryParts())), ("sharing", AnyView(BlitzUIKitSharing())),
         ("popovers", AnyView(BlitzUIKitPopovers())), ("settings", AnyView(BlitzUIKitSettings())),
-        ("unused", AnyView(BlitzUIKitUnused())),
     ]
 
     var body: some View {
@@ -75,7 +73,6 @@ struct BlitzUIKitContent: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(BlitzUI.panelBackground)
         .foregroundStyle(BlitzUI.primaryText)
-        .preferredColorScheme(.dark)
     }
 }
 
@@ -120,7 +117,7 @@ private struct BlitzUIKitColors: View {
     }
 
     private let accents: [Swatch] = [
-        .init(name: "mint", color: BlitzUI.mint), .init(name: "recordRed", color: BlitzUI.recordRed),
+        .init(name: "accent", color: BlitzUI.accent), .init(name: "recordRed", color: BlitzUI.recordRed),
         .init(name: "warning", color: BlitzUI.warning),
     ]
     private let surfaces: [Swatch] = [
@@ -215,7 +212,6 @@ private struct BlitzUIKitButtons: View {
             HStack(spacing: 18) {
                 BlitzUIKitSpecimen(label: "record") { Button("Record", systemImage: "record.circle") {}.blitzButton(.record) }
                 BlitzUIKitSpecimen(label: "dock") { Button("Screen", systemImage: "display") {}.blitzButton(.dock) }
-                BlitzUIKitSpecimen(label: "prominent") { Button("Send to BlitzReels") {}.blitzButton(.prominent) }
                 BlitzUIKitSpecimen(label: "secondary · destructive") {
                     Button("Move to Trash", systemImage: "trash", role: .destructive) {}.blitzButton(.secondary)
                 }
@@ -383,7 +379,7 @@ private struct BlitzUIKitLibrary: View {
                           isShared: false, isSelected: false))
             }
             .padding(8)
-            .frame(width: 340)
+            .frame(width: ProjectLibrarySidebarLayout.width)
             .background(BlitzUI.projectLibraryBackground, in: .rect(cornerRadius: BlitzUI.cardRadius))
         }
     }

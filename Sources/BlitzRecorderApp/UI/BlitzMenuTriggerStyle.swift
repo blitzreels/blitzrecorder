@@ -7,13 +7,14 @@ struct BlitzMenuTriggerStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .background(BlitzUI.insetWell, in: .rect(cornerRadius: BlitzControlMetrics.radius, style: .continuous))
             .background(
-                isPresented ? BlitzUI.selectedFill : (isHovering && isEnabled ? BlitzUI.hoverFill : BlitzUI.controlFill),
-                in: .rect(cornerRadius: BlitzControlMetrics.radius)
+                isPresented ? BlitzUI.selectedFill : (isHovering && isEnabled ? BlitzUI.quietFill : .clear),
+                in: .rect(cornerRadius: BlitzControlMetrics.radius, style: .continuous)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: BlitzControlMetrics.radius)
-                    .strokeBorder(BlitzUI.panelStroke, lineWidth: 1)
+                RoundedRectangle(cornerRadius: BlitzControlMetrics.radius, style: .continuous)
+                    .strokeBorder(isPresented ? BlitzUI.accent.opacity(0.5) : .clear, lineWidth: 1)
                     .allowsHitTesting(false)
             }
             .blitzFocusRing(cornerRadius: BlitzControlMetrics.radius)

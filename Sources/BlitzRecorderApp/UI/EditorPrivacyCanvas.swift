@@ -68,13 +68,13 @@ final class PrivacyCanvasView: NSView {
             let frame = source.displayedFrame(mask).intersection(source.visibleFrame)
             guard !frame.isNull, !frame.isEmpty else { continue }
             let selected = configuration.selectedID == mask.id
-            (selected ? NSColor.systemMint : NSColor.white.withAlphaComponent(0.45)).setStroke()
+            (selected ? BlitzThemeStore.shared.accent.nsAccent : NSColor.white.withAlphaComponent(0.45)).setStroke()
             let border = NSBezierPath(rect: frame)
             border.lineWidth = selected ? 2 : 1
             border.stroke()
             if selected {
                 for handle in handles(frame) {
-                    NSColor.systemMint.setFill()
+                    BlitzThemeStore.shared.accent.nsAccent.setFill()
                     NSBezierPath(roundedRect: CGRect(x: handle.point.x - 4, y: handle.point.y - 4, width: 8, height: 8),
                                  xRadius: 2, yRadius: 2).fill()
                 }

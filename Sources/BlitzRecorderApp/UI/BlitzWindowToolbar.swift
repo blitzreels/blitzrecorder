@@ -14,7 +14,8 @@ private struct BlitzWindowToolbarModifier: ViewModifier {
                 .padding(.vertical, 8)
                 .frame(minHeight: MainWindowChrome.toolbarHeight)
                 .background {
-                    BlitzUI.panelBackground
+                    BlitzUI.toolbarBackground
+                        .overlay(alignment: .bottom) { BlitzUI.toolbarDivider.frame(height: 1) }
                         .contentShape(.rect)
                         .gesture(WindowDragGesture())
                         .allowsWindowActivationEvents(true)
@@ -43,7 +44,7 @@ private struct GlobalVideoImportStatusBar: View {
                             .help(progress.filename)
                         ProgressView(value: progress.fraction)
                             .progressViewStyle(.linear)
-                            .tint(BlitzUI.mint)
+                            .tint(BlitzUI.accent)
                             .frame(minWidth: 80, maxWidth: 220)
                             .accessibilityLabel(progress.stage)
                         if let fraction = progress.fraction {
@@ -119,7 +120,7 @@ private struct GlobalExportProgressBar: View {
                     .lineLimit(1)
                 ProgressView(value: progress)
                     .progressViewStyle(.linear)
-                    .tint(BlitzUI.mint)
+                    .tint(BlitzUI.accent)
                     .frame(minWidth: 80, maxWidth: 220)
                 Text("\(Int((progress * 100).rounded()))%")
                     .monospacedDigit()

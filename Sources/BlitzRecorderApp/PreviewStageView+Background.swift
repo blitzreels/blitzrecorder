@@ -110,14 +110,14 @@ extension PreviewStageView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         if isBackgroundLayerSelected {
-            canvasBackgroundLayer.borderColor = Self.backgroundSelectionColor.cgColor
+            canvasBackgroundLayer.borderColor = resolvedCGColor(Self.backgroundSelectionColor)
             canvasBackgroundLayer.borderWidth = 2
         } else {
-            canvasBackgroundLayer.borderColor = NSColor.white.withAlphaComponent(0.20).cgColor
-            canvasBackgroundLayer.borderWidth = 1.5
+            canvasBackgroundLayer.borderColor = resolvedCGColor(BlitzColors.strongStroke.nsColor)
+            canvasBackgroundLayer.borderWidth = 1
         }
         CATransaction.commit()
     }
 
-    private static let backgroundSelectionColor = NSColor(srgbRed: 0.09, green: 1.0, blue: 0.65, alpha: 0.95)
+    private static var backgroundSelectionColor: NSColor { BlitzThemeStore.shared.accent.nsAccent.withAlphaComponent(0.95) }
 }

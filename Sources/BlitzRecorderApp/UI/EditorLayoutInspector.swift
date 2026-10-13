@@ -249,7 +249,7 @@ struct EditorLayoutInspector: View {
                 .font(BlitzType.captionEmphasis)
                 .foregroundStyle(BlitzUI.secondaryText)
                 .toggleStyle(.blitzSwitch)
-                .tint(BlitzUI.mint)
+                .tint(BlitzUI.accent)
                 .frame(minHeight: 28)
                 .help("Add a soft shadow under the screen recording")
         }
@@ -273,10 +273,10 @@ struct EditorLayoutInspector: View {
                     Spacer(minLength: 0)
                     Text(EditorFrameRatioLabel.text(for: currentRatio))
                         .font(BlitzType.captionEmphasis.monospacedDigit())
-                        .foregroundStyle(BlitzUI.mint)
+                        .foregroundStyle(BlitzUI.accent)
                         .padding(.horizontal, 8)
                         .frame(height: 24)
-                        .background(BlitzUI.mint.opacity(0.10), in: .capsule)
+                        .background(BlitzUI.accent.opacity(0.10), in: .capsule)
                 }
 
                 LazyVGrid(columns: EditorFrameRatio.columns, spacing: 2) {
@@ -297,7 +297,7 @@ struct EditorLayoutInspector: View {
                 Toggle("Lock aspect ratio", isOn: aspectRatioLockBinding(for: kind))
                     .font(BlitzType.captionEmphasis)
                     .toggleStyle(.blitzSwitch)
-                    .tint(BlitzUI.mint)
+                    .tint(BlitzUI.accent)
 
                 Text("Lock for proportional corners. Unlock or drag a side handle to reshape.")
                     .font(BlitzType.captionEmphasis)

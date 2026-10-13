@@ -63,23 +63,6 @@ struct EditorTimelinePinnedRuler<Content: View>: View {
     }
 }
 
-struct EditorTimelineTrackDuration {
-    struct Request {
-        let rawDuration: Double?
-        let playbackDuration: Double
-    }
-
-    static func resolve(_ request: Request) -> Double {
-        let playbackDuration = request.playbackDuration.isFinite
-            ? max(0, request.playbackDuration)
-            : 0
-        guard let rawDuration = request.rawDuration, rawDuration.isFinite else {
-            return playbackDuration
-        }
-        return min(max(0, rawDuration), playbackDuration)
-    }
-}
-
 struct EditorTimelinePlayhead: View {
     struct Configuration {
         let projection: EditorTimelineProjection
@@ -109,7 +92,7 @@ struct EditorTimelinePlayhead: View {
                     guard x >= 0, x <= size.width else { return }
                     let marker = EditorTimelinePlayheadShape().path(in: CGRect(x: x - 6, y: 0, width: 12, height: size.height))
                     context.stroke(marker, with: .color(.black.opacity(0.7)), lineWidth: 2)
-                    context.fill(marker, with: .color(BlitzUI.mint))
+                    context.fill(marker, with: .color(BlitzUI.accent))
                 }
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)

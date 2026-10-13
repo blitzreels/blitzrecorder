@@ -161,7 +161,7 @@ final class HostedVideoTests: XCTestCase {
             transcript: [.init(start: 0, end: min(2, duration), text: "A generated test video.", speaker: nil)],
             chapters: [.init(start: 0, title: "Test chapter", summary: nil)])
         let url = try await client.upload(.init(fileURL: URL(fileURLWithPath: file), token: token,
-            metadata: .init(title: "Hosting integration check", details: details), progress: { _ in }))
+            metadata: .init(title: "Hosting integration check", details: details), destination: .blitzrecorder, progress: { _ in }))
         XCTAssertEqual(url.host, URL(string: origin)?.host)
         try Data(url.absoluteString.utf8).write(to: URL(fileURLWithPath: receipt))
     }
@@ -225,7 +225,7 @@ final class HostedVideoTests: XCTestCase {
         let client = HostingClient(origin: URL(string: "https://hosting.test")!, session: network)
         let progress = HostingTestProgress()
         let request = HostingClient.Upload(fileURL: file, token: "test-token",
-            metadata: .init(title: "Test video", details: .empty), progress: { await progress.append($0) })
+            metadata: .init(title: "Test video", details: .empty), destination: .blitzrecorder, progress: { await progress.append($0) })
         let first = try await client.upload(request)
         let updates = await progress.values
         XCTAssertEqual(updates.first, .preparing)
@@ -251,6 +251,43 @@ final class HostedVideoTests: XCTestCase {
         })
     }
 
+    func testCloudflareStorageUploadsPartsToTheOwnersWorkerThenPublishes() async throws {
+        let fixture = try SyntheticRecording()
+        try await fixture.writeVideo(.init(url: fixture.take.screenURL, frames: 30))
+        let file = try await HostingSharingCopy.prepare(.init(fileURL: fixture.take.screenURL, progress: { _ in }))
+        defer { try? FileManager.default.removeItem(at: file) }
+        let bytes = try XCTUnwrap(file.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+        let server = HostingTestServer(.init(bytes: bytes, partDivisor: 4, permanentFailure: false))
+        HostingTestProtocol.server = server
+        defer { HostingTestProtocol.server = nil }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [HostingTestProtocol.self]
+        let network = URLSession(configuration: configuration)
+        defer { network.invalidateAndCancel() }
+        let client = HostingClient(origin: URL(string: "https://hosting.test")!, session: network)
+        let connection = CloudflareStorageConnection(accountID: String(repeating: "a", count: 32), accountName: "Owner",
+            mediaOrigin: URL(string: "https://\(HostingTestServer.mediaHost)")!, uploadSecret: "secret-1", apiToken: "token")
+        let url = try await client.upload(.init(fileURL: file, token: "test-token",
+            metadata: .init(title: "Test video", details: .empty), destination: .cloudflare(connection), progress: { _ in }))
+        XCTAssertEqual(url.absoluteString, "https://hosting.test/s/abcdefghijklmnopqrstuvwx")
+        let requests = server.requests
+        let create = try XCTUnwrap(requests.first { $0.url?.path == "/api/hosting/assets" && $0.httpMethod == "POST" })
+        let created = try XCTUnwrap(server.bodies[create.url!.absoluteString + "#POST"])
+        let body = try XCTUnwrap(try JSONSerialization.jsonObject(with: created) as? [String: Any])
+        XCTAssertEqual(body["mediaOrigin"] as? String, connection.mediaOrigin.absoluteString)
+        XCTAssertFalse(requests.contains { $0.url?.path.hasSuffix("/parts") == true || $0.url?.host == "upload.test" })
+        let media = requests.filter { $0.url?.host == HostingTestServer.mediaHost }
+        XCTAssertTrue(media.allSatisfy { $0.value(forHTTPHeaderField: "Authorization") == "Bearer secret-1" })
+        let partBytes = max(1, bytes / 4)
+        XCTAssertEqual(media.filter { $0.url?.query?.contains("part=") == true }.count, (bytes + partBytes - 1) / partBytes)
+        let finishWorker = try XCTUnwrap(requests.firstIndex { $0.url?.host == HostingTestServer.mediaHost
+            && $0.httpMethod == "POST" && $0.url?.query == "uploadId=up-1" })
+        let finishServer = try XCTUnwrap(requests.firstIndex { $0.url?.path.hasSuffix("/complete") == true })
+        XCTAssertLessThan(finishWorker, finishServer)
+        let assetID = try XCTUnwrap(requests.first { $0.url?.query == "uploads" }?.url?.pathComponents.dropFirst(2).first)
+        XCTAssertNil(UserDefaults.standard.data(forKey: "CloudflareUpload:\(assetID)"))
+    }
+
     func testFailedPartNeverCompletesTheUpload() async throws {
         let fixture = try SyntheticRecording()
         try await fixture.writeVideo(.init(url: fixture.take.screenURL, frames: 15))
@@ -267,7 +304,7 @@ final class HostedVideoTests: XCTestCase {
         let client = HostingClient(origin: URL(string: "https://hosting.test")!, session: network)
         do {
             _ = try await client.upload(.init(fileURL: file, token: "test-token",
-                metadata: .init(title: "Test video", details: .empty), progress: { _ in }))
+                metadata: .init(title: "Test video", details: .empty), destination: .blitzrecorder, progress: { _ in }))
             XCTFail("A failed part must not publish a video.")
         } catch is HostingFailure {}
         XCTAssertFalse(server.requests.contains { $0.url?.path.hasSuffix("/complete") == true })
@@ -291,7 +328,7 @@ final class HostedVideoTests: XCTestCase {
         let client = HostingClient(origin: URL(string: "https://hosting.test")!, session: network)
         let task = Task {
             try await client.upload(.init(fileURL: file, token: "test-token",
-                metadata: .init(title: "Test video", details: .empty), progress: { _ in }))
+                metadata: .init(title: "Test video", details: .empty), destination: .blitzrecorder, progress: { _ in }))
         }
         let deadline = ContinuousClock.now.advanced(by: .seconds(3))
         while server.peakUploads < HostingClient.parallelParts && ContinuousClock.now < deadline {
@@ -378,18 +415,46 @@ private final class HostingTestServer: @unchecked Sendable {
     var requests: [URLRequest] { lock.withLock { captured } }
     var peakUploads: Int { lock.withLock { maximumUploads } }
 
+    static let mediaHost = "blitzrecorder-media.owner.workers.dev"
+
     func finished(_ request: URLRequest) {
-        guard request.url?.host == "upload.test" else { return }
+        guard request.url?.host == "upload.test" || request.url?.query?.contains("part=") == true else { return }
         lock.withLock { activeUploads -= 1 }
     }
+
+    private var capturedBodies: [String: Data] = [:]
+    var bodies: [String: Data] { lock.withLock { capturedBodies } }
 
     func respond(_ request: URLRequest) throws -> (Int, Data) {
         try lock.withLock {
             captured.append(request)
+            if request.url?.path == "/api/hosting/assets", request.httpMethod == "POST", let stream = request.httpBodyStream {
+                var body = Data()
+                stream.open()
+                var buffer = [UInt8](repeating: 0, count: 512)
+                while stream.hasBytesAvailable {
+                    let count = stream.read(&buffer, maxLength: buffer.count)
+                    guard count > 0 else { break }
+                    body.append(contentsOf: buffer.prefix(count))
+                }
+                stream.close()
+                capturedBodies[request.url!.absoluteString + "#POST"] = body
+            }
             let bytes = configuration.bytes
             let partBytes = max(1, bytes / configuration.partDivisor)
             let url = try XCTUnwrap(request.url)
             if url.path.hasSuffix("/plan") { return (404, Data()) }
+            if url.host == HostingTestServer.mediaHost {
+                if url.path.hasSuffix("/poster.jpg") { return (200, Data("{\"saved\":true}".utf8)) }
+                if url.query == "uploads" { return (200, Data("{\"uploadId\":\"up-1\"}".utf8)) }
+                let part = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "part" }?.value
+                if let part, let number = Int(part) {
+                    activeUploads += 1
+                    maximumUploads = max(maximumUploads, activeUploads)
+                    return (200, try JSONSerialization.data(withJSONObject: ["part": number, "etag": "etag-\(number)"]))
+                }
+                return (200, Data("{\"bytes\":\(bytes)}".utf8))
+            }
             if url.host == "upload.test" {
                 activeUploads += 1
                 maximumUploads = max(maximumUploads, activeUploads)
@@ -432,14 +497,16 @@ private final class HostingTestProtocol: URLProtocol, @unchecked Sendable {
         get { lock.withLock { storedServer } }
         set { lock.withLock { storedServer = newValue } }
     }
-    override class func canInit(with request: URLRequest) -> Bool { ["hosting.test", "upload.test"].contains(request.url?.host ?? "") }
+    override class func canInit(with request: URLRequest) -> Bool {
+        ["hosting.test", "upload.test", HostingTestServer.mediaHost].contains(request.url?.host ?? "")
+    }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         let task = Task {
           do {
             let server = try XCTUnwrap(Self.server)
             let (status, data) = try server.respond(request)
-            if request.url?.host == "upload.test" {
+            if request.url?.host == "upload.test" || request.url?.query?.contains("part=") == true {
                 do { try await Task.sleep(for: .milliseconds(80)) }
                 catch { server.finished(request); return }
                 server.finished(request)

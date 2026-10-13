@@ -19,7 +19,10 @@ struct HostingPlan: Codable {
     let uploadWindowDays: Int
     let maximumResolution: Int
     let retentionDaysAfterExpiry: Int
+    /// The paid plan can be bought.
     let available: Bool
+    /// Free sharing from the user's own Cloudflare account. Older servers omit it.
+    let ownStorage: Bool?
 
     var price: String {
         (Double(amount) / 100).formatted(.currency(code: currency.uppercased()).precision(.fractionLength(0)))
@@ -28,6 +31,8 @@ struct HostingPlan: Codable {
     var allowance: String {
         "\(storageBytes / 1_000_000_000) GB storage · \(uploadSeconds / 3600) hours uploaded per \(uploadWindowDays) days"
     }
+
+    var offersSharing: Bool { available || ownStorage == true }
 }
 
 struct HostingAsset: Decodable {
@@ -72,14 +77,23 @@ struct HostingClient {
         let route: String
         let token: String?
         let body: Data?
+        var method: String { body == nil ? "GET" : "POST" }
     }
 
     private struct Failure: Decodable { let error: String }
 
     func send<T: Decodable>(_ request: Request) async throws -> T {
+        try await send(request, method: request.method)
+    }
+
+    func delete<T: Decodable>(_ request: Request) async throws -> T {
+        try await send(request, method: "DELETE")
+    }
+
+    private func send<T: Decodable>(_ request: Request, method: String) async throws -> T {
         let url = origin.appendingPathComponent("api/hosting").appendingPathComponent(request.route)
         var http = URLRequest(url: url)
-        http.httpMethod = request.body == nil ? "GET" : "POST"
+        http.httpMethod = method
         http.httpBody = request.body
         if let token = request.token { http.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         http.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -99,10 +113,15 @@ struct HostingClient {
         return origin.appendingPathComponent(String(path.dropFirst()))
     }
 
+    enum Destination: Sendable {
+        case blitzrecorder
+        case cloudflare(CloudflareStorageConnection)
+    }
     struct Upload {
         let fileURL: URL
         let token: String
         let metadata: HostingExportMetadata
+        let destination: Destination
         let progress: @Sendable (Progress) async -> Void
     }
     enum Progress: Sendable, Equatable {
@@ -131,9 +150,12 @@ struct HostingClient {
         }
         let key = try HostingExportMetadata.fingerprint(fileURL)
         let video = try await HostingSharingCopy.playable(fileURL)
-        let body: [String: Any] = ["title": String(request.metadata.title.prefix(160)), "bytes": bytes,
+        var media: CloudflareMediaClient?
+        if case .cloudflare(let connection) = request.destination { media = .init(connection: connection, session: session) }
+        var body: [String: Any] = ["title": String(request.metadata.title.prefix(160)), "bytes": bytes,
             "duration": duration, "contentType": "video/mp4", "requestKey": key,
             "video": ["width": video.width, "height": video.height, "frameRate": video.frameRate.map { $0 as Any } ?? NSNull()]]
+        if let media { body["mediaOrigin"] = media.connection.mediaOrigin.absoluteString }
         let asset: HostingAsset = try await send(.init(route: "assets", token: request.token,
             body: JSONSerialization.data(withJSONObject: body)))
         guard UUID(uuidString: asset.id) != nil else { throw HostingFailure(message: "The upload could not be created.") }
@@ -148,14 +170,27 @@ struct HostingClient {
                   let parts = asset.parts, parts == (bytes + partBytes - 1) / partBytes else {
                 throw HostingFailure(message: "The upload configuration is invalid.")
             }
-            if let poster = await HostingSharingCopy.poster(fileURL) {
-                let _: Saved? = try? await send(.init(route: "assets/\(asset.id)/poster", token: request.token,
-                    body: JSONSerialization.data(withJSONObject: ["jpeg": poster.base64EncodedString()])))
+            let journal = CloudflareUploadJournal(assetID: asset.id)
+            let uploaded: Set<Int>
+            if let media {
+                if let poster = await HostingSharingCopy.poster(fileURL) {
+                    try? await media.putPoster(assetID: asset.id, jpeg: poster)
+                }
+                if await journal.uploadID == nil {
+                    await journal.start(uploadID: try await media.createUpload(assetID: asset.id))
+                }
+                uploaded = Set(await journal.parts.map(\.part).filter { (1...parts).contains($0) })
+            } else {
+                if let poster = await HostingSharingCopy.poster(fileURL) {
+                    let _: Saved? = try? await send(.init(route: "assets/\(asset.id)/poster", token: request.token,
+                        body: JSONSerialization.data(withJSONObject: ["jpeg": poster.base64EncodedString()])))
+                }
+                let state: HostingAsset = try await send(.init(route: "assets/\(asset.id)", token: request.token, body: nil))
+                uploaded = Set((state.uploadedParts ?? []).filter { part in
+                    (1...parts).contains(part.number) && part.bytes == min(partBytes, bytes - (part.number - 1) * partBytes)
+                }.map(\.number))
             }
-            let state: HostingAsset = try await send(.init(route: "assets/\(asset.id)", token: request.token, body: nil))
-            let uploaded = Set((state.uploadedParts ?? []).filter { part in
-                (1...parts).contains(part.number) && part.bytes == min(partBytes, bytes - (part.number - 1) * partBytes)
-            }.map(\.number))
+            let cloudflareUploadID = await journal.uploadID
             let handle = try FileHandle(forReadingFrom: fileURL)
             defer { try? handle.close() }
             let sent = uploaded.reduce(0) { $0 + min(partBytes, bytes - ($1 - 1) * partBytes) }
@@ -187,7 +222,10 @@ struct HostingClient {
                             }
                             data.append(block)
                         }
-                        let part = ChunkUpload(number: number, assetID: asset.id, token: request.token, data: data) { progress in
+                        let target: ChunkUpload.Target = if let media, let cloudflareUploadID {
+                            .cloudflare(media.partRequest(assetID: asset.id, uploadID: cloudflareUploadID, number: number), journal)
+                        } else { .blitzrecorder }
+                        let part = ChunkUpload(number: number, assetID: asset.id, token: request.token, data: data, target: target) { progress in
                             guard case .uploading(let bytes) = progress else { return }
                             await aggregate.record(.init(number: number, sent: bytes.sent, expected: Int64(expected)))
                         }
@@ -210,6 +248,15 @@ struct HostingClient {
                 throw HostingFailure(message: "The video changed during upload. Export it again before sharing.")
             }
             try Task.checkCancellation()
+            if let media, let cloudflareUploadID {
+                do {
+                    try await media.complete(assetID: asset.id, uploadID: cloudflareUploadID, parts: await journal.parts)
+                } catch {
+                    await journal.clear()
+                    throw HostingFailure(message: "Your Cloudflare storage couldn’t finish this upload. Share again to start a fresh upload.")
+                }
+                await journal.clear()
+            }
             let completed: HostingAsset = try await send(.init(route: "assets/\(asset.id)/complete", token: request.token, body: Data("{}".utf8)))
             if completed.status == "ready", let path = completed.sharePath { return try shareURL(path) }
         }
@@ -231,10 +278,15 @@ struct HostingClient {
     }
 
     private struct ChunkUpload {
+        enum Target {
+            case blitzrecorder
+            case cloudflare(URLRequest, CloudflareUploadJournal)
+        }
         let number: Int
         let assetID: String
         let token: String
         let data: Data
+        let target: Target
         let progress: @Sendable (Progress) async -> Void
     }
 
@@ -242,6 +294,17 @@ struct HostingClient {
         for attempt in 0...2 {
             try Task.checkCancellation()
             do {
+                if case .cloudflare(let put, let journal) = part.target {
+                    let (data, response) = try await uploadPart(.init(request: put, data: part.data,
+                        completedBytes: 0, totalBytes: Int64(part.data.count), progress: part.progress))
+                    guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode),
+                          let saved = try? JSONDecoder().decode(CloudflareMediaClient.UploadedPart.self, from: data),
+                          saved.part == part.number else {
+                        throw HostingFailure(message: "The upload to your Cloudflare storage was interrupted. Resume to continue.")
+                    }
+                    await journal.record(saved)
+                    return
+                }
                 struct SignedPart: Decodable { let url: URL }
                 let signed: SignedPart = try await send(.init(route: "assets/\(part.assetID)/parts", token: part.token,
                     body: JSONSerialization.data(withJSONObject: ["number": part.number])))
@@ -251,7 +314,7 @@ struct HostingClient {
                 }
                 var put = URLRequest(url: signed.url)
                 put.httpMethod = "PUT"
-                let response = try await uploadPart(.init(request: put, data: part.data,
+                let (_, response) = try await uploadPart(.init(request: put, data: part.data,
                     completedBytes: 0, totalBytes: Int64(part.data.count), progress: part.progress))
                 guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
                     throw HostingFailure(message: "The upload was interrupted. Resume to continue from the saved parts.")
@@ -273,7 +336,7 @@ struct HostingClient {
         let progress: @Sendable (Progress) async -> Void
     }
 
-    private func uploadPart(_ part: PartUpload) async throws -> URLResponse {
+    private func uploadPart(_ part: PartUpload) async throws -> (Data, URLResponse) {
         let updates = AsyncStream<Int64>.makeStream(bufferingPolicy: .bufferingNewest(1))
         let delegate = HostingUploadDelegate(continuation: updates.continuation)
         let observer = Task {
@@ -283,10 +346,10 @@ struct HostingClient {
             }
         }
         do {
-            let (_, response) = try await session.upload(for: part.request, from: part.data, delegate: delegate)
+            let (data, response) = try await session.upload(for: part.request, from: part.data, delegate: delegate)
             updates.continuation.finish()
             await observer.value
-            return response
+            return (data, response)
         } catch {
             updates.continuation.finish()
             await observer.value
@@ -645,35 +708,17 @@ final class HostingUploadDelegate: NSObject, URLSessionTaskDelegate, @unchecked 
 struct HostingCredentialStore {
     let origin: URL
 
-    private var query: [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword,
-         kSecAttrService as String: Bundle.main.bundleIdentifier ?? "dev.blitzreels.blitzrecorder",
-         kSecAttrAccount as String: "hosting:\(origin.absoluteString)"]
-    }
+    private var item: KeychainItem { .init(account: "hosting:\(origin.absoluteString)") }
 
-    func load() -> String? {
-        var request = query
-        request[kSecReturnData as String] = true
-        request[kSecMatchLimit as String] = kSecMatchLimitOne
-        var item: CFTypeRef?
-        guard SecItemCopyMatching(request as CFDictionary, &item) == errSecSuccess, let data = item as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
+    func load() -> String? { item.load().flatMap { String(data: $0, encoding: .utf8) } }
 
-    func clear() { SecItemDelete(query as CFDictionary) }
+    func clear() { item.clear() }
 
     func save(_ token: String) throws {
         guard token.range(of: "^brh_[A-Za-z0-9_-]{43}$", options: .regularExpression) != nil else {
             throw HostingFailure(message: "Enter a valid hosting access key.")
         }
-        let data = Data(token.utf8)
-        let status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
-        if status == errSecSuccess { return }
-        guard status == errSecItemNotFound else { throw HostingFailure(message: "The hosting connection could not be saved in Keychain.") }
-        var item = query
-        item[kSecValueData as String] = data
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else {
+        guard item.save(Data(token.utf8)) else {
             throw HostingFailure(message: "The hosting connection could not be saved in Keychain.")
         }
     }

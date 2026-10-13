@@ -65,7 +65,7 @@ struct EditorTextInspector: View {
                 .background(BlitzUI.cardFill, in: .rect(cornerRadius: BlitzControlMetrics.radius))
                 .overlay {
                     RoundedRectangle(cornerRadius: BlitzControlMetrics.radius)
-                        .strokeBorder(isTextFocused ? BlitzUI.mint.opacity(0.7) : BlitzUI.panelStroke, lineWidth: 1)
+                        .strokeBorder(isTextFocused ? BlitzUI.accent.opacity(0.7) : BlitzUI.panelStroke, lineWidth: 1)
                         .allowsHitTesting(false)
                 }
                 .focused($isTextFocused)

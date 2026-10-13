@@ -19,10 +19,6 @@ struct HostedVideoSharePanel: View {
     let newExport: () -> Void
     let close: () -> Void
     let showLibrary: () -> Void
-    @State private var email = ""
-    @State private var code = ""
-    @FocusState private var focusedField: Field?
-    private enum Field { case email, code }
 
     private var isAccountOnly: Bool {
         if case .account = context { return true }
@@ -50,7 +46,28 @@ struct HostedVideoSharePanel: View {
     }
 
     var body: some View {
-        ScrollView {
+        Group {
+            if isAccountOnly {
+                stack
+            } else {
+                ScrollView {
+                    stack
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 16)
+                }
+                .scrollIndicators(.hidden)
+                .background(BlitzUI.panelBackground)
+            }
+        }
+        .foregroundStyle(BlitzUI.primaryText)
+        .controlSize(.regular)
+        .task { await controller.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await controller.refresh() }
+        }
+    }
+
+    private var stack: some View {
             VStack(alignment: .leading, spacing: 16) {
                 if !isAccountOnly {
                     HStack(alignment: .top, spacing: 8) {
@@ -72,7 +89,7 @@ struct HostedVideoSharePanel: View {
                 }
                 content
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .animation(.easeOut(duration: 0.18), value: stateKey)
+                    .animation(.easeOut(duration: 0.12), value: stateKey)
                 if !isAccountOnly {
                     Text("Anyone with the link can watch. Transcript and chapters are included when available.")
                         .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
@@ -90,35 +107,20 @@ struct HostedVideoSharePanel: View {
                 }
                 footer
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .scrollIndicators(.hidden)
-        .background(BlitzUI.panelBackground)
-        .foregroundStyle(BlitzUI.primaryText)
-        .controlSize(.regular)
-        .task { await controller.refresh() }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            Task { await controller.refresh() }
-        }
-        .onChange(of: controller.challenge?.challenge) {
-            code = ""
-            focusedField = controller.challenge == nil ? .email : .code
-        }
     }
 
     private enum StateKey: Hashable {
-        case uploading, saving, loading, unavailable, signIn, subscribe, account, ready, prepare, resume, idle
+        case uploading, saving, loading, unavailable, signIn, choosePlan, account, ready, prepare, resume, idle
     }
 
     private var stateKey: StateKey {
         if !isAccountOnly, controller.isRunning, controller.transferProgress != nil { return .uploading }
         if !isAccountOnly, isSaving { return .saving }
         if !controller.hasCheckedAccount { return .loading }
-        if controller.plan == nil || controller.plan?.available == false { return .unavailable }
+        if controller.plan?.offersSharing != true { return .unavailable }
         if !controller.isConnected { return .signIn }
-        if !controller.isSubscribed { return .subscribe }
+        if !controller.canShare { return .choosePlan }
         if isAccountOnly { return .account }
         if currentShare != nil, preparation == nil { return .ready }
         if preparation != nil { return .prepare }
@@ -155,17 +157,18 @@ struct HostedVideoSharePanel: View {
                     run: { Task { await controller.refresh() } }))
             case .signIn:
                 signIn
-            case .subscribe:
-                subscription
+            case .choosePlan:
+                if let plan = controller.plan { HostedSharingPlanPicker(controller: controller, plan: plan) }
             case .account:
                 Label("Your videos are synced with this account.", systemImage: "checkmark.circle.fill")
                     .font(BlitzType.body).foregroundStyle(BlitzUI.supportingText)
+                HostedSharingStorageSummary(controller: controller)
             case .ready:
                 if let url = currentShare { ready(url) }
             case .prepare:
                 if let preparation {
                     VStack(alignment: .leading, spacing: 4) {
-                        Label("High quality, up to 1080p", systemImage: "checkmark.shield.fill")
+                        Label("High quality, up to 1080p", systemImage: "checkmark.shield")
                             .font(BlitzType.section)
                         Text("\(preparation.summary) · Your original stays on this Mac.")
                             .font(BlitzType.body).foregroundStyle(BlitzUI.supportingText)
@@ -191,7 +194,7 @@ struct HostedVideoSharePanel: View {
                     .font(BlitzType.caption).foregroundStyle(BlitzUI.warning)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if let message = controller.accountMessage { errorText(message) }
+            if stateKey != .signIn, let message = controller.accountMessage { errorText(message) }
         }
         .transition(.opacity)
         .id(stateKey)
@@ -214,18 +217,11 @@ struct HostedVideoSharePanel: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(controller.account?.email ?? "BlitzRecorder account")
                         .font(BlitzType.label).lineLimit(1).truncationMode(.middle)
-                    Text(controller.isSubscribed ? "Hosting active" : "Free account")
+                    Text(storageLabel)
                         .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
                 }
                 Spacer(minLength: 8)
-                BlitzOverflowMenu(configuration: .init(
-                    entries: accountEntries,
-                    menuWidth: 200,
-                    placement: .inline,
-                    isBusy: false,
-                    accessibilityLabel: "Account options",
-                    help: "Account options"
-                ))
+                BlitzInlineActions(entries: accountEntries)
                 .controlSize(.small)
                 .disabled(controller.accountOperation != nil || controller.isRunning || isSaving)
             }
@@ -234,16 +230,23 @@ struct HostedVideoSharePanel: View {
         }
     }
 
+    private var storageLabel: String {
+        switch controller.activeStorage {
+        case .blitzrecorder: "BlitzRecorder Hosting"
+        case .cloudflare: "Sharing from your Cloudflare"
+        case nil: "Free account"
+        }
+    }
+
     private var accountEntries: [BlitzMenuEntry] {
         var entries: [BlitzMenuEntry] = []
         if !isAccountOnly {
-            entries.append(.item(.init(title: "All shared videos", systemImage: "film.stack.fill", action: showLibrary)))
+            entries.append(.item(.init(title: "All shared videos", systemImage: "film.stack", action: showLibrary)))
         }
         if controller.isSubscribed {
-            entries.append(.item(.init(title: "Manage hosting", systemImage: "creditcard.fill",
+            entries.append(.item(.init(title: "Manage hosting", systemImage: "creditcard",
                 action: { Task { await controller.openBilling() } })))
         }
-        if !entries.isEmpty { entries.append(.divider) }
         entries.append(.item(.init(title: "Sign out", systemImage: "rectangle.portrait.and.arrow.right",
             isDestructive: true, action: { Task { await controller.disconnect() } })))
         return entries
@@ -251,72 +254,19 @@ struct HostedVideoSharePanel: View {
 
     @ViewBuilder private var signIn: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(isAccountOnly ? "Sign in" : "Sign in to share").font(BlitzType.section)
-            if let challenge = controller.challenge {
-                Text("Enter the code sent to \(challenge.email).")
-                    .font(BlitzType.body).foregroundStyle(BlitzUI.supportingText)
-                    .fixedSize(horizontal: false, vertical: true)
-                TextField("6-digit code", text: $code)
-                    .textContentType(.oneTimeCode).textFieldStyle(.roundedBorder)
-                    .focused($focusedField, equals: .code)
-                    .accessibilityLabel("Email verification code")
-                    .onChange(of: code) { code = String(code.filter { $0.isASCII && $0.isNumber }.prefix(6)) }
-                    .onSubmit { if code.count == 6 { Task { await controller.verifyCode(code) } } }
-                action(.init(title: "Continue", operation: .verifyingCode, enabled: code.count == 6,
-                    run: { Task { await controller.verifyCode(code) } }))
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    let remaining = max(0, Int(ceil(controller.resendAfter.timeIntervalSince(context.date))))
-                    HStack {
-                        Button(remaining > 0 ? "Resend in \(remaining)s" : "Resend code") {
-                            Task { await controller.requestCode(email: challenge.email) }
-                        }.disabled(remaining > 0 || controller.accountOperation != nil)
-                        Spacer()
-                        Button("Change email", action: controller.changeEmail)
-                            .disabled(controller.accountOperation != nil)
-                    }.blitzButton(.quiet).controlSize(.small).monospacedDigit()
-                }
-            } else {
-                Text("Sign in or create an account with your email.")
-                    .font(BlitzType.body).foregroundStyle(BlitzUI.supportingText)
-                TextField("Email address", text: $email)
-                    .textContentType(.emailAddress).textFieldStyle(.roundedBorder)
-                    .focused($focusedField, equals: .email)
-                    .accessibilityLabel("BlitzRecorder email address")
-                    .onSubmit { if email.contains("@") { Task { await controller.requestCode(email: email) } } }
-                action(.init(title: "Continue with email", operation: .sendingCode, enabled: email.contains("@"),
-                    run: { Task { await controller.requestCode(email: email) } }))
-                Text("We’ll email you a sign-in code. No password needed.")
-                    .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
+            if !isAccountOnly {
+                Text("Sign in to share").font(BlitzType.section)
             }
-        }
-    }
-
-    @ViewBuilder private var subscription: some View {
-        if let plan = controller.plan {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("BlitzRecorder Hosting").font(BlitzType.title)
-                Text("\(plan.price) / month").font(BlitzType.largeTitle)
-                Text("Excluding tax · \(plan.allowance)")
-                    .font(BlitzType.body).foregroundStyle(BlitzUI.supportingText)
-                Text("High-quality sharing · Adaptive playback up to \(plan.maximumResolution)p")
-                    .font(BlitzType.body).foregroundStyle(BlitzUI.supportingText)
-                action(.init(title: controller.awaitingPayment ? "Reopen checkout" : "Enable sharing",
-                    operation: .openingBilling, enabled: true, run: { Task { await controller.openBilling() } }))
-                if controller.awaitingPayment { activity("Waiting for payment confirmation") }
-                Text("Your local recordings and exports stay free. Hosted links require an active subscription.")
-                    .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
-            }
+            HostedSignInForm(controller: controller, layout: .leading)
         }
     }
 
     private func ready(_ url: URL) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
-                Text("Watch link")
+                Text("Your link is live")
                     .font(BlitzType.strong).foregroundStyle(BlitzUI.secondaryText)
                 Spacer(minLength: 8)
-                BlitzStatusDot(tone: .live, diameter: 6)
-                Text("Live").font(BlitzType.captionEmphasis).foregroundStyle(BlitzUI.supportingText)
             }
             .accessibilityElement(children: .combine)
             Text(HostedVideoLinkField.displayText(url))
@@ -338,7 +288,7 @@ struct HostedVideoSharePanel: View {
 
     @ViewBuilder private func readyActions(_ url: URL) -> some View {
         Button { NSWorkspace.shared.open(url) } label: {
-            Label("Open", systemImage: "safari.fill").frame(maxWidth: .infinity)
+            Label("Open", systemImage: "safari").frame(maxWidth: .infinity)
         }
         .blitzButton(.secondary)
         .help("Open the watch page in your browser")

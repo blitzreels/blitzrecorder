@@ -3,16 +3,6 @@ import AVFoundation
 import CoreImage
 import SwiftUI
 
-enum Brand {
-    static let background = NSColor(calibratedRed: 0.055, green: 0.055, blue: 0.055, alpha: 1)
-    static let card = NSColor(calibratedRed: 0.039, green: 0.039, blue: 0.039, alpha: 1)
-    static let elevated = NSColor(calibratedRed: 0.075, green: 0.075, blue: 0.075, alpha: 1)
-    static let border = NSColor.white.withAlphaComponent(0.08)
-    static let primary = NSColor(calibratedRed: 0.09, green: 1.0, blue: 0.65, alpha: 1)
-    static let foreground = NSColor(calibratedWhite: 0.98, alpha: 1)
-    static let muted = NSColor.white.withAlphaComponent(0.52)
-}
-
 @MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     let coordinator: RecorderCoordinator
@@ -26,6 +16,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var cameraPreviewStartRevision = 0
     var cameraPreviewWatchdogTask: Task<Void, Never>?
     var cameraPreviewRecoveryAttempts = 0
+    var cameraDeviceWaitTask: Task<Void, Never>?
     var lastStartedScreenCaptureSignature: ScreenCaptureSignature?
     var screenPreviewStartRevision = 0
     var screenPreviewWatchdogTask: Task<Void, Never>?
@@ -206,8 +197,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         previewStage.cameraCornerRadius = coordinator.settings.cameraCornerRadius
 
         let host = NSHostingView(rootView: MainView(configuration: .init(viewModel: viewModel, mcpServer: mcpServer))
-            .environmentObject(configuration.updateController)
-            .preferredColorScheme(.dark))
+            .environmentObject(configuration.updateController))
         host.sizingOptions = []
         host.translatesAutoresizingMaskIntoConstraints = true
         host.autoresizingMask = [.width, .height]

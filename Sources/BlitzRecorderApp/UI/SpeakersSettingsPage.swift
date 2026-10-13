@@ -151,7 +151,7 @@ struct SpeakersSettingsPage: View {
             get: { renamingID == profile.id }, set: { if !$0 { renamingID = nil } }
         ), arrowEdge: .bottom) { renameEditor(profile) }
         .contextMenu {
-            Button("Rename…", systemImage: "pencil") { beginRename(profile) }
+            Button("Rename…", systemImage: "square.and.pencil") { beginRename(profile) }
             Button("Forget speaker…", systemImage: "trash", role: .destructive) { forgetting = profile }
                 .disabled(model.isSaving)
         }
@@ -172,10 +172,10 @@ struct SpeakersSettingsPage: View {
                 VStack(alignment: .trailing, spacing: 4) {
                     Text(MediaTimecode.label(.init(time: isPlaying ? elapsed : duration, duration: duration)))
                         .font(BlitzType.numeric)
-                        .foregroundStyle(isPlaying ? BlitzUI.mint : BlitzUI.secondaryText)
+                        .foregroundStyle(isPlaying ? BlitzUI.accent : BlitzUI.secondaryText)
                     ProgressView(value: min(elapsed / max(duration, 0.1), 1))
                         .progressViewStyle(.linear)
-                        .tint(BlitzUI.mint)
+                        .tint(BlitzUI.accent)
                         .scaleEffect(x: 1, y: 0.5)
                         .frame(height: 2)
                         .opacity(isPlaying ? 1 : 0)
@@ -198,20 +198,13 @@ struct SpeakersSettingsPage: View {
     }
 
     private func speakerMenu(_ profile: SavedSpeakerVoice) -> some View {
-        BlitzOverflowMenu(configuration: .init(
-            entries: [
-                .item(.init(title: "Rename…", systemImage: "pencil", action: { beginRename(profile) })),
+        BlitzInlineActions(entries: [
+                .item(.init(title: "Rename…", systemImage: "square.and.pencil", action: { beginRename(profile) })),
                 .divider,
                 .item(.init(title: "Forget speaker…", systemImage: "trash", isDestructive: true,
                             action: { forgetting = profile }))
-            ],
-            menuWidth: 200,
-            placement: .inline,
-            isBusy: false,
-            accessibilityLabel: "Actions for \(profile.name)",
-            help: "Rename or forget \(profile.name)"
-        ))
-        .controlSize(.regular)
+            ])
+        .controlSize(.small)
         .disabled(model.isSaving)
     }
 

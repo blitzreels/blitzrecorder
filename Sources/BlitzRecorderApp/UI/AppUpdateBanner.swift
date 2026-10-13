@@ -7,9 +7,9 @@ struct AppUpdateSidebarCard: View {
         if let version = updates.updateVersion {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 9) {
-                    Image(systemName: "arrow.down.circle.fill")
+                    Image(systemName: "arrow.down.circle")
                         .font(BlitzType.symbol(15))
-                        .foregroundStyle(BlitzUI.mint)
+                        .foregroundStyle(BlitzUI.accent)
                         .frame(width: 18)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(title)
@@ -26,7 +26,7 @@ struct AppUpdateSidebarCard: View {
                 if case .downloading = updates.status {
                     ProgressView()
                         .progressViewStyle(.linear)
-                        .tint(BlitzUI.mint)
+                        .tint(BlitzUI.accent)
                         .accessibilityLabel("Downloading update")
                 } else {
                     HStack(spacing: 6) {

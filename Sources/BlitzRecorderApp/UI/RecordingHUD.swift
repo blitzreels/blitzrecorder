@@ -158,7 +158,7 @@ final class RecordingHUDController {
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = true
-        panel.sharingType = .none
+        panel.sharingType = .readOnly
         panel.appearance = NSAppearance(named: .darkAqua)
         return panel
     }
@@ -557,7 +557,7 @@ struct RecordingHUDMeter: View {
         HStack(alignment: .center, spacing: 2) {
             ForEach(Array(recent.enumerated()), id: \.offset) { _, level in
                 Capsule()
-                    .fill(isActive ? BlitzUI.mint : BlitzUI.tertiaryText)
+                    .fill(isActive ? BlitzUI.accent : BlitzUI.tertiaryText)
                     .frame(width: 3, height: max(3, CGFloat(min(1, level)) * 16))
             }
         }

@@ -10,8 +10,6 @@ enum BlitzSymbols {
     static let layout = "rectangle.split.2x1"
     static let split = "rectangle.split.1x2"
     static let pictureInPicture = "pip"
-    static let layers = "square.3.layers.3d"
-    static let canvas = "paintpalette"
     static let source = "macwindow"
     static let videoQuality = "play.rectangle"
 }
@@ -22,6 +20,8 @@ enum BlitzType {
     static let headline = Font.system(size: 15, weight: .semibold)
     static let section = Font.system(size: 13, weight: .semibold)
     static let callout = Font.system(size: 13)
+    /// Sidebar links and list titles. One weight in every state so selection never shifts the layout.
+    static let navigation = Font.system(size: 13, weight: .medium)
     static let body = Font.system(size: 12)
     static let label = Font.system(size: 12, weight: .medium)
     static let strong = Font.system(size: 12, weight: .semibold)
@@ -68,36 +68,57 @@ struct BlitzSymbol: View {
 }
 
 enum BlitzUI {
-    static let mint = Color(red: 0.09, green: 1.0, blue: 0.65)
-    static let orange = Color(red: 1.0, green: 0.66, blue: 0.16)
-    static let recordRed = Color(red: 1.0, green: 0.27, blue: 0.27)
-    static let warning = Color(red: 1.0, green: 0.72, blue: 0.22)
-    static let panelStroke = Color.white.opacity(0.10)
-    static let canvasBackground = Color(red: 0.035, green: 0.035, blue: 0.043)
-    static let panelBackground = Color(white: 0.105)
-    static let overlayFill = Color(white: 0.07).opacity(0.94)
-    static let projectLibraryBackground = Color(red: 0.055, green: 0.055, blue: 0.063)
-    static let quietFill = Color.white.opacity(0.045)
-    static let selectedFill = Color.white.opacity(0.10)
-    static let controlFill = Color.white.opacity(0.055)
-    static let cardFill = Color.white.opacity(0.035)
-    static let primaryText = Color.white.opacity(0.92)
-    static let supportingText = Color.white.opacity(0.72)
-    static let secondaryText = Color.white.opacity(0.56)
-    static let tertiaryText = Color.white.opacity(0.38)
-    static let strongFill = Color.white.opacity(0.16)
-    static let strongStroke = Color.white.opacity(0.22)
-    static let hoverFill = Color.white.opacity(0.075)
+    static var accent: Color { BlitzThemeStore.shared.accent.accentPair.color }
+    static var accentHighlight: Color { BlitzThemeStore.shared.accent.highlightPair.color }
+    static var accentGlow: Color { BlitzThemeStore.shared.accent.accentPair.alpha(.init(light: 0.18, dark: 0.28)).color }
+    static var onAccent: Color { BlitzThemeStore.shared.accent.onAccentPair.color }
+    static let recordRed = BlitzColors.recordRed.color
+    static let recordRedHighlight = Color(red: 1.0, green: 0.38, blue: 0.35)
+    static let recordGlow = BlitzColors.recordRed.alpha(.init(light: 0.2, dark: 0.3)).color
+    static let warning = BlitzColors.warning.color
+
+    static var canvasBackground: Color { BlitzThemeStore.shared.tint.palette.canvas.color }
+    static var projectLibraryBackground: Color { BlitzThemeStore.shared.tint.palette.page.color }
+    static var panelBackground: Color { BlitzThemeStore.shared.tint.palette.panel.color }
+    static var toolbarBackground: Color { BlitzThemeStore.shared.tint.palette.toolbar.color }
+    static let toolbarDivider = BlitzColors.toolbarDivider.color
+    static let overlayFill = BlitzColors.overlayFill.color
+
+    static let primaryText = BlitzColors.primaryText.color
+    static let supportingText = BlitzColors.supportingText.color
+    static let secondaryText = BlitzColors.secondaryText.color
+    static let tertiaryText = BlitzColors.tertiaryText.color
+    static let inverseText = BlitzColors.inverseText.color
+    static let quietFill = BlitzColors.quietFill.color
+    static let cardFill = BlitzColors.cardFill.color
+    static let controlFill = BlitzColors.controlFill.color
+    static let hoverFill = BlitzColors.hoverFill.color
+    static let selectedFill = BlitzColors.selectedFill.color
+    static let strongFill = BlitzColors.strongFill.color
+    static let separator = BlitzColors.separator.color
+    static let panelStroke = BlitzColors.panelStroke.color
+    static let strongStroke = BlitzColors.strongStroke.color
+    static let raisedFillTop = BlitzColors.raisedFillTop.color
+    static let raisedFillBottom = BlitzColors.raisedFillBottom.color
+    static let edgeHighlight = BlitzColors.edgeHighlight.color
+    static let glassTint = BlitzColors.glassTint.color
+    static let insetWell = BlitzColors.insetWell.color
+    static let elevationShadow = BlitzColors.elevationShadow.color
+    static let deepShadow = BlitzColors.deepShadow.color
+
     static let controlRadius = BlitzControlMetrics.radius
     static let cardRadius: CGFloat = 12
     static let surfaceRadius: CGFloat = 16
-    static let separator = Color.white.opacity(0.08)
     static let sceneCardRadius: CGFloat = 12
-    static let scenePreviewFill = Color(white: 0.10)
-    static let scenePreviewStroke = Color.white.opacity(0.3)
-    static let screenPreviewFill = Color(white: 0.30)
-    static let cameraPreviewFill = Color(white: 0.62)
+    static let scenePreviewFill = BlitzColors.scenePreviewFill.color
+    static let scenePreviewStroke = BlitzColors.scenePreviewStroke.color
+    static let screenPreviewFill = BlitzColors.screenPreviewFill.color
+    static let cameraPreviewFill = BlitzColors.cameraPreviewFill.color
     static let screenPreviewGlyph = Color.white.opacity(0.5)
+    /// Text and glyphs drawn on top of footage, thumbnails or dark scrims: fixed, never follow light mode.
+    static let onMediaText = Color.white
+    static let onMediaSecondaryText = Color.white.opacity(0.75)
+    static let onMediaStroke = Color.white.opacity(0.3)
     static let cameraPreviewGlyph = Color.black.opacity(0.55)
 
     static let trackScreen = Color.cyan
@@ -106,7 +127,7 @@ enum BlitzUI {
     static let trackSystemAudio = Color(red: 0.36, green: 0.56, blue: 1.0)
 
     static func levelColor(active: Bool) -> Color {
-        active ? mint : tertiaryText
+        active ? accent : tertiaryText
     }
 
     static func sectionLabel(_ title: String) -> some View {
@@ -126,7 +147,7 @@ struct BlitzIconTile: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous)
-                .fill(isSelected ? BlitzUI.mint.opacity(0.16) : BlitzUI.controlFill)
+                .fill(isSelected ? BlitzUI.accent.opacity(0.16) : BlitzUI.controlFill)
             if let icon {
                 Image(nsImage: icon)
                     .resizable()
@@ -135,7 +156,7 @@ struct BlitzIconTile: View {
                     .clipShape(.rect(cornerRadius: 4))
             } else {
                 BlitzSymbol(configuration: .init(name: symbolName, size: size * 0.82))
-                    .foregroundStyle(isSelected ? BlitzUI.mint : BlitzUI.supportingText)
+                    .foregroundStyle(isSelected ? BlitzUI.accent : BlitzUI.supportingText)
             }
         }
         .frame(width: size, height: size)
@@ -349,7 +370,7 @@ enum BlitzStatusTone: Equatable {
     var color: Color {
         switch self {
         case .recording: return BlitzUI.recordRed
-        case .live, .ready: return BlitzUI.mint
+        case .live, .ready: return BlitzUI.accent
         case .warning: return BlitzUI.warning
         case .muted: return BlitzUI.tertiaryText
         }
@@ -404,18 +425,3 @@ struct BlitzLevelMeter: View {
     }
 }
 
-struct BlitzSelectedSurface: ViewModifier {
-    let isSelected: Bool
-    var cornerRadius: CGFloat = 10
-
-    func body(content: Content) -> some View {
-        content
-            .background(isSelected ? BlitzUI.selectedFill : BlitzUI.quietFill, in: .rect(cornerRadius: cornerRadius))
-    }
-}
-
-extension View {
-    func blitzSelectedSurface(isSelected: Bool, cornerRadius: CGFloat = 10) -> some View {
-        modifier(BlitzSelectedSurface(isSelected: isSelected, cornerRadius: cornerRadius))
-    }
-}

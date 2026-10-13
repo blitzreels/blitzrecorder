@@ -17,22 +17,40 @@ struct BottomDock: View {
             }
 
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 16) {
+                HStack(spacing: 12) {
                     RecorderSceneStrip(vm: vm, density: .regular)
+                    dockDivider
                     RecordingActionRow(vm: vm)
                 }
+                .dockGlass()
                 .fixedSize(horizontal: true, vertical: false)
 
-                HStack(spacing: 16) {
+                HStack(spacing: 12) {
                     RecorderSceneStrip(vm: vm, density: .compact)
+                    dockDivider
                     RecordingActionRow(vm: vm)
                 }
+                .dockGlass()
                 .fixedSize(horizontal: true, vertical: false)
 
-                VStack(spacing: 10) {
-                    RecorderSceneStrip(vm: vm, density: .regular)
+                HStack(spacing: 10) {
+                    RecorderSceneStrip(vm: vm, density: .compact)
+                    dockDivider
                     RecordingActionRow(vm: vm)
+                        .environment(\.blitzDockIsCompact, true)
                 }
+                .dockGlass()
+
+                ScrollView(.horizontal) {
+                    HStack(spacing: 10) {
+                        RecorderSceneStrip(vm: vm, density: .compact)
+                        dockDivider
+                        RecordingActionRow(vm: vm)
+                            .environment(\.blitzDockIsCompact, true)
+                    }
+                    .dockGlass()
+                }
+                .scrollIndicators(.never)
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -66,7 +84,7 @@ private struct SavedProjectActions: View {
         VStack(alignment: .leading, spacing: 4) {
             Label("Recording saved", systemImage: "checkmark.circle.fill")
                 .font(BlitzType.section)
-                .foregroundStyle(BlitzUI.mint)
+                .foregroundStyle(BlitzUI.accent)
             Text(vm.lastExportedProject?.displayTitle ?? "Your recording")
                 .font(BlitzType.caption)
                 .foregroundStyle(BlitzUI.supportingText)
@@ -96,13 +114,25 @@ private struct SavedProjectActions: View {
     }
 }
 
+private extension BottomDock {
+    var dockDivider: some View {
+        Rectangle().fill(BlitzUI.separator).frame(width: 1, height: 52)
+    }
+}
+
 private extension View {
+    func dockGlass() -> some View {
+        padding(8)
+            .padding(.trailing, 2)
+            .blitzGlass(cornerRadius: BlitzUI.surfaceRadius + 4)
+    }
+
     func floatingRecordingNotice() -> some View {
         padding(.horizontal, 14)
             .padding(.vertical, 11)
             .background {
                 RoundedRectangle(cornerRadius: BlitzUI.surfaceRadius, style: .continuous)
-                    .fill(.black.opacity(0.78))
+                    .fill(BlitzUI.overlayFill)
                 RoundedRectangle(cornerRadius: BlitzUI.surfaceRadius, style: .continuous)
                     .fill(.ultraThinMaterial)
             }
@@ -110,7 +140,7 @@ private extension View {
                 RoundedRectangle(cornerRadius: BlitzUI.surfaceRadius, style: .continuous)
                     .strokeBorder(BlitzUI.panelStroke, lineWidth: 1)
             }
-            .shadow(color: .black.opacity(0.32), radius: 18, y: 8)
+            .shadow(color: BlitzUI.elevationShadow, radius: 18, y: 8)
     }
 }
 

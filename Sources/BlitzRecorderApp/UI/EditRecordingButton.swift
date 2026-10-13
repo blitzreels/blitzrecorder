@@ -18,9 +18,10 @@ struct EditRecordingButton: View {
 
     var body: some View {
         Button(action: configuration.action) {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 ZStack {
-                    Image(systemName: "slider.horizontal.below.rectangle")
+                    Image(systemName: "scissors")
+                        .fontWeight(.semibold)
                         .opacity(configuration.isLoading ? 0 : 1)
                     if configuration.isLoading {
                         ProgressView()
@@ -34,7 +35,7 @@ struct EditRecordingButton: View {
             }
             .fixedSize()
         }
-        .blitzButton(configuration.placement == .dock ? .dock : .prominent)
+        .blitzButton(configuration.placement == .dock ? .dock : .accent)
         .disabled(configuration.isLoading)
         .accessibilityLabel(configuration.isLoading ? "Opening recording" : configuration.title)
         .help(configuration.help)

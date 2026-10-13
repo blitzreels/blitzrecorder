@@ -47,7 +47,7 @@ struct BlitzToggleStyle: ToggleStyle {
             )
             .overlay {
                 RoundedRectangle(cornerRadius: BlitzControlMetrics.radius)
-                    .strokeBorder(isFocused && isEnabled ? BlitzUI.mint : .clear, lineWidth: 2)
+                    .strokeBorder(isFocused && isEnabled ? BlitzUI.accent : .clear, lineWidth: 2)
                     .padding(-3)
                     .allowsHitTesting(false)
             }
@@ -78,21 +78,21 @@ struct BlitzToggleStyle: ToggleStyle {
         let knob: CGFloat = isCompact ? 12 : 16
         return ZStack(alignment: isOn ? .trailing : .leading) {
             Capsule()
-                .fill(isOn ? BlitzUI.mint : BlitzUI.controlFill)
+                .fill(isOn ? BlitzUI.accent : BlitzUI.strongFill)
             Capsule()
                 .strokeBorder(isOn ? .clear : outline, lineWidth: 1)
             HStack {
                 Image(systemName: "checkmark")
                     .font(BlitzType.glyph(8))
-                    .foregroundStyle(.black.opacity(0.72))
+                    .foregroundStyle(BlitzUI.onAccent)
                     .opacity(isOn && !isCompact ? 1 : 0)
                 Spacer(minLength: 0)
             }
             .padding(.leading, 6)
             Circle()
-                .fill(isOn ? Color.white : BlitzUI.supportingText)
+                .fill(Color.white)
                 .frame(width: knob, height: knob)
-                .shadow(color: .black.opacity(0.18), radius: 1, y: 1)
+                .shadow(color: BlitzUI.elevationShadow, radius: 1.5, y: 1)
                 .padding(isCompact ? 2 : 3)
         }
         .frame(width: isCompact ? 28 : 38, height: isCompact ? 16 : 22)
@@ -101,7 +101,7 @@ struct BlitzToggleStyle: ToggleStyle {
 
     private func checkbox(isOn: Bool) -> some View {
         RoundedRectangle(cornerRadius: 5, style: .continuous)
-            .fill(isOn ? BlitzUI.mint : BlitzUI.controlFill)
+            .fill(isOn ? BlitzUI.accent : BlitzUI.controlFill)
             .overlay {
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
                     .strokeBorder(isOn ? .clear : outline, lineWidth: 1)
@@ -109,7 +109,7 @@ struct BlitzToggleStyle: ToggleStyle {
             .overlay {
                 Image(systemName: "checkmark")
                     .font(BlitzType.glyph(10))
-                    .foregroundStyle(.black.opacity(0.88))
+                    .foregroundStyle(BlitzUI.onAccent)
                     .opacity(isOn ? 1 : 0)
             }
             .frame(width: 18, height: 18)

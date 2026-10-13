@@ -15,7 +15,7 @@ struct CameraImageControlsConfiguration {
 struct CameraImageControls: View {
     let configuration: CameraImageControlsConfiguration
 
-    private let mint = BlitzUI.mint
+    private var mint: Color { BlitzUI.accent }
 
     var body: some View {
         if configuration.isCropModeEnabled {
@@ -73,7 +73,7 @@ struct CameraImageControls: View {
             .help("Choose the area that fills the camera frame. Done applies it; Cancel keeps the current framing.")
 
             Button(action: configuration.onResetCrop) {
-                Label("Reset zoom", systemImage: "arrow.counterclockwise")
+                Label("Reset", systemImage: "arrow.counterclockwise")
                     .lineLimit(1)
                     .frame(maxWidth: .infinity)
             }
@@ -308,7 +308,7 @@ private func positionDraw(_ v: CameraInsetAlignment, _ c: inout GraphicsContext,
     let cw = f.width * 0.62, ch = cw * 9 / 16, pad: CGFloat = 2
     let x = (v == .bottomLeft) ? f.minX + pad : f.maxX - pad - cw
     let chip = CGRect(x: x, y: f.maxY - pad - ch, width: cw, height: ch)
-    CamDiagram.fill(c, chip, 2, sel ? BlitzUI.mint : BlitzUI.tertiaryText)
+    CamDiagram.fill(c, chip, 2, sel ? BlitzUI.accent : BlitzUI.tertiaryText)
 }
 
 private func shapeDraw(_ v: CameraInsetShape, _ c: inout GraphicsContext, _ s: CGSize, _ sel: Bool) {
@@ -332,7 +332,7 @@ private func shapeDraw(_ v: CameraInsetShape, _ c: inout GraphicsContext, _ s: C
         radius = w / 2
     }
     let chip = CGRect(x: f.midX - w / 2, y: f.maxY - pad - h, width: w, height: h)
-    CamDiagram.fill(c, chip, radius, sel ? BlitzUI.mint : BlitzUI.tertiaryText)
+    CamDiagram.fill(c, chip, radius, sel ? BlitzUI.accent : BlitzUI.tertiaryText)
 }
 
 struct SourceFramingPicker: View {
@@ -405,7 +405,7 @@ struct RemoteCameraOrientationControl: View {
                 orientationButton("Auto", systemImage: "iphone.gen3") {
                     vm.setRemoteCameraAutomaticRotation(true)
                 }
-                .background(usesAutomaticRotation ? BlitzUI.mint.opacity(0.16) : Color.clear, in: .rect(cornerRadius: BlitzUI.controlRadius))
+                .background(usesAutomaticRotation ? BlitzUI.accent.opacity(0.16) : Color.clear, in: .rect(cornerRadius: BlitzUI.controlRadius))
                 orientationButton("Left", systemImage: "rotate.left") {
                     rotate(by: -1)
                 }

@@ -89,6 +89,11 @@ extension AppDelegate {
         coordinator.stop()
     }
 
+    @objc func toggleLivePreview() {
+        guard let viewModel = windowController?.viewModel else { return }
+        viewModel.setLivePreviewEnabled(!viewModel.isLivePreviewEnabled)
+    }
+
     @objc func toggleRuleOfThirds() {
         coordinator.setRuleOfThirdsOverlayVisible(!coordinator.settings.showsRuleOfThirdsOverlay)
     }

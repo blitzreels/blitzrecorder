@@ -38,7 +38,7 @@ struct RecordingSettingsPage: View {
             .settingsPageContent()
         }
         .background(BlitzUI.projectLibraryBackground)
-        .foregroundStyle(.white)
+        .foregroundStyle(BlitzUI.primaryText)
         .task(id: vm.settings.outputDirectory) { refreshStorageDetail() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshStorageDetail()
@@ -126,13 +126,10 @@ struct RecordingSettingsPage: View {
                 HStack(alignment: .center, spacing: 14) {
                     Image(systemName: "folder.fill")
                         .font(BlitzType.glyph(30))
-                        .foregroundStyle(BlitzUI.mint)
+                        .foregroundStyle(BlitzUI.accent)
                         .frame(width: 48, height: 48)
-                        .background(BlitzUI.mint.opacity(0.08), in: .rect(cornerRadius: BlitzUI.cardRadius))
+                        .background(BlitzUI.accent.opacity(0.08), in: .rect(cornerRadius: BlitzUI.cardRadius))
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("Exports")
-                            .font(BlitzType.label)
-                            .foregroundStyle(BlitzUI.secondaryText)
                         Text(vm.settings.outputDirectory.lastPathComponent)
                             .font(BlitzType.headline)
                         Text(vm.settings.outputDirectory.path)
@@ -324,7 +321,7 @@ struct RecordingSettingsPage: View {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(BlitzType.glyph(15))
-                    .foregroundStyle(isSelected ? BlitzUI.mint : BlitzUI.secondaryText)
+                    .foregroundStyle(isSelected ? BlitzUI.accent : BlitzUI.secondaryText)
                     .padding(.top, 1)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
@@ -355,20 +352,20 @@ struct RecordingSettingsPage: View {
                 Text("Download once to transcribe on this Mac.")
                     .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
                 Button { vm.transcriptionController.downloadModels() } label: {
-                    Label("Download", systemImage: "arrow.down.circle.fill")
+                    Label("Download", systemImage: "arrow.down.circle")
                 }
                 .blitzButton(.accent)
                 .controlSize(.small)
             case .downloading(let progress, let phase):
-                ProgressView(value: progress).tint(BlitzUI.mint).frame(maxWidth: .infinity)
+                ProgressView(value: progress).tint(BlitzUI.accent).frame(maxWidth: .infinity)
                 Text(phase).font(BlitzType.caption.monospacedDigit()).foregroundStyle(BlitzUI.secondaryText)
                     .lineLimit(1)
             case .ready(let size):
                 Label("\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)) installed",
-                      systemImage: "checkmark.seal.fill")
+                      systemImage: "checkmark.circle.fill")
                     .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
                 Button { vm.transcriptionController.removeModels() } label: {
-                    Label("Remove", systemImage: "trash.fill")
+                    Label("Remove", systemImage: "trash")
                 }
                 .blitzButton(.secondary)
                 .controlSize(.small)
@@ -417,7 +414,7 @@ struct RecordingSettingsPage: View {
                                 ... Double(RecordingSettings.maxCustomVideoBitrate / 1_000_000),
                             step: 1
                         )
-                        .tint(BlitzUI.mint)
+                        .tint(BlitzUI.accent)
                         Text("\(Int(bitrateBinding.wrappedValue)) Mbps")
                             .font(BlitzType.label.monospacedDigit())
                             .frame(width: 70, alignment: .trailing)

@@ -23,11 +23,11 @@ final class EditorPaneSizingTests: XCTestCase {
 
     func testInspectorBoundsPreservePreviewSpace() {
         let wide = EditorPaneSizing.resolve(.init(pane: .inspector, preferred: 2_000, available: 1_200))
-        XCTAssertEqual(wide.value, 640)
+        XCTAssertEqual(wide.value, 700)
         let narrow = EditorPaneSizing.resolve(.init(pane: .inspector, preferred: 2_000, available: 800))
         XCTAssertEqual(narrow.value, 432)
         XCTAssertGreaterThanOrEqual(800 - narrow.value - EditorPaneSizing.dividerSize, 360)
-        XCTAssertEqual(EditorPaneSizing.resolve(.init(pane: .inspector, preferred: 0, available: 800)).value, 312)
+        XCTAssertEqual(EditorPaneSizing.resolve(.init(pane: .inspector, preferred: 0, available: 800)).value, 372)
     }
 
     func testTimelineBoundsLeaveSpaceForPreviewAndControls() {
@@ -49,7 +49,7 @@ final class EditorPaneSizingTests: XCTestCase {
     }
 
     func testInvalidPreferencesAndTransientGeometryStayFinite() {
-        XCTAssertEqual(EditorPaneSizing.resolve(.init(pane: .inspector, preferred: .nan, available: 1_200)).value, 360)
+        XCTAssertEqual(EditorPaneSizing.resolve(.init(pane: .inspector, preferred: .nan, available: 1_200)).value, 420)
         XCTAssertEqual(
             EditorPaneSizing.resolve(.init(pane: .timeline, preferred: .infinity, available: 680)).value, 380)
         for available in [0.0, -1, .nan, .infinity] {

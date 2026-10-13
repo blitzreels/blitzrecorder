@@ -187,37 +187,6 @@ struct CameraSourceInspector: View {
     }
 }
 
-struct AudioSourceInspector: View {
-    let source: CaptureSource
-    let levels: TrackLevels
-    @Binding var gain: Double
-    @Bindable var vm: RecorderViewModel
-
-    private var enabled: Bool { vm.settings.enabledSources.contains(source) }
-    private var gainLabel: String { "\(Int((gain * 100).rounded()))%" }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            BlitzLevelMeter(levels: levels, active: enabled)
-                .frame(height: 22)
-                .opacity(enabled ? 1 : 0.3)
-                .accessibilityHidden(true)
-
-            BlitzInspectorSlider(configuration: .init(
-                title: "Volume",
-                value: $gain,
-                range: 0...2,
-                step: 0.01,
-                valueLabel: gainLabel,
-                onEditingChanged: { _ in },
-                onReset: { gain = 1 }
-            ))
-            .disabled(vm.state != .idle || !enabled)
-            .accessibilityLabel(source == .microphone ? "Microphone volume" : "Mac audio volume")
-        }
-    }
-}
-
 private func inspectorIcon(_ icon: String, enabled: Bool) -> some View {
     Image(systemName: icon)
         .font(BlitzType.glyph(10))

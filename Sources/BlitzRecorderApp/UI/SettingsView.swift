@@ -3,6 +3,7 @@ import SwiftUI
 
 enum SettingsPane: Int, CaseIterable, Identifiable {
     case recording
+    case appearance
     case speakers
     case devices
     case permissions
@@ -19,6 +20,7 @@ enum SettingsPane: Int, CaseIterable, Identifiable {
         switch self {
         case .speakers: return "Speakers"
         case .recording: return "Recording"
+        case .appearance: return "Appearance"
         case .devices: return "iPhone Camera"
         case .permissions: return "Permissions"
         case .accounts: return "Accounts"
@@ -34,6 +36,7 @@ enum SettingsPane: Int, CaseIterable, Identifiable {
         switch self {
         case .speakers: return "Saved voices and samples"
         case .recording: return "Files and transcripts"
+        case .appearance: return "Light, dark and accent"
         case .devices: return "iPhone camera and pairing"
         case .permissions: return "macOS capture permissions"
         case .accounts: return "BlitzRecorder and BlitzReels"
@@ -49,6 +52,7 @@ enum SettingsPane: Int, CaseIterable, Identifiable {
         switch self {
         case .speakers: return "person.wave.2"
         case .recording: return "gearshape"
+        case .appearance: return "paintpalette"
         case .devices: return "iphone.gen3"
         case .permissions: return "lock.shield"
         case .accounts: return "person.crop.circle"
@@ -93,7 +97,7 @@ struct SettingsView: View {
             }
         }
         .background(BlitzUI.projectLibraryBackground)
-        .tint(BlitzUI.mint)
+        .tint(BlitzUI.accent)
         .onAppear { NowPlayingController.shared.perform(.pause) }
     }
 
@@ -106,9 +110,9 @@ struct SettingsView: View {
                         Image(systemName: pane.systemImage)
                             .symbolVariant(.fill)
                             .font(BlitzType.glyph(12))
-                            .foregroundStyle(isSelected ? .black.opacity(0.85) : BlitzUI.supportingText)
+                            .foregroundStyle(isSelected ? BlitzUI.onAccent : BlitzUI.supportingText)
                             .frame(width: 24, height: 24)
-                            .background(isSelected ? BlitzUI.mint : BlitzUI.controlFill,
+                            .background(isSelected ? BlitzUI.accent : BlitzUI.controlFill,
                                         in: .rect(cornerRadius: 6))
                         VStack(alignment: .leading, spacing: 1) {
                             Text(pane.title)
@@ -142,6 +146,8 @@ struct SettingsView: View {
         switch vm.selectedSettingsPane {
         case .recording:
             RecordingSettingsPage(vm: vm)
+        case .appearance:
+            AppearanceSettingsPage()
         case .speakers:
             SpeakersSettingsPage(projects: vm.recentProjects, openRecording: { project in
                 vm.projectLibraryNavigation.section = .recordings

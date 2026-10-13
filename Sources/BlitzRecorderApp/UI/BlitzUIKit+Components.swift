@@ -107,19 +107,12 @@ struct BlitzUIKitMenus: View {
                         .frame(height: 30)
                     }
                 }
-                BlitzUIKitSpecimen(label: "BlitzOverflowMenu · inline small / regular") {
-                    HStack {
-                        BlitzOverflowMenu(configuration: overflow(.inline)).controlSize(.small)
-                        BlitzOverflowMenu(configuration: overflow(.inline)).controlSize(.regular)
-                    }
-                }
-                BlitzUIKitSpecimen(label: "BlitzOverflowMenu · dock / busy") {
-                    HStack {
-                        BlitzOverflowMenu(configuration: overflow(.dock))
-                        BlitzOverflowMenu(configuration: .init(entries: menuEntries, menuWidth: 220, placement: .inline,
-                                                               isBusy: true, accessibilityLabel: "More", help: "More"))
-                            .controlSize(.small)
-                    }
+                BlitzUIKitSpecimen(label: "BlitzInlineActions · secondary actions, never ⋯") {
+                    BlitzInlineActions(entries: [
+                        .item(.init(title: "Rename", systemImage: "square.and.pencil", action: {})),
+                        .item(.init(title: "Move to Trash", systemImage: "trash", isDestructive: true, action: {}))
+                    ])
+                    .controlSize(.small)
                 }
                 BlitzUIKitSpecimen(label: "BlitzFormDropdown") {
                     BlitzFormDropdown(configuration: .init(
@@ -210,11 +203,6 @@ struct BlitzUIKitMenus: View {
         }
     }
 
-    private func overflow(_ placement: BlitzOverflowMenu.Placement) -> BlitzOverflowMenu.Configuration {
-        .init(entries: menuEntries, menuWidth: 220, placement: placement, isBusy: false,
-              accessibilityLabel: "More actions", help: "More actions")
-    }
-
     private var menuEntries: [BlitzMenuEntry] {
         [
             .section("Save next take to"),
@@ -262,7 +250,7 @@ struct BlitzUIKitEditor: View {
                             title: "Screen", symbol: "display", tint: BlitzUI.trackScreen, status: nil, height: 44,
                             isSelected: true, isInteractive: true, onSelect: {}, accessory: { EmptyView() }))
                         EditorTimelineTrackHeader(configuration: .init(
-                            title: "Transcript", symbol: "text.quote", tint: BlitzUI.mint, status: "Loading waveform",
+                            title: "Transcript", symbol: "text.quote", tint: BlitzUI.accent, status: "Loading waveform",
                             height: 44, isSelected: false, isInteractive: true, onSelect: {},
                             accessory: { ProgressView().controlSize(.mini) }))
                     }
@@ -283,7 +271,7 @@ struct BlitzUIKitEditor: View {
                     }
                 }
                 BlitzUIKitSpecimen(label: "BlitzPaneDivider · drag") {
-                    BlitzPaneDivider(configuration: .init(axis: .horizontal, label: "Timeline height", value: $split,
+                    BlitzPaneDivider(configuration: .init(axis: .horizontal, paneSide: .trailing, label: "Timeline height", value: $split,
                                                           bounds: 0.2...0.8, defaultValue: 0.6, onCommit: {}))
                         .frame(width: 240, height: 14)
                 }
@@ -416,7 +404,7 @@ struct BlitzUIKitSharing: View {
             BlitzUIKitGroup("Transcript") {
                 BlitzUIKitSpecimen(label: "TranscriptSpeakerLabel · click to rename") {
                     TranscriptSpeakerLabel(configuration: .init(
-                        speaker: .init(id: "S1", name: "Virgile", context: ""), color: BlitzUI.mint, onRename: { _ in }
+                        speaker: .init(id: "S1", name: "Virgile", context: ""), color: BlitzUI.accent, onRename: { _ in }
                     ))
                 }
                 BlitzUIKitSpecimen(label: "TranscriptTimestampButton · active / normal / disabled") {
@@ -506,39 +494,6 @@ struct BlitzUIKitLibraryParts: View {
                     ProjectFolderNameEditor(prompt: .rename(ProjectFolderPath(["Formation IA", "Module 01"])!),
                                             name: $folderName, affectedCount: 4, onSave: {}, onCancel: {})
                         .background(BlitzUI.panelBackground, in: .rect(cornerRadius: BlitzUI.cardRadius))
-                }
-            }
-        }
-    }
-}
-
-struct BlitzUIKitUnused: View {
-    var body: some View {
-        BlitzUIKitSection(title: "Unused", detail: "Defined in code but never shown in the app. Candidates to delete or wire up.") {
-            BlitzUIKitGroup("Views") {
-                BlitzUIKitSpecimen(label: "ProjectLibraryIconActionButton · secondary / destructive") {
-                    HStack {
-                        ProjectLibraryIconActionButton(configuration: .init(title: "Reveal", systemImage: "folder",
-                                                                            tone: .secondary, action: {}))
-                        ProjectLibraryIconActionButton(configuration: .init(title: "Delete", systemImage: "trash",
-                                                                            tone: .destructive, action: {}))
-                    }
-                }
-                BlitzUIKitSpecimen(label: ".blitzSelectedSurface(isSelected:) · on / off") {
-                    HStack {
-                        Text("Selected").padding(10).blitzSelectedSurface(isSelected: true)
-                        Text("Normal").padding(10).blitzSelectedSurface(isSelected: false)
-                    }
-                }
-            }
-            BlitzUIKitGroup("Tokens") {
-                BlitzUIKitSpecimen(label: "BlitzUI.orange") {
-                    RoundedRectangle(cornerRadius: BlitzUI.controlRadius).fill(BlitzUI.orange).frame(width: 116, height: 44)
-                }
-                ForEach([("BlitzSymbols.layers", BlitzSymbols.layers), ("BlitzSymbols.canvas", BlitzSymbols.canvas),
-                         ("BlitzSymbols.source", BlitzSymbols.source), ("ProjectLibrarySymbols.media", ProjectLibrarySymbols.media)],
-                        id: \.0) { name, symbol in
-                    BlitzUIKitSpecimen(label: name) { BlitzIconTile(symbolName: symbol, isSelected: false, size: 32) }
                 }
             }
         }

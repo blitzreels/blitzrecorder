@@ -176,6 +176,11 @@ final class MainMenuBuilder {
     private func viewMenuItem() -> NSMenuItem {
         let item = NSMenuItem(title: "View", action: nil, keyEquivalent: "")
         let submenu = NSMenu(title: "View")
+        let livePreview = menuItem("Live Preview", action: #selector(MenuActionsTarget.toggleLivePreview), keyEquivalent: "l")
+        livePreview.keyEquivalentModifierMask = [.command, .option]
+        livePreview.state = LivePreviewPreference().isEnabled ? .on : .off
+        livePreview.isEnabled = (coordinator?.state ?? .idle) == .idle
+        submenu.addItem(livePreview)
         submenu.addItem(menuItem("Toggle Rule of Thirds", action: #selector(MenuActionsTarget.toggleRuleOfThirds)))
         submenu.addItem(.separator())
         submenu.addItem(menuItem("Increase App Content Size", action: #selector(MenuActionsTarget.zoomIn), keyEquivalent: "+"))
@@ -326,6 +331,7 @@ final class MainMenuBuilder {
     func chooseLayoutItem(_ sender: NSMenuItem)
     func pickScreen()
     func toggleRuleOfThirds()
+    func toggleLivePreview()
     func zoomIn()
     func zoomOut()
     func resetZoom()

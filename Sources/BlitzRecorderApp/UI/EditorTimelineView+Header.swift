@@ -189,7 +189,7 @@ extension EditorTimelineView {
                     in: log2(EditorTimelineZoom.minimum)...log2(EditorTimelineZoom.maximum(for: projection.duration))
                 )
                     .controlSize(.small)
-                    .tint(BlitzUI.mint)
+                    .tint(BlitzUI.accent)
                     .frame(minWidth: compact ? 64 : 88, idealWidth: compact ? 64 : 88, maxWidth: compact ? 64 : 200)
                     .accessibilityLabel("Timeline zoom")
                     .accessibilityValue(String(format: "%.2f×", zoomLevel))

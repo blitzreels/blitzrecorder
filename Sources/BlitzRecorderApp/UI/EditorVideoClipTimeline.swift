@@ -182,16 +182,16 @@ struct EditorVideoClipStrip: View {
                 let hovered = isHovered(run)
                 let rect = CGRect(x: run.x, y: 2, width: max(1, run.width), height: size.height - 4)
                 let path = Path(roundedRect: rect, cornerRadius: run.width >= 8 ? 4 : 0)
-                context.fill(path, with: .color(BlitzUI.mint.opacity(hovered ? 0.26 : 0.12)))
+                context.fill(path, with: .color(BlitzUI.accent.opacity(hovered ? 0.26 : 0.12)))
                 context.stroke(path, with: .color(.black.opacity(0.7)), lineWidth: 3)
-                context.stroke(path, with: .color(hovered ? BlitzUI.mint : BlitzUI.strongFill), lineWidth: hovered ? 2 : 1)
+                context.stroke(path, with: .color(hovered ? BlitzUI.accent : BlitzUI.strongFill), lineWidth: hovered ? 2 : 1)
                 guard run.width >= 64, hovered || isSelected(run) else { continue }
                 var clipped = context
                 clipped.clip(to: path)
                 clipped.fill(Path(CGRect(x: rect.minX, y: rect.maxY - 19, width: rect.width, height: 19)),
                              with: .color(.black.opacity(0.8)))
                 clipped.draw(Text(run.clip.title).font(BlitzType.captionEmphasis)
-                    .foregroundStyle(BlitzUI.primaryText),
+                    .foregroundStyle(BlitzUI.onMediaText),
                     at: CGPoint(x: rect.minX + 8, y: rect.maxY - 10), anchor: .leading)
                 if run.width >= 140 {
                     clipped.draw(Text(String(format: "%.1fs", run.clip.end - run.clip.start))
@@ -311,7 +311,7 @@ struct EditorVideoClipStrip: View {
             : (selected?.end ?? run.clip.range.end) - run.clip.range.end) : 0
         let time = (edge == .left ? run.clip.start : run.clip.end) + shift
         let previousEnd = configuration.layout.clips.last { $0.range.end <= run.clip.range.start }?.range.end
-        return EditorTimelineGrip(tint: BlitzUI.mint, isActive: isActive)
+        return EditorTimelineGrip(tint: BlitzUI.accent, isActive: isActive)
         .opacity(showsHandle ? 1 : 0)
         .frame(width: EditorTimelineClipPointer.handleWidth, height: configuration.height)
         .contentShape(.rect)

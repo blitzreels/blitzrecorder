@@ -129,7 +129,6 @@ struct EditorExportPopover: View {
         .padding(20)
         .frame(width: 380)
         .background(BlitzUI.panelBackground)
-        .preferredColorScheme(.dark)
     }
 
     private var advancedSettings: some View {
@@ -214,7 +213,7 @@ struct EditorExportSpeedControl: View {
                     else { commit() }
                 })
                 .controlSize(.small)
-                .tint(BlitzUI.mint)
+                .tint(BlitzUI.accent)
                 .accessibilityLabel("Export speed")
                 .accessibilityValue(ExportPlaybackRate(clamping: value.wrappedValue).displayName)
                 Text(ExportPlaybackRate(clamping: value.wrappedValue).displayName)
