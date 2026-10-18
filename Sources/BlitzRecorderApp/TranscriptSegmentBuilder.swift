@@ -78,9 +78,9 @@ enum TranscriptSegmentBuilder {
             let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return }
             let attachesToPrevious = trimmed.first.map {
-                ".,!?;:%)]}".contains($0)
+                ".,!?;:%)]}'’".contains($0)
             } ?? false
-            if result.isEmpty || attachesToPrevious {
+            if result.isEmpty || attachesToPrevious || result.last.map({ "'’".contains($0) }) == true {
                 result += trimmed
             } else {
                 result += " \(trimmed)"

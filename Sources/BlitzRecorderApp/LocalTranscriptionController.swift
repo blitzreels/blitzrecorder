@@ -46,7 +46,7 @@ enum TranscriptionSpeechModel: String, CaseIterable, Sendable {
 
     var detail: String {
         switch self {
-        case .parakeet: "Fast, multilingual; automatic language only"
+        case .parakeet: "Fast, multilingual; supports a language lock"
         case .whisperMedium: "Multilingual; supports a language lock"
         case .whisperLargeTurbo: "Large-v3 accuracy, faster than full Large"
         case .whisperLarge: "Highest accuracy on long calls"
@@ -55,7 +55,7 @@ enum TranscriptionSpeechModel: String, CaseIterable, Sendable {
 
     var plainDetail: String {
         switch self {
-        case .parakeet: "Fastest. Detects the language on its own."
+        case .parakeet: "Fastest. Detects the language or uses your choice."
         case .whisperMedium: "Clearer. Lets you pick the language."
         case .whisperLargeTurbo: "Much more accurate. Large download, still practical."
         case .whisperLarge: "Most accurate. Largest download and the slowest pass."
@@ -328,8 +328,9 @@ final class LocalTranscriptionController {
         self.selectedLanguage = TranscriptionLanguage(
             rawValue: dependencies.defaults.string(forKey: Self.languageKey) ?? ""
         ) ?? .automatic
-        self.speakerCount = .automatic
-        dependencies.defaults.removeObject(forKey: Self.speakerCountKey)
+        self.speakerCount = TranscriptionSpeakerCount(
+            rawValue: dependencies.defaults.string(forKey: Self.speakerCountKey) ?? ""
+        ) ?? .automatic
         self.modelStates = Dictionary(uniqueKeysWithValues: TranscriptionSpeechModel.allCases.map { model in
             (model, dependencies.modelStore.isInstalled(model)
                 ? .ready(size: dependencies.modelStore.installedSize(model))

@@ -17,7 +17,8 @@ extension RecordingTranscript {
                     startTime: start,
                     endTime: end,
                     confidence: word.confidence,
-                    speakerID: speakerID
+                    speakerID: speakerID,
+                    source: word.source
                 ),
                 speakerID: speakerID
             )
@@ -54,7 +55,15 @@ extension RecordingTranscript {
             speakers: mappedSpeakers.isEmpty ? speakers : mappedSpeakers,
             segments: mappedSegments,
             words: words == nil ? nil : mappedWords.map(\.word),
-            speechRanges: mappedSpeechRanges
+            speechRanges: mappedSpeechRanges,
+            quality: quality.map { quality in
+                .init(pipelineVersion: quality.pipelineVersion, model: quality.model, languages: quality.languages,
+                      issues: quality.issues.flatMap { issue in
+                    Self.keptOutputRanges(start: issue.startTime, end: issue.endTime, timeMap: timeMap).map {
+                        .init(kind: issue.kind, startTime: $0.start, endTime: $0.end)
+                    }
+                })
+            }
         )
     }
 

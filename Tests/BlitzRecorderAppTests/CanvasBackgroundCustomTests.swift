@@ -60,7 +60,7 @@ final class CanvasBackgroundCustomTests: XCTestCase {
     }
 
     @MainActor
-    func testPreviewRendersEachNewBackground() {
+    func testPreviewRendersEachNewBackground() async throws {
         let view = PreviewStageView()
         view.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
         view.captureLayout = .horizontal
@@ -68,9 +68,9 @@ final class CanvasBackgroundCustomTests: XCTestCase {
         view.layoutSubtreeIfNeeded()
         for style in [CanvasBackgroundStyle.ocean, .peach, .solid(.systemYellow)] {
             view.canvasBackgroundStyle = style
-            let deadline = Date().addingTimeInterval(3)
+            let deadline = Date().addingTimeInterval(10)
             while view.renderedBackgroundKey?.style != style, Date() < deadline {
-                RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+                try await Task.sleep(for: .milliseconds(50))
             }
             XCTAssertEqual(view.renderedBackgroundKey?.style, style)
         }

@@ -2,6 +2,7 @@ import Foundation
 
 struct RecordingTranscript: Codable, Equatable, Identifiable, Sendable {
     struct Speaker: Codable, Equatable, Identifiable, Sendable {
+        static let unassignedID = "unassigned"
         let id: String
         var name: String
         var context: String
@@ -10,6 +11,7 @@ struct RecordingTranscript: Codable, Equatable, Identifiable, Sendable {
         var savedVoiceID: UUID? = nil
 
         var displayName: String {
+            if id == Self.unassignedID { return "Unassigned speaker" }
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? id : trimmed
         }
@@ -36,6 +38,7 @@ struct RecordingTranscript: Codable, Equatable, Identifiable, Sendable {
     let segments: [Segment]
     var words: [TranscriptWord]? = nil
     var speechRanges: [SpeechRange]? = nil
+    var quality: TranscriptionQuality? = nil
 
     struct SpeechRange: Codable, Equatable, Sendable {
         let startTime: Double
@@ -70,7 +73,8 @@ struct RecordingTranscript: Codable, Equatable, Identifiable, Sendable {
     }
 
     func speakerName(for id: String) -> String {
-        speakers.first(where: { $0.id == id })?.displayName ?? id
+        if id == Speaker.unassignedID { return "Unassigned speaker" }
+        return speakers.first(where: { $0.id == id })?.displayName ?? id
     }
 
     func wordCount(for speakerID: String) -> Int {
@@ -123,18 +127,23 @@ struct RecordingTranscript: Codable, Equatable, Identifiable, Sendable {
             suggestedTitle: suggestedTitle,
             speakers: speakers.filter { $0.id != request.sourceSpeakerID },
             segments: TranscriptSegmentBuilder.coalesced(relabeledSegments),
-            words: words,
-            speechRanges: speechRanges
+            words: words?.map { original in
+                var word = original
+                if word.speakerID == request.sourceSpeakerID { word.speakerID = request.targetSpeakerID }
+                return word
+            },
+            speechRanges: speechRanges,
+            quality: quality
         )
     }
 
     var formattedText: String {
-        guard !segments.isEmpty else { return text }
-        return segments.map { segment in
+        let body = segments.isEmpty ? text : segments.map { segment in
             let timestamp = Self.timestamp(segment.startTime)
             return "[\(timestamp)] \(speakerName(for: segment.speakerID)): \(segment.text)"
         }
         .joined(separator: "\n\n")
+        return [reviewNotes, body].compactMap { $0 }.joined(separator: "\n\n")
     }
 
     var markdownText: String {
@@ -147,6 +156,7 @@ struct RecordingTranscript: Codable, Equatable, Identifiable, Sendable {
             resolvedTitle.isEmpty ? defaultMarkdownTitle : resolvedTitle
         )
         var sections = ["# \(title)"]
+        if let reviewNotes { sections.append("## Review\n\n\(reviewNotes)") }
 
         let contextualSpeakers = speakers.filter {
             !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -176,6 +186,14 @@ struct RecordingTranscript: Codable, Equatable, Identifiable, Sendable {
         }
         sections.append("## Transcript\n\n\(transcriptBody)")
         return sections.joined(separator: "\n\n")
+    }
+
+    private var reviewNotes: String? {
+        guard let quality, quality.needsReview else { return nil }
+        let moments = quality.issues.sorted { $0.startTime < $1.startTime }.map {
+            "[\(Self.timestamp($0.startTime))] \($0.label)"
+        }
+        return (["Transcript needs review: \(moments.count) moments"] + moments).joined(separator: "\n")
     }
 
     private var defaultMarkdownTitle: String {
@@ -247,11 +265,18 @@ struct TranscriptSpeakerMergeRequest {
 }
 
 struct TranscriptWord: Codable, Equatable, Sendable {
+    enum Source: String, Codable, Hashable, Sendable {
+        case microphone
+        case systemAudio
+        case mixed
+    }
+
     let text: String
     let startTime: TimeInterval
     let endTime: TimeInterval
     let confidence: Float
     var speakerID: String? = nil
+    var source: Source? = nil
 }
 
 struct DiarizedInterval: Equatable, Sendable {

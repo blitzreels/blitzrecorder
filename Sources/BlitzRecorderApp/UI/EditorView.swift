@@ -72,8 +72,9 @@ struct EditorView: View {
             } inspector: {
                 if showsHostingShare {
                     HStack(spacing: 0) {
-                    HostedVideoSharePanel(controller: .shared, context: .project(path: project?.projectPath,
-                        title: project?.displayTitle ?? "Video"), preparation: preparesHostedExport ? .init(
+                    HostedVideoSharePanel(controller: .shared, context: .project(.init(path: project?.projectPath,
+                        title: project?.displayTitle ?? "Video", exports: project?.exports ?? [],
+                        shareFile: shareExportedFile)), preparation: preparesHostedExport ? .init(
                         title: project?.displayTitle ?? "Video", summary: exportRecipe(for: .link).summary,
                         status: exportStatus, export: { exportVideo(to: .link) }
                     ) : nil, newExport: { preparesHostedExport = true }, close: { showsHostingShare = false },
@@ -303,6 +304,11 @@ struct EditorView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+    }
+
+    private func shareExportedFile(_ url: URL) {
+        handleExportFollowUp(.share(url))
+        HostedVideoShareController.shared.start()
     }
 
     private func handleExportFollowUp(_ followUp: EditorExportFollowUp) {

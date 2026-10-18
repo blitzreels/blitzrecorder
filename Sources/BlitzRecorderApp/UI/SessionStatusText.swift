@@ -26,6 +26,7 @@ struct SessionStatusText: View {
 struct ElapsedTimeText: View {
     let isPaused: Bool
     let elapsed: String
+    @Environment(\.blitzDockIsCompact) private var isCompact
 
     var body: some View {
         HStack(spacing: 8) {
@@ -36,14 +37,17 @@ struct ElapsedTimeText: View {
                 .monospacedDigit()
                 .foregroundStyle(isPaused ? BlitzUI.secondaryText : BlitzUI.primaryText)
 
-            if isPaused {
+            if !isCompact {
                 Text("Paused")
                     .font(BlitzType.footnote)
                     .foregroundStyle(BlitzUI.warning)
+                    .opacity(isPaused ? 1 : 0)
+                    .accessibilityHidden(!isPaused)
             }
         }
-        .padding(.horizontal, 8)
-        .frame(minWidth: 112, minHeight: 44, alignment: .leading)
+        .padding(.horizontal, isCompact ? 4 : 8)
+        .frame(minHeight: 44, alignment: .leading)
+        .help(isPaused ? "Paused" : "Recording")
     }
 }
 

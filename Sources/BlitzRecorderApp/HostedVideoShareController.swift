@@ -86,6 +86,25 @@ final class HostedVideoShareController {
     private struct ProjectShare: Codable {
         let projectPath: String
         let url: URL
+        /// Missing on shares remembered before history was kept.
+        let sharedAt: Date?
+        /// The exported file that was uploaded. Missing on shares remembered before it was tracked.
+        let filePath: String?
+    }
+    struct ProjectLink: Identifiable {
+        let url: URL
+        let video: HostedLibraryVideo
+        let sharedAt: Date?
+        let filePath: String?
+        var id: String { video.id }
+
+        /// True when this link was made from the file at `record.path`. Older links carry no path, so a
+        /// near-identical size identifies the file instead; uploads add a little metadata.
+        func matches(_ record: RecordingProject.ExportRecord) -> Bool {
+            if let filePath { return filePath == record.path }
+            guard let size = record.fileSizeBytes, size > 0 else { return false }
+            return abs(Double(video.bytes - size)) / Double(size) < 0.01
+        }
     }
     private struct LibraryCache: Codable {
         let videos: [HostedLibraryVideo]
@@ -344,7 +363,7 @@ final class HostedVideoShareController {
                 shareURL = try await client.upload(.init(fileURL: fileURL, token: token, metadata: metadata,
                     destination: destination, progress: { update in await MainActor.run { self.transferProgress = update } }))
                 if let shareURL, let projectPath {
-                    rememberShare(.init(projectPath: projectPath, url: shareURL))
+                    rememberShare(.init(projectPath: projectPath, url: shareURL, sharedAt: Date(), filePath: fileURL.path))
                 }
                 if isRefreshingVideos { refreshAfterUpload = true }
                 else { await refreshVideos() }
@@ -414,6 +433,16 @@ final class HostedVideoShareController {
         }
     }
 
+    /// Every live link made from this project, newest first.
+    func links(forProject path: String?) -> [ProjectLink] {
+        guard let path, isConnected else { return [] }
+        return projectShares.filter { $0.projectPath == path }.compactMap { receipt in
+            videos.first { watchURL($0) == receipt.url }.map {
+                ProjectLink(url: receipt.url, video: $0, sharedAt: receipt.sharedAt, filePath: receipt.filePath)
+            }
+        }
+    }
+
     private func libraryKey(_ suffix: String) -> String? {
         guard let email = libraryEmail else { return nil }
         return "HostingLibrary:\(client.origin.absoluteString):\(email):\(suffix)"
@@ -456,7 +485,7 @@ final class HostedVideoShareController {
     private func rememberShare(_ receipt: ProjectShare) {
         prepareLibrary()
         shareURL = receipt.url
-        projectShares.removeAll { $0.projectPath == receipt.projectPath }
+        projectShares.removeAll { $0.url == receipt.url }
         projectShares.insert(receipt, at: 0)
         if let key = libraryKey("projects"), let data = try? JSONEncoder().encode(projectShares) {
             UserDefaults.standard.set(data, forKey: key)

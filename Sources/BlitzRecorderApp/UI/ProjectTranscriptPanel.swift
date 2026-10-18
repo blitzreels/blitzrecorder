@@ -125,13 +125,33 @@ extension ProjectLibraryView {
             let matches = transcriptMatches[project.id] ?? []
             let matchIDs = Set(matches.map(\.id))
             VStack(alignment: .leading, spacing: 8) {
+                if let quality = transcript.quality, quality.needsReview {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("\(quality.issues.count) moments need review")
+                            .font(BlitzType.strong)
+                            .foregroundStyle(BlitzUI.warning)
+                        ForEach(Array(quality.issues.prefix(4))) { issue in
+                            Button {
+                                projectPlayback.playFromOutput(issue.startTime)
+                            } label: {
+                                Text("\(durationLabel(issue.startTime)) · \(issue.label)")
+                            }
+                            .blitzButton(.quiet)
+                            .controlSize(.small)
+                            .disabled(playbackProjectID != selectedProject?.id || !projectPlayback.isReady)
+                        }
+                    }
+                }
                 if !matches.isEmpty {
                     Text("\(matches.count) matching moments · Click a timestamp to play")
                         .font(BlitzType.body)
                         .foregroundStyle(BlitzUI.accent)
                 }
                 if transcript.segments.isEmpty {
-                    Text(transcript.text).font(BlitzType.callout).textSelection(.enabled)
+                    let emptyMessage = transcript.quality?.issues.contains { $0.kind == .missingSpeech } == true
+                        ? "Speech was detected, but no words could be confirmed." : "No speech detected"
+                    Text(transcript.text.isEmpty ? emptyMessage : transcript.text)
+                        .font(BlitzType.callout).textSelection(.enabled)
                 }
                 let segments = matches.isEmpty ? transcript.segments : transcript.segments.filter { matchIDs.contains($0.id) }
                 LazyVStack(alignment: .leading, spacing: 0) {
@@ -221,6 +241,9 @@ extension ProjectLibraryView {
     private func transcriptSummaryLabel(
         _ transcript: RecordingTranscript
     ) -> String {
+        if let quality = transcript.quality, quality.needsReview {
+            return "Needs review · \(transcript.speakerCount) speakers · \(quality.issues.count) moments"
+        }
         if transcript.speakerCount == 1,
            let speaker = transcript.speakers.first {
             return "\(durationLabel(transcript.speakingDuration(for: speaker.id))) · "

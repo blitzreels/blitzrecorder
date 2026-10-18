@@ -216,7 +216,7 @@ extension ProjectLibraryView {
     ) -> String {
         switch status {
         case .ready:
-            return "Transcript ready"
+            return selectedTranscript?.quality?.needsReview == true ? "Transcript needs review" : "Transcript ready"
         case .failed:
             return "Transcript failed"
         case .waitingForModel:
@@ -235,7 +235,7 @@ extension ProjectLibraryView {
     ) -> Color {
         switch status {
         case .ready:
-            return BlitzUI.accent.opacity(0.84)
+            return selectedTranscript?.quality?.needsReview == true ? BlitzUI.warning : BlitzUI.accent.opacity(0.84)
         case .failed:
             return BlitzUI.warning
         case .notGenerated, .noAudio, .waitingForModel,

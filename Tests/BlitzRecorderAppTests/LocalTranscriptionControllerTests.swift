@@ -4,6 +4,22 @@ import XCTest
 
 final class LocalTranscriptionControllerTests: XCTestCase {
     @MainActor
+    func testSpeakerCountChoiceSurvivesRelaunch() throws {
+        let suite = "SpeakerPreference.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let dependencies = LocalTranscriptionController.Dependencies(
+            engine: LocalTranscriptionEngineSpy(onTranscriptionStarted: {}),
+            modelStore: LocalTranscriptionModelStoreStub(), artifactStore: TranscriptArtifactStore(),
+            fileStore: TakeFileStore(), defaults: defaults
+        )
+        let first = LocalTranscriptionController(dependencies)
+        first.speakerCount = .two
+        let reopened = LocalTranscriptionController(dependencies)
+        XCTAssertEqual(reopened.speakerCount, .two)
+        XCTAssertEqual(defaults.string(forKey: "transcription.speaker-count"), "two")
+    }
+    @MainActor
     func testImportedSilentVideoDoesNotDownloadModelsOrStartTranscription() async throws {
         let fixture = try SyntheticRecording()
         let source = fixture.root.appendingPathComponent("Silent.mov")

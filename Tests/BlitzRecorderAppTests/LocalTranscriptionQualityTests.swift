@@ -22,6 +22,44 @@ struct AssemblyCapture: Codable {
 }
 
 final class LocalTranscriptionQualityTests: XCTestCase {
+    func testAutomaticWhisperLanguageEnablesDetection() {
+        let options = LocalTranscriptionEngine.whisperDecodingOptions(.init(language: .automatic, promptTokens: nil))
+        XCTAssertTrue(options.detectLanguage)
+        XCTAssertNil(options.language)
+        XCTAssertTrue(options.wordTimestamps)
+    }
+
+    func testExplicitWhisperLanguagePreservesLock() {
+        for language in [TranscriptionLanguage.french, .english] {
+            let options = LocalTranscriptionEngine.whisperDecodingOptions(.init(language: language, promptTokens: [123]))
+            XCTAssertFalse(options.detectLanguage)
+            XCTAssertEqual(options.language, language.whisperCode)
+            XCTAssertEqual(options.promptTokens, [123])
+        }
+    }
+
+    func testAutomaticLanguagePreservesFrenchCallWhenRequested() async throws {
+        guard let path = ProcessInfo.processInfo.environment["BLITZRECORDER_FRENCH_CALL_SAMPLE"] else {
+            throw XCTSkip("Set a local French call excerpt to verify automatic language detection.")
+        }
+        let engine = LocalTranscriptionEngine()
+        if !LocalTranscriptionModelStore().isInstalled(.whisperLarge) {
+            guard ProcessInfo.processInfo.environment["BLITZRECORDER_RESTORE_CALL_MODEL"] == "1" else {
+                throw XCTSkip("Install Whisper Large to verify automatic language detection.")
+            }
+            try await engine.downloadModels(.init(model: .whisperLarge, onUpdate: { _ in }))
+        }
+        let transcript = try await engine.transcribe(.init(
+            source: .recording(URL(fileURLWithPath: path)),
+            model: .whisperLarge,
+            language: .automatic,
+            speakerCount: .automatic,
+            onUpdate: { _ in }
+        ))
+        XCTAssertTrue(transcript.text.lowercased().contains("fondateur"), transcript.text)
+        XCTAssertFalse(transcript.text.lowercased().contains("founder"), transcript.text)
+    }
+
     func testMicrophoneDiarizationDoesNotForceOneSpeaker() {
         let speakers = LocalTranscriptionEngine.microphoneDiarizerConfiguration(.automatic).clustering
         XCTAssertNil(speakers.numSpeakers)
@@ -31,6 +69,28 @@ final class LocalTranscriptionQualityTests: XCTestCase {
             LocalTranscriptionEngine.microphoneDiarizerConfiguration(.two).clustering.numSpeakers,
             2
         )
+    }
+
+    func testRetranscribeStagedCallWhenRequested() async throws {
+        guard let path = ProcessInfo.processInfo.environment["BLITZRECORDER_STAGED_CALL_PROJECT"] else {
+            throw XCTSkip("Set a staged project copy to verify a complete call transcript.")
+        }
+        let url = URL(fileURLWithPath: path)
+        let project = try TakeFileStore().loadRecordingProject(at: url)
+        let locations = TranscriptArtifactStore().locations(for: project)
+        XCTAssertEqual(locations.jsonURL.deletingLastPathComponent(), url.deletingLastPathComponent())
+        guard locations.jsonURL.deletingLastPathComponent() == url.deletingLastPathComponent() else { return }
+        let transcript = try await LocalTranscriptionEngine().transcribe(.init(
+            source: .project(url), model: .whisperLarge, language: .automatic, speakerCount: .automatic,
+            onUpdate: { update in
+                print("CALL \(update.stage) \(update.detail ?? "")")
+                fflush(stdout)
+            }
+        ))
+        XCTAssertGreaterThan(transcript.words?.count ?? 0, 100)
+        XCTAssertTrue(transcript.segments.allSatisfy {
+            $0.startTime >= 0 && $0.endTime >= $0.startTime && $0.endTime <= transcript.duration + 0.2
+        })
     }
 
     func testSilenceAndNonSpeechDoNotProduceInventedWordsWhenRequested() async throws {
@@ -90,9 +150,13 @@ final class LocalTranscriptionQualityTests: XCTestCase {
             let result = try await asr.transcribe(track.audioURL, decoderState: &state)
             let source = track.source == .microphone ? "microphone" : track.source == .systemAudio ? "systemAudio" : "mixed"
             capture.words += LocalTranscriptionEngine.words(result.tokenTimings ?? []).map { .init(word: $0, source: source) }
-            let diarizer = OfflineDiarizerManager(config: track.source == .microphone
+            var configuration = track.source == .microphone
                 ? LocalTranscriptionEngine.microphoneDiarizerConfiguration(.automatic)
-                : LocalTranscriptionEngine.systemDiarizerConfiguration)
+                : LocalTranscriptionEngine.systemDiarizerConfiguration
+            if let value = environment["BLITZRECORDER_DIARIZATION_THRESHOLD"].flatMap(Double.init) {
+                configuration.clusteringThreshold = value
+            }
+            let diarizer = OfflineDiarizerManager(config: configuration)
             diarizer.initialize(models: diarizerModels)
             let prefix = track.source == .microphone ? RecordingTranscriptAssembler.microphoneSpeakerPrefix
                 : RecordingTranscriptAssembler.systemSpeakerPrefix
@@ -105,15 +169,42 @@ final class LocalTranscriptionQualityTests: XCTestCase {
         try JSONEncoder().encode(capture).write(to: URL(fileURLWithPath: outputPath), options: .atomic)
     }
 
-    func testAssemblyReplayWhenRequested() throws {
+    func testAssemblyReplayWhenRequested() async throws {
         guard let path = ProcessInfo.processInfo.environment["BLITZRECORDER_ASSEMBLY_REPLAY"] else {
             throw XCTSkip("Set a captured assembly input to replay speaker assignment.")
         }
-        let capture = try JSONDecoder().decode(AssemblyCapture.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        var capture = try JSONDecoder().decode(AssemblyCapture.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        if let project = ProcessInfo.processInfo.environment["BLITZRECORDER_ASSEMBLY_CAPTURE_PROJECT"] {
+            let prepared = try await TranscriptionAudioPreparer().prepare(.project(URL(fileURLWithPath: project)))
+            defer { for track in prepared.tracks { try? FileManager.default.removeItem(at: track.audioURL) } }
+            let original = capture.request
+            let recovered = try CallSpeechRecovery.recover(.init(
+                tracks: prepared.tracks, words: original.words,
+                sources: original.wordSources, intervals: original.diarizedIntervals
+            ))
+            capture.words = zip(original.words, recovered.sources).map { word, source in
+                .init(word: word, source: source == .microphone ? "microphone" : source == .systemAudio ? "systemAudio" : "mixed")
+            }
+            capture.intervals = recovered.intervals.map {
+                .init(speakerID: $0.speakerID, startTime: $0.startTime, endTime: $0.endTime, embedding: $0.embedding)
+            }
+        }
         let request = capture.request
-        let labels = RecordingTranscriptAssembler.voiceClusterLabels(request.diarizedIntervals)
+        let labels = RecordingTranscriptAssembler.voiceClusterLabels(.init(
+            intervals: request.diarizedIntervals, words: Array(zip(request.words, request.wordSources))
+        ))
+        if let expected = ProcessInfo.processInfo.environment["BLITZRECORDER_ASSEMBLY_EXPECTED_ECHO"] {
+            let pair = expected.split(separator: "=").map(String.init)
+            XCTAssertEqual(pair.count, 2)
+            if pair.count == 2 { XCTAssertEqual(labels[pair[0]], labels[pair[1]]) }
+        }
         print("labels", labels.sorted { $0.key < $1.key })
         let transcript = RecordingTranscriptAssembler.assemble(request)
+        if ProcessInfo.processInfo.environment["BLITZRECORDER_ASSEMBLY_EXPECT_REMOTE_QUESTION"] == "1" {
+            let question = try XCTUnwrap(transcript.words?.first { $0.text == "Where" })
+            let remote = try XCTUnwrap(transcript.words?.first { $0.text == "Yeah," })
+            XCTAssertEqual(question.speakerID, remote.speakerID)
+        }
         let counts = Dictionary(grouping: transcript.words ?? [], by: { $0.speakerID ?? "-" }).mapValues(\.count)
         print("speakers", transcript.speakers.map { "\($0.id)=\($0.name)" }, counts.sorted { $0.key < $1.key })
         try Data((transcript.segments.map { "\(Int($0.startTime))\t\($0.speakerID)\t\($0.text)" }.joined(separator: "\n")).utf8)

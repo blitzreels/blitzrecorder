@@ -195,7 +195,9 @@ struct HostedVideoLibraryView: View {
             ZStack {
                 RoundedRectangle(cornerRadius: BlitzUI.cardRadius).fill(BlitzUI.controlFill)
                 if let image = thumbnail(video) {
-                    Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+                    Color.clear.overlay {
+                        Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+                    }
                 } else {
                     Image(systemName: "play.rectangle.fill")
                         .font(BlitzType.glyph(28))
@@ -222,7 +224,7 @@ struct HostedVideoLibraryView: View {
             .help(url == nil ? video.statusLabel : "Open the watch page")
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(video.title).font(BlitzType.strong).lineLimit(2).help(video.title)
+                Text(video.title).font(BlitzType.strong).lineLimit(1).help(video.title)
                 Text(detail(video))
                     .font(BlitzType.caption.monospacedDigit())
                     .foregroundStyle(video.status == "failed" ? BlitzUI.warning : BlitzUI.secondaryText)
@@ -230,33 +232,50 @@ struct HostedVideoLibraryView: View {
                     .help(video.error ?? "")
             }
             HStack(spacing: 8) {
-                if let url, video.isShared {
-                    BlitzCopyButton(configuration: .watchLink(.init(url: url, title: "Copy link", emphasis: .secondary, width: .fixed(84))))
-                    Button { NSWorkspace.shared.open(url) } label: {
-                        Label("Open", systemImage: "safari")
+                if let url {
+                    HStack(spacing: 8) {
+                        BlitzCopyButton(configuration: .watchLink(.init(url: url, title: "Copy link", emphasis: .secondary, width: .fixed(84))))
+                        Button { NSWorkspace.shared.open(url) } label: {
+                            Label("Open", systemImage: "safari")
+                        }
+                        .blitzButton(.secondary)
+                        .help("Open the watch page in your browser")
                     }
-                    .blitzButton(.secondary)
-                    .help("Open the watch page in your browser")
-                } else if video.status == "ready" {
-                    Button { Task { await controller.setListed(.init(video: video, listed: true)) } } label: {
-                        Label("Show link", systemImage: "eye")
-                    }
-                    .blitzButton(.secondary)
-                    .help("Turn the watch link back on")
+                    .fixedSize()
+                    .disabled(!video.isShared)
                 }
                 Spacer(minLength: 0)
-                if controller.changingVideos.contains(video.id) {
-                    ProgressView().controlSize(.small)
-                } else if ["ready", "failed", "queued", "processing"].contains(video.status) {
-                    BlitzInlineActions(entries: videoEntries(video))
+                if video.status == "ready" {
+                    publicSwitch(video)
                 }
             }
             .controlSize(.small)
             .disabled(!controller.isSubscribed && !video.isOwnStorage)
             .frame(height: BlitzControlMetrics.height(.small), alignment: .leading)
         }
+        .contentShape(.rect)
+        .contextMenu {
+            if ["ready", "failed", "queued", "processing"].contains(video.status) {
+                BlitzContextMenuItems(entries: videoEntries(video))
+            }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(video.title)
+    }
+
+    private func publicSwitch(_ video: HostedLibraryVideo) -> some View {
+        Toggle("Public", isOn: Binding(
+            get: { video.listed != false },
+            set: { listed in Task { await controller.setListed(.init(video: video, listed: listed)) } }
+        ))
+        .toggleStyle(.blitzSwitch)
+        .font(BlitzType.label)
+        .foregroundStyle(BlitzUI.supportingText)
+        .fixedSize()
+        .disabled(controller.changingVideos.contains(video.id))
+        .help(video.listed != false
+              ? "Anyone with the link can watch. Turn off to hide the link without deleting it."
+              : "The link is hidden. Turn on so anyone with the link can watch.")
     }
 
     private func videoEntries(_ video: HostedLibraryVideo) -> [BlitzMenuEntry] {

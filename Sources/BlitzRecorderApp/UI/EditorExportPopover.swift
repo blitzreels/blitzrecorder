@@ -25,6 +25,8 @@ struct EditorExportPopover: View {
         let estimatedSizeCaption: String
         let encodingDetail: String
         let directory: URL
+        /// When this project was last exported to a file that still exists.
+        let lastExportDate: Date?
         let canExport: Bool
         let export: () -> Void
         let chooseFolder: () -> Void
@@ -115,6 +117,13 @@ struct EditorExportPopover: View {
                         .controlSize(.small)
                         .accessibilityLabel("Change export folder")
                         .help("Change where finished videos are saved. Source files stay in the library.")
+                }
+                if let lastExportDate = configuration.lastExportDate {
+                    Text("Saves a new file. Your export from \(lastExportDate.formatted(.relative(presentation: .named))) stays, and so do its links.")
+                        .font(BlitzType.caption)
+                        .foregroundStyle(BlitzUI.secondaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Button(action: configuration.export) {
                     Text(layouts.count > 1 ? "Export \(layouts.count) videos" : "Export video")
@@ -241,7 +250,7 @@ struct EditorExportSpeedControl: View {
         format: .constant(.mp4), resolution: .constant(.p1080), framesPerSecond: .constant(24),
         quality: .constant(.high), playbackRate: .constant(.init(clamping: 1.3)),
         estimatedSize: "≈ 160 MB", estimatedSizeCaption: "Estimated size", encodingDetail: "HEVC · 12.0 Mbps",
-        directory: URL(fileURLWithPath: "/tmp/Recordings"), canExport: true,
+        directory: URL(fileURLWithPath: "/tmp/Recordings"), lastExportDate: Date().addingTimeInterval(-780), canExport: true,
         export: {}, chooseFolder: {}
     ))
 }

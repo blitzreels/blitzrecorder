@@ -70,7 +70,7 @@ struct BlitzCopyButton: View {
                 }
             } icon: {
                 Image(systemName: feedback.symbolName)
-                    .foregroundStyle(feedback == .failed ? BlitzUI.warning : .primary)
+                    .foregroundStyle(feedback == .failed ? AnyShapeStyle(BlitzUI.warning) : AnyShapeStyle(.foreground))
                     .contentTransition(.symbolEffect(.replace))
             }
             .frame(width: fixedWidth, alignment: .center)

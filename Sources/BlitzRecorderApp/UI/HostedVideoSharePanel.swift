@@ -2,8 +2,14 @@ import AppKit
 import SwiftUI
 
 struct HostedVideoSharePanel: View {
+    struct ProjectContext {
+        let path: String?
+        let title: String
+        let exports: [RecordingProject.ExportRecord]
+        let shareFile: (URL) -> Void
+    }
     enum Context {
-        case project(path: String?, title: String)
+        case project(ProjectContext)
         case account
     }
     struct ExportPreparation {
@@ -19,26 +25,28 @@ struct HostedVideoSharePanel: View {
     let newExport: () -> Void
     let close: () -> Void
     let showLibrary: () -> Void
+    @State private var stopping: HostedLibraryVideo?
 
     private var isAccountOnly: Bool {
         if case .account = context { return true }
         return false
     }
 
+    private var project: ProjectContext? {
+        guard case .project(let project) = context else { return nil }
+        return project
+    }
+
     private var previousShare: URL? {
-        guard case .project(let path, _) = context else { return nil }
-        return controller.sharedURL(forProject: path)
+        controller.sharedURL(forProject: project?.path)
     }
 
     private var currentShare: URL? {
-        guard case .project(let path, _) = context, let path else { return nil }
+        guard let path = project?.path else { return nil }
         return controller.projectPath == path ? controller.shareURL ?? previousShare : previousShare
     }
 
-    private var projectTitle: String {
-        guard case .project(_, let title) = context else { return "" }
-        return title
-    }
+    private var projectTitle: String { project?.title ?? "" }
 
     private var isSaving: Bool {
         if case .exporting = preparation?.status { return true }
@@ -65,6 +73,18 @@ struct HostedVideoSharePanel: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await controller.refresh() }
         }
+        .confirmationDialog("Stop sharing this link?", isPresented: Binding(
+            get: { stopping != nil }, set: { if !$0 { stopping = nil } }), presenting: stopping) { video in
+            Button("Stop sharing", role: .destructive) { Task { await controller.stopSharing(video) } }
+        } message: { video in
+            Text(video.isOwnStorage
+                 ? "The link stops working and the video is deleted from your Cloudflare. Your recording stays on this Mac."
+                 : "The link stops working for everyone and the video is deleted from BlitzRecorder Hosting. Your recording stays on this Mac.")
+        }
+    }
+
+    private func liveVideo(_ url: URL) -> HostedLibraryVideo? {
+        controller.links(forProject: project?.path).first { $0.url == url }?.video
     }
 
     private var stack: some View {
@@ -95,15 +115,16 @@ struct HostedVideoSharePanel: View {
                         .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if !isAccountOnly, let url = previousShare, preparation != nil || controller.isRunning || isSaving {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Previously shared")
-                            .font(BlitzType.strong).foregroundStyle(BlitzUI.secondaryText)
-                        HostedVideoLinkField(url: url, prominence: .secondary)
-                        Text("That link keeps the version you shared. Sharing now creates a new link.")
-                            .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                if let project {
+                    HostedVideoShareHistory(controller: controller, configuration: .init(
+                        links: controller.links(forProject: project.path),
+                        featuredLink: stateKey == .ready ? currentShare : nil,
+                        exports: project.exports.reversed(),
+                        linksNote: preparation != nil
+                            ? "Each link keeps the version you shared. Sharing now creates a new link." : nil,
+                        canShareFile: controller.canShare && !controller.isRunning && !isSaving,
+                        shareFile: project.shareFile
+                    ))
                 }
                 footer
             }
@@ -112,6 +133,13 @@ struct HostedVideoSharePanel: View {
 
     private enum StateKey: Hashable {
         case uploading, saving, loading, unavailable, signIn, choosePlan, account, ready, prepare, resume, idle
+    }
+
+    /// A paused or failed upload whose file is still on disk. A finished link that was stopped is not
+    /// resumable: sharing again starts from the current edit.
+    private var hasResumableUpload: Bool {
+        guard let fileURL = controller.fileURL, FileManager.default.fileExists(atPath: fileURL.path) else { return false }
+        return controller.transferMessage != nil
     }
 
     private var stateKey: StateKey {
@@ -124,7 +152,7 @@ struct HostedVideoSharePanel: View {
         if isAccountOnly { return .account }
         if currentShare != nil, preparation == nil { return .ready }
         if preparation != nil { return .prepare }
-        if controller.fileURL != nil { return .resume }
+        if hasResumableUpload { return .resume }
         return .idle
     }
 
@@ -186,7 +214,9 @@ struct HostedVideoSharePanel: View {
                         .frame(maxWidth: .infinity)
                 }.blitzButton(.accent).controlSize(.large)
             case .idle:
-                EmptyView()
+                Button(action: newExport) {
+                    Label("Create share link", systemImage: "link").frame(maxWidth: .infinity)
+                }.blitzButton(.accent).controlSize(.large)
             }
             if preparation == nil, let message = controller.transferMessage { errorText(message) }
             if [.uploading, .ready].contains(stateKey), let notice = controller.detailsNotice {
@@ -281,6 +311,15 @@ struct HostedVideoSharePanel: View {
                 HStack(spacing: 8) { readyActions(url) }
                 VStack(spacing: 8) { readyActions(url) }
             }
+            if let video = liveVideo(url) {
+                Button("Stop sharing…") { stopping = video }
+                    .blitzButton(.quiet)
+                    .controlSize(.small)
+                    .foregroundStyle(BlitzUI.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .disabled(controller.changingVideos.contains(video.id))
+                    .help("Turn this link off and delete the hosted copy. Your files on this Mac stay.")
+            }
         }
         .padding(14)
         .background(BlitzUI.quietFill, in: .rect(cornerRadius: BlitzUI.cardRadius))
@@ -293,11 +332,11 @@ struct HostedVideoSharePanel: View {
         .blitzButton(.secondary)
         .help("Open the watch page in your browser")
         Button(action: newExport) {
-            Label("New link", systemImage: "arrow.triangle.2.circlepath").frame(maxWidth: .infinity)
+            Label("Share latest edit", systemImage: "arrow.triangle.2.circlepath").frame(maxWidth: .infinity)
                 .lineLimit(1)
         }
         .blitzButton(.secondary)
-        .help("Share your latest edit as a new link. The current link keeps its version.")
+        .help("Export your current edit and share it as a new link. This link keeps the version it has now.")
     }
 
     private struct Action {

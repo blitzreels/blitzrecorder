@@ -231,6 +231,7 @@ struct RecordingHUDView: View {
     }
 
     private var isWide: Bool { model.isExpanded || hasPrompt }
+    private static let width: CGFloat = 340
 
     var body: some View {
         VStack(spacing: 0) {
@@ -244,7 +245,7 @@ struct RecordingHUDView: View {
                 if model.isExpanded { divider; details }
             }
         }
-        .frame(width: hasPrompt ? 400 : isWide ? 340 : nil)
+        .frame(width: Self.width)
         .fixedSize()
         .background(RecordingHUDSurface())
         .opacity(isIdle && !isWide ? 0.5 : 1)
@@ -313,7 +314,7 @@ struct RecordingHUDView: View {
                     RecordingHUDMeter(levels: vm.micLevels, isActive: vm.state == .recording)
                         .help(vm.selectedMicrophoneDisplayName)
                 }
-                if isWide { Spacer(minLength: 8) }
+                Spacer(minLength: 8)
             }
             .padding(.horizontal, 10)
             .frame(height: 40)
@@ -327,13 +328,12 @@ struct RecordingHUDView: View {
             .onHover { isDragHovering = $0 }
             .help("Drag to move recording controls")
             controls
-            if !isWide {
-                Image(systemName: model.anchor.isBottom ? "chevron.up" : "chevron.down")
-                    .font(BlitzType.symbol(9))
-                    .foregroundStyle(BlitzUI.tertiaryText)
-                    .padding(.trailing, 6)
-                    .accessibilityHidden(true)
-            }
+            Image(systemName: model.anchor.isBottom ? "chevron.up" : "chevron.down")
+                .font(BlitzType.symbol(9))
+                .foregroundStyle(BlitzUI.tertiaryText)
+                .padding(.trailing, 6)
+                .opacity(isWide ? 0 : 1)
+                .accessibilityHidden(true)
         }
         .padding(.leading, 4)
         .padding(.trailing, 5)

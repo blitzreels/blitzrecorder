@@ -76,7 +76,7 @@ final class EditorExportPresentationTests: XCTestCase {
                 format: .constant(.mp4), resolution: .constant(.p1080), framesPerSecond: .constant(24),
                 quality: .constant(.high), playbackRate: .constant(.init(clamping: 1.3)),
                 estimatedSize: "≈ 160 MB", estimatedSizeCaption: "Estimated size", encodingDetail: "HEVC · 12 Mbps",
-                directory: URL(fileURLWithPath: "/tmp/Recordings"), canExport: true,
+                directory: URL(fileURLWithPath: "/tmp/Recordings"), lastExportDate: nil, canExport: true,
                 export: {}, chooseFolder: {}
             )))
             host.setFrameSize(host.fittingSize)

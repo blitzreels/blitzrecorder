@@ -17,40 +17,13 @@ struct BottomDock: View {
             }
 
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) {
-                    RecorderSceneStrip(vm: vm, density: .regular)
-                    dockDivider
-                    RecordingActionRow(vm: vm)
-                }
-                .dockGlass()
-                .fixedSize(horizontal: true, vertical: false)
-
-                HStack(spacing: 12) {
-                    RecorderSceneStrip(vm: vm, density: .compact)
-                    dockDivider
-                    RecordingActionRow(vm: vm)
-                }
-                .dockGlass()
-                .fixedSize(horizontal: true, vertical: false)
-
-                HStack(spacing: 10) {
-                    RecorderSceneStrip(vm: vm, density: .compact)
-                    dockDivider
-                    RecordingActionRow(vm: vm)
-                        .environment(\.blitzDockIsCompact, true)
-                }
-                .dockGlass()
-
-                ScrollView(.horizontal) {
-                    HStack(spacing: 10) {
-                        RecorderSceneStrip(vm: vm, density: .compact)
-                        dockDivider
-                        RecordingActionRow(vm: vm)
-                            .environment(\.blitzDockIsCompact, true)
-                    }
-                    .dockGlass()
-                }
-                .scrollIndicators(.never)
+                dockRow(.init(density: .regular, spacing: 12, isCompact: false))
+                    .fixedSize(horizontal: true, vertical: false)
+                dockRow(.init(density: .compact, spacing: 12, isCompact: false))
+                    .fixedSize(horizontal: true, vertical: false)
+                dockRow(.init(density: .compact, spacing: 10, isCompact: true))
+                    .fixedSize(horizontal: true, vertical: false)
+                dockRow(.init(density: .compact, spacing: 10, isCompact: true))
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -115,6 +88,25 @@ private struct SavedProjectActions: View {
 }
 
 private extension BottomDock {
+    struct RowStyle {
+        let density: RecorderSceneStrip.Density
+        let spacing: CGFloat
+        let isCompact: Bool
+    }
+
+    func dockRow(_ style: RowStyle) -> some View {
+        HStack(spacing: style.spacing) {
+            RecorderSceneStrip(vm: vm, density: style.density)
+                .frame(minWidth: RecorderSceneStrip.Density.compact.tileWidth)
+            dockDivider
+            RecordingActionRow(vm: vm)
+                .environment(\.blitzDockIsCompact, style.isCompact)
+                .fixedSize(horizontal: true, vertical: false)
+                .layoutPriority(1)
+        }
+        .dockGlass()
+    }
+
     var dockDivider: some View {
         Rectangle().fill(BlitzUI.separator).frame(width: 1, height: 52)
     }
@@ -262,10 +254,11 @@ struct DockActionButton: View {
     let systemImage: String
     var help: String? = nil
     let action: () -> Void
+    @Environment(\.blitzDockIsCompact) private var isCompact
 
     var body: some View {
         Button(action: action) {
-            Label(title, systemImage: systemImage)
+            label
                 .font(BlitzType.captionEmphasis)
                 .fixedSize()
                 .padding(.horizontal, 9)
@@ -275,6 +268,15 @@ struct DockActionButton: View {
         .controlSize(.small)
         .pointingHandCursor()
         .help(help ?? title)
+    }
+
+    @ViewBuilder
+    private var label: some View {
+        if isCompact {
+            Label(title, systemImage: systemImage).labelStyle(.iconOnly)
+        } else {
+            Label(title, systemImage: systemImage)
+        }
     }
 }
 

@@ -325,7 +325,7 @@ final class RecordingTranscriptTests: XCTestCase {
                         confidence: 0.9
                     ),
                 ],
-                diarizedIntervals: []
+                diarizedIntervals: [.init(speakerID: "voice-a", startTime: 0, endTime: 2)]
             )
         )
         transcript.speakers[0].name = "Sarah"
@@ -941,6 +941,81 @@ final class RecordingTranscriptFragmentSpeakerTests: XCTestCase {
 }
 
 final class RecordingTranscriptSpeakerFixTests: XCTestCase {
+    func testTranscriptRejectsWordsBeyondRecordingAndClampsLastWord() {
+        let transcript = RecordingTranscriptAssembler.assemble(.init(
+            mediaPath: "/call", generatedAt: Date(timeIntervalSince1970: 0), duration: 4,
+            confidence: 0.9, text: "", suggestedTitle: nil,
+            words: [
+                .init(text: "Goodbye", startTime: 3.5, endTime: 4.2, confidence: 0.9),
+                .init(text: "invented", startTime: 5, endTime: 6, confidence: 0.9),
+                .init(text: "invalid", startTime: .nan, endTime: 3, confidence: 0.9)
+            ], diarizedIntervals: []
+        ))
+        XCTAssertEqual(transcript.words?.map(\.text), ["Goodbye"])
+        XCTAssertEqual(transcript.words?.first?.endTime, 4)
+        XCTAssertEqual(transcript.segments.first?.endTime, 4)
+    }
+
+    func testFrenchContractionsKeepApostrophesAttached() {
+        XCTAssertEqual(TranscriptSegmentBuilder.joinedText(["Je", "t", "'entends", "et", "c", "’est", "l'", "app", "."]),
+                       "Je t'entends et c’est l'app.")
+    }
+
+    func testLongRemoteLeakDoesNotBecomeAnotherSpeaker() {
+        let hostWords = (0..<10).map { index in
+            TranscriptWord(text: "host\(index)", startTime: Double(index) * 0.3,
+                           endTime: Double(index) * 0.3 + 0.2, confidence: 0.9)
+        }
+        let guestWords = (0..<80).map { index in
+            TranscriptWord(text: "guest\(index)", startTime: 10 + Double(index) * 0.3,
+                           endTime: 10.2 + Double(index) * 0.3, confidence: 0.9)
+        }
+        let leak = guestWords.map { word in
+            TranscriptWord(text: word.text, startTime: word.startTime + 0.03,
+                           endTime: word.endTime + 0.03, confidence: 0.6)
+        }
+        let transcript = RecordingTranscriptAssembler.assemble(.init(
+            mediaPath: "/call", generatedAt: Date(timeIntervalSince1970: 0), duration: 40,
+            confidence: 0.9, text: "", suggestedTitle: nil,
+            words: hostWords + leak + guestWords,
+            wordSources: Array(repeating: .microphone, count: hostWords.count + leak.count)
+                + Array(repeating: .systemAudio, count: guestWords.count),
+            diarizedIntervals: [
+                .init(speakerID: "mic-host", startTime: 0, endTime: 4, embedding: [1, 0, 0, 0]),
+                .init(speakerID: "mic-leak", startTime: 10, endTime: 35, embedding: [0, 0.79, 0.61, 0]),
+                .init(speakerID: "sys-guest", startTime: 9.9, endTime: 40, embedding: [0, 1, 0, 0])
+            ]
+        ))
+        XCTAssertEqual(transcript.speakerCount, 2)
+        XCTAssertEqual(transcript.speakers.map(\.name), ["You", ""])
+        XCTAssertEqual(transcript.words?.map(\.text), (hostWords + guestWords).map(\.text))
+        XCTAssertEqual(transcript.wordCount(for: "Speaker 2"), guestWords.count)
+    }
+
+    func testSimilarVoicesSpeakingDifferentWordsStaySeparate() {
+        let hostWords = (0..<20).map { index in
+            TranscriptWord(text: "host\(index)", startTime: Double(index) * 0.3,
+                           endTime: Double(index) * 0.3 + 0.2, confidence: 0.9)
+        }
+        let guestWords = (0..<20).map { index in
+            TranscriptWord(text: "guest\(index)", startTime: Double(index) * 0.3,
+                           endTime: Double(index) * 0.3 + 0.2, confidence: 0.9)
+        }
+        let transcript = RecordingTranscriptAssembler.assemble(.init(
+            mediaPath: "/call", generatedAt: Date(timeIntervalSince1970: 0), duration: 7,
+            confidence: 0.9, text: "", suggestedTitle: nil, words: hostWords + guestWords,
+            wordSources: Array(repeating: .microphone, count: hostWords.count)
+                + Array(repeating: .systemAudio, count: guestWords.count),
+            diarizedIntervals: [
+                .init(speakerID: "mic-host", startTime: 0, endTime: 7, embedding: [0, 0.79, 0.61, 0]),
+                .init(speakerID: "sys-guest", startTime: 0, endTime: 7, embedding: [0, 1, 0, 0])
+            ]
+        ))
+        XCTAssertEqual(transcript.speakerCount, 2)
+        XCTAssertEqual(transcript.wordCount(for: "Speaker 1"), hostWords.count)
+        XCTAssertEqual(transcript.wordCount(for: "Speaker 2"), guestWords.count)
+    }
+
     private struct CallFixture {
         let transcript: RecordingTranscript
         let intervals: [DiarizedInterval]
@@ -1011,12 +1086,17 @@ final class RecordingTranscriptSpeakerFixTests: XCTestCase {
         let guestOnMicrophone: [Float] = [0.5, 0.9, 0.2, 0.3]
         let host: [Float] = [0.98, 0.02, 0.10, 0.15]
         let promo: [Float] = [0, 0, 0, 1]
-        let labels = RecordingTranscriptAssembler.voiceClusterLabels([
+        let evidence: [(TranscriptWord, TranscriptWord.Source)] = (0..<8).flatMap { index -> [(TranscriptWord, TranscriptWord.Source)] in
+            let word = TranscriptWord(text: "echo\(index)", startTime: 150 + Double(index) * 0.5,
+                                      endTime: 150.3 + Double(index) * 0.5, confidence: 0.9)
+            return [(word, .microphone), (word, .systemAudio)]
+        }
+        let labels = RecordingTranscriptAssembler.voiceClusterLabels(.init(intervals: [
             .init(speakerID: "mic-0", startTime: 0, endTime: 100, embedding: host),
             .init(speakerID: "sys-0", startTime: 100, endTime: 200, embedding: guest),
             .init(speakerID: "mic-1", startTime: 150, endTime: 155, embedding: guestOnMicrophone),
             .init(speakerID: "sys-1", startTime: 205, endTime: 210, embedding: promo),
-        ])
+        ], words: evidence))
         XCTAssertEqual(labels["mic-1"], "sys-0", "A short echo of the guest on the microphone is the guest.")
         XCTAssertEqual(labels["mic-0"], "mic-0")
         XCTAssertEqual(labels["sys-1"], "sys-1", "A short but different voice stays its own speaker.")

@@ -272,7 +272,8 @@ final class HostedVideoAccountTests: XCTestCase {
 
     @MainActor private func snapshot(_ request: Snapshot) throws {
         for width in [312.0, 400.0] {
-            let host = NSHostingView(rootView: HostedVideoSharePanel(controller: request.controller, context: .project(path: request.projectPath, title: "How to record a useful walkthrough"),
+            let host = NSHostingView(rootView: HostedVideoSharePanel(controller: request.controller, context: .project(.init(
+                path: request.projectPath, title: "How to record a useful walkthrough", exports: [], shareFile: { _ in })),
                 preparation: request.preparation, newExport: {}, close: {}, showLibrary: {}).frame(width: width, height: 660).preferredColorScheme(.dark))
             host.setFrameSize(host.fittingSize)
             host.layoutSubtreeIfNeeded()

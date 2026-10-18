@@ -4,6 +4,9 @@ extension RecordingTranscriptAssembler {
     struct SpeakerReassignmentRequest {
         let transcript: RecordingTranscript
         let diarizedIntervals: [DiarizedInterval]
+        var recoveredSources: [WordSource]? = nil
+        var sourceVoiceLinks: [String: String] = [:]
+        var preservesDetectedSpeakers = false
     }
 
     enum SpeakerReassignmentError: LocalizedError, Equatable {
@@ -20,15 +23,24 @@ extension RecordingTranscriptAssembler {
     static func reassignSpeakers(
         _ request: SpeakerReassignmentRequest
     ) throws -> RecordingTranscript {
-        let words = (request.transcript.words ?? []).enumerated().sorted { left, right in
+        let ordered = (request.transcript.words ?? []).enumerated().sorted { left, right in
             if left.element.startTime == right.element.startTime {
                 return left.offset < right.offset
             }
             return left.element.startTime < right.element.startTime
-        }.map(\.element)
+        }
+        let words = ordered.map(\.element)
         guard !words.isEmpty else { throw SpeakerReassignmentError.missingWordTimings }
-        let sources = inferredWordSources(.init(words: words, intervals: request.diarizedIntervals))
-        let labels = voiceClusterLabels(request.diarizedIntervals)
+        let inferred = inferredWordSources(.init(words: words, intervals: request.diarizedIntervals))
+        let sources: [WordSource]
+        if let recovered = request.recoveredSources, recovered.count == words.count {
+            sources = ordered.map { recovered[$0.offset] }
+        } else {
+            sources = zip(words, inferred).map { $0.source ?? $1 }
+        }
+        let labels = voiceClusterLabels(.init(intervals: request.diarizedIntervals, words: Array(zip(words, sources)),
+                                              sourceVoiceLinks: request.sourceVoiceLinks,
+                                              preservesDetectedSpeakers: request.preservesDetectedSpeakers))
         let trackIntervals = TrackIntervals(.init(intervals: request.diarizedIntervals, labels: labels))
         let reassigned = voiceGroupedTranscript(VoiceGroupingRequest(
             metadata: .init(request.transcript),
@@ -44,6 +56,7 @@ extension RecordingTranscriptAssembler {
     }
 
     static let speakerFixMergeCosineDistance: Float = 0.2
+    static let speakerFixEchoCosineDistance: Float = 0.35
     static let speakerFixAttachCosineDistance: Float = 0.5
     static let speakerFixMinorClusterShare = 0.15
 
@@ -66,6 +79,18 @@ extension RecordingTranscriptAssembler {
     }
 
     static func voiceClusterLabels(_ intervals: [DiarizedInterval]) -> [String: String] {
+        voiceClusterLabels(.init(intervals: intervals, words: []))
+    }
+
+    struct VoiceClusteringRequest {
+        let intervals: [DiarizedInterval]
+        let words: [(TranscriptWord, WordSource)]
+        var sourceVoiceLinks: [String: String] = [:]
+        var preservesDetectedSpeakers = false
+    }
+
+    static func voiceClusterLabels(_ request: VoiceClusteringRequest) -> [String: String] {
+        let intervals = request.intervals
         var clusters: [VoiceCluster] = []
         var byID: [String: Int] = [:]
         for interval in intervals where !interval.embedding.isEmpty && interval.embedding.allSatisfy(\.isFinite) {
@@ -79,39 +104,96 @@ extension RecordingTranscriptAssembler {
                 clusters.append(.init(members: [interval.speakerID: weight], sum: weighted, duration: weight))
             }
         }
-        mergeClosestClusters(&clusters)
-        clusters = attachingMinorClusters(.init(clusters: clusters, intervals: intervals))
+        if !request.preservesDetectedSpeakers {
+            clusters = mergingClosestClusters(.init(clusters: clusters, evidence: request))
+            clusters = attachingMinorClusters(.init(clusters: clusters, evidence: request))
+        }
         var labels: [String: String] = [:]
         for cluster in clusters {
             for member in cluster.members.keys { labels[member] = cluster.label }
         }
+        for (microphone, system) in request.sourceVoiceLinks {
+            labels[microphone] = labels[system] ?? system
+        }
         return labels
     }
 
-    private static func mergeClosestClusters(_ clusters: inout [VoiceCluster]) {
+    private struct ClusterMergeRequest {
+        let clusters: [VoiceCluster]
+        let evidence: VoiceClusteringRequest
+    }
+
+    private static func mergingClosestClusters(_ request: ClusterMergeRequest) -> [VoiceCluster] {
+        var clusters = request.clusters
         while clusters.count > 1 {
             var best: (left: Int, right: Int, distance: Float)?
             for left in clusters.indices {
                 for right in clusters.indices where right > left {
                     let distance = cosineDistance(clusters[left].sum, clusters[right].sum)
+                    let crossTrack = isMicrophoneSpeaker(clusters[left].label) != isMicrophoneSpeaker(clusters[right].label)
+                        && (clusters[left].label.hasPrefix(systemSpeakerPrefix) || clusters[right].label.hasPrefix(systemSpeakerPrefix))
+                    guard !crossTrack && distance <= speakerFixMergeCosineDistance
+                        || crossTrack && distance <= speakerFixEchoCosineDistance && matchesCrossTrackEcho(.init(
+                            left: clusters[left], right: clusters[right], evidence: request.evidence
+                        )) else { continue }
                     if distance < (best?.distance ?? .infinity) { best = (left, right, distance) }
                 }
             }
-            guard let best, best.distance <= speakerFixMergeCosineDistance else { return }
+            guard let best else { return clusters }
             clusters[best.left].absorb(clusters[best.right])
             clusters.remove(at: best.right)
         }
+        return clusters
+    }
+
+    private struct EchoClusterRequest {
+        let left: VoiceCluster
+        let right: VoiceCluster
+        let evidence: VoiceClusteringRequest
+    }
+
+    private static func matchesCrossTrackEcho(_ request: EchoClusterRequest) -> Bool {
+        let leftIsMicrophone = isMicrophoneSpeaker(request.left.label)
+        let rightIsMicrophone = isMicrophoneSpeaker(request.right.label)
+        guard leftIsMicrophone != rightIsMicrophone else { return false }
+        let microphone = leftIsMicrophone ? request.left : request.right
+        let system = leftIsMicrophone ? request.right : request.left
+        guard system.label.hasPrefix(systemSpeakerPrefix) else { return false }
+        let microphoneIntervals = request.evidence.intervals.filter { microphone.members[$0.speakerID] != nil }
+        let systemIntervals = request.evidence.intervals.filter { system.members[$0.speakerID] != nil }
+        let microphoneWords = request.evidence.words.compactMap { word, source -> TranscriptWord? in
+            guard source == .microphone,
+                  microphoneIntervals.contains(where: {
+                      $0.startTime < word.endTime && $0.endTime > word.startTime
+                  }) else { return nil }
+            return word
+        }
+        let systemWords = request.evidence.words.compactMap { word, source -> TranscriptWord? in
+            guard source == .systemAudio,
+                  systemIntervals.contains(where: {
+                      $0.startTime < word.endTime && $0.endTime > word.startTime
+                  }) else { return nil }
+            return word
+        }
+        guard microphoneWords.count >= 6 else { return false }
+        let matching = microphoneWords.filter { matchesWords(.init(word: $0, candidates: systemWords)) }.count
+        return Double(matching) / Double(microphoneWords.count) >= 0.6
     }
 
     private struct MinorClusterRequest {
         let clusters: [VoiceCluster]
-        let intervals: [DiarizedInterval]
+        let evidence: VoiceClusteringRequest
     }
 
     private static func attachingMinorClusters(_ request: MinorClusterRequest) -> [VoiceCluster] {
         let clusters = request.clusters
-        let largest = clusters.map(\.duration).max() ?? 0
-        let isMinor = { (cluster: VoiceCluster) in cluster.duration < largest * speakerFixMinorClusterShare }
+        let isMinor = { (cluster: VoiceCluster) in
+            let largest = clusters.filter {
+                isMicrophoneSpeaker($0.label) == isMicrophoneSpeaker(cluster.label)
+            }.map(\.duration).max() ?? 0
+            return cluster.duration < largest * speakerFixMinorClusterShare
+                || cluster.duration <= 8 && cluster.duration < largest * 0.9
+        }
         let minors = clusters.filter(isMinor).sorted { $0.duration < $1.duration }
         var majors = clusters.filter { !isMinor($0) }
         var remaining: [VoiceCluster] = []
@@ -123,8 +205,8 @@ extension RecordingTranscriptAssembler {
                 isMicrophoneSpeaker(minor.label) != isMicrophoneSpeaker(majors[index].label)
             } ?? false
             let overlapsOtherTrack = nearest.map { index in
-                let minorIntervals = request.intervals.filter { minor.members[$0.speakerID] != nil }
-                let majorIntervals = request.intervals.filter { majors[index].members[$0.speakerID] != nil }
+                let minorIntervals = request.evidence.intervals.filter { minor.members[$0.speakerID] != nil }
+                let majorIntervals = request.evidence.intervals.filter { majors[index].members[$0.speakerID] != nil }
                 let overlap = minorIntervals.reduce(0.0) { total, interval in
                     total + majorIntervals.reduce(0.0) { subtotal, major in
                         subtotal + max(0, min(interval.endTime, major.endTime) - max(interval.startTime, major.startTime))
@@ -134,7 +216,18 @@ extension RecordingTranscriptAssembler {
             } ?? false
             let threshold = isCrossTrack && overlapsOtherTrack
                 ? speakerFixAttachCosineDistance : speakerFixMergeCosineDistance
-            if let nearest, cosineDistance(minor.sum, majors[nearest].sum) <= threshold {
+            let nearestDistance = nearest.map { cosineDistance(minor.sum, majors[$0].sum) } ?? .infinity
+            let nextDistance = majors.indices.filter { $0 != nearest }.map {
+                cosineDistance(minor.sum, majors[$0].sum)
+            }.min() ?? .infinity
+            let isShortMicrophoneFragment = !isCrossTrack && isMicrophoneSpeaker(minor.label)
+                && (minor.duration <= 3 && nearestDistance <= 0.4
+                    || minor.duration <= 8 && nearestDistance <= 0.3)
+                && nextDistance - nearestDistance >= 0.15
+            let corroborated = nearest.map {
+                !isCrossTrack || matchesCrossTrackEcho(.init(left: minor, right: majors[$0], evidence: request.evidence))
+            } ?? false
+            if let nearest, corroborated && (nearestDistance <= threshold || isShortMicrophoneFragment) {
                 majors[nearest].absorb(minor)
             } else {
                 remaining.append(minor)
@@ -195,15 +288,17 @@ extension RecordingTranscriptAssembler {
             }
             let resolved = RecordingTranscriptAssembler.speakerID(word: request.word, intervals: intervals)
             guard resolved == "undiarized" else { return resolved }
-            let nearest = intervals.min { left, right in
-                distance(from: request.word, to: left) < distance(from: request.word, to: right)
-            }
-            return nearest?.speakerID ?? (request.source == .microphone ? microphoneSpeakerID : resolved)
+            let nativeIDs = Set(intervals.map(\.speakerID).filter { speakerID in
+                switch request.source {
+                case .microphone: RecordingTranscriptAssembler.isMicrophoneSpeaker(speakerID)
+                case .systemAudio: speakerID.hasPrefix(RecordingTranscriptAssembler.systemSpeakerPrefix)
+                case .mixed: false
+                }
+            })
+            if nativeIDs.count == 1 { return nativeIDs.first! }
+            return "undiarized"
         }
 
-        private func distance(from word: TranscriptWord, to interval: DiarizedInterval) -> TimeInterval {
-            max(0, interval.startTime - word.endTime, word.startTime - interval.endTime)
-        }
     }
 
     struct WordSourceInferenceRequest {

@@ -1,11 +1,7 @@
 import Foundation
 
 enum RecordingTranscriptAssembler {
-    enum WordSource: Equatable, Sendable {
-        case microphone
-        case systemAudio
-        case mixed
-    }
+    typealias WordSource = TranscriptWord.Source
 
     struct Request {
         let mediaPath: String
@@ -17,6 +13,8 @@ enum RecordingTranscriptAssembler {
         let words: [TranscriptWord]
         let wordSources: [WordSource]
         let diarizedIntervals: [DiarizedInterval]
+        let sourceVoiceLinks: [String: String]
+        let preservesDetectedSpeakers: Bool
 
         init(
             mediaPath: String,
@@ -27,7 +25,9 @@ enum RecordingTranscriptAssembler {
             suggestedTitle: String?,
             words: [TranscriptWord],
             wordSources: [WordSource] = [],
-            diarizedIntervals: [DiarizedInterval]
+            diarizedIntervals: [DiarizedInterval],
+            sourceVoiceLinks: [String: String] = [:],
+            preservesDetectedSpeakers: Bool = false
         ) {
             self.mediaPath = mediaPath
             self.generatedAt = generatedAt
@@ -38,6 +38,8 @@ enum RecordingTranscriptAssembler {
             self.words = words
             self.wordSources = wordSources
             self.diarizedIntervals = diarizedIntervals
+            self.sourceVoiceLinks = sourceVoiceLinks
+            self.preservesDetectedSpeakers = preservesDetectedSpeakers
         }
     }
 
@@ -48,14 +50,16 @@ enum RecordingTranscriptAssembler {
     static func assemble(_ request: Request) -> RecordingTranscript {
         let sources = request.wordSources.count == request.words.count
             ? request.wordSources
-            : Array(repeating: WordSource.mixed, count: request.words.count)
+            : request.words.map { $0.source ?? .mixed }
         let paired = zip(request.words, sources).sorted { left, right in
             if left.0.startTime == right.0.startTime {
                 return left.0.endTime < right.0.endTime
             }
             return left.0.startTime < right.0.startTime
         }
-        let labels = voiceClusterLabels(request.diarizedIntervals)
+        let labels = voiceClusterLabels(.init(intervals: request.diarizedIntervals, words: paired,
+                                              sourceVoiceLinks: request.sourceVoiceLinks,
+                                              preservesDetectedSpeakers: request.preservesDetectedSpeakers))
         let trackIntervals = TrackIntervals(.init(intervals: request.diarizedIntervals, labels: labels))
         return voiceGroupedTranscript(VoiceGroupingRequest(
             metadata: .init(request),
@@ -100,6 +104,7 @@ enum RecordingTranscriptAssembler {
         let duration: TimeInterval
         let confidence: Float
         let suggestedTitle: String?
+        let quality: TranscriptionQuality?
 
         init(_ request: Request) {
             id = UUID()
@@ -108,6 +113,7 @@ enum RecordingTranscriptAssembler {
             duration = request.duration
             confidence = request.confidence
             suggestedTitle = request.suggestedTitle
+            quality = nil
         }
 
         init(_ transcript: RecordingTranscript) {
@@ -117,6 +123,7 @@ enum RecordingTranscriptAssembler {
             duration = transcript.duration
             confidence = transcript.confidence
             suggestedTitle = transcript.suggestedTitle
+            quality = transcript.quality
         }
     }
 
@@ -129,7 +136,18 @@ enum RecordingTranscriptAssembler {
     }
 
     static func assignedTranscript(_ request: AssignmentRequest) -> RecordingTranscript {
-        let assignedWords = request.words
+        let assignedWords = request.words.compactMap { assigned -> AssignedWord? in
+            let word = assigned.word
+            guard word.startTime.isFinite, word.endTime.isFinite, word.startTime >= 0,
+                  word.endTime >= word.startTime else { return nil }
+            guard request.metadata.duration.isFinite, request.metadata.duration > 0 else { return assigned }
+            guard word.startTime < request.metadata.duration else { return nil }
+            return AssignedWord(word: .init(
+                text: word.text, startTime: word.startTime,
+                endTime: min(word.endTime, request.metadata.duration),
+                confidence: word.confidence, speakerID: word.speakerID, source: word.source
+            ), rawSpeakerID: assigned.rawSpeakerID)
+        }
         let candidateWords = request.hasSeparateTracks
             ? stabilizedPerTrack(assignedWords)
             : stabilizedSpeakerAssignments(.init(words: assignedWords, minimumWords: 100))
@@ -150,6 +168,7 @@ enum RecordingTranscriptAssembler {
         let segments = TranscriptSegmentBuilder.segments(from: normalizedWords)
         let microphoneSpeakerCount = normalizedSpeakerIDs.keys.filter(isMicrophoneSpeaker).count
         let speakers = normalizedSpeakerIDs
+            .filter { $0.value != RecordingTranscript.Speaker.unassignedID }
             .sorted { speakerNumber($0.value) < speakerNumber($1.value) }
             .map { rawID, displayID in
                 RecordingTranscript.Speaker(
@@ -161,7 +180,7 @@ enum RecordingTranscriptAssembler {
             }
 
         return RecordingTranscript(
-            version: 2,
+            version: 3,
             id: request.metadata.id,
             mediaPath: request.metadata.mediaPath,
             generatedAt: request.metadata.generatedAt,
@@ -177,10 +196,12 @@ enum RecordingTranscriptAssembler {
                     startTime: assigned.word.startTime,
                     endTime: assigned.word.endTime,
                     confidence: assigned.word.confidence,
-                    speakerID: assigned.speakerID
+                    speakerID: assigned.speakerID,
+                    source: assigned.word.source
                 )
             },
-            speechRanges: request.speechRanges
+            speechRanges: request.speechRanges,
+            quality: request.metadata.quality
         )
     }
 
@@ -266,10 +287,11 @@ enum RecordingTranscriptAssembler {
         }
         var result: [String: String] = [:]
         for speakerID in ordered {
-            result[speakerID] = "Speaker \(result.count + 1)"
-        }
-        if result.isEmpty {
-            result["undiarized"] = "Speaker 1"
+            if speakerID == "undiarized" {
+                result[speakerID] = RecordingTranscript.Speaker.unassignedID
+                continue
+            }
+            result[speakerID] = "Speaker \(result.values.filter { $0 != RecordingTranscript.Speaker.unassignedID }.count + 1)"
         }
         return result
     }

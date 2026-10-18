@@ -90,6 +90,7 @@ struct MCPTranscriptResponse: Codable, Equatable {
     let wordCount: Int
     let speakerCount: Int
     let transcript: String
+    let quality: TranscriptionQuality?
 }
 
 struct MCPExportStartRequest {
@@ -321,7 +322,8 @@ final class MCPProjectService {
             duration: transcript.duration,
             wordCount: transcript.wordCount,
             speakerCount: transcript.speakerCount,
-            transcript: transcript.formattedText
+            transcript: transcript.formattedText,
+            quality: transcript.quality
         )
     }
 

@@ -88,6 +88,9 @@ struct EditorExportControls: View {
             estimatedSizeCaption: recipe.encoding.estimatedSizeCaption,
             encodingDetail: recipe.encoding.detail,
             directory: vm.settings.outputDirectory,
+            lastExportDate: project?.exports
+                .filter { FileManager.default.fileExists(atPath: $0.path) }
+                .map(\.createdAt).max(),
             canExport: project != nil && vm.state == .idle && !vm.isExporting,
             export: export,
             chooseFolder: {

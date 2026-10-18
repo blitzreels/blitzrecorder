@@ -261,16 +261,9 @@ struct RecordingSettingsPage: View {
             BlitzAdaptiveRow() {
                 SettingsRowLabel(.init(
                     title: "Language",
-                    detail: vm.transcriptionController.selectedModel == .parakeet
-                        ? "Detected automatically for each recording."
-                        : "Pick a language if Automatic guesses wrong."
+                    detail: "Choose the spoken language, or let the app detect it."
                 ))
-                if vm.transcriptionController.selectedModel == .parakeet {
-                    Label("Automatic", systemImage: "globe")
-                        .font(BlitzType.label)
-                        .foregroundStyle(BlitzUI.secondaryText)
-                } else {
-                    BlitzSegmentedPicker(configuration: .init(
+                BlitzSegmentedPicker(configuration: .init(
                         title: "Language",
                         options: TranscriptionLanguage.allCases,
                         selection: Binding(
@@ -281,7 +274,28 @@ struct RecordingSettingsPage: View {
                     ))
                     .controlSize(.small)
                     .fixedSize()
-                }
+            }
+            .frame(minHeight: 56)
+            .settingsRow()
+
+            SettingsRowDivider()
+
+            BlitzAdaptiveRow() {
+                SettingsRowLabel(.init(
+                    title: "Speaker count",
+                    detail: "Choose 2 for a call with two people, including a shared microphone."
+                ))
+                BlitzSegmentedPicker(configuration: .init(
+                    title: "Speaker count",
+                    options: TranscriptionSpeakerCount.allCases,
+                    selection: Binding(
+                        get: { vm.transcriptionController.speakerCount },
+                        set: { vm.transcriptionController.speakerCount = $0 }
+                    ),
+                    label: { $0.title }
+                ))
+                .controlSize(.small)
+                .fixedSize()
             }
             .frame(minHeight: 56)
             .settingsRow()
