@@ -45,7 +45,12 @@ final class EditorPaneProofTests: XCTestCase {
             try await Task.sleep(for: .seconds(isWarm ? 0.6 : 4))
             isWarm = true
             host.layoutSubtreeIfNeeded()
-            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            let scale = Int(environment["BLITZRECORDER_PROOF_SCALE"] ?? "") ?? 1
+            let bitmap = try XCTUnwrap(NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: Int(host.bounds.width) * scale, pixelsHigh: Int(host.bounds.height) * scale,
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+            bitmap.size = host.bounds.size
             host.cacheDisplay(in: host.bounds, to: bitmap)
             try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(
                 to: URL(fileURLWithPath: output).appendingPathComponent(

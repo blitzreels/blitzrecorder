@@ -250,7 +250,7 @@ struct BlitzUIKitEditor: View {
                             title: "Screen", symbol: "display", tint: BlitzUI.trackScreen, status: nil, height: 44,
                             isSelected: true, isInteractive: true, onSelect: {}, accessory: { EmptyView() }))
                         EditorTimelineTrackHeader(configuration: .init(
-                            title: "Transcript", symbol: "text.quote", tint: BlitzUI.accent, status: "Loading waveform",
+                            title: "Transcript", symbol: "text.quote", tint: BlitzUI.accent, status: "Loading",
                             height: 44, isSelected: false, isInteractive: true, onSelect: {},
                             accessory: { ProgressView().controlSize(.mini) }))
                     }

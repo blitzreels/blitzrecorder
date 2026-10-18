@@ -359,9 +359,13 @@ extension EditorTimelineView {
     func transcriptTrack(_ request: TranscriptTrackRequest) -> some View {
         if transcriptItems.isEmpty {
             HStack(spacing: 8) {
-                Text(transcriptionStatus.label)
-                    .font(BlitzType.caption)
-                    .foregroundStyle(BlitzUI.secondaryText)
+                if case .notGenerated = transcriptionStatus {
+                    EmptyView()
+                } else {
+                    Text(transcriptionStatus.label)
+                        .font(BlitzType.caption)
+                        .foregroundStyle(BlitzUI.secondaryText)
+                }
                 Button("Generate transcript", action: onGenerateTranscript)
                     .blitzButton(.secondary)
                     .controlSize(.mini)

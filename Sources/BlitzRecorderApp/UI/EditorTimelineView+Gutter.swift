@@ -46,7 +46,7 @@ extension EditorTimelineView {
                     tint: row.asset?.tint ?? BlitzUI.supportingText,
                     status: row.title == "Transcript" && transcriptionStatus.isRunning ? transcriptionStatus.label
                         : row.asset.map { library.loadingIDs.contains($0.id) } == true
-                        ? (row.asset?.isAudio == true ? "Loading waveform" : "Loading previews")
+                        ? "Loading"
                         : isOff ? (row.asset?.isVideo == true ? "Hidden" : "Muted") : nil,
                     height: row.height, isSelected: isSelected, isInteractive: isInteractive,
                     onSelect: onSelect,
