@@ -36,16 +36,16 @@ const sourceLinks: FooterLink[] = [
 
 export function SiteFooter() {
   return (
-    <footer className="border-t border-separator">
-      <Container>
+    <footer className="shadow-[inset_0_1px_0_rgb(255_255_255/7%)]">
+      <Container width="page">
         <div className="grid gap-12 py-16 sm:grid-cols-3 lg:grid-cols-[1.5fr_1fr_1fr_1fr]">
           <div className="max-w-xs sm:col-span-3 lg:col-span-1">
             <Link href="/" className="inline-flex items-center gap-2.5">
-              <Image src={assets.macIcon} width={32} height={32} alt="" className="rounded-[22%]" />
-              <span className="font-display text-lg font-bold tracking-[-0.02em]">BlitzRecorder</span>
+              <Image src={assets.macIcon} width={22} height={22} alt="" className="size-[22px] rounded-[22.5%]" />
+              <span className="text-[15px] font-semibold tracking-[-0.02em]">BlitzRecorder</span>
             </Link>
             <p className="mt-4 text-sm leading-6 text-faint">
-              Record and edit on your Mac. Free and open source.
+              A free Mac app to record your screen and your face. Open source.
             </p>
             <BlitzReelsLink
               content="footer_byline"
@@ -78,8 +78,8 @@ export function SiteFooter() {
 function FooterNav({ title, links }: { title: string; links: FooterLink[] }) {
   return (
     <nav className="text-sm" aria-label={title}>
-      <p className="label-mono text-faint">{title}</p>
-      <ul className="mt-4 flex flex-col gap-3 text-muted-foreground">
+      <p className="text-[13px] font-medium text-white/90">{title}</p>
+      <ul className="mt-4 flex flex-col gap-2.5 text-[13px] text-white/50">
         {links.map((link) => (
           <li key={link.label}>
             <FooterAnchor link={link} />

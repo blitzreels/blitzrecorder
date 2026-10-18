@@ -48,23 +48,23 @@ const VideoCard = ({ video, copied, onCopy }: {
       {formatTime(video.duration)}
     </span> : null}
   </div>;
-  const heading = <div className="flex flex-col gap-1 px-3 pt-3">
-    <h2 className="line-clamp-2 text-sm font-medium text-pretty">{video.title}</h2>
-    <p className={`text-xs ${video.status === "failed" ? "text-warning" : "text-faint"}`}>{statusLabel(video)}{video.storage === "cloudflare" ? " · Your Cloudflare" : ""} · {shortDate(video.createdAt)}</p>
+  const heading = <div className="flex flex-col gap-1 px-4 pt-3.5">
+    <h2 className="line-clamp-2 text-[15px] font-semibold tracking-[-0.01em] text-pretty">{video.title}</h2>
+    <p className={`text-[13px] ${video.status === "failed" ? "text-warning" : "text-faint"}`}>{statusLabel(video)}{video.storage === "cloudflare" ? " · Your Cloudflare" : ""} · {shortDate(video.createdAt)}</p>
   </div>;
-  return <article className="flex flex-col overflow-hidden rounded-card bg-card">
+  return <article className="product-surface flex flex-col overflow-hidden rounded-[16px]">
     {shared ? <Link href={sharePath(video.slug)} aria-label={`Open ${video.title}`}
       className="group/card block outline-none transition-colors hover:bg-fill-hover focus-visible:bg-fill-hover focus-visible:ring-3 focus-visible:ring-ring/40 active:opacity-75 [&_video]:pointer-events-none [&_img]:pointer-events-none">
       {preview}{heading}
     </Link> : <div>{preview}{heading}</div>}
-    <div className="mt-auto flex flex-wrap items-center gap-1.5 p-3">
+    <div className="mt-auto flex flex-wrap items-center gap-1.5 px-3 pt-2 pb-3">
       {shared && <Button type="button" size="sm" variant="ghost"
         aria-label={copied ? "Link copied" : `Copy link to ${video.title}`} onClick={() => onCopy(video.slug)}>
         {copied ? <Check /> : <Link2 />} {copied ? "Copied" : "Copy link"}
       </Button>}
       {ready && <ListingButton slug={video.slug} listed={video.listed} title={video.title} />}
       <StopSharing slug={video.slug} title={video.title} current={false}
-        trigger={<Button type="button" size="sm" variant="destructive" aria-label={`Stop sharing ${video.title}`} />}>
+        trigger={<Button type="button" size="sm" variant="destructive" className="ml-auto" aria-label={`Stop sharing ${video.title}`} />}>
         <Link2Off /> Stop sharing
       </StopSharing>
     </div>
@@ -89,7 +89,7 @@ export const VideoLibrary = ({ videos }: { videos: Array<LibraryVideo & { clip?:
     });
   };
 
-  return <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+  return <ul className="grid grid-cols-1 gap-5 md:grid-cols-2 2xl:grid-cols-3">
     {videos.map((video) => <li key={video.slug}>
       <VideoCard video={video} copied={copied === video.slug} onCopy={copy} />
     </li>)}

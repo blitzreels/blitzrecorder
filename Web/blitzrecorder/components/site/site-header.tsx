@@ -3,7 +3,7 @@ import Link from "next/link";
 import { SiteMark } from "@/components/site/site-mark";
 import { cn } from "@/lib/utils";
 
-export const navItemClass = "inline-flex h-8 items-center rounded-control px-2.5 text-sm text-muted-foreground outline-none transition-colors hover:bg-fill-quiet hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/40";
+export const navItemClass = "inline-flex h-8 items-center rounded-control px-2.5 text-[13px] font-medium text-white/60 outline-none transition-colors hover:text-white focus-visible:ring-3 focus-visible:ring-ring/40";
 
 export const NavItem = ({ href, current, className, children, onClick }: {
   href: string; current?: boolean; className?: string; children: ReactNode; onClick?: () => void;
@@ -23,11 +23,11 @@ export const SiteHeader = ({ position = "sticky", tone = "solid", compact = fals
   trailing?: ReactNode;
   menu?: ReactNode;
 }) => <header className={cn(
-  "inset-x-0 top-0 z-40 border-b transition-colors duration-200",
+  "inset-x-0 top-0 z-40 transition-colors duration-200",
   position === "fixed" ? "fixed" : "sticky",
-  tone === "opaque" ? "border-separator bg-background" : tone === "solid" ? "glass border-separator" : "border-transparent bg-transparent",
+  tone === "opaque" ? "bg-background shadow-[inset_0_-1px_0_rgb(255_255_255/7%)]" : tone === "solid" ? "bg-background/72 shadow-[inset_0_-1px_0_rgb(255_255_255/7%)] backdrop-blur-xl backdrop-saturate-150" : "bg-transparent",
 )}>
-  <div className={cn("mx-auto flex h-16 items-center gap-2", innerClassName ?? "w-[min(1180px,calc(100%-32px))]")}>
+  <div className={cn("mx-auto flex h-14 items-center gap-2", innerClassName ?? "w-[min(1360px,calc(100%-32px))]")}>
     {leading}
     <SiteMark compact={compact} />
     {nav}

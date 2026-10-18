@@ -4,7 +4,6 @@ import { notFound } from "next/navigation";
 import { sharedAsset } from "@/lib/hosting/service";
 import { mediaURL } from "@/lib/hosting/model";
 import { ownerLibrary, viewerAccount } from "@/lib/hosting/web-session";
-import { activeSessionCount } from "@/lib/hosting/account";
 import { SharedVideoView, type SharedViewer } from "./shared-video-view";
 import { shareDescription } from "@/lib/hosting/brief";
 import { EMPTY_DETAILS, shareDetails } from "@/lib/hosting/details";
@@ -50,9 +49,8 @@ export default async function SharedVideoPage({ params }: { params: Promise<{ sl
   const [asset, account] = await Promise.all([loadShared(slug), viewerAccount()]);
   if (!asset || !asset.width || !asset.height) notFound();
   const owner = account?.id === asset.account_id;
-  const [library, sessions] = account && owner
-    ? await Promise.all([ownerLibrary(account), activeSessionCount(account)]) : [null, 0];
-  const viewer: SharedViewer | null = account && { email: account.email, library, sessions };
+  const library = account && owner ? await ownerLibrary(account) : null;
+  const viewer: SharedViewer | null = account && { email: account.email, library };
   const has = (path: string) => asset.files.some((file) => file.path === path);
   const duration = asset.duration ?? asset.declared_seconds;
   const details = shareDetails({ details: asset.viewer_details ?? EMPTY_DETAILS, duration });

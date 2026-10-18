@@ -18,26 +18,45 @@ The site mirrors the Mac app. Tokens live in `app/globals.css` and copy `BlitzUI
 | `border` / `separator` | white 10% / 8% | `panelStroke` / `separator` |
 | `track-*` | cyan, teal, `#b88aff`, `#5c8fff` | `trackScreen`, `trackCamera`, `trackMicrophone`, `trackSystemAudio` |
 
+## Type
+
+Geist for everything, Geist Mono only for timecodes. Headings are Geist semibold set tight:
+`.type-hero` (page titles, -0.045em), `.type-title` (section titles, -0.04em), `.type-statement`
+(sentence-sized statements, weight 500). Body copy is 15 to 20px in `muted-foreground`. Section titles are
+sentences, never labels: no small or uppercase text above a heading.
+
 ## Radius
 
 | Class | Value | Use |
 | --- | --- | --- |
-| `rounded-inner` | 6px | segments inside a control, timeline clips, canvas frame |
-| `rounded-control` | 8px | buttons, inputs, segmented controls, pills (`BlitzControlMetrics.radius`) |
-| `rounded-tile` | 10px | layout tiles (`sceneCardRadius`) |
-| `rounded-card` | 12px | panels, windows, cards (`cardRadius`) |
-
-`rounded-full` is only for dots, bars, and progress tracks.
+| `rounded-inner` | 8px | timeline clips, segments inside a control |
+| `rounded-control` | pill | buttons, inputs, segmented controls |
+| `rounded-tile` | 16px | small media, phone screens |
+| `rounded-card` | 24px | dialogs, large panels |
+| `rounded-[20px]` | 20px | product shots (`.product-surface`) |
 
 ## Controls
 
-`Button` follows `BlitzButtonStyle`: `default` = accent (mint, black 88% text),
-`outline` = secondary (control fill + 10% stroke), `ghost` = quiet.
-Heights: `sm` 28, `default` 34, `lg` 40.
+`Button` keeps `BlitzButtonStyle` colors: `default` = accent (mint, black 88% text),
+`outline` = secondary, `ghost` = quiet. Shape is a pill. Heights: `sm` 32, `default` 36, `lg` 48.
+Selected options in a segmented control are white with black text; mint is for the main action.
 
 ## Surfaces
 
-- `.panel`: flat `card` fill, no stroke. No cards nested in cards.
-- `.app-surface`: add to a panel that draws a piece of the app (window, canvas, timeline).
-- Selection is a brighter fill (`fill-selected`), not a mint outline.
+- Sections sit on the black page. No grey bands, no cards inside cards.
+- `.product-surface`: a piece of the product on the page (hairline edge, lit top edge, deep soft shadow). `Card` uses it.
+- Product shots use the device frames in `components/site/devices.tsx` (MacBook, iPhone) and only real material:
+  app renders from `Scripts/ui-proof.sh` (`BLITZRECORDER_PROOF_SCALE=2`) and real exports from published videos.
+  Never a mock UI or a scripted demo video.
+- Viewfinder corner marks (`FrameMarks`) only on the 404 and error screens (`Problem`).
 - No gradients on text, no grain, no glows.
+
+## Motion
+
+Device videos play silently while on screen (`useLoopingVideos`) and pause off screen. Everything else moves only
+when the visitor acts (a toggle, a button). No fade-in on scroll. Reduced motion keeps the posters.
+
+## Copy
+
+Outcomes, not features. Say a reassurance once, at the point of action (under the download button). No release
+counts or build details on marketing pages.

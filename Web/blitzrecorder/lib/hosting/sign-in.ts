@@ -1,4 +1,5 @@
 import { createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
+import { sendEmail } from "@/lib/email";
 import { transaction } from "./db";
 import { connectAccountInTransaction } from "./account";
 import { assertHostingEnabled, HostingError, required, tokenHash } from "./model";
@@ -17,12 +18,17 @@ export function signInEmail(body: unknown): string {
   return email.trim().toLowerCase();
 }
 
+/** Production always emails. Local development without a Resend key hands the code straight back to the form. */
+function codeDelivery(): { kind: "email"; apiKey: string; from: string } | { kind: "console" } {
+  if (process.env.NODE_ENV === "development" && !process.env.HOSTING_EMAIL_API_KEY) return { kind: "console" };
+  return { kind: "email", apiKey: required("HOSTING_EMAIL_API_KEY"), from: required("HOSTING_EMAIL_FROM") };
+}
+
 export async function requestSignInCode({ body, network }: { body: unknown; network: string }) {
   assertHostingEnabled();
   const email = signInEmail(body);
-  const apiKey = required("HOSTING_EMAIL_API_KEY");
-  const from = required("HOSTING_EMAIL_FROM");
-  if (!/^BlitzRecorder <[^<>\s]+@(?:[a-z0-9-]+\.)?blitzrecorder\.com>$/.test(from)) {
+  const delivery = codeDelivery();
+  if (delivery.kind === "email" && !/^BlitzRecorder <[^<>\s]+@(?:[a-z0-9-]+\.)?blitzrecorder\.com>$/.test(delivery.from)) {
     throw new HostingError({ status: 503, message: "BlitzRecorder email sign-in is not configured yet." });
   }
   const challenge = randomBytes(32).toString("base64url");
@@ -45,15 +51,17 @@ export async function requestSignInCode({ body, network }: { body: unknown; netw
     await db.query("INSERT INTO hosting_sign_in_codes(challenge_hash,email,code_hash,network_hash) VALUES($1,$2,$3,$4)",
       [hash, email, digest(`${challenge}:${code}`), networkHash]);
   });
+  if (delivery.kind === "console") {
+    console.info(`[dev] BlitzRecorder sign-in code for ${email}: ${code}`);
+    return { challenge, email, expiresIn: 600, retryAfter: 60, devCode: code };
+  }
   try {
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST", redirect: "error", signal: AbortSignal.timeout(15_000),
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "Idempotency-Key": `hosting-sign-in/${hash}` },
-      body: JSON.stringify({ from, to: [email], subject: `${code} is your BlitzRecorder sign-in code`,
-        text: `Your BlitzRecorder sign-in code is ${code}.\n\nEnter it in the BlitzRecorder app or on blitzrecorder.com to create or access your account. It expires in 10 minutes.\n\nIf you did not request this code, you can ignore this email.`,
-        html: `<div style="font-family:system-ui,sans-serif;max-width:480px;margin:auto;padding:32px;color:#171717"><p style="font-weight:700">BlitzRecorder</p><h1 style="font-size:24px">Your sign-in code</h1><p>Enter this code in the BlitzRecorder app or on blitzrecorder.com to create or access your account.</p><p style="font-size:36px;font-weight:700;letter-spacing:8px">${code}</p><p>This code expires in 10 minutes.</p><p style="color:#737373;font-size:13px">If you did not request this code, you can ignore this email.</p></div>` }),
+    await sendEmail({
+      apiKey: delivery.apiKey, from: delivery.from, to: email, idempotencyKey: `hosting-sign-in/${hash}`,
+      subject: `${code} is your BlitzRecorder sign-in code`,
+      text: `Your BlitzRecorder sign-in code is ${code}.\n\nEnter it in the BlitzRecorder app or on blitzrecorder.com to create or access your account. It expires in 10 minutes.\n\nIf you did not request this code, you can ignore this email.`,
+      html: `<div style="font-family:system-ui,sans-serif;max-width:480px;margin:auto;padding:32px;color:#171717"><p style="font-weight:700">BlitzRecorder</p><h1 style="font-size:24px">Your sign-in code</h1><p>Enter this code in the BlitzRecorder app or on blitzrecorder.com to create or access your account.</p><p style="font-size:36px;font-weight:700;letter-spacing:8px">${code}</p><p>This code expires in 10 minutes.</p><p style="color:#737373;font-size:13px">If you did not request this code, you can ignore this email.</p></div>`,
     });
-    if (!response.ok) throw new Error("delivery");
   } catch {
     throw new HostingError({ status: 503, message: "We could not confirm email delivery. If no code arrives, wait a minute and try again." });
   }

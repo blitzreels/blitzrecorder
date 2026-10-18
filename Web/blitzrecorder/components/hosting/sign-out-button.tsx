@@ -32,12 +32,3 @@ export const SignOutButton = ({ scope = "device", className, children }: {
     {failed && <span role="alert" className="sr-only">{failed}</span>}
   </form>;
 };
-
-/** Other sessions are the Mac apps and browsers this account signed in on besides this one. */
-export const SignOutEverywhere = ({ sessions, className }: { sessions: number; className?: string }) => {
-  if (sessions <= 1) return null;
-  return <SignOutButton scope="everywhere" className={className
-    ?? "text-xs text-faint underline-offset-4 transition-colors hover:text-foreground hover:underline disabled:opacity-60"}>
-    Sign out of all {sessions} devices
-  </SignOutButton>;
-};

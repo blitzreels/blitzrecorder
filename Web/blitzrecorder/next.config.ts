@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Tailwind keeps the stylesheet small; inlining it removes the render-blocking request for first visits.
+  experimental: { inlineCss: true },
   async redirects() {
     return [
       // Legacy static .html paths → clean routes
@@ -10,8 +12,8 @@ const nextConfig: NextConfig = {
       { source: "/privacy.html", destination: "/privacy", permanent: true },
       { source: "/support.html", destination: "/support", permanent: true },
       { source: "/terms.html", destination: "/terms", permanent: true },
-      // People type /pricing; the license claim now lives on home.
-      { source: "/pricing", destination: "/#license", permanent: false },
+      // People type /pricing; the price lives on home.
+      { source: "/pricing", destination: "/#free", permanent: false },
       { source: "/hosting/videos", destination: "/videos", permanent: false },
       { source: "/hosting/sign-in", destination: "/sign-in", permanent: false },
       { source: "/hosting/complete", destination: "/billing", permanent: false },

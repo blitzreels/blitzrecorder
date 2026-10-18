@@ -7,9 +7,9 @@ import {
 } from "react";
 import { Check, Clapperboard, Link2, Link2Off, LoaderCircle, PanelLeft, Search, X } from "lucide-react";
 import { ListingButton } from "@/components/hosting/listing-button";
-import { SignOutButton, SignOutEverywhere } from "@/components/hosting/sign-out-button";
+import { SignOutButton } from "@/components/hosting/sign-out-button";
 import { formatTime } from "@/lib/hosting/details";
-import { sharePath, videosPath } from "@/lib/hosting/paths";
+import { accountPath, sharePath, videosPath } from "@/lib/hosting/paths";
 import type { LibraryVideo } from "@/lib/hosting/web-session";
 import styles from "./owner-library.module.css";
 import { StopSharing } from "@/components/hosting/stop-sharing";
@@ -83,8 +83,8 @@ const LibraryRow = memo(function LibraryRow({ video, current, copied, onCopy, on
   </li>;
 });
 
-export const OwnerLibrary = ({ videos, currentSlug, email, sessions }: {
-  videos: LibraryVideo[]; currentSlug: string; email: string | null; sessions: number;
+export const OwnerLibrary = ({ videos, currentSlug, email }: {
+  videos: LibraryVideo[]; currentSlug: string; email: string | null;
 }) => {
   const { open, setOpen } = useDrawer();
   const router = useRouter();
@@ -151,7 +151,7 @@ export const OwnerLibrary = ({ videos, currentSlug, email, sessions }: {
       <div className={styles.foot}>
         <div className={styles.account}>
           <span className={styles.email} title={email ?? undefined}>{email}</span>
-          <SignOutEverywhere sessions={sessions} />
+          <Link href={accountPath} className={styles.settings}>Account</Link>
         </div>
         <SignOutButton />
       </div>

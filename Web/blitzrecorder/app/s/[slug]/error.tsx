@@ -2,6 +2,6 @@
 
 import { ErrorScreen } from "@/components/hosting/error-screen";
 
-export default function SharedVideoError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
-  return <ErrorScreen error={error} reset={reset} subject="this video" />;
+export default function SharedVideoError({ error, retry }: { error: Error & { digest?: string }; retry: () => void }) {
+  return <ErrorScreen error={error} retry={retry} subject="this video" chrome="page" />;
 }

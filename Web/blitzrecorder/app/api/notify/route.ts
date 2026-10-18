@@ -1,5 +1,7 @@
+import { clientNetwork } from "@/lib/client-network";
 import { type NextRequest, NextResponse } from "next/server";
-import { recordNotifySignup } from "@/lib/notify-store";
+import { isDownloadLinkSource, sendDownloadLinkEmail } from "@/lib/download-link-email";
+import { claimDownloadEmail, recordNotifySignup, releaseDownloadEmail } from "@/lib/notify-store";
 
 export const runtime = "nodejs";
 
@@ -18,12 +20,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Invalid request." }, { status: 400 });
   }
 
-  const email = str(body?.email, 320);
+  const email = str(body?.email, 320)?.toLowerCase() ?? null;
   if (!email || !EMAIL_RE.test(email)) {
     return NextResponse.json({ ok: false, error: "Enter a valid email." }, { status: 400 });
   }
 
-  const source = str(body?.source, 80) ?? "site_notify";
+  const requested = str(body?.source, 80);
+  const source = requested && /^[a-z0-9_]+$/.test(requested) ? requested : "site_notify";
   const os = str(body?.os, 40);
 
   const attribution: Record<string, string> = {};
@@ -33,10 +36,24 @@ export async function POST(request: NextRequest) {
   if (referer) attribution.referrer = referer.slice(0, 500);
 
   try {
-    const stored = await recordNotifySignup({ email, source, os, attribution });
+    const signup = await recordNotifySignup({ email, source, os, attribution });
+    // One download email per address, ever, so the form can't be used to fill someone's inbox.
+    const claim = isDownloadLinkSource(source)
+      ? await claimDownloadEmail({ email, network: clientNetwork(request) })
+      : null;
+    if (claim === "limited") {
+      return NextResponse.json({ ok: false, error: "Too many requests from this network. Try again in an hour." }, { status: 429 });
+    }
+    if (claim === "claimed") {
+      const sent = await sendDownloadLinkEmail({ email }).catch(() => false);
+      if (!sent) {
+        await releaseDownloadEmail(email);
+        return NextResponse.json({ ok: false, error: "We couldn’t send the email. Try again in a minute." }, { status: 503 });
+      }
+    }
     // Report success even when the store is unconfigured (dev/preview): the
     // visitor experience is unchanged and production has POSTGRES_URL set.
-    return NextResponse.json({ ok: true, stored });
+    return NextResponse.json({ ok: true, stored: signup !== "unconfigured" });
   } catch {
     return NextResponse.json({ ok: false, error: "Something went wrong. Please try again." }, { status: 500 });
   }

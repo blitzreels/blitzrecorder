@@ -25,7 +25,7 @@ export function DownloadButton({
   source,
 }: {
   className: string;
-  size: "default" | "lg";
+  size: "sm" | "default" | "lg";
   label: string;
   source: string;
 }) {

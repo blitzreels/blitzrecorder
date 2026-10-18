@@ -2,12 +2,16 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { RotateCw, WifiOff, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Problem } from "@/components/site/problem";
 import { StatusScreen } from "./status-screen";
 
-export const ErrorScreen = ({ error, reset, subject }: {
-  error: Error & { digest?: string }; reset: () => void; subject: string;
+/**
+ * Body of every `error.tsx`. `retry` is Next's refetch-and-rerender; `page` draws its own bar,
+ * `inline` sits inside a layout that already has one (the dashboard shell).
+ */
+export const ErrorScreen = ({ error, retry, subject, chrome }: {
+  error: Error & { digest?: string }; retry: () => void; subject: string; chrome: "page" | "inline";
 }) => {
   const [offline, setOffline] = useState(false);
 
@@ -21,15 +25,17 @@ export const ErrorScreen = ({ error, reset, subject }: {
 
   useEffect(() => { console.error(error); }, [error]);
 
-  return <StatusScreen icon={offline ? <WifiOff /> : <TriangleAlert />}
-    title={offline ? "You’re offline" : `We couldn’t load ${subject}`}
-    actions={<>
-      <Button onClick={reset}><RotateCw /> Try again</Button>
-      <Button variant="ghost" render={<Link href="/" />}>Go to BlitzRecorder</Button>
-    </>}
-    footer={error.digest ? <>Error reference <span className="font-mono">{error.digest}</span></> : null}>
-    {offline
+  const props = {
+    mark: offline ? "Offline" : "Error",
+    title: offline ? "You’re offline" : `We couldn’t load ${subject}`,
+    actions: <>
+      <Button size="lg" onClick={retry}>Try again</Button>
+      <Button size="lg" variant="outline" render={<Link href="/" />}>Go home</Button>
+    </>,
+    footer: error.digest ? <>Reference <span className="font-mono">{error.digest}</span></> : null,
+    children: offline
       ? "Reconnect to the internet, then try again."
-      : "This is on our side, not yours. It usually clears up in a moment. If it keeps happening, email support@blitzreels.com with the reference below."}
-  </StatusScreen>;
+      : "Something failed on our side. It usually clears up in a moment. If it keeps happening, email support@blitzreels.com with the reference below.",
+  };
+  return chrome === "page" ? <StatusScreen {...props} /> : <Problem {...props} fill={false} />;
 };

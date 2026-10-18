@@ -22,8 +22,7 @@ export default function WebMCPPage() {
       <SiteNav />
       <main>
         <Section width="md" className="flex min-h-[80vh] flex-col justify-center pt-32 pb-24">
-          <p className="label-mono text-primary">Local WebMCP</p>
-          <Heading level={1} className="mt-6 max-w-[14ch] text-[clamp(2.5rem,6vw,4.5rem)] leading-[0.95]">
+          <Heading level={1} className="max-w-[14ch]">
             Your recordings stay inside BlitzRecorder.
           </Heading>
           <Paragraph className="mt-6 max-w-xl">
@@ -36,10 +35,10 @@ export default function WebMCPPage() {
             </Button>
             <span className="text-sm text-faint">Requires BlitzRecorder to be open on this Mac</span>
           </div>
-          <dl className="panel mt-14 grid rounded-card sm:grid-cols-3">
+          <dl className="product-surface mt-14 grid rounded-[20px] sm:grid-cols-3">
             {facts.map((fact) => (
               <div key={fact.label} className="border-t border-separator p-5 first:border-t-0 sm:border-t-0 sm:border-l sm:first:border-l-0 sm:p-6">
-                <dt className="label-mono text-faint">{fact.label}</dt>
+                <dt className="text-[13px] text-faint">{fact.label}</dt>
                 <dd className="mt-3 font-display text-lg font-bold tracking-[-0.01em]">{fact.value}</dd>
               </div>
             ))}

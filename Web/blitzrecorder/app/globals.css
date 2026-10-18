@@ -20,10 +20,10 @@
   --color-track-camera: var(--track-camera);
   --color-track-mic: var(--track-mic);
   --color-track-system: var(--track-system);
-  --radius-inner: 6px;
-  --radius-control: 8px;
-  --radius-tile: 10px;
-  --radius-card: 12px;
+  --radius-inner: 8px;
+  --radius-control: 9999px;
+  --radius-tile: 16px;
+  --radius-card: 24px;
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
@@ -139,7 +139,6 @@
   body {
     @apply bg-background text-foreground antialiased;
     text-rendering: optimizeLegibility;
-    font-feature-settings: "ss01", "cv11";
   }
   :focus-visible {
     outline: 2px solid var(--primary);
@@ -152,97 +151,30 @@
 }
 
 
-/* Mono label: timecodes, chapter names, captions. */
-.label-mono {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  line-height: 1rem;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-variant-numeric: tabular-nums;
+/* Headings: Geist semibold, set tight the way Apple and Linear set their display type. */
+.type-hero {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  line-height: 1;
+  text-wrap: balance;
 }
-
-/* BlitzUI.panelBackground: flat fill, no stroke. */
-.panel {
-  background: var(--card);
+.type-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.04;
+  text-wrap: balance;
 }
-
-/* A surface drawn as a piece of the app: BlitzUI.panelStroke edge plus window shadow. */
-.app-surface {
+/* A piece of the product on the page: hairline edge, lit top, deep soft shadow. */
+.product-surface {
+  background: rgb(255 255 255 / 3%);
   box-shadow:
-    0 0 0 1px var(--border),
-    0 40px 100px -30px rgb(0 0 0 / 90%);
+    inset 0 0 0 1px rgb(255 255 255 / 8%),
+    inset 0 1px 0 rgb(255 255 255 / 10%),
+    0 50px 100px -40px rgb(0 0 0 / 90%);
 }
 
-.glass {
-  background: color-mix(in oklch, var(--background) 72%, transparent);
-  backdrop-filter: blur(18px) saturate(160%);
-  -webkit-backdrop-filter: blur(18px) saturate(160%);
-}
-
-/* Timeline ruler: minor tick every 8px, major tick every 80px. */
-.ruler {
-  background-image:
-    linear-gradient(to right, oklch(1 0 0 / 22%) 1px, transparent 1px),
-    linear-gradient(to right, oklch(1 0 0 / 9%) 1px, transparent 1px);
-  background-size: 80px 12px, 8px 5px;
-  background-position: 0 100%, 0 100%;
-  background-repeat: repeat-x;
-}
-
-/* Hatched fill for silent ranges on the timeline. */
-.hatch {
-  background-image: repeating-linear-gradient(
-    -45deg,
-    oklch(1 0 0 / 9%) 0 1px,
-    transparent 1px 6px
-  );
-}
-
-/* Scroll reveal. Only arms once JS marks <html>, so no-JS stays visible. */
-.reveal-ready [data-reveal] {
-  opacity: 0;
-  transform: translateY(20px);
-  transition:
-    opacity 0.8s var(--ease-out-expo),
-    transform 0.8s var(--ease-out-expo);
-  transition-delay: var(--reveal-delay, 0ms);
-}
-.reveal-ready [data-reveal].is-visible {
-  opacity: 1;
-  transform: none;
-}
-
-/* Chapter segment: grows along the ruler when its chapter enters view. */
-.segment-bar {
-  transform-origin: left center;
-  transform: scaleX(var(--segment-start, 0.04));
-  transition: transform 1.4s var(--ease-out-expo) 0.15s;
-}
-.is-visible .segment-bar,
-html:not(.reveal-ready) .segment-bar {
-  transform: scaleX(1);
-}
-
-@keyframes br-playhead {
-  from {
-    left: 0%;
-  }
-  to {
-    left: 100%;
-  }
-}
-
-@keyframes br-rec {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
 
 ::selection {
   background: rgb(23 255 166 / 28%);

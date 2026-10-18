@@ -148,7 +148,7 @@ export function VideoNotes({ title, details, brief, time, duration, ready, playi
             const next = event.key === "Home" ? keys[0] : event.key === "End" ? keys[keys.length - 1]
               : keys[(index + (event.key === "ArrowRight" ? 1 : -1) + keys.length) % keys.length];
             onTabChange(next); document.getElementById(`tab-${next}`)?.focus();
-          }}>{item.title}{item.key !== "transcript" && <span>{item.count}</span>}</button>)}
+          }}>{item.title}{item.key === "chapters" && <span>{item.count}</span>}</button>)}
       </div> : <h2 className={styles.notesTitle}>{tabs[0]?.title}</h2>}
       {tab === "transcript" && <Menu.Root>
         <Menu.Trigger className={styles.iconButtonQuiet} aria-label="Transcript options">

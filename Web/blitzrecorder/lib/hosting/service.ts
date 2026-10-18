@@ -9,14 +9,13 @@ import { parseVideoDetails } from "./details";
 import { ownStorageBytes } from "./own-storage";
 import { accountForToken } from "./account";
 import { HOSTING_PLAN } from "./plan";
+import { storedBytes, uploadedSeconds } from "./usage";
 import { setVideoListing } from "./web-session";
 import type { PoolClient } from "pg";
 
 async function requireUploadAllowance({ db, accountID, duration }: { db: PoolClient; accountID: string; duration: number }) {
-  const usage = (await db.query<{ seconds: number }>(
-    "SELECT COALESCE(SUM(seconds),0) AS seconds FROM hosting_upload_usage WHERE account_id=$1 AND created_at>now()-$2*interval '1 day'",
-    [accountID, HOSTING_PLAN.uploadWindowDays])).rows[0].seconds;
-  if (Number(usage) + duration > HOSTING_PLAN.uploadSeconds) {
+  const usage = await uploadedSeconds({ db, accountID });
+  if (usage + duration > HOSTING_PLAN.uploadSeconds) {
     throw new HostingError({ status: 429, message: "Your plan includes 5 hours of uploads per 30 days. Existing videos remain available; try again when your allowance renews." });
   }
 }
@@ -78,10 +77,8 @@ export async function beginUpload({ account, body }: { account: HostingAccount; 
     const reservation = reservationBytes(input);
     if (!own) {
       await requireUploadAllowance({ db, accountID: account.id, duration: input.duration });
-      const usage = await db.query<{ bytes: string }>(
-        `SELECT COALESCE(SUM(CASE WHEN stored_bytes > 0 THEN stored_bytes ELSE reserved_bytes END),0)::text AS bytes
-         FROM hosting_assets WHERE account_id = $1 AND media_origin IS NULL`, [account.id]);
-      if (Number(usage.rows[0].bytes) + reservation > Number(current.rows[0].storage_limit)) {
+      const usage = await storedBytes({ db, accountID: account.id });
+      if (usage + reservation > Number(current.rows[0].storage_limit)) {
         throw new HostingError({ status: 413, message: "Your hosting storage is full. Remove a video or increase your plan." });
       }
     }

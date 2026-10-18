@@ -1,3 +1,4 @@
+import { clientNetwork } from "@/lib/client-network";
 import {
   authenticate, authenticateDelivery, beginUpload, finishUpload, listAssets,
   preparePart, resumeUpload, revokeAsset, setAssetListing, sharedAsset, updateDetails, uploadPoster,
@@ -7,6 +8,7 @@ import { accountState, billingURL, disconnectAccount } from "@/lib/hosting/accou
 import { DETAILS_MAX_BYTES } from "@/lib/hosting/details";
 import { requestSignInCode, verifySignInCode } from "@/lib/hosting/sign-in";
 import { hostingPlan } from "@/lib/hosting/plan";
+import { billingPath } from "@/lib/hosting/paths";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,7 +40,7 @@ async function handle(request: Request) {
       result = hostingPlan();
     } else if (request.method === "POST" && resource === "sign-in" && path.length === 2 && id === "request") {
       result = await requestSignInCode({ body: await readBody({ request, limit: 2048 }),
-        network: request.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim() ?? "unknown" });
+        network: clientNetwork(request) });
     } else if (request.method === "POST" && resource === "sign-in" && path.length === 2 && id === "verify") {
       result = await verifySignInCode(await readBody({ request, limit: 2048 }));
     } else if (resource === "connect") {
@@ -51,7 +53,7 @@ async function handle(request: Request) {
     } else {
       const account = await authenticate(request);
       if (resource === "account" && path.length === 1 && request.method === "GET") result = accountState(account);
-      else if (resource === "billing" && path.length === 1 && request.method === "POST") result = await billingURL(account);
+      else if (resource === "billing" && path.length === 1 && request.method === "POST") result = await billingURL({ account, returnPath: billingPath });
       else if (resource === "disconnect" && path.length === 1 && request.method === "POST") {
         result = await disconnectAccount({ request, account, body: await readBody({ request, limit: 256 }) });
       }

@@ -3,8 +3,8 @@ import { randomUUID } from "node:crypto";
 import { getSiteUrl, getStripe } from "../payments";
 import { hostingPool, transaction } from "./db";
 import { HostingError, newAccessToken, required, tokenHash, type HostingAccount } from "./model";
-import { billingPath } from "./paths";
 import { HOSTING_PLAN } from "./plan";
+import { storedBytes, uploadedSeconds } from "./usage";
 
 export type HostingIdentity = { id: string; email: string };
 
@@ -76,7 +76,31 @@ export async function activeSessionCount(account: HostingAccount): Promise<numbe
   return Number(result.rows[0]?.count ?? 0);
 }
 
-export async function billingURL(account: HostingAccount) {
+export type AccountOverview = {
+  email: string | null;
+  /** Paid hosting is current; own-Cloudflare sharing works either way. */
+  subscribed: boolean;
+  activeUntil: string;
+  storageLimit: number;
+  storedBytes: number;
+  uploadedSeconds: number;
+  sessions: number;
+};
+
+export async function accountOverview(account: HostingAccount): Promise<AccountOverview> {
+  const db = hostingPool();
+  const [bytes, seconds, sessions] = await Promise.all([
+    storedBytes({ db, accountID: account.id }), uploadedSeconds({ db, accountID: account.id }), activeSessionCount(account),
+  ]);
+  const state = accountState(account);
+  return {
+    email: account.email, subscribed: state.active, activeUntil: state.activeUntil, storageLimit: state.storageLimit,
+    storedBytes: bytes, uploadedSeconds: seconds, sessions,
+  };
+}
+
+/** `returnPath` is where Stripe sends people back: the app flow or the web dashboard. */
+export async function billingURL({ account, returnPath }: { account: HostingAccount; returnPath: string }) {
   const stripe = getStripe();
   const site = getSiteUrl();
   if (!site.startsWith("https://") && !/^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(site)) {
@@ -94,7 +118,7 @@ export async function billingURL(account: HostingAccount) {
       subscriptionEnded = ["canceled", "incomplete_expired"].includes(subscription.status);
       if (!subscriptionEnded) {
         const portal = await stripe.billingPortal.sessions.create({
-          customer: row.stripe_customer_id, return_url: `${site}${billingPath}`,
+          customer: row.stripe_customer_id, return_url: `${site}${returnPath}`,
           configuration: required("HOSTING_STRIPE_PORTAL_CONFIGURATION_ID"),
         });
         return { url: portal.url };
@@ -122,8 +146,8 @@ export async function billingURL(account: HostingAccount) {
       integration_identifier: "blitzrecorder_hosting_qmzpxrta",
       branding_settings: { display_name: "BlitzRecorder", button_color: "#00e69b", border_style: "rounded" },
       custom_text: { submit: { message: "BlitzRecorder video hosting. Your local recordings and exports remain free." } },
-      success_url: `${site}${billingPath}`, cancel_url: `${site}${billingPath}?cancelled=1`,
-    }, { idempotencyKey: `hosting-checkout:${account.id}:${row.checkout_session_id ?? "first"}` });
+      success_url: `${site}${returnPath}`, cancel_url: `${site}${returnPath}?cancelled=1`,
+    }, { idempotencyKey: `hosting-checkout:${account.id}:${returnPath}:${row.checkout_session_id ?? "first"}` });
     if (!session.url) throw new HostingError({ status: 503, message: "The subscription page could not be opened." });
     await db.query("UPDATE hosting_accounts SET checkout_session_id=$2,checkout_url=$3,checkout_expires_at=to_timestamp($4) WHERE id=$1",
       [account.id, session.id, session.url, session.expires_at]);

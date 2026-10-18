@@ -1,10 +1,13 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { hostingPool } from "@/lib/hosting/db";
-import { signOutEverywhere } from "@/lib/hosting/account";
-import { tokenHash } from "@/lib/hosting/model";
+import { billingURL, signOutEverywhere } from "@/lib/hosting/account";
+import { HostingError, tokenHash } from "@/lib/hosting/model";
+import { planPath } from "@/lib/hosting/paths";
+import { setCancelAtPeriodEnd } from "@/lib/hosting/subscription";
 import {
   SESSION_COOKIE, SESSION_COOKIE_OPTIONS, sessionToken, setVideoListing, stopSharingVideo, viewerAccount,
 } from "@/lib/hosting/web-session";
@@ -70,6 +73,36 @@ export async function stopSharing(slug: unknown): Promise<HostingActionResult> {
     return { ok: true };
   } catch (error) {
     console.error("Hosting stop sharing failed", error instanceof Error ? error.name : "Unknown error");
+    return { ok: false, error: UNAVAILABLE };
+  }
+}
+
+/** Stripe's billing portal for subscribers, checkout for everyone else. */
+export async function openBilling(): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  const account = await viewerAccount();
+  if (!account) return { ok: false, error: SESSION_EXPIRED };
+  try {
+    return { ok: true, url: (await billingURL({ account, returnPath: planPath })).url };
+  } catch (error) {
+    if (error instanceof HostingError) return { ok: false, error: error.message };
+    console.error("Hosting billing link failed", error instanceof Error ? error.name : "Unknown error");
+    return { ok: false, error: UNAVAILABLE };
+  }
+}
+
+/** Cancel at period end, or resume a subscription that is set to cancel. */
+export async function setSubscriptionCanceling(cancel: unknown): Promise<HostingActionResult> {
+  const input = z.boolean().safeParse(cancel);
+  if (!input.success) return { ok: false, error: UNAVAILABLE };
+  const account = await viewerAccount();
+  if (!account) return { ok: false, error: SESSION_EXPIRED };
+  try {
+    await setCancelAtPeriodEnd({ account, cancel: input.data });
+    revalidatePath(planPath);
+    return { ok: true };
+  } catch (error) {
+    if (error instanceof HostingError) return { ok: false, error: error.message };
+    console.error("Hosting subscription change failed", error instanceof Error ? error.name : "Unknown error");
     return { ok: false, error: UNAVAILABLE };
   }
 }

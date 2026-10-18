@@ -45,6 +45,8 @@ a.row:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
 
 .foot { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 0 0 8px; border-top:1px solid var(--border); }
 .account { display:flex; flex-direction:column; align-items:flex-start; gap:2px; min-width:0; }
+.settings { color:var(--muted-foreground); font-size:12px; text-decoration:none; }
+.settings:hover { color:var(--foreground); }
 .email { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--faint); font-size:12px; }
 
 @media (hover:none) { .actions { opacity:1; } }

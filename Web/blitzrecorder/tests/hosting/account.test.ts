@@ -85,7 +85,7 @@ integration("concurrent subscribe actions reuse one checkout and never grant acc
     return { id: "checkout-test", url: "https://checkout.stripe.com/test", expires_at: Math.floor(Date.now() / 1000) + 3600 } as Stripe.Checkout.Session;
   });
   t.mock.method(stripe.checkout.sessions, "retrieve", async () => ({ status: "open" }) as Stripe.Checkout.Session);
-  const [a, b] = await Promise.all([billingURL(account), billingURL(account)]);
+  const [a, b] = await Promise.all([billingURL({ account, returnPath: "/billing" }), billingURL({ account, returnPath: "/billing" })]);
   assert.equal(a.url, b.url);
   assert.equal(create.mock.callCount(), 1);
   const latest = (await hostingPool().query("SELECT active_until FROM hosting_accounts WHERE id=$1", [account.id])).rows[0];
@@ -101,7 +101,7 @@ integration("checkout refuses a price that differs from the displayed hosting pl
   const checkout = t.mock.method(stripe.checkout.sessions, "create", async () => {
     throw new Error("A mismatched price must not create a checkout.");
   });
-  await assert.rejects(billingURL(account), { status: 503 });
+  await assert.rejects(billingURL({ account, returnPath: "/billing" }), { status: 503 });
   assert.equal(checkout.mock.callCount(), 0);
 });
 
@@ -117,5 +117,5 @@ integration("hosting subscribers use the hosting portal without changing other p
     assert.equal(params.configuration, "test-hosting-portal");
     return { url: "https://billing.stripe.com/hosting" } as Stripe.BillingPortal.Session;
   });
-  assert.equal((await billingURL(account)).url, "https://billing.stripe.com/hosting");
+  assert.equal((await billingURL({ account, returnPath: "/billing" })).url, "https://billing.stripe.com/hosting");
 });

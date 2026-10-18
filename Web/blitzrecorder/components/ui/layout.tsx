@@ -10,6 +10,8 @@ const widthVariants = cva("mx-auto", {
       md: "w-[min(900px,calc(100%-32px))]",
       lg: "w-[min(1080px,calc(100%-32px))]",
       xl: "w-[min(1180px,calc(100%-32px))]",
+      page: "w-[min(1120px,calc(100%-32px))]",
+      wide: "w-[min(1360px,calc(100%-32px))]",
       full: "w-full",
     },
   },

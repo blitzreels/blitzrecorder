@@ -85,9 +85,16 @@ export const SignInForm = ({ next, intro }: { next: string; intro: string }) => 
     setPending(true);
     setError(null);
     try {
-      const result = await post<{ challenge: string; email: string; retryAfter: number }>({
+      const result = await post<{ challenge: string; email: string; retryAfter: number; devCode?: string }>({
         url: "/api/hosting/sign-in/request", body: { email: address },
       });
+      if (result.devCode) {
+        await post({ url: "/api/hosting/session", body: { challenge: result.challenge, code: result.devCode } });
+        setStep({ kind: "done" });
+        router.replace(next);
+        router.refresh();
+        return true;
+      }
       setStep({ kind: "code", email: result.email, challenge: result.challenge });
       setCode("");
       cooldown.start(result.retryAfter);
@@ -153,7 +160,7 @@ export const SignInForm = ({ next, intro }: { next: string; intro: string }) => 
   if (step.kind === "email") {
     return <form onSubmit={submitEmail} className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <h1 className="font-display text-2xl font-semibold tracking-tight">Sign in to your videos</h1>
+        <h1 className="type-title text-[2rem]">Sign in to your videos</h1>
         <p className="text-sm text-muted-foreground">{intro}</p>
       </div>
       <div className="flex flex-col gap-3">
@@ -177,7 +184,7 @@ export const SignInForm = ({ next, intro }: { next: string; intro: string }) => 
       <span className="mb-1 flex size-10 items-center justify-center rounded-tile bg-fill-control text-muted-foreground">
         <Mail className="size-5" />
       </span>
-      <h1 className="font-display text-2xl font-semibold tracking-tight">Check your email</h1>
+      <h1 className="type-title text-[2rem]">Check your email</h1>
       <p className="text-sm text-muted-foreground">
         Enter the 6-digit code sent to <span className="text-foreground">{step.email}</span>.{" "}
         <button type="button" onClick={changeEmail} className="text-foreground underline underline-offset-4 hover:text-primary">

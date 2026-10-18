@@ -12,10 +12,10 @@ import styles from "./owner-library.module.css";
 import { SharedPlayer } from "./player";
 import { StopSharing } from "@/components/hosting/stop-sharing";
 import { TryBlitzRecorderCard } from "./try-blitzrecorder";
-import { ShareNavActions, ShareNavLinks } from "./share-nav";
+import { ShareNavActions } from "./share-nav";
 
-/** `library` and `sessions` are only loaded when the viewer owns the video. */
-export type SharedViewer = { email: string | null; library: LibraryVideo[] | null; sessions: number };
+/** `library` is only loaded when the viewer owns the video. */
+export type SharedViewer = { email: string | null; library: LibraryVideo[] | null };
 
 export function SharedVideoView({ slug, source, poster, title, width, height, duration, frameRate, details, viewer }: {
   slug: string; source: string; poster: string; title: string; width: number; height: number;
@@ -40,7 +40,7 @@ export function SharedVideoView({ slug, source, poster, title, width, height, du
         compact={Boolean(library)}
         innerClassName={bar}
         leading={library ? <OwnerLibraryToggle count={library.length} /> : undefined}
-        nav={viewer ? <nav aria-label="Account"><NavItem href={videosPath}>Videos</NavItem></nav> : <ShareNavLinks />}
+        nav={viewer ? <nav aria-label="Account"><NavItem href={videosPath}>Videos</NavItem></nav> : null}
         trailing={!viewer ? <ShareNavActions signInHref={`${signInPath}?next=${sharePath(slug)}`} /> : !library ? <SignOutButton className={cn(buttonVariants({ variant: "outline", size: "sm" }))} /> : <>
           <span className="hidden max-w-52 truncate text-[13px] text-faint md:inline" title={viewer.email ?? undefined}>{viewer.email}</span>
           <SignOutButton className={cn(buttonVariants({ variant: "outline", size: "sm" }))} />
@@ -49,7 +49,7 @@ export function SharedVideoView({ slug, source, poster, title, width, height, du
       <div className="px-4 pt-4 pb-16 sm:px-6 sm:pt-6 lg:px-8">
         {library
           ? <div className={styles.shell}>
-            <OwnerLibrary videos={library} currentSlug={slug} email={viewer?.email ?? null} sessions={viewer?.sessions ?? 0} />
+            <OwnerLibrary videos={library} currentSlug={slug} email={viewer?.email ?? null} />
             {player}
           </div>
           : player}

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Schibsted_Grotesk, Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import Script from "next/script";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
@@ -41,36 +41,34 @@ async function resolveRelease(): Promise<Release | null> {
   }
 }
 
-const display = Schibsted_Grotesk({
+const display = Geist({
   variable: "--font-display",
   subsets: ["latin"],
-  weight: ["500", "700", "800", "900"],
 });
 
-const sans = Hanken_Grotesk({
+const sans = Geist({
   variable: "--font-sans",
   subsets: ["latin"],
 });
 
-const mono = JetBrains_Mono({
+const mono = Geist_Mono({
   variable: "--font-mono",
   subsets: ["latin"],
-  weight: ["500", "600"],
 });
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://blitzrecorder.com"),
   title: {
-    default: "BlitzRecorder: record and edit on your Mac",
+    default: "BlitzRecorder: pro screen videos, free on your Mac",
     template: "%s · BlitzRecorder",
   },
   description:
-    "Record your screen and camera, then edit the take on your Mac. iPhone camera, silence cuts, on-device transcripts. Free and open source.",
+    "Record your screen and your face in one take, framed for YouTube or Shorts. Cut every pause in one click and export in 4K. Free and open source.",
   openGraph: {
     title: "BlitzRecorder",
     siteName: "BlitzRecorder",
     description:
-      "Record and edit on your Mac. Free and open source.",
+      "Record your screen and your face. Post it the same day. A free, open-source Mac app.",
     type: "website",
     url: "https://blitzrecorder.com",
   },

@@ -12,15 +12,15 @@ export function LegalPage({ slug }: { slug: "terms" | "privacy" | "support" }) {
     <div className="min-h-screen">
       <SiteNav />
       <main>
-        <Container width="sm" className="pt-32 pb-20">
-          <p className="label-mono text-faint">{page.eyebrow}</p>
-          <Heading level={1} className="mt-5 text-[clamp(2.5rem,6vw,4rem)] leading-[0.95]">
+        <Container width="sm" className="pt-36 pb-28">
+          <Heading level={1} className="text-[clamp(2.5rem,5vw,3.75rem)]">
             {page.title}
           </Heading>
-          <Paragraph className="mt-6 max-w-2xl">{page.intro}</Paragraph>
+          <p className="mt-4 text-sm text-faint">{page.eyebrow}</p>
+          <Paragraph className="mt-8 max-w-2xl">{page.intro}</Paragraph>
           <div className="mt-12 flex flex-col">
             {page.sections.map((section) => (
-              <Article className="grid gap-3 border-t border-separator py-8 md:grid-cols-[14rem_1fr] md:gap-10" key={section.title}>
+              <Article className="grid gap-2 py-7 md:grid-cols-[14rem_1fr] md:gap-10" key={section.title}>
                 <Heading as="h2" level={4}>
                   {section.title}
                 </Heading>

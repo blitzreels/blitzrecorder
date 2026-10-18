@@ -15,40 +15,47 @@ export type FaqItem = { q: string; a: string };
 
 export const faqs: FaqItem[] = [
   {
-    q: "Do I need an account or a license key?",
-    a: "No. Recording, editing, 4K and 60 fps export, transcripts, and the iPhone camera work without an account, email, or key. Share links need a BlitzRecorder account, which you sign in to with an email code. Sending videos to BlitzReels is an optional integration.",
+    q: "Is it really free? What's the catch?",
+    a: "Recording, editing and 4K export are free, with no watermark and no account. The only paid part is optional hosting for share links.",
   },
   {
-    q: "What does video hosting include?",
-    a: "Hosting is €9 a month plus tax: 50 GB of storage, 5 hours of new uploads every 30 days, and streaming up to 1080p. A single video can use your whole upload allowance, whatever its size. Cancel from the app. Links stop when the subscription ends, and files are removed 30 days later.",
+    q: "Do I need to know how to edit?",
+    a: "No. Pick a layout before you record, then cut your pauses in one click. The timeline is there when you want more.",
   },
   {
     q: "Where do my recordings go?",
-    a: "To a folder you choose on your Mac, with exports in a folder of their own. Transcription runs on your Mac too. Nothing is uploaded unless you share a link. The apps include no analytics or crash-reporting SDK.",
+    a: "To a folder on your Mac. Nothing uploads unless you share a link.",
   },
   {
-    q: "Which Macs are supported?",
-    a: "Any Mac with macOS 15 Sequoia or later, Apple silicon or Intel. The iPhone camera app needs iOS 18 or later.",
+    q: "Can I use my videos for work?",
+    a: "Yes. Your videos are yours. The open-source license covers the app's code, not what you make with it.",
   },
   {
-    q: "Is there a Windows version?",
-    a: "Windows Studio is an early capture app. It records your screen, microphone, camera, and system audio, and plays the take back. The editor is Mac only for now. Installers are on GitHub Releases.",
+    q: "Will it still be around next year?",
+    a: "BlitzRecorder has shipped more than 40 updates since June 2026, all in public on GitHub. The code stays open whatever happens.",
   },
   {
-    q: "What is BlitzReels?",
-    a: "BlitzReels is the company behind BlitzRecorder. Its web app finds the best moments in a long recording, reframes them for vertical video, and adds captions. Sending a video there is optional.",
+    q: "What does sharing a link cost?",
+    a: "Nothing through your own Cloudflare account. Our hosting is €9 a month for 50 GB.",
   },
-];
-
-export const freeIncludes = [
-  "4K and 60 fps export",
-  "iPhone as a camera",
-  "On-device transcripts",
-  "No watermark or export limit",
-  "No account or license key",
-];
+]
 
 export type ProductScreen = { title: string; text: string };
+
+export const landingSteps: ProductScreen[] = [
+  {
+    title: "Download and open.",
+    text: "Free, with no account. Allow screen, camera and mic access once.",
+  },
+  {
+    title: "Record one take.",
+    text: "Your screen and your face together, already framed for YouTube or Shorts.",
+  },
+  {
+    title: "Cut and post.",
+    text: "Cut the pauses in one click, then export in 4K or share a link.",
+  },
+];
 
 export type ProductPageData = {
   key: "ios" | "macos";
@@ -104,7 +111,7 @@ export const pages: Record<"ios" | "macos", ProductPageData> = {
     eyebrow: "Mac app",
     appName: "BlitzRecorder",
     tagline: "Record and edit on your Mac",
-    hero: "Record your screen and camera together, then edit the take on a timeline. Free, open source, and local.",
+    hero: "Record your screen and camera together, then edit the take on a timeline. It is free and open source, and your files stay on your Mac.",
     icon: assets.macIcon,
     copyTitle: "One app from the first take to the export.",
     copy:
