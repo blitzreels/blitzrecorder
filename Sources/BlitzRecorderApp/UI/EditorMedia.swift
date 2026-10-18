@@ -257,6 +257,20 @@ final class EditorMediaLibrary {
         activityTokens[asset.id] = nil
     }
 
+    struct WaveformSource {
+        let assetID: String
+        let url: URL
+    }
+
+    /// Redraws an audio track from another file of the same length, such as the cleaned microphone.
+    func showWaveform(_ source: WaveformSource) async {
+        guard let duration = durations[source.assetID],
+              let waveform = await EditorAudioWaveform.load(.init(asset: AVURLAsset(url: source.url), duration: duration)),
+              !Task.isCancelled else { return }
+        timelineWaveforms[source.assetID] = waveform
+        waveforms[source.assetID] = waveform.overview
+    }
+
     func loadAssets(_ assets: [EditorAsset]) async {
         await loadAssets(.init(assets: assets, purpose: .editor))
     }

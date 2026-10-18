@@ -164,7 +164,7 @@ final class EditorExportRecipeTests: XCTestCase {
             layout: .horizontal,
             layoutCount: 2,
             audioBitrate: 192_000,
-            duration: 10
+            duration: 10, targetFileSize: nil
         ))
         XCTAssertEqual(recipe.profile.resolution, .p1080)
         XCTAssertTrue(recipe.summary.contains("2 videos"))
@@ -183,7 +183,7 @@ final class EditorExportRecipeTests: XCTestCase {
             layoutCount: 1,
             audioBitrate: 192_000,
             duration: 10,
-            playbackRate: 1
+            playbackRate: 1, targetFileSize: nil
         ))
         let faster = EditorExportRecipe.make(.init(
             preset: .balanced,
@@ -196,7 +196,7 @@ final class EditorExportRecipeTests: XCTestCase {
             layoutCount: 1,
             audioBitrate: 192_000,
             duration: 10,
-            playbackRate: 2
+            playbackRate: 2, targetFileSize: nil
         ))
         XCTAssertFalse(normal.summary.contains("2.0×"))
         XCTAssertTrue(faster.summary.contains("2.0×"))
@@ -450,7 +450,8 @@ final class RecordingStartGateTests: XCTestCase {
                 format: OutputVideoFormat.mov.rawValue,
                 resolution: OutputResolution.p1080.rawValue,
                 framesPerSecond: 30,
-                quality: ExportVideoQuality.high.rawValue
+                quality: ExportVideoQuality.high.rawValue,
+                targetFileSize: nil
             )
         )
         XCTAssertEqual(restored?.preset, .balanced)

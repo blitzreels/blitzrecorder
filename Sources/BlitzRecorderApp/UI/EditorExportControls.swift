@@ -4,7 +4,6 @@ import SwiftUI
 struct EditorExportControls: View {
     @Bindable var vm: RecorderViewModel
     let project: RecordingProject?
-    @Binding var isPresented: Bool
     @Binding var additionalExportLayouts: Set<CaptureLayout>
     @Binding var selectedExportPreset: ExportPerformancePreset
     @Binding var selectedFormat: OutputVideoFormat
@@ -12,33 +11,15 @@ struct EditorExportControls: View {
     @Binding var selectedExportFramesPerSecond: Int
     @Binding var selectedExportQuality: ExportVideoQuality
     @Binding var selectedExportPlaybackRate: ExportPlaybackRate
+    @Binding var selectedExportTargetSize: Int64?
     let recipe: EditorExportRecipe
+    let sizeEstimate: (ExportVideoQuality) -> String
     let persist: (String) -> Void
     let export: () -> Void
+    let section: EditorExportSettings.Section
 
     var body: some View {
-        Button {
-            isPresented.toggle()
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "square.and.arrow.down")
-                    .frame(width: 14, height: 14)
-                Text("Export")
-                    .frame(minWidth: 62, alignment: .leading)
-            }
-            .accessibilityElement(children: .combine)
-        }
-        .blitzButton(.accent)
-        .controlSize(.large)
-        .disabled(project == nil || vm.state != .idle || vm.isExporting)
-        .help(vm.isExporting ? "An export is already running. Progress is shown at the top." : "Save a video file to your Mac")
-        .popover(isPresented: $isPresented, arrowEdge: .top) {
-            popover
-        }
-    }
-
-    private var popover: some View {
-        EditorExportPopover(configuration: .init(
+        EditorExportSettings(configuration: .init(
             additionalLayouts: $additionalExportLayouts,
             currentLayout: vm.lastExportedProject?.selectedOutputLayout ?? .horizontal,
             format: Binding(
@@ -69,9 +50,11 @@ struct EditorExportControls: View {
             quality: Binding(
                 get: { recipe.profile.videoQuality.resolvedMenuQuality },
                 set: {
-                    guard $0 != recipe.profile.videoQuality.resolvedMenuQuality else { return }
+                    guard $0 != recipe.profile.videoQuality.resolvedMenuQuality || selectedExportTargetSize != nil
+                    else { return }
                     useCustomProfile()
                     selectedExportQuality = $0
+                    selectedExportTargetSize = nil
                     selectedFormat = $0.resolvedOutputFormat(selectedFormat)
                     persist("Change Export Quality")
                 }
@@ -85,19 +68,26 @@ struct EditorExportControls: View {
                 }
             ),
             estimatedSize: recipe.estimatedSize,
-            estimatedSizeCaption: recipe.encoding.estimatedSizeCaption,
+            fileSize: .init(
+                bytes: recipe.estimatedFileBytes,
+                range: recipe.fileSizeRange,
+                isCustom: selectedExportTargetSize != nil,
+                isAvailable: !recipe.profile.videoQuality.requiresQuickTime,
+                perVideo: (additionalExportLayouts.count + 1) > 1,
+                warning: recipe.sizeWarning,
+                select: {
+                    guard selectedExportTargetSize != $0 else { return }
+                    selectedExportTargetSize = $0
+                    persist($0 == nil ? "Reset Export Size" : "Change Export Size")
+                }
+            ),
+            sizeEstimate: sizeEstimate,
             encodingDetail: recipe.encoding.detail,
             directory: vm.settings.outputDirectory,
-            lastExportDate: project?.exports
-                .filter { FileManager.default.fileExists(atPath: $0.path) }
-                .map(\.createdAt).max(),
             canExport: project != nil && vm.state == .idle && !vm.isExporting,
             export: export,
-            chooseFolder: {
-                isPresented = false
-                vm.chooseOutputFolder { _ in isPresented = true }
-            }
-        ))
+            chooseFolder: vm.chooseOutputFolder
+        ), section: section)
     }
 
     private func useCustomProfile() {

@@ -65,10 +65,12 @@ enum ProjectExportRenderPlan {
         outputSceneEvents: [RecordingSceneEvent]
     ) -> RenderContext {
         let hiddenCaptureSources = hiddenCaptureSources(request.hiddenVideoSources)
+        var formatSettings = (outputProject.editorState.audioLevels ?? .unity).applying(to: exportSettings)
+        formatSettings.enabledSources.formUnion(videoSources(of: outputProject))
         return RenderContext(
             captureSettings: captureSettings,
             renderSettings: settings(
-                exportSettings: (outputProject.editorState.audioLevels ?? .unity).applying(to: exportSettings),
+                exportSettings: formatSettings,
                 profile: request.performanceProfile,
                 outputLayout: CaptureLayout(rawValue: outputProject.settings.layout),
                 mutedAudioSources: request.mutedAudioSources,
@@ -82,6 +84,11 @@ enum ProjectExportRenderPlan {
                 profile: request.performanceProfile
             )
         )
+    }
+
+    /// The videos this format's own scenes add on top of the main format's.
+    private static func videoSources(of project: RecordingProject) -> Set<CaptureSource> {
+        Set(project.settings.enabledSources.compactMap(CaptureSource.init(rawValue:))).intersection([.screen, .camera])
     }
 
     static func captureOutputFormat(
@@ -117,7 +124,9 @@ enum ProjectExportRenderPlan {
             fileSizeBytes: fileSizeBytes,
             layout: renderSettings.layout.rawValue,
             width: dimensions.width,
-            height: dimensions.height
+            height: dimensions.height,
+            videoBitrate: request.performanceProfile.videoBitrateOverride,
+            playbackRate: request.playbackRate
         )
     }
 }

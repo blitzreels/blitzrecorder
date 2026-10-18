@@ -280,14 +280,14 @@ struct BlitzUIKitEditor: View {
                 BlitzUIKitSpecimen(label: "CameraImageControls") {
                     CameraImageControls(configuration: .init(
                         contentMode: $contentMode, cropZoom: $cropZoom, isCropModeEnabled: false, showsContentMode: true,
-                        isResetDisabled: false, onCropZoomEditingChanged: { _ in }, onBeginCrop: {}, onResetCrop: {}
+                        isResetDisabled: false, showsResetButton: true, onCropZoomEditingChanged: { _ in }, onBeginCrop: {}, onResetCrop: {}
                     ))
                     .frame(width: 260)
                 }
                 BlitzUIKitSpecimen(label: "CameraImageControls · crop mode") {
                     CameraImageControls(configuration: .init(
                         contentMode: $contentMode, cropZoom: $cropZoom, isCropModeEnabled: true, showsContentMode: true,
-                        isResetDisabled: true, onCropZoomEditingChanged: { _ in }, onBeginCrop: {}, onResetCrop: {}
+                        isResetDisabled: true, showsResetButton: true, onCropZoomEditingChanged: { _ in }, onBeginCrop: {}, onResetCrop: {}
                     ))
                     .frame(width: 260)
                 }
@@ -301,9 +301,6 @@ struct BlitzUIKitEditor: View {
                 }
             }
             BlitzUIKitGroup("Silence actions") {
-                BlitzUIKitSpecimen(label: "SilenceTakeStrip") {
-                    SilenceTakeStrip(presentation: BlitzUIKitSilence.presentation(.proposed)).frame(width: 300, height: 48)
-                }
                 BlitzUIKitSpecimen(label: "SilenceStrengthSection") {
                     SilenceStrengthSection(presentation: BlitzUIKitSilence.presentation(.proposed), actions: silenceActions)
                         .frame(width: 300)

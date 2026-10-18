@@ -21,7 +21,6 @@ enum ScenePreset: String, CaseIterable {
             .webcamLeft,
             .cameraRight,
             .equalSplit,
-            .screenInset,
             .screenFullscreen,
             .webcamFullscreen
         ]

@@ -18,7 +18,7 @@ final class EditorExportPresentationTests: XCTestCase {
                         preset: .custom, sourceResolution: resolution, sourceFramesPerSecond: fps,
                         customResolution: .p720, customFramesPerSecond: 24, customVideoQuality: .compact,
                         layout: layout, layoutCount: 1, audioBitrate: 192_000, duration: 30,
-                        playbackRate: 1.3, destination: .link)
+                        playbackRate: 1.3, destination: .link, targetFileSize: nil)
                     let cloud = EditorExportRecipe.make(request)
                     XCTAssertEqual(cloud.profile.resolution, resolution == .p720 ? .p720 : .p1080)
                     XCTAssertEqual(cloud.profile.framesPerSecond, min(30, fps))
@@ -71,14 +71,17 @@ final class EditorExportPresentationTests: XCTestCase {
     @MainActor
     func testExportPopoverFitsCollapsedAndWithMultipleFormats() throws {
         for (name, additional) in [("single", Set<CaptureLayout>()), ("multi", Set([CaptureLayout.horizontal]))] {
-            let host = NSHostingView(rootView: EditorExportPopover(configuration: .init(
+            let host = NSHostingView(rootView: EditorExportSettings(configuration: .init(
                 additionalLayouts: .constant(additional), currentLayout: .vertical,
                 format: .constant(.mp4), resolution: .constant(.p1080), framesPerSecond: .constant(24),
                 quality: .constant(.high), playbackRate: .constant(.init(clamping: 1.3)),
-                estimatedSize: "≈ 160 MB", estimatedSizeCaption: "Estimated size", encodingDetail: "HEVC · 12 Mbps",
-                directory: URL(fileURLWithPath: "/tmp/Recordings"), lastExportDate: nil, canExport: true,
+                estimatedSize: "≈ 52 MB",
+                fileSize: .init(bytes: 52_000_000, range: 5_000_000...276_000_000, isCustom: name == "multi",
+                                isAvailable: true, perVideo: name == "multi", warning: nil, select: { _ in }),
+                sizeEstimate: { _ in "≈ 138 MB" }, encodingDetail: "HEVC · 10.0 Mbps",
+                directory: URL(fileURLWithPath: "/tmp/Recordings"), canExport: true,
                 export: {}, chooseFolder: {}
-            )))
+            ), section: .controls).frame(width: 340).padding(20).background(BlitzUI.panelBackground))
             host.setFrameSize(host.fittingSize)
             host.layoutSubtreeIfNeeded()
             XCTAssertEqual(host.fittingSize.width, 380, accuracy: 1)
@@ -121,7 +124,7 @@ final class EditorExportPresentationTests: XCTestCase {
             let recipe = EditorExportRecipe.make(.init(
                 preset: .balanced, sourceResolution: .p2160, sourceFramesPerSecond: fps,
                 customResolution: .p720, customFramesPerSecond: 30, customVideoQuality: .compact,
-                layout: .vertical, layoutCount: 1, audioBitrate: 192_000, duration: 60))
+                layout: .vertical, layoutCount: 1, audioBitrate: 192_000, duration: 60, targetFileSize: nil))
             XCTAssertEqual(recipe.profile.framesPerSecond, fps)
             XCTAssertEqual(recipe.profile.videoQuality, .high)
         }

@@ -21,6 +21,9 @@ enum SilenceStrength: Hashable, CaseIterable {
         }
     }
 
+    /// Off lives in the footer as Restore pauses, so the picker only offers how much to cut.
+    static var pickerCases: [SilenceStrength] { [.gentle, .balanced, .strong] }
+
     var pacing: SilencePacing? {
         switch self {
         case .off: nil
@@ -35,46 +38,6 @@ enum SilenceStrength: Hashable, CaseIterable {
         case .natural: self = .gentle
         case .tight: self = .balanced
         case .rapid: self = .strong
-        }
-    }
-}
-
-struct SilenceStripColumn: Equatable {
-    let level: Double
-    let kept: Double
-}
-
-enum SilenceStripColumns {
-    static let count = 120
-
-    struct Request {
-        let windows: [SilenceWindow]
-        let duration: Double
-        let cuts: [ClosedRange<Double>]
-    }
-
-    static func make(_ request: Request) -> [SilenceStripColumn] {
-        guard request.duration > 0, !request.windows.isEmpty else { return [] }
-        let width = request.duration / Double(count)
-        var peaks = [Double](repeating: -120, count: count)
-        for window in request.windows {
-            let index = min(count - 1, max(0, Int(window.start / width)))
-            peaks[index] = max(peaks[index], window.decibels)
-        }
-        let cuts = request.cuts.sorted { $0.lowerBound < $1.lowerBound }
-        var cutIndex = 0
-        return (0..<count).map { index in
-            let start = Double(index) * width
-            let end = start + width
-            while cutIndex < cuts.count, cuts[cutIndex].upperBound <= start { cutIndex += 1 }
-            var removed = 0.0
-            var probe = cutIndex
-            while probe < cuts.count, cuts[probe].lowerBound < end {
-                removed += max(0, min(end, cuts[probe].upperBound) - max(start, cuts[probe].lowerBound))
-                probe += 1
-            }
-            let level = min(1, max(0, (peaks[index] + 60) / 50))
-            return .init(level: level, kept: max(0, 1 - removed / width))
         }
     }
 }
@@ -113,7 +76,6 @@ struct SilencePanePresentation: Equatable {
     let removedDuration: Double
     let pauseCount: Int
     let cutRanges: [ClosedRange<Double>]
-    let columns: [SilenceStripColumn]
     let hasAppliedCuts: Bool
     let isUpdating: Bool
     let previewEnabled: Bool
@@ -226,7 +188,6 @@ struct SilencePanePresentation: Equatable {
             removedDuration: request.metrics.removedDuration,
             pauseCount: request.metrics.pauseCount,
             cutRanges: cutRanges,
-            columns: SilenceStripColumns.make(.init(windows: request.windows, duration: request.duration, cuts: cutRanges)),
             hasAppliedCuts: request.hasRemovedSilence,
             isUpdating: request.isUpdating,
             previewEnabled: request.previewEnabled,

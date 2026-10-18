@@ -99,11 +99,9 @@ final class HostedVideoAccountTests: XCTestCase {
         try snapshot(.init(controller: controller, name: "plan", preparation: nil))
         fixture.server.active = true
         await controller.refresh()
-        let ready = HostedVideoSharePanel.ExportPreparation(title: "How to record a useful walkthrough",
-            summary: "2560 × 1440 · 30 fps", status: nil, export: {})
+        let ready = HostedVideoSharePanel.ExportPreparation(status: nil, export: {})
         try snapshot(.init(controller: controller, name: "ready", preparation: ready))
-        let saving = HostedVideoSharePanel.ExportPreparation(title: ready.title, summary: ready.summary,
-            status: .exporting(.init(title: "Exporting", percentage: "42%", detail: nil, value: 0.42)), export: {})
+        let saving = HostedVideoSharePanel.ExportPreparation(status: .exporting(.init(title: "Exporting", percentage: "42%", detail: nil, value: 0.42)), export: {})
         try snapshot(.init(controller: controller, name: "saving", preparation: saving))
     }
 
@@ -271,10 +269,11 @@ final class HostedVideoAccountTests: XCTestCase {
     }
 
     @MainActor private func snapshot(_ request: Snapshot) throws {
-        for width in [312.0, 400.0] {
+        for width in [380.0] {
             let host = NSHostingView(rootView: HostedVideoSharePanel(controller: request.controller, context: .project(.init(
-                path: request.projectPath, title: "How to record a useful walkthrough", exports: [], shareFile: { _ in })),
-                preparation: request.preparation, newExport: {}, close: {}, showLibrary: {}).frame(width: width, height: 660).preferredColorScheme(.dark))
+                path: request.projectPath, estimatedSize: "≈ 70 MB")),
+                preparation: request.preparation, newExport: {}, showLibrary: {})
+                .frame(width: width - 40).padding(20).background(BlitzUI.panelBackground).preferredColorScheme(.dark))
             host.setFrameSize(host.fittingSize)
             host.layoutSubtreeIfNeeded()
             XCTAssertEqual(host.fittingSize.width, width, accuracy: 1)

@@ -7,6 +7,8 @@ struct CameraImageControlsConfiguration {
     let isCropModeEnabled: Bool
     let showsContentMode: Bool
     let isResetDisabled: Bool
+    /// The editor puts Reset in the section header instead.
+    let showsResetButton: Bool
     let onCropZoomEditingChanged: (Bool) -> Void
     let onBeginCrop: () -> Void
     let onResetCrop: () -> Void
@@ -36,7 +38,7 @@ struct CameraImageControls: View {
                 value: configuration.cropZoom,
                 range: 0...0.75,
                 step: 0.01,
-                valueLabel: "\(Int((configuration.cropZoom.wrappedValue / 0.75 * 100).rounded()))%",
+                valueLabel: EditorSourceZoom.label(configuration.cropZoom.wrappedValue),
                 onEditingChanged: configuration.onCropZoomEditingChanged,
                 onReset: configuration.onResetCrop
             ))
@@ -72,6 +74,7 @@ struct CameraImageControls: View {
             .pointingHandCursor()
             .help("Choose the area that fills the camera frame. Done applies it; Cancel keeps the current framing.")
 
+            if configuration.showsResetButton {
             Button(action: configuration.onResetCrop) {
                 Label("Reset", systemImage: "arrow.counterclockwise")
                     .lineLimit(1)
@@ -82,6 +85,7 @@ struct CameraImageControls: View {
             .pointingHandCursor()
             .accessibilityLabel("Reset camera zoom")
             .help("Reset zoom and position")
+            }
         }
     }
 }
@@ -115,6 +119,7 @@ struct CameraCropControls: View {
             isCropModeEnabled: vm.isCameraCropModeEnabled,
             showsContentMode: !vm.isCameraInsetLayout,
             isResetDisabled: isCentered,
+            showsResetButton: true,
             onCropZoomEditingChanged: { _ in },
             onBeginCrop: vm.beginCameraCropMode,
             onResetCrop: vm.resetCameraCrop

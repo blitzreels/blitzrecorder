@@ -66,58 +66,43 @@ struct ExportEncodingProfile: Equatable {
     let audioBitrate: Int
     let prefersFullRangeRGB: Bool
     let preferredFormat: OutputVideoFormat?
-    let sizeEstimateIsCeiling: Bool
     var prioritizesSpeed = false
 
     func prioritizingSpeed() -> ExportEncodingProfile {
-        var copy = self
-        copy.prioritizesSpeed = true
-        return ExportEncodingProfile(
-            codec: copy.codec, bitrate: copy.bitrate, quality: nil, usesAverageBitRate: true,
-            maxKeyFrameInterval: copy.maxKeyFrameInterval, audioBitrate: copy.audioBitrate,
-            prefersFullRangeRGB: false, preferredFormat: copy.preferredFormat ?? .mp4,
-            sizeEstimateIsCeiling: false, prioritizesSpeed: true)
+        ExportEncodingProfile(
+            codec: codec, bitrate: bitrate, quality: nil, usesAverageBitRate: true,
+            maxKeyFrameInterval: maxKeyFrameInterval, audioBitrate: audioBitrate,
+            prefersFullRangeRGB: false, preferredFormat: preferredFormat ?? .mp4, prioritizesSpeed: true)
     }
+
+    /// Hits a chosen file size. ProRes has no bitrate control, so it keeps its own.
+    func withVideoBitrate(_ videoBitrate: Int) -> ExportEncodingProfile {
+        guard codec != .proRes422 else { return self }
+        return ExportEncodingProfile(
+            codec: codec, bitrate: min(RecordingSettings.maxCustomVideoBitrate, max(Self.minimumTargetBitrate, videoBitrate)),
+            quality: quality, usesAverageBitRate: true, maxKeyFrameInterval: maxKeyFrameInterval,
+            audioBitrate: audioBitrate, prefersFullRangeRGB: prefersFullRangeRGB, preferredFormat: preferredFormat,
+            prioritizesSpeed: prioritizesSpeed)
+    }
+
+    static let minimumTargetBitrate = 300_000
 
     var detail: String {
-        switch codec {
-        case .proRes422:
-            return String(format: "ProRes 422 · almost lossless · %.0f Mbps", Double(bitrate) / 1_000_000)
-        case .h264, .hevc:
-            let codecName = codec.displayName
-            if let quality, quality >= 0.85 {
-                return String(format: "%@ · visually lossless · up to %.0f Mbps", codecName, Double(bitrate) / 1_000_000)
-            }
-            if usesAverageBitRate {
-                return String(format: "%@ · %.1f Mbps", codecName, Double(bitrate) / 1_000_000)
-            }
-            return String(format: "%@ · up to %.1f Mbps", codecName, Double(bitrate) / 1_000_000)
-        }
+        let megabits = Double(bitrate) / 1_000_000
+        return codec == .proRes422
+            ? String(format: "ProRes 422 · %.0f Mbps", megabits)
+            : String(format: "%@ · %.1f Mbps", codec.displayName, megabits)
     }
 
-    var typicalSizeFraction: Double {
-        guard sizeEstimateIsCeiling, let quality else { return 1 }
-        if quality >= 0.85 { return 0.22 }
-        if quality >= 0.65 { return 0.38 }
-        return 0.5
-    }
-
-    var estimatedSizeCaption: String {
-        sizeEstimateIsCeiling ? "Typical–max" : "Estimated size"
-    }
-
-    func estimatedSizeText(duration: TimeInterval, layoutCount: Int = 1) -> String {
+    /// Every tier holds a fixed average bitrate, so the size follows from duration alone.
+    func estimatedBytes(duration: TimeInterval, layoutCount: Int) -> Int64 {
         let seconds = max(0, duration) * Double(max(1, layoutCount))
-        let maximumBytes = Int64(seconds * Double(bitrate + audioBitrate) / 8)
-        let typicalBytes = Int64((Double(maximumBytes) * typicalSizeFraction).rounded())
-        if typicalBytes == maximumBytes {
-            return "≈ " + Self.byteCount(maximumBytes)
-        }
-        return "≈ \(Self.byteCount(typicalBytes))–\(Self.byteCount(maximumBytes))"
+        return Int64(seconds * Double(bitrate + audioBitrate) / 8)
     }
 
-    private static func byteCount(_ bytes: Int64) -> String {
-        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    func estimatedSizeText(duration: TimeInterval, layoutCount: Int) -> String {
+        "≈ " + ByteCountFormatter.string(
+            fromByteCount: estimatedBytes(duration: duration, layoutCount: layoutCount), countStyle: .file)
     }
 
     static func hevc(bitrate: Int, audioBitrate: Int) -> ExportEncodingProfile {
@@ -129,8 +114,7 @@ struct ExportEncodingProfile: Equatable {
             maxKeyFrameInterval: nil,
             audioBitrate: audioBitrate,
             prefersFullRangeRGB: false,
-            preferredFormat: nil,
-            sizeEstimateIsCeiling: false
+            preferredFormat: nil
         )
     }
 }
@@ -146,43 +130,38 @@ enum ExportVideoQuality: String, CaseIterable {
     var displayName: String {
         switch self {
         case .compact:
-            return "Compact"
+            return "Small"
         case .web:
             return "Web"
-        case .standard:
-            return "Standard"
-        case .high:
+        case .standard, .high, .maximum:
             return "High"
-        case .maximum:
-            return "Lossless"
         case .proRes:
-            return "ProRes"
+            return "Master"
         }
     }
 
     var plainDescription: String {
         switch self {
         case .compact:
-            return "Tiniest file · more loss"
+            return "For messages and email"
         case .web:
-            return "Clear H.264 · sharing and uploads"
-        case .standard:
-            return "Some loss · smaller HEVC"
-        case .high:
-            return "Light loss · most videos"
-        case .maximum:
-            return "Visually lossless HEVC"
+            return "Plays anywhere and uploads fast"
+        case .standard, .high, .maximum:
+            return "Sharpest file for YouTube or editing later"
         case .proRes:
-            return "Almost lossless master · huge MOV"
+            return "For editing apps like Final Cut · very large"
         }
     }
 
     static var menuCases: [ExportVideoQuality] {
-        [.compact, .web, .high, .maximum, .proRes]
+        [.compact, .web, .high, .proRes]
     }
 
     var resolvedMenuQuality: ExportVideoQuality {
-        self == .standard ? .high : self
+        switch self {
+        case .standard, .maximum: .high
+        default: self
+        }
     }
 
     var requiresQuickTime: Bool {
@@ -197,6 +176,7 @@ enum ExportVideoQuality: String, CaseIterable {
         encodingProfile(baseBitrate: baseBitrate, framesPerSecond: 30, audioBitrate: 192_000).bitrate
     }
 
+    /// `baseBitrate` is the 1080p social reference (8 Mbps up to 30 fps), so Small ≈ 2.5, Web ≈ 5 and High ≈ 10 Mbps.
     func encodingProfile(
         baseBitrate: Int,
         framesPerSecond: Int,
@@ -209,62 +189,35 @@ enum ExportVideoQuality: String, CaseIterable {
         case .compact:
             return ExportEncodingProfile(
                 codec: .hevc,
-                bitrate: scaledBitrate(baseBitrate, multiplier: 0.12),
-                quality: 0.28,
+                bitrate: scaledBitrate(baseBitrate, multiplier: 0.3125),
+                quality: nil,
                 usesAverageBitRate: true,
                 maxKeyFrameInterval: fps * 5,
                 audioBitrate: min(audioBitrate, 96_000),
                 prefersFullRangeRGB: false,
-                preferredFormat: nil,
-                sizeEstimateIsCeiling: false
+                preferredFormat: nil
             )
         case .web:
             return ExportEncodingProfile(
                 codec: .h264,
-                bitrate: scaledBitrate(baseBitrate, multiplier: 1.0),
-                quality: 0.75,
+                bitrate: scaledBitrate(baseBitrate, multiplier: 0.625),
+                quality: nil,
                 usesAverageBitRate: true,
                 maxKeyFrameInterval: fps * 2,
-                audioBitrate: min(audioBitrate, 192_000),
+                audioBitrate: min(audioBitrate, 160_000),
                 prefersFullRangeRGB: false,
-                preferredFormat: nil,
-                sizeEstimateIsCeiling: false
+                preferredFormat: nil
             )
-        case .standard:
+        case .standard, .high, .maximum:
             return ExportEncodingProfile(
                 codec: .hevc,
-                bitrate: scaledBitrate(baseBitrate, multiplier: 0.80),
-                quality: 0.55,
-                usesAverageBitRate: false,
-                maxKeyFrameInterval: fps * 3,
-                audioBitrate: audioBitrate,
-                prefersFullRangeRGB: false,
-                preferredFormat: nil,
-                sizeEstimateIsCeiling: true
-            )
-        case .high:
-            return ExportEncodingProfile(
-                codec: .hevc,
-                bitrate: scaledBitrate(baseBitrate, multiplier: 1.5),
-                quality: 0.72,
-                usesAverageBitRate: false,
+                bitrate: scaledBitrate(baseBitrate, multiplier: 1.25),
+                quality: nil,
+                usesAverageBitRate: true,
                 maxKeyFrameInterval: fps * 2,
                 audioBitrate: audioBitrate,
                 prefersFullRangeRGB: true,
-                preferredFormat: nil,
-                sizeEstimateIsCeiling: true
-            )
-        case .maximum:
-            return ExportEncodingProfile(
-                codec: .hevc,
-                bitrate: scaledBitrate(baseBitrate, multiplier: 4),
-                quality: 0.92,
-                usesAverageBitRate: false,
-                maxKeyFrameInterval: fps * 2,
-                audioBitrate: max(audioBitrate, 256_000),
-                prefersFullRangeRGB: true,
-                preferredFormat: nil,
-                sizeEstimateIsCeiling: true
+                preferredFormat: nil
             )
         case .proRes:
             return ExportEncodingProfile(
@@ -275,8 +228,7 @@ enum ExportVideoQuality: String, CaseIterable {
                 maxKeyFrameInterval: nil,
                 audioBitrate: max(audioBitrate, 320_000),
                 prefersFullRangeRGB: true,
-                preferredFormat: .mov,
-                sizeEstimateIsCeiling: false
+                preferredFormat: .mov
             )
         }
     }

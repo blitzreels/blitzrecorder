@@ -14,7 +14,7 @@ enum EditorDisplayLinkPolicy {
     }
 }
 
-private struct EditorCameraCropCanvasFrameRequest {
+private struct EditorSourceCropCanvasFrameRequest {
     let scene: RecordingScene
     let aspectRatios: [SceneLayerKind: CGFloat]
 }
@@ -24,12 +24,12 @@ struct EditorCompositedPlayer: NSViewRepresentable {
     let controller: EditorPlaybackController
     let renderSize: CGSize
     let previewSceneRevision: Int
-    let cameraCropEditingScene: RecordingScene?
+    let cropDraft: EditorSourceCropDraft?
 
     func makeNSView(context: Context) -> EditorCompositedPlayerView {
         let view = EditorCompositedPlayerView()
         view.controller = controller
-        view.cameraCropEditingScene = cameraCropEditingScene
+        view.cropDraft = cropDraft
         view.configure(renderSize: renderSize)
         return view
     }
@@ -37,7 +37,7 @@ struct EditorCompositedPlayer: NSViewRepresentable {
     func updateNSView(_ nsView: EditorCompositedPlayerView, context: Context) {
         nsView.controller = controller
         nsView.previewSceneRevision = previewSceneRevision
-        nsView.cameraCropEditingScene = cameraCropEditingScene
+        nsView.cropDraft = cropDraft
         nsView.configure(renderSize: renderSize)
         nsView.refresh()
         nsView.synchronizeDisplayLink()
@@ -67,7 +67,7 @@ final class EditorCompositedPlayerView: NSView {
         let backingScaleFactor: CGFloat
         let aspectRatios: [SceneLayerKind: CGFloat]
         let hiddenKinds: Set<SceneLayerKind>
-        let isCameraCropEditing: Bool
+        let croppingKind: SceneLayerKind?
         let screenPlayer: ObjectIdentifier?
         let cameraPlayer: ObjectIdentifier?
     }
@@ -89,7 +89,7 @@ final class EditorCompositedPlayerView: NSView {
     private var renderSize: CGSize = .zero
     private var renderedBackgroundKey: (style: CanvasBackgroundStyle, width: Int, height: Int)?
     var previewSceneRevision = 0
-    var cameraCropEditingScene: RecordingScene?
+    var cropDraft: EditorSourceCropDraft?
 
     weak var controller: EditorPlaybackController?
     private var displayLink: CADisplayLink?
@@ -218,7 +218,7 @@ final class EditorCompositedPlayerView: NSView {
         let time = controller.displayTime()
         defer { refreshPrivacyMasks(time: time) }
         guard let playbackScene = controller.scene(at: time) else { return }
-        let scene = cameraCropEditingScene ?? playbackScene
+        let scene = cropDraft?.scene ?? playbackScene
         let canvasFrame = cameraCropCanvasFrame(.init(
             scene: scene,
             aspectRatios: controller.sourceAspectRatios
@@ -233,7 +233,7 @@ final class EditorCompositedPlayerView: NSView {
             backingScaleFactor: window?.backingScaleFactor ?? 2,
             aspectRatios: aspectRatios,
             hiddenKinds: hidden,
-            isCameraCropEditing: cameraCropEditingScene != nil,
+            croppingKind: cropDraft?.kind,
             screenPlayer: controller.videoPlayer(for: .screen).map(ObjectIdentifier.init),
             cameraPlayer: controller.videoPlayer(for: .camera).map(ObjectIdentifier.init)
         )
@@ -318,7 +318,7 @@ final class EditorCompositedPlayerView: NSView {
                     aspectRatios: aspectRatios,
                     scale: scale,
                     scene: scene,
-                    isCameraCropEditing: kind == .camera && cameraCropEditingScene != nil
+                    isCropEditing: kind == cropDraft?.kind
                 )
             }
         }
@@ -366,10 +366,11 @@ final class EditorCompositedPlayerView: NSView {
         }
     }
 
-    private func cameraCropCanvasFrame(_ request: EditorCameraCropCanvasFrameRequest) -> CGRect {
-        guard cameraCropEditingScene != nil,
-              let sourceAspectRatio = request.aspectRatios[.camera],
-              let presentation = EditorCameraCropPresentation.make(.init(
+    private func cameraCropCanvasFrame(_ request: EditorSourceCropCanvasFrameRequest) -> CGRect {
+        guard let cropDraft,
+              let sourceAspectRatio = request.aspectRatios[cropDraft.kind],
+              let presentation = EditorSourceCropPresentation.make(.init(
+                kind: cropDraft.kind,
                 containerSize: bounds.size,
                 renderSize: renderSize,
                 scene: request.scene,
@@ -409,12 +410,12 @@ final class EditorCompositedPlayerView: NSView {
         aspectRatios: [SceneLayerKind: CGFloat],
         scale: CGFloat,
         scene: RecordingScene,
-        isCameraCropEditing: Bool
+        isCropEditing: Bool
     ) {
         let targetRect = geometry.targetRect(for: kind)
         let aspect = aspectRatios[kind] ?? (targetRect.height > 0 ? targetRect.width / targetRect.height : 1)
-        if isCameraCropEditing {
-            let sourceFrame = geometry.cameraCropSourceFrame(sourceAspectRatio: aspect)
+        if isCropEditing {
+            let sourceFrame = geometry.cropSourceFrame(for: kind, sourceAspectRatio: aspect)
             let displayedFrame = CGRect(
                 x: sourceFrame.minX * scale,
                 y: sourceFrame.minY * scale,

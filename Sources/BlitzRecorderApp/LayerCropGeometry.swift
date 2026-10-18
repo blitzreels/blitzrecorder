@@ -1,35 +1,39 @@
 import CoreGraphics
 
-struct CameraCropControl: Equatable {
+struct LayerCropControl: Equatable {
     let amount: CGPoint
     let position: CGPoint
 }
 
-struct CameraCropGeometry {
+/// Crop math for one source layer, screen or camera, in render space.
+struct LayerCropGeometry {
+    let kind: SceneLayerKind
     let renderGeometry: SceneRenderGeometry
     let sourceAspectRatio: CGFloat
     let minimumCropScale: CGFloat
 
     init(
+        kind: SceneLayerKind,
         renderGeometry: SceneRenderGeometry,
         sourceAspectRatio: CGFloat,
         minimumCropScale: CGFloat = 0.25
     ) {
+        self.kind = kind
         self.renderGeometry = renderGeometry
         self.sourceAspectRatio = sourceAspectRatio
         self.minimumCropScale = minimumCropScale
     }
 
     var sourceFrame: CGRect {
-        renderGeometry.cameraCropSourceFrame(sourceAspectRatio: sourceAspectRatio)
+        renderGeometry.cropSourceFrame(for: kind, sourceAspectRatio: sourceAspectRatio)
     }
 
     var targetFrame: CGRect {
-        renderGeometry.targetRect(for: .camera)
+        renderGeometry.targetRect(for: kind)
     }
 
     var baseCropFrame: CGRect {
-        renderGeometry.baseCameraCropFrame(sourceAspectRatio: sourceAspectRatio)
+        cropFrame(amount: .zero, position: .zero)
     }
 
     var cropAspectRatio: CGFloat {
@@ -38,11 +42,8 @@ struct CameraCropGeometry {
     }
 
     func cropFrame(amount: CGPoint, position: CGPoint) -> CGRect {
-        renderGeometry.cameraCropFrame(
-            sourceAspectRatio: sourceAspectRatio,
-            sourceCropAmount: amount,
-            sourceCropPosition: position
-        )
+        renderGeometry.cropFrame(.init(kind: kind, sourceAspectRatio: sourceAspectRatio,
+                                       sourceCropAmount: amount, sourceCropPosition: position))
     }
 
     func movedCropFrame(_ crop: CGRect, delta: CGPoint) -> CGRect {
@@ -113,14 +114,14 @@ struct CameraCropGeometry {
         return clampedCropFrame(CGRect(x: x, y: y, width: width, height: height))
     }
 
-    func control(for crop: CGRect) -> CameraCropControl? {
+    func control(for crop: CGRect) -> LayerCropControl? {
         let baseCrop = baseCropFrame
         guard baseCrop.width > 0, baseCrop.height > 0 else { return nil }
         let scale = min(
             crop.width / max(1, baseCrop.width),
             crop.height / max(1, baseCrop.height)
         )
-        return CameraCropControl(
+        return LayerCropControl(
             amount: CGPoint(
                 x: SourceCropGeometry.clampedCropAmount(1 - scale),
                 y: SourceCropGeometry.clampedCropAmount(1 - scale)

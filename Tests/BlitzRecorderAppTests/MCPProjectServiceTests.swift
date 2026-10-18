@@ -90,7 +90,8 @@ final class MCPProjectServiceTests: XCTestCase {
                 resolution: OutputResolution.p720.rawValue,
                 framesPerSecond: 24,
                 quality: ExportVideoQuality.maximum.rawValue,
-                playbackRate: 1.2
+                playbackRate: 1.2,
+                targetFileSize: nil
             )
         ))
 

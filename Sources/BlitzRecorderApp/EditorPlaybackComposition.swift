@@ -7,11 +7,20 @@ struct EditorPlaybackSceneTimeline {
     let sceneEvents: [RecordingSceneEvent]
 }
 
+/// Preview loads both versions of the microphone when cleanup is on, so Before | After flips instantly.
+enum EditorMicrophoneVersion {
+    case original
+    case cleaned
+}
+
 struct EditorPlaybackComposition {
     struct AudioInput {
         let source: CaptureSource
         let track: AVCompositionTrack
         let volume: Float
+        /// Set on the microphone while cleanup is on; nil means the only version.
+        let version: EditorMicrophoneVersion?
+        let url: URL
     }
 
     let composition: AVComposition
@@ -26,7 +35,7 @@ struct EditorPlaybackComposition {
     let cuts: [TimelineCut]
     let videoKinds: [SceneLayerKind]
     let sourceAspectRatios: [SceneLayerKind: CGFloat]
-    let audioInputs: [AudioInput]
+    var audioInputs: [AudioInput]
     let videoAssets: [SceneLayerKind: AVComposition]
     let makeInstructions: (Set<SceneLayerKind>, [FinalExportRenderSegment]) -> [AVMutableVideoCompositionInstruction]
     var sourceReferences: [RecordingProject.SourceFile] = []

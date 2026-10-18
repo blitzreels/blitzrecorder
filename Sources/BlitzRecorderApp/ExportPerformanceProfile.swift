@@ -25,13 +25,13 @@ enum ExportPerformancePreset: String, CaseIterable {
     var plainDescription: String {
         switch self {
         case .fast:
-            "Clear H.264 · 1080p · up to 30 fps"
+            "Web · 1080p · up to 30 fps"
         case .balanced:
-            "Light loss · 1080p · source fps"
+            "High · 1080p · source fps"
         case .maximum:
-            "Visually lossless HEVC · source res"
+            "High · source resolution"
         case .master:
-            "ProRes 422 · source res · huge MOV"
+            "Master · ProRes · source resolution"
         case .custom:
             "Set format, resolution, fps, and quality below"
         }
@@ -43,6 +43,14 @@ struct ExportPerformanceProfile: Equatable {
     let resolution: OutputResolution
     let framesPerSecond: Int
     let videoQuality: ExportVideoQuality
+    /// Set when the person picked a file size instead of a quality tier's default.
+    private(set) var videoBitrateOverride: Int? = nil
+
+    func withVideoBitrate(_ bitrate: Int) -> ExportPerformanceProfile {
+        var copy = self
+        copy.videoBitrateOverride = bitrate
+        return copy
+    }
 
     static func resolved(
         preset: ExportPerformancePreset,
@@ -104,7 +112,8 @@ struct ExportPerformanceProfile: Equatable {
             width: dimensions.width,
             height: dimensions.height
         )
-        let shareEncoding = videoQuality == .web ? encoding.prioritizingSpeed() : encoding
+        let targeted = videoBitrateOverride.map(encoding.withVideoBitrate) ?? encoding
+        let shareEncoding = videoQuality == .web ? targeted.prioritizingSpeed() : targeted
         settings.customVideoBitrate = shareEncoding.bitrate
         settings.exportEncoding = shareEncoding
         if let format = encoding.preferredFormat {

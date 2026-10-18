@@ -425,7 +425,8 @@ final class RecordingLifecycleTests: XCTestCase {
                 format: OutputVideoFormat.mov.rawValue,
                 resolution: OutputResolution.p1080.rawValue,
                 framesPerSecond: 24,
-                quality: ExportVideoQuality.high.rawValue
+                quality: ExportVideoQuality.high.rawValue,
+                targetFileSize: nil
             )
         )
         let export = RecordingProject.ExportRecord(

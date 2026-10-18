@@ -121,7 +121,7 @@ struct AccountsSettingsPage: View {
                     .settingsRow()
                 } else {
                     HostedVideoSharePanel(controller: hosting, context: .account, preparation: nil,
-                                          newExport: {}, close: {}, showLibrary: {})
+                                          newExport: {}, showLibrary: {})
                         .settingsRow()
                 }
                 if let message = hosting.accountMessage {

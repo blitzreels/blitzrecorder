@@ -11,7 +11,7 @@ extension Merger {
         cuts: [TimelineCut] = []
     ) async throws -> EditorPlaybackComposition {
         let videoSources = try await availableVideoSources(for: take, settings: settings)
-        let audioSources = try await readablePlaybackAudioSources(for: take, settings: settings)
+        let audioSources = try await readablePlaybackAudioSources(.init(take: take, settings: settings, progress: { _ in }))
         guard !videoSources.isEmpty || !audioSources.isEmpty else {
             throw RecorderError.exportUnavailable
         }
@@ -124,16 +124,56 @@ extension Merger {
         )
     }
 
+    struct EditorPlaybackAudioRequest {
+        let take: RecordingTake
+        let settings: RecordingSettings
+        let timeMap: TimelineTimeMap
+        let progress: @Sendable (Double) -> Void
+    }
+
+    struct EditorPlaybackAudio {
+        /// Owns the tracks in `inputs`; a track does not keep its asset alive.
+        let composition: AVComposition
+        let inputs: [EditorPlaybackComposition.AudioInput]
+    }
+
+    /// Only the audio of an editor preview, so a voice cleanup change does not rebuild the video players.
+    static func editorPlaybackAudio(_ request: EditorPlaybackAudioRequest) async throws -> EditorPlaybackAudio {
+        let composition = AVMutableComposition()
+        let inputs = try await readablePlaybackAudioSources(.init(
+            take: request.take, settings: request.settings, progress: request.progress
+        )).compactMap {
+            addOptionalPlaybackAudio(PlaybackAudioInsertionRequest(
+                audioSource: $0, composition: composition, timeMap: request.timeMap
+            ))
+        }
+        return EditorPlaybackAudio(composition: composition, inputs: inputs)
+    }
+
+    private struct PlaybackAudioSourcesRequest {
+        let take: RecordingTake
+        let settings: RecordingSettings
+        let progress: @Sendable (Double) -> Void
+    }
+
     private static func readablePlaybackAudioSources(
-        for take: RecordingTake,
-        settings: RecordingSettings
+        _ request: PlaybackAudioSourcesRequest
     ) async throws -> [ReadablePlaybackAudioSource] {
-        var sources: [ReadablePlaybackAudioSource] = []
-        for originalSource in playbackAudioSources(for: take, settings: settings) {
-            var audioSource = originalSource
-            if audioSource.source == .microphone, settings.voiceCleanup.isEnabled {
-                audioSource.url = try await VoiceCleanupProcessor.shared.processed(.init(url: audioSource.url, settings: settings.voiceCleanup))
+        let settings = request.settings
+        var versions: [(source: ExpectedAudioSource, version: EditorMicrophoneVersion?)] = []
+        for originalSource in playbackAudioSources(for: request.take, settings: settings) {
+            guard originalSource.source == .microphone, settings.voiceCleanup.isEnabled else {
+                versions.append((originalSource, nil))
+                continue
             }
+            var cleaned = originalSource
+            cleaned.url = try await VoiceCleanupProcessor.shared.processed(.init(
+                url: originalSource.url, settings: settings.voiceCleanup, progress: request.progress))
+            versions.append((originalSource, .original))
+            versions.append((cleaned, .cleaned))
+        }
+        var sources: [ReadablePlaybackAudioSource] = []
+        for (audioSource, version) in versions {
             guard FileManager.default.fileExists(atPath: audioSource.url.path) else { continue }
             let asset = AVURLAsset(url: audioSource.url)
             let tracks: [AVAssetTrack]
@@ -156,7 +196,8 @@ extension Merger {
                 source: audioSource,
                 asset: asset,
                 track: track,
-                duration: playableDuration
+                duration: playableDuration,
+                version: version
             ))
         }
         return sources
@@ -238,7 +279,9 @@ extension Merger {
         return EditorPlaybackComposition.AudioInput(
             source: request.audioSource.source.source,
             track: compositionAudioTrack,
-            volume: max(0, min(2, request.audioSource.source.volume))
+            volume: max(0, min(2, request.audioSource.source.volume)),
+            version: request.audioSource.version,
+            url: request.audioSource.asset.url
         )
     }
 
@@ -247,6 +290,7 @@ extension Merger {
         let asset: AVURLAsset
         let track: AVAssetTrack
         let duration: CMTime
+        let version: EditorMicrophoneVersion?
     }
 
     private struct PlaybackAudioInsertionRequest {

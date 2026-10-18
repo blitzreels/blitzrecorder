@@ -127,15 +127,11 @@ enum BlitzUIKitSilence {
     ]
 
     static func presentation(_ phase: SilencePanePresentation.Phase) -> SilencePanePresentation {
-        let columns = (0..<SilenceStripColumns.count).map { index in
-            let level = 0.25 + 0.7 * abs(sin(Double(index) / 6))
-            return SilenceStripColumn(level: level, kept: index % 17 < 3 ? 0 : 1)
-        }
         let none = phase == .noPauses
         return .init(
             phase: phase, originalDuration: 317, editedDuration: none ? 317 : 281, removedDuration: none ? 0 : 36,
             pauseCount: none ? 0 : 12,
-            cutRanges: [12...14, 80...83.5, 190...192], columns: columns, hasAppliedCuts: phase == .applied,
+            cutRanges: [12...14, 80...83.5, 190...192], hasAppliedCuts: phase == .applied,
             isUpdating: false, previewEnabled: true, strength: .balanced, canApply: phase == .proposed,
             warning: nil, sourceName: "Microphone"
         )

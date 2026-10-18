@@ -37,7 +37,7 @@ struct RecordingProject: Codable, Equatable {
         let outputResolution: String
         let outputVideoFormat: String
         let framesPerSecond: Int
-        let enabledSources: [String]
+        var enabledSources: [String]
         let hiddenSources: [String]
         let microphoneGain: Double?
         let systemAudioGain: Double?
@@ -65,6 +65,10 @@ struct RecordingProject: Codable, Equatable {
         var layout: String? = nil
         var width: Int? = nil
         var height: Int? = nil
+        /// Set when the person picked a file size instead of the quality tier's default.
+        var videoBitrate: Int? = nil
+        /// Missing on exports made before speed was recorded, which ran at 1×.
+        var playbackRate: Double? = nil
     }
 
     let version: Int

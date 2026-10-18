@@ -210,6 +210,59 @@ struct BlitzBackgroundPicker: View {
     }
 }
 
+/// A few backgrounds one click away, plus the full chooser behind More.
+struct EditorBackgroundSwatches: View {
+    let configuration: BlitzBackgroundPalette.Configuration
+    @State private var showsAll = false
+
+    private static let featured: [CanvasBackgroundStyle] = [
+        .macOSSonoma, .macOSRadialSky, .aurora, .ocean, .midnight, .graphite,
+    ]
+
+    private var swatches: [CanvasBackgroundStyle] {
+        let featured = Self.featured
+        guard !featured.contains(configuration.selection) else { return featured }
+        return [configuration.selection] + featured.dropLast()
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(swatches, id: \.self) { style in
+                let isSelected = style == configuration.selection
+                Button { configuration.onSelect(style) } label: {
+                    CanvasBackgroundSwatchCache.image(style)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 30)
+                        .clipShape(.rect(cornerRadius: BlitzUI.controlRadius - 3))
+                        .padding(3)
+                        .background {
+                            if isSelected { BlitzSelectedBackground(cornerRadius: BlitzUI.controlRadius) }
+                        }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(style.displayName)
+                .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+                .help(style.displayName)
+                .pointingHandCursor()
+            }
+            Button("More") { showsAll.toggle() }
+                .blitzButton(.quiet)
+                .controlSize(.small)
+                .fixedSize()
+                .help("All backgrounds")
+                .popover(isPresented: $showsAll, arrowEdge: .leading) {
+                    ScrollView {
+                        BlitzBackgroundPalette(configuration: configuration).padding(16)
+                    }
+                    .scrollIndicators(.never)
+                    .frame(width: 320, height: 560)
+                }
+        }
+    }
+}
+
 struct BlitzBackgroundPalette: View {
     struct Configuration {
         let selection: CanvasBackgroundStyle

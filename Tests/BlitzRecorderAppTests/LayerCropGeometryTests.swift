@@ -64,14 +64,15 @@ final class CameraCropGeometryTests: XCTestCase {
         XCTAssertEqual(control.position.y, 0, accuracy: 0.0001)
     }
 
-    private func makeGeometry(cameraFrame: CGRect, sourceAspectRatio: CGFloat) -> CameraCropGeometry {
+    private func makeGeometry(cameraFrame: CGRect, sourceAspectRatio: CGFloat) -> LayerCropGeometry {
         var layout = SceneLayout()
         layout.cameraFrame = cameraFrame
         let scene = RecordingScene(
             enabledSources: [.camera],
             sceneLayout: layout
         )
-        return CameraCropGeometry(
+        return LayerCropGeometry(
+            kind: .camera,
             renderGeometry: SceneRenderGeometry(
                 canvas: CGRect(x: 0, y: 0, width: 100, height: 100),
                 scene: scene,

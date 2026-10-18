@@ -10,6 +10,7 @@ struct HostedVideoShareHistory: View {
         let linksNote: String?
         let canShareFile: Bool
         let shareFile: (URL) -> Void
+        let reuseSettings: (RecordingProject.ExportRecord) -> Void
     }
 
     @Bindable var controller: HostedVideoShareController
@@ -98,10 +99,10 @@ struct HostedVideoShareHistory: View {
         let url = URL(fileURLWithPath: record.path)
         let exists = FileManager.default.fileExists(atPath: record.path)
         let link = configuration.links.first { $0.matches(record) }
-        let file = ExportFile(url: url, exists: exists, link: link)
+        let file = ExportFile(record: record, url: url, exists: exists, link: link)
         let detail = exists ? Self.exportDetail(record) : "Moved or deleted · \(Self.dateLabel(record.createdAt))"
         return row(.init(
-            title: url.lastPathComponent,
+            title: Self.exportTitle(record),
             detail: link.map { "\($0.video.statusLabel) · \(detail)" } ?? detail,
             help: link.map { "\(record.path)\n\($0.url.absoluteString)" } ?? record.path,
             isAvailable: exists
@@ -112,6 +113,7 @@ struct HostedVideoShareHistory: View {
     }
 
     private struct ExportFile {
+        let record: RecordingProject.ExportRecord
         let url: URL
         let exists: Bool
         let link: HostedVideoShareController.ProjectLink?
@@ -131,7 +133,11 @@ struct HostedVideoShareHistory: View {
             action: { configuration.shareFile(file.url) }))
         let show = BlitzMenuEntry.item(.init(title: "Show", subtitle: "Show in Finder", systemImage: "folder",
             isEnabled: file.exists, action: { NSWorkspace.shared.activateFileViewerSelecting([file.url]) }))
-        var entries: [ExportEntry] = []
+        var entries: [ExportEntry] = [
+            .init(entry: .item(.init(title: "Export again with these settings", systemImage: "arrow.clockwise",
+                action: { configuration.reuseSettings(file.record) })), isInline: false),
+            .init(entry: .divider, isInline: false),
+        ]
         if let link = file.link {
             entries.append(.init(entry: .item(.init(title: "Copy link", systemImage: "doc.on.doc", action: {
                 NSPasteboard.general.clearContents()
@@ -180,10 +186,17 @@ struct HostedVideoShareHistory: View {
         .background(BlitzUI.quietFill, in: .rect(cornerRadius: BlitzControlMetrics.radius))
     }
 
+    private static func exportTitle(_ record: RecordingProject.ExportRecord) -> String {
+        guard let quality = ExportVideoQuality(rawValue: record.quality) else {
+            return URL(fileURLWithPath: record.path).lastPathComponent
+        }
+        return [quality.displayName, record.resolution, "\(record.framesPerSecond) fps"].joined(separator: " · ")
+    }
+
     private static func exportDetail(_ record: RecordingProject.ExportRecord) -> String {
         let size = record.fileSizeBytes.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) }
         return [record.layout.flatMap(CaptureLayout.init(rawValue:)).map(EditorExportLayouts.title),
-                record.resolution, record.format.uppercased(), size, dateLabel(record.createdAt)]
+                size, record.format.uppercased(), dateLabel(record.createdAt)]
             .compactMap { $0 }.joined(separator: " · ")
     }
 

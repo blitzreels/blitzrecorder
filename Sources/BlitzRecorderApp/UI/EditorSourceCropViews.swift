@@ -1,45 +1,47 @@
 import AppKit
 import SwiftUI
 
-enum EditorCameraCropInteractionKind: Equatable {
+enum EditorSourceCropInteractionKind: Equatable {
     case move
     case resize(ResizeAnchor)
 }
 
-struct EditorCameraCropInteractionChange {
-    let kind: EditorCameraCropInteractionKind
+struct EditorSourceCropInteractionChange {
+    let kind: EditorSourceCropInteractionKind
     let delta: CGPoint
-    let startControl: CameraCropControl
+    let startControl: LayerCropControl
 }
 
-struct EditorCameraCropOverlayConfiguration {
+struct EditorSourceCropOverlayConfiguration {
+    let kind: SceneLayerKind
     let scene: RecordingScene
     let renderSize: CGSize
     let sourceAspectRatio: CGFloat
-    let onChange: (EditorCameraCropInteractionChange) -> Void
+    let onChange: (EditorSourceCropInteractionChange) -> Void
     let onDone: () -> Void
     let onReset: () -> Void
     let onCancel: () -> Void
 }
 
-struct EditorCameraCropOverlay: View {
-    let configuration: EditorCameraCropOverlayConfiguration
+struct EditorSourceCropOverlay: View {
+    let configuration: EditorSourceCropOverlayConfiguration
 
     var body: some View {
         GeometryReader { proxy in
-            if let presentation = EditorCameraCropPresentation.make(.init(
+            if let presentation = EditorSourceCropPresentation.make(.init(
+                kind: configuration.kind,
                 containerSize: proxy.size,
                 renderSize: configuration.renderSize,
                 scene: configuration.scene,
                 sourceAspectRatio: configuration.sourceAspectRatio
             )) {
-                EditorCameraCropSelectionOverlay(presentation: presentation)
+                EditorSourceCropSelectionOverlay(presentation: presentation)
 
-                EditorCameraCropInteractionView(configuration: .init(
+                EditorSourceCropInteractionView(configuration: .init(
                     presentation: presentation,
-                    control: CameraCropControl(
-                        amount: configuration.scene.cameraCropAmount,
-                        position: configuration.scene.cameraCropPosition
+                    control: LayerCropControl(
+                        amount: configuration.scene.cropAmount(for: configuration.kind),
+                        position: configuration.scene.cropPosition(for: configuration.kind)
                     ),
                     onChange: configuration.onChange
                 ))
@@ -57,8 +59,8 @@ struct EditorCameraCropOverlay: View {
     }
 }
 
-struct EditorCameraCropSelectionOverlay: View {
-    let presentation: EditorCameraCropPresentation
+struct EditorSourceCropSelectionOverlay: View {
+    let presentation: EditorSourceCropPresentation
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -107,14 +109,14 @@ struct EditorCameraCropSelectionOverlay: View {
     }
 }
 
-struct EditorCameraCropInteractionConfiguration {
-    let presentation: EditorCameraCropPresentation
-    let control: CameraCropControl
-    let onChange: (EditorCameraCropInteractionChange) -> Void
+struct EditorSourceCropInteractionConfiguration {
+    let presentation: EditorSourceCropPresentation
+    let control: LayerCropControl
+    let onChange: (EditorSourceCropInteractionChange) -> Void
 }
 
-struct EditorCameraCropInteractionView: NSViewRepresentable {
-    let configuration: EditorCameraCropInteractionConfiguration
+struct EditorSourceCropInteractionView: NSViewRepresentable {
+    let configuration: EditorSourceCropInteractionConfiguration
 
     func makeNSView(context: Context) -> InteractionView {
         let view = InteractionView()
@@ -138,13 +140,13 @@ struct EditorCameraCropInteractionView: NSViewRepresentable {
             let frame: CGRect
         }
 
-        var presentation: EditorCameraCropPresentation?
-        var control = CameraCropControl(amount: .zero, position: .zero)
-        var onChange: ((EditorCameraCropInteractionChange) -> Void)?
+        var presentation: EditorSourceCropPresentation?
+        var control = LayerCropControl(amount: .zero, position: .zero)
+        var onChange: ((EditorSourceCropInteractionChange) -> Void)?
         private var trackingArea: NSTrackingArea?
-        private var dragKind: EditorCameraCropInteractionKind?
+        private var dragKind: EditorSourceCropInteractionKind?
         private var dragStart = CGPoint.zero
-        private var dragStartControl = CameraCropControl(amount: .zero, position: .zero)
+        private var dragStartControl = LayerCropControl(amount: .zero, position: .zero)
 
         override var isFlipped: Bool { true }
 
@@ -165,7 +167,7 @@ struct EditorCameraCropInteractionView: NSViewRepresentable {
         override func mouseDown(with event: NSEvent) {
             guard let presentation else { return }
             let point = convert(event.locationInWindow, from: nil)
-            let kind: EditorCameraCropInteractionKind?
+            let kind: EditorSourceCropInteractionKind?
             if let anchor = resizeAnchor(.init(point: point, frame: presentation.cropFrame)) {
                 kind = .resize(anchor)
                 anchor.cursor.set()
@@ -204,7 +206,7 @@ struct EditorCameraCropInteractionView: NSViewRepresentable {
             guard let dragKind, let presentation else { return }
             let point = convert(event.locationInWindow, from: nil)
             let scale = max(0.0001, presentation.pointsPerRenderUnit)
-            onChange?(EditorCameraCropInteractionChange(
+            onChange?(EditorSourceCropInteractionChange(
                 kind: dragKind,
                 delta: CGPoint(
                     x: (point.x - dragStart.x) / scale,

@@ -117,7 +117,7 @@ final class RecordingWorkflowExpansionTests: XCTestCase {
         settings.isEnabled = true
         settings.strength = 1
         settings.normalizesSpeech = false
-        try VoiceCleanupProcessor.processPCM(.init(source: input, destination: output, settings: settings))
+        try VoiceCleanupProcessor.processPCM(.init(source: input, destination: output, settings: settings, progress: { _ in }))
         let file = try AVAudioFile(forReading: output)
         XCTAssertEqual(Int(file.length), count)
         let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(count)))

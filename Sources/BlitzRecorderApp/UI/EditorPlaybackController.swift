@@ -14,7 +14,6 @@ private struct EditorPlaybackMediaSignature: Equatable {
     let settings: RecordingProject.SettingsSnapshot
     let sources: [RecordingProject.SourceFile]
     let cuts: [TimelineCut]
-    let voiceCleanup: VoiceCleanupSettings
 
     init(project: RecordingProject) {
         version = project.version
@@ -27,7 +26,6 @@ private struct EditorPlaybackMediaSignature: Equatable {
         settings = project.settings
         sources = project.sources
         cuts = project.edits.enabledCuts
-        voiceCleanup = project.edits.voiceCleanup
     }
 }
 
@@ -101,8 +99,13 @@ final class EditorPlaybackController: NowPlayingPlayback {
     }
 
     @ObservationIgnored private var playback: EditorPlaybackComposition? {
-        didSet { invalidateRenderSegments() }
+        didSet {
+            invalidateRenderSegments()
+            compositionRevision &+= 1
+        }
     }
+    /// The composition itself is not observed; views that read values derived from it depend on this instead.
+    private var compositionRevision = 0
     @ObservationIgnored private var cachedRenderSegments: [FinalExportRenderSegment]?
     @ObservationIgnored private var cachedPreviewRenderSegments: [FinalExportRenderSegment]?
     @ObservationIgnored private var cachedLayerFrames: (
@@ -120,7 +123,10 @@ final class EditorPlaybackController: NowPlayingPlayback {
     @ObservationIgnored private var audioPlayer: AVPlayer?
     @ObservationIgnored private var exportedPlayer: AVPlayer?
     @ObservationIgnored private var exportedTimeMap: TimelineTimeMap?
-    @ObservationIgnored private var audioMixTracks: [(source: CaptureSource, track: AVCompositionTrack, baseVolume: Float)] = []
+    private typealias AudioMixTrack = (
+        source: CaptureSource, track: AVCompositionTrack, baseVolume: Float, version: EditorMicrophoneVersion?
+    )
+    @ObservationIgnored private var audioMixTracks: [AudioMixTrack] = []
     @ObservationIgnored private var audioComposition: AVMutableComposition?
     @ObservationIgnored private var playbackClockPlayer: AVPlayer?
     @ObservationIgnored private var timeObserver: Any?
@@ -128,6 +134,22 @@ final class EditorPlaybackController: NowPlayingPlayback {
     @ObservationIgnored private var nowPlayingTitle = "Recording"
     @ObservationIgnored private var loadedProjectPath: String?
     @ObservationIgnored private var loadedMediaSignature: EditorPlaybackMediaSignature?
+    /// What the audio player was built with. Video players do not depend on it.
+    @ObservationIgnored private var loadedVoiceCleanup: VoiceCleanupSettings?
+    /// Bumped on every audio request so an older, slower one never installs over a newer choice.
+    @ObservationIgnored private var audioRequestID = 0
+    /// The latest cleanup asked for, so a repeat of an in-flight request is not started twice.
+    @ObservationIgnored private var requestedVoiceCleanup: VoiceCleanupSettings?
+    /// Kept across a swap that a newer one replaces, so playback still resumes when the last one lands.
+    @ObservationIgnored private var resumesAfterAudioSwap = false
+    /// True while the audio player is being replaced; play requests wait for it instead of failing.
+    @ObservationIgnored private var isSwappingAudio = false
+    /// Keeps the tracks of a voice cleanup swap alive; the main composition owns the first load's tracks.
+    @ObservationIgnored private var rebuiltAudioSource: AVComposition?
+    private(set) var isUpdatingAudio = false
+    @ObservationIgnored private var activeAudioReloads = 0 {
+        didSet { isUpdatingAudio = activeAudioReloads > 0 }
+    }
     @ObservationIgnored private var isScrubbing = false
     @ObservationIgnored private var resumesAfterScrub = false
     @ObservationIgnored private var seekGeneration = 0
@@ -144,11 +166,13 @@ final class EditorPlaybackController: NowPlayingPlayback {
     }
 
     var hideableKinds: Set<SceneLayerKind> {
-        Set(playback?.videoKinds ?? [])
+        _ = compositionRevision
+        return Set(playback?.videoKinds ?? [])
     }
 
     var muteableSources: Set<CaptureSource> {
-        Set(playback?.audioInputs.map(\.source) ?? [])
+        _ = compositionRevision
+        return Set(playback?.audioInputs.map(\.source) ?? [])
     }
 
     var sourceAspectRatios: [SceneLayerKind: CGFloat] {
@@ -175,17 +199,153 @@ final class EditorPlaybackController: NowPlayingPlayback {
     var isExportedPlayback: Bool { exportedPlayer != nil }
     var filePlayer: AVPlayer? { exportedPlayer }
 
-    struct VoiceComparison {
-        let bypassed: Bool
-        let project: RecordingProject
-        let settings: RecordingSettings
+    /// Both microphone versions are already in the audio player, so Before | After only changes volumes.
+    func setVoiceCleanupBypassed(_ bypassed: Bool) {
+        bypassesVoiceCleanup = bypassed
+        audioPlayer?.currentItem?.audioMix = audioMix()
     }
 
-    func compareVoiceCleanup(_ request: VoiceComparison) async {
-        bypassesVoiceCleanup = request.bypassed
-        let wasPlaying = isPlaying
-        await load(project: request.project, baseSettings: request.settings)
-        if wasPlaying && isReady { play(from: currentTime) }
+    private var inactiveMicrophoneVersion: EditorMicrophoneVersion {
+        bypassesVoiceCleanup ? .cleaned : .original
+    }
+
+    /// The microphone file being heard, for the timeline waveform; nil when cleanup is off.
+    var heardMicrophoneURL: URL? {
+        _ = compositionRevision
+        return playback?.audioInputs.first {
+            $0.source == .microphone && $0.version != nil && $0.version != inactiveMicrophoneVersion
+        }?.url
+    }
+
+    /// Progress of the voice cleanup being prepared, nil when nothing is processing.
+    private(set) var audioProgress: Double?
+
+    struct AudioReload {
+        let project: RecordingProject
+        let baseSettings: RecordingSettings
+    }
+
+    /// Cleanup only changes the microphone audio, so swap the audio player in place and keep the
+    /// video, the scene and the playhead where they are.
+    func reloadAudioIfNeeded(_ request: AudioReload) async {
+        guard isReady, let playback, loadedProjectPath == request.project.projectPath else { return }
+        let store = TakeFileStore()
+        let outputFormat = OutputVideoFormat(rawValue: request.project.settings.outputVideoFormat)
+            ?? request.baseSettings.outputVideoFormat
+        let settings = store.recordingSettings(from: request.project, baseSettings: request.baseSettings, outputFormat: outputFormat)
+        let cleanup = Self.playbackVoiceCleanup(settings.voiceCleanup)
+        guard cleanup != (requestedVoiceCleanup ?? loadedVoiceCleanup) else { return }
+        audioRequestID &+= 1
+        let requestID = audioRequestID
+        requestedVoiceCleanup = cleanup
+        let generation = loadGeneration
+        // The refresh that asked may be cancelled by the next edit; a repeat of this request then waits on
+        // this one, so it has to finish on its own.
+        await Task { @MainActor in
+            await self.performAudioReload(.init(
+                request: request, settings: settings, outputFormat: outputFormat, timeMap: playback.timeMap,
+                cleanup: cleanup, requestID: requestID, generation: generation))
+        }.value
+    }
+
+    private struct AudioReloadWork {
+        let request: AudioReload
+        let settings: RecordingSettings
+        let outputFormat: OutputVideoFormat
+        let timeMap: TimelineTimeMap
+        let cleanup: VoiceCleanupSettings
+        let requestID: Int
+        let generation: Int
+    }
+
+    private func performAudioReload(_ work: AudioReloadWork) async {
+        let request = work.request
+        let settings = work.settings
+        let cleanup = work.cleanup
+        let requestID = work.requestID
+        let generation = work.generation
+        let isCurrent = { generation == self.loadGeneration && requestID == self.audioRequestID }
+        activeAudioReloads += 1
+        audioProgress = 0
+        defer {
+            activeAudioReloads -= 1
+            if activeAudioReloads == 0 { audioProgress = nil }
+        }
+        let audio: Merger.EditorPlaybackAudio
+        do {
+            audio = try await Merger.editorPlaybackAudio(.init(
+                take: TakeFileStore().recordingTake(from: request.project, settings: settings, outputFormat: work.outputFormat),
+                settings: settings,
+                timeMap: work.timeMap,
+                progress: { [weak self] value in
+                    Task { @MainActor in
+                        guard let self, requestID == self.audioRequestID else { return }
+                        self.audioProgress = value
+                    }
+                }
+            ))
+        } catch {
+            if requestID == audioRequestID { requestedVoiceCleanup = nil }
+            guard isCurrent(), !(error is CancellationError) else { return }
+            await load(project: request.project, baseSettings: request.baseSettings)
+            return
+        }
+        guard isCurrent(), isReady else {
+            if requestID == audioRequestID { requestedVoiceCleanup = nil }
+            return
+        }
+        await installAudio(.init(audio: audio, cleanup: cleanup, requestID: requestID, generation: generation))
+    }
+
+    private struct AudioInstall {
+        let audio: Merger.EditorPlaybackAudio
+        let cleanup: VoiceCleanupSettings
+        let requestID: Int
+        let generation: Int
+    }
+
+    private func installAudio(_ install: AudioInstall) async {
+        let isCurrent = { install.generation == self.loadGeneration && install.requestID == self.audioRequestID }
+        guard isCurrent(), var updated = playback else { return }
+        let time = currentTime
+        resumesAfterAudioSwap = resumesAfterAudioSwap || isPlaying
+        isSwappingAudio = true
+        defer { isSwappingAudio = false }
+        pauseAll()
+        isPlaying = false
+        removeClockObservers()
+        audioPlayer?.pause()
+        audioPlayer?.replaceCurrentItem(with: nil)
+        audioPlayer = nil
+        audioComposition = nil
+        audioMixTracks = []
+        updated.audioInputs = install.audio.inputs
+        playback = updated
+        rebuiltAudioSource = install.audio.composition
+        buildAudioPlayer(playback: updated)
+        if let audioPlayer {
+            _ = try? await waitForPlayersReady((players: [audioPlayer], generation: install.generation))
+        }
+        guard isCurrent() else { return }
+        let clockPlayer = await selectPlaybackClockPlayer()
+        guard isCurrent() else { return }
+        playbackClockPlayer = clockPlayer
+        installObservers()
+        await seekAllPrecisely(to: time)
+        guard isCurrent() else { return }
+        loadedVoiceCleanup = install.cleanup
+        requestedVoiceCleanup = nil
+        isSwappingAudio = false
+        if resumesAfterAudioSwap { isPlaying = playAll() }
+        resumesAfterAudioSwap = false
+    }
+
+    /// Music ducking only affects export, so it never needs new preview audio.
+    private static func playbackVoiceCleanup(_ settings: VoiceCleanupSettings) -> VoiceCleanupSettings {
+        guard settings.isEnabled else { return .disabled }
+        var playback = settings
+        playback.ducksMusic = false
+        return playback
     }
 
     func loadExported(url: URL, title: String) async {
@@ -266,8 +426,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
         let store = TakeFileStore()
         let outputFormat = OutputVideoFormat(rawValue: project.settings.outputVideoFormat)
             ?? baseSettings.outputVideoFormat
-        var settings = store.recordingSettings(from: project, baseSettings: baseSettings, outputFormat: outputFormat)
-        if bypassesVoiceCleanup { settings.voiceCleanup.isEnabled = false }
+        let settings = store.recordingSettings(from: project, baseSettings: baseSettings, outputFormat: outputFormat)
         let take = store.recordingTake(from: project, settings: settings, outputFormat: outputFormat)
         let sceneEvents = store.sceneEvents(from: project)
 
@@ -290,6 +449,10 @@ final class EditorPlaybackController: NowPlayingPlayback {
             loadedProjectPath = project.projectPath
             nowPlayingTitle = project.title
             loadedMediaSignature = request.previewCuts == nil ? EditorPlaybackMediaSignature(project: project) : nil
+            loadedVoiceCleanup = Self.playbackVoiceCleanup(settings.voiceCleanup)
+            requestedVoiceCleanup = nil
+            resumesAfterAudioSwap = false
+            audioRequestID &+= 1
             renderSize = playback.renderSize
             previewSceneOverride = nil
             previewSceneRevision &+= 1
@@ -375,7 +538,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
         let inputs = playback.audioInputs
         guard !inputs.isEmpty else { return }
         let composition = AVMutableComposition()
-        var mixTracks: [(source: CaptureSource, track: AVCompositionTrack, baseVolume: Float)] = []
+        var mixTracks: [AudioMixTrack] = []
         for input in inputs {
             guard let track = composition.addMutableTrack(
                 withMediaType: .audio,
@@ -384,7 +547,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
             let range = input.track.timeRange
             guard CMTimeCompare(range.duration, .zero) > 0 else { continue }
             try? track.insertTimeRange(range, of: input.track, at: range.start)
-            mixTracks.append((input.source, track, input.volume))
+            mixTracks.append((input.source, track, input.volume, input.version))
         }
         guard !mixTracks.isEmpty else { return }
         audioComposition = composition
@@ -453,9 +616,9 @@ final class EditorPlaybackController: NowPlayingPlayback {
         let mix = AVMutableAudioMix()
         mix.inputParameters = audioMixTracks.map { entry in
             let params = AVMutableAudioMixInputParameters(track: entry.track)
+            let silenced = mutedSources.contains(entry.source) || entry.version == inactiveMicrophoneVersion
             EditorAudioVolumeAutomation.apply(.init(parameters: params, source: entry.source,
-                baseVolume: mutedSources.contains(entry.source) ? 0
-                    : entry.baseVolume * Float(audioLevels.volume(for: entry.source)),
+                baseVolume: silenced ? 0 : entry.baseVolume * Float(audioLevels.volume(for: entry.source)),
                 regions: audioLevels.regions, timeMap: timeMap))
             return params
         }
@@ -559,6 +722,10 @@ final class EditorPlaybackController: NowPlayingPlayback {
     }
 
     private func playAll() -> Bool {
+        if isSwappingAudio {
+            resumesAfterAudioSwap = true
+            return false
+        }
         let players = allPlayers
         guard !players.isEmpty, players.allSatisfy({ $0.status == .readyToPlay }) else {
             pauseAll()
@@ -807,7 +974,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
         previewSceneRevision &+= 1
     }
 
-    private func teardownPlayers() {
+    private func removeClockObservers() {
         if let timeObserver, let masterPlayer {
             masterPlayer.removeTimeObserver(timeObserver)
         }
@@ -816,6 +983,10 @@ final class EditorPlaybackController: NowPlayingPlayback {
             NotificationCenter.default.removeObserver(endObserver)
             self.endObserver = nil
         }
+    }
+
+    private func teardownPlayers() {
+        removeClockObservers()
         for player in allPlayers {
             player.pause()
             player.replaceCurrentItem(with: nil)
@@ -827,6 +998,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
         playbackClockPlayer = nil
         audioComposition = nil
         audioMixTracks = []
+        rebuiltAudioSource = nil
     }
 
     private func applyPreviewDuration() {

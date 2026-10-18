@@ -5,10 +5,44 @@ import Foundation
 
 struct VoiceCleanupSettings: Codable, Equatable, Sendable {
     var isEnabled = false
-    var strength = 0.65
+    var strength = VoiceCleanupLevel.medium.strength
     var normalizesSpeech = true
     var ducksMusic = false
     static let disabled = Self()
+}
+
+/// Three levels, so each one is processed once and switching between them is instant afterwards.
+enum VoiceCleanupLevel: CaseIterable {
+    case light, medium, strong
+
+    var strength: Double {
+        switch self {
+        case .light: 0.35
+        case .medium: 0.65
+        case .strong: 0.9
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .light: "Light"
+        case .medium: "Medium"
+        case .strong: "Strong"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .light: "Takes the edge off hum and hiss. Your voice stays fully natural."
+        case .medium: "Removes most steady background noise. Right for most rooms."
+        case .strong: "For loud fans or air conditioning. Speech can sound a little thin."
+        }
+    }
+
+    /// Settings saved before levels existed snap to the closest one.
+    init(strength: Double) {
+        self = Self.allCases.min { abs($0.strength - strength) < abs($1.strength - strength) } ?? .medium
+    }
 }
 
 actor VoiceCleanupProcessor {
@@ -17,6 +51,8 @@ actor VoiceCleanupProcessor {
     struct Request {
         let url: URL
         let settings: VoiceCleanupSettings
+        /// 0…1 while the file is processed; not called when a cached result exists.
+        let progress: @Sendable (Double) -> Void
     }
 
     func processed(_ request: Request) async throws -> URL {
@@ -35,13 +71,15 @@ actor VoiceCleanupProcessor {
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: scratch) }
         let pcm = scratch.appendingPathComponent("processed.caf")
-        try Self.processPCM(.init(source: request.url, destination: pcm, settings: request.settings))
+        try Self.processPCM(.init(source: request.url, destination: pcm, settings: request.settings,
+                                  progress: { request.progress(0.9 * $0) }))
         try Task.checkCancellation()
         guard let exporter = AVAssetExportSession(asset: AVURLAsset(url: pcm), presetName: AVAssetExportPresetAppleM4A) else {
             throw RecorderError.mediaWriteFailed("Cannot encode cleaned microphone audio.")
         }
         let encoded = scratch.appendingPathComponent("processed.m4a")
         try await exporter.export(to: encoded, as: .m4a)
+        request.progress(1)
         try Task.checkCancellation()
         if FileManager.default.fileExists(atPath: destination.path) { return destination }
         try FileManager.default.moveItem(at: encoded, to: destination)
@@ -52,6 +90,7 @@ actor VoiceCleanupProcessor {
         let source: URL
         let destination: URL
         let settings: VoiceCleanupSettings
+        let progress: (Double) -> Void
     }
 
     static func processPCM(_ request: PCMRequest) throws {
@@ -151,6 +190,7 @@ actor VoiceCleanupProcessor {
             gain = nextGain
             try output.write(from: result)
             written += count
+            if written % (512 * 200) < 512 { request.progress(Double(written) / Double(length)) }
         }
         guard written == length else { throw RecorderError.mediaWriteFailed("Voice cleanup stopped before the end of the source.") }
     }

@@ -2,10 +2,10 @@ import CoreGraphics
 import XCTest
 @testable import BlitzRecorderApp
 
-final class EditorCameraCropEditingTests: XCTestCase {
+final class EditorSourceCropEditingTests: XCTestCase {
     func testProjectPersistsCameraCropAmountAndPositionAfterReopen() throws {
         let outputDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("EditorCameraCropEditingTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("EditorSourceCropEditingTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
         addTeardownBlock {
             try? FileManager.default.removeItem(at: outputDirectory)
@@ -23,10 +23,10 @@ final class EditorCameraCropEditingTests: XCTestCase {
             eventIndex: 0,
             baseSettings: settings
         ) { scene in
-            EditorCameraCropSession.Commit(
+            EditorSourceCropSession.Commit(
+                kind: .camera,
                 eventIndex: 0,
-                amount: CGPoint(x: 0.42, y: 0.42),
-                position: CGPoint(x: 0.65, y: -0.3)
+                control: .init(amount: CGPoint(x: 0.42, y: 0.42), position: CGPoint(x: 0.65, y: -0.3))
             ).apply(to: &scene)
         }
 
@@ -44,7 +44,8 @@ final class EditorCameraCropEditingTests: XCTestCase {
         settings.sceneLayout = SceneLayout.presetLayout(.webcamFullscreen, for: .vertical)
         let scene = RecordingScene(settings: settings)
 
-        let presentation = try XCTUnwrap(EditorCameraCropPresentation.make(.init(
+        let presentation = try XCTUnwrap(EditorSourceCropPresentation.make(.init(
+            kind: .camera,
             containerSize: CGSize(width: 900, height: 1_600),
             renderSize: CGSize(width: 1_080, height: 1_920),
             scene: scene,
@@ -68,7 +69,8 @@ final class EditorCameraCropEditingTests: XCTestCase {
         settings.cameraCropPosition = CGPoint(x: 0.7, y: -0.4)
         let scene = RecordingScene(settings: settings)
 
-        let presentation = try XCTUnwrap(EditorCameraCropPresentation.make(.init(
+        let presentation = try XCTUnwrap(EditorSourceCropPresentation.make(.init(
+            kind: .camera,
             containerSize: CGSize(width: 1_200, height: 675),
             renderSize: CGSize(width: 1_920, height: 1_080),
             scene: scene,

@@ -23,6 +23,7 @@ struct EditorView: View {
     @State var selectedExportFramesPerSecond = 60
     @State var selectedExportQuality: ExportVideoQuality = .high
     @State var selectedExportPreset: ExportPerformancePreset = .balanced
+    @State var selectedExportTargetSize: Int64?
     @State var selectedExportPlaybackRate = ExportPlaybackRate.normal
     @State var backgroundMusic: ExportBackgroundMusic?
     @State var backgroundMusicBookmarkData: Data?
@@ -33,7 +34,7 @@ struct EditorView: View {
     @State var layoutDraft: EditorLayoutDraft?
     @State var screenZoomDraft: Double?
     @State var cameraZoomDraft: Double?
-    @State var cameraCropDraft: EditorCameraCropDraft?
+    @State var sourceCropDraft: EditorSourceCropDraft?
     @State var canvasSceneDraft: RecordingScene?
     @State var canvasCommitTask: Task<Void, Never>?
     @State var preservesCanvasPreviewOnNextProjectRefresh = false
@@ -41,10 +42,8 @@ struct EditorView: View {
     @State var silence = SilenceEditingSession()
     @State var privacy = PrivacyEditingSession()
     @State var inspectorTab: EditorInspectorTab = .silence
-    @State var showsHostingShare = false
+    @State var exportDestination: EditorExportDestination = .file
     @State var preparesHostedExport = false
-    @State var showsSourceFraming = false
-    @State var framingSource: SceneLayerKind = .screen
     @State var aspectRatioLockedKinds: Set<SceneLayerKind> = [.screen, .camera]
 
     var body: some View {
@@ -70,25 +69,6 @@ struct EditorView: View {
                             .animation(.spring(duration: 0.18, bounce: 0), value: noticeKey)
                     }
             } inspector: {
-                if showsHostingShare {
-                    HStack(spacing: 0) {
-                    HostedVideoSharePanel(controller: .shared, context: .project(.init(path: project?.projectPath,
-                        title: project?.displayTitle ?? "Video", exports: project?.exports ?? [],
-                        shareFile: shareExportedFile)), preparation: preparesHostedExport ? .init(
-                        title: project?.displayTitle ?? "Video", summary: exportRecipe(for: .link).summary,
-                        status: exportStatus, export: { exportVideo(to: .link) }
-                    ) : nil, newExport: { preparesHostedExport = true }, close: { showsHostingShare = false },
-                    showLibrary: {
-                        vm.projectLibraryNavigation.section = .shared
-                        vm.showProjects()
-                    })
-                    EditorInspectorTabBar(selection: Binding(get: { .blitzReels }, set: { tab in
-                        showsHostingShare = false
-                        inspectorTab = tab
-                    }))
-                    }
-                    .background(BlitzUI.panelBackground)
-                } else {
                 EditorInspector(
                     vm: vm,
                     playback: playback,
@@ -106,22 +86,20 @@ struct EditorView: View {
                     recordedVideoSources: recordedVideoSources,
                     scenePresetPreview: scenePresetPreview,
                     cameraAssetID: asset(for: .camera)?.id,
-                    showsSourceFraming: $showsSourceFraming,
-                    framingSource: $framingSource,
+                    selectedSource: selectedVideoLayerKind,
                     screenZoomDraft: $screenZoomDraft,
                     cameraZoomDraft: $cameraZoomDraft,
-                    cameraCropDraft: $cameraCropDraft,
+                    sourceCropDraft: $sourceCropDraft,
                     canvasSceneDraft: $canvasSceneDraft,
                     canvasCommitTask: $canvasCommitTask,
                     preservesCanvasPreviewOnNextProjectRefresh: $preservesCanvasPreviewOnNextProjectRefresh,
                     selection: $selection,
                     editErrorMessage: $editErrorMessage,
-                    aspectRatioLockedKinds: $aspectRatioLockedKinds,
                     textSelection: placedSelection(.text),
-                    zoomSelection: placedSelection(.zoom)
+                    zoomSelection: placedSelection(.zoom),
+                    outputs: outputsPane
                 )
                     .background(BlitzUI.panelBackground)
-                }
             } timeline: {
             EditorTimelineView(
                 project: vm.editorProject,
@@ -196,6 +174,11 @@ struct EditorView: View {
             transcript = loaded
             silence.setTranscript(loaded)
         }
+        .task(id: "\(playback.heardMicrophoneURL?.path ?? "-")|\(assets.first { $0.kind == .microphone }.flatMap { library.durations[$0.id] } != nil)") {
+            guard let microphone = assets.first(where: { $0.kind == .microphone }),
+                  library.durations[microphone.id] != nil else { return }
+            await library.showWaveform(.init(assetID: microphone.id, url: playback.heardMicrophoneURL ?? microphone.url))
+        }
         .task(id: vm.lastExportedSourceTakeURL) {
             vm.refreshLastExportedProject()
             reloadTask?.cancel()
@@ -219,20 +202,24 @@ struct EditorView: View {
                 layoutDraft = nil
                 screenZoomDraft = nil
                 cameraZoomDraft = nil
-                cameraCropDraft = nil
+                sourceCropDraft = nil
                 canvasSceneDraft = nil
             }
             reloadTask = task
+        }
+        .onChange(of: vm.isEditorExportPresented, initial: true) { _, requested in
+            guard requested else { return }
+            vm.isEditorExportPresented = false
+            showOutputs(.file)
         }
         .onChange(of: vm.isEditorVisible) { _, visible in
             guard !visible else { return }
             playback.pauseForEditing()
             NowPlayingController.shared.deactivate(playback)
-            vm.isEditorExportPresented = false
             showsTimelineShortcuts = false
             privacy.cancelGesture()
         }
-        .onChange(of: project?.projectPath) {
+        .onChange(of: project?.projectPath, initial: true) {
             let sharing = HostedVideoShareController.shared
             preparesHostedExport = !sharing.isRunning && !sharing.belongsToProject(project?.projectPath)
         }
@@ -254,10 +241,6 @@ struct EditorView: View {
                 return
             }
             if privacy.selectedID != nil { privacy.select(nil) }
-            guard inspectorTab == .layout, case .asset = selection,
-                  let source = selectedVideoLayerKind else { return }
-            framingSource = source
-            showsSourceFraming = true
         }
         .onChange(of: privacy.selectedID) { _, id in
             guard inspectorTab == .privacy else { return }
@@ -281,7 +264,7 @@ struct EditorView: View {
 
     var noticeKey: EditorNoticeKey {
         let sharing = HostedVideoShareController.shared
-        if sharing.isRunning, sharing.transferProgress != nil { return showsHostingShare ? .none : .uploading }
+        if sharing.isRunning, sharing.transferProgress != nil { return inspectorTab == .exports && exportDestination == .link ? .none : .uploading }
         return .none
     }
 
@@ -296,7 +279,7 @@ struct EditorView: View {
                         .frame(maxWidth: .infinity)
                     Button {
                         preparesHostedExport = false
-                        showsHostingShare = true
+                        showOutputs(.link)
                     } label: { Label("View", systemImage: "link") }
                     .blitzButton(.secondary)
                 }
@@ -306,7 +289,7 @@ struct EditorView: View {
         }
     }
 
-    private func shareExportedFile(_ url: URL) {
+    func shareExportedFile(_ url: URL) {
         handleExportFollowUp(.share(url))
         HostedVideoShareController.shared.start()
     }
@@ -316,11 +299,10 @@ struct EditorView: View {
         case .share(let url):
             preparesHostedExport = false
             HostedVideoShareController.shared.select(.init(fileURL: url, projectPath: project?.projectPath))
-            showsHostingShare = true
+            showOutputs(.link)
         case .sendToBlitzReels(let url):
             guard let project else { return }
             BlitzReelsHandoffController.shared.selectExport(.init(fileURL: url, project: project, settings: vm.settings))
-            showsHostingShare = false
             inspectorTab = .blitzReels
         }
     }
@@ -370,6 +352,7 @@ struct EditorView: View {
         } else {
             playback.applyEditorState(project.editorState)
             silence.prepare(.init(vm: vm, playback: playback, project: project))
+            await playback.reloadAudioIfNeeded(.init(project: project, baseSettings: vm.settings))
         }
     }
 

@@ -4,7 +4,7 @@ import VideoToolbox
 import XCTest
 
 final class ExportVideoQualityTests: XCTestCase {
-    func testWebQualityPreservesScreenDetailAtTheFullSharingBitrate() {
+    func testWebQualityIsH264AtAFixedFiveMegabitAverage() {
         let profile = ExportVideoQuality.web.encodingProfile(
             baseBitrate: 8_000_000,
             framesPerSecond: 30,
@@ -12,15 +12,15 @@ final class ExportVideoQualityTests: XCTestCase {
         )
 
         XCTAssertEqual(profile.codec, .h264)
-        XCTAssertEqual(profile.bitrate, 8_000_000)
-        XCTAssertEqual(profile.audioBitrate, 192_000)
-        XCTAssertEqual(profile.quality ?? -1, 0.75, accuracy: 0.001)
+        XCTAssertEqual(profile.bitrate, 5_000_000)
+        XCTAssertEqual(profile.audioBitrate, 160_000)
+        XCTAssertNil(profile.quality)
         XCTAssertTrue(profile.usesAverageBitRate)
         XCTAssertEqual(profile.maxKeyFrameInterval, 60)
-        XCTAssertEqual(profile.detail, "H.264 · 8.0 Mbps")
+        XCTAssertEqual(profile.detail, "H.264 · 5.0 Mbps")
     }
 
-    func testCompactQualityUsesHEVCBelowTheOldTwoMegabitFloor() {
+    func testSmallQualityIsHEVCAtAFixedAverage() {
         let profile = ExportVideoQuality.compact.encodingProfile(
             baseBitrate: 8_000_000,
             framesPerSecond: 30,
@@ -28,56 +28,30 @@ final class ExportVideoQualityTests: XCTestCase {
         )
 
         XCTAssertEqual(profile.codec, .hevc)
-        XCTAssertEqual(profile.bitrate, 960_000)
+        XCTAssertEqual(profile.bitrate, 2_500_000)
         XCTAssertEqual(profile.audioBitrate, 96_000)
-        XCTAssertEqual(profile.quality ?? -1, 0.28, accuracy: 0.001)
+        XCTAssertNil(profile.quality)
         XCTAssertTrue(profile.usesAverageBitRate)
         XCTAssertEqual(profile.maxKeyFrameInterval, 150)
-        XCTAssertLessThan(profile.bitrate, RecordingSettings.minCustomVideoBitrate)
     }
 
-    func testStandardQualityUsesConstrainedHEVCQuality() {
-        let profile = ExportVideoQuality.standard.encodingProfile(
+    func testHighStandardAndLosslessShareOneFixedHEVCTier() {
+        let high = ExportVideoQuality.high.encodingProfile(
             baseBitrate: 8_000_000,
             framesPerSecond: 30,
             audioBitrate: 192_000
         )
 
-        XCTAssertEqual(profile.codec, .hevc)
-        XCTAssertEqual(profile.bitrate, 6_400_000)
-        XCTAssertEqual(profile.quality ?? -1, 0.55, accuracy: 0.001)
-        XCTAssertFalse(profile.usesAverageBitRate)
-        XCTAssertTrue(profile.sizeEstimateIsCeiling)
-    }
-
-    func testHighQualityUsesLightLossCRFWithHeadroom() {
-        let profile = ExportVideoQuality.high.encodingProfile(
-            baseBitrate: 8_000_000,
-            framesPerSecond: 30,
-            audioBitrate: 192_000
-        )
-
-        XCTAssertEqual(profile.codec, .hevc)
-        XCTAssertEqual(profile.bitrate, 12_000_000)
-        XCTAssertEqual(profile.quality ?? -1, 0.72, accuracy: 0.001)
-        XCTAssertFalse(profile.usesAverageBitRate)
-        XCTAssertTrue(profile.prefersFullRangeRGB)
-    }
-
-    func testLosslessQualityUsesNearLosslessHEVCWithoutAverageBitrate() {
-        let profile = ExportVideoQuality.maximum.encodingProfile(
-            baseBitrate: 8_000_000,
-            framesPerSecond: 30,
-            audioBitrate: 192_000
-        )
-
-        XCTAssertEqual(profile.codec, .hevc)
-        XCTAssertEqual(profile.bitrate, 32_000_000)
-        XCTAssertEqual(profile.quality ?? -1, 0.92, accuracy: 0.001)
-        XCTAssertFalse(profile.usesAverageBitRate)
-        XCTAssertEqual(profile.audioBitrate, 256_000)
-        XCTAssertTrue(profile.prefersFullRangeRGB)
-        XCTAssertTrue(profile.detail.contains("visually lossless"))
+        XCTAssertEqual(high.codec, .hevc)
+        XCTAssertEqual(high.bitrate, 10_000_000)
+        XCTAssertNil(high.quality)
+        XCTAssertTrue(high.usesAverageBitRate)
+        XCTAssertTrue(high.prefersFullRangeRGB)
+        for legacy in [ExportVideoQuality.standard, .maximum] {
+            XCTAssertEqual(legacy.encodingProfile(baseBitrate: 8_000_000, framesPerSecond: 30, audioBitrate: 192_000), high)
+            XCTAssertEqual(legacy.resolvedMenuQuality, .high)
+        }
+        XCTAssertEqual(ExportVideoQuality.menuCases, [.compact, .web, .high, .proRes])
     }
 
     func testProResIsAlmostLosslessMezzanineInQuickTime() {
@@ -105,11 +79,11 @@ final class ExportVideoQualityTests: XCTestCase {
         )
         XCTAssertEqual(
             ExportVideoQuality.web.videoBitrate(baseBitrate: 1_000_000),
-            1_000_000
+            625_000
         )
         XCTAssertEqual(
             ExportVideoQuality.standard.videoBitrate(baseBitrate: 1_000_000),
-            800_000
+            1_250_000
         )
         XCTAssertEqual(
             ExportVideoQuality.maximum.videoBitrate(baseBitrate: 100_000_000),
@@ -147,7 +121,7 @@ final class ExportVideoQualityTests: XCTestCase {
         )
     }
 
-    func testWebExportSettingsUseDetailedH264AndTwoSecondKeyframes() throws {
+    func testWebExportSettingsUseFixedAverageH264AndTwoSecondKeyframes() throws {
         let encoding = ExportVideoQuality.web.encodingProfile(
             baseBitrate: 8_000_000,
             framesPerSecond: 30,
@@ -165,15 +139,15 @@ final class ExportVideoQualityTests: XCTestCase {
 
         XCTAssertEqual(settings[AVVideoCodecKey] as? AVVideoCodecType, .h264)
         let compression = try XCTUnwrap(settings[AVVideoCompressionPropertiesKey] as? [String: Any])
-        XCTAssertEqual(compression[AVVideoAverageBitRateKey] as? Int, 8_000_000)
+        XCTAssertEqual(compression[AVVideoAverageBitRateKey] as? Int, 5_000_000)
         XCTAssertEqual(compression[AVVideoProfileLevelKey] as? String, AVVideoProfileLevelH264HighAutoLevel)
         XCTAssertEqual(compression[AVVideoMaxKeyFrameIntervalKey] as? Int, 60)
-        XCTAssertEqual((compression[kVTCompressionPropertyKey_Quality as String] as? NSNumber)?.floatValue ?? -1, 0.75, accuracy: 0.001)
+        XCTAssertNil(compression[kVTCompressionPropertyKey_Quality as String])
         let limits = try XCTUnwrap(compression[kVTCompressionPropertyKey_DataRateLimits as String] as? [Int])
-        XCTAssertEqual(limits, [1_000_000, 1])
+        XCTAssertEqual(limits, [625_000, 1])
     }
 
-    func testLosslessExportOmitsAverageBitRateSoQualityCanBreathe() throws {
+    func testHighExportHoldsAFixedAverageSoItsSizeIsPredictable() throws {
         let encoding = ExportVideoQuality.maximum.encodingProfile(
             baseBitrate: 8_000_000,
             framesPerSecond: 30,
@@ -191,10 +165,10 @@ final class ExportVideoQualityTests: XCTestCase {
 
         XCTAssertEqual(settings[AVVideoCodecKey] as? AVVideoCodecType, .hevc)
         let compression = try XCTUnwrap(settings[AVVideoCompressionPropertiesKey] as? [String: Any])
-        XCTAssertNil(compression[AVVideoAverageBitRateKey])
-        XCTAssertEqual((compression[kVTCompressionPropertyKey_Quality as String] as? NSNumber)?.floatValue ?? -1, 0.92, accuracy: 0.001)
+        XCTAssertEqual(compression[AVVideoAverageBitRateKey] as? Int, 10_000_000)
+        XCTAssertNil(compression[kVTCompressionPropertyKey_Quality as String])
         let limits = try XCTUnwrap(compression[kVTCompressionPropertyKey_DataRateLimits as String] as? [Int])
-        XCTAssertEqual(limits, [4_000_000, 1])
+        XCTAssertEqual(limits, [1_250_000, 1])
     }
 
     func testProResExportUsesMezzanineCodecWithoutBitrateControls() throws {
@@ -221,24 +195,14 @@ final class ExportVideoQualityTests: XCTestCase {
         XCTAssertEqual(compression[kVTCompressionPropertyKey_RealTime as String] as? Bool, false)
     }
 
-    func testLosslessSizeEstimateUsesATypicalRangeNotTheCeiling() {
-        let encoding = ExportVideoQuality.maximum.encodingProfile(
-            baseBitrate: 8_000_000,
-            framesPerSecond: 30,
-            audioBitrate: 192_000
-        )
-        XCTAssertEqual(encoding.estimatedSizeCaption, "Typical–max")
-        XCTAssertEqual(encoding.typicalSizeFraction, 0.22, accuracy: 0.001)
-        XCTAssertTrue(encoding.estimatedSizeText(duration: 150).contains("–"))
-    }
-
-    func testWebSizeEstimateIsASingleNumber() {
+    func testSizeEstimateIsOneNumberFromBitrateAndDuration() {
         let encoding = ExportVideoQuality.web.encodingProfile(
             baseBitrate: 8_000_000,
             framesPerSecond: 30,
             audioBitrate: 192_000
         )
-        XCTAssertEqual(encoding.estimatedSizeCaption, "Estimated size")
-        XCTAssertFalse(encoding.estimatedSizeText(duration: 150).contains("–"))
+        XCTAssertEqual(encoding.estimatedBytes(duration: 100, layoutCount: 1), 64_500_000)
+        XCTAssertEqual(encoding.estimatedBytes(duration: 100, layoutCount: 2), 129_000_000)
+        XCTAssertFalse(encoding.estimatedSizeText(duration: 150, layoutCount: 1).contains("–"))
     }
 }

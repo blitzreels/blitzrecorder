@@ -140,7 +140,7 @@ enum Merger {
         var expectedAudioSources = expectedAudioSources(for: take, settings: settings)
         for index in expectedAudioSources.indices where expectedAudioSources[index].source == .microphone {
             expectedAudioSources[index].url = try await VoiceCleanupProcessor.shared.processed(.init(
-                url: expectedAudioSources[index].url, settings: settings.voiceCleanup))
+                url: expectedAudioSources[index].url, settings: settings.voiceCleanup, progress: { _ in }))
         }
         var audioMixParameters: [AVMutableAudioMixInputParameters] = []
         for audioSource in expectedAudioSources {

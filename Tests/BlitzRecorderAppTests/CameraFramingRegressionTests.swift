@@ -64,7 +64,7 @@ final class CameraFramingRegressionTests: XCTestCase {
         studio.applyScenePreset(.webcamLeft)
         studio.setCameraContentMode(.fit)
         let slot = studio.settings.sceneLayout.cameraFrame
-        let control = CameraCropControl(amount: CGPoint(x: 0.3, y: 0.3), position: CGPoint(x: 0.4, y: 0))
+        let control = LayerCropControl(amount: CGPoint(x: 0.3, y: 0.3), position: CGPoint(x: 0.4, y: 0))
         var updates = 0
         studio.updateRecordingScene = { _ in updates += 1 }
 
@@ -133,7 +133,7 @@ final class CameraFramingRegressionTests: XCTestCase {
         let view = makeFitPreview()
         let originalLayout = view.sceneLayout
         let originalVisibleFrame = view.renderedCameraFrameForTesting
-        var committed: CameraCropControl?
+        var committed: LayerCropControl?
         view.onCameraCropChanged = { committed = $0 }
         view.beginCameraCropEditing()
         view.updateCameraCropDraft(amount: CGPoint(x: 0.25, y: 0.25), position: CGPoint(x: 0.4, y: 0))
@@ -172,13 +172,14 @@ final class CameraFramingRegressionTests: XCTestCase {
         settings.cameraContentMode = .fit
         settings.sceneLayout = SceneLayout.presetLayout(.webcamLeft, for: .horizontal)
         let original = RecordingScene(settings: settings)
-        var draft = try XCTUnwrap(EditorCameraCropSession.begin(
+        var draft = try XCTUnwrap(EditorSourceCropSession.begin(.init(
+            kind: .camera,
             eventIndex: 0,
             sceneEvents: [RecordingSceneEvent(time: 0, scene: original)]
-        ))
+        )))
         draft.scene.cameraCropAmount = CGPoint(x: 0.2, y: 0.2)
         draft.scene.cameraCropPosition = CGPoint(x: -0.3, y: 0)
-        let commit = EditorCameraCropSession.commit(draft)
+        let commit = EditorSourceCropSession.commit(draft)
         var result = original
 
         commit.apply(to: &result)

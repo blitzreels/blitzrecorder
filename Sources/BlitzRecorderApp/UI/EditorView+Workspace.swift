@@ -15,27 +15,18 @@ extension EditorView {
                 vm.selectOutputLayout($0)
             },
             exportButton: AnyView(HStack(spacing: 8) {
-                Button(action: openSharing) { Label("Share", systemImage: "link").lineLimit(1).fixedSize() }
+                Button { showOutputs(.link) } label: { Label("Share", systemImage: "link").lineLimit(1).fixedSize() }
                 .blitzButton(.secondary)
                 .controlSize(.large)
                 .disabled(project == nil)
-                .accessibilityValue(showsHostingShare ? "Open" : "Closed")
                 .help("Create a watch link anyone can open")
-                EditorExportControls(
-                vm: vm,
-                project: project,
-                isPresented: $vm.isEditorExportPresented,
-                additionalExportLayouts: $additionalExportLayouts,
-                selectedExportPreset: $selectedExportPreset,
-                selectedFormat: $selectedFormat,
-                selectedResolution: $selectedResolution,
-                selectedExportFramesPerSecond: $selectedExportFramesPerSecond,
-                selectedExportQuality: $selectedExportQuality,
-                selectedExportPlaybackRate: $selectedExportPlaybackRate,
-                recipe: exportRecipe,
-                persist: persistEditorState,
-                export: prepareExport
-            )
+                Button { showOutputs(.file) } label: {
+                    Label("Export", systemImage: "square.and.arrow.down").lineLimit(1).fixedSize()
+                }
+                .blitzButton(inspectorTab == .exports ? .secondary : .accent)
+                .controlSize(.large)
+                .disabled(project == nil || vm.state != .idle)
+                .help("Save a video file to your Mac")
             })
         )
     }
@@ -52,6 +43,7 @@ extension EditorView {
             selectedExportFramesPerSecond = restored.framesPerSecond
             selectedExportQuality = restored.quality
             selectedExportPlaybackRate = restored.playbackRate
+            selectedExportTargetSize = restored.targetFileSize
         } else {
             selectedFormat = EditorExportRecipe.fallbackFormat(
                 projectFormat: project.settings.outputVideoFormat,
@@ -59,6 +51,7 @@ extension EditorView {
             )
             applyExportPreset(EditorExportPresetRequest(preset: .balanced, project: project))
             selectedExportPlaybackRate = .normal
+            selectedExportTargetSize = nil
         }
         backgroundMusicBookmarkData = project.editorState.backgroundMusicBookmarkData
         let resolved = EditorBackgroundMusicResolution.resolve(.init(
@@ -85,7 +78,8 @@ extension EditorView {
                 resolution: selectedResolution.rawValue,
                 framesPerSecond: selectedExportFramesPerSecond,
                 quality: selectedExportQuality.rawValue,
-                playbackRate: selectedExportPlaybackRate.value
+                playbackRate: selectedExportPlaybackRate.value,
+                targetFileSize: selectedExportTargetSize
             ),
             audioLevels: playback.audioLevels == .unity ? nil : playback.audioLevels
         )
@@ -106,11 +100,19 @@ extension EditorView {
     }
 
     func exportRecipe(for destination: EditorExportDestination) -> EditorExportRecipe {
+        EditorExportRecipe.make(exportRecipeRequest(for: destination))
+    }
+
+    func exportSizeEstimate(_ quality: ExportVideoQuality) -> String {
+        EditorExportRecipe.estimatedSize(exportRecipeRequest(for: .file), quality: quality)
+    }
+
+    private func exportRecipeRequest(for destination: EditorExportDestination) -> EditorExportRecipe.Request {
         let duration = TimelineTimeMap(
             takeDuration: TimelineTimeMap.time(timelineDuration),
             cuts: vm.lastExportedProject?.edits.enabledCuts ?? []
         ).outputDuration.seconds
-        return EditorExportRecipe.make(.init(
+        return EditorExportRecipe.Request(
             preset: selectedExportPreset,
             sourceResolution: project.map { sourceResolution(for: $0) } ?? vm.settings.outputResolution,
             sourceFramesPerSecond: project?.settings.framesPerSecond ?? vm.settings.framesPerSecond,
@@ -122,8 +124,9 @@ extension EditorView {
             audioBitrate: vm.settings.audioQuality.bitrate,
             duration: duration,
             playbackRate: selectedExportPlaybackRate.value,
-            destination: destination
-        ))
+            destination: destination,
+            targetFileSize: selectedExportTargetSize
+        )
     }
 
     var selectedExportLayouts: [CaptureLayout] {
@@ -141,21 +144,103 @@ extension EditorView {
     }
 
     func prepareExport() {
-        vm.isEditorExportPresented = false
-        showsHostingShare = false
         exportVideo(to: .file)
     }
 
-    func openSharing() {
+    var outputsPane: EditorOutputsPane {
+        let shareRecipe = exportRecipe(for: .link)
+        let recipe = exportDestination == .link ? shareRecipe : exportRecipe
+        let layouts = exportLayouts(for: exportDestination)
         let sharing = HostedVideoShareController.shared
-        preparesHostedExport = !sharing.isRunning && !sharing.belongsToProject(project?.projectPath)
-        showsHostingShare = true
+        return EditorOutputsPane(
+            controller: sharing,
+            destination: Binding(get: { exportDestination }, set: showOutputs),
+            summary: EditorOutputSummary(
+                formats: layouts.count > 1 ? "\(layouts.count) videos"
+                    : EditorExportLayouts.title(vm.lastExportedProject?.selectedOutputLayout ?? .horizontal),
+                resolution: recipe.profile.resolution,
+                framesPerSecond: recipe.profile.framesPerSecond
+            ).text,
+            exportSettings: exportControls(.controls),
+            exportAction: exportControls(.action),
+            share: HostedVideoSharePanel(
+                controller: sharing,
+                context: .project(.init(path: project?.projectPath, estimatedSize: shareRecipe.estimatedSize)),
+                preparation: preparesHostedExport ? .init(status: exportStatus, export: { exportVideo(to: .link) }) : nil,
+                newExport: { preparesHostedExport = true },
+                showLibrary: {
+                    vm.projectLibraryNavigation.section = .shared
+                    vm.showProjects()
+                }
+            ),
+            history: .init(
+                outputs: outputHistory,
+                featuredLink: preparesHostedExport ? nil : sharing.sharedURL(forProject: project?.projectPath),
+                canShareFile: sharing.canShare && !sharing.isRunning && !vm.isExporting,
+                shareFile: shareExportedFile,
+                reuseSettings: reuseExportSettings
+            )
+        )
+    }
+
+    private func exportControls(_ section: EditorExportSettings.Section) -> EditorExportControls {
+        EditorExportControls(
+            vm: vm,
+            project: project,
+            additionalExportLayouts: $additionalExportLayouts,
+            selectedExportPreset: $selectedExportPreset,
+            selectedFormat: $selectedFormat,
+            selectedResolution: $selectedResolution,
+            selectedExportFramesPerSecond: $selectedExportFramesPerSecond,
+            selectedExportQuality: $selectedExportQuality,
+            selectedExportPlaybackRate: $selectedExportPlaybackRate,
+            selectedExportTargetSize: $selectedExportTargetSize,
+            recipe: exportRecipe,
+            sizeEstimate: exportSizeEstimate,
+            persist: persistEditorState,
+            export: prepareExport,
+            section: section
+        )
+    }
+
+    var outputHistory: EditorOutputHistory {
+        EditorOutputHistory(
+            exports: project?.exports ?? [],
+            links: project.map { HostedVideoShareController.shared.links(forProject: $0.projectPath) } ?? []
+        )
+    }
+
+    func showOutputs(_ destination: EditorExportDestination) {
+        if destination == .link {
+            let sharing = HostedVideoShareController.shared
+            preparesHostedExport = !sharing.isRunning && !sharing.belongsToProject(project?.projectPath)
+        }
+        exportDestination = destination
+        inspectorTab = .exports
+    }
+
+    func reuseExportSettings(_ record: RecordingProject.ExportRecord) {
+        guard let restored = EditorExportRecipe.reused(record) else { return }
+        if let layout = record.layout.flatMap(CaptureLayout.init(rawValue:)),
+           layout != vm.lastExportedProject?.selectedOutputLayout {
+            playback.pauseForEditing()
+            vm.selectOutputLayout(layout)
+        }
+        additionalExportLayouts = []
+        selectedExportPreset = .custom
+        selectedResolution = restored.resolution
+        selectedExportFramesPerSecond = restored.framesPerSecond
+        selectedExportQuality = restored.quality
+        selectedFormat = restored.format
+        selectedExportTargetSize = record.videoBitrate == nil ? nil : record.fileSizeBytes
+        selectedExportPlaybackRate = ExportPlaybackRate(clamping: record.playbackRate ?? 1)
+        persistEditorState("Reuse Export Settings")
+        showOutputs(.file)
     }
 
     func exportVideo(to destination: EditorExportDestination) {
         guard !vm.isExportingVariants else { return }
         let profile = exportRecipe(for: destination).profile
-        vm.isEditorExportPresented = false
         let request = EditorExportRequest(
             outputFormat: destination == .link ? .mp4 : profile.videoQuality.resolvedOutputFormat(selectedFormat),
             performanceProfile: profile,
@@ -221,10 +306,11 @@ extension EditorView {
             inspectorTab: inspectorTab,
             privacy: privacy,
             textCanvas: .init(vm: vm, playback: playback, selection: $selection, error: $editErrorMessage),
-            cameraCropDraft: cameraCropDraft,
+            sourceCropDraft: sourceCropDraft,
             layoutDraft: layoutDraft,
             canvasAspectRatio: canvasAspectRatio,
             ratioLabel: ratioLabel,
+            frameRatioBar: frameRatioBar,
             layers: { displayedCanvasLayers },
             editErrorMessage: $editErrorMessage,
             onSelectLayer: { layer in
@@ -234,12 +320,49 @@ extension EditorView {
             },
             onMove: handleLayerMove,
             onResize: handleLayerResize,
-            onCropChange: updateEditorCameraCrop,
-            onCropDone: applyEditorCameraCrop,
-            onCropReset: resetEditorCameraCrop,
-            onCropCancel: cancelEditorCameraCrop
+            onCropChange: updateEditorSourceCrop,
+            onCropDone: applyEditorSourceCrop,
+            onCropReset: resetEditorSourceCrop,
+            onCropCancel: cancelEditorSourceCrop
         )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(14)
+    }
+}
+
+extension EditorView {
+    var frameRatioBar: EditorFrameRatioBar.Configuration? {
+        guard inspectorTab == .layout, sourceCropDraft == nil, let kind = selectedVideoLayerKind,
+              let scene = currentEventScene else { return nil }
+        let sourceRatio = playback.sourceAspectRatios[kind] ?? 1
+        return EditorFrameRatioBar.Configuration(
+            presets: EditorFrameRatio.availablePresets(sourceRatio: sourceRatio),
+            selected: EditorFrameRatio.selectedPreset(
+                .init(kind: kind, scene: scene), canvasAspectRatio: canvasAspectRatio, sourceRatio: sourceRatio),
+            isLocked: aspectRatioLockedKinds.contains(kind),
+            select: { applyFrameRatio(.init(kind: kind, preset: $0)) },
+            toggleLock: {
+                if aspectRatioLockedKinds.contains(kind) { aspectRatioLockedKinds.remove(kind) }
+                else { aspectRatioLockedKinds.insert(kind) }
+            }
+        )
+    }
+
+    private func applyFrameRatio(_ request: EditorFrameRatioChange) {
+        guard let scene = currentEventScene else { return }
+        let edited = EditorFrameRatio.applied(
+            request,
+            scene: scene,
+            sourceRatio: playback.sourceAspectRatios[request.kind] ?? 1,
+            canvasAspectRatio: canvasAspectRatio
+        )
+        playback.pauseForEditing()
+        guard vm.applyProjectSceneEdit(eventIndex: currentEventIndex, { editedScene in
+            editedScene.sceneLayout = edited.sceneLayout
+            editedScene.cameraContentMode = edited.cameraContentMode
+        }) else {
+            editErrorMessage = vm.detailMessage
+            return
+        }
     }
 }

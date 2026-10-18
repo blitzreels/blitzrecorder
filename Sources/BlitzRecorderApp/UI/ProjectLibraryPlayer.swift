@@ -165,7 +165,7 @@ struct ProjectLibraryPlayerSurface: View {
                         controller: configuration.controller,
                         renderSize: configuration.controller.renderSize,
                         previewSceneRevision: configuration.controller.previewSceneRevision,
-                        cameraCropEditingScene: nil
+                        cropDraft: nil
                     )
                     .allowsHitTesting(false)
                 }

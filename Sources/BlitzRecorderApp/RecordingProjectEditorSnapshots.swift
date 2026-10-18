@@ -70,6 +70,8 @@ extension RecordingProject {
         let framesPerSecond: Int
         let quality: String
         var playbackRate: Double
+        /// Bytes per file the person asked for. Missing means the quality tier's own size.
+        var targetFileSize: Int64?
 
         init(
             preset: String,
@@ -77,8 +79,10 @@ extension RecordingProject {
             resolution: String,
             framesPerSecond: Int,
             quality: String,
-            playbackRate: Double = 1.0
+            playbackRate: Double = 1.0,
+            targetFileSize: Int64?
         ) {
+            self.targetFileSize = targetFileSize
             self.preset = preset
             self.format = format
             self.resolution = resolution
@@ -97,6 +101,7 @@ extension RecordingProject {
             playbackRate = ExportPlaybackRate(
                 clamping: try container.decodeIfPresent(Double.self, forKey: .playbackRate) ?? 1.0
             ).value
+            targetFileSize = try container.decodeIfPresent(Int64.self, forKey: .targetFileSize)
         }
     }
 

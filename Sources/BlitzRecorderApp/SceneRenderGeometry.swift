@@ -96,13 +96,33 @@ struct SceneRenderGeometry {
         videoPlacement(for: kind).sourceCropRectangle(sourceExtent: sourceExtent)
     }
 
-    func cameraCropSourceFrame(sourceAspectRatio: CGFloat) -> CGRect {
+    struct CropRequest {
+        let kind: SceneLayerKind
+        let sourceAspectRatio: CGFloat
+        let sourceCropAmount: CGPoint
+        let sourceCropPosition: CGPoint
+    }
+
+    func cropSourceFrame(for kind: SceneLayerKind, sourceAspectRatio: CGFloat) -> CGRect {
         sourceFrame(
-            for: .camera,
+            for: kind,
             sourceAspectRatio: sourceAspectRatio,
             sourceCropAmount: .zero,
             sourceCropPosition: .zero
         )
+    }
+
+    func cropFrame(_ request: CropRequest) -> CGRect {
+        SourceCropGeometry.cropRectangle(
+            source: cropSourceFrame(for: request.kind, sourceAspectRatio: request.sourceAspectRatio),
+            target: targetRect(for: request.kind),
+            sourceCropAmount: request.sourceCropAmount,
+            sourceCropPosition: request.sourceCropPosition
+        )
+    }
+
+    func cameraCropSourceFrame(sourceAspectRatio: CGFloat) -> CGRect {
+        cropSourceFrame(for: .camera, sourceAspectRatio: sourceAspectRatio)
     }
 
     func cameraCropFrame(
@@ -110,12 +130,8 @@ struct SceneRenderGeometry {
         sourceCropAmount: CGPoint,
         sourceCropPosition: CGPoint
     ) -> CGRect {
-        SourceCropGeometry.cropRectangle(
-            source: cameraCropSourceFrame(sourceAspectRatio: sourceAspectRatio),
-            target: targetRect(for: .camera),
-            sourceCropAmount: sourceCropAmount,
-            sourceCropPosition: sourceCropPosition
-        )
+        cropFrame(.init(kind: .camera, sourceAspectRatio: sourceAspectRatio,
+                        sourceCropAmount: sourceCropAmount, sourceCropPosition: sourceCropPosition))
     }
 
     func baseCameraCropFrame(sourceAspectRatio: CGFloat) -> CGRect {

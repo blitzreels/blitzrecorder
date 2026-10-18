@@ -29,7 +29,8 @@ enum PreviewStageLayout {
         cameraSourceAspectRatio: CGFloat,
         geometry: SceneRenderGeometry
     ) -> CGRect {
-        let cropGeometry = CameraCropGeometry(
+        let cropGeometry = LayerCropGeometry(
+            kind: .camera,
             renderGeometry: geometry,
             sourceAspectRatio: cameraSourceAspectRatio
         )

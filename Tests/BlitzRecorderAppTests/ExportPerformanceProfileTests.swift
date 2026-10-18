@@ -14,8 +14,8 @@ final class ExportPerformanceProfileTests: XCTestCase {
         XCTAssertEqual(profile.framesPerSecond, 30)
         XCTAssertEqual(profile.videoQuality, .web)
         XCTAssertEqual(appliedSettings.exportEncoding?.codec, .h264)
-        XCTAssertEqual(appliedSettings.finalVideoBitrate, 8_000_000)
-        XCTAssertEqual(appliedSettings.finalAudioBitrate, 192_000)
+        XCTAssertEqual(appliedSettings.finalVideoBitrate, 5_000_000)
+        XCTAssertEqual(appliedSettings.finalAudioBitrate, 160_000)
         XCTAssertTrue(appliedSettings.screenShadowEnabled)
         XCTAssertTrue(appliedSettings.cameraShadowEnabled)
         XCTAssertTrue(appliedScene.screenShadowEnabled)
@@ -52,10 +52,10 @@ final class ExportPerformanceProfileTests: XCTestCase {
         XCTAssertEqual(profile.framesPerSecond, 24)
         XCTAssertEqual(settings.outputResolution, .p1440)
         XCTAssertEqual(settings.framesPerSecond, 24)
-        XCTAssertEqual(settings.finalVideoBitrate, 21_000_000)
+        XCTAssertEqual(settings.finalVideoBitrate, 17_500_000)
         XCTAssertEqual(settings.exportEncoding?.codec, .hevc)
-        XCTAssertEqual(settings.exportEncoding?.quality ?? -1, 0.72, accuracy: 0.001)
-        XCTAssertEqual(settings.exportEncoding?.usesAverageBitRate, false)
+        XCTAssertNil(settings.exportEncoding?.quality)
+        XCTAssertEqual(settings.exportEncoding?.usesAverageBitRate, true)
     }
 
     func testBalancedProfilePreserves24FPSSource() {
@@ -77,14 +77,14 @@ final class ExportPerformanceProfileTests: XCTestCase {
         XCTAssertEqual(settings.outputResolution, .p1080)
         XCTAssertEqual(settings.framesPerSecond, 30)
         XCTAssertEqual(settings.exportEncoding?.codec, .h264)
-        XCTAssertEqual(settings.finalVideoBitrate, 8_000_000)
-        XCTAssertEqual(settings.finalAudioBitrate, 192_000)
+        XCTAssertEqual(settings.finalVideoBitrate, 5_000_000)
+        XCTAssertEqual(settings.finalAudioBitrate, 160_000)
         XCTAssertNil(settings.exportEncoding?.quality)
         XCTAssertTrue(settings.exportEncoding?.prioritizesSpeed ?? false)
         XCTAssertFalse(settings.exportEncoding?.prefersFullRangeRGB ?? true)
     }
 
-    func testCompactCustomProfileStaysUnderTwoMegabitsAt1080p30() {
+    func testSmallCustomProfileIsTwoAndAHalfMegabitsAt1080p30() {
         let settings = ExportPerformanceProfile.resolved(
             preset: .custom,
             sourceResolution: .p1080,
@@ -95,17 +95,17 @@ final class ExportPerformanceProfileTests: XCTestCase {
         ).applying(to: RecordingSettings())
 
         XCTAssertEqual(settings.exportEncoding?.codec, .hevc)
-        XCTAssertEqual(settings.finalVideoBitrate, 960_000)
+        XCTAssertEqual(settings.finalVideoBitrate, 2_500_000)
         XCTAssertEqual(settings.finalAudioBitrate, 96_000)
     }
 
-    func testBestPresetAppliesVisuallyLosslessHEVC() {
+    func testArchivePresetAppliesHighHEVCAtSourceResolution() {
         let settings = profile(.maximum).applying(to: RecordingSettings())
 
         XCTAssertEqual(settings.outputResolution, .p2160)
         XCTAssertEqual(settings.exportEncoding?.codec, .hevc)
-        XCTAssertEqual(settings.exportEncoding?.quality ?? -1, 0.92, accuracy: 0.001)
-        XCTAssertEqual(settings.exportEncoding?.usesAverageBitRate, false)
+        XCTAssertNil(settings.exportEncoding?.quality)
+        XCTAssertEqual(settings.exportEncoding?.usesAverageBitRate, true)
         XCTAssertTrue(settings.exportEncoding?.prefersFullRangeRGB ?? false)
     }
 

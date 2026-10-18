@@ -14,16 +14,23 @@ struct EditorExportRecipe {
         let duration: Double
         var playbackRate: Double = 1.0
         var destination: EditorExportDestination = .file
+        /// Bytes per file. Missing means the quality tier decides the size.
+        let targetFileSize: Int64?
     }
 
     let profile: ExportPerformanceProfile
     let encoding: ExportEncodingProfile
     let summary: String
     let estimatedSize: String
+    /// One file, whatever the number of formats.
+    let estimatedFileBytes: Int64
+    let fileSizeRange: ClosedRange<Int64>
+    /// Set when the chosen size leaves less detail than the Small tier at this resolution.
+    let sizeWarning: String?
 
     static func make(_ request: Request) -> EditorExportRecipe {
         let sharing = request.destination == .link
-        let profile = sharing ? shareProfile(request) : ExportPerformanceProfile.resolved(
+        var profile = sharing ? shareProfile(request) : ExportPerformanceProfile.resolved(
             preset: request.preset,
             sourceResolution: request.sourceResolution,
             sourceFramesPerSecond: request.sourceFramesPerSecond,
@@ -43,22 +50,60 @@ struct EditorExportRecipe {
             height: dimensions.height
         )
         if sharing { encoding = encoding.prioritizingSpeed() }
+        let rate = ExportPlaybackRate(clamping: request.playbackRate).value
+        let seconds = max(0.1, request.duration / rate)
+        let tierBitrate = encoding.bitrate
+        if !sharing, encoding.codec != .proRes422, let target = request.targetFileSize {
+            let requested = Double(target) * 8 / seconds - Double(encoding.audioBitrate)
+            let videoBitrate = Int(min(Double(RecordingSettings.maxCustomVideoBitrate), max(0, requested)))
+            encoding = encoding.withVideoBitrate(videoBitrate)
+            profile = profile.withVideoBitrate(encoding.bitrate)
+        }
+        let smallBitrate = ExportVideoQuality.compact.videoBitrate(baseBitrate: SocialVideoEncoding.videoBitrate(
+            resolution: profile.resolution, fps: profile.framesPerSecond))
+        let highBitrate = ExportVideoQuality.high.videoBitrate(baseBitrate: SocialVideoEncoding.videoBitrate(
+            resolution: profile.resolution, fps: profile.framesPerSecond))
+        let lowest = encoding.withVideoBitrate(ExportEncodingProfile.minimumTargetBitrate)
+            .estimatedBytes(duration: seconds, layoutCount: 1)
+        let highest = encoding.withVideoBitrate(max(highBitrate * 2, tierBitrate))
+            .estimatedBytes(duration: seconds, layoutCount: 1)
         let summary: String
         if request.layoutCount > 1 {
             summary = "\(request.layoutCount) videos · \(profile.resolution.displayName) · \(profile.framesPerSecond) fps\(Self.speedSuffix(request.playbackRate))"
         } else {
             summary = "\(dimensions.width) × \(dimensions.height) · \(profile.framesPerSecond) fps\(Self.speedSuffix(request.playbackRate))"
         }
-        let rate = ExportPlaybackRate(clamping: request.playbackRate).value
         return EditorExportRecipe(
             profile: profile,
             encoding: encoding,
             summary: summary,
-            estimatedSize: encoding.estimatedSizeText(
-                duration: request.duration / rate,
-                layoutCount: max(1, request.layoutCount)
-            )
+            estimatedSize: encoding.estimatedSizeText(duration: seconds, layoutCount: max(1, request.layoutCount)),
+            estimatedFileBytes: encoding.estimatedBytes(duration: seconds, layoutCount: 1),
+            fileSizeRange: lowest...max(lowest + 1, highest),
+            sizeWarning: profile.videoBitrateOverride.map { $0 < smallBitrate } == true
+                ? "Smaller than Small at \(profile.resolution.displayName). Text may look soft, so try a lower resolution."
+                : nil
         )
+    }
+
+    /// The size each quality tier would produce at the resolution and frame rate the request resolves to.
+    static func estimatedSize(_ request: Request, quality: ExportVideoQuality) -> String {
+        let profile = make(request).profile
+        return make(Request(
+            preset: .custom,
+            sourceResolution: request.sourceResolution,
+            sourceFramesPerSecond: request.sourceFramesPerSecond,
+            customResolution: profile.resolution,
+            customFramesPerSecond: profile.framesPerSecond,
+            customVideoQuality: quality,
+            layout: request.layout,
+            layoutCount: request.layoutCount,
+            audioBitrate: request.audioBitrate,
+            duration: request.duration,
+            playbackRate: request.playbackRate,
+            destination: request.destination,
+            targetFileSize: nil
+        )).estimatedSize
     }
 
     /// One hardware H.264 pass at the source rate, capped at 30 fps and 1080p. Already browser-ready, so sharing does not transcode again.
@@ -78,6 +123,7 @@ struct EditorExportRecipe {
         var framesPerSecond: Int
         var quality: ExportVideoQuality
         var playbackRate: ExportPlaybackRate
+        var targetFileSize: Int64?
     }
 
     static func restored(
@@ -96,7 +142,8 @@ struct EditorExportRecipe {
             resolution: resolution,
             framesPerSecond: snapshot.framesPerSecond,
             quality: quality.resolvedMenuQuality,
-            playbackRate: ExportPlaybackRate(clamping: snapshot.playbackRate)
+            playbackRate: ExportPlaybackRate(clamping: snapshot.playbackRate),
+            targetFileSize: snapshot.targetFileSize
         )
     }
 
@@ -141,6 +188,19 @@ struct EditorExportRecipe {
         )
     }
 
+    static func reused(_ record: RecordingProject.ExportRecord) -> AppliedPreset? {
+        guard let quality = ExportVideoQuality(rawValue: record.quality),
+              let resolution = OutputResolution(rawValue: record.resolution) else { return nil }
+        let format = OutputVideoFormat(rawValue: record.format) ?? .mp4
+        return AppliedPreset(
+            preset: .custom,
+            resolution: resolution,
+            framesPerSecond: record.framesPerSecond,
+            quality: quality.resolvedMenuQuality,
+            format: quality.resolvedOutputFormat(format)
+        )
+    }
+
     private static func speedSuffix(_ rate: Double) -> String {
         let playbackRate = ExportPlaybackRate(clamping: rate)
         guard playbackRate != .normal else { return "" }
@@ -164,5 +224,15 @@ enum EditorExportLayouts {
         case .horizontal: "Landscape"
         case .square: "Square"
         }
+    }
+}
+
+struct EditorOutputHistory {
+    let exports: [RecordingProject.ExportRecord]
+    let links: [HostedVideoShareController.ProjectLink]
+
+    /// Files plus links that were not made from one of those files.
+    var count: Int {
+        exports.count + links.filter { link in !exports.contains(where: link.matches) }.count
     }
 }

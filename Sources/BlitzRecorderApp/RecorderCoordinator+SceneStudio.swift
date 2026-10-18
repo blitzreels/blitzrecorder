@@ -120,7 +120,7 @@ extension RecorderCoordinator {
         studio.setSceneLayer(kind, frame: frame, transition: transition)
     }
 
-    func setCameraCrop(_ crop: CameraCropControl) {
+    func setCameraCrop(_ crop: LayerCropControl) {
         studio.setCameraCrop(crop)
     }
 

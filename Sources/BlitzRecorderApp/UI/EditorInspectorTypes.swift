@@ -8,6 +8,7 @@ enum EditorInspectorTab: String, CaseIterable {
     case silence = "Silence"
     case privacy = "Privacy"
     case audio = "Audio"
+    case exports = "Export"
     case blitzReels = "BlitzReels"
 
     var systemImage: String {
@@ -19,6 +20,7 @@ enum EditorInspectorTab: String, CaseIterable {
         case .silence: return "waveform.badge.minus"
         case .privacy: return "eye.slash"
         case .audio: return BlitzSymbols.systemAudio
+        case .exports: return "square.and.arrow.up"
         case .blitzReels: return "captions.bubble"
         }
     }

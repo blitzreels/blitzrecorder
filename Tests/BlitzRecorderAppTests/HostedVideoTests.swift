@@ -28,7 +28,7 @@ final class HostedVideoTests: XCTestCase {
             preset: .fast, sourceResolution: .p1440, sourceFramesPerSecond: 30,
             customResolution: .p720, customFramesPerSecond: 24, customVideoQuality: .compact,
             layout: .horizontal, layoutCount: 1, audioBitrate: 192_000, duration: 1,
-            playbackRate: 1.3, destination: .link))
+            playbackRate: 1.3, destination: .link, targetFileSize: nil))
         var settings = recipe.profile.applying(to: fixture.settings)
         settings.outputVideoFormat = .mp4
         let output = fixture.root.appendingPathComponent("cloud-master.mp4")

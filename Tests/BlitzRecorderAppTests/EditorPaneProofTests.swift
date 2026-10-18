@@ -25,19 +25,25 @@ final class EditorPaneProofTests: XCTestCase {
         vm.lastExportedSourceTakeURL = takeURL
         vm.refreshLastExportedProject()
         vm.studioMode = .edit
-        let tabs: [EditorInspectorTab] = [.layout, .silence, .captions, .text, .zoom, .privacy, .audio]
+        let tabs: [EditorInspectorTab] = [.layout, .silence, .captions, .text, .zoom, .privacy, .audio, .exports]
+        let only = Set((environment["BLITZRECORDER_PROOF_SCREENS"] ?? "").split(separator: ",").map(String.init))
+        var isWarm = false
         for (index, tab) in (tabs + [.silence, .silence]).enumerated() {
+            let name = index == tabs.count + 1 ? "wide" : index == tabs.count ? "notice" : tab.rawValue.lowercased()
+            if !only.isEmpty, !only.contains(name) { continue }
             if index == tabs.count + 1 { vm.lastExportSucceededURL = nil }
             if index == tabs.count {
                 vm.lastExportSucceededURL = URL(fileURLWithPath: "/Volumes/Exports/Maîtriser l'IA pour le business.mp4")
             }
             let host = NSHostingView(rootView: EditorView(vm: vm, loadedProjectID: project.id, inspectorTab: tab)
                 .environmentObject(AppUpdateController()).preferredColorScheme(.dark))
-            let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: index == tabs.count + 1 ? 1920 : 1440, height: 900),
+            let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: index == tabs.count + 1 ? 1920 : 1440,
+                                               height: Double(environment["BLITZRECORDER_PROOF_HEIGHT"] ?? "") ?? 900),
                 styleMask: [.titled, .resizable], backing: .buffered, defer: false)
             window.contentView = host
             window.orderFront(nil)
-            try await Task.sleep(for: .seconds(tab == tabs.first ? 4 : 2))
+            try await Task.sleep(for: .seconds(isWarm ? 0.6 : 4))
+            isWarm = true
             host.layoutSubtreeIfNeeded()
             let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
             host.cacheDisplay(in: host.bounds, to: bitmap)

@@ -406,8 +406,14 @@ extension EditorView {
     }
 
 
+    /// From the files on disk, not what playback loaded: a "Screen only" scene stops loading the camera,
+    /// and the camera layouts must stay available to bring it back.
     var recordedVideoSources: Set<CaptureSource> {
-        Set(playback.hideableKinds.map { $0 == .screen ? CaptureSource.screen : .camera })
+        guard let project else {
+            return Set(playback.hideableKinds.map { $0 == .screen ? CaptureSource.screen : .camera })
+        }
+        return Set(project.sources.filter(\.exists).compactMap { RecordingProject.captureSource(forPortableRole: $0.role) })
+            .intersection([.screen, .camera])
     }
 
     var scenePresetPreview: BlitzScenePreview {
@@ -418,34 +424,34 @@ extension EditorView {
         )
     }
 
-    func updateEditorCameraCrop(_ change: EditorCameraCropInteractionChange) {
-        guard let draft = cameraCropDraft,
-              let sourceAspectRatio = playback.sourceAspectRatios[.camera] else {
+    func updateEditorSourceCrop(_ change: EditorSourceCropInteractionChange) {
+        guard let draft = sourceCropDraft,
+              let sourceAspectRatio = playback.sourceAspectRatios[draft.kind] else {
             return
         }
-        cameraCropDraft = EditorCameraCropSession.applying(
-            change,
-            to: draft,
+        sourceCropDraft = EditorSourceCropSession.applying(.init(
+            change: change,
+            draft: draft,
             renderSize: playback.renderSize,
             sourceAspectRatio: sourceAspectRatio
-        )
+        ))
     }
 
-    func applyEditorCameraCrop() {
-        guard let draft = cameraCropDraft else { return }
-        let commit = EditorCameraCropSession.commit(draft)
+    func applyEditorSourceCrop() {
+        guard let draft = sourceCropDraft else { return }
+        let commit = EditorSourceCropSession.commit(draft)
         let succeeded = vm.applyProjectSceneEdit(eventIndex: commit.eventIndex) { scene in
             commit.apply(to: &scene)
         }
-        cameraCropDraft = nil
+        sourceCropDraft = nil
         if !succeeded {
             editErrorMessage = vm.detailMessage
         }
     }
 
-    func resetEditorCameraCrop() {
-        if let cameraCropDraft {
-            self.cameraCropDraft = EditorCameraCropSession.resetting(cameraCropDraft)
+    func resetEditorSourceCrop() {
+        if let sourceCropDraft {
+            self.sourceCropDraft = EditorSourceCropSession.resetting(sourceCropDraft)
             return
         }
         playback.pauseForEditing()
@@ -462,8 +468,8 @@ extension EditorView {
         }
     }
 
-    func cancelEditorCameraCrop() {
-        cameraCropDraft = nil
+    func cancelEditorSourceCrop() {
+        sourceCropDraft = nil
     }
 
     var canDeleteSelectedSegment: Bool {

@@ -36,15 +36,6 @@ struct EditorToolbar: View {
             .help("Choose the output aspect ratio")
             .disabled(vm.state != .idle)
 
-            if vm.onOpenEditorWindow != nil {
-                Button(action: vm.openEditorWindow) {
-                    Image(systemName: "macwindow.on.rectangle")
-                }
-                .blitzButton(.quiet)
-                .accessibilityLabel("Open Editor Window")
-                .help("Move this editor into a separate window")
-                .padding(.trailing, 8)
-            }
             exportButton
         }
     }

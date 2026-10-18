@@ -23,7 +23,7 @@ extension RecorderViewModel {
         if isCameraCropModeEnabled {
             previewStage.updateCameraCropDraft(amount: amount, position: position)
         } else {
-            coordinator.setCameraCrop(CameraCropControl(amount: amount, position: position))
+            coordinator.setCameraCrop(LayerCropControl(amount: amount, position: position))
             syncSettings()
         }
     }

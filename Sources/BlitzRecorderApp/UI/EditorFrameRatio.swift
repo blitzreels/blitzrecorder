@@ -105,3 +105,44 @@ enum EditorFrameRatio {
         return scene
     }
 }
+
+/// Shape presets for the selected layer, floating on the canvas next to the handles they affect.
+struct EditorFrameRatioBar: View {
+    struct Configuration {
+        let presets: [EditorFrameRatioPreset]
+        let selected: EditorFrameRatioPreset?
+        let isLocked: Bool
+        let select: (EditorFrameRatioPreset) -> Void
+        let toggleLock: () -> Void
+    }
+
+    let configuration: Configuration
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(configuration.presets) { preset in
+                BlitzTab(configuration: .init(
+                    title: preset.title,
+                    symbolName: nil,
+                    isSelected: preset == configuration.selected,
+                    expands: false,
+                    action: { configuration.select(preset) }
+                ))
+            }
+            Button(action: configuration.toggleLock) {
+                Image(systemName: configuration.isLocked ? "lock.fill" : "lock.open")
+                    .frame(width: 16, height: 16)
+            }
+            .blitzButton(.quiet)
+            .accessibilityLabel(configuration.isLocked ? "Unlock shape" : "Lock shape")
+            .help(configuration.isLocked
+                  ? "Corner handles keep this shape. Click to reshape freely."
+                  : "Handles reshape freely. Click to keep the shape.")
+        }
+        .controlSize(.small)
+        .padding(4)
+        .blitzGlass(cornerRadius: BlitzUI.cardRadius)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Frame shape")
+    }
+}

@@ -29,19 +29,6 @@ final class SilencePanePresentationTests: XCTestCase {
         XCTAssertEqual(make(.init(intensity: 2)).strength, .balanced)
     }
 
-    func testStripColumnsMeasureLevelAndKeptShare() {
-        let windows = [SilenceWindow(start: 0, end: 0.5, decibels: -10), SilenceWindow(start: 5, end: 5.5, decibels: -70)]
-        let columns = SilenceStripColumns.make(.init(windows: windows, duration: 12, cuts: [5...6]))
-        XCTAssertEqual(columns.count, SilenceStripColumns.count)
-        XCTAssertEqual(columns[0].level, 1)
-        XCTAssertEqual(columns[50].level, 0)
-        XCTAssertEqual(columns[50].kept, 0, accuracy: 0.001)
-        XCTAssertEqual(columns[0].kept, 1)
-        let bars = SilenceTakeStrip.bars(.init(columns: columns, size: CGSize(width: 250, height: 30)))
-        XCTAssertEqual(bars.count, SilenceStripColumns.count)
-        XCTAssertGreaterThan(bars[1].rect.minX, bars[0].rect.maxX)
-    }
-
     func testRendersEveryState() throws {
         let cuts = stride(from: 6.0, to: 1290, by: 10.1).map { $0...($0 + 6.7) }
         let states: [(String, SilencePanePresentation)] = [
@@ -130,7 +117,7 @@ private func speechWindows(_ duration: Double) -> [SilenceWindow] {
 private extension SilencePanePresentation {
     func withPauseCount(_ count: Int, removed: Double) -> SilencePanePresentation {
         .init(phase: phase, originalDuration: originalDuration, editedDuration: originalDuration - removed,
-              removedDuration: removed, pauseCount: count, cutRanges: cutRanges, columns: columns, hasAppliedCuts: hasAppliedCuts,
+              removedDuration: removed, pauseCount: count, cutRanges: cutRanges, hasAppliedCuts: hasAppliedCuts,
               isUpdating: isUpdating, previewEnabled: previewEnabled, strength: strength, canApply: canApply,
               warning: warning, sourceName: sourceName)
     }

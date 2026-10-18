@@ -20,7 +20,7 @@ final class PreviewStageView: NSView {
     var renderedBackgroundKey: BackgroundRenderKey?
     var requestedBackgroundKey: BackgroundRenderKey?
     var cachedRenderGeometry: (request: PreviewStageLayout.RenderRequest, value: SceneRenderGeometry)?
-    var cachedCameraCropGeometry: (request: PreviewStageLayout.RenderRequest, aspect: CGFloat, value: CameraCropGeometry)?
+    var cachedCameraCropGeometry: (request: PreviewStageLayout.RenderRequest, aspect: CGFloat, value: LayerCropGeometry)?
     var cachedScreenCropSourceFrame: (request: PreviewStageLayout.RenderRequest, aspect: CGFloat, value: CGRect)?
     var cachedCameraFillFlags: (fullscreen: Bool, fullWidth: Bool, circle: Bool, floating: Bool)?
     var lastLayoutPassKey: PreviewStagePassKeys.LayoutPassKey?
@@ -118,7 +118,7 @@ final class PreviewStageView: NSView {
     var onCropToolbarFrameChanged: ((CGRect?) -> Void)?
     var onScreenLayerFrameChanged: ((CGRect?) -> Void)?
     var onCanvasFrameChanged: ((CGRect) -> Void)?
-    var onCameraCropChanged: ((CameraCropControl) -> Void)?
+    var onCameraCropChanged: ((LayerCropControl) -> Void)?
     var onScreenCropChanged: ((CGRect?) -> Void)?
     var onScreenCropPanRequested: (() -> Void)?
     var renderedCanvasAspectRatio: CGFloat {

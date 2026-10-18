@@ -35,7 +35,7 @@ extension PreviewStageView {
         )
     }
 
-    func applyCameraCropControl(for crop: CGRect, using cropGeometry: CameraCropGeometry) {
+    func applyCameraCropControl(for crop: CGRect, using cropGeometry: LayerCropGeometry) {
         guard let control = cropGeometry.control(for: crop) else { return }
         updateCameraCropDraft(amount: control.amount, position: control.position)
     }
@@ -89,7 +89,7 @@ extension PreviewStageView {
         cameraContentMode = .fill
         cameraCropAmount = crop.0
         cameraCropPosition = crop.1
-        onCameraCropChanged?(CameraCropControl(amount: crop.0, position: crop.1))
+        onCameraCropChanged?(LayerCropControl(amount: crop.0, position: crop.1))
     }
 
     func cancelCameraCropEditing() {
@@ -162,7 +162,7 @@ extension PreviewStageView {
         cameraCropGeometry().sourceFrame
     }
 
-    func cameraCropGeometry() -> CameraCropGeometry {
+    func cameraCropGeometry() -> LayerCropGeometry {
         let render = renderGeometry(in: canvasFrame)
         let aspect = cameraPreview.currentSourceAspectRatio
         if let cachedRenderGeometry,
@@ -171,7 +171,8 @@ extension PreviewStageView {
            cachedCameraCropGeometry.aspect == aspect {
             return cachedCameraCropGeometry.value
         }
-        let value = CameraCropGeometry(
+        let value = LayerCropGeometry(
+            kind: .camera,
             renderGeometry: render,
             sourceAspectRatio: aspect
         )

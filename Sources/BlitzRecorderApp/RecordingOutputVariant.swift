@@ -40,11 +40,23 @@ extension RecordingProject {
             ?? RecordingOutputVariant.make(.init(project: self, layout: layout))
         var result = self
         result.settings.layout = layout.rawValue
+        result.settings.enabledSources = enabledSources(for: variant)
         result.sceneEvents = variant.scenes
         var edits = edits
         edits.textOverlays = variant.textOverlays.map(\.overlay)
         result.timelineEdits = .init(edits)
         return result
+    }
+}
+
+extension RecordingProject {
+    /// A format adds the recorded videos its own scenes show, so a camera layout in Square or Shorts works
+    /// even when the main format is Screen only. It never drops one: sources keep their recorded timing together.
+    fileprivate func enabledSources(for variant: RecordingOutputVariant) -> [String] {
+        let video = Set([CaptureSource.screen, .camera].map(\.rawValue))
+        let recorded = Set(sources.filter(\.exists).compactMap { Self.captureSource(forPortableRole: $0.role)?.rawValue })
+        let used = Set(variant.scenes.flatMap(\.scene.enabledSources)).intersection(video).intersection(recorded)
+        return Set(settings.enabledSources).union(used).sorted()
     }
 }
 

@@ -52,6 +52,23 @@ struct EditorLayoutDraft {
 }
 
 enum EditorCanvasAppearance {
+    /// The background only shows through spacing, a fitted source, or a layout that leaves part of the canvas empty.
+    static func showsBackground(_ scene: RecordingScene) -> Bool {
+        if scene.canvasPadding > 0.001 { return true }
+        if scene.renderedSources.contains(.screen), scene.screenCornerRadius > 0.001 { return true }
+        let sources = scene.renderedSources
+        if sources.contains(.screen), scene.screenContentMode == .fit { return true }
+        if sources.contains(.camera), scene.cameraContentMode == .fit { return true }
+        let canvas = CGRect(x: 0, y: 0, width: 1, height: 1)
+        let frames = [CaptureSource.screen, .camera].filter(sources.contains).map {
+            ($0 == .screen ? scene.sceneLayout.screenFrame : scene.sceneLayout.cameraFrame).intersection(canvas)
+        }
+        if frames.contains(where: { $0.width > 0.999 && $0.height > 0.999 }) { return false }
+        let area: (CGRect) -> CGFloat = { $0.isNull ? 0 : $0.width * $0.height }
+        let overlap = frames.count == 2 ? area(frames[0].intersection(frames[1])) : 0
+        return frames.reduce(0) { $0 + area($1) } - overlap < 0.995
+    }
+
     static func copy(_ draft: RecordingScene, into scene: inout RecordingScene) {
         scene.canvasBackgroundStyle = draft.canvasBackgroundStyle
         scene.canvasPadding = draft.canvasPadding
