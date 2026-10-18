@@ -10,7 +10,8 @@ struct EditorPrivacyCanvas: NSViewRepresentable {
         let hiddenKinds: Set<SceneLayerKind>
         let masks: [PrivacyMask]
         let selectedID: UUID?
-        let drawingSource: SceneLayerKind?
+        let drawableKinds: Set<SceneLayerKind>
+        let findings: [PrivacyFinding]
     }
 
     let configuration: Configuration
@@ -50,8 +51,10 @@ final class PrivacyCanvasView: NSView {
 
     override func resetCursorRects() {
         guard let configuration else { return }
-        if let source = sources.first(where: { $0.kind == configuration.drawingSource }) {
-            addCursorRect(source.visibleFrame, cursor: .crosshair)
+        if !configuration.drawableKinds.isEmpty {
+            for source in sources where configuration.drawableKinds.contains(source.kind) {
+                addCursorRect(source.visibleFrame, cursor: .crosshair)
+            }
         } else {
             for mask in configuration.masks {
                 guard let source = sources.first(where: { $0.kind == mask.source }) else { continue }
@@ -63,6 +66,22 @@ final class PrivacyCanvasView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let configuration else { return }
+        if let screen = sources.first(where: { $0.kind == .screen }) {
+            for finding in configuration.findings {
+                let probe = PrivacyMask(id: finding.id, source: .screen, frame: finding.frame,
+                                        start: finding.start, end: finding.end, style: .cover)
+                let frame = screen.displayedFrame(probe).intersection(screen.visibleFrame)
+                guard !frame.isNull, !frame.isEmpty else { continue }
+                let path = NSBezierPath(rect: frame.insetBy(dx: -1, dy: -1))
+                path.lineWidth = 3
+                NSColor.black.withAlphaComponent(0.5).setStroke()
+                path.stroke()
+                path.lineWidth = 1.5
+                path.setLineDash([5, 4], count: 2, phase: 0)
+                BlitzColors.warning.nsColor.setStroke()
+                path.stroke()
+            }
+        }
         for mask in configuration.masks {
             guard let source = sources.first(where: { $0.kind == mask.source }), mask.frame.width > 0 else { continue }
             let frame = source.displayedFrame(mask).intersection(source.visibleFrame)
@@ -86,9 +105,11 @@ final class PrivacyCanvasView: NSView {
         guard let configuration else { return }
         window?.makeFirstResponder(self)
         let point = convert(event.locationInWindow, from: nil)
-        if let kind = configuration.drawingSource,
-           let source = sources.last(where: { $0.kind == kind && $0.visibleFrame.contains(point) }),
-           let mask = configuration.session.selected {
+        if !configuration.drawableKinds.isEmpty {
+            guard let source = sources.last(where: {
+                configuration.drawableKinds.contains($0.kind) && $0.visibleFrame.contains(point)
+            }), var mask = configuration.session.selected else { return }
+            mask.source = source.kind
             drag = .init(original: mask, start: source.pointInSource(point), source: source, gesture: .draw)
             return
         }

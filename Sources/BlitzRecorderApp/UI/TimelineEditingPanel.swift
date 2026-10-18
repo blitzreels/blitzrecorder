@@ -77,38 +77,32 @@ struct TimelineEditingPanel: View {
     var body: some View {
         EditorInspectorPane(configuration: .init(
             title: "Motion",
-            detail: "Zoom into your clicks and smooth the cursor.",
-            showsFooter: message != nil || (hasCursorClicks && edits.zoom.isActive),
+            detail: "Zoom in on what matters and keep the cursor easy to follow.",
+            showsFooter: false,
             content: {
                 VStack(alignment: .leading, spacing: EditorInspectorMetrics.sectionSpacing) {
                     if let id = selectedKeyframeID.wrappedValue,
                        let keyframe = edits.zoom.keyframes.first(where: { $0.id == id }) {
-                        EditorZoomPointInspector(configuration: .init(
-                            vm: vm, playback: playback, point: keyframe, selection: selectedKeyframeID
-                        ))
-                        Rectangle().fill(BlitzUI.separator).frame(height: 1)
+                        EditorInspectorSection(configuration: .init(title: "Zoom point", content: {
+                            EditorZoomPointInspector(configuration: .init(
+                                vm: vm, playback: playback, point: keyframe, selection: selectedKeyframeID
+                            ))
+                        }))
                     }
-                    zoomContent
+                    EditorInspectorSection(configuration: .init(title: "Zoom", content: { zoomContent }))
+                    EditorInspectorSection(configuration: .init(title: "Cursor", content: { cursorContent }))
+                    if let message {
+                        Text(message).font(BlitzType.caption)
+                            .foregroundStyle(messageIsError ? BlitzUI.warning : BlitzUI.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.updatesFrequently)
+                    }
                 }
             },
-            footer: {
-                if let message {
-                    Text(message).font(BlitzType.caption).foregroundStyle(
-                        messageIsError ? BlitzUI.recordRed : BlitzUI.secondaryText
-                    )
-                    .fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.updatesFrequently)
-                }
-                if hasCursorClicks && edits.zoom.isActive {
-                    Button(action: generateZoom) {
-                        Label("Update cursor zoom", systemImage: "arrow.triangle.2.circlepath").frame(maxWidth: .infinity)
-                    }
-                    .blitzButton(.accent)
-                    .help("Rebuild zoom points from the clicks in this take")
-                }
-            }
+            footer: { EmptyView() }
         ))
         .onAppear {
-            magnification = edits.zoom.isEmpty ? 1.7 : edits.zoom.intensity
+            magnification = edits.zoom.isEmpty ? ScreenZoomStrength.medium.rawValue : edits.zoom.intensity
             cursorScale = edits.cursorStyle.scale
         }
         .onAppear {
@@ -118,73 +112,100 @@ struct TimelineEditingPanel: View {
         .onChange(of: edits.zoom.intensity) { _, value in magnification = value }
     }
 
-    private var zoomContent: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            cursorContent
-            Divider()
-            if cursorTracks.state == .loading {
-                loadingPlaceholder
-            } else if !hasCursorClicks {
-                emptyState(.init(
-                    symbol: "cursorarrow.motionlines",
-                    title: cursorTrack == nil ? "No cursor track on this take" : "No clicks recorded",
-                    detail: cursorTrack == nil
-                        ? "Record a new take with screen sources saved to use automatic cursor zoom."
-                        : "Click while recording to mark the moments for automatic screen zooms."
-                ))
-            }
-            if hasCursorClicks || !edits.zoom.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    Toggle(isOn: Binding(
-                        get: { edits.zoom.isActive },
-                        set: { setCursorZoomEnabled($0) }
-                    )) {
-                        illustratedLabel(.init(
-                            title: "Cursor zoom",
-                            detail: edits.zoom.isActive
-                                ? "Zoom into clicks, then ease back."
-                                : "Keep the screen steady.",
-                            effect: .zoom(amount: magnification, enabled: edits.zoom.isActive)
-                        ))
-                    }
-                    .toggleStyle(.blitzSwitch)
-                    .help("Turn cursor zoom on or off for preview and export. Your zoom points are kept when off.")
+    private var zoomCount: Int {
+        var count = 0
+        var wasZoomed = false
+        for keyframe in edits.zoom.keyframes {
+            let zoomed = keyframe.amount > 0.001
+            if zoomed && !wasZoomed { count += 1 }
+            wasZoomed = zoomed
+        }
+        return count
+    }
 
-                    BlitzInspectorSlider(configuration: .init(
-                        title: "Amount",
-                        value: $magnification,
-                        range: 1.3...2.5,
-                        step: 0.1,
-                        valueLabel: String(format: "%.1f×", magnification),
-                        onEditingChanged: { _ in },
-                        onReset: { magnification = 1.7 }
-                    ))
-                    .accessibilityLabel("Cursor zoom amount")
-                    .disabled(!edits.zoom.isActive)
-                    .opacity(edits.zoom.isActive ? 1 : 0.45)
-                }
-            }
-            Toggle(isOn: Binding(
-                get: { edits.cameraFollowsZoom },
-                set: { value in
-                    var updated = edits
-                    updated.cameraFollowsZoom = value
-                    apply(.init(edits: updated, actionName: "Change Camera Motion"))
-                })) {
+    private var zoomDetail: String {
+        if edits.zoom.isEmpty { return "Zoom in where you clicked." }
+        if !edits.zoom.isActive { return "Off. Your zooms are kept." }
+        return zoomCount == 1 ? "1 zoom. Eases back after it." : "\(zoomCount) zooms. Eases back after each one."
+    }
+
+    private var manualZoom: CursorZoomPlanning.ManualZoomRequest {
+        .init(track: edits.zoom, time: playback.currentTime, duration: playback.duration, magnification: magnification,
+              cursorSamples: cursorTrack?.samples ?? [], trimOffset: vm.lastExportedProject?.timelineTrimOffsetSeconds ?? 0)
+    }
+
+    private var zoomContent: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if cursorTracks.state == .loading && edits.zoom.isEmpty {
+                loadingPlaceholder
+            } else if hasCursorClicks || !edits.zoom.isEmpty {
+                Toggle(isOn: Binding(
+                    get: { edits.zoom.isActive },
+                    set: { setCursorZoomEnabled($0) }
+                )) {
                     illustratedLabel(.init(
-                        title: "Camera follows zoom", detail: "Shrink the camera during close-ups.",
-                        effect: .cameraFollow(edits.cameraFollowsZoom && edits.zoom.isActive)
+                        title: "Screen zoom",
+                        detail: zoomDetail,
+                        effect: .zoom(amount: magnification, enabled: edits.zoom.isActive)
                     ))
                 }
                 .toggleStyle(.blitzSwitch)
-                .help("The picture-in-picture camera shrinks during screen zooms, then returns to its original size.")
+                .help("Turn screen zoom on or off for preview and export.")
+            } else {
+                Text(cursorTrack == nil
+                     ? "This take has no click data. Add zooms by hand at the playhead."
+                     : "No clicks in this take. Add zooms by hand at the playhead.")
+                    .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if edits.zoom.isActive {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Strength").font(BlitzType.label).foregroundStyle(BlitzUI.supportingText)
+                    BlitzSegmentedPicker(configuration: .init(
+                        title: "Zoom strength",
+                        options: ScreenZoomStrength.allCases,
+                        selection: Binding(get: { ScreenZoomStrength.nearest(magnification) }, set: { setStrength($0) }),
+                        label: \.title,
+                        help: { String(format: "%.1f×", $0.rawValue) }
+                    ))
+                    .controlSize(.small)
+                }
+            }
+            let canAdd = CursorZoomPlanning.canAddZoom(manualZoom)
+            HStack(spacing: 8) {
+                Button(action: addZoom) { Label("Add zoom at playhead", systemImage: "plus.magnifyingglass") }
+                    .blitzButton(.secondary).controlSize(.small)
+                    .disabled(!canAdd || !playback.hideableKinds.contains(.screen))
+                    .help(canAdd ? "Zoom in for 3 seconds from the playhead" : "There's already a zoom here")
+                if hasCursorClicks && !edits.zoom.isEmpty {
+                    Button(action: generateZoom) { Label("Rebuild from clicks", systemImage: "arrow.triangle.2.circlepath") }
+                        .blitzButton(.quiet).controlSize(.small)
+                        .help("Replace every zoom with new ones from your clicks")
+                }
+            }
+            if edits.zoom.isActive && playback.hideableKinds.contains(.camera) {
+                Toggle(isOn: Binding(
+                    get: { edits.cameraFollowsZoom },
+                    set: { value in
+                        var updated = edits
+                        updated.cameraFollowsZoom = value
+                        apply(.init(edits: updated, actionName: "Change Camera Motion"))
+                    })) {
+                        illustratedLabel(.init(
+                            title: "Camera follows zoom", detail: "Shrink the camera during close-ups.",
+                            effect: .cameraFollow(edits.cameraFollowsZoom)
+                        ))
+                    }
+                    .toggleStyle(.blitzSwitch)
+                    .help("The picture-in-picture camera shrinks during screen zooms, then returns to its original size.")
+            }
         }
     }
 
+    @ViewBuilder
     private var cursorContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Cursor").font(BlitzType.section)
-            if cursorTrack?.supportsPresentation == true {
+        if cursorTrack?.supportsPresentation == true {
+            VStack(alignment: .leading, spacing: 12) {
                 Toggle(isOn: Binding(
                     get: { edits.cursorStyle.smoothed },
                     set: { value in
@@ -235,13 +256,30 @@ struct TimelineEditingPanel: View {
                     }
                 ))
                 .accessibilityLabel("Cursor size")
-
-            } else {
-                Text("This take has its original cursor. Record a new display capture with source files saved to adjust its look.")
-                    .foregroundStyle(BlitzUI.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
             }
-        }.font(BlitzType.body)
+        } else {
+            Text("Cursor effects need a full-screen recording made in BlitzRecorder. This take keeps its original cursor.")
+                .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func addZoom() {
+        let request = manualZoom
+        guard CursorZoomPlanning.canAddZoom(request) else { return }
+        var updated = edits
+        updated.zoom = CursorZoomPlanning.addingZoom(request)
+        if apply(.init(edits: updated, actionName: "Add Zoom")) {
+            playback.seek(to: min(playback.duration, request.time + 0.5))
+        }
+    }
+
+    private func setStrength(_ strength: ScreenZoomStrength) {
+        magnification = strength.rawValue
+        guard !edits.zoom.isEmpty else { return }
+        var updated = edits
+        updated.zoom = CursorZoomPlanning.changingStrength(.init(track: edits.zoom, magnification: strength.rawValue))
+        apply(.init(edits: updated, actionName: "Change Zoom Strength"))
     }
 
     private struct MotionLabel {
@@ -260,22 +298,6 @@ struct TimelineEditingPanel: View {
                 ))
             }
         ))
-    }
-
-    private struct EmptyStateRequest {
-        let symbol: String
-        let title: String
-        let detail: String
-    }
-    private func emptyState(_ request: EmptyStateRequest) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: request.symbol).font(BlitzType.glyph(26)).foregroundStyle(
-                BlitzUI.secondaryText)
-            Text(request.title).font(BlitzType.section)
-            Text(request.detail).font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
-                .multilineTextAlignment(.center).frame(maxWidth: 340)
-        }.frame(maxWidth: .infinity).padding(.vertical, 26)
-            .background(BlitzUI.cardFill, in: .rect(cornerRadius: BlitzUI.cardRadius))
     }
 
     @discardableResult
@@ -328,9 +350,7 @@ struct TimelineEditingPanel: View {
                 samples: cursorTrack.samples, duration: playback.duration,
                 trimOffset: project.timelineTrimOffsetSeconds, cuts: edits.enabledCuts, magnification: magnification))
         guard apply(.init(edits: updated, actionName: "Follow Cursor")) else { return }
-        message =
-            updated.zoom.isEmpty
-            ? "No usable clicks remain after your cuts." : "Cursor zoom saved. Preview before exporting."
+        message = updated.zoom.isEmpty ? "No usable clicks remain after your cuts." : nil
     }
 
 }

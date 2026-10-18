@@ -17,19 +17,18 @@ struct EditorInspector: View {
     var recordedVideoSources: Set<CaptureSource>
     var scenePresetPreview: BlitzScenePreview
     var cameraAssetID: String?
-    @Binding var showsSourceFraming: Bool
-    @Binding var framingSource: SceneLayerKind
+    var selectedSource: SceneLayerKind?
     @Binding var screenZoomDraft: Double?
     @Binding var cameraZoomDraft: Double?
-    @Binding var cameraCropDraft: EditorCameraCropDraft?
+    @Binding var sourceCropDraft: EditorSourceCropDraft?
     @Binding var canvasSceneDraft: RecordingScene?
     @Binding var canvasCommitTask: Task<Void, Never>?
     @Binding var preservesCanvasPreviewOnNextProjectRefresh: Bool
     @Binding var selection: EditorSelection?
     @Binding var editErrorMessage: String?
-    @Binding var aspectRatioLockedKinds: Set<SceneLayerKind>
     var textSelection: Binding<UUID?>
     var zoomSelection: Binding<UUID?>
+    var outputs: EditorOutputsPane
 
     var body: some View {
         HStack(spacing: 0) {
@@ -38,16 +37,19 @@ struct EditorInspector: View {
             case .audio:
                 EditorInspectorPane(configuration: .init(
                     title: "Audio",
-                    detail: "Clean up your voice and add background music.",
+                    detail: "Set volumes, clean up your voice and add music.",
                     showsFooter: false,
                     content: {
-                        EditorAudioInspector(configuration: .init(vm: vm, playback: playback))
-                        Rectangle().fill(BlitzUI.separator).frame(height: 1)
-                        EditorBackgroundMusicControl(
-                            backgroundMusic: $backgroundMusic,
-                            backgroundMusicBookmarkData: $backgroundMusicBookmarkData,
-                            persist: persistEditorState
-                        )
+                        EditorAudioInspector(configuration: .init(
+                            vm: vm, playback: playback, hasMusic: backgroundMusic != nil,
+                            music: {
+                                EditorBackgroundMusicControl(
+                                    backgroundMusic: $backgroundMusic,
+                                    backgroundMusicBookmarkData: $backgroundMusicBookmarkData,
+                                    persist: persistEditorState
+                                )
+                            }
+                        ))
                     },
                     footer: { EmptyView() }
                 ))
@@ -55,6 +57,8 @@ struct EditorInspector: View {
                 EditorPrivacyInspector(configuration: .init(vm: vm, playback: playback, session: privacy))
             case .silence:
                 SilenceInspectorPane(session: silence)
+            case .exports:
+                outputs
 
             case .captions:
                 EditorCaptionsInspector(configuration: .init(vm: vm, playback: playback, transcript: transcript, selectedID: Binding(get: {
@@ -97,17 +101,15 @@ struct EditorInspector: View {
                             recordedVideoSources: recordedVideoSources,
                             scenePresetPreview: scenePresetPreview,
                             cameraAssetID: cameraAssetID,
-                            showsSourceFraming: $showsSourceFraming,
-                            framingSource: $framingSource,
+                            selectedSource: selectedSource,
                             screenZoomDraft: $screenZoomDraft,
                             cameraZoomDraft: $cameraZoomDraft,
-                            cameraCropDraft: $cameraCropDraft,
+                            sourceCropDraft: $sourceCropDraft,
                             canvasSceneDraft: $canvasSceneDraft,
                             canvasCommitTask: $canvasCommitTask,
                             preservesCanvasPreviewOnNextProjectRefresh: $preservesCanvasPreviewOnNextProjectRefresh,
                             selection: $selection,
-                            editErrorMessage: $editErrorMessage,
-                            aspectRatioLockedKinds: $aspectRatioLockedKinds
+                            editErrorMessage: $editErrorMessage
                         )
                     },
                     footer: { EmptyView() }

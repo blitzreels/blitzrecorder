@@ -103,3 +103,25 @@ extension View {
         }
     }
 }
+
+/// A short label on the left and its control on the right, aligned with the other rows in the section.
+struct EditorInspectorRow<Content: View>: View {
+    struct Configuration {
+        let title: String
+        @ViewBuilder let content: () -> Content
+    }
+
+    static var labelWidth: CGFloat { 64 }
+
+    let configuration: Configuration
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(configuration.title)
+                .font(BlitzType.label)
+                .foregroundStyle(BlitzUI.supportingText)
+                .frame(width: Self.labelWidth, alignment: .leading)
+            configuration.content()
+        }
+    }
+}

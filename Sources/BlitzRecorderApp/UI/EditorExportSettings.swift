@@ -6,13 +6,14 @@ enum EditorExportDestination: String, CaseIterable {
     case link
 
     var title: String { self == .file ? "Save to Mac" : "Share link" }
+    var systemImage: String { self == .file ? "square.and.arrow.down" : "link" }
 
     func layouts(_ request: EditorExportLayouts.Request) -> [CaptureLayout] {
         EditorExportLayouts.resolve(.init(current: request.current, additional: self == .link ? [] : request.additional))
     }
 }
 
-struct EditorExportPopover: View {
+struct EditorExportSettings: View {
     struct Configuration {
         let additionalLayouts: Binding<Set<CaptureLayout>>
         let currentLayout: CaptureLayout
@@ -22,17 +23,23 @@ struct EditorExportPopover: View {
         let quality: Binding<ExportVideoQuality>
         let playbackRate: Binding<ExportPlaybackRate>
         let estimatedSize: String
-        let estimatedSizeCaption: String
+        let fileSize: EditorExportSizeSlider.Configuration
+        let sizeEstimate: (ExportVideoQuality) -> String
         let encodingDetail: String
         let directory: URL
-        /// When this project was last exported to a file that still exists.
-        let lastExportDate: Date?
         let canExport: Bool
         let export: () -> Void
         let chooseFolder: () -> Void
     }
 
+    /// The controls scroll in the pane. The folder and Export button stay pinned below them.
+    enum Section {
+        case controls
+        case action
+    }
+
     let configuration: Configuration
+    let section: Section
     @State private var showsAdvanced = false
 
     private var layouts: [CaptureLayout] {
@@ -44,115 +51,93 @@ struct EditorExportPopover: View {
         configuration.quality.wrappedValue.requiresQuickTime ? [.mov] : OutputVideoFormat.allCases
     }
 
-    private var summary: String {
-        let formats = layouts.count > 1 ? "\(layouts.count) videos" : EditorExportLayouts.title(configuration.currentLayout)
-        return [formats, configuration.resolution.wrappedValue.displayName,
-                "\(configuration.framesPerSecond.wrappedValue) fps", configuration.estimatedSize]
-            .joined(separator: " · ")
-    }
-
     private var advancedDetail: String {
         let extra = layouts.count > 1 ? " · +\(layouts.count - 1)" : ""
         return "\(configuration.format.wrappedValue.displayName) · \(configuration.framesPerSecond.wrappedValue) fps\(extra)"
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(layouts.count > 1 ? "Export \(layouts.count) videos" : "Export video")
-                    .font(BlitzType.title)
-                    .foregroundStyle(BlitzUI.primaryText)
-                Text(summary)
-                    .font(BlitzType.body.monospacedDigit())
+        switch section {
+        case .controls:
+            VStack(alignment: .leading, spacing: 18) { controls }
+        case .action:
+            action
+        }
+    }
+
+    @ViewBuilder private var controls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            EditorExportQualityPicker(configuration: .init(
+                selection: configuration.quality, size: configuration.sizeEstimate
+            ))
+            Text(configuration.fileSize.isCustom && configuration.fileSize.isAvailable
+                 ? "Custom size, encoded like \(configuration.quality.wrappedValue.displayName). Pick a quality to undo."
+                 : configuration.quality.wrappedValue.plainDescription)
+                .font(BlitzType.caption)
+                .foregroundStyle(BlitzUI.secondaryText)
+                .lineLimit(1)
+        }
+
+        VStack(spacing: 10) {
+            EditorExportSizeSlider(configuration: configuration.fileSize)
+            EditorExportChoiceRow(configuration: .init(
+                title: "Resolution", options: OutputResolution.allCases,
+                selection: configuration.resolution, label: { $0.displayName }
+            ))
+        }
+
+        BlitzInspectorDisclosure(configuration: .init(
+            title: "More options", detail: showsAdvanced ? nil : advancedDetail, isExpanded: $showsAdvanced,
+            content: { advancedSettings }
+        ))
+
+    }
+
+    private var action: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "folder")
+                    .foregroundStyle(BlitzUI.secondaryText)
+                Text(configuration.directory.lastPathComponent)
+                    .font(BlitzType.body)
                     .foregroundStyle(BlitzUI.supportingText)
                     .lineLimit(1)
-                    .help("\(configuration.estimatedSizeCaption) · \(configuration.encodingDetail)")
+                    .truncationMode(.middle)
+                    .help(configuration.directory.path)
+                Spacer(minLength: 0)
+                Button("Change…", action: configuration.chooseFolder)
+                    .blitzButton(.quiet)
+                    .controlSize(.small)
+                    .accessibilityLabel("Change export folder")
+                    .help("Change where finished videos are saved")
             }
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("Quality")
-                        .font(BlitzType.label)
-                        .foregroundStyle(BlitzUI.secondaryText)
-                    Spacer(minLength: 8)
-                    Text(configuration.quality.wrappedValue.plainDescription)
-                        .font(BlitzType.caption)
-                        .foregroundStyle(BlitzUI.secondaryText)
-                        .lineLimit(1)
-                }
-                BlitzSegmentedPicker(configuration: .init(
-                    title: "Export quality", options: ExportVideoQuality.menuCases,
-                    selection: configuration.quality, label: { $0.displayName }
-                ))
-                .controlSize(.mini)
-            }
-
-            VStack(spacing: 10) {
-                EditorExportChoiceRow(configuration: .init(
-                    title: "Resolution", options: OutputResolution.allCases,
-                    selection: configuration.resolution, label: { $0.displayName }
-                ))
-                EditorExportSpeedControl(selection: configuration.playbackRate)
-            }
-
-            BlitzInspectorDisclosure(configuration: .init(
-                title: "More options", detail: showsAdvanced ? nil : advancedDetail, isExpanded: $showsAdvanced,
-                content: { advancedSettings }
+            EditorOutputPrimaryButton(configuration: .init(
+                title: "\(layouts.count > 1 ? "Export \(layouts.count) videos" : "Export video") · \(configuration.estimatedSize)",
+                systemImage: "square.and.arrow.down",
+                isEnabled: configuration.canExport,
+                help: configuration.encodingDetail,
+                action: configuration.export
             ))
-
-            VStack(spacing: 12) {
-                Rectangle().fill(BlitzUI.separator).frame(height: 1)
-                HStack(spacing: 8) {
-                    Image(systemName: "folder")
-                        .foregroundStyle(BlitzUI.secondaryText)
-                    Text(configuration.directory.lastPathComponent)
-                        .font(BlitzType.body)
-                        .foregroundStyle(BlitzUI.supportingText)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(configuration.directory.path)
-                    Spacer(minLength: 0)
-                    Button("Change…", action: configuration.chooseFolder)
-                        .blitzButton(.quiet)
-                        .controlSize(.small)
-                        .accessibilityLabel("Change export folder")
-                        .help("Change where finished videos are saved. Source files stay in the library.")
-                }
-                if let lastExportDate = configuration.lastExportDate {
-                    Text("Saves a new file. Your export from \(lastExportDate.formatted(.relative(presentation: .named))) stays, and so do its links.")
-                        .font(BlitzType.caption)
-                        .foregroundStyle(BlitzUI.secondaryText)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Button(action: configuration.export) {
-                    Text(layouts.count > 1 ? "Export \(layouts.count) videos" : "Export video")
-                        .frame(maxWidth: .infinity)
-                }
-                .blitzButton(.accent)
-                .controlSize(.large)
-                .keyboardShortcut(.defaultAction)
-                .disabled(!configuration.canExport)
-            }
         }
-        .padding(20)
-        .frame(width: 380)
-        .background(BlitzUI.panelBackground)
     }
 
     private var advancedSettings: some View {
         VStack(alignment: .leading, spacing: 12) {
+            EditorExportSpeedControl(selection: configuration.playbackRate)
             EditorExportChoiceRow(configuration: .init(
                 title: "Frame rate", options: RecordingSettings.supportedFrameRates,
                 selection: configuration.framesPerSecond, label: { "\($0)" }
             ))
             EditorExportChoiceRow(configuration: .init(
-                title: "File format", options: OutputVideoFormat.allCases,
-                selection: configuration.format, label: { $0.displayName },
-                isOptionEnabled: { formatOptions.contains($0) }
+                title: "File format", options: formatOptions,
+                selection: Binding(
+                    get: { formatOptions.contains(configuration.format.wrappedValue) ? configuration.format.wrappedValue : .mov },
+                    set: { configuration.format.wrappedValue = $0 }
+                ),
+                label: { $0.displayName }
             ))
             .help(configuration.quality.wrappedValue.requiresQuickTime
-                ? "ProRes requires MOV." : configuration.format.wrappedValue.plainDescription)
+                ? "This quality always saves as MOV." : configuration.format.wrappedValue.plainDescription)
             HStack(spacing: 16) {
                 Text("Also export")
                     .font(BlitzType.label)
@@ -175,11 +160,142 @@ struct EditorExportPopover: View {
                 Spacer(minLength: 0)
             }
             .frame(minHeight: BlitzControlMetrics.height(.regular))
-            Text("\(configuration.estimatedSizeCaption) \(configuration.estimatedSize) · \(configuration.encodingDetail)")
+            Text("\(configuration.estimatedSize) · \(configuration.encodingDetail)")
                 .font(BlitzType.caption)
                 .foregroundStyle(BlitzUI.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+struct EditorExportSizeSlider: View {
+    struct Configuration {
+        let bytes: Int64
+        let range: ClosedRange<Int64>
+        /// True once the person dragged the slider, so the size no longer follows the quality tier.
+        let isCustom: Bool
+        let isAvailable: Bool
+        let perVideo: Bool
+        let warning: String?
+        let select: (Int64?) -> Void
+    }
+
+    let configuration: Configuration
+    @State private var pendingBytes: Int64?
+
+    private var shownBytes: Int64 { pendingBytes ?? configuration.bytes }
+
+    private var position: Binding<Double> {
+        Binding(get: { Self.position(of: shownBytes, in: configuration.range) }, set: {
+            pendingBytes = Self.bytes(at: $0, in: configuration.range)
+        })
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 16) {
+                Text("File size")
+                    .font(BlitzType.label)
+                    .foregroundStyle(BlitzUI.secondaryText)
+                    .frame(width: 88, alignment: .leading)
+                if configuration.isAvailable {
+                    HStack(spacing: 10) {
+                        Slider(value: position, in: 0...1, onEditingChanged: { editing in
+                            guard !editing, let pendingBytes else { return }
+                            configuration.select(pendingBytes)
+                            self.pendingBytes = nil
+                        })
+                        .controlSize(.small)
+                        .tint(BlitzUI.accent)
+                        .accessibilityLabel("File size")
+                        .accessibilityValue(Self.text(shownBytes))
+                        Text(Self.text(shownBytes))
+                            .font(BlitzType.label.monospacedDigit())
+                            .foregroundStyle(BlitzUI.primaryText)
+                            .frame(width: 64, alignment: .trailing)
+                            .accessibilityHidden(true)
+                    }
+                } else {
+                    Text("About \(Self.text(shownBytes)) · set by the quality")
+                        .font(BlitzType.label.monospacedDigit())
+                        .foregroundStyle(BlitzUI.supportingText)
+                    Spacer(minLength: 0)
+                }
+            }
+            .frame(minHeight: BlitzControlMetrics.height(.regular))
+            .help(configuration.isAvailable
+                  ? "Drag to pick the exact size. The quality adjusts to fit."
+                  : "This quality keeps every detail, so its size depends on resolution and length.")
+            if configuration.isCustom, configuration.isAvailable {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(configuration.warning
+                         ?? "Stays \(Self.text(configuration.bytes))\(configuration.perVideo ? " per video" : "") even if you cut more.")
+                        .font(BlitzType.caption)
+                        .foregroundStyle(configuration.warning == nil ? BlitzUI.secondaryText : BlitzUI.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button("Reset") { configuration.select(nil) }
+                        .blitzButton(.quiet)
+                        .controlSize(.small)
+                        .help("Go back to the size of the selected quality")
+                }
+            }
+        }
+    }
+
+    private static func position(of bytes: Int64, in range: ClosedRange<Int64>) -> Double {
+        let low = log(Double(range.lowerBound)), high = log(Double(range.upperBound))
+        return min(1, max(0, (log(Double(max(1, bytes))) - low) / (high - low)))
+    }
+
+    private static func bytes(at position: Double, in range: ClosedRange<Int64>) -> Int64 {
+        let low = log(Double(range.lowerBound)), high = log(Double(range.upperBound))
+        let raw = exp(low + (high - low) * position)
+        let step = raw < 10_000_000 ? 100_000.0 : 1_000_000.0
+        return Int64(max(Double(range.lowerBound), (raw / step).rounded() * step))
+    }
+
+    private static func text(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+}
+
+struct EditorExportQualityPicker: View {
+    struct Configuration {
+        let selection: Binding<ExportVideoQuality>
+        let size: (ExportVideoQuality) -> String
+    }
+
+    let configuration: Configuration
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(ExportVideoQuality.menuCases, id: \.self) { quality in
+                let isSelected = configuration.selection.wrappedValue == quality
+                Button { configuration.selection.wrappedValue = quality } label: {
+                    VStack(spacing: 2) {
+                        Text(quality.displayName)
+                            .font(BlitzType.captionEmphasis)
+                            .foregroundStyle(isSelected ? BlitzUI.primaryText : BlitzUI.supportingText)
+                        Text(configuration.size(quality).replacingOccurrences(of: "≈ ", with: ""))
+                            .font(BlitzType.caption.monospacedDigit())
+                            .foregroundStyle(BlitzUI.secondaryText)
+                    }
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 46)
+                }
+                .buttonStyle(BlitzSelectionButtonStyle(isSelected: isSelected))
+                .accessibilityLabel("\(quality.displayName), about \(configuration.size(quality))")
+                .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+                .help(quality.plainDescription)
+                .pointingHandCursor()
+            }
+        }
+        .blitzTabGroup()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Export quality")
     }
 }
 
@@ -244,13 +360,17 @@ struct EditorExportSpeedControl: View {
     }
 }
 
-#Preview("Export popover") {
-    EditorExportPopover(configuration: .init(
+#Preview("Export settings") {
+    EditorExportSettings(configuration: .init(
         additionalLayouts: .constant([]), currentLayout: .vertical,
         format: .constant(.mp4), resolution: .constant(.p1080), framesPerSecond: .constant(24),
         quality: .constant(.high), playbackRate: .constant(.init(clamping: 1.3)),
-        estimatedSize: "≈ 160 MB", estimatedSizeCaption: "Estimated size", encodingDetail: "HEVC · 12.0 Mbps",
-        directory: URL(fileURLWithPath: "/tmp/Recordings"), lastExportDate: Date().addingTimeInterval(-780), canExport: true,
+        estimatedSize: "≈ 52 MB",
+        fileSize: .init(bytes: 52_000_000, range: 5_000_000...276_000_000, isCustom: true, isAvailable: true,
+                        perVideo: false, warning: nil, select: { _ in }),
+        sizeEstimate: { ["compact": "≈ 35 MB", "web": "≈ 70 MB", "high": "≈ 138 MB", "proRes": "≈ 1,6 GB"][$0.rawValue] ?? "" },
+        encodingDetail: "HEVC · 10.0 Mbps",
+        directory: URL(fileURLWithPath: "/tmp/Recordings"), canExport: true,
         export: {}, chooseFolder: {}
-    ))
+    ), section: .controls)
 }

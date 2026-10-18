@@ -9,33 +9,60 @@ struct EditorLayoutInspector: View {
     let recordedVideoSources: Set<CaptureSource>
     let scenePresetPreview: BlitzScenePreview
     let cameraAssetID: String?
-    @Binding var showsSourceFraming: Bool
-    @Binding var framingSource: SceneLayerKind
+    /// The layer picked on the canvas, so its section reads as the one being edited.
+    let selectedSource: SceneLayerKind?
     @Binding var screenZoomDraft: Double?
     @Binding var cameraZoomDraft: Double?
-    @Binding var cameraCropDraft: EditorCameraCropDraft?
+    @Binding var sourceCropDraft: EditorSourceCropDraft?
     @Binding var canvasSceneDraft: RecordingScene?
     @Binding var canvasCommitTask: Task<Void, Never>?
     @Binding var preservesCanvasPreviewOnNextProjectRefresh: Bool
     @Binding var selection: EditorSelection?
     @Binding var editErrorMessage: String?
-    @Binding var aspectRatioLockedKinds: Set<SceneLayerKind>
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: EditorInspectorMetrics.sectionSpacing + 8) {
             sceneControlsSection
-            inspectorDivider
-            VStack(alignment: .leading, spacing: 12) {
-                BlitzInspectorHeading(configuration: .init(title: "Canvas", detail: nil))
-                canvasControlsSection
-                VStack(spacing: 2) {
-                    canvasPaddingSection
-                    screenAppearanceSection
+            if renders(.screen) {
+                sourceSection(.screen) { screenControls }
+            }
+            if renders(.camera) {
+                sourceSection(.camera) { cameraControlsSection }
+            }
+            backgroundSection
+        }
+    }
+
+    private func renders(_ source: CaptureSource) -> Bool {
+        currentEventScene?.renderedSources.contains(source) == true
+    }
+
+    private func sourceSection<Content: View>(
+        _ kind: SceneLayerKind,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Text(kind == .screen ? "Screen" : "Camera")
+                    .font(BlitzType.section)
+                    .foregroundStyle(BlitzUI.primaryText)
+                Spacer(minLength: 0)
+                if isFramingChanged(kind) {
+                    Button("Reset") { resetFraming(kind) }
+                        .blitzButton(.quiet)
+                        .controlSize(.small)
+                        .help("Back to the layout's own framing")
                 }
             }
-            inspectorDivider
-            sourceFramingSection
+            .frame(minHeight: 24)
+            content()
         }
+        .padding(selectedSource == kind ? 10 : 0)
+        .background {
+            if selectedSource == kind { BlitzSelectedBackground(cornerRadius: BlitzUI.cardRadius) }
+        }
+        .padding(selectedSource == kind ? -10 : 0)
+        .animation(.easeOut(duration: 0.12), value: selectedSource)
     }
 
     private var currentEventIndex: Int {
@@ -50,12 +77,6 @@ struct EditorLayoutInspector: View {
         canvasSceneDraft ?? currentEventScene
     }
 
-    private var inspectorDivider: some View {
-        Rectangle()
-            .fill(BlitzUI.separator)
-            .frame(height: 1)
-    }
-
     @ViewBuilder
     private var sceneControlsSection: some View {
         if let scene = currentEventScene, captureLayout != nil {
@@ -63,11 +84,14 @@ struct EditorLayoutInspector: View {
                 BlitzInspectorHeading(
                     configuration: .init(
                         title: "Composition",
-                        detail: sceneEvents.count > 1 ? "Segment \(currentEventIndex + 1)" : "Full video"
+                        detail: sceneEvents.count > 1 ? "Part \(currentEventIndex + 1) of \(sceneEvents.count)" : "Whole video"
                     ))
                 LazyVGrid(columns: scenePresetColumns, spacing: 8) {
                     ForEach(
-                        ScenePreset.allCases.filter { $0.supports(captureLayout ?? .horizontal) },
+                        ScenePreset.allCases.filter {
+                            $0.supports(captureLayout ?? .horizontal)
+                                && $0.requiredVideoSources.isSubset(of: recordedVideoSources)
+                        },
                         id: \.self
                     ) { preset in
                         let layout = editorLayout(for: preset)
@@ -76,14 +100,14 @@ struct EditorLayoutInspector: View {
                             layout: captureLayout ?? .horizontal,
                             isSelected: EditorScenePresetSelection.isSelected(
                                 .init(preset: preset, scene: scene, layout: layout)),
-                            isEnabled: preset.requiredVideoSources.isSubset(of: recordedVideoSources),
+                            isEnabled: true,
                             availableSources: recordedVideoSources,
                             preview: scenePresetPreview
                         ) {
                             applyScenePreset(preset)
                         }
                         .help(
-                            "\(preset.compactTitle). Applies to this segment. Drag sources in the preview to reposition them."
+                            "\(preset.compactTitle). Drag the screen or camera on the video to move them."
                         )
                     }
                 }
@@ -95,84 +119,40 @@ struct EditorLayoutInspector: View {
         [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
     }
 
-    private var sourceFramingSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Button {
-                showsSourceFraming.toggle()
-            } label: {
-                HStack {
-                    Text("Source framing")
-                        .font(BlitzType.strong)
-                    Spacer(minLength: 0)
-                    BlitzSymbol(
-                        configuration: .init(
-                            name: showsSourceFraming ? "chevron.up" : "chevron.down", size: 12
-                        )
-                    )
-                    .foregroundStyle(BlitzUI.secondaryText)
-                }
-                .foregroundStyle(BlitzUI.primaryText)
-                .frame(maxWidth: .infinity, minHeight: 28)
-                .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .pointingHandCursor()
-            .accessibilityValue(showsSourceFraming ? "Expanded" : "Collapsed")
-
-            if showsSourceFraming {
-                BlitzSegmentedPicker(
-                    configuration: .init(
-                        title: "Source to frame",
-                        options: [SceneLayerKind.screen, .camera],
-                        selection: $framingSource,
-                        label: { $0 == .screen ? "Screen" : "Camera" }
-                    ))
-                if framingSource == .screen {
-                    screenZoomSection
-                    screenFrameSection
-                    frameAspectSection(.screen)
-                } else if currentEventScene?.enabledSources.contains(.camera) == true {
-                    cameraControlsSection
-                } else {
-                    Text("Choose a composition with Camera to adjust its framing.")
-                        .font(BlitzType.caption)
-                        .foregroundStyle(BlitzUI.secondaryText)
-                }
-            }
-        }
-    }
-
     @ViewBuilder
-    private var screenFrameSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            BlitzUI.sectionLabel("Screen frame")
-
-            if sceneEvents.count > 1 {
-                Text("Applies to segment \(currentEventIndex + 1)")
-                    .font(BlitzType.captionEmphasis)
-                    .foregroundStyle(BlitzUI.secondaryText)
-            }
-
+    private var screenControls: some View {
+        if sceneEvents.count > 1 {
+            Text("Changes apply to part \(currentEventIndex + 1)")
+                .font(BlitzType.caption)
+                .foregroundStyle(BlitzUI.secondaryText)
+        }
+        if sourceCropDraft?.kind != .screen {
             SourceFramingPicker(selection: segmentSceneBinding(\.screenContentMode, fallback: .fill))
-        }
-    }
-
-    @ViewBuilder
-    private var screenZoomSection: some View {
-        if currentEventScene?.enabledSources.contains(.screen) == true {
             BlitzInspectorSlider(
-                configuration: .init(
-                    title: "Crop",
-                    value: screenZoomBinding,
-                    range: 0...0.75,
-                    step: 0.001,
-                    valueLabel: EditorSourceZoom.label(screenZoomValue),
-                    onEditingChanged: { if !$0 { commitScreenZoom() } },
-                    onReset: {
-                        previewScreenZoom(0)
-                        commitScreenZoom()
-                    }
-                ))
+            configuration: .init(
+                title: "Zoom",
+                value: screenZoomBinding,
+                range: 0...0.75,
+                step: 0.001,
+                valueLabel: EditorSourceZoom.label(screenZoomValue),
+                onEditingChanged: { if !$0 { commitScreenZoom() } },
+                onReset: {
+                    previewScreenZoom(0)
+                    commitScreenZoom()
+                }
+            ))
+            .help("Zoom into the screen recording")
+        }
+        if sourceCropDraft?.kind == .screen {
+            Text("Drag the frame on the video, then click Done.")
+                .font(BlitzType.caption)
+                .foregroundStyle(BlitzUI.secondaryText)
+        } else if sourceCropDraft == nil {
+            Button { beginEditorSourceCrop(.screen) } label: {
+                Label("Crop", systemImage: "crop").lineLimit(1).frame(maxWidth: .infinity)
+            }
+            .blitzButton(.secondary)
+            .help("Choose the part of your screen that fills its frame. Done applies it; Cancel keeps the current framing.")
         }
     }
 
@@ -180,14 +160,14 @@ struct EditorLayoutInspector: View {
     private var cameraControlsSection: some View {
         if let scene = currentEventScene, scene.enabledSources.contains(.camera) {
             VStack(alignment: .leading, spacing: 14) {
-                if cameraCropDraft == nil,
+                if sourceCropDraft?.kind != .camera,
                    SceneLayout.isCameraInsetFrame(scene.sceneLayout.cameraFrame) {
                     CameraInsetFrameControlPanel(configuration: editorCameraInsetConfiguration)
                 }
 
                 CameraImageControls(configuration: editorCameraImageConfiguration)
 
-                if showsEditorCameraShadow && cameraCropDraft == nil {
+                if showsEditorCameraShadow && sourceCropDraft?.kind != .camera {
                     Toggle("Shadow", isOn: segmentSceneBinding(\.cameraShadowEnabled, fallback: false))
                         .toggleStyle(.blitzSwitch)
                         .help("Add a soft shadow under the camera")
@@ -197,115 +177,62 @@ struct EditorLayoutInspector: View {
     }
 
     @ViewBuilder
-    private var canvasControlsSection: some View {
+    private var backgroundSection: some View {
         if let scene = displayedCanvasScene {
-            BlitzBackgroundPicker(
-                configuration: .init(
-                    selection: scene.canvasBackgroundStyle,
-                    onSelect: setCanvasBackground
-                ))
-        }
-    }
-
-    @ViewBuilder
-    private var canvasPaddingSection: some View {
-        if currentEventScene != nil {
-            BlitzInspectorSlider(
-                configuration: .init(
-                    title: "Padding",
-                    value: Binding(get: { Double(canvasPaddingValue) }, set: { previewCanvasPadding(CGFloat($0)) }),
-                    range: 0...0.12,
-                    step: 0.005,
-                    valueLabel: "\(Int((canvasPaddingValue * 100).rounded()))%",
-                    onEditingChanged: { if !$0 { commitCanvasSceneDraft() } },
-                    onReset: {
-                        previewCanvasPadding(0)
-                        commitCanvasSceneDraft()
+            let isVisible = EditorCanvasAppearance.showsBackground(scene)
+            VStack(alignment: .leading, spacing: 12) {
+                BlitzInspectorHeading(configuration: .init(title: "Background", detail: nil))
+                BlitzInspectorSlider(
+                    configuration: .init(
+                        title: "Spacing",
+                        value: Binding(get: { Double(canvasPaddingValue) }, set: { previewCanvasPadding(CGFloat($0)) }),
+                        range: 0...0.12,
+                        step: 0.005,
+                        valueLabel: canvasPaddingValue < 0.001 ? "None" : "\(Int((canvasPaddingValue * 100).rounded()))%",
+                        onEditingChanged: { if !$0 { commitCanvasSceneDraft() } },
+                        onReset: {
+                            previewCanvasPadding(0)
+                            commitCanvasSceneDraft()
+                        }
+                    ))
+                    .help("Space around your recording, filled with the background")
+                if isVisible {
+                    EditorBackgroundSwatches(configuration: .init(
+                        selection: scene.canvasBackgroundStyle,
+                        onSelect: setCanvasBackground
+                    ))
+                    if scene.renderedSources.contains(.screen) {
+                        BlitzInspectorSlider(
+                            configuration: .init(
+                                title: "Corners",
+                                value: Binding(
+                                    get: { Double(screenCornerRadiusValue) },
+                                    set: { previewScreenCornerRadius(CGFloat($0)) }),
+                                range: 0...0.12,
+                                step: 0.005,
+                                valueLabel: "\(Int((screenCornerRadiusValue * 100).rounded()))%",
+                                onEditingChanged: { if !$0 { commitCanvasSceneDraft() } },
+                                onReset: {
+                                    previewScreenCornerRadius(0)
+                                    commitCanvasSceneDraft()
+                                }
+                            ))
+                            .help("Round the screen recording")
+                        Toggle("Shadow", isOn: screenShadowBinding)
+                            .font(BlitzType.captionEmphasis)
+                            .foregroundStyle(BlitzUI.secondaryText)
+                            .toggleStyle(.blitzSwitch)
+                            .tint(BlitzUI.accent)
+                            .frame(minHeight: 28)
+                            .help("Add a soft shadow under the screen recording")
                     }
-                ))
-        }
-    }
-
-    @ViewBuilder
-    private var screenAppearanceSection: some View {
-        if let scene = displayedCanvasScene, scene.renderedSources.contains(.screen) {
-            BlitzInspectorSlider(
-                configuration: .init(
-                    title: "Corners",
-                    value: Binding(
-                        get: { Double(screenCornerRadiusValue) }, set: { previewScreenCornerRadius(CGFloat($0)) }),
-                    range: 0...0.12,
-                    step: 0.005,
-                    valueLabel: "\(Int((screenCornerRadiusValue * 100).rounded()))%",
-                    onEditingChanged: { if !$0 { commitCanvasSceneDraft() } },
-                    onReset: {
-                        previewScreenCornerRadius(0)
-                        commitCanvasSceneDraft()
-                    }
-                )
-            )
-            .help("Round the screen recording")
-            Toggle("Shadow", isOn: screenShadowBinding)
-                .font(BlitzType.captionEmphasis)
-                .foregroundStyle(BlitzUI.secondaryText)
-                .toggleStyle(.blitzSwitch)
-                .tint(BlitzUI.accent)
-                .frame(minHeight: 28)
-                .help("Add a soft shadow under the screen recording")
-        }
-    }
-
-    @ViewBuilder
-    private func frameAspectSection(_ kind: SceneLayerKind) -> some View {
-        if let scene = currentEventScene {
-            let sceneRequest = EditorFrameRatioSceneRequest(kind: kind, scene: scene)
-            let currentRatio = EditorFrameRatio.displayAspectRatio(sceneRequest, canvasAspectRatio: canvasAspectRatio)
-            let sourceRatio = playback.sourceAspectRatios[kind] ?? 1
-            let selectedPreset = EditorFrameRatio.selectedPreset(
-                sceneRequest,
-                canvasAspectRatio: canvasAspectRatio,
-                sourceRatio: sourceRatio
-            )
-
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
-                    BlitzUI.sectionLabel("Frame")
-                    Spacer(minLength: 0)
-                    Text(EditorFrameRatioLabel.text(for: currentRatio))
-                        .font(BlitzType.captionEmphasis.monospacedDigit())
-                        .foregroundStyle(BlitzUI.accent)
-                        .padding(.horizontal, 8)
-                        .frame(height: 24)
-                        .background(BlitzUI.accent.opacity(0.10), in: .capsule)
+                } else {
+                    Text("Your recording fills the frame. Add spacing to show a background.")
+                        .font(BlitzType.caption)
+                        .foregroundStyle(BlitzUI.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-
-                LazyVGrid(columns: EditorFrameRatio.columns, spacing: 2) {
-                    ForEach(EditorFrameRatio.availablePresets(sourceRatio: sourceRatio)) { preset in
-                        BlitzTab(configuration: .init(
-                            title: preset.title,
-                            symbolName: nil,
-                            isSelected: preset == selectedPreset,
-                            expands: true,
-                            action: { applyFrameRatio(.init(kind: kind, preset: preset)) }
-                        ))
-                    }
-                }
-                .blitzTabGroup()
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel("Frame aspect ratio")
-
-                Toggle("Lock aspect ratio", isOn: aspectRatioLockBinding(for: kind))
-                    .font(BlitzType.captionEmphasis)
-                    .toggleStyle(.blitzSwitch)
-                    .tint(BlitzUI.accent)
-
-                Text("Lock for proportional corners. Unlock or drag a side handle to reshape.")
-                    .font(BlitzType.captionEmphasis)
-                    .foregroundStyle(BlitzUI.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(10)
-            .background(BlitzUI.quietFill, in: .rect(cornerRadius: BlitzUI.cardRadius))
         }
     }
 
@@ -426,21 +353,22 @@ struct EditorLayoutInspector: View {
         }
     }
 
-    private func beginEditorCameraCrop() {
-        guard let draft = EditorCameraCropSession.begin(eventIndex: currentEventIndex, sceneEvents: sceneEvents) else {
-            return
-        }
+    private func beginEditorSourceCrop(_ kind: SceneLayerKind) {
+        guard let draft = EditorSourceCropSession.begin(.init(
+            kind: kind, eventIndex: currentEventIndex, sceneEvents: sceneEvents
+        )) else { return }
         playback.pauseForEditing()
+        screenZoomDraft = nil
         cameraZoomDraft = nil
-        cameraCropDraft = draft
-        if let cameraAssetID {
+        sourceCropDraft = draft
+        if kind == .camera, let cameraAssetID {
             selection = .asset(cameraAssetID)
         }
     }
 
-    private func resetEditorCameraCrop() {
-        if let cameraCropDraft {
-            self.cameraCropDraft = EditorCameraCropSession.resetting(cameraCropDraft)
+    private func resetEditorSourceCrop() {
+        if let sourceCropDraft {
+            self.sourceCropDraft = EditorSourceCropSession.resetting(sourceCropDraft)
             return
         }
         previewCameraZoom(0)
@@ -505,12 +433,12 @@ struct EditorLayoutInspector: View {
     }
 
     private var showsEditorCameraShadow: Bool {
-        let scene = cameraCropDraft?.scene ?? currentEventScene
+        let scene = sourceCropDraft?.scene ?? currentEventScene
         return scene.map { SceneLayout.isCameraInsetFrame($0.sceneLayout.cameraFrame) } ?? false
     }
 
     private var editorCameraImageConfiguration: CameraImageControlsConfiguration {
-        let scene = cameraCropDraft?.scene ?? currentEventScene
+        let scene = sourceCropDraft?.scene ?? currentEventScene
         let position = scene?.cameraCropPosition ?? .zero
         let amount = scene?.cameraCropAmount ?? .zero
         let isCentered = max(amount.x, amount.y) < 0.001
@@ -519,49 +447,47 @@ struct EditorLayoutInspector: View {
         return CameraImageControlsConfiguration(
             contentMode: segmentSceneBinding(\.cameraContentMode, fallback: .fill),
             cropZoom: cameraZoomBinding,
-            isCropModeEnabled: cameraCropDraft != nil,
+            isCropModeEnabled: sourceCropDraft?.kind == .camera,
             showsContentMode: !showsEditorCameraShadow,
             isResetDisabled: isCentered,
+            showsResetButton: false,
             onCropZoomEditingChanged: { isEditing in
                 if !isEditing {
                     commitCameraZoom()
                 }
             },
-            onBeginCrop: beginEditorCameraCrop,
-            onResetCrop: resetEditorCameraCrop
+            onBeginCrop: { beginEditorSourceCrop(.camera) },
+            onResetCrop: resetEditorSourceCrop
         )
     }
 
-    private func applyFrameRatio(_ request: EditorFrameRatioChange) {
-        guard let currentEventScene else { return }
-        let sourceRatio = playback.sourceAspectRatios[request.kind] ?? 1
-        let scene = EditorFrameRatio.applied(
-            request,
-            scene: currentEventScene,
-            sourceRatio: sourceRatio,
-            canvasAspectRatio: canvasAspectRatio
-        )
+    private func isFramingChanged(_ kind: SceneLayerKind) -> Bool {
+        guard let scene = currentEventScene else { return false }
+        let amount = kind == .screen ? scene.screenCropAmount : scene.cameraCropAmount
+        let position = kind == .screen ? scene.screenCropPosition : scene.cameraCropPosition
+        let mode = kind == .screen ? scene.screenContentMode : scene.cameraContentMode
+        return max(amount.x, amount.y) > 0.001 || abs(position.x) > 0.001 || abs(position.y) > 0.001 || mode != .fill
+    }
+
+    private func resetFraming(_ kind: SceneLayerKind) {
         playback.pauseForEditing()
-        guard vm.applyProjectSceneEdit(eventIndex: currentEventIndex, { editedScene in
-            editedScene.sceneLayout = scene.sceneLayout
-            editedScene.cameraContentMode = scene.cameraContentMode
+        screenZoomDraft = nil
+        cameraZoomDraft = nil
+        sourceCropDraft = nil
+        guard vm.applyProjectSceneEdit(eventIndex: currentEventIndex, { scene in
+            if kind == .screen {
+                scene.screenCropAmount = .zero
+                scene.screenCropPosition = .zero
+                scene.screenContentMode = .fill
+            } else {
+                scene.cameraCropAmount = .zero
+                scene.cameraCropPosition = .zero
+                scene.cameraContentMode = .fill
+            }
         }) else {
             editErrorMessage = vm.detailMessage
             return
         }
-    }
-
-    private func aspectRatioLockBinding(for kind: SceneLayerKind) -> Binding<Bool> {
-        Binding(
-            get: { aspectRatioLockedKinds.contains(kind) },
-            set: { isLocked in
-                if isLocked {
-                    aspectRatioLockedKinds.insert(kind)
-                } else {
-                    aspectRatioLockedKinds.remove(kind)
-                }
-            }
-        )
     }
 
     private func segmentSceneBinding<Value>(

@@ -1,71 +1,116 @@
 import SwiftUI
 
-struct EditorAudioInspector: View {
+struct EditorAudioInspector<Music: View>: View {
     struct Configuration {
         let vm: RecorderViewModel
         let playback: EditorPlaybackController
+        let hasMusic: Bool
+        @ViewBuilder let music: () -> Music
     }
 
     let configuration: Configuration
-    @State private var strength = 0.65
     @State private var error: String?
     private var settings: VoiceCleanupSettings { configuration.vm.lastExportedProject?.edits.voiceCleanup ?? .disabled }
     private var hasMicrophone: Bool {
         configuration.vm.lastExportedProject?.sources.contains { $0.role == "microphone" && $0.exists } == true
     }
+    private var volumeSources: [CaptureSource] {
+        [CaptureSource.microphone, .systemAudio].filter { configuration.playback.muteableSources.contains($0) }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-                Text("Track volume").font(BlitzType.section)
-                Text("Saved for playback and export.")
-                    .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
-                ForEach([CaptureSource.microphone, .systemAudio], id: \.self) { source in
-                    if configuration.playback.muteableSources.contains(source) {
+        VStack(alignment: .leading, spacing: EditorInspectorMetrics.sectionSpacing) {
+            if !volumeSources.isEmpty {
+                EditorInspectorSection(configuration: .init(title: "Volume", content: {
+                    ForEach(volumeSources, id: \.self) { source in
                         EditorTrackVolumeSlider(configuration: .init(
                             title: source == .microphone ? "Microphone" : "Mac audio",
                             source: source, playback: configuration.playback,
                             onCommit: configuration.vm.changeEditorTrackVolume))
                     }
+                }))
+            }
+            if hasMicrophone {
+                EditorInspectorSection(configuration: .init(title: "Voice cleanup", content: { cleanup }))
+            }
+            EditorInspectorSection(configuration: .init(title: "Music", content: {
+                configuration.music()
+                if configuration.hasMusic {
+                    Toggle("Lower music while you talk", isOn: Binding(get: { settings.ducksMusic }, set: { value in
+                        var settings = settings; settings.ducksMusic = value; save(settings)
+                    }))
+                    .toggleStyle(.blitzSwitch)
+                    .help("Music gets quieter while you talk and comes back between sentences.")
                 }
-                Rectangle().fill(BlitzUI.separator).frame(height: 1)
-                Text("Voice cleanup").font(BlitzType.section)
-                Text("Reduce steady background noise in the microphone track. Processing stays on this Mac.")
-                    .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-                Toggle("Clean up microphone", isOn: Binding(get: { settings.isEnabled }, set: { value in
-                    var settings = settings; settings.isEnabled = value; save(settings)
-                })).toggleStyle(.blitzSwitch).disabled(!hasMicrophone)
-                if !hasMicrophone { Text("This take has no microphone source.").font(BlitzType.caption) }
-                if settings.isEnabled {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Noise reduction · \(Int(strength * 100))%")
-                        Slider(value: $strength, in: 0...1, onEditingChanged: { editing in
-                            if !editing { var settings = settings; settings.strength = strength; save(settings) }
-                        }).accessibilityLabel("Noise reduction strength")
-                        Text("Use a lower strength if speech sounds thin.").font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
-                    }
-                    Toggle("Even out speech volume", isOn: Binding(get: { settings.normalizesSpeech }, set: { value in
-                        var settings = settings; settings.normalizesSpeech = value; save(settings)
-                    })).toggleStyle(.blitzSwitch)
-                    Toggle("Listen to original", isOn: Binding(get: { configuration.playback.bypassesVoiceCleanup }, set: { value in
-                        guard let project = configuration.vm.editorProject else { return }
-                        Task { await configuration.playback.compareVoiceCleanup(.init(
-                            bypassed: value, project: project, settings: configuration.vm.settings)) }
-                    })).toggleStyle(.blitzSwitch)
-                    Text("Comparison affects preview only. Exports use your saved cleanup settings.")
-                        .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
-                }
-                Rectangle().fill(BlitzUI.separator).frame(height: 1)
-                Toggle("Lower music during speech", isOn: Binding(get: { settings.ducksMusic }, set: { value in
-                    var settings = settings; settings.ducksMusic = value; save(settings)
-                })).toggleStyle(.blitzSwitch)
-                Text("Music gets quieter while you talk and returns between sentences.")
-                    .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
-                if let error { Text(error).font(BlitzType.caption).foregroundStyle(BlitzUI.warning) }
+            }))
+            if let error { Text(error).font(BlitzType.caption).foregroundStyle(BlitzUI.warning) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onAppear { strength = settings.strength }
-        .onChange(of: settings.strength) { _, value in strength = value }
+    }
+
+    private var cleanup: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Toggle("Clean up microphone", isOn: Binding(get: { settings.isEnabled }, set: { value in
+                var settings = settings; settings.isEnabled = value; save(settings)
+            }))
+            .toggleStyle(.blitzSwitch)
+            Text("Removes steady noise like a fan or a hum. Your video isn't changed.")
+                .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            if settings.isEnabled {
+                VStack(alignment: .leading, spacing: 8) {
+                    BlitzSegmentedPicker(configuration: .init(
+                        title: "Noise reduction", options: VoiceCleanupLevel.allCases,
+                        selection: Binding(get: { VoiceCleanupLevel(strength: settings.strength) }, set: { level in
+                            var settings = settings; settings.strength = level.strength; save(settings)
+                        }),
+                        label: \.title
+                    ))
+                    Text(VoiceCleanupLevel(strength: settings.strength).detail)
+                        .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                cleanupStatus
+                if configuration.playback.audioProgress == nil {
+                    VStack(alignment: .leading, spacing: 6) {
+                        BlitzSegmentedPicker(configuration: .init(
+                            title: "Compare", options: [true, false],
+                            selection: Binding(get: { configuration.playback.bypassesVoiceCleanup },
+                                               set: configuration.playback.setVoiceCleanupBypassed),
+                            label: { $0 ? "Before" : "After" }
+                        ))
+                        Text("Switch while playing to hear the difference. Exports always use After.")
+                            .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
+                    }
+                }
+                Toggle("Even out speech volume", isOn: Binding(get: { settings.normalizesSpeech }, set: { value in
+                    var settings = settings; settings.normalizesSpeech = value; save(settings)
+                }))
+                .toggleStyle(.blitzSwitch)
+            }
+        }
+    }
+
+    /// Fixed height so the line can change between working and done without moving the controls below it.
+    private var cleanupStatus: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let progress = configuration.playback.audioProgress {
+                Text("Cleaning your voice… \(Int((progress * 100).rounded()))%")
+                    .font(BlitzType.caption.monospacedDigit()).foregroundStyle(BlitzUI.supportingText)
+                ProgressView(value: progress).progressViewStyle(.linear).tint(BlitzUI.accent)
+            } else if configuration.playback.heardMicrophoneURL == nil {
+                Label("Getting ready…", systemImage: "hourglass")
+                    .font(BlitzType.caption).foregroundStyle(BlitzUI.supportingText)
+            } else {
+                Label(configuration.playback.bypassesVoiceCleanup
+                      ? "You're hearing the original voice"
+                      : "Done · you're hearing the cleaned voice",
+                      systemImage: configuration.playback.bypassesVoiceCleanup ? "waveform" : "checkmark.circle.fill")
+                    .font(BlitzType.caption).foregroundStyle(BlitzUI.supportingText)
+            }
+        }
+        .frame(height: 34, alignment: .topLeading)
+        .animation(.easeOut(duration: 0.12), value: configuration.playback.audioProgress == nil)
     }
 
     private func save(_ settings: VoiceCleanupSettings) {

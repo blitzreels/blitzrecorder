@@ -63,7 +63,7 @@ struct ProjectRecordingRenameEditor: View {
             }
             ProjectRenamePreview(title: "Full name", value: draft.proposedTitle ?? project.title)
             if let message = draft.validationMessage {
-                Text(message).font(BlitzType.caption).foregroundStyle(BlitzUI.recordRed)
+                Text(message).font(BlitzType.caption).foregroundStyle(BlitzUI.warning)
             } else if hasDuplicateLesson {
                 Label("This lesson number is already used in this module.", systemImage: "exclamationmark.triangle")
                     .font(BlitzType.caption).foregroundStyle(.orange)

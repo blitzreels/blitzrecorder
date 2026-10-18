@@ -28,6 +28,8 @@ rules = [
     (r"\.buttonStyle\(\.(?:bordered|borderedProminent|automatic)\)",
      "Use BlitzButtonStyle for app-owned buttons."),
     (r'(?:systemName|systemImage): "ellipsis', "No ⋯ menus. Show secondary actions with BlitzInlineActions and offer them on right-click."),
+    (r'Text\((?:error|message)\)[^\n]*BlitzUI\.recordRed', "Errors use BlitzUI.warning; red is reserved for the record control."),
+    (r'TextField\("0?0:00', "Use BlitzTimeStepper for times; don't make people type timecodes."),
 ]
 typed_rules = [
     (r"\.system\(size:", "Use a BlitzType token (title, section, body, caption…) instead of a raw font size."),

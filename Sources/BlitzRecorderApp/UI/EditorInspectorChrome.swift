@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 struct EditorInspectorTabBar: View {
     @Binding var selection: EditorInspectorTab
 
-    private let tabs: [EditorInspectorTab] = [.layout, .silence, .captions, .text, .zoom, .privacy, .audio]
+    private let tabs: [EditorInspectorTab] = [.layout, .silence, .captions, .text, .zoom, .privacy, .audio, .exports]
 
     var body: some View {
         BlitzToolTabBar(configuration: .init(
@@ -14,7 +14,13 @@ struct EditorInspectorTabBar: View {
             selection: selection,
             label: { $0.rawValue },
             symbolName: { $0.systemImage },
-            help: { $0 == .layout ? "Scene layout and canvas" : $0.rawValue },
+            help: {
+                switch $0 {
+                case .layout: "Scene layout and canvas"
+                case .exports: "Save a file, share a link, and see earlier exports"
+                default: $0.rawValue
+                }
+            },
             isOptionEnabled: { _ in true },
             select: { selection = $0 }
         ))
@@ -31,11 +37,11 @@ struct EditorBackgroundMusicControl: View {
             HStack(spacing: 10) {
                 BlitzIconTile(symbolName: "music.note", isSelected: backgroundMusic != nil, size: 30)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(backgroundMusic?.url.lastPathComponent ?? "Background music")
+                    Text(backgroundMusic?.url.lastPathComponent ?? "No music")
                         .font(BlitzType.section)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    Text(backgroundMusic == nil ? "Optional" : "Loops through the full export")
+                    Text(backgroundMusic == nil ? "Add a song to play under your video" : "Loops until the video ends")
                         .font(BlitzType.captionEmphasis)
                         .foregroundStyle(BlitzUI.secondaryText)
                 }
@@ -50,7 +56,7 @@ struct EditorBackgroundMusicControl: View {
                     }
                 } label: {
                     Label(backgroundMusic == nil ? "Choose…" : "Remove",
-                          systemImage: backgroundMusic == nil ? "plus" : "trash.fill")
+                          systemImage: backgroundMusic == nil ? "plus" : "trash")
                 }
                 .blitzButton(.secondary)
                 .controlSize(.small)

@@ -6,6 +6,20 @@ struct PrivacyMask: Codable, Equatable, Identifiable, Sendable {
     enum Style: String, Codable, CaseIterable {
         case cover = "Cover"
         case blur = "Blur"
+
+        var title: String {
+            switch self {
+            case .cover: "Black box"
+            case .blur: "Blur"
+            }
+        }
+
+        var symbolName: String {
+            switch self {
+            case .cover: "rectangle.fill"
+            case .blur: "drop.halffull"
+            }
+        }
     }
 
     let id: UUID

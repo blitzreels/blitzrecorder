@@ -144,10 +144,11 @@ struct TakeFileStore {
             defer { access.stop() }
             guard access.hasSecurityScopedAccess else { continue }
             let root = location.url.standardizedFileURL.resolvingSymlinksInPath()
+            let rootIsTemporary = Self.isTemporary(root.path)
             entries += loadLocalProjectHistory(settings: librarySettings).entries.filter {
                 let owner = URL(fileURLWithPath: $0.takeDirectoryPath).deletingLastPathComponent().deletingLastPathComponent()
                     .standardizedFileURL.resolvingSymlinksInPath()
-                return owner == root || !roots.contains(owner)
+                return (owner == root || !roots.contains(owner)) && (rootIsTemporary || !Self.isTemporary($0.takeDirectoryPath))
             }
         }
         entries.sort { $0.updatedAt > $1.updatedAt }
@@ -411,10 +412,19 @@ struct TakeFileStore {
         return Self.takeDateFormatter().date(from: prefix) ?? fallback
     }
 
+    /// Takes in the system temporary folder are deleted by macOS and never belong in a library.
+    static func isTemporary(_ path: String) -> Bool {
+        let temporary = FileManager.default.temporaryDirectory.standardizedFileURL.resolvingSymlinksInPath().path
+        let candidate = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+        return candidate == temporary || candidate.hasPrefix(temporary.hasSuffix("/") ? temporary : temporary + "/")
+    }
+
     private func upsertProjectHistory(_ project: RecordingProject, settings: RecordingSettings) throws {
+        let settings = projectLibrarySettings(.init(takePath: project.takeDirectoryPath, settings: settings))
+        let indexRoot = settings.sourceStorage.url.standardizedFileURL.resolvingSymlinksInPath()
+        if Self.isTemporary(project.takeDirectoryPath), !Self.isTemporary(indexRoot.path) { return }
         Self.projectHistoryLock.lock()
         defer { Self.projectHistoryLock.unlock() }
-        let settings = projectLibrarySettings(.init(takePath: project.takeDirectoryPath, settings: settings))
         let access = OutputDirectoryAccess(locations: [settings.sourceStorage])
         defer { access.stop() }
         guard access.hasSecurityScopedAccess else {

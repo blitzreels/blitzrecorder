@@ -11,240 +11,263 @@ struct EditorTextInspector: View {
     }
 
     let configuration: Configuration
-    @State private var draft = EditorTextDraft()
+    @State private var newText = ""
+    @State private var newPreset = TextOverlayPreset.title
+    @State private var editText = ""
+    @State private var editTextID: UUID?
+    @State private var pendingText: Task<Void, Never>?
     @State private var error: String?
     @FocusState private var isTextFocused: Bool
 
     private var edits: TimelineEdits { configuration.vm.editorProject?.edits ?? .empty }
-    private var duration: Double { configuration.playback.duration }
+    private var playback: EditorPlaybackController { configuration.playback }
+    private var duration: Double { playback.duration }
     private var sortedOverlays: [TextOverlay] { edits.textOverlays.sorted { $0.start < $1.start } }
+    private var selected: TextOverlay? {
+        configuration.selectedID.wrappedValue.flatMap { id in edits.textOverlays.first { $0.id == id } }
+    }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            EditorInspectorPane(configuration: .init(
-                title: "Text",
-                detail: "Add titles and callouts on top of your video.",
-                showsFooter: true,
-                content: {
-                    VStack(alignment: .leading, spacing: EditorInspectorMetrics.sectionSpacing) {
-                        composer.id("composer")
-                        timing
-                        Toggle("Fade in and out", isOn: $draft.fades)
-                            .toggleStyle(.blitzSwitch)
-                            .help("Turn off for text that appears and disappears instantly. Applies to this overlay.")
-                        if !sortedOverlays.isEmpty {
-                            Rectangle().fill(BlitzUI.separator).frame(height: 1)
-                            overlayList
-                        }
+        EditorInspectorPane(configuration: .init(
+            title: "Text",
+            detail: "Add titles and callouts on top of your video.",
+            showsFooter: false,
+            content: {
+                VStack(alignment: .leading, spacing: EditorInspectorMetrics.sectionSpacing) {
+                    if let selected {
+                        EditorInspectorSection(configuration: .init(title: "Edit text", content: { editor(selected) }))
+                        EditorInspectorSection(configuration: .init(title: "When", content: { when(selected) }))
+                    } else {
+                        EditorInspectorSection(configuration: .init(title: "Add text", content: { composer }))
                     }
-                },
-                footer: { footer }
-            ))
-            .onChange(of: draft.original?.id) { _, _ in proxy.scrollTo("composer", anchor: .top) }
+                    if !sortedOverlays.isEmpty {
+                        EditorInspectorSection(configuration: .init(title: "In this video", content: { overlayList }))
+                    }
+                    if let error {
+                        Text(error).font(BlitzType.caption).foregroundStyle(BlitzUI.warning)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            },
+            footer: { EmptyView() }
+        ))
+        .onAppear(perform: syncEditText)
+        .onChange(of: configuration.selectedID.wrappedValue) { _, _ in
+            flushText()
+            syncEditText()
         }
-        .onAppear(perform: loadSelection)
-        .onChange(of: (configuration.vm.lastExportedProject?.projectPath ?? "") + (configuration.vm.lastExportedProject?.selectedOutputLayout.rawValue ?? "")) { loadSelection() }
-        .onChange(of: configuration.selectedID.wrappedValue) { _, _ in loadSelection() }
-        .onChange(of: edits.textOverlays) { _, overlays in
-            if let id = draft.original?.id, !overlays.contains(where: { $0.id == id }) { resetDraft() }
-            else if let id = configuration.selectedID.wrappedValue,
-                    let overlay = overlays.first(where: { $0.id == id }) { draft.edit(overlay) }
-        }
+        .onChange(of: selected?.text) { _, _ in if pendingText == nil { syncEditText() } }
+        .onDisappear(perform: flushText)
     }
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: 12) {
-            BlitzInspectorHeading(configuration: .init(
-                title: draft.isEditing ? "Edit text" : "Add text", detail: "On your video"
-            ))
-            TextField("What would you like to say?", text: $draft.text, axis: .vertical)
-                .lineLimit(3...5)
-                .textFieldStyle(.plain)
-                .font(BlitzType.section)
-                .padding(12)
-                .blitzFieldChrome(isFocused: isTextFocused)
-                .focused($isTextFocused)
-                .accessibilityLabel("Overlay text")
-            HStack(alignment: .top, spacing: 4) {
-                ForEach(TextOverlayPreset.allCases, id: \.self) { preset in
-                    BlitzVisualChoice(configuration: .init(
-                        title: preset.displayName,
-                        help: "\(preset.displayName). Preview its appearance and position on your video.",
-                        isSelected: draft.preset == preset,
-                        action: { draft.preset = preset },
-                        preview: {
-                            EditorTextStylePreview(configuration: .init(
-                                preset: preset, text: draft.text,
-                                source: configuration.preview, scene: configuration.scene, layout: configuration.layout
-                            ))
-                        }
-                    ))
-                }
+            textField(.init(text: $newText, placeholder: "What would you like to say?"))
+                .onSubmit(addText)
+            styleChoices(.init(selection: newPreset, text: newText, choose: { newPreset = $0 }))
+            Button(action: addText) {
+                Label("Add at playhead", systemImage: "plus").frame(maxWidth: .infinity)
             }
+            .blitzButton(.accent)
+            .disabled(newText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || duration <= 0)
+            Text("Shows for 3 seconds. Change it after adding.")
+                .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
         }
     }
 
-    private var timing: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                BlitzInspectorHeading(configuration: .init(title: "Timing", detail: nil))
-                Button {
-                    draft.moveToPlayhead(.init(time: configuration.playback.currentTime, duration: duration))
-                } label: {
-                    Label("Use playhead", systemImage: "playhead")
+    private func editor(_ overlay: TextOverlay) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            textField(.init(text: $editText, placeholder: "Text"))
+                .onChange(of: editText) { _, _ in scheduleTextSave() }
+                .onSubmit(flushText)
+            styleChoices(.init(selection: overlay.style.preset, text: editText, choose: { preset in
+                update(.init(overlay: TextOverlayEditing.restyled(.init(overlay: overlay, preset: preset)),
+                             actionName: "Change Text Style"))
+            }))
+        }
+    }
+
+    private func when(_ overlay: TextOverlay) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            BlitzTimeRangeEditor(configuration: .init(
+                range: .init(start: overlay.start, end: overlay.end),
+                duration: duration,
+                playhead: playback.currentTime,
+                minimumLength: min(TextOverlayEditing.minimumLength, overlay.end - overlay.start),
+                onChange: { range in
+                    var changed = overlay
+                    changed.start = range.start
+                    changed.end = range.end
+                    if update(.init(overlay: changed, actionName: "Change Text Timing")), range.start != overlay.start {
+                        playback.seek(to: range.start + min(0.3, range.duration / 2))
+                    }
                 }
-                .blitzButton(.quiet).controlSize(.small)
-                .help("Start this text at the playhead, keeping its duration when space allows.")
-                .fixedSize()
-            }
-            HStack(spacing: 10) {
-                timeField(.init(title: "Start", value: $draft.startText))
-                timeField(.init(title: "End", value: $draft.endText))
-            }
-            if let range = draft.range(duration) {
-                let projection = EditorTimelineProjection(.init(duration: duration, cuts: edits.cuts))
-                HStack {
-                    Text("Visible for \(SilenceTime.label(projection.displayTime(range.end) - projection.displayTime(range.start)))")
-                    Spacer(minLength: 0)
-                    Text("min:sec")
+            ))
+            Toggle("Fade in and out", isOn: Binding(
+                get: { overlay.fadeSeconds > 0 },
+                set: { fades in
+                    update(.init(overlay: TextOverlayEditing.fading(.init(overlay: overlay, fades: fades)),
+                                 actionName: "Change Text Fade"))
                 }
-                .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
-                Text("Start and end refer to the original recording.")
-                    .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
-            } else {
-                Text("Enter a start before the end, within \(EditorPlaybackPosition.display(duration)).")
-                    .font(BlitzType.caption).foregroundStyle(BlitzUI.recordRed)
-                    .fixedSize(horizontal: false, vertical: true)
+            ))
+            .toggleStyle(.blitzSwitch)
+            HStack(spacing: 8) {
+                Button("Done") { configuration.selectedID.wrappedValue = nil }
+                    .blitzButton(.secondary).controlSize(.small)
+                    .help("Finish editing and add more text")
+                Spacer(minLength: 0)
+                BlitzInlineActions(entries: actions(overlay))
+                    .controlSize(.small)
+                    .fixedSize()
             }
         }
     }
 
     private var overlayList: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            BlitzInspectorHeading(configuration: .init(title: "In this video", detail: "\(sortedOverlays.count)"))
+        VStack(spacing: 2) {
             ForEach(sortedOverlays) { overlay in
-                HStack(spacing: 4) {
-                    Button {
-                        configuration.selectedID.wrappedValue = overlay.id
-                        draft.edit(overlay)
-                        error = nil
-                        configuration.playback.pauseForEditing()
-                        configuration.playback.seek(to: overlay.start + min(0.3, overlay.duration / 2))
-                        isTextFocused = true
-                    } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: "textformat")
-                                .font(BlitzType.glyph(14)).foregroundStyle(BlitzUI.secondaryText)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(overlay.text).font(BlitzType.label).lineLimit(2)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                Text("\(SilenceTime.label(overlay.start))–\(SilenceTime.label(overlay.end)) · \(overlay.style.preset.displayName)")
-                                    .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
-                            }
-                            Spacer(minLength: 0)
+                Button { select(overlay) } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "textformat")
+                            .font(BlitzType.glyph(13)).foregroundStyle(BlitzUI.secondaryText).frame(width: 18)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(overlay.text).font(BlitzType.navigation).lineLimit(1)
+                            Text("From \(BlitzTimeStepper.label(overlay.start)) · \(BlitzTimeStepper.label(overlay.end - overlay.start)) long · \(overlay.style.preset.displayName)")
+                                .font(BlitzType.caption.monospacedDigit()).foregroundStyle(BlitzUI.secondaryText)
                         }
-                        .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                        Spacer(minLength: 0)
                     }
-                    .buttonStyle(BlitzSelectionButtonStyle(isSelected: draft.original?.id == overlay.id))
-                    .pointingHandCursor()
-                    .accessibilityLabel("Edit \(overlay.text)")
-                    .help("Edit this overlay and show it in the preview.")
-                    Button {
-                        configuration.playback.play(from: overlay.start)
-                    } label: {
-                        Image(systemName: "play")
-                    }
-                    .blitzButton(.quiet).controlSize(.small)
-                    .accessibilityLabel("Preview \(overlay.text)").help("Play from this overlay")
-                    Button(role: .destructive) {
-                        var updated = edits
-                        updated.textOverlays.removeAll { $0.id == overlay.id }
-                        _ = apply(.init(edits: updated, actionName: "Remove Text"))
-                    } label: {
-                        Image(systemName: "trash")
-                    }
-                    .blitzButton(.quiet).controlSize(.small)
-                    .accessibilityLabel("Remove \(overlay.text)").help("Remove this overlay. Undo with ⌘Z.")
+                    .padding(8)
+                    .contentShape(.rect)
                 }
+                .buttonStyle(BlitzSelectionButtonStyle(isSelected: selected?.id == overlay.id))
+                .contextMenu { BlitzContextMenuItems(entries: actions(overlay)) }
+                .accessibilityLabel("Edit \(overlay.text)")
             }
         }
     }
 
-    private var footer: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if let error {
-                Text(error).font(BlitzType.caption).foregroundStyle(BlitzUI.recordRed)
-                    .fixedSize(horizontal: false, vertical: true)
+    private func actions(_ overlay: TextOverlay) -> [BlitzMenuEntry] {
+        [
+            .item(.init(title: "Play", systemImage: "play") { playback.play(from: overlay.start) }),
+            .item(.init(title: "Delete", systemImage: "trash", isDestructive: true) { remove(overlay) })
+        ]
+    }
+
+    private struct Field {
+        let text: Binding<String>
+        let placeholder: String
+    }
+
+    private func textField(_ field: Field) -> some View {
+        TextField(field.placeholder, text: field.text, axis: .vertical)
+            .lineLimit(2...5)
+            .textFieldStyle(.plain)
+            .font(BlitzType.section)
+            .padding(12)
+            .blitzFieldChrome(isFocused: isTextFocused)
+            .focused($isTextFocused)
+            .accessibilityLabel("Overlay text")
+    }
+
+    private struct StyleChoices {
+        let selection: TextOverlayPreset
+        let text: String
+        let choose: (TextOverlayPreset) -> Void
+    }
+
+    private func styleChoices(_ request: StyleChoices) -> some View {
+        HStack(alignment: .top, spacing: 4) {
+            ForEach(TextOverlayPreset.allCases, id: \.self) { preset in
+                BlitzVisualChoice(configuration: .init(
+                    title: preset.displayName,
+                    help: "\(preset.displayName). Preview its look and position on your video.",
+                    isSelected: request.selection == preset,
+                    action: { request.choose(preset) },
+                    preview: {
+                        EditorTextStylePreview(configuration: .init(
+                            preset: preset, text: request.text,
+                            source: configuration.preview, scene: configuration.scene, layout: configuration.layout
+                        ))
+                    }
+                ))
             }
-            HStack(spacing: 8) {
-                if draft.isEditing {
-                    Button(action: resetDraft) { Label("Cancel", systemImage: "xmark") }.blitzButton(.secondary)
-                }
-                Button(action: saveText) {
-                    Label(draft.isEditing ? "Save changes" : "Add to video",
-                          systemImage: draft.isEditing ? "checkmark" : "plus")
-                        .frame(maxWidth: .infinity)
-                }
-                .blitzButton(.accent)
-                .disabled(draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || draft.range(duration) == nil)
-            }
-            Text("Saved in this project · ⌘Z to undo")
-                .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
-                .frame(maxWidth: .infinity)
         }
     }
 
-    private struct TimeField {
-        let title: String
-        let value: Binding<String>
-    }
-
-    private func timeField(_ field: TimeField) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(field.title).font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
-            TextField("00:00.00", text: field.value)
-                .textFieldStyle(.plain)
-                .font(BlitzType.label.monospacedDigit())
-                .accessibilityLabel("Text \(field.title.lowercased()) time")
-                .help("Enter minutes:seconds, or seconds. Decimals are supported.")
-        }
-        .padding(10).frame(maxWidth: .infinity, alignment: .leading)
-        .background(BlitzUI.cardFill, in: .rect(cornerRadius: BlitzControlMetrics.radius))
-    }
-
-    private func resetDraft() {
-        configuration.selectedID.wrappedValue = nil
-        draft = EditorTextDraft()
-        draft.moveToPlayhead(.init(time: configuration.playback.currentTime, duration: duration))
+    private func select(_ overlay: TextOverlay) {
+        configuration.selectedID.wrappedValue = overlay.id
         error = nil
+        playback.pauseForEditing()
+        playback.seek(to: overlay.start + min(0.3, (overlay.end - overlay.start) / 2))
     }
 
-    private func loadSelection() {
-        guard let id = configuration.selectedID.wrappedValue,
-              let overlay = edits.textOverlays.first(where: { $0.id == id }) else { resetDraft(); return }
-        draft.edit(overlay)
-        error = nil
+    private func addText() {
+        guard let overlay = TextOverlayEditing.newOverlay(.init(
+            text: newText, preset: newPreset, time: playback.currentTime, duration: duration
+        )) else { return }
+        var updated = edits
+        updated.textOverlays.append(overlay)
+        guard apply(.init(edits: updated, actionName: "Add Text")) else { return }
+        newText = ""
+        select(overlay)
+    }
+
+    private func remove(_ overlay: TextOverlay) {
+        if overlay.id == editTextID { pendingText?.cancel(); pendingText = nil }
+        var updated = edits
+        updated.textOverlays.removeAll { $0.id == overlay.id }
+        if apply(.init(edits: updated, actionName: "Remove Text")), configuration.selectedID.wrappedValue == overlay.id {
+            configuration.selectedID.wrappedValue = nil
+        }
+    }
+
+    private func syncEditText() {
+        editTextID = selected?.id
+        editText = selected?.text ?? ""
+    }
+
+    private func scheduleTextSave() {
+        guard let id = editTextID, edits.textOverlays.first(where: { $0.id == id })?.text != editText else { return }
+        pendingText?.cancel()
+        pendingText = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            flushText()
+        }
+    }
+
+    private func flushText() {
+        pendingText?.cancel()
+        pendingText = nil
+        guard let id = editTextID, let overlay = edits.textOverlays.first(where: { $0.id == id }),
+              overlay.text != editText.trimmingCharacters(in: .whitespacesAndNewlines),
+              let changed = TextOverlayEditing.retexted(.init(overlay: overlay, text: editText)) else { return }
+        update(.init(overlay: changed, actionName: "Edit Text"))
+    }
+
+    private struct OverlayUpdate {
+        let overlay: TextOverlay
+        let actionName: String
+    }
+
+    @discardableResult
+    private func update(_ request: OverlayUpdate) -> Bool {
+        guard let index = edits.textOverlays.firstIndex(where: { $0.id == request.overlay.id }),
+              edits.textOverlays[index] != request.overlay else { return false }
+        var updated = edits
+        updated.textOverlays[index] = request.overlay
+        return apply(.init(edits: updated, actionName: request.actionName))
     }
 
     private func apply(_ change: EditorTimelineEditsChange) -> Bool {
-        configuration.playback.pauseForEditing()
+        playback.pauseForEditing()
         guard configuration.vm.applyOutputTextEdits(change) else {
             error = configuration.vm.detailMessage
             return false
         }
         error = nil
         return true
-    }
-
-    private func saveText() {
-        guard let overlay = draft.overlay(duration) else { return }
-        var updated = edits
-        updated.textOverlays.removeAll { $0.id == overlay.id }
-        updated.textOverlays.append(overlay)
-        guard apply(.init(edits: updated, actionName: draft.isEditing ? "Edit Text" : "Add Text")) else { return }
-        configuration.playback.seek(to: overlay.start + min(0.3, overlay.duration / 2))
-        resetDraft()
-        isTextFocused = false
     }
 }
 

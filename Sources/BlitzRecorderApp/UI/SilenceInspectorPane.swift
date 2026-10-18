@@ -8,7 +8,7 @@ enum SilencePacing: Int, CaseIterable {
 
 struct SilenceInspectorPane: View {
     @Bindable var session: SilenceEditingSession
-    @State private var showsTuning = false
+    @State private var showsAdvanced = false
     @State private var phaseStartedAt = Date()
 
     var body: some View {
@@ -26,14 +26,10 @@ struct SilenceInspectorPane: View {
             content: {
                 VStack(alignment: .leading, spacing: EditorInspectorMetrics.sectionSpacing) {
                     SilenceSummaryCard(presentation: presentation, phaseStartedAt: phaseStartedAt)
-                    SilenceStrengthSection(presentation: presentation, actions: actions)
-                    BlitzInspectorDisclosure(configuration: .init(
-                        title: "Fine-tune",
-                        detail: session.customized ? "Custom" : nil,
-                        isExpanded: $showsTuning,
-                        content: { tuning }
-                    ))
-                    .disabled(!presentation.hasResult)
+                    if presentation.hasResult {
+                        SilenceStrengthSection(presentation: presentation, actions: actions)
+                        if session.suggestsPauses && !session.windows.isEmpty { fineTune }
+                    }
                 }
             },
             footer: { SilenceFooterActions(presentation: presentation, actions: actions) }
@@ -41,60 +37,69 @@ struct SilenceInspectorPane: View {
         .onChange(of: presentation.phase.kind) { phaseStartedAt = Date() }
     }
 
-    private var tuning: some View {
-        VStack(alignment: .leading, spacing: 20) {
+    private var fineTune: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            BlitzInspectorHeading(configuration: .init(title: "Fine-tune", detail: session.customized ? "Custom" : nil))
+            parameter(.init(title: "Shortest pause", detail: nil,
+                            value: $session.minimumDuration, range: 0.1...3, step: 0.1))
+            parameter(.init(title: "Space around words", detail: nil,
+                            value: Binding(
+                                get: { session.paddingBefore },
+                                set: { value in
+                                    session.paddingBefore = value
+                                    session.paddingAfter = value
+                                    session.linkedPadding = true
+                                }
+                            ), range: 0...1, step: 0.05))
+            BlitzInspectorDisclosure(configuration: .init(
+                title: "Advanced",
+                detail: nil,
+                isExpanded: $showsAdvanced,
+                content: { advanced }
+            ))
+        }
+        .disabled(session.isAuditioning || session.loading)
+    }
+
+    private var advanced: some View {
+        VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 8) {
-                BlitzInspectorHeading(configuration: .init(title: "Detection", detail: session.sourceName))
-                Toggle("Automatic threshold", isOn: Binding(
+                Toggle("Detect quiet automatically", isOn: Binding(
                     get: { session.automaticThreshold },
                     set: { session.automaticThreshold = $0; session.changeThresholdMode() }
                 ))
                     .toggleStyle(.blitzSwitch)
-                BlitzInspectorSlider(configuration: .init(
-                    title: "Threshold", value: Binding(
-                        get: { session.threshold },
-                        set: { session.threshold = $0; session.recalculate() }
-                    ), range: -70 ... -15, step: 1,
-                    valueLabel: "\(Int(session.threshold)) dB",
-                    onEditingChanged: { _ in },
-                    onReset: { session.threshold = SilenceEditingSession.defaultThreshold; session.recalculate() }
-                ))
-                .disabled(session.automaticThreshold)
-
-            }
-            parameter(.init(title: "Minimum pause", detail: "Only consider quiet gaps at least this long.",
-                            value: $session.minimumDuration, range: 0.1...3))
-            VStack(alignment: .leading, spacing: 12) {
-                BlitzInspectorHeading(configuration: .init(title: "Breathing room", detail: nil))
-                Toggle("Same before and after", isOn: Binding(
-                    get: { session.linkedPadding },
-                    set: { linked in
-                        session.linkedPadding = linked
-                        if linked { session.paddingAfter = session.paddingBefore }
-                        session.customized = true
-                        session.recalculate()
-                    }
-                ))
-                    .toggleStyle(.blitzCheckbox)
-                    .controlSize(.small)
-                    .accessibilityLabel("Link silence padding")
-                parameter(.init(title: session.linkedPadding ? "Around speech" : "Before speech",
-                                detail: "Keep this much silence on each side of speech. Shorter gaps stay intact.",
-                                value: Binding(
-                                    get: { session.paddingBefore },
-                                    set: { value in
-                                        session.paddingBefore = value
-                                        if session.linkedPadding { session.paddingAfter = value }
-                                    }
-                                ), range: 0...1))
-                if !session.linkedPadding {
-                    parameter(.init(title: "After speech", detail: nil, value: $session.paddingAfter, range: 0...1))
+                    .help("Decide what counts as quiet from \(session.sourceName)")
+                if !session.automaticThreshold {
+                    BlitzInspectorSlider(configuration: .init(
+                        title: "Quiet level", value: Binding(
+                            get: { session.threshold },
+                            set: { session.threshold = $0; session.recalculateFromPerson() }
+                        ), range: -70 ... -15, step: 1,
+                        valueLabel: "\(Int(session.threshold)) dB",
+                        onEditingChanged: { _ in },
+                        onReset: { session.threshold = SilenceEditingSession.defaultThreshold; session.recalculateFromPerson() }
+                    ))
                 }
             }
-            parameter(.init(title: "Merge nearby pauses", detail: "Join pauses across brief quiet sounds. Detected speech stays separate. Set to zero to turn off.",
-                            value: $session.minimumAudio, range: 0...0.5))
+            Toggle("Same space before and after words", isOn: Binding(
+                get: { session.linkedPadding },
+                set: { linked in
+                    session.linkedPadding = linked
+                    if linked { session.paddingAfter = session.paddingBefore }
+                    session.customized = true
+                    session.recalculateFromPerson()
+                }
+            ))
+                .toggleStyle(.blitzSwitch)
+            if !session.linkedPadding {
+                parameter(.init(title: "Before words", detail: nil, value: $session.paddingBefore, range: 0...1, step: 0.05))
+                parameter(.init(title: "After words", detail: nil, value: $session.paddingAfter, range: 0...1, step: 0.05))
+            }
+            parameter(.init(title: "Ignore short noises",
+                            detail: "A click or breath this short doesn't break a pause.",
+                            value: $session.minimumAudio, range: 0...0.5, step: 0.05))
         }
-        .disabled(session.isAuditioning || session.loading || session.windows.isEmpty || !session.suggestsPauses)
     }
 
     private struct Parameter {
@@ -102,31 +107,39 @@ struct SilenceInspectorPane: View {
         let detail: String?
         let value: Binding<Double>
         let range: ClosedRange<Double>
+        let step: Double
     }
 
     private func parameter(_ parameter: Parameter) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack {
-                Text(parameter.title).font(BlitzType.label)
-                Spacer(minLength: 0)
-                Text("\(parameter.value.wrappedValue, specifier: "%.2f") s")
-                    .font(BlitzType.body.monospacedDigit())
-                    .foregroundStyle(BlitzUI.supportingText)
-            }
-            Slider(value: Binding(get: { parameter.value.wrappedValue }, set: { value in
-                parameter.value.wrappedValue = value
-                session.customized = true
-                session.recalculate()
-            }), in: parameter.range, step: 0.05)
-                .controlSize(.small)
-                .accessibilityLabel(parameter.title)
-                .accessibilityValue(String(format: "%.2f seconds", parameter.value.wrappedValue))
+        VStack(alignment: .leading, spacing: 6) {
+            BlitzInspectorSlider(configuration: .init(
+                title: parameter.title,
+                value: Binding(get: { parameter.value.wrappedValue }, set: { value in
+                    parameter.value.wrappedValue = value
+                    session.customized = true
+                    session.recalculateFromPerson()
+                }),
+                range: parameter.range,
+                step: parameter.step,
+                valueLabel: Self.seconds(parameter.value.wrappedValue),
+                onEditingChanged: { _ in },
+                onReset: {
+                    session.selectPacing(SilencePacing(rawValue: Int(session.intensity.rounded())) ?? .tight)
+                }
+            ))
+            .accessibilityValue(Self.seconds(parameter.value.wrappedValue))
             if let detail = parameter.detail {
                 Text(detail)
                     .font(BlitzType.caption)
-                    .foregroundStyle(BlitzUI.supportingText)
+                    .foregroundStyle(BlitzUI.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    static func seconds(_ value: Double) -> String {
+        guard value > 0.001 else { return "Off" }
+        let rounded = (value * 100).rounded() / 100
+        return rounded.formatted(.number.precision(.fractionLength(0...2))) + " s"
     }
 }

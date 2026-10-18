@@ -12,36 +12,19 @@ struct SilenceSummaryCard: View {
     let phaseStartedAt: Date
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 10) {
             status
             TimelineView(.periodic(from: phaseStartedAt, by: 1)) { context in
                 headline(elapsed: context.date.timeIntervalSince(phaseStartedAt))
             }
-            if presentation.phase.showsTimeline {
-                timeline
-                stats
+            if let progress = presentation.phase.progress {
+                ProgressView(value: progress)
+                    .progressViewStyle(.linear)
+                    .tint(BlitzUI.accent)
             }
         }
-        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(BlitzUI.quietFill, in: .rect(cornerRadius: BlitzUI.cardRadius))
         .animation(.easeOut(duration: 0.15), value: presentation)
-    }
-
-    private var timeline: some View {
-        VStack(spacing: 6) {
-            SilenceTakeStrip(presentation: presentation)
-                .frame(height: 30)
-            HStack {
-                Text("0:00")
-                Spacer(minLength: 0)
-                Text(ClockDuration.label(presentation.originalDuration))
-            }
-            .font(BlitzType.footnote)
-            .foregroundStyle(BlitzUI.tertiaryText)
-            .monospacedDigit()
-            .opacity(presentation.originalDuration > 0 ? 1 : 0)
-        }
     }
 
     private var status: some View {
@@ -62,7 +45,7 @@ struct SilenceSummaryCard: View {
                 Text("No long pauses found").foregroundStyle(BlitzUI.supportingText)
             case .unavailable:
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(BlitzUI.warning)
-                Text("Audio unavailable").foregroundStyle(BlitzUI.supportingText)
+                Text("No audio to scan").foregroundStyle(BlitzUI.supportingText)
             }
             Spacer(minLength: 0)
             if presentation.isUpdating && presentation.hasResult {
@@ -92,16 +75,24 @@ struct SilenceSummaryCard: View {
             case .unavailable(let message):
                 Text("Nothing to scan")
                     .font(SilencePaneType.displayText)
+                    .accessibilityAddTraits(.isHeader)
                 Text(message)
                     .foregroundStyle(BlitzUI.supportingText)
                     .fixedSize(horizontal: false, vertical: true)
             case .proposed, .applied, .noPauses:
-                Text(ClockDuration.label(presentation.editedDuration))
-                    .font(SilencePaneType.display)
-                    .contentTransition(.numericText())
-                Text(presentation.removedDuration > 0
-                     ? "Down from \(ClockDuration.label(presentation.originalDuration))"
-                     : "Same length as the recording")
+                HStack(alignment: .firstTextBaseline) {
+                    Text(ClockDuration.label(presentation.editedDuration))
+                        .font(SilencePaneType.display)
+                        .contentTransition(.numericText())
+                    Spacer(minLength: 8)
+                    if presentation.removedDuration > 0 {
+                        Text("−\(ClockDuration.label(presentation.removedDuration))")
+                            .font(BlitzType.headline)
+                            .foregroundStyle(BlitzUI.accent)
+                            .contentTransition(.numericText())
+                    }
+                }
+                Text(resultLine)
                     .foregroundStyle(BlitzUI.supportingText)
             }
         }
@@ -111,45 +102,11 @@ struct SilenceSummaryCard: View {
         .frame(maxWidth: .infinity, minHeight: 56, alignment: .topLeading)
     }
 
-    private var stats: some View {
-        HStack(spacing: 0) {
-            stat(.init(value: presentation.hasResult ? "\(presentation.pauseCount)" : "–",
-                       label: presentation.pauseCount == 1 ? "Pause" : "Pauses", tint: BlitzUI.primaryText))
-            stat(.init(value: savedValue,
-                       label: "Time saved",
-                       tint: presentation.hasResult && presentation.removedDuration > 0 ? BlitzUI.accent : BlitzUI.primaryText))
-            stat(.init(value: presentation.hasResult ? "\(presentation.shorterPercent)%" : "–",
-                       label: "Shorter", tint: BlitzUI.primaryText))
-        }
-        .padding(.top, 12)
-        .overlay(alignment: .top) { Rectangle().fill(BlitzUI.separator).frame(height: 1) }
-    }
-
-    private var savedValue: String {
-        guard presentation.hasResult else { return "–" }
-        guard presentation.removedDuration > 0 else { return "0:00" }
-        return "−\(ClockDuration.label(presentation.removedDuration))"
-    }
-
-    private struct Stat {
-        let value: String
-        let label: String
-        let tint: Color
-    }
-
-    private func stat(_ stat: Stat) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(stat.value)
-                .font(BlitzType.headline)
-                .foregroundStyle(stat.tint)
-                .monospacedDigit()
-                .contentTransition(.numericText())
-            Text(stat.label)
-                .font(BlitzType.caption)
-                .foregroundStyle(BlitzUI.secondaryText)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
+    private var resultLine: String {
+        let total = ClockDuration.label(presentation.originalDuration)
+        guard presentation.pauseCount > 0 else { return "No long pauses in \(total)" }
+        let pauses = presentation.pauseCount == 1 ? "1 pause" : "\(presentation.pauseCount) pauses"
+        return presentation.phase == .applied ? "\(pauses) cut from \(total)" : "\(pauses) found in \(total)"
     }
 }
 
@@ -167,94 +124,11 @@ private extension SilencePanePresentation.Phase {
         }
     }
 
-    var showsTimeline: Bool {
-        if case .unavailable = self { return false }
-        return true
-    }
-}
-
-struct SilenceTakeStrip: View {
-    let presentation: SilencePanePresentation
-
-    var body: some View {
-        Canvas { context, size in
-            let track = Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 6, style: .continuous)
-            context.fill(track, with: .color(BlitzUI.quietFill))
-            switch presentation.phase {
-            case .scanning(let fraction):
-                fill(.init(context: context, size: size, fraction: fraction))
-            case .analyzingSpeech(let step, _):
-                fill(.init(context: context, size: size, fraction: Double(step - 1) / 4 + 0.125))
-            case .unavailable:
-                break
-            case .proposed, .applied, .noPauses:
-                drawSpeech(.init(context: context, size: size))
-            }
-        }
-        .accessibilityElement()
-        .accessibilityLabel("Recording timeline")
-        .accessibilityValue(accessibilityValue)
-    }
-
-    private var accessibilityValue: String {
-        presentation.hasResult
-            ? "\(presentation.pauseCount) pauses marked for cutting"
-            : presentation.phase.statusTitle
-    }
-
-    private struct FillRequest {
-        let context: GraphicsContext
-        let size: CGSize
-        let fraction: Double
-    }
-
-    private func fill(_ request: FillRequest) {
-        let width = max(0, min(1, request.fraction)) * request.size.width
-        guard width > 0 else { return }
-        let rect = CGRect(x: 0, y: 0, width: width, height: request.size.height)
-        request.context.fill(Path(roundedRect: rect, cornerRadius: 6, style: .continuous),
-                             with: .color(BlitzUI.accent.opacity(0.85)))
-    }
-
-    private struct DrawRequest {
-        let context: GraphicsContext
-        let size: CGSize
-    }
-
-    private func drawSpeech(_ request: DrawRequest) {
-        let radius: (CGRect) -> CGFloat = { min(1, $0.width / 2) }
-        for bar in Self.bars(.init(columns: presentation.columns, size: request.size)) {
-            request.context.fill(Path(roundedRect: bar.rect, cornerRadius: radius(bar.rect)),
-                                 with: .color(BlitzUI.primaryText.opacity(0.14)))
-            let keptHeight = bar.rect.height * CGFloat(bar.kept)
-            guard keptHeight >= 1 else { continue }
-            let kept = CGRect(x: bar.rect.minX, y: bar.rect.midY - keptHeight / 2, width: bar.rect.width, height: keptHeight)
-            request.context.fill(Path(roundedRect: kept, cornerRadius: radius(kept)),
-                                 with: .color(BlitzUI.primaryText.opacity(0.78)))
-        }
-    }
-
-    struct BarsRequest {
-        let columns: [SilenceStripColumn]
-        let size: CGSize
-    }
-
-    struct Bar: Equatable {
-        let rect: CGRect
-        let kept: Double
-    }
-
-    static func bars(_ request: BarsRequest) -> [Bar] {
-        guard !request.columns.isEmpty, request.size.width > 0 else { return [] }
-        let inset: CGFloat = 5
-        let pitch = (request.size.width - inset * 2) / CGFloat(request.columns.count)
-        let width = max(1, pitch * 0.6)
-        let height = request.size.height - inset * 2
-        return request.columns.enumerated().map { index, column in
-            let barHeight = max(2, height * CGFloat(column.level))
-            return Bar(rect: CGRect(x: inset + CGFloat(index) * pitch + (pitch - width) / 2,
-                                    y: inset + (height - barHeight) / 2, width: width, height: barHeight),
-                       kept: column.kept)
+    var progress: Double? {
+        switch self {
+        case .scanning(let fraction): fraction
+        case .analyzingSpeech(let step, _): Double(step - 1) / 4 + 0.125
+        default: nil
         }
     }
 }
@@ -268,7 +142,7 @@ struct SilenceStrengthSection: View {
             BlitzInspectorHeading(configuration: .init(title: "Strength", detail: presentation.strength == nil ? "Custom" : nil))
             BlitzSegmentedPicker(configuration: .init(
                 title: "Silence removal strength",
-                options: SilenceStrength.allCases.map(Optional.some),
+                options: SilenceStrength.pickerCases.map(Optional.some),
                 selection: Binding<SilenceStrength?>(
                     get: { presentation.strength },
                     set: { if let strength = $0 { actions.selectStrength(strength) } }
@@ -278,6 +152,10 @@ struct SilenceStrengthSection: View {
             Text(presentation.strengthDetail)
                 .font(BlitzType.body)
                 .foregroundStyle(BlitzUI.supportingText)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Right-click a pause on the timeline to keep it.")
+                .font(BlitzType.caption)
+                .foregroundStyle(BlitzUI.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
             if presentation.phase == .proposed, presentation.pauseCount > 0 {
                 Toggle(isOn: Binding(get: { presentation.previewEnabled }, set: actions.setPreview)) {
@@ -310,8 +188,7 @@ struct SilenceFooterActions: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            switch presentation.phase {
-            case .applied:
+            if presentation.phase == .applied || presentation.hasAppliedCuts {
                 Button(action: actions.restore) {
                     Label("Restore pauses", systemImage: "arrow.uturn.backward")
                         .frame(maxWidth: .infinity)
@@ -319,8 +196,8 @@ struct SilenceFooterActions: View {
                 .blitzButton(.secondary)
                 .controlSize(.large)
                 .help("Put every cut pause back on the timeline")
-                caption("Brings back \(ClockDuration.label(presentation.removedDuration)) · ⌘Z to undo")
-            default:
+                caption("Changes apply right away · ⌘Z to undo")
+            } else {
                 Button(action: actions.apply) {
                     Label(applyTitle, systemImage: "scissors")
                         .frame(maxWidth: .infinity)
@@ -337,7 +214,6 @@ struct SilenceFooterActions: View {
     }
 
     private var applyTitle: String {
-        if presentation.hasAppliedCuts { return "Update cuts" }
         guard presentation.hasResult, presentation.pauseCount > 0 else { return "Cut pauses" }
         return presentation.pauseCount == 1 ? "Cut 1 pause" : "Cut \(presentation.pauseCount) pauses"
     }

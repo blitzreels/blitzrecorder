@@ -55,6 +55,8 @@ final class RecordingCursorTracker {
     }
     private var configuration: Configuration?
     private var samples: [RecordingCursorSample] = []
+    private var privacySignals: [RecordingPrivacySignal] = []
+    private var tick = 0
     private var timer: Timer?
     private var directory: URL?
     private var wasPressed = false
@@ -73,6 +75,8 @@ final class RecordingCursorTracker {
         configuration = request.configuration
         captureFrameProvider = request.captureFrame
         samples = []
+        privacySignals = []
+        tick = 0
         segment = 0
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -93,8 +97,13 @@ final class RecordingCursorTracker {
             try? JSONEncoder().encode(RecordingCursorTrack(version: 2, samples: samples))
                 .write(to: directory.appendingPathComponent("cursor-track.json"), options: .atomic)
         }
+        if let directory, !privacySignals.isEmpty, FileManager.default.fileExists(atPath: directory.path) {
+            try? JSONEncoder().encode(RecordingPrivacySignalTrack(version: 1, signals: privacySignals))
+                .write(to: directory.appendingPathComponent(RecordingPrivacySignalTrack.fileName), options: .atomic)
+        }
         directory = nil
         samples = []
+        privacySignals = []
         wasPressed = false
         captureFrameProvider = nil
     }
@@ -110,12 +119,34 @@ final class RecordingCursorTracker {
         guard crop.width > 0, crop.height > 0 else { return }
         let x = ((location.x - frame.minX) / frame.width - crop.minX) / crop.width
         let y = ((location.y - frame.minY) / frame.height - crop.minY) / crop.height
+        tick += 1
+        if tick % 30 == 0 { recordSensitiveWindows(.init(time: time, frame: frame, crop: crop)) }
         let visible = frame.contains(location) && (0...1).contains(x) && (0...1).contains(y)
         samples.append(.init(time: time, x: x, y: y, clicked: visible && pressed && !wasPressed,
             visible: visible && config.settings.includeCursor,
             rendered: CursorCapturePolicy.rendersCursor(.init(settings: config.settings, filter: config.filter)),
             segment: segment))
     }
+    private struct SignalRequest {
+        let time: Double
+        let frame: CGRect
+        let crop: CGRect
+    }
+
+    private func recordSensitiveWindows(_ request: SignalRequest) {
+        for window in SensitiveWindowScanner.visibleWindows() {
+            let normalized = CGRect(
+                x: ((window.bounds.minX - request.frame.minX) / request.frame.width - request.crop.minX) / request.crop.width,
+                y: ((window.bounds.minY - request.frame.minY) / request.frame.height - request.crop.minY) / request.crop.height,
+                width: window.bounds.width / request.frame.width / request.crop.width,
+                height: window.bounds.height / request.frame.height / request.crop.height
+            ).intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+            guard !normalized.isNull, normalized.width > 0.01, normalized.height > 0.01 else { continue }
+            privacySignals.append(.init(time: request.time, kind: window.kind, app: window.app,
+                                        windowID: window.windowID, frame: normalized))
+        }
+    }
+
     private func captureFrame(_ config: Configuration) -> CGRect? {
         var windowID = config.settings.screenSourceBinding?.windowID
         if let filter = config.filter {
@@ -144,6 +175,77 @@ enum CursorZoomPlanning {
         let cuts: [TimelineCut]
         let magnification: Double
     }
+    struct PositionRequest {
+        let sample: RecordingCursorSample
+        let amount: Double
+    }
+
+    static func position(_ request: PositionRequest) -> CGPoint {
+        CGPoint(x: min(1, max(-1, (request.sample.x - 0.5) * 2 / max(0.01, request.amount))),
+                y: min(1, max(-1, (request.sample.y - 0.5) * 2 / max(0.01, request.amount))))
+    }
+
+    struct ManualZoomRequest {
+        let track: ScreenZoomTrack
+        let time: Double
+        let duration: Double
+        let magnification: Double
+        let cursorSamples: [RecordingCursorSample]
+        let trimOffset: Double
+    }
+
+    static let manualZoomLength = 3.0
+
+    static func canAddZoom(_ request: ManualZoomRequest) -> Bool {
+        let end = request.time + manualZoomLength
+        guard request.time >= 0, end <= request.duration + 0.01 else { return false }
+        if request.track.isActive, request.track.sample(at: request.time).amount > 0.01 { return false }
+        return !request.track.keyframes.contains { $0.time > request.time - 0.2 && $0.time < end + 0.2 && $0.amount > 0.001 }
+    }
+
+    static func addingZoom(_ request: ManualZoomRequest) -> ScreenZoomTrack {
+        let amount = ScreenZoomTrack.amount(forMagnification: request.magnification)
+        let peak = request.time + 0.4
+        let focus = request.cursorSamples
+            .filter { $0.visible && $0.x.isFinite && $0.y.isFinite }
+            .min { abs($0.time - request.trimOffset - peak) < abs($1.time - request.trimOffset - peak) }
+        let position = focus.flatMap { abs($0.time - request.trimOffset - peak) < 2 ? $0 : nil }
+            .map { Self.position(.init(sample: $0, amount: amount)) } ?? .zero
+        var track = request.track
+        let end = request.time + manualZoomLength
+        track.keyframes += [
+            .init(time: request.time, amount: 0, position: position),
+            .init(time: peak, amount: amount, position: position),
+            .init(time: end - 0.4, amount: amount, position: position),
+            .init(time: end, amount: 0, position: position)
+        ]
+        track.keyframes.sort { $0.time < $1.time }
+        track.isEnabled = true
+        if request.track.isEmpty { track.intensity = request.magnification }
+        return track
+    }
+
+    struct StrengthRequest {
+        let track: ScreenZoomTrack
+        let magnification: Double
+    }
+
+    static func changingStrength(_ request: StrengthRequest) -> ScreenZoomTrack {
+        var track = request.track
+        let amount = ScreenZoomTrack.amount(forMagnification: request.magnification)
+        let previous = ScreenZoomTrack.amount(forMagnification: track.intensity)
+        for index in track.keyframes.indices {
+            let zoomed = track.keyframes[index].amount > 0.001
+            let scale = (zoomed ? track.keyframes[index].amount : previous) / max(0.01, amount)
+            let position = track.keyframes[index].position
+            if zoomed { track.keyframes[index].amount = amount }
+            track.keyframes[index].position = CGPoint(x: min(1, max(-1, position.x * scale)),
+                                                      y: min(1, max(-1, position.y * scale)))
+        }
+        track.intensity = request.magnification
+        return track
+    }
+
     static func plan(_ request: Request) -> ScreenZoomTrack {
         let amount = ScreenZoomTrack.amount(forMagnification: request.magnification)
         let map = TimelineTimeMap(takeDuration: TimelineTimeMap.time(request.duration), cuts: request.cuts)
@@ -155,8 +257,7 @@ enum CursorZoomPlanning {
             guard time >= lastEnd + 0.5, time < request.duration - 0.6, !map.isRemoved(takeTime: time) else { continue }
             let end = min(request.duration, time + 3)
             func position(_ sample: RecordingCursorSample) -> CGPoint {
-                CGPoint(x: min(1, max(-1, (sample.x - 0.5) * 2 / max(0.01, amount))),
-                        y: min(1, max(-1, (sample.y - 0.5) * 2 / max(0.01, amount))))
+                Self.position(.init(sample: sample, amount: amount))
             }
             keyframes.append(.init(time: max(lastEnd, time - 0.4), amount: 0, position: position(sample)))
             keyframes.append(.init(time: time + 0.15, amount: amount, position: position(sample)))

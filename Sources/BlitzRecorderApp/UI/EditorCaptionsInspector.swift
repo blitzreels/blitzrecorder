@@ -17,6 +17,7 @@ struct EditorCaptionsInspector: View {
         nonmutating set { configuration.selectedID.wrappedValue = newValue }
     }
     @State private var draft = ""
+    @State private var pendingSave: Task<Void, Never>?
     @State private var showsReplaceConfirmation = false
 
     private var project: RecordingProject? { configuration.vm.editorProject }
@@ -27,21 +28,36 @@ struct EditorCaptionsInspector: View {
     var body: some View {
         EditorInspectorPane(configuration: .init(
             title: "Captions",
-            detail: "Transcribe on this Mac. Captions appear in your preview and exported video.",
+            detail: "Turn what you say into captions, made on this Mac.",
             showsFooter: true,
             content: {
-                if !track.cues.isEmpty {
-                    Toggle("Show captions", isOn: binding(\.isEnabled))
-                        .toggleStyle(.blitzSwitch)
-                        .help("Show or hide captions in preview and every export. Your caption text stays saved.")
+                VStack(alignment: .leading, spacing: EditorInspectorMetrics.sectionSpacing) {
+                    if track.cues.isEmpty {
+                        Text("Captions follow your voice word by word. You can restyle and correct them after.")
+                            .font(BlitzType.body).foregroundStyle(BlitzUI.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Toggle("Show captions", isOn: binding(\.isEnabled))
+                            .toggleStyle(.blitzSwitch)
+                            .help("Show or hide captions in preview and every export. Your caption text stays saved.")
+                        if track.isEnabled {
+                            EditorInspectorSection(configuration: .init(title: "Style", content: { appearance }))
+                        }
+                        EditorInspectorSection(configuration: .init(
+                            title: track.cues.count == 1 ? "1 caption" : "\(track.cues.count) captions",
+                            content: { captionList }))
+                    }
                 }
-                appearance
-                if !track.cues.isEmpty { captionList }
             },
             footer: { footer }
         ))
         .onAppear { loadSelectedText() }
-        .onChange(of: selectedID) { loadSelectedText() }
+        .onChange(of: selectedID) {
+            flushText()
+            loadSelectedText()
+        }
+        .onChange(of: draft) { scheduleSave() }
+        .onDisappear { flushText() }
         .onChange(of: configuration.transcript) { generateWhenReady() }
         .onChange(of: status) { generateWhenReady() }
         .onChange(of: project?.projectPath) {
@@ -50,8 +66,9 @@ struct EditorCaptionsInspector: View {
             error = nil
         }
         .onChange(of: track.cues) {
-            if let selectedID, let cue = track.cues.first(where: { $0.id == selectedID }) { draft = cue.text }
-            else { selectedID = nil }
+            if let selectedID, let cue = track.cues.first(where: { $0.id == selectedID }) {
+                if pendingSave == nil { draft = cue.text }
+            } else { selectedID = nil }
         }
         .confirmationDialog("Replace caption text from the transcript?", isPresented: $showsReplaceConfirmation) {
             Button("Replace captions", role: .destructive, action: requestGeneration)
@@ -61,7 +78,7 @@ struct EditorCaptionsInspector: View {
     }
 
     private var appearance: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
                 ForEach(CaptionStyle.allCases, id: \.self) { style in
                     BlitzVisualChoice(configuration: .init(
@@ -73,25 +90,27 @@ struct EditorCaptionsInspector: View {
                     ))
                 }
             }
-            Text("Size").font(BlitzType.section)
-            BlitzSegmentedPicker(configuration: .init(title: "Caption size", options: CaptionSize.allCases,
-                selection: binding(\.size), label: { $0.title }))
-            Text("Position").font(BlitzType.section)
-            BlitzSegmentedPicker(configuration: .init(title: "Caption position", options: CaptionPosition.allCases,
+            EditorInspectorRow(configuration: .init(title: "Size") {
+                BlitzSegmentedPicker(configuration: .init(title: "Caption size", options: CaptionSize.allCases,
+                    selection: binding(\.size), label: { $0.title }))
+                .controlSize(.small)
+            })
+            EditorInspectorRow(configuration: .init(title: "Position") {
+                BlitzSegmentedPicker(configuration: .init(title: "Caption position", options: CaptionPosition.allCases,
                 selection: Binding(get: { track.position }, set: { value in
                     var updated = track
                     updated.position = value
                     updated.frame = nil
                     apply(.init(track: updated, actionName: "Move Captions"))
                 }), label: { $0.title }))
+                .controlSize(.small)
+            })
             Toggle("Shadow", isOn: binding(\.shadow)).toggleStyle(.blitzSwitch)
         }
     }
 
     private var captionList: some View {
         VStack(alignment: .leading, spacing: 10) {
-            BlitzInspectorHeading(configuration: .init(title: "Caption text",
-                detail: track.cues.count == 1 ? "1 caption" : "\(track.cues.count) captions"))
             if selectedID != nil {
                 TextField("Caption text", text: $draft, axis: .vertical)
                     .lineLimit(2...4)
@@ -100,11 +119,9 @@ struct EditorCaptionsInspector: View {
                     .padding(10)
                     .background(BlitzUI.cardFill, in: .rect(cornerRadius: BlitzUI.controlRadius))
                     .accessibilityLabel("Edit caption text")
-                HStack {
-                    Button("Cancel") { selectedID = nil }.blitzButton(.secondary)
-                    Button("Save text", action: saveText).blitzButton(.accent)
-                        .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
+                Button("Done") { selectedID = nil }
+                    .blitzButton(.secondary).controlSize(.small)
+                    .help("Your fix is saved as you type")
             }
             LazyVStack(alignment: .leading, spacing: 4) {
                 ForEach(track.cues) { cue in
@@ -122,7 +139,7 @@ struct EditorCaptionsInspector: View {
                         .padding(8).frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(BlitzSelectionButtonStyle(isSelected: selectedID == cue.id))
-                    .help("Edit this caption. Times refer to the original recording.")
+                    .help("Click to fix this caption")
                 }
             }
         }
@@ -130,7 +147,7 @@ struct EditorCaptionsInspector: View {
 
     @ViewBuilder private var footer: some View {
         if let error {
-            Text(error).font(BlitzType.caption).foregroundStyle(BlitzUI.recordRed)
+            Text(error).font(BlitzType.caption).foregroundStyle(BlitzUI.warning)
                 .fixedSize(horizontal: false, vertical: true)
         }
         if isGenerating {
@@ -141,16 +158,16 @@ struct EditorCaptionsInspector: View {
                 startedAt: controller.jobStartedAt[project?.projectPath ?? ""]))
             ProgressView().progressViewStyle(.linear)
         } else if case .downloading(let progress, let phase) = controller.modelState, pendingProject != nil {
-            Text("Downloading speech model · \(phase)").font(BlitzType.body)
+            Text("Getting voice-to-text ready (one time) · \(phase)").font(BlitzType.body)
             ProgressView(value: progress)
         } else if status == .noAudio {
-            Text("This video has no audio track to transcribe.").font(BlitzType.body)
+            Text("This video has no sound to turn into captions.").font(BlitzType.body)
         } else {
             if case .failed(let message) = status {
-                Text(message).font(BlitzType.caption).foregroundStyle(BlitzUI.recordRed)
+                Text(message).font(BlitzType.caption).foregroundStyle(BlitzUI.warning)
             }
             if case .failed(let message) = controller.modelState, pendingProject != nil {
-                Text(message).font(BlitzType.caption).foregroundStyle(BlitzUI.recordRed)
+                Text(message).font(BlitzType.caption).foregroundStyle(BlitzUI.warning)
             }
             Button {
                 if track.cues.isEmpty { requestGeneration() } else { showsReplaceConfirmation = true }
@@ -161,12 +178,10 @@ struct EditorCaptionsInspector: View {
             .blitzButton(track.cues.isEmpty ? .accent : .secondary)
             .disabled(project == nil)
             if configuration.transcript == nil, !controller.modelState.isReady {
-                Text("Downloads a speech model once. Your video and audio stay on this Mac.")
+                Text("The first time takes a little longer. Your video never leaves this Mac.")
                     .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
             }
         }
-        Text("Saved in this project · ⌘Z to undo")
-            .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
     }
 
     private func binding<Value>(_ keyPath: WritableKeyPath<CaptionTrack, Value>) -> Binding<Value> {
@@ -226,13 +241,27 @@ struct EditorCaptionsInspector: View {
         if let selectedID, let cue = track.cues.first(where: { $0.id == selectedID }) { draft = cue.text }
     }
 
-    private func saveText() {
-        guard let selectedID, let index = track.cues.firstIndex(where: { $0.id == selectedID }) else { return }
+    private func scheduleSave() {
+        guard let selectedID, let cue = track.cues.first(where: { $0.id == selectedID }),
+              cue.text != draft.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        pendingSave?.cancel()
+        pendingSave = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            flushText()
+        }
+    }
+
+    private func flushText() {
+        pendingSave?.cancel()
+        pendingSave = nil
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let selectedID, !text.isEmpty, let index = track.cues.firstIndex(where: { $0.id == selectedID }),
+              track.cues[index].text != text else { return }
         var updated = track
-        updated.cues[index].text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        updated.cues[index].text = text
         updated.cues[index].words = []
         apply(.init(track: updated, actionName: "Edit Caption Text"))
-        if error == nil { self.selectedID = nil }
     }
 }
 

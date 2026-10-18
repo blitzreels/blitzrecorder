@@ -45,6 +45,7 @@ final class SilenceEditingSession {
     @ObservationIgnored private var analysisTask: Task<Void, Never>?
     @ObservationIgnored private var previewTask: Task<Void, Never>?
     @ObservationIgnored private var calculationTask: Task<Void, Never>?
+    @ObservationIgnored private var appliesWhenCalculated = false
     @ObservationIgnored private var sourceURL: URL?
     @ObservationIgnored private var sourceOffset = 0.0
     @ObservationIgnored private var generation = 0
@@ -319,13 +320,20 @@ final class SilenceEditingSession {
     }
 
     func selectPacing(_ pacing: SilencePacing) {
+        appliesWhenCalculated = hasRemovedSilence
         intensity = Double(pacing.rawValue)
         changeIntensity()
     }
 
+    /// Once pauses are cut, a settings change re-cuts as soon as the new result is ready.
+    func recalculateFromPerson() {
+        appliesWhenCalculated = hasRemovedSilence
+        recalculate()
+    }
+
     func changeThresholdMode() {
         if automaticThreshold { threshold = SilenceDetection.suggestedThreshold(windows) }
-        recalculate()
+        recalculateFromPerson()
     }
 
     private func configuration() -> SilenceDetectionRequest {
@@ -361,7 +369,10 @@ final class SilenceEditingSession {
             baseCuts = result
             calculating = false
             updateMetrics()
-            if skipSilence { updatePreview() }
+            if appliesWhenCalculated, canApply {
+                appliesWhenCalculated = false
+                _ = apply()
+            } else if skipSilence { updatePreview() }
         }
     }
 

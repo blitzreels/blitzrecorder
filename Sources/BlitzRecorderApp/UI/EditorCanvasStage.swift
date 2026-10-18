@@ -5,16 +5,18 @@ struct EditorCanvasStage: View {
     var inspectorTab: EditorInspectorTab
     var privacy: PrivacyEditingSession
     var textCanvas: EditorTextCanvas.Configuration
-    var cameraCropDraft: EditorCameraCropDraft?
+    var sourceCropDraft: EditorSourceCropDraft?
     var layoutDraft: EditorLayoutDraft?
     var canvasAspectRatio: CGFloat
     var ratioLabel: String
+    /// Shown while a screen or camera layer is selected in the Layout tab.
+    var frameRatioBar: EditorFrameRatioBar.Configuration?
     var layers: () -> [EditorCanvasLayer]
     @Binding var editErrorMessage: String?
     var onSelectLayer: (EditorCanvasLayer) -> Void
     var onMove: (SceneLayerKind, CGSize, Bool) -> Void
     var onResize: (SceneLayerKind, ResizeAnchor, CGSize, Bool) -> Void
-    var onCropChange: (EditorCameraCropInteractionChange) -> Void
+    var onCropChange: (EditorSourceCropInteractionChange) -> Void
     var onCropDone: () -> Void
     var onCropReset: () -> Void
     var onCropCancel: () -> Void
@@ -29,7 +31,7 @@ struct EditorCanvasStage: View {
                     controller: playback,
                     renderSize: playback.renderSize,
                     previewSceneRevision: playback.previewSceneRevision,
-                    cameraCropEditingScene: cameraCropDraft?.scene
+                    cropDraft: sourceCropDraft
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipShape(.rect(cornerRadius: BlitzUI.cardRadius))
@@ -37,7 +39,7 @@ struct EditorCanvasStage: View {
             }
 
             overlay
-            if playback.isReady, inspectorTab != .privacy, cameraCropDraft == nil {
+            if playback.isReady, inspectorTab != .privacy, sourceCropDraft == nil {
                 EditorTextCanvas(configuration: textCanvas)
             }
         }
@@ -45,6 +47,26 @@ struct EditorCanvasStage: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .transaction { transaction in
             transaction.animation = nil
+        }
+        .overlay(alignment: .top) {
+            if let frameRatioBar {
+                EditorFrameRatioBar(configuration: frameRatioBar)
+                    .padding(.top, 10)
+                    .transition(.opacity)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if inspectorTab == .privacy, privacy.isDrawing {
+                Label("Drag over the area to hide", systemImage: "rectangle.dashed")
+                    .font(BlitzType.label)
+                    .foregroundStyle(BlitzUI.primaryText)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .blitzGlass(cornerRadius: BlitzUI.cardRadius)
+                    .padding(.bottom, 12)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Preview, \(ratioLabel)")
@@ -74,12 +96,14 @@ struct EditorCanvasStage: View {
                 session: privacy, scene: scene, renderSize: playback.renderSize,
                 aspectRatios: playback.sourceAspectRatios, hiddenKinds: playback.hiddenKinds,
                 masks: privacy.displayedMasks.filter { $0.isVisible(at: playback.currentTime) },
-                selectedID: privacy.selectedID, drawingSource: privacy.isDrawing ? privacy.selected?.source : nil
+                selectedID: privacy.selectedID, drawableKinds: privacy.isDrawing ? playback.hideableKinds : [],
+                findings: privacy.visibleFindings
             ))
-        } else if playback.isReady, let cameraCropDraft,
-                  let sourceAspectRatio = playback.sourceAspectRatios[.camera] {
-            EditorCameraCropOverlay(configuration: .init(
-                scene: cameraCropDraft.scene,
+        } else if playback.isReady, let sourceCropDraft,
+                  let sourceAspectRatio = playback.sourceAspectRatios[sourceCropDraft.kind] {
+            EditorSourceCropOverlay(configuration: .init(
+                kind: sourceCropDraft.kind,
+                scene: sourceCropDraft.scene,
                 renderSize: playback.renderSize,
                 sourceAspectRatio: sourceAspectRatio,
                 onChange: onCropChange,
