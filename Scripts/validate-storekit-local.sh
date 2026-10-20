@@ -23,7 +23,7 @@ require_absent() {
 require_not_contains() {
   local file="$1"
   local pattern="$2"
-  if [[ ! -f "$file" ]]; then
+  if [[ ! -e "$file" ]]; then
     fail "missing file: $file"
     return
   fi
@@ -35,15 +35,14 @@ require_not_contains() {
 require_file "project.yml"
 require_file "BlitzRecorder.xcodeproj/xcshareddata/xcschemes/BlitzRecorder.xcscheme"
 require_file "Sources/BlitzRecorderApp/AccessController.swift"
-require_file "Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift"
 
 require_absent "AppStore/BlitzRecorder.storekit"
 require_not_contains "project.yml" "storeKitConfiguration"
 require_not_contains "BlitzRecorder.xcodeproj/xcshareddata/xcschemes/BlitzRecorder.xcscheme" "StoreKitConfigurationFileReference"
-require_not_contains "Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift" "purchaseAnnual"
-require_not_contains "Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift" "purchaseMonthly"
-require_not_contains "Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift" "Restore Purchases"
-require_not_contains "Sources/BlitzRecorderApp/UI/BlitzReelsCreatorPage.swift" "Manage Subscription"
+require_not_contains "Sources/BlitzRecorderApp" "purchaseAnnual"
+require_not_contains "Sources/BlitzRecorderApp" "purchaseMonthly"
+require_not_contains "Sources/BlitzRecorderApp" "Restore Purchases"
+require_not_contains "Sources/BlitzRecorderApp" "Manage Subscription"
 
 if (( failures > 0 )); then
   echo "StoreKit removal validation failed with $failures issue(s)." >&2
