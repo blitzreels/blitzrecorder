@@ -15,7 +15,7 @@ enum BlitzRecorderMCPServerStatus: Equatable {
 }
 
 extension BlitzRecorderMCPServerStatus {
-    var servesAgents: Bool { self == .running || self == .portInUse }
+    var servesAgents: Bool { self == .running }
 
     var title: String {
         switch self {
@@ -23,7 +23,7 @@ extension BlitzRecorderMCPServerStatus {
         case .stopped: "Stopped"
         case .starting: "Starting…"
         case .running: "Online"
-        case .portInUse: "Other copy"
+        case .portInUse: "Port busy"
         case .failed: "Offline"
         }
     }
@@ -34,7 +34,7 @@ extension BlitzRecorderMCPServerStatus {
         case .stopped: "The server is not listening."
         case .starting: "Opening the local endpoint."
         case .running: "Server available. Each AI client still needs its own connection."
-        case .portInUse: "Another copy of BlitzRecorder is answering agents. This copy takes over when that one quits."
+        case .portInUse: "Another app is using port 18473, so agents cannot reach this copy. If it is another copy of BlitzRecorder, quit it and this one takes over."
         case .failed(let message): message
         }
     }

@@ -343,8 +343,8 @@ struct AppSidebarAgentsRow: View {
 
     private var tone: BlitzStatusTone {
         switch status {
-        case .running, .portInUse: .ready
-        case .failed: .warning
+        case .running: .ready
+        case .portInUse, .failed: .warning
         case .disabled, .stopped, .starting: .muted
         }
     }

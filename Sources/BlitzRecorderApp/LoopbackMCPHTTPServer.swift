@@ -46,8 +46,12 @@ final class LoopbackMCPHTTPServer: @unchecked Sendable {
             port: configuration.port
         ).get()]
         for host in configuration.fallbackHosts {
-            if let channel = try? await bootstrap.bind(host: host, port: configuration.port).get() {
-                channels.append(channel)
+            do {
+                channels.append(try await bootstrap.bind(host: host, port: configuration.port).get())
+            } catch where Self.isAddressInUse(error) {
+                throw error
+            } catch {
+                continue
             }
         }
     }
