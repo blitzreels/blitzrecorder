@@ -173,6 +173,7 @@ final class SpeakerIdentityTests: XCTestCase {
     @MainActor
     func testRenameUndoAndRedoUpdateSavedArtifacts() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let locations = TranscriptArtifactStore.Locations(jsonURL: root.appendingPathComponent("transcript.json"),
                                                          textURL: root.appendingPathComponent("transcript.txt"))

@@ -90,6 +90,9 @@ struct RecordingProject: Codable, Equatable {
     let exports: [ExportRecord]
     var timelineEdits: TimelineEditsSnapshot
     let analysis: AnalysisSnapshot
+    /// Counts saved changes to what the editor edits (scenes, settings, chapters, editor state and timeline edits).
+    /// Exports and renames leave it alone because editor writes keep those fields from disk.
+    var editRevision = 0
 
     enum CodingKeys: String, CodingKey {
         case version
@@ -111,6 +114,7 @@ struct RecordingProject: Codable, Equatable {
         case exports
         case timelineEdits
         case analysis
+        case editRevision
         case cuts
         case scene
     }
@@ -184,6 +188,7 @@ struct RecordingProject: Codable, Equatable {
         self.exports = try container.decodeIfPresent([ExportRecord].self, forKey: .exports) ?? []
         self.timelineEdits = try container.decodeIfPresent(TimelineEditsSnapshot.self, forKey: .timelineEdits) ?? .empty
         self.analysis = try container.decodeIfPresent(AnalysisSnapshot.self, forKey: .analysis) ?? .empty
+        self.editRevision = try container.decodeIfPresent(Int.self, forKey: .editRevision) ?? 0
         _ = try container.decodeIfPresent([TimelineCut].self, forKey: .cuts)
         _ = try container.decodeIfPresent(PortableSceneLayout.self, forKey: .scene)
     }
@@ -213,8 +218,14 @@ struct RecordingProject: Codable, Equatable {
         if !analysis.isEmpty {
             try container.encode(analysis, forKey: .analysis)
         }
+        try container.encode(editRevision, forKey: .editRevision)
         try container.encode(timelineEdits.edits.cuts, forKey: .cuts)
         try container.encode(portableSceneLayout, forKey: .scene)
+    }
+
+    func hasSameEdits(as other: RecordingProject) -> Bool {
+        sceneEvents == other.sceneEvents && settings == other.settings && chapters == other.chapters
+            && editorState == other.editorState && timelineEdits == other.timelineEdits
     }
 
     var portableSceneLayout: PortableSceneLayout {

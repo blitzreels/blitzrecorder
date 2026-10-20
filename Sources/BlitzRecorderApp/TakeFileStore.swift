@@ -1,9 +1,33 @@
 import CoreGraphics
 import CoreMedia
 import Foundation
+import os
+
+private let libraryLog = Logger(subsystem: "dev.blitzreels.blitzrecorder", category: "library")
+
+/// The project changed on disk after the editor loaded it; `current` is what is saved now.
+struct ProjectEditConflict: LocalizedError {
+    let current: RecordingProject
+
+    var errorDescription: String? {
+        "This recording changed somewhere else, so your change was not saved. The latest version is loaded; make the change again."
+    }
+}
+
+/// Posted after a save changes a project's edits, so editors holding an older copy can load the new one.
+struct RecordingProjectEdited: Sendable {
+    let projectPath: String
+    let editRevision: Int
+}
+
+extension Notification.Name {
+    static let recordingProjectEdited = Notification.Name("dev.blitzreels.blitzrecorder.project-edited")
+}
 
 struct TakeFileStore {
     private static let projectHistoryLock = NSRecursiveLock()
+    /// Serializes every read-modify-write of a project file in this process.
+    static let projectWriteLock = NSRecursiveLock()
 
     struct TakeCreationRequest {
         let settings: RecordingSettings
@@ -96,6 +120,8 @@ struct TakeFileStore {
         exportRecord: RecordingProject.ExportRecord? = nil,
         timelineEdits: RecordingProject.TimelineEditsSnapshot? = nil
     ) throws {
+        Self.projectWriteLock.lock()
+        defer { Self.projectWriteLock.unlock() }
         let now = Date()
         let projectURL = take.projectURL
         let existingProject = try? loadRecordingProject(at: projectURL)
@@ -105,7 +131,7 @@ struct TakeFileStore {
             exports.append(exportRecord)
             exports.sort { $0.createdAt < $1.createdAt }
         }
-        let project = RecordingProject(
+        var project = RecordingProject(
             version: 1,
             id: projectID(for: take, projectURL: projectURL),
             createdAt: projectCreatedAt(for: take, fallback: now),
@@ -128,9 +154,18 @@ struct TakeFileStore {
             timelineEdits: timelineEdits ?? existingProject?.timelineEdits ?? .empty,
             analysis: existingProject?.analysis ?? .empty
         )
+        if let existingProject {
+            project.editRevision = existingProject.editRevision + (project.hasSameEdits(as: existingProject) ? 0 : 1)
+        }
 
         let data = try Self.projectEncoder().encode(project)
         try data.write(to: projectURL, options: .atomic)
+        if let existingProject, existingProject.editRevision != project.editRevision {
+            NotificationCenter.default.post(
+                name: .recordingProjectEdited,
+                object: RecordingProjectEdited(projectPath: project.projectPath, editRevision: project.editRevision)
+            )
+        }
         try upsertProjectHistory(project, settings: settings)
     }
 
@@ -145,7 +180,8 @@ struct TakeFileStore {
             guard access.hasSecurityScopedAccess else { continue }
             let root = location.url.standardizedFileURL.resolvingSymlinksInPath()
             let rootIsTemporary = Self.isTemporary(root.path)
-            entries += loadLocalProjectHistory(settings: librarySettings).entries.filter {
+            let local = (try? loadLocalProjectHistory(settings: librarySettings)) ?? rebuiltProjectHistory(settings: librarySettings)
+            entries += local.entries.filter {
                 let owner = URL(fileURLWithPath: $0.takeDirectoryPath).deletingLastPathComponent().deletingLastPathComponent()
                     .standardizedFileURL.resolvingSymlinksInPath()
                 return (owner == root || !roots.contains(owner)) && (rootIsTemporary || !Self.isTemporary($0.takeDirectoryPath))
@@ -165,16 +201,84 @@ struct TakeFileStore {
         return history
     }
 
-    private func loadLocalProjectHistory(settings: RecordingSettings) -> RecordingProjectHistory {
+    /// The library index for one storage location. It never comes back empty while take folders still hold
+    /// projects: a missing index is rebuilt from them, and a damaged one is set aside as a backup first.
+    /// Throws only when the index exists but cannot be read, so callers never overwrite it blind.
+    private func loadLocalProjectHistory(settings: RecordingSettings) throws -> RecordingProjectHistory {
+        Self.projectHistoryLock.lock()
+        defer { Self.projectHistoryLock.unlock() }
         let url = projectHistoryURL(for: settings)
-        guard let data = try? Data(contentsOf: url) else {
-            return RecordingProjectHistory(version: 1, entries: [])
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch CocoaError.fileReadNoSuchFile {
+            let rebuilt = rebuiltProjectHistory(settings: settings)
+            if !rebuilt.entries.isEmpty {
+                libraryLog.notice("Rebuilt missing library index from \(rebuilt.entries.count) take folders")
+                try? writeProjectHistory(.init(history: rebuilt, settings: settings))
+            }
+            return rebuilt
+        } catch {
+            libraryLog.error("Library index unreadable: \(error.localizedDescription, privacy: .public)")
+            throw RecorderError.outputDirectoryUnavailable(
+                "BlitzRecorder could not read its project list at \(url.path). Nothing was changed. Check that the drive is connected, then try again."
+            )
         }
-        guard var history = try? Self.projectDecoder().decode(RecordingProjectHistory.self, from: data) else {
-            return RecordingProjectHistory(version: 1, entries: [])
+        do {
+            var history = try Self.projectDecoder().decode(RecordingProjectHistory.self, from: data)
+            let orphans = takeFolderEntries(.init(settings: settings, excluding: history))
+            if !orphans.isEmpty {
+                history.entries += orphans
+                libraryLog.notice("Added \(orphans.count) take folders missing from the library index")
+                try? writeProjectHistory(.init(history: history, settings: settings))
+            }
+            history.sortByRecordedDate()
+            return history
+        } catch {
+            let backup = url.deletingLastPathComponent()
+                .appendingPathComponent("projects.damaged-\(Int(Date().timeIntervalSince1970)).json")
+            try FileManager.default.moveItem(at: url, to: backup)
+            let rebuilt = rebuiltProjectHistory(settings: settings)
+            libraryLog.error(
+                "Library index damaged, kept as \(backup.lastPathComponent, privacy: .public); rebuilt \(rebuilt.entries.count) projects"
+            )
+            try writeProjectHistory(.init(history: rebuilt, settings: settings))
+            return rebuilt
         }
+    }
+
+    private func rebuiltProjectHistory(settings: RecordingSettings) -> RecordingProjectHistory {
+        var history = RecordingProjectHistory(version: 1, entries: takeFolderEntries(.init(
+            settings: settings, excluding: RecordingProjectHistory(version: 1, entries: [])
+        )))
         history.sortByRecordedDate()
         return history
+    }
+
+    private struct TakeFolderScan {
+        let settings: RecordingSettings
+        let excluding: RecordingProjectHistory
+    }
+
+    /// Library entries for take folders the index does not list yet. Only unlisted folders are read, and
+    /// folders whose project cannot be read are skipped, not deleted.
+    private func takeFolderEntries(_ scan: TakeFolderScan) -> [RecordingProjectHistory.Entry] {
+        let listedFolders = Set(scan.excluding.entries.map { URL(fileURLWithPath: $0.takeDirectoryPath).lastPathComponent })
+        let listedIDs = Set(scan.excluding.entries.map(\.id))
+        let folders = (try? FileManager.default.contentsOfDirectory(
+            at: scratchRoot(for: scan.settings), includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+        )) ?? []
+        return folders.filter { !listedFolders.contains($0.lastPathComponent) }.compactMap { folder in
+            let projectURL = folder.appendingPathComponent("project.blitzrecorder.json")
+            guard let project = try? loadRecordingProject(at: projectURL), !listedIDs.contains(project.id) else { return nil }
+            let savedFolder = URL(fileURLWithPath: project.takeDirectoryPath).standardizedFileURL.resolvingSymlinksInPath()
+            let isInPlace = savedFolder == folder.standardizedFileURL.resolvingSymlinksInPath()
+            return RecordingProjectHistory.Entry(
+                id: project.id, title: project.title, projectPath: isInPlace ? project.projectPath : projectURL.path,
+                takeDirectoryPath: isInPlace ? project.takeDirectoryPath : folder.path, finalVideoPath: project.finalVideoPath,
+                createdAt: project.createdAt, updatedAt: project.updatedAt, exports: project.exports
+            )
+        }
     }
 
     func loadRecordingProject(at url: URL) throws -> RecordingProject {
@@ -194,8 +298,10 @@ struct TakeFileStore {
             throw RecorderError.mediaWriteFailed("Enter a recording title.")
         }
 
+        Self.projectWriteLock.lock()
+        defer { Self.projectWriteLock.unlock() }
         let project = try loadRecordingProject(at: request.projectURL)
-        let renamedProject = RecordingProject(
+        var renamedProject = RecordingProject(
             version: project.version,
             id: project.id,
             createdAt: project.createdAt,
@@ -216,6 +322,7 @@ struct TakeFileStore {
             timelineEdits: project.timelineEdits,
             analysis: project.analysis
         )
+        renamedProject.editRevision = project.editRevision
 
         try Self.projectEncoder().encode(renamedProject).write(
             to: request.projectURL,
@@ -232,11 +339,13 @@ struct TakeFileStore {
     }
 
     func recordCompletedExport(_ request: CompletedExportRequest) throws {
+        Self.projectWriteLock.lock()
+        defer { Self.projectWriteLock.unlock() }
         let project = try loadRecordingProject(at: request.projectURL)
         var exports = project.exports.filter { $0.path != request.record.path }
         exports.append(request.record)
         exports.sort { $0.createdAt < $1.createdAt }
-        let updated = RecordingProject(
+        var updated = RecordingProject(
             version: project.version, id: project.id, createdAt: project.createdAt, updatedAt: Date(),
             title: project.title, projectPath: project.projectPath, takeDirectoryPath: project.takeDirectoryPath,
             finalVideoPath: request.record.path, settings: project.settings, sources: project.sources,
@@ -246,6 +355,7 @@ struct TakeFileStore {
             sourceTimelineOffsetSeconds: project.sourceTimelineOffsetSeconds,
             timelineEdits: project.timelineEdits, analysis: project.analysis
         )
+        updated.editRevision = project.editRevision
         try Self.projectEncoder().encode(updated).write(to: request.projectURL, options: .atomic)
         try upsertProjectHistory(updated, settings: request.settings)
     }
@@ -287,11 +397,11 @@ struct TakeFileStore {
 
         Self.projectHistoryLock.lock()
         defer { Self.projectHistoryLock.unlock() }
-        var history = loadLocalProjectHistory(settings: librarySettings)
-        history.entries.removeAll {
-            $0.id == request.project.id || $0.projectPath == request.project.projectPath
-        }
         do {
+            var history = try loadLocalProjectHistory(settings: librarySettings)
+            history.entries.removeAll {
+                $0.id == request.project.id || $0.projectPath == request.project.projectPath
+            }
             try writeProjectHistory(ProjectHistoryWriteRequest(history: history, settings: librarySettings))
         } catch {
             if let receipt {
@@ -430,7 +540,7 @@ struct TakeFileStore {
         guard access.hasSecurityScopedAccess else {
             throw RecorderError.outputDirectoryUnavailable(Self.permissionRecoveryMessage(for: settings.sourceStorage.url))
         }
-        var history = loadLocalProjectHistory(settings: settings)
+        var history = try loadLocalProjectHistory(settings: settings)
         history.entries.removeAll { $0.id == project.id || $0.projectPath == project.projectPath }
         history.entries.insert(
             RecordingProjectHistory.Entry(
@@ -544,14 +654,14 @@ struct TakeFileStore {
         return formatter
     }
 
-    private static func projectEncoder() -> JSONEncoder {
+    static func projectEncoder() -> JSONEncoder {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         return encoder
     }
 
-    private static func projectDecoder() -> JSONDecoder {
+    static func projectDecoder() -> JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder

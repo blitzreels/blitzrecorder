@@ -232,6 +232,26 @@ extension TakeFileStore {
         ))
     }
 
+    struct ProjectEditGuard {
+        let projectURL: URL
+        let expectedEditRevision: Int
+    }
+
+    /// Runs `write` only if the saved project is still the revision the editor loaded, so an edit made from a
+    /// stale copy never overwrites a newer one. Throws `ProjectEditConflict` with the saved project otherwise.
+    func editProject(
+        _ editGuard: ProjectEditGuard,
+        write: () throws -> RecordingProject
+    ) throws -> RecordingProject {
+        Self.projectWriteLock.lock()
+        defer { Self.projectWriteLock.unlock() }
+        let current = try loadRecordingProject(at: editGuard.projectURL)
+        guard current.editRevision == editGuard.expectedEditRevision else {
+            throw ProjectEditConflict(current: current)
+        }
+        return try write()
+    }
+
     private struct ProjectRewrite {
         let project: RecordingProject
         let projectURL: URL

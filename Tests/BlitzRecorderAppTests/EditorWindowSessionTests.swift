@@ -91,6 +91,37 @@ final class EditorWindowSessionTests: XCTestCase {
         XCTAssertEqual(reopened.editorState, state)
     }
 
+    func testSecondEditorPicksUpSavedEditsInsteadOfOverwritingThem() async throws {
+        let fixture = try fixture()
+        let first = RecorderViewModel(coordinator: fixture.recorder.coordinator, previewStage: PreviewStageView())
+        let second = RecorderViewModel(coordinator: fixture.recorder.coordinator, previewStage: PreviewStageView())
+        for editor in [first, second] {
+            editor.settings = fixture.recorder.settings
+            editor.openProject(fixture.project)
+        }
+        let muted = RecordingProject.EditorStateSnapshot(
+            hiddenVideoSources: [], mutedAudioSources: ["microphone"], backgroundMusicPath: nil,
+            backgroundMusicBookmarkData: nil, backgroundMusicVolume: nil, exportRecipe: nil
+        )
+        let hidden = RecordingProject.EditorStateSnapshot(
+            hiddenVideoSources: ["camera"], mutedAudioSources: [], backgroundMusicPath: nil,
+            backgroundMusicBookmarkData: nil, backgroundMusicVolume: nil, exportRecipe: nil
+        )
+        XCTAssertTrue(first.applyProjectEditorState(.init(editorState: muted, actionName: "Mute Microphone")))
+        await Task.yield()
+        XCTAssertTrue(first.canUndoEditor)
+        XCTAssertEqual(second.lastExportedProject?.editorState, muted)
+        XCTAssertFalse(second.canUndoEditor)
+
+        XCTAssertTrue(second.applyProjectEditorState(.init(editorState: hidden, actionName: "Hide Camera")))
+        await Task.yield()
+        XCTAssertEqual(first.lastExportedProject?.editorState, hidden)
+        XCTAssertFalse(first.canUndoEditor)
+        XCTAssertTrue(second.canUndoEditor)
+        let saved = try TakeFileStore().loadRecordingProject(at: URL(fileURLWithPath: fixture.project.projectPath))
+        XCTAssertEqual(saved.editorState, hidden)
+    }
+
     func testRecordingRoutesProjectToEditorWindowWithoutChangingCaptureView() throws {
         let fixture = try fixture()
         let recorder = fixture.recorder

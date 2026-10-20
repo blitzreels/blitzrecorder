@@ -8,25 +8,13 @@ extension RecorderViewModel {
                 scene = scene.corrected(request.correction, layout: layout)
             }))
         }
-        guard let projectURL = lastExportedProjectURL else {
-            detailMessage = "No editable project is available for this recording."
-            return false
-        }
-        let previousProject = lastExportedProject
-        do {
-            lastExportedProject = try coordinator.updateProjectScene(
-                at: projectURL,
-                eventIndex: request.eventIndex,
-                correction: request.correction
-            )
-            refreshRecentProjects()
-            detailMessage = "Updated project segment. Export again to render the correction."
-            recordEditorMutation(previousProject: previousProject, actionName: "Change Scene")
-            return true
-        } catch {
-            detailMessage = error.localizedDescription
-            return false
-        }
+        return commitEditorWrite(.init(
+            actionName: "Change Scene",
+            successMessage: "Updated project segment. Export again to render the correction.",
+            refreshesLibrary: true
+        ) { [coordinator] projectURL in
+            try coordinator.updateProjectScene(at: projectURL, eventIndex: request.eventIndex, correction: request.correction)
+        })
     }
 
     @discardableResult
@@ -34,71 +22,37 @@ extension RecorderViewModel {
         if lastExportedProject?.edits.activeOutputLayout != nil {
             return changeOutputScene(.init(index: eventIndex, mutate: mutate))
         }
-        guard let projectURL = lastExportedProjectURL else {
-            detailMessage = "No editable project is available for this recording."
-            return false
-        }
-        let previousProject = lastExportedProject
-        do {
-            lastExportedProject = try coordinator.updateProjectScene(
-                at: projectURL,
-                eventIndex: eventIndex,
-                mutate: mutate
-            )
-            recordEditorMutation(previousProject: previousProject, actionName: "Edit Scene")
-            return true
-        } catch {
-            detailMessage = error.localizedDescription
-            return false
-        }
+        return commitEditorWrite(.init(actionName: "Edit Scene", successMessage: nil, refreshesLibrary: false) {
+            [coordinator] projectURL in
+            try coordinator.updateProjectScene(at: projectURL, eventIndex: eventIndex, mutate: mutate)
+        })
     }
 
     @discardableResult
     func applyProjectEditorState(_ request: EditorProjectStateUpdateRequest) -> Bool {
-        guard let projectURL = lastExportedProjectURL else {
-            detailMessage = "No editable project is available for this recording."
-            return false
-        }
         guard lastExportedProject?.editorState != request.editorState else { return true }
-        let previousProject = lastExportedProject
-        do {
-            lastExportedProject = try coordinator.updateProjectEditorState(.init(
+        return commitEditorWrite(.init(actionName: request.actionName, successMessage: nil, refreshesLibrary: true) {
+            [coordinator, settings] projectURL in
+            try coordinator.updateProjectEditorState(.init(
                 projectURL: projectURL,
                 editorState: request.editorState,
                 baseSettings: settings
             ))
-            refreshRecentProjects()
-            recordEditorMutation(
-                previousProject: previousProject,
-                actionName: request.actionName
-            )
-            return true
-        } catch {
-            detailMessage = error.localizedDescription
-            return false
-        }
+        })
     }
 
     @discardableResult
     func applyTimelineEdits(_ request: EditorTimelineEditsChange) -> Bool {
-        guard let projectURL = lastExportedProjectURL else { return false }
+        guard lastExportedProjectURL != nil else { return false }
         var edits = request.edits
         if let project = lastExportedProject, project.edits.activeOutputLayout != nil {
             edits.textOverlays = project.edits.textOverlays
         }
         guard lastExportedProject?.edits != edits else { return true }
-        let previousProject = lastExportedProject
-        do {
-            lastExportedProject = try TakeFileStore().updateProjectTimelineEdits(.init(
-                projectURL: projectURL, edits: edits, baseSettings: settings
-            ))
-            refreshRecentProjects()
-            recordEditorMutation(previousProject: previousProject, actionName: request.actionName)
-            return true
-        } catch {
-            detailMessage = error.localizedDescription
-            return false
-        }
+        return commitEditorWrite(.init(actionName: request.actionName, successMessage: nil, refreshesLibrary: true) {
+            [coordinator, settings] projectURL in
+            try coordinator.updateProjectTimelineEdits(.init(projectURL: projectURL, edits: edits, baseSettings: settings))
+        })
     }
 
     @discardableResult
@@ -106,28 +60,17 @@ extension RecorderViewModel {
         if lastExportedProject?.edits.activeOutputLayout != nil {
             return splitOutputScene(.init(time: time, duration: duration))
         }
-        guard let projectURL = lastExportedProjectURL else {
-            detailMessage = "No editable project is available for this recording."
-            return false
-        }
         guard duration <= 0 || time < duration - 0.05 else {
             detailMessage = "Move the playhead before the end before splitting."
             return false
         }
-        let previousProject = lastExportedProject
-        do {
-            lastExportedProject = try coordinator.insertProjectSceneEvent(
-                at: projectURL,
-                time: time
-            )
-            refreshRecentProjects()
-            detailMessage = "Split all tracks at \(formatProjectEditTime(time))."
-            recordEditorMutation(previousProject: previousProject, actionName: "Split Segment")
-            return true
-        } catch {
-            detailMessage = error.localizedDescription
-            return false
-        }
+        return commitEditorWrite(.init(
+            actionName: "Split Segment",
+            successMessage: "Split all tracks at \(formatProjectEditTime(time)).",
+            refreshesLibrary: true
+        ) { [coordinator] projectURL in
+            try coordinator.insertProjectSceneEvent(at: projectURL, time: time)
+        })
     }
 
     @discardableResult
@@ -150,24 +93,65 @@ extension RecorderViewModel {
     @discardableResult
     func removeProjectSceneEvent(eventIndex: Int) -> Bool {
         if lastExportedProject?.edits.activeOutputLayout != nil { return joinOutputScene(eventIndex) }
-        guard let projectURL = lastExportedProjectURL else {
+        return commitEditorWrite(.init(
+            actionName: "Delete Scene Change",
+            successMessage: "Deleted scene change.",
+            refreshesLibrary: true
+        ) { [coordinator] projectURL in
+            try coordinator.removeProjectSceneEvent(at: projectURL, eventIndex: eventIndex)
+        })
+    }
+
+    private struct EditorProjectWrite {
+        let actionName: String
+        let successMessage: String?
+        let refreshesLibrary: Bool
+        let write: (URL) throws -> RecordingProject
+    }
+
+    /// The one path every editor change takes to disk: it saves only over the revision this editor loaded,
+    /// records the undo step, and on a conflict loads the saved version instead of overwriting it.
+    private func commitEditorWrite(_ edit: EditorProjectWrite) -> Bool {
+        guard let projectURL = lastExportedProjectURL, let previousProject = lastExportedProject else {
             detailMessage = "No editable project is available for this recording."
             return false
         }
-        let previousProject = lastExportedProject
+        isSavingProjectEdit = true
+        defer { isSavingProjectEdit = false }
         do {
-            lastExportedProject = try coordinator.removeProjectSceneEvent(
-                at: projectURL,
-                eventIndex: eventIndex
-            )
-            refreshRecentProjects()
-            detailMessage = "Deleted scene change."
-            recordEditorMutation(previousProject: previousProject, actionName: "Delete Scene Change")
+            lastExportedProject = try TakeFileStore().editProject(.init(
+                projectURL: projectURL, expectedEditRevision: previousProject.editRevision
+            )) { try edit.write(projectURL) }
+            if edit.refreshesLibrary { refreshRecentProjects() }
+            if let message = edit.successMessage { detailMessage = message }
+            recordEditorMutation(previousProject: previousProject, actionName: edit.actionName)
             return true
+        } catch let conflict as ProjectEditConflict {
+            loadConflictingProject(conflict)
+            return false
         } catch {
             detailMessage = error.localizedDescription
             return false
         }
+    }
+
+    /// Another window or agent saved a newer edit of the project this editor shows. The notification can
+    /// arrive while this editor is saving its own edit, which `isSavingProjectEdit` filters out.
+    func adoptEditSavedElsewhere(_ edit: RecordingProjectEdited) {
+        guard !isSavingProjectEdit, let current = lastExportedProject, current.projectPath == edit.projectPath,
+              edit.editRevision > current.editRevision,
+              let saved = try? TakeFileStore().loadRecordingProject(at: URL(fileURLWithPath: edit.projectPath)) else { return }
+        lastExportedProject = saved
+        clearEditorHistory()
+        detailMessage = "Loaded changes saved in another window."
+    }
+
+    /// Undo steps were taken from the stale copy; replaying them would undo someone else's change.
+    private func loadConflictingProject(_ conflict: ProjectEditConflict) {
+        lastExportedProject = conflict.current
+        clearEditorHistory()
+        refreshRecentProjects()
+        detailMessage = conflict.localizedDescription
     }
 
     func undoEditor() {
@@ -185,6 +169,8 @@ extension RecorderViewModel {
             editorHistory.pushRedo(project: currentProject, actionName: entry.actionName)
             detailMessage = "Undid \(entry.actionName.lowercased())."
             notifyEditorHistoryChanged()
+        } catch let conflict as ProjectEditConflict {
+            loadConflictingProject(conflict)
         } catch {
             editorHistory.pushUndo(entry)
             detailMessage = error.localizedDescription
@@ -207,6 +193,8 @@ extension RecorderViewModel {
             editorHistory.pushUndo(project: currentProject, actionName: entry.actionName)
             detailMessage = "Redid \(entry.actionName.lowercased())."
             notifyEditorHistoryChanged()
+        } catch let conflict as ProjectEditConflict {
+            loadConflictingProject(conflict)
         } catch {
             editorHistory.pushRedo(project: entry.project, actionName: entry.actionName)
             detailMessage = error.localizedDescription
@@ -221,11 +209,18 @@ extension RecorderViewModel {
     }
 
     private func restoreEditorProject(_ snapshot: RecordingProject) throws -> RecordingProject {
-        try coordinator.restoreProjectSceneTimeline(.init(
-            projectURL: URL(fileURLWithPath: snapshot.projectPath),
-            snapshot: snapshot,
-            baseSettings: settings
-        ))
+        isSavingProjectEdit = true
+        defer { isSavingProjectEdit = false }
+        let projectURL = URL(fileURLWithPath: snapshot.projectPath)
+        return try TakeFileStore().editProject(.init(
+            projectURL: projectURL, expectedEditRevision: lastExportedProject?.editRevision ?? snapshot.editRevision
+        )) {
+            try coordinator.restoreProjectSceneTimeline(.init(
+                projectURL: projectURL,
+                snapshot: snapshot,
+                baseSettings: settings
+            ))
+        }
     }
 
     private func recordEditorMutation(previousProject: RecordingProject?, actionName: String) {

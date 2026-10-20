@@ -216,6 +216,13 @@ extension RecorderCaptureRuntime {
         return try takeFileStore.updateProjectEditorState(request)
     }
 
+    func updateProjectTimelineEdits(
+        _ request: RecordingProjectTimelineEditsUpdateRequest
+    ) throws -> RecordingProject {
+        try ensureProjectCanBeEdited(request.projectURL)
+        return try takeFileStore.updateProjectTimelineEdits(request)
+    }
+
     func zoomIn() {
         guard !takeRecording.isUsingLiveCompositor else { return }
         screenRecorder.zoomIn()

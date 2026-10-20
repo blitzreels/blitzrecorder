@@ -22,6 +22,7 @@ extension AppDelegate {
                 showSettings: { [weak self] pane in self?.windowController?.presentSettings(selecting: pane) },
                 historyChanged: { [weak self] in self?.mainMenuBuilder?.rebuild() },
                 closed: { [weak self] in
+                    self?.editorWindowController?.viewModel.stopObservingProjectEdits()
                     self?.editorWindowController = nil
                     guard let recorder = self?.windowController?.viewModel else { return }
                     recorder.hasSeparateEditorWindow = false

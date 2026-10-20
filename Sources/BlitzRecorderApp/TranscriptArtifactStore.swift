@@ -34,11 +34,12 @@ struct TranscriptArtifactStore {
         )
     }
 
+    /// Transcripts live beside their recording. A missing folder means the recording was deleted while it was
+    /// being transcribed, so the save fails instead of re-creating a take folder with no media in it.
     func save(_ request: SaveRequest) throws {
-        try FileManager.default.createDirectory(
-            at: request.locations.jsonURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
+        guard FileManager.default.fileExists(atPath: request.locations.jsonURL.deletingLastPathComponent().path) else {
+            throw RecorderError.mediaWriteFailed("This recording was deleted, so its transcript was not saved.")
+        }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601

@@ -238,6 +238,11 @@ final class RecorderCoordinator {
     ) throws -> RecordingProject {
         try capture.updateProjectEditorState(request)
     }
+    func updateProjectTimelineEdits(
+        _ request: RecordingProjectTimelineEditsUpdateRequest
+    ) throws -> RecordingProject {
+        try capture.updateProjectTimelineEdits(request)
+    }
     func zoomIn() { capture.zoomIn() }
     func zoomOut() { capture.zoomOut() }
     func resetZoom() { capture.resetZoom() }

@@ -119,6 +119,8 @@ final class RecorderViewModel {
     var activeExportProjectURL: URL?
     var isExporting: Bool { activeExportProjectURL != nil || isExportingVariants }
     @ObservationIgnored var projectRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var projectEditedObserver: NSObjectProtocol?
+    @ObservationIgnored var isSavingProjectEdit = false
     var videoImportProgress: VideoProjectImporter.Progress?
     var videoImportError: String?
     @ObservationIgnored var videoImportTask: Task<Void, Never>?
@@ -296,6 +298,11 @@ final class RecorderViewModel {
         return coordinator.remoteCameraDeviceSummaries()
     }
 
+    func stopObservingProjectEdits() {
+        projectEditedObserver.map(NotificationCenter.default.removeObserver)
+        projectEditedObserver = nil
+    }
+
     init(
         coordinator: RecorderCoordinator,
         previewStage: PreviewStageView
@@ -311,6 +318,12 @@ final class RecorderViewModel {
             || !UserDefaults.standard.bool(forKey: Self.firstRunOnboardingKey)
         transcriptionController.onTranscriptionCompleted = { [weak self] completion in
             self?.generateAutomaticProjectTitle(completion)
+        }
+        projectEditedObserver = NotificationCenter.default.addObserver(
+            forName: .recordingProjectEdited, object: nil, queue: .main
+        ) { [weak self] notification in
+            guard let edit = notification.object as? RecordingProjectEdited else { return }
+            MainActor.assumeIsolated { self?.adoptEditSavedElsewhere(edit) }
         }
         refreshRecentProjects()
         syncScreenCaptureAreaSelection()

@@ -83,6 +83,7 @@ actor VoiceDiscoveryScanner {
                 } else {
                     transcript = try await configuration.analyze(URL(fileURLWithPath: entry.projectPath))
                     try Task.checkCancellation()
+                    try FileManager.default.createDirectory(at: configuration.cacheDirectory, withIntermediateDirectories: true)
                     try artifacts.save(.init(transcript: transcript, locations: .init(
                         jsonURL: url, textURL: url.deletingPathExtension().appendingPathExtension("txt")
                     )))
