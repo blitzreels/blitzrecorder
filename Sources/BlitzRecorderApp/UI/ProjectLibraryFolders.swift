@@ -174,7 +174,7 @@ struct FolderRecordTargetChip: View {
     @Bindable var vm: RecorderViewModel
 
     var body: some View {
-        if let target = vm.folderRecordTarget {
+        if let target = vm.libraryActions.folderRecordTarget {
             HStack(spacing: 8) {
                 Image(systemName: "folder.fill")
                     .font(BlitzType.symbol(12))
@@ -193,7 +193,7 @@ struct FolderRecordTargetChip: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 Button {
-                    vm.folderRecordTarget = nil
+                    vm.libraryActions.folderRecordTarget = nil
                 } label: {
                     Image(systemName: "xmark")
                         .font(BlitzType.symbol(10))
@@ -201,7 +201,7 @@ struct FolderRecordTargetChip: View {
                 }
                 .blitzButton(.quiet)
                 .controlSize(.mini)
-                .disabled(vm.countdownRemaining != nil || vm.state != .idle)
+                .disabled(vm.session.countdownRemaining != nil || vm.state != .idle)
                 .help("Save the next take to Recordings instead")
                 .accessibilityLabel("Stop saving into \(target.path.name)")
             }

@@ -34,9 +34,9 @@ private struct GlobalVideoImportStatusBar: View {
     @Bindable var vm: RecorderViewModel
 
     var body: some View {
-        if vm.videoImportProgress != nil || vm.videoImportError != nil {
+        if vm.libraryActions.videoImportProgress != nil || vm.libraryActions.videoImportError != nil {
             VStack(alignment: .leading, spacing: 12) {
-                if let progress = vm.videoImportProgress {
+                if let progress = vm.libraryActions.videoImportProgress {
                     BlitzAdaptiveRow() {
                         Text("\(progress.stage) · \(progress.filename)")
                             .lineLimit(2)
@@ -50,17 +50,17 @@ private struct GlobalVideoImportStatusBar: View {
                         if let fraction = progress.fraction {
                             Text("\(Int((fraction * 100).rounded()))%").monospacedDigit()
                         }
-                        Button("Cancel") { vm.videoImportTask?.cancel() }
+                        Button("Cancel") { vm.libraryActions.videoImportTask?.cancel() }
                             .blitzButton(.secondary)
                     }
-                } else if let error = vm.videoImportError {
+                } else if let error = vm.libraryActions.videoImportError {
                     BlitzAdaptiveRow() {
                         HStack(spacing: 8) {
                             Image(systemName: "exclamationmark.triangle").foregroundStyle(BlitzUI.warning)
                             Text("Import failed: \(error)").fixedSize(horizontal: false, vertical: true)
                         }
                         Button("Try again", action: vm.chooseVideoToImport).blitzButton(.secondary)
-                        Button { vm.videoImportError = nil } label: { Image(systemName: "xmark") }
+                        Button { vm.libraryActions.videoImportError = nil } label: { Image(systemName: "xmark") }
                             .blitzButton(.quiet)
                             .accessibilityLabel("Dismiss import error")
                     }
@@ -105,12 +105,12 @@ private struct GlobalExportProgressBar: View {
     @Bindable var vm: RecorderViewModel
 
     private var projectTitle: String {
-        vm.recentProjects.first { $0.projectPath == vm.activeExportProjectURL?.path }?.displayTitle ?? "video"
+        vm.recentProjects.first { $0.projectPath == vm.exports.activeExportProjectURL?.path }?.displayTitle ?? "video"
     }
 
     private var progress: Double {
-        guard vm.isExportingVariants else { return vm.exportProgress }
-        return (Double(max(0, vm.variantExportIndex - 1)) + vm.exportProgress) / Double(max(1, vm.variantExportTotal))
+        guard vm.exports.isExportingVariants else { return vm.exports.exportProgress }
+        return (Double(max(0, vm.exports.variantExportIndex - 1)) + vm.exports.exportProgress) / Double(max(1, vm.exports.variantExportTotal))
     }
 
     var body: some View {

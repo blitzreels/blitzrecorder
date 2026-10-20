@@ -35,54 +35,81 @@ struct BottomDock: View {
 
 private struct SavedProjectActions: View {
     @Bindable var vm: RecorderViewModel
+    @State private var metadata = ProjectLibraryMetadata.empty
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 16) {
-                summary
-                Spacer(minLength: 8)
-                actions
-            }
-            .fixedSize(horizontal: true, vertical: false)
-
-            VStack(alignment: .leading, spacing: 12) {
-                summary
-                actions
-            }
+        HStack(spacing: 14) {
+            summary
+            Spacer(minLength: 8)
+            actions
+                .layoutPriority(1)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: 640)
+        .contextMenu { BlitzContextMenuItems(entries: [.item(editItem)] + secondaryActions) }
+        .task(id: vm.currentEditorHistoryEntry?.id) {
+            guard let entry = vm.currentEditorHistoryEntry else { return }
+            metadata = await ProjectLibraryMetadataLoader.load(entry)
+        }
     }
 
     private var summary: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Label("Recording saved", systemImage: "checkmark.circle.fill")
-                .font(BlitzType.section)
-                .foregroundStyle(BlitzUI.accent)
-            Text(vm.lastExportedProject?.displayTitle ?? "Your recording")
-                .font(BlitzType.caption)
-                .foregroundStyle(BlitzUI.supportingText)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            if let warning = vm.lastExportWarning {
-                Text(warning)
+        HStack(spacing: 12) {
+            RecordingThumbnailButton(
+                image: metadata.thumbnail,
+                durationLabel: nil,
+                height: 44,
+                help: "Open in the editor",
+                action: vm.openEditor
+            )
+            .accessibilityLabel("Open recording in the editor")
+            VStack(alignment: .leading, spacing: 3) {
+                Text(vm.lastExportedProject?.displayTitle ?? "Your recording")
+                    .font(BlitzType.navigation)
+                    .foregroundStyle(BlitzUI.primaryText)
+                    .lineLimit(1)
+                Text(facts)
                     .font(BlitzType.caption)
-                    .foregroundStyle(BlitzUI.warning)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .foregroundStyle(BlitzUI.secondaryText)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                if let warning = vm.lastExportWarning {
+                    Text(warning)
+                        .font(BlitzType.caption)
+                        .foregroundStyle(BlitzUI.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
     }
 
+    private var facts: String {
+        (["Saved"] + [metadata.durationLabel].compactMap { $0 }).joined(separator: " · ")
+    }
+
+    private var editItem: BlitzMenuItem {
+        .init(title: "Edit", systemImage: BlitzSymbols.edit, action: vm.openEditor)
+    }
+
+    private var secondaryActions: [BlitzMenuEntry] {
+        [
+            .item(.init(title: "Export", subtitle: "Choose export settings and save a video file to your Mac",
+                        systemImage: BlitzSymbols.export, isEnabled: !vm.isExporting, action: vm.openEditorForExport)),
+            .item(.init(title: "Show in Library", subtitle: "Show this recording in the library",
+                        systemImage: BlitzSymbols.library, action: vm.showLastRecordingInLibrary))
+        ]
+    }
+
     private var actions: some View {
-        HStack(spacing: 10) {
-            Button("Edit", systemImage: "slider.horizontal.3", action: vm.openEditor)
-                .blitzButton(.emphasized)
-                .help("Open this recording in the editor")
-            Button("Export", systemImage: "square.and.arrow.down", action: vm.openEditorForExport)
-                .blitzButton(.accent)
-                .disabled(vm.isExporting)
-                .help("Choose export settings and save a video file to your Mac")
+        HStack(spacing: 8) {
+            BlitzInlineActions(entries: secondaryActions)
+            EditRecordingButton(configuration: .init(
+                title: "Edit",
+                isLoading: false,
+                help: "Open this recording in the editor",
+                placement: .page,
+                action: vm.openEditor
+            ))
         }
-        .controlSize(.large)
         .fixedSize()
     }
 }
@@ -120,18 +147,9 @@ private extension View {
     }
 
     func floatingRecordingNotice() -> some View {
-        padding(.horizontal, 14)
-            .padding(.vertical, 11)
-            .background {
-                RoundedRectangle(cornerRadius: BlitzUI.surfaceRadius, style: .continuous)
-                    .fill(BlitzUI.overlayFill)
-                RoundedRectangle(cornerRadius: BlitzUI.surfaceRadius, style: .continuous)
-                    .fill(.ultraThinMaterial)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: BlitzUI.surfaceRadius, style: .continuous)
-                    .strokeBorder(BlitzUI.panelStroke, lineWidth: 1)
-            }
+        padding(8)
+            .padding(.trailing, 4)
+            .blitzGlass(cornerRadius: BlitzUI.surfaceRadius + 4)
             .shadow(color: BlitzUI.elevationShadow, radius: 18, y: 8)
     }
 }
@@ -198,7 +216,7 @@ private struct RecordingActionRow: View {
                     detail: vm.sessionProgressDetail,
                     progress: vm.sessionProgressValue,
                     percent: vm.sessionProgressLabel,
-                    startedAt: vm.finishingStartedAt
+                    startedAt: vm.session.finishingStartedAt
                 )
             }
         }

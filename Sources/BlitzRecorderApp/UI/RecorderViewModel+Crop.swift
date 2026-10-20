@@ -20,7 +20,7 @@ extension RecorderViewModel {
     }
 
     func setCameraCropPreset(amount: CGPoint, position: CGPoint) {
-        if isCameraCropModeEnabled {
+        if canvas.isCameraCropModeEnabled {
             previewStage.updateCameraCropDraft(amount: amount, position: position)
         } else {
             coordinator.setCameraCrop(LayerCropControl(amount: amount, position: position))
@@ -34,24 +34,24 @@ extension RecorderViewModel {
         cancelScreenCropMode()
         selectLayer(.camera)
         previewStage.beginCameraCropEditing()
-        isCameraCropModeEnabled = true
+        canvas.isCameraCropModeEnabled = true
         syncPreviewInteractionState()
     }
 
     func applyCameraCropMode() {
         previewStage.commitCameraCropEditing()
-        isCameraCropModeEnabled = false
+        canvas.isCameraCropModeEnabled = false
         syncPreviewInteractionState()
     }
 
     func cancelCameraCropMode() {
         previewStage.cancelCameraCropEditing()
-        isCameraCropModeEnabled = false
+        canvas.isCameraCropModeEnabled = false
         syncPreviewInteractionState()
     }
 
     func resetCameraCrop() {
-        if isCameraCropModeEnabled {
+        if canvas.isCameraCropModeEnabled {
             previewStage.updateCameraCropDraft(amount: .zero, position: .zero)
         } else {
             coordinator.setCameraCropAmount(.zero)
@@ -69,7 +69,7 @@ extension RecorderViewModel {
         coordinator.beginScreenCropEditing()
         syncSettings()
         previewStage.beginScreenCropEditing(crop: settings.screenCrop)
-        isScreenCropModeEnabled = true
+        canvas.isScreenCropModeEnabled = true
         screenCaptureAreaSelection = .manualCrop
         syncPreviewInteractionState()
     }
@@ -80,16 +80,16 @@ extension RecorderViewModel {
     }
 
     func cancelScreenCropMode() {
-        guard isScreenCropModeEnabled || previewStage.isScreenCropEditingEnabled else { return }
+        guard canvas.isScreenCropModeEnabled || previewStage.isScreenCropEditingEnabled else { return }
         previewStage.cancelScreenCropEditing()
         coordinator.endScreenCropEditing()
-        isScreenCropModeEnabled = false
+        canvas.isScreenCropModeEnabled = false
         syncSettings()
         syncPreviewInteractionState()
     }
 
     func resetScreenCropMode() {
-        if isScreenCropModeEnabled {
+        if canvas.isScreenCropModeEnabled {
             previewStage.resetScreenCropDraft()
         } else {
             clearScreenCrop()

@@ -52,6 +52,16 @@ enum MicrophoneDeviceSelection {
         return fallbackMicrophone()
     }
 
+    /// The preferred microphone is saved but not connected, so a recording would use another input.
+    static func preferredIsMissing(settings: RecordingSettings) -> Bool {
+        guard let id = settings.selectedMicrophoneID else { return false }
+        return microphone(id: id) == nil
+    }
+
+    static func preferredName(id: String?) -> String? {
+        id.flatMap { AVCaptureDevice(uniqueID: $0)?.localizedName }
+    }
+
     static func microphone(id: String) -> AVCaptureDevice? {
         guard let device = AVCaptureDevice(uniqueID: id),
               device.isConnected,

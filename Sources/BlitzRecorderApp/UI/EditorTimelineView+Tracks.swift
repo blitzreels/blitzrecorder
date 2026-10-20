@@ -144,7 +144,7 @@ extension EditorTimelineView {
         .accessibilityAction { selectSegment(request) }
         .help("Select this segment across all tracks. Press Delete to remove it and close the gap.")
         .contextMenu {
-            Button("Delete segment from all tracks", systemImage: "trash") {
+            Button("Delete segment from all tracks", systemImage: BlitzSymbols.delete) {
                 selection = .segment(index)
                 onDeleteSegment()
             }
@@ -310,7 +310,7 @@ extension EditorTimelineView {
                 selection = .asset(asset.id)
             }
             if case .segment = selection {
-                Button("Delete segment from all tracks", systemImage: "trash", action: onDeleteSegment)
+                Button("Delete segment from all tracks", systemImage: BlitzSymbols.delete, action: onDeleteSegment)
                     .disabled(!isInteractive || !canDeleteSegment)
             }
             if toggleableAssetIDs.contains(asset.id) {

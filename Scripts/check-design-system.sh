@@ -51,6 +51,8 @@ dock_files = {"RecordButton.swift", "BlitzSharedControls.swift", "EditRecordingB
               "BottomDock.swift", "BlitzUIKit.swift", "BlitzUIKit+Components.swift", "BlitzUIKit+Feedback.swift"}
 dock_emphasis = re.compile(r"blitzButton\(\.(?:dock|prominent)\)|emphasis: \.(?:dock|prominent)\b|BlitzButtonStyle\(\.(?:dock|prominent)\)")
 token_definition = re.compile(r"^\s*static (?:let|func)\b")
+action_symbol_literal = re.compile(r'"(?:scissors|square\.and\.arrow\.(?:up|down)|link|doc\.on\.doc|safari|'
+                                   r'square\.and\.pencil|trash|folder|film\.stack)"')
 thin_weight = re.compile(r"weight: \.(?:ultraLight|thin|light)\b")
 failures = []
 for path in sorted(root.rglob("*.swift")):
@@ -72,6 +74,9 @@ for path in sorted(root.rglob("*.swift")):
             failures.append(f"{path}:{line_number}: Dock-size buttons belong to the dock; use accent, secondary or quiet on pages.")
         if thin_weight.search(line):
             failures.append(f"{path}:{line_number}: Thin symbol weights read as outline icons; use BlitzType.glyph.")
+        if action_symbol_literal.search(line) and path.name != "BlitzUIPrimitives.swift":
+            failures.append(f"{path}:{line_number}: Use the BlitzSymbols action constant (edit, export, share, copyLink, "
+                            "openLink, rename, delete, folder, library, saveToMac) so every action keeps one icon.")
         if ".buttonStyle(.borderless)" in line and path.name != "NowPlayingMenuView.swift":
             failures.append(f"{path}:{line_number}: Borderless is reserved for the native status-menu transport.")
     for match in re.finditer(r"\b(?:struct|class)\s+(\w+)\s*:\s*(?:ButtonStyle|PrimitiveButtonStyle|ToggleStyle)\b", source):

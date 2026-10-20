@@ -39,6 +39,8 @@ struct RecordingSettings {
     var selectedDisplayID: String?
     var selectedCameraID: String?
     var selectedMicrophoneID: String?
+    /// Name of the preferred microphone, kept so it can be named while it is unplugged.
+    var selectedMicrophoneName: String?
     var trustedRemoteCameraServiceIDs: Set<String> = []
     var remoteCameraSettingsByServiceID: [String: RemoteCameraSettings] = [:]
     var screenCrop: CGRect?

@@ -322,6 +322,7 @@ final class RecorderStudioConfiguration {
 
     func applyIdleMicrophone(id: String?) {
         settings.selectedMicrophoneID = id
+        settings.selectedMicrophoneName = MicrophoneDeviceSelection.preferredName(id: id)
         persist()
         refreshAudio?()
     }

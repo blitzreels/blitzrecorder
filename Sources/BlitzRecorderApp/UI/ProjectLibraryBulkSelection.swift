@@ -49,7 +49,7 @@ extension ProjectLibraryView {
             BlitzAdaptiveRow(.init(minimumContentWidth: 160)) {
                 ProjectLibraryActionButton(configuration: .init(
                     title: "Show in Finder",
-                    systemImage: "folder",
+                    systemImage: BlitzSymbols.folder,
                     tone: .secondary,
                     isLoading: false,
                     action: { vm.revealProjects(projects) }
@@ -58,7 +58,7 @@ extension ProjectLibraryView {
                 Button(role: .destructive) {
                     queueDeletion(projects)
                 } label: {
-                    Label("Move \(projects.count) projects to Trash", systemImage: "trash")
+                    Label("Move \(projects.count) projects to Trash", systemImage: BlitzSymbols.delete)
                 }
                 .blitzButton(.secondary)
                 .disabled(vm.projectTrash.isWorking)

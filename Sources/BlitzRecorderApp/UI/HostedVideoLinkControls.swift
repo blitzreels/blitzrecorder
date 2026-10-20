@@ -38,7 +38,7 @@ struct HostedVideoLinkActions: View {
             Button {
                 NSWorkspace.shared.open(url)
             } label: {
-                Label("Open video", systemImage: "arrow.up.right")
+                Label("Open video", systemImage: BlitzSymbols.openLink)
             }.blitzButton(.quiet)
                 .accessibilityLabel("Open shared video")
                 .help("Open the shared video in your browser")

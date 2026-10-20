@@ -146,11 +146,11 @@ extension RecorderViewModel {
     }
 
     func syncPreviewInteractionState() {
-        previewStage.allowsLayerInteraction = canManipulateCanvasItems && !isScreenCropModeEnabled && !isCameraCropModeEnabled
+        previewStage.allowsLayerInteraction = canManipulateCanvasItems && !canvas.isScreenCropModeEnabled && !canvas.isCameraCropModeEnabled
         previewStage.allowsCameraCropInteraction = canEditCameraCrop
         if !canEditCameraCrop {
             previewStage.cancelCameraCropEditing()
-            isCameraCropModeEnabled = false
+            canvas.isCameraCropModeEnabled = false
             cancelScreenCropMode()
         }
     }
@@ -208,7 +208,7 @@ extension RecorderViewModel {
         if binding.kind == .application {
             lastApplicationScreenSourceBinding = binding
         }
-        let autoFitWindowZoom = binding.kind == .display ? nil : targetWindowZoom
+        let autoFitWindowZoom = binding.kind == .display ? nil : screenSource.targetWindowZoom
         coordinator.setScreenSource(binding, autoFitWindowZoom: autoFitWindowZoom)
         syncSettings()
         screenCaptureAreaSelection = binding.kind == .display ? .fullDisplay : .activeWindow
@@ -239,7 +239,7 @@ extension RecorderViewModel {
         cancelScheduledTargetWindowFit()
         if settings.screenSourceBinding?.kind == .window {
             screenCaptureAreaSelection = .activeWindow
-            fitCurrentScreenWindow(zoom: targetWindowZoom)
+            fitCurrentScreenWindow(zoom: screenSource.targetWindowZoom)
             syncSettings()
             refreshTargetWindow()
             return
@@ -271,7 +271,7 @@ extension RecorderViewModel {
         return ScreenSourceCatalog.preferredWindowBinding(
             context: WindowSourceSelectionContext(
                 currentSource: currentSource,
-                targetWindow: targetWindowInfo,
+                targetWindow: screenSource.targetWindowInfo,
                 availableSources: availableScreenSources
             )
         )

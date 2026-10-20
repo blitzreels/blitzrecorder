@@ -27,22 +27,17 @@ extension RecorderViewModel {
     func refreshProjectsInBackground() {
         guard projectRefreshTask == nil else { return }
         let settings = settings
+        let library = coordinator.projectLibrary
         projectRefreshTask = Task { [weak self] in
-            let entries = await Task.detached(priority: .utility) {
-                TakeFileStore().loadProjectHistory(settings: settings).entries
-            }.value
+            let entries = await library.refresh(.init(settings: settings, includesLatestWrites: false))
             guard let self, !Task.isCancelled else { return }
             self.projectRefreshTask = nil
-            if self.recentProjects != entries { self.recentProjects = entries }
             self.transcriptionController.syncProjects(entries)
         }
     }
 
     func refreshRecentProjects() {
-        projectRefreshTask?.cancel()
-        projectRefreshTask = nil
-        recentProjects = TakeFileStore().loadProjectHistory(settings: settings).entries
-        transcriptionController.syncProjects(recentProjects)
+        transcriptionController.syncProjects(coordinator.projectLibrary.reload(settings: settings))
     }
 
     func showRecorder() {
@@ -55,6 +50,20 @@ extension RecorderViewModel {
         guard canShowProjects else { return }
         studioMode = .projects
         refreshProjectsInBackground()
+    }
+
+    /// Opens the library on the take that was just recorded, with search and folder cleared so it is visible.
+    func showLastRecordingInLibrary() {
+        guard let entry = currentEditorHistoryEntry else {
+            showProjects()
+            return
+        }
+        projectLibraryNavigation.section = .recordings
+        projectLibraryNavigation.folderScope = nil
+        projectLibraryNavigation.searchText = ""
+        projectLibraryNavigation.filters = ProjectLibraryFilters()
+        projectLibraryNavigation.selectedProjectIDs = [entry.id]
+        showProjects()
     }
 
     func revealProject(_ project: RecordingProjectHistory.Entry) {
@@ -237,7 +246,7 @@ extension RecorderViewModel {
             projectLibraryError = reason
             return
         }
-        guard !projects.contains(where: { $0.projectPath == activeExportProjectURL?.path }) else {
+        guard !projects.contains(where: { $0.projectPath == exports.activeExportProjectURL?.path }) else {
             projectLibraryError = "Wait for this project's export to finish before moving its sources to Trash."
             return
         }
@@ -335,16 +344,16 @@ extension RecorderViewModel {
     func exportOutputVariants(_ request: EditorVariantExportRequest) {
         guard let projectURL = lastExportedProjectURL, let project = lastExportedProject, state == .idle,
               !isExporting, !request.layouts.isEmpty else { return }
-        isExportingVariants = true
-        variantExportIndex = 0
-        variantExportTotal = request.layouts.count
-        variantExportURLs = []
+        exports.isExportingVariants = true
+        exports.variantExportIndex = 0
+        exports.variantExportTotal = request.layouts.count
+        exports.variantExportURLs = []
         let outputDirectory = settings.outputDirectory
         let baseName = ProjectExportFilename.slug(from: project.title)
         Task {
-            defer { isExportingVariants = false }
+            defer { exports.isExportingVariants = false }
             for layout in request.layouts {
-                variantExportIndex += 1
+                exports.variantExportIndex += 1
                 if Task.isCancelled { return }
                 let suffix = ProjectExportFilename.variantSuffix(for: layout)
                 let destination = coordinator.uniqueOutputURL(outputDirectory
@@ -357,10 +366,10 @@ extension RecorderViewModel {
                         hiddenVideoSources: request.export.hiddenVideoSources, mutedAudioSources: request.export.mutedAudioSources,
                         backgroundMusic: request.export.backgroundMusic, playbackRate: request.export.playbackRate
                     ))
-                    variantExportURLs.append(result.url)
+                    exports.variantExportURLs.append(result.url)
                 } catch { return }
             }
-            request.onCompletion(variantExportURLs)
+            request.onCompletion(exports.variantExportURLs)
         }
     }
 
@@ -433,6 +442,6 @@ extension RecorderViewModel {
         }
         openEditor()
         guard studioMode == .edit else { return }
-        isEditorExportPresented = true
+        exports.isEditorExportPresented = true
     }
 }

@@ -33,7 +33,7 @@ enum BlitzCopyFeedback: Equatable {
 
     var symbolName: String {
         switch self {
-        case .idle, .copying: "doc.on.doc"
+        case .idle, .copying: BlitzSymbols.copyLink
         case .copied: "checkmark"
         case .failed: "exclamationmark.triangle.fill"
         }
@@ -69,9 +69,13 @@ struct BlitzCopyButton: View {
                     Text(title)
                 }
             } icon: {
-                Image(systemName: feedback.symbolName)
-                    .foregroundStyle(feedback == .failed ? AnyShapeStyle(BlitzUI.warning) : AnyShapeStyle(.foreground))
-                    .contentTransition(.symbolEffect(.replace))
+                if feedback == .failed {
+                    Image(systemName: feedback.symbolName)
+                        .foregroundStyle(BlitzUI.warning)
+                } else {
+                    Image(systemName: feedback.symbolName)
+                        .contentTransition(.symbolEffect(.replace))
+                }
             }
             .frame(width: fixedWidth, alignment: .center)
             .frame(maxWidth: configuration.width == .fill ? .infinity : nil)

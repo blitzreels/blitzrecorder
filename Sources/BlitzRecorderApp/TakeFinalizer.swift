@@ -161,21 +161,13 @@ final class TakeFinalizer {
                     sceneEvents: sceneEvents
                 )
             } catch {
-                try? writeRecoverableProject(
-                    take: processedTake,
-                    settings: finalizationSettings,
-                    sceneEvents: sceneEvents
-                )
-                return .recoveryFiles(processedTake, reason: "Transparent camera save failed: \(error.recorderFailureDescription)")
+                return recoveryOutcome(.init(take: processedTake, settings: finalizationSettings, sceneEvents: sceneEvents,
+                    reason: "Transparent camera save failed: \(error.recorderFailureDescription)"))
             }
         case .recoverNoVideo(let reason):
             onRenderProgress?(0)
-            try? writeRecoverableProject(
-                take: processedTake,
-                settings: finalizationSettings,
-                sceneEvents: sceneEvents
-            )
-            return .recoveryFiles(processedTake, reason: reason)
+            return recoveryOutcome(.init(take: processedTake, settings: finalizationSettings, sceneEvents: sceneEvents,
+                reason: reason))
         case .exportFinalVideo:
             let missingAudioSources = missingRequiredAudioSources(
                 settings: finalizationSettings,
@@ -193,12 +185,8 @@ final class TakeFinalizer {
                         warning: "\(audioReason). Project is editable without that audio"
                     )
                 }
-                try? writeRecoverableProject(
-                    take: processedTake,
-                    settings: finalizationSettings,
-                    sceneEvents: sceneEvents
-                )
-                return .recoveryFiles(processedTake, reason: audioReason)
+                return recoveryOutcome(.init(take: processedTake, settings: finalizationSettings, sceneEvents: sceneEvents,
+                    reason: audioReason))
             }
             if finalizationSettings.savesSourceFiles {
                 return projectReadyOutcome(
@@ -294,8 +282,8 @@ final class TakeFinalizer {
             )
         } catch {
             onMessage?("Final video export skipped: \(error.recorderFailureDescription)")
-            try? writeRecoverableProject(take: take, settings: settings, sceneEvents: sceneEvents)
-            return .recoveryFiles(take, reason: "Export failed: \(error.recorderFailureDescription)")
+            return recoveryOutcome(.init(take: take, settings: settings, sceneEvents: sceneEvents,
+                reason: "Export failed: \(error.recorderFailureDescription)"))
         }
     }
 
@@ -322,6 +310,24 @@ final class TakeFinalizer {
             finalVideoURL: url
         )
         return .saved(url, sourceDirectory: take.scratchDirectory)
+    }
+
+    private struct RecoveryRequest {
+        let take: RecordingTake
+        let settings: RecordingSettings
+        let sceneEvents: [RecordingSceneEvent]
+        let reason: String
+    }
+
+    /// Saves the project so the take can be reopened, and says so in the reason when that save fails too.
+    private func recoveryOutcome(_ request: RecoveryRequest) -> TakeFinalizationOutcome {
+        do {
+            try writeRecoverableProject(take: request.take, settings: request.settings, sceneEvents: request.sceneEvents)
+            return .recoveryFiles(request.take, reason: request.reason)
+        } catch {
+            return .recoveryFiles(request.take, reason: "\(request.reason). The project file could not be saved either "
+                + "(\(error.recorderFailureDescription)); the recorded files are still in the take folder.")
+        }
     }
 
     private func writeRecoverableProject(

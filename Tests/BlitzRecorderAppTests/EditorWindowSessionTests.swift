@@ -162,7 +162,7 @@ final class EditorWindowSessionTests: XCTestCase {
         recorder.openEditorForExport()
         XCTAssertEqual(request?.project?.id, fixture.project.id)
         XCTAssertEqual(request?.presentsExport, true)
-        XCTAssertFalse(recorder.isEditorExportPresented)
+        XCTAssertFalse(recorder.exports.isEditorExportPresented)
         XCTAssertEqual(recorder.studioMode, .record)
         recorder.openEditorWindow()
         XCTAssertNil(request?.project)

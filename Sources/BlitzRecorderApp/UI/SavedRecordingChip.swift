@@ -40,7 +40,7 @@ struct SavedRecordingChip: View {
             }
 
             Button { NSWorkspace.shared.activateFileViewerSelecting([url]) } label: {
-                Image(systemName: "folder")
+                Image(systemName: BlitzSymbols.folder)
             }
             .blitzButton(.dock)
             .fixedSize()
@@ -64,10 +64,10 @@ struct SavedRecordingChip: View {
     private var menuEntries: [BlitzMenuEntry] {
         var items = [
             BlitzMenuItem(title: "Play", systemImage: "play") { NSWorkspace.shared.open(url) },
-            BlitzMenuItem(title: "Show in Finder", systemImage: "folder") {
+            BlitzMenuItem(title: "Show in Finder", systemImage: BlitzSymbols.folder) {
                 NSWorkspace.shared.activateFileViewerSelecting([url])
             },
-            BlitzMenuItem(title: "Rename…", systemImage: "square.and.pencil") { vm.renameLastExportedFile() }
+            BlitzMenuItem(title: "Rename…", systemImage: BlitzSymbols.rename) { vm.renameLastExportedFile() }
         ]
         if let sourceTakeURL {
             items.append(BlitzMenuItem(title: "Show Source Files", systemImage: "square.stack.3d.up") {

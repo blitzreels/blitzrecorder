@@ -22,7 +22,7 @@ final class RecorderSceneInspectorTests: XCTestCase {
 
         setup.viewModel.commitScreenSplitPreview()
 
-        XCTAssertNil(setup.viewModel.screenSplitPreviewHeight)
+        XCTAssertNil(setup.viewModel.canvas.screenSplitPreviewHeight)
         XCTAssertEqual(captureChanges, 1)
         XCTAssertEqual(setup.coordinator.settings.sceneLayout.screenSplitHeight ?? 0, 0.65, accuracy: 0.001)
         XCTAssertEqual(RecordingSettingsStore.load(defaults: setup.defaults).sceneLayout,
@@ -38,7 +38,7 @@ final class RecorderSceneInspectorTests: XCTestCase {
         setup.viewModel.cancelScreenSplitPreview()
         setup.viewModel.commitScreenSplitPreview()
 
-        XCTAssertNil(setup.viewModel.screenSplitPreviewHeight)
+        XCTAssertNil(setup.viewModel.canvas.screenSplitPreviewHeight)
         XCTAssertEqual(setup.coordinator.settings.sceneLayout, original.sceneLayout)
         XCTAssertEqual(setup.coordinator.settings.outputResolution, original.outputResolution)
         XCTAssertEqual(setup.coordinator.settings.framesPerSecond, original.framesPerSecond)
@@ -58,7 +58,7 @@ final class RecorderSceneInspectorTests: XCTestCase {
         setup.viewModel.commitScreenSplitPreview()
         setup.viewModel.selectScene(originalID)
 
-        XCTAssertNil(setup.viewModel.screenSplitPreviewHeight)
+        XCTAssertNil(setup.viewModel.canvas.screenSplitPreviewHeight)
         XCTAssertEqual(setup.coordinator.settings.sceneLayout, originalLayout)
     }
 

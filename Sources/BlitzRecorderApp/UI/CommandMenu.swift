@@ -69,7 +69,7 @@ enum BlitzCommandCatalog {
                   symbol: "record.circle", keywords: ["record", "start", "studio"], shortcut: "⌘N",
                   run: vm.startNewRecording))
         add(.init(id: "import", group: .actions, title: "Import Video…", detail: "MP4, MOV or M4V",
-                  symbol: "square.and.arrow.down", keywords: ["file", "open", "add"], shortcut: "⌘I",
+                  symbol: BlitzSymbols.saveToMac, keywords: ["file", "open", "add"], shortcut: "⌘I",
                   run: vm.chooseVideoToImport))
         add(.init(id: "live-preview", group: .actions,
                   title: vm.isLivePreviewEnabled ? "Turn Off Live Preview" : "Turn On Live Preview",
@@ -121,14 +121,14 @@ enum BlitzCommandCatalog {
                       run: { theme.accent = accent }))
         }
 
-        add(.init(id: "go-recordings", group: .navigation, title: "Recordings", detail: nil, symbol: "film.stack",
+        add(.init(id: "go-recordings", group: .navigation, title: "Recordings", detail: nil, symbol: BlitzSymbols.library,
                   keywords: ["library", "projects", "videos"], shortcut: nil,
                   run: { vm.showSidebarDestination(.recordings) }))
-        add(.init(id: "go-shared", group: .navigation, title: "Shared Videos", detail: nil, symbol: "link",
+        add(.init(id: "go-shared", group: .navigation, title: "Shared Videos", detail: nil, symbol: BlitzSymbols.share,
                   keywords: ["links", "share", "hosting", "watch"], shortcut: nil,
                   run: { vm.showSidebarDestination(.shared) }))
         if vm.canOpenEditor {
-            add(.init(id: "go-editor", group: .navigation, title: "Editor", detail: nil, symbol: "scissors",
+            add(.init(id: "go-editor", group: .navigation, title: "Editor", detail: nil, symbol: BlitzSymbols.edit,
                       keywords: ["edit", "timeline", "cut"], shortcut: nil, run: vm.openEditor))
         }
         for pane in SettingsPane.allCases {

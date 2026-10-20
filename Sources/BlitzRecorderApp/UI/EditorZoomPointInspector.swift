@@ -72,7 +72,7 @@ struct EditorZoomPointInspector: View {
                 ))
                 .controlSize(.small)
             })
-            Button(role: .destructive, action: remove) { Label("Remove point", systemImage: "trash") }
+            Button(role: .destructive, action: remove) { Label("Remove point", systemImage: BlitzSymbols.delete) }
                 .blitzButton(.quiet).controlSize(.small)
             if let error { Text(error).font(BlitzType.caption).foregroundStyle(BlitzUI.warning) }
         }

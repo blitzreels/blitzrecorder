@@ -20,7 +20,7 @@ struct EditRecordingButton: View {
         Button(action: configuration.action) {
             HStack(spacing: 6) {
                 ZStack {
-                    Image(systemName: "scissors")
+                    Image(systemName: BlitzSymbols.edit)
                         .fontWeight(.semibold)
                         .opacity(configuration.isLoading ? 0 : 1)
                     if configuration.isLoading {

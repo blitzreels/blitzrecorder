@@ -66,8 +66,8 @@ final class VideoProjectImporterTests: XCTestCase {
         XCTAssertEqual(vm.settings.enabledSources, previousSources)
         XCTAssertEqual(vm.settings.layout, previousLayout)
         XCTAssertEqual(vm.state, .idle)
-        XCTAssertNil(vm.videoImportProgress)
-        XCTAssertNil(vm.videoImportError)
+        XCTAssertNil(vm.libraryActions.videoImportProgress)
+        XCTAssertNil(vm.libraryActions.videoImportError)
         let project = try XCTUnwrap(vm.lastExportedProject)
         let edits = try XCTUnwrap(EditorTimeRange.removing(.init(range: .init(start: 0.1, end: 0.2),
             edits: project.edits, takeDuration: 1.0 / 3)))

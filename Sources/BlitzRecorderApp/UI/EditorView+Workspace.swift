@@ -15,13 +15,13 @@ extension EditorView {
                 vm.selectOutputLayout($0)
             },
             exportButton: AnyView(HStack(spacing: 8) {
-                Button { showOutputs(.link) } label: { Label("Share", systemImage: "link").lineLimit(1).fixedSize() }
+                Button { showOutputs(.link) } label: { Label("Share", systemImage: BlitzSymbols.share).lineLimit(1).fixedSize() }
                 .blitzButton(.secondary)
                 .controlSize(.large)
                 .disabled(project == nil)
                 .help("Create a watch link anyone can open")
                 Button { showOutputs(.file) } label: {
-                    Label("Export", systemImage: "square.and.arrow.down").lineLimit(1).fixedSize()
+                    Label("Export", systemImage: BlitzSymbols.export).lineLimit(1).fixedSize()
                 }
                 .blitzButton(inspectorTab == .exports ? .secondary : .accent)
                 .controlSize(.large)
@@ -239,7 +239,7 @@ extension EditorView {
     }
 
     func exportVideo(to destination: EditorExportDestination) {
-        guard !vm.isExportingVariants else { return }
+        guard !vm.exports.isExportingVariants else { return }
         let profile = exportRecipe(for: destination).profile
         let request = EditorExportRequest(
             outputFormat: destination == .link ? .mp4 : profile.videoQuality.resolvedOutputFormat(selectedFormat),
@@ -279,12 +279,12 @@ extension EditorView {
     }
 
     var exportStatus: EditorExportStatus? {
-        if vm.isExportingVariants {
+        if vm.exports.isExportingVariants {
             return .exporting(.init(
-                title: "Exporting format \(vm.variantExportIndex) of \(vm.variantExportTotal)",
+                title: "Exporting format \(vm.exports.variantExportIndex) of \(vm.exports.variantExportTotal)",
                 percentage: vm.exportProgressLabel,
                 detail: nil,
-                value: (Double(max(0, vm.variantExportIndex - 1)) + vm.exportProgress) / Double(max(1, vm.variantExportTotal))
+                value: (Double(max(0, vm.exports.variantExportIndex - 1)) + vm.exports.exportProgress) / Double(max(1, vm.exports.variantExportTotal))
             ))
         }
         if vm.isExporting {
@@ -292,11 +292,11 @@ extension EditorView {
                 title: "Exporting video",
                 percentage: vm.exportProgressLabel,
                 detail: nil,
-                value: vm.exportProgress
+                value: vm.exports.exportProgress
             ))
         }
-        if let error = vm.lastExportError { return .failed(error) }
-        if let url = vm.lastExportSucceededURL { return .succeeded(url) }
+        if let error = vm.exports.lastExportError { return .failed(error) }
+        if let url = vm.exports.lastExportSucceededURL { return .succeeded(url) }
         return nil
     }
 

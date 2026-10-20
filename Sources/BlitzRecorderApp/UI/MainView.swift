@@ -83,11 +83,18 @@ struct MainView: View {
             guard destination == .record, previous != .settings else { return }
             studioExitDestination = previous == .editor ? .editor : .recordings
         }
-        .sheet(item: $vm.folderPrompt) { prompt in
+        .sheet(item: Binding(
+            get: { vm.libraryActions.folderPrompt },
+            set: { vm.libraryActions.folderPrompt = $0 }
+        )) { prompt in
             ProjectFolderNameEditor(
-                prompt: prompt, name: $vm.folderNameDraft,
+                prompt: prompt,
+                name: Binding(
+                    get: { vm.libraryActions.folderNameDraft },
+                    set: { vm.libraryActions.folderNameDraft = $0 }
+                ),
                 affectedCount: vm.folderPromptAffectedCount(prompt),
-                onSave: { vm.commitFolderPrompt(prompt) }, onCancel: { vm.folderPrompt = nil }
+                onSave: { vm.commitFolderPrompt(prompt) }, onCancel: { vm.libraryActions.folderPrompt = nil }
             )
         }
         .overlay {
@@ -137,6 +144,23 @@ struct MainView: View {
                 .blitzWindowToolbar()
             recordContent()
         }
+        .confirmationDialog(
+            "\(vm.session.pendingMicrophoneFallback?.preferredName ?? "Your preferred mic") is not connected",
+            isPresented: Binding(
+                get: { vm.session.pendingMicrophoneFallback != nil },
+                set: { if !$0 { vm.session.pendingMicrophoneFallback = nil } }
+            ),
+            presenting: vm.session.pendingMicrophoneFallback
+        ) { missing in
+            if let fallback = missing.fallbackName {
+                Button("Record with \(fallback)") { vm.recordWithFallbackMicrophone() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { missing in
+            Text(missing.fallbackName == nil
+                ? "Connect it, then press Record."
+                : "Connect it and press Record again, or record this take with another mic. Your preferred mic stays saved.")
+        }
     }
 
     private func recordContent() -> some View {
@@ -177,7 +201,7 @@ struct MainView: View {
                         CropToolbarOverlay(vm: vm)
                         ShortFormSafeZoneOverlay(vm: vm)
 
-                        if let remaining = vm.countdownRemaining {
+                        if let remaining = vm.session.countdownRemaining {
                             RecordingCountdownOverlay(configuration: .init(
                                 remaining: remaining,
                                 onCancel: vm.cancelCountdown
@@ -279,9 +303,9 @@ private struct SideSplitDividerOverlay: View {
     var body: some View {
         GeometryReader { proxy in
             if vm.showsSideSplitControl, vm.canEditScene,
-               !vm.isScreenCropModeEnabled, !vm.isCameraCropModeEnabled,
-               !vm.previewCanvasFrame.isEmpty {
-                let canvas = vm.previewCanvasFrame
+               !vm.canvas.isScreenCropModeEnabled, !vm.canvas.isCameraCropModeEnabled,
+               !vm.canvas.previewCanvasFrame.isEmpty {
+                let canvas = vm.canvas.previewCanvasFrame
                 let dividerX = vm.sideSplitCameraIsLeft ? vm.sideSplitCameraWidth : 1 - vm.sideSplitCameraWidth
                 handle
                     .frame(width: 28, height: max(0, canvas.height - 2))
@@ -370,9 +394,9 @@ private struct SplitDividerOverlay: View {
     var body: some View {
         GeometryReader { proxy in
             if vm.showsScreenSplitControl, vm.canEditScene,
-               !vm.isScreenCropModeEnabled, !vm.isCameraCropModeEnabled,
-               !vm.previewCanvasFrame.isEmpty {
-                let canvas = vm.previewCanvasFrame
+               !vm.canvas.isScreenCropModeEnabled, !vm.canvas.isCameraCropModeEnabled,
+               !vm.canvas.previewCanvasFrame.isEmpty {
+                let canvas = vm.canvas.previewCanvasFrame
                 handle
                     .frame(width: max(0, canvas.width - 2), height: 28)
                     .contentShape(.rect)
@@ -450,8 +474,8 @@ struct CropToolbarOverlay: View {
 
     var body: some View {
         GeometryReader { proxy in
-            if let frame = vm.cropToolbarFrame,
-               vm.isScreenCropModeEnabled || vm.isCameraCropModeEnabled {
+            if let frame = vm.canvas.cropToolbarFrame,
+               vm.canvas.isScreenCropModeEnabled || vm.canvas.isCameraCropModeEnabled {
                 CropFloatingToolbar(configuration: cropToolbarConfiguration)
                     .fixedSize()
                     .position(
@@ -465,21 +489,21 @@ struct CropToolbarOverlay: View {
     private var cropToolbarConfiguration: CropFloatingToolbarConfiguration {
         CropFloatingToolbarConfiguration(
             onDone: {
-                if vm.isCameraCropModeEnabled {
+                if vm.canvas.isCameraCropModeEnabled {
                     vm.applyCameraCropMode()
                 } else {
                     vm.applyScreenCropMode()
                 }
             },
             onReset: {
-                if vm.isCameraCropModeEnabled {
+                if vm.canvas.isCameraCropModeEnabled {
                     vm.resetCameraCrop()
                 } else {
                     vm.resetScreenCropMode()
                 }
             },
             onCancel: {
-                if vm.isCameraCropModeEnabled {
+                if vm.canvas.isCameraCropModeEnabled {
                     vm.cancelCameraCropMode()
                 } else {
                     vm.cancelScreenCropMode()
@@ -494,7 +518,7 @@ private struct ScreenPickPromptOverlay: View {
 
     var body: some View {
         GeometryReader { proxy in
-            if let frame = vm.screenLayerFrame, frame.width > 1, frame.height > 1 {
+            if let frame = vm.canvas.screenLayerFrame, frame.width > 1, frame.height > 1 {
                 ScreenPickPrompt(vm: vm)
                     .fixedSize()
                     .position(x: frame.midX, y: proxy.size.height - frame.midY)
@@ -669,6 +693,7 @@ private struct CaptureCommandBar: View {
                 .frame(maxWidth: 240, alignment: .leading)
             RecordingOutputPicker(vm: vm)
             CanvasGuidesMenu(vm: vm)
+            RecorderVisibilityMenu(vm: vm)
             RecordingQualityShortcut(vm: vm)
         }
     }

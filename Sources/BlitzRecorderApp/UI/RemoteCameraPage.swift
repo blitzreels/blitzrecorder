@@ -24,8 +24,8 @@ struct RemoteCameraPage: View {
 
     private var canConnect: Bool {
         vm.state == .idle
-            && !vm.directRemoteCameraHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !vm.directRemoteCameraPort.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !vm.remoteCameraPreview.directRemoteCameraHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !vm.remoteCameraPreview.directRemoteCameraPort.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
@@ -251,8 +251,8 @@ struct RemoteCameraPage: View {
             ZStack {
                 Color.black
                 CameraPreviewRepresentable(view: vm.remoteCameraPreviewSurface)
-                    .aspectRatio(vm.remoteCameraPreviewAspectRatio, contentMode: .fit)
-                if !vm.hasRemoteCameraPreviewImage {
+                    .aspectRatio(vm.remoteCameraPreview.remoteCameraPreviewAspectRatio, contentMode: .fit)
+                if !vm.remoteCameraPreview.hasRemoteCameraPreviewImage {
                     VStack(spacing: 10) {
                         Image(systemName: "iphone.gen3")
                             .font(BlitzType.glyph(28))
@@ -324,7 +324,15 @@ struct RemoteCameraPage: View {
             BlitzUI.sectionLabel(field == .address ? "iPhone address" : "Port")
             TextField(
                 field == .address ? "192.168.1.10" : "Port",
-                text: field == .address ? $vm.directRemoteCameraHost : $vm.directRemoteCameraPort
+                text: field == .address
+                    ? Binding(
+                        get: { vm.remoteCameraPreview.directRemoteCameraHost },
+                        set: { vm.remoteCameraPreview.directRemoteCameraHost = $0 }
+                    )
+                    : Binding(
+                        get: { vm.remoteCameraPreview.directRemoteCameraPort },
+                        set: { vm.remoteCameraPreview.directRemoteCameraPort = $0 }
+                    )
             )
             .textFieldStyle(.plain)
             .font(BlitzType.body.monospaced())

@@ -46,7 +46,7 @@ extension EditorTimelineView {
 
     private func editActions(compact: Bool) -> some View {
         HStack(spacing: 6) {
-            Button(action: onSplit) { Label("Split", systemImage: "scissors") }
+            Button(action: onSplit) { Label("Split", systemImage: BlitzSymbols.edit) }
                 .blitzButton(.secondary)
                 .disabled(!isInteractive || !canSplitSelection)
                 .help(selectedPlacedItem == nil ? "Split the clip at the playhead. All sources stay linked (⌘B)."

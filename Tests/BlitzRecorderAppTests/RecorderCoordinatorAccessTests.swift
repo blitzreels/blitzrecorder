@@ -418,11 +418,11 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         XCTAssertEqual(vm.studioMode, .record)
         vm.openEditor()
         XCTAssertEqual(vm.studioMode, .edit)
-        XCTAssertFalse(vm.isEditorExportPresented)
+        XCTAssertFalse(vm.exports.isEditorExportPresented)
         vm.closeEditor()
         vm.openEditorForExport()
         XCTAssertEqual(vm.studioMode, .edit)
-        XCTAssertTrue(vm.isEditorExportPresented)
+        XCTAssertTrue(vm.exports.isEditorExportPresented)
         XCTAssertEqual(vm.lastExportedSourceTakeURL, take.scratchDirectory)
     }
 
@@ -445,7 +445,7 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         )
 
         XCTAssertEqual(viewModel.studioMode, .edit)
-        XCTAssertEqual(viewModel.lastExportSucceededURL, outputURL)
+        XCTAssertEqual(viewModel.exports.lastExportSucceededURL, outputURL)
     }
 
     func testEditorSceneCorrectionSupportsUndoAndRedo() throws {
@@ -621,7 +621,7 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
             viewModel.sessionProgressDetail,
             "Not recording yet. Hang on while BlitzRecorder prepares capture."
         )
-        XCTAssertEqual(viewModel.elapsedSeconds, 0)
+        XCTAssertEqual(viewModel.session.elapsedSeconds, 0)
     }
 
     func testScreenFullscreenPresetDoesNotFitTargetWindowAutomatically() {
@@ -919,7 +919,7 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
             windowID: 42,
             windowTitle: "BlitzRecorder"
         )
-        viewModel.targetWindowInfo = TargetWindowInfo(
+        viewModel.screenSource.targetWindowInfo = TargetWindowInfo(
             processID: 123,
             appName: "Safari",
             windowTitle: "BlitzRecorder",
@@ -958,7 +958,7 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         viewModel.setTargetWindowZoom(1.25)
 
         XCTAssertEqual(viewModel.screenCaptureAreaSelection, .fullDisplay)
-        XCTAssertEqual(viewModel.targetWindowZoom, 1.25)
+        XCTAssertEqual(viewModel.screenSource.targetWindowZoom, 1.25)
         XCTAssertEqual(RecordingSettingsStore.load(defaults: defaults).screenWindowZoom, 1.25)
     }
 
@@ -979,7 +979,7 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         viewModel.zoomTargetWindowFit(by: 0.05)
 
         XCTAssertEqual(viewModel.screenCaptureAreaSelection, .fullDisplay)
-        XCTAssertEqual(viewModel.targetWindowZoom, 1.05, accuracy: 0.0001)
+        XCTAssertEqual(viewModel.screenSource.targetWindowZoom, 1.05, accuracy: 0.0001)
     }
 
     func testResetUiScalePreservesDisplayMode() {
@@ -1000,7 +1000,7 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         viewModel.resetTargetWindowZoom()
 
         XCTAssertEqual(viewModel.screenCaptureAreaSelection, .fullDisplay)
-        XCTAssertEqual(viewModel.targetWindowZoom, 1, accuracy: 0.0001)
+        XCTAssertEqual(viewModel.screenSource.targetWindowZoom, 1, accuracy: 0.0001)
     }
 
     func testAppWindowSelectionPrefersFocusedWindowOverLargerAuxiliaryWindow() {
@@ -1260,7 +1260,7 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         XCTAssertEqual(coordinator.settings.cameraCropAmount, original.cameraCropAmount)
         XCTAssertEqual(coordinator.settings.cameraCropPosition, original.cameraCropPosition)
         XCTAssertEqual(coordinator.settings.screenCrop, original.screenCrop)
-        XCTAssertFalse(viewModel.isScreenCropModeEnabled)
+        XCTAssertFalse(viewModel.canvas.isScreenCropModeEnabled)
     }
 
     func testPreviewLayerSelectionSelectsMatchingSource() {

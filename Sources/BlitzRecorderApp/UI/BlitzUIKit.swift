@@ -199,11 +199,11 @@ private struct BlitzUIKitButtons: View {
                     GridRow {
                         Text(name).font(BlitzType.footnote).monospaced().foregroundStyle(BlitzUI.tertiaryText)
                         ForEach(sizes, id: \.0) { _, size in
-                            Button("Export", systemImage: "square.and.arrow.up") {}
+                            Button("Export", systemImage: BlitzSymbols.export) {}
                                 .blitzButton(emphasis)
                                 .controlSize(size)
                         }
-                        Button("Export", systemImage: "square.and.arrow.up") {}
+                        Button("Export", systemImage: BlitzSymbols.export) {}
                             .blitzButton(emphasis)
                             .disabled(true)
                     }
@@ -213,11 +213,11 @@ private struct BlitzUIKitButtons: View {
                 BlitzUIKitSpecimen(label: "record") { Button("Record", systemImage: "record.circle") {}.blitzButton(.record) }
                 BlitzUIKitSpecimen(label: "dock") { Button("Screen", systemImage: "display") {}.blitzButton(.dock) }
                 BlitzUIKitSpecimen(label: "secondary · destructive") {
-                    Button("Move to Trash", systemImage: "trash", role: .destructive) {}.blitzButton(.secondary)
+                    Button("Move to Trash", systemImage: BlitzSymbols.delete, role: .destructive) {}.blitzButton(.secondary)
                 }
                 BlitzUIKitSpecimen(label: "BlitzToolbarButton") {
                     HStack {
-                        BlitzToolbarButton(configuration: .init(title: "Split", symbolName: "scissors", showsTitle: true, action: {}))
+                        BlitzToolbarButton(configuration: .init(title: "Split", symbolName: BlitzSymbols.edit, showsTitle: true, action: {}))
                         BlitzToolbarButton(configuration: .init(title: "Dismiss", symbolName: "xmark", showsTitle: false, action: {}))
                     }
                 }
@@ -316,16 +316,16 @@ private struct BlitzUIKitNavigation: View {
             HStack(alignment: .top, spacing: 28) {
                 VStack(alignment: .leading, spacing: 2) {
                     BlitzUI.sectionLabel("Library").padding(.horizontal, 8).padding(.bottom, 4)
-                    row(.init(item: item("Recordings", "film.stack", detail: nil, trailing: "24"),
+                    row(.init(item: item("Recordings", BlitzSymbols.library, detail: nil, trailing: "24"),
                               isSelected: true, isDropTarget: false, action: {}))
-                    row(.init(item: item("Shared", "link", detail: nil, trailing: nil),
+                    row(.init(item: item("Shared", BlitzSymbols.share, detail: nil, trailing: nil),
                               isSelected: false, isDropTarget: false, action: {}))
-                    row(.init(item: item("Editor", "scissors", detail: "trailer", trailing: nil),
+                    row(.init(item: item("Editor", BlitzSymbols.edit, detail: "trailer", trailing: nil),
                               isSelected: false, isDropTarget: false, action: {}))
                     BlitzUI.sectionLabel("Folders").padding(.horizontal, 8).padding(.vertical, 4).padding(.top, 10)
-                    row(.init(item: item("Formation IA", "folder", detail: nil, trailing: "12"),
+                    row(.init(item: item("Formation IA", BlitzSymbols.folder, detail: nil, trailing: "12"),
                               isSelected: false, isDropTarget: true, action: {}))
-                    row(.init(item: item("Client X", "folder", detail: nil, trailing: "3"),
+                    row(.init(item: item("Client X", BlitzSymbols.folder, detail: nil, trailing: "3"),
                               isSelected: false, isDropTarget: false, action: {}))
                     Spacer().frame(height: 12)
                     row(.init(item: item("Settings", "gearshape", detail: nil, trailing: "⌘,"),

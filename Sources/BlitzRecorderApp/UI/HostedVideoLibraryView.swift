@@ -112,7 +112,7 @@ struct HostedVideoLibraryView: View {
             if isLoading {
                 BlitzLoadingState(title: "Loading shared videos")
             } else if controller.videos.isEmpty && controller.libraryMessage == nil {
-                empty(.init(symbol: "link", title: "Your next video belongs here",
+                empty(.init(symbol: BlitzSymbols.share, title: "Your next video belongs here",
                     detail: "Open a recording, then choose Share to create its watch page.",
                     action: .init(title: "Choose a recording", run: showRecordings)))
             } else if controller.videos.isEmpty {
@@ -236,7 +236,7 @@ struct HostedVideoLibraryView: View {
                     HStack(spacing: 8) {
                         BlitzCopyButton(configuration: .watchLink(.init(url: url, title: "Copy link", emphasis: .secondary, width: .fixed(84))))
                         Button { NSWorkspace.shared.open(url) } label: {
-                            Label("Open", systemImage: "safari")
+                            Label("Open", systemImage: BlitzSymbols.openLink)
                         }
                         .blitzButton(.secondary)
                         .help("Open the watch page in your browser")

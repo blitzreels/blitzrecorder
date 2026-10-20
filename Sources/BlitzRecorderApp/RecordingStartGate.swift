@@ -117,7 +117,11 @@ enum RecordingStopCopy {
     }
 
     static func microphoneSwitched(_ name: String) -> String {
-        "Microphone disconnected. Switched to \(name); recording continues."
+        "Microphone disconnected. Switched to \(name); recording continues and switches back when it reconnects."
+    }
+
+    static func microphoneReturned(_ name: String) -> String {
+        "\(name) reconnected. Recording continues with it."
     }
 
     static func screenSwitched(_ name: String) -> String {

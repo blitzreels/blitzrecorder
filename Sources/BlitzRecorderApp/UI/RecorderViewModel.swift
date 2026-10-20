@@ -14,25 +14,24 @@ final class RecorderViewModel {
 
     let coordinator: RecorderCoordinator
     let accessController: AccessController
+    let exports = EditorExportState()
+    let canvas = PreviewCanvasState()
+    let remoteCameraPreview = RemoteCameraPreviewState()
+    let screenSource = ScreenSourceTrackingState()
+    let libraryActions = ProjectLibraryActionState()
+    let session = RecordingSessionUIState()
 
     let previewStage: PreviewStageView
     let micLevels = TrackLevels()
     let sysLevels = TrackLevels()
-    let transcriptionController = LocalTranscriptionController()
+    var transcriptionController: LocalTranscriptionController { coordinator.transcription }
 
     var state: RecordingState = .idle
     var settings: RecordingSettings
     var detailMessage: String = ""
     var screenWindowFitMessage: String?
-    var isEditorExportPresented = false
     var showsScreenSourcePicker = false
-    var isExportingVariants = false
     var isLivePreviewEnabled = LivePreviewPreference().isEnabled
-    var variantExportIndex = 0
-    var variantExportTotal = 0
-    var variantExportURLs: [URL] = []
-    var lastExportError: String?
-    var lastExportSucceededURL: URL?
     var lastExportedURL: URL?
     var lastExportedSourceTakeURL: URL?
     var lastExportWarning: String?
@@ -72,14 +71,11 @@ final class RecorderViewModel {
         onEditorHistoryChanged?()
     }
 
-    var recentProjects: [RecordingProjectHistory.Entry] = []
+    var recentProjects: [RecordingProjectHistory.Entry] {
+        get { coordinator.projectLibrary.entries }
+        set { coordinator.projectLibrary.entries = newValue }
+    }
     var projectLibraryError: String?
-    var folderRecordTarget: ProjectFolderRecordTarget?
-    var folderExportStatus: String?
-    var folderMoveUndo: ProjectFolderMoveUndo?
-    var folderPrompt: ProjectFolderPrompt?
-    var folderNameDraft = ""
-    var exportFollowUp: EditorExportFollowUp?
 
     var canShowProjects: Bool {
         !projectTrash.isWorking
@@ -89,42 +85,22 @@ final class RecorderViewModel {
     var availableScreenSources: [ScreenSourceOption] = []
     var availableCameras: [SourceOption] = []
     var availableMicrophones: [SourceOption] = []
-    var directRemoteCameraHost: String = ""
-    var directRemoteCameraPort: String = ""
     let remoteCameraPreviewSurface = CameraPreviewView()
-    var hasRemoteCameraPreviewImage = false
-    var remoteCameraPreviewAspectRatio: CGFloat = 9.0 / 16.0
-    var remoteCameraPreviewFrameSize: (width: Int, height: Int)?
 
-    var elapsedSeconds: Int = 0
-    var captureStopProgress: CaptureStopProgress?
-    var finishingStartedAt: Date?
-    var unavailableScreenSource: ScreenSourceBinding?
-    @ObservationIgnored var screenSourceAvailabilityTracker = ScreenSourceAvailabilityTracker()
-    var suggestedScreenSource: ScreenSourceBinding?
     var followsActiveWindow = FollowActiveWindowPreference().isEnabled {
         didSet {
             FollowActiveWindowPreference().setEnabled(followsActiveWindow)
-            pendingFollowKey = nil
-            suggestedScreenSource = nil
-            dismissedScreenSuggestion = nil
+            screenSource.pendingFollowKey = nil
+            screenSource.suggestedScreenSource = nil
+            screenSource.dismissedScreenSuggestion = nil
         }
     }
-    var autoSwitchNotice: ScreenSourceBinding?
-    @ObservationIgnored var pendingFollowKey: String?
-    @ObservationIgnored var autoSwitchNoticeTask: Task<Void, Never>?
-    var dismissedScreenSuggestion: String?
-    var exportProgress: Double = 0
-    var exportProgressLabel: String { "\(Int((exportProgress * 100).rounded()))%" }
-    var activeExportProjectURL: URL?
-    var isExporting: Bool { activeExportProjectURL != nil || isExportingVariants }
+    var exportProgressLabel: String { "\(Int((exports.exportProgress * 100).rounded()))%" }
+    var isExporting: Bool { exports.activeExportProjectURL != nil || exports.isExportingVariants }
+    /// This window's wait on the shared library refresh, so callers and tests can await it.
     @ObservationIgnored var projectRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var projectEditedObserver: NSObjectProtocol?
     @ObservationIgnored var isSavingProjectEdit = false
-    var videoImportProgress: VideoProjectImporter.Progress?
-    var videoImportError: String?
-    @ObservationIgnored var videoImportTask: Task<Void, Never>?
-    var renderProgress: Double = 0
     let elapsedClock = RecordingElapsedClock()
 
     @ObservationIgnored var onPresentSettings: ((SettingsPane?) -> Void)?
@@ -142,33 +118,17 @@ final class RecorderViewModel {
     @ObservationIgnored var editorHistory = EditorProjectHistory()
     var editorHistoryRevision = 0
     var inspectorSelection: RecorderInspectorSelection = .canvas
-    var countdownRemaining: Int?
-    var countdownSeconds = RecordingCountdownPreference().seconds
-    var countdownTask: Task<Void, Never>?
     var projectLibraryNavigation = ProjectLibraryNavigationState()
     let projectTrash = ProjectLibraryTrashController(operations: .live)
-    var screenSplitPreviewHeight: Double?
-    var sideSplitPreviewWidth: Double?
-    var previewCanvasFrame: CGRect = .zero
-    var isCameraCropModeEnabled = false
-    var isScreenCropModeEnabled = false
     var sceneLibraryRevision = 0
-    var cropToolbarFrame: CGRect?
-    var screenLayerFrame: CGRect?
     var showsFirstRunOnboarding: Bool
     var screenAccessAwaitingRestart = false
     var screenCaptureAreaSelection: ScreenCaptureAreaSelection = .fullDisplay
     var lastApplicationScreenSourceBinding: ScreenSourceBinding?
-    var targetWindowInfo: TargetWindowInfo?
-    var targetWindowStatus: String = "Detecting target..."
-    var targetWindowZoom: CGFloat = 1.0
-    @ObservationIgnored var targetWindowZoomTask: Task<Void, Never>?
-    @ObservationIgnored var pendingTargetWindowFitContext: ScheduledTargetWindowFitContext?
     @ObservationIgnored var permissionRequestTask: Task<Void, Never>?
     @ObservationIgnored var permissionRequestID: UUID?
     var isRequestingPermissions = false
     var permissionRefreshToken = 0
-    var remoteCameraRefreshToken = 0
 
     var selectedSource: SourceSelection? {
         inspectorSelection.source.map(SourceSelection.init(source:))
@@ -240,12 +200,12 @@ final class RecorderViewModel {
     }
 
     var selectedRemoteCameraCapabilities: RemoteCameraCapabilities? {
-        _ = remoteCameraRefreshToken
+        _ = remoteCameraPreview.remoteCameraRefreshToken
         return coordinator.selectedRemoteCameraCapabilities()
     }
 
     var selectedRemoteCameraTelemetry: RemoteCameraTelemetry? {
-        _ = remoteCameraRefreshToken
+        _ = remoteCameraPreview.remoteCameraRefreshToken
         return coordinator.selectedRemoteCameraTelemetry()
     }
 
@@ -262,17 +222,17 @@ final class RecorderViewModel {
     }
 
     var selectedRemoteCameraName: String? {
-        _ = remoteCameraRefreshToken
+        _ = remoteCameraPreview.remoteCameraRefreshToken
         return coordinator.selectedRemoteCameraName()
     }
 
     var selectedRemoteCameraStatus: String? {
-        _ = remoteCameraRefreshToken
+        _ = remoteCameraPreview.remoteCameraRefreshToken
         return coordinator.selectedRemoteCameraStatus()
     }
 
     var selectedRemoteCameraDeviceDescription: String {
-        _ = remoteCameraRefreshToken
+        _ = remoteCameraPreview.remoteCameraRefreshToken
         return coordinator.selectedRemoteCameraDeviceDescription()
     }
 
@@ -281,7 +241,7 @@ final class RecorderViewModel {
     }
 
     var isRemoteCameraSelected: Bool {
-        _ = remoteCameraRefreshToken
+        _ = remoteCameraPreview.remoteCameraRefreshToken
         return coordinator.isRemoteCameraSelected
     }
 
@@ -294,7 +254,7 @@ final class RecorderViewModel {
     }
 
     var remoteCameraDeviceSummaries: [RemoteCameraDeviceSummary] {
-        _ = remoteCameraRefreshToken
+        _ = remoteCameraPreview.remoteCameraRefreshToken
         return coordinator.remoteCameraDeviceSummaries()
     }
 
@@ -312,13 +272,13 @@ final class RecorderViewModel {
         self.previewStage = previewStage
         self.settings = coordinator.settings
         self.inspectorSelection = RecorderInspectorSelection.initial(settings: coordinator.settings)
-        self.targetWindowZoom = coordinator.settings.screenWindowZoom
+        self.screenSource.targetWindowZoom = coordinator.settings.screenWindowZoom
         previewStage.sceneID = coordinator.selectedSceneIDForCurrentLayout()
         self.showsFirstRunOnboarding = ProcessInfo.processInfo.environment["BLITZRECORDER_FORCE_ONBOARDING"] == "1"
             || !UserDefaults.standard.bool(forKey: Self.firstRunOnboardingKey)
-        transcriptionController.onTranscriptionCompleted = { [weak self] completion in
+        transcriptionController.addCompletionHandler(.init(owner: self) { [weak self] completion in
             self?.generateAutomaticProjectTitle(completion)
-        }
+        })
         projectEditedObserver = NotificationCenter.default.addObserver(
             forName: .recordingProjectEdited, object: nil, queue: .main
         ) { [weak self] notification in
@@ -328,7 +288,7 @@ final class RecorderViewModel {
         refreshRecentProjects()
         syncScreenCaptureAreaSelection()
         elapsedClock.onElapsedSecondsChanged = { [weak self] elapsedSeconds in
-            self?.elapsedSeconds = elapsedSeconds
+            self?.session.elapsedSeconds = elapsedSeconds
         }
 
         remoteCameraPreviewSurface.setMessage("Waiting for iPhone preview")
@@ -343,13 +303,13 @@ final class RecorderViewModel {
             self?.selectBackgroundLayer()
         }
         previewStage.onCropToolbarFrameChanged = { [weak self] frame in
-            self?.cropToolbarFrame = frame
+            self?.canvas.cropToolbarFrame = frame
         }
         previewStage.onScreenLayerFrameChanged = { [weak self] frame in
-            self?.screenLayerFrame = frame
+            self?.canvas.screenLayerFrame = frame
         }
         previewStage.onCanvasFrameChanged = { [weak self] frame in
-            self?.previewCanvasFrame = frame
+            self?.canvas.previewCanvasFrame = frame
         }
         previewStage.onSceneLayoutChanged = { [weak self] layout in
             guard let self else { return }
@@ -384,7 +344,7 @@ final class RecorderViewModel {
             self.coordinator.endScreenCropEditing()
             self.settings = self.coordinator.settings
             self.previewStage.screenCrop = self.coordinator.settings.screenCrop
-            self.isScreenCropModeEnabled = false
+            self.canvas.isScreenCropModeEnabled = false
             self.screenCaptureAreaSelection = self.settings.screenCrop == nil ? .fullDisplay : .manualCrop
         }
         previewStage.onScreenCropPanRequested = { [weak self] in

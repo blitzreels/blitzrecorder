@@ -145,16 +145,16 @@ extension AppNavigationTests {
         defer { fixture.cleanup() }
         let vm = fixture.vm
         vm.applyExportProject(URL(fileURLWithPath: fixture.entry.projectPath))
-        vm.exportProgress = 0.6
+        vm.exports.exportProgress = 0.6
         vm.applyState(.recording)
-        XCTAssertEqual(vm.exportProgress, 0.6)
+        XCTAssertEqual(vm.exports.exportProgress, 0.6)
         vm.showProjects()
         vm.applySavedRecordingOutput(.init(url: fixture.directory.appendingPathComponent("export.mp4"),
             sourceDirectory: URL(fileURLWithPath: fixture.entry.takeDirectoryPath), warning: nil))
         vm.applyExportProject(nil)
         XCTAssertEqual(vm.studioMode, .projects)
         XCTAssertEqual(vm.state, .recording)
-        XCTAssertNotNil(vm.lastExportSucceededURL)
+        XCTAssertNotNil(vm.exports.lastExportSucceededURL)
         XCTAssertFalse(vm.isExporting)
         vm.applyState(.idle)
     }

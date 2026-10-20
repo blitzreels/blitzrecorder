@@ -31,9 +31,9 @@ final class EditorPaneProofTests: XCTestCase {
         for (index, tab) in (tabs + [.silence, .silence]).enumerated() {
             let name = index == tabs.count + 1 ? "wide" : index == tabs.count ? "notice" : tab.rawValue.lowercased()
             if !only.isEmpty, !only.contains(name) { continue }
-            if index == tabs.count + 1 { vm.lastExportSucceededURL = nil }
+            if index == tabs.count + 1 { vm.exports.lastExportSucceededURL = nil }
             if index == tabs.count {
-                vm.lastExportSucceededURL = URL(fileURLWithPath: "/Volumes/Exports/Maîtriser l'IA pour le business.mp4")
+                vm.exports.lastExportSucceededURL = URL(fileURLWithPath: "/Volumes/Exports/Maîtriser l'IA pour le business.mp4")
             }
             let host = NSHostingView(rootView: EditorView(vm: vm, loadedProjectID: project.id, inspectorTab: tab)
                 .environmentObject(AppUpdateController()).preferredColorScheme(.dark))
@@ -59,6 +59,6 @@ final class EditorPaneProofTests: XCTestCase {
             window.orderOut(nil)
             window.contentView = nil
         }
-        vm.lastExportSucceededURL = nil
+        vm.exports.lastExportSucceededURL = nil
     }
 }

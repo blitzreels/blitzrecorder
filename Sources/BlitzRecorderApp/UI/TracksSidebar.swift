@@ -385,6 +385,12 @@ private enum SourceRowStatusTone: Equatable {
         .preferredColorScheme(.dark)
 }
 
+#Preview("Sources - Preferred mic missing") {
+    SourcesSidebar(vm: SourcesSidebarPreviewFactory.preferredMicMissing())
+        .frame(height: 780)
+        .padding()
+}
+
 #Preview("Sources - Mic") {
     SourcesSidebar(vm: SourcesSidebarPreviewFactory.micSelected())
         .frame(height: 780)
@@ -423,6 +429,17 @@ private enum SourcesSidebarPreviewFactory {
         return vm
     }
 
+    static func preferredMicMissing() -> RecorderViewModel {
+        var settings = previewSettings
+        settings.enabledSources = [.screen, .camera, .microphone]
+        settings.hiddenSources = [.camera]
+        settings.selectedMicrophoneID = "preview-rodecaster"
+        settings.selectedMicrophoneName = "RODECaster Pro II Chat"
+        let vm = makeViewModel(settings: settings)
+        vm.selectSource(.microphone)
+        return vm
+    }
+
     private static var previewSettings: RecordingSettings {
         var settings = RecordingSettings()
         settings.enabledSources = [.screen, .camera, .microphone, .systemAudio]
@@ -455,12 +472,12 @@ private enum SourcesSidebarPreviewFactory {
         vm.availableMicrophones = [
             SourceOption(id: "preview-mic", name: "Studio Mic")
         ]
-        vm.targetWindowInfo = TargetWindowInfo(
+        vm.screenSource.targetWindowInfo = TargetWindowInfo(
             appName: "Safari",
             windowTitle: "Landing Page",
             frame: CGRect(x: 0, y: 0, width: 1440, height: 900)
         )
-        vm.targetWindowStatus = "Safari - Landing Page"
+        vm.screenSource.targetWindowStatus = "Safari - Landing Page"
         previewLevels.forEach { vm.micLevels.append($0) }
         previewLevels.reversed().forEach { vm.sysLevels.append($0) }
         return vm

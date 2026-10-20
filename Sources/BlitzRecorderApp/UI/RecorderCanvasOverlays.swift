@@ -42,12 +42,12 @@ struct ShortFormSafeZoneOverlay: View {
 
     var body: some View {
         GeometryReader { proxy in
-            if isVisible, vm.settings.layout == .vertical, !vm.previewCanvasFrame.isEmpty {
+            if isVisible, vm.settings.layout == .vertical, !vm.canvas.previewCanvasFrame.isEmpty {
                 let canvas = CGRect(
-                    x: vm.previewCanvasFrame.minX,
-                    y: proxy.size.height - vm.previewCanvasFrame.maxY,
-                    width: vm.previewCanvasFrame.width,
-                    height: vm.previewCanvasFrame.height
+                    x: vm.canvas.previewCanvasFrame.minX,
+                    y: proxy.size.height - vm.canvas.previewCanvasFrame.maxY,
+                    width: vm.canvas.previewCanvasFrame.width,
+                    height: vm.canvas.previewCanvasFrame.height
                 )
                 let insets = ShortFormSafeZone.insets
                 let safe = CGRect(

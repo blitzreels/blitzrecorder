@@ -39,11 +39,8 @@ final class ProjectLibraryHeaderTests: XCTestCase {
                 try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(
                     to: URL(fileURLWithPath: output).appendingPathComponent("header-\(Int(width)).png"))
             }
-            let recognition = VNRecognizeTextRequest()
-            recognition.recognitionLevel = .accurate
-            recognition.recognitionLanguages = ["en-US"]
-            try VNImageRequestHandler(cgImage: image).perform([recognition])
-            let headerLines = (recognition.results ?? []).filter { $0.boundingBox.midY > 0.65 }
+            let headerLines = try RenderedText.observations(.init(image: image, customWords: []))
+                .filter { $0.boundingBox.midY > 0.65 }
                 .compactMap { $0.topCandidates(1).first?.string }
             XCTAssertTrue(headerLines.contains { $0.contains("Loading speech model") },
                 "Header at \(Int(width)) points splits its status: \(headerLines)")

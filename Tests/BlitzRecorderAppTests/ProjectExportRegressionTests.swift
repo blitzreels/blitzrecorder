@@ -190,7 +190,7 @@ extension ProjectExportRegressionTests {
             defer { finished = true }
             return try await Merger.exportFinalVideo(.init(take: take, settings: renderSettings,
                 sceneEvents: scenes, backgroundMusic: nil, destinationURL: destination,
-                progressHandler: { value in vm.exportProgress = value; progressCount += 1 },
+                progressHandler: { value in vm.exports.exportProgress = value; progressCount += 1 },
                 timelineEdits: outputProject.edits))
         }
         defer { export.cancel() }

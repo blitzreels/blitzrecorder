@@ -202,7 +202,7 @@ struct EditorPrivacyInspector: View {
                 minimumLength: 0.5,
                 onChange: { setRange($0) }
             ))
-            Button(role: .destructive) { session.removeSelected() } label: { Label("Delete area", systemImage: "trash") }
+            Button(role: .destructive) { session.removeSelected() } label: { Label("Delete area", systemImage: BlitzSymbols.delete) }
                 .blitzButton(.quiet).controlSize(.small)
         }
     }

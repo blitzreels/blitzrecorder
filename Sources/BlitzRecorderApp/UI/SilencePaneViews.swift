@@ -37,7 +37,7 @@ struct SilenceSummaryCard: View {
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(BlitzUI.accent)
                 Text("Pauses cut").foregroundStyle(BlitzUI.supportingText)
             case .proposed:
-                Image(systemName: "scissors").foregroundStyle(BlitzUI.supportingText)
+                Image(systemName: BlitzSymbols.edit).foregroundStyle(BlitzUI.supportingText)
                 Text(presentation.hasAppliedCuts ? "New settings, not applied yet" : "Preview, not applied yet")
                     .foregroundStyle(BlitzUI.supportingText)
             case .noPauses:
@@ -199,7 +199,7 @@ struct SilenceFooterActions: View {
                 caption("Changes apply right away · ⌘Z to undo")
             } else {
                 Button(action: actions.apply) {
-                    Label(applyTitle, systemImage: "scissors")
+                    Label(applyTitle, systemImage: BlitzSymbols.edit)
                         .frame(maxWidth: .infinity)
                         .contentTransition(.numericText())
                 }

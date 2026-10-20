@@ -108,12 +108,12 @@ private struct ScreenSourceFramingControl: View {
             BlitzInspectorSlider(configuration: .init(
                 title: "Content size",
                 value: Binding(
-                    get: { Double(vm.targetWindowZoom) },
+                    get: { Double(vm.screenSource.targetWindowZoom) },
                     set: { vm.setTargetWindowZoom(CGFloat($0)) }
                 ),
                 range: 0.5...2,
                 step: 0.05,
-                valueLabel: "\(Int((vm.targetWindowZoom * 100).rounded()))%",
+                valueLabel: "\(Int((vm.screenSource.targetWindowZoom * 100).rounded()))%",
                 onEditingChanged: { if !$0 { vm.applyTargetWindowZoom() } },
                 onReset: vm.resetTargetWindowZoom
             ))
@@ -132,7 +132,7 @@ private struct ScreenSourceFramingControl: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .disabled(!enabled || !vm.canEditScene || vm.isScreenCropModeEnabled)
+        .disabled(!enabled || !vm.canEditScene || vm.canvas.isScreenCropModeEnabled)
     }
 }
 

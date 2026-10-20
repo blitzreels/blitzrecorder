@@ -18,11 +18,11 @@ extension RecorderViewModel {
     }
 
     func applyExportProject(_ url: URL?) {
-        activeExportProjectURL = url
+        exports.activeExportProjectURL = url
         if url != nil {
-            exportProgress = 0
-            lastExportError = nil
-            lastExportSucceededURL = nil
+            exports.exportProgress = 0
+            exports.lastExportError = nil
+            exports.lastExportSucceededURL = nil
         }
     }
 
@@ -33,8 +33,8 @@ extension RecorderViewModel {
         syncPreviewInteractionState()
         switch newState {
         case .starting:
-            isEditorExportPresented = false
-            renderProgress = 0
+            exports.isEditorExportPresented = false
+            exports.renderProgress = 0
             detailMessage = RecordingStartCopy.preparing
             lastExportedURL = nil
             lastExportedSourceTakeURL = nil
@@ -46,18 +46,18 @@ extension RecorderViewModel {
             lastRecoveryOutput = nil
         case .recording:
             if previousState == .idle || previousState == .starting || previousState == .finishing {
-                renderProgress = 0
+                exports.renderProgress = 0
             }
         case .paused:
             break
         case .finishing:
-            if previousState != .finishing { finishingStartedAt = Date() }
-            captureStopProgress = nil
-            renderProgress = 0
+            if previousState != .finishing { session.finishingStartedAt = Date() }
+            session.captureStopProgress = nil
+            exports.renderProgress = 0
         case .idle:
-            finishingStartedAt = nil
-            captureStopProgress = nil
-            renderProgress = 0
+            session.finishingStartedAt = nil
+            session.captureStopProgress = nil
+            exports.renderProgress = 0
         }
     }
 
@@ -66,9 +66,9 @@ extension RecorderViewModel {
     }
 
     func applySavedRecordingOutput(_ output: SavedRecordingOutput) {
-        if activeExportProjectURL?.deletingLastPathComponent() == output.sourceDirectory {
-            lastExportError = nil
-            lastExportSucceededURL = output.url
+        if exports.activeExportProjectURL?.deletingLastPathComponent() == output.sourceDirectory {
+            exports.lastExportError = nil
+            exports.lastExportSucceededURL = output.url
             refreshProjectsInBackground()
             if lastExportedSourceTakeURL == output.sourceDirectory {
                 lastExportedURL = output.url
@@ -77,8 +77,8 @@ extension RecorderViewModel {
             return
         }
         let keepsEditorOpen = studioMode == .edit
-        lastExportError = nil
-        lastExportSucceededURL = output.url
+        exports.lastExportError = nil
+        exports.lastExportSucceededURL = output.url
         lastExportedURL = output.url
         lastExportedSourceTakeURL = output.sourceDirectory
         lastExportWarning = output.warning
@@ -118,13 +118,13 @@ extension RecorderViewModel {
     }
 
     func applyRenderProgress(_ progress: Double) {
-        renderProgress = min(1, max(0, progress))
+        exports.renderProgress = min(1, max(0, progress))
     }
 
     func applyExportFailure(_ message: String?) {
-        lastExportError = message
+        exports.lastExportError = message
         if message != nil {
-            lastExportSucceededURL = nil
+            exports.lastExportSucceededURL = nil
         }
     }
 
@@ -140,19 +140,19 @@ extension RecorderViewModel {
         settings = coordinator.settings
         let sceneID = coordinator.selectedSceneIDForCurrentLayout()
         if previewStage.sceneID != sceneID || previewStage.captureLayout != settings.layout {
-            isCameraCropModeEnabled = false
-            isScreenCropModeEnabled = false
+            canvas.isCameraCropModeEnabled = false
+            canvas.isScreenCropModeEnabled = false
             previewStage.cancelCanvasInteraction()
             previewStage.sceneID = sceneID
             coordinator.endScreenCropEditing()
         }
         previewStage.sceneID = sceneID
-        targetWindowZoom = coordinator.settings.screenWindowZoom
+        screenSource.targetWindowZoom = coordinator.settings.screenWindowZoom
         syncScreenCaptureAreaSelection()
         syncSelectedSource()
         syncPreviewInteractionState()
         previewStage.captureLayout = coordinator.settings.layout
-        previewStage.sceneLayout = screenSplitPreviewHeight.map {
+        previewStage.sceneLayout = canvas.screenSplitPreviewHeight.map {
             SceneLayout.screenSplitLayout(screenHeight: CGFloat($0))
         } ?? sideSplitPreviewLayout ?? coordinator.settings.sceneLayout
         previewStage.enabledSources = coordinator.settings.visibleSources
@@ -180,17 +180,21 @@ extension RecorderViewModel {
 
     func refreshTargetWindow() {
         do {
-            targetWindowInfo = try coordinator.targetWindowInfo()
-            targetWindowStatus = ""
+            screenSource.targetWindowInfo = try coordinator.targetWindowInfo()
+            screenSource.targetWindowStatus = ""
         } catch {
-            targetWindowInfo = nil
-            targetWindowStatus = error.localizedDescription
+            screenSource.targetWindowInfo = nil
+            screenSource.targetWindowStatus = error.localizedDescription
         }
     }
 
     func refreshSources() async {
         availableCameras = coordinator.availableCameras()
         availableMicrophones = coordinator.availableMicrophones()
+        if state == .idle, settings.selectedMicrophoneName == nil, let id = settings.selectedMicrophoneID,
+           availableMicrophones.contains(where: { $0.id == id }) {
+            setMicrophone(id)
+        }
         async let displays = coordinator.availableDisplays()
         async let screenSources = coordinator.availableScreenSources()
         availableDisplays = await displays
@@ -205,7 +209,7 @@ extension RecorderViewModel {
     func refreshRemoteCameraState() {
         settings = coordinator.settings
         availableCameras = coordinator.availableCameras()
-        remoteCameraRefreshToken += 1
+        remoteCameraPreview.remoteCameraRefreshToken += 1
     }
 
     func startRemoteCameraDiscovery() {
@@ -268,7 +272,7 @@ extension RecorderViewModel {
     }
 
     var screenSplitHeight: Double {
-        screenSplitPreviewHeight
+        canvas.screenSplitPreviewHeight
             ?? Double(settings.sceneLayout.screenSplitHeight ?? SceneSplitPolicy.inferredHeight(from: settings.sceneLayout) ?? SceneLayout.defaultScreenSplitHeight)
     }
 
@@ -314,7 +318,7 @@ extension RecorderViewModel {
     }
 
     func setScreenSplitHeight(_ height: Double) {
-        screenSplitPreviewHeight = nil
+        canvas.screenSplitPreviewHeight = nil
         coordinator.setScreenSplitHeight(CGFloat(height))
         syncSettingsAfterSceneChange()
     }
@@ -322,14 +326,14 @@ extension RecorderViewModel {
     func previewScreenSplitHeight(_ height: Double) {
         guard canEditScene, showsScreenSplitControl else { return }
         let height = Double(SceneLayout.clampedScreenSplitHeight(CGFloat(height)))
-        screenSplitPreviewHeight = height
+        canvas.screenSplitPreviewHeight = height
         let layout = SceneLayout.screenSplitLayout(screenHeight: CGFloat(height))
         previewStage.sceneLayout = layout
         coordinator.previewSceneLayout(layout)
     }
 
     func commitScreenSplitPreview() {
-        guard let height = screenSplitPreviewHeight else { return }
+        guard let height = canvas.screenSplitPreviewHeight else { return }
         guard canEditScene, showsScreenSplitControl else {
             cancelScreenSplitPreview()
             return
@@ -338,8 +342,8 @@ extension RecorderViewModel {
     }
 
     func cancelScreenSplitPreview() {
-        guard screenSplitPreviewHeight != nil else { return }
-        screenSplitPreviewHeight = nil
+        guard canvas.screenSplitPreviewHeight != nil else { return }
+        canvas.screenSplitPreviewHeight = nil
         previewStage.sceneLayout = coordinator.settings.sceneLayout
         coordinator.previewSceneLayout(coordinator.settings.sceneLayout)
     }
@@ -351,7 +355,7 @@ extension RecorderViewModel {
     }
 
     var sideSplitCameraWidth: Double {
-        sideSplitPreviewWidth ?? Double(settings.sceneLayout.sideBySideCameraWidth
+        canvas.sideSplitPreviewWidth ?? Double(settings.sceneLayout.sideBySideCameraWidth
             ?? SceneLayout.defaultSideBySideCameraWidth(for: settings.layout))
     }
 
@@ -360,12 +364,12 @@ extension RecorderViewModel {
     }
 
     private var sideSplitPreviewLayout: SceneLayout? {
-        guard let width = sideSplitPreviewWidth, let side = coordinator.settings.sceneLayout.cameraSide else { return nil }
+        guard let width = canvas.sideSplitPreviewWidth, let side = coordinator.settings.sceneLayout.cameraSide else { return nil }
         return SceneLayout.sideBySideLayout(.init(cameraWidth: CGFloat(width), cameraSide: side))
     }
 
     func setSideSplitCameraWidth(_ width: Double) {
-        sideSplitPreviewWidth = nil
+        canvas.sideSplitPreviewWidth = nil
         guard let side = settings.sceneLayout.cameraSide else { return }
         coordinator.setSideBySideLayout(.init(cameraWidth: CGFloat(width), cameraSide: side))
         syncSettingsAfterSceneChange()
@@ -383,14 +387,14 @@ extension RecorderViewModel {
 
     func previewSideSplitCameraWidth(_ width: Double) {
         guard canEditScene, showsSideSplitControl else { return }
-        sideSplitPreviewWidth = Double(SceneLayout.clampedSideBySideCameraWidth(CGFloat(width)))
+        canvas.sideSplitPreviewWidth = Double(SceneLayout.clampedSideBySideCameraWidth(CGFloat(width)))
         guard let layout = sideSplitPreviewLayout else { return }
         previewStage.sceneLayout = layout
         coordinator.previewSceneLayout(layout)
     }
 
     func commitSideSplitPreview() {
-        guard let width = sideSplitPreviewWidth else { return }
+        guard let width = canvas.sideSplitPreviewWidth else { return }
         guard canEditScene, showsSideSplitControl else {
             cancelSideSplitPreview()
             return
@@ -399,8 +403,8 @@ extension RecorderViewModel {
     }
 
     func cancelSideSplitPreview() {
-        guard sideSplitPreviewWidth != nil else { return }
-        sideSplitPreviewWidth = nil
+        guard canvas.sideSplitPreviewWidth != nil else { return }
+        canvas.sideSplitPreviewWidth = nil
         previewStage.sceneLayout = coordinator.settings.sceneLayout
         coordinator.previewSceneLayout(coordinator.settings.sceneLayout)
     }
@@ -582,7 +586,7 @@ extension RecorderViewModel {
     func primaryAction() {
         switch state {
         case .idle:
-            if countdownRemaining != nil {
+            if session.countdownRemaining != nil {
                 cancelCountdown()
             } else {
                 requestRecordingStart()
@@ -595,45 +599,56 @@ extension RecorderViewModel {
     }
 
     func requestRecordingStart() {
-        guard state == .idle, countdownRemaining == nil else { return }
+        guard state == .idle, session.countdownRemaining == nil else { return }
         let readiness = coordinator.recordingReadiness()
         guard readiness.isReady else {
             resolveStartBlockers(readiness)
             return
         }
+        if let missing = missingPreferredMicrophone {
+            session.pendingMicrophoneFallback = missing
+            return
+        }
+        beginCountdown()
+    }
+
+    /// Records this take with the current mic; the preferred one stays saved for the next take.
+    func recordWithFallbackMicrophone() {
+        session.pendingMicrophoneFallback = nil
+        guard state == .idle, session.countdownRemaining == nil else { return }
         beginCountdown()
     }
 
     func setCountdownSeconds(_ seconds: Int) {
         RecordingCountdownPreference().setSeconds(seconds)
-        countdownSeconds = RecordingCountdownPreference().seconds
+        session.countdownSeconds = RecordingCountdownPreference().seconds
     }
 
     func cancelCountdown() {
-        countdownTask?.cancel()
-        countdownTask = nil
-        countdownRemaining = nil
+        session.countdownTask?.cancel()
+        session.countdownTask = nil
+        session.countdownRemaining = nil
     }
 
     private func beginCountdown() {
-        guard state == .idle, countdownRemaining == nil, studioMode == .record else { return }
-        countdownTask?.cancel()
+        guard state == .idle, session.countdownRemaining == nil, studioMode == .record else { return }
+        session.countdownTask?.cancel()
         cancelScreenCropMode()
-        if isCameraCropModeEnabled { cancelCameraCropMode() }
-        guard countdownSeconds > 0 else {
+        if canvas.isCameraCropModeEnabled { cancelCameraCropMode() }
+        guard session.countdownSeconds > 0 else {
             coordinator.start(takeTitle: nextTakeTitle())
             return
         }
-        countdownRemaining = countdownSeconds
-        countdownTask = Task { @MainActor [weak self] in
+        session.countdownRemaining = session.countdownSeconds
+        session.countdownTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            for remaining in stride(from: self.countdownSeconds, to: 0, by: -1) {
-                self.countdownRemaining = remaining
+            for remaining in stride(from: self.session.countdownSeconds, to: 0, by: -1) {
+                self.session.countdownRemaining = remaining
                 try? await Task.sleep(for: .seconds(1))
                 if Task.isCancelled { return }
             }
-            self.countdownTask = nil
-            self.countdownRemaining = nil
+            self.session.countdownTask = nil
+            self.session.countdownRemaining = nil
             guard self.state == .idle, self.studioMode == .record,
                   self.coordinator.recordingReadiness().isReady else { return }
             self.coordinator.start(takeTitle: self.nextTakeTitle())
@@ -698,7 +713,7 @@ extension RecorderViewModel {
     }
 
     var formattedElapsed: String {
-        let total = elapsedSeconds
+        let total = session.elapsedSeconds
         let hours = total / 3600
         let minutes = (total % 3600) / 60
         let seconds = total % 60
@@ -709,7 +724,7 @@ extension RecorderViewModel {
     }
 
     var renderProgressLabel: String {
-        "\(Int((renderProgress * 100).rounded()))%"
+        "\(Int((exports.renderProgress * 100).rounded()))%"
     }
 
     var sessionProgressTitle: String {
@@ -720,7 +735,7 @@ extension RecorderViewModel {
             if remoteTransferProgress != nil {
                 return "Downloading iPhone Media"
             }
-            return captureStopProgress?.title ?? finishingMessageTitle ?? "Saving Recording"
+            return session.captureStopProgress?.title ?? finishingMessageTitle ?? "Saving Recording"
         case .recording, .paused:
             return state == .paused ? "Paused" : "Recording"
         case .idle:
@@ -730,9 +745,9 @@ extension RecorderViewModel {
 
     var sessionProgressValue: Double? {
         if state == .finishing, let remoteTransferProgress { return remoteTransferProgress.fraction }
-        if let captureStopProgress { return captureStopProgress.fraction }
+        if let captureStopProgress = session.captureStopProgress { return captureStopProgress.fraction }
         if detailMessage.hasPrefix("Exporting") || detailMessage.hasPrefix("Removing camera background") {
-            return renderProgress
+            return exports.renderProgress
         }
         return nil
     }
@@ -742,7 +757,7 @@ extension RecorderViewModel {
            let remoteTransferProgress {
             return "\(Int((remoteTransferProgress.fraction * 100).rounded()))%"
         }
-        if let captureStopProgress { return captureStopProgress.label }
+        if let captureStopProgress = session.captureStopProgress { return captureStopProgress.label }
         return sessionProgressValue == nil ? "" : renderProgressLabel
     }
 
@@ -754,7 +769,7 @@ extension RecorderViewModel {
         if let remoteTransferProgress {
             return byteProgressLabel(remoteTransferProgress)
         }
-        if let captureStopProgress { return captureStopProgress.detail }
+        if let captureStopProgress = session.captureStopProgress { return captureStopProgress.detail }
         return "Your recording is being saved. Keep BlitzRecorder open."
     }
 

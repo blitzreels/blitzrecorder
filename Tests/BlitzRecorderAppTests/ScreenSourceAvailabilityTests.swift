@@ -26,7 +26,7 @@ final class ScreenSourceAvailabilityTests: XCTestCase {
         defer { vm.prepareForWindowClose() }
         vm.settings.enabledSources = [.screen]
         vm.settings.screenSourceBinding = source()
-        vm.unavailableScreenSource = source()
+        vm.screenSource.unavailableScreenSource = source()
         vm.state = .recording
         let notice = try XCTUnwrap(vm.sourceReadinessNotice(.screen))
         XCTAssertEqual(notice.title, "Window unavailable")

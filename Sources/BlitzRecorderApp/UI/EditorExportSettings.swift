@@ -6,7 +6,7 @@ enum EditorExportDestination: String, CaseIterable {
     case link
 
     var title: String { self == .file ? "Save to Mac" : "Share link" }
-    var systemImage: String { self == .file ? "square.and.arrow.down" : "link" }
+    var systemImage: String { self == .file ? BlitzSymbols.saveToMac : BlitzSymbols.share }
 
     func layouts(_ request: EditorExportLayouts.Request) -> [CaptureLayout] {
         EditorExportLayouts.resolve(.init(current: request.current, additional: self == .link ? [] : request.additional))
@@ -96,7 +96,7 @@ struct EditorExportSettings: View {
     private var action: some View {
         VStack(spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: "folder")
+                Image(systemName: BlitzSymbols.folder)
                     .foregroundStyle(BlitzUI.secondaryText)
                 Text(configuration.directory.lastPathComponent)
                     .font(BlitzType.body)
@@ -113,7 +113,7 @@ struct EditorExportSettings: View {
             }
             EditorOutputPrimaryButton(configuration: .init(
                 title: "\(layouts.count > 1 ? "Export \(layouts.count) videos" : "Export video") · \(configuration.estimatedSize)",
-                systemImage: "square.and.arrow.down",
+                systemImage: BlitzSymbols.saveToMac,
                 isEnabled: configuration.canExport,
                 help: configuration.encodingDetail,
                 action: configuration.export

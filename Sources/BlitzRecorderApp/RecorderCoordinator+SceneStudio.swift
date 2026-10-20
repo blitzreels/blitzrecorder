@@ -86,6 +86,7 @@ extension RecorderCoordinator {
 
     func setRecorderUIIncluded(_ included: Bool) {
         studio.setRecorderUIIncluded(included)
+        recorderUISharing.update(includesRecorderUI: settings.includesRecorderUI)
     }
 
     func setCursorIncluded(_ included: Bool) {

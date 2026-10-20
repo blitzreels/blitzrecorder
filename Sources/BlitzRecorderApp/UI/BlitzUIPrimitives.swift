@@ -12,6 +12,21 @@ enum BlitzSymbols {
     static let pictureInPicture = "pip"
     static let source = "macwindow"
     static let videoQuality = "play.rectangle"
+
+    // One icon per action, on buttons, inline actions and menus alike. Scripts/check-design-system.sh rejects
+    // these names written as literals anywhere else.
+    static let edit = "scissors"
+    static let export = "square.and.arrow.up"
+    static let saveToMac = "square.and.arrow.down"
+    static let share = "link"
+    static let copyLink = "doc.on.doc"
+    static let openLink = "safari"
+    static let rename = "square.and.pencil"
+    static let delete = "trash"
+    static let folder = "folder"
+    static let library = "film.stack"
+    static let recorderHidden = "eye.slash"
+    static let recorderShown = "eye"
 }
 
 enum BlitzType {

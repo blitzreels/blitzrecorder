@@ -39,6 +39,7 @@ extension RecorderCaptureRuntime {
                 try await takeRecording.switchMicrophone(to: device.uniqueID)
                 guard state == .recording || state == .paused else { return }
                 settings.selectedMicrophoneID = id
+                settings.selectedMicrophoneName = MicrophoneDeviceSelection.preferredName(id: id)
                 activeMicrophoneDeviceID = device.uniqueID
                 persistSettings()
                 onMessage?("Microphone switched to \(device.localizedName). Recording continues.")
@@ -148,6 +149,7 @@ extension RecorderCaptureRuntime {
         if actions.refreshAudio {
             refreshAudioLevelMonitoring()
         }
+        returnToPreferredMicrophone(device)
         if actions.notifyCamera {
             onCameraConfigurationChanged?()
         }
@@ -189,11 +191,30 @@ extension RecorderCaptureRuntime {
                 try await takeRecording.switchMicrophone(to: fallback.uniqueID)
                 guard state == .recording || state == .paused else { return }
                 activeMicrophoneDeviceID = fallback.uniqueID
-                settings.selectedMicrophoneID = nil
-                persistSettings()
                 onMessage?(RecordingStopCopy.microphoneSwitched(fallback.localizedName))
             } catch {
                 handleActiveCaptureFailure(ActiveCaptureFailure(source: .microphone, error: error))
+            }
+        }
+    }
+
+    /// Switches a running take back to the preferred microphone when it is plugged in again.
+    func returnToPreferredMicrophone(_ device: AVCaptureDevice) {
+        guard state == .recording || state == .paused,
+              settings.enabledSources.contains(.microphone),
+              device.uniqueID == settings.selectedMicrophoneID,
+              activeMicrophoneDeviceID != device.uniqueID else { return }
+        Task {
+            do {
+                try await takeRecording.switchMicrophone(to: device.uniqueID)
+                guard state == .recording || state == .paused else { return }
+                activeMicrophoneDeviceID = device.uniqueID
+                onMessage?(RecordingStopCopy.microphoneReturned(device.localizedName))
+            } catch {
+                onMessage?(
+                    "\(device.localizedName) is back, but switching to it failed. Recording continues with the current microphone: "
+                        + error.recorderFailureDescription
+                )
             }
         }
     }

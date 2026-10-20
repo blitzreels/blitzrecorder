@@ -246,7 +246,22 @@ final class LocalTranscriptionController {
     private(set) var speakerFixDetails: [String: String] = [:]
     private(set) var jobStartedAt: [String: Date] = [:]
     @ObservationIgnored private var jobIDs: [String: UUID] = [:]
-    @ObservationIgnored var onTranscriptionCompleted: ((CompletedTranscription) -> Void)?
+    struct CompletionHandler {
+        weak var owner: AnyObject?
+        let handle: (CompletedTranscription) -> Void
+    }
+
+    /// Every window registers; a completion goes to the first one still open, so it is handled exactly once.
+    @ObservationIgnored private var completionHandlers: [CompletionHandler] = []
+
+    func addCompletionHandler(_ handler: CompletionHandler) {
+        completionHandlers.append(handler)
+    }
+
+    func deliverCompletion(_ completion: CompletedTranscription) {
+        completionHandlers.removeAll { $0.owner == nil }
+        completionHandlers.first?.handle(completion)
+    }
     var isAutomaticEnabled: Bool {
         didSet {
             defaults.set(isAutomaticEnabled, forKey: Self.automaticKey)
@@ -550,10 +565,7 @@ final class LocalTranscriptionController {
                     )
                 )
                 await markReady(source)
-                onTranscriptionCompleted?(CompletedTranscription(
-                    source: source,
-                    transcript: transcript
-                ))
+                deliverCompletion(CompletedTranscription(source: source, transcript: transcript))
             } catch {
                 jobStatuses[source.key] = .failed(error.localizedDescription)
             }

@@ -88,7 +88,7 @@ struct AccountsSettingsPage: View {
                         Button {
                             vm.projectLibraryNavigation.section = .shared
                             vm.showProjects()
-                        } label: { Label("Open", systemImage: "film.stack") }
+                        } label: { Label("Open", systemImage: BlitzSymbols.library) }
                         .blitzButton(.secondary)
                     }
                     .settingsRow()
@@ -199,7 +199,7 @@ struct AccountsSettingsPage: View {
                         Button(action: reels.connect) {
                             HStack(spacing: 6) {
                                 if reels.isWorking { ProgressView().controlSize(.small) }
-                                else { Image(systemName: "link") }
+                                else { Image(systemName: BlitzSymbols.share) }
                                 Text(reels.connection.hasCredential ? "Reconnect" : "Connect")
                             }
                         }

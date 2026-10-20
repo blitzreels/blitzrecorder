@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
     private var terminationTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        coordinator.recorderUISharing.start(includesRecorderUI: coordinator.settings.includesRecorderUI)
         launchIfNeeded()
     }
 
@@ -107,8 +108,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
             self?.windowController?.updateCaptureStopProgress(progress)
         }
         coordinator.onExportProgress = { [weak self] progress in
-            self?.windowController?.viewModel.exportProgress = min(1, max(0, progress))
-            self?.editorWindowController?.viewModel.exportProgress = min(1, max(0, progress))
+            self?.windowController?.viewModel.exports.exportProgress = min(1, max(0, progress))
+            self?.editorWindowController?.viewModel.exports.exportProgress = min(1, max(0, progress))
         }
         coordinator.onExportProjectChanged = { [weak self] projectURL in
             self?.windowController?.viewModel.applyExportProject(projectURL)

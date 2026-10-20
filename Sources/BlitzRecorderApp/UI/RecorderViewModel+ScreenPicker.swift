@@ -10,17 +10,17 @@ extension RecorderViewModel {
 extension RecorderViewModel {
     func refreshScreenSuggestion() {
         guard state == .recording, settings.enabledSources.contains(.screen) else {
-            suggestedScreenSource = nil
-            dismissedScreenSuggestion = nil
-            pendingFollowKey = nil
-            autoSwitchNoticeTask?.cancel()
-            autoSwitchNotice = nil
+            screenSource.suggestedScreenSource = nil
+            screenSource.dismissedScreenSuggestion = nil
+            screenSource.pendingFollowKey = nil
+            screenSource.autoSwitchNoticeTask?.cancel()
+            screenSource.autoSwitchNotice = nil
             return
         }
         guard !coordinator.isSwitchingScreenSource else { return }
         guard let app = NSWorkspace.shared.frontmostApplication,
             app.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
-            pendingFollowKey = nil
+            screenSource.pendingFollowKey = nil
             return
         }
         let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
@@ -41,57 +41,57 @@ extension RecorderViewModel {
 
     func updateScreenSuggestion(_ candidate: ScreenSourceBinding?) {
         guard let candidate else {
-            suggestedScreenSource = nil
-            dismissedScreenSuggestion = nil
-            pendingFollowKey = nil
+            screenSource.suggestedScreenSource = nil
+            screenSource.dismissedScreenSuggestion = nil
+            screenSource.pendingFollowKey = nil
             return
         }
         guard RecordingSourceSuggestion.shouldSuggest(.init(current: settings.screenSourceBinding,
             candidate: candidate, ownProcessID: ProcessInfo.processInfo.processIdentifier)) else {
-            suggestedScreenSource = nil
-            dismissedScreenSuggestion = nil
-            pendingFollowKey = nil
+            screenSource.suggestedScreenSource = nil
+            screenSource.dismissedScreenSuggestion = nil
+            screenSource.pendingFollowKey = nil
             return
         }
         let key = candidate.id
-        if suggestedScreenSource?.id != key { suggestedScreenSource = nil }
-        if dismissedScreenSuggestion != key { dismissedScreenSuggestion = nil }
-        guard pendingFollowKey == key else {
-            pendingFollowKey = key
+        if screenSource.suggestedScreenSource?.id != key { screenSource.suggestedScreenSource = nil }
+        if screenSource.dismissedScreenSuggestion != key { screenSource.dismissedScreenSuggestion = nil }
+        guard screenSource.pendingFollowKey == key else {
+            screenSource.pendingFollowKey = key
             return
         }
         guard followsActiveWindow else {
-            suggestedScreenSource = dismissedScreenSuggestion == key ? nil : candidate
+            screenSource.suggestedScreenSource = screenSource.dismissedScreenSuggestion == key ? nil : candidate
             return
         }
-        suggestedScreenSource = nil
-        pendingFollowKey = nil
+        screenSource.suggestedScreenSource = nil
+        screenSource.pendingFollowKey = nil
         setScreenSource(candidate)
         showAutoSwitchNotice(candidate)
     }
 
     private func showAutoSwitchNotice(_ source: ScreenSourceBinding) {
-        autoSwitchNotice = source
-        autoSwitchNoticeTask?.cancel()
-        autoSwitchNoticeTask = Task { [weak self] in
+        screenSource.autoSwitchNotice = source
+        screenSource.autoSwitchNoticeTask?.cancel()
+        screenSource.autoSwitchNoticeTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(3))
             guard !Task.isCancelled else { return }
-            self?.autoSwitchNotice = nil
+            self?.screenSource.autoSwitchNotice = nil
         }
     }
 
     func acceptScreenSuggestion() {
-        guard let source = suggestedScreenSource, state == .recording,
+        guard let source = screenSource.suggestedScreenSource, state == .recording,
             !coordinator.isSwitchingScreenSource else { return }
-        suggestedScreenSource = nil
-        dismissedScreenSuggestion = nil
-        pendingFollowKey = nil
+        screenSource.suggestedScreenSource = nil
+        screenSource.dismissedScreenSuggestion = nil
+        screenSource.pendingFollowKey = nil
         setScreenSource(source)
     }
 
     func dismissScreenSuggestion() {
-        guard let source = suggestedScreenSource else { return }
-        dismissedScreenSuggestion = source.id
-        suggestedScreenSource = nil
+        guard let source = screenSource.suggestedScreenSource else { return }
+        screenSource.dismissedScreenSuggestion = source.id
+        screenSource.suggestedScreenSource = nil
     }
 }

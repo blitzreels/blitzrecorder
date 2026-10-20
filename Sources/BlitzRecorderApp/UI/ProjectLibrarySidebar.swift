@@ -190,20 +190,20 @@ extension ProjectLibraryView {
         guard !projects.isEmpty, !vm.projectTrash.isWorking else { return [] }
         var entries: [BlitzMenuEntry] = []
         if projects.count == 1, let project = projects.first {
-            entries.append(.item(.init(title: "Edit Recording", systemImage: "scissors",
+            entries.append(.item(.init(title: "Edit Recording", systemImage: BlitzSymbols.edit,
                                        isEnabled: vm.canOpenProjectEditor, action: { vm.openProject(project) })))
-            entries.append(.item(.init(title: "Rename…", systemImage: "square.and.pencil", action: { beginRename(project) })))
+            entries.append(.item(.init(title: "Rename…", systemImage: BlitzSymbols.rename, action: { beginRename(project) })))
             if let url = sharing.sharedURL(forProject: project.projectPath) {
-                entries.append(.item(.init(title: "Copy Watch Link", systemImage: "link",
+                entries.append(.item(.init(title: "Copy Watch Link", systemImage: BlitzSymbols.share,
                                            action: { BlitzClipboard.copyInBackground(url.absoluteString) })))
             }
             entries.append(.divider)
         }
         entries.append(.item(.init(title: projects.count == 1 ? "Show in Finder" : "Show \(projects.count) in Finder",
-                                   systemImage: "folder", action: { vm.revealProjects(projects) })))
+                                   systemImage: BlitzSymbols.folder, action: { vm.revealProjects(projects) })))
         entries.append(.section("Move to folder"))
         for node in vm.folderTree.flatMap(\.flattened) {
-            entries.append(.item(.init(title: node.path.displayPath, systemImage: "folder", action: {
+            entries.append(.item(.init(title: node.path.displayPath, systemImage: BlitzSymbols.folder, action: {
                 vm.moveIntoFolder(.init(projects: projects, destination: vm.folderDestination(node), path: node.path))
             })))
         }
@@ -215,7 +215,7 @@ extension ProjectLibraryView {
         }
         entries.append(.divider)
         entries.append(.item(.init(title: projects.count == 1 ? "Move to Trash" : "Move \(projects.count) to Trash",
-                                   systemImage: "trash", isDestructive: true, action: { queueDeletion(projects) })))
+                                   systemImage: BlitzSymbols.delete, isDestructive: true, action: { queueDeletion(projects) })))
         return entries
     }
 }
@@ -289,7 +289,7 @@ struct ProjectLibrarySidebarRow: View {
                     Text(configuration.detail).lineLimit(1)
                     Spacer(minLength: 0)
                     if configuration.isShared {
-                        Image(systemName: "link")
+                        Image(systemName: BlitzSymbols.share)
                             .font(BlitzType.symbol(10))
                             .accessibilityLabel("Shared")
                             .help("Has a watch link")

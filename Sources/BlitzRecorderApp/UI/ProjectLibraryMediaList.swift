@@ -26,7 +26,7 @@ extension ProjectLibraryView {
                 Button {
                     vm.revealProject(project)
                 } label: {
-                    Label("Show in Finder", systemImage: "folder")
+                    Label("Show in Finder", systemImage: BlitzSymbols.folder)
                 }
                 .blitzButton(.secondary)
                 .controlSize(.small)

@@ -18,7 +18,7 @@ extension RecorderViewModel {
     }
 
     func nextTakeTitle() -> String? {
-        folderRecordTarget.map { target in
+        libraryActions.folderRecordTarget.map { target in
             ProjectFolderMoves.nextTitle(.init(target: target, index: projectFolderIndex, library: recentProjects)).formatted
         }
     }
@@ -40,7 +40,7 @@ extension RecorderViewModel {
         } else {
             ProjectFolderStore.shared.pin(target.path)
         }
-        folderRecordTarget = target
+        libraryActions.folderRecordTarget = target
         showRecorder()
     }
 
@@ -51,19 +51,19 @@ extension RecorderViewModel {
     func moveProjects(_ request: ProjectFolderMoveRequest) {
         if let rename = request.folderRename {
             ProjectFolderStore.shared.rename(rename)
-            if let target = folderRecordTarget, target.path.hasPrefix(rename.from) {
-                folderRecordTarget = .init(path: target.path.replacingPrefix(rename), module: target.module)
+            if let target = libraryActions.folderRecordTarget, target.path.hasPrefix(rename.from) {
+                libraryActions.folderRecordTarget = .init(path: target.path.replacingPrefix(rename), module: target.module)
             }
         }
         let previous = applyProjectTitles(request.titles)
         guard !previous.isEmpty || request.folderRename != nil else { return }
-        folderMoveUndo = .init(message: request.message, previousTitles: previous,
+        libraryActions.folderMoveUndo = .init(message: request.message, previousTitles: previous,
                                folderRename: request.folderRename.map { .init(from: $0.to, to: $0.from) })
     }
 
     func undoFolderMove() {
-        guard let undo = folderMoveUndo else { return }
-        folderMoveUndo = nil
+        guard let undo = libraryActions.folderMoveUndo else { return }
+        libraryActions.folderMoveUndo = nil
         if let rename = undo.folderRename { ProjectFolderStore.shared.rename(rename) }
         applyProjectTitles(undo.previousTitles)
     }
@@ -92,15 +92,15 @@ extension RecorderViewModel {
     }
 
     func exportFolder(_ projects: [RecordingProjectHistory.Entry]) {
-        guard !projects.isEmpty, !isExporting, folderExportStatus == nil, state == .idle else { return }
+        guard !projects.isEmpty, !isExporting, libraryActions.folderExportStatus == nil, state == .idle else { return }
         let service = MCPProjectService(coordinator: coordinator)
         let outputDirectory = settings.outputDirectory
-        folderExportStatus = "Exporting 1 of \(projects.count)…"
+        libraryActions.folderExportStatus = "Exporting 1 of \(projects.count)…"
         Task {
             var exported: [URL] = []
             var failures: [String] = []
             for (index, entry) in projects.enumerated() {
-                folderExportStatus = "Exporting \(index + 1) of \(projects.count) · \(entry.displayTitle)"
+                libraryActions.folderExportStatus = "Exporting \(index + 1) of \(projects.count) · \(entry.displayTitle)"
                 do {
                     let project = try TakeFileStore().loadRecordingProject(at: URL(fileURLWithPath: entry.projectPath))
                     let request = try service.makeExportRequest(.init(project: project, outputDirectory: outputDirectory))
@@ -109,7 +109,7 @@ extension RecorderViewModel {
                     failures.append("\(entry.displayTitle): \(error.localizedDescription)")
                 }
             }
-            folderExportStatus = nil
+            libraryActions.folderExportStatus = nil
             refreshRecentProjects()
             if !failures.isEmpty { projectLibraryError = "Some recordings did not export:\n" + failures.joined(separator: "\n") }
             if !exported.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(exported) }

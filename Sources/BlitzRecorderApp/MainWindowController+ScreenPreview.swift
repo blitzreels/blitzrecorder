@@ -31,7 +31,7 @@ extension MainWindowController {
             framesPerSecond: settings.framesPerSecond,
             includeCursor: settings.includeCursor,
             includesRecorderUI: settings.includesRecorderUI,
-            isEditingCrop: viewModel.isScreenCropModeEnabled
+            isEditingCrop: viewModel.canvas.isScreenCropModeEnabled
         )
     }
 

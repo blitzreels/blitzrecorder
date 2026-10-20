@@ -64,7 +64,7 @@ struct RecordButton: View {
     @ViewBuilder
     private var recordGlyph: some View {
         switch vm.state {
-        case .idle where vm.countdownRemaining != nil:
+        case .idle where vm.session.countdownRemaining != nil:
             Image(systemName: "xmark")
                 .font(BlitzType.glyph(13))
                 .foregroundStyle(.white)
@@ -96,7 +96,7 @@ struct RecordButton: View {
 
     private var actionTitle: String {
         switch vm.state {
-        case .idle: return vm.countdownRemaining == nil ? "Record" : "Cancel"
+        case .idle: return vm.session.countdownRemaining == nil ? "Record" : "Cancel"
         case .recording, .paused: return "Stop"
         case .starting: return "Starting"
         case .finishing: return "Saving"

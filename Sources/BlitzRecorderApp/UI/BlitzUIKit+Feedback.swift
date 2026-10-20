@@ -59,11 +59,11 @@ struct BlitzUIKitLoading: View {
                                                              placement: .dock, action: {}))
                 }
                 BlitzUIKitSpecimen(label: "ProjectLibraryActionButton · primary · loading") {
-                    ProjectLibraryActionButton(configuration: .init(title: "Edit recording", systemImage: "scissors",
+                    ProjectLibraryActionButton(configuration: .init(title: "Edit recording", systemImage: BlitzSymbols.edit,
                                                                     tone: .primary, isLoading: true, action: {}))
                 }
                 BlitzUIKitSpecimen(label: "ProjectLibraryActionButton · secondary") {
-                    ProjectLibraryActionButton(configuration: .init(title: "Copy AI context", systemImage: "doc.on.doc",
+                    ProjectLibraryActionButton(configuration: .init(title: "Copy AI context", systemImage: BlitzSymbols.copyLink,
                                                                     tone: .secondary, isLoading: false, action: {}))
                 }
             }

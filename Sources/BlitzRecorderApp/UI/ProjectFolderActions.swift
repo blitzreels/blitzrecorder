@@ -31,8 +31,8 @@ extension RecorderViewModel {
     }
 
     func presentFolderPrompt(_ prompt: ProjectFolderPrompt) {
-        if case .rename(let path) = prompt { folderNameDraft = path.name } else { folderNameDraft = "" }
-        folderPrompt = prompt
+        if case .rename(let path) = prompt { libraryActions.folderNameDraft = path.name } else { libraryActions.folderNameDraft = "" }
+        libraryActions.folderPrompt = prompt
     }
 
     func addModule(_ node: ProjectFolderTree.Node) {
@@ -64,7 +64,7 @@ extension RecorderViewModel {
     }
 
     private func clearFolderReferences(inside path: ProjectFolderPath) {
-        if folderRecordTarget?.path.hasPrefix(path) == true { folderRecordTarget = nil }
+        if libraryActions.folderRecordTarget?.path.hasPrefix(path) == true { libraryActions.folderRecordTarget = nil }
         if projectLibraryNavigation.folderScope?.path.hasPrefix(path) == true { projectLibraryNavigation.folderScope = nil }
     }
 
@@ -117,8 +117,8 @@ extension RecorderViewModel {
     }
 
     func commitFolderPrompt(_ prompt: ProjectFolderPrompt) {
-        let name = folderNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        folderPrompt = nil
+        let name = libraryActions.folderNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        libraryActions.folderPrompt = nil
         guard ProjectFolderPath.isValidName(name) else { return }
         switch prompt {
         case .create(let parent, let moving):
@@ -160,15 +160,15 @@ struct ProjectFolderMenu: View {
         } else {
             Button("Number as Lessons", systemImage: "list.number") { vm.numberAsLessons(node) }
         }
-        Button("Rename Folder…", systemImage: "square.and.pencil") { vm.presentFolderPrompt(.rename(node.path)) }
+        Button("Rename Folder…", systemImage: BlitzSymbols.rename) { vm.presentFolderPrompt(.rename(node.path)) }
         Divider()
-        Button("Export All", systemImage: "square.and.arrow.up") { vm.exportFolder(node.allProjects) }
-            .disabled(node.allProjects.isEmpty || vm.isExporting || vm.folderExportStatus != nil || vm.state != .idle)
-        Button("Show in Finder", systemImage: "folder") { vm.revealProjects(node.allProjects) }
+        Button("Export All", systemImage: BlitzSymbols.export) { vm.exportFolder(node.allProjects) }
+            .disabled(node.allProjects.isEmpty || vm.isExporting || vm.libraryActions.folderExportStatus != nil || vm.state != .idle)
+        Button("Show in Finder", systemImage: BlitzSymbols.folder) { vm.revealProjects(node.allProjects) }
             .disabled(node.allProjects.isEmpty)
         Divider()
         if node.allProjects.isEmpty {
-            Button("Delete Folder", systemImage: "trash", role: .destructive) { vm.deleteFolder(node) }
+            Button("Delete Folder", systemImage: BlitzSymbols.delete, role: .destructive) { vm.deleteFolder(node) }
         } else {
             Button("Ungroup", systemImage: "folder.badge.minus") { vm.ungroupFolder(node) }
         }

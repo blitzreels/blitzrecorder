@@ -49,9 +49,9 @@ final class RecorderStudioProofTests: XCTestCase {
         vm.selectSource(.camera)
         try await snap("studio-vertical-safe-zones")
         UserDefaults.standard.set(safeZones, forKey: ShortFormSafeZone.preferenceKey)
-        vm.countdownRemaining = 3
+        vm.session.countdownRemaining = 3
         try await snap("studio-countdown")
-        vm.countdownRemaining = nil
+        vm.session.countdownRemaining = nil
         vm.setScenePreset(.cameraInset)
         try await snap("studio-vertical-inset-camera")
         vm.setCameraInsetShape(.circle)
@@ -63,5 +63,18 @@ final class RecorderStudioProofTests: XCTestCase {
         try await snap("studio-landscape-min")
         window.setContentSize(CGSize(width: 1200, height: 785))
         try await snap("studio-landscape-1200")
+        vm.settings.enabledSources.insert(.microphone)
+        vm.settings.selectedMicrophoneID = "proof-rodecaster"
+        vm.settings.selectedMicrophoneName = "RODECaster Pro II Chat"
+        vm.availableMicrophones = [SourceOption(id: "proof-c920", name: "HD Pro Webcam C920")]
+        vm.selectSource(.microphone)
+        try await snap("studio-preferred-mic-missing")
+        let synthetic = try await SyntheticTake()
+        _ = try TakeFileStore().renameProject(.init(projectURL: synthetic.take.projectURL,
+            title: "Réunion validation attentes communautaire", settings: synthetic.settings))
+        vm.lastExportedSourceTakeURL = synthetic.take.scratchDirectory
+        vm.lastExportedProject = try TakeFileStore().loadRecordingProject(at: synthetic.take.projectURL)
+        vm.recentProjects = TakeFileStore().loadProjectHistory(settings: synthetic.settings).entries
+        try await snap("studio-recording-saved")
     }
 }

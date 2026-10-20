@@ -65,7 +65,7 @@ final class RecorderViewModelWindowFitTests: XCTestCase {
 
         viewModel.setTargetWindowZoom(2)
 
-        XCTAssertEqual(viewModel.targetWindowZoom, 2)
+        XCTAssertEqual(viewModel.screenSource.targetWindowZoom, 2)
         XCTAssertEqual(
             RecordingSettingsStore.load(defaults: defaults).screenWindowZoom,
             2
@@ -132,7 +132,7 @@ final class RecorderViewModelWindowFitTests: XCTestCase {
 
         viewModel.setTargetWindowZoom(0.5)
 
-        XCTAssertEqual(viewModel.targetWindowZoom, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(viewModel.screenSource.targetWindowZoom, 0.5, accuracy: 0.0001)
         XCTAssertTrue(viewModel.hasScheduledTargetWindowFit)
     }
 
@@ -198,12 +198,12 @@ final class RecorderViewModelWindowFitTests: XCTestCase {
                     vm.setTargetWindowZoom(zoom)
                     XCTAssertEqual(vm.settings.sceneLayout, original, "\(layout), \(state), \(zoom)")
                     XCTAssertEqual(vm.previewStage.sceneLayout, original)
-                    XCTAssertEqual(vm.targetWindowZoom, zoom, accuracy: 0.0001)
+                    XCTAssertEqual(vm.screenSource.targetWindowZoom, zoom, accuracy: 0.0001)
                     XCTAssertNil(vm.settings.screenCrop)
                     XCTAssertEqual(vm.settings.screenContentMode, .fit)
                     let actual = TargetWindowFitting.plan(screenFrame: display, visibleFrame: display,
                         captureLayout: layout, sceneLayout: vm.settings.sceneLayout,
-                        enabledSources: vm.settings.visibleSources, zoom: vm.targetWindowZoom)
+                        enabledSources: vm.settings.visibleSources, zoom: vm.screenSource.targetWindowZoom)
                     let expected = TargetWindowFitting.plan(screenFrame: display, visibleFrame: display,
                         captureLayout: layout, sceneLayout: original,
                         enabledSources: vm.settings.visibleSources, zoom: zoom)
@@ -214,7 +214,7 @@ final class RecorderViewModelWindowFitTests: XCTestCase {
             }
             vm.applyState(.finishing)
             vm.setTargetWindowZoom(1.7)
-            XCTAssertEqual(vm.targetWindowZoom, 1)
+            XCTAssertEqual(vm.screenSource.targetWindowZoom, 1)
             XCTAssertEqual(vm.settings.sceneLayout, original)
         }
     }
@@ -233,7 +233,7 @@ final class RecorderViewModelWindowFitTests: XCTestCase {
         XCTAssertEqual(vm.settings.sceneLayout, original.sceneLayout)
         XCTAssertEqual(vm.settings.screenCrop, original.screenCrop)
         XCTAssertEqual(vm.settings.screenContentMode, original.screenContentMode)
-        XCTAssertEqual(vm.targetWindowZoom, 2)
+        XCTAssertEqual(vm.screenSource.targetWindowZoom, 2)
         XCTAssertEqual(RecordingSettingsStore.load(defaults: defaults).screenWindowZoom, 2)
         XCTAssertFalse(vm.hasScheduledTargetWindowFit)
     }
@@ -251,17 +251,17 @@ final class RecorderViewModelWindowFitTests: XCTestCase {
         let vm = RecorderViewModel(coordinator: coordinator, previewStage: PreviewStageView())
         defer { vm.prepareForWindowClose() }
         vm.setTargetWindowZoom(0.7)
-        let scheduledContext = vm.pendingTargetWindowFitContext
+        let scheduledContext = vm.screenSource.pendingTargetWindowFitContext
         for zoom: CGFloat in [0.8, 0.9, 1.1] { vm.setTargetWindowZoom(zoom) }
-        XCTAssertEqual(vm.pendingTargetWindowFitContext, scheduledContext)
+        XCTAssertEqual(vm.screenSource.pendingTargetWindowFitContext, scheduledContext)
         coordinator.settings.sceneLayout.screenFrame.size.height = 0.45
         vm.syncSettings()
-        for _ in 0..<40 where vm.hasScheduledTargetWindowFit || vm.pendingTargetWindowFitContext != nil {
+        for _ in 0..<40 where vm.hasScheduledTargetWindowFit || vm.screenSource.pendingTargetWindowFitContext != nil {
             try await Task.sleep(for: .milliseconds(50))
         }
         XCTAssertFalse(vm.hasScheduledTargetWindowFit)
-        XCTAssertNil(vm.pendingTargetWindowFitContext)
-        XCTAssertEqual(vm.targetWindowZoom, 1.1, accuracy: 0.0001)
+        XCTAssertNil(vm.screenSource.pendingTargetWindowFitContext)
+        XCTAssertEqual(vm.screenSource.targetWindowZoom, 1.1, accuracy: 0.0001)
     }
 
 }

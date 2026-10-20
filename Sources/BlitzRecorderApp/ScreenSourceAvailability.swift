@@ -47,7 +47,7 @@ struct ScreenSourceWindowPresence {
 
 extension RecorderViewModel {
     var unavailableScreenSourceNotice: SourceReadinessNotice? {
-        guard isSourceConfigured(.screen), let missing = unavailableScreenSource,
+        guard isSourceConfigured(.screen), let missing = screenSource.unavailableScreenSource,
               missing.runtimeID == settings.screenSourceBinding?.runtimeID else { return nil }
         let name = switch missing.kind {
         case .window: "Window"
@@ -61,8 +61,8 @@ extension RecorderViewModel {
 
     func refreshScreenSourceAvailability() {
         guard isSourceConfigured(.screen), let binding = settings.screenSourceBinding else {
-            screenSourceAvailabilityTracker = ScreenSourceAvailabilityTracker()
-            unavailableScreenSource = nil
+            screenSource.screenSourceAvailabilityTracker = ScreenSourceAvailabilityTracker()
+            screenSource.unavailableScreenSource = nil
             return
         }
         let isPresent: Bool
@@ -74,13 +74,13 @@ extension RecorderViewModel {
             isPresent = ScreenWindowFit.processID(forApplicationBinding: binding) != nil
         case .display:
             guard let displayID = binding.displayID.flatMap(UInt32.init) else {
-                screenSourceAvailabilityTracker = ScreenSourceAvailabilityTracker()
-                unavailableScreenSource = nil
+                screenSource.screenSourceAvailabilityTracker = ScreenSourceAvailabilityTracker()
+                screenSource.unavailableScreenSource = nil
                 return
             }
             isPresent = CGDisplayIsOnline(displayID) != 0
         }
-        unavailableScreenSource = screenSourceAvailabilityTracker.unavailableSource(.init(
+        screenSource.unavailableScreenSource = screenSource.screenSourceAvailabilityTracker.unavailableSource(.init(
             binding: binding, isPresent: isPresent, now: Date()
         ))
     }

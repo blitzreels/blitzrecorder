@@ -30,14 +30,20 @@ struct BlitzSelectedBackground: View {
 }
 
 /// A one-pixel rim that is brighter at the top, so surfaces read as lit rather than outlined.
-struct BlitzEdgeHighlight: View {
-    let cornerRadius: CGFloat
+struct BlitzEdgeHighlight<Rim: InsettableShape>: View {
+    let shape: Rim
 
     var body: some View {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        shape
             .strokeBorder(LinearGradient(colors: [BlitzUI.edgeHighlight, BlitzUI.separator],
                                          startPoint: .top, endPoint: .bottom), lineWidth: 1)
             .allowsHitTesting(false)
+    }
+}
+
+extension BlitzEdgeHighlight where Rim == RoundedRectangle {
+    init(cornerRadius: CGFloat) {
+        shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
     }
 }
 

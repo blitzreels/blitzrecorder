@@ -106,7 +106,7 @@ final class ScreenSourceRecoveryTests: XCTestCase {
             bundleIdentifier: "example.missing", applicationName: "Missing", processID: -1,
             windowID: UInt32.max, windowTitle: "Window")
         vm.refreshScreenSourceAvailability()
-        XCTAssertNil(vm.unavailableScreenSource)
+        XCTAssertNil(vm.screenSource.unavailableScreenSource)
     }
 
     func testLiveChromePreviewPreservesApplicationSelection() async throws {

@@ -145,7 +145,7 @@ struct AgentsSettingsPage: View {
         .settingsSection(.init(
             title: "Connect your AI client",
             detail: "Set up each client once. Tools are discovered after it connects; local apps are not registered automatically.",
-            systemImage: "link"
+            systemImage: BlitzSymbols.share
         ))
     }
 

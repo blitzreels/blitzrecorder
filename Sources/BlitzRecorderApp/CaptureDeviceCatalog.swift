@@ -45,10 +45,10 @@ enum CaptureDeviceCatalog {
     }
 
     static func microphoneName(selectedID: String?) -> String {
-        if let selectedID, let device = AVCaptureDevice(uniqueID: selectedID) {
+        if let selectedID, let device = MicrophoneDeviceSelection.microphone(id: selectedID) {
             return device.localizedName
         }
-        if let device = AVCaptureDevice.default(for: .audio) {
+        if let device = MicrophoneDeviceSelection.fallbackMicrophone() {
             return device.localizedName
         }
         return "Default microphone"

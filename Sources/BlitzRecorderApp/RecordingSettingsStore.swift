@@ -25,6 +25,7 @@ enum RecordingSettingsStore {
         static let selectedDisplayID = "recording.selectedDisplayID"
         static let selectedCameraID = "recording.selectedCameraID"
         static let selectedMicrophoneID = "recording.selectedMicrophoneID"
+        static let selectedMicrophoneName = "recording.selectedMicrophoneName"
         static let trustedRemoteCameraServiceIDs = "recording.trustedRemoteCameraServiceIDs"
         static let remoteCameraSettingsByServiceID = "recording.remoteCameraSettingsByServiceID"
         static let outputDirectoryPath = "recording.outputDirectoryPath"
@@ -144,6 +145,7 @@ enum RecordingSettingsStore {
         }
         settings.selectedCameraID = defaults.string(forKey: Key.selectedCameraID)
         settings.selectedMicrophoneID = defaults.string(forKey: Key.selectedMicrophoneID)
+        settings.selectedMicrophoneName = defaults.string(forKey: Key.selectedMicrophoneName)
         settings.trustedRemoteCameraServiceIDs = Set(defaults.stringArray(forKey: Key.trustedRemoteCameraServiceIDs) ?? [])
         settings.remoteCameraSettingsByServiceID = remoteCameraSettingsByServiceID(defaults: defaults)
         settings.screenCrop = rect(for: Key.screenCrop, defaults: defaults)
@@ -331,6 +333,7 @@ enum RecordingSettingsStore {
         defaults.set(settings.selectedDisplayID, forKey: Key.selectedDisplayID)
         defaults.set(settings.selectedCameraID, forKey: Key.selectedCameraID)
         defaults.set(settings.selectedMicrophoneID, forKey: Key.selectedMicrophoneID)
+        defaults.set(settings.selectedMicrophoneName, forKey: Key.selectedMicrophoneName)
         defaults.set(settings.trustedRemoteCameraServiceIDs.sorted(), forKey: Key.trustedRemoteCameraServiceIDs)
         if let data = try? JSONEncoder().encode(settings.remoteCameraSettingsByServiceID) {
             defaults.set(data, forKey: Key.remoteCameraSettingsByServiceID)

@@ -56,7 +56,7 @@ struct EditorBackgroundMusicControl: View {
                     }
                 } label: {
                     Label(backgroundMusic == nil ? "Choose…" : "Remove",
-                          systemImage: backgroundMusic == nil ? "plus" : "trash")
+                          systemImage: backgroundMusic == nil ? "plus" : BlitzSymbols.delete)
                 }
                 .blitzButton(.secondary)
                 .controlSize(.small)

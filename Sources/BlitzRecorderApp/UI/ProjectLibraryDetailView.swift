@@ -193,13 +193,13 @@ extension ProjectLibraryView {
     private func projectActions(_ project: RecordingProjectHistory.Entry) -> [BlitzMenuEntry] {
         var entries: [BlitzMenuEntry] = [
             .item(.init(title: "Rename", subtitle: "Rename this recording (or double-click the title)",
-                        systemImage: "square.and.pencil", action: { beginRename(project) }))
+                        systemImage: BlitzSymbols.rename, action: { beginRename(project) }))
         ]
         if let url = sharing.sharedURL(forProject: project.projectPath) {
-            entries.append(.item(.init(title: "Copy link", subtitle: "Copy the watch link", systemImage: "link",
+            entries.append(.item(.init(title: "Copy link", subtitle: "Copy the watch link", systemImage: BlitzSymbols.copyLink,
                                        action: { BlitzClipboard.copyInBackground(url.absoluteString) })))
         }
-        entries.append(.item(.init(title: "Delete", subtitle: "Move to Trash (⌫)", systemImage: "trash",
+        entries.append(.item(.init(title: "Delete", subtitle: "Move to Trash (⌫)", systemImage: BlitzSymbols.delete,
                                    isDestructive: true, action: { queueDeletion([project]) })))
         return entries
     }
@@ -253,7 +253,7 @@ extension ProjectLibraryView {
                     vm.projectLibraryNavigation.filters = .init(sort: vm.projectLibraryNavigation.filters.sort)
                 }) : nil)
         } else {
-            configuration = .init(symbol: "film.stack", title: "Select a recording",
+            configuration = .init(symbol: BlitzSymbols.library, title: "Select a recording",
                                   detail: "Choose one from the list to play it.", action: nil)
         }
         return BlitzEmptyState(configuration: configuration)

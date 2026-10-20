@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 
 extension RecorderViewModel {
     func chooseVideoToImport() {
-        guard videoImportProgress == nil, !projectTrash.isWorking else { return }
+        guard libraryActions.videoImportProgress == nil, !projectTrash.isWorking else { return }
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
@@ -13,7 +13,7 @@ extension RecorderViewModel {
         panel.message = "Edit and transcribe the video in its current location without copying it. Keep the original file available for playback and export."
         let handler: (NSApplication.ModalResponse) -> Void = { [weak self] response in
             guard response == .OK, let url = panel.url, let self else { return }
-            self.videoImportTask = Task { await self.importVideo(url) }
+            self.libraryActions.videoImportTask = Task { await self.importVideo(url) }
         }
         if let window = NSApp.mainWindow ?? NSApp.keyWindow {
             panel.beginSheetModal(for: window, completionHandler: handler)
@@ -23,17 +23,17 @@ extension RecorderViewModel {
     }
 
     func importVideo(_ url: URL) async {
-        guard videoImportProgress == nil, !projectTrash.isWorking else { return }
-        videoImportError = nil
-        videoImportProgress = .init(filename: url.lastPathComponent, stage: "Checking video", fraction: nil)
+        guard libraryActions.videoImportProgress == nil, !projectTrash.isWorking else { return }
+        libraryActions.videoImportError = nil
+        libraryActions.videoImportProgress = .init(filename: url.lastPathComponent, stage: "Checking video", fraction: nil)
         defer {
-            videoImportProgress = nil
-            videoImportTask = nil
+            libraryActions.videoImportProgress = nil
+            libraryActions.videoImportTask = nil
         }
         let settings = settings
         let task = Task.detached(priority: .userInitiated) { [self] in
             try await VideoProjectImporter().importVideo(.init(url: url, settings: settings, onProgress: { progress in
-                await MainActor.run { self.videoImportProgress = progress }
+                await MainActor.run { self.libraryActions.videoImportProgress = progress }
             }))
         }
         do {
@@ -42,12 +42,7 @@ extension RecorderViewModel {
             } onCancel: {
                 task.cancel()
             }
-            projectRefreshTask?.cancel()
-            projectRefreshTask = nil
-            let entries = await Task.detached(priority: .utility) {
-                TakeFileStore().loadProjectHistory(settings: settings).entries
-            }.value
-            recentProjects = entries
+            let entries = await coordinator.projectLibrary.refresh(.init(settings: settings, includesLatestWrites: true))
             transcriptionController.syncProjects(entries)
             projectLibraryNavigation.section = .recordings
             projectLibraryNavigation.searchText = ""
@@ -60,7 +55,7 @@ extension RecorderViewModel {
             }
         } catch is CancellationError {
         } catch {
-            if !Task.isCancelled { videoImportError = error.localizedDescription }
+            if !Task.isCancelled { libraryActions.videoImportError = error.localizedDescription }
         }
     }
 }

@@ -73,7 +73,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             defer: false
         )
         window.title = "BlitzRecorder"
-        window.sharingType = .readOnly
         MainWindowChrome.configure(window)
         window.isMovableByWindowBackground = false
         window.isReleasedWhenClosed = false
@@ -362,7 +361,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func updateCaptureStopProgress(_ progress: CaptureStopProgress?) {
-        viewModel.captureStopProgress = progress
+        viewModel.session.captureStopProgress = progress
     }
 
     func updateRenderProgress(_ progress: Double) {

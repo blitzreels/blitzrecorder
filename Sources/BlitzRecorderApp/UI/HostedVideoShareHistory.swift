@@ -71,7 +71,7 @@ struct HostedVideoShareHistory: View {
                 ProgressView().controlSize(.small)
             } else {
                 BlitzCopyButton(configuration: .watchLink(.init(url: link.url, title: "Copy", emphasis: .quiet, width: .fit)))
-                Button { NSWorkspace.shared.open(link.url) } label: { Label("Open", systemImage: "safari") }
+                Button { NSWorkspace.shared.open(link.url) } label: { Label("Open", systemImage: BlitzSymbols.openLink) }
                     .blitzButton(.quiet)
                     .help("Open the watch page in your browser")
             }
@@ -82,11 +82,11 @@ struct HostedVideoShareHistory: View {
     private func linkEntries(_ link: HostedVideoShareController.ProjectLink) -> [BlitzMenuEntry] {
         let listed = link.video.listed != false
         return [
-            .item(.init(title: "Copy link", systemImage: "doc.on.doc", action: {
+            .item(.init(title: "Copy link", systemImage: BlitzSymbols.copyLink, action: {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(link.url.absoluteString, forType: .string)
             })),
-            .item(.init(title: "Open", systemImage: "safari", action: { NSWorkspace.shared.open(link.url) })),
+            .item(.init(title: "Open", systemImage: BlitzSymbols.openLink, action: { NSWorkspace.shared.open(link.url) })),
             .divider,
             .item(.init(title: listed ? "Hide link" : "Show link", systemImage: listed ? "eye.slash" : "eye",
                 action: { Task { await controller.setListed(.init(video: link.video, listed: !listed)) } })),
@@ -129,9 +129,9 @@ struct HostedVideoShareHistory: View {
             title: file.link == nil ? "Share" : "Share again",
             subtitle: file.link == nil ? "Create a link from this file without exporting again"
                 : "This file already has a link. Sharing again creates a second one.",
-            systemImage: "link", isEnabled: file.exists && configuration.canShareFile,
+            systemImage: BlitzSymbols.share, isEnabled: file.exists && configuration.canShareFile,
             action: { configuration.shareFile(file.url) }))
-        let show = BlitzMenuEntry.item(.init(title: "Show", subtitle: "Show in Finder", systemImage: "folder",
+        let show = BlitzMenuEntry.item(.init(title: "Show", subtitle: "Show in Finder", systemImage: BlitzSymbols.folder,
             isEnabled: file.exists, action: { NSWorkspace.shared.activateFileViewerSelecting([file.url]) }))
         var entries: [ExportEntry] = [
             .init(entry: .item(.init(title: "Export again with these settings", systemImage: "arrow.clockwise",
@@ -139,11 +139,11 @@ struct HostedVideoShareHistory: View {
             .init(entry: .divider, isInline: false),
         ]
         if let link = file.link {
-            entries.append(.init(entry: .item(.init(title: "Copy link", systemImage: "doc.on.doc", action: {
+            entries.append(.init(entry: .item(.init(title: "Copy link", systemImage: BlitzSymbols.copyLink, action: {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(link.url.absoluteString, forType: .string)
             })), isInline: false))
-            entries.append(.init(entry: .item(.init(title: "Open link", systemImage: "safari",
+            entries.append(.init(entry: .item(.init(title: "Open link", systemImage: BlitzSymbols.openLink,
                 action: { NSWorkspace.shared.open(link.url) })), isInline: false))
         }
         entries.append(.init(entry: share, isInline: true))

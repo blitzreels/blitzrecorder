@@ -91,21 +91,21 @@ extension RecorderViewModel {
 
     func setRemoteCameraAutomaticRotation(_ enabled: Bool) {
         coordinator.setRemoteCameraAutomaticRotation(enabled)
-        remoteCameraRefreshToken += 1
+        remoteCameraPreview.remoteCameraRefreshToken += 1
         syncSettings()
         refreshRemoteCameraPreviewAspectRatioForCurrentFrame()
     }
 
     func setRemoteCameraRotationDegrees(_ degrees: Int) {
         coordinator.setRemoteCameraRotationDegrees(degrees)
-        remoteCameraRefreshToken += 1
+        remoteCameraPreview.remoteCameraRefreshToken += 1
         syncSettings()
         refreshRemoteCameraPreviewAspectRatioForCurrentFrame()
     }
 
     func resetRemoteCameraSettings() {
         coordinator.resetRemoteCameraSettings()
-        remoteCameraRefreshToken += 1
+        remoteCameraPreview.remoteCameraRefreshToken += 1
         syncSettings()
         refreshRemoteCameraPreviewAspectRatioForCurrentFrame()
     }
@@ -134,8 +134,8 @@ extension RecorderViewModel {
 
     func clearRemoteCameraPreview(message: String) {
         remoteCameraPreviewSurface.setMessage(message)
-        hasRemoteCameraPreviewImage = false
-        remoteCameraPreviewFrameSize = nil
+        remoteCameraPreview.hasRemoteCameraPreviewImage = false
+        remoteCameraPreview.remoteCameraPreviewFrameSize = nil
     }
 
     @discardableResult
@@ -145,27 +145,27 @@ extension RecorderViewModel {
             height: height,
             rotationDegrees: selectedRemoteCameraRotationDegrees
         )
-        remoteCameraPreviewFrameSize = frame.size
-        remoteCameraPreviewAspectRatio = frame.aspectRatio
-        hasRemoteCameraPreviewImage = true
+        remoteCameraPreview.remoteCameraPreviewFrameSize = frame.size
+        remoteCameraPreview.remoteCameraPreviewAspectRatio = frame.aspectRatio
+        remoteCameraPreview.hasRemoteCameraPreviewImage = true
         return frame
     }
 
     func refreshRemoteCameraPreviewAspectRatioForCurrentFrame() {
-        guard let remoteCameraPreviewFrameSize else { return }
+        guard let remoteCameraPreviewFrameSize = remoteCameraPreview.remoteCameraPreviewFrameSize else { return }
         let aspectRatio = RemoteCameraPreviewGeometry.displayAspectRatio(
             width: remoteCameraPreviewFrameSize.width,
             height: remoteCameraPreviewFrameSize.height,
             rotationDegrees: selectedRemoteCameraRotationDegrees
         )
-        remoteCameraPreviewAspectRatio = aspectRatio
+        remoteCameraPreview.remoteCameraPreviewAspectRatio = aspectRatio
         remoteCameraPreviewSurface.setSourceAspectRatio(aspectRatio)
     }
 
     func connectDirectRemoteCamera() {
         coordinator.connectDirectRemoteCamera(
-            host: directRemoteCameraHost,
-            portString: directRemoteCameraPort
+            host: remoteCameraPreview.directRemoteCameraHost,
+            portString: remoteCameraPreview.directRemoteCameraPort
         )
         syncSettings()
         availableCameras = coordinator.availableCameras()

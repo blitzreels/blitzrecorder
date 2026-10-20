@@ -37,7 +37,7 @@ struct TranscriptSpeakerLabel: View {
         .accessibilityLabel("Speaker \(configuration.speaker.displayName)")
         .accessibilityHint("Rename this speaker or review a suggested identity")
         .contextMenu {
-            Button("Rename Speaker…", systemImage: "square.and.pencil", action: beginRename)
+            Button("Rename Speaker…", systemImage: BlitzSymbols.rename, action: beginRename)
         }
         .popover(isPresented: $isRenaming, arrowEdge: .bottom) {
             renameEditor

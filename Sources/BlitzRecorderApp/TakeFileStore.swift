@@ -215,7 +215,7 @@ struct TakeFileStore {
             let rebuilt = rebuiltProjectHistory(settings: settings)
             if !rebuilt.entries.isEmpty {
                 libraryLog.notice("Rebuilt missing library index from \(rebuilt.entries.count) take folders")
-                try? writeProjectHistory(.init(history: rebuilt, settings: settings))
+                writeRepairedProjectHistory(.init(history: rebuilt, settings: settings))
             }
             return rebuilt
         } catch {
@@ -230,7 +230,7 @@ struct TakeFileStore {
             if !orphans.isEmpty {
                 history.entries += orphans
                 libraryLog.notice("Added \(orphans.count) take folders missing from the library index")
-                try? writeProjectHistory(.init(history: history, settings: settings))
+                writeRepairedProjectHistory(.init(history: history, settings: settings))
             }
             history.sortByRecordedDate()
             return history
@@ -244,6 +244,15 @@ struct TakeFileStore {
             )
             try writeProjectHistory(.init(history: rebuilt, settings: settings))
             return rebuilt
+        }
+    }
+
+    /// A repair that cannot be written is redone on the next load, so it is logged rather than thrown.
+    private func writeRepairedProjectHistory(_ request: ProjectHistoryWriteRequest) {
+        do {
+            try writeProjectHistory(request)
+        } catch {
+            libraryLog.error("Could not save the repaired library index: \(error.localizedDescription, privacy: .public)")
         }
     }
 

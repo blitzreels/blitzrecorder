@@ -150,7 +150,7 @@ struct EditorTextInspector: View {
     private func actions(_ overlay: TextOverlay) -> [BlitzMenuEntry] {
         [
             .item(.init(title: "Play", systemImage: "play") { playback.play(from: overlay.start) }),
-            .item(.init(title: "Delete", systemImage: "trash", isDestructive: true) { remove(overlay) })
+            .item(.init(title: "Delete", systemImage: BlitzSymbols.delete, isDestructive: true) { remove(overlay) })
         ]
     }
 

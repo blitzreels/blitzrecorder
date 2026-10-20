@@ -168,7 +168,7 @@ private struct ProjectRenameContext: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("In folder").font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
-            Label(path, systemImage: "folder").font(BlitzType.strong).fixedSize(horizontal: false, vertical: true)
+            Label(path, systemImage: BlitzSymbols.folder).font(BlitzType.strong).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

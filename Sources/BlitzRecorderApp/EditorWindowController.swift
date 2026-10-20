@@ -33,7 +33,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
             defer: false
         )
         window.title = "BlitzRecorder Editor"
-        window.sharingType = .readOnly
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
         window.collectionBehavior = [.moveToActiveSpace]
@@ -68,7 +67,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
             viewModel.openProject(project)
         }
         if request.presentsExport, viewModel.isEditorVisible {
-            viewModel.isEditorExportPresented = true
+            viewModel.exports.isEditorExportPresented = true
         }
         updateTitle()
         showWindow(nil)
@@ -128,11 +127,18 @@ private struct EditorWindowView: View {
         .environment(\.workspaceRecorder, vm)
         .background(BlitzUI.panelBackground)
         .ignoresSafeArea(.container, edges: .top)
-        .sheet(item: $vm.folderPrompt) { prompt in
+        .sheet(item: Binding(
+            get: { vm.libraryActions.folderPrompt },
+            set: { vm.libraryActions.folderPrompt = $0 }
+        )) { prompt in
             ProjectFolderNameEditor(
-                prompt: prompt, name: $vm.folderNameDraft,
+                prompt: prompt,
+                name: Binding(
+                    get: { vm.libraryActions.folderNameDraft },
+                    set: { vm.libraryActions.folderNameDraft = $0 }
+                ),
                 affectedCount: vm.folderPromptAffectedCount(prompt),
-                onSave: { vm.commitFolderPrompt(prompt) }, onCancel: { vm.folderPrompt = nil }
+                onSave: { vm.commitFolderPrompt(prompt) }, onCancel: { vm.libraryActions.folderPrompt = nil }
             )
         }
     }

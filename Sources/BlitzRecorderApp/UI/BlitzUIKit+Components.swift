@@ -109,8 +109,8 @@ struct BlitzUIKitMenus: View {
                 }
                 BlitzUIKitSpecimen(label: "BlitzInlineActions · secondary actions, never ⋯") {
                     BlitzInlineActions(entries: [
-                        .item(.init(title: "Rename", systemImage: "square.and.pencil", action: {})),
-                        .item(.init(title: "Move to Trash", systemImage: "trash", isDestructive: true, action: {}))
+                        .item(.init(title: "Rename", systemImage: BlitzSymbols.rename, action: {})),
+                        .item(.init(title: "Move to Trash", systemImage: BlitzSymbols.delete, isDestructive: true, action: {}))
                     ])
                     .controlSize(.small)
                 }
@@ -207,11 +207,11 @@ struct BlitzUIKitMenus: View {
         [
             .section("Save next take to"),
             .item(.init(title: "Projects", systemImage: "tray", isSelected: false, action: {})),
-            .item(.init(title: "Formation IA", subtitle: "Module 01 · next is Lesson 02", systemImage: "folder",
+            .item(.init(title: "Formation IA", subtitle: "Module 01 · next is Lesson 02", systemImage: BlitzSymbols.folder,
                         isSelected: true, action: {})),
             .item(.init(title: "Disabled item", systemImage: "nosign", isEnabled: false, action: {})),
             .divider,
-            .item(.init(title: "Delete folder", systemImage: "trash", isDestructive: true, action: {})),
+            .item(.init(title: "Delete folder", systemImage: BlitzSymbols.delete, isDestructive: true, action: {})),
         ]
     }
 }
@@ -439,7 +439,7 @@ struct BlitzUIKitSettings: View {
                         .settingsRow()
                     }
                     .settingsCard()
-                    .settingsSection(.init(title: "Files", detail: "Where takes are saved", systemImage: "folder"))
+                    .settingsSection(.init(title: "Files", detail: "Where takes are saved", systemImage: BlitzSymbols.folder))
                 }
                 .frame(width: 520)
             }

@@ -157,7 +157,7 @@ struct HostedVideoSharePanel: View {
                 EditorOutputPrimaryButton(configuration: .init(
                     title: controller.transferProgress?.isProcessing == true ? "Check playback status"
                         : controller.transferMessage == nil ? "Create link" : "Resume upload",
-                    systemImage: "link", isEnabled: true, help: "Finish sharing this video",
+                    systemImage: BlitzSymbols.share, isEnabled: true, help: "Finish sharing this video",
                     action: controller.start))
             case .idle:
                 createLinkButton(newExport)
@@ -177,7 +177,7 @@ struct HostedVideoSharePanel: View {
     private func createLinkButton(_ action: @escaping () -> Void) -> some View {
         EditorOutputPrimaryButton(configuration: .init(
             title: "Create link · \(project?.estimatedSize ?? "")",
-            systemImage: "link", isEnabled: true,
+            systemImage: BlitzSymbols.share, isEnabled: true,
             help: "Save a web copy of your current edit and upload it", action: action))
     }
 
@@ -234,7 +234,7 @@ struct HostedVideoSharePanel: View {
     private var accountEntries: [BlitzMenuEntry] {
         var entries: [BlitzMenuEntry] = []
         if !isAccountOnly {
-            entries.append(.item(.init(title: "All shared videos", systemImage: "film.stack", action: showLibrary)))
+            entries.append(.item(.init(title: "All shared videos", systemImage: BlitzSymbols.library, action: showLibrary)))
         }
         if controller.isSubscribed {
             entries.append(.item(.init(title: "Manage hosting", systemImage: "creditcard",
@@ -288,7 +288,7 @@ struct HostedVideoSharePanel: View {
 
     @ViewBuilder private func readyActions(_ url: URL) -> some View {
         Button { NSWorkspace.shared.open(url) } label: {
-            Label("Open", systemImage: "safari").frame(maxWidth: .infinity)
+            Label("Open", systemImage: BlitzSymbols.openLink).frame(maxWidth: .infinity)
         }
         .blitzButton(.secondary)
         .help("Open the watch page in your browser")

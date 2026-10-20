@@ -211,9 +211,9 @@ struct ProjectLibraryView: View {
                 .help(commandBarTitle)
 
 
-            Button("Import video…", systemImage: "square.and.arrow.down", action: vm.chooseVideoToImport)
+            Button("Import video…", systemImage: BlitzSymbols.saveToMac, action: vm.chooseVideoToImport)
                 .blitzButton(.secondary)
-                .disabled(vm.videoImportProgress != nil || vm.projectTrash.isWorking)
+                .disabled(vm.libraryActions.videoImportProgress != nil || vm.projectTrash.isWorking)
                 .keyboardShortcut("i", modifiers: .command)
                 .help("Create an editable project from an MP4, MOV, or M4V video (⌘I)")
         }
@@ -244,7 +244,7 @@ struct ProjectLibraryView: View {
                 if vm.projectTrash.isWorking {
                     ProgressView().controlSize(.small)
                 } else {
-                    BlitzSymbol(configuration: .init(name: "trash", size: 16))
+                    BlitzSymbol(configuration: .init(name: BlitzSymbols.delete, size: 16))
                 }
                 Text(vm.projectTrash.status ?? "Projects in Trash")
                     .font(BlitzType.label)
@@ -271,7 +271,7 @@ struct ProjectLibraryView: View {
 
     @ViewBuilder
     private var folderStatusBar: some View {
-        if let status = vm.folderExportStatus {
+        if let status = vm.libraryActions.folderExportStatus {
             HStack(spacing: 12) {
                 ProgressView().controlSize(.small)
                 Text(status)
@@ -281,9 +281,9 @@ struct ProjectLibraryView: View {
                 Spacer(minLength: 8)
             }
             .blitzWorkspaceToolbar()
-        } else if let undo = vm.folderMoveUndo {
+        } else if let undo = vm.libraryActions.folderMoveUndo {
             HStack(spacing: 12) {
-                BlitzSymbol(configuration: .init(name: "folder", size: 16))
+                BlitzSymbol(configuration: .init(name: BlitzSymbols.folder, size: 16))
                 Text(undo.message)
                     .font(BlitzType.label)
                     .foregroundStyle(BlitzUI.secondaryText)
@@ -293,7 +293,7 @@ struct ProjectLibraryView: View {
                     .blitzButton(.secondary)
                 BlitzToolbarButton(configuration: .init(
                     title: "Dismiss", symbolName: "xmark", showsTitle: false,
-                    action: { vm.folderMoveUndo = nil }
+                    action: { vm.libraryActions.folderMoveUndo = nil }
                 ))
             }
             .blitzWorkspaceToolbar()

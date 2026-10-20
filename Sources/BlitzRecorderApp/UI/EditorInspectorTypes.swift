@@ -20,7 +20,7 @@ enum EditorInspectorTab: String, CaseIterable {
         case .silence: return "waveform.badge.minus"
         case .privacy: return "eye.slash"
         case .audio: return BlitzSymbols.systemAudio
-        case .exports: return "square.and.arrow.up"
+        case .exports: return BlitzSymbols.export
         case .blitzReels: return "captions.bubble"
         }
     }

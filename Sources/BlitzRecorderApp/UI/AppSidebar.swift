@@ -68,12 +68,12 @@ extension RecorderViewModel {
     }
 
     func startNewRecording() {
-        guard state == .idle, countdownRemaining == nil else { return showRecorder() }
+        guard state == .idle, session.countdownRemaining == nil else { return showRecorder() }
         switch sidebarDestination {
         case .folder(let scope):
             recordInFolder(recordTarget(scope))
         case .recordings, .shared:
-            folderRecordTarget = nil
+            libraryActions.folderRecordTarget = nil
             showRecorder()
         case .editor, .record, .settings:
             showRecorder()
@@ -112,12 +112,12 @@ struct AppSidebar: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
                     sectionHeader("Library")
-                    row(.init(destination: .recordings, title: "Recordings", symbol: "film.stack",
+                    row(.init(destination: .recordings, title: "Recordings", symbol: BlitzSymbols.library,
                               detail: nil, trailing: "\(vm.recentProjects.count)", enabled: vm.canShowProjects), selection)
-                    row(.init(destination: .shared, title: "Shared", symbol: "link",
+                    row(.init(destination: .shared, title: "Shared", symbol: BlitzSymbols.share,
                               detail: nil, trailing: nil, enabled: vm.canShowProjects), selection)
                     if vm.canOpenEditor {
-                        row(.init(destination: .editor, title: "Editor", symbol: "scissors",
+                        row(.init(destination: .editor, title: "Editor", symbol: BlitzSymbols.edit,
                                   detail: editorTitle, trailing: nil,
                                   enabled: vm.canOpenEditorFromSidebar), selection)
                     }
@@ -190,7 +190,7 @@ struct AppSidebar: View {
         let isSelected = if case .folder(let selected) = selection { selected.path.hasPrefix(node.path) } else { false }
         return AppSidebarRow(configuration: .init(
             item: .init(destination: .folder(scope), title: node.path.name,
-                        symbol: "folder", detail: nil, trailing: "\(node.allProjects.count)",
+                        symbol: BlitzSymbols.folder, detail: nil, trailing: "\(node.allProjects.count)",
                         enabled: vm.canShowProjects),
             isSelected: isSelected,
             isDropTarget: dropTargetID == dropID,

@@ -88,7 +88,7 @@ struct EditorPlacedItemClip: View {
               : "\(item.title)\nDrag to move. Select and drag either edge to change duration. Delete removes this item.")
         .contextMenu {
             Button("Edit", systemImage: "slider.horizontal.3") { configuration.select(item.id) }
-            Button("Remove", systemImage: "trash", role: .destructive) { configuration.remove(item.id) }
+            Button("Remove", systemImage: BlitzSymbols.delete, role: .destructive) { configuration.remove(item.id) }
         }
         .disabled(!configuration.isInteractive)
     }

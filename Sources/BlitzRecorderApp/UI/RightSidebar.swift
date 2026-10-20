@@ -99,7 +99,7 @@ struct CameraCropControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            if vm.isRemoteCameraSelected && !vm.isCameraCropModeEnabled {
+            if vm.isRemoteCameraSelected && !vm.canvas.isCameraCropModeEnabled {
                 RemoteCameraOrientationControl(vm: vm)
             }
 
@@ -116,7 +116,7 @@ struct CameraCropControls: View {
                 get: { cropZoom },
                 set: { vm.setCameraCropZoom(CGFloat($0)) }
             ),
-            isCropModeEnabled: vm.isCameraCropModeEnabled,
+            isCropModeEnabled: vm.canvas.isCameraCropModeEnabled,
             showsContentMode: !vm.isCameraInsetLayout,
             isResetDisabled: isCentered,
             showsResetButton: true,

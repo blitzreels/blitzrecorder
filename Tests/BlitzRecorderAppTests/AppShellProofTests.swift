@@ -62,7 +62,7 @@ final class AppShellProofTests: XCTestCase {
 
         vm.startNewRecording()
         try await snap("record-into-folder", wait: .seconds(2))
-        vm.folderRecordTarget = nil
+        vm.libraryActions.folderRecordTarget = nil
 
         vm.showSidebarDestination(.shared)
         try await snap("shared", wait: .seconds(2))
@@ -74,9 +74,9 @@ final class AppShellProofTests: XCTestCase {
         if let project = vm.recentProjects.first {
             vm.openProject(project)
             try await snap("editor", wait: .seconds(3))
-            vm.lastExportSucceededURL = URL(fileURLWithPath: "/tmp/trailer-landscape.mov")
+            vm.exports.lastExportSucceededURL = URL(fileURLWithPath: "/tmp/trailer-landscape.mov")
             try await snap("editor-export-toast", wait: .milliseconds(600))
-            vm.lastExportSucceededURL = nil
+            vm.exports.lastExportSucceededURL = nil
         }
 
         updates.prepareInstallation(.init(version: "0.35.0", install: {}))

@@ -80,11 +80,36 @@ struct SourceReadinessNotice: Equatable {
     }
 }
 
+/// The microphone picked in Devices is saved as the preferred one; this is set while it is not connected.
+struct MissingPreferredMicrophone: Equatable {
+    let preferredName: String
+    let fallbackName: String?
+
+    var notice: SourceReadinessNotice {
+        .init(title: "Preferred mic not connected",
+              detail: fallbackName.map { "\(preferredName) is missing, so recording would use \($0). Connect it or choose another mic." }
+                ?? "\(preferredName) is missing. Connect it to record sound.",
+              action: nil, isWaiting: false, severity: .warning)
+    }
+}
+
 extension RecorderViewModel {
     func sourceReadinessNotice(_ source: CaptureSource) -> SourceReadinessNotice? {
         if source == .screen, let notice = unavailableScreenSourceNotice { return notice }
         guard state == .idle, isSourceConfigured(source) else { return nil }
-        return SourceReadinessNotice.resolve(.init(source: source, blockers: recordingReadiness.blockers))
+        if let notice = SourceReadinessNotice.resolve(.init(source: source, blockers: recordingReadiness.blockers)) {
+            return notice
+        }
+        return source == .microphone ? missingPreferredMicrophone?.notice : nil
+    }
+
+    var missingPreferredMicrophone: MissingPreferredMicrophone? {
+        guard isSourceConfigured(.microphone), let id = settings.selectedMicrophoneID,
+              !availableMicrophones.contains(where: { $0.id == id }) else { return nil }
+        return MissingPreferredMicrophone(
+            preferredName: settings.selectedMicrophoneName ?? MicrophoneDeviceSelection.preferredName(id: id) ?? "Your preferred mic",
+            fallbackName: availableMicrophones.isEmpty ? nil : selectedMicrophoneDisplayName
+        )
     }
 
     func resolveSourceReadiness(_ action: SourceReadinessNotice.Action) {

@@ -64,8 +64,8 @@ final class RecordingHUDTests: XCTestCase {
             let model = RecordingHUDModel()
             model.anchor = anchor
             model.isHovering = expanded
-            vm.suggestedScreenSource = suggestion
-            vm.unavailableScreenSource = name == "missing" ? vm.settings.screenSourceBinding : nil
+            vm.screenSource.suggestedScreenSource = suggestion
+            vm.screenSource.unavailableScreenSource = name == "missing" ? vm.settings.screenSourceBinding : nil
             let view = RecordingHUDView(vm: vm, model: model, actions: .init(resize: { _ in }, dragChanged: {}, dragEnded: {}))
                 .padding(24)
                 .background(Color(red: 0.86, green: 0.88, blue: 0.92))

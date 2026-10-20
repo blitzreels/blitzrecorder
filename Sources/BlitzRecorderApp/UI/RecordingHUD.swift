@@ -158,7 +158,6 @@ final class RecordingHUDController {
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = true
-        panel.sharingType = .readOnly
         panel.appearance = NSAppearance(named: .darkAqua)
         return panel
     }
@@ -226,8 +225,8 @@ struct RecordingHUDView: View {
     @State private var idleTask: Task<Void, Never>?
 
     private var hasPrompt: Bool {
-        vm.unavailableScreenSourceNotice != nil || vm.autoSwitchNotice != nil
-            || (vm.suggestedScreenSource != nil && vm.state == .recording)
+        vm.unavailableScreenSourceNotice != nil || vm.screenSource.autoSwitchNotice != nil
+            || (vm.screenSource.suggestedScreenSource != nil && vm.state == .recording)
     }
 
     private var isWide: Bool { model.isExpanded || hasPrompt }
@@ -314,6 +313,7 @@ struct RecordingHUDView: View {
                     RecordingHUDMeter(levels: vm.micLevels, isActive: vm.state == .recording)
                         .help(vm.selectedMicrophoneDisplayName)
                 }
+                RecorderVisibilityIndicator(hidden: !vm.settings.includesRecorderUI)
                 Spacer(minLength: 8)
             }
             .padding(.horizontal, 10)
@@ -327,13 +327,13 @@ struct RecordingHUDView: View {
             .blitzCursor(model.isDragging ? .closedHand : .openHand)
             .onHover { isDragHovering = $0 }
             .help("Drag to move recording controls")
-            controls
             Image(systemName: model.anchor.isBottom ? "chevron.up" : "chevron.down")
                 .font(BlitzType.symbol(9))
                 .foregroundStyle(BlitzUI.tertiaryText)
-                .padding(.trailing, 6)
+                .padding(.horizontal, 4)
                 .opacity(isWide ? 0 : 1)
                 .accessibilityHidden(true)
+            controls
         }
         .padding(.leading, 4)
         .padding(.trailing, 5)
@@ -395,7 +395,7 @@ struct RecordingHUDView: View {
                 }
             }
         }
-        if let notice = vm.autoSwitchNotice {
+        if let notice = vm.screenSource.autoSwitchNotice {
             promptRow {
                 RecordingSourceAppIcon(binding: notice)
                     .frame(width: 24, height: 24)
@@ -403,7 +403,7 @@ struct RecordingHUDView: View {
                     .foregroundStyle(BlitzUI.primaryText).lineLimit(1)
                 Spacer(minLength: 0)
             }
-        } else if let suggestion = vm.suggestedScreenSource, vm.state == .recording {
+        } else if let suggestion = vm.screenSource.suggestedScreenSource, vm.state == .recording {
             promptRow {
                 VStack(alignment: .leading, spacing: 12) {
                     Label("This window isn’t being recorded", systemImage: "exclamationmark.triangle.fill")
@@ -542,14 +542,16 @@ struct RecordingHUDView: View {
     }
 }
 
+/// Circular corners, not continuous: the bar's ends must be true half circles so the round stop button sits
+/// concentric in them.
 private struct RecordingHUDSurface: View {
+    private let shape = RoundedRectangle(cornerRadius: 20, style: .circular)
+
     var body: some View {
-        RoundedRectangle(cornerRadius: 20, style: .continuous)
+        shape
             .fill(.regularMaterial)
-            .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous).fill(BlitzUI.glassTint)
-            }
-            .overlay { BlitzEdgeHighlight(cornerRadius: 20) }
+            .overlay { shape.fill(BlitzUI.glassTint) }
+            .overlay { BlitzEdgeHighlight(shape: shape) }
     }
 }
 
@@ -586,8 +588,7 @@ struct RecordingHUDIconButton: View {
 
     var body: some View {
         Button(action: configuration.action) {
-            Image(systemName: configuration.symbol)
-                .font(BlitzType.symbol(11))
+            glyph
                 .foregroundStyle(BlitzUI.primaryText)
                 .frame(width: 30, height: 30)
                 .background(configuration.fill, in: .circle)
@@ -600,6 +601,21 @@ struct RecordingHUDIconButton: View {
         .onHover { isHovering = $0 }
         .help(configuration.help)
         .accessibilityLabel(configuration.help)
+    }
+
+    /// Stop and pause are drawn, not SF Symbols, whose glyphs sit up to a point off the button's center.
+    @ViewBuilder private var glyph: some View {
+        switch configuration.symbol {
+        case "stop.fill":
+            RoundedRectangle(cornerRadius: 2, style: .circular).frame(width: 10, height: 10)
+        case "pause.fill":
+            HStack(spacing: 3) {
+                RoundedRectangle(cornerRadius: 1, style: .circular).frame(width: 3, height: 10)
+                RoundedRectangle(cornerRadius: 1, style: .circular).frame(width: 3, height: 10)
+            }
+        default:
+            Image(systemName: configuration.symbol).font(BlitzType.symbol(11))
+        }
     }
 }
 

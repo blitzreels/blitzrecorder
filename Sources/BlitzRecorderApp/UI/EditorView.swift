@@ -57,9 +57,9 @@ struct EditorView: View {
             EditorWorkspaceSplitView(showsSourceTracks: showsSourceTracks) {
                 playerColumn
                     .background(BlitzUI.canvasBackground)
-                    .onChange(of: vm.exportFollowUp) { _, followUp in
+                    .onChange(of: vm.exports.exportFollowUp) { _, followUp in
                         guard let followUp else { return }
-                        vm.exportFollowUp = nil
+                        vm.exports.exportFollowUp = nil
                         handleExportFollowUp(followUp)
                     }
                     .overlay(alignment: .bottom) {
@@ -207,9 +207,9 @@ struct EditorView: View {
             }
             reloadTask = task
         }
-        .onChange(of: vm.isEditorExportPresented, initial: true) { _, requested in
+        .onChange(of: vm.exports.isEditorExportPresented, initial: true) { _, requested in
             guard requested else { return }
-            vm.isEditorExportPresented = false
+            vm.exports.isEditorExportPresented = false
             showOutputs(.file)
         }
         .onChange(of: vm.isEditorVisible) { _, visible in
@@ -280,7 +280,7 @@ struct EditorView: View {
                     Button {
                         preparesHostedExport = false
                         showOutputs(.link)
-                    } label: { Label("View", systemImage: "link") }
+                    } label: { Label("View", systemImage: BlitzSymbols.share) }
                     .blitzButton(.secondary)
                 }
                 .editorNoticeSurface()

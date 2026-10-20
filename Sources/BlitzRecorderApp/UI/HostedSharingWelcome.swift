@@ -186,7 +186,7 @@ struct HostedSharingWelcome: View {
 
     private var linkPill: some View {
         HStack(spacing: 8) {
-            Image(systemName: "link")
+            Image(systemName: BlitzSymbols.share)
                 .font(BlitzType.symbol(11))
                 .foregroundStyle(BlitzUI.secondaryText)
             (Text("blitzrecorder.com/s/").foregroundStyle(BlitzUI.secondaryText)
@@ -199,7 +199,7 @@ struct HostedSharingWelcome: View {
                         .foregroundStyle(BlitzUI.accent)
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
                 } else {
-                    Image(systemName: "doc.on.doc")
+                    Image(systemName: BlitzSymbols.copyLink)
                         .font(BlitzType.symbol(11))
                         .foregroundStyle(BlitzUI.secondaryText)
                         .transition(.scale(scale: 0.6).combined(with: .opacity))

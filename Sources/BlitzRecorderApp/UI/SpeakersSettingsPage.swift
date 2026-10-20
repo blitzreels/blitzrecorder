@@ -151,8 +151,8 @@ struct SpeakersSettingsPage: View {
             get: { renamingID == profile.id }, set: { if !$0 { renamingID = nil } }
         ), arrowEdge: .bottom) { renameEditor(profile) }
         .contextMenu {
-            Button("Rename…", systemImage: "square.and.pencil") { beginRename(profile) }
-            Button("Forget speaker…", systemImage: "trash", role: .destructive) { forgetting = profile }
+            Button("Rename…", systemImage: BlitzSymbols.rename) { beginRename(profile) }
+            Button("Forget speaker…", systemImage: BlitzSymbols.delete, role: .destructive) { forgetting = profile }
                 .disabled(model.isSaving)
         }
     }
@@ -199,9 +199,9 @@ struct SpeakersSettingsPage: View {
 
     private func speakerMenu(_ profile: SavedSpeakerVoice) -> some View {
         BlitzInlineActions(entries: [
-                .item(.init(title: "Rename…", systemImage: "square.and.pencil", action: { beginRename(profile) })),
+                .item(.init(title: "Rename…", systemImage: BlitzSymbols.rename, action: { beginRename(profile) })),
                 .divider,
-                .item(.init(title: "Forget speaker…", systemImage: "trash", isDestructive: true,
+                .item(.init(title: "Forget speaker…", systemImage: BlitzSymbols.delete, isDestructive: true,
                             action: { forgetting = profile }))
             ])
         .controlSize(.small)

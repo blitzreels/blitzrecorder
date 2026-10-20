@@ -13,6 +13,10 @@ final class RecorderCoordinator {
     let accessController: AccessController
     let permissionGate: PermissionGate
     let studio: RecorderStudioConfiguration
+    let projectLibrary = ProjectLibraryStore()
+    let recorderUISharing = RecorderUIScreenSharing()
+    /// One transcription queue for every window, so a recording is never transcribed twice at once.
+    let transcription = LocalTranscriptionController()
     lazy var remoteCamera = RemoteIPhoneCameraSession(
         readSettings: { [weak self] in
             self?.settings ?? RecordingSettings()

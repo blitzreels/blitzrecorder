@@ -53,7 +53,7 @@ struct RecordingSettingsPage: View {
             )) {
                 SettingsRowLabel(.init(
                     title: "Record BlitzRecorder UI",
-                    detail: "Include BlitzRecorder in display recordings and choose its window as a screen source."
+                    detail: "Include BlitzRecorder in display recordings and choose its window as a screen source. When off, it is also hidden from screen sharing where the call allows it; sharing your whole screen in Zoom may still show it."
                 ))
             }
             .toggleStyle(.blitzSwitch)
@@ -88,7 +88,7 @@ struct RecordingSettingsPage: View {
                 BlitzSegmentedPicker(configuration: .init(
                     title: "Countdown",
                     options: RecordingCountdownPreference.options,
-                    selection: Binding(get: { vm.countdownSeconds }, set: { vm.setCountdownSeconds($0) }),
+                    selection: Binding(get: { vm.session.countdownSeconds }, set: { vm.setCountdownSeconds($0) }),
                     label: { $0 == 0 ? "Off" : "\($0) s" }
                 ))
                 .frame(width: 180)
@@ -379,7 +379,7 @@ struct RecordingSettingsPage: View {
                       systemImage: "checkmark.circle.fill")
                     .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
                 Button { vm.transcriptionController.removeModels() } label: {
-                    Label("Remove", systemImage: "trash")
+                    Label("Remove", systemImage: BlitzSymbols.delete)
                 }
                 .blitzButton(.secondary)
                 .controlSize(.small)

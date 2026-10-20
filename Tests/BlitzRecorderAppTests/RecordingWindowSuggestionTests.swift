@@ -24,22 +24,22 @@ final class RecordingWindowSuggestionTests: XCTestCase {
             let original = vm.settings.screenSourceBinding
             var candidate = self.window(2)
             vm.updateScreenSuggestion(candidate)
-            XCTAssertNil(vm.suggestedScreenSource)
+            XCTAssertNil(vm.screenSource.suggestedScreenSource)
             vm.updateScreenSuggestion(candidate)
-            XCTAssertEqual(vm.suggestedScreenSource, candidate)
+            XCTAssertEqual(vm.screenSource.suggestedScreenSource, candidate)
             XCTAssertEqual(vm.settings.screenSourceBinding, original)
             vm.dismissScreenSuggestion()
             candidate.windowTitle = "A different tab"
             vm.updateScreenSuggestion(candidate)
-            XCTAssertNil(vm.suggestedScreenSource)
+            XCTAssertNil(vm.screenSource.suggestedScreenSource)
             XCTAssertEqual(vm.settings.screenSourceBinding, original)
             vm.updateScreenSuggestion(original)
             vm.updateScreenSuggestion(candidate)
             vm.updateScreenSuggestion(candidate)
-            XCTAssertEqual(vm.suggestedScreenSource, candidate)
+            XCTAssertEqual(vm.screenSource.suggestedScreenSource, candidate)
             vm.acceptScreenSuggestion()
             XCTAssertEqual(vm.settings.screenSourceBinding, candidate)
-            XCTAssertNil(vm.suggestedScreenSource)
+            XCTAssertNil(vm.screenSource.suggestedScreenSource)
         }
     }
 
@@ -54,7 +54,7 @@ final class RecordingWindowSuggestionTests: XCTestCase {
             XCTAssertEqual(vm.settings.screenSourceBinding, original)
             vm.updateScreenSuggestion(candidate)
             XCTAssertEqual(vm.settings.screenSourceBinding, candidate)
-            XCTAssertNil(vm.suggestedScreenSource)
+            XCTAssertNil(vm.screenSource.suggestedScreenSource)
         }
     }
 
@@ -68,7 +68,7 @@ final class RecordingWindowSuggestionTests: XCTestCase {
             vm.updateScreenSuggestion(candidate)
             vm.updateScreenSuggestion(candidate)
             XCTAssertEqual(vm.settings.screenSourceBinding, original)
-            XCTAssertEqual(vm.suggestedScreenSource, candidate)
+            XCTAssertEqual(vm.screenSource.suggestedScreenSource, candidate)
         }
     }
 
@@ -79,14 +79,14 @@ final class RecordingWindowSuggestionTests: XCTestCase {
             vm.updateScreenSuggestion(self.window(2))
             vm.dismissScreenSuggestion()
             vm.updateScreenSuggestion(self.window(3))
-            XCTAssertNil(vm.suggestedScreenSource)
+            XCTAssertNil(vm.screenSource.suggestedScreenSource)
             vm.updateScreenSuggestion(self.window(3))
-            XCTAssertEqual(vm.suggestedScreenSource, self.window(3))
+            XCTAssertEqual(vm.screenSource.suggestedScreenSource, self.window(3))
             vm.state = .paused
             vm.refreshScreenSuggestion()
-            XCTAssertNil(vm.suggestedScreenSource)
-            XCTAssertNil(vm.pendingFollowKey)
-            XCTAssertNil(vm.dismissedScreenSuggestion)
+            XCTAssertNil(vm.screenSource.suggestedScreenSource)
+            XCTAssertNil(vm.screenSource.pendingFollowKey)
+            XCTAssertNil(vm.screenSource.dismissedScreenSuggestion)
         }
     }
 
@@ -109,7 +109,7 @@ final class RecordingWindowSuggestionTests: XCTestCase {
         let coordinator = RecorderCoordinator(accessController: AccessController(defaults: defaults), defaults: defaults)
         let vm = RecorderViewModel(coordinator: coordinator, previewStage: PreviewStageView())
         defer {
-            vm.autoSwitchNoticeTask?.cancel()
+            vm.screenSource.autoSwitchNoticeTask?.cancel()
             vm.prepareForWindowClose()
         }
         vm.state = .recording

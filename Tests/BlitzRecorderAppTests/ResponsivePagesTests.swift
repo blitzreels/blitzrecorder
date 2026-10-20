@@ -79,12 +79,8 @@ final class ResponsivePagesTests: XCTestCase {
         for y in stride(from: 0, to: image.height, by: 700) {
             let crop = try XCTUnwrap(image.cropping(to: CGRect(x: 0, y: y, width: image.width,
                                                               height: min(800, image.height - y))))
-            let recognition = VNRecognizeTextRequest()
-            recognition.recognitionLevel = .accurate
-            recognition.recognitionLanguages = ["en-US"]
-            recognition.customWords = ["iPhone", "BlitzRecorder", "BlitzReels"]
-            try VNImageRequestHandler(cgImage: crop).perform([recognition])
-            lines += (recognition.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+            lines += try RenderedText.observations(.init(image: crop, customWords: ["iPhone", "BlitzRecorder", "BlitzReels"]))
+                .compactMap { $0.topCandidates(1).first?.string }
         }
         return lines
     }

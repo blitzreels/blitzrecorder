@@ -35,9 +35,9 @@ final class RecordingCountdownTests: XCTestCase {
         let coordinator = RecorderCoordinator(accessController: AccessController(defaults: defaults), defaults: defaults)
         let vm = RecorderViewModel(coordinator: coordinator, previewStage: PreviewStageView())
         defer { vm.prepareForWindowClose() }
-        vm.countdownRemaining = 2
+        vm.session.countdownRemaining = 2
         vm.primaryAction()
-        XCTAssertNil(vm.countdownRemaining)
+        XCTAssertNil(vm.session.countdownRemaining)
         XCTAssertEqual(vm.state, .idle)
     }
 }
