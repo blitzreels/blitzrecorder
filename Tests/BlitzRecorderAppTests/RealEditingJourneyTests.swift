@@ -7,13 +7,22 @@ import XCTest
 final class RealEditingJourneyTests: XCTestCase {
     @MainActor
     func testCutExtendUndoReopenAndExportRealParallelSources() async throws {
+        // Point both variables at an isolated real project copy and its output directory; otherwise a synthetic take runs.
         let environment = ProcessInfo.processInfo.environment
-        guard let path = environment["BLITZRECORDER_JOURNEY_PROJECT"],
-              let output = environment["BLITZRECORDER_JOURNEY_OUTPUT"] else {
-            throw XCTSkip("Provide an isolated real project copy and validation output directory.")
+        let fixture: SyntheticTake?
+        let projectURL: URL
+        let root: URL
+        if let path = environment["BLITZRECORDER_JOURNEY_PROJECT"], let output = environment["BLITZRECORDER_JOURNEY_OUTPUT"] {
+            fixture = nil
+            projectURL = URL(fileURLWithPath: path)
+            root = URL(fileURLWithPath: output)
+        } else {
+            let take = try await SyntheticTake()
+            fixture = take
+            projectURL = take.take.projectURL
+            root = take.root
         }
-        let projectURL = URL(fileURLWithPath: path)
-        let root = URL(fileURLWithPath: output)
+        defer { withExtendedLifetime(fixture) {} }
         XCTAssertTrue(projectURL.path.hasPrefix(root.path + "/"))
         guard projectURL.path.hasPrefix(root.path + "/") else { return }
         let store = TakeFileStore()
@@ -37,9 +46,12 @@ final class RealEditingJourneyTests: XCTestCase {
         await playback.load(project: original, baseSettings: vm.settings)
         XCTAssertTrue(playback.isReady, playback.loadError ?? "")
         let duration = playback.duration
-        XCTAssertGreaterThan(duration, 12)
+        XCTAssertGreaterThan(duration, 5)
+        // Real takes keep a 12 s excerpt; the 6 s synthetic take keeps all but its last second.
+        let excerptEnd = min(12, duration - 1)
+        let expectedDuration = excerptEnd - 1
         var initial = original.edits
-        initial.cuts = [.init(start: 12, end: duration, kind: .manual, source: .user)]
+        initial.cuts = [.init(start: excerptEnd, end: duration, kind: .manual, source: .user)]
         initial.videoSplits = []
         initial.silenceRemovalApplied = false
         initial.silenceOverrides = []
@@ -58,15 +70,15 @@ final class RealEditingJourneyTests: XCTestCase {
         XCTAssertEqual(reopened.edits, extended)
         await playback.load(project: reopened, baseSettings: vm.settings)
         XCTAssertTrue(playback.isReady, playback.loadError ?? "")
-        XCTAssertEqual(playback.outputDuration, 11, accuracy: 0.01)
+        XCTAssertEqual(playback.outputDuration, expectedDuration, accuracy: 0.01)
         let screen = try XCTUnwrap(playback.videoPlayer(for: .screen))
         let camera = try XCTUnwrap(playback.videoPlayer(for: .camera))
         for player in [screen, camera] {
             let asset = try XCTUnwrap(player.currentItem?.asset)
             let time = try await asset.load(.duration)
-            XCTAssertEqual(time.seconds, 11, accuracy: 0.1)
+            XCTAssertEqual(time.seconds, expectedDuration, accuracy: 0.1)
         }
-        playback.seek(to: 5)
+        playback.seek(to: min(5, expectedDuration / 2))
         try await Task.sleep(for: .milliseconds(300))
         XCTAssertEqual(screen.currentTime().seconds, camera.currentTime().seconds, accuracy: 0.06)
         let profile = ExportPerformanceProfile.resolved(preset: .custom, sourceResolution: .p1080,
@@ -78,7 +90,7 @@ final class RealEditingJourneyTests: XCTestCase {
         let exportDuration = try await asset.load(.duration)
         let videos = try await asset.loadTracks(withMediaType: .video)
         let audios = try await asset.loadTracks(withMediaType: .audio)
-        XCTAssertEqual(exportDuration.seconds, 11 / 1.3, accuracy: 0.1)
+        XCTAssertEqual(exportDuration.seconds, expectedDuration / 1.3, accuracy: 0.1)
         XCTAssertFalse(audios.isEmpty)
         let exportedFPS = try await XCTUnwrap(videos.first).load(.nominalFrameRate)
         XCTAssertEqual(exportedFPS, 24, accuracy: 0.1)

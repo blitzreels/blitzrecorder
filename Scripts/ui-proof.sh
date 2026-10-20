@@ -71,7 +71,7 @@ fi
 
 echo "Rendering: ${scopes[*]}"
 log="$run/test.log"
-if ! env "${take_env[@]}" BLITZRECORDER_PROOF_SCREENS="$screens" BLITZRECORDER_PROOF_HEIGHT="${BLITZRECORDER_PROOF_HEIGHT:-1400}" BLITZRECORDER_PROOF_SCALE="${BLITZRECORDER_PROOF_SCALE:-1}" BLITZRECORDER_EXPORT_UI_PROOF="$PWD/$run" BLITZRECORDER_SILENCE_UI_PROOF="$PWD/$run" \
+if ! env ${take_env[@]+"${take_env[@]}"} BLITZRECORDER_PROOF_SCREENS="$screens" BLITZRECORDER_PROOF_HEIGHT="${BLITZRECORDER_PROOF_HEIGHT:-1400}" BLITZRECORDER_PROOF_SCALE="${BLITZRECORDER_PROOF_SCALE:-1}" BLITZRECORDER_EXPORT_UI_PROOF="$PWD/$run" BLITZRECORDER_SILENCE_UI_PROOF="$PWD/$run" \
     swift test --filter "$filter" >"$log" 2>&1; then
   grep -E "error:|failed" "$log" | head -20 >&2
   echo "Proof tests failed. Full log: $log" >&2

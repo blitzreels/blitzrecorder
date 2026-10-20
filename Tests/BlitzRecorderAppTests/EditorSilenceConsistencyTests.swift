@@ -4,10 +4,18 @@ import XCTest
 
 final class EditorSilenceConsistencyTests: XCTestCase {
     func testRealProjectSilenceDisplayMatchesTheRemovalProposal() async throws {
-        guard let path = ProcessInfo.processInfo.environment["BLITZ_SILENCE_TEST_PROJECT"] else {
-            throw XCTSkip("Provide a project path for a read-only silence display check.")
+        // Point the variable at a real project for a read-only check; otherwise a synthetic take runs.
+        let fixture: SyntheticTake?
+        let url: URL
+        if let path = ProcessInfo.processInfo.environment["BLITZ_SILENCE_TEST_PROJECT"] {
+            fixture = nil
+            url = URL(fileURLWithPath: path)
+        } else {
+            let take = try await SyntheticTake()
+            fixture = take
+            url = take.take.projectURL
         }
-        let url = URL(fileURLWithPath: path)
+        defer { withExtendedLifetime(fixture) {} }
         let original = try Data(contentsOf: url)
         let project = try TakeFileStore().loadRecordingProject(at: url)
         let decoder = JSONDecoder()
@@ -48,6 +56,26 @@ final class EditorSilenceConsistencyTests: XCTestCase {
             projection: .init(.init(duration: duration, cuts: proposal.cuts))))
         XCTAssertFalse(applied.items.contains { $0.source.kind == .nonDialogue })
         XCTAssertEqual(try Data(contentsOf: url), original)
+        if fixture != nil {
+            // Silence detection finds each written pause, trimmed by the padding.
+            let pauses = SilenceDetection.cuts(.init(windows: windows, configuration: .init(
+                audioURL: url, takeDuration: duration, sourceOffset: 0, minimumSilence: settings.minimumDuration,
+                thresholdDB: settings.threshold, previousCuts: [], paddingBefore: settings.paddingBefore,
+                paddingAfter: settings.paddingAfter)))
+            XCTAssertEqual(pauses.count, SyntheticTake.silentGaps.count, "\(pauses)")
+            for (pause, gap) in zip(pauses, SyntheticTake.silentGaps) {
+                XCTAssertGreaterThanOrEqual(pause.start, gap.start - 0.05)
+                XCTAssertLessThanOrEqual(pause.end, gap.end + 0.05)
+                XCTAssertGreaterThan(pause.end - pause.start, 0.3)
+            }
+            // The unspoken tone is the one red item, and the proposal removes all of it.
+            let reds = current.items.filter { $0.source.kind == .nonDialogue }.map(\.source.range)
+            XCTAssertEqual(reds.count, 1, "\(reds)")
+            let red = try XCTUnwrap(reds.first)
+            XCTAssertEqual(red.start, SyntheticTake.unspokenSound.start, accuracy: 0.1)
+            XCTAssertEqual(red.end, SyntheticTake.unspokenSound.end, accuracy: 0.1)
+            XCTAssertTrue(proposal.cuts.contains { $0.isEnabled && $0.start <= red.start + 0.01 && $0.end >= red.end - 0.01 })
+        }
         print("REAL_SILENCE saved_cuts=\(project.edits.cuts.count) old_red=\(legacyReds.count) subframe=\(subframe.count) pending_red=\(current.items.filter { $0.source.kind == .nonDialogue }.count) after_apply_red=\(applied.items.filter { $0.source.kind == .nonDialogue }.count)")
     }
 

@@ -5,15 +5,32 @@ import XCTest
 
 final class ProjectExportRegressionTests: XCTestCase {
     func testRealProjectAtFractionalSpeed() async throws {
+        // Point both variables at an isolated real project copy and output path; otherwise a synthetic take runs.
         let environment = ProcessInfo.processInfo.environment
-        guard let path = environment["BLITZ_EXPORT_TEST_PROJECT"],
-              let outputPath = environment["BLITZ_EXPORT_TEST_OUTPUT"] else {
-            throw XCTSkip("Set an isolated project copy and output path to validate a real export.")
-        }
-        let output = URL(fileURLWithPath: outputPath)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: output.path))
+        let fixture: SyntheticTake?
+        let projectURL: URL
+        let output: URL
         let store = TakeFileStore()
-        let project = try store.loadRecordingProject(at: URL(fileURLWithPath: path))
+        if let path = environment["BLITZ_EXPORT_TEST_PROJECT"], let outputPath = environment["BLITZ_EXPORT_TEST_OUTPUT"] {
+            fixture = nil
+            projectURL = URL(fileURLWithPath: path)
+            output = URL(fileURLWithPath: outputPath)
+        } else {
+            let take = try await SyntheticTake()
+            fixture = take
+            projectURL = take.take.projectURL
+            output = take.root.appendingPathComponent("fractional-speed.mp4")
+            // Cut the first pause so the export also maps a timeline edit through the 1.3x speed.
+            let gap = SyntheticTake.silentGaps[0]
+            var edits = TimelineEdits.empty
+            edits.cuts = [.init(start: gap.start, end: gap.end, kind: .manual, source: .user)]
+            try store.writeRecordingProject(for: take.take, settings: take.settings,
+                sceneEvents: store.sceneEvents(from: store.loadRecordingProject(at: projectURL)),
+                finalVideoURL: nil, timelineEdits: .init(edits))
+        }
+        defer { withExtendedLifetime(fixture) {} }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: output.path))
+        let project = try store.loadRecordingProject(at: projectURL)
         let outputProject = project.outputProject(for: project.selectedOutputLayout)
         let preset = ExportPerformancePreset(rawValue: environment["BLITZ_EXPORT_TEST_PRESET"] ?? "balanced") ?? .balanced
         let format: OutputVideoFormat = output.pathExtension == "mov" ? .mov : .mp4
@@ -43,6 +60,9 @@ final class ProjectExportRegressionTests: XCTestCase {
         let sourceDuration = try await AVURLAsset(url: take.screenURL).load(.duration)
         let expected = TimelineTimeMap(takeDuration: sourceDuration, cuts: outputProject.edits.cuts, playbackRate: 1.3)
         XCTAssertEqual(duration.seconds, expected.outputDuration.seconds, accuracy: 0.1)
+        if fixture != nil {
+            XCTAssertEqual(expected.outputDuration.seconds, (SyntheticTake.duration - SyntheticTake.silentGaps[0].duration) / 1.3, accuracy: 0.05)
+        }
         XCTAssertEqual(size.width, 1080)
         XCTAssertEqual(size.height, 1920)
         XCTAssertEqual(Double(rate), Double(profile.framesPerSecond), accuracy: 0.1)
