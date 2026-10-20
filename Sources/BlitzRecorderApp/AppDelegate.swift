@@ -18,16 +18,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
     var blinkOn = false
     var mainMenuBuilder: MainMenuBuilder?
     lazy var updateController = AppUpdateController()
-    private lazy var mcpServer = BlitzRecorderMCPServer(coordinator: coordinator)
+    lazy var mcpServer = BlitzRecorderMCPServer(coordinator: coordinator)
     private var terminationTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         launchIfNeeded()
     }
 
+    private var launchedForAgents: Bool {
+        CommandLine.arguments.contains(BlitzRecorderMCPServer.backgroundLaunchArgument)
+    }
+
     func launchIfNeeded() {
         guard windowController == nil else {
-            presentMainWindow()
+            if !launchedForAgents { presentMainWindow() }
             return
         }
 
@@ -47,7 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
                 NSApp.dockTile.display()
             }
         ))
-        if !LocalDevelopmentRuntime.disablesIdleCapture(), LivePreviewPreference().isEnabled {
+        if !launchedForAgents, !LocalDevelopmentRuntime.disablesIdleCapture(), LivePreviewPreference().isEnabled {
             coordinator.prewarmLocalCameraPreviewIfAuthorized()
         }
 
@@ -151,10 +155,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
             await mcpServer.start()
         }
         if !LocalDevelopmentRuntime.isNoninteractiveVerification() {
-            presentMainWindow()
             updateController.start()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                self?.presentMainWindow()
+            if !launchedForAgents {
+                presentMainWindow()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                    self?.presentMainWindow()
+                }
             }
         }
         writeScreenshotIfRequested()

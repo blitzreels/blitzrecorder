@@ -14,7 +14,7 @@ struct AgentsSettingsPage: View {
                 SettingsPageHeader(.init(
                     title: "Integrations",
                     detail: "Connect an AI client to recordings, transcripts, video frames, and exports on this Mac.",
-                    status: .init(title: statusTitle, isActive: mcpServer.status == .running)
+                    status: .init(title: mcpServer.status.title, isActive: mcpServer.status.servesAgents)
                 ))
                 serverSection
                 connectSection
@@ -71,7 +71,7 @@ struct AgentsSettingsPage: View {
             ))
             .settingsRow()
         }
-        .settingsSection(.init(title: "Local agent server", detail: statusDetail, systemImage: "antenna.radiowaves.left.and.right"))
+        .settingsSection(.init(title: "Local agent server", detail: mcpServer.status.detail, systemImage: "antenna.radiowaves.left.and.right"))
     }
 
     private var connectSection: some View {
@@ -92,11 +92,11 @@ struct AgentsSettingsPage: View {
                             .font(BlitzType.caption)
                             .foregroundStyle(BlitzUI.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
-                        Button(isConnecting ? "Connecting…" : "Connect \(provider.title)") {
+                        Button(connectTitle) {
                             Task { await connectClient() }
                         }
                         .blitzButton(.secondary)
-                        .disabled(isConnecting || mcpServer.status != .running || clientStatus == .configured || clientStatus == .conflict)
+                        .disabled(isConnecting || !mcpServer.status.servesAgents || clientStatus == .configured)
                     }
                     if let path = provider.relativeConfigurationPath {
                         Text("User configuration: ~/\(path)")
@@ -114,7 +114,7 @@ struct AgentsSettingsPage: View {
                         Task { await connectClient() }
                     }
                     .blitzButton(.secondary)
-                    .disabled(isConnecting || mcpServer.status != .running)
+                    .disabled(isConnecting || !mcpServer.status.servesAgents)
                     Text("Claude opens an installation prompt. Enable the extension there, then start a new conversation. Keep BlitzRecorder open.")
                         .font(BlitzType.caption)
                         .foregroundStyle(BlitzUI.secondaryText)
@@ -127,7 +127,7 @@ struct AgentsSettingsPage: View {
                         copyableCode(stdioConfiguration(directory))
                     }
                 }
-                if mcpServer.status != .running, provider != .cloud {
+                if !mcpServer.status.servesAgents, provider != .cloud {
                     Text("Turn on Allow local agents and wait for the server to be ready before connecting.")
                         .font(BlitzType.caption)
                         .foregroundStyle(BlitzUI.secondaryText)
@@ -165,7 +165,11 @@ struct AgentsSettingsPage: View {
                 }
             } else {
                 let request = MCPClientSetup.Request(provider: provider, home: FileManager.default.homeDirectoryForCurrentUser)
-                try await MCPClientSetup.install(request)
+                if hasConflict {
+                    try await MCPClientSetup.replace(request)
+                } else {
+                    try await MCPClientSetup.install(request)
+                }
                 clientStatus = await MCPClientSetup.status(request)
                 setupMessage = "Connection saved. Start a new session in \(provider.title), approve the tools, then ask it to list BlitzRecorder recordings."
             }
@@ -182,28 +186,17 @@ struct AgentsSettingsPage: View {
         return data.map { String(decoding: $0, as: UTF8.self) } ?? ""
     }
 
+    private var hasConflict: Bool {
+        if case .conflict = clientStatus { true } else { false }
+    }
+
+    private var connectTitle: String {
+        if isConnecting { return hasConflict ? "Replacing…" : "Connecting…" }
+        return hasConflict ? "Replace connection" : "Connect \(provider.title)"
+    }
+
     private var enabledBinding: Binding<Bool> {
         Binding(get: { mcpServer.isEnabled }, set: { enabled in Task { await mcpServer.setEnabled(enabled) } })
-    }
-
-    private var statusTitle: String {
-        switch mcpServer.status {
-        case .disabled: "Off"
-        case .stopped: "Stopped"
-        case .starting: "Starting…"
-        case .running: "Running"
-        case .failed: "Unavailable"
-        }
-    }
-
-    private var statusDetail: String {
-        switch mcpServer.status {
-        case .disabled: "Turn on local agent access to connect."
-        case .stopped: "The server is not listening."
-        case .starting: "Opening the local endpoint."
-        case .running: "Server available. Each AI client still needs its own connection."
-        case .failed(let message): message
-        }
     }
 
     private var isTestingConnection: Bool { mcpServer.connectionTestStatus == .testing }

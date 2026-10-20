@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "blitzrecorder",
   "display_name": "BlitzRecorder",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Read local recordings, transcripts and video frames, and create MP4 exports with BlitzRecorder.",
   "author": { "name": "BlitzRecorder" },
   "server": {

@@ -13,7 +13,7 @@ final class MCPClientSetupTests: XCTestCase {
             let original = Data(#"{"preference":true,"mcpServers":{"existing":{"command":"keep-me","env":{"TEST":"unchanged"}}}}"#.utf8)
             try original.write(to: file)
             let request = MCPClientSetup.Request(provider: provider, home: home)
-            try MCPClientSetup.mergeConfiguration(request)
+            try MCPClientSetup.mergeConfiguration(.init(request: request, mode: .add))
             let status = await MCPClientSetup.status(request)
             XCTAssertEqual(status, .configured)
             let first = try Data(contentsOf: file)
@@ -22,7 +22,7 @@ final class MCPClientSetupTests: XCTestCase {
             let servers = try XCTUnwrap(document["mcpServers"] as? [String: Any])
             XCTAssertEqual((servers["existing"] as? [String: Any])?["command"] as? String, "keep-me")
             XCTAssertEqual(servers["blitzrecorder"] as? [String: String], provider.serverConfiguration)
-            try MCPClientSetup.mergeConfiguration(request)
+            try MCPClientSetup.mergeConfiguration(.init(request: request, mode: .add))
             XCTAssertEqual(try Data(contentsOf: file), first)
             let backups = try FileManager.default.contentsOfDirectory(at: file.deletingLastPathComponent(), includingPropertiesForKeys: nil)
                 .filter { $0.pathExtension == "backup" }
@@ -48,7 +48,7 @@ final class MCPClientSetupTests: XCTestCase {
             let status = await MCPClientSetup.status(request)
             XCTAssertNotEqual(status, .missing)
             XCTAssertNotEqual(status, .configured)
-            XCTAssertThrowsError(try MCPClientSetup.mergeConfiguration(request))
+            XCTAssertThrowsError(try MCPClientSetup.mergeConfiguration(.init(request: request, mode: .add)))
             XCTAssertEqual(try Data(contentsOf: file), original)
         }
     }

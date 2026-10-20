@@ -7,6 +7,7 @@ import MCP
 final class LoopbackMCPHTTPServer: @unchecked Sendable {
     struct Configuration {
         let host: String
+        let fallbackHosts: [String]
         let port: Int
         let endpoint: String
         let workspaceEndpoint: String
@@ -16,7 +17,7 @@ final class LoopbackMCPHTTPServer: @unchecked Sendable {
 
     private let configuration: Configuration
     private let eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-    private var channel: Channel?
+    private var channels: [Channel] = []
 
     init(_ configuration: Configuration) {
         self.configuration = configuration
@@ -40,15 +41,26 @@ final class LoopbackMCPHTTPServer: @unchecked Sendable {
             }
             .childChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
 
-        channel = try await bootstrap.bind(
+        channels = [try await bootstrap.bind(
             host: configuration.host,
             port: configuration.port
-        ).get()
+        ).get()]
+        for host in configuration.fallbackHosts {
+            if let channel = try? await bootstrap.bind(host: host, port: configuration.port).get() {
+                channels.append(channel)
+            }
+        }
+    }
+
+    static func isAddressInUse(_ error: Error) -> Bool {
+        (error as? IOError)?.errnoCode == EADDRINUSE
     }
 
     func stop() async {
-        try? await channel?.close().get()
-        channel = nil
+        for channel in channels {
+            try? await channel.close().get()
+        }
+        channels = []
         try? await eventLoopGroup.shutdownGracefully()
     }
 }

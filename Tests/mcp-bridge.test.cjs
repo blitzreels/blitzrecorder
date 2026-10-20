@@ -7,6 +7,7 @@ test('bridge forwards lifecycle headers and keeps notifications off stdout', asy
   const requests = [];
   const forward = createForwarder({
     url: 'http://127.0.0.1:18473/mcp',
+    launchApp: async () => false,
     fetchRequest: async (url, options) => {
       const message = JSON.parse(options.body);
       requests.push({ url, options, message });

@@ -1,10 +1,46 @@
 const readline = require('node:readline');
+const { execFile } = require('node:child_process');
 
 const endpoint = 'http://127.0.0.1:18473/mcp';
+const bundleIds = ['dev.blitzreels.blitzrecorder', 'dev.blitzreels.blitzrecorder.debug'];
+const launchTimeoutMs = 20000;
 
-function createForwarder({ url, fetchRequest }) {
+const isConnectionRefused = error => error.cause?.code === 'ECONNREFUSED';
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+function openInBackground(bundleId) {
+  return new Promise(resolve => {
+    execFile('/usr/bin/open', ['-g', '-b', bundleId, '--args', '--agent-background'], error => resolve(!error));
+  });
+}
+
+async function launchApp() {
+  for (const bundleId of bundleIds) {
+    if (await openInBackground(bundleId)) return true;
+  }
+  return false;
+}
+
+function createForwarder({ url, fetchRequest, launchApp }) {
   let protocolVersion = '2025-11-25';
   let sessionId;
+
+  async function fetchLaunchingApp(options) {
+    try {
+      return await fetchRequest(url, options());
+    } catch (error) {
+      if (!isConnectionRefused(error) || !(await launchApp())) throw error;
+      const deadline = Date.now() + launchTimeoutMs;
+      for (;;) {
+        await delay(500);
+        try {
+          return await fetchRequest(url, options());
+        } catch (retryError) {
+          if (!isConnectionRefused(retryError) || Date.now() > deadline) throw retryError;
+        }
+      }
+    }
+  }
 
   return async function forward(message) {
     const headers = {
@@ -13,13 +49,13 @@ function createForwarder({ url, fetchRequest }) {
       'MCP-Protocol-Version': protocolVersion,
     };
     if (sessionId) headers['Mcp-Session-Id'] = sessionId;
-    const response = await fetchRequest(url, {
+    const response = await fetchLaunchingApp(() => ({
       method: 'POST',
       headers,
       body: JSON.stringify(message),
       signal: AbortSignal.timeout(60000),
       redirect: 'error',
-    });
+    }));
     if (!response.ok) throw new Error(`BlitzRecorder returned HTTP ${response.status}. Check Settings > Integrations.`);
     sessionId = response.headers.get('mcp-session-id') || sessionId;
     if (response.status === 202 || response.status === 204) return null;
@@ -45,8 +81,8 @@ function startBridge({ input, output, diagnostics, forward }) {
         const result = await forward(message);
         if (result && Object.hasOwn(message, 'id')) output.write(JSON.stringify(result) + '\n');
       } catch (error) {
-        const detail = error.cause?.code === 'ECONNREFUSED'
-          ? 'Open BlitzRecorder and turn on Settings > Integrations > Allow local agents, then reconnect.'
+        const detail = isConnectionRefused(error)
+          ? 'Could not reach BlitzRecorder. Open BlitzRecorder and turn on Settings > Integrations > Allow local agents, then retry.'
           : error.message;
         if (message && Object.hasOwn(message, 'id')) {
           output.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, error: { code: -32000, message: detail } }) + '\n');
@@ -66,7 +102,7 @@ if (require.main === module) {
     input: process.stdin,
     output: process.stdout,
     diagnostics: process.stderr,
-    forward: createForwarder({ url: endpoint, fetchRequest: fetch }),
+    forward: createForwarder({ url: endpoint, fetchRequest: fetch, launchApp }),
   }).catch(error => {
     process.stderr.write(`BlitzRecorder: ${error.message}\n`);
     process.exitCode = 1;

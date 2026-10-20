@@ -25,7 +25,7 @@ struct MainView: View {
     var body: some View {
         HStack(spacing: 0) {
             if !isSidebarHidden && !isInStudio {
-                AppSidebar(vm: vm)
+                AppSidebar(vm: vm, mcpServer: mcpServer)
                     .shadow(color: BlitzUI.elevationShadow, radius: 8, x: 2)
                     .zIndex(1)
             }

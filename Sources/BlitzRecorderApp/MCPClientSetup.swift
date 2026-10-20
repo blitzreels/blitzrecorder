@@ -73,6 +73,24 @@ enum MCPClientProvider: String, CaseIterable, Identifiable {
         }
     }
 
+    var commandLineTool: String? {
+        switch self {
+        case .claudeCode: "claude"
+        case .codex: "codex"
+        case .gemini: "gemini"
+        case .vscode: "code"
+        case .claudeDesktop, .cursor, .windsurf, .other, .cloud: nil
+        }
+    }
+
+    func matchesServer(_ values: [String: Any]) -> Bool {
+        let endpoint = BlitzRecorderMCPServer.endpointURL.absoluteString
+        return serverConfiguration.allSatisfy { key, value in
+            guard let existing = values[key] as? String else { return false }
+            return value == endpoint ? BlitzRecorderMCPServer.isEndpoint(existing) : existing == value
+        }
+    }
+
     var canInstallConfiguration: Bool {
         ![.claudeDesktop, .other, .cloud].contains(self)
     }
@@ -87,14 +105,14 @@ enum MCPClientSetup {
     enum Status: Equatable {
         case missing
         case configured
-        case conflict
+        case conflict(String)
         case unavailable(String)
 
         var detail: String {
             switch self {
             case .missing: "Not configured for this user."
             case .configured: "Configuration saved. Start a new session in the client to discover the tools."
-            case .conflict: "A different server already uses the name blitzrecorder. Your configuration was kept."
+            case .conflict(let target): "The name blitzrecorder points to \(target). Replace it to connect to this app."
             case .unavailable(let message): message
             }
         }
@@ -112,7 +130,8 @@ enum MCPClientSetup {
                     return .unavailable("BlitzRecorder is configured but disabled in Codex. Enable it in Codex MCP settings.")
                 }
                 let transport = document?["transport"] as? [String: Any]
-                return transport?["url"] as? String == BlitzRecorderMCPServer.endpointURL.absoluteString ? .configured : .conflict
+                if let url = transport?["url"] as? String, BlitzRecorderMCPServer.isEndpoint(url) { return .configured }
+                return .conflict(conflictTarget(transport ?? [:]))
             }
             guard let path = request.provider.relativeConfigurationPath else { return .missing }
             let url = request.home.appendingPathComponent(path)
@@ -126,8 +145,8 @@ enum MCPClientSetup {
                 return .unavailable("The client's server configuration has an unsupported format. Nothing was changed.")
             }
             guard let server = servers["blitzrecorder"] else { return .missing }
-            guard let values = server as? [String: Any] else { return .conflict }
-            return request.provider.serverConfiguration.allSatisfy { values[$0.key] as? String == $0.value } ? .configured : .conflict
+            guard let values = server as? [String: Any] else { return .conflict(conflictTarget([:])) }
+            return request.provider.matchesServer(values) ? .configured : .conflict(conflictTarget(values))
         } catch {
             return .unavailable(error.localizedDescription)
         }
@@ -136,36 +155,64 @@ enum MCPClientSetup {
     static func install(_ request: Request) async throws {
         switch await status(request) {
         case .configured: return
-        case .conflict: throw SetupError.message(Status.conflict.detail)
+        case .conflict(let target): throw SetupError.message(Status.conflict(target).detail)
         case .unavailable(let message): throw SetupError.message(message)
         case .missing: break
         }
-        if [.claudeCode, .codex, .gemini, .vscode].contains(request.provider) {
-            let executable: String
+        if let executable = request.provider.commandLineTool {
             let arguments: [String]
             let endpoint = BlitzRecorderMCPServer.endpointURL.absoluteString
             switch request.provider {
             case .claudeCode, .gemini:
-                executable = request.provider == .claudeCode ? "claude" : "gemini"
                 arguments = ["mcp", "add", "--scope", "user", "--transport", "http", "blitzrecorder", endpoint]
             case .codex:
-                executable = "codex"
                 arguments = ["mcp", "add", "blitzrecorder", "--url", endpoint]
             default:
-                executable = "code"
                 arguments = ["--add-mcp", "{\"name\":\"blitzrecorder\",\"type\":\"http\",\"url\":\"\(endpoint)\"}"]
             }
             let result = try await run(.init(executable: executable, arguments: arguments, home: request.home))
             guard result.code == 0 else { throw SetupError.message("\(request.provider.title) could not save the connection. Use the setup command below in Terminal.") }
         } else {
-            try mergeConfiguration(request)
+            try mergeConfiguration(.init(request: request, mode: .add))
         }
         guard await status(request) == .configured else {
             throw SetupError.message("The client did not save a matching connection. Check its MCP settings.")
         }
     }
 
-    static func mergeConfiguration(_ request: Request) throws {
+    static func replace(_ request: Request) async throws {
+        guard case .conflict = await status(request) else { return try await install(request) }
+        switch request.provider {
+        case .claudeCode, .gemini, .codex:
+            guard let executable = request.provider.commandLineTool else { return }
+            let scope = request.provider == .codex ? [] : ["--scope", "user"]
+            let result = try await run(.init(
+                executable: executable, arguments: ["mcp", "remove"] + scope + ["blitzrecorder"], home: request.home
+            ))
+            guard result.code == 0 else {
+                throw SetupError.message("\(request.provider.title) could not remove the old connection. Remove blitzrecorder in its MCP settings.")
+            }
+            try await install(request)
+        case .cursor, .windsurf:
+            try mergeConfiguration(.init(request: request, mode: .replace))
+        case .vscode, .claudeDesktop, .other, .cloud:
+            throw SetupError.message("Remove blitzrecorder from \(request.provider.title)'s MCP settings, then connect again.")
+        }
+    }
+
+    private static func conflictTarget(_ values: [String: Any]) -> String {
+        let target = ["url", "httpUrl", "serverUrl", "command"].lazy.compactMap { values[$0] as? String }.first
+        return target ?? "a different server"
+    }
+
+    struct Merge {
+        enum Mode { case add, replace }
+        let request: Request
+        let mode: Mode
+    }
+
+    static func mergeConfiguration(_ merge: Merge) throws {
+        let request = merge.request
         guard let path = request.provider.relativeConfigurationPath,
               ![.codex, .vscode].contains(request.provider) else { throw SetupError.message("Use this client's setup command.") }
         let fileManager = FileManager.default
@@ -182,10 +229,10 @@ enum MCPClientSetup {
             throw SetupError.message("The client's server configuration has an unsupported format. Nothing was changed.")
         }
         var servers = document[request.provider.serverKey] as? [String: Any] ?? [:]
-        if let existing = servers["blitzrecorder"] {
-            guard let values = existing as? [String: Any],
-                  request.provider.serverConfiguration.allSatisfy({ values[$0.key] as? String == $0.value }) else {
-                throw SetupError.message(Status.conflict.detail)
+        if let existing = servers["blitzrecorder"], merge.mode == .add {
+            let values = existing as? [String: Any] ?? [:]
+            guard request.provider.matchesServer(values) else {
+                throw SetupError.message(Status.conflict(conflictTarget(values)).detail)
             }
             return
         }

@@ -61,6 +61,10 @@ extension AppDelegate {
             livePreview.state = LivePreviewPreference().isEnabled ? .on : .off
         }
         menu.addItem(withTitle: "Show BlitzRecorder", action: #selector(showWindow), keyEquivalent: "")
+        let agents = menu.addItem(
+            withTitle: "AI Agents: \(mcpServer.status.title)", action: #selector(showAgentSettings), keyEquivalent: ""
+        )
+        agents.toolTip = mcpServer.status.detail
         menu.addItem(.separator())
 
         let heading = NSMenuItem(title: "Recent Projects", action: nil, keyEquivalent: "")
@@ -98,6 +102,10 @@ extension AppDelegate {
         for item in menu.items {
             item.target = self
         }
+    }
+
+    @objc private func showAgentSettings() {
+        windowController?.presentSettings(selecting: .agents)
     }
 
     @objc private func quitApplication() {

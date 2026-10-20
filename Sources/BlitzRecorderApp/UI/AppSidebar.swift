@@ -92,6 +92,7 @@ extension RecorderViewModel {
 
 struct AppSidebar: View {
     @Bindable var vm: RecorderViewModel
+    let mcpServer: BlitzRecorderMCPServer
 
     @State private var dropTargetID: String?
 
@@ -137,6 +138,9 @@ struct AppSidebar: View {
                     AppUpdateSidebarCard()
                         .padding(.bottom, 8)
                 }
+                AppSidebarAgentsRow(configuration: .init(mcpServer: mcpServer) {
+                    vm.showSettings(.agents)
+                })
                 AppSidebarLivePreviewToggle(vm: vm)
                 row(.init(destination: .settings, title: "Settings", symbol: "gearshape",
                           detail: nil, trailing: "⌘,", enabled: true), selection)
@@ -288,6 +292,71 @@ struct AppSidebarRow: View {
         .background { background }
         .opacity(item.enabled ? 1 : 0.45)
         .onHover { isHovering = $0 }
+    }
+}
+
+struct AppSidebarAgentsRow: View {
+    struct Configuration {
+        let mcpServer: BlitzRecorderMCPServer
+        let action: () -> Void
+    }
+
+    let configuration: Configuration
+    @State private var isHovering = false
+
+    private var status: BlitzRecorderMCPServerStatus { configuration.mcpServer.status }
+
+    var body: some View {
+        Button(action: configuration.action) {
+            HStack(spacing: 10) {
+                Image(systemName: "terminal")
+                    .font(BlitzType.symbol(14))
+                    .foregroundStyle(BlitzUI.secondaryText)
+                    .frame(width: 20)
+                Text("AI agents")
+                    .font(BlitzType.navigation)
+                    .foregroundStyle(BlitzUI.supportingText)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                BlitzStatusDot(tone: tone, diameter: 6)
+                Text(status.title)
+                    .font(BlitzType.caption)
+                    .foregroundStyle(status.servesAgents ? BlitzUI.secondaryText : BlitzUI.tertiaryText)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, AppSidebarRow.inset)
+            .frame(minHeight: AppSidebarRow.height)
+            .contentShape(.rect)
+        }
+        .buttonStyle(BlitzPressButtonStyle())
+        .background {
+            RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous)
+                .fill(isHovering ? BlitzUI.quietFill : .clear)
+        }
+        .onHover { isHovering = $0 }
+        .animation(.easeOut(duration: 0.15), value: status)
+        .help(help)
+        .accessibilityLabel("AI agents")
+        .accessibilityValue(status.title)
+        .accessibilityHint("Opens Integrations settings")
+    }
+
+    private var tone: BlitzStatusTone {
+        switch status {
+        case .running, .portInUse: .ready
+        case .failed: .warning
+        case .disabled, .stopped, .starting: .muted
+        }
+    }
+
+    private var help: String {
+        let handshake = configuration.mcpServer.lastClientHandshake.map {
+            " \($0.name) last connected at \($0.date.formatted(date: .omitted, time: .shortened))."
+        } ?? ""
+        let reach = status.servesAgents
+            ? "Claude Code, Codex and other MCP clients can use your recordings."
+            : "MCP clients cannot reach BlitzRecorder right now."
+        return "\(reach) \(status.detail)\(handshake)"
     }
 }
 

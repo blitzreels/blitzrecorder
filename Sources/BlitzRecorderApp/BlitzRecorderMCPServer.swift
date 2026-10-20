@@ -10,7 +10,34 @@ enum BlitzRecorderMCPServerStatus: Equatable {
     case stopped
     case starting
     case running
+    case portInUse
     case failed(String)
+}
+
+extension BlitzRecorderMCPServerStatus {
+    var servesAgents: Bool { self == .running || self == .portInUse }
+
+    var title: String {
+        switch self {
+        case .disabled: "Off"
+        case .stopped: "Stopped"
+        case .starting: "Starting…"
+        case .running: "Online"
+        case .portInUse: "Other copy"
+        case .failed: "Offline"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .disabled: "Turn on local agent access to connect."
+        case .stopped: "The server is not listening."
+        case .starting: "Opening the local endpoint."
+        case .running: "Server available. Each AI client still needs its own connection."
+        case .portInUse: "Another copy of BlitzRecorder is answering agents. This copy takes over when that one quits."
+        case .failed(let message): message
+        }
+    }
 }
 
 enum BlitzRecorderMCPConnectionTestStatus: Equatable {
@@ -41,11 +68,21 @@ final class BlitzRecorderMCPServer {
     }
     """
 
+    nonisolated static func isEndpoint(_ value: String) -> Bool {
+        guard let url = URL(string: value), url.scheme == "http", url.port == port,
+              let host = url.host(percentEncoded: false),
+              ["127.0.0.1", "localhost", "::1"].contains(host.lowercased()) else { return false }
+        return url.path() == endpoint || url.path() == "\(endpoint)/"
+    }
+
+    nonisolated static let backgroundLaunchArgument = "--agent-background"
+
     private static let enabledDefaultsKey = "agents.mcpServer.enabled.v1"
 
     private let projectService: MCPProjectService
     private let defaults: UserDefaults
     private var httpServer: LoopbackMCPHTTPServer?
+    private var portRetryTask: Task<Void, Never>?
     private(set) var isEnabled: Bool
     private(set) var status: BlitzRecorderMCPServerStatus
     private(set) var connectionTestStatus = BlitzRecorderMCPConnectionTestStatus.notRun
@@ -66,10 +103,13 @@ final class BlitzRecorderMCPServer {
             return
         }
         guard httpServer == nil else { return }
-        status = .starting
+        if status != .portInUse {
+            status = .starting
+        }
 
         let httpServer = LoopbackMCPHTTPServer(.init(
             host: "127.0.0.1",
+            fallbackHosts: ["::1"],
             port: Self.port,
             endpoint: Self.endpoint,
             workspaceEndpoint: Self.workspaceEndpoint,
@@ -91,10 +131,23 @@ final class BlitzRecorderMCPServer {
             }
             self.httpServer = httpServer
             status = .running
-            mcpLog.info("BlitzRecorder MCP listening on 127.0.0.1:\(Self.port)")
+            mcpLog.info("BlitzRecorder MCP listening on localhost:\(Self.port)")
         } catch {
-            status = .failed(error.localizedDescription)
-            mcpLog.error("BlitzRecorder MCP failed to start: \(error.localizedDescription, privacy: .public)")
+            await httpServer.stop()
+            guard LoopbackMCPHTTPServer.isAddressInUse(error) else {
+                status = .failed(error.localizedDescription)
+                mcpLog.error("BlitzRecorder MCP failed to start: \(error.localizedDescription, privacy: .public)")
+                return
+            }
+            if status != .portInUse {
+                mcpLog.info("BlitzRecorder MCP port \(Self.port) is in use; retrying until it is free")
+            }
+            status = .portInUse
+            portRetryTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled, let self, self.status == .portInUse else { return }
+                await self.start()
+            }
         }
     }
 
@@ -182,6 +235,8 @@ final class BlitzRecorderMCPServer {
     }
 
     func stop() async {
+        portRetryTask?.cancel()
+        portRetryTask = nil
         await httpServer?.stop()
         httpServer = nil
         status = isEnabled ? .stopped : .disabled
