@@ -11,10 +11,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def replace(path: str, pattern: str, replacement: str) -> None:
+def replace(path: str, pattern: str, replacement: str, limit: int = 0) -> None:
     file_path = ROOT / path
     text = file_path.read_text()
-    updated, count = re.subn(pattern, replacement, text)
+    updated, count = re.subn(pattern, replacement, text, count=limit)
     if count == 0:
         raise SystemExit(f"error: no replacement made in {path}")
     file_path.write_text(updated)
@@ -38,8 +38,9 @@ def main() -> None:
     if not re.fullmatch(r"\d+", args.build):
         raise SystemExit("error: build must be a positive integer")
 
-    replace("project.yml", r'MARKETING_VERSION: "[^"]+"', f'MARKETING_VERSION: "{args.version}"')
-    replace("project.yml", r'CURRENT_PROJECT_VERSION: "[^"]+"', f'CURRENT_PROJECT_VERSION: "{args.build}"')
+    # Only the Mac app, the first target. The iPhone app and its controls keep their own App Store version.
+    replace("project.yml", r'MARKETING_VERSION: "[^"]+"', f'MARKETING_VERSION: "{args.version}"', limit=1)
+    replace("project.yml", r'CURRENT_PROJECT_VERSION: "[^"]+"', f'CURRENT_PROJECT_VERSION: "{args.build}"', limit=1)
 
     shell_constants = [
         "Scripts/preflight-app-store-local.sh",
