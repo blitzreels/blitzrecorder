@@ -33,10 +33,17 @@ private struct BlitzWindowToolbarModifier: ViewModifier {
 private struct GlobalVideoImportStatusBar: View {
     @Bindable var vm: RecorderViewModel
 
+    /// The library shows an import as a row where the project will land, so the bar only follows other pages.
+    private var progress: VideoProjectImporter.Progress? {
+        let showsImportRow = vm.studioMode == .projects && !vm.isShowingSettings
+            && vm.projectLibraryNavigation.section == .recordings
+        return showsImportRow ? nil : vm.libraryActions.videoImportProgress
+    }
+
     var body: some View {
-        if vm.libraryActions.videoImportProgress != nil || vm.libraryActions.videoImportError != nil {
+        if progress != nil || vm.libraryActions.videoImportError != nil {
             VStack(alignment: .leading, spacing: 12) {
-                if let progress = vm.libraryActions.videoImportProgress {
+                if let progress {
                     BlitzAdaptiveRow() {
                         Text("\(progress.stage) · \(progress.filename)")
                             .lineLimit(2)

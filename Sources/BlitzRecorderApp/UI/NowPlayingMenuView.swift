@@ -27,7 +27,6 @@ struct NowPlayingMenuView: View {
                 }
                 .accessibilityLabel("Skip back 10 seconds")
                 .help("Skip back 10 seconds")
-                .pointingHandCursor()
 
                 Button {
                     playback.perform(.toggle)
@@ -37,7 +36,6 @@ struct NowPlayingMenuView: View {
                         .frame(width: 38, height: 32)
                 }
                 .accessibilityLabel(playback.isPlaying ? "Pause playback" : "Resume playback")
-                .pointingHandCursor()
 
                 Button {
                     playback.perform(.skip(10))
@@ -46,7 +44,6 @@ struct NowPlayingMenuView: View {
                 }
                 .accessibilityLabel("Skip forward 10 seconds")
                 .help("Skip forward 10 seconds")
-                .pointingHandCursor()
             }
             .font(BlitzType.title)
             .buttonStyle(.borderless)

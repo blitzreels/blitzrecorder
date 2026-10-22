@@ -65,7 +65,17 @@ final class RecorderCoordinator {
         didSet { capture.onStateChanged = onStateChanged }
     }
     var onMessage: ((String) -> Void)? {
-        didSet { capture.onMessage = onMessage }
+        didSet {
+            #if DEBUG
+            let onMessage = onMessage
+            capture.onMessage = { message in
+                MCPDebugCameraService.shared.record(message)
+                onMessage?(message)
+            }
+            #else
+            capture.onMessage = onMessage
+            #endif
+        }
     }
     var onScreenWindowFitMessage: ((String) -> Void)? {
         didSet { capture.onScreenWindowFitMessage = onScreenWindowFitMessage }
@@ -133,6 +143,9 @@ final class RecorderCoordinator {
         recents.record(settings.screenSourceBinding)
         capture.remoteCamera = remoteCamera
         remoteCamera.onMessage = { [weak self] message in
+            #if DEBUG
+            MCPDebugCameraService.shared.record(message)
+            #endif
             self?.onMessage?(message)
         }
         remoteCamera.onCameraConfigurationChanged = { [weak self] in
@@ -152,7 +165,8 @@ final class RecorderCoordinator {
             self?.onRemoteCameraPairingCodeRequested?(deviceName)
         }
         capture.bindCaptureEngine()
-        if RemoteCameraProviderID.isRemote(settings.selectedCameraID) {
+        // A paired iPhone may come back as the camera, so look for it without waiting to be asked.
+        if RemoteCameraProviderID.isRemote(settings.selectedCameraID) || !settings.trustedRemoteCameraServiceIDs.isEmpty {
             startRemoteCameraDiscoveryIfNeeded()
         }
         if capture.refitCameraInsetFrameForCurrentSource() {

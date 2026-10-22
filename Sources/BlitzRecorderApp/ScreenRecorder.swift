@@ -193,7 +193,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .screen,
               sampleBuffer.isValid,
-              frameStatus(for: sampleBuffer) == .complete || frameStatus(for: sampleBuffer) == .started else {
+              [.complete, .started].contains(sampleBuffer.screenCaptureFrameStatus) else {
             return
         }
         writer?.append(sampleBuffer)
@@ -390,14 +390,5 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         configuration.preservesAspectRatio = true
         configuration.streamName = "BlitzRecorder Picked Screen"
         return configuration
-    }
-
-    private func frameStatus(for sampleBuffer: CMSampleBuffer) -> SCFrameStatus {
-        guard let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
-              let rawStatus = attachments.first?[SCStreamFrameInfo.status] as? Int,
-              let status = SCFrameStatus(rawValue: rawStatus) else {
-            return .complete
-        }
-        return status
     }
 }

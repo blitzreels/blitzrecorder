@@ -24,34 +24,18 @@ extension ScreenCaptureGeometry {
             .max { overlapArea($0.frame, contentRect) < overlapArea($1.frame, contentRect) }
 
         guard let window = target,
-              overlapArea(window.frame, contentRect) > 0,
-              let pid = window.owningApplication?.processID else {
+              overlapArea(window.frame, contentRect) > 0 else {
             return nil
         }
 
-        return PickedWindowTarget(
-            pid: pid,
-            bounds: window.frame,
-            title: window.title,
-            appName: window.owningApplication?.applicationName,
-            displayID: displayID(for: window, displays: content.displays)
-        )
+        return window.pickedTarget(displayID: displayID(for: window, displays: content.displays))
     }
 
     static func windowTarget(for binding: ScreenSourceBinding) async -> PickedWindowTarget? {
         if let target = knownWindowTarget(binding) { return target }
         guard let content = try? await SCShareableContent.current else { return nil }
-        guard let window = window(matching: binding, in: content),
-              let pid = window.owningApplication?.processID else {
-            return nil
-        }
-        return PickedWindowTarget(
-            pid: pid,
-            bounds: window.frame,
-            title: window.title,
-            appName: window.owningApplication?.applicationName,
-            displayID: binding.displayID ?? displayID(for: window, displays: content.displays)
-        )
+        guard let window = window(matching: binding, in: content) else { return nil }
+        return window.pickedTarget(displayID: binding.displayID ?? displayID(for: window, displays: content.displays))
     }
 
     static func knownWindowTarget(_ binding: ScreenSourceBinding) -> PickedWindowTarget? {
@@ -86,18 +70,11 @@ extension ScreenCaptureGeometry {
             for: application,
             on: targetDisplay,
             in: content
-        ),
-              let pid = window.owningApplication?.processID else {
+        ) else {
             return nil
         }
 
-        return PickedWindowTarget(
-            pid: pid,
-            bounds: window.frame,
-            title: window.title,
-            appName: window.owningApplication?.applicationName,
-            displayID: binding.displayID ?? displayID(for: window, displays: content.displays)
-        )
+        return window.pickedTarget(displayID: binding.displayID ?? displayID(for: window, displays: content.displays))
     }
 
     static func displayID(for window: SCWindow, displays: [SCDisplay]) -> String? {
@@ -180,5 +157,18 @@ extension ScreenCaptureGeometry {
             return true
         }
         return owningApplication.applicationName == application.applicationName
+    }
+}
+
+private extension SCWindow {
+    func pickedTarget(displayID: String?) -> PickedWindowTarget? {
+        guard let pid = owningApplication?.processID else { return nil }
+        return PickedWindowTarget(
+            pid: pid,
+            bounds: frame,
+            title: title,
+            appName: owningApplication?.applicationName,
+            displayID: displayID
+        )
     }
 }

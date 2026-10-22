@@ -29,7 +29,6 @@ struct BlitzVisualChoice<Preview: View>: View {
         .accessibilityLabel(configuration.title)
         .accessibilityAddTraits(configuration.isSelected ? .isSelected : [])
         .help(configuration.help)
-        .pointingHandCursor()
     }
 }
 
@@ -245,7 +244,6 @@ struct EditorBackgroundSwatches: View {
                 .accessibilityLabel(style.displayName)
                 .accessibilityAddTraits(isSelected ? [.isSelected] : [])
                 .help(style.displayName)
-                .pointingHandCursor()
             }
             Button("More") { showsAll.toggle() }
                 .blitzButton(.quiet)

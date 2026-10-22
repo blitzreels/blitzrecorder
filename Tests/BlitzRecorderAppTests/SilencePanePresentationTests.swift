@@ -39,7 +39,7 @@ final class SilencePanePresentationTests: XCTestCase {
             ("none", make(.init())),
             ("unavailable", make(.init(hasAudio: false)))
         ]
-        let actions = SilencePaneActions(apply: {}, restore: {}, setPreview: { _ in }, selectStrength: { _ in })
+        let actions = SilencePaneActions(apply: {}, restore: {}, keepCurrent: {}, setPreview: { _ in }, selectStrength: { _ in })
         for (name, presentation) in states {
             let view = VStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 20) {

@@ -55,7 +55,6 @@ private struct BlitzCursorModifier: ViewModifier {
 
     private var nativeStyle: PointerStyle? {
         if cursor === NSCursor.arrow { return .default }
-        if cursor === NSCursor.pointingHand { return .link }
         if cursor === NSCursor.resizeLeftRight { return .columnResize }
         if cursor === NSCursor.resizeUpDown { return .rowResize }
         if cursor === NSCursor.crosshair { return .rectSelection }
@@ -68,9 +67,5 @@ private struct BlitzCursorModifier: ViewModifier {
 extension View {
     func blitzCursor(_ cursor: NSCursor) -> some View {
         modifier(BlitzCursorModifier(cursor: cursor, enabled: true))
-    }
-
-    func pointingHandCursor(enabled: Bool = true) -> some View {
-        modifier(BlitzCursorModifier(cursor: .pointingHand, enabled: enabled))
     }
 }

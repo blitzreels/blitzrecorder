@@ -178,7 +178,6 @@ struct EditorTranscriptStrip: View {
         .frame(width: configuration.width, height: configuration.height, alignment: .leading)
         .background(BlitzUI.cardFill)
         .contentShape(.rect)
-        .pointingHandCursor(enabled: hoveredRange != nil)
         .onContinuousHover { phase in
             switch phase {
             case .active(let location):

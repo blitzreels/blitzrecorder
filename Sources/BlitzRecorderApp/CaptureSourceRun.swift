@@ -2,194 +2,6 @@ import Foundation
 import CoreMedia
 import ScreenCaptureKit
 
-protocol ScreenCaptureRecording: AnyObject {
-    var activeScreenCaptureStream: SCStream? { get }
-    var cursorCaptureFrame: CGRect? { get }
-    func start(url: URL, settings: RecordingSettings, filter pickedFilter: SCContentFilter?, timelineStartTime: CMTime?) async throws
-    func update(settings: RecordingSettings, filter pickedFilter: SCContentFilter?) async throws
-    func pause()
-    func resume()
-    func stop() async throws -> MediaWriterCompletion
-}
-
-extension ScreenCaptureRecording {
-    var activeScreenCaptureStream: SCStream? { nil }
-    var cursorCaptureFrame: CGRect? { nil }
-}
-
-protocol CameraCaptureRecording: AnyObject {
-    func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) async throws
-    func pause()
-    func resume()
-    func stop() async throws -> MediaWriterCompletion
-}
-
-@MainActor
-protocol RemoteCameraCaptureRecording: AnyObject {
-    func startRemoteCamera(take: RecordingTake, settings: RecordingSettings, hostTimelineStartTime: UInt64) async throws
-    func pauseRemoteCamera()
-    func resumeRemoteCamera()
-    func stopRemoteCamera(take: RecordingTake, settings: RecordingSettings) async throws -> MediaWriterCompletion
-}
-
-protocol MicrophoneCaptureRecording: AnyObject {
-    var recordingTimelineOffset: CMTime { get }
-    func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) async throws
-    func pause()
-    func resume()
-    func switchMicrophone(to deviceID: String) async throws
-    func stop() async throws -> MediaWriterCompletion
-    func finalizeSynchronization() async throws
-    func finalizeSynchronization(_ progress: AudioSynchronizationProgress) async throws
-}
-
-struct AudioSynchronizationProgress {
-    let onProgress: @Sendable (Double) -> Void
-}
-
-protocol SystemAudioCaptureRecording: AnyObject {
-    var recordingTimelineOffset: CMTime { get }
-    func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) async throws
-    func start(_ request: SystemAudioCaptureStartRequest) async throws
-    func update(filter pickedScreenFilter: SCContentFilter?) async throws
-    func pause()
-    func resume()
-    func stop() async throws -> MediaWriterCompletion
-}
-
-struct SystemAudioCaptureStartRequest {
-    let url: URL
-    let settings: RecordingSettings
-    let pickedScreenFilter: SCContentFilter?
-    let timelineStartTime: CMTime?
-}
-
-extension MicrophoneCaptureRecording {
-    var recordingTimelineOffset: CMTime { .zero }
-    func switchMicrophone(to deviceID: String) async throws {
-        throw RecorderError.microphoneUnavailable
-    }
-    func finalizeSynchronization() async throws {}
-    func finalizeSynchronization(_ progress: AudioSynchronizationProgress) async throws {
-        try await finalizeSynchronization()
-    }
-}
-
-extension SystemAudioCaptureRecording {
-    var recordingTimelineOffset: CMTime { .zero }
-
-    func start(_ request: SystemAudioCaptureStartRequest) async throws {
-        try await start(
-            url: request.url,
-            settings: request.settings,
-            timelineStartTime: request.timelineStartTime
-        )
-    }
-
-    func update(filter pickedScreenFilter: SCContentFilter?) async throws {}
-}
-
-struct CaptureSourceRunSummary {
-    let completions: [CaptureSource: MediaWriterCompletion]
-    let stopFailures: [CaptureSource: String]
-    let synchronizationFailures: Set<CaptureSource>
-    let timelineTrimOffset: CMTime
-    let sourceTimelineOffsets: [CaptureSource: CMTime]
-
-    init(
-        completions: [CaptureSource: MediaWriterCompletion],
-        stopFailures: [CaptureSource: String] = [:],
-        synchronizationFailures: Set<CaptureSource> = [],
-        timelineTrimOffset: CMTime = .zero,
-        sourceTimelineOffsets: [CaptureSource: CMTime] = [:]
-    ) {
-        self.completions = completions
-        self.stopFailures = stopFailures
-        self.synchronizationFailures = synchronizationFailures
-        self.timelineTrimOffset = timelineTrimOffset
-        self.sourceTimelineOffsets = sourceTimelineOffsets
-    }
-
-    var hasVideoMedia: Bool {
-        completions[.screen]?.wroteMedia == true || completions[.camera]?.wroteMedia == true
-    }
-
-    var stopFailureWarning: String? {
-        stopFailureWarning(for: Set(CaptureSource.allCases))
-    }
-
-    var savedRecordingStopWarning: String? {
-        if let videoWarning = stopFailureWarning(for: [.screen, .camera]) {
-            return videoWarning
-        }
-
-        let synchronizationFailureNames = [CaptureSource.microphone, .systemAudio]
-            .filter { synchronizationFailures.contains($0) }
-            .map(\.rawValue)
-            .joined(separator: " and ")
-        if !synchronizationFailureNames.isEmpty {
-            return "\(synchronizationFailureNames) timing could not be corrected. Saved video is intact, but that audio may drift."
-        }
-
-        let failedAudioSources = [CaptureSource.microphone, .systemAudio].filter {
-            stopFailures[$0] != nil && completions[$0]?.wroteMedia != true
-        }
-        guard !failedAudioSources.isEmpty else { return nil }
-        let names = failedAudioSources.map(\.rawValue).joined(separator: " and ")
-        return "\(names) audio could not be finalized. Saved video is intact, but that audio track may be missing."
-    }
-
-    private func stopFailureWarning(for sources: Set<CaptureSource>) -> String? {
-        let failures = CaptureSource.allCases.compactMap { source -> String? in
-            guard sources.contains(source) else { return nil }
-            guard let reason = stopFailures[source] else { return nil }
-            return "\(source.rawValue): \(Self.userFacingStopFailureReason(for: source, reason: reason))"
-        }
-        guard !failures.isEmpty else { return nil }
-        return "Some sources stopped with errors: \(failures.joined(separator: "; "))"
-    }
-
-    private static func userFacingStopFailureReason(for source: CaptureSource, reason: String) -> String {
-        let lowercased = reason.lowercased()
-        if source == .camera,
-           lowercased.contains("remote iphone"),
-           lowercased.contains("no video frames captured") {
-            return "iPhone camera did not save usable video. Keep BlitzRecorder Camera open until recording stops, then retry."
-        }
-        if lowercased.contains("no video frames captured") {
-            return "No video was captured from this source."
-        }
-        if lowercased.contains("cannot open") || lowercased.contains("operation not permitted") {
-            return "BlitzRecorder could not open the saved media. Check recording-folder permission, then retry."
-        }
-        return reason
-    }
-}
-
-struct CaptureSourceStopFailure: Error {
-    let completion: MediaWriterCompletion
-    let underlyingError: Error
-}
-
-struct CaptureSourceRetargetFailure: Error {
-    let rollbackFailed: Bool
-    let underlyingError: Error
-
-    static func shouldStopTake(for error: Error) -> Bool {
-        (error as? CaptureSourceRetargetFailure)?.rollbackFailed == true
-    }
-}
-
-struct CaptureSourceRunStartResult: Equatable {
-    let hostTimelineStartTime: UInt64
-    let timelineStartTime: CMTime
-
-    static func == (lhs: CaptureSourceRunStartResult, rhs: CaptureSourceRunStartResult) -> Bool {
-        lhs.hostTimelineStartTime == rhs.hostTimelineStartTime
-            && CMTimeCompare(lhs.timelineStartTime, rhs.timelineStartTime) == 0
-    }
-}
-
 @MainActor
 final class CaptureSourceRun {
     let take: RecordingTake
@@ -266,7 +78,7 @@ final class CaptureSourceRun {
             try await startEnabledSources(settings: settings, pickedScreenFilter: pickedScreenFilter)
             let contentStartTime = CMClockGetTime(CMClockGetHostTimeClock())
             let offset = CMTimeSubtract(contentStartTime, timeline.timelineStartTime)
-            if offset.isValid, offset.seconds.isFinite, CMTimeCompare(offset, .zero) > 0 {
+            if Self.isPositive(offset) {
                 timelineTrimOffset = CMTimeConvertScale(
                     offset,
                     timescale: 600,
@@ -319,7 +131,7 @@ final class CaptureSourceRun {
         for source in sourcesToStart {
             guard let adapter = sourceAdapters[source] else { continue }
             let offset = adapter.timelineOffset()
-            if offset.isValid, offset.seconds.isFinite, CMTimeCompare(offset, .zero) > 0 {
+            if Self.isPositive(offset) {
                 sourceTimelineOffsets[source] = offset
             }
         }
@@ -598,6 +410,10 @@ final class CaptureSourceRun {
         return adapters
     }
 
+    private static func isPositive(_ offset: CMTime) -> Bool {
+        offset.isValid && offset.seconds.isFinite && CMTimeCompare(offset, .zero) > 0
+    }
+
     static func sourceStopFailureDescription(_ error: Error) -> String {
         if error is RecorderError {
             return error.localizedDescription
@@ -605,8 +421,3 @@ final class CaptureSourceRun {
         return error.recorderFailureDescription
     }
 }
-
-extension ScreenRecorder: ScreenCaptureRecording {}
-extension CameraRecorder: CameraCaptureRecording {}
-extension AudioRecorder: MicrophoneCaptureRecording {}
-extension SystemAudioRecorder: SystemAudioCaptureRecording {}

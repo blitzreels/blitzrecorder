@@ -38,14 +38,9 @@ struct HostedVideoLibraryView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .foregroundStyle(BlitzUI.primaryText)
-        .confirmationDialog("Stop sharing “\(stopping?.title ?? "")”?", isPresented: Binding(
-            get: { stopping != nil }, set: { if !$0 { stopping = nil } }), presenting: stopping) { video in
-            Button("Stop sharing", role: .destructive) { Task { await controller.stopSharing(video) } }
-        } message: { video in
-            Text(video.isOwnStorage
-                 ? "The link stops working and the video is deleted from your Cloudflare. Your recording stays on this Mac."
-                 : "The link stops working for everyone. Your recording stays on this Mac.")
-        }
+        .stopSharingConfirmation(.init(stopping: $stopping, controller: controller,
+                                       title: "Stop sharing “\(stopping?.title ?? "")”?",
+                                       hostedMessage: "The link stops working for everyone. Your recording stays on this Mac."))
         .task { await controller.refresh() }
         .task(id: controller.videos.contains(where: \.isProcessing)) {
             guard controller.videos.contains(where: \.isProcessing) else { return }
@@ -220,7 +215,6 @@ struct HostedVideoLibraryView: View {
             .clipShape(.rect(cornerRadius: BlitzUI.cardRadius))
             .contentShape(.rect(cornerRadius: BlitzUI.cardRadius))
             .onTapGesture { if let url { NSWorkspace.shared.open(url) } }
-            .pointingHandCursor(enabled: url != nil)
             .help(url == nil ? video.statusLabel : "Open the watch page")
 
             VStack(alignment: .leading, spacing: 3) {

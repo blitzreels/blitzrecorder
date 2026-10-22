@@ -152,12 +152,11 @@ struct RecordingThumbnailButton: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
-        .pointingHandCursor()
         .help(help)
     }
 }
 
-private struct RecordingFileMetadata {
+struct RecordingFileMetadata {
     let sizeLabel: String?
     let durationLabel: String?
     let thumbnail: NSImage?

@@ -40,7 +40,10 @@ struct CameraSourcePickerModel {
             layout: .list,
             enabled: enabled && vm.state == .idle,
             prompt: "Choose camera",
-            refresh: { await vm.refreshSources() }
+            refresh: {
+                vm.startRemoteCameraDiscovery()
+                await vm.refreshSources()
+            }
         )
     }
 
@@ -63,7 +66,7 @@ struct CameraSourcePickerModel {
             BlitzSourcePickerItem(
                 id: "camera:\(option.id)",
                 title: option.name,
-                subtitle: "Wireless iPhone camera",
+                subtitle: "BlitzRecorder Camera · best quality",
                 systemImage: "iphone.gen3",
                 icon: nil,
                 thumbnail: nil,
@@ -74,8 +77,8 @@ struct CameraSourcePickerModel {
             }
         }
         return [
+            BlitzSourcePickerSection(title: "iPhone with BlitzRecorder Camera", items: remoteItems),
             BlitzSourcePickerSection(title: "Connected cameras", items: local.map(cameraItem)),
-            BlitzSourcePickerSection(title: "Wireless iPhones", items: remoteItems),
             BlitzSourcePickerSection(title: "Automatic", items: [defaultItem]),
             BlitzSourcePickerSection(title: "Continuity & Desk View", items: continuity.map(cameraItem))
         ]

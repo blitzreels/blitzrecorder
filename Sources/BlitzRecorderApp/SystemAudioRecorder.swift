@@ -36,24 +36,13 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
     }
     private var streamError: Error?
     private var intentionallyStoppedStreamID: ObjectIdentifier?
-    private var startupContinuation: CheckedContinuation<Void, Error>?
-    private var startupTimeoutTask: Task<Void, Never>?
-    private var hasProducedStartupSample = false
+    private let startupGate = AudioStartupGate(timeoutError: RecorderError.systemAudioDidNotStart)
     private var hasReportedActiveFailure = false
-    private var timelineStartTime: CMTime?
-    private var firstSampleTime: CMTime?
+    private var timelineAnchor = RecordingTimelineAnchor()
     var failureHandler: (@MainActor (Error) -> Void)?
 
     var recordingTimelineOffset: CMTime {
-        queue.sync {
-            guard let timelineStartTime,
-                  let firstSampleTime else { return .zero }
-            let offset = CMTimeSubtract(firstSampleTime, timelineStartTime)
-            guard offset.isValid,
-                  offset.seconds.isFinite,
-                  CMTimeCompare(offset, .zero) > 0 else { return .zero }
-            return CMTimeConvertScale(offset, timescale: 600, method: .roundHalfAwayFromZero)
-        }
+        queue.sync { timelineAnchor.offset }
     }
 
     func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime? = nil) async throws {
@@ -68,9 +57,8 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
     func start(_ request: SystemAudioCaptureStartRequest) async throws {
         streamError = nil
         intentionallyStoppedStreamID = nil
-        self.timelineStartTime = request.timelineStartTime
-        firstSampleTime = nil
-        hasProducedStartupSample = false
+        timelineAnchor.reset(timelineStartTime: request.timelineStartTime)
+        startupGate.reset()
         hasReportedActiveFailure = false
         let writer = try AudioSampleFileWriter(
             url: request.url,
@@ -163,12 +151,7 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
     }
 
     func receiveAudioSample(_ sampleBuffer: CMSampleBuffer) {
-        if firstSampleTime == nil {
-            let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-            if presentationTime.isValid {
-                firstSampleTime = presentationTime
-            }
-        }
+        timelineAnchor.observeFirstSample(sampleBuffer)
         levelPublisher.publish(from: sampleBuffer)
         writer?.append(sampleBuffer)
     }
@@ -183,37 +166,15 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
     }
 
     private func waitForFirstAudioSample() async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            queue.async {
-                if self.hasProducedStartupSample {
-                    continuation.resume()
-                    return
-                }
-                self.startupContinuation = continuation
-                self.startupTimeoutTask?.cancel()
-                self.startupTimeoutTask = Task { [weak self] in
-                    try? await Task.sleep(nanoseconds: 2_000_000_000)
-                    self?.queue.async {
-                        self?.completeStartup(.failure(RecorderError.systemAudioDidNotStart))
-                    }
-                }
-            }
-        }
+        try await startupGate.wait(on: queue)
     }
 
     private func completeStartup(_ result: Result<Void, Error>) {
-        if case .success = result {
-            hasProducedStartupSample = true
-        }
-        guard let continuation = startupContinuation else { return }
-        startupContinuation = nil
-        startupTimeoutTask?.cancel()
-        startupTimeoutTask = nil
-        continuation.resume(with: result)
+        startupGate.complete(result)
     }
 
     private func reportActiveFailureIfNeeded(_ error: Error) {
-        guard hasProducedStartupSample, !hasReportedActiveFailure else { return }
+        guard startupGate.hasProducedSample, !hasReportedActiveFailure else { return }
         hasReportedActiveFailure = true
         let failureHandler = failureHandler
         Task { @MainActor in

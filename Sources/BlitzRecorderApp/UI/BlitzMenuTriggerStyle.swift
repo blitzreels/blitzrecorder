@@ -21,7 +21,6 @@ struct BlitzMenuTriggerStyle: ButtonStyle {
             .opacity(isEnabled ? (configuration.isPressed ? 0.76 : 1) : 0.4)
             .contentShape(.rect(cornerRadius: BlitzControlMetrics.radius))
             .onHover { isHovering = $0 }
-            .pointingHandCursor()
     }
 }
 

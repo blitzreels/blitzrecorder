@@ -70,7 +70,6 @@ extension EditorTimelineView {
                     .padding(.horizontal, 7)
             }
             .contentShape(.rect(cornerRadius: 5))
-            .pointingHandCursor()
             .onHover { hoveredChapterTime = $0 && isInteractive ? chapter.time : nil }
             .onTapGesture { seekAndSettle(to: start) }
     }
@@ -127,7 +126,6 @@ extension EditorTimelineView {
             isActive: request.isActive
         )
         .contentShape(.rect(cornerRadius: BlitzUI.controlRadius))
-        .pointingHandCursor()
         .onTapGesture {
             let modifiers = NSEvent.modifierFlags
             if !modifiers.intersection([.shift, .command]).isEmpty,
@@ -276,7 +274,6 @@ extension EditorTimelineView {
                 .allowsHitTesting(false)
         }
         .contentShape(shape)
-        .pointingHandCursor()
         .onContinuousHover { phase in
             switch phase {
             case .active(let location):

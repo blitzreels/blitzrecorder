@@ -18,7 +18,9 @@ extension AppDelegate {
         statusItem?.menu = menu
     }
 
+    /// Only an open menu reads the recordings folder; rebuilds in between reuse the shared project list.
     func menuNeedsUpdate(_ menu: NSMenu) {
+        coordinator.projectLibrary.reload(settings: coordinator.settings)
         populateStatusMenu(menu)
     }
 
@@ -71,10 +73,7 @@ extension AppDelegate {
         heading.isEnabled = false
         menu.addItem(heading)
 
-        let projects = TakeFileStore()
-            .loadProjectHistory(settings: coordinator.settings)
-            .entries
-            .prefix(5)
+        let projects = coordinator.projectLibrary.entries.prefix(5)
 
         if projects.isEmpty {
             let emptyItem = NSMenuItem(title: "No recent projects", action: nil, keyEquivalent: "")

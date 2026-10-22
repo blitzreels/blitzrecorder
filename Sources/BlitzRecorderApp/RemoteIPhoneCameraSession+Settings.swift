@@ -9,7 +9,8 @@ extension RemoteIPhoneCameraSession {
     }
 
     func selectedStatus() -> String? {
-        sessionState.selectedStatus(
+        if let absence = selectedAbsence() { return absence.statusLabel }
+        return sessionState.selectedStatus(
             settings: readSettings(),
             previewHealthStatus: Self.previewHealthStatus
         )

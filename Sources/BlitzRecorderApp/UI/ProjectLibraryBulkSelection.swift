@@ -62,7 +62,6 @@ extension ProjectLibraryView {
                 }
                 .blitzButton(.secondary)
                 .disabled(vm.projectTrash.isWorking)
-                .pointingHandCursor()
             }
         }
         .padding(.horizontal, 36)
@@ -186,7 +185,6 @@ extension ProjectLibraryView {
                 hoveredBulkProjectID = nil
             }
         }
-        .pointingHandCursor()
         .help("View \(displayTitle(project))")
         .blitzContextMenu(projectMenu(nil))
     }

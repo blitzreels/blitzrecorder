@@ -69,7 +69,6 @@ struct ScreenContentModeControl: View {
                 }
                 .blitzButton(.secondary)
                 .disabled(!enabled || !vm.canEditScene)
-                .pointingHandCursor()
                 .help("Drag and resize the visible screen area on the preview")
                 Text("Choose which part of your screen shows.")
                     .font(BlitzType.caption)
@@ -182,7 +181,6 @@ struct CameraSourceInspector: View {
         .blitzButton(.secondary)
         .controlSize(.small)
         .disabled(!enabled)
-        .pointingHandCursor()
         .help("Open iPhone camera settings. You can also use Cmd+, then Devices.")
     }
 }

@@ -144,7 +144,6 @@ struct TranscriptTimestampButton: View {
         }
         .buttonStyle(BlitzSelectionButtonStyle(isSelected: false))
         .disabled(!isEnabled)
-        .pointingHandCursor(enabled: isEnabled)
         .help("Play from \(timestamp)")
         .accessibilityLabel("Play transcript from \(timestamp)")
     }

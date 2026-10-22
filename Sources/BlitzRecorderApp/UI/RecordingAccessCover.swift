@@ -193,7 +193,6 @@ struct RecordingAccessCover: View {
             .tint(accent)
             .disabled(!isReady || vm.isRequestingPermissions)
             .opacity(isReady ? 1 : 0.45)
-            .pointingHandCursor()
 
             HStack(spacing: 18) {
                 if hasAllowable {
@@ -374,6 +373,5 @@ private struct AccessPermissionRow: View {
         .blitzButton(.secondary)
         .controlSize(.small)
         .disabled(isRequesting)
-        .pointingHandCursor()
     }
 }

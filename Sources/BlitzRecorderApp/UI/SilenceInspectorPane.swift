@@ -16,6 +16,7 @@ struct SilenceInspectorPane: View {
         let actions = SilencePaneActions(
             apply: { _ = session.apply() },
             restore: session.restoreSilence,
+            keepCurrent: session.keepCurrentCuts,
             setPreview: session.setPreviewEnabled,
             selectStrength: session.selectStrength
         )
@@ -58,7 +59,7 @@ struct SilenceInspectorPane: View {
                 content: { advanced }
             ))
         }
-        .disabled(session.isAuditioning || session.loading)
+        .disabled(session.loading)
     }
 
     private var advanced: some View {
@@ -74,11 +75,11 @@ struct SilenceInspectorPane: View {
                     BlitzInspectorSlider(configuration: .init(
                         title: "Quiet level", value: Binding(
                             get: { session.threshold },
-                            set: { session.threshold = $0; session.recalculateFromPerson() }
+                            set: { session.threshold = $0; session.recalculate() }
                         ), range: -70 ... -15, step: 1,
                         valueLabel: "\(Int(session.threshold)) dB",
                         onEditingChanged: { _ in },
-                        onReset: { session.threshold = SilenceEditingSession.defaultThreshold; session.recalculateFromPerson() }
+                        onReset: { session.threshold = SilenceEditingSession.defaultThreshold; session.recalculate() }
                     ))
                 }
             }
@@ -88,7 +89,7 @@ struct SilenceInspectorPane: View {
                     session.linkedPadding = linked
                     if linked { session.paddingAfter = session.paddingBefore }
                     session.customized = true
-                    session.recalculateFromPerson()
+                    session.recalculate()
                 }
             ))
                 .toggleStyle(.blitzSwitch)
@@ -117,7 +118,7 @@ struct SilenceInspectorPane: View {
                 value: Binding(get: { parameter.value.wrappedValue }, set: { value in
                     parameter.value.wrappedValue = value
                     session.customized = true
-                    session.recalculateFromPerson()
+                    session.recalculate()
                 }),
                 range: parameter.range,
                 step: parameter.step,

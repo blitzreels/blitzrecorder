@@ -3,6 +3,7 @@ import SwiftUI
 struct SilencePaneActions {
     let apply: () -> Void
     let restore: () -> Void
+    let keepCurrent: () -> Void
     let setPreview: (Bool) -> Void
     let selectStrength: (SilenceStrength) -> Void
 }
@@ -188,7 +189,7 @@ struct SilenceFooterActions: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if presentation.phase == .applied || presentation.hasAppliedCuts {
+            if presentation.phase == .applied {
                 Button(action: actions.restore) {
                     Label("Restore pauses", systemImage: "arrow.uturn.backward")
                         .frame(maxWidth: .infinity)
@@ -207,6 +208,14 @@ struct SilenceFooterActions: View {
                 .controlSize(.large)
                 .disabled(!presentation.canApply)
                 .help("Cut these pauses from the timeline and every export")
+                if presentation.hasAppliedCuts {
+                    Button(action: actions.keepCurrent) {
+                        Text("Keep current cuts").frame(maxWidth: .infinity)
+                    }
+                    .blitzButton(.secondary)
+                    .controlSize(.large)
+                    .help("Go back to the pauses you already cut")
+                }
                 caption(applyCaption)
             }
         }
@@ -214,7 +223,9 @@ struct SilenceFooterActions: View {
     }
 
     private var applyTitle: String {
-        guard presentation.hasResult, presentation.pauseCount > 0 else { return "Cut pauses" }
+        guard presentation.hasResult, presentation.pauseCount > 0 else {
+            return presentation.hasAppliedCuts ? "Apply new settings" : "Cut pauses"
+        }
         return presentation.pauseCount == 1 ? "Cut 1 pause" : "Cut \(presentation.pauseCount) pauses"
     }
 

@@ -4,6 +4,7 @@ import CoreGraphics
 import CoreMedia
 import Foundation
 import ImageIO
+import Network
 
 @MainActor
 protocol RemoteIPhoneCameraBrowsing: AnyObject {
@@ -25,6 +26,11 @@ protocol RemoteIPhoneCameraControlling: AnyObject {
     func send(_ command: RemoteCameraCommand)
     func pair(shortCode: String, challenge: RemoteCameraPairingChallenge)
     func disconnect()
+    var remoteHost: NWEndpoint.Host? { get }
+}
+
+extension RemoteIPhoneCameraControlling {
+    var remoteHost: NWEndpoint.Host? { nil }
 }
 
 extension BonjourServiceBrowser: RemoteIPhoneCameraBrowsing {}
@@ -45,9 +51,26 @@ final class RemoteIPhoneCameraSession {
 
     var sessionState = RemoteIPhoneCameraState()
     private var reconnectTasks: [String: Task<Void, Never>] = [:]
+    /// Consecutive reconnects without reaching the iPhone; each one waits twice as long, up to 15 seconds.
+    private var reconnectAttempts: [String: Int] = [:]
+    #if DEBUG
+    /// Every connection the Mac opened and why, for the iPhone end-to-end check.
+    var connectionLog: [String] = []
+    /// Live-view frames this Mac received from the iPhone since launch.
+    var previewFramesReceived = 0
+    /// While set, the Mac acts as if the network were gone: no connection, no reconnect.
+    var isDebugOffline = false
+    #endif
     var settingsSendTasks: [String: Task<Void, Never>] = [:]
     var previewSuppressedUntil: [String: Date] = [:]
     private var isDiscoveryStarted = false
+    /// When the iPhone last sent anything. A connection that stays silent is dead even if the socket looks open,
+    /// as when the iPhone app quits or Wi‑Fi drops without closing it.
+    private var lastEventAt = Date.distantPast
+    /// What happened to each iPhone the last time it went away, for the Mac to explain while it is gone.
+    var absenceNotes: [String: RemoteCameraAbsence.Note] = [:]
+    private var silenceWatchdog: Task<Void, Never>?
+    private static let silenceLimit: TimeInterval = 8
     let monitorSampleBufferFactory = RemoteCameraMonitorSampleBufferFactory()
     let readSettings: () -> RecordingSettings
     let saveSettings: (RecordingSettings) -> Void
@@ -108,7 +131,7 @@ final class RemoteIPhoneCameraSession {
 
         if let serviceID = RemoteCameraProviderID.serviceID(from: id) {
             startDiscoveryIfNeeded()
-            connect(serviceID: serviceID, forceReconnect: isRetryingSelectedRemoteCamera)
+            connect(.init(serviceID: serviceID, forceReconnect: isRetryingSelectedRemoteCamera, reason: "camera chosen"))
         } else {
             controlClient.disconnect()
         }
@@ -130,7 +153,7 @@ final class RemoteIPhoneCameraSession {
         var settings = readSettings()
         settings.selectedCameraID = RemoteCameraProviderID.make(for: service.id)
         saveSettings(settings)
-        connect(serviceID: service.id)
+        connect(.init(serviceID: service.id, forceReconnect: false, reason: "direct address"))
         onCameraConfigurationChanged?()
     }
 
@@ -149,7 +172,15 @@ final class RemoteIPhoneCameraSession {
                 case .connected, .pairing:
                     self.reconnectTasks[serviceID]?.cancel()
                     self.reconnectTasks[serviceID] = nil
+                    if state == .connected {
+                        self.reconnectAttempts[serviceID] = nil
+                        self.absenceNotes[serviceID] = nil
+                    }
                 case .disconnected, .degraded:
+                    self.noteAbsence(.init(kind: .stoppedResponding, since: Date()), serviceID: serviceID)
+                    #if DEBUG
+                    self.connectionLog.append("\(Date().formatted(.iso8601.time(includingFractionalSeconds: true))) state \(state)")
+                    #endif
                     self.scheduleReconnect(serviceID: serviceID)
                 default:
                     break
@@ -159,7 +190,14 @@ final class RemoteIPhoneCameraSession {
         }
         controlClient.onEvent = { [weak self] event in
             Task { @MainActor [weak self] in
+                self?.lastEventAt = Date()
                 self?.handle(event)
+            }
+        }
+        silenceWatchdog = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                self?.reconnectIfSilent()
             }
         }
         browser.onStateChanged = { [weak self] state in
@@ -181,11 +219,12 @@ final class RemoteIPhoneCameraSession {
                         self.saveSettings(settings)
                     }
                     let wasRediscovered = !previousServiceIDs.contains(service.id)
-                    self.connect(serviceID: service.id, forceReconnect: wasRediscovered)
+                    self.connect(.init(serviceID: service.id, forceReconnect: wasRediscovered,
+                                       reason: wasRediscovered ? "rediscovered" : "services changed"))
                 } else if let service = self.sessionState.automaticSelection(settings: settings) {
                     settings.selectedCameraID = RemoteCameraProviderID.make(for: service.id)
                     self.saveSettings(settings)
-                    self.connect(serviceID: service.id)
+                    self.connect(.init(serviceID: service.id, forceReconnect: false, reason: "automatic selection"))
                 }
                 self.onCameraConfigurationChanged?()
             }
@@ -211,7 +250,7 @@ final class RemoteIPhoneCameraSession {
         }
 
         if sessionState.containsService(id: selectedServiceID) {
-            connect(serviceID: selectedServiceID, forceReconnect: true)
+            connect(.init(serviceID: selectedServiceID, forceReconnect: true, reason: "recording needs connection"))
         }
 
         let deadline = Date().addingTimeInterval(5)
@@ -235,6 +274,11 @@ final class RemoteIPhoneCameraSession {
 
         if sessionState.containsService(id: selectedServiceID),
            sessionState.connectionStates[selectedServiceID] != .pairing {
+            #if DEBUG
+            if reconnectTasks[selectedServiceID] == nil {
+                connectionLog.append("\(Date().formatted(.iso8601.time(includingFractionalSeconds: true))) readiness check while \(String(describing: sessionState.connectionStates[selectedServiceID]))")
+            }
+            #endif
             scheduleReconnect(serviceID: selectedServiceID)
         }
 
@@ -242,7 +286,9 @@ final class RemoteIPhoneCameraSession {
             source: .camera,
             permission: "Remote iPhone",
             status: selectedStatus() ?? "not connected",
-            recovery: "Keep the iPhone camera app open and wait for it to reconnect."
+            recovery: sessionState.connectionStates[selectedServiceID] == .pairing
+                ? "Tap Connect on your iPhone to pair it."
+                : "Keep the iPhone camera app open and wait for it to reconnect."
         )
     }
 
@@ -265,9 +311,47 @@ final class RemoteIPhoneCameraSession {
         return services.count == 1 ? services[0] : nil
     }
 
-    private func connect(serviceID: String, forceReconnect: Bool = false) {
+    private struct ConnectRequest {
+        let serviceID: String
+        let forceReconnect: Bool
+        let reason: String
+    }
+
+    #if DEBUG
+    /// Drops the iPhone connection for a while, like a Wi‑Fi loss, then lets it reconnect.
+    func debugDropConnection(seconds: Double) {
+        isDebugOffline = true
+        connectionLog.append("\(Date().formatted(.iso8601.time(includingFractionalSeconds: true))) debug network drop")
+        controlClient.disconnect()
+        if let serviceID = selectedRemoteServiceID() {
+            sessionState.setConnectionState(.disconnected, for: serviceID)
+        }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard let self else { return }
+            self.isDebugOffline = false
+            guard let serviceID = self.selectedRemoteServiceID() else { return }
+            self.connect(.init(serviceID: serviceID, forceReconnect: true, reason: "debug network back"))
+        }
+    }
+    #endif
+
+    private func connect(_ request: ConnectRequest) {
+        let serviceID = request.serviceID
+        let forceReconnect = request.forceReconnect
+        #if DEBUG
+        guard !isDebugOffline else { return }
+        if forceReconnect || controlClient.connectedServiceID != serviceID {
+            connectionLog.append("\(Date().formatted(.iso8601.time(includingFractionalSeconds: true))) \(request.reason)")
+            connectionLog = Array(connectionLog.suffix(30))
+        }
+        #endif
         guard let service = sessionState.service(id: serviceID) else {
             sessionState.setConnectionState(.discovering, for: serviceID)
+            return
+        }
+        // A rediscovery of the iPhone this Mac is already talking to changes nothing.
+        guard forceReconnect || controlClient.connectedServiceID != serviceID || !controlClient.isConnected else {
             return
         }
         sessionState.setConnectionState(.pairing, for: serviceID)
@@ -277,6 +361,47 @@ final class RemoteIPhoneCameraSession {
         controlClient.connect(to: service, forceReconnect: forceReconnect)
     }
 
+    private func reconnectIfSilent() {
+        guard let serviceID = selectedRemoteServiceID(),
+              isConnected(serviceID: serviceID),
+              Date().timeIntervalSince(lastEventAt) > Self.silenceLimit else { return }
+        lastEventAt = Date()
+        noteAbsence(.init(kind: .stoppedResponding, since: Date()), serviceID: serviceID)
+        sessionState.setConnectionState(.disconnected, for: serviceID)
+        onCameraConfigurationChanged?()
+        connect(.init(serviceID: serviceID, forceReconnect: true, reason: "iPhone went silent"))
+    }
+
+    /// The iPhone said goodbye, so the Mac lets go at once instead of waiting for silence. It comes back on its
+    /// own when the app opens again and shows up on the network.
+    func dropSleepingIPhone(serviceID: String) {
+        absenceNotes[serviceID] = .init(kind: .asleep, since: Date())
+        reconnectAttempts[serviceID] = nil
+        controlClient.disconnect()
+        sessionState.setConnectionState(.disconnected, for: serviceID)
+        onCameraConfigurationChanged?()
+    }
+
+    /// Keeps the first reason an iPhone went away; a goodbye from the iPhone wins over a later silence.
+    func noteAbsence(_ note: RemoteCameraAbsence.Note, serviceID: String) {
+        if let existing = absenceNotes[serviceID], existing.kind == .asleep || note.kind == existing.kind { return }
+        absenceNotes[serviceID] = note
+    }
+
+    func selectedAbsence() -> RemoteCameraAbsence? {
+        guard let serviceID = selectedRemoteServiceID() else { return nil }
+        switch sessionState.connectionState(for: serviceID) {
+        case .connected: return nil
+        // Reconnect attempts also show as pairing; only a first-time pairing has no note.
+        case .pairing where absenceNotes[serviceID] == nil: return nil
+        case .pairing, .discovering, .degraded, .disconnected, .unavailable, nil: break
+        }
+        return RemoteCameraAbsence(
+            note: absenceNotes[serviceID],
+            hasConnectedBefore: !readSettings().trustedRemoteCameraServiceIDs.isEmpty
+        )
+    }
+
     private func scheduleReconnect(serviceID: String) {
         let settings = readSettings()
         guard settings.selectedCameraID == RemoteCameraProviderID.make(for: serviceID),
@@ -284,8 +409,11 @@ final class RemoteIPhoneCameraSession {
               sessionState.containsService(id: serviceID) else {
             return
         }
+        let attempt = reconnectAttempts[serviceID, default: 0]
+        reconnectAttempts[serviceID] = attempt + 1
+        let delay = min(reconnectDelay * (1 << min(attempt, 3)), max(reconnectDelay, .seconds(15)))
         reconnectTasks[serviceID] = Task { [weak self] in
-            try? await Task.sleep(for: self?.reconnectDelay ?? .seconds(2))
+            try? await Task.sleep(for: delay)
             await MainActor.run { [weak self] in
                 guard let self,
                       !Task.isCancelled,
@@ -293,7 +421,7 @@ final class RemoteIPhoneCameraSession {
                     return
                 }
                 self.reconnectTasks[serviceID] = nil
-                self.connect(serviceID: serviceID, forceReconnect: true)
+                self.connect(.init(serviceID: serviceID, forceReconnect: true, reason: "scheduled reconnect"))
             }
         }
     }

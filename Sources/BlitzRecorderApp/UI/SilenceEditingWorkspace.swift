@@ -25,8 +25,6 @@ final class SilenceEditingSession {
     private var baseCuts: [TimelineCut] = []
     private var transcript: RecordingTranscript?
     private(set) var loadingTranscript = false
-    private(set) var isAuditioning = false
-    @ObservationIgnored private var auditionTask: Task<Void, Never>?
     private var transcriptCuts: [TimelineCut] = []
     private var detectedTranscriptItems: [EditorTranscriptItem] = []
     private(set) var transcriptItems: [EditorTranscriptItem] = []
@@ -45,7 +43,7 @@ final class SilenceEditingSession {
     @ObservationIgnored private var analysisTask: Task<Void, Never>?
     @ObservationIgnored private var previewTask: Task<Void, Never>?
     @ObservationIgnored private var calculationTask: Task<Void, Never>?
-    @ObservationIgnored private var appliesWhenCalculated = false
+    @ObservationIgnored private var playbackRestoresCutPauses = false
     @ObservationIgnored private var sourceURL: URL?
     @ObservationIgnored private var sourceOffset = 0.0
     @ObservationIgnored private var generation = 0
@@ -53,56 +51,14 @@ final class SilenceEditingSession {
 
     var removedDuration: Double { timeMap.removedDuration }
     var timeMap: TimelineTimeMap { .init(takeDuration: TimelineTimeMap.time(duration), cuts: cuts.filter(\.isEnabled)) }
-    var cutCount: Int { cuts.filter(\.isEnabled).count }
     var suggestsPauses: Bool { intensity > 0 }
-    var canClassify: Bool { active && !isAuditioning && !loading && !calculating && !windows.isEmpty }
+    var canClassify: Bool { active && !loading && !calculating && !windows.isEmpty }
     var waitingForTranscript: Bool {
         loadingTranscript || request.map { $0.vm.transcriptionController.jobStatuses[$0.project.projectPath]?.isRunning == true } == true
     }
 
-    enum Activity: Equatable {
-        case analyzingAudio
-        case analyzingSpeech
-        case updatingSilences
-        case preparingPreview
-
-        var title: String {
-            switch self {
-            case .analyzingAudio: "Analyzing audio…"
-            case .analyzingSpeech: "Analyzing speech…"
-            case .updatingSilences: "Updating silence cuts…"
-            case .preparingPreview: "Preparing playback…"
-            }
-        }
-
-        var detail: String {
-            switch self {
-            case .analyzingAudio: "Checking the audio tracks for quiet moments."
-            case .analyzingSpeech: "Identifying speech before the silence cuts are ready."
-            case .updatingSilences: "Recalculating cuts with your current settings."
-            case .preparingPreview: "Loading the edited timeline."
-            }
-        }
-    }
-
     var transcriptStatus: TranscriptionJobStatus? {
         request.flatMap { $0.vm.transcriptionController.jobStatuses[$0.project.projectPath] }
-    }
-
-    var transcriptDetail: String? {
-        request.flatMap { $0.vm.transcriptionController.jobDetails[$0.project.projectPath] }
-    }
-
-    var activity: Activity? {
-        if loading { return .analyzingAudio }
-        if waitingForTranscript { return .analyzingSpeech }
-        if calculating { return .updatingSilences }
-        if preparingPreview { return .preparingPreview }
-        return nil
-    }
-
-    var showsActionsFooter: Bool {
-        activity != nil || !windows.isEmpty || hasRemovedSilence || error != nil
     }
 
     var settingsSnapshot: SilenceRemovalSettings {
@@ -124,13 +80,17 @@ final class SilenceEditingSession {
     var hasChanges: Bool { metrics.hasChanges || hasSettingsChanges }
 
     var canApply: Bool {
-        active && !waitingForTranscript && !isAuditioning && !loading && !calculating && !preparingPreview && error == nil && !windows.isEmpty && hasChanges
+        active && !waitingForTranscript && !loading && !calculating && !preparingPreview && error == nil && !windows.isEmpty && hasChanges
             && metrics.outputDuration >= 0.1
     }
 
     var hasRemovedSilence: Bool {
         request?.vm.lastExportedProject?.edits.enabledCuts.contains { $0.kind == .silence } ?? false
     }
+
+    /// Pauses are already cut and new settings are waiting to be applied. The timeline then shows the cut
+    /// pauses again so the new proposal is marked on every pause, as it was before the first cut.
+    var isReviewingRecut: Bool { active && hasRemovedSilence && hasSettingsChanges }
 
     func prepare(_ request: Request) {
         guard request.playback.duration > 0 else { return }
@@ -166,6 +126,7 @@ final class SilenceEditingSession {
         nonDialogueRanges = []
         error = nil
         skipSilence = false
+        playbackRestoresCutPauses = false
         updateMetrics()
         let audioSources = request.project.sources.filter {
             ["microphone", "systemAudio"].contains($0.role) && $0.exists
@@ -234,8 +195,6 @@ final class SilenceEditingSession {
         analysisTask?.cancel()
         previewTask?.cancel()
         calculationTask?.cancel()
-        auditionTask?.cancel()
-        isAuditioning = false
         calculating = false
         loading = false
         scanProgress = nil
@@ -243,13 +202,9 @@ final class SilenceEditingSession {
     }
 
     func setPreviewEnabled(_ enabled: Bool) {
-        guard !isAuditioning, skipSilence != enabled else { return }
+        guard skipSilence != enabled else { return }
         skipSilence = enabled
         updatePreview()
-    }
-
-    func endPreview() {
-        setPreviewEnabled(false)
     }
 
     func apply() -> Bool {
@@ -266,9 +221,24 @@ final class SilenceEditingSession {
         }
         preparingPreview = false
         skipSilence = false
+        playbackRestoresCutPauses = false
         baseCuts = edits.cuts
         updateMetrics()
         return true
+    }
+
+    /// Drops a pending re-cut and goes back to the settings the saved cuts were made with.
+    func keepCurrentCuts() {
+        guard let request, let edits = request.vm.lastExportedProject?.edits else { return }
+        calculationTask?.cancel()
+        calculating = false
+        error = nil
+        restoreSettings(edits.silenceSettings)
+        baseCuts = edits.cuts
+        skipSilence = false
+        refreshTranscriptCuts()
+        updateMetrics()
+        updatePreview()
     }
 
     func restoreSilence() {
@@ -276,6 +246,7 @@ final class SilenceEditingSession {
         previewTask?.cancel()
         preparingPreview = false
         skipSilence = false
+        playbackRestoresCutPauses = false
         request.playback.pauseForEditing()
         edits.cuts.removeAll { $0.kind == .silence }
         edits.silenceRemovalApplied = false
@@ -320,20 +291,13 @@ final class SilenceEditingSession {
     }
 
     func selectPacing(_ pacing: SilencePacing) {
-        appliesWhenCalculated = hasRemovedSilence
         intensity = Double(pacing.rawValue)
         changeIntensity()
     }
 
-    /// Once pauses are cut, a settings change re-cuts as soon as the new result is ready.
-    func recalculateFromPerson() {
-        appliesWhenCalculated = hasRemovedSilence
-        recalculate()
-    }
-
     func changeThresholdMode() {
         if automaticThreshold { threshold = SilenceDetection.suggestedThreshold(windows) }
-        recalculateFromPerson()
+        recalculate()
     }
 
     private func configuration() -> SilenceDetectionRequest {
@@ -369,15 +333,8 @@ final class SilenceEditingSession {
             baseCuts = result
             calculating = false
             updateMetrics()
-            if appliesWhenCalculated, canApply {
-                appliesWhenCalculated = false
-                _ = apply()
-            } else if skipSilence { updatePreview() }
+            if skipSilence || playbackRestoresCutPauses != isReviewingRecut { updatePreview() }
         }
-    }
-
-    func keep(_ range: EditorTimeRange) {
-        classify(.init(range: range, classification: .sound))
     }
 
     func classification(_ range: EditorTimeRange) -> SilenceClassification {
@@ -512,73 +469,28 @@ final class SilenceEditingSession {
         previousIntensity = max(1, value.intensity)
     }
 
-    func audition(_ withCuts: Bool) {
-        guard active, !isAuditioning, !loading, !calculating, !waitingForTranscript, let request else { return }
-        auditionTask?.cancel()
-        previewTask?.cancel()
-        request.playback.pauseForEditing()
-        let originalTime = request.playback.currentTime
-        let originalPreview = skipSilence
-        let example = cuts.first { $0.isEnabled && $0.kind == .silence }
-        let start = max(0, (example?.start ?? originalTime) - 2)
-        let end = min(duration, (example?.end ?? start + 4) + 2)
-        isAuditioning = true
-        auditionTask = Task {
-            guard let project = request.vm.lastExportedProject else { isAuditioning = false; return }
-            await request.playback.load(.init(project: project, baseSettings: request.vm.settings,
-                previewCuts: withCuts ? cuts.filter(\.isEnabled) : project.edits.enabledCuts))
-            guard !Task.isCancelled else { return }
-            guard request.playback.isReady else {
-                error = request.playback.loadError ?? "The comparison could not be loaded."
-                isAuditioning = false
-                return
-            }
-            request.playback.play(from: start)
-            let deadline = ContinuousClock.now.advanced(by: .seconds(12))
-            while !Task.isCancelled && request.playback.isPlaying && request.playback.currentTime < end && ContinuousClock.now < deadline {
-                try? await Task.sleep(for: .milliseconds(50))
-            }
-            guard !Task.isCancelled else { return }
-            request.playback.pauseForEditing()
-            await request.playback.load(.init(project: project, baseSettings: request.vm.settings,
-                previewCuts: originalPreview ? cuts.filter(\.isEnabled) : nil))
-            guard !Task.isCancelled else { return }
-            request.playback.seek(to: originalTime)
-            isAuditioning = false
-        }
-    }
-
-    func stopAudition() {
-        request?.playback.pauseForEditing()
-    }
-
     func updatePreview() {
-        guard active, !isAuditioning, let request, !loading else { return }
+        guard active, let request, !loading else { return }
         previewTask?.cancel()
         guard let project = request.vm.lastExportedProject, project.id == request.project.id else { return }
-        let proposed = skipSilence ? cuts.filter(\.isEnabled) : project.edits.enabledCuts
+        let previewCuts: [TimelineCut]? = skipSilence ? cuts.filter(\.isEnabled)
+            : isReviewingRecut ? project.edits.enabledCuts.filter { $0.kind != .silence } : nil
+        let proposed = previewCuts ?? project.edits.enabledCuts
         guard
             TimelineTimeMap(takeDuration: TimelineTimeMap.time(duration), cuts: proposed).outputDuration.seconds >= 0.1
         else {
             error = "These settings remove the whole recording. Lower the threshold or keep a segment."
             return
         }
+        playbackRestoresCutPauses = !skipSilence && isReviewingRecut
         preparingPreview = true
         previewTask = Task {
             guard !Task.isCancelled else { return }
             await request.playback.load(
-                .init(project: project, baseSettings: request.vm.settings, previewCuts: skipSilence ? proposed : nil))
+                .init(project: project, baseSettings: request.vm.settings, previewCuts: previewCuts))
             guard !Task.isCancelled else { return }
             preparingPreview = false
             if let loadError = request.playback.loadError { error = loadError }
         }
-    }
-
-}
-
-enum SilenceTime {
-    static func label(_ seconds: Double) -> String {
-        let time = max(0, seconds.isFinite ? seconds : 0)
-        return String(format: "%d:%04.1f", Int(time) / 60, time.truncatingRemainder(dividingBy: 60))
     }
 }

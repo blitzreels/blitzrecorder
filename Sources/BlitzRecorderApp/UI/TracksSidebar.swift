@@ -2,6 +2,13 @@ import SwiftUI
 
 struct SourcesSidebar: View {
     @Bindable var vm: RecorderViewModel
+    @State private var dismissedIPhoneSuggestions: Set<String> = []
+
+    /// A BlitzRecorder Camera iPhone that is open nearby while another camera is chosen, often Continuity Camera.
+    private var suggestedIPhone: SourceOption? {
+        guard vm.state == .idle, vm.isSourceConfigured(.camera), !vm.isRemoteCameraSelected else { return nil }
+        return vm.remoteCameraOptions.first { !dismissedIPhoneSuggestions.contains($0.id) }
+    }
 
     var body: some View {
         ScrollView {
@@ -62,6 +69,15 @@ struct SourcesSidebar: View {
                 gain: nil,
                 vm: vm
             )
+            if let iPhone = suggestedIPhone {
+                IPhoneCameraSuggestion(configuration: .init(
+                    name: iPhone.name,
+                    replacesContinuity: vm.selectedContinuityCamera != nil,
+                    use: { vm.setCamera(iPhone.id) },
+                    dismiss: { dismissedIPhoneSuggestions.insert(iPhone.id) }
+                ))
+                .transition(.opacity)
+            }
         case .microphone:
             DeviceCard(
                 source: .microphone,
@@ -134,6 +150,12 @@ struct SourcesSidebar: View {
     }
 
     private var remoteCameraStatus: SourceRowStatus {
+        if let absence = vm.selectedRemoteCameraAbsence {
+            return SourceRowStatus(label: absence.statusLabel, tone: .warning)
+        }
+        if vm.selectedRemoteCameraConnectionState == .pairing {
+            return SourceRowStatus(label: "Tap Connect on the iPhone", tone: .warning)
+        }
         let status = (vm.selectedRemoteCameraStatus ?? vm.selectedRemoteCameraReviewStatus).lowercased()
         if status.contains("waiting") || status.contains("disconnect") || status.contains("unavailable") {
             return SourceRowStatus(label: "Waiting", tone: .warning)
@@ -314,6 +336,51 @@ private struct DeviceCard: View {
             return ("Hidden in this scene", false)
         }
         return nil
+    }
+}
+
+/// One click from Continuity Camera (or any camera) to the iPhone running BlitzRecorder Camera.
+private struct IPhoneCameraSuggestion: View {
+    struct Configuration {
+        let name: String
+        let replacesContinuity: Bool
+        let use: () -> Void
+        let dismiss: () -> Void
+    }
+
+    let configuration: Configuration
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "iphone.gen3")
+                    .font(BlitzType.glyph(11))
+                    .foregroundStyle(BlitzUI.accent)
+                    .accessibilityHidden(true)
+                Text("\(configuration.name) is open in BlitzRecorder Camera")
+                    .font(BlitzType.captionEmphasis)
+                    .foregroundStyle(BlitzUI.primaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text(configuration.replacesContinuity
+                 ? "Better quality than Continuity Camera. Continuity turns off when you switch."
+                 : "Record in 4K with full camera controls.")
+                .font(BlitzType.caption)
+                .foregroundStyle(BlitzUI.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 6) {
+                Button("Use iPhone", action: configuration.use)
+                    .blitzButton(.accent)
+                Button("Not now", action: configuration.dismiss)
+                    .blitzButton(.quiet)
+            }
+            .controlSize(.small)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background { BlitzSelectedBackground(cornerRadius: BlitzUI.cardRadius) }
+        .padding(.horizontal, 4)
+        .padding(.bottom, 4)
     }
 }
 

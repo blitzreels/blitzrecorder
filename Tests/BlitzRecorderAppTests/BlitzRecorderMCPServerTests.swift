@@ -26,7 +26,7 @@ final class BlitzRecorderMCPServerTests: XCTestCase {
 
         let list = try await send(.init(server: server, body: #"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#))
         let tools = try XCTUnwrap((list["result"] as? [String: Any])?["tools"] as? [[String: Any]])
-        XCTAssertEqual(tools.compactMap { $0["name"] as? String },
+        XCTAssertEqual(tools.compactMap { $0["name"] as? String }.filter { !$0.hasPrefix("debug_") },
                        ["projects_list", "project_get", "project_transcript", "project_frame", "projects_export_as_is", "export_status"])
 
         let call = try await send(.init(server: server, body: #"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"projects_list","arguments":{"limit":1}}}"#))

@@ -580,7 +580,7 @@ final class RemoteCameraTransferManagerTests: XCTestCase {
             expectedByteCount: nil
         ), settings: settings)
 
-        manager.requestPendingImports(serviceID: "iphone-15-pro", settings: settings)
+        manager.requestPendingImports(.init(serviceID: "iphone-15-pro", recordingTakeID: nil, settings: settings))
 
         XCTAssertEqual(commands, [])
         XCTAssertEqual(finishedTakeIDs, [takeID])

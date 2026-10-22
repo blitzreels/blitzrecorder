@@ -70,16 +70,8 @@ enum PreviewStageCropGeometry {
         anchor: ResizeAnchor,
         in sourceFrame: CGRect
     ) -> CGRect {
-        var minX = frame.minX
-        var maxX = frame.maxX
-        var minY = frame.minY
-        var maxY = frame.maxY
-        if anchor.resizesLeftEdge { minX += delta.x }
-        if anchor.resizesRightEdge { maxX += delta.x }
-        if anchor.resizesBottomEdge { minY += delta.y }
-        if anchor.resizesTopEdge { maxY += delta.y }
-        return clampedPixelFrame(
-            CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY),
+        clampedPixelFrame(
+            ResizeDrag(frame: frame, delta: delta, anchor: anchor).movedEdges.rect,
             in: sourceFrame
         )
     }

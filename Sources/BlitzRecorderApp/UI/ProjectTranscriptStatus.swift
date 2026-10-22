@@ -47,7 +47,6 @@ extension ProjectLibraryView {
                     performTranscriptAction(request.project)
                 }
                 .buttonStyle(BlitzButtonStyle(.secondary))
-                .pointingHandCursor()
             }
         }
         .padding(.vertical, 12)
@@ -161,7 +160,6 @@ extension ProjectLibraryView {
                let action = configuration.action {
                 Button(actionTitle, action: action)
                     .buttonStyle(BlitzButtonStyle(.secondary))
-                    .pointingHandCursor()
             }
         }
         .padding(.vertical, 12)

@@ -61,7 +61,7 @@ struct EditorPlacedItemClip: View {
         }
         .frame(width: width, height: configuration.height)
         .contentShape(.rect)
-        .blitzCursor(item.canChangeTiming ? (draft == nil ? .openHand : .closedHand) : .pointingHand)
+        .blitzCursor(item.canChangeTiming ? (draft == nil ? .openHand : .closedHand) : .arrow)
         .onHover { isHovering = $0 && configuration.isInteractive }
         .onTapGesture { configuration.select(item.id) }
         .gesture(drag(.move), isEnabled: configuration.isInteractive && item.canChangeTiming)

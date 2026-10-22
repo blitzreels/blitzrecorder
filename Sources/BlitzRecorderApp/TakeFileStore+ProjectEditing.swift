@@ -310,7 +310,7 @@ extension TakeFileStore {
     }
 }
 
-private extension RecordingProject {
+extension RecordingProject {
     func outputVideoFormat(fallback: OutputVideoFormat) -> OutputVideoFormat {
         OutputVideoFormat(rawValue: settings.outputVideoFormat) ?? fallback
     }

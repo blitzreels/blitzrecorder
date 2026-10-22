@@ -9,7 +9,7 @@ extension LiveCompositedRecorder {
 
         switch type {
         case .screen:
-            guard frameStatus(for: sampleBuffer) == .complete || frameStatus(for: sampleBuffer) == .started,
+            guard [.complete, .started].contains(sampleBuffer.screenCaptureFrameStatus),
                   let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
                 return
             }
@@ -101,14 +101,5 @@ extension LiveCompositedRecorder {
         DispatchQueue.main.async { [weak self, sampleBuffer] in
             self?.onCameraPreviewSampleBuffer?(sampleBuffer, width, height)
         }
-    }
-
-    private func frameStatus(for sampleBuffer: CMSampleBuffer) -> SCFrameStatus {
-        guard let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
-              let rawStatus = attachments.first?[SCStreamFrameInfo.status] as? Int,
-              let status = SCFrameStatus(rawValue: rawStatus) else {
-            return .complete
-        }
-        return status
     }
 }

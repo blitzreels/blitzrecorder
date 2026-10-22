@@ -122,3 +122,53 @@ struct EditorPlaybackSceneTimelineUpdate {
     let baseSettings: RecordingSettings
     let preservesPreviewSceneOverride: Bool
 }
+
+struct EditorPlaybackMediaSignature: Equatable {
+    let version: Int
+    let id: UUID
+    let projectPath: String
+    let takeDirectoryPath: String
+    let finalVideoPath: String?
+    let timelineTrimOffsetSeconds: Double
+    let sourceTimelineOffsetSeconds: [String: Double]
+    let settings: RecordingProject.SettingsSnapshot
+    let sources: [RecordingProject.SourceFile]
+    let cuts: [TimelineCut]
+
+    init(project: RecordingProject) {
+        version = project.version
+        id = project.id
+        projectPath = project.projectPath
+        takeDirectoryPath = project.takeDirectoryPath
+        finalVideoPath = project.finalVideoPath
+        timelineTrimOffsetSeconds = project.timelineTrimOffsetSeconds
+        sourceTimelineOffsetSeconds = project.sourceTimelineOffsetSeconds
+        settings = project.settings
+        sources = project.sources
+        cuts = project.edits.enabledCuts
+    }
+}
+
+extension EditorPlaybackController {
+    struct AudioReload {
+        let project: RecordingProject
+        let baseSettings: RecordingSettings
+    }
+
+    struct AudioReloadWork {
+        let request: AudioReload
+        let settings: RecordingSettings
+        let outputFormat: OutputVideoFormat
+        let timeMap: TimelineTimeMap
+        let cleanup: VoiceCleanupSettings
+        let requestID: Int
+        let generation: Int
+    }
+
+    struct AudioInstall {
+        let audio: Merger.EditorPlaybackAudio
+        let cleanup: VoiceCleanupSettings
+        let requestID: Int
+        let generation: Int
+    }
+}

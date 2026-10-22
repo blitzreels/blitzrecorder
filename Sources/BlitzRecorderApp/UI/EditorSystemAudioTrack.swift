@@ -67,7 +67,6 @@ struct EditorSystemAudioChunk: View {
         .clipShape(.rect(cornerRadius: 5))
         .overlay { RoundedRectangle(cornerRadius: 5).strokeBorder(showsVolume ? BlitzUI.accent : BlitzUI.trackSystemAudio, lineWidth: 1) }
         .contentShape(.rect)
-        .pointingHandCursor()
         .onTapGesture { showsVolume = true }
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.isButton)

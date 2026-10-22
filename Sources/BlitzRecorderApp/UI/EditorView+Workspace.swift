@@ -45,10 +45,7 @@ extension EditorView {
             selectedExportPlaybackRate = restored.playbackRate
             selectedExportTargetSize = restored.targetFileSize
         } else {
-            selectedFormat = EditorExportRecipe.fallbackFormat(
-                projectFormat: project.settings.outputVideoFormat,
-                fallbackFormat: vm.settings.outputVideoFormat
-            )
+            selectedFormat = project.outputVideoFormat(fallback: vm.settings.outputVideoFormat)
             applyExportPreset(EditorExportPresetRequest(preset: .balanced, project: project))
             selectedExportPlaybackRate = .normal
             selectedExportTargetSize = nil
@@ -251,6 +248,8 @@ extension EditorView {
         )
         let sharesExport = destination == .link
         let projectPath = project?.projectPath
+        shareOutcome = nil
+        showsExportResult = true
         vm.exportOutputVariants(.init(export: request, layouts: exportLayouts(for: destination), onCompletion: { urls in
             guard sharesExport, let url = urls.first else { return }
             HostedVideoShareController.shared.select(.init(fileURL: url, projectPath: projectPath))

@@ -3,32 +3,6 @@ import Foundation
 import Observation
 import SwiftUI
 
-private struct EditorPlaybackMediaSignature: Equatable {
-    let version: Int
-    let id: UUID
-    let projectPath: String
-    let takeDirectoryPath: String
-    let finalVideoPath: String?
-    let timelineTrimOffsetSeconds: Double
-    let sourceTimelineOffsetSeconds: [String: Double]
-    let settings: RecordingProject.SettingsSnapshot
-    let sources: [RecordingProject.SourceFile]
-    let cuts: [TimelineCut]
-
-    init(project: RecordingProject) {
-        version = project.version
-        id = project.id
-        projectPath = project.projectPath
-        takeDirectoryPath = project.takeDirectoryPath
-        finalVideoPath = project.finalVideoPath
-        timelineTrimOffsetSeconds = project.timelineTrimOffsetSeconds
-        sourceTimelineOffsetSeconds = project.sourceTimelineOffsetSeconds
-        settings = project.settings
-        sources = project.sources
-        cuts = project.edits.enabledCuts
-    }
-}
-
 @MainActor
 @Observable
 final class EditorPlaybackController: NowPlayingPlayback {
@@ -93,8 +67,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
     }
 
     private(set) var cursorTrack = CursorPresentationTrack.empty
-    var outputDuration: Double { timeMap.outputDuration.seconds }
-    private var timeMap: TimelineTimeMap {
+    var timeMap: TimelineTimeMap {
         exportedTimeMap ?? playback?.timeMap ?? .identity(takeDuration: MediaTime.zero)
     }
 
@@ -123,9 +96,6 @@ final class EditorPlaybackController: NowPlayingPlayback {
     @ObservationIgnored private var audioPlayer: AVPlayer?
     @ObservationIgnored private var exportedPlayer: AVPlayer?
     @ObservationIgnored private var exportedTimeMap: TimelineTimeMap?
-    private typealias AudioMixTrack = (
-        source: CaptureSource, track: AVCompositionTrack, baseVolume: Float, version: EditorMicrophoneVersion?
-    )
     @ObservationIgnored private var audioMixTracks: [AudioMixTrack] = []
     @ObservationIgnored private var audioComposition: AVMutableComposition?
     @ObservationIgnored private var playbackClockPlayer: AVPlayer?
@@ -146,10 +116,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
     @ObservationIgnored private var isSwappingAudio = false
     /// Keeps the tracks of a voice cleanup swap alive; the main composition owns the first load's tracks.
     @ObservationIgnored private var rebuiltAudioSource: AVComposition?
-    private(set) var isUpdatingAudio = false
-    @ObservationIgnored private var activeAudioReloads = 0 {
-        didSet { isUpdatingAudio = activeAudioReloads > 0 }
-    }
+    @ObservationIgnored private var activeAudioReloads = 0
     @ObservationIgnored private var isScrubbing = false
     @ObservationIgnored private var resumesAfterScrub = false
     @ObservationIgnored private var seekGeneration = 0
@@ -196,13 +163,12 @@ final class EditorPlaybackController: NowPlayingPlayback {
         return players
     }
 
-    var isExportedPlayback: Bool { exportedPlayer != nil }
     var filePlayer: AVPlayer? { exportedPlayer }
 
     /// Both microphone versions are already in the audio player, so Before | After only changes volumes.
     func setVoiceCleanupBypassed(_ bypassed: Bool) {
         bypassesVoiceCleanup = bypassed
-        audioPlayer?.currentItem?.audioMix = audioMix()
+        refreshAudioMix()
     }
 
     private var inactiveMicrophoneVersion: EditorMicrophoneVersion {
@@ -220,20 +186,12 @@ final class EditorPlaybackController: NowPlayingPlayback {
     /// Progress of the voice cleanup being prepared, nil when nothing is processing.
     private(set) var audioProgress: Double?
 
-    struct AudioReload {
-        let project: RecordingProject
-        let baseSettings: RecordingSettings
-    }
-
     /// Cleanup only changes the microphone audio, so swap the audio player in place and keep the
     /// video, the scene and the playhead where they are.
     func reloadAudioIfNeeded(_ request: AudioReload) async {
         guard isReady, let playback, loadedProjectPath == request.project.projectPath else { return }
-        let store = TakeFileStore()
-        let outputFormat = OutputVideoFormat(rawValue: request.project.settings.outputVideoFormat)
-            ?? request.baseSettings.outputVideoFormat
-        let settings = store.recordingSettings(from: request.project, baseSettings: request.baseSettings, outputFormat: outputFormat)
-        let cleanup = Self.playbackVoiceCleanup(settings.voiceCleanup)
+        let resolved = ProjectSettings(project: request.project, baseSettings: request.baseSettings)
+        let cleanup = Self.playbackVoiceCleanup(resolved.settings.voiceCleanup)
         guard cleanup != (requestedVoiceCleanup ?? loadedVoiceCleanup) else { return }
         audioRequestID &+= 1
         let requestID = audioRequestID
@@ -243,19 +201,9 @@ final class EditorPlaybackController: NowPlayingPlayback {
         // this one, so it has to finish on its own.
         await Task { @MainActor in
             await self.performAudioReload(.init(
-                request: request, settings: settings, outputFormat: outputFormat, timeMap: playback.timeMap,
+                request: request, settings: resolved.settings, outputFormat: resolved.outputFormat, timeMap: playback.timeMap,
                 cleanup: cleanup, requestID: requestID, generation: generation))
         }.value
-    }
-
-    private struct AudioReloadWork {
-        let request: AudioReload
-        let settings: RecordingSettings
-        let outputFormat: OutputVideoFormat
-        let timeMap: TimelineTimeMap
-        let cleanup: VoiceCleanupSettings
-        let requestID: Int
-        let generation: Int
     }
 
     private func performAudioReload(_ work: AudioReloadWork) async {
@@ -297,13 +245,6 @@ final class EditorPlaybackController: NowPlayingPlayback {
         await installAudio(.init(audio: audio, cleanup: cleanup, requestID: requestID, generation: generation))
     }
 
-    private struct AudioInstall {
-        let audio: Merger.EditorPlaybackAudio
-        let cleanup: VoiceCleanupSettings
-        let requestID: Int
-        let generation: Int
-    }
-
     private func installAudio(_ install: AudioInstall) async {
         let isCurrent = { install.generation == self.loadGeneration && install.requestID == self.audioRequestID }
         guard isCurrent(), var updated = playback else { return }
@@ -311,8 +252,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
         resumesAfterAudioSwap = resumesAfterAudioSwap || isPlaying
         isSwappingAudio = true
         defer { isSwappingAudio = false }
-        pauseAll()
-        isPlaying = false
+        pausePlayback()
         removeClockObservers()
         audioPlayer?.pause()
         audioPlayer?.replaceCurrentItem(with: nil)
@@ -327,7 +267,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
             _ = try? await waitForPlayersReady((players: [audioPlayer], generation: install.generation))
         }
         guard isCurrent() else { return }
-        let clockPlayer = await selectPlaybackClockPlayer()
+        let clockPlayer = await Self.longestPlayer(among: clockCandidates)
         guard isCurrent() else { return }
         playbackClockPlayer = clockPlayer
         installObservers()
@@ -340,19 +280,10 @@ final class EditorPlaybackController: NowPlayingPlayback {
         resumesAfterAudioSwap = false
     }
 
-    /// Music ducking only affects export, so it never needs new preview audio.
-    private static func playbackVoiceCleanup(_ settings: VoiceCleanupSettings) -> VoiceCleanupSettings {
-        guard settings.isEnabled else { return .disabled }
-        var playback = settings
-        playback.ducksMusic = false
-        return playback
-    }
-
     func loadExported(url: URL, title: String) async {
         loadGeneration += 1
         let generation = loadGeneration
-        pauseAll()
-        isPlaying = false
+        pausePlayback()
         isReady = false
         loadError = nil
         teardownPlayers()
@@ -367,39 +298,26 @@ final class EditorPlaybackController: NowPlayingPlayback {
 
         do {
             let asset = AVURLAsset(url: url)
-            let durationTime = try await asset.load(.duration)
-            let tracks = try await asset.loadTracks(withMediaType: .video)
-            let size: CGSize
-            if let track = tracks.first {
-                let naturalSize = try await track.load(.naturalSize)
-                let transform = try await track.load(.preferredTransform)
-                let rect = CGRect(origin: .zero, size: naturalSize).applying(transform).standardized
-                size = CGSize(width: abs(rect.width), height: abs(rect.height))
-            } else {
-                size = .zero
-            }
-            guard generation == loadGeneration, !Task.isCancelled else { return }
+            let info = try await Self.exportedAssetInfo(asset)
+            guard isCurrentLoad(generation) else { return }
             let player = Self.makePlayer(AVPlayerItem(asset: asset))
             exportedPlayer = player
             guard try await waitForPlayersReady((players: [player], generation: generation)) else { return }
-            guard generation == loadGeneration, !Task.isCancelled else { return }
+            guard isCurrentLoad(generation) else { return }
             playbackClockPlayer = player
             nowPlayingTitle = title
-            self.duration = durationTime.seconds.isFinite ? max(0, durationTime.seconds) : 0
+            self.duration = info.duration.seconds.isFinite ? max(0, info.duration.seconds) : 0
             exportedTimeMap = .identity(takeDuration: MediaTime(seconds: self.duration))
-            renderSize = size
+            renderSize = info.size
             previewSceneRevision &+= 1
             currentTime = 0
             installObservers()
             await seekAllPrecisely(to: 0)
-            guard generation == loadGeneration, !Task.isCancelled else { return }
+            guard isCurrentLoad(generation) else { return }
             isReady = true
         } catch {
-            guard generation == loadGeneration, !Task.isCancelled else { return }
-            teardownPlayers()
-            duration = 0
-            renderSize = .zero
-            loadError = error.localizedDescription
+            guard isCurrentLoad(generation) else { return }
+            failLoad(error)
         }
     }
 
@@ -418,16 +336,14 @@ final class EditorPlaybackController: NowPlayingPlayback {
         let resumeTime = isSameProject ? currentTime : 0
         let wasPlaying = isSameProject && isPlaying
 
-        pauseAll()
-        isPlaying = false
+        pausePlayback()
         isReady = false
         loadError = nil
 
         let store = TakeFileStore()
-        let outputFormat = OutputVideoFormat(rawValue: project.settings.outputVideoFormat)
-            ?? baseSettings.outputVideoFormat
-        let settings = store.recordingSettings(from: project, baseSettings: baseSettings, outputFormat: outputFormat)
-        let take = store.recordingTake(from: project, settings: settings, outputFormat: outputFormat)
+        let resolved = ProjectSettings(project: project, baseSettings: baseSettings)
+        let settings = resolved.settings
+        let take = store.recordingTake(from: project, settings: settings, outputFormat: resolved.outputFormat)
         let sceneEvents = store.sceneEvents(from: project)
 
         do {
@@ -441,7 +357,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
                 cuts: request.previewCuts ?? project.edits.enabledCuts
             )
             let cursor = await loadedCursor
-            guard generation == loadGeneration, !Task.isCancelled else { return }
+            guard isCurrentLoad(generation) else { return }
             teardownPlayers()
             self.playback = playback
             edits = project.edits
@@ -460,8 +376,8 @@ final class EditorPlaybackController: NowPlayingPlayback {
 
             buildPlayers(playback: playback)
             guard try await waitForPlayersReady((players: allPlayers, generation: generation)) else { return }
-            let clockPlayer = await selectPlaybackClockPlayer()
-            guard generation == loadGeneration, !Task.isCancelled else { return }
+            let clockPlayer = await Self.longestPlayer(among: clockCandidates)
+            guard isCurrentLoad(generation) else { return }
             playbackClockPlayer = clockPlayer
             duration = max(0, playback.timeMap.takeDuration.seconds)
             installObservers()
@@ -470,18 +386,15 @@ final class EditorPlaybackController: NowPlayingPlayback {
             currentTime = startTime
             await seekAllPrecisely(to: startTime)
 
-            guard generation == loadGeneration, !Task.isCancelled else { return }
+            guard isCurrentLoad(generation) else { return }
             isReady = true
             if wasPlaying { isPlaying = playAll() }
         } catch {
-            guard generation == loadGeneration, !Task.isCancelled else { return }
-            teardownPlayers()
+            guard isCurrentLoad(generation) else { return }
+            failLoad(error)
             playback = nil
             loadedProjectPath = nil
             loadedMediaSignature = nil
-            duration = 0
-            renderSize = .zero
-            loadError = error.localizedDescription
         }
     }
 
@@ -494,18 +407,9 @@ final class EditorPlaybackController: NowPlayingPlayback {
         ))
         guard kind == .sceneTimeline, let playback else { return false }
 
-        let store = TakeFileStore()
-        let outputFormat = OutputVideoFormat(rawValue: update.project.settings.outputVideoFormat)
-            ?? update.baseSettings.outputVideoFormat
-        let settings = store.recordingSettings(
-            from: update.project,
-            baseSettings: update.baseSettings,
-            outputFormat: outputFormat
-        )
-        let sceneEvents = store.sceneEvents(from: update.project)
         guard let refreshedPlayback = try? playback.updatingSceneTimeline(EditorPlaybackSceneTimeline(
-            settings: settings,
-            sceneEvents: sceneEvents
+            settings: ProjectSettings(project: update.project, baseSettings: update.baseSettings).settings,
+            sceneEvents: TakeFileStore().sceneEvents(from: update.project)
         )) else {
             return false
         }
@@ -535,35 +439,14 @@ final class EditorPlaybackController: NowPlayingPlayback {
     }
 
     private func buildAudioPlayer(playback: EditorPlaybackComposition) {
-        let inputs = playback.audioInputs
-        guard !inputs.isEmpty else { return }
-        let composition = AVMutableComposition()
-        var mixTracks: [AudioMixTrack] = []
-        for input in inputs {
-            guard let track = composition.addMutableTrack(
-                withMediaType: .audio,
-                preferredTrackID: kCMPersistentTrackID_Invalid
-            ) else { continue }
-            let range = input.track.timeRange
-            guard CMTimeCompare(range.duration, .zero) > 0 else { continue }
-            try? track.insertTimeRange(range, of: input.track, at: range.start)
-            mixTracks.append((input.source, track, input.volume, input.version))
-        }
-        guard !mixTracks.isEmpty else { return }
-        audioComposition = composition
-        audioMixTracks = mixTracks
-        let item = AVPlayerItem(asset: composition)
+        guard let audio = Self.audioComposition(for: playback.audioInputs) else { return }
+        audioComposition = audio.composition
+        audioMixTracks = audio.tracks
+        let item = AVPlayerItem(asset: audio.composition)
         item.audioMix = audioMix()
         let player = Self.makePlayer(item)
         player.volume = Float(playbackVolume)
         audioPlayer = player
-    }
-
-    private static func makePlayer(_ item: AVPlayerItem) -> AVPlayer {
-        item.audioTimePitchAlgorithm = .timeDomain
-        let player = AVPlayer(playerItem: item)
-        player.automaticallyWaitsToMinimizeStalling = false
-        return player
     }
 
     private func waitForPlayersReady(_ request: (players: [AVPlayer], generation: Int)) async throws -> Bool {
@@ -600,15 +483,12 @@ final class EditorPlaybackController: NowPlayingPlayback {
         throw RecorderError.playbackNotReady
     }
 
-    private func selectPlaybackClockPlayer() async -> AVPlayer? {
-        let candidates = [audioPlayer, videoPlayers[.screen], videoPlayers[.camera]].compactMap { $0 }
-        var durations: [Double] = []
-        for player in candidates {
-            let duration = try? await player.currentItem?.asset.load(.duration)
-            durations.append(duration?.seconds ?? 0)
-        }
-        guard let index = EditorPlaybackClockSelection.index(for: durations) else { return nil }
-        return candidates[index]
+    private var clockCandidates: [AVPlayer] {
+        [audioPlayer, videoPlayers[.screen], videoPlayers[.camera]].compactMap { $0 }
+    }
+
+    private func refreshAudioMix() {
+        audioPlayer?.currentItem?.audioMix = audioMix()
     }
 
     private func audioMix() -> AVAudioMix? {
@@ -653,13 +533,11 @@ final class EditorPlaybackController: NowPlayingPlayback {
 
     func scene(at seconds: Double) -> RecordingScene? {
         guard playback != nil else { return nil }
-        let time = outputTime(forTakeSeconds: seconds)
         let segmentScene: RecordingScene
-        if let cachedSceneAt,
-           cachedSceneAt.revision == previewSceneRevision,
-           CMTimeRangeContainsTime(cachedSceneAt.range, time: time) {
+        if isCachedSceneSegment(at: seconds), let cachedSceneAt {
             segmentScene = cachedSceneAt.scene
         } else {
+            let time = outputTime(forTakeSeconds: seconds)
             let segments = previewRenderSegments
             guard let index = EditorTimelineIndex.segmentIndex(at: time, in: segments) else { return nil }
             segmentScene = segments[index].scene
@@ -679,8 +557,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
         isScrubbing = false
         resumesAfterScrub = false
         if isPlaying {
-            pauseAll()
-            isPlaying = false
+            pausePlayback()
         } else {
             if duration > 0, currentTime >= duration - 0.05 {
                 currentTime = 0
@@ -697,10 +574,6 @@ final class EditorPlaybackController: NowPlayingPlayback {
         isScrubbing = false
         resumesAfterScrub = false
         isPlaying = playAll()
-    }
-
-    func playFromOutput(_ seconds: Double) {
-        play(from: timeMap.takeSeconds(forOutputSeconds: seconds))
     }
 
     func setPlaybackRate(_ rate: EditorPlaybackRate) {
@@ -737,12 +610,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
         let now = CMClockGetTime(CMClockGetHostTimeClock())
         let hostTime = CMTimeAdd(now, CMTime(seconds: 0.06, preferredTimescale: 600))
         for player in players {
-            let clamped = itemClampedTime(currentTime, for: player)
-            player.setRate(
-                playbackRate.rawValue,
-                time: CMTime(seconds: clamped, preferredTimescale: 600),
-                atHostTime: hostTime
-            )
+            player.setRate(playbackRate.rawValue, time: itemTime(currentTime, for: player), atHostTime: hostTime)
         }
         return true
     }
@@ -751,10 +619,16 @@ final class EditorPlaybackController: NowPlayingPlayback {
         for player in allPlayers { player.rate = 0 }
     }
 
-    private func itemClampedTime(_ seconds: Double, for player: AVPlayer) -> Double {
+    private func pausePlayback() {
+        pauseAll()
+        isPlaying = false
+    }
+
+    private func itemTime(_ seconds: Double, for player: AVPlayer) -> CMTime {
         let itemDuration = player.currentItem?.duration.seconds ?? duration
         let limit = itemDuration.isFinite ? itemDuration : duration
-        return min(timeMap.outputSeconds(forTakeSeconds: max(0, seconds)), max(limit, 0))
+        let clamped = min(timeMap.outputSeconds(forTakeSeconds: max(0, seconds)), max(limit, 0))
+        return CMTime(seconds: clamped, preferredTimescale: 600)
     }
 
     func scrub(to seconds: Double) {
@@ -769,15 +643,11 @@ final class EditorPlaybackController: NowPlayingPlayback {
         currentTime = clamped
         for player in allPlayers {
             player.seek(
-                to: CMTime(seconds: itemClampedTime(clamped, for: player), preferredTimescale: 600),
+                to: itemTime(clamped, for: player),
                 toleranceBefore: CMTime(seconds: 0.1, preferredTimescale: 600),
                 toleranceAfter: CMTime(seconds: 0.1, preferredTimescale: 600)
             )
         }
-    }
-
-    func scrubToOutput(_ seconds: Double) {
-        scrub(to: timeMap.takeSeconds(forOutputSeconds: seconds))
     }
 
     func endScrub() {
@@ -814,7 +684,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
 
     private func seekAll(to seconds: Double, precise: Bool) {
         for player in allPlayers {
-            let t = CMTime(seconds: itemClampedTime(seconds, for: player), preferredTimescale: 600)
+            let t = itemTime(seconds, for: player)
             if precise {
                 player.seek(to: t, toleranceBefore: .zero, toleranceAfter: .zero)
             } else {
@@ -826,7 +696,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
     private func seekAllPrecisely(to seconds: Double) async {
         await withTaskGroup(of: Void.self) { group in
             for player in allPlayers {
-                let t = CMTime(seconds: itemClampedTime(seconds, for: player), preferredTimescale: 600)
+                let t = itemTime(seconds, for: player)
                 group.addTask { @MainActor in
                     await withCheckedContinuation { continuation in
                         player.seek(to: t, toleranceBefore: .zero, toleranceAfter: .zero) { _ in
@@ -843,10 +713,8 @@ final class EditorPlaybackController: NowPlayingPlayback {
     }
 
     func step(byFrames frameCount: Int) {
-        let frameDuration = playback?.frameDuration
-        let frameSeconds = frameDuration?.seconds.isFinite == true && (frameDuration?.seconds ?? 0) > 0
-            ? frameDuration?.seconds ?? 1.0 / 30.0
-            : 1.0 / 30.0
+        let seconds = playback?.frameDuration.seconds ?? 0
+        let frameSeconds = seconds.isFinite && seconds > 0 ? seconds : 1.0 / 30.0
         seek(by: Double(frameCount) * frameSeconds)
     }
 
@@ -859,7 +727,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
     func setMuted(_ muted: Bool, source: CaptureSource) {
         guard playback != nil else { return }
         if muted { mutedSources.insert(source) } else { mutedSources.remove(source) }
-        audioPlayer?.currentItem?.audioMix = audioMix()
+        refreshAudioMix()
     }
 
     func setPlaybackVolume(_ volume: Double) {
@@ -874,17 +742,17 @@ final class EditorPlaybackController: NowPlayingPlayback {
     func setTrackVolume(_ change: EditorTrackVolumeChange) {
         guard muteableSources.contains(change.source) else { return }
         audioLevels.setVolume(change)
-        audioPlayer?.currentItem?.audioMix = audioMix()
+        refreshAudioMix()
     }
 
     func setAudioRegionVolume(_ region: EditorAudioVolumeRegion) {
         audioLevels.setRegion(region)
-        audioPlayer?.currentItem?.audioMix = audioMix()
+        refreshAudioMix()
     }
 
     func restoreAudioLevels(_ levels: EditorAudioLevels) {
         audioLevels = levels
-        audioPlayer?.currentItem?.audioMix = audioMix()
+        refreshAudioMix()
     }
 
     func togglePlaybackMute() {
@@ -898,7 +766,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
         hiddenKinds.formIntersection(hideableKinds)
         mutedSources.formIntersection(muteableSources)
         applyPreviewDuration()
-        audioPlayer?.currentItem?.audioMix = audioMix()
+        refreshAudioMix()
     }
 
     func setPreviewSceneOverride(_ scene: RecordingScene?, at seconds: Double) {
@@ -940,18 +808,8 @@ final class EditorPlaybackController: NowPlayingPlayback {
 
     func pauseForEditing() {
         guard isReady else { return }
-        pauseAll()
-        isPlaying = false
+        pausePlayback()
         syncCurrentTimeFromMasterPlayer()
-    }
-
-    var nowPlayingDuration: Double { outputDuration }
-
-    var nowPlayingTime: Double { timeMap.outputSeconds(forTakeSeconds: currentTime) }
-
-    func seekFromNowPlaying(to seconds: Double) {
-        guard seconds.isFinite else { return }
-        seek(to: timeMap.takeSeconds(forOutputSeconds: seconds))
     }
 
     func displayTime() -> Double {
@@ -999,6 +857,17 @@ final class EditorPlaybackController: NowPlayingPlayback {
         audioComposition = nil
         audioMixTracks = []
         rebuiltAudioSource = nil
+    }
+
+    private func isCurrentLoad(_ generation: Int) -> Bool {
+        generation == loadGeneration && !Task.isCancelled
+    }
+
+    private func failLoad(_ error: Error) {
+        teardownPlayers()
+        duration = 0
+        renderSize = .zero
+        loadError = error.localizedDescription
     }
 
     private func applyPreviewDuration() {
@@ -1065,8 +934,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
             ) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self, self.loadGeneration == generation, self.isReady else { return }
-                    self.pauseAll()
-                    self.isPlaying = false
+                    self.pausePlayback()
                     self.currentTime = self.duration
                 }
             }

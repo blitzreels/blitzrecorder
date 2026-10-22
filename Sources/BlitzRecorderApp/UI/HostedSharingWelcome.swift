@@ -147,14 +147,7 @@ struct HostedSharingWelcome: View {
                 .padding(.horizontal, 14)
                 .padding(.bottom, 26)
         }
-        .frame(width: size.width, height: size.height)
-        .clipShape(.rect(cornerRadius: BlitzUI.surfaceRadius))
-        .overlay {
-            RoundedRectangle(cornerRadius: BlitzUI.surfaceRadius)
-                .strokeBorder(LinearGradient(colors: [BlitzUI.strongStroke, BlitzUI.separator],
-                                             startPoint: .top, endPoint: .bottom), lineWidth: 1)
-        }
-        .shadow(color: BlitzUI.deepShadow, radius: 16, y: 8)
+        .showcaseCardChrome(size: size)
     }
 
     private var placeholderCard: some View {
@@ -163,14 +156,7 @@ struct HostedSharingWelcome: View {
                            startPoint: .topLeading, endPoint: .bottomTrailing)
             playButton
         }
-        .frame(width: Metrics.card.width, height: Metrics.card.height)
-        .clipShape(.rect(cornerRadius: BlitzUI.surfaceRadius))
-        .overlay {
-            RoundedRectangle(cornerRadius: BlitzUI.surfaceRadius)
-                .strokeBorder(LinearGradient(colors: [BlitzUI.strongStroke, BlitzUI.separator],
-                                             startPoint: .top, endPoint: .bottom), lineWidth: 1)
-        }
-        .shadow(color: BlitzUI.deepShadow, radius: 16, y: 8)
+        .showcaseCardChrome(size: Metrics.card)
     }
 
     private var playButton: some View {
@@ -256,5 +242,18 @@ private struct Reveal: ViewModifier {
             .opacity(isVisible ? 1 : 0)
             .offset(y: isVisible ? 0 : 4)
             .animation(reduceMotion ? nil : .smooth(duration: 0.14).delay(delay), value: isVisible)
+    }
+}
+
+private extension View {
+    func showcaseCardChrome(size: CGSize) -> some View {
+        frame(width: size.width, height: size.height)
+            .clipShape(.rect(cornerRadius: BlitzUI.surfaceRadius))
+            .overlay {
+                RoundedRectangle(cornerRadius: BlitzUI.surfaceRadius)
+                    .strokeBorder(LinearGradient(colors: [BlitzUI.strongStroke, BlitzUI.separator],
+                                                 startPoint: .top, endPoint: .bottom), lineWidth: 1)
+            }
+            .shadow(color: BlitzUI.deepShadow, radius: 16, y: 8)
     }
 }

@@ -194,7 +194,6 @@ struct BlitzSourcePickerThumbnailCard: View {
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .accessibilityAddTraits(item.isSelected ? [.isSelected] : [])
-        .pointingHandCursor()
         .help([item.title, item.subtitle].compactMap { $0 }.joined(separator: " — "))
         .task(id: thumbnailID) {
             await thumbnail.load(.init(id: thumbnailID, load: item.loadThumbnail))

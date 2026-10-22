@@ -1,37 +1,6 @@
 import AppKit
 import Observation
 
-struct HostedLibraryVideo: Codable, Identifiable, Equatable {
-    let id: String
-    let title: String
-    let status: String
-    let sharePath: String?
-    let duration: Double?
-    let width: Int?
-    let height: Int?
-    let bytes: Int64
-    let error: String?
-    /// "cloudflare" when the file lives in the owner's account. Older servers omit it.
-    let storage: String?
-    /// False when the owner hid the link. Older servers omit it.
-    let listed: Bool?
-
-    var isOwnStorage: Bool { storage == "cloudflare" }
-    var isShared: Bool { status == "ready" && listed != false }
-
-    var isProcessing: Bool { ["queued", "processing"].contains(status) }
-    var statusLabel: String {
-        switch status {
-        case "ready": listed == false ? "Unlisted" : "Shared"
-        case "uploading": "Upload incomplete"
-        case "queued", "processing": "Processing"
-        case "failed": "Processing failed"
-        case "revoked": "Removed"
-        default: "Checking status"
-        }
-    }
-}
-
 @MainActor
 @Observable
 final class HostedVideoShareController {
@@ -122,7 +91,6 @@ final class HostedVideoShareController {
     var isConnected: Bool { account != nil }
     var isPerformingAccountAction: Bool { accountOperation != nil && accountOperation != .checking }
     var isSubscribed: Bool { account?.active == true }
-    var isConnectingCloudflare: Bool { cloudflareStep != nil }
     var canShare: Bool { activeStorage != nil }
     /// Where the next link uploads. A user with both keeps the one they picked last.
     var activeStorage: Storage? {
@@ -149,11 +117,11 @@ final class HostedVideoShareController {
             hasCheckedAccount = true
             prepareLibrary()
         }
-        if let data = UserDefaults.standard.data(forKey: "HostingExport:\(client.origin.absoluteString)") {
+        if let data = UserDefaults.standard.data(forKey: exportKey) {
             var stale = false
             fileURL = try? URL(resolvingBookmarkData: data, options: [.withSecurityScope, .withoutUI],
                                relativeTo: nil, bookmarkDataIsStale: &stale)
-            projectPath = UserDefaults.standard.string(forKey: "HostingProject:\(client.origin.absoluteString)")
+            projectPath = UserDefaults.standard.string(forKey: projectKey)
         }
     }
 
@@ -169,11 +137,11 @@ final class HostedVideoShareController {
         guard fileURL != url || selectedFingerprint != fingerprint || projectPath != selection.projectPath else { return }
         fileURL = url
         projectPath = selection.projectPath
-        UserDefaults.standard.set(projectPath, forKey: "HostingProject:\(client.origin.absoluteString)")
+        UserDefaults.standard.set(projectPath, forKey: projectKey)
         selectedFingerprint = fingerprint
         if let bookmark = try? url.bookmarkData(options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
                                                 includingResourceValuesForKeys: nil, relativeTo: nil) {
-            UserDefaults.standard.set(bookmark, forKey: "HostingExport:\(client.origin.absoluteString)")
+            UserDefaults.standard.set(bookmark, forKey: exportKey)
         }
         shareURL = nil
         transferProgress = nil
@@ -243,10 +211,8 @@ final class HostedVideoShareController {
             await refreshVideos()
         } catch {
             if (error as? HostingFailure)?.status == 401 {
-                credentials.clear()
-                setAccount(nil)
+                signOutLocally()
                 awaitingPayment = false
-                clearLibrary()
             }
             accountMessage = error.localizedDescription
         }
@@ -289,13 +255,10 @@ final class HostedVideoShareController {
             let body = Data((everywhere ? #"{"everywhere":true}"# : "{}").utf8)
             let result: Result = try await client.send(.init(route: "disconnect", token: token, body: body))
             billingTask?.cancel()
-            credentials.clear()
-            setAccount(nil)
+            signOutLocally()
             challenge = nil
             awaitingPayment = false
-            shareURL = nil
             transferMessage = nil
-            clearLibrary()
             // A server without sign-out-everywhere still revokes this Mac's token, so the local sign-out stands.
             accountMessage = everywhere && result.everywhere != true
                 ? "Signed out of this Mac only. Sign out your other devices from blitzrecorder.com." : nil
@@ -349,6 +312,7 @@ final class HostedVideoShareController {
         transferProgress = .preparing
         detailsNotice = nil
         let projectPath = projectPath
+        let pausedMessage = "Upload paused. Resume continues from the saved parts."
         task = Task {
             var access = SecurityScopedResourceAccess(urls: [fileURL])
             access.start()
@@ -368,15 +332,13 @@ final class HostedVideoShareController {
                 if isRefreshingVideos { refreshAfterUpload = true }
                 else { await refreshVideos() }
             } catch is CancellationError {
-                transferMessage = "Upload paused. Resume continues from the saved parts."
+                transferMessage = pausedMessage
             } catch {
                 if (error as? HostingFailure)?.status == 401 {
-                    credentials.clear()
-                    setAccount(nil)
+                    signOutLocally()
                     hasCheckedAccount = true
-                    clearLibrary()
                 }
-                transferMessage = Task.isCancelled ? "Upload paused. Resume continues from the saved parts." : error.localizedDescription
+                transferMessage = Task.isCancelled ? pausedMessage : error.localizedDescription
             }
         }
     }
@@ -454,6 +416,8 @@ final class HostedVideoShareController {
     }
 
     private var snapshotKey: String { "HostingAccount:\(client.origin.absoluteString)" }
+    private var exportKey: String { "HostingExport:\(client.origin.absoluteString)" }
+    private var projectKey: String { "HostingProject:\(client.origin.absoluteString)" }
 
     private func setAccount(_ value: Account?) {
         account = value
@@ -490,6 +454,12 @@ final class HostedVideoShareController {
         if let key = libraryKey("projects"), let data = try? JSONEncoder().encode(projectShares) {
             UserDefaults.standard.set(data, forKey: key)
         }
+    }
+
+    private func signOutLocally() {
+        credentials.clear()
+        setAccount(nil)
+        clearLibrary()
     }
 
     private func clearLibrary() {
@@ -529,9 +499,7 @@ final class HostedVideoShareController {
         } catch {
             guard credentials.load() == token, libraryEmail == email else { return }
             if (error as? HostingFailure)?.status == 401 {
-                credentials.clear()
-                setAccount(nil)
-                clearLibrary()
+                signOutLocally()
                 accountMessage = "Sign in again to see your shared videos."
             } else {
                 libraryMessage = videos.isEmpty ? "Unable to load shared videos. Try again."

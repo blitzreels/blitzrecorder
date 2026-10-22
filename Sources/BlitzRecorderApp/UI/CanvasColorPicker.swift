@@ -125,7 +125,6 @@ struct CanvasColorPicker: View {
                 .frame(width: 20, height: 20)
         }
         .buttonStyle(BlitzPressButtonStyle())
-        .pointingHandCursor()
         .accessibilityLabel("Color #\(Self.hex(preset))")
     }
 

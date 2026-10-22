@@ -36,24 +36,7 @@ final class CameraPreviewView: NSView {
 
     init() {
         super.init(frame: .zero)
-        wantsLayer = true
-        layer?.backgroundColor = .clear
-        layer?.masksToBounds = true
-        layer?.actions = previewLayerNoResizeActions
-
-        imageLayer.contentsGravity = .resizeAspectFill
-        imageLayer.backgroundColor = .clear
-        imageLayer.actions = previewLayerNoResizeActions
-        layer?.addSublayer(imageLayer)
-
-        unavailableOverlay.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(unavailableOverlay)
-        NSLayoutConstraint.activate([
-            unavailableOverlay.leadingAnchor.constraint(equalTo: leadingAnchor),
-            unavailableOverlay.trailingAnchor.constraint(equalTo: trailingAnchor),
-            unavailableOverlay.topAnchor.constraint(equalTo: topAnchor),
-            unavailableOverlay.bottomAnchor.constraint(equalTo: bottomAnchor)
-        ])
+        installPreviewBaseLayers(.init(imageLayer: imageLayer, overlay: unavailableOverlay, masksToBounds: true))
     }
 
     required init?(coder: NSCoder) {
@@ -135,33 +118,14 @@ final class CameraPreviewView: NSView {
         previewLayer = nil
         imageLayer.contents = nil
         if sampleBufferLayer == nil {
-            let layer = AVSampleBufferDisplayLayer()
-            layer.videoGravity = .resizeAspectFill
-            layer.actions = previewLayerNoResizeActions
-            layer.backgroundColor = NSColor.black.cgColor
+            let layer = AVSampleBufferDisplayLayer.previewDisplayLayer(backgroundColor: NSColor.black.cgColor)
             sampleBufferLayer = layer
             self.layer?.insertSublayer(layer, at: 0)
         }
         sourceAspectRatio = overrideAspectRatio ?? CGFloat(width) / max(1, CGFloat(height))
         syncPreviewLayerFrame()
         hideUnavailableOverlay()
-        guard let sampleBufferLayer else { return }
-        if #available(macOS 15.0, *) {
-            let renderer = sampleBufferLayer.sampleBufferRenderer
-            if renderer.status == .failed {
-                renderer.flush()
-            }
-            if renderer.isReadyForMoreMediaData {
-                renderer.enqueue(sampleBuffer)
-            }
-        } else {
-            if sampleBufferLayer.status == .failed {
-                sampleBufferLayer.flush()
-            }
-            if sampleBufferLayer.isReadyForMoreMediaData {
-                sampleBufferLayer.enqueue(sampleBuffer)
-            }
-        }
+        sampleBufferLayer?.enqueuePreviewFrame(sampleBuffer)
     }
 
     func setSourceAspectRatio(_ aspectRatio: CGFloat) {

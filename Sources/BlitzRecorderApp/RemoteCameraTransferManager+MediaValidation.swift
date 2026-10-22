@@ -11,7 +11,9 @@ extension RemoteCameraTransferManager {
         url: URL,
         manifest: RemoteCameraTransferManifest?
     ) async throws -> [String] {
-        let asset = AVURLAsset(url: url)
+        // The clip is checked while it still ends in ".partial"; AVFoundation picks the format from the
+        // extension, so say it is a QuickTime movie.
+        let asset = AVURLAsset(url: url, options: [AVURLAssetOverrideMIMETypeKey: "video/quicktime"])
         let videoTracks = try await asset.loadTracks(withMediaType: .video)
         guard let videoTrack = videoTracks.first else {
             throw RecorderError.remoteCameraTransferFailed("Imported iPhone recording has no video track.")
@@ -136,36 +138,7 @@ extension RemoteCameraTransferManager {
         guard let formatDescription = formatDescriptions.first else {
             return nil
         }
-        return videoCodecLabel(for: CMFormatDescriptionGetMediaSubType(formatDescription))
-    }
-
-    private static func videoCodecLabel(for codec: FourCharCode) -> String {
-        switch codec {
-        case kCMVideoCodecType_HEVC:
-            return "HEVC"
-        case kCMVideoCodecType_H264:
-            return "H.264"
-        case kCMVideoCodecType_AppleProRes422:
-            return "ProRes 422"
-        case kCMVideoCodecType_AppleProRes4444:
-            return "ProRes 4444"
-        default:
-            return fourCharacterCode(codec)
-        }
-    }
-
-    private static func fourCharacterCode(_ value: FourCharCode) -> String {
-        let bytes = [
-            UInt8((value >> 24) & 0xff),
-            UInt8((value >> 16) & 0xff),
-            UInt8((value >> 8) & 0xff),
-            UInt8(value & 0xff)
-        ]
-        let scalars = bytes.map { byte -> UnicodeScalar in
-            let scalar = byte >= 32 && byte <= 126 ? byte : UInt8(ascii: "?")
-            return UnicodeScalar(scalar)
-        }
-        return String(String.UnicodeScalarView(scalars))
+        return EditorMediaTechnicalMetadata.videoCodecLabel(CMFormatDescriptionGetMediaSubType(formatDescription))
     }
 
     private static func formattedSeconds(_ seconds: Double) -> String {

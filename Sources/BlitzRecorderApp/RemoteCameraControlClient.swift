@@ -4,6 +4,7 @@ import CryptoKit
 import Foundation
 import Network
 import Security
+import SystemConfiguration
 
 @MainActor
 final class RemoteCameraControlClient {
@@ -14,6 +15,9 @@ final class RemoteCameraControlClient {
     private(set) var isConnected = false
     private(set) var connectionAttemptCount = 0
     private let macCredential = RemoteCameraMacIdentityStore.load()
+
+    /// The name the iPhone shows for this Mac, as set in System Settings > General > Sharing.
+    private static let computerName = SCDynamicStoreCopyComputerName(nil, nil) as String?
 
     var onChanged: (() -> Void)?
     var onMessage: ((String) -> Void)?
@@ -62,6 +66,10 @@ final class RemoteCameraControlClient {
         onChanged?()
     }
 
+    var remoteHost: NWEndpoint.Host? {
+        connection?.remoteHost
+    }
+
     func send(_ command: RemoteCameraCommand) {
         connection?.send(command) { [weak self] error in
             guard let error else { return }
@@ -98,9 +106,13 @@ final class RemoteCameraControlClient {
         switch state {
         case .ready:
             isConnected = true
-            onMessage?("Connected to \(service.name) Remote iPhone Camera.")
+            onMessage?("Connected to \(service.name). If it asks, tap Connect on the iPhone.")
             onStateChanged?(.pairing)
-            send(.hello(protocolVersion: RemoteCameraConstants.protocolVersion, macIdentity: macCredential.identity))
+            send(.hello(
+                protocolVersion: RemoteCameraConstants.protocolVersion,
+                macIdentity: macCredential.identity,
+                macName: Self.computerName
+            ))
         case .waiting(let error):
             isConnected = false
             onStateChanged?(.degraded)
@@ -155,13 +167,15 @@ final class RemoteCameraControlClient {
         case .transferReady(_, let fileName, let byteCount, _):
             let size = ByteCountFormatter.string(fromByteCount: byteCount, countStyle: .file)
             onMessage?("Remote iPhone transfer ready: \(fileName) (\(size)).")
-        case .transferChunk:
+        case .transferChunk, .transferChannel:
             break
         case .transferComplete(_, let byteCount, _):
             let size = ByteCountFormatter.string(fromByteCount: byteCount, countStyle: .file)
             onMessage?("Remote iPhone transfer complete (\(size)).")
         case .failed(_, let reason):
             onMessage?("Remote iPhone failed: \(reason)")
+        case .goingToSleep:
+            onMessage?("Remote iPhone is going to sleep.")
         }
         onChanged?()
     }

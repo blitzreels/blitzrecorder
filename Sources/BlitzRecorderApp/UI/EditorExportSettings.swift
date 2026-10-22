@@ -290,7 +290,6 @@ struct EditorExportQualityPicker: View {
                 .accessibilityLabel("\(quality.displayName), about \(configuration.size(quality))")
                 .accessibilityAddTraits(isSelected ? [.isSelected] : [])
                 .help(quality.plainDescription)
-                .pointingHandCursor()
             }
         }
         .blitzTabGroup()

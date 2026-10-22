@@ -73,29 +73,13 @@ struct MainView: View {
         }
         .background { AppSidebarShortcuts(vm: vm) }
         .environment(\.windowToolbarLeadingInset, toolbarLeadingInset)
-        .environment(\.workspaceRecorder, vm)
-        .background(BlitzUI.panelBackground)
-        .ignoresSafeArea(.container, edges: .top)
+        .workspaceWindowSurface(vm: vm)
         .onChange(of: vm.studioMode, initial: true) { _, mode in
             if mode == .edit { retainsEditor = true }
         }
         .onChange(of: vm.sidebarDestination) { previous, destination in
             guard destination == .record, previous != .settings else { return }
             studioExitDestination = previous == .editor ? .editor : .recordings
-        }
-        .sheet(item: Binding(
-            get: { vm.libraryActions.folderPrompt },
-            set: { vm.libraryActions.folderPrompt = $0 }
-        )) { prompt in
-            ProjectFolderNameEditor(
-                prompt: prompt,
-                name: Binding(
-                    get: { vm.libraryActions.folderNameDraft },
-                    set: { vm.libraryActions.folderNameDraft = $0 }
-                ),
-                affectedCount: vm.folderPromptAffectedCount(prompt),
-                onSave: { vm.commitFolderPrompt(prompt) }, onCancel: { vm.libraryActions.folderPrompt = nil }
-            )
         }
         .overlay {
             if vm.showsFirstRunOnboarding && !vm.isShowingSettings {
@@ -209,26 +193,7 @@ struct MainView: View {
                         }
 
                         if vm.state == .idle && !vm.isLivePreviewEnabled {
-                            BlitzUI.canvasBackground
-                                .overlay {
-                                    VStack(spacing: 12) {
-                                        Image(systemName: "eye.slash")
-                                            .font(BlitzType.glyph(28))
-                                            .foregroundStyle(BlitzUI.accent)
-                                        Text("Live preview is off")
-                                            .font(BlitzType.title)
-                                        Text("Mac camera, microphone, screen, and system audio start when you record.")
-                                            .font(BlitzType.body)
-                                            .foregroundStyle(BlitzUI.secondaryText)
-                                            .multilineTextAlignment(.center)
-                                        Button("Turn on preview") {
-                                            vm.setLivePreviewEnabled(true)
-                                        }
-                                        .blitzButton(.secondary)
-                                        .padding(.top, 4)
-                                    }
-                                    .padding(24)
-                                }
+                            livePreviewOffPlaceholder
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -247,502 +212,55 @@ struct MainView: View {
         .frame(maxHeight: .infinity)
     }
 
-}
-
-enum ScreenSplitDividerGeometry {
-    struct Drag {
-        let startHeight: Double
-        let translation: CGFloat
-        let canvasHeight: CGFloat
-    }
-
-    static func height(_ drag: Drag) -> Double {
-        guard drag.startHeight.isFinite, drag.translation.isFinite,
-              drag.canvasHeight.isFinite, drag.canvasHeight > 0 else {
-            return Double(SceneLayout.defaultScreenSplitHeight)
-        }
-        let proposed = drag.startHeight + Double(drag.translation / drag.canvasHeight)
-        let clamped = Double(SceneLayout.clampedScreenSplitHeight(CGFloat(proposed)))
-        let snapDistance = min(0.018, 6 / Double(drag.canvasHeight))
-        return [0.5, 2.0 / 3.0, 0.75].first { abs($0 - clamped) <= snapDistance } ?? clamped
-    }
-}
-
-enum SideSplitDividerGeometry {
-    struct Drag {
-        let startWidth: Double
-        let translation: CGFloat
-        let canvasWidth: CGFloat
-        let cameraIsLeft: Bool
-        let layout: CaptureLayout
-    }
-
-    static func width(_ drag: Drag) -> Double {
-        guard drag.startWidth.isFinite, drag.translation.isFinite,
-              drag.canvasWidth.isFinite, drag.canvasWidth > 0 else {
-            return Double(SceneLayout.defaultSideBySideCameraWidth(for: drag.layout))
-        }
-        let delta = Double(drag.translation / drag.canvasWidth) * (drag.cameraIsLeft ? 1 : -1)
-        let clamped = Double(SceneLayout.clampedSideBySideCameraWidth(CGFloat(drag.startWidth + delta)))
-        let snapDistance = min(0.018, 6 / Double(drag.canvasWidth))
-        let portrait = Double(SceneLayout.portraitCameraWidth(for: drag.layout))
-        return [portrait, 0.5].first { abs($0 - clamped) <= snapDistance } ?? clamped
-    }
-}
-
-private struct SideSplitDividerOverlay: View {
-    @Bindable var vm: RecorderViewModel
-    @State private var dragOrigin: DragOrigin?
-    @State private var isHovering = false
-
-    private struct DragOrigin {
-        let width: Double
-        let canvasWidth: CGFloat
-    }
-
-    var body: some View {
-        GeometryReader { proxy in
-            if vm.showsSideSplitControl, vm.canEditScene,
-               !vm.canvas.isScreenCropModeEnabled, !vm.canvas.isCameraCropModeEnabled,
-               !vm.canvas.previewCanvasFrame.isEmpty {
-                let canvas = vm.canvas.previewCanvasFrame
-                let dividerX = vm.sideSplitCameraIsLeft ? vm.sideSplitCameraWidth : 1 - vm.sideSplitCameraWidth
-                handle
-                    .frame(width: 28, height: max(0, canvas.height - 2))
-                    .contentShape(.rect)
-                    .gesture(DragGesture(minimumDistance: 2, coordinateSpace: .global)
-                        .onChanged { value in
-                            if dragOrigin == nil {
-                                dragOrigin = DragOrigin(width: vm.sideSplitCameraWidth, canvasWidth: canvas.width)
-                            }
-                            guard let dragOrigin else { return }
-                            vm.previewSideSplitCameraWidth(SideSplitDividerGeometry.width(.init(
-                                startWidth: dragOrigin.width,
-                                translation: value.translation.width,
-                                canvasWidth: dragOrigin.canvasWidth,
-                                cameraIsLeft: vm.sideSplitCameraIsLeft,
-                                layout: vm.settings.layout
-                            )))
-                        }
-                        .onEnded { _ in
-                            guard dragOrigin != nil else { return }
-                            vm.commitSideSplitPreview()
-                            dragOrigin = nil
-                        }
-                    )
-                    .onHover {
-                        isHovering = $0
-                        ($0 ? NSCursor.resizeLeftRight : NSCursor.arrow).set()
+    private var livePreviewOffPlaceholder: some View {
+        BlitzUI.canvasBackground
+            .overlay {
+                VStack(spacing: 12) {
+                    Image(systemName: "eye.slash")
+                        .font(BlitzType.glyph(28))
+                        .foregroundStyle(BlitzUI.accent)
+                    Text("Live preview is off")
+                        .font(BlitzType.title)
+                    Text("Mac camera, microphone, screen, and system audio start when you record.")
+                        .font(BlitzType.body)
+                        .foregroundStyle(BlitzUI.secondaryText)
+                        .multilineTextAlignment(.center)
+                    Button("Turn on preview") {
+                        vm.setLivePreviewEnabled(true)
                     }
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Camera and screen divider")
-                    .accessibilityValue("\(Int((vm.sideSplitCameraWidth * 100).rounded())) percent camera")
-                    .accessibilityAdjustableAction { direction in
-                        switch direction {
-                        case .increment: vm.setSideSplitCameraWidth(vm.sideSplitCameraWidth + 0.05)
-                        case .decrement: vm.setSideSplitCameraWidth(vm.sideSplitCameraWidth - 0.05)
-                        @unknown default: break
-                        }
-                    }
-                    .help("Drag to share space between camera and screen")
-                    .position(
-                        x: canvas.minX + canvas.width * dividerX,
-                        y: proxy.size.height - canvas.midY
-                    )
-            }
-        }
-        .onChange(of: vm.selectedSceneID) { _, _ in cancelDrag() }
-        .onDisappear { cancelDrag() }
-    }
-
-    private var handle: some View {
-        ZStack {
-            Rectangle()
-                .fill(BlitzUI.accent.opacity(isHovering || dragOrigin != nil ? 0.8 : 0))
-                .frame(width: 1)
-            Capsule()
-                .fill(.black.opacity(0.7))
-                .frame(width: 18, height: 46)
-                .overlay {
-                    Capsule()
-                        .fill(isHovering || dragOrigin != nil ? BlitzUI.accent : BlitzUI.supportingText)
-                        .frame(width: 3, height: 24)
+                    .blitzButton(.secondary)
+                    .padding(.top, 4)
                 }
-        }
-    }
-
-    private func cancelDrag() {
-        dragOrigin = nil
-        vm.cancelSideSplitPreview()
-        if isHovering {
-            isHovering = false
-            NSCursor.arrow.set()
-        }
-    }
-}
-
-private struct SplitDividerOverlay: View {
-    @Bindable var vm: RecorderViewModel
-    @State private var dragOrigin: DragOrigin?
-    @State private var isHovering = false
-
-    private struct DragOrigin {
-        let height: Double
-        let canvasHeight: CGFloat
-    }
-
-    var body: some View {
-        GeometryReader { proxy in
-            if vm.showsScreenSplitControl, vm.canEditScene,
-               !vm.canvas.isScreenCropModeEnabled, !vm.canvas.isCameraCropModeEnabled,
-               !vm.canvas.previewCanvasFrame.isEmpty {
-                let canvas = vm.canvas.previewCanvasFrame
-                handle
-                    .frame(width: max(0, canvas.width - 2), height: 28)
-                    .contentShape(.rect)
-                    .gesture(DragGesture(minimumDistance: 2, coordinateSpace: .global)
-                        .onChanged { value in
-                            if dragOrigin == nil {
-                                dragOrigin = DragOrigin(height: vm.screenSplitHeight, canvasHeight: canvas.height)
-                            }
-                            guard let dragOrigin else { return }
-                            vm.previewScreenSplitHeight(ScreenSplitDividerGeometry.height(.init(
-                                startHeight: dragOrigin.height,
-                                translation: value.translation.height,
-                                canvasHeight: dragOrigin.canvasHeight
-                            )))
-                        }
-                        .onEnded { _ in
-                            guard dragOrigin != nil else { return }
-                            vm.commitScreenSplitPreview()
-                            dragOrigin = nil
-                        }
-                    )
-                    .onHover {
-                        isHovering = $0
-                        ($0 ? NSCursor.resizeUpDown : NSCursor.arrow).set()
-                    }
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Screen and camera divider")
-                    .accessibilityValue("\(Int((vm.screenSplitHeight * 100).rounded())) percent screen")
-                    .accessibilityAdjustableAction { direction in
-                        switch direction {
-                        case .increment: vm.setScreenSplitHeight(vm.screenSplitHeight + 0.05)
-                        case .decrement: vm.setScreenSplitHeight(vm.screenSplitHeight - 0.05)
-                        @unknown default: break
-                        }
-                    }
-                    .help("Drag to share space between screen and camera")
-                    .position(
-                        x: canvas.midX,
-                        y: proxy.size.height - canvas.maxY + canvas.height * vm.screenSplitHeight
-                    )
+                .padding(24)
             }
-        }
-        .onChange(of: vm.selectedSceneID) { _, _ in cancelDrag() }
-        .onDisappear { cancelDrag() }
     }
 
-    private var handle: some View {
-        ZStack {
-            Rectangle()
-                .fill(BlitzUI.accent.opacity(isHovering || dragOrigin != nil ? 0.8 : 0))
-                .frame(height: 1)
-            Capsule()
-                .fill(.black.opacity(0.7))
-                .frame(width: 46, height: 18)
-                .overlay {
-                    Capsule()
-                        .fill(isHovering || dragOrigin != nil ? BlitzUI.accent : BlitzUI.supportingText)
-                        .frame(width: 24, height: 3)
-                }
-        }
-    }
-
-    private func cancelDrag() {
-        dragOrigin = nil
-        vm.cancelScreenSplitPreview()
-        if isHovering {
-            isHovering = false
-            NSCursor.arrow.set()
-        }
-    }
-}
-
-struct CropToolbarOverlay: View {
-    @Bindable var vm: RecorderViewModel
-
-    var body: some View {
-        GeometryReader { proxy in
-            if let frame = vm.canvas.cropToolbarFrame,
-               vm.canvas.isScreenCropModeEnabled || vm.canvas.isCameraCropModeEnabled {
-                CropFloatingToolbar(configuration: cropToolbarConfiguration)
-                    .fixedSize()
-                    .position(
-                        x: frame.midX,
-                        y: proxy.size.height - frame.midY
-                    )
-            }
-        }
-    }
-
-    private var cropToolbarConfiguration: CropFloatingToolbarConfiguration {
-        CropFloatingToolbarConfiguration(
-            onDone: {
-                if vm.canvas.isCameraCropModeEnabled {
-                    vm.applyCameraCropMode()
-                } else {
-                    vm.applyScreenCropMode()
-                }
-            },
-            onReset: {
-                if vm.canvas.isCameraCropModeEnabled {
-                    vm.resetCameraCrop()
-                } else {
-                    vm.resetScreenCropMode()
-                }
-            },
-            onCancel: {
-                if vm.canvas.isCameraCropModeEnabled {
-                    vm.cancelCameraCropMode()
-                } else {
-                    vm.cancelScreenCropMode()
-                }
-            }
-        )
-    }
-}
-
-private struct ScreenPickPromptOverlay: View {
-    @Bindable var vm: RecorderViewModel
-
-    var body: some View {
-        GeometryReader { proxy in
-            if let frame = vm.canvas.screenLayerFrame, frame.width > 1, frame.height > 1 {
-                ScreenPickPrompt(vm: vm)
-                    .fixedSize()
-                    .position(x: frame.midX, y: proxy.size.height - frame.midY)
-            } else {
-                ScreenPickPrompt(vm: vm)
-                    .fixedSize()
-                    .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
-            }
-        }
-    }
-}
-
-private struct ScreenPickPrompt: View {
-    @Bindable var vm: RecorderViewModel
-
-    var body: some View {
-        Button {
-            vm.pickScreen()
-        } label: {
-            Label(vm.screenPickActionTitle, systemImage: "macwindow")
-        }
-        .blitzButton(.emphasized)
-        .controlSize(.large)
-        .shadow(color: BlitzUI.elevationShadow, radius: 12, y: 4)
-        .pointingHandCursor()
-        .help("Choose an app window and fit it to the current scene")
-    }
-}
-
-struct CropFloatingToolbarConfiguration {
-    let onDone: () -> Void
-    let onReset: () -> Void
-    let onCancel: () -> Void
-}
-
-struct CropFloatingToolbar: View {
-    let configuration: CropFloatingToolbarConfiguration
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Button(action: configuration.onCancel) {
-                Image(systemName: "xmark")
-            }
-            .blitzButton(.secondary)
-            .keyboardShortcut(.cancelAction)
-            .accessibilityLabel("Cancel")
-            .help("Cancel (Esc)")
-
-            Button(action: configuration.onReset) {
-                Label("Reset", systemImage: "arrow.counterclockwise")
-            }
-            .blitzButton(.secondary)
-            .help("Show the whole source again")
-
-            Button(action: configuration.onDone) {
-                Label("Done", systemImage: "checkmark")
-            }
-            .blitzButton(.accent)
-            .keyboardShortcut(.defaultAction)
-            .help("Keep this framing (Return)")
-        }
-        .pointingHandCursor()
-        .padding(8)
-        .background(.regularMaterial, in: .rect(cornerRadius: BlitzUI.cardRadius))
-        .shadow(color: BlitzUI.elevationShadow, radius: 12, y: 4)
-    }
-}
-
-private struct RecordingQualityShortcut: View {
-    @Bindable var vm: RecorderViewModel
-    @State private var isPresented = false
-
-    var body: some View {
-        Button {
-            isPresented.toggle()
-        } label: {
-            HStack(spacing: 9) {
-                BlitzSymbol(configuration: .init(name: BlitzSymbols.videoQuality, size: 18))
-                    .foregroundStyle(BlitzUI.secondaryText)
-                Text(vm.settings.outputResolution.displayName)
-                    .font(BlitzType.strong)
-                    .foregroundStyle(BlitzUI.primaryText)
-                Rectangle()
-                    .fill(BlitzUI.panelStroke)
-                    .frame(width: 1, height: 12)
-                Text("\(vm.settings.framesPerSecond) FPS")
-                    .font(BlitzType.captionEmphasis)
-                    .foregroundStyle(BlitzUI.secondaryText)
-                BlitzMenuChevron()
-            }
-            .monospacedDigit()
-            .lineLimit(1)
-            .padding(.horizontal, 12)
-            .frame(height: BlitzControlMetrics.toolbarHeight)
-        }
-        .buttonStyle(BlitzMenuTriggerStyle(isPresented: isPresented))
-        .accessibilityLabel("Recording quality, \(qualityPresentation.controlLabel)")
-        .disabled(vm.state != .idle)
-        .help("Choose recording resolution and Source FPS")
-        .onChange(of: vm.state) {
-            if vm.state != .idle { isPresented = false }
-        }
-        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-            qualityPopover
-        }
-    }
-
-    private var qualityPopover: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Recording quality")
-                    .font(BlitzType.headline)
-                    .foregroundStyle(BlitzUI.primaryText)
-                Text(resolutionDimensions)
-                    .font(BlitzType.caption)
-                    .foregroundStyle(BlitzUI.secondaryText)
-                    .monospacedDigit()
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                BlitzUI.sectionLabel("Resolution")
-                BlitzSegmentedPicker(configuration: .init(
-                    title: "Recording resolution",
-                    options: OutputResolution.allCases,
-                    selection: Binding(get: { vm.settings.outputResolution }, set: { vm.setResolution($0) }),
-                    label: { $0.displayName }
-                ))
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                BlitzUI.sectionLabel("Source FPS")
-                BlitzSegmentedPicker(configuration: .init(
-                    title: "Source FPS",
-                    options: RecordingSettings.supportedFrameRates,
-                    selection: Binding(get: { vm.settings.framesPerSecond }, set: { vm.setFrameRate($0) }),
-                    label: { "\($0) FPS" }
-                ))
-                Text(frameRateDescription)
-                    .font(BlitzType.footnote)
-                    .foregroundStyle(BlitzUI.secondaryText)
-            }
-        }
-        .disabled(vm.state != .idle)
-        .padding(16)
-        .frame(width: 288)
-    }
-
-    private var qualityPresentation: RecordingQualityPresentation {
-        RecordingQualityPresentation(settings: vm.settings)
-    }
-
-    private var resolutionDimensions: String {
-        let dimensions = vm.settings.outputResolution.dimensions(for: vm.settings.layout)
-        return "\(dimensions.width) × \(dimensions.height)"
-    }
-
-    private var frameRateDescription: String {
-        switch vm.settings.framesPerSecond {
-        case 24: return "Cinematic motion"
-        case 60: return "Extra smooth motion"
-        default: return "Standard motion"
-        }
-    }
-}
-
-private struct CaptureCommandBar: View {
-    @Bindable var vm: RecorderViewModel
-
-    var body: some View {
-        BlitzAdaptiveRow(.init(minimumContentWidth: 180)) {
-            FolderRecordTargetChip(vm: vm)
-                .frame(maxWidth: 240, alignment: .leading)
-            RecordingOutputPicker(vm: vm)
-            CanvasGuidesMenu(vm: vm)
-            RecorderVisibilityMenu(vm: vm)
-            RecordingQualityShortcut(vm: vm)
-        }
-    }
-}
-
-/// Preview-only guides live with the preview controls, not in the canvas settings: they are never recorded.
-private struct CanvasGuidesMenu: View {
-    @Bindable var vm: RecorderViewModel
-    @AppStorage(ShortFormSafeZone.preferenceKey) private var showsSafeZones = false
-
-    private var showsSafeZoneOption: Bool { vm.settings.layout == .vertical }
-    private var anyGuideOn: Bool {
-        vm.settings.showsRuleOfThirdsOverlay || (showsSafeZoneOption && showsSafeZones)
-    }
-
-    var body: some View {
-        BlitzGlassMenu(entries: entries, menuWidth: 240) {
-            HStack(spacing: 7) {
-                BlitzSymbol(configuration: .init(name: "squareshape.split.3x3", size: 16))
-                    .foregroundStyle(anyGuideOn ? BlitzUI.accent : BlitzUI.secondaryText)
-                Text("Guides")
-                    .font(BlitzType.label)
-                    .foregroundStyle(BlitzUI.primaryText)
-            }
-            .padding(.horizontal, 10)
-            .frame(height: BlitzControlMetrics.toolbarHeight)
-        }
-        .disabled(!vm.canEditScene)
-        .help("Preview guides. They are never recorded.")
-    }
-
-    private var entries: [BlitzMenuEntry] {
-        var entries: [BlitzMenuEntry] = [
-            .item(.init(title: "Rule of thirds", subtitle: "Lines to help you frame the shot",
-                        systemImage: "squareshape.split.3x3", isSelected: vm.settings.showsRuleOfThirdsOverlay,
-                        action: { vm.setRuleOfThirds(!vm.settings.showsRuleOfThirdsOverlay) }))
-        ]
-        if showsSafeZoneOption {
-            entries.append(.item(.init(title: "App safe zones", subtitle: "Where TikTok, Reels and Shorts put buttons",
-                                       systemImage: "iphone", isSelected: showsSafeZones,
-                                       action: { showsSafeZones.toggle() })))
-        }
-        return entries
-    }
-}
-
-private extension MainView {
-    var backgroundLayer: some View {
+    private var backgroundLayer: some View {
         BlitzUI.canvasBackground
             .ignoresSafeArea()
+    }
+}
+
+@MainActor
+extension View {
+    func workspaceWindowSurface(vm: RecorderViewModel) -> some View {
+        self
+            .environment(\.workspaceRecorder, vm)
+            .background(BlitzUI.panelBackground)
+            .ignoresSafeArea(.container, edges: .top)
+            .sheet(item: Binding(
+                get: { vm.libraryActions.folderPrompt },
+                set: { vm.libraryActions.folderPrompt = $0 }
+            )) { prompt in
+                ProjectFolderNameEditor(
+                    prompt: prompt,
+                    name: Binding(
+                        get: { vm.libraryActions.folderNameDraft },
+                        set: { vm.libraryActions.folderNameDraft = $0 }
+                    ),
+                    affectedCount: vm.folderPromptAffectedCount(prompt),
+                    onSave: { vm.commitFolderPrompt(prompt) }, onCancel: { vm.libraryActions.folderPrompt = nil }
+                )
+            }
     }
 }

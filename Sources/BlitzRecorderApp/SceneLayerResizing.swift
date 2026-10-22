@@ -59,32 +59,24 @@ enum SceneLayerResizing {
             return aspectLockedResized(frame, delta: delta, anchor: anchor, aspectRatio: aspectRatio)
         }
 
-        var minX = frame.minX
-        var maxX = frame.maxX
-        var minY = frame.minY
-        var maxY = frame.maxY
+        var edges = ResizeDrag(frame: frame, delta: delta, anchor: anchor).movedEdges
 
-        if anchor.resizesLeftEdge { minX += delta.x }
-        if anchor.resizesRightEdge { maxX += delta.x }
-        if anchor.resizesBottomEdge { minY += delta.y }
-        if anchor.resizesTopEdge { maxY += delta.y }
-
-        if maxX - minX < minimumSize {
+        if edges.maxX - edges.minX < minimumSize {
             if anchor.resizesLeftEdge {
-                minX = maxX - minimumSize
+                edges.minX = edges.maxX - minimumSize
             } else {
-                maxX = minX + minimumSize
+                edges.maxX = edges.minX + minimumSize
             }
         }
-        if maxY - minY < minimumSize {
+        if edges.maxY - edges.minY < minimumSize {
             if anchor.resizesBottomEdge {
-                minY = maxY - minimumSize
+                edges.minY = edges.maxY - minimumSize
             } else {
-                maxY = minY + minimumSize
+                edges.maxY = edges.minY + minimumSize
             }
         }
 
-        return clamped(CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY))
+        return clamped(edges.rect)
     }
 
     private static func aspectLockedResized(
@@ -93,17 +85,8 @@ enum SceneLayerResizing {
         anchor: ResizeAnchor,
         aspectRatio: CGFloat
     ) -> CGRect {
-        var minX = frame.minX
-        var maxX = frame.maxX
-        var minY = frame.minY
-        var maxY = frame.maxY
-
-        if anchor.resizesLeftEdge { minX += delta.x }
-        if anchor.resizesRightEdge { maxX += delta.x }
-        if anchor.resizesBottomEdge { minY += delta.y }
-        if anchor.resizesTopEdge { maxY += delta.y }
-
-        let proposedSize = CGSize(width: max(0.01, maxX - minX), height: max(0.01, maxY - minY))
+        let edges = ResizeDrag(frame: frame, delta: delta, anchor: anchor).movedEdges
+        let proposedSize = CGSize(width: max(0.01, edges.maxX - edges.minX), height: max(0.01, edges.maxY - edges.minY))
         let currentSize = CGSize(width: max(0.01, frame.width), height: max(0.01, frame.height))
         let widthScale = proposedSize.width / currentSize.width
         let heightScale = proposedSize.height / currentSize.height
@@ -193,6 +176,32 @@ enum SceneLayerResizing {
         let x = min(max(0, 1 - width), max(min(0, 1 - width), frame.minX))
         let y = min(max(0, 1 - height), max(min(0, 1 - height), frame.minY))
         return CGRect(x: x, y: y, width: width, height: height)
+    }
+}
+
+struct ResizeEdges {
+    var minX: CGFloat
+    var maxX: CGFloat
+    var minY: CGFloat
+    var maxY: CGFloat
+
+    var rect: CGRect {
+        CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+}
+
+struct ResizeDrag {
+    let frame: CGRect
+    let delta: CGPoint
+    let anchor: ResizeAnchor
+
+    var movedEdges: ResizeEdges {
+        var edges = ResizeEdges(minX: frame.minX, maxX: frame.maxX, minY: frame.minY, maxY: frame.maxY)
+        if anchor.resizesLeftEdge { edges.minX += delta.x }
+        if anchor.resizesRightEdge { edges.maxX += delta.x }
+        if anchor.resizesBottomEdge { edges.minY += delta.y }
+        if anchor.resizesTopEdge { edges.maxY += delta.y }
+        return edges
     }
 }
 

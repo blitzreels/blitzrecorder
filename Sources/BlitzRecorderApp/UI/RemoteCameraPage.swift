@@ -1,3 +1,4 @@
+import AppKit
 import BlitzRecorderCore
 import SwiftUI
 
@@ -10,12 +11,6 @@ struct RemoteCameraPage: View {
     private enum ConnectionField: Hashable {
         case address
         case port
-    }
-
-    private struct SetupStep {
-        let number: Int
-        let title: String
-        let detail: String
     }
 
     private var selectedDevice: RemoteCameraDeviceSummary? {
@@ -40,16 +35,22 @@ struct RemoteCameraPage: View {
                 if vm.isRemoteCameraSelected {
                     connectedSummary
                     if showsDevicePicker { nearbyDevices }
-                    cameraWorkspace
+                    if vm.selectedRemoteCameraConnectionState == .connected {
+                        cameraWorkspace
+                    } else {
+                        connectionGuide
+                    }
+                } else if let device = vm.remoteCameraDeviceSummaries.first {
+                    readyDevice(device)
                 } else {
                     setupSummary
-                    setupGuide
-                    nearbyDevices
                 }
 
                 directConnection
             }
             .settingsPageContent()
+            .animation(.easeOut(duration: 0.15), value: vm.remoteCameraDeviceSummaries)
+            .animation(.easeOut(duration: 0.15), value: vm.selectedRemoteCameraConnectionState)
         }
         .background(BlitzUI.projectLibraryBackground)
         .foregroundStyle(BlitzUI.primaryText)
@@ -60,79 +61,93 @@ struct RemoteCameraPage: View {
         VStack(alignment: .leading, spacing: 18) {
             BlitzAdaptiveRow(.init(minimumContentWidth: 320)) {
                 HStack(spacing: 18) {
-                    phoneIcon
+                    companionIcon(size: 64)
                     VStack(alignment: .leading, spacing: 6) {
                         Text("A better camera. Right beside you.")
                             .font(BlitzType.title)
-                        Text("Record on your iPhone. Frame the shot and control the camera from your Mac.")
+                        Text("Open BlitzRecorder Camera on your iPhone, on the same Wi‑Fi. It shows up here with a Connect button.")
                             .font(BlitzType.body)
                             .foregroundStyle(BlitzUI.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Link(destination: BlitzRecorderProductIdentity.companionInstallURL) {
-                    Label("Get iPhone app", systemImage: "arrow.up.right")
+                    Label("Get iPhone app", systemImage: BlitzSymbols.openLink)
                 }
                 .blitzButton(.secondary)
                 .help("Open \(BlitzRecorderProductIdentity.companionDisplayName)")
             }
-
-            if vm.settings.enabledSources.contains(.camera) {
-                SettingsRowDivider()
-                HStack(spacing: 8) {
-                    Image(systemName: "video")
-                    Text("Recorder camera")
-                    Spacer(minLength: 8)
-                    Text(vm.selectedCameraDisplayName)
-                        .foregroundStyle(BlitzUI.primaryText)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+            SettingsRowDivider()
+            HStack(spacing: 10) {
+                ProgressView().controlSize(.small)
+                Text("Looking for iPhones nearby")
+                    .font(BlitzType.body)
+                    .foregroundStyle(BlitzUI.secondaryText)
+                Spacer(minLength: 8)
+                Button("Search again", systemImage: "arrow.clockwise") {
+                    vm.startRemoteCameraDiscovery()
                 }
-                .font(BlitzType.caption)
-                .foregroundStyle(BlitzUI.secondaryText)
-                Text("Pairing below uses the BlitzRecorder Camera app, separate from macOS Continuity Camera.")
+                .blitzButton(.quiet)
+                .disabled(vm.state != .idle)
+            }
+            if let continuity = vm.selectedContinuityCamera {
+                Text("\(continuity.name) is in use through Continuity Camera. Connecting it here switches to "
+                     + "BlitzRecorder Camera, which records in higher quality.")
                     .font(BlitzType.caption)
                     .foregroundStyle(BlitzUI.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, -8)
             }
         }
         .settingsSurface()
     }
 
-    private var phoneIcon: some View {
-        Image(systemName: "iphone.gen3.radiowaves.left.and.right")
-            .font(BlitzType.glyph(30))
-            .foregroundStyle(BlitzUI.accent)
-            .frame(width: 64, height: 64)
-            .background(BlitzUI.accent.opacity(0.08), in: .rect(cornerRadius: BlitzUI.surfaceRadius))
-    }
-
-    private var setupGuide: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 20)], alignment: .leading, spacing: 20) {
-            setupStep(.init(number: 1, title: "Open the app", detail: "Launch BlitzRecorder Camera on your iPhone."))
-            setupStep(.init(number: 2, title: "Use the same Wi-Fi", detail: "Keep your iPhone and Mac on one network."))
-            setupStep(.init(number: 3, title: "Pair below", detail: "Select your iPhone and enter its six-digit code."))
+    /// An iPhone with the app open: the page is one Connect button, not setup instructions.
+    private func readyDevice(_ device: RemoteCameraDeviceSummary) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            BlitzAdaptiveRow(.init(minimumContentWidth: 320)) {
+                HStack(spacing: 18) {
+                    companionIcon(size: 64)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("\(device.name) is ready")
+                            .font(BlitzType.title)
+                        Text(device.isTrusted
+                             ? "Paired before. Use it as your camera."
+                             : "BlitzRecorder Camera is open on it. Click Connect, then tap Connect on the iPhone.")
+                            .font(BlitzType.body)
+                            .foregroundStyle(BlitzUI.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let continuity = vm.selectedContinuityCamera {
+                            Text("Replaces \(continuity.name) through Continuity Camera.")
+                                .font(BlitzType.caption)
+                                .foregroundStyle(BlitzUI.tertiaryText)
+                        }
+                    }
+                }
+                Button(device.isTrusted ? "Use iPhone" : "Connect", systemImage: "iphone.gen3") {
+                    vm.setCamera(device.cameraID)
+                }
+                .blitzButton(.accent)
+                .controlSize(.large)
+                .disabled(vm.state != .idle)
+                .keyboardShortcut(.defaultAction)
+            }
+            let others = Array(vm.remoteCameraDeviceSummaries.dropFirst())
+            if !others.isEmpty {
+                SettingsRowDivider()
+                ForEach(others, id: \.id) { other in
+                    deviceRow(other)
+                }
+            }
         }
         .settingsSurface()
     }
 
-    private func setupStep(_ step: SetupStep) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text("\(step.number)")
-                .font(BlitzType.captionEmphasis)
-                .foregroundStyle(BlitzUI.secondaryText)
-                .frame(width: 24, height: 24)
-                .background(BlitzUI.quietFill, in: .circle)
-            Text(step.title)
-                .font(BlitzType.label)
-            Text(step.detail)
-                .font(BlitzType.caption)
-                .foregroundStyle(BlitzUI.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+    private func companionIcon(size: CGFloat) -> some View {
+        BlitzAppIcon(image: Self.companionAppIcon.map(Image.init(nsImage:)), size: size)
     }
+
+    private static let companionAppIcon = Bundle.main.url(forResource: "CompanionAppIcon", withExtension: "png")
+        .flatMap(NSImage.init(contentsOf:))
 
     private var nearbyDevices: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -198,7 +213,7 @@ struct RemoteCameraPage: View {
                 tone: device.isReady ? .ready : .muted
             ))
             if !device.isSelected {
-                Button(device.isTrusted ? "Use camera" : "Pair…") {
+                Button(device.isTrusted ? "Use camera" : "Connect") {
                     vm.setCamera(device.cameraID)
                 }
                 .blitzButton(.secondary)
@@ -212,17 +227,20 @@ struct RemoteCameraPage: View {
     private var connectedSummary: some View {
         BlitzAdaptiveRow(.init(minimumContentWidth: 320)) {
             HStack(spacing: 16) {
-                phoneIcon
+                companionIcon(size: 64)
                 VStack(alignment: .leading, spacing: 6) {
                     Text(vm.selectedRemoteCameraName ?? "iPhone camera")
                         .font(BlitzType.title)
-                    Text(vm.selectedRemoteCameraDeviceDescription)
-                        .font(BlitzType.body)
-                        .foregroundStyle(BlitzUI.secondaryText)
-                        .lineLimit(2)
+                    if vm.selectedRemoteCameraDeviceDescription != vm.selectedRemoteCameraName {
+                        Text(vm.selectedRemoteCameraDeviceDescription)
+                            .font(BlitzType.body)
+                            .foregroundStyle(BlitzUI.secondaryText)
+                            .lineLimit(2)
+                    }
                     SettingsStatusBadge(configuration: .init(
                         title: vm.selectedRemoteCameraStatus ?? "Waiting for connection",
-                        tone: selectedDevice?.isReady == true ? .ready : .warning
+                        tone: selectedDevice?.isReady == true
+                            && vm.selectedRemoteCameraTelemetry?.previewHealth?.isStale != true ? .ready : .warning
                     ))
                 }
             }
@@ -233,6 +251,53 @@ struct RemoteCameraPage: View {
             .disabled(vm.state != .idle)
         }
         .settingsSurface()
+    }
+
+    /// Until the iPhone is connected, the page asks for the one thing that is missing instead of an empty preview.
+    private var connectionGuide: some View {
+        let isAsking = vm.selectedRemoteCameraConnectionState == .pairing && vm.selectedRemoteCameraAbsence == nil
+        let name = vm.selectedRemoteCameraName ?? "your iPhone"
+        let absence = vm.selectedRemoteCameraAbsence ?? .notFound
+        // The device card above already shows the app icon and the short status.
+        return HStack(alignment: .top, spacing: 18) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(isAsking ? "Tap Connect on \(name)" : absence.title(deviceName: name))
+                    .font(BlitzType.title)
+                Text(isAsking
+                     ? "BlitzRecorder Camera is asking on the iPhone. You only do this once; after that it connects by itself."
+                     : absence.instruction)
+                    .font(BlitzType.body)
+                    .foregroundStyle(BlitzUI.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !isAsking, let lastSeen = absence.lastSeen {
+                    TimelineView(.periodic(from: .now, by: 30)) { _ in
+                        Text("Last seen \(lastSeen.formatted(.relative(presentation: .named)))")
+                            .font(BlitzType.caption)
+                            .foregroundStyle(BlitzUI.tertiaryText)
+                    }
+                }
+                // Searching cannot wake a sleeping iPhone, so that case offers no button.
+                if !isAsking, !absence.isAsleep {
+                    HStack(spacing: 8) {
+                        if absence == .neverConnected {
+                            Link(destination: BlitzRecorderProductIdentity.companionInstallURL) {
+                                Label("Get iPhone app", systemImage: BlitzSymbols.openLink)
+                            }
+                            .blitzButton(.secondary)
+                        }
+                        Button("Search again", systemImage: "arrow.clockwise") {
+                            vm.startRemoteCameraDiscovery()
+                        }
+                        .blitzButton(.quiet)
+                        .disabled(vm.state != .idle)
+                    }
+                    .padding(.top, 4)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .settingsSurface()
+        .animation(.easeOut(duration: 0.15), value: isAsking)
     }
 
     private var cameraWorkspace: some View {
@@ -263,7 +328,7 @@ struct RemoteCameraPage: View {
                     }
                     .foregroundStyle(BlitzUI.onMediaSecondaryText)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(.black.opacity(0.85))
+                    .background(.black)
                 }
             }
             .frame(height: 310)
@@ -294,7 +359,6 @@ struct RemoteCameraPage: View {
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
-            .pointingHandCursor()
             .accessibilityValue(showsDirectConnection ? "Expanded" : "Collapsed")
 
             if showsDirectConnection {
@@ -305,14 +369,18 @@ struct RemoteCameraPage: View {
                     connectionField(.address)
                     connectionField(.port)
                         .frame(width: 90)
-                    Button {
-                        vm.connectDirectRemoteCamera()
-                    } label: {
-                        Label("Connect", systemImage: "arrow.right")
+                    VStack(alignment: .leading, spacing: 6) {
+                        BlitzUI.sectionLabel(" ")
+                            .accessibilityHidden(true)
+                        Button {
+                            vm.connectDirectRemoteCamera()
+                        } label: {
+                            Label("Connect", systemImage: "arrow.right")
+                                .frame(height: 36)
+                        }
+                        .blitzButton(.secondary)
+                        .disabled(!canConnect)
                     }
-                    .blitzButton(.secondary)
-                    .disabled(!canConnect)
-                    .frame(height: 36)
                 }
             }
         }

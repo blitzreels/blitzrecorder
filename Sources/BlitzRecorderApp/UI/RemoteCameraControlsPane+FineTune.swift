@@ -217,7 +217,6 @@ extension RemoteCameraControlsPane {
             .blitzButton(.secondary)
             .controlSize(.small)
             .disabled(vm.selectedRemoteCameraCapabilities == nil)
-            .pointingHandCursor()
             .help(button.help)
         }
     }

@@ -231,6 +231,22 @@ final class RecorderViewModel {
         return coordinator.selectedRemoteCameraStatus()
     }
 
+    var selectedRemoteCameraAbsence: RemoteCameraAbsence? {
+        _ = remoteCameraPreview.remoteCameraRefreshToken
+        return coordinator.selectedRemoteCameraAbsence()
+    }
+
+    var selectedRemoteCameraConnectionState: RemoteCameraConnectionState? {
+        _ = remoteCameraPreview.remoteCameraRefreshToken
+        return coordinator.selectedRemoteCameraConnectionState()
+    }
+
+    /// The Continuity Camera the Mac uses now, if any. It holds the iPhone, so BlitzRecorder Camera can't run.
+    var selectedContinuityCamera: SourceOption? {
+        guard let id = settings.selectedCameraID else { return nil }
+        return localCameraOptions.first { $0.id == id && $0.cameraKind == .continuity }
+    }
+
     var selectedRemoteCameraDeviceDescription: String {
         _ = remoteCameraPreview.remoteCameraRefreshToken
         return coordinator.selectedRemoteCameraDeviceDescription()
@@ -318,7 +334,7 @@ final class RecorderViewModel {
                 self.previewStage.sceneLayout = self.coordinator.settings.sceneLayout
                 return
             }
-            self.coordinator.previewSceneLayout(layout)
+            self.showSceneLayoutPreview(layout)
         }
         previewStage.onSceneLayoutEditingEnded = { [weak self] layout in
             guard let self, self.canApplyCanvasEdit else { return }

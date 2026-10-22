@@ -47,6 +47,8 @@ final class RemoteCameraSessionRuntime {
     )
 
     private(set) var activeTakeID: UUID?
+    /// The take the Mac is still recording. Its clip is not asked for until the Mac stops it.
+    private var recordingTakeID: UUID?
 
     init(sendCommand: @escaping (RemoteCameraCommand) -> Void, onMessage: @escaping (String) -> Void) {
         self.sendCommand = sendCommand
@@ -55,6 +57,7 @@ final class RemoteCameraSessionRuntime {
 
     func beginTake(takeID: UUID, serviceID: String?, take: RecordingTake, settings: RecordingSettings) {
         activeTakeID = takeID
+        recordingTakeID = takeID
         transferManager.registerPendingImport(
             takeID: takeID,
             serviceID: serviceID,
@@ -77,6 +80,9 @@ final class RemoteCameraSessionRuntime {
         clearTiming(takeID: takeID)
         if activeTakeID == takeID {
             activeTakeID = nil
+        }
+        if recordingTakeID == takeID {
+            recordingTakeID = nil
         }
     }
 
@@ -109,6 +115,7 @@ final class RemoteCameraSessionRuntime {
     }
 
     func stopAndImport(take: RecordingTake, settings: RecordingSettings) async throws -> MediaWriterCompletion {
+        recordingTakeID = nil
         if transferManager.hasCompletedImport(for: take) {
             return .wrote(take.cameraURL)
         }
@@ -123,8 +130,12 @@ final class RemoteCameraSessionRuntime {
         return try await transferManager.waitForStopAndImport(takeID: takeID, take: take, settings: settings)
     }
 
+    func resendUnansweredStops(settings: RecordingSettings) {
+        transferManager.resendUnansweredStops(settings: settings)
+    }
+
     func requestPendingImports(serviceID: String, settings: RecordingSettings) {
-        transferManager.requestPendingImports(serviceID: serviceID, settings: settings)
+        transferManager.requestPendingImports(.init(serviceID: serviceID, recordingTakeID: recordingTakeID, settings: settings))
     }
 
     func handleFailed(takeID failedTakeID: UUID?, reason: String) {
@@ -132,9 +143,13 @@ final class RemoteCameraSessionRuntime {
             failSync(takeID: syncTakeID, phase: .prepare, reason: reason)
             failSync(takeID: syncTakeID, phase: .start, reason: reason)
         }
-        if let takeID = activeTakeID {
+        if let takeID = failedTakeID ?? activeTakeID {
             transferManager.failInFlightTransfer(takeID: takeID, reason: reason)
         }
+    }
+
+    func forgetPendingImport(takeID: UUID, settings: RecordingSettings) {
+        transferManager.removePendingImport(takeID: takeID, settings: settings)
     }
 
     func applyTransferReady(
@@ -155,6 +170,10 @@ final class RemoteCameraSessionRuntime {
 
     func writeChunk(takeID: UUID, offset: Int64, data: Data, isFinal: Bool) {
         transferManager.writeChunk(takeID: takeID, offset: offset, data: data, isFinal: isFinal)
+    }
+
+    func receiveChannel(_ request: RemoteCameraChannelRequest) {
+        transferManager.receiveChannel(request)
     }
 
     func completeTransfer(takeID: UUID, byteCount: Int64, sha256: String?, settings: RecordingSettings) async {

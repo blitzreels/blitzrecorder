@@ -86,7 +86,9 @@ struct VideoProjectImporter {
         let audioURL = directory.appendingPathComponent("audio.m4a")
         if !audioTracks.isEmpty {
             await request.onProgress(.init(filename: filename, stage: "Preparing audio", fraction: nil))
-            try await extractAudio(.init(asset: AVURLAsset(url: sourceURL), destination: audioURL))
+            try await extractAudio(.init(asset: AVURLAsset(url: sourceURL), destination: audioURL, onFraction: { fraction in
+                await request.onProgress(.init(filename: filename, stage: "Preparing audio", fraction: fraction))
+            }))
         }
         try Task.checkCancellation()
         await request.onProgress(.init(filename: filename, stage: "Creating project", fraction: nil))
@@ -113,6 +115,7 @@ struct VideoProjectImporter {
     private struct AudioRequest {
         let asset: AVURLAsset
         let destination: URL
+        let onFraction: @Sendable (Double) async -> Void
     }
 
     private func extractAudio(_ request: AudioRequest) async throws {
@@ -130,6 +133,12 @@ struct VideoProjectImporter {
             presetName: compatible && tracks.count == 1 ? AVAssetExportPresetPassthrough : AVAssetExportPresetAppleM4A) else {
             throw RecorderError.mediaWriteFailed("This video's audio could not be prepared for editing.")
         }
+        let progress = Task {
+            for await state in session.states(updateInterval: 0.25) {
+                if case .exporting(let progress) = state { await request.onFraction(progress.fractionCompleted) }
+            }
+        }
+        defer { progress.cancel() }
         try await withTaskCancellationHandler {
             try await session.export(to: request.destination, as: .m4a)
         } onCancel: {

@@ -12,9 +12,7 @@ final class VideoFileWriter: @unchecked Sendable {
 
     private var firstPresentationTime: CMTime?
     private var lastWrittenPresentationTime: CMTime?
-    private var pauseStartedAt: CMTime?
-    private var pauseOffset = CMTime.zero
-    private var paused = false
+    private var pauseClock = MediaWriterPauseClock()
     private let finalization = MediaWriterFinalization()
     private var finished = false
     private var wroteSample = false
@@ -91,7 +89,7 @@ final class VideoFileWriter: @unchecked Sendable {
                 self.writer.startSession(atSourceTime: .zero)
             }
 
-            guard !self.paused else {
+            guard !self.pauseClock.isPaused else {
                 return
             }
 
@@ -121,24 +119,14 @@ final class VideoFileWriter: @unchecked Sendable {
     func pause() {
         let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
         queue.async {
-            guard !self.paused else { return }
-            self.paused = true
-            self.pauseStartedAt = hostTime
+            self.pauseClock.pause(at: hostTime)
         }
     }
 
     func resume() {
         let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
         queue.async {
-            guard self.paused else { return }
-            if let start = self.pauseStartedAt {
-                let delta = CMTimeSubtract(hostTime, start)
-                if delta.isValid, delta.seconds > 0 {
-                    self.pauseOffset = CMTimeAdd(self.pauseOffset, delta)
-                }
-            }
-            self.pauseStartedAt = nil
-            self.paused = false
+            self.pauseClock.resume(at: hostTime)
         }
     }
 
@@ -196,68 +184,11 @@ final class VideoFileWriter: @unchecked Sendable {
         guard CMTimeCompare(elapsed, .zero) >= 0 else {
             return nil
         }
-        var outputTime = CMTimeSubtract(elapsed, pauseOffset)
+        var outputTime = CMTimeSubtract(elapsed, pauseClock.offset)
         if CMTimeCompare(outputTime, .zero) < 0 {
             outputTime = .zero
         }
-
-        var count: CMItemCount = 0
-        CMSampleBufferGetSampleTimingInfoArray(
-            sampleBuffer,
-            entryCount: 0,
-            arrayToFill: nil,
-            entriesNeededOut: &count
-        )
-        if count <= 0 {
-            count = 1
-        }
-
-        var timing = Array(
-            repeating: CMSampleTimingInfo(
-                duration: CMSampleBufferGetDuration(sampleBuffer),
-                presentationTimeStamp: presentationTime,
-                decodeTimeStamp: CMSampleBufferGetDecodeTimeStamp(sampleBuffer)
-            ),
-            count: count
-        )
-
-        timing.withUnsafeMutableBufferPointer { buffer in
-            _ = CMSampleBufferGetSampleTimingInfoArray(
-                sampleBuffer,
-                entryCount: count,
-                arrayToFill: buffer.baseAddress,
-                entriesNeededOut: &count
-            )
-        }
-
-        let delta = CMTimeSubtract(outputTime, presentationTime)
-        for index in timing.indices {
-            if timing[index].presentationTimeStamp.isValid {
-                timing[index].presentationTimeStamp = CMTimeAdd(timing[index].presentationTimeStamp, delta)
-            } else {
-                timing[index].presentationTimeStamp = outputTime
-            }
-
-            if timing[index].decodeTimeStamp.isValid {
-                timing[index].decodeTimeStamp = CMTimeAdd(timing[index].decodeTimeStamp, delta)
-            }
-        }
-
-        var adjusted: CMSampleBuffer?
-        let status = timing.withUnsafeBufferPointer { buffer in
-            CMSampleBufferCreateCopyWithNewTiming(
-                allocator: kCFAllocatorDefault,
-                sampleBuffer: sampleBuffer,
-                sampleTimingEntryCount: count,
-                sampleTimingArray: buffer.baseAddress,
-                sampleBufferOut: &adjusted
-            )
-        }
-
-        guard status == noErr else {
-            return nil
-        }
-        return adjusted
+        return sampleBuffer.retimed(toPresentationTime: outputTime)
     }
 
     private static func recordingBaseline(timelineStartTime: CMTime?, firstSampleTime: CMTime) -> CMTime {

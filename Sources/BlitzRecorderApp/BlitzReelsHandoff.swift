@@ -201,8 +201,7 @@ final class BlitzReelsHandoffController {
                 idempotencyKey: identity
             ))
             guard upload.upload_url.scheme == "https"
-                || (["localhost", "127.0.0.1"].contains(upload.upload_url.host ?? "")
-                    && ["localhost", "127.0.0.1"].contains(connection.client.origin.host ?? "")) else {
+                || (upload.upload_url.hasLocalDevelopmentHost && connection.client.origin.hasLocalDevelopmentHost) else {
                 throw BlitzReelsHandoffError.invalidResponse
             }
             receipt = .init(fingerprint: fingerprint, organizationID: workspace.id, userID: userID, origin: origin,

@@ -481,14 +481,14 @@ final class EditorVideoClipTimelineTests: XCTestCase {
             EditorTimelineClipPointer.Request(
                 layout: layout, edits: edits, duration: 10, pixelsPerSecond: 100, x: $0)
         }
-        XCTAssertEqual(EditorTimelineClipPointer.at(request(200)), .pointingHand)
-        XCTAssertEqual(EditorTimelineClipPointer.at(request(391)), .pointingHand)
+        XCTAssertEqual(EditorTimelineClipPointer.at(request(200)), .arrow)
+        XCTAssertEqual(EditorTimelineClipPointer.at(request(391)), .arrow)
         XCTAssertEqual(EditorTimelineClipPointer.at(request(392)), .resize)
         XCTAssertEqual(EditorTimelineClipPointer.at(request(395)), .resize)
         XCTAssertEqual(EditorTimelineClipPointer.at(request(400)), .resize)
         XCTAssertEqual(EditorTimelineClipPointer.at(request(403)), .resize)
         XCTAssertEqual(EditorTimelineClipPointer.at(request(404)), .resize)
-        XCTAssertEqual(EditorTimelineClipPointer.at(request(500)), .pointingHand)
+        XCTAssertEqual(EditorTimelineClipPointer.at(request(500)), .arrow)
         XCTAssertEqual(EditorTimelineClipPointer.at(request(1_000)), .arrow)
         XCTAssertEqual(
             EditorTimelineClipPointer.at(.init(

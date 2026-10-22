@@ -127,7 +127,6 @@ struct BlitzTab: View {
         }
         .buttonStyle(BlitzSelectionButtonStyle(isSelected: configuration.isSelected))
         .accessibilityAddTraits(configuration.isSelected ? [.isSelected] : [])
-        .pointingHandCursor()
     }
 }
 
@@ -235,23 +234,7 @@ private struct BlitzTabGroupModifier: ViewModifier {
     }
 }
 
-private struct BlitzFocusRing: View {
-    let cornerRadius: CGFloat
-    @Environment(\.isFocused) private var isFocused
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: cornerRadius + 3, style: .continuous)
-            .strokeBorder(isFocused ? BlitzUI.accent : .clear, lineWidth: 2)
-            .padding(-3)
-            .allowsHitTesting(false)
-    }
-}
-
 extension View {
-    func blitzFocusRing(cornerRadius: CGFloat) -> some View {
-        overlay { BlitzFocusRing(cornerRadius: cornerRadius) }
-    }
-
     func blitzWorkspaceToolbar() -> some View {
         modifier(BlitzWorkspaceToolbarModifier())
     }

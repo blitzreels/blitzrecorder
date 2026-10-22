@@ -1,4 +1,3 @@
-import AVFoundation
 import Foundation
 
 enum CallSpeechRecovery {
@@ -31,8 +30,8 @@ enum CallSpeechRecovery {
         let microphoneIntervals = request.intervals.filter {
             RecordingTranscriptAssembler.isMicrophoneSpeaker($0.speakerID)
         }
-        let microphoneSamples = try samples(microphone.audioURL)
-        let systemSamples = try samples(system.audioURL)
+        let microphoneSamples = try CallAudioAnalysis.readSamples(microphone.audioURL)
+        let systemSamples = try CallAudioAnalysis.readSamples(system.audioURL)
         let systemWords = zip(request.words, request.sources).compactMap { word, source in
             source == .systemAudio ? word : nil
         }
@@ -77,18 +76,5 @@ enum CallSpeechRecovery {
         let end = Int(min(Double(request.samples.count), max(0, (request.word.endTime + 0.25) * 16_000)))
         guard end > start else { return 0 }
         return request.samples[start..<end].reduce(0.0) { $0 + Double($1) * Double($1) } / Double(end - start)
-    }
-
-    private static func samples(_ url: URL) throws -> [Float] {
-        let file = try AVAudioFile(forReading: url)
-        guard file.processingFormat.sampleRate == 16_000, file.processingFormat.channelCount == 1,
-              file.length > 0, file.length <= Int64(UInt32.max),
-              let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat,
-                                            frameCapacity: AVAudioFrameCount(file.length)) else {
-            throw RecorderError.speechUnavailable
-        }
-        try file.read(into: buffer)
-        guard let channel = buffer.floatChannelData?[0] else { throw RecorderError.speechUnavailable }
-        return Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
     }
 }

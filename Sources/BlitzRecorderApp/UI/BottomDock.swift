@@ -175,7 +175,6 @@ private struct RecordingActionRow: View {
                             .frame(width: 170, alignment: .leading)
                     }
                     .buttonStyle(.plain)
-                    .pointingHandCursor()
                     .help(vm.recordingBlockerDetail ?? blocker)
                 }
 
@@ -284,7 +283,6 @@ struct DockActionButton: View {
         }
         .blitzButton(.secondary)
         .controlSize(.small)
-        .pointingHandCursor()
         .help(help ?? title)
     }
 

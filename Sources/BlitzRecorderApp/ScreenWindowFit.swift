@@ -67,32 +67,20 @@ enum ScreenWindowFit {
         if request.binding.kind == .application {
             if let target = await ScreenCaptureGeometry.applicationWindowTarget(for: request.binding) {
                 guard isCurrent() else { return nil }
-                return try await ShortsWindowArranger.fitWindow(
-                    ownerPID: target.pid,
-                    bounds: target.bounds,
-                    title: target.title,
-                    appName: target.appName ?? request.binding.applicationName ?? "Application",
-                    displayID: target.displayID ?? displayID,
-                    captureLayout: request.captureLayout,
-                    sceneLayout: request.sceneLayout,
-                    enabledSources: request.enabledSources,
-                    canvasPadding: request.canvasPadding,
-                    zoom: request.zoom
-                )
+                return try await request.fitWindow(.init(
+                    target: target,
+                    fallbackAppName: request.binding.applicationName ?? "Application",
+                    fallbackDisplayID: displayID
+                ))
             }
 
             if let processID = processID(forApplicationBinding: request.binding) {
                 guard isCurrent() else { return nil }
-                return try await ShortsWindowArranger.fitAppWindow(
+                return try await request.fitAppWindow(.init(
                     ownerPID: processID,
                     appName: request.binding.applicationName ?? "Application",
-                    displayID: displayID,
-                    captureLayout: request.captureLayout,
-                    sceneLayout: request.sceneLayout,
-                    enabledSources: request.enabledSources,
-                    canvasPadding: request.canvasPadding,
-                    zoom: request.zoom
-                )
+                    displayID: displayID
+                ))
             }
         }
 
@@ -101,18 +89,7 @@ enum ScreenWindowFit {
         }
         guard isCurrent() else { return nil }
 
-        return try await ShortsWindowArranger.fitWindow(
-            ownerPID: target.pid,
-            bounds: target.bounds,
-            title: target.title,
-            appName: target.appName ?? "",
-            displayID: target.displayID ?? displayID,
-            captureLayout: request.captureLayout,
-            sceneLayout: request.sceneLayout,
-            enabledSources: request.enabledSources,
-            canvasPadding: request.canvasPadding,
-            zoom: request.zoom
-        )
+        return try await request.fitWindow(.init(target: target, fallbackAppName: "", fallbackDisplayID: displayID))
     }
 
     static func pickedArrangement(
@@ -124,50 +101,33 @@ enum ScreenWindowFit {
            let processID = binding.processID,
            binding.kind == .window {
             guard isCurrent() else { throw CancellationError() }
-            return try await ShortsWindowArranger.fitWindow(
-                ownerPID: processID,
-                bounds: ScreenCaptureGeometry.knownWindowTarget(binding)?.bounds ?? request.filter.contentRect,
-                title: binding.windowTitle,
-                appName: binding.applicationName ?? "Application",
-                displayID: displayID,
-                captureLayout: request.captureLayout,
-                sceneLayout: request.sceneLayout,
-                enabledSources: request.enabledSources,
-                canvasPadding: request.canvasPadding,
-                zoom: request.zoom
-            )
+            return try await request.fitWindow(.init(
+                target: PickedWindowTarget(
+                    pid: processID,
+                    bounds: ScreenCaptureGeometry.knownWindowTarget(binding)?.bounds ?? request.filter.contentRect,
+                    title: binding.windowTitle,
+                    appName: nil,
+                    displayID: nil
+                ),
+                fallbackAppName: binding.applicationName ?? "Application",
+                fallbackDisplayID: displayID
+            ))
         }
         if let binding = request.binding,
            let processID = binding.processID,
            binding.kind == .application {
             guard isCurrent() else { throw CancellationError() }
-            return try await ShortsWindowArranger.fitAppWindow(
+            return try await request.fitAppWindow(.init(
                 ownerPID: processID,
                 appName: binding.applicationName ?? "Application",
-                displayID: displayID,
-                captureLayout: request.captureLayout,
-                sceneLayout: request.sceneLayout,
-                enabledSources: request.enabledSources,
-                canvasPadding: request.canvasPadding,
-                zoom: request.zoom
-            )
+                displayID: displayID
+            ))
         }
         guard let target = await ScreenCaptureGeometry.pickedWindowTarget(for: request.filter) else {
             throw ShortsWindowArrangerError.noWindowFound
         }
         guard isCurrent() else { throw CancellationError() }
-        return try await ShortsWindowArranger.fitWindow(
-            ownerPID: target.pid,
-            bounds: target.bounds,
-            title: target.title,
-            appName: target.appName ?? "",
-            displayID: target.displayID ?? displayID,
-            captureLayout: request.captureLayout,
-            sceneLayout: request.sceneLayout,
-            enabledSources: request.enabledSources,
-            canvasPadding: request.canvasPadding,
-            zoom: request.zoom
-        )
+        return try await request.fitWindow(.init(target: target, fallbackAppName: "", fallbackDisplayID: displayID))
     }
 
     struct ScalingSupportRequest {
@@ -238,5 +198,58 @@ enum ScreenWindowFit {
             guard let binding, binding.kind != .display else { return .skip }
             return .binding(binding)
         }
+    }
+}
+
+private protocol ScreenWindowFitPlacement {
+    var captureLayout: CaptureLayout { get }
+    var sceneLayout: SceneLayout { get }
+    var enabledSources: Set<CaptureSource> { get }
+    var canvasPadding: CGFloat { get }
+    var zoom: CGFloat { get }
+}
+
+private struct WindowFitTarget {
+    let target: PickedWindowTarget
+    let fallbackAppName: String
+    let fallbackDisplayID: String?
+}
+
+private struct AppWindowFitTarget {
+    let ownerPID: pid_t
+    let appName: String
+    let displayID: String?
+}
+
+extension ScreenWindowFit.ArrangementRequest: ScreenWindowFitPlacement {}
+extension ScreenWindowFit.PickedArrangementRequest: ScreenWindowFitPlacement {}
+
+private extension ScreenWindowFitPlacement {
+    func fitWindow(_ window: WindowFitTarget) async throws -> ShortsWindowArrangement {
+        try await ShortsWindowArranger.fitWindow(
+            ownerPID: window.target.pid,
+            bounds: window.target.bounds,
+            title: window.target.title,
+            appName: window.target.appName ?? window.fallbackAppName,
+            displayID: window.target.displayID ?? window.fallbackDisplayID,
+            captureLayout: captureLayout,
+            sceneLayout: sceneLayout,
+            enabledSources: enabledSources,
+            canvasPadding: canvasPadding,
+            zoom: zoom
+        )
+    }
+
+    func fitAppWindow(_ app: AppWindowFitTarget) async throws -> ShortsWindowArrangement {
+        try await ShortsWindowArranger.fitAppWindow(
+            ownerPID: app.ownerPID,
+            appName: app.appName,
+            displayID: app.displayID,
+            captureLayout: captureLayout,
+            sceneLayout: sceneLayout,
+            enabledSources: enabledSources,
+            canvasPadding: canvasPadding,
+            zoom: zoom
+        )
     }
 }

@@ -98,7 +98,6 @@ struct RemoteCameraControlsPane: View {
             .blitzButton(.secondary)
             .controlSize(.small)
             .disabled(!allowsFormatChanges || vm.selectedRemoteCameraCapabilities == nil)
-            .pointingHandCursor()
             .help("Set iPhone camera controls to Auto")
         }
     }

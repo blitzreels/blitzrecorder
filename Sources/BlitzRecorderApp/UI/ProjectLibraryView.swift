@@ -110,6 +110,7 @@ struct ProjectLibraryView: View {
                         projectDetail
                     }
                 }
+                .projectLibraryVideoDrop(vm)
                 .opacity(workPolicy.loadsLocalProjects ? 1 : 0)
                 .disabled(!workPolicy.loadsLocalProjects)
                 .allowsHitTesting(workPolicy.loadsLocalProjects)
@@ -213,9 +214,9 @@ struct ProjectLibraryView: View {
 
             Button("Import video…", systemImage: BlitzSymbols.saveToMac, action: vm.chooseVideoToImport)
                 .blitzButton(.secondary)
-                .disabled(vm.libraryActions.videoImportProgress != nil || vm.projectTrash.isWorking)
+                .disabled(!vm.canImportVideos)
                 .keyboardShortcut("i", modifiers: .command)
-                .help("Create an editable project from an MP4, MOV, or M4V video (⌘I)")
+                .help("Create editable projects from MP4, MOV, or M4V videos, or drag them here from Finder (⌘I)")
         }
     }
 

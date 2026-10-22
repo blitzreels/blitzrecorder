@@ -9,7 +9,7 @@ from pathlib import Path
 import re
 import sys
 
-root = Path("Sources/BlitzRecorderApp/UI")
+roots = [Path("Sources/BlitzRecorderApp/UI"), Path("Packages/BlitzRecorderDesign/Sources"), Path("Apps/iOSCamera/Sources")]
 styles = {
     "BlitzButtonStyle": "BlitzButtonStyle.swift",
     "BlitzPressButtonStyle": "BlitzButtonStyle.swift",
@@ -18,6 +18,7 @@ styles = {
     "BlitzScenePresetButtonStyle": "BlitzUIPrimitives.swift",
     "BlitzToggleStyle": "BlitzToggleStyle.swift",
 }
+token_files = {"BlitzUI.swift", "BlitzButtonStyle.swift"}
 rules = [
     (r"\bPicker\s*\(|\.pickerStyle\s*\(|\.menuStyle\s*\(",
      "Use BlitzDropdown or BlitzSegmentedPicker for app-owned choices."),
@@ -30,6 +31,8 @@ rules = [
     (r'(?:systemName|systemImage): "ellipsis', "No ⋯ menus. Show secondary actions with BlitzInlineActions and offer them on right-click."),
     (r'Text\((?:error|message)\)[^\n]*BlitzUI\.recordRed', "Errors use BlitzUI.warning; red is reserved for the record control."),
     (r'TextField\("0?0:00', "Use BlitzTimeStepper for times; don't make people type timecodes."),
+    (r"pointingHandCursor|NSCursor\.pointingHand|\.pointingHand\b",
+     "Mac controls keep the arrow cursor; only resize and drag areas change it."),
 ]
 typed_rules = [
     (r"\.system\(size:", "Use a BlitzType token (title, section, body, caption…) instead of a raw font size."),
@@ -50,12 +53,12 @@ rules += [
 dock_files = {"RecordButton.swift", "BlitzSharedControls.swift", "EditRecordingButton.swift", "SavedRecordingChip.swift",
               "BottomDock.swift", "BlitzUIKit.swift", "BlitzUIKit+Components.swift", "BlitzUIKit+Feedback.swift"}
 dock_emphasis = re.compile(r"blitzButton\(\.(?:dock|prominent)\)|emphasis: \.(?:dock|prominent)\b|BlitzButtonStyle\(\.(?:dock|prominent)\)")
-token_definition = re.compile(r"^\s*static (?:let|func)\b")
+token_definition = re.compile(r"^\s*(?:public )?static (?:let|func)\b")
 action_symbol_literal = re.compile(r'"(?:scissors|square\.and\.arrow\.(?:up|down)|link|doc\.on\.doc|safari|'
                                    r'square\.and\.pencil|trash|folder|film\.stack)"')
 thin_weight = re.compile(r"weight: \.(?:ultraLight|thin|light)\b")
 failures = []
-for path in sorted(root.rglob("*.swift")):
+for path in sorted(p for root in roots for p in root.rglob("*.swift")):
     source = path.read_text()
     for line_number, line in enumerate(source.splitlines(), 1):
         for pattern, message in rules:
@@ -64,7 +67,7 @@ for path in sorted(root.rglob("*.swift")):
         if re.search(r"\.toggleStyle\(\.(?:switch|checkbox|automatic|button)\)", line) and path.name != "BlitzToggleStyle.swift":
             failures.append(f"{path}:{line_number}: Use BlitzToggleStyle for app-owned toggles.")
         defines_token = token_definition.match(line) or (
-            path.name == "BlitzUIPrimitives.swift" and line.strip().startswith(".system(size: size")
+            path.name == "BlitzUI.swift" and line.strip().startswith(".system(size: size")
         )
         if not defines_token:
             for pattern, message in typed_rules:
@@ -74,7 +77,7 @@ for path in sorted(root.rglob("*.swift")):
             failures.append(f"{path}:{line_number}: Dock-size buttons belong to the dock; use accent, secondary or quiet on pages.")
         if thin_weight.search(line):
             failures.append(f"{path}:{line_number}: Thin symbol weights read as outline icons; use BlitzType.glyph.")
-        if action_symbol_literal.search(line) and path.name != "BlitzUIPrimitives.swift":
+        if action_symbol_literal.search(line) and path.name != "BlitzUI.swift":
             failures.append(f"{path}:{line_number}: Use the BlitzSymbols action constant (edit, export, share, copyLink, "
                             "openLink, rename, delete, folder, library, saveToMac) so every action keeps one icon.")
         if ".buttonStyle(.borderless)" in line and path.name != "NowPlayingMenuView.swift":
@@ -83,7 +86,10 @@ for path in sorted(root.rglob("*.swift")):
         if styles.get(match.group(1)) != path.name:
             failures.append(f"{path}: Add a variant to the shared primitive instead of defining {match.group(1)}.")
 
-for path in sorted(Path("Sources/BlitzRecorderApp").rglob("*.swift")):
+app_roots = [Path("Sources/BlitzRecorderApp"), Path("Packages/BlitzRecorderDesign/Sources"), Path("Apps/iOSCamera/Sources")]
+# The iPhone camera tab sits over live footage, like the recording HUD, so it is the other place dark is pinned.
+pinned_dark = {"RecordingHUD.swift", "CameraCompanionView.swift"}
+for path in sorted(p for root in app_roots for p in root.rglob("*.swift")):
     if path.name == "BlitzTheme.swift":
         continue
     for line_number, line in enumerate(path.read_text().splitlines(), 1):
@@ -95,7 +101,7 @@ for path in sorted(Path("Sources/BlitzRecorderApp").rglob("*.swift")):
     for line_number, line in enumerate(path.read_text().splitlines(), 1):
         if line.startswith("#Preview") or line.startswith("#if DEBUG"):
             in_preview = True
-        if ".preferredColorScheme(.dark)" in line and not in_preview and path.name != "RecordingHUD.swift":
+        if ".preferredColorScheme(" in line and not in_preview and path.name not in pinned_dark:
             failures.append(f"{path}:{line_number}: Don't pin dark; views must work in light and dark.")
 
 if failures:

@@ -112,7 +112,6 @@ struct EditorPlaybackControls: View {
         .clipShape(Circle())
         .accessibilityLabel(transport.title)
         .help(transport.help)
-        .pointingHandCursor()
     }
 
     private var position: some View {
@@ -136,7 +135,6 @@ struct EditorPlaybackControls: View {
             "\(EditorPlaybackPosition.display(displayedTime)) of \(EditorPlaybackPosition.display(configuration.duration))"
         )
         .help("Click to jump to a time")
-        .pointingHandCursor()
         .popover(isPresented: $showsPosition, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 12) {
                 BlitzUI.sectionLabel("Jump to time")

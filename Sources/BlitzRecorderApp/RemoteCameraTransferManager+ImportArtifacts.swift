@@ -15,7 +15,7 @@ extension RemoteCameraTransferManager {
         return "iPhone import failed. Keep both devices on the same Wi-Fi, reopen BlitzRecorder Camera, then retry."
     }
 
-    static func sha256HexDigest(for url: URL) throws -> String {
+    nonisolated static func sha256HexDigest(for url: URL) throws -> String {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
 

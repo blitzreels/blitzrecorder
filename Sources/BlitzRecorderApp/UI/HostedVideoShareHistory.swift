@@ -36,14 +36,9 @@ struct HostedVideoShareHistory: View {
                 }
             }
         }
-        .confirmationDialog("Stop sharing this link?", isPresented: Binding(
-            get: { stopping != nil }, set: { if !$0 { stopping = nil } }), presenting: stopping) { video in
-            Button("Stop sharing", role: .destructive) { Task { await controller.stopSharing(video) } }
-        } message: { video in
-            Text(video.isOwnStorage
-                 ? "The link stops working and the video is deleted from your Cloudflare. Your recording stays on this Mac."
-                 : "The link stops working for everyone. Your recording stays on this Mac.")
-        }
+        .stopSharingConfirmation(.init(stopping: $stopping, controller: controller,
+                                       title: "Stop sharing this link?",
+                                       hostedMessage: "The link stops working for everyone. Your recording stays on this Mac."))
     }
 
     private func section<Rows: View>(title: String, note: String?, @ViewBuilder rows: () -> Rows) -> some View {

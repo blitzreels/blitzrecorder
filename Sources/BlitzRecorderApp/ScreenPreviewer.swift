@@ -117,7 +117,7 @@ final class ScreenPreviewer: NSObject, SCStreamOutput, SCStreamDelegate, @unchec
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .screen,
               sampleBuffer.isValid,
-              frameStatus(for: sampleBuffer) == .complete || frameStatus(for: sampleBuffer) == .started,
+              [.complete, .started].contains(sampleBuffer.screenCaptureFrameStatus),
               let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
             return
         }
@@ -155,14 +155,5 @@ final class ScreenPreviewer: NSObject, SCStreamOutput, SCStreamDelegate, @unchec
         Task { @MainActor in
             failureHandler?(error)
         }
-    }
-
-    private func frameStatus(for sampleBuffer: CMSampleBuffer) -> SCFrameStatus {
-        guard let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
-              let rawStatus = attachments.first?[SCStreamFrameInfo.status] as? Int,
-              let status = SCFrameStatus(rawValue: rawStatus) else {
-            return .complete
-        }
-        return status
     }
 }

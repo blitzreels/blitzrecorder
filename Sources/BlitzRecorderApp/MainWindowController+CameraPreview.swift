@@ -117,7 +117,10 @@ extension MainWindowController {
                     return
                 }
             case .pairing, .degraded, .disconnected, .discovering, .unavailable, nil:
-                previewStage.cameraPreview.setMessage("\(name): \(status)")
+                let absence = coordinator.selectedRemoteCameraAbsence()
+                previewStage.cameraPreview.setMessage(absence.map {
+                    "\($0.title(deviceName: name)). \($0.instruction)"
+                } ?? "\(name): \(status)")
                 viewModel.clearRemoteCameraPreview(message: status)
                 refreshPermissionGate()
                 return

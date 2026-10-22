@@ -91,13 +91,6 @@ enum ProjectExportRenderPlan {
         Set(project.settings.enabledSources.compactMap(CaptureSource.init(rawValue:))).intersection([.screen, .camera])
     }
 
-    static func captureOutputFormat(
-        project: RecordingProject,
-        fallback: OutputVideoFormat
-    ) -> OutputVideoFormat {
-        OutputVideoFormat(rawValue: project.settings.outputVideoFormat) ?? fallback
-    }
-
     static func savedOutput(url: URL, take: RecordingTake) -> SavedRecordingOutput {
         SavedRecordingOutput(
             url: url,

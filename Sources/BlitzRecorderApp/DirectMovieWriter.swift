@@ -13,9 +13,7 @@ final class DirectMovieWriter: @unchecked Sendable {
     private let queue = DispatchQueue(label: "blitzrecorder.direct-movie-writer")
     private let recordingStartHostTime: CMTime
 
-    private var pauseStartedAt: CMTime?
-    private var pauseOffset = CMTime.zero
-    private var paused = false
+    private var pauseClock = MediaWriterPauseClock()
     private let finalization = MediaWriterFinalization()
     private var finished = false
     private var wroteVideo = false
@@ -83,7 +81,7 @@ final class DirectMovieWriter: @unchecked Sendable {
 
     func appendVideo(sourceTime: CMTime, render: @escaping (CVPixelBuffer) -> Bool) {
         queue.async {
-            guard !self.finished, !self.paused, sourceTime.isNumeric else { return }
+            guard !self.finished, !self.pauseClock.isPaused, sourceTime.isNumeric else { return }
             guard self.writer.status != .failed else {
                 self.failWriting(self.writer.error ?? RecorderError.writerNotReady)
                 return
@@ -120,7 +118,7 @@ final class DirectMovieWriter: @unchecked Sendable {
     func appendAudio(_ sampleBuffer: CMSampleBuffer, source: CaptureSource) {
         queue.async {
             guard !self.finished,
-                  !self.paused,
+                  !self.pauseClock.isPaused,
                   self.wroteVideo,
                   CMSampleBufferDataIsReady(sampleBuffer),
                   let input = self.audioInputs[source],
@@ -131,7 +129,7 @@ final class DirectMovieWriter: @unchecked Sendable {
             let sourceTime = self.currentHostTime()
             guard sourceTime.isValid else { return }
             let presentationTime = self.presentationTime(for: sourceTime)
-            guard let adjusted = Self.copy(sampleBuffer, toPresentationTime: presentationTime) else {
+            guard let adjusted = sampleBuffer.retimed(toPresentationTime: presentationTime) else {
                 return
             }
             if !input.append(adjusted) {
@@ -144,23 +142,13 @@ final class DirectMovieWriter: @unchecked Sendable {
 
     func pause() {
         queue.async {
-            guard !self.paused else { return }
-            self.paused = true
-            self.pauseStartedAt = self.currentHostTime()
+            self.pauseClock.pause(at: self.currentHostTime())
         }
     }
 
     func resume() {
         queue.async {
-            guard self.paused else { return }
-            if let start = self.pauseStartedAt {
-                let delta = CMTimeSubtract(self.currentHostTime(), start)
-                if delta.isValid, delta.seconds > 0 {
-                    self.pauseOffset = CMTimeAdd(self.pauseOffset, delta)
-                }
-            }
-            self.pauseStartedAt = nil
-            self.paused = false
+            self.pauseClock.resume(at: self.currentHostTime())
         }
     }
 
@@ -195,7 +183,7 @@ final class DirectMovieWriter: @unchecked Sendable {
                                 at: self.finalURL.deletingLastPathComponent(),
                                 withIntermediateDirectories: true
                             )
-                            let outputURL = Self.uniqueFileURL(self.finalURL)
+                            let outputURL = TakeFileStore().uniqueFileURL(self.finalURL)
                             try FileManager.default.moveItem(at: self.temporaryURL, to: outputURL)
                             self.finalization.complete(.success(.wrote(outputURL)))
                         } catch {
@@ -224,7 +212,7 @@ final class DirectMovieWriter: @unchecked Sendable {
 
     private func presentationTime(for sourceTime: CMTime) -> CMTime {
         let elapsed = CMTimeSubtract(sourceTime, recordingStartHostTime)
-        let adjusted = CMTimeSubtract(elapsed, pauseOffset)
+        let adjusted = CMTimeSubtract(elapsed, pauseClock.offset)
         return CMTimeCompare(adjusted, .zero) < 0 ? .zero : adjusted
     }
 
@@ -248,82 +236,5 @@ final class DirectMovieWriter: @unchecked Sendable {
         }
         writer.add(input)
         return input
-    }
-
-    private static func copy(_ sampleBuffer: CMSampleBuffer, toPresentationTime presentationTime: CMTime) -> CMSampleBuffer? {
-        var count: CMItemCount = 0
-        CMSampleBufferGetSampleTimingInfoArray(
-            sampleBuffer,
-            entryCount: 0,
-            arrayToFill: nil,
-            entriesNeededOut: &count
-        )
-        if count <= 0 {
-            count = 1
-        }
-
-        var timing = Array(
-            repeating: CMSampleTimingInfo(
-                duration: CMSampleBufferGetDuration(sampleBuffer),
-                presentationTimeStamp: CMSampleBufferGetPresentationTimeStamp(sampleBuffer),
-                decodeTimeStamp: CMSampleBufferGetDecodeTimeStamp(sampleBuffer)
-            ),
-            count: count
-        )
-
-        timing.withUnsafeMutableBufferPointer { buffer in
-            _ = CMSampleBufferGetSampleTimingInfoArray(
-                sampleBuffer,
-                entryCount: count,
-                arrayToFill: buffer.baseAddress,
-                entriesNeededOut: &count
-            )
-        }
-
-        let sourceTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-        let delta = CMTimeSubtract(presentationTime, sourceTime)
-        for index in timing.indices {
-            if timing[index].presentationTimeStamp.isValid {
-                timing[index].presentationTimeStamp = CMTimeAdd(timing[index].presentationTimeStamp, delta)
-            } else {
-                timing[index].presentationTimeStamp = presentationTime
-            }
-
-            if timing[index].decodeTimeStamp.isValid {
-                timing[index].decodeTimeStamp = CMTimeAdd(timing[index].decodeTimeStamp, delta)
-            }
-        }
-
-        var adjusted: CMSampleBuffer?
-        let status = timing.withUnsafeBufferPointer { buffer in
-            CMSampleBufferCreateCopyWithNewTiming(
-                allocator: kCFAllocatorDefault,
-                sampleBuffer: sampleBuffer,
-                sampleTimingEntryCount: count,
-                sampleTimingArray: buffer.baseAddress,
-                sampleBufferOut: &adjusted
-            )
-        }
-        guard status == noErr else { return nil }
-        return adjusted
-    }
-
-    private static func uniqueFileURL(_ url: URL) -> URL {
-        let fileManager = FileManager.default
-        guard fileManager.fileExists(atPath: url.path) else {
-            return url
-        }
-
-        let directory = url.deletingLastPathComponent()
-        let baseName = url.deletingPathExtension().lastPathComponent
-        let pathExtension = url.pathExtension
-        var index = 2
-        while true {
-            let candidate = directory.appendingPathComponent("\(baseName)-\(index).\(pathExtension)")
-            if !fileManager.fileExists(atPath: candidate.path) {
-                return candidate
-            }
-            index += 1
-        }
     }
 }

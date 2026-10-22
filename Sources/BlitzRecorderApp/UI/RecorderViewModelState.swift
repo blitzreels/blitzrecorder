@@ -16,7 +16,6 @@ final class EditorExportState {
     var exportProgress: Double = 0
     var activeExportProjectURL: URL?
     var renderProgress: Double = 0
-    var exportFollowUp: EditorExportFollowUp?
 }
 
 /// Holds preview canvas geometry and crop editing state.

@@ -100,7 +100,6 @@ struct RecorderSceneStrip: View {
         }
         .buttonStyle(BlitzSelectionButtonStyle(isSelected: isSelected))
         .disabled(!vm.canSwitchScene && !isSelected)
-        .pointingHandCursor()
         .accessibilityLabel("Scene \(tile.index + 1), \(vm.sceneLabel(scene))\(isSelected && isLive ? ", live" : "")")
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .keyboardShortcut(tile.shortcutDigit.map { KeyboardShortcut(KeyEquivalent($0), modifiers: .command) })

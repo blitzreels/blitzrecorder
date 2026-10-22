@@ -5,13 +5,11 @@ enum EditorTimelineClipPointer: Equatable {
     static let handleWidth: CGFloat = 12
 
     case arrow
-    case pointingHand
     case resize
 
     var cursor: NSCursor {
         switch self {
         case .arrow: return .arrow
-        case .pointingHand: return .pointingHand
         case .resize: return .resizeLeftRight
         }
     }
@@ -48,7 +46,7 @@ enum EditorTimelineClipPointer: Equatable {
                 return .resize
             }
         }
-        return request.layout.clip(at: Double(request.x / request.pixelsPerSecond)) == nil ? .arrow : .pointingHand
+        return .arrow
     }
 }
 

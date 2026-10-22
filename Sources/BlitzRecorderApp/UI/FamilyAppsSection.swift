@@ -71,16 +71,7 @@ struct FamilyAppsSection: View {
                 ForEach(FamilyApp.all) { app in
                     BlitzAdaptiveRow() {
                         HStack(spacing: 12) {
-                            Group {
-                                if let icon = app.icon {
-                                    Image(nsImage: icon).resizable().scaledToFit()
-                                } else {
-                                    RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous).fill(BlitzUI.controlFill)
-                                }
-                            }
-                            .frame(width: 32, height: 32)
-                            .clipShape(RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous))
-                            .accessibilityHidden(true)
+                            BlitzAppIcon(image: app.icon.map(Image.init(nsImage:)), size: 32)
                             SettingsRowLabel(.init(title: app.name, detail: app.detail))
                         }
                         Link(app.actionTitle, destination: app.url)

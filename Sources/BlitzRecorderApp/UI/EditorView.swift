@@ -44,6 +44,8 @@ struct EditorView: View {
     @State var inspectorTab: EditorInspectorTab = .silence
     @State var exportDestination: EditorExportDestination = .file
     @State var preparesHostedExport = false
+    @State var showsExportResult = false
+    @State var shareOutcome: EditorOutputResult?
     @State var aspectRatioLockedKinds: Set<SceneLayerKind> = [.screen, .camera]
 
     var body: some View {
@@ -57,11 +59,6 @@ struct EditorView: View {
             EditorWorkspaceSplitView(showsSourceTracks: showsSourceTracks) {
                 playerColumn
                     .background(BlitzUI.canvasBackground)
-                    .onChange(of: vm.exports.exportFollowUp) { _, followUp in
-                        guard let followUp else { return }
-                        vm.exports.exportFollowUp = nil
-                        handleExportFollowUp(followUp)
-                    }
                     .overlay(alignment: .bottom) {
                         editorNotice
                             .padding(.horizontal, 20)
@@ -207,6 +204,20 @@ struct EditorView: View {
             }
             reloadTask = task
         }
+        .onChange(of: HostedVideoShareController.shared.isRunning) { wasRunning, isRunning in
+            let sharing = HostedVideoShareController.shared
+            guard wasRunning, !isRunning, let path = project?.projectPath, sharing.projectPath == path else { return }
+            if let link = sharing.shareURL {
+                BlitzClipboard.copyInBackground(link.absoluteString)
+                shareOutcome = .shared(link: link, file: sharing.fileURL)
+            } else if let message = sharing.transferMessage {
+                shareOutcome = .shareFailed(message)
+            }
+        }
+        .onChange(of: project?.projectPath) {
+            showsExportResult = false
+            shareOutcome = nil
+        }
         .onChange(of: vm.exports.isEditorExportPresented, initial: true) { _, requested in
             guard requested else { return }
             vm.exports.isEditorExportPresented = false
@@ -260,12 +271,32 @@ struct EditorView: View {
 
     enum EditorNoticeKey: Hashable {
         case none, uploading
+        case result(EditorOutputResult)
     }
 
     var noticeKey: EditorNoticeKey {
         let sharing = HostedVideoShareController.shared
         if sharing.isRunning, sharing.transferProgress != nil { return inspectorTab == .exports && exportDestination == .link ? .none : .uploading }
-        return .none
+        return outputResult.map(EditorNoticeKey.result) ?? .none
+    }
+
+    /// The newest export or link made in this editor. A share upload replaces its own export's result.
+    private var outputResult: EditorOutputResult? {
+        if let shareOutcome { return shareOutcome }
+        guard showsExportResult, !vm.isExporting else { return nil }
+        if let error = vm.exports.lastExportError { return .exportFailed(error) }
+        guard let url = vm.exports.lastExportSucceededURL else { return nil }
+        let sharing = HostedVideoShareController.shared
+        if sharing.isRunning, sharing.fileURL == url { return nil }
+        return .exported(files: vm.exports.variantExportURLs.count > 1 ? vm.exports.variantExportURLs : [url])
+    }
+
+    private func dismissOutputResult() {
+        shareOutcome = nil
+        showsExportResult = false
+        vm.exports.lastExportSucceededURL = nil
+        vm.exports.lastExportError = nil
+        vm.exports.variantExportURLs = []
     }
 
     @ViewBuilder var editorNotice: some View {
@@ -286,6 +317,22 @@ struct EditorView: View {
                 .editorNoticeSurface()
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+        case .result(let result):
+            EditorOutputResultCard(configuration: .init(
+                result: result,
+                canShare: HostedVideoShareController.shared.canShare && !HostedVideoShareController.shared.isRunning,
+                share: { url in
+                    dismissOutputResult()
+                    shareExportedFile(url)
+                },
+                sendToBlitzReels: { url in handleExportFollowUp(.sendToBlitzReels(url)) },
+                showSharing: {
+                    preparesHostedExport = false
+                    showOutputs(.link)
+                },
+                dismiss: dismissOutputResult
+            ))
+            .transition(.move(edge: .bottom).combined(with: .opacity))
         }
     }
 

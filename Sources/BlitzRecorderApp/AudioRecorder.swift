@@ -26,22 +26,11 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     }
     var failureHandler: ((Error) -> Void)?
     var syncWarningHandler: ((String) -> Void)?
-    private var startupContinuation: CheckedContinuation<Void, Error>?
-    private var startupTimeoutTask: Task<Void, Never>?
-    private var hasProducedStartupSample = false
-    private var timelineStartTime: CMTime?
-    private var firstSampleTime: CMTime?
+    private let startupGate = AudioStartupGate(timeoutError: RecorderError.microphoneDidNotStart)
+    private var timelineAnchor = RecordingTimelineAnchor()
 
     var recordingTimelineOffset: CMTime {
-        queue.sync {
-            guard let timelineStartTime,
-                  let firstSampleTime else { return .zero }
-            let offset = CMTimeSubtract(firstSampleTime, timelineStartTime)
-            guard offset.isValid,
-                  offset.seconds.isFinite,
-                  CMTimeCompare(offset, .zero) > 0 else { return .zero }
-            return CMTimeConvertScale(offset, timescale: 600, method: .roundHalfAwayFromZero)
-        }
+        queue.sync { timelineAnchor.offset }
     }
 
     func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime? = nil) async throws {
@@ -64,9 +53,8 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
                 normalizationBitrate = settings.finalAudioBitrate
                 pendingClockNormalization = nil
                 hasEmittedSyncWarning = false
-                self.timelineStartTime = timelineStartTime
-                firstSampleTime = nil
-                hasProducedStartupSample = false
+                timelineAnchor.reset(timelineStartTime: timelineStartTime)
+                startupGate.reset()
 
                 session.beginConfiguration()
                 didBeginConfiguration = true
@@ -227,12 +215,7 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
                 ))
                 self.emitSyncWarningIfNeeded()
             }
-            if self.firstSampleTime == nil {
-                let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-                if presentationTime.isValid {
-                    self.firstSampleTime = presentationTime
-                }
-            }
+            self.timelineAnchor.observeFirstSample(sampleBuffer)
         }
     }
 
@@ -268,7 +251,7 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
             if let continuation = self.finishContinuation {
                 self.finishContinuation = nil
                 continuation.resume(with: result)
-            } else if case .failure(let error) = result, self.hasProducedStartupSample {
+            } else if case .failure(let error) = result, self.startupGate.hasProducedSample {
                 self.failureHandler?(error)
             }
         }
@@ -312,33 +295,11 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     }
 
     private func waitForFirstAudioSample() async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            queue.async {
-                if self.hasProducedStartupSample {
-                    continuation.resume()
-                    return
-                }
-                self.startupContinuation = continuation
-                self.startupTimeoutTask?.cancel()
-                self.startupTimeoutTask = Task { [weak self] in
-                    try? await Task.sleep(nanoseconds: 2_000_000_000)
-                    self?.queue.async {
-                        self?.completeStartup(.failure(RecorderError.microphoneDidNotStart))
-                    }
-                }
-            }
-        }
+        try await startupGate.wait(on: queue)
     }
 
     private func completeStartup(_ result: Result<Void, Error>) {
-        if case .success = result {
-            hasProducedStartupSample = true
-        }
-        guard let continuation = startupContinuation else { return }
-        startupContinuation = nil
-        startupTimeoutTask?.cancel()
-        startupTimeoutTask = nil
-        continuation.resume(with: result)
+        startupGate.complete(result)
     }
 
     private static func audioSettings(_ request: AudioFileOutputSettingsRequest) -> [String: Any] {

@@ -83,10 +83,7 @@ extension RecorderCaptureRuntime {
         let project = try await Task.detached(priority: .utility) {
             try TakeFileStore().loadRecordingProject(at: request.projectURL)
         }.value
-        let captureOutputFormat = ProjectExportRenderPlan.captureOutputFormat(
-            project: project,
-            fallback: baseSettings.outputVideoFormat
-        )
+        let captureOutputFormat = project.outputVideoFormat(fallback: baseSettings.outputVideoFormat)
         let captureSettings = takeFileStore.recordingSettings(
             from: project,
             baseSettings: baseSettings,

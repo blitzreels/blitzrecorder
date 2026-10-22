@@ -28,6 +28,10 @@ extension RecorderCoordinator {
         remoteCamera.selectedStatus()
     }
 
+    func selectedRemoteCameraAbsence() -> RemoteCameraAbsence? {
+        remoteCamera.selectedAbsence()
+    }
+
     func selectedRemoteCameraConnectionState() -> RemoteCameraConnectionState? {
         remoteCamera.selectedConnectionState()
     }

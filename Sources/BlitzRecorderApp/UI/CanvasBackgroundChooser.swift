@@ -169,7 +169,6 @@ struct CanvasBackgroundSwatch: View {
         }
         .buttonStyle(BlitzPressButtonStyle())
         .onHover { isHovering = $0 }
-        .pointingHandCursor()
         .accessibilityLabel(configuration.style.displayName)
         .accessibilityAddTraits(configuration.isSelected ? [.isSelected] : [])
         .help(configuration.style.displayName)
@@ -211,7 +210,6 @@ private struct CanvasBackgroundActionTile: View {
         }
         .buttonStyle(BlitzPressButtonStyle())
         .onHover { isHovering = $0 }
-        .pointingHandCursor()
         .accessibilityLabel(configuration.title)
         .help(configuration.help)
     }

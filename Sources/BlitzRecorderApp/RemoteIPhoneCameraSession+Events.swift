@@ -35,6 +35,7 @@ extension RemoteIPhoneCameraSession {
             sessionState.setConnectionState(.connected, for: serviceID)
             onMessage?("Paired \(trust.deviceName) as Remote iPhone Camera.")
             controlClient.send(.requestCapabilities)
+            runtime.resendUnansweredStops(settings: readSettings())
             attemptPendingImports(serviceID: serviceID)
             onCameraConfigurationChanged?()
         case .capabilities(let capabilities):
@@ -46,14 +47,6 @@ extension RemoteIPhoneCameraSession {
                settings.selectedScenePreset?.supports(settings.layout) == true {
                 refreshSelectedScenePresetLayoutIfNeeded(settings: &settings)
                 saveSettings(settings)
-            }
-            if settings.remoteCameraSettingsByServiceID[serviceID] != nil,
-               !sessionState.hasSentSettingsRestore(for: serviceID) {
-                let restoredSettings = remoteSettings(for: serviceID)
-                sessionState.updateTelemetrySettings(for: serviceID, activeSettings: restoredSettings)
-                sessionState.markSettingsRestoreSent(for: serviceID)
-                suppressPreview(serviceID: serviceID, message: "Updating iPhone camera...")
-                controlClient.send(.applySettings(restoredSettings))
             }
             attemptPendingImports(serviceID: serviceID)
             onCameraConfigurationChanged?()
@@ -68,11 +61,24 @@ extension RemoteIPhoneCameraSession {
             if mergeResult.didUpdateSettings {
                 saveSettings(settings)
             }
+            restoreSettingsIfNeeded(serviceID: serviceID, phoneSettings: telemetry.activeSettings)
             onCameraConfigurationChanged?()
+        case .goingToSleep:
+            dropSleepingIPhone(serviceID: serviceID)
         case .failed(let failedTakeID, let reason):
-            sessionState.setConnectionState(.degraded, for: serviceID)
-            onMessage?("Remote iPhone error: \(reason)")
+            // A failed take or clip is not a broken connection; only an unfinished handshake is.
+            if sessionState.connectionStates[serviceID] != .connected {
+                sessionState.setConnectionState(.degraded, for: serviceID)
+            }
+            if reason != RemoteCameraTransferProtocol.pausedForTakeReason {
+                onMessage?(RemoteCameraConstants.isUnsupportedProtocolReason(reason)
+                       ? "Update BlitzRecorder and BlitzRecorder Camera on your iPhone so both run the latest version."
+                       : "Remote iPhone error: \(reason)")
+            }
             runtime.handleFailed(takeID: failedTakeID, reason: reason)
+            if let failedTakeID, reason == RemoteCameraTransferProtocol.unavailableRecordingReason {
+                runtime.forgetPendingImport(takeID: failedTakeID, settings: readSettings())
+            }
         case .transferReady(let takeID, _, let byteCount, let manifest):
             runtime.applyTransferReady(
                 takeID: takeID,
@@ -87,12 +93,19 @@ extension RemoteIPhoneCameraSession {
                 onPreviewFrame?(image)
             }
         case .monitorVideoFrame(let frame):
+            #if DEBUG
+            previewFramesReceived += 1
+            #endif
             guard !isPreviewSuppressed(serviceID: serviceID) else { return }
             if let sampleBuffer = monitorSampleBufferFactory.makeSampleBuffer(from: frame) {
                 onPreviewSampleBuffer?(sampleBuffer, frame.width, frame.height)
             }
         case .transferChunk(let takeID, let offset, let data, let isFinal):
             runtime.writeChunk(takeID: takeID, offset: offset, data: data, isFinal: isFinal)
+            onCameraConfigurationChanged?()
+        case .transferChannel(let takeID, let port, let token, let offset, let byteCount):
+            runtime.receiveChannel(.init(takeID: takeID, host: controlClient.remoteHost, port: port, token: token,
+                                         offset: offset, byteCount: byteCount))
             onCameraConfigurationChanged?()
         case .transferComplete(let takeID, let byteCount, let sha256):
             Task { @MainActor in
@@ -102,6 +115,7 @@ extension RemoteIPhoneCameraSession {
                     sha256: sha256,
                     settings: readSettings()
                 )
+                attemptPendingImports(serviceID: serviceID)
                 onCameraConfigurationChanged?()
             }
         case .prepared(let takeID, let deviceStartTime):
@@ -116,6 +130,21 @@ extension RemoteIPhoneCameraSession {
             }
             onCameraConfigurationChanged?()
         }
+    }
+
+    /// Once per connection, puts back the settings this Mac last used, after the iPhone has said what it runs.
+    /// Matching settings are left alone, so a reconnect does not rebuild the camera or blank the live view.
+    private func restoreSettingsIfNeeded(serviceID: String, phoneSettings: RemoteCameraSettings) {
+        guard readSettings().remoteCameraSettingsByServiceID[serviceID] != nil,
+              runtime.activeTakeID == nil,
+              sessionState.capabilities(for: serviceID) != nil,
+              !sessionState.hasSentSettingsRestore(for: serviceID) else { return }
+        sessionState.markSettingsRestoreSent(for: serviceID)
+        let restoredSettings = remoteSettings(for: serviceID)
+        guard restoredSettings != phoneSettings else { return }
+        sessionState.updateTelemetrySettings(for: serviceID, activeSettings: restoredSettings)
+        suppressPreview(serviceID: serviceID, message: "Updating iPhone camera...")
+        controlClient.send(.applySettings(restoredSettings))
     }
 
     private func attemptPendingImports(serviceID: String) {

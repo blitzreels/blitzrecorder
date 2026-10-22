@@ -78,6 +78,10 @@ extension ProjectLibraryView {
             let hasQuery = !vm.projectLibraryNavigation.searchText.isEmpty || vm.projectLibraryNavigation.filters.activeCount > 0
             let index = vm.folderIndex
             List(selection: $vm.projectLibraryNavigation.selectedProjectIDs) {
+                if let progress = vm.libraryActions.videoImportProgress {
+                    ProjectLibraryImportRow(progress: progress, cancel: { vm.libraryActions.videoImportTask?.cancel() })
+                        .selectionDisabled()
+                }
                 if let scope = vm.projectLibraryNavigation.folderScope {
                     let nodes = ProjectFolderTree.roots(.init(projects: visibleProjects, index: index, includesEmpty: !hasQuery))
                         .flatMap(\.flattened)
@@ -311,7 +315,6 @@ struct ProjectLibrarySidebarRow: View {
         .background(ProjectLibraryListHighlightSuppressor())
         .contentShape(.rect)
         .onHover { isHovering = $0 }
-        .pointingHandCursor()
         .accessibilityAddTraits(configuration.isSelected ? .isSelected : [])
     }
 }

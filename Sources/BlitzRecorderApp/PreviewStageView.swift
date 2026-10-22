@@ -125,16 +125,6 @@ final class PreviewStageView: NSView {
         guard canvasFrame.height > 0 else { return 0 }
         return canvasFrame.width / canvasFrame.height
     }
-    var renderedCanvasFrameForTesting: CGRect { canvasFrame }
-    var renderedScreenFrameForTesting: CGRect { screenPreview.frame }
-    var renderedCameraFrameForTesting: CGRect { cameraPreview.frame }
-    var renderedCameraShadowOpacityForTesting: Float { cameraShadowLayer.shadowOpacity }
-    var renderedScreenShadowOpacityForTesting: Float { screenShadowLayer.shadowOpacity }
-    var renderedScreenCornerRadiusForTesting: CGFloat { screenPreview.layer?.cornerRadius ?? 0 }
-    var renderedCameraContentMasksToBoundsForTesting: Bool { cameraPreview.layer?.masksToBounds == true }
-    var renderedSelectionFrameForTesting: CGRect? { selectionOverlay.selectionFrame }
-    var renderedSelectionShowsResizeHandlesForTesting: Bool { selectionOverlay.showsResizeHandles }
-    var renderedCropToolbarFrameForTesting: CGRect? { cropToolbarFrame }
     var cropToolbarFrame: CGRect? {
         didSet {
             guard oldValue != cropToolbarFrame else { return }
@@ -361,11 +351,8 @@ final class PreviewStageView: NSView {
     var sceneLayout = SceneLayout() {
         didSet {
             guard oldValue != sceneLayout else { return }
-            if isApplyingLocalDragFrame {
-                if oldValue.layerOrder != sceneLayout.layerOrder { applyLayerOrder() }
-                return
-            }
             if oldValue.layerOrder != sceneLayout.layerOrder { applyLayerOrder() }
+            guard !isApplyingLocalDragFrame else { return }
             relayoutCanvasImmediately()
         }
     }
@@ -493,12 +480,7 @@ final class PreviewStageView: NSView {
         if let previous = lastLayoutPassKey, previous != key {
             layoutLog.notice("preview relayout changed=\(LayoutPassKeyDiff.changedFields(.init(previous: previous, next: key)), privacy: .public)")
         }
-        if lastLayoutPassKey == key {
-            if canvasBackgroundAnimated {
-                updateBackgroundAnimation()
-            }
-            return
-        }
+        if skipsUnchangedLayoutPass(key) { return }
         lastLayoutPassKey = key
 
         performWithoutUIAnimation {
@@ -521,33 +503,6 @@ final class PreviewStageView: NSView {
         invalidateResizeCursorRects()
     }
 
-    func layoutPassKey() -> LayoutPassKey {
-        LayoutPassKey(
-            bounds: bounds,
-            captureLayout: captureLayout,
-            isCameraCropEditingEnabled: isCameraCropEditingEnabled,
-            isScreenCropEditingEnabled: isScreenCropEditingEnabled,
-            enabledSources: enabledSources,
-            fillsCanvasWhenOnlyVideoSource: fillsCanvasWhenOnlyVideoSource,
-            cameraSourceAspectRatio: cameraPreview.currentSourceAspectRatio,
-            sceneLayout: sceneLayout,
-            screenFillsSceneFrame: screenFillsSceneFrame,
-            screenCrop: screenCrop,
-            screenSourceAspectRatio: effectiveScreenSourceAspectRatio,
-            cameraCropAmount: cameraCropAmount,
-            cameraCropPosition: cameraCropPosition,
-            canvasBackgroundStyle: canvasBackgroundStyle,
-            canvasPadding: canvasPadding,
-            screenContentMode: screenContentMode,
-            cameraContentMode: cameraContentMode,
-            cameraFramePadding: cameraFramePadding,
-            cameraShadowEnabled: cameraShadowEnabled,
-            screenCornerRadius: screenCornerRadius,
-            screenShadowEnabled: screenShadowEnabled,
-            cameraCornerRadius: cameraCornerRadius
-        )
-    }
-
     override func viewDidEndLiveResize() {
         super.viewDidEndLiveResize()
         refreshCanvasBackground()
@@ -558,53 +513,5 @@ final class PreviewStageView: NSView {
         super.viewDidMoveToWindow()
         applyChromeAppearance()
         updateBackgroundAnimation()
-    }
-
-    func fittedCropEditingCanvas(in rect: NSRect) -> NSRect {
-        let canvas = PreviewStageLayout.fittedCanvas(in: rect, captureLayout: captureLayout)
-        guard isCameraCropEditingEnabled, enabledSources.contains(.camera) else { return canvas }
-        return PreviewStageLayout.cropEditingCanvas(
-            fittedCanvas: canvas,
-            in: rect,
-            cameraSourceAspectRatio: cameraPreview.currentSourceAspectRatio,
-            geometry: renderGeometry(in: canvas)
-        )
-    }
-
-    func relayoutCanvasImmediately() {
-        let key = layoutPassKey()
-        if lastLayoutPassKey == key {
-            if canvasBackgroundAnimated {
-                updateBackgroundAnimation()
-            }
-            return
-        }
-        needsLayout = true
-        if !bounds.isEmpty {
-            layout()
-        }
-        needsDisplay = true
-        safeZoneOverlay.needsDisplay = true
-        selectionOverlay.needsDisplay = true
-        outlineOverlay.needsDisplay = true
-        invalidateResizeCursorRects()
-    }
-}
-
-enum LayoutPassKeyDiff {
-    struct Request {
-        let previous: PreviewStagePassKeys.LayoutPassKey
-        let next: PreviewStagePassKeys.LayoutPassKey
-    }
-
-    static func changedFields(_ request: Request) -> String {
-        let next = Dictionary(Mirror(reflecting: request.next).children.compactMap { child in
-            child.label.map { ($0, String(describing: child.value)) }
-        }, uniquingKeysWith: { lhs, _ in lhs })
-        return Mirror(reflecting: request.previous).children.compactMap { child -> String? in
-            guard let label = child.label, let value = next[label] else { return nil }
-            let old = String(describing: child.value)
-            return old == value ? nil : "\(label): \(old.prefix(80)) -> \(value.prefix(80))"
-        }.joined(separator: " | ")
     }
 }

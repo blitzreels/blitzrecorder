@@ -5,233 +5,6 @@ import BlitzRecorderCore
 import CoreGraphics
 import Foundation
 
-struct RecordingReadiness: Equatable {
-    let isReady: Bool
-    let title: String
-    let detail: String
-    let blockers: [PermissionBlocker]
-    let statusLine: String
-
-    func blocking(with blocker: PermissionBlocker, statusSuffix: String) -> RecordingReadiness {
-        let statusLine = "\(self.statusLine) | \(statusSuffix)"
-        return RecordingReadiness(
-            isReady: false,
-            title: title,
-            detail: "Start disabled: \(statusLine)",
-            blockers: blockers + [blocker],
-            statusLine: statusLine
-        )
-    }
-
-    func replacingScreenSourceBlockers(with blocker: PermissionBlocker) -> RecordingReadiness {
-        let blockers = self.blockers.filter {
-            $0.source != .screen && $0.source != .systemAudio
-        } + [blocker]
-        let statusLine = "\(self.statusLine) | Screen source: not selected"
-        return RecordingReadiness(
-            isReady: false,
-            title: title,
-            detail: "Start disabled: \(statusLine)",
-            blockers: blockers,
-            statusLine: statusLine
-        )
-    }
-}
-
-enum LocalCameraRuntimeState: Equatable {
-    struct ReadinessRequest {
-        let readiness: RecordingReadiness
-        let settings: RecordingSettings
-        let isRemoteCameraSelected: Bool
-    }
-
-    case unchecked
-    case starting
-    case waitingForDevice
-    case ready
-    case unavailable(String)
-
-    func applying(_ request: ReadinessRequest) -> RecordingReadiness {
-        guard request.settings.enabledSources.contains(.camera),
-              !request.isRemoteCameraSelected else {
-            return request.readiness
-        }
-
-        let blocker: PermissionBlocker
-        switch self {
-        case .unchecked, .ready:
-            return request.readiness
-        case .starting:
-            blocker = PermissionBlocker(
-                source: .camera,
-                permission: "Camera availability",
-                status: "starting",
-                recovery: "Wait for the camera preview before recording."
-            )
-        case .waitingForDevice:
-            blocker = PermissionBlocker(
-                source: .camera,
-                permission: "Camera availability",
-                status: "waiting",
-                recovery: "Bring your iPhone close and lock it, or plug in a camera. It connects on its own."
-            )
-        case .unavailable(let reason):
-            blocker = PermissionBlocker(
-                source: .camera,
-                permission: "Camera availability",
-                status: reason,
-                recovery: "Choose another camera or close the app currently using it."
-            )
-        }
-
-        return request.readiness.blocking(
-            with: blocker,
-            statusSuffix: "Camera: \(blocker.status)"
-        )
-    }
-}
-
-struct PermissionBlocker: Equatable {
-    let source: CaptureSource
-    let permission: String
-    let status: String
-    let recovery: String
-
-    var sentence: String {
-        if permission == "Screen & System Audio Recording" {
-            switch source {
-            case .screen:
-                return "Screen source selected; full-capture access is inactive. \(recovery)"
-            case .systemAudio:
-                return "System Audio needs Screen Recording access. \(recovery)"
-            case .camera, .microphone:
-                break
-            }
-        }
-        return "\(source.rawValue) blocked by \(permission): \(status). \(recovery)"
-    }
-}
-
-extension Array where Element == PermissionBlocker {
-    var shortSummary: String {
-        if contains(where: { $0.permission == "Sources" }) {
-            return "Pick a source to record"
-        }
-        if contains(where: { $0.permission == "Screen source" }) {
-            return "Pick a screen or app to record"
-        }
-        if let cameraBlocker = first(where: { $0.permission == "Camera availability" }) {
-            switch cameraBlocker.status {
-            case "starting": return "Camera is starting"
-            case "waiting": return "Waiting for a camera"
-            default: return "Camera unavailable"
-            }
-        }
-        if contains(where: { $0.source == .screen }),
-           !contains(where: { $0.source == .systemAudio }) {
-            return "Pick again or enable Screen Recording"
-        }
-        if contains(where: { $0.source == .systemAudio }),
-           !contains(where: { $0.source == .screen }) {
-            return "Mac audio needs Screen Recording"
-        }
-        var parts: [String] = []
-        if contains(where: { $0.source == .screen || $0.source == .systemAudio }) {
-            parts.append("Screen Recording")
-        }
-        if contains(where: { $0.permission == "Camera" }) { parts.append("Camera") }
-        if contains(where: { $0.source == .microphone }) { parts.append("Microphone") }
-        if parts.isEmpty {
-            if contains(where: { $0.permission == "Remote iPhone" }) {
-                return "Waiting for the iPhone camera to connect"
-            }
-            return "Permission needed to record"
-        }
-        return parts.count == 1 ? "\(parts[0]) permission needed" : "Permissions needed to record"
-    }
-}
-
-struct PermissionRequestResult: Equatable {
-    enum Status: Equatable {
-        case granted
-        case needsSettings
-        case cancelled
-    }
-
-    let status: Status
-    let message: String
-
-    var isGranted: Bool {
-        status == .granted
-    }
-}
-
-enum RecordingPermissionSettingsPane {
-    case screenCapture
-    case accessibility
-    case camera
-    case microphone
-}
-
-@MainActor
-protocol RecordingPermissionSystem: AnyObject {
-    func hasScreenCaptureAccess() -> Bool
-    func requestScreenCaptureAccess() -> Bool
-    func hasAccessibilityAccess() -> Bool
-    func requestAccessibilityAccess() -> Bool
-    func authorizationStatus(for mediaType: AVMediaType) -> AVAuthorizationStatus
-    func requestAccess(for mediaType: AVMediaType) async -> Bool
-    func openSettings(_ pane: RecordingPermissionSettingsPane)
-}
-
-@MainActor
-final class MacOSRecordingPermissionSystem: RecordingPermissionSystem {
-    private let settingsURLs: [RecordingPermissionSettingsPane: URL] = [
-        .screenCapture: URL(
-            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
-        )!,
-        .accessibility: URL(
-            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-        )!,
-        .camera: URL(
-            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"
-        )!,
-        .microphone: URL(
-            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
-        )!
-    ]
-
-    func hasScreenCaptureAccess() -> Bool {
-        CGPreflightScreenCaptureAccess()
-    }
-
-    func requestScreenCaptureAccess() -> Bool {
-        CGRequestScreenCaptureAccess()
-    }
-
-    func hasAccessibilityAccess() -> Bool {
-        AXIsProcessTrusted()
-    }
-
-    func requestAccessibilityAccess() -> Bool {
-        let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
-        return AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
-    }
-
-    func authorizationStatus(for mediaType: AVMediaType) -> AVAuthorizationStatus {
-        AVCaptureDevice.authorizationStatus(for: mediaType)
-    }
-
-    func requestAccess(for mediaType: AVMediaType) async -> Bool {
-        await AVCaptureDevice.requestAccess(for: mediaType)
-    }
-
-    func openSettings(_ pane: RecordingPermissionSettingsPane) {
-        guard let url = settingsURLs[pane] else { return }
-        NSWorkspace.shared.open(url)
-    }
-}
-
 @MainActor
 final class PermissionGate {
     private let system: any RecordingPermissionSystem
@@ -334,10 +107,6 @@ final class PermissionGate {
         }
     }
 
-    var accessibilityStatus: String {
-        hasAccessibilityAccess ? "allowed" : "needed for target-window controls"
-    }
-
     var hasAccessibilityAccess: Bool {
         system.hasAccessibilityAccess()
     }
@@ -350,71 +119,47 @@ final class PermissionGate {
         system.authorizationStatus(for: .video)
     }
 
-    var microphoneAuthorizationStatus: AVAuthorizationStatus {
-        system.authorizationStatus(for: .audio)
-    }
-
     func requestScreenCaptureAccess() async -> PermissionRequestResult {
         guard !isTerminating, !Task.isCancelled else { return cancelledRequest }
-        if hasScreenCaptureAccess {
-            return PermissionRequestResult(
-                status: .granted,
-                message: "Screen Recording permission is active."
-            )
-        }
-
-        guard !hasRequestedScreenCaptureAccessThisSession else {
-            return PermissionRequestResult(
-                status: .needsSettings,
-                message: "Enable Screen Recording in System Settings, then reopen BlitzRecorder."
-            )
-        }
-        hasRequestedScreenCaptureAccessThisSession = true
-        _ = system.requestScreenCaptureAccess()
-
-        if await waitForPermission({ [system] in system.hasScreenCaptureAccess() }) {
-            return PermissionRequestResult(
-                status: .granted,
-                message: "Screen Recording permission is active."
-            )
-        }
-
-        guard !isTerminating, !Task.isCancelled else { return cancelledRequest }
-        return PermissionRequestResult(
+        let granted = PermissionRequestResult(
+            status: .granted,
+            message: "Screen Recording permission is active."
+        )
+        let needsSettings = PermissionRequestResult(
             status: .needsSettings,
             message: "Enable Screen Recording in System Settings, then reopen BlitzRecorder."
         )
+        if hasScreenCaptureAccess { return granted }
+
+        guard !hasRequestedScreenCaptureAccessThisSession else { return needsSettings }
+        hasRequestedScreenCaptureAccessThisSession = true
+        _ = system.requestScreenCaptureAccess()
+
+        if await waitForPermission({ [system] in system.hasScreenCaptureAccess() }) { return granted }
+
+        guard !isTerminating, !Task.isCancelled else { return cancelledRequest }
+        return needsSettings
     }
 
     func requestAccessibilityAccessForWindowControls() async -> PermissionRequestResult {
         guard !isTerminating, !Task.isCancelled else { return cancelledRequest }
-        if hasAccessibilityAccess {
-            return PermissionRequestResult(
-                status: .granted,
-                message: "Accessibility permission is active."
-            )
-        }
-
-        guard !hasRequestedAccessibilityAccessThisSession else {
-            return PermissionRequestResult(
-                status: .needsSettings,
-                message: "Enable Accessibility in System Settings to move and resize captured windows."
-            )
-        }
-        hasRequestedAccessibilityAccessThisSession = true
-        _ = system.requestAccessibilityAccess()
-        if await waitForPermission({ [system] in system.hasAccessibilityAccess() }) {
-            return PermissionRequestResult(
-                status: .granted,
-                message: "Accessibility permission is active."
-            )
-        }
-
-        guard !isTerminating, !Task.isCancelled else { return cancelledRequest }
-        return PermissionRequestResult(
+        let granted = PermissionRequestResult(
+            status: .granted,
+            message: "Accessibility permission is active."
+        )
+        let needsSettings = PermissionRequestResult(
             status: .needsSettings,
             message: "Enable Accessibility in System Settings to move and resize captured windows."
         )
+        if hasAccessibilityAccess { return granted }
+
+        guard !hasRequestedAccessibilityAccessThisSession else { return needsSettings }
+        hasRequestedAccessibilityAccessThisSession = true
+        _ = system.requestAccessibilityAccess()
+        if await waitForPermission({ [system] in system.hasAccessibilityAccess() }) { return granted }
+
+        guard !isTerminating, !Task.isCancelled else { return cancelledRequest }
+        return needsSettings
     }
 
     func requestCameraAccess() async -> Bool {
@@ -464,10 +209,9 @@ final class PermissionGate {
         if settings.enabledSources.contains(.screen),
            !settings.usesPickedScreenContent,
            !hasScreenCaptureAccess {
-            blockers.append(Self.screenCaptureBlocker(ScreenCaptureBlockerRequest(
-                source: .screen,
+            blockers.append(Self.screenCaptureBlocker(
                 hasScreenSourceBinding: settings.screenSourceBinding?.isConcreteSelection == true
-            )))
+            ))
         }
 
         if settings.enabledSources.contains(.camera),
@@ -553,33 +297,20 @@ final class PermissionGate {
         PermissionRequestResult(status: .cancelled, message: "")
     }
 
-    private struct ScreenCaptureBlockerRequest {
-        let source: CaptureSource
-        let hasScreenSourceBinding: Bool
-    }
-
-    private static func screenCaptureBlocker(_ request: ScreenCaptureBlockerRequest) -> PermissionBlocker {
-        if request.source == .screen {
-            if !request.hasScreenSourceBinding {
-                return PermissionBlocker(
-                    source: request.source,
-                    permission: "Screen source",
-                    status: "no app or screen picked",
-                    recovery: "Enable Screen Recording, then choose a display, app, or window."
-                )
-            }
+    private static func screenCaptureBlocker(hasScreenSourceBinding: Bool) -> PermissionBlocker {
+        guard hasScreenSourceBinding else {
             return PermissionBlocker(
-                source: request.source,
-                permission: "Screen & System Audio Recording",
-                status: "source selected; full-capture access inactive",
-                recovery: "Enable Screen Recording to capture the selected source."
+                source: .screen,
+                permission: "Screen source",
+                status: "no app or screen picked",
+                recovery: "Enable Screen Recording, then choose a display, app, or window."
             )
         }
         return PermissionBlocker(
-            source: request.source,
+            source: .screen,
             permission: "Screen & System Audio Recording",
-            status: "Mac audio capture needs Screen Recording access",
-            recovery: "macOS lists this under Screen Recording; enable it there or turn System Audio off."
+            status: "source selected; full-capture access inactive",
+            recovery: "Enable Screen Recording to capture the selected source."
         )
     }
 

@@ -23,13 +23,24 @@ final class RemoteCameraTransferManager {
 
     private let pendingImportStore: RemoteCameraPendingImportStore
     private let sendCommand: (RemoteCameraCommand) -> Void
-    private let onMessage: (String) -> Void
+    let onMessage: (String) -> Void
     private let onTransferFinished: (UUID) -> Void
     private let validateImportedMedia: ImportedMediaValidator
 
+    struct PendingChannelCompletion {
+        let byteCount: Int64
+        let sha256: String?
+        let settings: RecordingSettings
+    }
+
     private var transfers: [UUID: TransferSession] = [:]
+    var channelTasks: [UUID: Task<Void, Never>] = [:]
+    var pendingChannelCompletions: [UUID: PendingChannelCompletion] = [:]
     private var continuations: [UUID: CheckedContinuation<MediaWriterCompletion, Error>] = [:]
     private var timeoutTasks: [UUID: Task<Void, Never>] = [:]
+    /// Stops the iPhone has not answered yet, kept with their original time so a stop sent while the iPhone was
+    /// out of reach is sent again when it comes back, and the clip still ends where the Mac stopped.
+    private var unansweredStops: [UUID: RemoteCameraTimeline] = [:]
 
     init(
         pendingImportStore: RemoteCameraPendingImportStore = RemoteCameraPendingImportStore(),
@@ -62,6 +73,7 @@ final class RemoteCameraTransferManager {
     }
 
     func removePendingImport(takeID: UUID, settings: RecordingSettings) {
+        unansweredStops.removeValue(forKey: takeID)
         pendingImportStore.remove(takeID: takeID, settings: settings)
     }
 
@@ -96,10 +108,9 @@ final class RemoteCameraTransferManager {
             }
 
             onMessage("Stopping iPhone recording...")
-            sendCommand(.stop(RemoteCameraTimeline(
-                takeID: takeID,
-                hostStopTime: DispatchTime.now().uptimeNanoseconds
-            )))
+            let stop = RemoteCameraTimeline(takeID: takeID, hostStopTime: DispatchTime.now().uptimeNanoseconds)
+            unansweredStops[takeID] = stop
+            sendCommand(.stop(stop))
             let resumeOffset = beginTransfer(
                 takeID: takeID,
                 destinationURL: take.cameraURL,
@@ -168,6 +179,7 @@ final class RemoteCameraTransferManager {
         hostTimelineStartTime: UInt64?,
         estimatedHostStartTime: UInt64?
     ) {
+        unansweredStops.removeValue(forKey: takeID)
         guard var transfer = transfers[takeID] else { return }
         var manifest = manifest
         manifest.hostTimelineStartTime = manifest.hostTimelineStartTime ?? hostTimelineStartTime
@@ -243,6 +255,10 @@ final class RemoteCameraTransferManager {
     }
 
     func completeTransfer(takeID: UUID, byteCount: Int64, sha256: String?, settings: RecordingSettings) async {
+        if channelTasks[takeID] != nil {
+            pendingChannelCompletions[takeID] = .init(byteCount: byteCount, sha256: sha256, settings: settings)
+            return
+        }
         guard let transfer = transfers[takeID] else { return }
         await finishCompletedTransfer(takeID: takeID, transfer: transfer, byteCount: byteCount, sha256: sha256, settings: settings)
     }
@@ -252,9 +268,19 @@ final class RemoteCameraTransferManager {
         finish(takeID: takeID, result: .failure(RecorderError.remoteCameraTransferFailed(reason)))
     }
 
-    func requestPendingImports(serviceID: String, settings: RecordingSettings) {
+    struct PendingImportsRequest {
+        let serviceID: String
+        /// A take still being recorded after a reconnect; asking for its clip would end it on the iPhone.
+        let recordingTakeID: UUID?
+        let settings: RecordingSettings
+    }
+
+    func requestPendingImports(_ request: PendingImportsRequest) {
+        let settings = request.settings
         for pendingImport in pendingImportStore.all(settings: settings) {
-            guard pendingImport.serviceID == nil || pendingImport.serviceID == serviceID else { continue }
+            guard pendingImport.serviceID == nil || pendingImport.serviceID == request.serviceID else { continue }
+            guard pendingImport.takeID != request.recordingTakeID,
+                  unansweredStops[pendingImport.takeID] == nil else { continue }
             guard transfers[pendingImport.takeID] == nil else { continue }
             guard let resumeOffset = beginTransfer(
                 takeID: pendingImport.takeID,
@@ -266,7 +292,31 @@ final class RemoteCameraTransferManager {
         }
     }
 
-    private func scheduleTimeout(takeID: UUID, reason: String) {
+    /// After a reconnect only: stops sent while the iPhone was out of reach go out again with their original time.
+    func resendUnansweredStops(settings: RecordingSettings) {
+        let pendingImports = pendingImportStore.all(settings: settings)
+        for stop in unansweredStops.values {
+            guard let pendingImport = pendingImports.first(where: { $0.takeID == stop.takeID }) else {
+                unansweredStops.removeValue(forKey: stop.takeID)
+                continue
+            }
+            if transfers[stop.takeID] == nil {
+                _ = beginTransfer(takeID: stop.takeID, destinationURL: pendingImport.destinationURL,
+                                  expectedByteCount: 0, settings: settings)
+            }
+            sendCommand(.stop(stop))
+        }
+    }
+
+    func partialURL(takeID: UUID) -> URL? {
+        transfers[takeID]?.partialURL
+    }
+
+    func updateReceivedByteCount(_ progress: ChannelProgress) {
+        transfers[progress.takeID]?.receivedByteCount = progress.receivedByteCount
+    }
+
+    func scheduleTimeout(takeID: UUID, reason: String) {
         timeoutTasks.removeValue(forKey: takeID)?.cancel()
         timeoutTasks[takeID] = Task { [weak self] in
             try? await Task.sleep(for: .seconds(30))
@@ -286,6 +336,8 @@ final class RemoteCameraTransferManager {
 
     private func finish(takeID: UUID, result: Result<MediaWriterCompletion, Error>) {
         timeoutTasks.removeValue(forKey: takeID)?.cancel()
+        channelTasks.removeValue(forKey: takeID)?.cancel()
+        pendingChannelCompletions.removeValue(forKey: takeID)
         if let transfer = transfers.removeValue(forKey: takeID) {
             if let settings = transfer.settings {
                 pendingImportStore.updatePhase(takeID: takeID, phase: .failedRecoverable, settings: settings)
@@ -324,7 +376,10 @@ final class RemoteCameraTransferManager {
                 throw RecorderError.remoteCameraTransferFailed("Expected \(byteCount) bytes, imported \(importedByteCount).")
             }
             if let sha256 {
-                let importedSHA256 = try Self.sha256HexDigest(for: transfer.partialURL)
+                let partialURL = transfer.partialURL
+                let importedSHA256 = try await Task.detached(priority: .userInitiated) {
+                    try Self.sha256HexDigest(for: partialURL)
+                }.value
                 guard importedSHA256 == sha256 else {
                     throw RecorderError.remoteCameraTransferFailed("Checksum mismatch.")
                 }

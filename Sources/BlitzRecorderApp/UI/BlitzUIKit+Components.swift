@@ -327,7 +327,7 @@ struct BlitzUIKitEditor: View {
     }
 
     private var silenceActions: SilencePaneActions {
-        .init(apply: {}, restore: {}, setPreview: { _ in }, selectStrength: { _ in })
+        .init(apply: {}, restore: {}, keepCurrent: {}, setPreview: { _ in }, selectStrength: { _ in })
     }
 }
 

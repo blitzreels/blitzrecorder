@@ -1,10 +1,7 @@
 import Foundation
 
 actor EditorWaveformCache {
-    struct Configuration {
-        let directory: URL
-        let byteLimit: Int
-    }
+    typealias Configuration = DiskCacheConfiguration
 
     struct Key {
         let file: MediaFileFingerprint
@@ -52,29 +49,10 @@ actor EditorWaveformCache {
         var count = UInt64(peaks.count).littleEndian
         withUnsafeBytes(of: &count) { data.append(contentsOf: $0) }
         peaks.withUnsafeBytes { data.append(contentsOf: $0) }
-        do {
-            try FileManager.default.createDirectory(at: configuration.directory, withIntermediateDirectories: true)
-            try data.write(to: fileURL(request.key), options: .atomic)
-            prune()
-        } catch {}
+        configuration.write(.init(data: data, url: fileURL(request.key)))
     }
 
     private func fileURL(_ key: Key) -> URL {
         configuration.directory.appendingPathComponent("\(key.file.cacheKey)-\(key.duration.bitPattern).brwf")
-    }
-
-    private func prune() {
-        let keys: Set<URLResourceKey> = [.fileSizeKey, .contentModificationDateKey]
-        guard let files = try? FileManager.default.contentsOfDirectory(
-            at: configuration.directory, includingPropertiesForKeys: Array(keys), options: .skipsHiddenFiles
-        ) else { return }
-        let entries = files.filter { $0.pathExtension == "brwf" }.compactMap { url -> (URL, Int, Date)? in
-            guard let values = try? url.resourceValues(forKeys: keys), let size = values.fileSize else { return nil }
-            return (url, size, values.contentModificationDate ?? .distantPast)
-        }.sorted { $0.2 < $1.2 }
-        var total = entries.reduce(0) { $0 + $1.1 }
-        for entry in entries where total > configuration.byteLimit {
-            if (try? FileManager.default.removeItem(at: entry.0)) != nil { total -= entry.1 }
-        }
     }
 }

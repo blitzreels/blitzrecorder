@@ -1,158 +1,6 @@
 import AppKit
 import SwiftUI
 
-enum BlitzSymbols {
-    static let screen = "display"
-    static let camera = "video"
-    static let microphone = "mic"
-    static let systemAudio = "speaker.wave.2"
-    static let scenes = "rectangle.stack"
-    static let layout = "rectangle.split.2x1"
-    static let split = "rectangle.split.1x2"
-    static let pictureInPicture = "pip"
-    static let source = "macwindow"
-    static let videoQuality = "play.rectangle"
-
-    // One icon per action, on buttons, inline actions and menus alike. Scripts/check-design-system.sh rejects
-    // these names written as literals anywhere else.
-    static let edit = "scissors"
-    static let export = "square.and.arrow.up"
-    static let saveToMac = "square.and.arrow.down"
-    static let share = "link"
-    static let copyLink = "doc.on.doc"
-    static let openLink = "safari"
-    static let rename = "square.and.pencil"
-    static let delete = "trash"
-    static let folder = "folder"
-    static let library = "film.stack"
-    static let recorderHidden = "eye.slash"
-    static let recorderShown = "eye"
-}
-
-enum BlitzType {
-    static let largeTitle = Font.system(size: 24, weight: .semibold)
-    static let title = Font.system(size: 17, weight: .semibold)
-    static let headline = Font.system(size: 15, weight: .semibold)
-    static let section = Font.system(size: 13, weight: .semibold)
-    static let callout = Font.system(size: 13)
-    /// Sidebar links and list titles. One weight in every state so selection never shifts the layout.
-    static let navigation = Font.system(size: 13, weight: .medium)
-    static let body = Font.system(size: 12)
-    static let label = Font.system(size: 12, weight: .medium)
-    static let strong = Font.system(size: 12, weight: .semibold)
-    static let caption = Font.system(size: 11)
-    static let captionEmphasis = Font.system(size: 11, weight: .medium)
-    static let footnote = Font.system(size: 10, weight: .medium)
-    static let numeric = Font.system(size: 11, weight: .medium).monospacedDigit()
-    static let shortcutBadge = Font.system(size: 9, weight: .semibold).monospacedDigit()
-    static let countdown = Font.system(size: 120, weight: .bold, design: .rounded).monospacedDigit()
-
-    static func glyph(_ size: CGFloat) -> Font {
-        .system(size: size, weight: .medium)
-    }
-
-    static func symbol(_ size: CGFloat) -> Font {
-        .system(size: size, weight: .semibold)
-    }
-
-    static func control(_ size: CGFloat) -> Font {
-        .system(size: size, weight: .medium)
-    }
-
-    static func monogram(_ size: CGFloat) -> Font {
-        .system(size: size, weight: .semibold, design: .rounded)
-    }
-}
-
-struct BlitzSymbol: View {
-    struct Configuration {
-        let name: String
-        let size: CGFloat
-    }
-
-    let configuration: Configuration
-
-    var body: some View {
-        Image(systemName: configuration.name)
-            .font(BlitzType.symbol(configuration.size * 0.8))
-            .symbolRenderingMode(.monochrome)
-            .imageScale(.medium)
-            .frame(width: configuration.size, height: configuration.size)
-            .accessibilityHidden(true)
-    }
-}
-
-enum BlitzUI {
-    static var accent: Color { BlitzThemeStore.shared.accent.accentPair.color }
-    static var accentHighlight: Color { BlitzThemeStore.shared.accent.highlightPair.color }
-    static var accentGlow: Color { BlitzThemeStore.shared.accent.accentPair.alpha(.init(light: 0.18, dark: 0.28)).color }
-    static var onAccent: Color { BlitzThemeStore.shared.accent.onAccentPair.color }
-    static let recordRed = BlitzColors.recordRed.color
-    static let recordRedHighlight = Color(red: 1.0, green: 0.38, blue: 0.35)
-    static let recordGlow = BlitzColors.recordRed.alpha(.init(light: 0.2, dark: 0.3)).color
-    static let warning = BlitzColors.warning.color
-
-    static var canvasBackground: Color { BlitzThemeStore.shared.tint.palette.canvas.color }
-    static var projectLibraryBackground: Color { BlitzThemeStore.shared.tint.palette.page.color }
-    static var panelBackground: Color { BlitzThemeStore.shared.tint.palette.panel.color }
-    static var toolbarBackground: Color { BlitzThemeStore.shared.tint.palette.toolbar.color }
-    static let toolbarDivider = BlitzColors.toolbarDivider.color
-    static let overlayFill = BlitzColors.overlayFill.color
-
-    static let primaryText = BlitzColors.primaryText.color
-    static let supportingText = BlitzColors.supportingText.color
-    static let secondaryText = BlitzColors.secondaryText.color
-    static let tertiaryText = BlitzColors.tertiaryText.color
-    static let inverseText = BlitzColors.inverseText.color
-    static let quietFill = BlitzColors.quietFill.color
-    static let cardFill = BlitzColors.cardFill.color
-    static let controlFill = BlitzColors.controlFill.color
-    static let hoverFill = BlitzColors.hoverFill.color
-    static let selectedFill = BlitzColors.selectedFill.color
-    static let strongFill = BlitzColors.strongFill.color
-    static let separator = BlitzColors.separator.color
-    static let panelStroke = BlitzColors.panelStroke.color
-    static let strongStroke = BlitzColors.strongStroke.color
-    static let raisedFillTop = BlitzColors.raisedFillTop.color
-    static let raisedFillBottom = BlitzColors.raisedFillBottom.color
-    static let edgeHighlight = BlitzColors.edgeHighlight.color
-    static let glassTint = BlitzColors.glassTint.color
-    static let insetWell = BlitzColors.insetWell.color
-    static let elevationShadow = BlitzColors.elevationShadow.color
-    static let deepShadow = BlitzColors.deepShadow.color
-
-    static let controlRadius = BlitzControlMetrics.radius
-    static let cardRadius: CGFloat = 12
-    static let surfaceRadius: CGFloat = 16
-    static let sceneCardRadius: CGFloat = 12
-    static let scenePreviewFill = BlitzColors.scenePreviewFill.color
-    static let scenePreviewStroke = BlitzColors.scenePreviewStroke.color
-    static let screenPreviewFill = BlitzColors.screenPreviewFill.color
-    static let cameraPreviewFill = BlitzColors.cameraPreviewFill.color
-    static let screenPreviewGlyph = Color.white.opacity(0.5)
-    /// Text and glyphs drawn on top of footage, thumbnails or dark scrims: fixed, never follow light mode.
-    static let onMediaText = Color.white
-    static let onMediaSecondaryText = Color.white.opacity(0.75)
-    static let onMediaStroke = Color.white.opacity(0.3)
-    static let cameraPreviewGlyph = Color.black.opacity(0.55)
-
-    static let trackScreen = Color.cyan
-    static let trackCamera = Color.teal
-    static let trackMicrophone = Color(red: 0.72, green: 0.54, blue: 1.0)
-    static let trackSystemAudio = Color(red: 0.36, green: 0.56, blue: 1.0)
-
-    static func levelColor(active: Bool) -> Color {
-        active ? accent : tertiaryText
-    }
-
-    static func sectionLabel(_ title: String) -> some View {
-        Text(title)
-            .font(BlitzType.captionEmphasis)
-            .foregroundStyle(BlitzUI.secondaryText)
-            .lineLimit(1)
-    }
-}
-
 struct BlitzIconTile: View {
     let symbolName: String
     let isSelected: Bool
@@ -219,7 +67,6 @@ struct BlitzScenePresetCard: View {
         .disabled(!isEnabled)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .opacity(isEnabled || isSelected ? 1 : 0.5)
-        .pointingHandCursor()
         .help(preset.compactTitle)
     }
 
@@ -372,35 +219,6 @@ extension ScenePreset {
         default:
             return detail
         }
-    }
-}
-
-enum BlitzStatusTone: Equatable {
-    case recording
-    case live
-    case ready
-    case warning
-    case muted
-
-    var color: Color {
-        switch self {
-        case .recording: return BlitzUI.recordRed
-        case .live, .ready: return BlitzUI.accent
-        case .warning: return BlitzUI.warning
-        case .muted: return BlitzUI.tertiaryText
-        }
-    }
-}
-
-struct BlitzStatusDot: View {
-    var tone: BlitzStatusTone
-    var diameter: CGFloat = 7
-
-    var body: some View {
-        Circle()
-            .fill(tone.color)
-            .frame(width: diameter, height: diameter)
-
     }
 }
 

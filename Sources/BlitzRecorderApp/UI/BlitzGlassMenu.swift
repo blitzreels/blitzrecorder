@@ -246,7 +246,6 @@ struct BlitzMenuRow: View {
             if $0 && item.isEnabled { onHighlight() }
         }
         .accessibilityAddTraits(item.isSelected ? [.isSelected] : [])
-        .pointingHandCursor()
         .disabled(!item.isEnabled)
         .opacity(item.isEnabled ? 1 : 0.4)
         .help(item.subtitle.map { "\(item.title) — \($0)" } ?? item.title)

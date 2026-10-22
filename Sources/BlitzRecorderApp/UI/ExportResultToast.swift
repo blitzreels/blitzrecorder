@@ -8,11 +8,12 @@ struct ExportResultToast: View {
     private static let successLifetime: Duration = .seconds(6)
 
     private var isVisible: Bool {
-        !vm.isExporting && (vm.exports.lastExportSucceededURL != nil || vm.exports.lastExportError != nil)
+        !vm.isExporting && !vm.isEditorVisible
+            && (vm.exports.lastExportSucceededURL != nil || vm.exports.lastExportError != nil)
     }
 
     private var dismissTaskID: String {
-        "\(vm.exports.lastExportSucceededURL?.path ?? "")|\(vm.exports.lastExportError ?? "")|\(isHovering)|\(vm.isExporting)"
+        "\(vm.exports.lastExportSucceededURL?.path ?? "")|\(vm.exports.lastExportError ?? "")|\(isHovering)|\(isVisible)"
     }
 
     var body: some View {
@@ -42,14 +43,6 @@ struct ExportResultToast: View {
                 .lineLimit(2)
                 .frame(maxWidth: 260, alignment: .leading)
             if let url = vm.exports.lastExportSucceededURL {
-                if vm.isEditorVisible {
-                    Button("Share link", systemImage: BlitzSymbols.share) { vm.exports.exportFollowUp = .share(url) }
-                        .blitzButton(.secondary)
-                        .help("Upload this export and copy a watch link")
-                    Button("Send to BlitzReels", systemImage: "paperplane") { vm.exports.exportFollowUp = .sendToBlitzReels(url) }
-                        .blitzButton(.secondary)
-                        .help("Open this export in the BlitzReels panel")
-                }
                 Button("Show in Finder") {
                     NSWorkspace.shared.activateFileViewerSelecting(vm.exports.variantExportURLs.count > 1 ? vm.exports.variantExportURLs : [url])
                 }

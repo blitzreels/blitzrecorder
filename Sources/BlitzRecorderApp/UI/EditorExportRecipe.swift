@@ -147,13 +147,6 @@ struct EditorExportRecipe {
         )
     }
 
-    static func fallbackFormat(
-        projectFormat: String,
-        fallbackFormat: OutputVideoFormat
-    ) -> OutputVideoFormat {
-        OutputVideoFormat(rawValue: projectFormat) ?? fallbackFormat
-    }
-
     struct AppliedPreset: Equatable {
         var preset: ExportPerformancePreset
         var resolution: OutputResolution

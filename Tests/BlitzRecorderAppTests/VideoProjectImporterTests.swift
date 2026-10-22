@@ -60,7 +60,9 @@ final class VideoProjectImporterTests: XCTestCase {
         vm.studioMode = .projects
         let previousSources = vm.settings.enabledSources
         let previousLayout = vm.settings.layout
-        await vm.importVideo(source)
+        XCTAssertTrue(vm.importVideos([source]))
+        await vm.libraryActions.videoImportTask?.value
+        XCTAssertNil(vm.libraryActions.videoImportTask)
         XCTAssertEqual(vm.studioMode, .edit)
         XCTAssertEqual(vm.lastExportedProject?.title, "Course lesson")
         XCTAssertEqual(vm.settings.enabledSources, previousSources)

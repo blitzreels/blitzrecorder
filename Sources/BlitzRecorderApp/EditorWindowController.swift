@@ -124,22 +124,6 @@ private struct EditorWindowView: View {
             ExportResultToast(vm: vm).padding(16)
         }
         .environment(\.windowToolbarLeadingInset, MainWindowChrome.trafficLightsWidth + (vm.isEditorVisible ? 144 : 52))
-        .environment(\.workspaceRecorder, vm)
-        .background(BlitzUI.panelBackground)
-        .ignoresSafeArea(.container, edges: .top)
-        .sheet(item: Binding(
-            get: { vm.libraryActions.folderPrompt },
-            set: { vm.libraryActions.folderPrompt = $0 }
-        )) { prompt in
-            ProjectFolderNameEditor(
-                prompt: prompt,
-                name: Binding(
-                    get: { vm.libraryActions.folderNameDraft },
-                    set: { vm.libraryActions.folderNameDraft = $0 }
-                ),
-                affectedCount: vm.folderPromptAffectedCount(prompt),
-                onSave: { vm.commitFolderPrompt(prompt) }, onCancel: { vm.libraryActions.folderPrompt = nil }
-            )
-        }
+        .workspaceWindowSurface(vm: vm)
     }
 }

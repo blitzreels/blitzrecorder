@@ -56,6 +56,12 @@ extension RecordingProject {
 }
 
 extension RecordingProjectHistory.Entry {
+    init(_ project: RecordingProject) {
+        self.init(id: project.id, title: project.title, projectPath: project.projectPath,
+                  takeDirectoryPath: project.takeDirectoryPath, finalVideoPath: project.finalVideoPath,
+                  createdAt: project.createdAt, updatedAt: project.updatedAt, exports: project.exports)
+    }
+
     var recordedAt: Date {
         createdAt
             ?? RecordingProjectDisplayTitle.timestampDate(from: title)

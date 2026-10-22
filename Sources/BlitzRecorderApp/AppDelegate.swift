@@ -62,6 +62,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
             updateController: updateController
         ))
         self.windowController = windowController
+        #if DEBUG
+        MCPDebugCameraService.shared.showDevicesPage = { [weak windowController] in
+            windowController?.presentSettings(selecting: .devices)
+        }
+        #endif
         windowController.viewModel.onOpenEditorWindow = { [weak self] request in
             self?.presentEditorWindow(request)
         }
@@ -86,7 +91,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
         }
         coordinator.onMessage = { [weak self] message in
             self?.windowController?.setDetail(message)
-            self?.rebuildMenu()
         }
         coordinator.onSavedRecording = { [weak self] output in
             self?.windowController?.applySavedRecordingOutput(output)
