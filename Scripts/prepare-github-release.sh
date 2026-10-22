@@ -58,7 +58,8 @@ done
 
 cd "$ROOT"
 
-Scripts/set-version.py "$VERSION" "$BUILD"
+# A local dry run of the release build. Published releases take their version from the tag in CI.
+export MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD"
 Scripts/generate-xcode-project.sh
 
 bash -n \
@@ -72,7 +73,6 @@ bash -n \
   Scripts/generate-sparkle-appcast.sh \
   Scripts/check-github-release-readiness.sh
 
-python3 -m py_compile Scripts/set-version.py
 python3 -m py_compile Scripts/sync-github-labels.py
 ruby -e 'require "yaml"; YAML.load_file(".github/workflows/macos-dmg.yml")' >/dev/null
 python3 Scripts/generate-app-store-connect-fields.py --check
@@ -98,12 +98,9 @@ if [[ "$RUN_DMG" == "1" ]]; then
 fi
 
 cat <<EOF
-Prepared BlitzRecorder $VERSION build $BUILD.
+Built BlitzRecorder $VERSION build $BUILD locally.
 
-Next steps:
-  git status --short
-  git add README.md SECURITY.md CHANGELOG.md .github/PULL_REQUEST_TEMPLATE.md .github/ISSUE_TEMPLATE .github/release.yml .github/labels.json project.yml BlitzRecorder.xcodeproj/project.pbxproj .github/workflows/macos-dmg.yml .github/workflows/ios-testflight.yml .github/workflows/app-store-release.yml Scripts/set-version.py Scripts/sync-github-labels.py Scripts/prepare-github-release.sh Scripts/bootstrap-github-repo.sh Scripts/generate-sparkle-appcast.sh Scripts/check-github-release-readiness.sh Scripts/package-app.sh Scripts/package-dmg.sh Scripts/ci-macos-dmg.sh Scripts/ci-ios-testflight.sh Scripts/archive-app-store.sh Scripts/preflight-app-store-local.sh Scripts/validate-submission-artifacts.sh Scripts/app-store-connect-readiness.py Scripts/validate-launch-readiness.sh Scripts/prepare-app-store-review-package.sh Scripts/collect-release-evidence.sh
-  git commit -m "Release BlitzRecorder $VERSION"
+To publish it, tag and push. CI sets the version from the tag and the build number from its run number:
   git tag v$VERSION
-  git push origin main --tags
+  git push origin v$VERSION
 EOF

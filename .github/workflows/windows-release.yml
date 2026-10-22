@@ -207,7 +207,9 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $installer --clobber
           } else {
-            gh release create $tag $installer --title $tag --generate-notes
+            # The macOS job marks the release as latest once its DMG and update feed are attached.
+            $prerelease = if ($tag.Contains("-")) { "--prerelease" } else { "--prerelease=false" }
+            gh release create $tag $installer --title $tag --generate-notes $prerelease --latest=false
             if ($LASTEXITCODE -ne 0) {
               gh release upload $tag $installer --clobber
             }

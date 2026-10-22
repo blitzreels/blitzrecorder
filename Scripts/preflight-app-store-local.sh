@@ -5,8 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DERIVED_DATA="$ROOT/build/XcodeDerivedData"
 MAC_APP="$DERIVED_DATA/Build/Products/Release/BlitzRecorder.app"
 IOS_APP="$DERIVED_DATA/Build/Products/Release-iphoneos/BlitzRecorderCamera.app"
-EXPECTED_MARKETING_VERSION="0.39.0"
-EXPECTED_BUILD_NUMBER="52"
+source "$ROOT/Scripts/project-versions.sh"
 
 cd "$ROOT"
 
@@ -135,8 +134,8 @@ xcodebuild \
 }
 
 require_plist_value "$MAC_APP/Contents/Info.plist" "CFBundleIdentifier" "dev.blitzreels.blitzrecorder"
-require_plist_value "$MAC_APP/Contents/Info.plist" "CFBundleShortVersionString" "$EXPECTED_MARKETING_VERSION"
-require_plist_value "$MAC_APP/Contents/Info.plist" "CFBundleVersion" "$EXPECTED_BUILD_NUMBER"
+require_plist_value "$MAC_APP/Contents/Info.plist" "CFBundleShortVersionString" "$(mac_marketing_version)"
+require_plist_value "$MAC_APP/Contents/Info.plist" "CFBundleVersion" "$(mac_build_number)"
 require_plist_value "$MAC_APP/Contents/Info.plist" "LSApplicationCategoryType" "public.app-category.video"
 require_plist_value "$MAC_APP/Contents/Info.plist" "ITSAppUsesNonExemptEncryption" "false"
 require_plist_contains "$MAC_APP/Contents/Info.plist" "NSBonjourServices" "_blitzrecorder-camera._tcp"
@@ -148,8 +147,8 @@ require_plist_value "$MAC_APP/Contents/Resources/PrivacyInfo.xcprivacy" "NSPriva
 require_plist_contains "$MAC_APP/Contents/Resources/PrivacyInfo.xcprivacy" "NSPrivacyAccessedAPITypes" "NSPrivacyAccessedAPICategoryUserDefaults"
 require_plist_contains "$MAC_APP/Contents/Resources/PrivacyInfo.xcprivacy" "NSPrivacyAccessedAPITypes" "NSPrivacyAccessedAPICategoryFileTimestamp"
 require_plist_value "$IOS_APP/Info.plist" "CFBundleIdentifier" "dev.blitzreels.blitzrecorder.camera"
-require_plist_value "$IOS_APP/Info.plist" "CFBundleShortVersionString" "$EXPECTED_MARKETING_VERSION"
-require_plist_value "$IOS_APP/Info.plist" "CFBundleVersion" "$EXPECTED_BUILD_NUMBER"
+require_plist_value "$IOS_APP/Info.plist" "CFBundleShortVersionString" "$(ios_marketing_version)"
+require_plist_value "$IOS_APP/Info.plist" "CFBundleVersion" "$(ios_build_number)"
 require_plist_value "$IOS_APP/Info.plist" "ITSAppUsesNonExemptEncryption" "false"
 require_plist_contains "$IOS_APP/Info.plist" "UIDeviceFamily" "1"
 require_plist_contains "$IOS_APP/Info.plist" "UIDeviceFamily" "2"

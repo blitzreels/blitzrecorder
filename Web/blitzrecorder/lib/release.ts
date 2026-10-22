@@ -12,7 +12,7 @@ export const RELEASES_URL = `${GITHUB_REPO_URL}/releases`;
 export const LATEST_RELEASE_URL = `${RELEASES_URL}/latest`;
 /** Unsigned tester installer: latest green CI on main (artifact windows-studio-installer-unsigned). */
 export const WINDOWS_CI_WORKFLOW_URL = `${GITHUB_REPO_URL}/actions/workflows/ci.yml?query=is%3Asuccess+branch%3Amain`;
-/** Shown when no release is published yet; kept in sync by Scripts/set-version.py. */
+/** Shown only if GitHub cannot be reached; releases never need to update it. */
 export const FALLBACK_VERSION = "0.39.0";
 
 export type Release = {
@@ -45,13 +45,14 @@ type GitHubRelease = {
 export async function getLatestRelease(): Promise<Release | null> {
   try {
     const res = await fetch(
-      `https://api.github.com/repos/${OWNER}/${REPO}/releases/latest?expected=${encodeURIComponent(FALLBACK_VERSION)}`,
+      `https://api.github.com/repos/${OWNER}/${REPO}/releases/latest`,
       {
         headers: {
           Accept: "application/vnd.github+json",
           "X-GitHub-Api-Version": "2022-11-28",
         },
-        next: { revalidate: 3600 },
+        // A new release shows on the site within 10 minutes, without a redeploy.
+        next: { revalidate: 600 },
       },
     );
     if (!res.ok) return null;

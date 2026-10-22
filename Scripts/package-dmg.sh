@@ -6,8 +6,9 @@ CONFIG="${CONFIGURATION:-release}"
 
 cd "$ROOT"
 
-MARKETING_VERSION="${MARKETING_VERSION:-$(awk -F '"' '/MARKETING_VERSION:/ { print $2; exit }' "$ROOT/project.yml")}"
-CURRENT_PROJECT_VERSION="${CURRENT_PROJECT_VERSION:-$(awk -F '"' '/CURRENT_PROJECT_VERSION:/ { print $2; exit }' "$ROOT/project.yml")}"
+source "$ROOT/Scripts/project-versions.sh"
+MARKETING_VERSION="$(mac_marketing_version)"
+CURRENT_PROJECT_VERSION="$(mac_build_number)"
 DMG_ARCH_LABEL="${DMG_ARCH_LABEL:-universal}"
 DMG_NAME="${DMG_NAME:-BlitzRecorder-${MARKETING_VERSION}-${CURRENT_PROJECT_VERSION}-macOS-${DMG_ARCH_LABEL}.dmg}"
 DIST_DIR="$ROOT/build/Distributions"

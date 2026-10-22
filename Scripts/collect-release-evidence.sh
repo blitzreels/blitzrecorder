@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "$ROOT/Scripts/project-versions.sh"
 cd "$ROOT"
 
 FULL=0
@@ -64,7 +65,7 @@ under \`build/\` so release evidence stays local unless explicitly packaged.
 
 ## Release Identity
 
-- Version/build: \`0.39.0 / 52\`
+- Version/build: \`$(mac_marketing_version) / $(mac_build_number)\`
 - macOS bundle ID: \`dev.blitzreels.blitzrecorder\`
 - iOS companion bundle ID: \`dev.blitzreels.blitzrecorder.camera\`
 - Pricing: \`free\`

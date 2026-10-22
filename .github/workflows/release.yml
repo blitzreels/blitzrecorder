@@ -1,0 +1,47 @@
+name: Release
+
+# The "Run workflow" button on GitHub: type a version, and this tags main and starts the macOS and Windows release
+# builds. Pushing a tag yourself (git tag v1.2.3 && git push origin v1.2.3) does the same.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version, like 0.39.1. Add a suffix (0.39.1-rc1) for a test release users don't see."
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  tag:
+    name: Tag And Start Release Builds
+    runs-on: ubuntu-latest
+    if: ${{ github.ref == 'refs/heads/main' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Tag main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION#v}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "Version must look like 0.39.1 or 0.39.1-rc1, got $VERSION." >&2
+            exit 2
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            echo "$TAG already exists." >&2
+            exit 2
+          fi
+          git tag "$TAG" "$GITHUB_SHA"
+          git push origin "$TAG"
+          # A tag pushed with this workflow's token does not start other workflows, so start them here.
+          gh workflow run macos-dmg.yml --ref "$TAG"
+          gh workflow run windows-release.yml --ref "$TAG"
+          echo "Started the release builds for $TAG."

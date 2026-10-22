@@ -5,8 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 STRICT=0
 TARGET="${TARGET:-all}"
 REQUIRE_EXPORTS="${REQUIRE_EXPORTS:-1}"
-EXPECTED_MARKETING_VERSION="0.39.0"
-EXPECTED_BUILD_NUMBER="52"
+source "$ROOT/Scripts/project-versions.sh"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -445,8 +444,16 @@ validate_archived_app() {
     echo "✓ $label archived app bundle id is $bundle_id"
   fi
 
-  validate_plist_value "$label archived app" "$info_plist" "CFBundleShortVersionString" "$EXPECTED_MARKETING_VERSION"
-  validate_plist_value "$label archived app" "$info_plist" "CFBundleVersion" "$EXPECTED_BUILD_NUMBER"
+  local expected_version expected_build
+  if [[ "$expected_bundle_id" == *.camera ]]; then
+    expected_version="$(ios_marketing_version)"
+    expected_build="$(ios_build_number)"
+  else
+    expected_version="$(mac_marketing_version)"
+    expected_build="$(mac_build_number)"
+  fi
+  validate_plist_value "$label archived app" "$info_plist" "CFBundleShortVersionString" "$expected_version"
+  validate_plist_value "$label archived app" "$info_plist" "CFBundleVersion" "$expected_build"
 
   if ! codesign --verify --strict --deep "$app_path" >/dev/null 2>&1; then
     fail "$label archived app does not pass strict codesign verification"

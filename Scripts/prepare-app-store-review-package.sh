@@ -4,8 +4,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-VERSION="0.39.0"
-BUILD="52"
+source "$ROOT/Scripts/project-versions.sh"
+VERSION="$(mac_marketing_version)"
+BUILD="$(mac_build_number)"
 PACKAGE_ROOT="${PACKAGE_ROOT:-build/AppStoreReviewPackage}"
 PACKAGE_DIR="$PACKAGE_ROOT/BlitzRecorder-$VERSION-build-$BUILD"
 RUN_VALIDATION=1

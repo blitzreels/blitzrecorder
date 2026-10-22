@@ -147,7 +147,7 @@ require_file "Resources/dmg/background.png"
 require_file "Resources/dmg/dmgly.json"
 require_file "Scripts/ci-ios-testflight.sh"
 require_file "Scripts/archive-app-store.sh"
-require_file "Scripts/set-version.py"
+require_file "Scripts/project-versions.sh"
 require_file "Scripts/prepare-github-release.sh"
 require_file "Scripts/bootstrap-github-repo.sh"
 require_file "Scripts/generate-sparkle-appcast.sh"
@@ -162,7 +162,6 @@ require_executable "Scripts/dmg/hide-support-files.sh"
 require_executable "Scripts/validate-public-dmg.sh"
 require_executable "Scripts/ci-ios-testflight.sh"
 require_executable "Scripts/archive-app-store.sh"
-require_executable "Scripts/set-version.py"
 require_executable "Scripts/prepare-github-release.sh"
 require_executable "Scripts/bootstrap-github-repo.sh"
 require_executable "Scripts/generate-sparkle-appcast.sh"
@@ -180,12 +179,6 @@ if Scripts/check-repo-hygiene.sh; then
   pass "repository hygiene checks pass"
 else
   fail "repository hygiene checks fail"
-fi
-
-if python3 -m py_compile Scripts/set-version.py; then
-  pass "set-version.py compiles"
-else
-  fail "set-version.py does not compile"
 fi
 
 if python3 -m py_compile Scripts/sync-github-labels.py; then

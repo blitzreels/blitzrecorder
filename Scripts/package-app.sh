@@ -72,8 +72,9 @@ if [[ "$DIRECT_DISTRIBUTION" == "1" ]] &&
   install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BINARY"
 fi
 
-MARKETING_VERSION="${MARKETING_VERSION:-$(awk -F '"' '/MARKETING_VERSION:/ { print $2; exit }' "$ROOT/project.yml")}"
-CURRENT_PROJECT_VERSION="${CURRENT_PROJECT_VERSION:-$(awk -F '"' '/CURRENT_PROJECT_VERSION:/ { print $2; exit }' "$ROOT/project.yml")}"
+source "$ROOT/Scripts/project-versions.sh"
+MARKETING_VERSION="$(mac_marketing_version)"
+CURRENT_PROJECT_VERSION="$(mac_build_number)"
 PRODUCT_BUNDLE_IDENTIFIER="${PRODUCT_BUNDLE_IDENTIFIER:-dev.blitzreels.blitzrecorder}"
 if [[ "$CONFIG" == "debug" || "$PRODUCT_BUNDLE_IDENTIFIER" == *.debug ]]; then
   APP_ICON_FILE="${APP_ICON_FILE:-BlitzRecorderDev}"
