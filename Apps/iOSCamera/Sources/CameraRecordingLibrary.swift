@@ -23,12 +23,24 @@ struct CameraRecordingLibrary {
             return []
         }
         return urls
-            .filter { $0.pathExtension.lowercased() == "mov" }
+            .filter { $0.pathExtension.lowercased() == "mov" && keepsAsPending($0) }
             .sorted { lhs, rhs in
                 let lhsDate = (try? lhs.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
                 let rhsDate = (try? rhs.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
                 return lhsDate > rhsDate
             }
+    }
+
+    /// A take that never wrote a byte holds nothing to import. Left in place it would be offered to the Mac
+    /// forever and stall every later transfer, so once it is clearly abandoned it is removed.
+    private func keepsAsPending(_ url: URL) -> Bool {
+        let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        guard (values?.fileSize ?? 0) == 0 else { return true }
+        let modified = values?.contentModificationDate ?? .distantPast
+        if Date().timeIntervalSince(modified) > 600 {
+            removeRecording(at: url)
+        }
+        return false
     }
 
     func removeRecording(at url: URL) {

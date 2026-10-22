@@ -4,45 +4,6 @@ import Foundation
 import Observation
 import UIKit
 
-struct CameraCompanionEnergyPolicy: Equatable {
-    var isSceneActive: Bool
-    var isPairedWithMac: Bool
-    var isCameraRecording: Bool
-    var recordingPhase: RemoteCameraRecordingPhase
-
-    var keepsDeviceAwake: Bool {
-        isSceneActive && needsHighEnergyMode
-    }
-
-    var shouldSuspendCameraSession: Bool {
-        !isPairedWithMac && !isCameraRecording && !recordingPhase.needsCameraSession
-    }
-
-    private var needsHighEnergyMode: Bool {
-        isPairedWithMac || isCameraRecording || recordingPhase.usesActiveDeviceResources
-    }
-}
-
-private extension RemoteCameraRecordingPhase {
-    var usesActiveDeviceResources: Bool {
-        switch self {
-        case .preparing, .recording, .stopping, .transferring:
-            return true
-        case .idle, .pendingImport, .failed:
-            return false
-        }
-    }
-
-    var needsCameraSession: Bool {
-        switch self {
-        case .preparing, .recording, .stopping:
-            return true
-        case .idle, .transferring, .pendingImport, .failed:
-            return false
-        }
-    }
-}
-
 @Observable
 @MainActor
 final class CameraCompanionStore {
@@ -62,10 +23,10 @@ final class CameraCompanionStore {
     var thermalStateLabel = "Normal"
     var listeningPortLabel = "..."
     var pairingCode = "------"
+    var pairingStep = CompanionPairingStep.waitingForMac
     var availableLenses: [RemoteCameraLens] = [.wide]
     var pendingRecordingCount = 0
     var pendingRecordings: [CameraPendingRecording] = []
-    var pendingRecordingsByteCountLabel = "0 KB"
     var keepsRecordingsAfterMacImport = false {
         didSet {
             guard oldValue != keepsRecordingsAfterMacImport else { return }
@@ -80,63 +41,20 @@ final class CameraCompanionStore {
     var hasPairedMac: Bool {
         isPairedWithMac || connectionSession.hasTrustedMac
     }
+    /// The preview stays on through a take even if the Mac drops: attaching a new preview layer to the session
+    /// mid-take ends the recording.
     var isLiveCameraPreviewEnabled: Bool {
-        isPairedWithMac && camera.isPreviewRunning
+        (isPairedWithMac || isTakeInProgress) && camera.isPreviewRunning
     }
-    var canRetryConnection: Bool {
-        switch connectionState {
-        case .degraded, .disconnected, .unavailable:
-            return true
-        case .discovering, .pairing, .connected:
-            return false
+    var isTakeInProgress: Bool {
+        switch recordingPhase {
+        case .preparing, .recording, .stopping: true
+        case .idle, .transferring, .pendingImport, .failed: false
         }
     }
-    var connectionIssueTitle: String {
-        switch connectionState {
-        case .unavailable:
-            return "Can’t find the Mac"
-        case .degraded:
-            return "Wi-Fi is weak"
-        case .disconnected:
-            return "Mac is not connected"
-        case .discovering:
-            return "Waiting for Mac"
-        case .pairing:
-            return "Connecting to Mac"
-        case .connected:
-            return "Connected"
-        }
+    var transferFraction: Double? {
+        activeTransferProgress?.fraction
     }
-    var connectionIssueRecovery: String {
-        switch connectionState {
-        case .unavailable:
-            return "Allow Local Network for BlitzRecorder Camera, put both devices on the same Wi-Fi, then tap Try again."
-        case .degraded:
-            return "Move closer to Wi-Fi, then tap Try again."
-        case .disconnected:
-            return "Open BlitzRecorder on the Mac and select this iPhone again."
-        case .discovering:
-            return "Open BlitzRecorder on the Mac and choose this iPhone as the camera."
-        case .pairing:
-            return "Enter the pairing code on the Mac."
-        case .connected:
-            return "Ready."
-        }
-    }
-    var diagnosticsText: String {
-        [
-            "Status: \(connectionTitle)",
-            "Message: \(statusMessage)",
-            "Port: \(listeningPortLabel)",
-            "Pairing code: \(pairingCode)",
-            "Keep awake: \(UIApplication.shared.isIdleTimerDisabled ? "enabled" : "disabled")",
-            "Live view: \(camera.isPreviewRunning ? "on" : "off")",
-            "Saved clips: \(pendingRecordingCount)",
-            "Free space: \(freeStorageLabel)",
-            "Phone temp: \(thermalStateLabel)"
-        ].joined(separator: "\n")
-    }
-
     private var timer: Timer?
     private var keepAwakeTimer: Timer?
     private var previewHealthTimer: Timer?
@@ -144,10 +62,12 @@ final class CameraCompanionStore {
     private var activeTransferProgress: RemoteCameraTransferProgress?
     private var isPairedWithMac = false
     private var settingsApplyTask: Task<Void, Never>?
-    private var orientationObserver: NSObjectProtocol?
-    private var automaticRotationWarning: String?
-    private var lastTelemeteredPreviewHealthState: PreviewHealthTelemetryState?
+    private var lastTelemeteredPreviewHealthState: CameraPreviewHealthTelemetryState?
     private var isSceneActive = true
+    private var lastTelemetrySentAt = Date.distantPast
+    @ObservationIgnored private var backgroundObserver: NSObjectProtocol?
+    private var isAsleep = false
+    @ObservationIgnored private let automaticRotation = CameraAutomaticRotationMonitor()
     @ObservationIgnored private lazy var connectionSession: CompanionConnectionSession = {
         let session = CompanionConnectionSession()
         session.isRecordingOnDisconnect = { [weak self] in
@@ -176,7 +96,7 @@ final class CameraCompanionStore {
     @ObservationIgnored private lazy var monitorPreviewPipeline: MonitorPreviewPipeline = {
         let pipeline = MonitorPreviewPipeline()
         pipeline.onHealthChanged = { [weak self] health in
-            self?.updatePreviewHealthLabel(health)
+            self?.previewHealthLabel = CameraDeviceStatus.previewHealthLabel(for: health)
             self?.camera.adaptMonitorPreview(to: health)
             self?.sendPreviewHealthTelemetryIfNeeded(health)
         }
@@ -196,7 +116,7 @@ final class CameraCompanionStore {
         )
     }()
     @ObservationIgnored private lazy var recordingRuntime: CameraCompanionRecordingRuntime = {
-        let runtime = CameraCompanionRecordingRuntime(
+        let runtime = CameraCompanionRecordingRuntime(dependencies: CameraCompanionRecordingDependencies(
             sendEvent: { [weak self] event in
                 self?.send(event)
             },
@@ -234,13 +154,7 @@ final class CameraCompanionStore {
                         captureFormatLabel: nil
                     )
                 }
-                return CameraCompanionRecordingConfigurationSnapshot(
-                    settings: self.activeSettings,
-                    format: self.currentFormat(),
-                    captureProfileID: self.camera.captureProfileID,
-                    captureCodecLabel: self.camera.captureCodecLabel,
-                    captureFormatLabel: self.camera.captureFormatLabel
-                )
+                return self.currentRecordingConfiguration
             },
             startCameraRecording: { [weak self] takeID, expectedSettings in
                 guard let self else { throw CameraCompanionRecordingError.cameraUnavailable }
@@ -285,7 +199,7 @@ final class CameraCompanionStore {
                 }
                 return self.makeTransferManifest(request)
             }
-        )
+        ))
         runtime.onSnapshotChanged = { [weak self] snapshot in
             self?.applyRecordingSnapshot(snapshot)
         }
@@ -305,38 +219,24 @@ final class CameraCompanionStore {
         static let keepsRecordingsAfterMacImport = "remoteCamera.keepsRecordingsAfterMacImport"
     }
 
-    private enum PreviewHealthTelemetryState: Equatable {
-        case transferActive
-        case waiting
-        case stale
-        case dropping
-        case healthy
-    }
-
     init() {
         keepsRecordingsAfterMacImport = UserDefaults.standard.bool(forKey: Key.keepsRecordingsAfterMacImport)
     }
 
-    var connectionTitle: String {
-        switch connectionState {
-        case .discovering: return "Ready to connect"
-        case .pairing: return "Connecting"
-        case .connected: return pairedMacName.map { "Connected to \($0)" } ?? "Connected"
-        case .degraded: return "Weak connection"
-        case .disconnected: return "Not connected"
-        case .unavailable: return "Not available"
-        }
-    }
-
-    var elapsedLabel: String {
-        let minutes = elapsedSeconds / 60
-        let seconds = elapsedSeconds % 60
-        return String(format: "%02d:%02d", minutes, seconds)
-    }
-
     func start() async {
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.tellMacGoingToSleep() }
+        }
         UIDevice.current.isBatteryMonitoringEnabled = true
-        startDeviceOrientationMonitoring()
+        automaticRotation.onOrientationChanged = { [weak self] in
+            self?.scheduleAutomaticRotationUpdate()
+        }
+        automaticRotation.start()
+        camera.onLevelRotationChanged = { [weak self] in
+            self?.scheduleAutomaticRotationUpdate()
+        }
         refreshDeviceState()
         camera.onMonitorFrame = { [weak self] data, width, height in
             Task { @MainActor in
@@ -373,8 +273,30 @@ final class CameraCompanionStore {
 
     func setSceneActive(_ active: Bool) {
         isSceneActive = active
+        if active, isAsleep {
+            isAsleep = false
+            connectionSession.retry()
+        }
         refreshEnergyPolicy()
         refreshPreviewHealthHeartbeat()
+    }
+
+    /// Lets the Mac say "iPhone locked" instead of guessing. iOS gives a moment of background time to send it.
+    func tellMacGoingToSleep() {
+        // A clip on its way to the Mac keeps the connection for as long as iOS allows.
+        guard activeTransferProgress == nil else { return }
+        isAsleep = true
+        guard isPairedWithMac else {
+            connectionSession.goDark()
+            return
+        }
+        let task = UIApplication.shared.beginBackgroundTask(withName: "Tell Mac") {}
+        connectionSession.send(.goingToSleep) { [weak self] _ in
+            Task { @MainActor in
+                self?.connectionSession.goDark()
+                UIApplication.shared.endBackgroundTask(task)
+            }
+        }
     }
 
     func setKeepsDeviceAwake(_ enabled: Bool) {
@@ -387,13 +309,17 @@ final class CameraCompanionStore {
         }
     }
 
-    private func refreshEnergyPolicy() {
-        let policy = CameraCompanionEnergyPolicy(
+    private var energyPolicy: CameraCompanionEnergyPolicy {
+        CameraCompanionEnergyPolicy(
             isSceneActive: isSceneActive,
             isPairedWithMac: isPairedWithMac,
             isCameraRecording: camera.isRecording,
             recordingPhase: recordingPhase
         )
+    }
+
+    private func refreshEnergyPolicy() {
+        let policy = energyPolicy
         setKeepsDeviceAwake(policy.keepsDeviceAwake)
         if policy.shouldSuspendCameraSession {
             Task { @MainActor in
@@ -402,17 +328,8 @@ final class CameraCompanionStore {
         }
     }
 
-    private var shouldSuspendCameraSession: Bool {
-        CameraCompanionEnergyPolicy(
-            isSceneActive: isSceneActive,
-            isPairedWithMac: isPairedWithMac,
-            isCameraRecording: camera.isRecording,
-            recordingPhase: recordingPhase
-        ).shouldSuspendCameraSession
-    }
-
     private func suspendCameraSessionIfIdle() async {
-        guard shouldSuspendCameraSession else { return }
+        guard energyPolicy.shouldSuspendCameraSession else { return }
         await camera.stopSessionIfIdle()
     }
 
@@ -452,24 +369,6 @@ final class CameraCompanionStore {
         recordingRuntime.stopFromPhone()
     }
 
-    func setLens(_ lens: RemoteCameraLens) {
-        guard availableLenses.contains(lens) else {
-            statusMessage = "\(lens.displayName) not available on this iPhone"
-            return
-        }
-        activeSettings.lens = lens
-        activeSettings.zoomFactor = 1
-        Task {
-            guard await ensureCameraActiveForMac() else { return }
-            await camera.setLens(lens)
-            activeSettings.zoomFactor = Double(await camera.setZoomFactor(1))
-            if let capabilities = camera.capabilities {
-                availableLenses = capabilities.supportedLenses.isEmpty ? availableLenses : capabilities.supportedLenses
-            }
-            sendTelemetry()
-        }
-    }
-
     func retryPendingImport(_ recording: CameraPendingRecording) {
         switch pendingImportLibrary.retryRequest(for: recording, isPairedWithMac: isPairedWithMac) {
         case .success(let request):
@@ -499,6 +398,18 @@ final class CameraCompanionStore {
         sendTelemetry()
     }
 
+    func approvePendingMac() {
+        connectionSession.approvePendingMac()
+    }
+
+    func pairPendingMacWithCode() {
+        connectionSession.pairPendingMacWithCode()
+    }
+
+    func declinePendingMac() {
+        connectionSession.declinePendingMac()
+    }
+
     func retryConnection() {
         cancelActiveTransfer(reason: "Retrying connection.", notifyMac: false)
         connectionSession.retry()
@@ -506,25 +417,10 @@ final class CameraCompanionStore {
 
     private func refreshDeviceState() {
         let thermalState = ProcessInfo.processInfo.thermalState
-        thermalStateLabel = Self.phoneHeatLabel(for: thermalState)
+        thermalStateLabel = CameraDeviceStatus.phoneHeatLabel(for: thermalState)
 
-        if let freeBytes = try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory())[.systemFreeSize] as? NSNumber {
-            freeStorageLabel = ByteCountFormatter.string(fromByteCount: freeBytes.int64Value, countStyle: .file)
-        }
-    }
-
-    private static func phoneHeatLabel(for thermalState: ProcessInfo.ThermalState) -> String {
-        switch thermalState {
-        case .nominal:
-            return "Normal"
-        case .fair:
-            return "Warm"
-        case .serious:
-            return "Needs a break"
-        case .critical:
-            return "Needs a break"
-        @unknown default:
-            return "Unknown"
+        if let freeBytes = CameraDeviceStatus.freeStorageBytes() {
+            freeStorageLabel = ByteCountFormatter.string(fromByteCount: freeBytes, countStyle: .file)
         }
     }
 
@@ -535,7 +431,6 @@ final class CameraCompanionStore {
     private func applyPendingImportSnapshot(_ snapshot: CameraPendingImportSnapshot) {
         pendingRecordings = snapshot.recordings
         pendingRecordingCount = snapshot.count
-        pendingRecordingsByteCountLabel = snapshot.byteCountLabel
     }
 
     private func startTimer() {
@@ -564,6 +459,7 @@ final class CameraCompanionStore {
         }
         listeningPortLabel = snapshot.listeningPortLabel
         pairingCode = snapshot.pairingCode
+        pairingStep = snapshot.pairingStep
         isPairedWithMac = snapshot.isPairedWithMac
         refreshEnergyPolicy()
         refreshPreviewHealthHeartbeat()
@@ -587,27 +483,15 @@ final class CameraCompanionStore {
             sendCapabilities()
         case .applySettings(let settings):
             guard isCommandAllowed() else { return }
-            let previousSettingsApplyTask = settingsApplyTask
-            settingsApplyTask = Task {
-                await previousSettingsApplyTask?.value
-                await applyRemoteSettings(settings)
-                sendTelemetry()
+            enqueueSettingsApplication {
+                await self.applyRemoteSettings(settings)
+                self.sendTelemetry()
             }
         case .prepare, .start, .stop, .requestTransfer:
             guard isCommandAllowed() else { return }
             recordingRuntime.handle(command)
         case .transferAck, .cancel:
             recordingRuntime.handle(command)
-        }
-    }
-
-    private func completePairing(status: String) {
-        Task {
-            if await ensureCameraActiveForMac() {
-                statusMessage = status
-                sendCapabilities()
-            }
-            sendTelemetry()
         }
     }
 
@@ -620,6 +504,22 @@ final class CameraCompanionStore {
         return true
     }
 
+    /// A camera restarted while the Mac was away comes back on its defaults; putting the last settings back first
+    /// keeps what the Mac is told true, so the Mac can skip re-sending settings it already has.
+    private func completePairing(status: String) {
+        enqueueSettingsApplication {
+            let wasRunning = self.camera.isPreviewRunning && self.camera.capabilities != nil
+            if await self.ensureCameraActiveForMac() {
+                if !wasRunning, self.recordingPhase == .idle {
+                    self.activeSettings = await self.camera.apply(settings: self.activeSettings)
+                }
+                self.statusMessage = status
+                self.sendCapabilities()
+            }
+            self.sendTelemetry()
+        }
+    }
+
     private func applyRemoteSettings(_ settings: RemoteCameraSettings) async {
         guard await ensureCameraActiveForMac() else {
             send(.failed(takeID: nil, reason: "Camera not available."))
@@ -630,7 +530,7 @@ final class CameraCompanionStore {
         if activeSettings.usesAutomaticRotation {
             await applyAutomaticRotationIfNeeded(sendTelemetryWhenChanged: false)
         } else {
-            setAutomaticRotationWarning(nil)
+            automaticRotation.setWarning(nil)
         }
         if let capabilities = camera.capabilities {
             availableLenses = capabilities.supportedLenses.isEmpty ? availableLenses : capabilities.supportedLenses
@@ -678,50 +578,38 @@ final class CameraCompanionStore {
         }
     }
 
-    private func startDeviceOrientationMonitoring() {
-        guard orientationObserver == nil else { return }
-        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
-        orientationObserver = NotificationCenter.default.addObserver(
-            forName: UIDevice.orientationDidChangeNotification,
-            object: UIDevice.current,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                await self?.scheduleAutomaticRotationUpdate()
-            }
-        }
-        Task { @MainActor in
-            await scheduleAutomaticRotationUpdate()
-        }
-    }
-
-    private func scheduleAutomaticRotationUpdate() async {
-        guard activeSettings.usesAutomaticRotation else { return }
-        guard recordingPhase == .idle || recordingPhase == .preparing else { return }
+    private func enqueueSettingsApplication(_ operation: @escaping @MainActor () async -> Void) {
         let previousSettingsApplyTask = settingsApplyTask
         settingsApplyTask = Task {
             await previousSettingsApplyTask?.value
-            await applyAutomaticRotationIfNeeded(sendTelemetryWhenChanged: true)
+            await operation()
+        }
+    }
+
+    private func scheduleAutomaticRotationUpdate() {
+        guard activeSettings.usesAutomaticRotation else { return }
+        guard recordingPhase == .idle || recordingPhase == .preparing else { return }
+        enqueueSettingsApplication {
+            await self.applyAutomaticRotationIfNeeded(sendTelemetryWhenChanged: true)
         }
     }
 
     private func applyAutomaticRotationIfNeeded(sendTelemetryWhenChanged: Bool) async {
         guard activeSettings.usesAutomaticRotation else {
-            let didChangeWarning = setAutomaticRotationWarning(nil)
-            if sendTelemetryWhenChanged, didChangeWarning {
+            if automaticRotation.setWarning(nil), sendTelemetryWhenChanged {
                 sendTelemetry()
             }
             return
         }
-        guard let rotationDegrees = Self.currentDeviceRotationDegrees() else {
-            let didChangeWarning = setAutomaticRotationWarning("Auto orientation needs the iPhone upright")
-            if sendTelemetryWhenChanged, didChangeWarning {
+        guard let rotationDegrees = camera.levelRotationDegrees
+                ?? CameraAutomaticRotationMonitor.currentDeviceRotationDegrees() else {
+            if automaticRotation.setWarning("Auto orientation needs the iPhone upright"), sendTelemetryWhenChanged {
                 sendTelemetry()
             }
             return
         }
 
-        let didChangeWarning = setAutomaticRotationWarning(nil)
+        let didChangeWarning = automaticRotation.setWarning(nil)
         guard activeSettings.rotationDegrees != rotationDegrees else {
             if sendTelemetryWhenChanged, didChangeWarning {
                 sendTelemetry()
@@ -738,18 +626,11 @@ final class CameraCompanionStore {
         }
     }
 
-    @discardableResult
-    private func setAutomaticRotationWarning(_ warning: String?) -> Bool {
-        guard automaticRotationWarning != warning else { return false }
-        automaticRotationWarning = warning
-        return true
-    }
-
     private var currentCaptureWarning: String? {
         if let captureWarning = camera.captureWarning, !captureWarning.isEmpty {
             return captureWarning
         }
-        return automaticRotationWarning
+        return automaticRotation.warning
     }
 
     func focusCinematic(at focusPoint: CameraPreviewFocusPoint, lockFocus: Bool) {
@@ -761,51 +642,8 @@ final class CameraCompanionStore {
         }
     }
 
-    private static func currentDeviceRotationDegrees() -> Int? {
-        if let rotation = rotationDegrees(for: UIDevice.current.orientation) {
-            return rotation
-        }
-        return UIApplication.shared.connectedScenes
-            .compactMap { ($0 as? UIWindowScene)?.interfaceOrientation }
-            .compactMap { Self.rotationDegrees(for: $0) }
-            .first
-    }
-
-    private static func rotationDegrees(for orientation: UIDeviceOrientation) -> Int? {
-        switch orientation {
-        case .portrait:
-            return 0
-        case .portraitUpsideDown:
-            return 180
-        case .landscapeLeft:
-            return 90
-        case .landscapeRight:
-            return 270
-        case .unknown, .faceUp, .faceDown:
-            return nil
-        @unknown default:
-            return nil
-        }
-    }
-
-    private static func rotationDegrees(for orientation: UIInterfaceOrientation) -> Int? {
-        switch orientation {
-        case .portrait:
-            return 0
-        case .portraitUpsideDown:
-            return 180
-        case .landscapeRight:
-            return 90
-        case .landscapeLeft:
-            return 270
-        case .unknown:
-            return nil
-        @unknown default:
-            return nil
-        }
-    }
-
     private func sendTelemetry() {
+        lastTelemetrySentAt = Date()
         refreshDeviceState()
         let batteryLevel = UIDevice.current.batteryLevel >= 0 ? Double(UIDevice.current.batteryLevel) : nil
         send(.telemetry(RemoteCameraTelemetry(
@@ -813,7 +651,7 @@ final class CameraCompanionStore {
             elapsedSeconds: Double(elapsedSeconds),
             batteryLevel: batteryLevel,
             thermalState: thermalStateLabel,
-            storageFreeBytes: freeStorageBytes(),
+            storageFreeBytes: CameraDeviceStatus.freeStorageBytes(),
             activeSettings: activeSettings,
             transferProgress: activeTransferProgress,
             previewHealth: monitorPreviewPipeline.health,
@@ -849,82 +687,35 @@ final class CameraCompanionStore {
         transferProgressLabel = "\(Int((activeTransferProgress.fraction * 100).rounded()))%"
     }
 
-    private func updatePreviewHealthLabel(_ health: RemoteCameraPreviewHealth) {
-        if health.isTransferActive {
-            previewHealthLabel = "Importing"
-        } else if health.isStale {
-            previewHealthLabel = "Stale"
-        } else if health.isBlockedBeforeFirstFrame {
-            previewHealthLabel = "Blocked"
-        } else if health.isDroppingFrames {
-            previewHealthLabel = "\(Int((health.droppedFrameRatio * 100).rounded()))% drop"
-        } else if health.isWaitingForFirstFrame {
-            previewHealthLabel = "Waiting"
-        } else if health.isHealthy {
-            previewHealthLabel = "\(health.framesSent) ok"
-        } else {
-            previewHealthLabel = "Connected"
-        }
-    }
-
+    /// Also a heartbeat: the Mac treats an iPhone that has been silent for a few seconds as gone.
     private func sendPreviewHealthTelemetryIfNeeded(_ health: RemoteCameraPreviewHealth) {
-        let state = previewHealthTelemetryState(for: health)
-        guard state != lastTelemeteredPreviewHealthState else { return }
+        let state = CameraPreviewHealthTelemetryState(health: health)
+        let isHeartbeatDue = Date().timeIntervalSince(lastTelemetrySentAt) >= 2
+        guard state != lastTelemeteredPreviewHealthState || isHeartbeatDue else { return }
         lastTelemeteredPreviewHealthState = state
         sendTelemetry()
     }
 
-    private func previewHealthTelemetryState(for health: RemoteCameraPreviewHealth) -> PreviewHealthTelemetryState {
-        if health.isTransferActive {
-            return .transferActive
-        }
-        if health.isStale {
-            return .stale
-        }
-        if health.isBlockedBeforeFirstFrame {
-            return .dropping
-        }
-        if health.isDroppingFrames {
-            return .dropping
-        }
-        if health.isWaitingForFirstFrame {
-            return .waiting
-        }
-        return .healthy
-    }
-
     private func makeTransferManifest(_ request: CameraCompanionTransferManifestRequest) -> RemoteCameraTransferManifest {
-        var recordingDiagnostics = request.recordingDiagnostics
+        var request = request
         if let captureWarning = currentCaptureWarning {
-            if recordingDiagnostics == nil {
-                recordingDiagnostics = RemoteCameraRecordingDiagnostics()
-            }
-            let existingCaptureWarning = recordingDiagnostics?.captureWarning
-            recordingDiagnostics?.captureWarning = RemoteCameraRecordingWarningAccumulator.mergedWarning(
-                existingCaptureWarning,
+            var recordingDiagnostics = request.recordingDiagnostics ?? RemoteCameraRecordingDiagnostics()
+            recordingDiagnostics.captureWarning = RemoteCameraRecordingWarningAccumulator.mergedWarning(
+                recordingDiagnostics.captureWarning,
                 captureWarning
             )
+            request.recordingDiagnostics = recordingDiagnostics
         }
-        return RemoteCameraTransferManifest(
-            takeID: request.takeID,
-            recordingID: request.takeID,
-            fileName: request.recordingURL.lastPathComponent,
-            byteCount: request.byteCount,
-            sha256: request.sha256,
-            durationSeconds: request.durationSeconds,
-            resumeOffset: request.resumeOffset,
-            settings: request.recordingSettings ?? activeSettings,
-            format: request.recordingFormat ?? currentFormat(),
-            captureProfileID: request.recordingCaptureProfileID ?? camera.captureProfileID,
-            captureCodecLabel: request.recordingCaptureCodecLabel ?? camera.captureCodecLabel,
-            captureFormatLabel: request.recordingCaptureFormatLabel ?? camera.captureFormatLabel,
-            deviceStartTime: request.deviceStartTime,
-            deviceStopTime: request.deviceStopTime,
-            hostStartTime: request.hostStartTime,
-            hostStopTime: request.hostStopTime,
-            hostTimelineStartTime: request.hostTimelineStartTime,
-            stopReason: request.stopReason,
-            recordingDiagnostics: recordingDiagnostics
+        return request.manifest(defaults: currentRecordingConfiguration)
+    }
+
+    private var currentRecordingConfiguration: CameraCompanionRecordingConfigurationSnapshot {
+        CameraCompanionRecordingConfigurationSnapshot(
+            settings: activeSettings,
+            format: currentFormat(),
+            captureProfileID: camera.captureProfileID,
+            captureCodecLabel: camera.captureCodecLabel,
+            captureFormatLabel: camera.captureFormatLabel
         )
     }
 
@@ -936,13 +727,4 @@ final class CameraCompanionStore {
         }
         return capabilities.supportedFormats.first
     }
-
-    private func freeStorageBytes() -> Int64? {
-        guard let freeBytes = try? FileManager.default
-            .attributesOfFileSystem(forPath: NSHomeDirectory())[.systemFreeSize] as? NSNumber else {
-            return nil
-        }
-        return freeBytes.int64Value
-    }
-
 }

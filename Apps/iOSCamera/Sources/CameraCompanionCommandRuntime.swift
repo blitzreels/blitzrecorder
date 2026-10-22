@@ -5,6 +5,7 @@ import Security
 
 enum RemoteCameraPairingState: Equatable {
     case waitingForHello
+    case awaitingApproval(macIdentity: RemoteCameraMacIdentity)
     case challenging(
         macIdentity: RemoteCameraMacIdentity,
         challenge: RemoteCameraPairingChallenge,
@@ -126,9 +127,10 @@ struct RemoteCameraRecordingStateMachine {
                 return .accepted
             }
             return .rejected("Can’t start while \(phase.simpleLabel.lowercased()).")
-        case .failed:
+        case .failed, .transferring, .pendingImport:
+            // An older clip still waiting to send never blocks a new take; it is sent afterwards.
             return .accepted
-        case .preparing, .recording, .stopping, .transferring, .pendingImport:
+        case .preparing, .recording, .stopping:
             return .rejected("Can’t start while \(phase.simpleLabel.lowercased()).")
         }
     }
@@ -156,10 +158,13 @@ struct RemoteCameraRecordingStateMachine {
             return .accepted
         case .preparing where isStartTaskRunning:
             return .accepted
+        case .pendingImport, .transferring:
+            // The iPhone already ended this take (locked, interrupted, too hot); the Mac still wants the clip.
+            return .accepted
         case .failed:
             let reason = failureReason ?? "No usable camera recording was saved."
             return .rejected("iPhone recording failed before stop: \(reason)")
-        case .idle, .preparing, .transferring, .pendingImport:
+        case .idle, .preparing:
             return .rejected("Can’t stop while \(phase.simpleLabel.lowercased()).")
         }
     }

@@ -176,7 +176,7 @@ extension RemoteCameraSettings {
 }
 
 public enum RemoteCameraCommand: Codable, Equatable, Sendable {
-    case hello(protocolVersion: Int, macIdentity: RemoteCameraMacIdentity)
+    case hello(protocolVersion: Int, macIdentity: RemoteCameraMacIdentity, macName: String?)
     case pair(shortCode: String, macIdentity: RemoteCameraMacIdentity, proof: RemoteCameraPairingProof)
     case requestCapabilities
     case applySettings(RemoteCameraSettings)
@@ -337,6 +337,11 @@ public enum RemoteCameraEvent: Codable, Equatable, Sendable {
     case monitorVideoFrame(RemoteCameraMonitorVideoFrame)
     case transferReady(takeID: UUID, fileName: String, byteCount: Int64, manifest: RemoteCameraTransferManifest)
     case transferChunk(takeID: UUID, offset: Int64, data: Data, isFinal: Bool)
+    /// The clip is ready on its own raw-byte connection: connect to `port` on the iPhone, send the token, and
+    /// read from `offset` to `byteCount`. `transferComplete` follows with the checksum.
+    case transferChannel(takeID: UUID, port: UInt16, token: String, offset: Int64, byteCount: Int64)
     case transferComplete(takeID: UUID, byteCount: Int64, sha256: String?)
     case failed(takeID: UUID?, reason: String)
+    /// The iPhone is locking or leaving the app; it will stop answering until it is opened again.
+    case goingToSleep
 }

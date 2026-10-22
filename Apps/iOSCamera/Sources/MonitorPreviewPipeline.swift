@@ -84,11 +84,8 @@ final class MonitorPreviewPipeline {
         recordFrameDropped()
     }
 
+    /// Live view keeps running while a clip transfers; the capture side drops to its lightest profile meanwhile.
     private func publish(_ event: RemoteCameraEvent, using send: EventSender) {
-        guard !isTransferActive else {
-            return
-        }
-
         guard !sendInFlight else {
             recordFrameDropped()
             return
@@ -155,7 +152,7 @@ final class MonitorPreviewPipeline {
     }
 
     private func publishAvailabilityIfNeeded() {
-        let canPublish = !isTransferActive && !sendInFlight
+        let canPublish = !sendInFlight
         guard canPublish != lastCanPublish else { return }
         lastCanPublish = canPublish
         onPublishAvailabilityChanged?(canPublish)

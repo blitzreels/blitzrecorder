@@ -186,9 +186,8 @@ public enum RemoteCameraSettingsResolver {
         if remoteSettings.whiteBalanceMode == .manual, !capabilities.supportsManualWhiteBalance {
             remoteSettings.whiteBalanceMode = .continuousAuto
         }
-        if remoteSettings.exposureMode == .continuousAuto {
-            remoteSettings.exposureBias = 0
-        } else if capabilities.minimumExposureBias < capabilities.maximumExposureBias {
+        // Brightness also steers auto exposure, which is where people use it most.
+        if capabilities.minimumExposureBias < capabilities.maximumExposureBias {
             remoteSettings.exposureBias = min(
                 capabilities.maximumExposureBias,
                 max(capabilities.minimumExposureBias, remoteSettings.exposureBias)

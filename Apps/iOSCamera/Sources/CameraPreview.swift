@@ -1,3 +1,4 @@
+import BlitzRecorderDesign
 import AVFoundation
 import SwiftUI
 import UIKit
@@ -178,7 +179,7 @@ final class PreviewView: UIView {
             shapeLayer.frame = rect
             shapeLayer.path = UIBezierPath(
                 roundedRect: CGRect(origin: .zero, size: rect.size),
-                cornerRadius: 8
+                cornerRadius: BlitzUI.controlRadius
             ).cgPath
             shapeLayer.strokeColor = focusStrokeColor(for: candidate.focusMode).cgColor
             shapeLayer.lineDashPattern = focusLineDashPattern(for: candidate.focusMode)
@@ -199,7 +200,7 @@ final class PreviewView: UIView {
     private func focusStrokeColor(for mode: CameraCinematicFocusMode) -> UIColor {
         switch mode {
         case .strong, .weak:
-            return UIColor(red: 1, green: 0.88, blue: 0.18, alpha: 1)
+            return BlitzThemeStore.shared.accent.accentPair.dark
         case .none:
             return UIColor(white: 1, alpha: 0.82)
         }

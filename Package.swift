@@ -8,6 +8,7 @@ var packageDependencies: [Package.Dependency] = [
     .package(path: "Packages/BlitzRecorderCore"),
     .package(path: "Packages/BlitzRecorderDomain"),
     .package(path: "Packages/BlitzRecorderTransport"),
+    .package(path: "Packages/BlitzRecorderDesign"),
     .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", exact: "0.12.1"),
     .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
     .package(
@@ -21,6 +22,7 @@ var appDependencies: [Target.Dependency] = [
     .product(name: "BlitzRecorderCore", package: "BlitzRecorderCore"),
     .product(name: "BlitzRecorderDomain", package: "BlitzRecorderDomain"),
     .product(name: "BlitzRecorderTransport", package: "BlitzRecorderTransport"),
+    .product(name: "BlitzRecorderDesign", package: "BlitzRecorderDesign"),
     .product(name: "MCP", package: "swift-sdk"),
     .product(name: "NIOCore", package: "swift-nio"),
     .product(name: "NIOHTTP1", package: "swift-nio"),

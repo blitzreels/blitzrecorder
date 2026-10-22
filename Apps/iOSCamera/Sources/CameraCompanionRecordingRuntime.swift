@@ -1,63 +1,9 @@
 import BlitzRecorderCore
 import Foundation
-
-struct CameraCompanionRecordingSnapshot: Equatable {
-    var phase: RemoteCameraRecordingPhase
-    var activeRecordingURL: URL?
-    var activeTransferProgress: RemoteCameraTransferProgress?
-    var statusMessage: String
-}
-
-struct CameraCompanionTransferManifestRequest {
-    var takeID: UUID
-    var recordingURL: URL
-    var byteCount: Int64
-    var sha256: String?
-    var resumeOffset: Int64
-    var durationSeconds: Double
-    var deviceStartTime: UInt64?
-    var deviceStopTime: UInt64?
-    var hostStartTime: UInt64?
-    var hostStopTime: UInt64?
-    var hostTimelineStartTime: UInt64?
-    var stopReason: String?
-    var recordingDiagnostics: RemoteCameraRecordingDiagnostics?
-    var recordingSettings: RemoteCameraSettings?
-    var recordingFormat: RemoteCameraFormat?
-    var recordingCaptureProfileID: RemoteCameraCaptureProfileID?
-    var recordingCaptureCodecLabel: String?
-    var recordingCaptureFormatLabel: String?
-}
-
-struct CameraCompanionRecordingConfigurationSnapshot {
-    var settings: RemoteCameraSettings
-    var format: RemoteCameraFormat?
-    var captureProfileID: RemoteCameraCaptureProfileID
-    var captureCodecLabel: String?
-    var captureFormatLabel: String?
-}
+import OSLog
 
 @MainActor
 final class CameraCompanionRecordingRuntime {
-    typealias SendEvent = @MainActor (RemoteCameraEvent) -> Void
-    typealias RequestTelemetry = @MainActor () -> Void
-    typealias WaitForSettingsApplication = @MainActor () async -> Void
-    typealias EnsureCameraActive = @MainActor () async -> Bool
-    typealias WaitForCaptureReadiness = @MainActor (_ timeoutSeconds: Double?) async -> Void
-    typealias IsCameraRecording = @MainActor () -> Bool
-    typealias CurrentConfiguration = @MainActor () -> CameraCompanionRecordingConfigurationSnapshot
-    typealias StartCameraRecording = @MainActor (
-        _ takeID: UUID,
-        _ expectedSettings: RemoteCameraSettings
-    ) async throws -> CameraRecordingStartResult
-    typealias StopCameraRecording = @MainActor () async throws -> CameraRecordingResult
-    typealias ExistingRecordingURL = @MainActor (_ takeID: UUID) -> URL?
-    typealias RemoveRecording = @MainActor (_ url: URL) -> Void
-    typealias RefreshPendingRecordings = @MainActor () -> Void
-    typealias KeepsRecordingsAfterMacImport = @MainActor () -> Bool
-    typealias ImportCompletedStatus = @MainActor () -> String
-    typealias MakeTransferManifest = @MainActor (CameraCompanionTransferManifestRequest) -> RemoteCameraTransferManifest
-
     var onSnapshotChanged: ((CameraCompanionRecordingSnapshot) -> Void)?
     var onStartElapsedTimer: (() -> Void)?
     var onStopElapsedTimer: (() -> Void)?
@@ -65,7 +11,6 @@ final class CameraCompanionRecordingRuntime {
 
     private var activeTakeID: UUID?
     private var activeRecordingURL: URL?
-    private var lastRecordingResult: CameraRecordingResult?
     private var activeHostStartTime: UInt64?
     private var activeHostStopTime: UInt64?
     private var activeHostTimelineStartTime: UInt64?
@@ -81,38 +26,17 @@ final class CameraCompanionRecordingRuntime {
     private var queuedStopTimeline: RemoteCameraTimeline?
     private var statusMessage = "Ready"
 
-    private let sendEvent: SendEvent
-    private let requestTelemetry: RequestTelemetry
-    private let elapsedSeconds: () -> Int
-    private let waitForSettingsApplication: WaitForSettingsApplication
-    private let ensureCameraActive: EnsureCameraActive
-    private let waitForCaptureReadiness: WaitForCaptureReadiness
-    private let isCameraRecording: IsCameraRecording
-    private let currentConfiguration: CurrentConfiguration
-    private let startCameraRecording: StartCameraRecording
-    private let stopCameraRecording: StopCameraRecording
-    private let existingRecordingURL: ExistingRecordingURL
-    private let removeRecording: RemoveRecording
-    private let refreshPendingRecordings: RefreshPendingRecordings
-    private let keepsRecordingsAfterMacImport: KeepsRecordingsAfterMacImport
-    private let importCompletedStatus: ImportCompletedStatus
-    private let makeTransferManifest: MakeTransferManifest
+    private let dependencies: CameraCompanionRecordingDependencies
 
     private lazy var transferSender: CameraCompanionTransferSender = {
         let sender = CameraCompanionTransferSender { [weak self] event in
-            self?.sendEvent(event)
+            self?.dependencies.sendEvent(event)
         }
         sender.onProgressChanged = { [weak self] progress in
             self?.setActiveTransferProgress(progress)
         }
-        sender.onFinished = { [weak self] takeID, recordingURL, byteCount, resumeOffset, sha256 in
-            self?.finishTransfer(
-                takeID: takeID,
-                recordingURL: recordingURL,
-                byteCount: byteCount,
-                resumeOffset: resumeOffset,
-                sha256: sha256
-            )
+        sender.onFinished = { [weak self] takeID, _, byteCount, _, sha256 in
+            self?.finishTransfer(takeID: takeID, byteCount: byteCount, sha256: sha256)
         }
         sender.onFailed = { [weak self] takeID, error in
             self?.failTransfer(takeID: takeID, error: error)
@@ -120,47 +44,18 @@ final class CameraCompanionRecordingRuntime {
         return sender
     }()
 
-    init(
-        sendEvent: @escaping SendEvent,
-        requestTelemetry: @escaping RequestTelemetry,
-        elapsedSeconds: @escaping () -> Int,
-        waitForSettingsApplication: @escaping WaitForSettingsApplication,
-        ensureCameraActive: @escaping EnsureCameraActive,
-        waitForCaptureReadiness: @escaping WaitForCaptureReadiness,
-        isCameraRecording: @escaping IsCameraRecording,
-        currentConfiguration: @escaping CurrentConfiguration,
-        startCameraRecording: @escaping StartCameraRecording,
-        stopCameraRecording: @escaping StopCameraRecording,
-        existingRecordingURL: @escaping ExistingRecordingURL,
-        removeRecording: @escaping RemoveRecording,
-        refreshPendingRecordings: @escaping RefreshPendingRecordings,
-        keepsRecordingsAfterMacImport: @escaping KeepsRecordingsAfterMacImport,
-        importCompletedStatus: @escaping ImportCompletedStatus,
-        makeTransferManifest: @escaping MakeTransferManifest
-    ) {
-        self.sendEvent = sendEvent
-        self.requestTelemetry = requestTelemetry
-        self.elapsedSeconds = elapsedSeconds
-        self.waitForSettingsApplication = waitForSettingsApplication
-        self.ensureCameraActive = ensureCameraActive
-        self.waitForCaptureReadiness = waitForCaptureReadiness
-        self.isCameraRecording = isCameraRecording
-        self.currentConfiguration = currentConfiguration
-        self.startCameraRecording = startCameraRecording
-        self.stopCameraRecording = stopCameraRecording
-        self.existingRecordingURL = existingRecordingURL
-        self.removeRecording = removeRecording
-        self.refreshPendingRecordings = refreshPendingRecordings
-        self.keepsRecordingsAfterMacImport = keepsRecordingsAfterMacImport
-        self.importCompletedStatus = importCompletedStatus
-        self.makeTransferManifest = makeTransferManifest
+    init(dependencies: CameraCompanionRecordingDependencies) {
+        self.dependencies = dependencies
     }
 
     var isRecording: Bool {
         recordingStateMachine.phase == .recording
     }
 
+    private static let logger = Logger(subsystem: "dev.blitzreels.blitzrecorder.camera", category: "Recording")
+
     func handle(_ command: RemoteCameraCommand) {
+        Self.logger.info("Mac command \(String(describing: command).prefix(120), privacy: .public) in \(self.recordingStateMachine.phase.rawValue, privacy: .public)")
         switch command {
         case .prepare(let timeline):
             prepare(timeline)
@@ -185,14 +80,7 @@ final class CameraCompanionRecordingRuntime {
         recordingStateMachine.stop(RemoteCameraTimeline(takeID: activeTakeID ?? UUID()))
         statusMessage = "Stopping"
         publish()
-        Task {
-            do {
-                let result = try await stopCameraRecording()
-                finishRecording(result: result)
-            } catch {
-                finishRecording(error: error)
-            }
-        }
+        stopCameraAndFinishRecording()
     }
 
     func retryPendingImport(takeID: UUID, recordingURL: URL, fileName: String) {
@@ -201,7 +89,16 @@ final class CameraCompanionRecordingRuntime {
         statusMessage = "Sending again: \(fileName)"
         publish()
         announceTransferReady(takeID: takeID)
-        requestTelemetry()
+        dependencies.requestTelemetry()
+    }
+
+    /// A stop the Mac sent again after a reconnect, for a take this iPhone already finished.
+    private func offerFinishedClip(takeID: UUID) {
+        guard let recordingURL = dependencies.existingRecordingURL(takeID) else {
+            dependencies.sendEvent(.failed(takeID: takeID, reason: RemoteCameraTransferProtocol.unavailableRecordingReason))
+            return
+        }
+        retryPendingImport(takeID: takeID, recordingURL: recordingURL, fileName: recordingURL.lastPathComponent)
     }
 
     func handleUnexpectedRecordingFinish(_ result: Result<CameraRecordingResult, Error>) {
@@ -225,19 +122,14 @@ final class CameraCompanionRecordingRuntime {
         guard accept(recordingStateMachine.prepareDecision(takeID: timeline.takeID), takeID: timeline.takeID) else {
             return
         }
+        if recordingStateMachine.phase == .transferring {
+            cancelActiveTransfer(reason: RemoteCameraTransferProtocol.pausedForTakeReason)
+        }
         recordingStateMachine.prepare(timeline)
+        clearActiveRecordingState()
         activeTakeID = timeline.takeID
-        activeRecordingURL = nil
-        lastRecordingResult = nil
         activeHostStartTime = timeline.hostStartTime
-        activeHostStopTime = nil
         activeHostTimelineStartTime = timeline.hostTimelineStartTime
-        activeDeviceStartTime = nil
-        activeDeviceStopTime = nil
-        activeStopReason = nil
-        activeRecordingDiagnostics = nil
-        activeRecordingConfiguration = nil
-        activeRecordingFailureReason = nil
         setActiveTransferProgress(nil)
         statusMessage = "Ready for Mac"
         publish()
@@ -258,6 +150,10 @@ final class CameraCompanionRecordingRuntime {
     }
 
     private func stop(_ timeline: RemoteCameraTimeline) {
+        if timeline.takeID != activeTakeID, recordingStateMachine.phase == .idle || recordingStateMachine.phase == .failed {
+            offerFinishedClip(takeID: timeline.takeID)
+            return
+        }
         guard accept(
             recordingStateMachine.stopDecision(
                 takeID: timeline.takeID,
@@ -284,23 +180,23 @@ final class CameraCompanionRecordingRuntime {
     private func failCommand(takeID: UUID?, reason: String) {
         statusMessage = reason
         publish()
-        sendEvent(.failed(takeID: takeID, reason: reason))
-        requestTelemetry()
+        dependencies.sendEvent(.failed(takeID: takeID, reason: reason))
+        dependencies.requestTelemetry()
     }
 
     private func prepareRecording(timeline: RemoteCameraTimeline) {
         Task {
-            await waitForSettingsApplication()
-            guard await ensureCameraActive() else {
+            await dependencies.waitForSettingsApplication()
+            guard await dependencies.ensureCameraActive() else {
                 failCommand(takeID: timeline.takeID, reason: "Camera not available.")
                 return
             }
-            await waitForCaptureReadiness(nil)
+            await dependencies.waitForCaptureReadiness(nil)
             guard recordingStateMachine.phase == .preparing, activeTakeID == timeline.takeID else {
                 return
             }
-            sendEvent(.prepared(takeID: timeline.takeID, deviceStartTime: DispatchTime.now().uptimeNanoseconds))
-            requestTelemetry()
+            dependencies.sendEvent(.prepared(takeID: timeline.takeID, deviceStartTime: DispatchTime.now().uptimeNanoseconds))
+            dependencies.requestTelemetry()
         }
     }
 
@@ -313,11 +209,11 @@ final class CameraCompanionRecordingRuntime {
             do {
                 statusMessage = "Applying camera settings"
                 publish()
-                await waitForSettingsApplication()
-                guard await ensureCameraActive() else {
+                await dependencies.waitForSettingsApplication()
+                guard await dependencies.ensureCameraActive() else {
                     throw CameraCompanionRecordingError.cameraUnavailable
                 }
-                await waitForCaptureReadiness(0.5)
+                await dependencies.waitForCaptureReadiness(0.5)
                 guard !Task.isCancelled,
                       activeTakeID == timeline.takeID,
                       recordingStateMachine.phase == .preparing || recordingStateMachine.phase == .stopping else {
@@ -325,22 +221,22 @@ final class CameraCompanionRecordingRuntime {
                     return
                 }
 
-                let recordingConfiguration = currentConfiguration()
-                let recordingStart = try await startCameraRecording(
+                let recordingConfiguration = dependencies.currentConfiguration()
+                let recordingStart = try await dependencies.startCameraRecording(
                     timeline.takeID,
                     recordingConfiguration.settings
                 )
                 let recordingURL = recordingStart.url
                 guard !Task.isCancelled,
                       activeTakeID == timeline.takeID else {
-                    _ = try? await stopCameraRecording()
-                    removeRecording(recordingURL)
+                    _ = try? await dependencies.stopCameraRecording()
+                    dependencies.removeRecording(recordingURL)
                     startRecordingTask = nil
                     clearActiveRecordingState()
                     recordingStateMachine.cancel()
                     statusMessage = "Mac stopped the camera"
                     publish()
-                    requestTelemetry()
+                    dependencies.requestTelemetry()
                     return
                 }
 
@@ -359,7 +255,7 @@ final class CameraCompanionRecordingRuntime {
                 onStartElapsedTimer?()
                 activeDeviceStartTime = deviceStartTime
                 publish()
-                sendEvent(.started(takeID: timeline.takeID, deviceStartTime: deviceStartTime))
+                dependencies.sendEvent(.started(takeID: timeline.takeID, deviceStartTime: deviceStartTime))
                 startRecordingTask = nil
                 if let stopTimeline = queuedStopTimeline,
                    stopTimeline.takeID == timeline.takeID {
@@ -374,29 +270,31 @@ final class CameraCompanionRecordingRuntime {
                 recordingStateMachine.fail(error.localizedDescription)
                 statusMessage = "Recording failed: \(error.localizedDescription)"
                 publish()
-                sendEvent(.failed(takeID: timeline.takeID, reason: error.localizedDescription))
+                dependencies.sendEvent(.failed(takeID: timeline.takeID, reason: error.localizedDescription))
             }
-            requestTelemetry()
+            dependencies.requestTelemetry()
         }
     }
 
     private func stopRecording(timeline: RemoteCameraTimeline) {
-        guard recordingStateMachine.phase != .stopping else {
-            requestTelemetry()
+        switch recordingStateMachine.phase {
+        case .stopping, .transferring:
+            dependencies.requestTelemetry()
             return
+        case .pendingImport:
+            announceTransferReady(takeID: timeline.takeID)
+            return
+        case .idle, .preparing, .recording, .failed:
+            break
         }
-        if startRecordingTask != nil, !isCameraRecording() {
+        if startRecordingTask != nil, !dependencies.isCameraRecording() {
             queuedStopTimeline = timeline
             activeTakeID = timeline.takeID
             activeHostStopTime = timeline.hostStopTime
             recordingStateMachine.stop(timeline)
             statusMessage = "Stopping"
             publish()
-            requestTelemetry()
-            return
-        }
-        guard isCameraRecording() else {
-            finishRecording(error: CameraCompanionRecordingError.notRecording)
+            dependencies.requestTelemetry()
             return
         }
 
@@ -405,15 +303,19 @@ final class CameraCompanionRecordingRuntime {
         recordingStateMachine.stop(timeline)
         statusMessage = "Stopping"
         publish()
+        stopCameraAndFinishRecording()
+        dependencies.requestTelemetry()
+    }
+
+    private func stopCameraAndFinishRecording() {
         Task {
             do {
-                let result = try await stopCameraRecording()
+                let result = try await dependencies.stopCameraRecording()
                 finishRecording(result: result)
             } catch {
                 finishRecording(error: error)
             }
         }
-        requestTelemetry()
     }
 
     private func cancelActiveRecording(reason: String) {
@@ -422,12 +324,12 @@ final class CameraCompanionRecordingRuntime {
         let startTask = startRecordingTask
         let cancelledTakeID = activeTakeID
 
-        guard startTask != nil || isCameraRecording() else {
+        guard startTask != nil || dependencies.isCameraRecording() else {
             clearActiveRecordingState()
             recordingStateMachine.cancel()
             statusMessage = reason
             publish()
-            requestTelemetry()
+            dependencies.requestTelemetry()
             return
         }
 
@@ -435,14 +337,14 @@ final class CameraCompanionRecordingRuntime {
         statusMessage = reason
         onStopElapsedTimer?()
         publish()
-        requestTelemetry()
+        dependencies.requestTelemetry()
 
         Task {
             if let startTask {
                 await startTask.value
-            } else if isCameraRecording() {
-                if let result = try? await stopCameraRecording() {
-                    removeRecording(result.url)
+            } else if dependencies.isCameraRecording() {
+                if let result = try? await dependencies.stopCameraRecording() {
+                    dependencies.removeRecording(result.url)
                 }
             }
 
@@ -454,14 +356,13 @@ final class CameraCompanionRecordingRuntime {
             recordingStateMachine.cancel()
             statusMessage = reason
             publish()
-            requestTelemetry()
+            dependencies.requestTelemetry()
         }
     }
 
     private func clearActiveRecordingState() {
         activeTakeID = nil
         activeRecordingURL = nil
-        lastRecordingResult = nil
         activeHostStartTime = nil
         activeHostStopTime = nil
         activeHostTimelineStartTime = nil
@@ -475,14 +376,32 @@ final class CameraCompanionRecordingRuntime {
 
     private func finishRecording(result: CameraRecordingResult) {
         activeRecordingURL = result.url
-        lastRecordingResult = result
         activeStopReason = result.stopReason
         activeRecordingDiagnostics = Self.mergedRecordingDiagnostics(
             activeRecordingDiagnostics,
             result.recordingDiagnostics
         )
         recordingStateMachine.finish(recordingURL: result.url, stopReason: result.stopReason)
-        finishRecording(error: nil)
+        guard let length = lateStopClipLength() else {
+            finishRecording(error: nil)
+            return
+        }
+        statusMessage = "Matching the clip to your Mac"
+        publish()
+        Task {
+            try? await CameraClipTrimmer.trim(.init(url: result.url, seconds: length))
+            finishRecording(error: nil)
+        }
+    }
+
+    /// When the Mac's stop arrived late (the two were apart), the clip runs past the moment the Mac stopped.
+    /// Returns the length the clip should have, measured on the Mac's clock, or nil when it is already right.
+    private func lateStopClipLength() -> Double? {
+        guard let hostStart = activeHostStartTime, let hostStop = activeHostStopTime, hostStop > hostStart,
+              let deviceStart = activeDeviceStartTime else { return nil }
+        let macSeconds = Double(hostStop - hostStart) / 1e9
+        let iPhoneSeconds = Double(DispatchTime.now().uptimeNanoseconds &- deviceStart) / 1e9
+        return iPhoneSeconds - macSeconds > 1 ? macSeconds : nil
     }
 
     private static func mergedRecordingDiagnostics(
@@ -498,7 +417,7 @@ final class CameraCompanionRecordingRuntime {
         guard let takeID = activeTakeID else {
             recordingStateMachine.cancel()
             publish()
-            requestTelemetry()
+            dependencies.requestTelemetry()
             return
         }
 
@@ -507,8 +426,8 @@ final class CameraCompanionRecordingRuntime {
             recordingStateMachine.fail(error.localizedDescription)
             statusMessage = "Recording failed: \(error.localizedDescription)"
             publish()
-            sendEvent(.failed(takeID: takeID, reason: error.localizedDescription))
-            requestTelemetry()
+            dependencies.sendEvent(.failed(takeID: takeID, reason: error.localizedDescription))
+            dependencies.requestTelemetry()
             return
         }
 
@@ -517,24 +436,24 @@ final class CameraCompanionRecordingRuntime {
         activeDeviceStopTime = deviceStopTime
         recordingStateMachine.markPendingImport(deviceStopTime: deviceStopTime)
         publish()
-        sendEvent(.stopped(
+        dependencies.sendEvent(.stopped(
             takeID: takeID,
             deviceStopTime: deviceStopTime,
-            durationSeconds: Double(elapsedSeconds()),
+            durationSeconds: Double(dependencies.elapsedSeconds()),
             reason: activeStopReason
         ))
         announceTransferReady(takeID: takeID)
-        requestTelemetry()
+        dependencies.requestTelemetry()
     }
 
     private func announceTransferReady(takeID: UUID) {
-        let recordingURL = activeRecordingURL ?? existingRecordingURL(takeID)
+        let recordingURL = activeRecordingURL ?? dependencies.existingRecordingURL(takeID)
         guard let recordingURL,
               let byteCount = Self.fileSize(at: recordingURL) else {
             recordingStateMachine.fail("Clip is still saving.")
             statusMessage = "Clip is still saving"
             publish()
-            sendEvent(.failed(takeID: takeID, reason: "Clip is still saving."))
+            dependencies.sendEvent(.failed(takeID: takeID, reason: "Clip is still saving."))
             return
         }
         guard byteCount > 0 else {
@@ -543,16 +462,16 @@ final class CameraCompanionRecordingRuntime {
             recordingStateMachine.fail(reason)
             statusMessage = reason
             publish()
-            sendEvent(.failed(takeID: takeID, reason: reason))
+            dependencies.sendEvent(.failed(takeID: takeID, reason: reason))
             return
         }
 
         recordingStateMachine.markPendingImport(deviceStopTime: activeDeviceStopTime ?? DispatchTime.now().uptimeNanoseconds)
         statusMessage = "Ready to send to Mac"
         activeRecordingURL = recordingURL
-        refreshPendingRecordings()
+        dependencies.refreshPendingRecordings()
         publish()
-        sendEvent(.transferReady(
+        dependencies.sendEvent(.transferReady(
             takeID: takeID,
             fileName: recordingURL.lastPathComponent,
             byteCount: byteCount,
@@ -567,18 +486,29 @@ final class CameraCompanionRecordingRuntime {
     }
 
     private func sendRecordingFile(takeID: UUID, resumeOffset: Int64) {
-        let recordingURL = activeRecordingURL ?? existingRecordingURL(takeID)
-        guard let recordingURL else {
-            recordingStateMachine.fail("Clip missing.")
-            statusMessage = "Clip missing"
-            publish()
-            sendEvent(.failed(takeID: takeID, reason: "Clip missing."))
-            requestTelemetry()
+        if takeID != activeTakeID, [.preparing, .recording, .stopping].contains(recordingStateMachine.phase) {
+            dependencies.sendEvent(.failed(takeID: takeID, reason: RemoteCameraTransferProtocol.pausedForTakeReason))
+            return
+        }
+        guard takeID != activeTakeID || recordingStateMachine.phase != .recording else {
+            // The Mac stopped this take while the two were apart, so its stop never arrived. Asking for the clip
+            // means the take is over: finish it, and the clip is offered once it is saved.
+            stopRecording(timeline: RemoteCameraTimeline(takeID: takeID))
+            return
+        }
+        guard takeID != activeTakeID || recordingStateMachine.phase != .stopping else { return }
+        let recordingURL = activeRecordingURL ?? dependencies.existingRecordingURL(takeID)
+        let fileSize = recordingURL.flatMap(Self.fileSize(at:)) ?? 0
+        guard let recordingURL, fileSize > 0 else {
+            if let recordingURL, recordingURL != activeRecordingURL {
+                try? FileManager.default.removeItem(at: recordingURL)
+            }
+            dependencies.sendEvent(.failed(takeID: takeID, reason: RemoteCameraTransferProtocol.unavailableRecordingReason))
+            dependencies.requestTelemetry()
             return
         }
 
         activeRecordingURL = recordingURL
-        let fileSize = Self.fileSize(at: recordingURL) ?? 0
         let clampedResumeOffset = RemoteCameraTransferProtocol.clampedResumeOffset(resumeOffset, fileSize: fileSize)
         recordingStateMachine.transfer(takeID: takeID, recordingURL: recordingURL)
         statusMessage = clampedResumeOffset > 0
@@ -586,10 +516,10 @@ final class CameraCompanionRecordingRuntime {
             : "Sending clip to Mac"
         publish()
         transferSender.sendRecordingFile(takeID: takeID, recordingURL: recordingURL, resumeOffset: clampedResumeOffset)
-        requestTelemetry()
+        dependencies.requestTelemetry()
     }
 
-    private func finishTransfer(takeID: UUID, recordingURL: URL, byteCount: Int64, resumeOffset: Int64, sha256: String) {
+    private func finishTransfer(takeID: UUID, byteCount: Int64, sha256: String) {
         setActiveTransferProgress(RemoteCameraTransferProgress(
             takeID: takeID,
             transferredByteCount: byteCount,
@@ -597,22 +527,22 @@ final class CameraCompanionRecordingRuntime {
         ))
         activeRecordingURL = nil
         activeTakeID = nil
-        lastRecordingResult = nil
         recordingStateMachine.markTransferComplete()
-        refreshPendingRecordings()
+        dependencies.refreshPendingRecordings()
         statusMessage = "Sent to Mac"
         publish()
-        sendEvent(.transferComplete(takeID: takeID, byteCount: byteCount, sha256: sha256))
-        requestTelemetry()
+        dependencies.sendEvent(.transferComplete(takeID: takeID, byteCount: byteCount, sha256: sha256))
+        dependencies.requestTelemetry()
     }
 
     private func failTransfer(takeID: UUID, error: Error) {
+        guard recordingStateMachine.phase == .transferring, takeID == activeTakeID else { return }
         recordingStateMachine.fail(error.localizedDescription)
         activeRecordingFailureReason = error.localizedDescription
         statusMessage = "Couldn’t send: \(error.localizedDescription)"
         publish()
-        sendEvent(.failed(takeID: takeID, reason: error.localizedDescription))
-        requestTelemetry()
+        dependencies.sendEvent(.failed(takeID: takeID, reason: error.localizedDescription))
+        dependencies.requestTelemetry()
     }
 
     private func resolveTransferAck(takeID: UUID, receivedByteCount: Int64) {
@@ -632,21 +562,20 @@ final class CameraCompanionRecordingRuntime {
     }
 
     private func completeMacImport(takeID: UUID) {
-        let keepsRecording = keepsRecordingsAfterMacImport()
-        if !keepsRecording, let recordingURL = existingRecordingURL(takeID) {
-            removeRecording(recordingURL)
+        let keepsRecording = dependencies.keepsRecordingsAfterMacImport()
+        if !keepsRecording, let recordingURL = dependencies.existingRecordingURL(takeID) {
+            dependencies.removeRecording(recordingURL)
         }
         setActiveTransferProgress(nil)
         activeRecordingURL = nil
         activeTakeID = nil
-        lastRecordingResult = nil
-        refreshPendingRecordings()
+        dependencies.refreshPendingRecordings()
         recordingStateMachine.cancel()
         statusMessage = keepsRecording
             ? "Sent to Mac. Kept on iPhone."
-            : importCompletedStatus()
+            : dependencies.importCompletedStatus()
         publish()
-        requestTelemetry()
+        dependencies.requestTelemetry()
     }
 
     private func setActiveTransferProgress(_ progress: RemoteCameraTransferProgress?) {
@@ -655,6 +584,7 @@ final class CameraCompanionRecordingRuntime {
     }
 
     private func publish() {
+        Self.logger.info("Recording \(self.recordingStateMachine.phase.rawValue, privacy: .public): \(self.statusMessage, privacy: .public)")
         onSnapshotChanged?(CameraCompanionRecordingSnapshot(
             phase: recordingStateMachine.phase,
             activeRecordingURL: activeRecordingURL,
@@ -670,13 +600,13 @@ final class CameraCompanionRecordingRuntime {
         sha256: String?,
         resumeOffset: Int64
     ) -> RemoteCameraTransferManifest {
-        makeTransferManifest(CameraCompanionTransferManifestRequest(
+        dependencies.makeTransferManifest(CameraCompanionTransferManifestRequest(
             takeID: takeID,
             recordingURL: recordingURL,
             byteCount: byteCount,
             sha256: sha256,
             resumeOffset: resumeOffset,
-            durationSeconds: Double(elapsedSeconds()),
+            durationSeconds: Double(dependencies.elapsedSeconds()),
             deviceStartTime: activeDeviceStartTime,
             deviceStopTime: activeDeviceStopTime,
             hostStartTime: activeHostStartTime,

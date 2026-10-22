@@ -1,4 +1,5 @@
 import AVFoundation
+import BlitzRecorderDesign
 import SwiftUI
 import UIKit
 
@@ -24,25 +25,16 @@ struct CameraRecordingPlaybackView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [CompanionTheme.canvasTop, CompanionTheme.canvasBottom],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-            CompanionStudioGrid()
+            BlitzUI.projectLibraryBackground
+                .ignoresSafeArea()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     ZoomablePlayerSurface(player: playback.player, resetToken: zoomResetToken)
                         .frame(maxWidth: .infinity)
                         .aspectRatio(playback.displayAspectRatio, contentMode: .fit)
-                        .background(.black)
-                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .stroke(CompanionTheme.stroke, lineWidth: 1)
-                        }
+                        .background(BlitzUI.canvasBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: BlitzUI.surfaceRadius, style: .continuous))
                         .accessibilityLabel("Recording preview")
 
                     playbackControls
@@ -54,23 +46,17 @@ struct CameraRecordingPlaybackView: View {
         }
         .navigationTitle("Recording")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
-        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
-                Button {
+                Button("Send Again", systemImage: "arrow.clockwise") {
                     retryImport()
-                } label: {
-                    Label("Send Again", systemImage: "arrow.clockwise.icloud")
                 }
                 .disabled(recording.takeID == nil)
 
-                Button(role: .destructive) {
+                Button("Delete", systemImage: BlitzSymbols.delete, role: .destructive) {
                     playback.pause()
                     delete()
                     dismiss()
-                } label: {
-                    Label("Delete", systemImage: "trash")
                 }
             }
         }
@@ -80,7 +66,7 @@ struct CameraRecordingPlaybackView: View {
         .onDisappear {
             playback.pause()
         }
-        .tint(CompanionTheme.accent)
+        .tint(BlitzUI.accent)
     }
 
     private var playbackControls: some View {
@@ -94,12 +80,9 @@ struct CameraRecordingPlaybackView: View {
                         systemImage: playback.isPlaying ? "pause.fill" : "play.fill"
                     )
                         .labelStyle(.iconOnly)
-                        .font(.title3.weight(.semibold))
-                        .frame(width: 44, height: 44)
+                        .frame(width: 22)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(CompanionTheme.accent)
-                .clipShape(Circle())
+                .blitzButton(.accent)
 
                 VStack(spacing: 4) {
                     Slider(
@@ -117,8 +100,8 @@ struct CameraRecordingPlaybackView: View {
                         Spacer()
                         Text(playback.durationLabel)
                     }
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(CompanionTheme.faintText)
+                    .font(BlitzType.numeric)
+                    .foregroundStyle(BlitzUI.secondaryText)
                 }
             }
 
@@ -128,19 +111,17 @@ struct CameraRecordingPlaybackView: View {
                 Label("Reset view", systemImage: "arrow.up.left.and.down.right.magnifyingglass")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.roundedRectangle(radius: 14))
+            .blitzButton(.secondary)
 
             if let message = playback.statusMessage {
                 Label(message, systemImage: "exclamationmark.triangle")
-                    .font(.footnote)
-                    .foregroundStyle(CompanionTheme.faintText)
+                    .font(BlitzType.caption)
+                    .foregroundStyle(BlitzUI.warning)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding()
-        .foregroundStyle(.white)
-        .companionGlassPanel(cornerRadius: 18)
+        .background { BlitzSelectedBackground(cornerRadius: BlitzUI.surfaceRadius) }
     }
 
     private var metadata: some View {
@@ -152,10 +133,10 @@ struct CameraRecordingPlaybackView: View {
             LabeledContent("Codec", value: playback.codecLabel)
             LabeledContent("Frame rate", value: playback.frameRateLabel)
         }
-        .font(.subheadline)
+        .font(BlitzType.body)
+        .foregroundStyle(BlitzUI.primaryText)
         .padding()
-        .foregroundStyle(.white)
-        .companionGlassPanel(cornerRadius: 18)
+        .background { BlitzSelectedBackground(cornerRadius: BlitzUI.surfaceRadius) }
     }
 }
 

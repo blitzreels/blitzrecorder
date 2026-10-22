@@ -8,6 +8,11 @@ public enum RemoteCameraTransferChunkDisposition: Equatable, Sendable {
 
 public enum RemoteCameraTransferProtocol {
     public static let defaultChunkSize = 256 * 1024
+    /// Sent when the Mac asks for a clip the iPhone no longer has, or that is empty. The Mac drops it from its
+    /// pending imports instead of asking again on every connection.
+    public static let unavailableRecordingReason = "This clip is no longer on the iPhone."
+    /// The iPhone holds back older clips while a take records; the Mac asks again once the take is in.
+    public static let pausedForTakeReason = "The iPhone is recording; this clip is sent after the take."
 
     public static func clampedResumeOffset(_ resumeOffset: Int64, fileSize: Int64) -> Int64 {
         min(max(0, resumeOffset), max(0, fileSize))

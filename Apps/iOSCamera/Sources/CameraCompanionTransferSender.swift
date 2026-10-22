@@ -1,4 +1,5 @@
 import BlitzRecorderCore
+import BlitzRecorderTransport
 import CryptoKit
 import Foundation
 
@@ -7,6 +8,12 @@ final class CameraCompanionTransferSender {
     private var activeTransferTask: Task<Void, Never>?
     private var transferAckContinuations: [UUID: CheckedContinuation<Int64, Error>] = [:]
     private var activeProgress: RemoteCameraTransferProgress?
+    private let channel = RawFileTransferServer()
+    private var channelToken: String?
+    private var channelOutcome: CheckedContinuation<RawFileTransferServer.Outcome, Never>?
+    private var channelStarted: CheckedContinuation<Bool, Never>?
+    /// How long the Mac has to open the file channel before the clip goes over the control connection instead.
+    private static let channelConnectTimeout: Duration = .seconds(10)
 
     var onProgressChanged: ((RemoteCameraTransferProgress?) -> Void)?
     var onFinished: ((UUID, URL, Int64, Int64, String) -> Void)?
@@ -16,6 +23,15 @@ final class CameraCompanionTransferSender {
 
     init(sendEvent: @escaping (RemoteCameraEvent) -> Void) {
         self.sendEvent = sendEvent
+        channel.onStarted = { [weak self] token in
+            Task { @MainActor in self?.channelDidStart(token: token) }
+        }
+        channel.onProgress = { [weak self] token, sentByteCount in
+            Task { @MainActor in self?.channelDidSend(.init(token: token, sentByteCount: sentByteCount)) }
+        }
+        channel.onFinished = { [weak self] token, outcome in
+            Task { @MainActor in self?.channelDidFinish(.init(token: token, outcome: outcome)) }
+        }
     }
 
     func sendRecordingFile(takeID: UUID, recordingURL: URL, resumeOffset: Int64) {
@@ -30,7 +46,120 @@ final class CameraCompanionTransferSender {
             expectedByteCount: fileSize
         ))
 
-        activeTransferTask = Task.detached(priority: .userInitiated) { [weak self, recordingURL] in
+        activeTransferTask = Task { [weak self] in
+            guard let self else { return }
+            let request = FileRequest(takeID: takeID, recordingURL: recordingURL, fileSize: fileSize,
+                                      resumeOffset: clampedResumeOffset)
+            if await self.sendThroughChannel(request) { return }
+            guard !Task.isCancelled else { return }
+            self.sendInChunks(request)
+        }
+    }
+
+    private struct FileRequest: Sendable {
+        let takeID: UUID
+        let recordingURL: URL
+        let fileSize: Int64
+        let resumeOffset: Int64
+    }
+
+    /// Sends the clip as raw bytes on its own connection. Returns false when the Mac never opened the channel,
+    /// so the caller can fall back to chunks on the control connection.
+    private func sendThroughChannel(_ request: FileRequest) async -> Bool {
+        guard let port = try? await channel.start(), !Task.isCancelled else { return false }
+        let token = channel.offer(.init(fileURL: request.recordingURL, offset: request.resumeOffset))
+        channelToken = token
+        let hashTask = Task.detached(priority: .userInitiated) { [url = request.recordingURL] in
+            try Self.sha256(of: url)
+        }
+        sendEvent(.transferChannel(takeID: request.takeID, port: port, token: token,
+                                   offset: request.resumeOffset, byteCount: request.fileSize))
+        let started = await withCheckedContinuation { continuation in
+            channelStarted = continuation
+            Task { [weak self] in
+                try? await Task.sleep(for: Self.channelConnectTimeout)
+                self?.resolveChannelStarted(false)
+            }
+        }
+        guard started else {
+            channel.revoke(token)
+            channelToken = nil
+            hashTask.cancel()
+            return false
+        }
+        let outcome = await withCheckedContinuation { channelOutcome = $0 }
+        channelToken = nil
+        guard !Task.isCancelled else {
+            hashTask.cancel()
+            return true
+        }
+        switch outcome {
+        case .sent:
+            do {
+                let sha256 = try await hashTask.value
+                finishTransfer(takeID: request.takeID, recordingURL: request.recordingURL, byteCount: request.fileSize,
+                               resumeOffset: request.resumeOffset, sha256: sha256)
+            } catch {
+                failTransfer(takeID: request.takeID, error: error)
+            }
+        case .failed(let reason):
+            hashTask.cancel()
+            failTransfer(takeID: request.takeID, error: CameraCompanionTransferSenderError.cancelled(reason))
+        }
+        return true
+    }
+
+    private func resolveChannelStarted(_ started: Bool) {
+        channelStarted?.resume(returning: started)
+        channelStarted = nil
+    }
+
+    private func channelDidStart(token: String) {
+        guard token == channelToken else { return }
+        resolveChannelStarted(true)
+    }
+
+    private struct ChannelProgress {
+        let token: String
+        let sentByteCount: Int64
+    }
+
+    private func channelDidSend(_ progress: ChannelProgress) {
+        guard progress.token == channelToken, let active = activeProgress else { return }
+        setProgress(RemoteCameraTransferProtocol.progress(
+            takeID: active.takeID,
+            transferredByteCount: progress.sentByteCount,
+            expectedByteCount: active.expectedByteCount
+        ))
+    }
+
+    private struct ChannelResult {
+        let token: String
+        let outcome: RawFileTransferServer.Outcome
+    }
+
+    private func channelDidFinish(_ result: ChannelResult) {
+        guard result.token == channelToken else { return }
+        channelOutcome?.resume(returning: result.outcome)
+        channelOutcome = nil
+    }
+
+    nonisolated private static func sha256(of url: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while let data = try handle.read(upToCount: 4 * 1_048_576), !data.isEmpty {
+            try Task.checkCancellation()
+            hasher.update(data: data)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func sendInChunks(_ request: FileRequest) {
+        let takeID = request.takeID
+        let fileSize = request.fileSize
+        let clampedResumeOffset = request.resumeOffset
+        activeTransferTask = Task.detached(priority: .userInitiated) { [weak self, recordingURL = request.recordingURL] in
             do {
                 let handle = try FileHandle(forReadingFrom: recordingURL)
                 defer { try? handle.close() }
@@ -95,6 +224,11 @@ final class CameraCompanionTransferSender {
     func cancel(reason: String, notifyMac: Bool = true) {
         activeTransferTask?.cancel()
         activeTransferTask = nil
+        if let channelToken { channel.revoke(channelToken) }
+        channelToken = nil
+        resolveChannelStarted(false)
+        channelOutcome?.resume(returning: .failed(reason))
+        channelOutcome = nil
         let error = CameraCompanionTransferSenderError.cancelled(reason)
         for (_, continuation) in transferAckContinuations {
             continuation.resume(throwing: error)

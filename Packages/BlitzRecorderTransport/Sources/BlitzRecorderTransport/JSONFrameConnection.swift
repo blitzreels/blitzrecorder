@@ -93,6 +93,12 @@ public final class JSONFrameConnection: @unchecked Sendable {
         }
     }
 
+    /// The peer's address on the path in use, for opening a second connection to the same device.
+    public var remoteHost: NWEndpoint.Host? {
+        if case .hostPort(let host, _) = connection.currentPath?.remoteEndpoint { return host }
+        return nil
+    }
+
     public func cancel() {
         connection.stateUpdateHandler = nil
         connection.cancel()

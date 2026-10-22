@@ -1,198 +1,15 @@
 import BlitzRecorderCore
 import BlitzRecorderTransport
 import Foundation
-import Network
 import OSLog
-import Security
-import UIKit
 
-enum CompanionFrameConnectionState {
-    case ready
-    case waiting(String)
-    case failed(String)
-    case cancelled
-    case other
-}
-
-@MainActor
-protocol CompanionFrameConnection: AnyObject {
-    var onStateChanged: ((CompanionFrameConnectionState) -> Void)? { get set }
-    var onFrameReceived: ((Data) -> Void)? { get set }
-    var onFailed: ((String) -> Void)? { get set }
-
-    func start()
-    func send(_ event: RemoteCameraEvent, completion: (@Sendable (Error?) -> Void)?)
-    func cancel()
-}
-
-@MainActor
-protocol CompanionConnectionAdvertising: AnyObject {
-    var onStateChanged: ((BonjourServiceState) -> Void)? { get set }
-    var onConnectionReceived: ((any CompanionFrameConnection) -> Void)? { get set }
-    var onListeningPortChanged: ((UInt16) -> Void)? { get set }
-
-    func start() throws
-    func stop()
-}
-
-protocol CompanionTrustedMacStore {
-    func trustedIdentity() -> RemoteCameraMacIdentity?
-    func isTrusted(_ identity: RemoteCameraMacIdentity) -> Bool
-    func trust(_ identity: RemoteCameraMacIdentity)
-}
-
-extension RemoteCameraTrustedMacStore: CompanionTrustedMacStore {}
-
-struct CompanionConnectionDependencies {
-    var deviceID: UUID
-    var deviceName: @MainActor () -> String
-    var trustedMacStore: any CompanionTrustedMacStore
-    var advertiserFactory: @MainActor (_ serviceName: String, _ serviceType: String) -> any CompanionConnectionAdvertising
-    var makePairingCode: () -> String
-    var makeChallengeNonce: () -> Data
-    var retryDelay: Duration
-    var sleep: @Sendable (Duration) async throws -> Void
-
-    static func live(defaults: UserDefaults = .standard) -> CompanionConnectionDependencies {
-        CompanionConnectionDependencies(
-            deviceID: Self.loadDeviceID(defaults: defaults),
-            deviceName: { UIDevice.current.name },
-            trustedMacStore: RemoteCameraTrustedMacStore(),
-            advertiserFactory: { serviceName, serviceType in
-                BonjourCompanionAdvertiserAdapter(serviceName: serviceName, serviceType: serviceType)
-            },
-            makePairingCode: Self.makePairingCode,
-            makeChallengeNonce: Self.makeChallengeNonce,
-            retryDelay: .seconds(3),
-            sleep: { duration in
-                try await Task.sleep(for: duration)
-            }
-        )
-    }
-
-    private static func makePairingCode() -> String {
-        String(format: "%06d", Int.random(in: 0...999_999))
-    }
-
-    private static func makeChallengeNonce() -> Data {
-        var bytes = [UInt8](repeating: 0, count: 32)
-        let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        if status == errSecSuccess {
-            return Data(bytes)
-        }
-        return Data((0..<32).map { _ in UInt8.random(in: UInt8.min...UInt8.max) })
-    }
-
-    private static func loadDeviceID(defaults: UserDefaults) -> UUID {
-        let key = "remoteCamera.deviceID"
-        if let value = defaults.string(forKey: key),
-           let uuid = UUID(uuidString: value) {
-            return uuid
-        }
-        let uuid = UUID()
-        defaults.set(uuid.uuidString, forKey: key)
-        return uuid
-    }
-}
-
-@MainActor
-final class BonjourCompanionAdvertiserAdapter: CompanionConnectionAdvertising {
-    var onStateChanged: ((BonjourServiceState) -> Void)?
-    var onConnectionReceived: ((any CompanionFrameConnection) -> Void)?
-    var onListeningPortChanged: ((UInt16) -> Void)?
-
-    private let advertiser: BonjourServiceAdvertiser
-    private let frameConnectionFactory: @MainActor (NWConnection) -> any CompanionFrameConnection
-
-    init(
-        serviceName: String,
-        serviceType: String,
-        frameConnectionFactory: @escaping @MainActor (NWConnection) -> any CompanionFrameConnection = {
-            JSONFrameConnectionAdapter(connection: JSONFrameConnection(connection: $0))
-        }
-    ) {
-        advertiser = BonjourServiceAdvertiser(serviceName: serviceName, serviceType: serviceType)
-        self.frameConnectionFactory = frameConnectionFactory
-        advertiser.onStateChanged = { [weak self] state in
-            Task { @MainActor in
-                self?.onStateChanged?(state)
-            }
-        }
-        advertiser.onConnectionReceived = { [weak self] connection in
-            Task { @MainActor in
-                guard let self else { return }
-                self.onConnectionReceived?(self.frameConnectionFactory(connection))
-            }
-        }
-        advertiser.onListeningPortChanged = { [weak self] port in
-            Task { @MainActor in
-                self?.onListeningPortChanged?(port)
-            }
-        }
-    }
-
-    func start() throws {
-        try advertiser.start()
-    }
-
-    func stop() {
-        advertiser.stop()
-    }
-}
-
-@MainActor
-final class JSONFrameConnectionAdapter: CompanionFrameConnection {
-    var onStateChanged: ((CompanionFrameConnectionState) -> Void)?
-    var onFrameReceived: ((Data) -> Void)?
-    var onFailed: ((String) -> Void)?
-
-    private let connection: JSONFrameConnection
-
-    init(connection: JSONFrameConnection) {
-        self.connection = connection
-        connection.onStateChanged = { [weak self] state in
-            Task { @MainActor in
-                self?.onStateChanged?(Self.frameState(from: state))
-            }
-        }
-        connection.onFrameReceived = { [weak self] data in
-            Task { @MainActor in
-                self?.onFrameReceived?(data)
-            }
-        }
-        connection.onFailed = { [weak self] message in
-            Task { @MainActor in
-                self?.onFailed?(message)
-            }
-        }
-    }
-
-    func start() {
-        connection.start()
-    }
-
-    func send(_ event: RemoteCameraEvent, completion: (@Sendable (Error?) -> Void)? = nil) {
-        connection.send(event, completion: completion)
-    }
-
-    func cancel() {
-        connection.cancel()
-    }
-
-    private static func frameState(from state: NWConnection.State) -> CompanionFrameConnectionState {
-        switch state {
-        case .ready:
-            return .ready
-        case .waiting(let error):
-            return .waiting(error.localizedDescription)
-        case .failed(let error):
-            return .failed(error.localizedDescription)
-        case .cancelled:
-            return .cancelled
-        default:
-            return .other
-        }
-    }
+/// How far a new Mac is through pairing. Trusted Macs skip straight to connected.
+enum CompanionPairingStep: Equatable {
+    case waitingForMac
+    case approval
+    case code
+    /// The Mac speaks another protocol version; one of the two apps needs an update.
+    case updateNeeded(macIsOlder: Bool)
 }
 
 struct CompanionConnectionSnapshot: Equatable {
@@ -201,6 +18,7 @@ struct CompanionConnectionSnapshot: Equatable {
     var statusMessage: String
     var listeningPortLabel: String
     var pairingCode: String
+    var pairingStep: CompanionPairingStep
     var isPairedWithMac: Bool
 }
 
@@ -213,20 +31,10 @@ final class CompanionConnectionSession {
 
     private static func diagnosticLog(_ message: String) {
         logger.info("\(message, privacy: .public)")
-        #if DEBUG
-        if let data = "[CompanionConnection] \(message)\n".data(using: .utf8) {
-            FileHandle.standardError.write(data)
-        }
-        #endif
     }
 
     private static func diagnosticError(_ message: String) {
         logger.error("\(message, privacy: .public)")
-        #if DEBUG
-        if let data = "[CompanionConnection] ERROR \(message)\n".data(using: .utf8) {
-            FileHandle.standardError.write(data)
-        }
-        #endif
     }
 
     var onSnapshotChanged: ((CompanionConnectionSnapshot) -> Void)?
@@ -239,6 +47,7 @@ final class CompanionConnectionSession {
 
     private var advertiser: (any CompanionConnectionAdvertising)?
     private var controlConnection: (any CompanionFrameConnection)?
+    private var candidateConnections: [any CompanionFrameConnection] = []
     private var discoveryRetryTask: Task<Void, Never>?
     private let dependencies: CompanionConnectionDependencies
     private let trustedMacStore: any CompanionTrustedMacStore
@@ -256,12 +65,9 @@ final class CompanionConnectionSession {
             statusMessage: "Waiting for Mac",
             listeningPortLabel: "...",
             pairingCode: dependencies.makePairingCode(),
+            pairingStep: .waitingForMac,
             isPairedWithMac: false
         )
-    }
-
-    convenience init(defaults: UserDefaults) {
-        self.init(dependencies: .live(defaults: defaults))
     }
 
     var hasTrustedMac: Bool {
@@ -274,20 +80,40 @@ final class CompanionConnectionSession {
     }
 
     func retry() {
-        discoveryRetryTask?.cancel()
-        discoveryRetryTask = nil
+        cancelDiscoveryRetry()
         let previousConnection = controlConnection
         controlConnection = nil
         previousConnection?.cancel()
+        candidateConnections.forEach { $0.cancel() }
+        candidateConnections.removeAll()
         snapshot.isPairedWithMac = false
         snapshot.pairedMacName = nil
         pairingState = .waitingForHello
-        snapshot.pairingCode = dependencies.makePairingCode()
+        snapshot.pairingStep = .waitingForMac
         snapshot.listeningPortLabel = "Starting"
         snapshot.connectionState = .discovering
         snapshot.statusMessage = "Restarting discovery"
         publish()
         startAdvertising()
+    }
+
+    /// Leaves the network while the app sleeps, so the Mac does not reconnect to an iPhone that cannot film.
+    /// `retry()` comes back when the app opens again.
+    func goDark() {
+        cancelDiscoveryRetry()
+        let previousAdvertiser = advertiser
+        advertiser = nil
+        previousAdvertiser?.stop()
+        let previousConnection = controlConnection
+        controlConnection = nil
+        previousConnection?.cancel()
+        candidateConnections.forEach { $0.cancel() }
+        candidateConnections.removeAll()
+        snapshot.isPairedWithMac = false
+        pairingState = .waitingForHello
+        snapshot.pairingStep = .waitingForMac
+        snapshot.connectionState = .disconnected
+        publish()
     }
 
     @discardableResult
@@ -346,8 +172,7 @@ final class CompanionConnectionSession {
         Self.diagnosticLog("Bonjour advertiser state changed: \(String(describing: state))")
         switch state {
         case .ready:
-            discoveryRetryTask?.cancel()
-            discoveryRetryTask = nil
+            cancelDiscoveryRetry()
             snapshot.connectionState = .discovering
             snapshot.statusMessage = "Waiting for Mac"
             publish()
@@ -370,6 +195,11 @@ final class CompanionConnectionSession {
         }
     }
 
+    private func cancelDiscoveryRetry() {
+        discoveryRetryTask?.cancel()
+        discoveryRetryTask = nil
+    }
+
     private func scheduleDiscoveryRetry(reason: String) {
         guard !snapshot.isPairedWithMac,
               discoveryRetryTask == nil else {
@@ -388,38 +218,63 @@ final class CompanionConnectionSession {
         }
     }
 
+    /// The Mac may open several connections at once, one per network path (Wi‑Fi and peer-to-peer). Each one
+    /// waits as a candidate; the first to say hello becomes the control channel and the others are closed.
     private func acceptMacConnection(_ connection: any CompanionFrameConnection) {
         Self.diagnosticLog("Accepted Mac control connection")
-        discoveryRetryTask?.cancel()
-        discoveryRetryTask = nil
-        controlConnection?.cancel()
-        controlConnection = connection
-        onConnectionReplaced?()
-        snapshot.isPairedWithMac = false
-        pairingState = .waitingForHello
-        snapshot.connectionState = .pairing
-        snapshot.statusMessage = "Mac found. Waiting for code."
-        publish()
+        cancelDiscoveryRetry()
+        candidateConnections.append(connection)
+        if controlConnection == nil {
+            snapshot.connectionState = .pairing
+            snapshot.statusMessage = "Mac found"
+            publish()
+        }
 
         connection.onStateChanged = { [weak self, weak connection] state in
             guard let self, let connection, self.isActiveConnection(connection) else { return }
             self.handleConnectionState(state, connection: connection)
         }
-        connection.onFrameReceived = { [weak self] data in
+        connection.onFrameReceived = { [weak self, weak connection] data in
+            guard let self, let connection else { return }
             do {
                 let command = try JSONMessageCodec.decode(RemoteCameraCommand.self, from: data)
-                self?.handle(command)
+                if !self.isActiveConnection(connection) {
+                    guard case .hello = command else { return }
+                    self.promote(connection)
+                }
+                self.handle(command)
             } catch {
-                self?.snapshot.statusMessage = "Mac message could not be read: \(error.localizedDescription)"
-                self?.publish()
+                self.snapshot.statusMessage = "Mac message could not be read: \(error.localizedDescription)"
+                self.publish()
             }
         }
-        connection.onFailed = { [weak self] message in
-            guard let self else { return }
+        connection.onFailed = { [weak self, weak connection] message in
+            guard let self, let connection else { return }
+            guard self.isActiveConnection(connection) else {
+                self.candidateConnections.removeAll { $0 === connection }
+                return
+            }
             self.onControlChannelClosed?()
             self.markMacDisconnected(status: "Mac not connected: \(message)")
         }
         connection.start()
+    }
+
+    private func promote(_ connection: any CompanionFrameConnection) {
+        let previous = controlConnection
+        controlConnection = connection
+        previous?.cancel()
+        for candidate in candidateConnections where candidate !== connection {
+            candidate.cancel()
+        }
+        candidateConnections.removeAll()
+        if previous != nil { onConnectionReplaced?() }
+        snapshot.isPairedWithMac = false
+        pairingState = .waitingForHello
+        snapshot.pairingStep = .waitingForMac
+        snapshot.connectionState = .pairing
+        snapshot.statusMessage = "Mac found"
+        publish()
     }
 
     private func handleConnectionState(_ state: CompanionFrameConnectionState, connection: any CompanionFrameConnection) {
@@ -451,15 +306,14 @@ final class CompanionConnectionSession {
     }
 
     private func markMacDisconnected(status: String, connection: (any CompanionFrameConnection)? = nil) {
-        if let connection {
-            guard isActiveConnection(connection) else { return }
-            controlConnection = nil
-        } else {
-            controlConnection = nil
+        if let connection, !isActiveConnection(connection) {
+            return
         }
+        controlConnection = nil
         snapshot.isPairedWithMac = false
         snapshot.pairedMacName = nil
         pairingState = .waitingForHello
+        snapshot.pairingStep = .waitingForMac
         snapshot.connectionState = isRecordingOnDisconnect() ? .degraded : .disconnected
         snapshot.statusMessage = status
         publish()
@@ -467,8 +321,8 @@ final class CompanionConnectionSession {
 
     private func handle(_ command: RemoteCameraCommand) {
         switch command {
-        case .hello(let protocolVersion, let macIdentity):
-            handleHello(protocolVersion: protocolVersion, macIdentity: macIdentity)
+        case .hello(let protocolVersion, let macIdentity, let macName):
+            handleHello(.init(protocolVersion: protocolVersion, macIdentity: macIdentity, macName: macName))
         case .pair(let shortCode, let macIdentity, let proof):
             handlePair(shortCode: shortCode, macIdentity: macIdentity, proof: proof)
         case .requestCapabilities, .applySettings, .prepare, .start, .stop, .requestTransfer:
@@ -479,27 +333,77 @@ final class CompanionConnectionSession {
         }
     }
 
-    private func handleHello(protocolVersion: Int, macIdentity: RemoteCameraMacIdentity) {
-        Self.diagnosticLog("Received Mac hello with protocol \(protocolVersion)")
-        guard protocolVersion == RemoteCameraConstants.protocolVersion else {
-            send(.failed(takeID: nil, reason: "Unsupported protocol \(protocolVersion)"))
+    private struct Hello {
+        let protocolVersion: Int
+        let macIdentity: RemoteCameraMacIdentity
+        let macName: String?
+    }
+
+    private func handleHello(_ hello: Hello) {
+        let macIdentity = hello.macIdentity
+        Self.diagnosticLog("Received Mac hello with protocol \(hello.protocolVersion)")
+        guard hello.protocolVersion == RemoteCameraConstants.protocolVersion else {
+            send(.failed(takeID: nil, reason: RemoteCameraConstants.unsupportedProtocolReason(hello.protocolVersion)))
+            snapshot.pairingStep = .updateNeeded(macIsOlder: hello.protocolVersion < RemoteCameraConstants.protocolVersion)
+            publish()
             return
         }
         guard RemoteCameraPairingValidator.isValidIdentity(macIdentity) else {
             send(.failed(takeID: nil, reason: "Mac identity fingerprint did not match its public key."))
             return
         }
-        let isTrusted = trustedMacStore.isTrusted(macIdentity)
+        snapshot.connectionState = .pairing
+        let macName = hello.macName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        snapshot.pairedMacName = macName.isEmpty ? nil : macName
+        guard trustedMacStore.isTrusted(macIdentity) else {
+            pairingState = .awaitingApproval(macIdentity: macIdentity)
+            snapshot.pairingStep = .approval
+            snapshot.statusMessage = "\(snapshot.pairedMacName ?? "A Mac") wants to use this iPhone as its camera"
+            publish()
+            return
+        }
+        sendChallenge(.init(macIdentity: macIdentity, isTrusted: true, requiresShortCode: false))
+    }
+
+    /// One tap on the iPhone pairs the Mac that is asking. It still has to prove its identity with its key.
+    func approvePendingMac() {
+        guard case .awaitingApproval(let macIdentity) = pairingState else { return }
+        sendChallenge(.init(macIdentity: macIdentity, isTrusted: false, requiresShortCode: false))
+    }
+
+    /// The fallback: the Mac types the code shown on this iPhone.
+    func pairPendingMacWithCode() {
+        guard case .awaitingApproval(let macIdentity) = pairingState else { return }
+        sendChallenge(.init(macIdentity: macIdentity, isTrusted: false, requiresShortCode: true))
+    }
+
+    func declinePendingMac() {
+        guard case .awaitingApproval = pairingState else { return }
+        pairingState = .waitingForHello
+        snapshot.pairingStep = .waitingForMac
+        snapshot.statusMessage = "Pairing declined"
+        publish()
+        send(.failed(takeID: nil, reason: "Pairing was declined on the iPhone."))
+    }
+
+    private struct ChallengeRequest {
+        let macIdentity: RemoteCameraMacIdentity
+        let isTrusted: Bool
+        let requiresShortCode: Bool
+    }
+
+    private func sendChallenge(_ request: ChallengeRequest) {
         let challenge = RemoteCameraPairingChallenge(
             deviceID: deviceID,
             deviceName: dependencies.deviceName(),
             shortCode: "",
             challengeNonce: dependencies.makeChallengeNonce(),
-            requiresShortCode: !isTrusted
+            requiresShortCode: request.requiresShortCode
         )
-        pairingState = .challenging(macIdentity: macIdentity, challenge: challenge, isTrusted: isTrusted)
-        snapshot.connectionState = .pairing
-        snapshot.statusMessage = isTrusted ? "Checking trusted Mac" : "Enter this code on your Mac"
+        pairingState = .challenging(macIdentity: request.macIdentity, challenge: challenge, isTrusted: request.isTrusted)
+        snapshot.pairingStep = request.requiresShortCode ? .code : .waitingForMac
+        snapshot.statusMessage = request.isTrusted ? "Checking trusted Mac"
+            : request.requiresShortCode ? "Enter this code on your Mac" : "Connecting"
         #if DEBUG
         if challenge.requiresShortCode {
             Self.diagnosticLog("Pairing code \(snapshot.pairingCode)")
@@ -560,10 +464,8 @@ final class CompanionConnectionSession {
         }
         snapshot.isPairedWithMac = true
         Self.diagnosticLog("Remote camera pairing completed: \(status)")
-        discoveryRetryTask?.cancel()
-        discoveryRetryTask = nil
+        cancelDiscoveryRetry()
         snapshot.connectionState = .connected
-        snapshot.pairedMacName = "BlitzRecorder Mac"
         snapshot.statusMessage = "Getting camera ready"
         publish()
         send(.paired(RemoteCameraPairingTrust(
@@ -589,12 +491,10 @@ final class CompanionConnectionSession {
     }
 
     private func isActiveAdvertiser(_ candidate: any CompanionConnectionAdvertising) -> Bool {
-        guard let advertiser else { return false }
-        return ObjectIdentifier(advertiser as AnyObject) == ObjectIdentifier(candidate as AnyObject)
+        advertiser === candidate
     }
 
     private func isActiveConnection(_ candidate: any CompanionFrameConnection) -> Bool {
-        guard let controlConnection else { return false }
-        return ObjectIdentifier(controlConnection as AnyObject) == ObjectIdentifier(candidate as AnyObject)
+        controlConnection === candidate
     }
 }

@@ -13,6 +13,8 @@ packages:
     path: Packages/BlitzRecorderDomain
   BlitzRecorderTransport:
     path: Packages/BlitzRecorderTransport
+  BlitzRecorderDesign:
+    path: Packages/BlitzRecorderDesign
   MCPSwiftSDK:
     url: https://github.com/modelcontextprotocol/swift-sdk.git
     exactVersion: 0.12.1
@@ -70,6 +72,8 @@ targets:
     dependencies:
       - package: BlitzRecorderCore
         product: BlitzRecorderCore
+      - package: BlitzRecorderDesign
+        product: BlitzRecorderDesign
       - package: BlitzRecorderDomain
         product: BlitzRecorderDomain
       - package: BlitzRecorderTransport
@@ -94,8 +98,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: dev.blitzreels.blitzrecorder
         INFOPLIST_FILE: Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: ""
-        MARKETING_VERSION: "0.38.3"
-        CURRENT_PROJECT_VERSION: "51"
+        MARKETING_VERSION: "0.39.0"
+        CURRENT_PROJECT_VERSION: "52"
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
       configs:
         Debug:
@@ -119,6 +123,7 @@ targets:
     deploymentTarget: "18.0"
     sources:
       - path: Apps/iOSCamera/Sources
+      - path: Apps/iOSCamera/Shared
       - path: Apps/iOSCamera/Resources/Assets.xcassets
       - path: Apps/iOSCamera/Resources/PrivacyInfo.xcprivacy
         buildPhase: resources
@@ -151,8 +156,11 @@ targets:
     dependencies:
       - package: BlitzRecorderCore
         product: BlitzRecorderCore
+      - package: BlitzRecorderDesign
+        product: BlitzRecorderDesign
       - package: BlitzRecorderTransport
         product: BlitzRecorderTransport
+      - target: BlitzRecorderCameraControls
     settings:
       base:
         PRODUCT_NAME: BlitzRecorderCamera
@@ -162,8 +170,25 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: ""
         TARGETED_DEVICE_FAMILY: "1,2"
-        MARKETING_VERSION: "0.38.3"
-        CURRENT_PROJECT_VERSION: "51"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "3"
+
+  BlitzRecorderCameraControls:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Apps/iOSCameraControls/Sources
+      - path: Apps/iOSCamera/Shared
+    settings:
+      base:
+        PRODUCT_NAME: BlitzRecorderCameraControls
+        PRODUCT_BUNDLE_IDENTIFIER: dev.blitzreels.blitzrecorder.camera.controls
+        INFOPLIST_FILE: Apps/iOSCameraControls/Info.plist
+        TARGETED_DEVICE_FAMILY: "1,2"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "3"
+        SKIP_INSTALL: YES
 
 schemes:
   BlitzRecorder:
