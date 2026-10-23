@@ -284,6 +284,7 @@
 		71D761A956CA1D85DEC7AB35 /* EditorTimelineTrackHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0B463ACBB235C2BEBA93787 /* EditorTimelineTrackHeader.swift */; };
 		7240FB996B6C54199E623499 /* CompanionCameraScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C72B19912C3574EBC57AB2E /* CompanionCameraScreen.swift */; };
 		724F3842E76A08BD86B618A2 /* CallAudioAnalysis.swift in Sources */ = {isa = PBXBuildFile; fileRef = 011994871005A589D500EA25 /* CallAudioAnalysis.swift */; };
+		72DCF887C08D37F5D9F3220B /* ProjectSaveQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E87AAC441DF908177D6585E /* ProjectSaveQueue.swift */; };
 		731BDA6ECF6049AF6B7F82A8 /* DiskCacheConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAE561218806A89D5DD4009D /* DiskCacheConfiguration.swift */; };
 		733AA9D5FF826F4F1EEA248D /* EditorCanvasStage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DF6827C0F71B16A1C608A58 /* EditorCanvasStage.swift */; };
 		73E455AAB98514525BC632E3 /* BlitzUIPrimitives.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D53FEB42F8BC2321044C21D /* BlitzUIPrimitives.swift */; };
@@ -342,6 +343,7 @@
 		8E0A21A77169107ED7450455 /* Merger.swift in Sources */ = {isa = PBXBuildFile; fileRef = E097E4BC7F7B1E3DAC98F9AB /* Merger.swift */; };
 		8E9603E54C90B4CD4FC54E9E /* RecorderViewModel+RecordingSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 318CB4C0AC50ABED17667E5C /* RecorderViewModel+RecordingSession.swift */; };
 		8F35A6057105074742EF03AC /* MCPProjectService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAF44D05FA8A523149608D57 /* MCPProjectService.swift */; };
+		8F85EBC58A1CB60B1823FE43 /* ProjectFileCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBFCBFF0932F1392462091A4 /* ProjectFileCache.swift */; };
 		8FB8B4CCFC5AEE933F9BAF81 /* RecordingProjectHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = F711C68E5364627BEC43C91C /* RecordingProjectHistory.swift */; };
 		8FC72D2BC90F13D89BED31A5 /* PreviewStageEditing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 497D1FF69DF0EF515FE0BA4F /* PreviewStageEditing.swift */; };
 		904A40ECAA8AE154145005A7 /* MonitorPreviewPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F7918852C34B3AD365DD85C /* MonitorPreviewPipeline.swift */; };
@@ -760,6 +762,7 @@
 		2E1ADCEE01AFBDED3DB396C8 /* IntegrationClaude.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = IntegrationClaude.png; sourceTree = "<group>"; };
 		2E5B81E1C162C2178896A5ED /* CaptureValueClamps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureValueClamps.swift; sourceTree = "<group>"; };
 		2E751CD7ECA46C611D3FD271 /* Icon-App-40x40@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icon-App-40x40@2x.png"; sourceTree = "<group>"; };
+		2E87AAC441DF908177D6585E /* ProjectSaveQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectSaveQueue.swift; sourceTree = "<group>"; };
 		2E93AC35825DD8F786C7FC1A /* EditorKeyboardShortcutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorKeyboardShortcutView.swift; sourceTree = "<group>"; };
 		2EC055AFF475F3BC9B599865 /* RecorderViewModel+EditorProject.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecorderViewModel+EditorProject.swift"; sourceTree = "<group>"; };
 		2F242D71EFB0E3CF1D1CBBC1 /* AppearanceSettingsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettingsPage.swift; sourceTree = "<group>"; };
@@ -1124,6 +1127,7 @@
 		C8B8E86C8BA3D3776BEE8DD4 /* MCPDesktopExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPDesktopExtension.swift; sourceTree = "<group>"; };
 		C8F2F4400638C6D8F6559DCD /* BlitzDesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlitzDesignSystem.swift; sourceTree = "<group>"; };
 		CA60B9B6353830FB52F3AAE0 /* AccountsSettingsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountsSettingsPage.swift; sourceTree = "<group>"; };
+		CBFCBFF0932F1392462091A4 /* ProjectFileCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectFileCache.swift; sourceTree = "<group>"; };
 		CC63B335ABED243AD69E5854 /* RecordingStartSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingStartSettings.swift; sourceTree = "<group>"; };
 		CCEAC5896C1F7C67E7C8C404 /* EditorOutputsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorOutputsPane.swift; sourceTree = "<group>"; };
 		CD438796CEBF64395FF86524 /* ExportVideoQuality.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportVideoQuality.swift; sourceTree = "<group>"; };
@@ -1488,8 +1492,10 @@
 				4110466BFECBC7CB67568D66 /* ProjectAIPrompt.swift */,
 				24711045F8FD34C2C68CFA1C /* ProjectExportPlacement.swift */,
 				AC53630727CC213ADE4457A8 /* ProjectExportRenderPlan.swift */,
+				CBFCBFF0932F1392462091A4 /* ProjectFileCache.swift */,
 				07EE741199239718EDD6B39E /* ProjectFolders.swift */,
 				6DEBE81790A03D41D67B228B /* ProjectRenameDraft.swift */,
+				2E87AAC441DF908177D6585E /* ProjectSaveQueue.swift */,
 				2F454716F2820AA696C2B78A /* ProjectTranscriptSearch.swift */,
 				E6635064CF7091C0BA4A72BA /* RecorderCaptureRuntime.swift */,
 				2BFE2052D456A7B066B9BA15 /* RecorderCoordinator.swift */,
@@ -2459,6 +2465,7 @@
 				5A27FAB8CED11F6DE2466D77 /* ProjectAIPromptButton.swift in Sources */,
 				6F42D3C3AFDA846AAFCE8600 /* ProjectExportPlacement.swift in Sources */,
 				7990612FD746A51027A17110 /* ProjectExportRenderPlan.swift in Sources */,
+				8F85EBC58A1CB60B1823FE43 /* ProjectFileCache.swift in Sources */,
 				EF9409020528C080EE9BB46B /* ProjectFolderActions.swift in Sources */,
 				BCDFFC867BA6D1C8EC6AA99D /* ProjectFolders.swift in Sources */,
 				7C7D5C63BF3B6DDDDB190E5D /* ProjectLibraryBulkSelection.swift in Sources */,
@@ -2479,6 +2486,7 @@
 				67FC74E3D67E963B4716D532 /* ProjectLibraryView.swift in Sources */,
 				A482031A0FEC42B232F83004 /* ProjectRenameDraft.swift in Sources */,
 				BA41DAA6C2B6FC3E23162CE9 /* ProjectRenameEditor.swift in Sources */,
+				72DCF887C08D37F5D9F3220B /* ProjectSaveQueue.swift in Sources */,
 				FE5F3828091762E320EBB46C /* ProjectThumbnailSampling.swift in Sources */,
 				10D59103C69B4F935A07119E /* ProjectTranscriptPanel.swift in Sources */,
 				011D3D8920499E62E20A8B4E /* ProjectTranscriptSearch.swift in Sources */,

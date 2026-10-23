@@ -15,6 +15,7 @@ struct ProjectEditConflict: LocalizedError {
 }
 
 /// Posted after a save changes a project's edits, so editors holding an older copy can load the new one.
+/// Renames and finished exports post it with an unchanged revision: same edits, newer title or export list.
 struct RecordingProjectEdited: Sendable {
     let projectPath: String
     let editRevision: Int
@@ -28,6 +29,33 @@ struct TakeFileStore {
     private static let projectHistoryLock = NSRecursiveLock()
     /// Serializes every read-modify-write of a project file in this process.
     static let projectWriteLock = NSRecursiveLock()
+    static let projectCache = ProjectFileCache()
+
+    /// The in-memory copy an editor change is worked out on. While it is set, reading or writing its project
+    /// uses the copy instead of the file, so the editor's existing edit functions run without touching disk.
+    final class ProjectDraft: @unchecked Sendable {
+        let projectPath: String
+        var project: RecordingProject
+
+        init(projectURL: URL, project: RecordingProject) {
+            projectPath = ProjectSaveQueue.key(for: projectURL)
+            self.project = project
+        }
+
+        func matches(_ url: URL) -> Bool { ProjectSaveQueue.key(for: url) == projectPath }
+
+        /// Runs an editor change on this copy and returns the project it makes. Nothing is written.
+        func stage(_ change: () throws -> RecordingProject) throws -> RecordingProject {
+            try TakeFileStore.$draft.withValue(self) { _ = try change() }
+            return project
+        }
+    }
+
+    @TaskLocal static var draft: ProjectDraft?
+
+    static func logLibraryIndexFailure(_ error: Error) {
+        libraryLog.error("Could not update the library index: \(error.localizedDescription, privacy: .public)")
+    }
 
     func loadProjectHistory(settings: RecordingSettings) -> RecordingProjectHistory {
         var entries: [RecordingProjectHistory.Entry] = []
@@ -151,12 +179,30 @@ struct TakeFileStore {
     }
 
     func loadRecordingProject(at url: URL) throws -> RecordingProject {
+        if let draft = Self.draft, draft.matches(url) { return draft.project }
+        let saved = try savedRecordingProject(at: url)
+        // An editor change still waiting to be written is what the project is now, for every reader.
+        guard let pending = ProjectSaveQueue.shared.pendingProject(at: url) else { return saved }
+        return pending.keepingSavedMetadata(from: saved)
+    }
+
+    private func savedRecordingProject(at url: URL) throws -> RecordingProject {
+        // Stamped before reading: if the file changes mid-read, the next load sees a new stamp and decodes again.
+        let stamp = ProjectFileCache.Stamp(url: url)
+        if let stamp, let cached = Self.projectCache.project(path: url.path, stamp: stamp) { return cached }
         let data = try Data(contentsOf: url)
+        let project: RecordingProject
         do {
-            return try Self.projectDecoder().decode(RecordingProject.self, from: data)
+            project = try Self.projectDecoder().decode(RecordingProject.self, from: data)
         } catch {
-            return try RecordingProject.importedPortable(from: data, projectURL: url)
+            project = try RecordingProject.importedPortable(from: data, projectURL: url)
         }
+        // Imported videos are found through bookmarks while decoding, so those projects depend on more than
+        // their file and are decoded fresh each time; caching them would also keep the original's access open.
+        if let stamp, !project.sources.contains(where: { $0.bookmarkData != nil }) {
+            Self.projectCache.insert(.init(path: url.path, stamp: stamp, project: project))
+        }
+        return project
     }
 
     func renameProject(
@@ -182,6 +228,7 @@ struct TakeFileStore {
             options: .atomic
         )
         try upsertProjectHistory(renamedProject, settings: request.settings)
+        Self.postProjectEdited(renamedProject)
         return renamedProject
     }
 
@@ -203,6 +250,18 @@ struct TakeFileStore {
         ))
         try Self.projectEncoder().encode(updated).write(to: request.projectURL, options: .atomic)
         try upsertProjectHistory(updated, settings: request.settings)
+        Self.postProjectEdited(updated)
+    }
+
+    /// Observers run on the main queue, and posting waits for them. A writer off the main thread usually still
+    /// holds `projectWriteLock`, which the main thread may be waiting for, so it posts without waiting.
+    static func postProjectEdited(_ project: RecordingProject) {
+        let edited = RecordingProjectEdited(projectPath: project.projectPath, editRevision: project.editRevision)
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { NotificationCenter.default.post(name: .recordingProjectEdited, object: edited) }
+            return
+        }
+        NotificationCenter.default.post(name: .recordingProjectEdited, object: edited)
     }
 
     private struct ProjectMetadataUpdate {
@@ -247,6 +306,9 @@ struct TakeFileStore {
             fileURLWithPath: request.project.takeDirectoryPath,
             isDirectory: true
         ).standardizedFileURL
+        // Waits for a save in flight; any save after this finds the folder gone, so the recording stays deleted.
+        Self.projectWriteLock.lock()
+        defer { Self.projectWriteLock.unlock() }
         try validateProjectDeletionTarget(request)
 
         var receipt: RecordingProjectTrashReceipt?
@@ -289,6 +351,8 @@ struct TakeFileStore {
         guard access.hasSecurityScopedAccess else {
             throw RecorderError.outputDirectoryUnavailable(Self.permissionRecoveryMessage(for: librarySettings.sourceStorage.url))
         }
+        Self.projectWriteLock.lock()
+        defer { Self.projectWriteLock.unlock() }
         try validateProjectDeletionTarget(.init(project: receipt.project, settings: request.settings, disposition: .trash))
         let original = URL(fileURLWithPath: receipt.project.takeDirectoryPath, isDirectory: true)
         guard !fileManager.fileExists(atPath: original.path) else {
@@ -355,7 +419,7 @@ struct TakeFileStore {
         guard access.hasSecurityScopedAccess else {
             throw RecorderError.outputDirectoryUnavailable(Self.permissionRecoveryMessage(for: settings.sourceStorage.url))
         }
-        var history = try loadLocalProjectHistory(settings: settings)
+        var history = try indexForUpdate(settings: settings)
         history.entries.removeAll { $0.id == project.id || $0.projectPath == project.projectPath }
         history.entries.insert(RecordingProjectHistory.Entry(project), at: 0)
         history.sortByRecordedDate()
@@ -363,6 +427,16 @@ struct TakeFileStore {
             history: history,
             settings: settings
         ))
+    }
+
+    /// The saved index as it is, for changing one entry. Every save lands here, so it skips listing the take
+    /// folders; library loads add any folder the index misses. A missing or damaged index takes the repair path.
+    private func indexForUpdate(settings: RecordingSettings) throws -> RecordingProjectHistory {
+        if let data = try? Data(contentsOf: projectHistoryURL(for: settings)),
+           let history = try? Self.projectDecoder().decode(RecordingProjectHistory.self, from: data) {
+            return history
+        }
+        return try loadLocalProjectHistory(settings: settings)
     }
 
     private struct ProjectLibrarySettingsRequest {

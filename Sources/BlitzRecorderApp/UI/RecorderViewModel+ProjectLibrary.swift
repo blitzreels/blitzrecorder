@@ -40,6 +40,11 @@ extension RecorderViewModel {
         transcriptionController.syncProjects(coordinator.projectLibrary.reload(settings: settings))
     }
 
+    /// After a save to one project: updates its row instead of reading every library again on the main thread.
+    func refreshLibraryEntry(for project: RecordingProject) {
+        if !coordinator.projectLibrary.replace(RecordingProjectHistory.Entry(project)) { refreshRecentProjects() }
+    }
+
     func showRecorder() {
         if let onShowRecorder { onShowRecorder(); return }
         guard !projectTrash.isWorking else { return }
@@ -92,7 +97,7 @@ extension RecorderViewModel {
             if lastExportedProject?.id == renamedProject.id {
                 lastExportedProject = renamedProject
             }
-            refreshRecentProjects()
+            refreshLibraryEntry(for: renamedProject)
         } catch {
             projectLibraryError = error.localizedDescription
         }

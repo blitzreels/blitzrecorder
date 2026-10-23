@@ -109,38 +109,77 @@ extension RecorderViewModel {
         let write: (URL) throws -> RecordingProject
     }
 
-    /// The one path every editor change takes to disk: it saves only over the revision this editor loaded,
-    /// records the undo step, and on a conflict loads the saved version instead of overwriting it.
+    /// The one path every editor change takes to disk. The change is worked out on the project this editor shows
+    /// and shown at once; `ProjectSaveQueue` writes it behind, only over the revision it was made on. A save that
+    /// fails or meets a newer edit from elsewhere loads the saved version instead (`finishEditorSave`).
     private func commitEditorWrite(_ edit: EditorProjectWrite) -> Bool {
         guard let projectURL = lastExportedProjectURL, let previousProject = lastExportedProject else {
             detailMessage = "No editable project is available for this recording."
             return false
         }
-        isSavingProjectEdit = true
-        defer { isSavingProjectEdit = false }
         do {
-            lastExportedProject = try TakeFileStore().editProject(.init(
-                projectURL: projectURL, expectedEditRevision: previousProject.editRevision
-            )) { try edit.write(projectURL) }
-            if edit.refreshesLibrary { refreshRecentProjects() }
+            let staged = try stageEditorChange(.init(projectURL: projectURL, base: previousProject) { try edit.write(projectURL) })
+            lastExportedProject = staged
+            if edit.refreshesLibrary { refreshLibraryEntry(for: staged) }
             if let message = edit.successMessage { detailMessage = message }
             recordEditorMutation(previousProject: previousProject, actionName: edit.actionName)
             return true
-        } catch let conflict as ProjectEditConflict {
-            loadConflictingProject(conflict)
-            return false
         } catch {
             detailMessage = error.localizedDescription
             return false
         }
     }
 
-    /// Another window or agent saved a newer edit of the project this editor shows. The notification can
-    /// arrive while this editor is saving its own edit, which `isSavingProjectEdit` filters out.
+    private struct EditorChange {
+        let projectURL: URL
+        let base: RecordingProject
+        let change: () throws -> RecordingProject
+    }
+
+    /// Runs the change on an in-memory copy of `base` and queues its save. Throws only when the change itself
+    /// is invalid (for example a scene that no longer exists); disk errors arrive later in `finishEditorSave`.
+    private func stageEditorChange(_ request: EditorChange) throws -> RecordingProject {
+        let draft = TakeFileStore.ProjectDraft(projectURL: request.projectURL, project: request.base)
+        let staged = try draft.stage(request.change)
+        ProjectSaveQueue.shared.enqueue(.init(
+            projectURL: request.projectURL, project: staged, baseRevision: request.base.editRevision, settings: settings,
+            owner: ObjectIdentifier(self), generation: editSaveGeneration
+        ) { [weak self] outcome in self?.finishEditorSave(outcome) })
+        return staged
+    }
+
+    /// A queued save either landed, or could not: then this window shows what is on disk, because the changes
+    /// after it were made on top of one that never saved.
+    private func finishEditorSave(_ outcome: ProjectSaveQueue.Outcome) {
+        switch outcome {
+        case .saved, .skipped:
+            return
+        case let .conflict(conflict, generation):
+            editSaveGeneration = generation
+            guard lastExportedProject?.projectPath == conflict.current.projectPath else { return }
+            loadConflictingProject(conflict)
+        case let .failed(error, saved, generation):
+            editSaveGeneration = generation
+            detailMessage = "Your last change could not be saved: \(error.localizedDescription)"
+            guard let saved, lastExportedProject?.projectPath == saved.projectPath else { return }
+            lastExportedProject = saved
+            clearEditorHistory()
+            refreshRecentProjects()
+        }
+    }
+
+    /// Another window or agent saved a newer edit of the project this editor shows. This window's own queued
+    /// saves post the same notification; while any are pending, the conflict check in the queue decides instead.
     func adoptEditSavedElsewhere(_ edit: RecordingProjectEdited) {
-        guard !isSavingProjectEdit, let current = lastExportedProject, current.projectPath == edit.projectPath,
-              edit.editRevision > current.editRevision,
+        guard !ProjectSaveQueue.shared.hasPendingSaves(projectPath: edit.projectPath, owner: ObjectIdentifier(self)),
+              let current = lastExportedProject, current.projectPath == edit.projectPath,
+              edit.editRevision >= current.editRevision,
               let saved = try? TakeFileStore().loadRecordingProject(at: URL(fileURLWithPath: edit.projectPath)) else { return }
+        guard edit.editRevision > current.editRevision else {
+            // Same edits with a new title or export: refresh them and keep undo history.
+            if saved.editRevision == current.editRevision, saved.updatedAt > current.updatedAt { lastExportedProject = saved }
+            return
+        }
         lastExportedProject = saved
         clearEditorHistory()
         detailMessage = "Loaded changes saved in another window."
@@ -209,18 +248,14 @@ extension RecorderViewModel {
     }
 
     private func restoreEditorProject(_ snapshot: RecordingProject) throws -> RecordingProject {
-        isSavingProjectEdit = true
-        defer { isSavingProjectEdit = false }
         let projectURL = URL(fileURLWithPath: snapshot.projectPath)
-        return try TakeFileStore().editProject(.init(
-            projectURL: projectURL, expectedEditRevision: lastExportedProject?.editRevision ?? snapshot.editRevision
-        )) {
+        return try stageEditorChange(.init(projectURL: projectURL, base: lastExportedProject ?? snapshot) { [coordinator, settings] in
             try coordinator.restoreProjectSceneTimeline(.init(
                 projectURL: projectURL,
                 snapshot: snapshot,
                 baseSettings: settings
             ))
-        }
+        })
     }
 
     private func recordEditorMutation(previousProject: RecordingProject?, actionName: String) {

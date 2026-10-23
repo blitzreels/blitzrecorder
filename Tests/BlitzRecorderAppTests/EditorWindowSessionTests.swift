@@ -91,6 +91,12 @@ final class EditorWindowSessionTests: XCTestCase {
         XCTAssertEqual(reopened.editorState, state)
     }
 
+    /// Editor changes are written behind the editor; waits for them and for the notifications they post.
+    private func savesSettled() async {
+        await Task.detached { ProjectSaveQueue.shared.waitUntilIdle() }.value
+        await MainActor.run {}
+    }
+
     func testSecondEditorPicksUpSavedEditsInsteadOfOverwritingThem() async throws {
         let fixture = try fixture()
         let first = RecorderViewModel(coordinator: fixture.recorder.coordinator, previewStage: PreviewStageView())
@@ -108,13 +114,13 @@ final class EditorWindowSessionTests: XCTestCase {
             backgroundMusicBookmarkData: nil, backgroundMusicVolume: nil, exportRecipe: nil
         )
         XCTAssertTrue(first.applyProjectEditorState(.init(editorState: muted, actionName: "Mute Microphone")))
-        await Task.yield()
+        await savesSettled()
         XCTAssertTrue(first.canUndoEditor)
         XCTAssertEqual(second.lastExportedProject?.editorState, muted)
         XCTAssertFalse(second.canUndoEditor)
 
         XCTAssertTrue(second.applyProjectEditorState(.init(editorState: hidden, actionName: "Hide Camera")))
-        await Task.yield()
+        await savesSettled()
         XCTAssertEqual(first.lastExportedProject?.editorState, hidden)
         XCTAssertFalse(first.canUndoEditor)
         XCTAssertTrue(second.canUndoEditor)

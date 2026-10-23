@@ -17,6 +17,8 @@ final class LoopbackMCPHTTPServer: @unchecked Sendable {
 
     private let configuration: Configuration
     private let eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+    /// `start` and `stop` run on different tasks, so the bound channels are only touched under this lock.
+    private let channelsLock = NSLock()
     private var channels: [Channel] = []
 
     init(_ configuration: Configuration) {
@@ -41,13 +43,15 @@ final class LoopbackMCPHTTPServer: @unchecked Sendable {
             }
             .childChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
 
-        channels = [try await bootstrap.bind(
+        let primary = try await bootstrap.bind(
             host: configuration.host,
             port: configuration.port
-        ).get()]
+        ).get()
+        channelsLock.withLock { channels = [primary] }
         for host in configuration.fallbackHosts {
             do {
-                channels.append(try await bootstrap.bind(host: host, port: configuration.port).get())
+                let fallback = try await bootstrap.bind(host: host, port: configuration.port).get()
+                channelsLock.withLock { channels.append(fallback) }
             } catch where Self.isAddressInUse(error) {
                 throw error
             } catch {
@@ -61,10 +65,13 @@ final class LoopbackMCPHTTPServer: @unchecked Sendable {
     }
 
     func stop() async {
-        for channel in channels {
+        let bound = channelsLock.withLock {
+            defer { channels = [] }
+            return channels
+        }
+        for channel in bound {
             try? await channel.close().get()
         }
-        channels = []
         try? await eventLoopGroup.shutdownGracefully()
     }
 }

@@ -100,7 +100,9 @@ final class RecorderViewModel {
     /// This window's wait on the shared library refresh, so callers and tests can await it.
     @ObservationIgnored var projectRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var projectEditedObserver: NSObjectProtocol?
-    @ObservationIgnored var isSavingProjectEdit = false
+    /// Which of this window's queued saves still count; it moves on when a save fails, dropping the ones
+    /// made on top of it (see `ProjectSaveQueue`).
+    @ObservationIgnored var editSaveGeneration = 0
     let elapsedClock = RecordingElapsedClock()
 
     @ObservationIgnored var onPresentSettings: ((SettingsPane?) -> Void)?

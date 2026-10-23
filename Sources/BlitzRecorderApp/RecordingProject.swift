@@ -228,6 +228,21 @@ struct RecordingProject: Codable, Equatable {
             && editorState == other.editorState && timelineEdits == other.timelineEdits
     }
 
+    /// This copy's edits on top of what `saved` says about everything else: a rename, a finished export or new
+    /// analysis saved while this edit waited keeps its values.
+    func keepingSavedMetadata(from saved: RecordingProject) -> RecordingProject {
+        var merged = RecordingProject(
+            version: version, id: id, createdAt: createdAt, updatedAt: max(updatedAt, saved.updatedAt),
+            title: saved.title, projectPath: projectPath, takeDirectoryPath: takeDirectoryPath,
+            finalVideoPath: saved.finalVideoPath, settings: settings, sources: sources, sceneEvents: sceneEvents,
+            chapters: chapters, editorTimeline: editorTimeline, editorState: editorState, exports: saved.exports,
+            timelineTrimOffsetSeconds: timelineTrimOffsetSeconds, sourceTimelineOffsetSeconds: sourceTimelineOffsetSeconds,
+            timelineEdits: timelineEdits, analysis: saved.analysis
+        )
+        merged.editRevision = editRevision
+        return merged
+    }
+
     var portableSceneLayout: PortableSceneLayout {
         guard let snapshot = sceneEvents.last?.scene else {
             return .screenOnly

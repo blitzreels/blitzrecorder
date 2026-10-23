@@ -30,6 +30,17 @@ final class ProjectLibraryStore {
         return loaded
     }
 
+    /// Swaps in the row of one project that is already listed, after a save that only changed that project.
+    /// Returns false when it is not listed, so the caller reloads instead.
+    func replace(_ entry: RecordingProjectHistory.Entry) -> Bool {
+        guard let index = entries.firstIndex(where: { $0.id == entry.id }) else { return false }
+        var history = RecordingProjectHistory(version: 1, entries: entries)
+        history.entries[index] = entry
+        history.sortByRecordedDate()
+        entries = history.entries
+        return true
+    }
+
     /// Reloads now, for callers that need the list to include a write they just made.
     @discardableResult
     func reload(settings: RecordingSettings) -> [RecordingProjectHistory.Entry] {

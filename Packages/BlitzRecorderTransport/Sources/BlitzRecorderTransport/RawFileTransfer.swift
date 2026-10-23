@@ -88,10 +88,10 @@ public final class RawFileTransferServer: @unchecked Sendable {
                 switch state {
                 case .ready:
                     let port = listener.port?.rawValue ?? 0
-                    self?.queue.async { self?.port = port }
+                    self?.queue.async { [weak self] in self?.port = port }
                     if resumed.claim() { continuation.resume(returning: port) }
                 case .failed(let error):
-                    self?.queue.async {
+                    self?.queue.async { [weak self] in
                         self?.listener = nil
                         self?.port = nil
                     }

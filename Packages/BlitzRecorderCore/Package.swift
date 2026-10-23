@@ -11,7 +11,8 @@ let package = Package(
         .library(name: "BlitzRecorderCore", targets: ["BlitzRecorderCore"])
     ],
     targets: [
-        .target(name: "BlitzRecorderCore"),
+        // Data races in this module are compile errors waiting to happen, not warnings to ignore.
+        .target(name: "BlitzRecorderCore", swiftSettings: [.enableExperimentalFeature("StrictConcurrency")]),
         .testTarget(
             name: "BlitzRecorderCoreTests",
             dependencies: ["BlitzRecorderCore"]

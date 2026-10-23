@@ -87,57 +87,114 @@ extension TakeFileStore {
         settings: RecordingSettings,
         sceneEvents: [RecordingSceneEvent],
         finalVideoURL: URL?,
-        chapters: [RecordingProject.ChapterSnapshot] = [],
-        editorTimeline: RecordingProject.TimelineSnapshot = .empty,
+        chapters: [RecordingProject.ChapterSnapshot]? = nil,
+        editorTimeline: RecordingProject.TimelineSnapshot? = nil,
         editorState: RecordingProject.EditorStateSnapshot? = nil,
         exportRecord: RecordingProject.ExportRecord? = nil,
         timelineEdits: RecordingProject.TimelineEditsSnapshot? = nil
     ) throws {
+        let edits = ProjectEdits(
+            take: take, settings: settings, sceneEvents: sceneEvents, finalVideoURL: finalVideoURL, chapters: chapters,
+            editorTimeline: editorTimeline, editorState: editorState, exportRecord: exportRecord, timelineEdits: timelineEdits
+        )
+        if let draft = Self.draft, draft.matches(take.projectURL) {
+            // Editor changes are worked out on the copy the editor shows; `ProjectSaveQueue` writes them.
+            draft.project = recordingProject(.init(edits: edits, existing: draft.project, sources: draft.project.sources))
+            return
+        }
         Self.projectWriteLock.lock()
         defer { Self.projectWriteLock.unlock() }
-        let now = Date()
         let projectURL = take.projectURL
-        let existingProject = try? loadRecordingProject(at: projectURL)
+        // A project that exists but can't be read is never replaced: that would silently drop its edits and exports.
+        let existingProject = FileManager.default.fileExists(atPath: projectURL.path)
+            ? try loadRecordingProject(at: projectURL)
+            : nil
+        let project = recordingProject(.init(edits: edits, existing: existingProject, sources: projectSourceFiles(for: take)))
+        let data = try Self.projectEncoder().encode(project)
+        try data.write(to: projectURL, options: .atomic)
+        if let existingProject, existingProject.editRevision != project.editRevision {
+            Self.postProjectEdited(project)
+        }
+        try upsertProjectHistory(project, settings: settings)
+    }
+
+    private struct ProjectEdits {
+        let take: RecordingTake
+        let settings: RecordingSettings
+        let sceneEvents: [RecordingSceneEvent]
+        let finalVideoURL: URL?
+        let chapters: [RecordingProject.ChapterSnapshot]?
+        let editorTimeline: RecordingProject.TimelineSnapshot?
+        let editorState: RecordingProject.EditorStateSnapshot?
+        let exportRecord: RecordingProject.ExportRecord?
+        let timelineEdits: RecordingProject.TimelineEditsSnapshot?
+    }
+
+    private struct ProjectBuild {
+        let edits: ProjectEdits
+        let existing: RecordingProject?
+        let sources: [RecordingProject.SourceFile]
+    }
+
+    /// The project these edits make. Fields the caller leaves nil keep what `existing` has.
+    private func recordingProject(_ build: ProjectBuild) -> RecordingProject {
+        let edits = build.edits
+        let take = edits.take
+        let existingProject = build.existing
+        let now = Date()
         var exports = existingProject?.exports ?? []
-        if let exportRecord {
+        if let exportRecord = edits.exportRecord {
             exports = exports.upserting(exportRecord)
         }
         var project = RecordingProject(
             version: 1,
-            id: projectID(for: take, projectURL: projectURL),
+            id: existingProject?.id ?? UUID(),
             createdAt: projectCreatedAt(for: take, fallback: now),
             updatedAt: now,
             title: take.titleSlug ?? Self.defaultSlug(for: take.scratchDirectory),
-            projectPath: projectURL.path,
+            projectPath: take.projectURL.path,
             takeDirectoryPath: take.scratchDirectory.path,
-            finalVideoPath: finalVideoURL?.path,
-            settings: RecordingProject.SettingsSnapshot(settings),
-            sources: projectSourceFiles(for: take),
-            sceneEvents: sceneEvents.map(RecordingProject.SceneEventSnapshot.init),
-            chapters: chapters,
-            editorTimeline: editorTimeline,
-            editorState: editorState ?? existingProject?.editorState ?? .empty,
+            finalVideoPath: edits.finalVideoURL?.path,
+            settings: RecordingProject.SettingsSnapshot(edits.settings),
+            sources: build.sources,
+            sceneEvents: edits.sceneEvents.map(RecordingProject.SceneEventSnapshot.init),
+            chapters: edits.chapters ?? existingProject?.chapters ?? [],
+            editorTimeline: edits.editorTimeline ?? existingProject?.editorTimeline ?? .empty,
+            editorState: edits.editorState ?? existingProject?.editorState ?? .empty,
             exports: exports,
             timelineTrimOffsetSeconds: max(0, take.timelineTrimOffset.seconds),
             sourceTimelineOffsetSeconds: Dictionary(uniqueKeysWithValues: take.sourceTimelineOffsets.map {
                 ($0.key.rawValue, max(0, $0.value.seconds))
             }),
-            timelineEdits: timelineEdits ?? existingProject?.timelineEdits ?? .empty,
+            timelineEdits: edits.timelineEdits ?? existingProject?.timelineEdits ?? .empty,
             analysis: existingProject?.analysis ?? .empty
         )
         if let existingProject {
             project.editRevision = existingProject.editRevision + (project.hasSameEdits(as: existingProject) ? 0 : 1)
         }
+        return project
+    }
 
-        let data = try Self.projectEncoder().encode(project)
-        try data.write(to: projectURL, options: .atomic)
-        if let existingProject, existingProject.editRevision != project.editRevision {
-            NotificationCenter.default.post(
-                name: .recordingProjectEdited,
-                object: RecordingProjectEdited(projectPath: project.projectPath, editRevision: project.editRevision)
-            )
+    /// Writes an editor change worked out in draft mode, on the save queue. It lands only on the revision it was
+    /// made on, or when the file already holds exactly these edits (a rename or export wrote them meanwhile).
+    func saveStagedProject(_ save: ProjectSaveQueue.Save) throws -> RecordingProject {
+        Self.projectWriteLock.lock()
+        defer { Self.projectWriteLock.unlock() }
+        let current = try loadRecordingProject(at: save.projectURL)
+        let alreadyHoldsEdits = current.editRevision == save.project.editRevision && current.hasSameEdits(as: save.project)
+        guard current.editRevision == save.baseRevision || alreadyHoldsEdits else {
+            throw ProjectEditConflict(current: current)
         }
-        try upsertProjectHistory(project, settings: settings)
+        let project = save.project.keepingSavedMetadata(from: current)
+        try Self.projectEncoder().encode(project).write(to: save.projectURL, options: .atomic)
+        if current.editRevision != project.editRevision { Self.postProjectEdited(project) }
+        do {
+            try upsertProjectHistory(project, settings: save.settings)
+        } catch {
+            // The edit is saved; the list repairs itself from the take folders on the next load.
+            Self.logLibraryIndexFailure(error)
+        }
+        return project
     }
 
     func finalVideoURL(slug: String?, settings: RecordingSettings, outputFormat: OutputVideoFormat) -> URL {
@@ -177,15 +234,6 @@ extension TakeFileStore {
             }
             index += 1
         }
-    }
-
-    private func projectID(for take: RecordingTake, projectURL: URL) -> UUID {
-        if let data = try? Data(contentsOf: projectURL) {
-            if let existing = try? Self.projectDecoder().decode(RecordingProject.self, from: data) {
-                return existing.id
-            }
-        }
-        return UUID()
     }
 
     private func projectCreatedAt(for take: RecordingTake, fallback: Date) -> Date {

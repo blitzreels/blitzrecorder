@@ -186,6 +186,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
             }
             await coordinator.shutdown()
             await mcpServer.stop()
+            // Editor changes are written behind the editor; quitting waits for the last ones to reach disk.
+            await Task.detached { ProjectSaveQueue.shared.waitUntilIdle() }.value
             sender?.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater

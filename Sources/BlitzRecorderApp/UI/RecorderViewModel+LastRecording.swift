@@ -40,7 +40,7 @@ extension RecorderViewModel {
                 if lastExportedProject?.id == renamedProject.id {
                     lastExportedProject = renamedProject
                 }
-                refreshRecentProjects()
+                refreshLibraryEntry(for: renamedProject)
                 detailMessage = "Transcript ready · Renamed to \(title)"
             } catch {
                 detailMessage = "Transcript ready · Automatic title skipped: \(error.localizedDescription)"
