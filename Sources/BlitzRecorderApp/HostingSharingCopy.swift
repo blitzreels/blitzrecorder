@@ -46,8 +46,8 @@ enum HostingSharingCopy {
                 if browserReady {
                     try await remux(asset, to: output)
                 } else {
-                    try await encodeFast(asset, track: track, transform: transform, displaySize: displaySize,
-                                         bounds: bounds, to: output, progress: request.progress)
+                    try await encode(.init(source: .init(asset: asset, track: track, transform: transform,
+                        displaySize: displaySize, bounds: bounds), output: output, kind: .sharing, progress: request.progress))
                 }
             } onCancel: {}
             try Task.checkCancellation()
@@ -76,12 +76,56 @@ enum HostingSharingCopy {
         try await exporter.export(to: output, as: .mp4)
     }
 
-    /// Hardware H.264. Keeps the source frame rate and scales only when a side exceeds 1080p.
-    private static func encodeFast(
-        _ asset: AVAsset, track: AVAssetTrack, transform: CGAffineTransform, displaySize: CGSize,
-        bounds: CGRect, to output: URL, progress: @escaping @Sendable (HostingClient.Progress) async -> Void
-    ) async throws {
-        let scale = min(1, 1080 / min(displaySize.width, displaySize.height), 1920 / max(displaySize.width, displaySize.height))
+    private struct EncodeSource {
+        let asset: AVAsset
+        let track: AVAssetTrack
+        let transform: CGAffineTransform
+        let displaySize: CGSize
+        let bounds: CGRect
+
+        init(asset: AVAsset, track: AVAssetTrack, transform: CGAffineTransform, displaySize: CGSize, bounds: CGRect) {
+            self.asset = asset
+            self.track = track
+            self.transform = transform
+            self.displaySize = displaySize
+            self.bounds = bounds
+        }
+
+        init(_ asset: AVAsset) async throws {
+            guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw sharingCopyFailure }
+            let (size, transform) = try await track.load(.naturalSize, .preferredTransform)
+            let bounds = CGRect(origin: .zero, size: size).applying(transform)
+            self.init(asset: asset, track: track, transform: transform, displaySize: bounds.size, bounds: bounds)
+        }
+    }
+
+    private enum EncodeKind {
+        /// The whole video, scaled only when a side exceeds 1080p.
+        case sharing
+        /// The first minute at up to 720p and 1.5 Mbit/s: the clip link previews (Discord, iMessage) play.
+        case preview
+
+        var shortSide: CGFloat { self == .sharing ? 1080 : 720 }
+        var longSide: CGFloat { self == .sharing ? 1920 : 1280 }
+        var seconds: Double? { self == .sharing ? nil : 60 }
+        var audioBitrate: Int { self == .sharing ? 160_000 : 128_000 }
+    }
+
+    private struct EncodeJob {
+        let source: EncodeSource
+        let output: URL
+        let kind: EncodeKind
+        let progress: @Sendable (HostingClient.Progress) async -> Void
+    }
+
+    /// Hardware H.264. Keeps the source frame rate and scales only when a side exceeds the kind's limit.
+    private static func encode(_ job: EncodeJob) async throws {
+        let (asset, track, transform, displaySize, bounds) = (job.source.asset, job.source.track, job.source.transform,
+                                                              job.source.displaySize, job.source.bounds)
+        let output = job.output
+        let progress = job.progress
+        let scale = min(1, job.kind.shortSide / min(displaySize.width, displaySize.height),
+                        job.kind.longSide / max(displaySize.width, displaySize.height))
         let renderSize = CGSize(width: max(2, floor(displaySize.width * scale / 2) * 2),
                                 height: max(2, floor(displaySize.height * scale / 2) * 2))
         let composition = AVMutableVideoComposition()
@@ -131,7 +175,8 @@ enum HostingSharingCopy {
         writer.shouldOptimizeForNetworkUse = true
         let pixels = Int(renderSize.width) * Int(renderSize.height)
         let reference = SocialVideoEncoding.videoBitrate(resolution: .p1080, fps: min(fps, 60))
-        let bitrate = max(1_500_000, Int((Double(reference) * max(0.15, Double(pixels) / Double(1920 * 1080))).rounded()))
+        let bitrate = job.kind == .preview ? 1_500_000
+            : max(1_500_000, Int((Double(reference) * max(0.15, Double(pixels) / Double(1920 * 1080))).rounded()))
         let hardware = HardwareVideoEncoderSupport.probe(HardwareVideoEncoderProbeRequest(
             width: Int(renderSize.width), height: Int(renderSize.height), codecType: kCMVideoCodecType_H264))
         let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: OptimizedCompositionExporter.videoOutputSettings(for: .init(
@@ -143,7 +188,7 @@ enum HostingSharingCopy {
         }
         writer.add(videoInput)
         let audioInput: AVAssetWriterInput? = audioOutput == nil ? nil : AVAssetWriterInput(mediaType: .audio, outputSettings: [
-            AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: 160_000
+            AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: job.kind.audioBitrate
         ])
         if let audioInput {
             guard writer.canAdd(audioInput) else {
@@ -151,16 +196,45 @@ enum HostingSharingCopy {
             }
             writer.add(audioInput)
         }
+        let fullDuration = (try await asset.load(.duration)).seconds
+        let duration = max(0.001, min(fullDuration, job.kind.seconds ?? fullDuration))
+        if job.kind.seconds != nil {
+            reader.timeRange = CMTimeRange(start: .zero, duration: CMTime(seconds: duration, preferredTimescale: 600))
+        }
         guard writer.startWriting(), reader.startReading() else {
             throw writer.error ?? reader.error ?? sharingCopyFailure
         }
         writer.startSession(atSourceTime: .zero)
-        let duration = max(0.001, (try await asset.load(.duration)).seconds)
         try await SharingMediaPump.run(reader: reader, writer: writer, videoOutput: videoOutput, videoInput: videoInput,
                                        audioOutput: audioOutput, audioInput: audioInput, duration: duration, progress: progress)
         await writer.finishWriting()
         guard writer.status == .completed else {
             throw writer.error ?? sharingCopyFailure
+        }
+    }
+
+    static let previewMaxBytes = 16 * 1024 * 1024
+
+    /// The link-preview clip for a sharing copy, made once per file and cached. Nil when it can't be made or comes
+    /// out too large; sharing never waits on it.
+    static func preview(_ fileURL: URL) async -> URL? {
+        do {
+            let fingerprint = try HostingExportMetadata.fingerprint(fileURL)
+            let directory = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask,
+                appropriateFor: nil, create: true).appendingPathComponent("BlitzRecorder/SharingPreview-v1", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let cached = directory.appendingPathComponent(fingerprint).appendingPathExtension("mp4")
+            if !FileManager.default.fileExists(atPath: cached.path) {
+                let output = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension("mp4")
+                defer { try? FileManager.default.removeItem(at: output) }
+                try await encode(.init(source: try await EncodeSource(AVURLAsset(url: fileURL)), output: output,
+                                       kind: .preview, progress: { _ in }))
+                try FileManager.default.moveItem(at: output, to: cached)
+            }
+            let bytes = try cached.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            return (16...previewMaxBytes).contains(bytes) ? cached : nil
+        } catch {
+            return nil
         }
     }
 

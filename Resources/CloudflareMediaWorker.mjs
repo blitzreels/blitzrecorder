@@ -1,7 +1,8 @@
-export const VERSION = 1;
+export const VERSION = 2;
 
 const ID = "[a-f0-9-]{36}";
-const FILES = { "video.mp4": "video/mp4", "poster.jpg": "image/jpeg" };
+const FILES = { "video.mp4": "video/mp4", "poster.jpg": "image/jpeg", "preview.mp4": "video/mp4" };
+const SMALL_FILES = { "poster.jpg": 1024 * 1024, "preview.mp4": 16 * 1024 * 1024 };
 const PART_BYTES = 64 * 1024 * 1024;
 
 function cors(extra = {}) {
@@ -53,9 +54,9 @@ async function serveFile({ request, env, id, name }) {
 async function write({ request, env, url, id, name }) {
   const key = `videos/${id}/${name}`;
   const uploadId = url.searchParams.get("uploadId");
-  if (request.method === "PUT" && name === "poster.jpg") {
+  if (request.method === "PUT" && name in SMALL_FILES) {
     const length = Number(request.headers.get("Content-Length"));
-    if (!Number.isSafeInteger(length) || length < 4 || length > 1024 * 1024) return json({ error: "Invalid poster." }, 400);
+    if (!Number.isSafeInteger(length) || length < 4 || length > SMALL_FILES[name]) return json({ error: "Invalid file." }, 400);
     await env.MEDIA.put(key, request.body, { httpMetadata: { contentType: FILES[name] } });
     return json({ saved: true });
   }
@@ -98,9 +99,9 @@ export async function serve({ request, env }) {
   if (url.pathname === "/health" && request.method === "GET") {
     return json({ blitzrecorder: true, version: VERSION, upload: await authorized({ request, env }) });
   }
-  const read = new RegExp(`^/v/(${ID})/(video\\.mp4|poster\\.jpg)$`).exec(url.pathname);
+  const read = new RegExp(`^/v/(${ID})/(video\\.mp4|poster\\.jpg|preview\\.mp4)$`).exec(url.pathname);
   if (read && ["GET", "HEAD"].includes(request.method)) return serveFile({ request, env, id: read[1], name: read[2] });
-  const owner = new RegExp(`^/u/(${ID})(?:/(video\\.mp4|poster\\.jpg))?$`).exec(url.pathname);
+  const owner = new RegExp(`^/u/(${ID})(?:/(video\\.mp4|poster\\.jpg|preview\\.mp4))?$`).exec(url.pathname);
   if (!owner) return json({ error: "Not found." }, 404);
   if (!await authorized({ request, env })) return json({ error: "Not authorized." }, 401);
   try {

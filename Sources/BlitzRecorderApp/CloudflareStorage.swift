@@ -131,25 +131,8 @@ struct CloudflareSetup {
         }
 
         await request.progress(.installingPlayer)
-        guard let scriptURL = Bundle.main.url(forResource: "CloudflareMediaWorker", withExtension: "mjs"),
-              let script = try? Data(contentsOf: scriptURL) else {
-            throw HostingFailure(message: "BlitzRecorder is missing its video player. Reinstall the app and try again.")
-        }
         let secret = Self.randomSecret()
-        let metadata: [String: Any] = [
-            "main_module": "worker.mjs", "compatibility_date": "2026-10-01",
-            "bindings": [
-                ["type": "r2_bucket", "name": "MEDIA", "bucket_name": Self.bucketName],
-                ["type": "secret_text", "name": "UPLOAD_SECRET", "text": secret],
-            ],
-        ]
-        struct Script: Decodable { let id: String? }
-        let _: Script = try await api.call(.init(method: "PUT", path: "\(accountPath)/workers/scripts/\(Self.scriptName)",
-            body: .multipart([
-                .init(name: "metadata", filename: nil, contentType: "application/json",
-                      data: try JSONSerialization.data(withJSONObject: metadata)),
-                .init(name: "worker.mjs", filename: "worker.mjs", contentType: "application/javascript+module", data: script),
-            ])))
+        try await installWorker(.init(api: api, accountPath: accountPath, secret: secret))
         let subdomain = try await accountSubdomain(api: api, accountPath: accountPath)
         struct Enabled: Decodable { let enabled: Bool? }
         let _: Enabled = try await api.call(.init(method: "POST", path: "\(accountPath)/workers/scripts/\(Self.scriptName)/subdomain",
@@ -163,6 +146,48 @@ struct CloudflareSetup {
                                                      uploadSecret: secret, apiToken: request.token)
         try await waitUntilLive(connection)
         return connection
+    }
+
+    /// The worker version this app ships (`VERSION` in `CloudflareMediaWorker.mjs`).
+    static let workerVersion = 2
+
+    private struct WorkerInstall {
+        let api: CloudflareAPI
+        let accountPath: String
+        let secret: String
+    }
+
+    private func installWorker(_ install: WorkerInstall) async throws {
+        guard let scriptURL = Bundle.main.url(forResource: "CloudflareMediaWorker", withExtension: "mjs"),
+              let script = try? Data(contentsOf: scriptURL) else {
+            throw HostingFailure(message: "BlitzRecorder is missing its video player. Reinstall the app and try again.")
+        }
+        let metadata: [String: Any] = [
+            "main_module": "worker.mjs", "compatibility_date": "2026-10-01",
+            "bindings": [
+                ["type": "r2_bucket", "name": "MEDIA", "bucket_name": Self.bucketName],
+                ["type": "secret_text", "name": "UPLOAD_SECRET", "text": install.secret],
+            ],
+        ]
+        struct Script: Decodable { let id: String? }
+        let _: Script = try await install.api.call(.init(method: "PUT",
+            path: "\(install.accountPath)/workers/scripts/\(Self.scriptName)",
+            body: .multipart([
+                .init(name: "metadata", filename: nil, contentType: "application/json",
+                      data: try JSONSerialization.data(withJSONObject: metadata)),
+                .init(name: "worker.mjs", filename: "worker.mjs", contentType: "application/javascript+module", data: script),
+            ])))
+    }
+
+    /// Workers installed by an older app keep running their old code; this replaces one older than the app's,
+    /// with the same upload secret, so existing links and uploads keep working.
+    func upgradeWorkerIfNeeded(_ connection: CloudflareStorageConnection) async throws {
+        struct Health: Decodable { let version: Int? }
+        let (data, _) = try await session.data(from: connection.mediaOrigin.appendingPathComponent("health"))
+        let installed = (try? JSONDecoder().decode(Health.self, from: data))?.version ?? 0
+        guard installed < Self.workerVersion else { return }
+        try await installWorker(.init(api: CloudflareAPI(token: connection.apiToken, session: session),
+            accountPath: "accounts/\(connection.accountID)", secret: connection.uploadSecret))
     }
 
     func disconnect(_ connection: CloudflareStorageConnection) async {
@@ -349,6 +374,18 @@ struct CloudflareMediaClient: Sendable {
         var call = request("/u/\(assetID)/poster.jpg", method: "PUT")
         call.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
         let _: Saved = try await send(call, body: jpeg)
+    }
+
+    struct PreviewFile {
+        let assetID: String
+        let mp4: Data
+    }
+
+    func putPreview(_ file: PreviewFile) async throws {
+        struct Saved: Decodable { let saved: Bool }
+        var call = request("/u/\(file.assetID)/preview.mp4", method: "PUT")
+        call.setValue("video/mp4", forHTTPHeaderField: "Content-Type")
+        let _: Saved = try await send(call, body: file.mp4)
     }
 }
 

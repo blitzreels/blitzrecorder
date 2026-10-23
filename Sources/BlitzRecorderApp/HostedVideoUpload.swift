@@ -174,9 +174,13 @@ struct HostingClient {
             }
             func partSize(_ number: Int) -> Int { min(partBytes, bytes - (number - 1) * partBytes) }
             let changedDuringUpload = HostingFailure(message: "The video changed during upload. Export it again before sharing.")
+            // Made on this Mac while the video uploads; link previews (Discord, iMessage) play it instead of the full file.
+            let preview = Task { await HostingSharingCopy.preview(fileURL) }
             let journal = CloudflareUploadJournal(assetID: asset.id)
             let uploaded: Set<Int>
             if let media {
+                // Older installs of the storage worker don't accept the preview yet.
+                try? await CloudflareSetup.configured.upgradeWorkerIfNeeded(media.connection)
                 if let poster = await HostingSharingCopy.poster(fileURL) {
                     try? await media.putPoster(assetID: asset.id, jpeg: poster)
                 }
@@ -251,6 +255,9 @@ struct HostingClient {
                 throw changedDuringUpload
             }
             try Task.checkCancellation()
+            if let previewURL = await preview.value {
+                try? await uploadPreview(.init(fileURL: previewURL, assetID: asset.id, token: request.token, media: media))
+            }
             if let media, let cloudflareUploadID {
                 do {
                     try await media.complete(assetID: asset.id, uploadID: cloudflareUploadID, parts: await journal.parts)
@@ -278,6 +285,35 @@ struct HostingClient {
             try await Task.sleep(for: .seconds(3))
         }
         throw HostingFailure(message: "The video is still processing. Check again to retrieve the same link.")
+    }
+
+    private struct PreviewUpload {
+        let fileURL: URL
+        let assetID: String
+        let token: String
+        let media: CloudflareMediaClient?
+    }
+
+    /// Best effort: a link without a preview still shows its poster.
+    private func uploadPreview(_ upload: PreviewUpload) async throws {
+        let data = try Data(contentsOf: upload.fileURL)
+        if let media = upload.media {
+            try await media.putPreview(.init(assetID: upload.assetID, mp4: data))
+            return
+        }
+        struct Signed: Decodable { let url: URL }
+        let signed: Signed = try await send(.init(route: "assets/\(upload.assetID)/preview", token: upload.token,
+            body: JSONSerialization.data(withJSONObject: ["bytes": data.count])))
+        guard signed.url.scheme == "https" || (signed.url.host == origin.host && origin.hasLocalDevelopmentHost) else {
+            throw HostingFailure(message: "The upload requires a secure connection.")
+        }
+        var put = URLRequest(url: signed.url)
+        put.httpMethod = "PUT"
+        put.setValue("video/mp4", forHTTPHeaderField: "Content-Type")
+        let (_, response) = try await session.upload(for: put, from: data)
+        guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
+            throw HostingFailure(message: "The link preview could not be uploaded.")
+        }
     }
 
     private struct ChunkUpload {
