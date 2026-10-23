@@ -417,13 +417,6 @@ export async function validateLicenseKey(licenseKey: string): Promise<LicenseVal
     return { ok: false, status: "wrong_product", reason: "License is for a different Stripe price" };
   }
 
-  const cacheKey = licenseKeyHash(licenseKey);
-  const cached = validationCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    return { ok: true, status: "active", payload: cached.payload };
-  }
-  validationCache.delete(cacheKey);
-
   // Revocation lives in the license store (refund/dispute webhooks or manual
   // ops). A store outage falls back to the Stripe-only checks below.
   if (isLicenseStoreConfigured()) {
@@ -455,6 +448,15 @@ export async function validateLicenseKey(licenseKey: string): Promise<LicenseVal
       };
     }
   }
+
+  // Checked after the store, so a refund or dispute recorded there is never hidden by a cached result;
+  // the cache only spares the Stripe calls below.
+  const cacheKey = licenseKeyHash(licenseKey);
+  const cached = validationCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return { ok: true, status: "active", payload: cached.payload };
+  }
+  validationCache.delete(cacheKey);
 
   if (offline) {
     return cacheActiveValidation({ cacheKey, payload });

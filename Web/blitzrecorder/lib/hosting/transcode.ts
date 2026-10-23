@@ -19,15 +19,23 @@ export const PREVIEW_MAX_BYTES = 16 * 1024 ** 2;
 /** A file the worker can never play, as opposed to a failure worth retrying. */
 export class InvalidVideo extends Error {}
 
-/** Signed R2 links let ffmpeg read only the bytes it needs instead of downloading the whole upload. */
-function protocols(source: string) {
-  return source.startsWith("https://") ? "https,tls,tcp,crypto" : "file,pipe";
+/**
+ * How ffmpeg may open an untrusted upload. Signed R2 links let it read only the bytes it needs. The MP4/MOV
+ * demuxer is forced with external references off, so a file that is really a playlist can't make the worker
+ * fetch other addresses.
+ */
+function untrustedInput(source: string) {
+  return ["-protocol_whitelist", source.startsWith("https://") ? "https,tls,tcp,crypto" : "file,pipe",
+    "-f", "mov", "-enable_drefs", "0", "-use_absolute_path", "0", "-i", source];
 }
 
 export async function inspectVideo({ source, maxSeconds }: { source: string; maxSeconds: number }): Promise<VideoInspection> {
   const { stdout } = await exec("ffprobe", [
-    "-v", "error", "-protocol_whitelist", protocols(source), "-show_format", "-show_streams", "-of", "json", source,
-  ], { timeout: 30_000, maxBuffer: 1024 * 1024 });
+    "-v", "error", "-show_format", "-show_streams", "-of", "json", ...untrustedInput(source),
+  ], { timeout: 30_000, maxBuffer: 1024 * 1024 }).catch((error: { stderr?: string }) => {
+    if (error.stderr?.includes("Invalid data found")) throw new InvalidVideo("Export an MP4 or MOV video before sharing.");
+    throw error;
+  });
   const metadata = JSON.parse(stdout) as {
     format: { duration: string; format_name: string; tags?: Record<string, string> };
     streams: { codec_type: string; codec_name?: string; avg_frame_rate?: string; width: number; height: number; side_data_list?: { rotation?: number }[] }[];
@@ -72,7 +80,7 @@ export function encodeArguments({ source, destination, ladder }: {
   const scales = ladder.map((level, index) => `[s${index}]scale=${level.width}:${level.height}:flags=lanczos,setsar=1[v${index}]`);
   return [
     "-nostdin", "-hide_banner", "-loglevel", "error", "-nostats", "-progress", "pipe:1",
-    "-protocol_whitelist", "file,pipe", "-i", source,
+    ...untrustedInput(source),
     "-filter_complex", [split, ...scales].join(";"),
     ...ladder.flatMap((level, index) => {
       const directory = path.join(destination, level.name);
@@ -131,8 +139,8 @@ export async function transcode({ source, destination, info, signal, onProgress 
     ]), "",
   ].join("\n"));
   await exec("ffmpeg", [
-    "-nostdin", "-hide_banner", "-loglevel", "error", "-protocol_whitelist", "file,pipe", "-ss", String(Math.min(1, info.duration / 2)),
-    "-i", source, "-frames:v", "1", "-vf", "scale=960:960:force_original_aspect_ratio=decrease", "-q:v", "3",
+    "-nostdin", "-hide_banner", "-loglevel", "error", "-ss", String(Math.min(1, info.duration / 2)),
+    ...untrustedInput(source), "-frames:v", "1", "-vf", "scale=960:960:force_original_aspect_ratio=decrease", "-q:v", "3",
     path.join(destination, "poster.jpg"),
   ], { signal, timeout: 30_000 });
   const files: HostedFile[] = [];
@@ -156,7 +164,7 @@ export async function encodePreview({ source, destination, info, signal }: {
 }) {
   const { width, height } = previewSize(info);
   await exec("ffmpeg", [
-    "-nostdin", "-hide_banner", "-loglevel", "error", "-protocol_whitelist", protocols(source), "-i", source,
+    "-nostdin", "-hide_banner", "-loglevel", "error", ...untrustedInput(source),
     "-t", String(PREVIEW_SECONDS), "-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn", "-map_metadata", "-1",
     "-vf", `scale=${width}:${height}:flags=lanczos,setsar=1`,
     "-c:v", "libx264", "-preset", "veryfast", "-crf", "26", "-profile:v", "high", "-pix_fmt", "yuv420p",
