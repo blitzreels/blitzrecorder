@@ -196,7 +196,7 @@ struct RecordingHUDView: View {
                 Spacer(minLength: 0)
             }
         } else if let suggestion = vm.screenSource.suggestedScreenSource, vm.state == .recording {
-            promptRow {
+            HStack {
                 VStack(alignment: .leading, spacing: 12) {
                     Label("This window isn’t being recorded", systemImage: "exclamationmark.triangle.fill")
                         .font(BlitzType.section)
@@ -220,15 +220,19 @@ struct RecordingHUDView: View {
                     HStack {
                         Button("Keep current", action: vm.dismissScreenSuggestion)
                             .blitzButton(.quiet)
-                            .controlSize(.small)
                         Spacer(minLength: 8)
                         Button("Switch to this window", action: vm.acceptScreenSuggestion)
                             .blitzButton(.accent)
-                            .controlSize(.regular)
                     }
+                    .controlSize(.regular)
                 }
             }
-            .background(BlitzUI.warning.opacity(0.1))
+            .font(BlitzType.label)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(BlitzUI.warning.opacity(0.1), in: .rect(cornerRadius: BlitzUI.surfaceRadius, style: .continuous))
+            .padding(4)
+            .transition(.opacity)
         }
     }
 
