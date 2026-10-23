@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { hostingPool } from "./db";
-import { abortUpload, deletePrefix, downloadSource, sourceURL, uploadFile } from "./r2";
-import { encodePreview, inspectVideo, InvalidVideo, PREVIEW_MAX_BYTES, transcode } from "./transcode";
-import { MAX_DIRECT_SECONDS, MAX_VIDEO_SECONDS, type HostedAsset } from "./model";
+import { abortUpload, deletePrefix, downloadSource, uploadFile } from "./r2";
+import { inspectVideo, InvalidVideo, transcode } from "./transcode";
+import { MAX_VIDEO_SECONDS, type HostedAsset } from "./model";
 import { HOSTING_PLAN } from "./plan";
 
 export async function processNext(): Promise<boolean> {
@@ -72,64 +72,9 @@ export async function processNext(): Promise<boolean> {
     await hostingPool().query(
       `UPDATE hosting_assets SET status=CASE WHEN attempts<3 THEN 'queued' ELSE 'failed' END,
        error=$3,lease_until=NULL,processing_progress=NULL,updated_at=now() WHERE id=$1 AND lease_token=$2 AND status='processing'`,
-      [asset.id, lease, error instanceof Error && error.message.startsWith("The ") ? error.message : "Video processing failed. Please upload a fresh export."]);
+      [asset.id, lease, error instanceof InvalidVideo || (error instanceof Error && error.message.startsWith("The ")) ? error.message : "Video processing failed. Please upload a fresh export."]);
   } finally {
     clearInterval(heartbeat);
-    await rm(work, { recursive: true, force: true });
-  }
-  return true;
-}
-
-/**
- * Direct MP4s go live without processing, so the worker checks them afterwards: a file longer or larger than the
- * app declared stops playing. Every video we host also gets a short MP4 for link previews.
- */
-export async function checkNext(): Promise<boolean> {
-  const lease = randomUUID();
-  const claimed = await hostingPool().query<HostedAsset>(
-    `UPDATE hosting_assets SET lease_token=$1, lease_until=now()+interval '15 minutes', check_attempts=check_attempts+1
-     WHERE id=(SELECT id FROM hosting_assets WHERE status='ready' AND checked_at IS NULL AND media_origin IS NULL
-       AND check_attempts<3 AND (lease_until IS NULL OR lease_until<now()) ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1)
-     RETURNING *`, [lease]);
-  const asset = claimed.rows[0];
-  if (!asset) return false;
-  const work = await mkdtemp(path.join(tmpdir(), "blitz-hosting-"));
-  const settle = ({ sql, values }: { sql: string; values: unknown[] }) => hostingPool().query(
-    `UPDATE hosting_assets SET ${sql}, checked_at=now(), lease_token=NULL, lease_until=NULL, updated_at=now()
-     WHERE id=$1 AND lease_token=$2 AND status='ready'`, [asset.id, lease, ...values]);
-  const reject = (message: string) => settle({ sql: "status='failed', error=$3", values: [message] });
-  try {
-    const source = await sourceURL(asset);
-    const direct = asset.files.some((file) => file.path === "video.mp4");
-    let info;
-    try { info = await inspectVideo({ source, maxSeconds: direct ? MAX_DIRECT_SECONDS : MAX_VIDEO_SECONDS }); }
-    catch (error) {
-      if (!(error instanceof InvalidVideo)) throw error;
-      await reject(error.message);
-      return true;
-    }
-    if (direct && (info.duration > asset.declared_seconds + 1
-      || Math.min(info.width, info.height) > 1080 || Math.max(info.width, info.height) > 1920)) {
-      await reject("The uploaded video is longer or larger than the app reported. Share it again from BlitzRecorder.");
-      return true;
-    }
-    if (!asset.stream_prefix) {
-      await settle({ sql: "duration=$3", values: [info.duration] });
-      return true;
-    }
-    const preview = path.join(work, "preview.mp4");
-    await encodePreview({ source, destination: preview, info, signal: AbortSignal.timeout(10 * 60_000) });
-    const bytes = (await stat(preview)).size;
-    if (bytes > PREVIEW_MAX_BYTES) throw new Error("The link preview came out too large.");
-    await uploadFile({ key: `${asset.stream_prefix}preview.mp4`, path: preview, bytes, contentType: "video/mp4" });
-    await settle({ sql: "files=files || $3::jsonb, stored_bytes=stored_bytes+$4, duration=$5",
-      values: [JSON.stringify([{ path: "preview.mp4", bytes, contentType: "video/mp4" }]), bytes, info.duration] });
-  } catch (error) {
-    console.error("Video check failed", error instanceof Error ? error.message : "Unknown error");
-    await hostingPool().query(
-      "UPDATE hosting_assets SET lease_token=NULL, lease_until=now()+interval '10 minutes' WHERE id=$1 AND lease_token=$2",
-      [asset.id, lease]);
-  } finally {
     await rm(work, { recursive: true, force: true });
   }
   return true;

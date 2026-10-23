@@ -1,7 +1,7 @@
 import { clientNetwork } from "@/lib/client-network";
 import {
   authenticate, authenticateDelivery, beginUpload, finishUpload, listAssets,
-  preparePart, resumeUpload, revokeAsset, setAssetListing, sharedAsset, updateDetails, uploadPoster,
+  preparePart, preparePreview, resumeUpload, revokeAsset, setAssetListing, sharedAsset, updateDetails, uploadPoster,
 } from "@/lib/hosting/service";
 import { DELIVERY_TTL_SECONDS, HostingError } from "@/lib/hosting/model";
 import { accountState, billingURL, disconnectAccount } from "@/lib/hosting/account";
@@ -71,6 +71,9 @@ async function handle(request: Request) {
       }
       else if (request.method === "POST" && path.length === 3 && action === "poster") {
         result = await uploadPoster({ account, id, body: await readBody({ request, limit: 1_500_000 }) });
+      }
+      else if (request.method === "POST" && path.length === 3 && action === "preview") {
+        result = await preparePreview({ account, id, body: await readBody({ request, limit: 256 }) });
       }
       else if (request.method === "POST" && path.length === 3 && action === "parts") {
         const body = await readBody({ request, limit: 16_384 }) as { number: number };

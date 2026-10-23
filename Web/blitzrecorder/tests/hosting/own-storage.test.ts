@@ -59,7 +59,7 @@ test("own storage worker uploads in parts, streams ranges, and deletes", async (
 
   assert.equal((await call(`/u/${id}/video.mp4?uploads`, { method: "POST" })).status, 401);
   const health = await (await call("/health", { headers: auth })).json();
-  assert.deepEqual(health, { blitzrecorder: true, version: 1, upload: true });
+  assert.deepEqual(health, { blitzrecorder: true, version: 2, upload: true });
 
   const { uploadId } = await (await call(`/u/${id}/video.mp4?uploads`, { method: "POST", headers: auth })).json();
   const parts = [];

@@ -1,5 +1,5 @@
 import { setTimeout } from "node:timers/promises";
-import { checkNext, cleanupExpired, processNext } from "../lib/hosting/processor";
+import { cleanupExpired, processNext } from "../lib/hosting/processor";
 import { migrate } from "../lib/hosting/migrate";
 import { hostingPool } from "../lib/hosting/db";
 import { assertHostingEnabled } from "../lib/hosting/model";
@@ -29,7 +29,7 @@ async function main() {
       await cleanupExpired();
       nextMaintenance = Date.now() + 30 * 60_000;
     }
-    const processed: boolean = (draining || maintenance || signals.length > 0) && (await processNext() || await checkNext());
+    const processed: boolean = (draining || maintenance || signals.length > 0) && await processNext();
     draining = processed;
     if (!processed) await clearCompletedSignals(signals);
     if (process.argv.includes("--once")) break;

@@ -11,6 +11,8 @@ export const MAX_DIRECT_BYTES = 10_000 * PART_BYTES;
 export const MAX_DIRECT_SECONDS = 24 * 60 * 60;
 export const DELIVERY_TTL_SECONDS = 10;
 export const POSTER_MAX_BYTES = 1024 ** 2;
+/** The app's link-preview clip: the first minute at up to 720p, about 12 MB. */
+export const PREVIEW_MAX_BYTES = 16 * 1024 ** 2;
 /** The media worker the Mac app deploys into the owner's own Cloudflare account. */
 export const OWN_STORAGE_ORIGIN = /^https:\/\/blitzrecorder-media\.[a-z0-9-]{1,63}\.workers\.dev$/;
 
@@ -145,7 +147,7 @@ export function parseUploadInput(body: unknown): UploadInput {
 }
 
 export function reservationBytes(input: UploadInput): number {
-  if (input.video) return input.bytes + POSTER_MAX_BYTES;
+  if (input.video) return input.bytes + POSTER_MAX_BYTES + PREVIEW_MAX_BYTES;
   return input.bytes + Math.ceil(input.duration * 12_000_000 / 8 * 1.3) + 10 * 1024 ** 2;
 }
 
@@ -156,9 +158,9 @@ export function partSize({ bytes, number }: { bytes: number; number: number }): 
   return Math.min(PART_BYTES, bytes - (number - 1) * PART_BYTES);
 }
 
-/** Link previews are at most 720p on the short side, in even dimensions for H.264. */
+/** The app's link-preview clip size: at most 720 on the short side and 1280 on the long one, in even pixels. */
 export function previewSize({ width, height }: { width: number; height: number }) {
-  const scale = Math.min(1, 720 / Math.min(width, height));
+  const scale = Math.min(1, 720 / Math.min(width, height), 1280 / Math.max(width, height));
   return { width: Math.max(2, Math.floor(width * scale / 2) * 2), height: Math.max(2, Math.floor(height * scale / 2) * 2) };
 }
 

@@ -2,7 +2,7 @@ import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { previewSize, safeDeliveryPath, type HostedFile } from "./model";
+import { safeDeliveryPath, type HostedFile } from "./model";
 
 const exec = promisify(execFile);
 
@@ -13,19 +13,15 @@ export type VideoInspection = VideoInfo & {
   title: string | null; description: string | null; recordedAt: string | null;
 };
 
-export const PREVIEW_SECONDS = 60;
-export const PREVIEW_MAX_BYTES = 16 * 1024 ** 2;
-
 /** A file the worker can never play, as opposed to a failure worth retrying. */
 export class InvalidVideo extends Error {}
 
 /**
- * How ffmpeg may open an untrusted upload. Signed R2 links let it read only the bytes it needs. The MP4/MOV
- * demuxer is forced with external references off, so a file that is really a playlist can't make the worker
- * fetch other addresses.
+ * How ffmpeg may open an untrusted upload: the MP4/MOV demuxer is forced with external references off, so a file
+ * that is really a playlist can't make the worker fetch other addresses or read local files.
  */
 function untrustedInput(source: string) {
-  return ["-protocol_whitelist", source.startsWith("https://") ? "https,tls,tcp,crypto" : "file,pipe",
+  return ["-protocol_whitelist", "file,pipe",
     "-f", "mov", "-enable_drefs", "0", "-use_absolute_path", "0", "-i", source];
 }
 
@@ -158,17 +154,3 @@ export async function transcode({ source, destination, info, signal, onProgress 
   return files;
 }
 
-/** The first minute at up to 720p with the index up front, small enough for link previews to fetch whole. */
-export async function encodePreview({ source, destination, info, signal }: {
-  source: string; destination: string; info: VideoInfo; signal: AbortSignal;
-}) {
-  const { width, height } = previewSize(info);
-  await exec("ffmpeg", [
-    "-nostdin", "-hide_banner", "-loglevel", "error", ...untrustedInput(source),
-    "-t", String(PREVIEW_SECONDS), "-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn", "-map_metadata", "-1",
-    "-vf", `scale=${width}:${height}:flags=lanczos,setsar=1`,
-    "-c:v", "libx264", "-preset", "veryfast", "-crf", "26", "-profile:v", "high", "-pix_fmt", "yuv420p",
-    "-maxrate", "1500k", "-bufsize", "3000k", "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "48000",
-    "-movflags", "+faststart", destination,
-  ], { signal, timeout: 10 * 60_000, maxBuffer: 1024 * 1024 });
-}

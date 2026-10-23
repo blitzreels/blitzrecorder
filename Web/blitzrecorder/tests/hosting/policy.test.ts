@@ -19,7 +19,7 @@ test("a playable 1080p upload reserves only its own bytes and rejects anything l
   const video = { width: 1920, height: 1080, frameRate: 60 };
   const input = parseUploadInput({ ...valid, video });
   assert.deepEqual(input.video, video);
-  assert.equal(reservationBytes(input), valid.bytes + 1024 ** 2);
+  assert.equal(reservationBytes(input), valid.bytes + 1024 ** 2 + 16 * 1024 ** 2);
   assert.deepEqual(parseUploadInput({ ...valid, video: { width: 1080, height: 1920, frameRate: null } }).video,
     { width: 1080, height: 1920, frameRate: null });
   for (const bad of [{ width: 2560, height: 1440 }, { width: 1920, height: 1200 }, { width: 1.5, height: 2 }, null, { ...video, frameRate: 0 }]) {

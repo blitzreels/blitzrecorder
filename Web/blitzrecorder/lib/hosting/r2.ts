@@ -91,8 +91,18 @@ export async function downloadSource({ asset, destination }: { asset: HostedAsse
   await pipeline(object.Body as Readable, createWriteStream(destination, { flags: "wx" }));
 }
 
-export async function sourceURL(asset: HostedAsset): Promise<string> {
-  return getSignedUrl(r2(), new GetObjectCommand({ Bucket: bucket(), Key: asset.source_key }), { expiresIn: 3600 });
+export async function readRange({ key, offset, length }: { key: string; offset: number; length: number }): Promise<Buffer> {
+  const object = await r2().send(new GetObjectCommand({ Bucket: bucket(), Key: key, Range: `bytes=${offset}-${offset + length - 1}` }));
+  if (!object.Body) return Buffer.alloc(0);
+  return Buffer.from(await object.Body.transformToByteArray());
+}
+
+/** A one-time PUT for a file of exactly `bytes`, so the app uploads it straight to R2. */
+export async function signFileUpload({ key, bytes, contentType }: { key: string; bytes: number; contentType: string }) {
+  const url = await getSignedUrl(r2(), new PutObjectCommand({
+    Bucket: bucket(), Key: key, ContentLength: bytes, ContentType: contentType, CacheControl: "public, max-age=31536000, immutable",
+  }), { expiresIn: 900, signableHeaders: new Set(["content-length", "content-type"]) });
+  return { url, expiresIn: 900 };
 }
 
 export async function uploadFile({ key, path, bytes, contentType }: { key: string; path: string; bytes: number; contentType: string }) {

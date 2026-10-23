@@ -1,10 +1,13 @@
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { hostingPool, transaction } from "./db";
 import {
-  assertHostingEnabled, HostingError, PART_BYTES, POSTER_MAX_BYTES, UPLOAD_SECONDS, parseUploadInput,
+  assertHostingEnabled, HostingError, PART_BYTES, POSTER_MAX_BYTES, PREVIEW_MAX_BYTES, UPLOAD_SECONDS, parseUploadInput,
   publicAsset, required, reservationBytes, type HostedAsset, type HostedFile, type HostingAccount,
 } from "./model";
-import { createUpload, completeUpload, objectBytes, signPart, uploadData, uploadParts, signalJob } from "./r2";
+import {
+  createUpload, completeUpload, objectBytes, readRange, signFileUpload, signPart, uploadData, uploadParts, signalJob,
+} from "./r2";
+import { mp4Duration } from "./mp4";
 import { parseVideoDetails } from "./details";
 import { ownStorageBytes } from "./own-storage";
 import { accountForToken } from "./account";
@@ -129,6 +132,29 @@ export async function uploadPoster({ account, id, body }: { account: HostingAcco
   return { saved: true };
 }
 
+/** A signed PUT for the app's link-preview clip, uploaded straight to R2 next to the video. */
+export async function preparePreview({ account, id, body }: { account: HostingAccount; id: string; body: unknown }) {
+  requirePaid(account);
+  const asset = await ownedAsset({ account, id });
+  requireHostedByUs(asset);
+  if (asset.status !== "uploading" || !asset.stream_prefix) throw new HostingError({ status: 409, message: "This upload is no longer active." });
+  const bytes = (body as { bytes?: unknown } | null)?.bytes;
+  if (typeof bytes !== "number" || !Number.isSafeInteger(bytes) || bytes < 16 || bytes > PREVIEW_MAX_BYTES) {
+    throw new HostingError({ status: 400, message: "Invalid preview video." });
+  }
+  return signFileUpload({ key: `${asset.stream_prefix}preview.mp4`, bytes, contentType: "video/mp4" });
+}
+
+/** The real length from the uploaded MP4's header, so the upload allowance can't be passed with a shorter claim. */
+async function requireDeclaredDuration(asset: HostedAsset) {
+  const duration = await mp4Duration({ bytes: Number(asset.declared_bytes),
+    read: ({ offset, length }) => readRange({ key: asset.source_key, offset, length }) });
+  if (duration === null) throw new HostingError({ status: 422, message: "This file isn't a playable MP4. Export it again." });
+  if (duration > asset.declared_seconds + 1) {
+    throw new HostingError({ status: 422, message: "This video is longer than BlitzRecorder reported. Export it again." });
+  }
+}
+
 export async function resumeUpload({ account, id }: { account: HostingAccount; id: string }) {
   const asset = await ownedAsset({ account, id });
   const parts = asset.status === "uploading" && asset.upload_id && !asset.media_origin ? await uploadParts(asset) : [];
@@ -143,7 +169,10 @@ export async function finishUpload({ account, id }: { account: HostingAccount; i
   if (!activeUpload(owned)) throw new HostingError({ status: 409, message: "This upload is no longer active." });
   // R2 calls stay outside the transaction so a slow R2 never holds the account lock or a pooled connection.
   await completeUpload(owned);
-  const posterBytes = owned.stream_prefix ? await objectBytes(`${owned.stream_prefix}poster.jpg`) : null;
+  if (owned.stream_prefix) await requireDeclaredDuration(owned);
+  const [posterBytes, previewBytes] = owned.stream_prefix
+    ? await Promise.all([objectBytes(`${owned.stream_prefix}poster.jpg`), objectBytes(`${owned.stream_prefix}preview.mp4`)])
+    : [null, null];
   const result = await transaction(async (db) => {
     const current = (await db.query<HostingAccount>("SELECT * FROM hosting_accounts WHERE id=$1 FOR UPDATE", [account.id])).rows[0];
     requirePaid(current);
@@ -154,8 +183,7 @@ export async function finishUpload({ account, id }: { account: HostingAccount; i
     await db.query("INSERT INTO hosting_upload_usage(asset_id,account_id,seconds) VALUES($1,$2,$3)",
       [asset.id, account.id, asset.declared_seconds]);
     if (asset.stream_prefix) {
-      const files: HostedFile[] = [{ path: "video.mp4", bytes: Number(asset.declared_bytes), contentType: "video/mp4" },
-        ...(posterBytes ? [{ path: "poster.jpg", bytes: posterBytes, contentType: "image/jpeg" }] : [])];
+      const files = directFiles({ video: Number(asset.declared_bytes), poster: posterBytes, preview: previewBytes });
       const ready = await db.query<HostedAsset>(
         `UPDATE hosting_assets SET status='ready', files=$2::jsonb, stored_bytes=$3, duration=declared_seconds, updated_at=now()
          WHERE id=$1 RETURNING *`, [id, JSON.stringify(files), files.reduce((sum, file) => sum + file.bytes, 0)]);
@@ -166,13 +194,18 @@ export async function finishUpload({ account, id }: { account: HostingAccount; i
     return publicAsset(updated.rows[0]);
   });
   if (["queued", "processing"].includes(result.status)) await signalJob(id);
-  // Direct MP4s play at once. The wake-up is only a speed-up: the worker's maintenance pass also finds unchecked videos.
-  else if (result.status === "ready") await signalJob(id).catch(() => console.error("Video check notification failed"));
   return result;
 }
 
 function activeUpload(asset: HostedAsset) {
   return asset.status === "uploading" && Boolean(asset.upload_id) && asset.expires_at.getTime() > Date.now();
+}
+
+/** A direct upload's files: the MP4, plus the poster and link preview when the app sent them. */
+function directFiles({ video, poster, preview }: { video: number; poster: number | null; preview: number | null }): HostedFile[] {
+  return [{ path: "video.mp4", bytes: video, contentType: "video/mp4" },
+    ...(poster && poster <= POSTER_MAX_BYTES ? [{ path: "poster.jpg", bytes: poster, contentType: "image/jpeg" }] : []),
+    ...(preview && preview <= PREVIEW_MAX_BYTES ? [{ path: "preview.mp4", bytes: preview, contentType: "video/mp4" }] : [])];
 }
 
 function requireHostedByUs(asset: HostedAsset) {
@@ -184,15 +217,15 @@ async function finishOwnUpload(asset: HostedAsset) {
   if (["ready", "failed", "revoked"].includes(asset.status)) return publicAsset(asset);
   if (asset.expires_at.getTime() <= Date.now()) throw new HostingError({ status: 409, message: "This upload is no longer active." });
   const origin = asset.media_origin!;
-  const [video, poster] = await Promise.all([
+  const [video, poster, preview] = await Promise.all([
     ownStorageBytes({ origin, id: asset.id, path: "video.mp4" }),
     ownStorageBytes({ origin, id: asset.id, path: "poster.jpg" }),
+    ownStorageBytes({ origin, id: asset.id, path: "preview.mp4" }),
   ]);
   if (video !== Number(asset.declared_bytes)) {
     throw new HostingError({ status: 409, message: "Your Cloudflare storage doesn’t have the whole video yet. Resume the upload." });
   }
-  const files: HostedFile[] = [{ path: "video.mp4", bytes: video, contentType: "video/mp4" },
-    ...(poster ? [{ path: "poster.jpg", bytes: poster, contentType: "image/jpeg" }] : [])];
+  const files = directFiles({ video, poster, preview });
   const ready = await hostingPool().query<HostedAsset>(
     `UPDATE hosting_assets SET status='ready', files=$2::jsonb, stored_bytes=$3, duration=declared_seconds, updated_at=now()
      WHERE id=$1 AND status='uploading' RETURNING *`, [asset.id, JSON.stringify(files), files.reduce((sum, file) => sum + file.bytes, 0)]);

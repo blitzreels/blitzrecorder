@@ -21,6 +21,20 @@ const schema = `hosting_test_${randomUUID().replaceAll("-", "")}`;
 let admin: Pool;
 let failJobNotification = false;
 
+/** A 1,024-byte MP4 whose header says 12 seconds: a `moov` with an `mvhd`, then padding. */
+function fakeMP4(): Buffer {
+  const file = Buffer.alloc(1024);
+  file.writeUInt32BE(116, 0);
+  file.write("moov", 4, "latin1");
+  file.writeUInt32BE(108, 8);
+  file.write("mvhd", 12, "latin1");
+  file.writeUInt32BE(1000, 28);
+  file.writeUInt32BE(12_000, 32);
+  file.writeUInt32BE(1024 - 116, 116);
+  file.write("free", 120, "latin1");
+  return file;
+}
+
 test.before(async () => {
   if (!database) return;
   assert.ok(["localhost", "127.0.0.1"].includes(new URL(database).hostname), "Hosting tests require a local database.");
@@ -36,7 +50,12 @@ test.before(async () => {
   process.env.HOSTING_R2_BUCKET = "test";
   await migrate(new URL("../../migrations/", import.meta.url));
   r2().middlewareStack.add(() => async (args) => {
-    const value = args.input as { Key?: string };
+    const value = args.input as { Key?: string; Range?: string };
+    const range = value.Range?.match(/^bytes=(\d+)-(\d+)$/);
+    if (range) {
+      const bytes = fakeMP4().subarray(Number(range[1]), Number(range[2]) + 1);
+      return { response: {}, output: { $metadata: {}, Body: { transformToByteArray: async () => new Uint8Array(bytes) } } };
+    }
     if (value.Key?.startsWith("hosting-jobs/") && failJobNotification) {
       failJobNotification = false;
       throw new Error("Notification interrupted");
@@ -136,7 +155,7 @@ integration("the Mac sees processing progress only while a video is being prepar
   assert.equal(publicAsset(await ownedAsset({ account: owner, id })).progress, null);
 });
 
-integration("a 1080p MP4 plays as soon as its upload completes, even when the worker wake-up fails", async () => {
+integration("a 1080p MP4 plays as soon as its upload completes, with no processing job", async () => {
   const owner = await account({ limit: 1024 ** 3, active: true });
   const upload = await beginUpload({ account: owner,
     body: { ...input, requestKey: "d".repeat(20), video: { width: 1920, height: 1080, frameRate: 30 } } });
@@ -151,10 +170,10 @@ integration("a 1080p MP4 plays as soon as its upload completes, even when the wo
     const ready = await finishUpload({ account: owner, id: upload.id });
     assert.equal(ready.status, "ready");
     assert.match(ready.sharePath ?? "", /^\/s\/[A-Za-z0-9_-]{24}$/);
-    assert.equal(failJobNotification, false);
+    assert.equal(failJobNotification, true);
   } finally { failJobNotification = false; }
   const shared = await sharedAsset(stored.slug);
-  assert.deepEqual(shared?.files.map((file) => file.path), ["video.mp4", "poster.jpg"]);
+  assert.deepEqual(shared?.files.map((file) => file.path), ["video.mp4", "poster.jpg", "preview.mp4"]);
   assert.equal(shared?.width, 1920);
   assert.equal(shared?.duration, input.duration);
   await assert.rejects(uploadPoster({ account: owner, id: upload.id, body: { jpeg: "" } }), { status: 409 });
@@ -284,13 +303,13 @@ integration("own Cloudflare storage shares for free, skips our quotas, and survi
   assert.equal(stored.media_origin, mediaOrigin);
   assert.equal(stored.upload_id, null);
   await assert.rejects(uploadPoster({ account: owner, id: asset.id, body: { jpeg: "" } }), { status: 402 });
-  let sizes: Record<string, number | null> = { "video.mp4": 1000, "poster.jpg": 2048 };
+  let sizes: Record<string, number | null> = { "video.mp4": 1000, "poster.jpg": 2048, "preview.mp4": null };
   t.mock.method(globalThis, "fetch", async (url: string) => {
     const bytes = sizes[url.split("/").at(-1)!];
     return new Response(null, { status: bytes === null ? 404 : 200, headers: bytes === null ? {} : { "content-length": String(bytes) } });
   });
   await assert.rejects(finishUpload({ account: owner, id: asset.id }), { status: 409 });
-  sizes = { "video.mp4": input.bytes, "poster.jpg": null };
+  sizes = { "video.mp4": input.bytes, "poster.jpg": null, "preview.mp4": null };
   const ready = await finishUpload({ account: owner, id: asset.id });
   assert.equal(ready.status, "ready");
   assert.equal(ready.storage, "cloudflare");
