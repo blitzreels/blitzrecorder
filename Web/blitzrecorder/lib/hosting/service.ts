@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { hostingPool, transaction, ensureAssetColumns } from "./db";
+import { hostingPool, transaction } from "./db";
 import {
   assertHostingEnabled, HostingError, PART_BYTES, POSTER_MAX_BYTES, UPLOAD_SECONDS, parseUploadInput,
   publicAsset, required, reservationBytes, type HostedAsset, type HostedFile, type HostingAccount,
@@ -40,7 +40,6 @@ export async function authenticate(request: Request): Promise<HostingAccount> {
   if (!token) throw new HostingError({ status: 401, message: "Connect your hosting account to continue." });
   const account = await accountForToken(token);
   if (!account) throw new HostingError({ status: 401, message: "Your hosting connection has expired." });
-  await ensureAssetColumns();
   return account;
 }
 
@@ -140,20 +139,21 @@ export async function finishUpload({ account, id }: { account: HostingAccount; i
   const owned = await ownedAsset({ account, id });
   if (owned.media_origin) return finishOwnUpload(owned);
   requirePaid(account);
+  if (["queued", "processing", "ready"].includes(owned.status)) return publicAsset(owned);
+  if (!activeUpload(owned)) throw new HostingError({ status: 409, message: "This upload is no longer active." });
+  // R2 calls stay outside the transaction so a slow R2 never holds the account lock or a pooled connection.
+  await completeUpload(owned);
+  const posterBytes = owned.stream_prefix ? await objectBytes(`${owned.stream_prefix}poster.jpg`) : null;
   const result = await transaction(async (db) => {
     const current = (await db.query<HostingAccount>("SELECT * FROM hosting_accounts WHERE id=$1 FOR UPDATE", [account.id])).rows[0];
     requirePaid(current);
     const asset = (await db.query<HostedAsset>("SELECT * FROM hosting_assets WHERE id = $1 FOR UPDATE", [id])).rows[0];
     if (["queued", "processing", "ready"].includes(asset.status)) return publicAsset(asset);
-    if (asset.status !== "uploading" || !asset.upload_id || asset.expires_at.getTime() <= Date.now()) {
-      throw new HostingError({ status: 409, message: "This upload is no longer active." });
-    }
+    if (!activeUpload(asset)) throw new HostingError({ status: 409, message: "This upload is no longer active." });
     await requireUploadAllowance({ db, accountID: account.id, duration: asset.declared_seconds });
-    await completeUpload(asset);
     await db.query("INSERT INTO hosting_upload_usage(asset_id,account_id,seconds) VALUES($1,$2,$3)",
       [asset.id, account.id, asset.declared_seconds]);
     if (asset.stream_prefix) {
-      const posterBytes = await objectBytes(`${asset.stream_prefix}poster.jpg`);
       const files: HostedFile[] = [{ path: "video.mp4", bytes: Number(asset.declared_bytes), contentType: "video/mp4" },
         ...(posterBytes ? [{ path: "poster.jpg", bytes: posterBytes, contentType: "image/jpeg" }] : [])];
       const ready = await db.query<HostedAsset>(
@@ -166,7 +166,13 @@ export async function finishUpload({ account, id }: { account: HostingAccount; i
     return publicAsset(updated.rows[0]);
   });
   if (["queued", "processing"].includes(result.status)) await signalJob(id);
+  // Direct MP4s play at once. The wake-up is only a speed-up: the worker's maintenance pass also finds unchecked videos.
+  else if (result.status === "ready") await signalJob(id).catch(() => console.error("Video check notification failed"));
   return result;
+}
+
+function activeUpload(asset: HostedAsset) {
+  return asset.status === "uploading" && Boolean(asset.upload_id) && asset.expires_at.getTime() > Date.now();
 }
 
 function requireHostedByUs(asset: HostedAsset) {
@@ -223,7 +229,6 @@ export async function listAssets(account: HostingAccount) {
 export async function sharedAsset(slug: string): Promise<HostedAsset | null> {
   assertHostingEnabled();
   if (!/^[A-Za-z0-9_-]{24}$/.test(slug)) return null;
-  await ensureAssetColumns();
   const result = await hostingPool().query<HostedAsset>(
     `SELECT assets.* FROM hosting_assets assets JOIN hosting_accounts accounts ON accounts.id = assets.account_id
      WHERE assets.slug = $1 AND assets.status = 'ready' AND assets.listed

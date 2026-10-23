@@ -1,6 +1,5 @@
 import type { MetadataRoute } from "next";
-
-const SITE = "https://blitzrecorder.com";
+import { SITE_URL } from "@/lib/site";
 
 export default function robots(): MetadataRoute.Robots {
   return {
@@ -12,7 +11,7 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ["/license/claim", "/api/", "/s/"],
       },
     ],
-    sitemap: `${SITE}/sitemap.xml`,
-    host: SITE,
+    sitemap: `${SITE_URL}/sitemap.xml`,
+    host: SITE_URL,
   };
 }

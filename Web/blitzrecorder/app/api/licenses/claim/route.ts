@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { claimLicenseForCheckoutSession } from "@/lib/licenses";
+import { CheckoutSessionNotEligible, claimLicenseForCheckoutSession } from "@/lib/licenses";
 
 export const runtime = "nodejs";
 
@@ -10,12 +10,17 @@ export async function GET(request: Request) {
   }
 
   try {
-    const license = await claimLicenseForCheckoutSession(sessionId);
+    const license = await claimLicenseForCheckoutSession({
+      sessionId,
+      stripeAccountId: null,
+      storeWrite: "best_effort",
+    });
     return NextResponse.json(license);
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to claim license" },
-      { status: 400 },
-    );
+    if (error instanceof CheckoutSessionNotEligible) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    console.error("License claim failed", error instanceof Error ? error.message : error);
+    return NextResponse.json({ error: "Unable to claim license right now. Try again later." }, { status: 500 });
   }
 }

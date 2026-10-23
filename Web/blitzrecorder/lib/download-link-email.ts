@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { sendEmail } from "@/lib/email";
-
-const SITE_URL = "https://blitzrecorder.com";
+import { SITE_URL } from "@/lib/site";
 
 /** True when the email form asked for the Mac download link, not a waitlist. */
 export function isDownloadLinkSource(source: string): boolean {

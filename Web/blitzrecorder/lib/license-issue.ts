@@ -56,16 +56,14 @@ export async function handleFreeLicenseIssue(request: NextRequest): Promise<Next
       }
     }
 
-    await issueFreeLicense(normalizeLicenseEmail(email), attributionMetadata);
+    await issueFreeLicense({ email: normalizeLicenseEmail(email), attribution: attributionMetadata });
     const siteUrl = getSiteUrl(request.url);
     const grant = createFreeLicenseGrant(email);
     const claimUrl = new URL("/license/claim", siteUrl);
     claimUrl.searchParams.set("grant", grant);
     return NextResponse.redirect(claimUrl, 303);
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to issue license" },
-      { status: 500 },
-    );
+    console.error("Free license issue failed", error instanceof Error ? error.message : error);
+    return NextResponse.json({ error: "Unable to issue license right now. Try again later." }, { status: 500 });
   }
 }

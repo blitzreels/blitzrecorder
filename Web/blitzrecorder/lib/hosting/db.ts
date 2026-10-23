@@ -12,17 +12,6 @@ export function hostingPool(): Pool {
   return state.hostingPool;
 }
 
-let assetColumns: Promise<void> | null = null;
-
-/** Idempotent so a deploy does not wait on a separate migration run. */
-export function ensureAssetColumns(): Promise<void> {
-  assetColumns ??= hostingPool().query(
-    `ALTER TABLE hosting_assets ADD COLUMN IF NOT EXISTS listed BOOLEAN NOT NULL DEFAULT true,
-     ADD COLUMN IF NOT EXISTS media_origin TEXT`,
-  ).then(() => undefined, (error) => { assetColumns = null; throw error; });
-  return assetColumns;
-}
-
 export async function transaction<T>(operation: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await hostingPool().connect();
   try {

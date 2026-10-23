@@ -1,5 +1,6 @@
 import { setTimeout } from "node:timers/promises";
-import { cleanupExpired, processNext } from "../lib/hosting/processor";
+import { checkNext, cleanupExpired, processNext } from "../lib/hosting/processor";
+import { migrate } from "../lib/hosting/migrate";
 import { hostingPool } from "../lib/hosting/db";
 import { assertHostingEnabled } from "../lib/hosting/model";
 import { pendingJobSignals, clearJobSignals } from "../lib/hosting/r2";
@@ -17,6 +18,8 @@ async function clearCompletedSignals(signals: Awaited<ReturnType<typeof pendingJ
 
 async function main() {
   assertHostingEnabled();
+  const applied = await migrate(new URL("../migrations/", import.meta.url));
+  if (applied.length) console.log(`Applied ${applied.join(", ")}`);
   let nextMaintenance = 0;
   let draining = false;
   do {
@@ -26,7 +29,7 @@ async function main() {
       await cleanupExpired();
       nextMaintenance = Date.now() + 30 * 60_000;
     }
-    const processed: boolean = (draining || maintenance || signals.length > 0) && await processNext();
+    const processed: boolean = (draining || maintenance || signals.length > 0) && (await processNext() || await checkNext());
     draining = processed;
     if (!processed) await clearCompletedSignals(signals);
     if (process.argv.includes("--once")) break;

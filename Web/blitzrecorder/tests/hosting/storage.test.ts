@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { Pool } from "pg";
 import { beginUpload, authenticate, ownedAsset, revokeAsset, setAssetListing, sharedAsset, updateDetails, finishUpload, uploadPoster } from "../../lib/hosting/service";
 import { EMPTY_DETAILS } from "../../lib/hosting/details";
 import { hostingPool } from "../../lib/hosting/db";
+import { migrate } from "../../lib/hosting/migrate";
 import { newAccessToken, tokenHash, parseUploadInput, publicAsset, reservationBytes, type HostingAccount } from "../../lib/hosting/model";
 import { r2 } from "../../lib/hosting/r2";
 import type Stripe from "stripe";
@@ -34,13 +34,7 @@ test.before(async () => {
   process.env.HOSTING_R2_ACCESS_KEY_ID = "test";
   process.env.HOSTING_R2_SECRET_ACCESS_KEY = "test";
   process.env.HOSTING_R2_BUCKET = "test";
-  await hostingPool().query(await readFile(new URL("../../migrations/001-hosting.sql", import.meta.url), "utf8"));
-  await hostingPool().query(await readFile(new URL("../../migrations/002-hosting-details.sql", import.meta.url), "utf8"));
-  await hostingPool().query(await readFile(new URL("../../migrations/003-hosting-accounts.sql", import.meta.url), "utf8"));
-  await hostingPool().query(await readFile(new URL("../../migrations/004-hosting-usage.sql", import.meta.url), "utf8"));
-  await hostingPool().query(await readFile(new URL("../../migrations/006-hosting-processing-progress.sql", import.meta.url), "utf8"));
-  await hostingPool().query(await readFile(new URL("../../migrations/007-hosting-listed.sql", import.meta.url), "utf8"));
-  await hostingPool().query(await readFile(new URL("../../migrations/008-hosting-own-storage.sql", import.meta.url), "utf8"));
+  await migrate(new URL("../../migrations/", import.meta.url));
   r2().middlewareStack.add(() => async (args) => {
     const value = args.input as { Key?: string };
     if (value.Key?.startsWith("hosting-jobs/") && failJobNotification) {
@@ -142,7 +136,7 @@ integration("the Mac sees processing progress only while a video is being prepar
   assert.equal(publicAsset(await ownedAsset({ account: owner, id })).progress, null);
 });
 
-integration("a 1080p MP4 plays as soon as its upload completes, with no processing job", async () => {
+integration("a 1080p MP4 plays as soon as its upload completes, even when the worker wake-up fails", async () => {
   const owner = await account({ limit: 1024 ** 3, active: true });
   const upload = await beginUpload({ account: owner,
     body: { ...input, requestKey: "d".repeat(20), video: { width: 1920, height: 1080, frameRate: 30 } } });
@@ -157,7 +151,7 @@ integration("a 1080p MP4 plays as soon as its upload completes, with no processi
     const ready = await finishUpload({ account: owner, id: upload.id });
     assert.equal(ready.status, "ready");
     assert.match(ready.sharePath ?? "", /^\/s\/[A-Za-z0-9_-]{24}$/);
-    assert.equal(failJobNotification, true);
+    assert.equal(failJobNotification, false);
   } finally { failJobNotification = false; }
   const shared = await sharedAsset(stored.slug);
   assert.deepEqual(shared?.files.map((file) => file.path), ["video.mp4", "poster.jpg"]);

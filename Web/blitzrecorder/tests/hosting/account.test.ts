@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { Pool } from "pg";
 import { accountState, activeSessionCount, billingURL, connectAccount, disconnectAccount } from "../../lib/hosting/account";
 import { authenticate } from "../../lib/hosting/service";
 import { hostingPool } from "../../lib/hosting/db";
+import { migrate } from "../../lib/hosting/migrate";
 import { getStripe } from "../../lib/payments";
 import type Stripe from "stripe";
 
@@ -28,9 +28,7 @@ test.before(async () => {
   process.env.HOSTING_STRIPE_PORTAL_CONFIGURATION_ID = "test-hosting-portal";
   process.env.STRIPE_SECRET_KEY = "test-placeholder";
   process.env.NEXT_PUBLIC_SITE_URL = "https://hosting.test";
-  for (const file of ["001-hosting.sql", "002-hosting-details.sql", "003-hosting-accounts.sql", "004-hosting-usage.sql"]) {
-    await hostingPool().query(await readFile(new URL(`../../migrations/${file}`, import.meta.url), "utf8"));
-  }
+  await migrate(new URL("../../migrations/", import.meta.url));
 });
 
 test.after(async () => {

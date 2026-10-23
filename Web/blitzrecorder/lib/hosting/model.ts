@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { VideoDetails } from "./details";
+import { sharePath } from "./paths";
 
 export const PART_BYTES = 16 * 1024 * 1024;
 export const UPLOAD_SECONDS = 24 * 60 * 60;
@@ -155,14 +156,20 @@ export function partSize({ bytes, number }: { bytes: number; number: number }): 
   return Math.min(PART_BYTES, bytes - (number - 1) * PART_BYTES);
 }
 
+/** Link previews are at most 720p on the short side, in even dimensions for H.264. */
+export function previewSize({ width, height }: { width: number; height: number }) {
+  const scale = Math.min(1, 720 / Math.min(width, height));
+  return { width: Math.max(2, Math.floor(width * scale / 2) * 2), height: Math.max(2, Math.floor(height * scale / 2) * 2) };
+}
+
 export function safeDeliveryPath(path: string): boolean {
-  return /^(video\.mp4|master\.m3u8|poster\.jpg|v(?:480|720|1080)\/(?:index\.m3u8|init\.mp4|segment-\d{6}\.m4s))$/.test(path);
+  return /^(video\.mp4|preview\.mp4|master\.m3u8|poster\.jpg|v(?:480|720|1080)\/(?:index\.m3u8|init\.mp4|segment-\d{6}\.m4s))$/.test(path);
 }
 
 export function publicAsset(asset: HostedAsset) {
   return {
     id: asset.id, title: asset.title, status: asset.status,
-    sharePath: asset.status === "ready" ? `/s/${asset.slug}` : null,
+    sharePath: asset.status === "ready" ? sharePath(asset.slug) : null,
     duration: asset.duration, width: asset.width, height: asset.height,
     bytes: Number(asset.stored_bytes), error: asset.error,
     progress: asset.status === "processing" ? asset.processing_progress ?? null : null,

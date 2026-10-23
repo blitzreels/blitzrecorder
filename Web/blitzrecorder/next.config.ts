@@ -3,6 +3,13 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Tailwind keeps the stylesheet small; inlining it removes the render-blocking request for first visits.
   experimental: { inlineCss: true },
+  async headers() {
+    return [
+      // No other site may frame our pages (clickjacking on owner controls), except the player X shows in posts.
+      { source: "/:path*", headers: [{ key: "Content-Security-Policy", value: "frame-ancestors 'none'" }] },
+      { source: "/s/:slug/embed", headers: [{ key: "Content-Security-Policy", value: "frame-ancestors https:" }] },
+    ];
+  },
   async redirects() {
     return [
       // Legacy static .html paths → clean routes

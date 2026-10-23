@@ -91,6 +91,10 @@ export async function downloadSource({ asset, destination }: { asset: HostedAsse
   await pipeline(object.Body as Readable, createWriteStream(destination, { flags: "wx" }));
 }
 
+export async function sourceURL(asset: HostedAsset): Promise<string> {
+  return getSignedUrl(r2(), new GetObjectCommand({ Bucket: bucket(), Key: asset.source_key }), { expiresIn: 3600 });
+}
+
 export async function uploadFile({ key, path, bytes, contentType }: { key: string; path: string; bytes: number; contentType: string }) {
   await r2().send(new PutObjectCommand({
     Bucket: bucket(), Key: key, Body: createReadStream(path), ContentLength: bytes, ContentType: contentType,

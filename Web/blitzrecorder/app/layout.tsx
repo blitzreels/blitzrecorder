@@ -12,6 +12,7 @@ import {
   RELEASES_URL,
   type Release,
 } from "@/lib/release";
+import { SITE_URL } from "@/lib/site";
 
 /**
  * Self-hosted DMG fallback (server-only — uses fs, so it must not live in the
@@ -57,7 +58,7 @@ const mono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://blitzrecorder.com"),
+  metadataBase: new URL(SITE_URL),
   title: {
     default: "BlitzRecorder: pro screen videos, free on your Mac",
     template: "%s · BlitzRecorder",
@@ -70,7 +71,7 @@ export const metadata: Metadata = {
     description:
       "Record your screen and your face. Post it the same day. A free, open-source Mac app.",
     type: "website",
-    url: "https://blitzrecorder.com",
+    url: SITE_URL,
   },
   twitter: {
     card: "summary_large_image",

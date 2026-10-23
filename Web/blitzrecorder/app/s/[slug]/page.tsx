@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
-import { cache } from "react";
 import { notFound } from "next/navigation";
-import { sharedAsset } from "@/lib/hosting/service";
-import { mediaURL } from "@/lib/hosting/model";
+import { hasFile, loadShared, playablePath } from "./shared-asset";
+import { mediaURL, previewSize } from "@/lib/hosting/model";
 import { ownerLibrary, viewerAccount } from "@/lib/hosting/web-session";
 import { SharedVideoView, type SharedViewer } from "./shared-video-view";
 import { shareDescription } from "@/lib/hosting/brief";
 import { EMPTY_DETAILS, shareDetails } from "@/lib/hosting/details";
+import { embedPath, sharePath } from "@/lib/hosting/paths";
+import { SITE_URL } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
 
@@ -14,11 +15,6 @@ const privatePage: Metadata = {
   robots: { index: false, follow: false, noarchive: true },
   referrer: "no-referrer",
 };
-
-const loadShared = cache(async (slug: string) => {
-  if (process.env.BLITZRECORDER_HOSTING_ENABLED !== "true") return null;
-  return sharedAsset(slug);
-});
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const asset = await loadShared((await params).slug);
@@ -28,18 +24,29 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const duration = asset.duration ?? asset.declared_seconds;
   const details = shareDetails({ details: asset.viewer_details ?? EMPTY_DETAILS, duration });
   const description = shareDescription({ details, duration });
-  const poster = (asset.media_origin || process.env.HOSTING_MEDIA_ORIGIN) && asset.files.some((file) => file.path === "poster.jpg")
-    ? mediaURL({ asset, path: "poster.jpg" }) : null;
+  const hosted = Boolean(asset.media_origin || process.env.HOSTING_MEDIA_ORIGIN);
+  const poster = hosted && hasFile({ asset, path: "poster.jpg" }) ? mediaURL({ asset, path: "poster.jpg" }) : null;
+  const preview = hosted && hasFile({ asset, path: "preview.mp4" }) ? mediaURL({ asset, path: "preview.mp4" }) : null;
+  const video = hosted && hasFile({ asset, path: "video.mp4" }) ? mediaURL({ asset, path: "video.mp4" }) : null;
+  const stream = preview ?? video;
   return {
     title: asset.title, description, ...privatePage,
     openGraph: {
-      title: asset.title, description, type: "website", url: `/s/${asset.slug}`,
+      title: asset.title, description, type: preview ? "video.other" : "website", url: sharePath(asset.slug),
+      // Only the short preview: the full upload can be gigabytes, which Facebook, iMessage and Discord won't fetch.
+      videos: preview ? [{ url: preview, secureUrl: preview.startsWith("https://") ? preview : undefined, type: "video/mp4",
+        ...previewSize({ width: asset.width, height: asset.height }) }] : undefined,
       images: poster ? [{ url: poster, width: asset.width, height: asset.height, alt: asset.title }] : undefined,
     },
-    twitter: {
-      card: poster ? "summary_large_image" : "summary", title: asset.title, description,
-      images: poster ? [poster] : undefined,
-    },
+    twitter: stream && poster
+      ? {
+        card: "player", title: asset.title, description, images: [poster],
+        players: [{ playerUrl: `${SITE_URL}${embedPath(asset.slug)}`, streamUrl: stream, width: asset.width, height: asset.height }],
+      }
+      : {
+        card: poster ? "summary_large_image" : "summary", title: asset.title, description,
+        images: poster ? [poster] : undefined,
+      },
   };
 }
 
@@ -51,11 +58,12 @@ export default async function SharedVideoPage({ params }: { params: Promise<{ sl
   const owner = account?.id === asset.account_id;
   const library = account && owner ? await ownerLibrary(account) : null;
   const viewer: SharedViewer | null = account && { email: account.email, library };
-  const has = (path: string) => asset.files.some((file) => file.path === path);
+  const playable = playablePath(asset);
+  if (!playable) notFound();
   const duration = asset.duration ?? asset.declared_seconds;
   const details = shareDetails({ details: asset.viewer_details ?? EMPTY_DETAILS, duration });
-  return <SharedVideoView slug={asset.slug} source={mediaURL({ asset, path: has("video.mp4") ? "video.mp4" : "master.m3u8" })}
-    poster={has("poster.jpg") ? mediaURL({ asset, path: "poster.jpg" }) : ""}
+  return <SharedVideoView slug={asset.slug} source={mediaURL({ asset, path: playable })}
+    poster={hasFile({ asset, path: "poster.jpg" }) ? mediaURL({ asset, path: "poster.jpg" }) : ""}
     title={asset.title} width={asset.width} height={asset.height} duration={duration}
     frameRate={asset.frame_rate} details={details} viewer={viewer} />;
 }

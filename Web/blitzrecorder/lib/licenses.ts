@@ -37,9 +37,18 @@ export type ClaimedLicense = {
   payload: LicensePayload;
 };
 
-export type LicenseClaimContext = {
-  stripeAccountId?: string | null;
-};
+/**
+ * A checkout session that will never yield a license (another product, not
+ * paid yet, unknown session). Callers treat it as a skip, not a failure.
+ */
+export class CheckoutSessionNotEligible extends Error {}
+
+/** "required" lets a store outage fail the claim so the webhook is retried. */
+export type LicenseStoreWrite = "required" | "best_effort";
+
+const VALIDATION_CACHE_MS = 5 * 60 * 1000;
+const VALIDATION_CACHE_MAX = 5_000;
+const validationCache = new Map<string, { payload: LicensePayload; expiresAt: number }>();
 
 export type LicenseValidation =
   | { ok: true; status: "active"; payload: LicensePayload }
@@ -133,10 +142,13 @@ function freeSessionId(email: string): string {
   return `free_${hmac(`session:${normalizeLicenseEmail(email)}`).slice(0, 32)}`;
 }
 
-export async function issueFreeLicense(
-  email: string,
-  attribution: Record<string, string> = {},
-): Promise<ClaimedLicense> {
+export async function issueFreeLicense({
+  email,
+  attribution,
+}: {
+  email: string;
+  attribution: Record<string, string>;
+}): Promise<ClaimedLicense> {
   const normalized = normalizeLicenseEmail(email);
   if (!isValidLicenseEmail(normalized)) {
     throw new Error("Enter a valid email address.");
@@ -159,12 +171,13 @@ export async function issueFreeLicense(
     issuedAt: FREE_LICENSE_EPOCH,
   };
 
+  // Free keys verify offline; the row only records the signup.
   if (isLicenseStoreConfigured()) {
     await upsertLicenseWithContext(payload, {
       stripeLivemode: false,
       stripeAccountId: null,
       attribution,
-    }).catch(() => {});
+    }).catch((error) => logStoreFailure({ action: "record free license", error }));
   }
 
   return {
@@ -245,14 +258,22 @@ function sessionPriceIds(session: Stripe.Checkout.Session): string[] {
 function assertPaidBlitzRecorderSession(session: Stripe.Checkout.Session): void {
   const priceId = getBlitzRecorderEarlyPriceId();
   if (session.mode !== "payment") {
-    throw new Error("Checkout session is not a one-time payment");
+    throw new CheckoutSessionNotEligible("Checkout session is not a one-time payment");
   }
   if (session.payment_status !== "paid") {
-    throw new Error("Checkout session is not paid");
+    throw new CheckoutSessionNotEligible("Checkout session is not paid");
   }
   if (!sessionPriceIds(session).includes(priceId)) {
-    throw new Error("Checkout session is not for the BlitzRecorder lifetime license");
+    throw new CheckoutSessionNotEligible("Checkout session is not for the BlitzRecorder lifetime license");
   }
+}
+
+function isStripeResourceMissing(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "resource_missing";
+}
+
+function logStoreFailure({ action, error }: { action: string; error: unknown }): void {
+  console.error(`License store: failed to ${action}`, error instanceof Error ? error.message : error);
 }
 
 function sessionAttribution(session: Stripe.Checkout.Session): Record<string, string> {
@@ -263,15 +284,18 @@ function sessionAttribution(session: Stripe.Checkout.Session): Record<string, st
   );
 }
 
-function storeContextForSession(
-  session: Stripe.Checkout.Session,
-  context: LicenseClaimContext = {},
-) {
+function storeContextForSession({
+  session,
+  stripeAccountId,
+}: {
+  session: Stripe.Checkout.Session;
+  stripeAccountId: string | null;
+}) {
   const attribution = sessionAttribution(session);
   return {
     stripeLivemode: session.livemode,
     stripeAccountId:
-      context.stripeAccountId ??
+      stripeAccountId ??
       attribution.stripe_account_id ??
       process.env.STRIPE_ACCOUNT_ID ??
       null,
@@ -279,15 +303,25 @@ function storeContextForSession(
   };
 }
 
-export async function claimLicenseForCheckoutSession(
-  sessionId: string,
-  context: LicenseClaimContext = {},
-): Promise<ClaimedLicense> {
+export async function claimLicenseForCheckoutSession({
+  sessionId,
+  stripeAccountId,
+  storeWrite,
+}: {
+  sessionId: string;
+  stripeAccountId: string | null;
+  storeWrite: LicenseStoreWrite;
+}): Promise<ClaimedLicense> {
   const stripe = getStripe();
   const priceId = getBlitzRecorderEarlyPriceId();
-  const session = await stripe.checkout.sessions.retrieve(sessionId, {
-    expand: ["line_items.data.price", "payment_intent", "customer"],
-  });
+  const session = await stripe.checkout.sessions
+    .retrieve(sessionId, { expand: ["line_items.data.price", "payment_intent", "customer"] })
+    .catch((error: unknown) => {
+      if (isStripeResourceMissing(error)) {
+        throw new CheckoutSessionNotEligible("Checkout session was not found");
+      }
+      throw error;
+    });
 
   assertPaidBlitzRecorderSession(session);
 
@@ -298,7 +332,7 @@ export async function claimLicenseForCheckoutSession(
   const email = session.customer_details?.email ?? customerEmail;
 
   if (!email) {
-    throw new Error("Checkout session does not include a customer email");
+    throw new CheckoutSessionNotEligible("Checkout session does not include a customer email");
   }
 
   const payload: LicensePayload = {
@@ -317,10 +351,16 @@ export async function claimLicenseForCheckoutSession(
     issuedAt: session.created,
   };
 
-  // Record the license when a store is configured. Claiming must not fail on
-  // a database hiccup: the key is still valid without the row.
+  // The upsert is keyed by license id (derived from the session id), so a
+  // retried webhook is idempotent. Customer-facing claims stay best effort:
+  // the key is valid without the row and the webhook records it.
   if (isLicenseStoreConfigured()) {
-    await upsertLicenseWithContext(payload, storeContextForSession(session, context)).catch(() => {});
+    const write = upsertLicenseWithContext(payload, storeContextForSession({ session, stripeAccountId }));
+    if (storeWrite === "required") {
+      await write;
+    } else {
+      await write.catch((error) => logStoreFailure({ action: "record claimed license", error }));
+    }
   }
 
   return {
@@ -371,24 +411,26 @@ export async function validateLicenseKey(licenseKey: string): Promise<LicenseVal
   }
 
   const offline = isOfflineIssuedLicense(payload);
-  if (!offline) {
-    try {
-      if (payload.stripePriceId !== getBlitzRecorderEarlyPriceId()) {
-        return { ok: false, status: "wrong_product", reason: "License is for a different Stripe price" };
-      }
-    } catch (error) {
-      return {
-        ok: false,
-        status: "invalid",
-        reason: error instanceof Error ? error.message : "License is invalid",
-      };
-    }
+  // A missing price id is a server misconfiguration, so it throws (500)
+  // rather than telling the app the license is invalid.
+  if (!offline && payload.stripePriceId !== getBlitzRecorderEarlyPriceId()) {
+    return { ok: false, status: "wrong_product", reason: "License is for a different Stripe price" };
   }
+
+  const cacheKey = licenseKeyHash(licenseKey);
+  const cached = validationCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return { ok: true, status: "active", payload: cached.payload };
+  }
+  validationCache.delete(cacheKey);
 
   // Revocation lives in the license store (refund/dispute webhooks or manual
   // ops). A store outage falls back to the Stripe-only checks below.
   if (isLicenseStoreConfigured()) {
-    const stored = await getLicense(payload.licenseId).catch(() => null);
+    const stored = await getLicense(payload.licenseId).catch((error) => {
+      logStoreFailure({ action: "read license", error });
+      return null;
+    });
     if (stored?.status === "revoked") {
       return {
         ok: false,
@@ -400,7 +442,10 @@ export async function validateLicenseKey(licenseKey: string): Promise<LicenseVal
     }
 
     const paymentIntentRevocation = payload.stripePaymentIntentId
-      ? await getPaymentIntentRevocation(payload.stripePaymentIntentId).catch(() => null)
+      ? await getPaymentIntentRevocation(payload.stripePaymentIntentId).catch((error) => {
+          logStoreFailure({ action: "read payment revocation", error });
+          return null;
+        })
       : null;
     if (paymentIntentRevocation) {
       return {
@@ -412,7 +457,7 @@ export async function validateLicenseKey(licenseKey: string): Promise<LicenseVal
   }
 
   if (offline) {
-    return { ok: true, status: "active", payload };
+    return cacheActiveValidation({ cacheKey, payload });
   }
 
   const stripe = getStripe();
@@ -423,11 +468,10 @@ export async function validateLicenseKey(licenseKey: string): Promise<LicenseVal
   try {
     assertPaidBlitzRecorderSession(session);
   } catch (error) {
-    return {
-      ok: false,
-      status: "unpaid",
-      reason: error instanceof Error ? error.message : "Payment is not active",
-    };
+    if (!(error instanceof CheckoutSessionNotEligible)) {
+      throw error;
+    }
+    return { ok: false, status: "unpaid", reason: error.message };
   }
 
   const paymentRevocation = await paymentRevocationStatus(payload.stripePaymentIntentId);
@@ -441,8 +485,30 @@ export async function validateLicenseKey(licenseKey: string): Promise<LicenseVal
   // Backfill the store for licenses claimed before the webhook/store existed.
   // The upsert never touches `status`, so it cannot resurrect a revocation.
   if (isLicenseStoreConfigured()) {
-    await upsertLicenseWithContext(payload, storeContextForSession(session)).catch(() => {});
+    await upsertLicenseWithContext(payload, storeContextForSession({ session, stripeAccountId: null }))
+      .catch((error) => logStoreFailure({ action: "backfill license", error }));
   }
 
+  return cacheActiveValidation({ cacheKey, payload });
+}
+
+export function licenseKeyHash(licenseKey: string): string {
+  return crypto.createHash("sha256").update(licenseKey.trim()).digest("hex");
+}
+
+// Only active results are cached; failures always re-check, so a Stripe
+// outage is never remembered as an invalid license.
+function cacheActiveValidation({
+  cacheKey,
+  payload,
+}: {
+  cacheKey: string;
+  payload: LicensePayload;
+}): LicenseValidation {
+  if (validationCache.size >= VALIDATION_CACHE_MAX) {
+    const oldest = validationCache.keys().next().value;
+    if (oldest !== undefined) validationCache.delete(oldest);
+  }
+  validationCache.set(cacheKey, { payload, expiresAt: Date.now() + VALIDATION_CACHE_MS });
   return { ok: true, status: "active", payload };
 }

@@ -3,6 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
 import { inspectVideo } from "../lib/hosting/transcode";
+import { MAX_DIRECT_SECONDS } from "../lib/hosting/model";
 import { parseArgs } from "node:util";
 import { localVideoDetails } from "../lib/hosting/local-details";
 
@@ -21,7 +22,7 @@ async function main() {
   const base = new URL(origin);
   if (base.protocol !== "https:" && !["localhost", "127.0.0.1"].includes(base.hostname)) throw new Error("Hosting requires HTTPS.");
   const details = await stat(file);
-  const info = await inspectVideo(file);
+  const info = await inspectVideo({ source: file, maxSeconds: MAX_DIRECT_SECONDS });
   if (args.values.project && !args.values.speed) throw new Error("Pass --speed with the playback speed used for this export.");
   const metadata = await localVideoDetails({ file, info, projectPath: args.values.project ?? null,
     transcriptPath: args.values.transcript ?? null, detailsPath: args.values.details ?? null, playbackRate: Number(args.values.speed ?? 1) });

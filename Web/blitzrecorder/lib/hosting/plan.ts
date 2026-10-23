@@ -9,6 +9,7 @@ export const HOSTING_PLAN = {
   uploadWindowDays: 30,
   maximumResolution: 1080,
   retentionDaysAfterExpiry: 30,
+  failedRetentionDays: 7,
 } as const;
 
 export function hostingPlan() {

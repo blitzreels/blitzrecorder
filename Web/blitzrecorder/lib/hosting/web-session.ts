@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { hostingPool, ensureAssetColumns } from "./db";
+import { hostingPool } from "./db";
 import { mediaURL, type AssetStatus, type HostingAccount } from "./model";
 import { accountForToken } from "./account";
 import { HOSTING_PLAN } from "./plan";
@@ -40,7 +40,6 @@ export async function hostingStanding(account: HostingAccount): Promise<{ subscr
 
 /** Returns false when the video is not this account's or was already revoked. */
 export async function stopSharingVideo({ account, slug }: { account: HostingAccount; slug: string }): Promise<boolean> {
-  await ensureAssetColumns();
   const result = await hostingPool().query(
     `UPDATE hosting_assets SET status='revoked', updated_at=now()
      WHERE slug=$1 AND account_id=$2 AND status IN ('queued','processing','ready','failed')`, [slug, account.id]);
@@ -49,7 +48,6 @@ export async function stopSharingVideo({ account, slug }: { account: HostingAcco
 
 /** Turns the public link off or back on. The file stays hosted. */
 export async function setVideoListing({ account, slug, listed }: { account: HostingAccount; slug: string; listed: boolean }): Promise<boolean> {
-  await ensureAssetColumns();
   const result = await hostingPool().query(
     `UPDATE hosting_assets SET listed=$3, updated_at=now()
      WHERE slug=$1 AND account_id=$2 AND status='ready'`, [slug, account.id, listed]);
@@ -57,7 +55,6 @@ export async function setVideoListing({ account, slug, listed }: { account: Host
 }
 
 export async function ownerLibrary(account: HostingAccount): Promise<LibraryVideo[]> {
-  await ensureAssetColumns();
   const rows = await hostingPool().query<{
     id: string; media_origin: string | null; slug: string; title: string; status: AssetStatus; listed: boolean; duration: number | null; declared_seconds: number; created_at: Date; has_poster: boolean;
   }>(`SELECT id, media_origin, slug, title, status, listed, duration, declared_seconds, created_at, files @> '[{"path":"poster.jpg"}]'::jsonb AS has_poster

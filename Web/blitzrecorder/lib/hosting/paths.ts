@@ -8,6 +8,7 @@ export const signInPath = "/sign-in";
 export const billingPath = "/billing";
 
 export const sharePath = (slug: string) => `/s/${slug}`;
+export const embedPath = (slug: string) => `${sharePath(slug)}/embed`;
 
 /** Dashboard pages a signed-out visitor can be sent back to after signing in. */
 export const dashboardPaths = [videosPath, usagePath, planPath, accountPath];

@@ -10,6 +10,7 @@
     "typecheck": "next typegen && tsc --noEmit && tsc -p hosting-worker/tsconfig.json",
     "test:hosting": "tsx --test tests/hosting/*.test.ts",
     "hosting:worker": "tsx scripts/hosting-worker.ts",
+    "hosting:migrate": "tsx scripts/hosting-migrate.ts",
     "hosting:upload": "tsx scripts/hosting-upload.ts",
     "hosting:delivery:local": "tsx scripts/hosting-delivery-local.ts"
   },

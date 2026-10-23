@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { getStripe } from "@/lib/payments";
-import { claimLicenseForCheckoutSession } from "@/lib/licenses";
+import { CheckoutSessionNotEligible, claimLicenseForCheckoutSession } from "@/lib/licenses";
 import { syncHostingBilling } from "@/lib/hosting/billing";
 import {
   isLicenseStoreConfigured,
@@ -45,10 +45,14 @@ export async function POST(request: Request) {
         const session = event.data.object;
         // claimLicense re-fetches and asserts paid + BlitzRecorder price, and
         // upserts into the store. A session for another product or an unpaid
-        // async method just skips.
-        await claimLicenseForCheckoutSession(session.id, {
+        // async method just skips; store or Stripe failures throw so Stripe retries.
+        await claimLicenseForCheckoutSession({
+          sessionId: session.id,
           stripeAccountId: event.account ?? null,
-        }).catch(() => null);
+          storeWrite: "required",
+        }).catch((error: unknown) => {
+          if (!(error instanceof CheckoutSessionNotEligible)) throw error;
+        });
         break;
       }
       case "charge.refunded": {
@@ -70,10 +74,8 @@ export async function POST(request: Request) {
     }
   } catch (error) {
     // Store hiccup: non-2xx so Stripe retries the event later.
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Webhook handler failed" },
-      { status: 500 },
-    );
+    console.error(`Stripe webhook ${event.type} failed`, error instanceof Error ? error.message : error);
+    return NextResponse.json({ error: "Webhook handler failed" }, { status: 500 });
   }
 
   return NextResponse.json({ received: true });

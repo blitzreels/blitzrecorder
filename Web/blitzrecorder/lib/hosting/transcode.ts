@@ -2,7 +2,7 @@ import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { MAX_VIDEO_SECONDS, safeDeliveryPath, type HostedFile } from "./model";
+import { previewSize, safeDeliveryPath, type HostedFile } from "./model";
 
 const exec = promisify(execFile);
 
@@ -13,19 +13,30 @@ export type VideoInspection = VideoInfo & {
   title: string | null; description: string | null; recordedAt: string | null;
 };
 
-export async function inspectVideo(file: string): Promise<VideoInspection> {
+export const PREVIEW_SECONDS = 60;
+export const PREVIEW_MAX_BYTES = 16 * 1024 ** 2;
+
+/** A file the worker can never play, as opposed to a failure worth retrying. */
+export class InvalidVideo extends Error {}
+
+/** Signed R2 links let ffmpeg read only the bytes it needs instead of downloading the whole upload. */
+function protocols(source: string) {
+  return source.startsWith("https://") ? "https,tls,tcp,crypto" : "file,pipe";
+}
+
+export async function inspectVideo({ source, maxSeconds }: { source: string; maxSeconds: number }): Promise<VideoInspection> {
   const { stdout } = await exec("ffprobe", [
-    "-v", "error", "-protocol_whitelist", "file,pipe", "-show_format", "-show_streams", "-of", "json", file,
+    "-v", "error", "-protocol_whitelist", protocols(source), "-show_format", "-show_streams", "-of", "json", source,
   ], { timeout: 30_000, maxBuffer: 1024 * 1024 });
   const metadata = JSON.parse(stdout) as {
     format: { duration: string; format_name: string; tags?: Record<string, string> };
     streams: { codec_type: string; codec_name?: string; avg_frame_rate?: string; width: number; height: number; side_data_list?: { rotation?: number }[] }[];
   };
-  if (!metadata.format.format_name.split(",").includes("mov")) throw new Error("Export an MP4 or MOV video before sharing.");
+  if (!metadata.format.format_name.split(",").includes("mov")) throw new InvalidVideo("Export an MP4 or MOV video before sharing.");
   const video = metadata.streams.find((stream) => stream.codec_type === "video");
   const duration = Number(metadata.format.duration);
-  if (!video || !Number.isFinite(duration) || duration <= 0 || duration > MAX_VIDEO_SECONDS || video.width > 8192 || video.height > 8192) {
-    throw new Error("This video cannot be processed. Export an MP4 up to one hour long.");
+  if (!video || !Number.isFinite(duration) || duration <= 0 || duration > maxSeconds || video.width > 8192 || video.height > 8192) {
+    throw new InvalidVideo("This video cannot be processed. Export an MP4 up to one hour long.");
   }
   const rotated = Math.abs(video.side_data_list?.find((side) => side.rotation !== undefined)?.rotation ?? 0) % 180 === 90;
   const [numerator, denominator] = (video.avg_frame_rate ?? "0/0").split("/").map(Number);
@@ -137,4 +148,19 @@ export async function transcode({ source, destination, info, signal, onProgress 
       : relative.endsWith(".jpg") ? "image/jpeg" : relative.endsWith(".m4s") ? "video/iso.segment" : "video/mp4" });
   }
   return files;
+}
+
+/** The first minute at up to 720p with the index up front, small enough for link previews to fetch whole. */
+export async function encodePreview({ source, destination, info, signal }: {
+  source: string; destination: string; info: VideoInfo; signal: AbortSignal;
+}) {
+  const { width, height } = previewSize(info);
+  await exec("ffmpeg", [
+    "-nostdin", "-hide_banner", "-loglevel", "error", "-protocol_whitelist", protocols(source), "-i", source,
+    "-t", String(PREVIEW_SECONDS), "-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn", "-map_metadata", "-1",
+    "-vf", `scale=${width}:${height}:flags=lanczos,setsar=1`,
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "26", "-profile:v", "high", "-pix_fmt", "yuv420p",
+    "-maxrate", "1500k", "-bufsize", "3000k", "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "48000",
+    "-movflags", "+faststart", destination,
+  ], { signal, timeout: 10 * 60_000, maxBuffer: 1024 * 1024 });
 }

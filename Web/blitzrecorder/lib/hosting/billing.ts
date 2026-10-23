@@ -30,28 +30,30 @@ export async function syncHostingBilling(event: Stripe.Event): Promise<void> {
     subscriptionID = typeof reference === "string" ? reference : reference?.id ?? null;
   }
   if (!subscriptionID) return;
+  const subscription = await getStripe().subscriptions.retrieve(subscriptionID, { expand: ["latest_invoice"] });
+  const accountID = subscription.metadata.blitzrecorder_hosting_account_id;
+  if (!accountID || !/^[a-f0-9-]{36}$/.test(accountID)) return;
+  const storage = planStorageBytes();
+  const priceID = required("HOSTING_STRIPE_PRICE_ID");
+  const period = paidHostingPeriod({ subscription, priceID });
+  const customer = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
   await transaction(async (db) => {
-    await db.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`hosting:${subscriptionID}`]);
-    const subscription = await getStripe().subscriptions.retrieve(subscriptionID, { expand: ["latest_invoice"] });
-    const accountID = subscription.metadata.blitzrecorder_hosting_account_id;
-    if (!accountID || !/^[a-f0-9-]{36}$/.test(accountID)) return;
-    const storage = planStorageBytes();
-    const priceID = required("HOSTING_STRIPE_PRICE_ID");
-    const period = paidHostingPeriod({ subscription, priceID });
-    const customer = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
     const account = (await db.query<{
-      active_until: Date; stripe_subscription_id: string | null; stripe_customer_id: string | null;
-    }>("SELECT active_until,stripe_subscription_id,stripe_customer_id FROM hosting_accounts WHERE id=$1 FOR UPDATE", [accountID])).rows[0];
+      active_until: Date; stripe_subscription_id: string | null; stripe_customer_id: string | null; billing_event_at: Date | null;
+    }>("SELECT active_until,stripe_subscription_id,stripe_customer_id,billing_event_at FROM hosting_accounts WHERE id=$1 FOR UPDATE",
+      [accountID])).rows[0];
     if (!account || (account.stripe_customer_id && account.stripe_customer_id !== customer)) {
       throw new Error("Hosting subscription is not linked to its account.");
     }
+    // Stripe was read before the lock, so a newer event may already have written a fresher state.
+    if (account.billing_event_at && account.billing_event_at.getTime() > event.created * 1000) return;
     if (account.stripe_subscription_id && account.stripe_subscription_id !== subscription.id
       && (period === null || account.active_until.getTime() > Date.now())) return;
     const updated = await db.query(
       `UPDATE hosting_accounts SET active_until=to_timestamp($2),storage_limit=$3,
-       stripe_subscription_id=$4,stripe_customer_id=$5,
+       stripe_subscription_id=$4,stripe_customer_id=$5,billing_event_at=to_timestamp($6),
        inactive_since=CASE WHEN $2>0 THEN NULL ELSE COALESCE(inactive_since,now()) END WHERE id=$1`,
-      [accountID, period ?? 0, storage, subscription.id, customer]);
+      [accountID, period ?? 0, storage, subscription.id, customer, event.created]);
     if (!updated.rowCount) throw new Error("Hosting subscription is not linked to its account.");
   });
 }

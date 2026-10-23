@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { Pool } from "pg";
 import { hostingPool } from "../../lib/hosting/db";
+import { migrate } from "../../lib/hosting/migrate";
 import { connectAccount } from "../../lib/hosting/account";
 import { requestSignInCode, verifySignInCode, signInEmail } from "../../lib/hosting/sign-in";
 import { authenticate } from "../../lib/hosting/service";
@@ -26,9 +26,7 @@ test.before(async () => {
   process.env.HOSTING_AUTH_SECRET = "test-secret-with-no-production-access";
   process.env.HOSTING_EMAIL_API_KEY = "test-email-key";
   process.env.HOSTING_EMAIL_FROM = "BlitzRecorder <accounts@blitzrecorder.com>";
-  for (const file of ["001-hosting.sql", "002-hosting-details.sql", "003-hosting-accounts.sql", "004-hosting-usage.sql", "005-hosting-sign-in.sql"]) {
-    await hostingPool().query(await readFile(new URL(`../../migrations/${file}`, import.meta.url), "utf8"));
-  }
+  await migrate(new URL("../../migrations/", import.meta.url));
 });
 
 test.after(async () => {

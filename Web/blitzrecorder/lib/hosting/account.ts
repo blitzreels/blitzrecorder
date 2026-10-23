@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg";
 import { randomUUID } from "node:crypto";
+import { setTimeout } from "node:timers/promises";
 import { getSiteUrl, getStripe } from "../payments";
 import { hostingPool, transaction } from "./db";
 import { HostingError, newAccessToken, required, tokenHash, type HostingAccount } from "./model";
@@ -99,36 +100,51 @@ export async function accountOverview(account: HostingAccount): Promise<AccountO
   };
 }
 
-/** `returnPath` is where Stripe sends people back: the app flow or the web dashboard. */
+type BillingRow = {
+  stripe_customer_id: string | null; stripe_subscription_id: string | null; email: string | null;
+  checkout_session_id: string | null; checkout_url: string | null; checkout_expires_at: Date | null;
+};
+
+async function billingRow(account: HostingAccount): Promise<BillingRow> {
+  return (await hostingPool().query<BillingRow>(
+    `SELECT stripe_customer_id,stripe_subscription_id,email,checkout_session_id,checkout_url,checkout_expires_at
+     FROM hosting_accounts WHERE id=$1`, [account.id])).rows[0];
+}
+
+/**
+ * `returnPath` is where Stripe sends people back: the app flow or the web dashboard.
+ * Stripe is called with no database lock held; a short claim on the account makes concurrent clicks share one checkout.
+ */
 export async function billingURL({ account, returnPath }: { account: HostingAccount; returnPath: string }) {
   const stripe = getStripe();
   const site = getSiteUrl();
   if (!site.startsWith("https://") && !/^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(site)) {
     throw new HostingError({ status: 503, message: "Video hosting is not configured yet." });
   }
-  return transaction(async (db) => {
-    const row = (await db.query<{
-      stripe_customer_id: string | null; stripe_subscription_id: string | null; active_until: Date;
-      checkout_session_id: string | null; checkout_url: string | null; checkout_expires_at: Date | null;
-      email: string | null;
-    }>("SELECT * FROM hosting_accounts WHERE id=$1 FOR UPDATE", [account.id])).rows[0];
-    let subscriptionEnded = false;
-    if (row.stripe_customer_id && row.stripe_subscription_id) {
-      const subscription = await stripe.subscriptions.retrieve(row.stripe_subscription_id);
-      subscriptionEnded = ["canceled", "incomplete_expired"].includes(subscription.status);
-      if (!subscriptionEnded) {
-        const portal = await stripe.billingPortal.sessions.create({
-          customer: row.stripe_customer_id, return_url: `${site}${returnPath}`,
-          configuration: required("HOSTING_STRIPE_PORTAL_CONFIGURATION_ID"),
-        });
-        return { url: portal.url };
-      }
+  const row = await billingRow(account);
+  let subscriptionEnded = false;
+  if (row.stripe_customer_id && row.stripe_subscription_id) {
+    const subscription = await stripe.subscriptions.retrieve(row.stripe_subscription_id);
+    subscriptionEnded = ["canceled", "incomplete_expired"].includes(subscription.status);
+    if (!subscriptionEnded) {
+      const portal = await stripe.billingPortal.sessions.create({
+        customer: row.stripe_customer_id, return_url: `${site}${returnPath}`,
+        configuration: required("HOSTING_STRIPE_PORTAL_CONFIGURATION_ID"),
+      });
+      return { url: portal.url };
     }
-    if (row.checkout_session_id && row.checkout_url && row.checkout_expires_at && row.checkout_expires_at.getTime() > Date.now()) {
-      const previous = await stripe.checkout.sessions.retrieve(row.checkout_session_id);
-      if (previous.status === "open") return { url: row.checkout_url };
-      if (previous.status === "complete" && !subscriptionEnded) throw new HostingError({ status: 409, message: "Your payment is being confirmed. Return to the app and check your subscription." });
-    }
+  }
+  if (row.checkout_session_id && row.checkout_url && row.checkout_expires_at && row.checkout_expires_at.getTime() > Date.now()) {
+    const previous = await stripe.checkout.sessions.retrieve(row.checkout_session_id);
+    if (previous.status === "open") return { url: row.checkout_url };
+    if (previous.status === "complete" && !subscriptionEnded) throw new HostingError({ status: 409, message: "Your payment is being confirmed. Return to the app and check your subscription." });
+  }
+  const claimed = await hostingPool().query(
+    `UPDATE hosting_accounts SET checkout_claimed_until=now()+interval '30 seconds'
+     WHERE id=$1 AND checkout_session_id IS NOT DISTINCT FROM $2 AND (checkout_claimed_until IS NULL OR checkout_claimed_until<now())`,
+    [account.id, row.checkout_session_id]);
+  if (!claimed.rowCount) return { url: await concurrentCheckout({ account, previous: row.checkout_session_id }) };
+  try {
     const metadata = { blitzrecorder_hosting_account_id: account.id };
     const priceID = required("HOSTING_STRIPE_PRICE_ID");
     const price = await stripe.prices.retrieve(priceID);
@@ -149,8 +165,22 @@ export async function billingURL({ account, returnPath }: { account: HostingAcco
       success_url: `${site}${returnPath}`, cancel_url: `${site}${returnPath}?cancelled=1`,
     }, { idempotencyKey: `hosting-checkout:${account.id}:${returnPath}:${row.checkout_session_id ?? "first"}` });
     if (!session.url) throw new HostingError({ status: 503, message: "The subscription page could not be opened." });
-    await db.query("UPDATE hosting_accounts SET checkout_session_id=$2,checkout_url=$3,checkout_expires_at=to_timestamp($4) WHERE id=$1",
-      [account.id, session.id, session.url, session.expires_at]);
+    await hostingPool().query(
+      `UPDATE hosting_accounts SET checkout_session_id=$2,checkout_url=$3,checkout_expires_at=to_timestamp($4),checkout_claimed_until=NULL
+       WHERE id=$1`, [account.id, session.id, session.url, session.expires_at]);
     return { url: session.url };
-  });
+  } catch (error) {
+    await hostingPool().query("UPDATE hosting_accounts SET checkout_claimed_until=NULL WHERE id=$1", [account.id]);
+    throw error;
+  }
+}
+
+/** Another request is creating the checkout: wait for its link without holding a connection. */
+async function concurrentCheckout({ account, previous }: { account: HostingAccount; previous: string | null }): Promise<string> {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    await setTimeout(500);
+    const row = await billingRow(account);
+    if (row.checkout_session_id !== previous && row.checkout_url) return row.checkout_url;
+  }
+  throw new HostingError({ status: 409, message: "The subscription page is still opening. Try again in a moment." });
 }

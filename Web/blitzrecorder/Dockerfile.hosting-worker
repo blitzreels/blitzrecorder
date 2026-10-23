@@ -9,6 +9,7 @@ WORKDIR /app
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY package.json ./
 COPY lib ./lib
+COPY migrations ./migrations
 COPY scripts/hosting-worker.ts ./scripts/hosting-worker.ts
 USER node
 ENV NODE_ENV=production

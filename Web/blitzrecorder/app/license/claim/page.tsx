@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Section } from "@/components/ui/layout";
 import { Heading, Paragraph } from "@/components/ui/typography";
 import {
+  CheckoutSessionNotEligible,
   claimLicenseForCheckoutSession,
   emailFromFreeLicenseGrant,
   issueFreeLicense,
@@ -37,7 +38,7 @@ export default async function ClaimLicensePage({
   if (grant) {
     try {
       const email = emailFromFreeLicenseGrant(grant);
-      const license = await issueFreeLicense(email);
+      const license = await issueFreeLicense({ email, attribution: {} });
       result = {
         kind: "claimed",
         licenseId: license.licenseId,
@@ -59,7 +60,11 @@ export default async function ClaimLicensePage({
     };
   } else {
     try {
-      const license = await claimLicenseForCheckoutSession(sessionId);
+      const license = await claimLicenseForCheckoutSession({
+        sessionId,
+        stripeAccountId: null,
+        storeWrite: "best_effort",
+      });
       result = {
         kind: "claimed",
         licenseId: license.licenseId,
@@ -67,9 +72,15 @@ export default async function ClaimLicensePage({
         licenseKey: license.licenseKey,
       };
     } catch (error) {
+      if (!(error instanceof CheckoutSessionNotEligible)) {
+        console.error("License claim failed", error instanceof Error ? error.message : error);
+      }
       result = {
         kind: "error",
-        message: error instanceof Error ? error.message : "Unable to claim license",
+        message:
+          error instanceof CheckoutSessionNotEligible
+            ? error.message
+            : "Unable to claim your license right now. Refresh the page in a moment.",
       };
     }
   }
