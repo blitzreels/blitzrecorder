@@ -7,7 +7,7 @@ import {
 import {
   createUpload, completeUpload, objectBytes, readRange, signFileUpload, signPart, uploadData, uploadParts, signalJob,
 } from "./r2";
-import { mp4Duration } from "./mp4";
+import { mp4Facts } from "./mp4";
 import { parseVideoDetails } from "./details";
 import { ownStorageBytes } from "./own-storage";
 import { accountForToken } from "./account";
@@ -145,13 +145,19 @@ export async function preparePreview({ account, id, body }: { account: HostingAc
   return signFileUpload({ key: `${asset.stream_prefix}preview.mp4`, bytes, contentType: "video/mp4" });
 }
 
-/** The real length from the uploaded MP4's header, so the upload allowance can't be passed with a shorter claim. */
-async function requireDeclaredDuration(asset: HostedAsset) {
-  const duration = await mp4Duration({ bytes: Number(asset.declared_bytes),
+/**
+ * The real length and size from the uploaded MP4's header, so the upload allowance and the 1080p limit can't be
+ * passed with a false claim.
+ */
+async function requireDeclaredVideo(asset: HostedAsset) {
+  const facts = await mp4Facts({ bytes: Number(asset.declared_bytes),
     read: ({ offset, length }) => readRange({ key: asset.source_key, offset, length }) });
-  if (duration === null) throw new HostingError({ status: 422, message: "This file isn't a playable MP4. Export it again." });
-  if (duration > asset.declared_seconds + 1) {
+  if (facts === null) throw new HostingError({ status: 422, message: "This file isn't a playable MP4. Export it again." });
+  if (facts.duration > asset.declared_seconds + 1) {
     throw new HostingError({ status: 422, message: "This video is longer than BlitzRecorder reported. Export it again." });
+  }
+  if (Math.min(facts.width, facts.height) > 1080 || Math.max(facts.width, facts.height) > 1920) {
+    throw new HostingError({ status: 422, message: "Share a video up to 1080p." });
   }
 }
 
@@ -169,7 +175,7 @@ export async function finishUpload({ account, id }: { account: HostingAccount; i
   if (!activeUpload(owned)) throw new HostingError({ status: 409, message: "This upload is no longer active." });
   // R2 calls stay outside the transaction so a slow R2 never holds the account lock or a pooled connection.
   await completeUpload(owned);
-  if (owned.stream_prefix) await requireDeclaredDuration(owned);
+  if (owned.stream_prefix) await requireDeclaredVideo(owned);
   const [posterBytes, previewBytes] = owned.stream_prefix
     ? await Promise.all([objectBytes(`${owned.stream_prefix}poster.jpg`), objectBytes(`${owned.stream_prefix}preview.mp4`)])
     : [null, null];
