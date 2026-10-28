@@ -376,7 +376,7 @@ final class CaptureSourceRun {
             .microphone: CaptureSourceRunAdapter(
                 start: { settings, _, timeline in
                     try await audioRecorder.start(
-                        url: take.audioURL,
+                        url: take.microphoneCaptureURL,
                         settings: settings,
                         timelineStartTime: timeline.timelineStartTime
                     )

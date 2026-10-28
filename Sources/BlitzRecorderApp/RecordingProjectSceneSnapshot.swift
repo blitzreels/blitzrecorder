@@ -39,12 +39,14 @@ extension RecordingProject {
         let cameraFrame: RectValue
         let layerOrder: [String]
         let cameraMask: String?
+        let secondCameraFrame: RectValue?
 
         init(_ layout: SceneLayout) {
             self.screenFrame = RectValue(layout.screenFrame)
             self.cameraFrame = RectValue(layout.cameraFrame)
-            self.layerOrder = layout.layerOrder.map(\.rawValue)
+            self.layerOrder = layout.layerOrder.filter(SceneLayerKind.persistedOrderKinds.contains).map(\.rawValue)
             self.cameraMask = layout.cameraMask.rawValue
+            self.secondCameraFrame = layout.secondCameraFrame.map(RectValue.init)
         }
 
         var sceneCameraMask: SceneCameraMask {
@@ -88,6 +90,12 @@ extension RecordingProject {
         let cameraCornerRadius: Double?
         let sourceOpacities: [String: Double]
         let fillsCanvasWhenOnlyVideoSource: Bool?
+        /// Absent for Camera 1, so projects without extra angles stay byte-identical.
+        let cameraFeed: String?
+        let secondCameraFeed: String?
+        /// Absent while the second camera shows its whole picture.
+        let secondCameraCropAmount: PointValue?
+        let secondCameraCropPosition: PointValue?
 
         init(_ scene: RecordingScene) {
             self.enabledSources = scene.enabledSources.map(\.rawValue).sorted()
@@ -111,6 +119,11 @@ extension RecordingProject {
                 (source.rawValue, Double(opacity))
             })
             self.fillsCanvasWhenOnlyVideoSource = scene.fillsCanvasWhenOnlyVideoSource
+            self.cameraFeed = scene.cameraFeeds.usesCameraAngle ? scene.cameraFeeds.camera : nil
+            self.secondCameraFeed = scene.sceneLayout.secondCameraFrame == nil ? nil : scene.cameraFeeds.secondCamera
+            let hasSecondCameraCrop = scene.secondCameraCropAmount != .zero || scene.secondCameraCropPosition != .zero
+            self.secondCameraCropAmount = hasSecondCameraCrop ? PointValue(scene.secondCameraCropAmount) : nil
+            self.secondCameraCropPosition = hasSecondCameraCrop ? PointValue(scene.secondCameraCropPosition) : nil
         }
     }
 
@@ -214,7 +227,12 @@ extension RecordingScene {
                 screenFrame: snapshot.sceneLayout.screenFrame.rect,
                 cameraFrame: snapshot.sceneLayout.cameraFrame.rect,
                 layerOrder: layerOrder.isEmpty ? [.screen, .camera] : layerOrder,
-                cameraMask: snapshot.sceneLayout.sceneCameraMask
+                cameraMask: snapshot.sceneLayout.sceneCameraMask,
+                secondCameraFrame: snapshot.sceneLayout.secondCameraFrame?.rect
+            ),
+            cameraFeeds: CameraFeeds(
+                camera: snapshot.cameraFeed ?? CameraFeeds.mainRole,
+                secondCamera: snapshot.secondCameraFeed ?? CameraFeeds.firstAngleRole
             ),
             screenSourceGeometry: ScreenSourceGeometry(
                 usesPickedContent: snapshot.screenSourceGeometry.usesPickedContent,
@@ -243,6 +261,8 @@ extension RecordingScene {
             }),
             fillsCanvasWhenOnlyVideoSource: snapshot.fillsCanvasWhenOnlyVideoSource ?? false
         )
+        secondCameraCropAmount = snapshot.secondCameraCropAmount?.point ?? .zero
+        secondCameraCropPosition = snapshot.secondCameraCropPosition?.point ?? .zero
     }
 
     func corrected(

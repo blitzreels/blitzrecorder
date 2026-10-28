@@ -4,6 +4,7 @@ enum RecorderInspectorTab: CaseIterable, Hashable {
     case layout
     case screen
     case camera
+    case secondCamera
     case background
 
     var title: String {
@@ -11,7 +12,8 @@ enum RecorderInspectorTab: CaseIterable, Hashable {
         case .layout: return "Layout"
         case .screen: return "Screen"
         case .camera: return "Camera"
-        case .background: return "Canvas"
+        case .secondCamera: return "Camera 2"
+        case .background: return "Background"
         }
     }
 
@@ -19,8 +21,8 @@ enum RecorderInspectorTab: CaseIterable, Hashable {
         switch self {
         case .layout: return "rectangle.split.2x1"
         case .screen: return BlitzSymbols.screen
-        case .camera: return BlitzSymbols.camera
-        case .background: return "photo"
+        case .camera, .secondCamera: return BlitzSymbols.camera
+        case .background: return "square.stack.3d.down.forward"
         }
     }
 
@@ -30,6 +32,7 @@ enum RecorderInspectorTab: CaseIterable, Hashable {
         case .layout: self = .layout
         case .source(.screen): self = .screen
         case .source(.camera): self = .camera
+        case .secondCamera: self = .secondCamera
         case .source(.microphone), .source(.systemAudio): self = .layout
         }
     }
@@ -43,38 +46,57 @@ struct RecorderLayerInspector: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: EditorInspectorMetrics.sectionSpacing) {
-                    Text(tab.title)
-                        .font(BlitzType.title)
-                        .foregroundStyle(BlitzUI.primaryText)
-                    pane
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, EditorInspectorMetrics.verticalPadding)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        ScrollView {
+            VStack(alignment: .leading, spacing: EditorInspectorMetrics.sectionSpacing) {
+                layerList
+                pane
             }
-            .scrollIndicators(.never)
-            tabBar
+            .padding(.horizontal, 14)
+            .padding(.vertical, EditorInspectorMetrics.verticalPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .scrollIndicators(.never)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(BlitzMaterialBackground(kind: .sidebar))
         .foregroundStyle(BlitzUI.primaryText)
         .tint(BlitzUI.accent)
     }
 
-    private var tabBar: some View {
-        BlitzToolTabBar(configuration: .init(
-            title: "Scene settings",
-            options: RecorderInspectorTab.allCases,
-            selection: tab,
-            label: { $0.title },
-            symbolName: { $0.symbolName },
-            help: { help(for: $0) },
-            isOptionEnabled: { isEnabled($0) },
-            select: { select($0) }
-        ))
+    /// The scene's layers, top to bottom, with Background last. Selecting one here, on the canvas or in the
+    /// inputs list is the same selection.
+    private var layerList: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            BlitzUI.sectionLabel("Layers in \(vm.selectedSceneName)")
+                .padding(.horizontal, 8)
+                .padding(.bottom, 4)
+            ForEach(RecorderInspectorTab.allCases, id: \.self) { item in
+                if isEnabled(item) {
+                    LayerListRow(configuration: .init(
+                        title: title(for: item),
+                        symbol: item.symbolName,
+                        isSelected: tab == item,
+                        visibility: visibility(item),
+                        help: help(for: item),
+                        select: { select(item) }
+                    ))
+                }
+            }
+        }
+    }
+
+    private func visibility(_ item: RecorderInspectorTab) -> LayerListRow.Visibility? {
+        let source: CaptureSource
+        switch item {
+        case .screen: source = .screen
+        case .camera: source = .camera
+        case .layout, .secondCamera, .background: return nil
+        }
+        let isVisible = vm.isSourceVisible(source)
+        return .init(
+            isVisible: isVisible,
+            isEnabled: vm.canEditScene,
+            toggle: { vm.setSourceVisible(source, visible: !isVisible) }
+        )
     }
 
     @ViewBuilder
@@ -83,6 +105,7 @@ struct RecorderLayerInspector: View {
         case .layout: layoutPane
         case .screen: screenPane
         case .camera: cameraPane
+        case .secondCamera: secondCameraPane
         case .background: backgroundPane
         }
     }
@@ -101,7 +124,7 @@ struct RecorderLayerInspector: View {
     private var cameraPane: some View {
         Group {
             EditorInspectorSection(configuration: .init(title: "Framing") {
-                CameraCropControls(vm: vm)
+                CameraCropControls(vm: vm, layer: .camera)
             })
             EditorInspectorSection(configuration: .init(title: "Effects") {
                 CameraSourceInspector(vm: vm, enabled: vm.isSourceConfigured(.camera))
@@ -129,6 +152,29 @@ struct RecorderLayerInspector: View {
             })
             hiddenNotice(for: .camera)
         }
+    }
+
+    private var showsSecondCamera: Bool {
+        vm.isSourceConfigured(.camera) && vm.settings.sceneLayout.secondCameraFrame != nil
+            && vm.isSourceVisible(.camera)
+    }
+
+    private func title(for item: RecorderInspectorTab) -> String {
+        switch item {
+        case .layout: "Layout"
+        case .camera: showsSecondCamera ? "Camera 1" : item.title
+        default: item.title
+        }
+    }
+
+    private var secondCameraPane: some View {
+        EditorInspectorSection(configuration: .init(title: "Framing") {
+            if let name = vm.secondCameraDeviceName {
+                layoutCaption(name)
+            }
+            CameraCropControls(vm: vm, layer: .secondCamera)
+            layoutCaption("Its own crop and zoom. Shape and spacing of both cameras are in Layout.")
+        })
     }
 
     private var backgroundPane: some View {
@@ -242,6 +288,18 @@ struct RecorderLayerInspector: View {
             layoutCaption(vm.isSourceConfigured(.screen)
                 ? "Only your camera shows. Your screen still records on its own track."
                 : "Only your camera shows.")
+        case .twoCameras?, .twoCamerasScreen?:
+            if vm.settings.sceneLayout.secondCameraFrame != nil {
+                SceneTileControls(configuration: .init(
+                    tiles: vm.sceneTiles,
+                    layout: vm.settings.layout,
+                    cameraAspectRatio: vm.sceneTilesCameraAspectRatio,
+                    includesScreen: vm.selectedScenePreset == .twoCamerasScreen,
+                    apply: vm.setSceneTiles
+                ))
+            } else {
+                unavailableLayoutCaption
+            }
         default:
             layoutCaption("Pick a layout in the scenes bar under the preview.")
         }
@@ -323,15 +381,17 @@ struct RecorderLayerInspector: View {
         case .layout: return true
         case .screen: return vm.isSourceConfigured(.screen)
         case .camera: return vm.isSourceConfigured(.camera)
+        case .secondCamera: return showsSecondCamera
         case .background: return true
         }
     }
 
     private func help(for item: RecorderInspectorTab) -> String {
         switch item {
-        case .layout: return "Where the screen and camera sit in this scene"
+        case .layout: return "Where the screen and camera sit in this scene, corners and shadow"
         case .screen: return "Screen framing in this scene"
         case .camera: return "Camera framing and effects"
+        case .secondCamera: return "Camera 2 framing, separate from Camera 1"
         case .background: return "Background, padding and guides"
         }
     }
@@ -341,8 +401,86 @@ struct RecorderLayerInspector: View {
         case .layout: vm.selectLayoutInspector()
         case .screen: vm.selectSource(.screen)
         case .camera: vm.selectSource(.camera)
+        case .secondCamera: vm.selectLayer(.secondCamera)
         case .background: vm.selectBackgroundLayer()
         }
+    }
+}
+
+private struct LayerListRow: View {
+    struct Visibility {
+        let isVisible: Bool
+        let isEnabled: Bool
+        let toggle: () -> Void
+    }
+
+    struct Configuration {
+        let title: String
+        let symbol: String
+        let isSelected: Bool
+        /// Background and Layout are always there, so they have no eye.
+        let visibility: Visibility?
+        let help: String
+        let select: () -> Void
+    }
+
+    let configuration: Configuration
+    @State private var isHovering = false
+
+    private var isHidden: Bool { configuration.visibility?.isVisible == false }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Button(action: configuration.select) {
+                HStack(spacing: 10) {
+                    Image(systemName: configuration.symbol)
+                        .font(BlitzType.symbol(13))
+                        .symbolVariant(configuration.isSelected ? .fill : .none)
+                        .foregroundStyle(configuration.isSelected ? BlitzUI.accent : BlitzUI.secondaryText)
+                        .frame(width: 20)
+                    Text(configuration.title)
+                        .font(BlitzType.navigation)
+                        .foregroundStyle(isHidden ? BlitzUI.tertiaryText
+                            : configuration.isSelected ? BlitzUI.primaryText : BlitzUI.supportingText)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .frame(height: 30)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(configuration.title)
+            .accessibilityAddTraits(configuration.isSelected ? .isSelected : [])
+            .help(configuration.help)
+
+            if let visibility = configuration.visibility {
+                Button(action: visibility.toggle) {
+                    Image(systemName: visibility.isVisible ? "eye" : "eye.slash")
+                        .font(BlitzType.symbol(11))
+                        .foregroundStyle(visibility.isVisible ? BlitzUI.secondaryText : BlitzUI.tertiaryText)
+                        .frame(width: 24, height: 24)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(BlitzPressButtonStyle())
+                .disabled(!visibility.isEnabled)
+                .opacity(visibility.isVisible && !isHovering && !configuration.isSelected ? 0.55 : 1)
+                .help(visibility.isVisible
+                      ? "Hide \(configuration.title.lowercased()) in this scene. It still records on its own track."
+                      : "Show \(configuration.title.lowercased()) in this scene")
+                .accessibilityLabel(visibility.isVisible ? "Hide \(configuration.title)" : "Show \(configuration.title)")
+            }
+        }
+        .padding(.leading, 8)
+        .padding(.trailing, 4)
+        .background {
+            if configuration.isSelected {
+                BlitzSelectedBackground(cornerRadius: BlitzUI.controlRadius)
+            } else {
+                RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous)
+                    .fill(isHovering ? BlitzUI.quietFill : .clear)
+            }
+        }
+        .onHover { isHovering = $0 }
     }
 }
 

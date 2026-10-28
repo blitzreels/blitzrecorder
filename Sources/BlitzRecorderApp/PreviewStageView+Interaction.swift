@@ -27,7 +27,7 @@ extension PreviewStageView {
                 lastScreenShapeKey = nil
             }
             if hasCamera {
-                let frame = isCameraCropEditingEnabled ? cameraCropSourceFrame() : projectedFrame(for: .camera, in: canvasFrame)
+                let frame = isCropEditing(.camera) ? cameraCropSourceFrame() : projectedFrame(for: .camera, in: canvasFrame)
                 if cameraPreview.frame != frame {
                     cameraPreview.frame = frame
                 }
@@ -38,6 +38,20 @@ extension PreviewStageView {
                 lastCameraMaskKey = nil
                 lastCameraShapeKey = nil
                 applyCameraShadow(frame: .zero, cornerRadius: 0)
+            }
+
+            let hasSecondCamera = hasCamera && sceneLayout.secondCameraFrame != nil
+            secondCameraPreview.isHidden = !hasSecondCamera
+            if hasSecondCamera {
+                let frame = isCropEditing(.secondCamera)
+                    ? cameraCropSourceFrame()
+                    : projectedFrame(for: .secondCamera, in: canvasFrame)
+                if secondCameraPreview.frame != frame {
+                    secondCameraPreview.frame = frame
+                }
+                secondCameraPreview.wantsLayer = true
+                secondCameraPreview.layer?.cornerRadius = renderGeometry(in: canvasFrame).sourceCornerRadius(for: .secondCamera)
+                secondCameraPreview.layer?.masksToBounds = true
             }
 
             updateOutlineOverlay()
@@ -67,14 +81,16 @@ extension PreviewStageView {
         guard !canvasFrame.isEmpty else { return }
         performWithoutUIAnimation {
             let frame = projectedFrame(for: layer, in: canvasFrame)
-            if layer == .screen {
+            switch layer {
+            case .screen:
                 if screenPreview.frame != frame {
                     screenPreview.frame = frame
                 }
                 screenLayerFrame = frame
-            } else {
-                if cameraPreview.frame != frame {
-                    cameraPreview.frame = frame
+            case .camera, .secondCamera:
+                let preview = cameraPreview(for: layer)
+                if preview.frame != frame {
+                    preview.frame = frame
                 }
             }
             updateOutlineOverlay()

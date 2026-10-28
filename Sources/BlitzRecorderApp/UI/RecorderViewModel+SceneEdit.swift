@@ -14,6 +14,20 @@ extension RecorderViewModel {
         }
     }
 
+    /// The current two-camera scene's tiles, or nil once a camera was moved by hand.
+    var sceneTiles: SceneTiles? {
+        coordinator.sceneTiles(in: settings)
+    }
+
+    var sceneTilesCameraAspectRatio: CGFloat {
+        coordinator.studio.cameraAspectRatio()
+    }
+
+    func setSceneTiles(_ tiles: SceneTiles) {
+        coordinator.applySceneTiles(tiles)
+        syncSettingsAfterSceneChange()
+    }
+
     func setCameraContentMode(_ mode: CameraContentMode) {
         coordinator.setCameraContentMode(mode)
         syncSettingsAfterSceneChange()
@@ -157,7 +171,9 @@ extension RecorderViewModel {
 
     func selectLayer(_ layer: SceneLayerKind) {
         guard settings.enabledSources.contains(layer.source) else { return }
-        inspectorSelection = .source(layer.source)
+        inspectorSelection = layer == .secondCamera && settings.sceneLayout.secondCameraFrame != nil
+            ? .secondCamera
+            : .source(layer.source)
         previewStage.isBackgroundLayerSelected = false
         previewStage.selectedLayer = layer
     }
@@ -278,11 +294,15 @@ extension RecorderViewModel {
     }
 
     func syncSelectedSource() {
-        guard case .source = inspectorSelection else {
+        switch inspectorSelection {
+        case .source(let source) where isSourceConfigured(source):
             return
-        }
-        if let source = inspectorSelection.source, isSourceConfigured(source) {
+        case .secondCamera where isSourceConfigured(.camera) && settings.sceneLayout.secondCameraFrame != nil:
             return
+        case .canvas, .layout:
+            return
+        case .source, .secondCamera:
+            break
         }
         inspectorSelection = RecorderInspectorSelection.initial(settings: settings)
         if let selectedLayer = inspectorSelection.sceneLayer {

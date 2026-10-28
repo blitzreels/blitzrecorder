@@ -86,7 +86,9 @@ enum Merger {
             "recording.\(take.outputVideoFormat.fileExtension)"
         )
 
-        let videoSources = try await availableVideoSources(for: take, settings: settings)
+        let videoSources = try await availableVideoSources(.init(
+            take: take, settings: settings, sceneEvents: sceneEvents, loadsAllCameraAngles: false
+        ))
         guard !videoSources.isEmpty else {
             throw RecorderError.exportUnavailable
         }
@@ -110,7 +112,7 @@ enum Merger {
 
         var compositedSources: [CompositedVideoSource] = []
         for source in videoSources {
-            let insertions = exportPlan.insertions(for: source.kind)
+            let insertions = exportPlan.insertions((kind: source.kind, feed: source.feed))
             guard let firstInsertion = insertions.first, let lastInsertion = insertions.last else { continue }
             guard let compositionTrack = composition.addMutableTrack(
                 withMediaType: .video,

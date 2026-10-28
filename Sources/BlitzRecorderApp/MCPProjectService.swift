@@ -374,6 +374,8 @@ final class MCPProjectService {
         case "camera": CaptureSource.camera.rawValue
         case "microphone": CaptureSource.microphone.rawValue
         case "systemAudio": CaptureSource.systemAudio.rawValue
+        case _ where NumberedSourceTracks.cameraAngles.number(role: role) != nil: CaptureSource.camera.rawValue
+        case _ where NumberedSourceTracks.microphones.number(role: role) != nil: CaptureSource.microphone.rawValue
         default: nil
         }
     }

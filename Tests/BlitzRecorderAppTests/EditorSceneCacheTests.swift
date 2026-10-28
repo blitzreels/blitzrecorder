@@ -63,7 +63,7 @@ final class EditorSceneCacheTests: XCTestCase {
         defer { controller.teardown() }
         await controller.load(project: project, baseSettings: settings)
         XCTAssertTrue(controller.isReady)
-        let player = try XCTUnwrap(controller.videoPlayer(for: .screen))
+        let player = try XCTUnwrap(controller.videoPlayer(for: .screen, scene: RecordingScene(settings: RecordingSettings())))
         for _ in 0..<3 {
             controller.setHidden(true, kind: .camera)
             for time in [0.5, 1.5, 2.5] {
@@ -89,7 +89,7 @@ final class EditorSceneCacheTests: XCTestCase {
                                                  baseSettings: settings) { $0.canvasPadding = 0.15 }
         XCTAssertTrue(controller.refreshSceneTimeline(.init(project: edited, baseSettings: settings,
                                                             preservesPreviewSceneOverride: false)))
-        XCTAssertTrue(player === controller.videoPlayer(for: .screen))
+        XCTAssertTrue(player === controller.videoPlayer(for: .screen, scene: RecordingScene(settings: RecordingSettings())))
         XCTAssertEqual(controller.scene(at: 1.5)?.canvasPadding, 0.15)
         controller.applyEditorState(.init(hiddenVideoSources: [SceneLayerKind.camera.rawValue], mutedAudioSources: [],
                                           backgroundMusicPath: nil, backgroundMusicBookmarkData: nil,
@@ -112,10 +112,10 @@ final class EditorSceneCacheTests: XCTestCase {
         defer { controller.teardown() }
         let firstLoad = Task { await controller.load(project: initial, baseSettings: fixture.settings) }
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
-        while controller.videoPlayer(for: .screen) == nil, ContinuousClock.now < deadline {
+        while controller.videoPlayer(for: .screen, scene: RecordingScene(settings: RecordingSettings())) == nil, ContinuousClock.now < deadline {
             await Task.yield()
         }
-        XCTAssertNotNil(controller.videoPlayer(for: .screen))
+        XCTAssertNotNil(controller.videoPlayer(for: .screen, scene: RecordingScene(settings: RecordingSettings())))
         controller.teardown()
         await controller.load(project: edited, baseSettings: fixture.settings)
         await firstLoad.value

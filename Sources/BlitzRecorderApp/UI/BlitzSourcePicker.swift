@@ -12,6 +12,7 @@ struct BlitzSourcePickerItem: Identifiable {
     var visibility: SourcePickerVisibility? = nil
     var screenKind: ScreenSourceBinding.Kind? = nil
     var loadThumbnail: (() async -> NSImage?)? = nil
+    var isEnabled = true
     let action: () -> Void
 
     func menuItem(isChoice: Bool) -> BlitzMenuItem {
@@ -21,6 +22,7 @@ struct BlitzSourcePickerItem: Identifiable {
             systemImage: systemImage,
             icon: icon,
             isSelected: isChoice ? isSelected : nil,
+            isEnabled: isEnabled,
             action: action
         )
     }

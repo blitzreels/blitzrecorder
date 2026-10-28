@@ -82,22 +82,27 @@ struct EditorSourceCropDraft {
 
 extension RecordingScene {
     func cropAmount(for kind: SceneLayerKind) -> CGPoint {
-        kind == .screen ? screenCropAmount : cameraCropAmount
+        sourceCropAmount(for: kind)
     }
 
     func cropPosition(for kind: SceneLayerKind) -> CGPoint {
-        kind == .screen ? screenCropPosition : cameraCropPosition
+        sourceCropPosition(for: kind)
     }
 
     /// Cropping always fills the frame, so the chosen area is exactly what shows.
     mutating func setCrop(_ control: LayerCropControl, for kind: SceneLayerKind) {
-        if kind == .screen {
+        switch kind {
+        case .screen:
             screenCropAmount = control.amount
             screenCropPosition = control.position
             screenContentMode = .fill
-        } else {
+        case .camera:
             cameraCropAmount = control.amount
             cameraCropPosition = control.position
+            cameraContentMode = .fill
+        case .secondCamera:
+            secondCameraCropAmount = control.amount
+            secondCameraCropPosition = control.position
             cameraContentMode = .fill
         }
     }

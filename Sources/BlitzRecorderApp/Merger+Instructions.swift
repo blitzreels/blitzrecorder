@@ -41,6 +41,7 @@ extension Merger {
         let sourceDescriptors = request.sources.map {
             MetalExportSourceDescriptor(
                 kind: $0.kind,
+                feed: $0.feed,
                 trackID: $0.compositionTrack.trackID,
                 preferredTransform: $0.preferredTransform,
                 leadingFrame: ExportLeadingFrame(.init(
@@ -82,8 +83,10 @@ extension Merger {
             scene: endScene,
             origin: .upperLeft
         )
+        let availableFeeds = Set(sources.map(\.feed))
         return activeLayerOrder.compactMap { kind -> AVMutableVideoCompositionLayerInstruction? in
-            guard let source = sources.first(where: { $0.kind == kind && $0.isActive(during: timeRange) }) else {
+            let feed = startScene.feed(for: kind, available: availableFeeds)
+            guard let source = sources.first(where: { $0.feed == feed && $0.isActive(during: timeRange) }) else {
                 return nil
             }
             let startPlacement = startGeometry.videoPlacement(for: kind)

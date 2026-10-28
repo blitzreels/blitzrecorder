@@ -36,6 +36,15 @@ struct RecorderSceneStrip: View {
                     }
                     .scrollIndicators(.never)
                     .frame(height: Tile.height)
+                    .mask {
+                        HStack(spacing: 0) {
+                            LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
+                                .frame(width: 12)
+                            Rectangle()
+                            LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                                .frame(width: 24)
+                        }
+                    }
                     .onAppear {
                         if let sceneID = vm.selectedSceneID { proxy.scrollTo(sceneID, anchor: .center) }
                     }

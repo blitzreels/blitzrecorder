@@ -28,6 +28,17 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     var syncWarningHandler: ((String) -> Void)?
     private let startupGate = AudioStartupGate(timeoutError: RecorderError.microphoneDidNotStart)
     private var timelineAnchor = RecordingTimelineAnchor()
+    /// An extra microphone keeps what it recorded when its device goes away mid-take, instead of deleting the file.
+    private let keepsRecordingOnFailure: Bool
+
+    override convenience init() {
+        self.init(keepsRecordingOnFailure: false)
+    }
+
+    init(keepsRecordingOnFailure: Bool) {
+        self.keepsRecordingOnFailure = keepsRecordingOnFailure
+        super.init()
+    }
 
     var recordingTimelineOffset: CMTime {
         queue.sync { timelineAnchor.offset }
@@ -237,7 +248,11 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     ) {
         queue.async {
             let result: Result<MediaWriterCompletion, Error>
-            if let error {
+            var keptAfterError: Error?
+            if let error, self.keepsRecordingOnFailure, Self.hasRecordedAudio(at: outputFileURL) {
+                keptAfterError = error
+                result = .success(.wrote(outputFileURL))
+            } else if let error {
                 try? FileManager.default.removeItem(at: outputFileURL)
                 result = .failure(error)
             } else if Self.hasRecordedAudio(at: outputFileURL) {
@@ -253,6 +268,8 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
                 continuation.resume(with: result)
             } else if case .failure(let error) = result, self.startupGate.hasProducedSample {
                 self.failureHandler?(error)
+            } else if let keptAfterError, self.startupGate.hasProducedSample {
+                self.failureHandler?(keptAfterError)
             }
         }
     }

@@ -62,12 +62,29 @@ extension PreviewStageView {
         )
     }
 
-    func beginCameraCropEditing() {
-        guard allowsCameraCropInteraction else { return }
-        cameraCropDraftAmount = cameraCropAmount
-        cameraCropDraftPosition = cameraCropPosition
-        selectedLayer = .camera
+    func beginCameraCropEditing(_ layer: SceneLayerKind) {
+        guard allowsCameraCropInteraction, layer.isCamera else { return }
+        cameraCropLayer = layer
+        cachedCameraCropGeometry = nil
+        let crop = committedCameraCrop(for: layer)
+        cameraCropDraftAmount = crop.amount
+        cameraCropDraftPosition = crop.position
+        selectedLayer = layer
         isCameraCropEditingEnabled = true
+    }
+
+    func isCropEditing(_ layer: SceneLayerKind) -> Bool {
+        isCameraCropEditingEnabled && cameraCropLayer == layer
+    }
+
+    func committedCameraCrop(for layer: SceneLayerKind) -> LayerCropControl {
+        layer == .secondCamera
+            ? LayerCropControl(amount: secondCameraCropAmount, position: secondCameraCropPosition)
+            : LayerCropControl(amount: cameraCropAmount, position: cameraCropPosition)
+    }
+
+    func cameraPreview(for layer: SceneLayerKind) -> CameraPreviewView {
+        layer == .secondCamera ? secondCameraPreview : cameraPreview
     }
 
     func beginScreenCropEditing(crop: CGRect?) {
@@ -87,9 +104,14 @@ extension PreviewStageView {
         cameraCropDraftAmount = nil
         cameraCropDraftPosition = nil
         cameraContentMode = .fill
-        cameraCropAmount = crop.0
-        cameraCropPosition = crop.1
-        onCameraCropChanged?(LayerCropControl(amount: crop.0, position: crop.1))
+        if cameraCropLayer == .secondCamera {
+            secondCameraCropAmount = crop.0
+            secondCameraCropPosition = crop.1
+        } else {
+            cameraCropAmount = crop.0
+            cameraCropPosition = crop.1
+        }
+        onCameraCropChanged?(CameraCropChange(layer: cameraCropLayer, crop: .init(amount: crop.0, position: crop.1)))
     }
 
     func cancelCameraCropEditing() {
@@ -130,23 +152,23 @@ extension PreviewStageView {
     }
 
     var activeCameraCropAmount: CGPoint {
-        cameraCropDraftAmount ?? cameraCropAmount
+        cameraCropDraftAmount ?? committedCameraCrop(for: cameraCropLayer).amount
     }
 
     var activeCameraCropPosition: CGPoint {
-        cameraCropDraftPosition ?? cameraCropPosition
+        cameraCropDraftPosition ?? committedCameraCrop(for: cameraCropLayer).position
     }
 
+    /// Each camera preview shows its committed crop, and the whole picture while it is being cropped.
     func syncPreviewCrop() {
-        let amount = isCameraCropEditingEnabled ? .zero : cameraCropAmount
-        let position = isCameraCropEditingEnabled ? .zero : cameraCropPosition
-        guard cameraPreview.sourceCropAmount != amount || cameraPreview.sourceCropPosition != position else {
-            return
-        }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        cameraPreview.sourceCropAmount = amount
-        cameraPreview.sourceCropPosition = position
+        for layer in [SceneLayerKind.camera, .secondCamera] {
+            let preview = cameraPreview(for: layer)
+            let crop = isCropEditing(layer) ? LayerCropControl(amount: .zero, position: .zero) : committedCameraCrop(for: layer)
+            if preview.sourceCropAmount != crop.amount { preview.sourceCropAmount = crop.amount }
+            if preview.sourceCropPosition != crop.position { preview.sourceCropPosition = crop.position }
+        }
         CATransaction.commit()
     }
 
@@ -164,7 +186,7 @@ extension PreviewStageView {
 
     func cameraCropGeometry() -> LayerCropGeometry {
         let render = renderGeometry(in: canvasFrame)
-        let aspect = cameraPreview.currentSourceAspectRatio
+        let aspect = cameraPreview(for: cameraCropLayer).currentSourceAspectRatio
         if let cachedRenderGeometry,
            let cachedCameraCropGeometry,
            cachedCameraCropGeometry.request == cachedRenderGeometry.request,
@@ -172,7 +194,7 @@ extension PreviewStageView {
             return cachedCameraCropGeometry.value
         }
         let value = LayerCropGeometry(
-            kind: .camera,
+            kind: cameraCropLayer,
             renderGeometry: render,
             sourceAspectRatio: aspect
         )

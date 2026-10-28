@@ -219,12 +219,12 @@ final class EditorCompositedPlayerView: NSView {
         defer { refreshPrivacyMasks(time: time) }
         guard let playbackScene = controller.scene(at: time) else { return }
         let scene = cropDraft?.scene ?? playbackScene
+        let aspectRatios = controller.sourceAspectRatios(for: scene)
         let canvasFrame = cameraCropCanvasFrame(.init(
             scene: scene,
-            aspectRatios: controller.sourceAspectRatios
+            aspectRatios: aspectRatios
         ))
         guard canvasFrame.width > 0 else { return }
-        let aspectRatios = controller.sourceAspectRatios
         let hidden = controller.hiddenKinds
         let state = RenderState(
             scene: scene,
@@ -234,8 +234,8 @@ final class EditorCompositedPlayerView: NSView {
             aspectRatios: aspectRatios,
             hiddenKinds: hidden,
             croppingKind: cropDraft?.kind,
-            screenPlayer: controller.videoPlayer(for: .screen).map(ObjectIdentifier.init),
-            cameraPlayer: controller.videoPlayer(for: .camera).map(ObjectIdentifier.init)
+            screenPlayer: controller.videoPlayer(for: .screen, scene: scene).map(ObjectIdentifier.init),
+            cameraPlayer: controller.videoPlayer(for: .camera, scene: scene).map(ObjectIdentifier.init)
         )
         refreshCaptions(.init(time: time, canvasSize: canvasFrame.size))
         let visibleOverlays = controller.edits.textOverlays.filter { $0.isVisible(at: time) }
@@ -296,8 +296,8 @@ final class EditorCompositedPlayerView: NSView {
             canvasLayer.bounds = CGRect(origin: .zero, size: canvasFrame.size)
             updateBackground(scene: scene, canvasSize: canvasFrame.size)
 
-            for kind in [SceneLayerKind.screen, .camera] {
-                guard let player = controller.videoPlayer(for: kind) else {
+            for kind in SceneLayerKind.allCases {
+                guard let player = controller.videoPlayer(for: kind, scene: scene) else {
                     sourceLayers[kind]?.shadowHost.isHidden = true
                     continue
                 }
@@ -432,8 +432,8 @@ final class EditorCompositedPlayerView: NSView {
         let sourceFrame = geometry.sourceFrame(
             for: kind,
             sourceAspectRatio: aspect,
-            sourceCropAmount: kind == .camera ? scene.cameraCropAmount : scene.screenCropAmount,
-            sourceCropPosition: kind == .camera ? scene.cameraCropPosition : scene.screenCropPosition
+            sourceCropAmount: scene.sourceCropAmount(for: kind),
+            sourceCropPosition: scene.sourceCropPosition(for: kind)
         )
         let radius = geometry.sourceCornerRadius(for: kind) * scale
 

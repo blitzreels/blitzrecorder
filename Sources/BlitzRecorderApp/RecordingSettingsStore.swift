@@ -24,6 +24,8 @@ enum RecordingSettingsStore {
         static let screenSourceBinding = "recording.screenSourceBinding"
         static let selectedDisplayID = "recording.selectedDisplayID"
         static let selectedCameraID = "recording.selectedCameraID"
+        static let extraCameraAngleIDs = "recording.extraCameraAngleIDs"
+        static let extraMicrophoneIDs = "recording.extraMicrophoneIDs"
         static let selectedMicrophoneID = "recording.selectedMicrophoneID"
         static let selectedMicrophoneName = "recording.selectedMicrophoneName"
         static let trustedRemoteCameraServiceIDs = "recording.trustedRemoteCameraServiceIDs"
@@ -37,6 +39,8 @@ enum RecordingSettingsStore {
         static let screenWindowZoom = "screen.windowZoom"
         static let cameraCropAmount = "camera.cropAmount"
         static let cameraCropPosition = "camera.cropPosition"
+        static let secondCameraCropAmount = "camera.secondCropAmount"
+        static let secondCameraCropPosition = "camera.secondCropPosition"
         static let canvasBackgroundStyle = "scene.canvasBackgroundStyle"
         static let canvasBackgroundAnimated = "scene.canvasBackgroundAnimated"
         static let canvasPadding = "scene.canvasPadding"
@@ -144,6 +148,8 @@ enum RecordingSettingsStore {
             settings.screenSourceBinding = .display(id: selectedDisplayID)
         }
         settings.selectedCameraID = defaults.string(forKey: Key.selectedCameraID)
+        settings.extraCameraAngleIDs = defaults.stringArray(forKey: Key.extraCameraAngleIDs) ?? []
+        settings.extraMicrophoneIDs = defaults.stringArray(forKey: Key.extraMicrophoneIDs) ?? []
         settings.selectedMicrophoneID = defaults.string(forKey: Key.selectedMicrophoneID)
         settings.selectedMicrophoneName = defaults.string(forKey: Key.selectedMicrophoneName)
         settings.trustedRemoteCameraServiceIDs = Set(defaults.stringArray(forKey: Key.trustedRemoteCameraServiceIDs) ?? [])
@@ -160,6 +166,8 @@ enum RecordingSettingsStore {
         }
         settings.cameraCropAmount = point(for: Key.cameraCropAmount, defaults: defaults) ?? .zero
         settings.cameraCropPosition = point(for: Key.cameraCropPosition, defaults: defaults) ?? .zero
+        settings.secondCameraCropAmount = point(for: Key.secondCameraCropAmount, defaults: defaults) ?? .zero
+        settings.secondCameraCropPosition = point(for: Key.secondCameraCropPosition, defaults: defaults) ?? .zero
         if let rawCanvasBackgroundStyle = defaults.string(forKey: Key.canvasBackgroundStyle),
            let canvasBackgroundStyle = CanvasBackgroundStyle(rawValue: rawCanvasBackgroundStyle) {
             settings.canvasBackgroundStyle = canvasBackgroundStyle
@@ -240,7 +248,7 @@ enum RecordingSettingsStore {
         }
         if let rawOrder = defaults.stringArray(forKey: Key.layerOrder) {
             let order = rawOrder.compactMap(SceneLayerKind.init(rawValue:))
-            if Set(order) == Set(SceneLayerKind.allCases), order.count == SceneLayerKind.allCases.count {
+            if Set(order) == Set(SceneLayerKind.persistedOrderKinds), order.count == SceneLayerKind.persistedOrderKinds.count {
                 settings.sceneLayout.layerOrder = order
             }
         }
@@ -332,6 +340,8 @@ enum RecordingSettingsStore {
         }
         defaults.set(settings.selectedDisplayID, forKey: Key.selectedDisplayID)
         defaults.set(settings.selectedCameraID, forKey: Key.selectedCameraID)
+        defaults.set(settings.extraCameraAngleIDs, forKey: Key.extraCameraAngleIDs)
+        defaults.set(settings.extraMicrophoneIDs, forKey: Key.extraMicrophoneIDs)
         defaults.set(settings.selectedMicrophoneID, forKey: Key.selectedMicrophoneID)
         defaults.set(settings.selectedMicrophoneName, forKey: Key.selectedMicrophoneName)
         defaults.set(settings.trustedRemoteCameraServiceIDs.sorted(), forKey: Key.trustedRemoteCameraServiceIDs)
@@ -371,6 +381,8 @@ enum RecordingSettingsStore {
         )
         defaults.set(string(from: settings.cameraCropAmount), forKey: Key.cameraCropAmount)
         defaults.set(string(from: settings.cameraCropPosition), forKey: Key.cameraCropPosition)
+        defaults.set(string(from: settings.secondCameraCropAmount), forKey: Key.secondCameraCropAmount)
+        defaults.set(string(from: settings.secondCameraCropPosition), forKey: Key.secondCameraCropPosition)
         defaults.set(settings.canvasBackgroundStyle.rawValue, forKey: Key.canvasBackgroundStyle)
         defaults.set(settings.canvasBackgroundAnimated, forKey: Key.canvasBackgroundAnimated)
         defaults.set(CaptureValueClamps.canvasPadding(settings.canvasPadding), forKey: Key.canvasPadding)

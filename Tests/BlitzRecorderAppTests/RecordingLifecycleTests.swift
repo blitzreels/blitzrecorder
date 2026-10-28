@@ -805,7 +805,7 @@ final class RecordingLifecycleTests: XCTestCase {
         ) { _ in }
         let controller = EditorPlaybackController()
         await controller.load(project: initialProject, baseSettings: settings)
-        let initialPlayer = try XCTUnwrap(controller.videoPlayer(for: .screen))
+        let initialPlayer = try XCTUnwrap(controller.videoPlayer(for: .screen, scene: RecordingScene(settings: RecordingSettings())))
         let initialPreviewRevision = controller.previewSceneRevision
         var livePreviewScene = try XCTUnwrap(controller.scene(at: 0))
         livePreviewScene.canvasPadding = 0.1
@@ -834,7 +834,7 @@ final class RecordingLifecycleTests: XCTestCase {
         ))
 
         XCTAssertTrue(canvasRefreshed)
-        XCTAssertTrue(initialPlayer === controller.videoPlayer(for: .screen))
+        XCTAssertTrue(initialPlayer === controller.videoPlayer(for: .screen, scene: RecordingScene(settings: RecordingSettings())))
         XCTAssertEqual(controller.scene(at: 0)?.canvasPadding, 0.1)
         XCTAssertEqual(controller.scene(at: 0)?.screenCornerRadius, 0.12)
         XCTAssertEqual(controller.scene(at: 0)?.screenShadowEnabled, true)
@@ -874,12 +874,12 @@ final class RecordingLifecycleTests: XCTestCase {
         await controller.load(project: canvasProject, baseSettings: settings)
         view.refresh()
         XCTAssertFalse(initialPlayer === playerLayer.player)
-        XCTAssertTrue(playerLayer.player === controller.videoPlayer(for: .screen))
+        XCTAssertTrue(playerLayer.player === controller.videoPlayer(for: .screen, scene: RecordingScene(settings: RecordingSettings())))
 
         EditorCompositedPlayer.dismantleNSView(view, coordinator: ())
         XCTAssertNil(playerLayer.player)
         view.refresh()
-        XCTAssertTrue(playerLayer.player === controller.videoPlayer(for: .screen))
+        XCTAssertTrue(playerLayer.player === controller.videoPlayer(for: .screen, scene: RecordingScene(settings: RecordingSettings())))
         view.teardown()
         controller.teardown()
     }
@@ -920,10 +920,10 @@ final class RecordingLifecycleTests: XCTestCase {
             $0.sublayers?.first?.sublayers?.first is AVPlayerLayer
         })
         let screen = try XCTUnwrap(sources.first {
-            ($0.sublayers?.first?.sublayers?.first as? AVPlayerLayer)?.player === controller.videoPlayer(for: .screen)
+            ($0.sublayers?.first?.sublayers?.first as? AVPlayerLayer)?.player === controller.videoPlayer(for: .screen, scene: RecordingScene(settings: RecordingSettings()))
         })
         let camera = try XCTUnwrap(sources.first {
-            ($0.sublayers?.first?.sublayers?.first as? AVPlayerLayer)?.player === controller.videoPlayer(for: .camera)
+            ($0.sublayers?.first?.sublayers?.first as? AVPlayerLayer)?.player === controller.videoPlayer(for: .camera, scene: RecordingScene(settings: RecordingSettings()))
         })
         XCTAssertGreaterThan(screen.zPosition, camera.zPosition)
 

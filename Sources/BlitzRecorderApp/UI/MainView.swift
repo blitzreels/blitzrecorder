@@ -15,6 +15,8 @@ struct MainView: View {
     @State private var studioExitDestination: AppSidebarDestination = .recordings
     @AppStorage("recorder.sourcesWidth") private var savedSourcesWidth = 232.0
     @State private var sourcesWidthDraft: Double?
+    @AppStorage(StudioPanels.sourcesHiddenKey) private var sourcesHidden = false
+    @AppStorage(StudioPanels.inspectorHiddenKey) private var inspectorHidden = false
     private static let sourcesWidthRange = 200.0...380.0
 
     init(configuration: Configuration) {
@@ -149,23 +151,25 @@ struct MainView: View {
 
     private func recordContent() -> some View {
         HStack(alignment: .top, spacing: 0) {
-            SourcesSidebar(vm: vm)
-                .frame(width: sourcesWidthDraft ?? savedSourcesWidth)
-                .zIndex(1)
-            BlitzPaneDivider(configuration: .init(
-                axis: .horizontal,
-                paneSide: .leading,
-                label: "Sources width",
-                value: Binding(get: { sourcesWidthDraft ?? savedSourcesWidth }, set: { sourcesWidthDraft = $0 }),
-                bounds: Self.sourcesWidthRange,
-                defaultValue: 232,
-                onCommit: {
-                    savedSourcesWidth = sourcesWidthDraft ?? savedSourcesWidth
-                    sourcesWidthDraft = nil
-                }
-            ))
+            if !sourcesHidden {
+                SourcesSidebar(vm: vm)
+                    .frame(width: sourcesWidthDraft ?? savedSourcesWidth)
+                    .zIndex(1)
+                BlitzPaneDivider(configuration: .init(
+                    axis: .horizontal,
+                    paneSide: .leading,
+                    label: "Inputs width",
+                    value: Binding(get: { sourcesWidthDraft ?? savedSourcesWidth }, set: { sourcesWidthDraft = $0 }),
+                    bounds: Self.sourcesWidthRange,
+                    defaultValue: 232,
+                    onCommit: {
+                        savedSourcesWidth = sourcesWidthDraft ?? savedSourcesWidth
+                        sourcesWidthDraft = nil
+                    }
+                ))
+            }
 
-            RecorderInspectorSplitView {
+            RecorderInspectorSplitView(showsInspector: !inspectorHidden) {
                 VStack(spacing: 12) {
                     ZStack(alignment: .top) {
                         PreviewStageRepresentable(view: vm.previewStage)

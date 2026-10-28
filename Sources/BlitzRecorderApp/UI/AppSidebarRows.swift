@@ -82,9 +82,11 @@ struct AppSidebarRow: View {
     }
 }
 
-struct AppSidebarAgentsRow: View {
+/// Settings, with the AI agents (MCP) status as a dot, so the footer is one row.
+struct AppSidebarSettingsRow: View {
     struct Configuration {
         let mcpServer: BlitzRecorderMCPServer
+        let isSelected: Bool
         let action: () -> Void
     }
 
@@ -96,17 +98,18 @@ struct AppSidebarAgentsRow: View {
     var body: some View {
         Button(action: configuration.action) {
             HStack(spacing: 10) {
-                Image(systemName: "terminal")
+                Image(systemName: "gearshape")
                     .font(BlitzType.symbol(14))
-                    .foregroundStyle(BlitzUI.secondaryText)
+                    .symbolVariant(configuration.isSelected ? .fill : .none)
+                    .foregroundStyle(configuration.isSelected ? BlitzUI.accent : BlitzUI.secondaryText)
                     .frame(width: 20)
-                Text("AI agents")
+                Text("Settings")
                     .font(BlitzType.navigation)
-                    .foregroundStyle(BlitzUI.supportingText)
+                    .foregroundStyle(configuration.isSelected ? BlitzUI.primaryText : BlitzUI.supportingText)
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 BlitzStatusDot(tone: tone, diameter: 6)
-                Text(status.title)
+                Text("Agents")
                     .font(BlitzType.caption)
                     .foregroundStyle(status.servesAgents ? BlitzUI.secondaryText : BlitzUI.tertiaryText)
                     .lineLimit(1)
@@ -117,15 +120,19 @@ struct AppSidebarAgentsRow: View {
         }
         .buttonStyle(BlitzPressButtonStyle())
         .background {
-            RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous)
-                .fill(isHovering ? BlitzUI.quietFill : .clear)
+            if configuration.isSelected {
+                BlitzSelectedBackground(cornerRadius: BlitzUI.controlRadius)
+            } else {
+                RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous)
+                    .fill(isHovering ? BlitzUI.quietFill : .clear)
+            }
         }
         .onHover { isHovering = $0 }
         .animation(.easeOut(duration: 0.15), value: status)
-        .help(help)
-        .accessibilityLabel("AI agents")
-        .accessibilityValue(status.title)
-        .accessibilityHint("Opens Integrations settings")
+        .help("Settings (⌘,). AI agents: \(status.title). \(help)")
+        .accessibilityLabel("Settings")
+        .accessibilityValue("AI agents \(status.title)")
+        .accessibilityAddTraits(configuration.isSelected ? .isSelected : [])
     }
 
     private var tone: BlitzStatusTone {
@@ -144,34 +151,6 @@ struct AppSidebarAgentsRow: View {
             ? "Claude Code, Codex and other MCP clients can use your recordings."
             : "MCP clients cannot reach BlitzRecorder right now."
         return "\(reach) \(status.detail)\(handshake)"
-    }
-}
-
-struct AppSidebarLivePreviewToggle: View {
-    @Bindable var vm: RecorderViewModel
-
-    var body: some View {
-        Toggle(isOn: Binding(get: { vm.isLivePreviewEnabled }, set: { vm.setLivePreviewEnabled($0) })) {
-            HStack(spacing: 10) {
-                Image(systemName: vm.isLivePreviewEnabled ? "eye" : "eye.slash")
-                    .font(BlitzType.symbol(14))
-                    .foregroundStyle(BlitzUI.secondaryText)
-                    .frame(width: 20)
-                Text("Live preview")
-                    .font(BlitzType.navigation)
-                    .foregroundStyle(BlitzUI.supportingText)
-                    .lineLimit(1)
-                    .fixedSize()
-            }
-        }
-        .toggleStyle(.blitzSwitch)
-        .controlSize(.mini)
-        .padding(.horizontal, AppSidebarRow.inset)
-        .frame(minHeight: AppSidebarRow.height)
-        .disabled(vm.state != .idle)
-        .help(vm.state == .idle
-              ? "Pause camera, microphone, screen, and audio previews while idle (⌥⌘L). Recording still works."
-              : "Change live preview after this recording")
     }
 }
 

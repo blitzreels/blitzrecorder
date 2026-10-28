@@ -90,6 +90,12 @@ require_image() {
   }
 }
 
+# App Store processing rejects App Intent descriptions that name Apple products (error 90626, seen on "Mac").
+if grep -rniE 'IntentDescription\("[^"]*\b(mac|iphone|ipad|siri|apple)\b' Apps/iOSCamera; then
+  echo "error: App Intent descriptions above name an Apple product; App Store processing rejects the build (90626)" >&2
+  exit 1
+fi
+
 swift test
 Scripts/test-app-store-connect-readiness.py
 Scripts/test-app-store-connect-bootstrap.py

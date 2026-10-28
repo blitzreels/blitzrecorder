@@ -38,6 +38,24 @@ final class RecorderStudioProofTests: XCTestCase {
         vm.setLayout(.vertical)
         vm.selectSource(.camera)
         try await snap("studio-vertical-camera")
+        let cameras = vm.availableCameras
+        let microphones = vm.availableMicrophones
+        vm.availableCameras += [
+            SourceOption(id: "proof-pocket", name: "OsmoPocket4", cameraKind: .external),
+            SourceOption(id: "proof-brio", name: "Logitech BRIO", cameraKind: .external)
+        ]
+        vm.availableMicrophones += [
+            SourceOption(id: "proof-pocket-mic", name: "OsmoPocket4"),
+            SourceOption(id: "proof-rode", name: "RODE Wireless GO")
+        ]
+        vm.addCameraAngle("proof-pocket")
+        try await snap("studio-camera-angles")
+        vm.addMicrophoneTrack("proof-pocket-mic")
+        try await snap("studio-microphones")
+        vm.removeMicrophoneTrack("proof-pocket-mic")
+        vm.removeCameraAngle("proof-pocket")
+        vm.availableMicrophones = microphones
+        vm.availableCameras = cameras
         vm.selectSource(.screen)
         try await snap("studio-vertical-screen")
         vm.selectSource(.microphone)

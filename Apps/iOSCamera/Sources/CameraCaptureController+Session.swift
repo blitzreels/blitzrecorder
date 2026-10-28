@@ -64,11 +64,8 @@ extension CameraCaptureController {
         Self.logger.warning("\(message, privacy: .public)")
     }
 
+    /// An interruption ends any clip being recorded, so the camera only needs to run again.
     private func handleSessionInterruptionEnded() async {
-        if isRecording {
-            statusMessage = "Recording resumed"
-            return
-        }
         setCaptureSessionWarning(nil)
         await restartSessionIfNeeded(recoveredStatusMessage: "Camera ready")
     }
@@ -96,7 +93,7 @@ extension CameraCaptureController {
         Self.logger.warning("\(message, privacy: .public)")
     }
 
-    private func restartSessionIfNeeded(recoveredStatusMessage: String) async {
+    func restartSessionIfNeeded(recoveredStatusMessage: String) async {
         guard activeDevice != nil else { return }
         let didRestart = await runOnSessionQueue { [session] in
             guard !session.isRunning else { return true }
@@ -142,9 +139,11 @@ extension CameraCaptureController {
         case .videoDeviceNotAvailableInBackground:
             return "iPhone camera is unavailable in the background"
         case .audioDeviceInUseByAnotherClient:
-            return "iPhone microphone is in use by another app"
+            return "Another app is using the iPhone microphone, like your Mac through Continuity. "
+                + "In BlitzRecorder on the Mac, choose another microphone"
         case .videoDeviceInUseByAnotherClient:
-            return "Your Mac is using this iPhone as a Continuity Camera. Choose BlitzRecorder Camera on the Mac to switch"
+            return "Your Mac is using this iPhone through Continuity. "
+                + "In BlitzRecorder on the Mac, choose another microphone and close other apps using the iPhone"
         case .videoDeviceNotAvailableWithMultipleForegroundApps:
             return "iPhone camera is unavailable with multiple foreground apps"
         case .videoDeviceNotAvailableDueToSystemPressure:

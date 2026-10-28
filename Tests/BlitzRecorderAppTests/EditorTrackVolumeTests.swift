@@ -46,7 +46,7 @@ final class EditorTrackVolumeTests: XCTestCase {
         defer { playback.teardown() }
         await playback.load(project: original, baseSettings: settings)
         XCTAssertTrue(playback.isReady)
-        let videoPlayer = try XCTUnwrap(playback.videoPlayer(for: .screen))
+        let videoPlayer = try XCTUnwrap(playback.videoPlayer(for: .screen, scene: RecordingScene(settings: RecordingSettings())))
         let fullOutput = fixture.root.appendingPathComponent("full.mp4")
         let quietOutput = fixture.root.appendingPathComponent("quiet.mp4")
         let profile = ExportPerformanceProfile.resolved(preset: .custom, sourceResolution: .p720,
@@ -59,7 +59,7 @@ final class EditorTrackVolumeTests: XCTestCase {
             playback.setTrackVolume(change)
             XCTAssertTrue(vm.changeEditorTrackVolume(change))
         }
-        XCTAssertTrue(videoPlayer === playback.videoPlayer(for: .screen))
+        XCTAssertTrue(videoPlayer === playback.videoPlayer(for: .screen, scene: RecordingScene(settings: RecordingSettings())))
         XCTAssertEqual(playback.audioLevels.volume(for: .microphone), 0.25)
         var saved = try store.loadRecordingProject(at: fixture.take.projectURL)
         XCTAssertEqual(saved.editorState.audioLevels, playback.audioLevels)

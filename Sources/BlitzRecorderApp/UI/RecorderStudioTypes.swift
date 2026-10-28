@@ -35,6 +35,8 @@ enum SourceSelection: CaseIterable, Equatable {
 
 enum RecorderInspectorSelection: Hashable {
     case source(CaptureSource)
+    /// Camera 2 in a two-camera scene; its input is still the camera source.
+    case secondCamera
     case canvas
     case layout
 
@@ -52,11 +54,15 @@ enum RecorderInspectorSelection: Hashable {
     }
 
     var source: CaptureSource? {
-        guard case .source(let source) = self else { return nil }
-        return source
+        switch self {
+        case .source(let source): source
+        case .secondCamera: .camera
+        case .canvas, .layout: nil
+        }
     }
 
     var sceneLayer: SceneLayerKind? {
+        if self == .secondCamera { return .secondCamera }
         switch source {
         case .screen:
             return .screen

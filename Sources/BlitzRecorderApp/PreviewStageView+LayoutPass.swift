@@ -31,12 +31,13 @@ extension PreviewStageView {
     func fittedCropEditingCanvas(in rect: NSRect) -> NSRect {
         let canvas = PreviewStageLayout.fittedCanvas(in: rect, captureLayout: captureLayout)
         guard isCameraCropEditingEnabled, enabledSources.contains(.camera) else { return canvas }
-        return PreviewStageLayout.cropEditingCanvas(
+        return PreviewStageLayout.cropEditingCanvas(.init(
             fittedCanvas: canvas,
-            in: rect,
-            cameraSourceAspectRatio: cameraPreview.currentSourceAspectRatio,
+            rect: rect,
+            cameraLayer: cameraCropLayer,
+            cameraSourceAspectRatio: cameraPreview(for: cameraCropLayer).currentSourceAspectRatio,
             geometry: renderGeometry(in: canvas)
-        )
+        ))
     }
 
     func skipsUnchangedLayoutPass(_ key: LayoutPassKey) -> Bool {

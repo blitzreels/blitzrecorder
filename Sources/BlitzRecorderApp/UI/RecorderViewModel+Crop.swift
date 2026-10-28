@@ -2,38 +2,43 @@ import CoreGraphics
 import Foundation
 
 extension RecorderViewModel {
-    func setCameraCropAmount(_ amount: CGPoint) {
-        coordinator.setCameraCropAmount(amount)
-        syncSettings()
+    struct CameraCropZoomChange {
+        let layer: SceneLayerKind
+        let zoom: CGFloat
     }
 
-    func setCameraCropPosition(_ position: CGPoint) {
-        coordinator.setCameraCropPosition(position)
-        syncSettings()
+    /// The committed crop of Camera 1 or Camera 2.
+    func cameraCrop(for layer: SceneLayerKind) -> LayerCropControl {
+        layer == .secondCamera
+            ? LayerCropControl(amount: settings.secondCameraCropAmount, position: settings.secondCameraCropPosition)
+            : LayerCropControl(amount: settings.cameraCropAmount, position: settings.cameraCropPosition)
     }
 
-    func setCameraCropZoom(_ zoom: CGFloat) {
-        setCameraCropPreset(
-            amount: CGPoint(x: zoom, y: zoom),
-            position: settings.cameraCropPosition
-        )
+    func setCameraCropZoom(_ change: CameraCropZoomChange) {
+        setCameraCrop(.init(layer: change.layer, crop: .init(
+            amount: CGPoint(x: change.zoom, y: change.zoom),
+            position: cameraCrop(for: change.layer).position
+        )))
     }
 
-    func setCameraCropPreset(amount: CGPoint, position: CGPoint) {
-        if canvas.isCameraCropModeEnabled {
-            previewStage.updateCameraCropDraft(amount: amount, position: position)
+    func setCameraCrop(_ change: CameraCropChange) {
+        if isCameraCropMode(change.layer) {
+            previewStage.updateCameraCropDraft(amount: change.crop.amount, position: change.crop.position)
         } else {
-            coordinator.setCameraCrop(LayerCropControl(amount: amount, position: position))
+            coordinator.setCameraCrop(change)
             syncSettings()
         }
     }
 
-    func beginCameraCropMode() {
+    /// Crops Camera 1 or Camera 2 on the canvas; Done and Cancel in the canvas toolbar end it.
+    func beginCameraCropMode(_ layer: SceneLayerKind) {
         guard canEditCameraCrop else { return }
         cancelScreenSplitPreview()
         cancelScreenCropMode()
-        selectLayer(.camera)
-        previewStage.beginCameraCropEditing()
+        if canvas.isCameraCropModeEnabled { cancelCameraCropMode() }
+        selectLayer(layer)
+        previewStage.beginCameraCropEditing(layer)
+        canvas.cameraCropModeLayer = layer
         canvas.isCameraCropModeEnabled = true
         syncPreviewInteractionState()
     }
@@ -50,14 +55,12 @@ extension RecorderViewModel {
         syncPreviewInteractionState()
     }
 
-    func resetCameraCrop() {
-        if canvas.isCameraCropModeEnabled {
-            previewStage.updateCameraCropDraft(amount: .zero, position: .zero)
-        } else {
-            coordinator.setCameraCropAmount(.zero)
-            coordinator.setCameraCropPosition(.zero)
-            syncSettings()
-        }
+    func isCameraCropMode(_ layer: SceneLayerKind) -> Bool {
+        canvas.isCameraCropModeEnabled && canvas.cameraCropModeLayer == layer
+    }
+
+    func resetCameraCrop(_ layer: SceneLayerKind) {
+        setCameraCrop(.init(layer: layer, crop: .init(amount: .zero, position: .zero)))
     }
 
     func beginScreenCropMode() {

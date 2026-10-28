@@ -3,8 +3,8 @@ import XCTest
 @testable import BlitzRecorderApp
 
 final class SourcePickerVisibilityTests: XCTestCase {
-    func testContinuityIsHiddenByDefaultAndRestorableAcrossRelaunch() {
-        let camera = SourcePickerVisibility(id: "camera:phone", hiddenReason: CameraSourceKind.continuity.hiddenReason)
+    func testSourceHiddenByDefaultIsRestorableAcrossRelaunch() {
+        let camera = SourcePickerVisibility(id: "screen:window:helper", hiddenReason: "Hidden by default")
         var preferences = SourcePickerPreferences(encoded: "{}")
         XCTAssertTrue(preferences.isHidden(camera))
         preferences.update(.init(id: camera.id, isHidden: false))

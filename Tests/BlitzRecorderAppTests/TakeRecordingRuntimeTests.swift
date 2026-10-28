@@ -204,6 +204,8 @@ final class TakeRecordingRuntimeTests: XCTestCase {
             remoteCameraRecorder: remoteCamera,
             audioRecorder: NoopMicrophoneCaptureRecorder(),
             systemAudioRecorder: NoopSystemAudioCaptureRecorder(),
+            cameraAngles: .none,
+            microphoneTracks: .none,
             prerollHandler: nil
         )
 
@@ -234,6 +236,8 @@ final class TakeRecordingRuntimeTests: XCTestCase {
             cameraRecorder: NoopCameraCaptureRecorder(),
             audioRecorder: microphone,
             systemAudioRecorder: NoopSystemAudioCaptureRecorder(),
+            cameraAngles: .none,
+            microphoneTracks: .none,
             prerollHandler: nil
         )
         let outcome = try await runtime.stop()

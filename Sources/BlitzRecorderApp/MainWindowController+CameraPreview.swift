@@ -103,6 +103,12 @@ extension MainWindowController {
             return
         }
 
+        startSecondCameraPreview()
+        if let angleDeviceID = coordinator.settings.cameraAngleDeviceID(role: coordinator.settings.cameraFeeds.camera) {
+            startCameraAnglePreview(deviceID: angleDeviceID)
+            return
+        }
+
         let selectedID = coordinator.settings.selectedCameraID
         if coordinator.isRemoteCameraSelected {
             coordinator.setLocalCameraRuntimeState(.unchecked)
@@ -251,6 +257,63 @@ extension MainWindowController {
         }
     }
 
+    /// A scene filled by another camera angle previews that angle's own session, the one that records it.
+    private func startCameraAnglePreview(deviceID: String) {
+        guard cameraPreviewDeviceID != deviceID || !previewStage.cameraPreview.hasPreviewContent else { return }
+        invalidateCameraPreviewStart()
+        cameraPreviewDeviceID = deviceID
+        let feed = coordinator.settings.cameraFeeds.camera
+        let revision = cameraPreviewStartRevision
+        previewStage.cameraPreview.isHidden = false
+        previewStage.cameraPreview.setMessage("Starting camera")
+        Task {
+            do {
+                let layer = try await coordinator.cameraAnglePreviewLayer(deviceID: deviceID)
+                guard cameraPreviewStartRevision == revision,
+                      coordinator.settings.cameraFeeds.camera == feed else { return }
+                previewStage.cameraPreview.setPreviewLayer(layer)
+                coordinator.setCameraAngleThumbnailHandler(deviceID: deviceID) { [weak self] sampleBuffer in
+                    guard let self, self.cameraPreviewDeviceID == deviceID,
+                          self.coordinator.settings.cameraFeeds.camera == feed else { return }
+                    self.previewStage.cameraPreview.noteCaptureFrame(sampleBuffer)
+                }
+            } catch {
+                guard cameraPreviewStartRevision == revision else { return }
+                cameraPreviewDeviceID = nil
+                previewStage.cameraPreview.setMessage("Camera unavailable")
+            }
+        }
+    }
+
+    /// Two-camera scenes preview the second camera from that angle's own session.
+    private func startSecondCameraPreview() {
+        let settings = coordinator.settings
+        guard settings.sceneLayout.secondCameraFrame != nil,
+              let deviceID = settings.cameraAngleDeviceID(role: settings.cameraFeeds.secondCamera) else {
+            secondCameraPreviewDeviceID = nil
+            previewStage.secondCameraPreview.setMessage("Add a second camera")
+            return
+        }
+        guard secondCameraPreviewDeviceID != deviceID || !previewStage.secondCameraPreview.hasPreviewContent else { return }
+        secondCameraPreviewDeviceID = deviceID
+        previewStage.secondCameraPreview.setMessage("Starting camera")
+        Task {
+            do {
+                let layer = try await coordinator.cameraAnglePreviewLayer(deviceID: deviceID)
+                guard secondCameraPreviewDeviceID == deviceID else { return }
+                previewStage.secondCameraPreview.setPreviewLayer(layer)
+                coordinator.setCameraAngleThumbnailHandler(deviceID: deviceID) { [weak self] sampleBuffer in
+                    guard let self, self.secondCameraPreviewDeviceID == deviceID else { return }
+                    self.previewStage.secondCameraPreview.noteCaptureFrame(sampleBuffer)
+                }
+            } catch {
+                guard secondCameraPreviewDeviceID == deviceID else { return }
+                secondCameraPreviewDeviceID = nil
+                previewStage.secondCameraPreview.setMessage("Camera unavailable")
+            }
+        }
+    }
+
     private func waitForCameraDevice() {
         previewStage.cameraPreview.setMessage("Waiting for a camera")
         coordinator.setLocalCameraRuntimeState(.waitingForDevice)
@@ -308,6 +371,8 @@ extension MainWindowController {
         Task {
             await viewModel.refreshSources()
             viewModel.refreshRemoteCameraState()
+            viewModel.sceneLibraryRevision += 1
+            viewModel.syncSettings()
             startCameraPreview()
             refreshPermissionGate()
         }

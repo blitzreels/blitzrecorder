@@ -23,7 +23,7 @@ extension TakeFileStore {
         let scratchDirectory = uniqueDirectory(directory)
         try FileManager.default.createDirectory(at: scratchDirectory, withIntermediateDirectories: true)
 
-        let take = RecordingTake(
+        var take = RecordingTake(
             scratchDirectory: scratchDirectory,
             screenURL: scratchDirectory.appendingPathComponent("screen.\(settings.sourceVideoFormat.fileExtension)"),
             cameraURL: scratchDirectory.appendingPathComponent("camera.\(settings.sourceVideoFormat.fileExtension)"),
@@ -37,6 +37,17 @@ extension TakeFileStore {
             ),
             outputVideoFormat: settings.outputVideoFormat,
             titleSlug: request.title
+        )
+        take.cameraAngleFiles = NumberedSourceTracks.cameraAngles.files(
+            directory: scratchDirectory,
+            count: settings.recordedExtraCameraAngleIDs.count,
+            fileExtension: settings.sourceVideoFormat.fileExtension
+        )
+        let extraMicrophoneCount = settings.recordedExtraMicrophoneIDs.count
+        take.microphoneTrackFiles = NumberedSourceTracks.microphones.files(
+            directory: scratchDirectory,
+            count: extraMicrophoneCount == 0 ? 0 : extraMicrophoneCount + 1,
+            fileExtension: settings.effectiveSourceAudioFormat.fileExtension
         )
         if settings.savesSourceFiles {
             try writeSourceTakeManifest(for: take, settings: settings, finalVideoURL: nil)
@@ -248,7 +259,7 @@ extension TakeFileStore {
             ("microphone", take.audioURL),
             ("systemAudio", take.systemAudioURL),
             ("transcript", take.transcriptURL)
-        ]
+        ] + (take.cameraAngleFiles + take.microphoneTrackFiles).map { ($0.role, $0.url) }
     }
 
     private func sourceFiles(for take: RecordingTake) -> [SourceTakeManifest.SourceFile] {

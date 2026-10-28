@@ -48,12 +48,11 @@ struct AppSidebar: View {
                     AppUpdateSidebarCard()
                         .padding(.bottom, 8)
                 }
-                AppSidebarAgentsRow(configuration: .init(mcpServer: mcpServer) {
-                    vm.showSettings(.agents)
-                })
-                AppSidebarLivePreviewToggle(vm: vm)
-                row(.init(destination: .settings, title: "Settings", symbol: "gearshape",
-                          detail: nil, trailing: "⌘,", enabled: true), selection)
+                AppSidebarSettingsRow(configuration: .init(
+                    mcpServer: mcpServer,
+                    isSelected: selection == .settings,
+                    action: { vm.showSidebarDestination(.settings) }
+                ))
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 10)

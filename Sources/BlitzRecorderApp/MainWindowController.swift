@@ -13,6 +13,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var cameraDeviceObservers: [NSObjectProtocol] = []
     var isStartingCameraPreview = false
     var cameraPreviewDeviceID: String?
+    var secondCameraPreviewDeviceID: String?
     var cameraPreviewStartRevision = 0
     var cameraPreviewWatchdogTask: Task<Void, Never>?
     var cameraPreviewRecoveryAttempts = 0
@@ -38,6 +39,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var remoteCameraPreviewFramesAreAllowed: Bool {
         previewFramesAreAllowed
             && coordinator.settings.visibleSources.contains(.camera)
+            && !coordinator.settings.cameraFeeds.usesCameraAngle
             && coordinator.isRemoteCameraSelected
     }
     var onEditorHistoryChanged: (() -> Void)? {
@@ -114,6 +116,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                   self.coordinator.state != .idle || self.viewModel.isLivePreviewEnabled else { return }
             self.viewModel.appendAudioLevel(level, source: source)
         }
+        coordinator.onMicrophoneTrackLevel = { [weak self] deviceID, level in
+            guard let self,
+                  self.coordinator.state != .idle || self.viewModel.isLivePreviewEnabled else { return }
+            self.viewModel.microphoneTrackLevels.append(level, deviceID: deviceID)
+        }
         coordinator.onScreenCaptureConfigurationChanged = { [weak self] in
             layoutLog.notice("screen capture configuration changed, restarting preview")
             self?.restartScreenPreview()
@@ -132,6 +139,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             guard let self,
                   self.previewFramesAreAllowed,
                   self.coordinator.settings.visibleSources.contains(.camera),
+                  !self.coordinator.settings.cameraFeeds.usesCameraAngle,
                   !self.coordinator.isRemoteCameraSelected else { return }
             self.previewStage.cameraPreview.isHidden = false
             self.previewStage.cameraPreview.enqueuePreviewSampleBuffer(sampleBuffer, width: width, height: height)
@@ -141,6 +149,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             guard let self,
                   self.previewFramesAreAllowed,
                   self.coordinator.settings.enabledSources.contains(.camera),
+                  !self.coordinator.settings.cameraFeeds.usesCameraAngle,
                   !self.coordinator.isRemoteCameraSelected else { return }
             guard self.coordinator.state != .idle
                 || !self.coordinator.settings.removesCameraBackgroundAfterRecording else { return }

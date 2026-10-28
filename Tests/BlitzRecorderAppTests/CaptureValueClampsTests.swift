@@ -103,7 +103,7 @@ final class RecordingStartCopyTests: XCTestCase {
 
 final class CaptureDeviceCatalogTests: XCTestCase {
     func testMicrophoneFallbackName() {
-        XCTAssertFalse(CaptureDeviceCatalog.microphoneName(selectedID: nil).isEmpty)
+        XCTAssertFalse(CaptureDeviceCatalog.microphoneName(settings: RecordingSettings()).isEmpty)
     }
 }
 

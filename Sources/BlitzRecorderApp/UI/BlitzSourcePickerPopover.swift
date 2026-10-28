@@ -63,7 +63,7 @@ struct BlitzSourcePickerPopover: View {
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(isEditingSources ? "Edit sources" : model.prompt)
                 .font(BlitzType.headline)
                 .foregroundStyle(BlitzUI.primaryText)
@@ -111,13 +111,13 @@ struct BlitzSourcePickerPopover: View {
     private var screenKinds: some View {
         BlitzSegmentedPicker(configuration: .init(
             title: "Source type",
-            options: [.window, .display, .application],
+            options: [.display, .window, .application],
             selection: $screenKind,
             label: { kind in
                 switch kind {
-                case .window: "Windows"
-                case .display: "Displays"
-                case .application: "Apps"
+                case .window: "Window"
+                case .display: "Full screen"
+                case .application: "App"
                 }
             }
         ))

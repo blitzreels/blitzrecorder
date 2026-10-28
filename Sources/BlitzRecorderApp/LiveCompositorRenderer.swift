@@ -18,6 +18,8 @@ struct LiveCompositorImageFrame {
 struct LiveCompositorImageRenderRequest {
     let screenFrame: LiveCompositorImageFrame?
     let cameraFrame: LiveCompositorImageFrame?
+    /// Only two-camera layouts have one; the live recorder never does.
+    var secondCameraFrame: LiveCompositorImageFrame? = nil
     let scene: RecordingScene
     let settings: RecordingSettings
     let backgroundPhase: Double?
@@ -116,6 +118,17 @@ final class LiveCompositorRenderer: @unchecked Sendable {
                 }
                 image = fill(
                     cameraFrame.image,
+                    into: placement.targetRect,
+                    sourceCrop: { placement.videoPlacement.sourceCropRectangle(sourceExtent: $0) },
+                    contentMode: placement.videoPlacement.contentMode,
+                    cornerRadius: placement.cornerRadius
+                )
+                .settingOpacity(opacity)
+                .composited(over: image)
+            case .secondCamera:
+                guard let secondCameraFrame = request.secondCameraFrame else { continue }
+                image = fill(
+                    secondCameraFrame.image,
                     into: placement.targetRect,
                     sourceCrop: { placement.videoPlacement.sourceCropRectangle(sourceExtent: $0) },
                     contentMode: placement.videoPlacement.contentMode,
@@ -332,6 +345,8 @@ final class LiveCompositorRenderer: @unchecked Sendable {
                 return scene.renderedSources.contains(.screen)
             case .camera:
                 return scene.renderedSources.contains(.camera)
+            case .secondCamera:
+                return false
             }
         }) == .camera
     }

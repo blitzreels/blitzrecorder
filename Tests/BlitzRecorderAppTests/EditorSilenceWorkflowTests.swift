@@ -217,7 +217,7 @@ final class EditorSilenceWorkflowTests: XCTestCase {
         XCTAssertTrue(playback.isReady)
         playback.setPlaybackVolume(0)
         playback.play(from: 0)
-        let player = try XCTUnwrap(playback.videoPlayer(for: .screen))
+        let player = try XCTUnwrap(playback.videoPlayer(for: .screen, scene: RecordingScene(settings: RecordingSettings())))
         XCTAssertTrue(playback.isPlaying)
         session.prepare(.init(vm: vm, playback: playback, project: project))
         XCTAssertEqual(session.activity, .analyzingAudio)
@@ -238,7 +238,7 @@ final class EditorSilenceWorkflowTests: XCTestCase {
         XCTAssertTrue(session.canApply)
         XCTAssertGreaterThan(session.metrics.removedDuration, 1)
         XCTAssertTrue(playback.isPlaying)
-        XCTAssertTrue(playback.videoPlayer(for: .screen) === player)
+        XCTAssertTrue(playback.videoPlayer(for: .screen, scene: RecordingScene(settings: RecordingSettings())) === player)
         XCTAssertEqual(try Data(contentsOf: fixture.take.projectURL), originalData)
         session.customized = true
         session.paddingBefore = 0.2

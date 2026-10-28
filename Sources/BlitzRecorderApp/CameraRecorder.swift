@@ -13,6 +13,7 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     private var pendingRecording: PendingRecording?
     private var isConfigured = false
     private var configuredDeviceID: String?
+    private var configuredDevice: AVCaptureDevice?
     private var configuredFPS: Int?
     private var startupContinuation: CheckedContinuation<Void, Error>?
     private var startupTimeoutTask: Task<Void, Never>?
@@ -24,8 +25,15 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     private var thumbnailHandler: ThumbnailHandler?
     private var lastThumbnailTime = -TimeInterval.infinity
     var failureHandler: (@MainActor (Error) -> Void)?
+    /// An extra angle records only its own camera; recording the default camera instead would duplicate Camera 1.
+    private let fallsBackToDefaultCamera: Bool
 
-    override init() {
+    override convenience init() {
+        self.init(fallsBackToDefaultCamera: true)
+    }
+
+    init(fallsBackToDefaultCamera: Bool) {
+        self.fallsBackToDefaultCamera = fallsBackToDefaultCamera
         super.init()
         let center = NotificationCenter.default
         sessionObservers = [
@@ -240,24 +248,13 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             session.stopRunning()
         }
 
-        let cameraIsRunningSomewhere = LocalCameraUsage.isRunningSomewhere(device)
-
         session.beginConfiguration()
-        LocalCameraSessionConfiguration.configurePreset(on: session)
         session.inputs.forEach { session.removeInput($0) }
         session.outputs.forEach { session.removeOutput($0) }
-
-        LocalCameraSessionConfiguration.configure(.init(
-            device: device,
-            fps: settings.framesPerSecond,
-            logPrefix: "Camera",
-            cameraIsRunningSomewhere: cameraIsRunningSomewhere
+        try LocalCameraSessionConfiguration.attachCamera(.init(
+            session: session,
+            device: device
         ))
-
-        let input = try AVCaptureDeviceInput(device: device)
-        if session.canAddInput(input) {
-            session.addInput(input)
-        }
 
         let output = AVCaptureVideoDataOutput()
         output.alwaysDiscardsLateVideoFrames = true
@@ -273,13 +270,22 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         session.commitConfiguration()
         isConfigured = true
         configuredDeviceID = selectedDeviceID
+        configuredDevice = device
         configuredFPS = settings.framesPerSecond
     }
 
     private func startSessionIfNeededOnQueue() {
-        if !session.isRunning {
-            session.startRunning()
-        }
+        guard !session.isRunning else { return }
+        let held = configuredDevice.map { device in
+            LocalCameraSessionConfiguration.holdBestFormat(.init(
+                device: device,
+                fps: configuredFPS ?? RecordingSettings().framesPerSecond,
+                logPrefix: "Camera",
+                cameraIsRunningSomewhere: LocalCameraUsage.isRunningSomewhere(device)
+            ))
+        } ?? false
+        session.startRunning()
+        if held { configuredDevice?.unlockForConfiguration() }
     }
 
     private func prepareBlackFrameGeneratorIfNeeded(_ sampleBuffer: CMSampleBuffer) {
@@ -332,7 +338,12 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     }
 
     private func selectedCamera(settings: RecordingSettings) -> AVCaptureDevice? {
-        LocalCameraSessionConfiguration.selectedCamera(settings: settings)
+        guard fallsBackToDefaultCamera else {
+            return settings.selectedCameraID
+                .flatMap(AVCaptureDevice.init(uniqueID:))
+                .flatMap { $0.isConnected && !$0.isSuspended ? $0 : nil }
+        }
+        return LocalCameraSessionConfiguration.selectedCamera(settings: settings)
     }
 
     private func makeWriter(
@@ -395,9 +406,7 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
                     }
                 }
 
-                if !self.session.isRunning {
-                    self.session.startRunning()
-                }
+                self.startSessionIfNeededOnQueue()
             }
         }
     }

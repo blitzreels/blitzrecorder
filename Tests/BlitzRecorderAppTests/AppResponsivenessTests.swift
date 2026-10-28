@@ -70,7 +70,7 @@ final class AppResponsivenessTests: XCTestCase {
         defer { controller.teardown() }
         await controller.load(project: project, baseSettings: RecordingSettings())
         XCTAssertTrue(controller.isReady)
-        let item = try XCTUnwrap(controller.videoPlayer(for: .screen)?.currentItem)
+        let item = try XCTUnwrap(controller.videoPlayer(for: .screen, scene: RecordingScene(settings: RecordingSettings()))?.currentItem)
         let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
         ])

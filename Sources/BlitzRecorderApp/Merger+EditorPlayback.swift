@@ -10,7 +10,9 @@ extension Merger {
         sceneEvents: [RecordingSceneEvent],
         cuts: [TimelineCut] = []
     ) async throws -> EditorPlaybackComposition {
-        let videoSources = try await availableVideoSources(for: take, settings: settings)
+        let videoSources = try await availableVideoSources(.init(
+            take: take, settings: settings, sceneEvents: sceneEvents, loadsAllCameraAngles: true
+        ))
         let audioSources = try await readablePlaybackAudioSources(.init(take: take, settings: settings, progress: { _ in }))
         guard !videoSources.isEmpty || !audioSources.isEmpty else {
             throw RecorderError.exportUnavailable
@@ -37,8 +39,9 @@ extension Merger {
         let composition = AVMutableComposition()
         var compositedSources: [CompositedVideoSource] = []
         var videoAssets: [SceneLayerKind: AVComposition] = [:]
+        var cameraAngleAssets: [String: AVComposition] = [:]
         for source in videoSources {
-            guard let input = sourceInputs.first(where: { $0.kind == source.kind }) else { continue }
+            guard let input = sourceInputs.first(where: { $0.feed == source.feed }) else { continue }
             let insertions = timeMap.mediaInsertions(.init(
                 activeTakeStart: input.activeTakeStart,
                 sourceTimeAtActiveStart: input.sourceTimeAtActiveStart,
@@ -71,7 +74,11 @@ extension Merger {
                 )
             }
             videoTrack.preferredTransform = source.preferredTransform
-            videoAssets[source.kind] = videoAsset
+            if source.feed == source.kind.defaultFeed {
+                videoAssets[source.kind] = videoAsset
+            } else {
+                cameraAngleAssets[source.feed] = videoAsset
+            }
             compositedSources.append(CompositedVideoSource(
                 source: source,
                 compositionTrack: compositionTrack,
@@ -88,6 +95,7 @@ extension Merger {
             }
         }
 
+        let primarySources = compositedSources.filter { $0.feed == $0.kind.defaultFeed }
         let renderSize = exportPlan?.renderSize ?? fallbackRenderSize
         let renderSegments = exportPlan?.renderSegments ?? [
             FinalExportRenderSegment(
@@ -107,12 +115,16 @@ extension Merger {
             sourceInputs: sourceInputs,
             timeMap: timeMap,
             cuts: cuts,
-            videoKinds: compositedSources.map(\.kind),
-            sourceAspectRatios: Dictionary(uniqueKeysWithValues: compositedSources.map {
+            videoKinds: primarySources.map(\.kind),
+            sourceAspectRatios: Dictionary(uniqueKeysWithValues: primarySources.map {
                 ($0.kind, sourceAspectRatio(for: $0))
             }),
             audioInputs: audioInputs,
             videoAssets: videoAssets,
+            cameraAngleAssets: cameraAngleAssets,
+            cameraAngleAspectRatios: Dictionary(uniqueKeysWithValues: compositedSources
+                .filter { $0.feed != $0.kind.defaultFeed }
+                .map { ($0.feed, sourceAspectRatio(for: $0)) }),
             makeInstructions: { hiddenKinds, renderSegments in
                 videoCompositionInstructions(
                     sources: compositedSources.filter { !hiddenKinds.contains($0.kind) },

@@ -125,14 +125,19 @@ extension BlitzRecorderMCPServer {
         Tool(
             name: "project_frame",
             title: "Inspect a recorded video frame",
-            description: "Return a JPEG frame from a project's screen or camera track, without opening the app UI. "
+            description: "Return a JPEG frame from a project's screen, camera or camera-angle track (camera-2, camera-3), "
+                + "without opening the app UI. "
                 + "timeSeconds uses the original project timeline, matching project_transcript before saved cuts. "
                 + "This is original source footage, not the edited composition. Use project_get to find available tracks.",
             inputSchema: .object([
                 "type": "object",
                 "properties": .object([
                     "projectId": .object(["type": "string", "description": "Project UUID from projects_list."]),
-                    "source": .object(["type": "string", "enum": ["screen", "camera"]]),
+                    "source": .object([
+                        "type": "string",
+                        "pattern": "^(screen|camera(-([2-9]|[1-9][0-9]+))?)$",
+                        "description": "screen, camera, or a camera angle such as camera-2. project_get lists the roles.",
+                    ]),
                     "timeSeconds": .object(["type": "number", "minimum": 0]),
                 ]),
                 "required": ["projectId", "source", "timeSeconds"],
@@ -228,7 +233,7 @@ extension BlitzRecorderMCPServer {
         let projectID = try projectID(arguments)
         guard let rawSource = arguments?["source"]?.stringValue,
               let source = MCPProjectFrameSource(rawValue: rawSource) else {
-            throw MCPToolArgumentError.invalid("source must be screen or camera.")
+            throw MCPToolArgumentError.invalid("source must be screen, camera, or a camera angle such as camera-2.")
         }
         let time: Double
         switch arguments?["timeSeconds"] {

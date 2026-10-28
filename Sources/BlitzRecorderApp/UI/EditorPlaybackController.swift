@@ -93,6 +93,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
         scene: RecordingScene
     )?
     @ObservationIgnored private var videoPlayers: [SceneLayerKind: AVPlayer] = [:]
+    @ObservationIgnored private var cameraAnglePlayers: [String: AVPlayer] = [:]
     @ObservationIgnored private var audioPlayer: AVPlayer?
     @ObservationIgnored private var exportedPlayer: AVPlayer?
     @ObservationIgnored private var exportedTimeMap: TimelineTimeMap?
@@ -142,12 +143,33 @@ final class EditorPlaybackController: NowPlayingPlayback {
         return Set(playback?.audioInputs.map(\.source) ?? [])
     }
 
+    /// The project recorded a Camera 2, so two-camera layouts can show it.
+    var hasSecondCamera: Bool {
+        _ = compositionRevision
+        return playback?.videoKinds.contains(.secondCamera) == true
+    }
+
     var sourceAspectRatios: [SceneLayerKind: CGFloat] {
         playback?.sourceAspectRatios ?? [:]
     }
 
-    func videoPlayer(for kind: SceneLayerKind) -> AVPlayer? {
-        videoPlayers[kind]
+    /// The player for a layer in a scene: the camera layer plays the scene's camera angle when it was recorded.
+    func videoPlayer(for kind: SceneLayerKind, scene: RecordingScene) -> AVPlayer? {
+        let feed = scene.feed(for: kind, available: Set(cameraAnglePlayers.keys).union([kind.defaultFeed]))
+        return cameraAnglePlayers[feed] ?? videoPlayers[kind]
+    }
+
+    /// Source aspect ratios as a scene shows them, with the camera angle's own ratio in the camera layer.
+    func sourceAspectRatios(for scene: RecordingScene) -> [SceneLayerKind: CGFloat] {
+        var ratios = sourceAspectRatios
+        let mainCameraRatio = ratios[.camera]
+        if let angleRatio = playback?.cameraAngleAspectRatios[scene.cameraFeeds.camera] {
+            ratios[.camera] = angleRatio
+        }
+        if scene.sceneLayout.secondCameraFrame != nil {
+            ratios[.secondCamera] = playback?.cameraAngleAspectRatios[scene.cameraFeeds.secondCamera] ?? mainCameraRatio
+        }
+        return ratios
     }
 
     private var masterPlayer: AVPlayer? {
@@ -158,7 +180,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
         if let exportedPlayer {
             return [exportedPlayer]
         }
-        var players = Array(videoPlayers.values)
+        var players = Array(videoPlayers.values) + Array(cameraAnglePlayers.values)
         if let audioPlayer { players.append(audioPlayer) }
         return players
     }
@@ -434,6 +456,11 @@ final class EditorPlaybackController: NowPlayingPlayback {
             let player = Self.makePlayer(AVPlayerItem(asset: asset))
             player.isMuted = true
             videoPlayers[kind] = player
+        }
+        for (feed, asset) in playback.cameraAngleAssets {
+            let player = Self.makePlayer(AVPlayerItem(asset: asset))
+            player.isMuted = true
+            cameraAnglePlayers[feed] = player
         }
         buildAudioPlayer(playback: playback)
     }
@@ -850,6 +877,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
             player.replaceCurrentItem(with: nil)
         }
         videoPlayers = [:]
+        cameraAnglePlayers = [:]
         audioPlayer = nil
         exportedPlayer = nil
         exportedTimeMap = nil

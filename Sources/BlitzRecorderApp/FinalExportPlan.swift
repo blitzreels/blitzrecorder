@@ -8,17 +8,21 @@ enum FinalExportEngine: Equatable {
 
 struct FinalExportSourceInput: Equatable {
     let kind: SceneLayerKind
+    /// The file role: `camera` and `camera-2` both fill the camera layer.
+    let feed: String
     let duration: CMTime
     let timelineOffset: CMTime
     let sourceStartOffset: CMTime
 
     init(
         kind: SceneLayerKind,
+        feed: String? = nil,
         duration: CMTime,
         timelineOffset: CMTime,
         sourceStartOffset: CMTime = .zero
     ) {
         self.kind = kind
+        self.feed = feed ?? kind.defaultFeed
         self.duration = duration
         self.timelineOffset = timelineOffset
         self.sourceStartOffset = sourceStartOffset
@@ -42,6 +46,7 @@ struct FinalExportSourceInput: Equatable {
 
 struct FinalExportSourceInsertion: Equatable {
     let kind: SceneLayerKind
+    let feed: String
     let sourceStart: CMTime
     let compositionStart: CMTime
     let duration: CMTime
@@ -49,12 +54,14 @@ struct FinalExportSourceInsertion: Equatable {
 
     init(
         kind: SceneLayerKind,
+        feed: String? = nil,
         sourceStart: CMTime,
         compositionStart: CMTime,
         duration: CMTime,
         sourceDuration: CMTime? = nil
     ) {
         self.kind = kind
+        self.feed = feed ?? kind.defaultFeed
         self.sourceStart = sourceStart
         self.compositionStart = compositionStart
         self.duration = duration
@@ -63,6 +70,7 @@ struct FinalExportSourceInsertion: Equatable {
 
     static func == (lhs: FinalExportSourceInsertion, rhs: FinalExportSourceInsertion) -> Bool {
         lhs.kind == rhs.kind
+            && lhs.feed == rhs.feed
             && CMTimeCompare(lhs.sourceStart, rhs.sourceStart) == 0
             && CMTimeCompare(lhs.compositionStart, rhs.compositionStart) == 0
             && CMTimeCompare(lhs.duration, rhs.duration) == 0
@@ -135,6 +143,13 @@ struct FinalExportPlan: Equatable {
     func insertions(for kind: SceneLayerKind) -> [FinalExportSourceInsertion] {
         sourceInsertions.filter { $0.kind == kind }
     }
+
+    /// One composition track's ranges. A feed can fill two layers (camera-2 as Camera 1 in one scene and as the
+    /// second camera in another), and each layer has its own track, so match the layer too: inserting both
+    /// layers' ranges into one track would double its length past the video's instructions.
+    func insertions(_ request: (kind: SceneLayerKind, feed: String)) -> [FinalExportSourceInsertion] {
+        sourceInsertions.filter { $0.kind == request.kind && $0.feed == request.feed }
+    }
 }
 
 enum FinalExportPlanning {
@@ -165,6 +180,7 @@ enum FinalExportPlanning {
         return request.sources.map { source in
             FinalExportSourceInput(
                 kind: source.kind,
+                feed: source.feed,
                 duration: source.duration,
                 timelineOffset: CMTimeSubtract(source.timelineOffset, offset),
                 sourceStartOffset: source.sourceStartOffset
@@ -200,9 +216,11 @@ enum FinalExportPlanning {
             throw RecorderError.exportUnavailable
         }
 
-        let takeDuration = durationSources
+        let primarySources = durationSources.filter { $0.kind != .secondCamera && $0.feed == $0.kind.defaultFeed }
+        let lengthSources = primarySources.isEmpty ? durationSources : primarySources
+        let takeDuration = lengthSources
             .map { CMTimeAdd($0.timelineOffset, $0.duration) }
-            .reduce(CMTimeAdd(durationSources[0].timelineOffset, durationSources[0].duration)) { CMTimeMinimum($0, $1) }
+            .reduce(CMTimeAdd(lengthSources[0].timelineOffset, lengthSources[0].duration)) { CMTimeMinimum($0, $1) }
         let timeMap = TimelineTimeMap(
             takeDuration: takeDuration,
             cuts: request.cuts,
@@ -246,6 +264,7 @@ enum FinalExportPlanning {
         let duration = CMTimeMinimum(remainingCompositionDuration, remainingSourceDuration)
         return FinalExportSourceInsertion(
             kind: source.kind,
+            feed: source.feed,
             sourceStart: sourceStart,
             compositionStart: compositionStart,
             duration: duration
@@ -264,6 +283,7 @@ enum FinalExportPlanning {
             guard insertion.duration > .zero else { return nil }
             return FinalExportSourceInsertion(
                 kind: source.kind,
+                feed: source.feed,
                 sourceStart: insertion.sourceStart.cmTime,
                 compositionStart: insertion.compositionStart.cmTime,
                 duration: insertion.duration.cmTime,
@@ -297,9 +317,9 @@ enum FinalExportPlanning {
     private static func renderSegments(_ request: RenderSegmentRequest) -> [FinalExportRenderSegment] {
         let fallbackScene = RecordingScene(settings: request.settings)
         let timeMap = request.timeMap
-        var insertionsByKind: [SceneLayerKind: [FinalExportSourceInsertion]] = [:]
+        var insertionsByFeed: [String: [FinalExportSourceInsertion]] = [:]
         for insertion in request.sourceInsertions {
-            insertionsByKind[insertion.kind, default: []].append(insertion)
+            insertionsByFeed[insertion.feed, default: []].append(insertion)
         }
         let sourceTakeRanges = request.sources.map { source in
             CMTimeRange(start: source.activeTakeStart, end: CMTimeMinimum(source.activeTakeEnd, timeMap.takeDuration.cmTime))
@@ -348,7 +368,7 @@ enum FinalExportPlanning {
             let activeLayerOrder = activeLayerOrder(
                 startScene: scenes[index],
                 endScene: endScene,
-                insertionsByKind: insertionsByKind,
+                insertionsByFeed: insertionsByFeed,
                 timeRange: ranges[index],
                 renderSize: request.renderSize
             )
@@ -363,10 +383,11 @@ enum FinalExportPlanning {
     private static func activeLayerOrder(
         startScene: RecordingScene,
         endScene: RecordingScene,
-        insertionsByKind: [SceneLayerKind: [FinalExportSourceInsertion]],
+        insertionsByFeed: [String: [FinalExportSourceInsertion]],
         timeRange: CMTimeRange,
         renderSize: CGSize
     ) -> [SceneLayerKind] {
+        let availableFeeds = Set(insertionsByFeed.keys)
         let canvas = CGRect(origin: .zero, size: renderSize)
         let startGeometry = SceneRenderGeometry(canvas: canvas, scene: startScene, origin: .upperLeft)
         let endGeometry = SceneRenderGeometry(canvas: canvas, scene: endScene, origin: .upperLeft)
@@ -376,7 +397,8 @@ enum FinalExportPlanning {
             orderedKinds.append(kind)
         }
         return orderedKinds.filter { kind in
-            (insertionsByKind[kind] ?? []).contains { sourceIsActive($0, during: timeRange) }
+            (insertionsByFeed[startScene.feed(for: kind, available: availableFeeds)] ?? [])
+                .contains { sourceIsActive($0, during: timeRange) }
         }
     }
 

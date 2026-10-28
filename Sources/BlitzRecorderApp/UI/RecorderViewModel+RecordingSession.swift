@@ -156,6 +156,8 @@ extension RecorderViewModel {
         previewStage.screenCrop = coordinator.settings.screenCrop
         previewStage.cameraCropAmount = coordinator.settings.cameraCropAmount
         previewStage.cameraCropPosition = coordinator.settings.cameraCropPosition
+        previewStage.secondCameraCropAmount = coordinator.settings.secondCameraCropAmount
+        previewStage.secondCameraCropPosition = coordinator.settings.secondCameraCropPosition
         previewStage.showsRuleOfThirdsOverlay = coordinator.settings.showsRuleOfThirdsOverlay
         previewStage.socialSafeZoneOverlay = coordinator.settings.socialSafeZoneOverlay
         previewStage.canvasBackgroundStyle = coordinator.settings.canvasBackgroundStyle

@@ -1251,9 +1251,9 @@ final class RecorderCoordinatorAccessTests: XCTestCase {
         layout.cameraFrame = CGRect(x: 0.2, y: 0.2, width: 0.4, height: 0.4)
         previewStage.onSceneLayoutChanged?(layout)
         previewStage.onSceneLayoutEditingEnded?(layout)
-        previewStage.onCameraCropChanged?(LayerCropControl(
+        previewStage.onCameraCropChanged?(CameraCropChange(layer: .camera, crop: LayerCropControl(
             amount: CGPoint(x: 0.2, y: 0.2), position: CGPoint(x: 0.3, y: 0.3)
-        ))
+        )))
         previewStage.onScreenCropChanged?(CGRect(x: 0.2, y: 0.2, width: 0.5, height: 0.5))
         previewStage.onScreenCropPanRequested?()
         XCTAssertEqual(coordinator.settings.sceneLayout, original.sceneLayout)

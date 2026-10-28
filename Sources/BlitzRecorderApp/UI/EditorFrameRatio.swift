@@ -49,6 +49,7 @@ enum EditorFrameRatioLabel {
             (3.0 / 2.0, "3:2"),
             (4.0 / 3.0, "4:3"),
             (1, "1:1"),
+            (4.0 / 5.0, "4:5"),
             (9.0 / 16.0, "9:16")
         ]
         if let match = commonRatios.first(where: { abs($0.value - ratio) < 0.02 }) {
@@ -98,21 +99,39 @@ enum EditorFrameRatio {
             frame: frame,
             aspectRatio: normalizedRatio
         ))
-        scene.sceneLayout.setFrame(resized, for: request.kind)
-        if request.kind == .camera {
+        scene.sceneLayout.setFrame(fittedInCanvas(resized), for: request.kind)
+        if request.kind.isCamera {
             scene.cameraContentMode = .fill
         }
         return scene
     }
 }
 
+/// A new shape keeps its centre but never grows past the canvas: a 4:3 camera on a 9:16 canvas used to come out
+/// almost twice the canvas width.
+private func fittedInCanvas(_ frame: CGRect) -> CGRect {
+    let scale = min(1, 1 / max(frame.width, 0.0001), 1 / max(frame.height, 0.0001))
+    let width = frame.width * scale
+    let height = frame.height * scale
+    let x = min(max(0, frame.midX - width / 2), 1 - width)
+    let y = min(max(0, frame.midY - height / 2), 1 - height)
+    return CGRect(x: x, y: y, width: width, height: height)
+}
+
 /// Shape presets for the selected layer, floating on the canvas next to the handles they affect.
 struct EditorFrameRatioBar: View {
+    struct Option: Identifiable {
+        let title: String
+        let help: String
+        let isSelected: Bool
+        let select: () -> Void
+
+        var id: String { title }
+    }
+
     struct Configuration {
-        let presets: [EditorFrameRatioPreset]
-        let selected: EditorFrameRatioPreset?
+        let options: [Option]
         let isLocked: Bool
-        let select: (EditorFrameRatioPreset) -> Void
         let toggleLock: () -> Void
     }
 
@@ -120,14 +139,15 @@ struct EditorFrameRatioBar: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            ForEach(configuration.presets) { preset in
+            ForEach(configuration.options) { option in
                 BlitzTab(configuration: .init(
-                    title: preset.title,
+                    title: option.title,
                     symbolName: nil,
-                    isSelected: preset == configuration.selected,
+                    isSelected: option.isSelected,
                     expands: false,
-                    action: { configuration.select(preset) }
+                    action: option.select
                 ))
+                .help(option.help)
             }
             Button(action: configuration.toggleLock) {
                 Image(systemName: configuration.isLocked ? "lock.fill" : "lock.open")

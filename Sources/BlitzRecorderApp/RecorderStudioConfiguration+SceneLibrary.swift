@@ -35,9 +35,9 @@ extension RecorderStudioConfiguration {
         settings.screenSourceAspectRatio = screenAspectRatio
         carryCameraFraming(from: previousSettings)
         persist(saveSceneSnapshot: false)
-        updateRecordingScene?(.sceneSwitch)
+        updateRecordingScene?(previousSettings.cameraFeeds == settings.cameraFeeds ? .sceneSwitch : .cut)
         onScreenCaptureConfigurationChanged?()
-        if state == .idle {
+        if state == .idle || previousSettings.cameraFeeds != settings.cameraFeeds {
             onCameraConfigurationChanged?()
         }
         autoFitSelectedScreenWindow?()
@@ -82,13 +82,29 @@ extension RecorderStudioConfiguration {
         autoFitSelectedScreenWindow?()
     }
 
+    /// Adds or removes the scenes of camera angles after the angle list changes.
+    func refreshCameraAngleScenes() {
+        saveCurrentSceneSnapshotIfNeeded()
+        let selectedBefore = selectedSceneIDForCurrentLayout()
+        guard sceneLibrary.canonicalize(cameraAngleCount: settings.extraCameraAngleIDs.count) else { return }
+        saveSceneLibrary()
+        guard selectedSceneIDForCurrentLayout() != selectedBefore,
+              let scene = sceneLibrary.selectedScene(layout: settings.layout) else { return }
+        let screenSelection = currentScreenSourceSelection()
+        applySceneSnapshot(scene.snapshot)
+        restoreScreenSourceSelection(screenSelection)
+        persist(saveSceneSnapshot: false)
+        updateRecordingScene?(.cut)
+        onCameraConfigurationChanged?()
+    }
+
     func carryCameraFraming(from previous: RecordingSettings) {
         func showsCamera(_ settings: RecordingSettings) -> Bool {
             settings.enabledSources.contains(.camera)
                 && !settings.hiddenSources.contains(.camera)
                 && settings.cameraContentMode == .fill
         }
-        guard showsCamera(previous), showsCamera(settings) else { return }
+        guard previous.cameraFeeds == settings.cameraFeeds, showsCamera(previous), showsCamera(settings) else { return }
         func canvasRect(_ frame: CGRect, layout: CaptureLayout) -> CGRect {
             CGRect(
                 x: frame.minX * layout.aspectRatio,

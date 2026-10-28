@@ -4,7 +4,7 @@ import SwiftUI
 struct EditorCanvasInteractionView: NSViewRepresentable {
     let layers: [EditorCanvasLayer]
     @Binding var hoveredLayerID: String?
-    let onSelect: (EditorCanvasLayer) -> Void
+    let onSelect: (EditorCanvasLayer?) -> Void
     let onMove: (SceneLayerKind, CGSize, Bool) -> Void
     let onResize: (SceneLayerKind, ResizeAnchor, CGSize, Bool) -> Void
 
@@ -37,7 +37,7 @@ struct EditorCanvasInteractionView: NSViewRepresentable {
         var layers: [EditorCanvasLayer] = []
         var hoveredLayerID: String?
         var onHover: ((String?) -> Void)?
-        var onSelect: ((EditorCanvasLayer) -> Void)?
+        var onSelect: ((EditorCanvasLayer?) -> Void)?
         var onMove: ((SceneLayerKind, CGSize, Bool) -> Void)?
         var onResize: ((SceneLayerKind, ResizeAnchor, CGSize, Bool) -> Void)?
         private var trackingArea: NSTrackingArea?
@@ -88,6 +88,7 @@ struct EditorCanvasInteractionView: NSViewRepresentable {
             guard let layer = hitLayer(at: point) else {
                 dragMode = nil
                 setHoveredLayer(nil)
+                onSelect?(nil)
                 return
             }
             onSelect?(layer)

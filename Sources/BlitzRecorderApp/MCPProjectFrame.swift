@@ -1,9 +1,22 @@
 import AppKit
 import AVFoundation
 
-enum MCPProjectFrameSource: String {
-    case screen
-    case camera
+/// A video track an agent can read frames from: `screen`, `camera`, or a camera angle such as `camera-2`.
+struct MCPProjectFrameSource {
+    static let screen = MCPProjectFrameSource(role: "screen")
+    static let camera = MCPProjectFrameSource(role: "camera")
+
+    let rawValue: String
+
+    private init(role: String) {
+        rawValue = role
+    }
+
+    init?(rawValue: String) {
+        guard rawValue == "screen" || rawValue == "camera"
+                || NumberedSourceTracks.cameraAngles.number(role: rawValue) != nil else { return nil }
+        self.rawValue = rawValue
+    }
 }
 
 struct MCPProjectFrameRequest {

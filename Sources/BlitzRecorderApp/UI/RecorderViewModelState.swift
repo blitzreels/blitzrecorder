@@ -26,6 +26,8 @@ final class PreviewCanvasState {
     var sideSplitPreviewWidth: Double?
     var previewCanvasFrame: CGRect = .zero
     var isCameraCropModeEnabled = false
+    /// The camera being cropped on the canvas while `isCameraCropModeEnabled`.
+    var cameraCropModeLayer: SceneLayerKind = .camera
     var isScreenCropModeEnabled = false
     var cropToolbarFrame: CGRect?
     var screenLayerFrame: CGRect?

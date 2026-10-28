@@ -4,7 +4,7 @@ import AppIntents
 /// control, from Shortcuts and from Siri.
 struct OpenCameraIntent: AppIntent {
     static let title: LocalizedStringResource = "Open BlitzRecorder Camera"
-    static let description = IntentDescription("Opens the camera so BlitzRecorder on your Mac can use it.")
+    static let description = IntentDescription("Opens the camera so BlitzRecorder can record with it.")
     static let openAppWhenRun = true
 
     func perform() async throws -> some IntentResult {

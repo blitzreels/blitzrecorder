@@ -8,7 +8,8 @@ struct EditorLayoutInspector: View {
     let canvasAspectRatio: CGFloat
     let recordedVideoSources: Set<CaptureSource>
     let scenePresetPreview: BlitzScenePreview
-    let cameraAssetID: String?
+    /// The file each canvas layer shows in the current scene.
+    let layerAssetIDs: [SceneLayerKind: String]
     /// The layer picked on the canvas, so its section reads as the one being edited.
     let selectedSource: SceneLayerKind?
     @Binding var screenZoomDraft: Double?
@@ -29,7 +30,66 @@ struct EditorLayoutInspector: View {
             if renders(.camera) {
                 sourceSection(.camera) { cameraControlsSection }
             }
+            if showsSecondCamera {
+                sourceSection(.secondCamera) { secondCameraControls }
+            }
+            cameraTilesSection
             backgroundSection
+        }
+    }
+
+    var showsSecondCamera: Bool {
+        renders(.camera) && currentEventScene?.sceneLayout.secondCameraFrame != nil
+    }
+
+    private func sectionTitle(_ kind: SceneLayerKind) -> String {
+        switch kind {
+        case .screen: "Screen"
+        case .camera: showsSecondCamera ? "Camera 1" : "Camera"
+        case .secondCamera: "Camera 2"
+        }
+    }
+
+    @ViewBuilder
+    private var secondCameraControls: some View {
+        if sourceCropDraft?.kind == .secondCamera {
+            Text("Drag the frame on the video, then click Done.")
+                .font(BlitzType.caption)
+                .foregroundStyle(BlitzUI.secondaryText)
+        } else if sourceCropDraft == nil {
+            Button { beginEditorSourceCrop(.secondCamera) } label: {
+                Label("Crop", systemImage: "crop").lineLimit(1).frame(maxWidth: .infinity)
+            }
+            .blitzButton(.secondary)
+            .help("Choose the part of Camera 2 that fills its frame. Done applies it; Cancel keeps the current framing.")
+        }
+    }
+
+    /// Spacing and shape of the two camera tiles, from presets so both tiles always stay even.
+    @ViewBuilder
+    private var cameraTilesSection: some View {
+        if showsSecondCamera, sourceCropDraft == nil, let scene = currentEventScene {
+            let context = EditorSceneTiles.Context(scene: scene, layout: captureLayout ?? .horizontal,
+                                                   sourceAspectRatios: playback.sourceAspectRatios(for: scene))
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Cameras")
+                    .font(BlitzType.section)
+                    .foregroundStyle(BlitzUI.primaryText)
+                    .frame(minHeight: 24)
+                SceneTileControls(configuration: .init(
+                    tiles: EditorSceneTiles.current(context),
+                    layout: context.layout,
+                    cameraAspectRatio: EditorSceneTiles.cameraAspectRatio(context),
+                    includesScreen: EditorSceneTiles.includesScreen(scene),
+                    apply: { tiles in
+                        playback.pauseForEditing()
+                        if !vm.applyProjectSceneEdit(eventIndex: currentEventIndex,
+                                                     EditorSceneTiles.edit(.init(tiles: tiles, context: context))) {
+                            editErrorMessage = vm.detailMessage
+                        }
+                    }
+                ))
+            }
         }
     }
 
@@ -43,7 +103,7 @@ struct EditorLayoutInspector: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Text(kind == .screen ? "Screen" : "Camera")
+                Text(sectionTitle(kind))
                     .font(BlitzType.section)
                     .foregroundStyle(BlitzUI.primaryText)
                 Spacer(minLength: 0)
@@ -88,7 +148,7 @@ struct EditorLayoutInspector: View {
                     ))
                 LazyVGrid(columns: scenePresetColumns, spacing: 8) {
                     ForEach(
-                        ScenePreset.allCases.filter {
+                        (ScenePreset.allCases + (playback.hasSecondCamera ? ScenePreset.twoCameraPresets : [])).filter {
                             $0.supports(captureLayout ?? .horizontal)
                                 && $0.requiredVideoSources.isSubset(of: recordedVideoSources)
                         },
@@ -204,9 +264,11 @@ struct EditorLayoutInspector: View {
                 { scene in
                     scene.sceneLayout = layout
                     scene.cameraContentMode = .fill
-                    scene.enabledSources.formUnion([.screen, .camera])
-                    scene.sourceOpacities[.screen] = 1
-                    scene.sourceOpacities[.camera] = 1
+                    let video = preset.requiredVideoSources
+                    scene.enabledSources.subtract([.screen, .camera])
+                    scene.enabledSources.formUnion(video)
+                    for source in video { scene.sourceOpacities[source] = 1 }
+                    if layout.secondCameraFrame != nil { scene.cameraFeeds = .main }
                 })
         else {
             editErrorMessage = vm.detailMessage
@@ -301,8 +363,8 @@ struct EditorLayoutInspector: View {
         screenZoomDraft = nil
         cameraZoomDraft = nil
         sourceCropDraft = draft
-        if kind == .camera, let cameraAssetID {
-            selection = .asset(cameraAssetID)
+        if kind.isCamera, let assetID = layerAssetIDs[kind] {
+            selection = .asset(assetID)
         }
     }
 
@@ -403,8 +465,8 @@ struct EditorLayoutInspector: View {
 
     private func isFramingChanged(_ kind: SceneLayerKind) -> Bool {
         guard let scene = currentEventScene else { return false }
-        let amount = kind == .screen ? scene.screenCropAmount : scene.cameraCropAmount
-        let position = kind == .screen ? scene.screenCropPosition : scene.cameraCropPosition
+        let amount = scene.sourceCropAmount(for: kind)
+        let position = scene.sourceCropPosition(for: kind)
         let mode = kind == .screen ? scene.screenContentMode : scene.cameraContentMode
         return max(amount.x, amount.y) > 0.001 || abs(position.x) > 0.001 || abs(position.y) > 0.001 || mode != .fill
     }
@@ -419,6 +481,9 @@ struct EditorLayoutInspector: View {
                 scene.screenCropAmount = .zero
                 scene.screenCropPosition = .zero
                 scene.screenContentMode = .fill
+            } else if kind == .secondCamera {
+                scene.secondCameraCropAmount = .zero
+                scene.secondCameraCropPosition = .zero
             } else {
                 scene.cameraCropAmount = .zero
                 scene.cameraCropPosition = .zero

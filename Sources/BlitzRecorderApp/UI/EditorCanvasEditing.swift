@@ -31,14 +31,14 @@ struct EditorLayoutDraft {
             anchor: anchor,
             aspectRatio: aspectLocked && start.height > 0 ? start.width / start.height : nil
         )
-        if kind == .camera, !aspectLocked || !anchor.keepsAspectRatio {
+        if kind.isCamera, !aspectLocked || !anchor.keepsAspectRatio {
             scene.cameraContentMode = .fill
         }
         scene.sceneLayout.setFrame(resized, for: kind)
     }
 
     func resizeStartFrame(kind: SceneLayerKind, visibleFrame: CGRect?) -> CGRect {
-        guard kind == .camera, scene.cameraContentMode == .fit, let visibleFrame else {
+        guard kind.isCamera, scene.cameraContentMode == .fit, let visibleFrame else {
             return startLayout.frame(for: kind)
         }
         return CGRect(
@@ -170,7 +170,7 @@ private let editorCanvasSpace = "EditorCanvasOverlay"
 
 struct EditorCanvasLayerOverlay: View {
     let layers: [EditorCanvasLayer]
-    let onSelect: (EditorCanvasLayer) -> Void
+    let onSelect: (EditorCanvasLayer?) -> Void
     let onMove: (SceneLayerKind, CGSize, Bool) -> Void
     let onResize: (SceneLayerKind, ResizeAnchor, CGSize, Bool) -> Void
     @State private var hoveredLayerID: String?

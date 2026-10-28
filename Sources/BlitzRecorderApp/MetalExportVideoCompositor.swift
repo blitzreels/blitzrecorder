@@ -6,6 +6,7 @@ import Metal
 
 struct MetalExportSourceDescriptor: @unchecked Sendable {
     let kind: SceneLayerKind
+    let feed: String
     let trackID: CMPersistentTrackID
     let preferredTransform: CGAffineTransform
     let leadingFrame: ExportLeadingFrame
@@ -48,8 +49,10 @@ final class MetalExportInstruction: NSObject, AVVideoCompositionInstructionProto
         containsTweening = request.scene.canvasBackgroundAnimated || request.edits.zoom.isActive
             || !captionTimeline.cues.isEmpty
             || !request.edits.privacyMasks.isEmpty || !request.edits.textOverlays.isEmpty || !request.cursorTrack.isEmpty
+        let availableFeeds = Set(request.sourceDescriptors.map(\.feed))
         sourceDescriptors = request.activeLayerOrder.compactMap { kind in
-            request.sourceDescriptors.first { $0.kind == kind }
+            let feed = request.scene.feed(for: kind, available: availableFeeds)
+            return request.sourceDescriptors.first { $0.kind == kind && $0.feed == feed }
         }
         requiredSourceTrackIDs = sourceDescriptors.map {
             NSNumber(value: $0.trackID)
@@ -134,7 +137,12 @@ final class MetalExportVideoCompositor: NSObject, AVVideoCompositing, @unchecked
             instruction: instruction,
             compositionRequest: request
         ))
-        guard screenFrame != nil || cameraFrame != nil else {
+        let secondCameraFrame = sourceFrame(SourceFrameRequest(
+            kind: .secondCamera,
+            instruction: instruction,
+            compositionRequest: request
+        ))
+        guard screenFrame != nil || cameraFrame != nil || secondCameraFrame != nil else {
             request.finish(with: MetalExportCompositorError.sourceFramesUnavailable(request.compositionTime.seconds))
             return
         }
@@ -176,6 +184,7 @@ final class MetalExportVideoCompositor: NSObject, AVVideoCompositing, @unchecked
         let rendered = renderer.render(LiveCompositorImageRenderRequest(
             screenFrame: screenFrame,
             cameraFrame: cameraFrame,
+            secondCameraFrame: secondCameraFrame,
             scene: scene,
             settings: instruction.settings,
             backgroundPhase: phase,

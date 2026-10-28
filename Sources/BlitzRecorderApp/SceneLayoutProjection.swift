@@ -170,7 +170,7 @@ extension SceneLayerKind {
         switch self {
         case .screen:
             return .screen
-        case .camera:
+        case .camera, .secondCamera:
             return .camera
         }
     }

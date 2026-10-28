@@ -39,6 +39,14 @@ enum CaptureSource: String, CaseIterable {
 enum SceneLayerKind: String, CaseIterable {
     case screen = "Screen"
     case camera = "Camera"
+    /// A second camera shown next to the first, in two-camera layouts only. Never saved in `layerOrder`:
+    /// it always sits right above `.camera`, so builds without it still read every saved layout.
+    case secondCamera = "Second Camera"
+
+    /// The kinds a saved `layerOrder` lists.
+    static let persistedOrderKinds: [SceneLayerKind] = [.screen, .camera]
+
+    var isCamera: Bool { self != .screen }
 }
 
 struct VideoSafeZoneMargins: Equatable {

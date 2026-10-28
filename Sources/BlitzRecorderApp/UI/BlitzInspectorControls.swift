@@ -111,33 +111,59 @@ struct BlitzInspectorSlider: View {
     let configuration: Configuration
     @Environment(\.controlSize) private var controlSize
 
+    /// Below this width the slider would be too short to grab, so the label and value move above it.
+    private static let minimumInlineSliderWidth: CGFloat = 120
+
     var body: some View {
-        HStack(spacing: 12) {
-            Text(configuration.title)
-                .font(controlSize == .large ? BlitzType.section : BlitzType.captionEmphasis)
-                .foregroundStyle(controlSize == .large ? BlitzUI.supportingText : BlitzUI.secondaryText)
-                .frame(width: controlSize == .large ? 70 : 64, alignment: .leading)
-            Slider(
-                value: steppedValue,
-                in: configuration.range,
-                onEditingChanged: configuration.onEditingChanged
-            )
-            .controlSize(.small)
-            .tint(BlitzUI.accent)
-            .accessibilityLabel(configuration.title)
-            .accessibilityValue(configuration.valueLabel)
-            .accessibilityAction(named: "Reset", configuration.onReset)
-            Text(configuration.valueLabel)
-                .font((controlSize == .large ? BlitzType.label : BlitzType.captionEmphasis).monospacedDigit())
-                .foregroundStyle(BlitzUI.primaryText)
-                .monospacedDigit()
-                .frame(width: controlSize == .large ? 48 : 38, alignment: .trailing)
-                .accessibilityHidden(true)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                title
+                slider(controlSize: .small)
+                    .frame(minWidth: Self.minimumInlineSliderWidth)
+                valueText
+            }
+            .frame(minHeight: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 8) {
+                    title
+                    Spacer(minLength: 0)
+                    valueText
+                }
+                slider(controlSize: .regular)
+            }
         }
-        .frame(minHeight: 28)
         .contextMenu {
             Button("Reset \(configuration.title.lowercased())", action: configuration.onReset)
         }
+    }
+
+    private var title: some View {
+        Text(configuration.title)
+            .font(controlSize == .large ? BlitzType.section : BlitzType.captionEmphasis)
+            .foregroundStyle(controlSize == .large ? BlitzUI.supportingText : BlitzUI.secondaryText)
+            .frame(width: controlSize == .large ? 70 : 64, alignment: .leading)
+    }
+
+    private var valueText: some View {
+        Text(configuration.valueLabel)
+            .font((controlSize == .large ? BlitzType.label : BlitzType.captionEmphasis).monospacedDigit())
+            .foregroundStyle(BlitzUI.primaryText)
+            .monospacedDigit()
+            .frame(width: controlSize == .large ? 48 : 38, alignment: .trailing)
+            .accessibilityHidden(true)
+    }
+
+    private func slider(controlSize: ControlSize) -> some View {
+        Slider(
+            value: steppedValue,
+            in: configuration.range,
+            onEditingChanged: configuration.onEditingChanged
+        )
+        .controlSize(controlSize)
+        .tint(BlitzUI.accent)
+        .accessibilityLabel(configuration.title)
+        .accessibilityValue(configuration.valueLabel)
+        .accessibilityAction(named: "Reset", configuration.onReset)
     }
 
     private var steppedValue: Binding<Double> {

@@ -84,7 +84,7 @@ extension EditorView {
     }
 
     func resizeVisibleStartFrame(kind: SceneLayerKind, draft: EditorLayoutDraft) -> CGRect? {
-        guard kind == .camera, draft.scene.cameraContentMode == .fit else { return nil }
+        guard kind.isCamera, draft.scene.cameraContentMode == .fit else { return nil }
         var startScene = draft.scene
         startScene.sceneLayout = draft.startLayout
         return playback.layerFrames(for: startScene).first(where: { $0.kind == kind })?.frame

@@ -98,6 +98,8 @@ enum PreviewStageDrag {
         var canEditLayer: Bool
         var canBeginScreenCropPan: Bool
         var screenCropFrame: CGRect
+        /// The camera a crop drag edits.
+        var cameraCropLayer: SceneLayerKind
         var cameraNormalizedFrame: CGRect
         var layerSelectionFrame: CGRect
         var layerNormalizedSelection: CGRect
@@ -129,10 +131,10 @@ enum PreviewStageDrag {
             )
         case .cameraCrop(let mode):
             return .select(
-                .camera,
+                request.cameraCropLayer,
                 drag: DragMode(
                     kind: mode,
-                    layer: .camera,
+                    layer: request.cameraCropLayer,
                     startPoint: request.location,
                     startFrame: request.cameraNormalizedFrame,
                     startCropAmount: request.activeCameraCropAmount,

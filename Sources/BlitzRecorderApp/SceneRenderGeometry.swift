@@ -41,6 +41,16 @@ struct SceneRenderGeometry {
                 sourceCropAmount: .zero,
                 sourceCropPosition: .zero
             )
+        case .secondCamera:
+            guard scene.cameraContentMode == .fit else {
+                return targetRect(for: .secondCamera)
+            }
+            return sourceFrame(
+                for: .secondCamera,
+                sourceAspectRatio: sourceAspectRatio,
+                sourceCropAmount: .zero,
+                sourceCropPosition: .zero
+            )
         }
     }
 

@@ -121,8 +121,8 @@ extension RecorderCoordinator {
         studio.setSceneLayer(kind, frame: frame, transition: transition)
     }
 
-    func setCameraCrop(_ crop: LayerCropControl) {
-        studio.setCameraCrop(crop)
+    func setCameraCrop(_ change: CameraCropChange) {
+        studio.setCameraCrop(change)
     }
 
     func setCameraCropAmount(_ amount: CGPoint) {
@@ -183,6 +183,14 @@ extension RecorderCoordinator {
 
     func applyScenePreset(_ preset: ScenePreset) {
         studio.applyScenePreset(preset)
+    }
+
+    func sceneTiles(in settings: RecordingSettings) -> SceneTiles? {
+        studio.sceneTiles(in: settings)
+    }
+
+    func applySceneTiles(_ tiles: SceneTiles) {
+        studio.applySceneTiles(tiles)
     }
 
     func setScreenSplitHeight(_ height: CGFloat) {

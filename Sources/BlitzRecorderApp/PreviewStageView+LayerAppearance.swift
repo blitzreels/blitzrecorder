@@ -5,7 +5,7 @@ extension PreviewStageView {
     func applyCanvasMask(to view: NSView) {
         guard let layer = view.layer else { return }
         let isCamera = view === cameraPreview
-        let cropEditing = isCamera ? isCameraCropEditingEnabled : isScreenCropEditingEnabled
+        let cropEditing = isCamera ? isCropEditing(.camera) : isScreenCropEditingEnabled
         let key = CanvasMaskKey(
             viewFrame: view.frame,
             canvasFrame: canvasFrame,
@@ -127,7 +127,7 @@ extension PreviewStageView {
 
     func applyCameraShadow(frame: NSRect, cornerRadius: CGFloat) {
         guard cameraShadowEnabled,
-              !isCameraCropEditingEnabled,
+              !isCropEditing(.camera),
               !isFullscreenCameraPreview,
               !frame.isEmpty else {
             cameraShadowLayer.shadowOpacity = 0
@@ -170,6 +170,8 @@ extension PreviewStageView {
             return screenPreview.hasPreviewContent
         case .camera:
             return cameraPreview.hasPreviewContent
+        case .secondCamera:
+            return secondCameraPreview.hasPreviewContent
         }
     }
 
@@ -179,11 +181,13 @@ extension PreviewStageView {
             return screenPreview.frame
         case .camera:
             return cameraPreview.frame
+        case .secondCamera:
+            return secondCameraPreview.frame
         }
     }
 
     func applyLayerOrder() {
-        let order = sceneLayout.layerOrder
+        let order = sceneLayout.renderLayerOrder
         if lastLayerOrder == order {
             return
         }
@@ -196,6 +200,8 @@ extension PreviewStageView {
             case .camera:
                 cameraPreview.layer?.zPosition = zPosition
                 cameraShadowLayer.zPosition = zPosition - 0.5
+            case .secondCamera:
+                secondCameraPreview.layer?.zPosition = zPosition
             }
         }
         safeZoneOverlay.layer?.zPosition = CGFloat(order.count + 1)

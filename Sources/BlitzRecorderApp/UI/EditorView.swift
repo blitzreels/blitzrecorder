@@ -46,7 +46,7 @@ struct EditorView: View {
     @State var preparesHostedExport = false
     @State var showsExportResult = false
     @State var shareOutcome: EditorOutputResult?
-    @State var aspectRatioLockedKinds: Set<SceneLayerKind> = [.screen, .camera]
+    @State var aspectRatioLockedKinds: Set<SceneLayerKind> = [.screen, .camera, .secondCamera]
 
     var body: some View {
         let tracks = assetTracks
@@ -82,7 +82,9 @@ struct EditorView: View {
                     canvasAspectRatio: canvasAspectRatio,
                     recordedVideoSources: recordedVideoSources,
                     scenePresetPreview: scenePresetPreview,
-                    cameraAssetID: asset(for: .camera)?.id,
+                    layerAssetIDs: SceneLayerKind.allCases.reduce(into: [:]) { ids, kind in
+                        ids[kind] = asset(for: kind)?.id
+                    },
                     selectedSource: selectedVideoLayerKind,
                     screenZoomDraft: $screenZoomDraft,
                     cameraZoomDraft: $cameraZoomDraft,
@@ -460,8 +462,16 @@ struct EditorView: View {
         ))
     }
 
+    /// The canvas layer that shows this file in the current scene: `camera-2` is the second camera in a
+    /// two-camera scene, and Camera 1's layer in a "Camera 2" scene.
     func layerKind(for asset: EditorAsset) -> SceneLayerKind? {
-        EditorAssetTracks.layerKind(asset.kind)
+        guard asset.kind == .camera, let scene = currentEventScene else { return EditorAssetTracks.layerKind(asset.kind) }
+        let roles = Set(assets.map(\.role))
+        if scene.sceneLayout.secondCameraFrame != nil, scene.feed(for: .secondCamera, available: roles) == asset.role,
+           scene.feed(for: .camera, available: roles) != asset.role {
+            return .secondCamera
+        }
+        return .camera
     }
 
     func audioSource(for asset: EditorAsset) -> CaptureSource? {
@@ -480,10 +490,9 @@ struct EditorView: View {
     }
 
     func asset(for kind: SceneLayerKind) -> EditorAsset? {
-        switch kind {
-        case .screen: return assets.first { $0.kind == .screen }
-        case .camera: return assets.first { $0.kind == .camera }
-        }
+        let roles = Set(assets.map(\.role))
+        let feed = currentEventScene?.feed(for: kind, available: roles) ?? kind.defaultFeed
+        return assets.first { $0.role == feed } ?? assets.first { $0.role == kind.defaultFeed }
     }
 
     var selectedVideoLayerKind: SceneLayerKind? {

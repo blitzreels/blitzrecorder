@@ -27,3 +27,16 @@ final class TrackLevels {
         levels.max() ?? 0
     }
 }
+
+/// Live levels of the extra microphones, by device.
+@Observable
+@MainActor
+final class MicrophoneTrackLevelStore {
+    private(set) var levelsByDeviceID: [String: TrackLevels] = [:]
+
+    func append(_ level: Float, deviceID: String) {
+        let levels = levelsByDeviceID[deviceID] ?? TrackLevels()
+        if levelsByDeviceID[deviceID] == nil { levelsByDeviceID[deviceID] = levels }
+        levels.append(level)
+    }
+}

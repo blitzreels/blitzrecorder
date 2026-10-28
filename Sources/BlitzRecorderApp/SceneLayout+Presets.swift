@@ -88,6 +88,9 @@ extension SceneLayout {
             sceneLayout.cameraFrame = canvasFillingFrame(sourceAspectRatio: cameraAspectRatio, canvasAspectRatio: canvasAR)
             sceneLayout.layerOrder = [.camera, .screen]
             return sceneLayout
+        case .twoCameras, .twoCamerasScreen:
+            return twoCameraLayout(.init(preset: preset, layout: .vertical, screenAspectRatio: screenAspectRatio,
+                                         cameraAspectRatio: cameraAspectRatio))
         }
     }
 
@@ -175,7 +178,27 @@ extension SceneLayout {
             )
             sceneLayout.layerOrder = [.screen, .camera]
             return sceneLayout
+        case .twoCameras, .twoCamerasScreen:
+            return twoCameraLayout(.init(preset: preset, layout: request.layout, screenAspectRatio: screenAspectRatio,
+                                         cameraAspectRatio: cameraAspectRatio))
         }
+    }
+
+    private struct TwoCameraPresetRequest {
+        let preset: ScenePreset
+        let layout: CaptureLayout
+        let screenAspectRatio: CGFloat
+        let cameraAspectRatio: CGFloat
+    }
+
+    private static func twoCameraLayout(_ request: TwoCameraPresetRequest) -> SceneLayout {
+        tiledLayout(.init(
+            tiles: .defaults(for: request.layout),
+            includesScreen: request.preset == .twoCamerasScreen,
+            layout: request.layout,
+            screenAspectRatio: request.screenAspectRatio,
+            cameraAspectRatio: request.cameraAspectRatio
+        ))
     }
 
     private struct ScreenInsetRequest {

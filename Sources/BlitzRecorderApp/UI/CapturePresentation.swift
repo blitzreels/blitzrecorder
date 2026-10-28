@@ -97,6 +97,8 @@ extension ScenePreset {
         case .screenInset: return BlitzSymbols.pictureInPicture
         case .screenFullscreen: return BlitzSymbols.screen
         case .webcamFullscreen: return BlitzSymbols.camera
+        case .twoCameras: return BlitzSymbols.layout
+        case .twoCamerasScreen: return "rectangle.split.3x1"
         }
     }
 }

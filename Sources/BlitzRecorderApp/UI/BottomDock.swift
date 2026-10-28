@@ -21,9 +21,7 @@ struct BottomDock: View {
                     .fixedSize(horizontal: true, vertical: false)
                 dockRow(.init(density: .compact, spacing: 12, isCompact: false))
                     .fixedSize(horizontal: true, vertical: false)
-                dockRow(.init(density: .compact, spacing: 10, isCompact: true))
-                    .fixedSize(horizontal: true, vertical: false)
-                dockRow(.init(density: .compact, spacing: 10, isCompact: true))
+                dockRow(.init(density: .compact, spacing: 10, isCompact: vm.state != .idle))
             }
         }
         .fixedSize(horizontal: false, vertical: true)

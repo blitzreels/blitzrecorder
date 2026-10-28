@@ -157,7 +157,7 @@ struct SceneRenderPlacementPolicy {
         switch kind {
         case .screen:
             return scene.screenContentMode.renderContentMode
-        case .camera:
+        case .camera, .secondCamera:
             return scene.cameraContentMode.renderContentMode
         }
     }
@@ -223,11 +223,11 @@ struct SceneRenderPlacementPolicy {
     }
 
     private func defaultSourceCropAmount(for kind: SceneLayerKind) -> CGPoint {
-        kind == .camera ? scene.cameraCropAmount : scene.screenCropAmount
+        scene.sourceCropAmount(for: kind)
     }
 
     private func defaultSourceCropPosition(for kind: SceneLayerKind) -> CGPoint {
-        kind == .camera ? scene.cameraCropPosition : scene.screenCropPosition
+        scene.sourceCropPosition(for: kind)
     }
 }
 

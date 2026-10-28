@@ -407,6 +407,8 @@ final class TakeFinalizer {
         )
         updatedTake.timelineTrimOffset = take.timelineTrimOffset
         updatedTake.sourceTimelineOffsets = take.sourceTimelineOffsets
+        updatedTake.cameraAngleFiles = take.cameraAngleFiles
+        updatedTake.microphoneTrackFiles = take.microphoneTrackFiles
         return updatedTake
     }
 

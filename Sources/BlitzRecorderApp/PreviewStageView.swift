@@ -12,6 +12,8 @@ final class PreviewStageView: NSView {
 
     let screenPreview = ScreenPreviewView()
     let cameraPreview = CameraPreviewView()
+    /// The second camera of two-camera layouts. It shares Camera 1's style and is not edited on the stage.
+    let secondCameraPreview = CameraPreviewView()
     let cameraShadowLayer = CALayer()
     let canvasShadowLayer = CALayer()
     private var accentObserver: NSObjectProtocol?
@@ -70,6 +72,8 @@ final class PreviewStageView: NSView {
         }
     }
     var trackingArea: NSTrackingArea?
+    /// The camera the canvas crop edits: Camera 1 (`.camera`) or Camera 2 (`.secondCamera`).
+    var cameraCropLayer: SceneLayerKind = .camera
     var cameraCropDraftAmount: CGPoint?
     var cameraCropDraftPosition: CGPoint?
     var screenCropDraft: CGRect?
@@ -118,7 +122,7 @@ final class PreviewStageView: NSView {
     var onCropToolbarFrameChanged: ((CGRect?) -> Void)?
     var onScreenLayerFrameChanged: ((CGRect?) -> Void)?
     var onCanvasFrameChanged: ((CGRect) -> Void)?
-    var onCameraCropChanged: ((LayerCropControl) -> Void)?
+    var onCameraCropChanged: ((CameraCropChange) -> Void)?
     var onScreenCropChanged: ((CGRect?) -> Void)?
     var onScreenCropPanRequested: (() -> Void)?
     var renderedCanvasAspectRatio: CGFloat {
@@ -210,7 +214,7 @@ final class PreviewStageView: NSView {
     var cameraCropAmount: CGPoint = .zero {
         didSet {
             guard oldValue != cameraCropAmount else { return }
-            if !isCameraCropEditingEnabled {
+            if !isCropEditing(.camera) {
                 cameraPreview.sourceCropAmount = cameraCropAmount
             }
             updateSelectionOverlay()
@@ -220,9 +224,25 @@ final class PreviewStageView: NSView {
     var cameraCropPosition: CGPoint = .zero {
         didSet {
             guard oldValue != cameraCropPosition else { return }
-            if !isCameraCropEditingEnabled {
+            if !isCropEditing(.camera) {
                 cameraPreview.sourceCropPosition = cameraCropPosition
             }
+            updateSelectionOverlay()
+        }
+    }
+
+    var secondCameraCropAmount: CGPoint = .zero {
+        didSet {
+            guard oldValue != secondCameraCropAmount else { return }
+            syncPreviewCrop()
+            updateSelectionOverlay()
+        }
+    }
+
+    var secondCameraCropPosition: CGPoint = .zero {
+        didSet {
+            guard oldValue != secondCameraCropPosition else { return }
+            syncPreviewCrop()
             updateSelectionOverlay()
         }
     }
@@ -421,6 +441,8 @@ final class PreviewStageView: NSView {
 
         screenPreview.translatesAutoresizingMaskIntoConstraints = true
         cameraPreview.translatesAutoresizingMaskIntoConstraints = true
+        secondCameraPreview.translatesAutoresizingMaskIntoConstraints = true
+        secondCameraPreview.isHidden = true
         safeZoneOverlay.translatesAutoresizingMaskIntoConstraints = true
         selectionOverlay.translatesAutoresizingMaskIntoConstraints = true
         outlineOverlay.translatesAutoresizingMaskIntoConstraints = true
@@ -431,6 +453,7 @@ final class PreviewStageView: NSView {
         selectionOverlay.wantsLayer = true
         addSubview(screenPreview)
         addSubview(cameraPreview)
+        addSubview(secondCameraPreview)
         addSubview(outlineOverlay)
         addSubview(safeZoneOverlay)
         addSubview(selectionOverlay)

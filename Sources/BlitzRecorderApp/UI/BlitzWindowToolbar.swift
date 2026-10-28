@@ -18,6 +18,7 @@ private struct BlitzWindowToolbarModifier: ViewModifier {
                         .overlay(alignment: .bottom) { BlitzUI.toolbarDivider.frame(height: 1) }
                         .contentShape(.rect)
                         .gesture(WindowDragGesture())
+                        .simultaneousGesture(TapGesture(count: 2).onEnded { TitlebarDoubleClick.performSystemAction() })
                         .allowsWindowActivationEvents(true)
                 }
 
@@ -137,6 +138,47 @@ private struct GlobalExportProgressBar: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
             .background(BlitzUI.panelBackground)
+        }
+    }
+}
+
+/// AppKit zooms a window on any double-click in its title bar, even one on a toolbar button. Double-clicks in the
+/// toolbar band reach controls as single clicks instead, and only the toolbar's empty background runs the
+/// system's double-click action (zoom or minimize, from System Settings → Desktop & Dock).
+@MainActor
+enum TitlebarDoubleClick {
+    private static var monitor: Any?
+
+    static func install() {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { event in
+            guard event.clickCount >= 2, let window = event.window,
+                  window.styleMask.contains(.titled), window.styleMask.contains(.fullSizeContentView),
+                  let contentView = window.contentView else { return event }
+            let point = contentView.convert(event.locationInWindow, from: nil)
+            let distanceFromTop = contentView.isFlipped ? point.y : contentView.bounds.height - point.y
+            guard distanceFromTop <= MainWindowChrome.toolbarHeight else { return event }
+            if let hit = contentView.hitTest(point), hit is NSText || hit is NSTextField { return event }
+            return NSEvent.mouseEvent(
+                with: event.type,
+                location: event.locationInWindow,
+                modifierFlags: event.modifierFlags,
+                timestamp: event.timestamp,
+                windowNumber: event.windowNumber,
+                context: nil,
+                eventNumber: event.eventNumber,
+                clickCount: 1,
+                pressure: event.pressure
+            ) ?? event
+        }
+    }
+
+    static func performSystemAction() {
+        guard let window = NSApp.keyWindow else { return }
+        switch UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") {
+        case "Minimize": window.performMiniaturize(nil)
+        case "None": break
+        default: window.performZoom(nil)
         }
     }
 }

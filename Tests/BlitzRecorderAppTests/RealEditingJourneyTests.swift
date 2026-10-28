@@ -71,8 +71,8 @@ final class RealEditingJourneyTests: XCTestCase {
         await playback.load(project: reopened, baseSettings: vm.settings)
         XCTAssertTrue(playback.isReady, playback.loadError ?? "")
         XCTAssertEqual(playback.outputDuration, expectedDuration, accuracy: 0.01)
-        let screen = try XCTUnwrap(playback.videoPlayer(for: .screen))
-        let camera = try XCTUnwrap(playback.videoPlayer(for: .camera))
+        let screen = try XCTUnwrap(playback.videoPlayer(for: .screen, scene: RecordingScene(settings: RecordingSettings())))
+        let camera = try XCTUnwrap(playback.videoPlayer(for: .camera, scene: RecordingScene(settings: RecordingSettings())))
         for player in [screen, camera] {
             let asset = try XCTUnwrap(player.currentItem?.asset)
             let time = try await asset.load(.duration)

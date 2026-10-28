@@ -13,17 +13,60 @@ struct RecordingOutputVariant: Codable, Equatable, Identifiable {
 
     static func make(_ request: Request) -> Self {
         let scenes = TakeFileStore().sceneEvents(from: request.project).map { event in
-            var scene = event.scene
-            let video = scene.enabledSources.intersection([.screen, .camera])
-            let preset: ScenePreset = video == [.screen] ? .screenFullscreen
-                : video == [.camera] ? .webcamFullscreen : .defaultPreset(for: request.layout)
-            scene.sceneLayout = SceneLayout.presetLayout(preset, for: request.layout,
-                screenAspectRatio: scene.screenSourceGeometry.aspectRatio())
-                .withCameraSide(scene.sceneLayout.cameraSide)
-            scene.screenContentMode = .fit
-            return RecordingProject.SceneEventSnapshot(.init(time: event.time, scene: scene, transition: event.transition))
+            RecordingProject.SceneEventSnapshot(.init(
+                time: event.time,
+                scene: adapted(.init(scene: event.scene, layout: request.layout)),
+                transition: event.transition
+            ))
         }
         return .init(layout: request.layout, scenes: scenes, textOverlays: request.project.timelineEdits.textOverlays)
+    }
+
+    struct SceneRequest {
+        let scene: RecordingScene
+        let layout: CaptureLayout
+    }
+
+    /// One recorded scene in another format: the same sources in that format's preset, so a two-camera scene keeps
+    /// both cameras (in 9:16, the screen on top and the cameras side by side under it).
+    static func adapted(_ request: SceneRequest) -> RecordingScene {
+        var scene = request.scene
+        let video = scene.enabledSources.intersection([.screen, .camera])
+        let showsSecondCamera = video.contains(.camera) && scene.sceneLayout.secondCameraFrame != nil
+        let preset: ScenePreset = if showsSecondCamera {
+            video.contains(.screen) ? .twoCamerasScreen : .twoCameras
+        } else if video == [.screen] {
+            .screenFullscreen
+        } else if video == [.camera] {
+            .webcamFullscreen
+        } else {
+            .defaultPreset(for: request.layout)
+        }
+        let layout = SceneLayout.presetLayout(preset, for: request.layout,
+            screenAspectRatio: scene.screenSourceGeometry.aspectRatio())
+        scene.sceneLayout = showsSecondCamera ? layout : layout.withCameraSide(scene.sceneLayout.cameraSide)
+        scene.screenContentMode = .fit
+        return scene
+    }
+
+    /// Formats made before two-camera scenes were converted dropped the second camera. Rebuild only the scenes
+    /// that lost it, so framing edits on every other scene stay.
+    func restoringSecondCameras(from project: RecordingProject) -> Self {
+        let recorded = TakeFileStore().sceneEvents(from: project)
+        var repaired = self
+        for index in repaired.scenes.indices {
+            let snapshot = repaired.scenes[index]
+            guard snapshot.scene.sceneLayout.secondCameraFrame == nil,
+                  let source = recorded.first(where: { abs($0.time - snapshot.time) < 0.01 }),
+                  source.scene.sceneLayout.secondCameraFrame != nil,
+                  source.scene.enabledSources.contains(.camera) else { continue }
+            repaired.scenes[index] = .init(.init(
+                time: snapshot.time,
+                scene: Self.adapted(.init(scene: source.scene, layout: layout)),
+                transition: RecordingSceneTransition(snapshot: snapshot.transition)
+            ))
+        }
+        return repaired
     }
 }
 
@@ -36,7 +79,7 @@ extension RecordingProject {
 
     func outputProject(for layout: CaptureLayout) -> RecordingProject {
         guard layout.rawValue != settings.layout else { return self }
-        let variant = edits.outputVariants.first { $0.layout == layout }
+        let variant = edits.outputVariants.first { $0.layout == layout }?.restoringSecondCameras(from: self)
             ?? RecordingOutputVariant.make(.init(project: self, layout: layout))
         var result = self
         result.settings.layout = layout.rawValue
@@ -103,8 +146,9 @@ extension RecorderViewModel {
     func changeOutputScene(_ request: OutputSceneChange) -> Bool {
         guard let project = lastExportedProject, let layout = project.edits.activeOutputLayout else { return false }
         var edits = project.edits
-        guard let index = edits.outputVariants.firstIndex(where: { $0.layout == layout }),
-              edits.outputVariants[index].scenes.indices.contains(request.index) else { return false }
+        guard let index = edits.outputVariants.firstIndex(where: { $0.layout == layout }) else { return false }
+        edits.outputVariants[index] = edits.outputVariants[index].restoringSecondCameras(from: project)
+        guard edits.outputVariants[index].scenes.indices.contains(request.index) else { return false }
         let snapshot = edits.outputVariants[index].scenes[request.index]
         guard var scene = RecordingScene(snapshot: snapshot.scene) else { return false }
         request.mutate(&scene)
@@ -123,6 +167,7 @@ extension RecorderViewModel {
               request.time > 0.05, request.time < request.duration - 0.05 else { return false }
         var edits = project.edits
         guard let index = edits.outputVariants.firstIndex(where: { $0.layout == layout }) else { return false }
+        edits.outputVariants[index] = edits.outputVariants[index].restoringSecondCameras(from: project)
         var scenes = edits.outputVariants[index].scenes
         guard !scenes.contains(where: { abs($0.time - request.time) < 0.01 }),
               let previous = scenes.last(where: { $0.time <= request.time }),
@@ -135,8 +180,9 @@ extension RecorderViewModel {
     func joinOutputScene(_ eventIndex: Int) -> Bool {
         guard let project = lastExportedProject, let layout = project.edits.activeOutputLayout else { return false }
         var edits = project.edits
-        guard let index = edits.outputVariants.firstIndex(where: { $0.layout == layout }), eventIndex > 0,
-              edits.outputVariants[index].scenes.indices.contains(eventIndex) else { return false }
+        guard let index = edits.outputVariants.firstIndex(where: { $0.layout == layout }), eventIndex > 0 else { return false }
+        edits.outputVariants[index] = edits.outputVariants[index].restoringSecondCameras(from: project)
+        guard edits.outputVariants[index].scenes.indices.contains(eventIndex) else { return false }
         edits.outputVariants[index].scenes.remove(at: eventIndex)
         return applyTimelineEdits(.init(edits: edits, actionName: "Join Segment"))
     }

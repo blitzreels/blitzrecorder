@@ -475,8 +475,12 @@ validate_archived_app() {
     fi
   done
 
+  local signing_style
+  signing_style="$(plist_value "build/AppStoreExports/$label-export-options.plist" "signingStyle")"
   if [[ "$distribution_signed" == "1" ]]; then
     echo "✓ $label archived app is distribution signed"
+  elif [[ "$signing_style" == "automatic" && "$signing_authority" == *"Apple Development"* ]]; then
+    echo "✓ $label archived app is development signed; automatic signing re-signs it for distribution at export"
   else
     fail "$label archived app is not signed with an App Store distribution identity (${signing_authority:-unknown})"
   fi
@@ -603,6 +607,33 @@ check_archives() {
   fi
 }
 
+# What App Store Connect receives must carry the distribution identity, whatever signed the archive.
+validate_export_signing() {
+  local label="$1"
+  local dir="$2"
+  local package
+  package="$(find "$dir" -maxdepth 1 -type f \( -name '*.ipa' -o -name '*.pkg' \) 2>/dev/null | sort | head -1)"
+  [[ -n "$package" ]] || return
+
+  local authorities
+  if [[ "$package" == *.ipa ]]; then
+    local unpacked
+    unpacked="$(mktemp -d)"
+    unzip -q "$package" -d "$unpacked"
+    authorities="$(codesign -dvv "$unpacked"/Payload/*.app 2>&1 | awk -F= '/^Authority=/ { print $2 }' | paste -sd '|' -)"
+    rm -rf "$unpacked"
+  else
+    authorities="$(pkgutil --check-signature "$package" 2>&1 | paste -sd '|' -)"
+  fi
+
+  if [[ "$authorities" == *"Apple Distribution"* || "$authorities" == *"iPhone Distribution"* ||
+        "$authorities" == *"3rd Party Mac Developer"* || "$authorities" == *"Mac Installer Distribution"* ]]; then
+    echo "✓ $label export is distribution signed"
+  else
+    fail "$label export is not signed with an App Store distribution identity (${authorities:-unknown})"
+  fi
+}
+
 check_exports() {
   if [[ "$REQUIRE_EXPORTS" == "0" ]]; then
     echo "✓ App Store exports are not required for this validation"
@@ -616,6 +647,7 @@ check_exports() {
       echo "✓ macOS export output is not required for upload destination"
     else
       require_export_output "macOS" "build/AppStoreExports/macOS" "pkg"
+      validate_export_signing "macOS" "build/AppStoreExports/macOS"
     fi
   fi
   if [[ "$TARGET" == "all" || "$TARGET" == "ios" ]]; then
@@ -625,6 +657,7 @@ check_exports() {
       echo "✓ iOS export output is not required for upload destination"
     else
       require_export_output "iOS" "build/AppStoreExports/iOS" "ipa"
+      validate_export_signing "iOS" "build/AppStoreExports/iOS"
     fi
   fi
 }

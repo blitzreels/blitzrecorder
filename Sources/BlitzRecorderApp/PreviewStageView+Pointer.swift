@@ -16,7 +16,7 @@ extension PreviewStageView {
         }
 
         if allowsCameraCropInteraction, isCameraCropEditingEnabled, enabledSources.contains(.camera) {
-            addCropCursorRects(frame: frame(for: .camera), sourceFrame: cameraCropSourceFrame())
+            addCropCursorRects(frame: frame(for: cameraCropLayer), sourceFrame: cameraCropSourceFrame())
             return
         }
 
@@ -68,7 +68,8 @@ extension PreviewStageView {
             canEditLayer: layer.map(canEditLayerFrame) ?? false,
             canBeginScreenCropPan: layer.map(canBeginScreenCropPan) ?? false,
             screenCropFrame: screenCropFrame(),
-            cameraNormalizedFrame: normalizedFrame(for: .camera),
+            cameraCropLayer: cameraCropLayer,
+            cameraNormalizedFrame: normalizedFrame(for: cameraCropLayer),
             layerSelectionFrame: layer.map(selectionFrame(for:)) ?? .zero,
             layerNormalizedSelection: layer.map(normalizedSelectionFrame(for:)) ?? .zero,
             layerNormalizedFrame: layer.map(normalizedFrame(for:)) ?? .zero,

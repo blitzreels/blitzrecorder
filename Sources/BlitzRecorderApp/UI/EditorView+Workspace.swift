@@ -313,8 +313,10 @@ extension EditorView {
             layers: { displayedCanvasLayers },
             editErrorMessage: $editErrorMessage,
             onSelectLayer: { layer in
-                if let id = layer.assetID {
+                if let id = layer?.assetID {
                     selection = .asset(id)
+                } else if layer == nil, case .asset = selection {
+                    selection = nil
                 }
             },
             onMove: handleLayerMove,
@@ -333,13 +335,11 @@ extension EditorView {
     var frameRatioBar: EditorFrameRatioBar.Configuration? {
         guard inspectorTab == .layout, sourceCropDraft == nil, let kind = selectedVideoLayerKind,
               let scene = currentEventScene else { return nil }
-        let sourceRatio = playback.sourceAspectRatios[kind] ?? 1
         return EditorFrameRatioBar.Configuration(
-            presets: EditorFrameRatio.availablePresets(sourceRatio: sourceRatio),
-            selected: EditorFrameRatio.selectedPreset(
-                .init(kind: kind, scene: scene), canvasAspectRatio: canvasAspectRatio, sourceRatio: sourceRatio),
+            options: kind.isCamera && EditorSceneTiles.isTiled(scene)
+                ? tileShapeOptions(scene: scene)
+                : frameRatioOptions(.init(kind: kind, scene: scene)),
             isLocked: aspectRatioLockedKinds.contains(kind),
-            select: { applyFrameRatio(.init(kind: kind, preset: $0)) },
             toggleLock: {
                 if aspectRatioLockedKinds.contains(kind) { aspectRatioLockedKinds.remove(kind) }
                 else { aspectRatioLockedKinds.insert(kind) }
@@ -347,12 +347,46 @@ extension EditorView {
         )
     }
 
+    private func frameRatioOptions(_ request: EditorFrameRatioSceneRequest) -> [EditorFrameRatioBar.Option] {
+        let sourceRatio = playback.sourceAspectRatios(for: request.scene)[request.kind] ?? 1
+        let selected = EditorFrameRatio.selectedPreset(request, canvasAspectRatio: canvasAspectRatio, sourceRatio: sourceRatio)
+        return EditorFrameRatio.availablePresets(sourceRatio: sourceRatio).map { preset in
+            .init(title: preset.title, help: "Make this layer \(preset.title)", isSelected: preset == selected,
+                  select: { applyFrameRatio(.init(kind: request.kind, preset: preset)) })
+        }
+    }
+
+    /// In a two-camera scene a camera's shape is both tiles' shape, so the tiles stay even.
+    private func tileShapeOptions(scene: RecordingScene) -> [EditorFrameRatioBar.Option] {
+        let context = EditorSceneTiles.Context(scene: scene, layout: captureLayout ?? .horizontal,
+                                               sourceAspectRatios: playback.sourceAspectRatios(for: scene))
+        let current = EditorSceneTiles.current(context)
+        let cameraRatio = EditorSceneTiles.cameraAspectRatio(context)
+        return SceneTileShape.options(cameraAspectRatio: cameraRatio).map { shape in
+            .init(title: shape.title(cameraAspectRatio: cameraRatio),
+                  help: "Both cameras: " + shape.help(includesScreen: EditorSceneTiles.includesScreen(scene)),
+                  isSelected: current?.shape == shape,
+                  select: {
+                      let spacing = current?.spacing ?? SceneTiles.defaults(for: context.layout).spacing
+                      applySceneTiles(.init(tiles: .init(spacing: spacing, shape: shape), context: context))
+                  })
+        }
+    }
+
+    func applySceneTiles(_ change: EditorSceneTiles.Change) {
+        playback.pauseForEditing()
+        guard vm.applyProjectSceneEdit(eventIndex: currentEventIndex, EditorSceneTiles.edit(change)) else {
+            editErrorMessage = vm.detailMessage
+            return
+        }
+    }
+
     private func applyFrameRatio(_ request: EditorFrameRatioChange) {
         guard let scene = currentEventScene else { return }
         let edited = EditorFrameRatio.applied(
             request,
             scene: scene,
-            sourceRatio: playback.sourceAspectRatios[request.kind] ?? 1,
+            sourceRatio: playback.sourceAspectRatios(for: scene)[request.kind] ?? 1,
             canvasAspectRatio: canvasAspectRatio
         )
         playback.pauseForEditing()

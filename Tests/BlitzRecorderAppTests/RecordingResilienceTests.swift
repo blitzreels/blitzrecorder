@@ -162,11 +162,11 @@ final class RecordingResilienceTests: XCTestCase {
             controller.teardown()
             await load.value
             XCTAssertFalse(controller.isReady)
-            XCTAssertNil(controller.videoPlayer(for: .screen))
+            XCTAssertNil(controller.videoPlayer(for: .screen, scene: RecordingScene(settings: RecordingSettings())))
         }
         await controller.load(project: project, baseSettings: fixture.settings)
         XCTAssertTrue(controller.isReady)
-        XCTAssertEqual(controller.videoPlayer(for: .screen)?.status, .readyToPlay)
+        XCTAssertEqual(controller.videoPlayer(for: .screen, scene: RecordingScene(settings: RecordingSettings()))?.status, .readyToPlay)
         controller.play(from: 0)
         XCTAssertTrue(controller.isPlaying)
         controller.teardown()

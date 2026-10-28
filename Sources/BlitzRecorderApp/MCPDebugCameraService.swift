@@ -158,6 +158,17 @@ final class MCPDebugCameraService {
         return try status()
     }
 
+    /// Selects the first scene of the current layout whose name contains `name`, such as "Camera 2".
+    func selectScene(nameContains name: String) throws -> [String] {
+        guard let coordinator else { throw Failure.unavailable }
+        let scenes = coordinator.scenesForCurrentLayout()
+        guard let scene = scenes.first(where: { $0.name.localizedCaseInsensitiveContains(name) }) else {
+            throw Failure.timedOut("finding a scene named \(name); found \(scenes.map(\.name))")
+        }
+        coordinator.selectScene(id: scene.id)
+        return scenes.map { $0.id == scene.id ? "> \($0.name)" : $0.name }
+    }
+
     /// Sets the iPhone codec (automatic, highEfficiency, proRes422) and color (standard, appleLog, appleLog2).
     func applyIPhoneCapture(profile: String?, color: String?) async throws -> Status {
         guard let coordinator else { throw Failure.unavailable }
@@ -369,6 +380,17 @@ extension BlitzRecorderMCPServer {
             ])
         ),
         Tool(
+            name: "debug_select_scene",
+            title: "Select a scene (debug)",
+            description: "Select the first scene whose name contains the given text, such as 'Camera 2'. Lists the scenes.",
+            inputSchema: .object([
+                "type": "object",
+                "properties": .object(["name": .object(["type": "string"])]),
+                "required": ["name"],
+                "additionalProperties": false,
+            ])
+        ),
+        Tool(
             name: "debug_trash_test_takes",
             title: "Trash end-to-end test takes (debug)",
             description: "Move every take titled 'iPhone end-to-end check' to the Trash.",
@@ -418,6 +440,9 @@ extension BlitzRecorderMCPServer {
                     control: parameters.arguments?["control"]?.stringValue ?? "",
                     value: parameters.arguments?["value"]?.stringValue ?? ""
                 )))
+            case "debug_select_scene":
+                let name = parameters.arguments?["name"]?.stringValue ?? ""
+                return try Self.debugResult(await service.selectScene(nameContains: name))
             case "debug_trash_test_takes":
                 return try Self.debugResult(await service.trashTestTakes())
             case "debug_show_iphone_page":

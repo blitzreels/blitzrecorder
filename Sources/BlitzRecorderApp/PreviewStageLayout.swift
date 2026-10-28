@@ -23,16 +23,22 @@ enum PreviewStageLayout {
         SceneSlotGeometry.canvasFrame(in: rect, captureLayout: captureLayout)
     }
 
-    static func cropEditingCanvas(
-        fittedCanvas canvas: CGRect,
-        in rect: CGRect,
-        cameraSourceAspectRatio: CGFloat,
-        geometry: SceneRenderGeometry
-    ) -> CGRect {
+    struct CropEditingCanvasRequest {
+        let fittedCanvas: CGRect
+        let rect: CGRect
+        /// The camera being cropped, whose whole picture must fit on screen.
+        let cameraLayer: SceneLayerKind
+        let cameraSourceAspectRatio: CGFloat
+        let geometry: SceneRenderGeometry
+    }
+
+    static func cropEditingCanvas(_ request: CropEditingCanvasRequest) -> CGRect {
+        let canvas = request.fittedCanvas
+        let rect = request.rect
         let cropGeometry = LayerCropGeometry(
-            kind: .camera,
-            renderGeometry: geometry,
-            sourceAspectRatio: cameraSourceAspectRatio
+            kind: request.cameraLayer,
+            renderGeometry: request.geometry,
+            sourceAspectRatio: request.cameraSourceAspectRatio
         )
         let region = canvas.union(cropGeometry.sourceFrame)
         guard region.width > 0, region.height > 0 else { return canvas }

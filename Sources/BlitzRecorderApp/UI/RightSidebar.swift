@@ -90,6 +90,8 @@ struct CameraImageControls: View {
 
 struct CameraCropControls: View {
     @Bindable var vm: RecorderViewModel
+    /// Camera 1 (`.camera`) or Camera 2 (`.secondCamera`); each keeps its own crop.
+    let layer: SceneLayerKind
 
     private var disabled: Bool {
         !vm.isSourceConfigured(.camera) || !vm.canEditCameraCrop
@@ -97,7 +99,7 @@ struct CameraCropControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            if vm.isRemoteCameraSelected && !vm.canvas.isCameraCropModeEnabled {
+            if layer == .camera && vm.isRemoteCameraSelected && !vm.canvas.isCameraCropModeEnabled {
                 RemoteCameraOrientationControl(vm: vm)
             }
 
@@ -112,15 +114,15 @@ struct CameraCropControls: View {
             contentMode: contentModeSelection,
             cropZoom: Binding(
                 get: { cropZoom },
-                set: { vm.setCameraCropZoom(CGFloat($0)) }
+                set: { vm.setCameraCropZoom(.init(layer: layer, zoom: CGFloat($0))) }
             ),
-            isCropModeEnabled: vm.canvas.isCameraCropModeEnabled,
-            showsContentMode: !vm.isCameraInsetLayout,
+            isCropModeEnabled: vm.isCameraCropMode(layer),
+            showsContentMode: !vm.isCameraInsetLayout && vm.settings.sceneLayout.secondCameraFrame == nil,
             isResetDisabled: isCentered,
             showsResetButton: true,
             onCropZoomEditingChanged: { _ in },
-            onBeginCrop: vm.beginCameraCropMode,
-            onResetCrop: vm.resetCameraCrop
+            onBeginCrop: { vm.beginCameraCropMode(layer) },
+            onResetCrop: { vm.resetCameraCrop(layer) }
         )
     }
 
@@ -132,12 +134,14 @@ struct CameraCropControls: View {
     }
 
     private var isCentered: Bool {
-        vm.settings.cameraCropAmount.x < 0.001 && vm.settings.cameraCropAmount.y < 0.001
-            && abs(vm.settings.cameraCropPosition.x) < 0.001 && abs(vm.settings.cameraCropPosition.y) < 0.001
+        let crop = vm.cameraCrop(for: layer)
+        return crop.amount.x < 0.001 && crop.amount.y < 0.001
+            && abs(crop.position.x) < 0.001 && abs(crop.position.y) < 0.001
     }
 
     private var cropZoom: Double {
-        Double(max(vm.settings.cameraCropAmount.x, vm.settings.cameraCropAmount.y))
+        let amount = vm.cameraCrop(for: layer).amount
+        return Double(max(amount.x, amount.y))
     }
 }
 

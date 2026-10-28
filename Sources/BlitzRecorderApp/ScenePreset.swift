@@ -13,6 +13,15 @@ enum ScenePreset: String, CaseIterable {
     case screenInset = "Screen Inset"
     case screenFullscreen = "Screen Fullscreen"
     case webcamFullscreen = "Webcam Fullscreen"
+    /// Camera 1 and Camera 2 side by side; offered once a second camera is added.
+    case twoCameras = "Two Cameras"
+    /// The screen with Camera 1 and Camera 2 next to it; offered once a second camera is added.
+    case twoCamerasScreen = "Two Cameras + Screen"
+
+    /// Presets that need a camera angle, and the scene names that need no "Camera N" numbering.
+    static let twoCameraPresets: [ScenePreset] = [.twoCameras, .twoCamerasScreen]
+
+    var needsSecondCamera: Bool { Self.twoCameraPresets.contains(self) }
 
     static var allCases: [ScenePreset] {
         [
@@ -52,6 +61,10 @@ enum ScenePreset: String, CaseIterable {
             return "Screen 100%"
         case .webcamFullscreen:
             return "Camera 100%"
+        case .twoCameras:
+            return "Two cameras"
+        case .twoCamerasScreen:
+            return "Screen + two cameras"
         }
     }
 }
@@ -78,7 +91,7 @@ extension ScenePreset {
             return [.vertical, .horizontal, .square]
         case .screenFocus:
             return [.vertical, .horizontal, .square]
-        case .screenFullscreen, .webcamFullscreen:
+        case .screenFullscreen, .webcamFullscreen, .twoCameras, .twoCamerasScreen:
             return [.vertical, .horizontal, .square]
         case .webcamLeft, .cameraRight, .equalSplit:
             return [.horizontal, .square]
@@ -98,7 +111,7 @@ extension ScenePreset {
     var requiredVideoSources: Set<CaptureSource> {
         switch self {
         case .screenFullscreen: [.screen]
-        case .webcamFullscreen: [.camera]
+        case .webcamFullscreen, .twoCameras: [.camera]
         default: [.screen, .camera]
         }
     }

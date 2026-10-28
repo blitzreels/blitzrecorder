@@ -60,10 +60,11 @@ enum CameraSourceKind {
         }
     }
 
-    var hiddenReason: String? {
+    /// An iPhone streaming to this Mac through Apple Continuity, listed in its own section.
+    var isContinuity: Bool {
         switch self {
-        case .continuity, .deskView: "Continuity and Desk View are tucked away by default"
-        case .builtIn, .external: nil
+        case .continuity, .deskView: true
+        case .builtIn, .external: false
         }
     }
 }

@@ -49,6 +49,8 @@ struct EditorAsset: Identifiable, Equatable {
 
     let id: String
     let kind: Kind
+    /// The project source role, such as `camera` or `camera-2`.
+    let role: String
     let url: URL
     let title: String
     let exists: Bool
@@ -81,6 +83,7 @@ struct EditorAsset: Identifiable, Equatable {
     private init(url: URL, kind: Kind, role: String, exists: Bool) {
         self.id = url.path
         self.kind = kind
+        self.role = role
         self.url = url
         self.title = Self.title(for: kind, role: role)
         self.exists = exists
@@ -112,7 +115,8 @@ struct EditorAsset: Identifiable, Equatable {
             assets.append(
                 EditorAsset(
                     url: URL(fileURLWithPath: source.path),
-                    kind: Kind(rawValue: source.role) ?? .other,
+                    kind: Kind(rawValue: source.role)
+                        ?? (NumberedSourceTracks.cameraAngles.number(role: source.role) != nil ? .camera : .other),
                     role: source.role,
                     exists: source.exists
                 )
@@ -157,7 +161,9 @@ struct EditorAsset: Identifiable, Equatable {
         switch kind {
         case .output: return "Output"
         case .screen: return "Screen"
-        case .camera: return "Camera"
+        case .camera:
+            return NumberedSourceTracks.cameraAngles.number(role: role)
+                .map(NumberedSourceTracks.cameraAngles.displayName(number:)) ?? "Camera"
         case .microphone: return "Mic"
         case .systemAudio: return "Mac audio"
         case .other:

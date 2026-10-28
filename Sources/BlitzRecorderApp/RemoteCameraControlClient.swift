@@ -3,6 +3,7 @@ import BlitzRecorderTransport
 import CryptoKit
 import Foundation
 import Network
+import OSLog
 import Security
 import SystemConfiguration
 
@@ -18,6 +19,10 @@ final class RemoteCameraControlClient {
 
     /// The name the iPhone shows for this Mac, as set in System Settings > General > Sharing.
     private static let computerName = SCDynamicStoreCopyComputerName(nil, nil) as String?
+
+    /// Every connection change and iPhone message, so a dropped iPhone can be explained from the Mac's log:
+    /// `log show --predicate 'subsystem == "dev.blitzreels.blitzrecorder" && category == "RemoteCamera"'`.
+    private static let logger = Logger(subsystem: "dev.blitzreels.blitzrecorder", category: "RemoteCamera")
 
     var onChanged: (() -> Void)?
     var onMessage: ((String) -> Void)?
@@ -54,14 +59,14 @@ final class RemoteCameraControlClient {
                 self.isConnected = false
                 self.connection = nil
                 self.onStateChanged?(.disconnected)
-                self.onMessage?("Remote iPhone command channel failed: \(message)")
+                self.report("Remote iPhone command channel failed: \(message)")
                 self.onChanged?()
             }
         }
         self.connection = connection
         connectionAttemptCount += 1
         connection.start()
-        onMessage?("Connecting to \(service.name) Remote iPhone Camera...")
+        report("Connecting to \(service.name) Remote iPhone Camera...")
         onStateChanged?(.pairing)
         onChanged?()
     }
@@ -74,7 +79,7 @@ final class RemoteCameraControlClient {
         connection?.send(command) { [weak self] error in
             guard let error else { return }
             Task { @MainActor in
-                self?.onMessage?("Remote iPhone command failed: \(error.localizedDescription)")
+                self?.report("Remote iPhone command failed: \(error.localizedDescription)")
             }
         }
     }
@@ -84,7 +89,7 @@ final class RemoteCameraControlClient {
             let proof = try macCredential.proof(for: challenge)
             send(.pair(shortCode: shortCode, macIdentity: macCredential.identity, proof: proof))
         } catch {
-            onMessage?("Remote iPhone pairing proof failed: \(error.localizedDescription)")
+            report("Remote iPhone pairing proof failed: \(error.localizedDescription)")
         }
     }
 
@@ -102,11 +107,19 @@ final class RemoteCameraControlClient {
         cancel()
     }
 
+    private func report(_ message: String) {
+        Self.logger.notice("\(message, privacy: .public)")
+        onMessage?(message)
+    }
+
     private func handleState(_ state: NWConnection.State, service: DiscoveredBonjourService) {
+        if case .cancelled = state {
+            Self.logger.notice("Connection to \(service.name, privacy: .public) closed")
+        }
         switch state {
         case .ready:
             isConnected = true
-            onMessage?("Connected to \(service.name). If it asks, tap Connect on the iPhone.")
+            report("Connected to \(service.name). If it asks, tap Connect on the iPhone.")
             onStateChanged?(.pairing)
             send(.hello(
                 protocolVersion: RemoteCameraConstants.protocolVersion,
@@ -116,12 +129,12 @@ final class RemoteCameraControlClient {
         case .waiting(let error):
             isConnected = false
             onStateChanged?(.degraded)
-            onMessage?("Remote iPhone connection waiting: \(error.localizedDescription)")
+            report("Remote iPhone connection waiting: \(error.localizedDescription)")
         case .failed(let error):
             isConnected = false
             connection = nil
             onStateChanged?(.disconnected)
-            onMessage?("Remote iPhone connection failed: \(error.localizedDescription)")
+            report("Remote iPhone connection failed: \(error.localizedDescription)")
         case .cancelled:
             isConnected = false
             connection = nil
@@ -137,7 +150,7 @@ final class RemoteCameraControlClient {
             let event = try JSONMessageCodec.decode(RemoteCameraEvent.self, from: data)
             handle(event)
         } catch {
-            onMessage?("Invalid Remote iPhone event: \(error.localizedDescription)")
+            report("Invalid Remote iPhone event: \(error.localizedDescription)")
         }
     }
 
@@ -145,37 +158,40 @@ final class RemoteCameraControlClient {
         onEvent?(event)
         switch event {
         case .pairingChallenge:
-            onMessage?("Enter the pairing code shown on the iPhone.")
+            report("Enter the pairing code shown on the iPhone.")
         case .paired(let trust):
             onStateChanged?(.connected)
-            onMessage?("Remote iPhone paired: \(trust.deviceName).")
+            report("Remote iPhone paired: \(trust.deviceName).")
         case .capabilities(let capabilities):
             self.capabilities = capabilities
-            onMessage?("Remote iPhone ready: \(capabilities.deviceName).")
+            report("Remote iPhone ready: \(capabilities.deviceName).")
         case .telemetry(let telemetry):
+            if let warning = telemetry.captureWarning, warning != self.telemetry?.captureWarning {
+                Self.logger.warning("iPhone warning: \(warning, privacy: .public)")
+            }
             self.telemetry = telemetry
         case .prepared:
-            onMessage?("Remote iPhone prepared.")
+            report("Remote iPhone prepared.")
         case .started:
-            onMessage?("Remote iPhone recording started.")
+            report("Remote iPhone recording started.")
         case .stopped:
-            onMessage?("Remote iPhone recording stopped.")
+            report("Remote iPhone recording stopped.")
         case .monitorFrame:
             break
         case .monitorVideoFrame:
             break
         case .transferReady(_, let fileName, let byteCount, _):
             let size = ByteCountFormatter.string(fromByteCount: byteCount, countStyle: .file)
-            onMessage?("Remote iPhone transfer ready: \(fileName) (\(size)).")
+            report("Remote iPhone transfer ready: \(fileName) (\(size)).")
         case .transferChunk, .transferChannel:
             break
         case .transferComplete(_, let byteCount, _):
             let size = ByteCountFormatter.string(fromByteCount: byteCount, countStyle: .file)
-            onMessage?("Remote iPhone transfer complete (\(size)).")
+            report("Remote iPhone transfer complete (\(size)).")
         case .failed(_, let reason):
-            onMessage?("Remote iPhone failed: \(reason)")
+            report("Remote iPhone failed: \(reason)")
         case .goingToSleep:
-            onMessage?("Remote iPhone is going to sleep.")
+            report("Remote iPhone is going to sleep.")
         }
         onChanged?()
     }

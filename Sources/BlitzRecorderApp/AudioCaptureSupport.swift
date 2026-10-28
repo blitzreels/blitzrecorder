@@ -1,4 +1,5 @@
 import AVFoundation
+import BlitzRecorderCore
 import CoreMedia
 import Foundation
 import ScreenCaptureKit
@@ -49,7 +50,20 @@ enum MicrophoneDeviceSelection {
            let device = microphone(id: selectedMicrophoneID) {
             return device
         }
-        return fallbackMicrophone()
+        return fallbackMicrophone(.init(settings: settings, excludedIDs: []))
+    }
+
+    /// BlitzRecorder Camera records with the iPhone's own camera and microphone, so the Mac must not take that
+    /// iPhone's microphone through Continuity: iOS hands the iPhone to Continuity and the take on the iPhone stops.
+    static func usesIPhoneCompanion(_ settings: RecordingSettings) -> Bool {
+        settings.enabledSources.contains(.camera) && RemoteCameraProviderID.isRemote(settings.selectedCameraID)
+    }
+
+    /// The microphone a recording would use takes the iPhone away from BlitzRecorder Camera.
+    static func conflictsWithIPhoneCompanion(settings: RecordingSettings) -> Bool {
+        guard usesIPhoneCompanion(settings), settings.enabledSources.contains(.microphone),
+              let device = selectedMicrophone(settings: settings) else { return false }
+        return isContinuityMicrophone(device)
     }
 
     /// The preferred microphone is saved but not connected, so a recording would use another input.
@@ -70,20 +84,33 @@ enum MicrophoneDeviceSelection {
         return device
     }
 
-    static func fallbackMicrophone(excluding excludedID: String? = nil) -> AVCaptureDevice? {
-        if let device = AVCaptureDevice.default(for: .audio),
-           device.uniqueID != excludedID,
-           device.isConnected,
-           !device.isSuspended {
+    struct FallbackRequest {
+        let settings: RecordingSettings
+        let excludedIDs: Set<String>
+    }
+
+    /// The microphone used when none is picked or the picked one is gone. While BlitzRecorder Camera is the camera
+    /// it is never an iPhone microphone reached through Continuity: macOS makes that the default input on Macs
+    /// without a microphone, and using it stopped the iPhone's take about once a minute.
+    static func fallbackMicrophone(_ request: FallbackRequest) -> AVCaptureDevice? {
+        let avoidsContinuity = usesIPhoneCompanion(request.settings)
+        func usable(_ device: AVCaptureDevice) -> Bool {
+            !request.excludedIDs.contains(device.uniqueID) && device.isConnected && !device.isSuspended
+                && !(avoidsContinuity && isContinuityMicrophone(device))
+        }
+        if let device = AVCaptureDevice.default(for: .audio), usable(device) {
             return device
         }
         return AVCaptureDevice.DiscoverySession(
             deviceTypes: [.microphone, .external],
             mediaType: .audio,
             position: .unspecified
-        ).devices.first {
-            $0.uniqueID != excludedID && $0.isConnected && !$0.isSuspended
-        }
+        ).devices.first(where: usable)
+    }
+
+    /// Core Audio's Continuity Capture transports, wired ('ccwd') and wireless ('ccwl').
+    static func isContinuityMicrophone(_ device: AVCaptureDevice) -> Bool {
+        [0x6363_7764, 0x6363_776C].contains(device.transportType)
     }
 }
 

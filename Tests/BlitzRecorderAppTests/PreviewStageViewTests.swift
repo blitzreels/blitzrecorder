@@ -135,7 +135,7 @@ final class PreviewStageViewTests: XCTestCase {
         view.sceneLayout = layout
         view.layoutSubtreeIfNeeded()
 
-        view.beginCameraCropEditing()
+        view.beginCameraCropEditing(.camera)
 
         let selectionFrame = try XCTUnwrap(view.renderedSelectionFrameForTesting)
         let toolbarFrame = try XCTUnwrap(view.renderedCropToolbarFrameForTesting)
@@ -383,7 +383,7 @@ final class PreviewStageViewTests: XCTestCase {
         view.layoutSubtreeIfNeeded()
         var commits = 0
         view.onCameraCropChanged = { _ in commits += 1 }
-        view.beginCameraCropEditing()
+        view.beginCameraCropEditing(.camera)
         view.updateCameraCropDraft(amount: CGPoint(x: 0.1, y: 0.1))
         view.sceneID = UUID()
         view.commitCameraCropEditing()
@@ -459,7 +459,7 @@ final class PreviewStageViewTests: XCTestCase {
         view.enabledSources = [.camera]
         view.allowsLayerInteraction = false
 
-        view.beginCameraCropEditing()
+        view.beginCameraCropEditing(.camera)
 
         XCTAssertTrue(view.isCameraCropEditingEnabled)
     }
@@ -506,7 +506,7 @@ final class PreviewStageViewTests: XCTestCase {
         view.enabledSources = [.camera]
         view.allowsCameraCropInteraction = false
 
-        view.beginCameraCropEditing()
+        view.beginCameraCropEditing(.camera)
 
         XCTAssertFalse(view.isCameraCropEditingEnabled)
     }
@@ -520,7 +520,7 @@ final class PreviewStageViewTests: XCTestCase {
         view.sceneLayout = SceneLayout.presetLayout(.webcamFullscreen, for: .vertical)
         view.layoutSubtreeIfNeeded()
 
-        view.beginCameraCropEditing()
+        view.beginCameraCropEditing(.camera)
         view.layoutSubtreeIfNeeded()
 
         let sourceFrame = view.renderedCameraFrameForTesting
@@ -541,7 +541,7 @@ final class PreviewStageViewTests: XCTestCase {
         view.layoutSubtreeIfNeeded()
 
         let normalCameraFrame = view.renderedCameraFrameForTesting
-        view.beginCameraCropEditing()
+        view.beginCameraCropEditing(.camera)
         view.cancelCameraCropEditing()
 
         XCTAssertRect(view.renderedCameraFrameForTesting, equals: normalCameraFrame)
@@ -554,7 +554,7 @@ final class PreviewStageViewTests: XCTestCase {
         view.enabledSources = [.screen, .camera]
         view.selectedLayer = .camera
         view.sceneLayout = SceneLayout.presetLayout(.webcamFullscreen, for: .vertical)
-        view.beginCameraCropEditing()
+        view.beginCameraCropEditing(.camera)
         view.layoutSubtreeIfNeeded()
 
         view.updateCameraCropDraft(position: CGPoint(x: 1, y: 0))
@@ -578,7 +578,7 @@ final class PreviewStageViewTests: XCTestCase {
         view.layoutSubtreeIfNeeded()
 
         let normalCameraFrame = view.renderedCameraFrameForTesting
-        view.beginCameraCropEditing()
+        view.beginCameraCropEditing(.camera)
         view.layoutSubtreeIfNeeded()
 
         let sourceFrame = view.renderedCameraFrameForTesting
@@ -597,7 +597,7 @@ final class PreviewStageViewTests: XCTestCase {
         view.sceneLayout = SceneLayout.presetLayout(.webcamLeft, for: .horizontal)
         view.layoutSubtreeIfNeeded()
 
-        view.beginCameraCropEditing()
+        view.beginCameraCropEditing(.camera)
         view.layoutSubtreeIfNeeded()
 
         let sourceFrame = view.renderedCameraFrameForTesting

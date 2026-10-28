@@ -4,7 +4,7 @@ import SwiftUI
 enum RecorderVisibility {
     static func symbol(hidden: Bool) -> String { hidden ? BlitzSymbols.recorderHidden : BlitzSymbols.recorderShown }
 
-    static func title(hidden: Bool) -> String { hidden ? "Hidden" : "Visible" }
+    static func title(hidden: Bool) -> String { hidden ? "App hidden" : "App visible" }
 
     static func help(hidden: Bool) -> String {
         hidden
@@ -13,31 +13,36 @@ enum RecorderVisibility {
     }
 }
 
-/// Studio toolbar control: shows whether BlitzRecorder is recorded and lets the person switch before recording.
+/// Studio toolbar control: whether BlitzRecorder itself shows in the recording. Quiet while hidden (the usual
+/// case), amber while it would be recorded.
 struct RecorderVisibilityMenu: View {
     @Bindable var vm: RecorderViewModel
+    @State private var isPresented = false
 
     private var hidden: Bool { !vm.settings.includesRecorderUI }
 
     var body: some View {
-        BlitzGlassMenu(entries: entries, menuWidth: 280) {
-            HStack(spacing: 7) {
-                BlitzSymbol(configuration: .init(name: RecorderVisibility.symbol(hidden: hidden), size: 16))
-                    .foregroundStyle(hidden ? BlitzUI.secondaryText : BlitzUI.warning)
-                Text(RecorderVisibility.title(hidden: hidden))
-                    .font(BlitzType.label)
-                    .foregroundStyle(BlitzUI.primaryText)
-            }
-            .padding(.horizontal, 10)
-            .frame(height: BlitzControlMetrics.toolbarHeight)
+        Button {
+            isPresented.toggle()
+        } label: {
+            StudioToolbarIcon(name: RecorderVisibility.symbol(hidden: hidden),
+                              color: hidden ? BlitzUI.secondaryText : BlitzUI.warning)
         }
+        .buttonStyle(BlitzMenuTriggerStyle(isPresented: isPresented, variant: .borderless))
         .disabled(vm.state != .idle)
         .help(RecorderVisibility.help(hidden: hidden))
-        .accessibilityLabel("BlitzRecorder \(RecorderVisibility.title(hidden: hidden).lowercased()) in recordings")
+        .accessibilityLabel(hidden ? "BlitzRecorder hidden from recordings" : "BlitzRecorder shown in recordings")
+        .onChange(of: vm.state) { if vm.state != .idle { isPresented = false } }
+        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+            BlitzMenuList(entries: entries, width: 300, maxHeight: BlitzMenuList.adaptiveMaxHeight) {
+                isPresented = false
+            }
+        }
     }
 
     private var entries: [BlitzMenuEntry] {
         [
+            .section("BlitzRecorder in the video"),
             .item(.init(title: "Hide BlitzRecorder",
                         subtitle: "Keep its windows and controls out of the video and of calls that allow it",
                         systemImage: BlitzSymbols.recorderHidden, isSelected: hidden,
@@ -63,6 +68,6 @@ struct RecorderVisibilityIndicator: View {
         .foregroundStyle(hidden ? BlitzUI.secondaryText : BlitzUI.warning)
         .fixedSize()
         .help(RecorderVisibility.help(hidden: hidden))
-        .accessibilityLabel("BlitzRecorder \(RecorderVisibility.title(hidden: hidden).lowercased()) in this recording")
+        .accessibilityLabel(hidden ? "BlitzRecorder hidden from this recording" : "BlitzRecorder shown in this recording")
     }
 }

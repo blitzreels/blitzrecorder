@@ -28,7 +28,7 @@ struct CropToolbarOverlay: View {
             },
             onReset: {
                 if vm.canvas.isCameraCropModeEnabled {
-                    vm.resetCameraCrop()
+                    vm.resetCameraCrop(vm.canvas.cameraCropModeLayer)
                 } else {
                     vm.resetScreenCropMode()
                 }

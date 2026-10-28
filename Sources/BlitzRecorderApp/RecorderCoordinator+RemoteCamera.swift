@@ -10,6 +10,7 @@ import ScreenCaptureKit
 extension RecorderCoordinator {
     func setCamera(id: String?) {
         remoteCamera.selectCamera(id: id)
+        dropCameraAngleUsedAsMainCamera()
     }
 
     func connectDirectRemoteCamera(host: String, portString: String) {

@@ -37,6 +37,9 @@ struct EditorPlaybackComposition {
     let sourceAspectRatios: [SceneLayerKind: CGFloat]
     var audioInputs: [AudioInput]
     let videoAssets: [SceneLayerKind: AVComposition]
+    /// Camera angle files the scenes show in the camera layer, keyed by role (`camera-2`).
+    let cameraAngleAssets: [String: AVComposition]
+    let cameraAngleAspectRatios: [String: CGFloat]
     let makeInstructions: (Set<SceneLayerKind>, [FinalExportRenderSegment]) -> [AVMutableVideoCompositionInstruction]
     var sourceReferences: [RecordingProject.SourceFile] = []
 
@@ -81,6 +84,8 @@ struct EditorPlaybackComposition {
             sourceAspectRatios: sourceAspectRatios,
             audioInputs: audioInputs,
             videoAssets: videoAssets,
+            cameraAngleAssets: cameraAngleAssets,
+            cameraAngleAspectRatios: cameraAngleAspectRatios,
             makeInstructions: makeInstructions,
             sourceReferences: sourceReferences
         )

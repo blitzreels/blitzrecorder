@@ -23,6 +23,7 @@ final class RecorderViewModel {
 
     let previewStage: PreviewStageView
     let micLevels = TrackLevels()
+    let microphoneTrackLevels = MicrophoneTrackLevelStore()
     let sysLevels = TrackLevels()
     var transcriptionController: LocalTranscriptionController { coordinator.transcription }
 
@@ -348,13 +349,15 @@ final class RecorderViewModel {
             guard let self, self.canApplyCanvasEdit else { return }
             self.finishSceneLayerResize(layer)
         }
-        previewStage.onCameraCropChanged = { [weak self] crop in
+        previewStage.onCameraCropChanged = { [weak self] change in
             guard let self, self.canApplyCanvasEdit else { return }
-            self.coordinator.setCameraCrop(crop)
+            self.coordinator.setCameraCrop(change)
             self.settings = self.coordinator.settings
             self.previewStage.cameraContentMode = self.coordinator.settings.cameraContentMode
             self.previewStage.cameraCropAmount = self.coordinator.settings.cameraCropAmount
             self.previewStage.cameraCropPosition = self.coordinator.settings.cameraCropPosition
+            self.previewStage.secondCameraCropAmount = self.coordinator.settings.secondCameraCropAmount
+            self.previewStage.secondCameraCropPosition = self.coordinator.settings.secondCameraCropPosition
         }
         previewStage.onScreenCropChanged = { [weak self] crop in
             guard let self, self.canApplyCanvasEdit else { return }

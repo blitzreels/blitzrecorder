@@ -307,6 +307,9 @@ extension CameraCaptureController {
         guard activeRecordingURL == url else { return }
         activeRecordingURL = nil
         onRecordingFinishedUnexpectedly?(result)
+        // The session stops with the clip (an interruption or a media services reset); without a restart the next
+        // take fails at once with "Cannot Record".
+        await restartSessionIfNeeded(recoveredStatusMessage: "Camera ready")
     }
 
     private func consumeRecordingResultDiagnostics() -> RemoteCameraRecordingDiagnostics? {

@@ -43,10 +43,14 @@ extension RecorderCaptureRuntime {
                     throw RecorderError.noSourcesSelected
                 }
                 await prepareScreenSourceWindowForRecording()
-                let recordingSettingsForStart = RecordingStartSettings.effective(
+                var recordingSettingsForStart = RecordingStartSettings.effective(
                     settings,
                     hasScreenCaptureAccess: hasScreenCaptureAccess()
                 )
+                let mainCameraDeviceID = mainLocalCameraDeviceID
+                recordingSettingsForStart.extraCameraAngleIDs.removeAll { $0 == mainCameraDeviceID }
+                let mainMicrophoneDeviceID = MicrophoneDeviceSelection.selectedMicrophone(settings: settings)?.uniqueID
+                recordingSettingsForStart.extraMicrophoneIDs.removeAll { $0 == mainMicrophoneDeviceID }
                 let recordingScreenFilter = try await resolvedScreenFilter(for: recordingSettingsForStart)
                 let prepared = RecordingStartPrepared.make(
                     requestedSettings: settings,
@@ -67,6 +71,9 @@ extension RecorderCaptureRuntime {
                         throw RecorderError.noCamera
                     }
                     await cameraCutoutPreviewer.stop()
+                }
+                if !access.localCamera, !recordingSettings.recordedExtraCameraAngleIDs.isEmpty {
+                    _ = await permissionGate.requestCameraAccess()
                 }
                 if access.microphone {
                     guard await permissionGate.requestMicrophoneAccess() else {
@@ -134,7 +141,9 @@ extension RecorderCaptureRuntime {
                     cameraRecorder: cameraRecorder,
                     remoteCameraRecorder: startPlan.usesRemoteCamera ? remoteCamera : nil,
                     audioRecorder: audioRecorder,
-                    systemAudioRecorder: systemAudioRecorder
+                    systemAudioRecorder: systemAudioRecorder,
+                    cameraAngles: cameraAngles.run(take: take, settings: recordingSettings),
+                    microphoneTracks: microphoneTracks.run(take: take, settings: recordingSettings)
                 ) { [weak self] remaining in
                     self?.onMessage?(RecordingStartCopy.prerollMessage(remaining: remaining))
                 }

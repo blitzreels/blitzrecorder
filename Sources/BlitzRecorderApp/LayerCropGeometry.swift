@@ -5,6 +5,12 @@ struct LayerCropControl: Equatable {
     let position: CGPoint
 }
 
+/// A crop for one camera layer: Camera 1 (`.camera`) or Camera 2 (`.secondCamera`).
+struct CameraCropChange: Equatable {
+    let layer: SceneLayerKind
+    let crop: LayerCropControl
+}
+
 /// Crop math for one source layer, screen or camera, in render space.
 struct LayerCropGeometry {
     let kind: SceneLayerKind

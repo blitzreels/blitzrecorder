@@ -38,7 +38,7 @@ final class SceneLibraryDefaultLayoutTests: XCTestCase {
         library.scenesByLayout[.horizontal]?[0].snapshot.sceneLayout = SceneLayout.sideBySideLayout(
             .init(cameraWidth: 0.4, cameraSide: .right)
         )
-        library.canonicalize()
+        library.canonicalize(cameraAngleCount: 0)
         let migrated = library.scenes(for: .horizontal)[0].snapshot.sceneLayout
         XCTAssertEqual(migrated.cameraSide, .right)
         XCTAssertEqual(migrated.sideBySideCameraWidth ?? 0, 81.0 / 256.0, accuracy: 0.0001)
@@ -65,7 +65,7 @@ final class SceneLibraryDefaultLayoutTests: XCTestCase {
         library.scenesByLayout[.horizontal] = scenes + [custom]
         library.selectedSceneIDsByLayout[.horizontal] = scenes[3].id
 
-        XCTAssertTrue(library.canonicalize())
+        XCTAssertTrue(library.canonicalize(cameraAngleCount: 0))
         let repaired = library.scenes(for: .horizontal)
         XCTAssertEqual(repaired.map(\.name), ["Screen + Camera", "Camera Inset", "Screen", "Camera"])
         XCTAssertEqual(repaired[0].id, scenes[3].id)
@@ -74,7 +74,7 @@ final class SceneLibraryDefaultLayoutTests: XCTestCase {
         XCTAssertEqual(repaired[3].snapshot.selectedScenePreset, .webcamFullscreen)
         XCTAssertEqual(repaired[3].snapshot.hiddenVideoSources, [.screen])
         XCTAssertEqual(library.selectedScene(layout: .horizontal)?.id, repaired[0].id)
-        XCTAssertFalse(library.canonicalize())
+        XCTAssertFalse(library.canonicalize(cameraAngleCount: 0))
     }
 
     func testStoreRepairsAndPersistsLegacyLibraries() throws {

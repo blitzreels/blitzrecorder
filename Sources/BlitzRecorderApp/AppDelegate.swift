@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
     private var terminationTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        TitlebarDoubleClick.install()
         coordinator.recorderUISharing.start(includesRecorderUI: coordinator.settings.includesRecorderUI)
         launchIfNeeded()
     }

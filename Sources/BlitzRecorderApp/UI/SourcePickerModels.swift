@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import SwiftUI
 
 @MainActor
@@ -7,6 +8,7 @@ struct CameraSourcePickerModel {
     let enabled: Bool
 
     private var selectedName: String {
+        guard vm.isSourceConfigured(.camera) else { return "No camera" }
         if vm.isRemoteCameraSelected {
             return vm.selectedRemoteCameraName ?? "Remote iPhone"
         }
@@ -17,6 +19,9 @@ struct CameraSourcePickerModel {
         return "Default camera"
     }
 
+    /// The main camera is in use: picking it again is a no-op, and ⌘-click can add the others as angles.
+    private var isOn: Bool { vm.isSourceConfigured(.camera) }
+
     var model: BlitzSourcePickerModel {
         BlitzSourcePickerModel(
             title: selectedName,
@@ -24,19 +29,7 @@ struct CameraSourcePickerModel {
             systemImage: vm.isRemoteCameraSelected ? "iphone.gen3" : BlitzSymbols.camera,
             icon: nil,
             sections: cameraSections,
-            actions: [
-                BlitzSourcePickerItem(
-                    id: "camera:manage",
-                    title: "Connect an iPhone…",
-                    subtitle: nil,
-                    systemImage: "iphone.radiowaves.left.and.right",
-                    icon: nil,
-                    thumbnail: nil,
-                    isSelected: false
-                ) {
-                    vm.showSettings(.devices)
-                }
-            ],
+            actions: actions,
             layout: .list,
             enabled: enabled && vm.state == .idle,
             prompt: "Choose camera",
@@ -47,21 +40,57 @@ struct CameraSourcePickerModel {
         )
     }
 
+
+    private func isAngleCandidate(_ option: SourceOption) -> Bool {
+        option.cameraKind != .deskView && option.id != vm.coordinator.mainLocalCameraDeviceID
+    }
+
+    private var actions: [BlitzSourcePickerItem] {
+        var actions = [
+            BlitzSourcePickerItem(
+                id: "camera:manage",
+                title: "Connect an iPhone…",
+                subtitle: nil,
+                systemImage: "iphone.radiowaves.left.and.right",
+                icon: nil,
+                thumbnail: nil,
+                isSelected: false
+            ) {
+                vm.showSettings(.devices)
+            }
+        ]
+        if isOn {
+            actions.append(BlitzSourcePickerItem(
+                id: "camera:none",
+                title: "No camera",
+                subtitle: "Record without a camera",
+                systemImage: "video.slash",
+                icon: nil,
+                thumbnail: nil,
+                isSelected: false
+            ) {
+                vm.removeSource(.camera)
+            })
+        }
+        return actions
+    }
+
     private var cameraSections: [BlitzSourcePickerSection] {
+        let systemDefault = AVCaptureDevice.default(for: .video).map { CameraOptionName.plain($0.localizedName) }
         let defaultItem = BlitzSourcePickerItem(
             id: "camera:default",
             title: "Default camera",
-            subtitle: "Follow the macOS default",
+            subtitle: systemDefault.map { "Follow macOS default · now \($0)" } ?? "Follow the macOS default",
             systemImage: "camera",
             icon: nil,
             thumbnail: nil,
-            isSelected: vm.settings.selectedCameraID == nil,
-            visibility: .init(id: "camera:default", hiddenReason: nil)
+            isSelected: isOn && vm.settings.selectedCameraID == nil
         ) {
             vm.setCamera(nil)
+            vm.turnOnSource(.camera)
         }
-        let local = vm.localCameraOptions.filter { $0.cameraKind?.hiddenReason == nil }
-        let continuity = vm.localCameraOptions.filter { $0.cameraKind?.hiddenReason != nil }
+        let local = vm.localCameraOptions.filter { $0.cameraKind?.isContinuity != true }
+        let continuity = vm.localCameraOptions.filter { $0.cameraKind?.isContinuity == true }
         let remoteItems = vm.remoteCameraOptions.map { option in
             BlitzSourcePickerItem(
                 id: "camera:\(option.id)",
@@ -70,36 +99,50 @@ struct CameraSourcePickerModel {
                 systemImage: "iphone.gen3",
                 icon: nil,
                 thumbnail: nil,
-                isSelected: vm.settings.selectedCameraID == option.id,
-                visibility: .init(id: "camera:\(option.id)", hiddenReason: nil)
+                isSelected: isOn && vm.settings.selectedCameraID == option.id
             ) {
                 vm.setCamera(option.id)
+                vm.turnOnSource(.camera)
             }
         }
         return [
             BlitzSourcePickerSection(title: "iPhone with BlitzRecorder Camera", items: remoteItems),
             BlitzSourcePickerSection(title: "Connected cameras", items: local.map(cameraItem)),
-            BlitzSourcePickerSection(title: "Automatic", items: [defaultItem]),
-            BlitzSourcePickerSection(title: "Continuity & Desk View", items: continuity.map(cameraItem))
+            BlitzSourcePickerSection(title: "Continuity & Desk View", items: continuity.map(cameraItem)),
+            BlitzSourcePickerSection(title: "Automatic", items: [defaultItem])
         ]
     }
 
     private func cameraItem(_ option: SourceOption) -> BlitzSourcePickerItem {
         let kind = option.cameraKind ?? .external
-        let title = option.name
-            .replacingOccurrences(of: " (Continuity)", with: "")
-            .replacingOccurrences(of: " (Desk View)", with: "")
+        let angle = vm.cameraAngles.first { $0.deviceID == option.id }
+        let isMain = isOn && vm.settings.selectedCameraID == option.id
+        let subtitle: String = if let angle {
+            "Recording as \(angle.name)"
+        } else if isMain, !vm.cameraAngles.isEmpty {
+            "\(vm.mainCameraTitle) · \(kind.subtitle)"
+        } else {
+            kind.subtitle
+        }
         return BlitzSourcePickerItem(
             id: "camera:\(option.id)",
-            title: title,
-            subtitle: kind.subtitle,
+            title: CameraOptionName.plain(option.name),
+            subtitle: subtitle,
             systemImage: kind.systemImage,
             icon: nil,
             thumbnail: nil,
-            isSelected: vm.settings.selectedCameraID == option.id,
-            visibility: .init(id: "camera:\(option.id)", hiddenReason: kind.hiddenReason)
+            isSelected: isMain
         ) {
+            if NSEvent.modifierFlags.contains(.command), isOn, isAngleCandidate(option) {
+                if angle != nil {
+                    vm.removeCameraAngle(option.id)
+                } else {
+                    vm.addCameraAngle(option.id)
+                }
+                return
+            }
             vm.setCamera(option.id)
+            vm.turnOnSource(.camera)
         }
     }
 }
@@ -109,43 +152,120 @@ struct MicrophoneSourcePickerModel {
     let vm: RecorderViewModel
     let enabled: Bool
 
+    private var isOn: Bool { vm.isSourceConfigured(.microphone) }
+
     var model: BlitzSourcePickerModel {
         BlitzSourcePickerModel(
-            title: vm.selectedMicrophoneDisplayName,
+            title: isOn ? vm.selectedMicrophoneDisplayName : "No microphone",
             subtitle: "Microphone input",
             systemImage: BlitzSymbols.microphone,
             icon: nil,
-            sections: [BlitzSourcePickerSection(title: "Microphones", items: microphoneItems)],
-            actions: [],
+            sections: microphoneSections,
+            actions: actions,
             layout: .list,
-            enabled: enabled && vm.state != .starting && vm.state != .finishing
+            enabled: enabled && vm.state != .starting && vm.state != .finishing,
+            prompt: "Choose microphone"
         )
     }
 
+
+    private var actions: [BlitzSourcePickerItem] {
+        guard isOn, vm.state == .idle else { return [] }
+        return [BlitzSourcePickerItem(
+            id: "microphone:none",
+            title: "No microphone",
+            subtitle: "Record without your voice",
+            systemImage: "mic.slash",
+            icon: nil,
+            thumbnail: nil,
+            isSelected: false
+        ) {
+            vm.removeSource(.microphone)
+        }]
+    }
+
+    /// Microphones that belong to a camera, such as an Osmo Pocket's, keyed by microphone ID.
+    private var cameraNamesByMicrophoneID: [String: String] {
+        var names: [String: String] = [:]
+        for camera in vm.localCameraOptions {
+            if let microphone = vm.pairedMicrophone(cameraDeviceID: camera.id) {
+                names[microphone.id] = CameraOptionName.plain(camera.name)
+            }
+        }
+        return names
+    }
+
+    private var microphoneSections: [BlitzSourcePickerSection] {
+        let items = microphoneItems
+        return [
+            BlitzSourcePickerSection(title: "Microphones", items: Array(items.dropFirst())),
+            BlitzSourcePickerSection(title: "Automatic", items: Array(items.prefix(1)))
+        ]
+    }
+
+    /// The macOS default first, then every connected microphone, then a preferred one that is unplugged.
     private var microphoneItems: [BlitzSourcePickerItem] {
+        let systemDefault = AVCaptureDevice.default(for: .audio)?.localizedName
         let defaultItem = BlitzSourcePickerItem(
             id: "microphone:default",
             title: "Default microphone",
-            subtitle: "Follow the macOS default",
+            subtitle: systemDefault.map { "Follow macOS default · now \($0)" } ?? "Follow the macOS default",
             systemImage: BlitzSymbols.microphone,
             icon: nil,
             thumbnail: nil,
-            isSelected: vm.settings.selectedMicrophoneID == nil
+            isSelected: isOn && vm.settings.selectedMicrophoneID == nil
         ) {
             vm.setMicrophone(nil)
+            vm.turnOnSource(.microphone)
         }
-        return [defaultItem] + vm.availableMicrophones.map { option in
-            BlitzSourcePickerItem(
-                id: "microphone:\(option.id)",
-                title: option.name,
-                subtitle: nil,
-                systemImage: BlitzSymbols.microphone,
+        let cameraNames = cameraNamesByMicrophoneID
+        var items = [defaultItem] + vm.availableMicrophones.map { option in
+            microphoneItem(option, cameraName: cameraNames[option.id])
+        }
+        if let missing = vm.missingPreferredMicrophone {
+            items.append(BlitzSourcePickerItem(
+                id: "microphone:missing",
+                title: missing.preferredName,
+                subtitle: "Not connected · used again when plugged in",
+                systemImage: "mic.badge.xmark",
                 icon: nil,
                 thumbnail: nil,
-                isSelected: vm.settings.selectedMicrophoneID == option.id
-            ) {
-                vm.setMicrophone(option.id)
+                isSelected: false,
+                isEnabled: false
+            ) {})
+        }
+        return items
+    }
+
+    private func microphoneItem(_ option: SourceOption, cameraName: String?) -> BlitzSourcePickerItem {
+        let track = vm.microphoneTracks.first { $0.deviceID == option.id }
+        let isMain = isOn && vm.settings.selectedMicrophoneID == option.id
+        let facts = [
+            track.map { "Recording as \($0.name)" },
+            isMain && !vm.microphoneTracks.isEmpty ? vm.mainMicrophoneTitle : nil,
+            cameraName.map { "From \($0)" }
+        ].compactMap { $0 }
+        return BlitzSourcePickerItem(
+            id: "microphone:\(option.id)",
+            title: option.name,
+            subtitle: facts.isEmpty ? nil : facts.joined(separator: " · "),
+            systemImage: BlitzSymbols.microphone,
+            icon: nil,
+            thumbnail: nil,
+            isSelected: isMain
+        ) {
+            if NSEvent.modifierFlags.contains(.command), isOn, vm.state == .idle,
+               option.id != vm.coordinator.mainMicrophoneDeviceID {
+                if track != nil {
+                    vm.removeMicrophoneTrack(option.id)
+                } else {
+                    vm.addMicrophoneTrack(option.id)
+                }
+                return
             }
+            if track != nil { vm.removeMicrophoneTrack(option.id) }
+            vm.setMicrophone(option.id)
+            vm.turnOnSource(.microphone)
         }
     }
 }

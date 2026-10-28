@@ -66,6 +66,8 @@ final class TakeRecordingRuntime {
 
     private let cursorTracker = RecordingCursorTracker()
     private var mode: Mode = .idle
+    private var cameraAngleRun = CameraAngleRun.none
+    private var microphoneTrackRun = MicrophoneTrackRun.none
     private(set) var sceneEvents: [RecordingSceneEvent] = []
     private var timelineSegmentStartedAt: Date?
     private var timelineAccumulatedSeconds: TimeInterval = 0
@@ -142,6 +144,8 @@ final class TakeRecordingRuntime {
         remoteCameraRecorder: RemoteCameraCaptureRecording? = nil,
         audioRecorder: MicrophoneCaptureRecording,
         systemAudioRecorder: SystemAudioCaptureRecording,
+        cameraAngles: CameraAngleRun,
+        microphoneTracks: MicrophoneTrackRun,
         prerollHandler: ((Int) -> Void)?
     ) async throws -> CaptureSourceRunStartResult {
         let captureRunSettings = remoteCameraRecorder == nil
@@ -162,6 +166,11 @@ final class TakeRecordingRuntime {
             prerollSeconds: prerollSeconds,
             prerollHandler: prerollHandler
         )
+        cameraAngleRun = cameraAngles
+        microphoneTrackRun = microphoneTracks
+        async let anglesStarted: Void = cameraAngles.start(timelineStartTime: start.timelineStartTime)
+        await microphoneTracks.start(timelineStartTime: start.timelineStartTime)
+        await anglesStarted
         startSceneTimeline(scene: initialScene)
         cursorTracker.start(.init(directory: take.screenURL.deletingLastPathComponent(),
             configuration: .init(settings: settings, filter: pickedScreenFilter),
@@ -180,6 +189,8 @@ final class TakeRecordingRuntime {
             liveCompositedRecorder.pause()
         case .captureRun(let captureRun):
             captureRun.pause()
+            cameraAngleRun.pause()
+            microphoneTrackRun.pause()
         case .idle:
             break
         }
@@ -192,6 +203,8 @@ final class TakeRecordingRuntime {
             liveCompositedRecorder.resume()
         case .captureRun(let captureRun):
             captureRun.resume()
+            cameraAngleRun.resume()
+            microphoneTrackRun.resume()
         case .idle:
             break
         }
@@ -234,7 +247,31 @@ final class TakeRecordingRuntime {
         }
         mode = .idle
         captureRun.onStopProgress = onStopProgress
-        return await captureRun.stop()
+        let microphones = microphoneTrackRun
+        microphoneTrackRun = .none
+        async let angleFailures = stopCameraAngles()
+        async let microphonesStopped: Void = microphones.stop()
+        var summary = await captureRun.stop()
+        summary.cameraAngleFailures = await angleFailures
+        await microphonesStopped
+        let onStopProgress = onStopProgress
+        return await microphones.mergeIntoTake(summary) { fraction in
+            Task { @MainActor in
+                onStopProgress?(.init(phase: .synchronizingAudio, completed: 1, total: 1, pendingSources: [],
+                                      synchronizationProgress: fraction))
+            }
+        }
+    }
+
+    /// Ends one extra microphone early when its device is unplugged during a take.
+    func stopMicrophoneTrack(deviceID: String) async {
+        await microphoneTrackRun.stopTrack(deviceID: deviceID)
+    }
+
+    private func stopCameraAngles() async -> [String] {
+        let run = cameraAngleRun
+        cameraAngleRun = .none
+        return await run.stop()
     }
 
     func stopAnyActiveRecording() async {
@@ -247,6 +284,9 @@ final class TakeRecordingRuntime {
         case .idle:
             break
         }
+        _ = await stopCameraAngles()
+        await microphoneTrackRun.stop()
+        microphoneTrackRun = .none
         mode = .idle
         resetSceneTimeline()
     }

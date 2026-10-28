@@ -32,7 +32,9 @@ extension TakeFileStore {
                     CMTime(seconds: max(0, seconds), preferredTimescale: 600)
                 )
             }),
-            sourceReferences: project.sources.filter { $0.bookmarkData != nil }
+            sourceReferences: project.sources.filter { $0.bookmarkData != nil },
+            cameraAngleFiles: NumberedSourceTracks.cameraAngles.files(sourceURLByRole: sourceURLByRole),
+            microphoneTrackFiles: NumberedSourceTracks.microphones.files(sourceURLByRole: sourceURLByRole)
         )
     }
 
@@ -73,6 +75,8 @@ extension TakeFileStore {
             settings.selectedDisplayID = firstScene.screenSourceGeometry.selectedDisplayID
             settings.cameraCropAmount = firstScene.cameraCropAmount
             settings.cameraCropPosition = firstScene.cameraCropPosition
+            settings.secondCameraCropAmount = firstScene.secondCameraCropAmount
+            settings.secondCameraCropPosition = firstScene.secondCameraCropPosition
             settings.screenCornerRadius = firstScene.screenCornerRadius
             settings.screenShadowEnabled = firstScene.screenShadowEnabled
             settings.cameraCornerRadius = firstScene.cameraCornerRadius

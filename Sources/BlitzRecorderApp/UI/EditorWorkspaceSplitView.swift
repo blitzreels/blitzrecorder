@@ -136,6 +136,7 @@ struct EditorWorkspaceSplitView<Preview: View, Inspector: View, Timeline: View>:
 }
 
 struct RecorderInspectorSplitView<Stage: View, Inspector: View>: View {
+    let showsInspector: Bool
     @ViewBuilder let stage: () -> Stage
     @ViewBuilder let inspector: () -> Inspector
 
@@ -152,22 +153,30 @@ struct RecorderInspectorSplitView<Stage: View, Inspector: View>: View {
             HStack(spacing: 0) {
                 stage()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                BlitzPaneDivider(configuration: .init(
-                    axis: .horizontal,
-                    paneSide: .trailing,
-                    label: "Inspector width",
-                    value: Binding(get: { inspectorSize.value }, set: { inspectorWidthDraft = $0 }),
-                    bounds: inspectorSize.bounds,
-                    defaultValue: EditorPaneSizing.Pane.recorderInspector.defaultSize,
-                    onCommit: {
-                        savedInspectorWidth = inspectorWidthDraft ?? inspectorSize.value
-                        inspectorWidthDraft = nil
-                    }
-                ))
-                inspector()
-                    .frame(width: inspectorSize.value)
-                    .frame(maxHeight: .infinity)
+                if showsInspector {
+                    inspectorPane(inspectorSize)
+                }
             }
+        }
+    }
+
+    private func inspectorPane(_ inspectorSize: EditorPaneSizing) -> some View {
+        HStack(spacing: 0) {
+            BlitzPaneDivider(configuration: .init(
+                axis: .horizontal,
+                paneSide: .trailing,
+                label: "Inspector width",
+                value: Binding(get: { inspectorSize.value }, set: { inspectorWidthDraft = $0 }),
+                bounds: inspectorSize.bounds,
+                defaultValue: EditorPaneSizing.Pane.recorderInspector.defaultSize,
+                onCommit: {
+                    savedInspectorWidth = inspectorWidthDraft ?? inspectorSize.value
+                    inspectorWidthDraft = nil
+                }
+            ))
+            inspector()
+                .frame(width: inspectorSize.value)
+                .frame(maxHeight: .infinity)
         }
     }
 }

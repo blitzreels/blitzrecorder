@@ -24,8 +24,8 @@ struct SceneLayoutGraph: Equatable {
             items: [
                 SceneLayoutItem(kind: .screen, frame: layout.screenFrame),
                 SceneLayoutItem(kind: .camera, frame: layout.cameraFrame)
-            ],
-            layerOrder: layout.layerOrder
+            ] + (layout.secondCameraFrame.map { [SceneLayoutItem(kind: .secondCamera, frame: $0)] } ?? []),
+            layerOrder: layout.renderLayerOrder
         )
     }
 

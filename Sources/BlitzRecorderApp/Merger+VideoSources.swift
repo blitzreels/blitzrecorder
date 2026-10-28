@@ -4,7 +4,17 @@ import CoreGraphics
 import Foundation
 
 extension Merger {
-    static func availableVideoSources(for take: RecordingTake, settings: RecordingSettings) async throws -> [VideoSource] {
+    struct VideoSourcesRequest {
+        let take: RecordingTake
+        let settings: RecordingSettings
+        let sceneEvents: [RecordingSceneEvent]
+        /// The editor loads every angle so a new layout can show one at once; export loads only what scenes show.
+        let loadsAllCameraAngles: Bool
+    }
+
+    static func availableVideoSources(_ request: VideoSourcesRequest) async throws -> [VideoSource] {
+        let take = request.take
+        let settings = request.settings
         for source in take.sourceReferences where !source.exists || !FileManager.default.isReadableFile(atPath: source.path) {
             throw RecorderError.mediaWriteFailed("The original video \(URL(fileURLWithPath: source.path).lastPathComponent) is unavailable. Reconnect its drive or restore the file to continue playback and export.")
         }
@@ -43,9 +53,40 @@ extension Merger {
                     ),
                     sourceStartOffset: processedTiming?.sourceStartOffset ?? .zero
                 ))
+                sources += try await cameraAngleSources(request)
+            case .secondCamera:
+                continue
             }
         }
 
+        return sources
+    }
+
+    /// The angle files the scenes show, once per camera layer that shows them. Each one is already on the take
+    /// timeline: its writer anchored it to the take's start, so none of Camera 1's offset corrections apply.
+    private static func cameraAngleSources(_ request: VideoSourcesRequest) async throws -> [VideoSource] {
+        let scenes = [RecordingScene(settings: request.settings)] + request.sceneEvents.map(\.scene)
+        let allRoles = Set(request.take.cameraAngleFiles.map(\.role))
+        let cameraFeeds = request.loadsAllCameraAngles ? allRoles : Set(scenes.map(\.cameraFeeds.camera))
+        let secondCameraFeeds = request.loadsAllCameraAngles
+            ? allRoles.intersection([CameraFeeds.firstAngleRole])
+            : Set(scenes.filter { $0.sceneLayout.secondCameraFrame != nil }.map(\.cameraFeeds.secondCamera))
+        var sources: [VideoSource] = []
+        for file in request.take.cameraAngleFiles {
+            let kinds = [SceneLayerKind.camera, .secondCamera].filter {
+                ($0 == .camera ? cameraFeeds : secondCameraFeeds).contains(file.role)
+            }
+            guard !kinds.isEmpty, let asset = await readableVideoAsset(kind: file.role, url: file.url) else { continue }
+            for kind in kinds {
+                sources.append(try await VideoSource(
+                    kind: kind,
+                    feed: file.role,
+                    asset: asset.asset,
+                    track: asset.track,
+                    duration: asset.duration
+                ))
+            }
+        }
         return sources
     }
 
@@ -209,6 +250,7 @@ extension Merger {
 
     struct VideoSource {
         let kind: SceneLayerKind
+        let feed: String
         let asset: AVURLAsset
         let track: AVAssetTrack
         let duration: CMTime
@@ -220,6 +262,7 @@ extension Merger {
         var planningInput: FinalExportSourceInput {
             FinalExportSourceInput(
                 kind: kind,
+                feed: feed,
                 duration: duration,
                 timelineOffset: timelineOffset,
                 sourceStartOffset: sourceStartOffset
@@ -228,6 +271,7 @@ extension Merger {
 
         init(
             kind: SceneLayerKind,
+            feed: String? = nil,
             asset: AVURLAsset,
             track: AVAssetTrack,
             duration: CMTime,
@@ -235,6 +279,7 @@ extension Merger {
             sourceStartOffset: CMTime = .zero
         ) async throws {
             self.kind = kind
+            self.feed = feed ?? kind.defaultFeed
             self.asset = asset
             self.track = track
             self.duration = duration
@@ -247,6 +292,7 @@ extension Merger {
 
     struct CompositedVideoSource {
         let kind: SceneLayerKind
+        let feed: String
         let asset: AVAsset
         let sourceStart: CMTime
         let compositionTrack: AVCompositionTrack
@@ -256,6 +302,7 @@ extension Merger {
 
         init(source: VideoSource, compositionTrack: AVCompositionTrack, timeRange: CMTimeRange) {
             kind = source.kind
+            feed = source.feed
             asset = source.asset
             sourceStart = compositionTrack.segments.first(where: { !$0.isEmpty })?.timeMapping.source.start ?? .zero
             self.compositionTrack = compositionTrack

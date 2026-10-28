@@ -21,7 +21,7 @@ extension PreviewStageView {
         }
         guard layer == .camera,
               cameraContentMode == .fit,
-              !isCameraCropEditingEnabled else {
+              !isCropEditing(.camera) else {
             return geometry.targetRect(for: layer)
         }
         return geometry.sourceFrame(

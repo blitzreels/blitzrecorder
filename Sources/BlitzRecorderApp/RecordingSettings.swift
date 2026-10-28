@@ -38,6 +38,10 @@ struct RecordingSettings {
     var screenSourceBinding: ScreenSourceBinding? = .display(id: nil)
     var selectedDisplayID: String?
     var selectedCameraID: String?
+    /// Mac cameras recorded next to the main camera, each to its own file, in the order they were added.
+    var extraCameraAngleIDs: [String] = []
+    /// Microphones recorded next to the main microphone, mixed into one track after the take, in the order they were added.
+    var extraMicrophoneIDs: [String] = []
     var selectedMicrophoneID: String?
     /// Name of the preferred microphone, kept so it can be named while it is unplugged.
     var selectedMicrophoneName: String?
@@ -48,6 +52,9 @@ struct RecordingSettings {
     var screenWindowZoom: CGFloat = 1
     var cameraCropAmount: CGPoint = .zero
     var cameraCropPosition: CGPoint = .zero
+    /// Camera 2's own crop in two-camera scenes.
+    var secondCameraCropAmount: CGPoint = .zero
+    var secondCameraCropPosition: CGPoint = .zero
     var canvasBackgroundStyle: CanvasBackgroundStyle = .black
     var canvasBackgroundAnimated: Bool = false
     var canvasPadding: CGFloat = 0
@@ -59,6 +66,7 @@ struct RecordingSettings {
     var cameraShadowEnabled: Bool = false
     var cameraCornerRadius: CGFloat = SceneLayoutProjection.defaultCameraCornerRadius
     var sceneLayout = SceneLayout()
+    var cameraFeeds = CameraFeeds.main
     var selectedScenePreset: ScenePreset?
     var projectLibrary: RecordingStorageLocation?
     var additionalProjectLibraries: [RecordingStorageLocation] = []
@@ -149,6 +157,14 @@ struct RecordingTake {
     var timelineTrimOffset: CMTime = .zero
     var sourceTimelineOffsets: [CaptureSource: CMTime] = [:]
     var sourceReferences: [RecordingProject.SourceFile] = []
+    var cameraAngleFiles: [SourceTrackFile] = []
+    /// Each microphone's own file when a take records more than one; `audioURL` then holds their mix.
+    var microphoneTrackFiles: [SourceTrackFile] = []
+
+    /// Where the main microphone records: its own numbered file when other microphones record with it.
+    var microphoneCaptureURL: URL {
+        microphoneTrackFiles.first?.url ?? audioURL
+    }
 
     var sourceManifestURL: URL {
         scratchDirectory.appendingPathComponent("take.json")

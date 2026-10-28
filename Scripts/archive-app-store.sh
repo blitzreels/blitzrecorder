@@ -131,7 +131,17 @@ preflight_if_needed() {
   fi
 
   Scripts/preflight-app-store-local.sh
-  Scripts/validate-submission-artifacts.sh
+}
+
+# Archives and exports from an earlier run must never stand in for this one: the final artifact check reads
+# build/AppStoreArchives and build/AppStoreExports, so a failed archive would otherwise validate old files.
+remove_previous_artifacts() {
+  local label="$1"
+  local archive_name="$2"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    return
+  fi
+  rm -rf "$ARCHIVE_DIR/$archive_name" "$EXPORT_DIR/$label" "$EXPORT_DIR/$label-export-options.plist"
 }
 
 write_export_options() {
@@ -192,6 +202,7 @@ validate_archive() {
   local app_relative_path="$2"
   local bundle_id="$3"
   local label="$4"
+  local profile_specifier="$5"
   local app_path="$archive/$app_relative_path"
 
   if [[ ! -d "$app_path" ]]; then
@@ -228,7 +239,10 @@ validate_archive() {
       paste -sd '|' -
   )"
 
-  if [[ "$signing_authority" != *"Apple Distribution"* &&
+  # Automatic signing archives with the development identity and re-signs for distribution at export; only a
+  # manually signed archive must already carry the distribution identity.
+  if [[ -n "$profile_specifier" &&
+        "$signing_authority" != *"Apple Distribution"* &&
         "$signing_authority" != *"3rd Party Mac Developer Application"* &&
         "$signing_authority" != *"iPhone Distribution"* ]]; then
     echo "error: $label archive is not signed with an App Store distribution identity." >&2
@@ -240,6 +254,7 @@ validate_archive() {
 }
 
 archive_mac() {
+  remove_previous_artifacts "macOS" "BlitzRecorder-macOS.xcarchive"
   local archive="$ARCHIVE_DIR/BlitzRecorder-macOS.xcarchive"
   local signing_args=()
   while IFS= read -r -d '' arg; do
@@ -258,7 +273,8 @@ archive_mac() {
     archive
 
   if [[ "$DRY_RUN" != "1" ]]; then
-    validate_archive "$archive" "Products/Applications/BlitzRecorder.app" "dev.blitzreels.blitzrecorder" "macOS"
+    validate_archive "$archive" "Products/Applications/BlitzRecorder.app" "dev.blitzreels.blitzrecorder" "macOS" \
+      "$MAC_PROVISIONING_PROFILE_SPECIFIER"
   fi
 
   if [[ "$EXPORT" == "1" || "$UPLOAD" == "1" ]]; then
@@ -274,6 +290,7 @@ archive_mac() {
 }
 
 archive_ios() {
+  remove_previous_artifacts "iOS" "BlitzRecorderCamera-iOS.xcarchive"
   local archive="$ARCHIVE_DIR/BlitzRecorderCamera-iOS.xcarchive"
   local signing_args=()
   while IFS= read -r -d '' arg; do
@@ -292,7 +309,8 @@ archive_ios() {
     archive
 
   if [[ "$DRY_RUN" != "1" ]]; then
-    validate_archive "$archive" "Products/Applications/BlitzRecorderCamera.app" "dev.blitzreels.blitzrecorder.camera" "iOS"
+    validate_archive "$archive" "Products/Applications/BlitzRecorderCamera.app" "dev.blitzreels.blitzrecorder.camera" "iOS" \
+      "$IOS_PROVISIONING_PROFILE_SPECIFIER"
   fi
 
   if [[ "$EXPORT" == "1" || "$UPLOAD" == "1" ]]; then

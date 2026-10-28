@@ -131,19 +131,12 @@ extension LiveCompositedRecorder {
 
         let session = AVCaptureSession()
         session.beginConfiguration()
-        LocalCameraSessionConfiguration.configurePreset(on: session)
-
-        LocalCameraSessionConfiguration.configure(.init(
-            device: device,
-            fps: settings.framesPerSecond,
-            logPrefix: "Live compositor",
-            cameraIsRunningSomewhere: LocalCameraUsage.isRunningSomewhere(device)
-        ))
-        let input = try AVCaptureDeviceInput(device: device)
-        guard session.canAddInput(input) else {
+        guard try LocalCameraSessionConfiguration.attachCamera(.init(
+            session: session,
+            device: device
+        )) else {
             throw RecorderError.noCamera
         }
-        session.addInput(input)
 
         let output = AVCaptureVideoDataOutput()
         output.alwaysDiscardsLateVideoFrames = true
@@ -159,8 +152,16 @@ extension LiveCompositedRecorder {
 
         cameraSession = session
         observeCaptureSession(.init(session: session, source: .camera))
+        let format = LocalCameraDeviceConfigurationRequest(
+            device: device,
+            fps: settings.framesPerSecond,
+            logPrefix: "Live compositor",
+            cameraIsRunningSomewhere: LocalCameraUsage.isRunningSomewhere(device)
+        )
         cameraQueue.async {
+            let held = LocalCameraSessionConfiguration.holdBestFormat(format)
             session.startRunning()
+            if held { device.unlockForConfiguration() }
         }
     }
 

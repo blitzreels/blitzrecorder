@@ -19,6 +19,8 @@ final class RecorderCaptureRuntime {
     let screenSourcePickerRecents: ScreenSourcePickerRecents
     let screenCropPicker = ScreenCropPicker()
     let cameraRecorder = CameraRecorder()
+    let cameraAngles = CameraAngleRecorders()
+    let microphoneTracks = MicrophoneTrackMonitors()
     let cameraCutoutPreviewer = CameraCutoutPreviewer()
     let audioRecorder = AudioRecorder()
     let systemAudioRecorder = SystemAudioRecorder()

@@ -22,6 +22,11 @@ extension RecorderCaptureRuntime {
     func setMicrophone(id: String?) {
         guard state == .recording || state == .paused else {
             studio.applyIdleMicrophone(id: id)
+            dropMicrophoneTrackUsedAsMainMicrophone()
+            return
+        }
+        if let id, (committedRecordingSettings ?? settings).recordedExtraMicrophoneIDs.contains(id) {
+            onMessage?("That microphone is already recording on its own track.")
             return
         }
         guard settings.enabledSources.contains(.microphone) else {
@@ -29,7 +34,7 @@ extension RecorderCaptureRuntime {
             return
         }
         let device = id.flatMap { MicrophoneDeviceSelection.microphone(id: $0) }
-            ?? MicrophoneDeviceSelection.fallbackMicrophone()
+            ?? MicrophoneDeviceSelection.fallbackMicrophone(.init(settings: settings, excludedIDs: []))
         guard let device else {
             onMessage?("Microphone unavailable. Recording continues with the current microphone.")
             return
@@ -100,7 +105,7 @@ extension RecorderCaptureRuntime {
     }
 
     func selectedMicrophoneName() -> String {
-        CaptureDeviceCatalog.microphoneName(selectedID: settings.selectedMicrophoneID)
+        CaptureDeviceCatalog.microphoneName(settings: settings)
     }
 
     func handleActiveMicrophoneCaptureFailure(_ error: Error) {
@@ -150,12 +155,32 @@ extension RecorderCaptureRuntime {
             refreshAudioLevelMonitoring()
         }
         returnToPreferredMicrophone(device)
+        addConnectedCameraAsAngle(device)
         if actions.notifyCamera {
             onCameraConfigurationChanged?()
         }
     }
 
+    /// A camera plugged in while idle becomes the next angle, so its scenes appear without another step.
+    /// Desk View is skipped: it is a crop of an iPhone camera, not another angle.
+    private func addConnectedCameraAsAngle(_ device: AVCaptureDevice) {
+        guard state == .idle,
+              device.hasMediaType(.video),
+              device.deviceType != .deskViewCamera,
+              device.uniqueID != mainLocalCameraDeviceID,
+              !settings.extraCameraAngleIDs.contains(device.uniqueID) else { return }
+        addCameraAngle(deviceID: device.uniqueID)
+        let name = NumberedSourceTracks.cameraAngles.displayName(index: settings.extraCameraAngleIDs.count - 1)
+        onMessage?("\(device.localizedName) is \(name). Its scenes are in the strip, with Two Cameras.")
+    }
+
     func handleCaptureDeviceDisconnected(_ device: AVCaptureDevice) {
+        if state == .recording || state == .paused,
+           let index = (committedRecordingSettings ?? settings).recordedExtraMicrophoneIDs.firstIndex(of: device.uniqueID) {
+            let name = NumberedSourceTracks.microphones.displayName(index: index + 1)
+            Task { await takeRecording.stopMicrophoneTrack(deviceID: device.uniqueID) }
+            onMessage?("\(name) was unplugged. What it recorded so far is kept.")
+        }
         let actions = CaptureDeviceEvent.disconnected(
             isActiveMicrophone: device.hasMediaType(.audio) && activeMicrophoneDeviceID == device.uniqueID,
             isActiveLocalCamera: device.hasMediaType(.video) && activeLocalCameraDeviceID == device.uniqueID,
@@ -177,9 +202,11 @@ extension RecorderCaptureRuntime {
 
     func recoverDisconnectedMicrophone(_ disconnectedDevice: AVCaptureDevice) {
         guard state == .recording || state == .paused else { return }
-        guard let fallback = MicrophoneDeviceSelection.fallbackMicrophone(
-            excluding: disconnectedDevice.uniqueID
-        ) else {
+        let extraMicrophones = (committedRecordingSettings ?? settings).recordedExtraMicrophoneIDs
+        guard let fallback = MicrophoneDeviceSelection.fallbackMicrophone(.init(
+            settings: committedRecordingSettings ?? settings,
+            excludedIDs: Set(extraMicrophones + [disconnectedDevice.uniqueID])
+        )) else {
             handleActiveCaptureFailure(ActiveCaptureFailure(
                 source: .microphone,
                 error: RecorderError.microphoneUnavailable
@@ -237,7 +264,11 @@ extension RecorderCaptureRuntime {
             } catch {
                 microphoneLevelMonitor.stop()
             }
+            if state == .idle {
+                microphoneTracks.start(deviceIDs: settings.recordedExtraMicrophoneIDs, settings: settings)
+            }
         } else {
+            microphoneTracks.stop()
             microphoneLevelMonitor.stop()
         }
 
@@ -270,11 +301,13 @@ extension RecorderCaptureRuntime {
 
     func stopAudioLevelMonitoring() async {
         microphoneLevelMonitor.stop()
+        microphoneTracks.stop()
         try? await systemAudioLevelMonitor.stop()
     }
 
     func prepareAudioLevelMonitoringForRecording() async {
         microphoneLevelMonitor.stop()
+        microphoneTracks.stop()
         guard settings.enabledSources.contains(.systemAudio) else {
             try? await systemAudioLevelMonitor.stop()
             return

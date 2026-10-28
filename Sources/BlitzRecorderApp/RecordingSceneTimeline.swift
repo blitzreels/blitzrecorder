@@ -11,6 +11,9 @@ struct RecordingSceneSegment: Equatable {
 
 enum RecordingSceneTimeline {
     private static let defaultTransitionSampleInterval = 1.0 / 60.0
+    /// Segment boundaries are event times rounded to 1/600 s and carried through the time map, so a segment that
+    /// starts on a scene switch can ask for a time a millisecond before it. Under a frame at any export rate.
+    private static let switchTolerance: TimeInterval = 0.002
 
     struct BoundaryRequest {
         let sceneEvents: [RecordingSceneEvent]
@@ -91,7 +94,7 @@ enum RecordingSceneTimeline {
             targetScene: RecordingScene
         )?
         for event in sortedEvents {
-            guard event.time <= time else {
+            guard event.time <= time + switchTolerance else {
                 break
             }
 
@@ -180,9 +183,8 @@ enum RecordingSceneTimeline {
         ),
         at time: TimeInterval
     ) -> RecordingScene {
-        let elapsed = time - transition.startTime
-        guard elapsed >= 0,
-              elapsed < transition.transition.duration else {
+        let elapsed = max(0, time - transition.startTime)
+        guard elapsed < transition.transition.duration else {
             return transition.targetScene
         }
         return transition.startScene.interpolated(

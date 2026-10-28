@@ -26,6 +26,17 @@ struct SourceReadinessNotice: Equatable {
             case .manageDevices: "Connect iPhone"
             }
         }
+
+        /// The same action as a short button next to its problem.
+        var shortTitle: String {
+            switch self {
+            case .chooseScreen: "Choose"
+            case .screenSettings, .cameraSettings, .microphoneSettings: "Settings"
+            case .requestCamera, .requestMicrophone: "Allow"
+            case .retryCamera: "Retry"
+            case .manageDevices: "Connect"
+            }
+        }
     }
 
     enum Severity {
@@ -45,7 +56,7 @@ struct SourceReadinessNotice: Equatable {
         guard let blocker = request.blockers.first(where: { $0.source == request.source }) else { return nil }
         switch blocker.permission {
         case "Screen source":
-            return .init(title: "Choose screen or window",
+            return .init(title: "No screen or window picked",
                 detail: request.source == .systemAudio
                     ? "Choose a display or window to capture its audio."
                     : "Choose the display or window you want to record.",
@@ -100,7 +111,23 @@ extension RecorderViewModel {
         if let notice = SourceReadinessNotice.resolve(.init(source: source, blockers: recordingReadiness.blockers)) {
             return notice
         }
-        return source == .microphone ? missingPreferredMicrophone?.notice : nil
+        guard source == .microphone else { return nil }
+        return iPhoneCompanionMicrophoneNotice ?? missingPreferredMicrophone?.notice
+    }
+
+    /// BlitzRecorder Camera needs its iPhone's microphone; the Mac taking it through Continuity stops the iPhone's
+    /// take, so say so before recording instead of failing mid-take.
+    var iPhoneCompanionMicrophoneNotice: SourceReadinessNotice? {
+        guard isSourceConfigured(.microphone), MicrophoneDeviceSelection.usesIPhoneCompanion(settings) else { return nil }
+        if MicrophoneDeviceSelection.conflictsWithIPhoneCompanion(settings: settings) {
+            return .init(title: "This mic stops the iPhone camera",
+                         detail: "The iPhone can't record while the Mac uses its microphone. Choose another microphone.",
+                         action: nil, isWaiting: false, severity: .warning)
+        }
+        guard MicrophoneDeviceSelection.selectedMicrophone(settings: settings) == nil else { return nil }
+        return .init(title: "No microphone",
+                     detail: "The iPhone's microphone can't be used while it is the camera. Connect a microphone or mute it.",
+                     action: nil, isWaiting: false, severity: .warning)
     }
 
     var missingPreferredMicrophone: MissingPreferredMicrophone? {

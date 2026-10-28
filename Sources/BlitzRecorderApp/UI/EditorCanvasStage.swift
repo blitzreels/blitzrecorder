@@ -13,7 +13,7 @@ struct EditorCanvasStage: View {
     var frameRatioBar: EditorFrameRatioBar.Configuration?
     var layers: () -> [EditorCanvasLayer]
     @Binding var editErrorMessage: String?
-    var onSelectLayer: (EditorCanvasLayer) -> Void
+    var onSelectLayer: (EditorCanvasLayer?) -> Void
     var onMove: (SceneLayerKind, CGSize, Bool) -> Void
     var onResize: (SceneLayerKind, ResizeAnchor, CGSize, Bool) -> Void
     var onCropChange: (EditorSourceCropInteractionChange) -> Void

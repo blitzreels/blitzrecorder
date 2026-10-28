@@ -5,11 +5,14 @@ struct SceneLayout: Equatable {
     var cameraFrame: CGRect = CGRect(x: 0, y: 0.046796875, width: 1, height: 0.31640625)
     var layerOrder: [SceneLayerKind] = [.screen, .camera]
     var cameraMask: SceneCameraMask = .rectangle
+    /// The second camera's frame in two-camera layouts; nil when the scene shows one camera.
+    var secondCameraFrame: CGRect?
 
     func frame(for kind: SceneLayerKind) -> CGRect {
         switch kind {
         case .screen: return screenFrame
         case .camera: return cameraFrame
+        case .secondCamera: return secondCameraFrame ?? .zero
         }
     }
 
@@ -17,7 +20,16 @@ struct SceneLayout: Equatable {
         switch kind {
         case .screen: screenFrame = frame
         case .camera: cameraFrame = frame
+        case .secondCamera: secondCameraFrame = frame
         }
+    }
+
+    /// Back to front, with the second camera right above the first when the scene has one.
+    var renderLayerOrder: [SceneLayerKind] {
+        guard secondCameraFrame != nil else { return layerOrder }
+        var order = layerOrder.filter { $0 != .secondCamera }
+        order.insert(.secondCamera, at: (order.firstIndex(of: .camera) ?? order.count - 1) + 1)
+        return order
     }
 
     static func scaledAroundCenter(_ frame: CGRect, scale: CGFloat) -> CGRect {
@@ -348,6 +360,9 @@ extension SceneLayout {
 
     func arrangementName(visibleSources: Set<CaptureSource>) -> String {
         let frames = visibleFrames(visibleSources)
+        if secondCameraFrame != nil, frames[.camera] != nil {
+            return frames[.screen] == nil ? "Two Cameras" : "Screen + Two Cameras"
+        }
         switch (frames[.screen], frames[.camera]) {
         case (_?, _?):
             return cameraFloats(visibleSources: visibleSources) ? "Camera Inset" : "Screen + Camera"

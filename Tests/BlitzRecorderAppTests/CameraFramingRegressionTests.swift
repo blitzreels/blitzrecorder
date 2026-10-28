@@ -68,7 +68,7 @@ final class CameraFramingRegressionTests: XCTestCase {
         var updates = 0
         studio.updateRecordingScene = { _ in updates += 1 }
 
-        studio.setCameraCrop(control)
+        studio.setCameraCrop(CameraCropChange(layer: .camera, crop: control))
 
         XCTAssertEqual(updates, 1)
         XCTAssertEqual(studio.settings.cameraContentMode, .fill)
@@ -134,8 +134,8 @@ final class CameraFramingRegressionTests: XCTestCase {
         let originalLayout = view.sceneLayout
         let originalVisibleFrame = view.renderedCameraFrameForTesting
         var committed: LayerCropControl?
-        view.onCameraCropChanged = { committed = $0 }
-        view.beginCameraCropEditing()
+        view.onCameraCropChanged = { committed = $0.crop }
+        view.beginCameraCropEditing(.camera)
         view.updateCameraCropDraft(amount: CGPoint(x: 0.25, y: 0.25), position: CGPoint(x: 0.4, y: 0))
 
         view.commitCameraCropEditing()
@@ -153,7 +153,7 @@ final class CameraFramingRegressionTests: XCTestCase {
         let originalFrame = view.renderedCameraFrameForTesting
         var commits = 0
         view.onCameraCropChanged = { _ in commits += 1 }
-        view.beginCameraCropEditing()
+        view.beginCameraCropEditing(.camera)
         view.updateCameraCropDraft(amount: CGPoint(x: 0.4, y: 0.4), position: CGPoint(x: -0.5, y: 0))
 
         view.cancelCameraCropEditing()

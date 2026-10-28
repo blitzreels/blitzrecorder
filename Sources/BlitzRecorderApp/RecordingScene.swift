@@ -4,6 +4,7 @@ import Foundation
 struct RecordingScene: Equatable {
     var enabledSources: Set<CaptureSource>
     var sceneLayout: SceneLayout
+    var cameraFeeds: CameraFeeds
     var screenSourceGeometry: ScreenSourceGeometry
     var screenCropAmount: CGPoint
     var screenCropPosition: CGPoint
@@ -21,11 +22,15 @@ struct RecordingScene: Equatable {
     var cameraCornerRadius: CGFloat
     var sourceOpacities: [CaptureSource: CGFloat]
     var fillsCanvasWhenOnlyVideoSource: Bool
+    /// The second camera's own crop in two-camera scenes. Zero shows its whole picture.
+    var secondCameraCropAmount: CGPoint = .zero
+    var secondCameraCropPosition: CGPoint = .zero
 
     init(settings: RecordingSettings) {
         self.init(
             enabledSources: settings.visibleSources,
             sceneLayout: settings.sceneLayout,
+            cameraFeeds: settings.cameraFeeds,
             screenSourceGeometry: ScreenSourceGeometry(settings: settings),
             screenCropAmount: .zero,
             screenCropPosition: .zero,
@@ -43,11 +48,14 @@ struct RecordingScene: Equatable {
             cameraCornerRadius: settings.cameraCornerRadius,
             fillsCanvasWhenOnlyVideoSource: settings.enabledSources.intersection([.screen, .camera]).count == 1
         )
+        secondCameraCropAmount = settings.secondCameraCropAmount
+        secondCameraCropPosition = settings.secondCameraCropPosition
     }
 
     init(
         enabledSources: Set<CaptureSource>,
         sceneLayout: SceneLayout,
+        cameraFeeds: CameraFeeds = .main,
         screenSourceGeometry: ScreenSourceGeometry = ScreenSourceGeometry(),
         screenCropAmount: CGPoint = .zero,
         screenCropPosition: CGPoint = .zero,
@@ -68,6 +76,7 @@ struct RecordingScene: Equatable {
     ) {
         self.enabledSources = enabledSources
         self.sceneLayout = sceneLayout
+        self.cameraFeeds = cameraFeeds
         self.screenSourceGeometry = screenSourceGeometry
         self.screenCropAmount = screenCropAmount
         self.screenCropPosition = screenCropPosition

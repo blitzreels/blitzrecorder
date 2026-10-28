@@ -44,13 +44,7 @@ enum CaptureDeviceCatalog {
         ).devices.map { SourceOption(id: $0.uniqueID, name: $0.localizedName) }
     }
 
-    static func microphoneName(selectedID: String?) -> String {
-        if let selectedID, let device = MicrophoneDeviceSelection.microphone(id: selectedID) {
-            return device.localizedName
-        }
-        if let device = MicrophoneDeviceSelection.fallbackMicrophone() {
-            return device.localizedName
-        }
-        return "Default microphone"
+    static func microphoneName(settings: RecordingSettings) -> String {
+        MicrophoneDeviceSelection.selectedMicrophone(settings: settings)?.localizedName ?? "No microphone available"
     }
 }

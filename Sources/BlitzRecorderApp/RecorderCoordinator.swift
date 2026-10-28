@@ -215,6 +215,26 @@ final class RecorderCoordinator {
     func requestPermissionsForEnabledSources() async { await capture.requestPermissionsForEnabledSources() }
     func availableCameras() -> [SourceOption] { capture.availableCameras() }
     func availableMicrophones() -> [SourceOption] { capture.availableMicrophones() }
+    var mainLocalCameraDeviceID: String? { capture.mainLocalCameraDeviceID }
+    func addCameraAngle(deviceID: String) { capture.addCameraAngle(deviceID: deviceID) }
+    func replaceCameraAngle(_ replacement: CameraAngleReplacement) { capture.replaceCameraAngle(replacement) }
+    func removeCameraAngle(deviceID: String) { capture.removeCameraAngle(deviceID: deviceID) }
+    func dropCameraAngleUsedAsMainCamera() { capture.dropCameraAngleUsedAsMainCamera() }
+    var mainMicrophoneDeviceID: String? { capture.mainMicrophoneDeviceID }
+    func addMicrophoneTrack(deviceID: String) { capture.addMicrophoneTrack(deviceID: deviceID) }
+    func replaceMicrophoneTrack(_ replacement: MicrophoneTrackReplacement) { capture.replaceMicrophoneTrack(replacement) }
+    func removeMicrophoneTrack(deviceID: String) { capture.removeMicrophoneTrack(deviceID: deviceID) }
+    var onMicrophoneTrackLevel: ((String, Float) -> Void)? {
+        get { capture.microphoneTracks.levelHandler }
+        set { capture.microphoneTracks.levelHandler = newValue }
+    }
+    func cameraAnglePreviewLayer(deviceID: String) async throws -> AVCaptureVideoPreviewLayer {
+        try await capture.cameraAnglePreviewLayer(deviceID: deviceID)
+    }
+    func stopCameraAnglePreview(deviceID: String) { capture.stopCameraAnglePreview(deviceID: deviceID) }
+    func setCameraAngleThumbnailHandler(deviceID: String, handler: @escaping CameraRecorder.ThumbnailHandler) {
+        capture.setCameraAngleThumbnailHandler(deviceID: deviceID, handler: handler)
+    }
     func selectedMicrophoneName() -> String { capture.selectedMicrophoneName() }
     func start(takeTitle: String?) { capture.start(takeTitle: takeTitle) }
     func pause() { capture.pause() }

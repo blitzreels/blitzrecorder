@@ -3,10 +3,17 @@ import Foundation
 
 @MainActor
 extension RecorderStudioConfiguration {
-    func setCameraCrop(_ crop: LayerCropControl) {
+    func setCameraCrop(_ change: CameraCropChange) {
         guard sceneChangeIsAllowed() else { return }
-        settings.cameraCropAmount = SourceCropGeometry.clampedAmount(crop.amount)
-        settings.cameraCropPosition = SourceCropGeometry.clampedPosition(crop.position)
+        let amount = SourceCropGeometry.clampedAmount(change.crop.amount)
+        let position = SourceCropGeometry.clampedPosition(change.crop.position)
+        if change.layer == .secondCamera {
+            settings.secondCameraCropAmount = amount
+            settings.secondCameraCropPosition = position
+        } else {
+            settings.cameraCropAmount = amount
+            settings.cameraCropPosition = position
+        }
         settings.cameraContentMode = .fill
         persist()
         updateRecordingScene?(.cut)
@@ -28,8 +35,8 @@ extension RecorderStudioConfiguration {
                 screenCaptureConfigurationChanged = true
             }
             settings.sceneLayout.screenFrame = nextFrame
-        case .camera:
-            settings.sceneLayout.cameraFrame = SceneLayerResizing.clamped(frame)
+        case .camera, .secondCamera:
+            settings.sceneLayout.setFrame(SceneLayerResizing.clamped(frame), for: kind)
         }
         persist()
         updateRecordingScene?(transition)
@@ -265,8 +272,8 @@ extension RecorderStudioConfiguration {
 
     func setSceneLayerOrder(_ order: [SceneLayerKind]) {
         guard sceneChangeIsAllowed() else { return }
-        guard Set(order) == Set(SceneLayerKind.allCases),
-              order.count == SceneLayerKind.allCases.count else {
+        guard Set(order) == Set(SceneLayerKind.persistedOrderKinds),
+              order.count == SceneLayerKind.persistedOrderKinds.count else {
             return
         }
         settings.selectedScenePreset = nil
@@ -280,7 +287,7 @@ extension RecorderStudioConfiguration {
         switch kind {
         case .screen:
             sourceAspectRatio = screenAspectRatio()
-        case .camera:
+        case .camera, .secondCamera:
             sourceAspectRatio = cameraAspectRatio()
         }
         setSceneLayer(
@@ -378,6 +385,35 @@ extension RecorderStudioConfiguration {
             || abs(next.height - frame.height) > epsilon else { return false }
         settings.sceneLayout.cameraFrame = next
         return true
+    }
+
+    /// The tiles a two-camera scene in these settings was laid out with, or nil once a camera was moved by hand.
+    func sceneTiles(in settings: RecordingSettings) -> SceneTiles? {
+        settings.sceneLayout.matchingTiles(.init(
+            includesScreen: settings.selectedScenePreset == .twoCamerasScreen,
+            layout: settings.layout,
+            screenAspectRatio: screenAspectRatio(),
+            cameraAspectRatio: cameraAspectRatio()
+        ))
+    }
+
+    /// Lays both cameras (and the screen) of the current two-camera scene out as these tiles.
+    func applySceneTiles(_ tiles: SceneTiles) {
+        guard sceneChangeIsAllowed(), settings.sceneLayout.secondCameraFrame != nil else { return }
+        let layout = SceneLayout.tiledLayout(.init(
+            tiles: tiles,
+            includesScreen: settings.selectedScenePreset == .twoCamerasScreen,
+            layout: settings.layout,
+            screenAspectRatio: screenAspectRatio(),
+            cameraAspectRatio: cameraAspectRatio()
+        ))
+        settings.sceneLayout.screenFrame = layout.screenFrame
+        settings.sceneLayout.cameraFrame = layout.cameraFrame
+        settings.sceneLayout.secondCameraFrame = layout.secondCameraFrame
+        settings.cameraContentMode = .fill
+        persist()
+        updateRecordingScene?(.cut)
+        onScreenCaptureConfigurationChanged?()
     }
 
     private func sceneChangeIsAllowed() -> Bool {

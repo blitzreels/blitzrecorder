@@ -16,7 +16,7 @@ struct EditorInspector: View {
     var canvasAspectRatio: CGFloat
     var recordedVideoSources: Set<CaptureSource>
     var scenePresetPreview: BlitzScenePreview
-    var cameraAssetID: String?
+    let layerAssetIDs: [SceneLayerKind: String]
     var selectedSource: SceneLayerKind?
     @Binding var screenZoomDraft: Double?
     @Binding var cameraZoomDraft: Double?
@@ -100,7 +100,7 @@ struct EditorInspector: View {
                             canvasAspectRatio: canvasAspectRatio,
                             recordedVideoSources: recordedVideoSources,
                             scenePresetPreview: scenePresetPreview,
-                            cameraAssetID: cameraAssetID,
+                            layerAssetIDs: layerAssetIDs,
                             selectedSource: selectedSource,
                             screenZoomDraft: $screenZoomDraft,
                             cameraZoomDraft: $cameraZoomDraft,

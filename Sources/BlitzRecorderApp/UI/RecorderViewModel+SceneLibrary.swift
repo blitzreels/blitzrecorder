@@ -70,8 +70,13 @@ extension RecorderViewModel {
             .subtracting(scene.snapshot.hiddenVideoSources)
     }
 
+    /// Names the camera by number once a second camera exists: "Screen + Camera 2".
     func sceneLabel(_ scene: RecordingSceneDefinition) -> String {
-        sceneLayout(scene).arrangementName(visibleSources: sceneVisibleSources(scene))
+        let name = sceneLayout(scene).arrangementName(visibleSources: sceneVisibleSources(scene))
+        guard !settings.extraCameraAngleIDs.isEmpty,
+              sceneLayout(scene).secondCameraFrame == nil,
+              let number = CameraFeeds.angleNumber(role: scene.snapshot.cameraFeeds.camera) else { return name }
+        return name.replacingOccurrences(of: "Camera", with: "Camera \(number)")
     }
 
 }

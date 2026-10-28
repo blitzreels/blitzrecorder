@@ -4,9 +4,10 @@ extension RecordingScene {
     func interpolated(to target: RecordingScene, progress: CGFloat) -> RecordingScene {
         let progress = min(1, max(0, progress))
         let enabledSources = progress < 1 ? enabledSources.union(target.enabledSources) : target.enabledSources
-        return RecordingScene(
+        var scene = RecordingScene(
             enabledSources: enabledSources,
-            sceneLayout: sceneLayout.interpolated(to: target.sceneLayout, progress: progress),
+            sceneLayout: steadyLayout(to: target, progress: progress),
+            cameraFeeds: progress < 0.5 ? cameraFeeds : target.cameraFeeds,
             screenSourceGeometry: progress < 1 ? screenSourceGeometry : target.screenSourceGeometry,
             screenCropAmount: screenCropAmount.interpolated(to: target.screenCropAmount, progress: progress),
             screenCropPosition: screenCropPosition.interpolated(to: target.screenCropPosition, progress: progress),
@@ -23,6 +24,33 @@ extension RecordingScene {
             cameraShadowEnabled: progress < 1 ? cameraShadowEnabled : target.cameraShadowEnabled,
             cameraCornerRadius: cameraCornerRadius + (target.cameraCornerRadius - cameraCornerRadius) * progress,
             sourceOpacities: interpolatedSourceOpacities(to: target, sources: enabledSources, progress: progress)
+        )
+        scene.secondCameraCropAmount = secondCameraCropAmount.interpolated(to: target.secondCameraCropAmount, progress: progress)
+        scene.secondCameraCropPosition = secondCameraCropPosition.interpolated(
+            to: target.secondCameraCropPosition, progress: progress)
+        return scene
+    }
+
+    /// The layout between two scenes. A layer that is leaving fades out where it was, and one that is arriving fades
+    /// in where it will be: a hidden layer keeps a stale frame (often the full canvas), and sliding toward it made
+    /// the screen balloon behind the cameras.
+    private func steadyLayout(to target: RecordingScene, progress: CGFloat) -> SceneLayout {
+        let layout = sceneLayout.interpolated(to: target.sceneLayout, progress: progress)
+        func frame(_ source: CaptureSource, moving: CGRect, from start: CGRect, to end: CGRect) -> CGRect {
+            switch (enabledSources.contains(source), target.enabledSources.contains(source)) {
+            case (true, false): start
+            case (false, true): end
+            default: moving
+            }
+        }
+        return SceneLayout(
+            screenFrame: frame(.screen, moving: layout.screenFrame,
+                               from: sceneLayout.screenFrame, to: target.sceneLayout.screenFrame),
+            cameraFrame: frame(.camera, moving: layout.cameraFrame,
+                               from: sceneLayout.cameraFrame, to: target.sceneLayout.cameraFrame),
+            layerOrder: layout.layerOrder,
+            cameraMask: layout.cameraMask,
+            secondCameraFrame: layout.secondCameraFrame
         )
     }
 
@@ -53,8 +81,19 @@ extension SceneLayout {
             layerOrder: progress <= 0 ? layerOrder : target.layerOrder,
             cameraMask: progress <= 0
                 ? cameraMask
-                : (progress >= 1 || cameraMask == target.cameraMask ? target.cameraMask : .rectangle)
+                : (progress >= 1 || cameraMask == target.cameraMask ? target.cameraMask : .rectangle),
+            secondCameraFrame: interpolatedSecondCameraFrame(to: target, progress: progress)
         )
+    }
+
+    /// A second camera that appears or leaves grows from or shrinks into the first camera's frame.
+    private func interpolatedSecondCameraFrame(to target: SceneLayout, progress: CGFloat) -> CGRect? {
+        switch (secondCameraFrame, target.secondCameraFrame) {
+        case (nil, nil): return nil
+        case let (start?, end?): return start.interpolated(to: end, progress: progress)
+        case let (nil, end?): return progress <= 0 ? nil : cameraFrame.interpolated(to: end, progress: progress)
+        case let (start?, nil): return progress >= 1 ? nil : start.interpolated(to: target.cameraFrame, progress: progress)
+        }
     }
 }
 

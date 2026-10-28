@@ -2,11 +2,15 @@ import Foundation
 import CoreMedia
 
 struct CaptureSourceRunSummary {
-    let completions: [CaptureSource: MediaWriterCompletion]
+    var completions: [CaptureSource: MediaWriterCompletion]
     let stopFailures: [CaptureSource: String]
     let synchronizationFailures: Set<CaptureSource>
     let timelineTrimOffset: CMTime
-    let sourceTimelineOffsets: [CaptureSource: CMTime]
+    var sourceTimelineOffsets: [CaptureSource: CMTime]
+    /// One line per extra camera angle that did not save video, such as "Camera 2: …".
+    var cameraAngleFailures: [String] = []
+    /// One line per extra microphone that did not save audio, or a line when the microphones could not be mixed.
+    var microphoneTrackFailures: [String] = []
 
     init(
         completions: [CaptureSource: MediaWriterCompletion],
@@ -27,12 +31,27 @@ struct CaptureSourceRunSummary {
     }
 
     var stopFailureWarning: String? {
-        stopFailureWarning(for: Set(CaptureSource.allCases))
+        RecordingWarning.combined([
+            stopFailureWarning(for: Set(CaptureSource.allCases)), cameraAngleWarning, microphoneTrackWarning
+        ])
+    }
+
+    private var microphoneTrackWarning: String? {
+        guard !microphoneTrackFailures.isEmpty else { return nil }
+        return "Some microphones were not saved: \(microphoneTrackFailures.joined(separator: "; "))"
+    }
+
+    private var cameraAngleWarning: String? {
+        guard !cameraAngleFailures.isEmpty else { return nil }
+        return "Some camera angles were not saved: \(cameraAngleFailures.joined(separator: "; "))"
     }
 
     var savedRecordingStopWarning: String? {
         if let videoWarning = stopFailureWarning(for: [.screen, .camera]) {
             return videoWarning
+        }
+        if let extraTrackWarning = RecordingWarning.combined([cameraAngleWarning, microphoneTrackWarning]) {
+            return extraTrackWarning
         }
 
         let synchronizationFailureNames = [CaptureSource.microphone, .systemAudio]
