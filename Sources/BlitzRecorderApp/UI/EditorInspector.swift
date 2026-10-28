@@ -29,11 +29,23 @@ struct EditorInspector: View {
     var textSelection: Binding<UUID?>
     var zoomSelection: Binding<UUID?>
     var outputs: EditorOutputsPane
+    /// The Cameras tab's cameras and actions; nil for a recorded take.
+    var cameras: EditorCamerasInspector.Configuration?
 
     var body: some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
             switch inspectorTab {
+            case .cameras:
+                if let cameras {
+                    EditorInspectorPane(configuration: .init(
+                        title: "Cameras",
+                        detail: "Pick the shot from the playhead on, and whose sound plays.",
+                        showsFooter: false,
+                        content: { EditorCamerasInspector(configuration: cameras) },
+                        footer: { EmptyView() }
+                    ))
+                }
             case .audio:
                 EditorInspectorPane(configuration: .init(
                     title: "Audio",
@@ -117,7 +129,7 @@ struct EditorInspector: View {
             }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            EditorInspectorTabBar(selection: $inspectorTab)
+            EditorInspectorTabBar(configuration: .init(selection: $inspectorTab, showsCameras: cameras != nil))
         }
     }
 

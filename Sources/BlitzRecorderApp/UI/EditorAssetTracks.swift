@@ -1,9 +1,12 @@
 import Foundation
 
 enum EditorAssetTracks {
+    /// One timeline lane and what its eye or speaker switches: the canvas layer its file fills in the current scene,
+    /// or the sound it plays. A lane with neither, like a camera not on screen or a multicam angle, has no toggle.
     struct Item: Equatable {
         let id: String
-        let kind: EditorAsset.Kind
+        let layer: SceneLayerKind?
+        let audio: CaptureSource?
     }
 
     struct Request {
@@ -40,7 +43,7 @@ enum EditorAssetTracks {
         let visibleVideoCount = request.hideableKinds.subtracting(request.hiddenKinds).count
         var snapshot = Snapshot()
         for asset in request.assets {
-            if let kind = layerKind(asset.kind) {
+            if let kind = asset.layer {
                 if request.hiddenKinds.contains(kind) {
                     snapshot.hiddenIDs.insert(asset.id)
                 }
@@ -48,7 +51,7 @@ enum EditorAssetTracks {
                    request.hiddenKinds.contains(kind) || visibleVideoCount > 1 {
                     snapshot.toggleableIDs.insert(asset.id)
                 }
-            } else if let source = audioSource(asset.kind) {
+            } else if let source = asset.audio {
                 if request.mutedSources.contains(source) {
                     snapshot.mutedIDs.insert(asset.id)
                 }

@@ -95,7 +95,7 @@ extension RecorderViewModel {
     /// starts right there changes to it. The first part changes when the playhead is at the very start.
     @discardableResult
     func cutToCameraShot(_ request: MulticamCutRequest) -> Bool {
-        guard let project = lastExportedProject, project.cameraAngles.count >= 2 else { return false }
+        guard let project = lastExportedProject, project.isMulticam else { return false }
         guard project.edits.activeOutputLayout == nil else {
             detailMessage = "Camera cuts change the main layout. Switch back to it to cut between cameras."
             return false
@@ -119,8 +119,19 @@ extension RecorderViewModel {
                 index = new
             }
             return try coordinator.updateProjectScene(at: projectURL, eventIndex: index) { scene in
-                request.shot.apply(to: &scene, .init(angles: angles, canvas: canvas))
+                request.shot.apply(to: &scene, .init(angles: angles, canvas: canvas, framing: request.framing))
             }
+        })
+    }
+
+    /// Names a camera of a multicam project, such as after the speaker it frames. Its lanes, shots and sound
+    /// picker all show the new name.
+    func renameCameraAngle(_ rename: CameraAngleRenameRequest) {
+        guard let project = lastExportedProject, project.cameraAngles.record(role: rename.role)?.title != rename.title,
+              !rename.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        _ = commitEditorWrite(.init(actionName: "Rename Camera", successMessage: nil, refreshesLibrary: false) {
+            [coordinator] projectURL in
+            try coordinator.renameProjectCameraAngle(.init(projectURL: projectURL, role: rename.role, title: rename.title))
         })
     }
 
@@ -360,8 +371,14 @@ extension RecorderViewModel {
     }
 }
 
+struct CameraAngleRenameRequest {
+    let role: String
+    let title: String
+}
+
 struct MulticamCutRequest {
     let shot: MulticamShot
+    let framing: MulticamShot.Framing
     /// Seconds on the take timeline where the shot starts.
     let time: Double
 }

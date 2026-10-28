@@ -96,7 +96,18 @@ struct EditorView: View {
                     editErrorMessage: $editErrorMessage,
                     textSelection: placedSelection(.text),
                     zoomSelection: placedSelection(.zoom),
-                    outputs: outputsPane
+                    outputs: outputsPane,
+                    cameras: multicam.map { program in
+                        EditorCamerasInspector.Configuration(
+                            program: program, playback: playback, soundSwitch: vm.editorSoundSwitch,
+                            isInteractive: playback.isReady,
+                            thumbnail: cameraThumbnail,
+                            onCut: { cut(to: $0) }, onReframe: { reframe($0) },
+                            onChangeTiles: { changeCameraTiles($0) },
+                            onUseSound: { vm.useProgramAudio(role: $0) },
+                            onRename: { vm.renameCameraAngle($0) }
+                        )
+                    }
                 )
                     .background(BlitzUI.panelBackground)
             } timeline: {
@@ -149,7 +160,13 @@ struct EditorView: View {
                 silence: silence,
                 onOpenSilence: openSilenceInspector,
                 onChangePlacedItem: changePlacedItem,
-                onRemovePlacedItem: removePlacedItem
+                onRemovePlacedItem: removePlacedItem,
+                multicam: multicam.map { program in
+                    EditorTimelineMulticam(
+                        program: program, soundSwitch: vm.editorSoundSwitch,
+                        onCut: { cut(to: $0) }, onUseSound: { vm.useProgramAudio(role: $0) }
+                    )
+                }
             )
             }
         }
@@ -367,7 +384,7 @@ struct EditorView: View {
             loadedProjectID = project.id
             privacy.select(nil)
             additionalExportLayouts = []
-            inspectorTab = .silence
+            inspectorTab = project.isMulticam ? .cameras : .silence
         }
         EditorCursorTrackCache.shared.prepare(directory: project.takeDirectoryPath)
         privacy.configure(.init(vm: vm, playback: playback))
@@ -399,7 +416,7 @@ struct EditorView: View {
         if !refreshed {
             await reloadProject()
         } else {
-            playback.applyEditorState(project.editorState)
+            playback.applyEditorState(project.playbackEditorState)
             silence.prepare(.init(vm: vm, playback: playback, project: project))
             await playback.reloadAudioIfNeeded(.init(project: project, baseSettings: vm.settings))
         }
@@ -453,8 +470,15 @@ struct EditorView: View {
     }
 
     var assetTracks: EditorAssetTracks.Snapshot {
-        EditorAssetTracks.snapshot(.init(
-            assets: assets.map { EditorAssetTracks.Item(id: $0.id, kind: $0.kind) },
+        let switchesCameras = project?.isMulticam == true
+        return EditorAssetTracks.snapshot(.init(
+            assets: assets.map { asset in
+                EditorAssetTracks.Item(
+                    id: asset.id,
+                    layer: switchesCameras && asset.kind == .camera ? nil : layerKind(for: asset),
+                    audio: audioSource(for: asset)
+                )
+            },
             hiddenKinds: playback.hiddenKinds,
             hideableKinds: playback.hideableKinds,
             mutedSources: playback.mutedSources,
@@ -463,15 +487,35 @@ struct EditorView: View {
     }
 
     /// The canvas layer that shows this file in the current scene: `camera-2` is the second camera in a
-    /// two-camera scene, and Camera 1's layer in a "Camera 2" scene.
+    /// two-camera scene, and Camera 1's layer in a "Camera 2" scene. Nil for a camera the scene doesn't show, so
+    /// its lane can't hide the camera that is on screen.
     func layerKind(for asset: EditorAsset) -> SceneLayerKind? {
         guard asset.kind == .camera, let scene = currentEventScene else { return EditorAssetTracks.layerKind(asset.kind) }
         let roles = Set(assets.map(\.role))
-        if scene.sceneLayout.secondCameraFrame != nil, scene.feed(for: .secondCamera, available: roles) == asset.role,
-           scene.feed(for: .camera, available: roles) != asset.role {
+        if scene.feed(for: .camera, available: roles) == asset.role { return .camera }
+        if scene.sceneLayout.secondCameraFrame != nil, scene.feed(for: .secondCamera, available: roles) == asset.role {
             return .secondCamera
         }
-        return .camera
+        return nil
+    }
+
+    /// The cameras of a project made from several cameras' files; nil for a recorded take.
+    var multicam: MulticamProgram? {
+        guard let project else { return nil }
+        return MulticamProgram(.init(
+            angles: project.cameraAngles, soundRole: project.programAudioRole,
+            sceneEvents: sceneEvents, duration: timelineDuration, canvas: captureLayout ?? .horizontal
+        ))
+    }
+
+    /// The filmstrip frame nearest a take time, for a camera's thumbnail in the Cameras tab.
+    func cameraThumbnail(_ request: EditorCamerasInspector.ThumbnailRequest) -> CGImage? {
+        guard let project, let asset = assets.first(where: { $0.isVideo && $0.role == request.role }),
+              let frames = library.filmstrips[asset.id], !frames.isEmpty else { return nil }
+        let duration = library.durations[asset.id] ?? timelineDuration
+        let sourceTime = request.time - (project.sourceOffset(forRole: asset.role) - project.timelineTrimOffsetSeconds)
+        let fraction = duration > 0 ? min(max(sourceTime / duration, 0), 0.999) : 0.5
+        return frames[Int(fraction * Double(frames.count))]
     }
 
     func audioSource(for asset: EditorAsset) -> CaptureSource? {

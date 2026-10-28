@@ -266,6 +266,9 @@ final class RecorderCoordinator {
     func removeProjectSceneEvent(at projectURL: URL, eventIndex: Int) throws -> RecordingProject {
         try capture.removeProjectSceneEvent(at: projectURL, eventIndex: eventIndex)
     }
+    func renameProjectCameraAngle(_ rename: TakeFileStore.CameraAngleRename) throws -> RecordingProject {
+        try capture.renameProjectCameraAngle(rename)
+    }
     func updateProjectProgramAudio(_ change: TakeFileStore.ProgramAudioChange) throws -> RecordingProject {
         try capture.updateProjectProgramAudio(change)
     }

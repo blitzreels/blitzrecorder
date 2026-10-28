@@ -140,6 +140,42 @@ extension TakeFileStore {
 
     /// Plays another angle's sound as the program audio of a multicam project. The sound file is one the editor
     /// extracted for that angle, so switching back and forth never extracts twice.
+    struct CameraAngleRename {
+        let projectURL: URL
+        let role: String
+        /// What the person calls the camera, such as the speaker it frames.
+        let title: String
+    }
+
+    func renameProjectCameraAngle(_ rename: CameraAngleRename, baseSettings: RecordingSettings) throws -> RecordingProject {
+        let project = try loadRecordingProject(at: rename.projectURL)
+        let title = rename.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty, let index = project.cameraAngles.firstIndex(where: { $0.role == rename.role }) else {
+            throw RecorderError.mediaWriteFailed("This camera is no longer part of the project.")
+        }
+        let outputFormat = project.outputVideoFormat(fallback: baseSettings.outputVideoFormat)
+        let settings = recordingSettings(from: project, baseSettings: baseSettings, outputFormat: outputFormat)
+        let current = recordingTake(from: project, settings: settings, outputFormat: outputFormat)
+        var angles = current.cameraAngles
+        angles[angles.firstIndex { $0.role == rename.role } ?? index].title = title
+        let take = RecordingTake(
+            scratchDirectory: current.scratchDirectory, screenURL: current.screenURL, cameraURL: current.cameraURL,
+            audioURL: current.audioURL, systemAudioURL: current.systemAudioURL, transcriptURL: current.transcriptURL,
+            finalVideoURL: current.finalVideoURL, outputVideoFormat: current.outputVideoFormat,
+            titleSlug: current.titleSlug, timelineTrimOffset: current.timelineTrimOffset,
+            sourceTimelineOffsets: current.sourceTimelineOffsets,
+            sourceReferences: current.sourceReferences, cameraAngleFiles: current.cameraAngleFiles,
+            cameraAngles: angles, programAudioRole: current.programAudioRole,
+            microphoneTrackFiles: current.microphoneTrackFiles
+        )
+        try writeRecordingProject(
+            for: take, settings: settings, sceneEvents: sceneEvents(from: project),
+            finalVideoURL: project.finalVideoPath.map(URL.init(fileURLWithPath:)),
+            chapters: project.chapters, editorTimeline: project.editorTimeline
+        )
+        return try loadRecordingProject(at: rename.projectURL)
+    }
+
     func updateProjectProgramAudio(_ change: ProgramAudioChange, baseSettings: RecordingSettings) throws -> RecordingProject {
         let project = try loadRecordingProject(at: change.projectURL)
         guard let angle = project.cameraAngles.record(role: change.role) else {

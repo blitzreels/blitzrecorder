@@ -199,8 +199,8 @@ extension EditorTimelineView {
 
     /// A multicam camera lane shows its sound: bright when it is the sound that plays, faint when silent.
     private func videoSound(for asset: EditorAsset) -> EditorTimelineVideoSound {
-        guard asset.isVideo, let project, project.cameraAngles.record(role: asset.role) != nil else { return .hidden }
-        return project.programAudioRole == asset.role ? .playing : .muted
+        guard let angle = multicamAngle(for: asset) else { return .hidden }
+        return angle.isSound && !isMulticamSoundMuted ? .playing : .muted
     }
 
     private func sourceOffset(for asset: EditorAsset) -> Double {
@@ -273,6 +273,12 @@ extension EditorTimelineView {
             )
             .equatable()
             .padding(.vertical, asset.isVideo ? 3 : 0)
+            if let angle = multicamAngle(for: asset) {
+                EditorTimelineLiveShade(configuration: .init(
+                    liveRanges: angle.liveRanges, projection: projection, duration: duration,
+                    pixelsPerSecond: request.pxPerSecond, viewport: viewport
+                ))
+            }
         }
         .frame(width: width, height: rowHeight)
         .clipShape(shape)
@@ -316,6 +322,15 @@ extension EditorTimelineView {
             if case .segment = selection {
                 Button("Delete segment from all tracks", systemImage: BlitzSymbols.delete, action: onDeleteSegment)
                     .disabled(!isInteractive || !canDeleteSegment)
+            }
+            if let multicam, let angle = multicamAngle(for: asset) {
+                Button("Show \(angle.title) from the playhead", systemImage: BlitzSymbols.camera) {
+                    multicam.onCut(.camera(role: angle.role))
+                }
+                .disabled(!isInteractive)
+                Button(angle.isSound ? "Sound plays from \(angle.title)" : "Play \(angle.title)'s sound",
+                       systemImage: BlitzSymbols.systemAudio) { toggleSound(of: angle) }
+                    .disabled(!isInteractive || angle.isSound || multicam.soundSwitch != nil)
             }
             if toggleableAssetIDs.contains(asset.id) {
                 Button(

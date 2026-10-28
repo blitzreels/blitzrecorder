@@ -427,18 +427,20 @@ final class EditorSelectionControlsTests: XCTestCase {
     func testAssetTracksSnapshotIsOnePass() {
         let snapshot = EditorAssetTracks.snapshot(.init(
             assets: [
-                .init(id: "s", kind: .screen),
-                .init(id: "c", kind: .camera),
-                .init(id: "m", kind: .microphone)
+                .init(id: "s", layer: .screen, audio: nil),
+                .init(id: "c", layer: .camera, audio: nil),
+                .init(id: "c2", layer: .secondCamera, audio: nil),
+                .init(id: "angle", layer: nil, audio: nil),
+                .init(id: "m", layer: nil, audio: .microphone)
             ],
             hiddenKinds: [.camera],
-            hideableKinds: [.screen, .camera],
+            hideableKinds: [.screen, .camera, .secondCamera],
             mutedSources: [.microphone],
             muteableSources: [.microphone]
         ))
-        XCTAssertEqual(snapshot.hiddenIDs, ["c"])
+        XCTAssertEqual(snapshot.hiddenIDs, ["c"], "Hiding Camera 1 leaves Camera 2's lane showing")
         XCTAssertEqual(snapshot.mutedIDs, ["m"])
-        XCTAssertEqual(snapshot.toggleableIDs, ["c", "m"])
+        XCTAssertEqual(snapshot.toggleableIDs, ["s", "c", "c2", "m"])
         XCTAssertEqual(EditorAssetTracks.layerKind(.screen), .screen)
         XCTAssertEqual(EditorAssetTracks.audioSource(.microphone), .microphone)
     }

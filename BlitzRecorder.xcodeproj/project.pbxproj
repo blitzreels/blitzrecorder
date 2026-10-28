@@ -41,6 +41,7 @@
 		0B6F9D49DA0048717C48DD28 /* BlitzRecorderCameraControls.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 83081BA3975CC413EEF743EC /* BlitzRecorderCameraControls.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		0BC9D97D5207118324CD887D /* CanvasBackgroundStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E17E36AB4297B54094D3F54 /* CanvasBackgroundStyle.swift */; };
 		0BCF4EB7507A3C5722849E38 /* EditorAudioInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF318B5382A1104CF3127AFA /* EditorAudioInspector.swift */; };
+		0BEB6EA42D9D1C976C3C7653 /* MulticamProgram.swift in Sources */ = {isa = PBXBuildFile; fileRef = C564BF851842021965EE8D23 /* MulticamProgram.swift */; };
 		0CBE856E0CAD154BCF337268 /* RecordingStopPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56E6187448FD249BB10E424A /* RecordingStopPresentation.swift */; };
 		0D6DEFB9FB9A482E0F93A6FA /* CameraCompanionStore+Labels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FD821BDCCC3F17AF8BE4573 /* CameraCompanionStore+Labels.swift */; };
 		0DD547778C5A6071E46F07E5 /* RecordingAccessCover.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6456F84DED22B81F974CB00 /* RecordingAccessCover.swift */; };
@@ -337,6 +338,7 @@
 		85AE251C64B8786201EC8EFA /* CameraRecordingPlaybackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0B9CFB19622D3BD42D242F0 /* CameraRecordingPlaybackView.swift */; };
 		85B0EF4C33A020619EE3B12D /* LiveCompositedRecorder+CaptureSources.swift in Sources */ = {isa = PBXBuildFile; fileRef = A56D1CC10AFE765AFB281E88 /* LiveCompositedRecorder+CaptureSources.swift */; };
 		86004701A24CA1AE51E6E50D /* AppSupportActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E2575685270153BF4904E1C /* AppSupportActions.swift */; };
+		86B919D905F914C14A127435 /* EditorTimelineMulticam.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8552DBF065DE9314784C29F /* EditorTimelineMulticam.swift */; };
 		8760F513610FA01B4652BBF6 /* TakeFileStore+Takes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F2A066CCCEF86A8463CD689 /* TakeFileStore+Takes.swift */; };
 		8779B67440D54512716A7B34 /* SourceInspectors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E1C870F2BFD10CD87CE0407 /* SourceInspectors.swift */; };
 		87AD08756FE82897B0D6F0BE /* OutputResolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC8EAA13CAA91BAF3EF2C066 /* OutputResolution.swift */; };
@@ -386,6 +388,7 @@
 		9B57B96728C451D810EBF3E9 /* EditorTimelineView+Selection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 306E843F7F26EF59D23DB287 /* EditorTimelineView+Selection.swift */; };
 		9B975FD3D34B1E988B1DE60C /* RecorderCoordinator+Screen.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5C3B6331BEFF361DE7D6F53 /* RecorderCoordinator+Screen.swift */; };
 		9DE3E768C1FF954642367C05 /* ScreenSourceThumbnailProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07CD152B0ECBB2FB3262FF89 /* ScreenSourceThumbnailProvider.swift */; };
+		9E245B4B83DE7F6702CAA06E /* EditorCamerasInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD719E88373F40F00B2EEBAE /* EditorCamerasInspector.swift */; };
 		9E26566ED930CEB941D0AD69 /* BlitzRecorderTransport in Frameworks */ = {isa = PBXBuildFile; productRef = 51851B90D299274EC1D45318 /* BlitzRecorderTransport */; };
 		9F09F425CE5F8A660DBF198A /* RecordingTranscriptAssembler+EchoFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A6E6D8D07D172B2207CD019 /* RecordingTranscriptAssembler+EchoFilter.swift */; };
 		9F5483A972566EE4786B9802 /* RecorderStudioLabels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35925F3ED4F2C4C8CDD9007 /* RecorderStudioLabels.swift */; };
@@ -1130,6 +1133,7 @@
 		BC909FBB917B7A8F2FBE3BEE /* OutputDirectoryAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputDirectoryAccess.swift; sourceTree = "<group>"; };
 		BD02719D1D6D027B069D95B7 /* MCPClientSetup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPClientSetup.swift; sourceTree = "<group>"; };
 		BD5333620B94F39BDC5C6EE3 /* RecordingOutputVariant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingOutputVariant.swift; sourceTree = "<group>"; };
+		BD719E88373F40F00B2EEBAE /* EditorCamerasInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorCamerasInspector.swift; sourceTree = "<group>"; };
 		BD75950AB511C753AE156830 /* RecordingTranscriptionSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingTranscriptionSettingsSection.swift; sourceTree = "<group>"; };
 		BDC95FDD30822DBC288FB0F5 /* RemoteCameraSettingsCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCameraSettingsCommand.swift; sourceTree = "<group>"; };
 		BE2152375B5BC5690A9FAB55 /* MediaWriterTiming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaWriterTiming.swift; sourceTree = "<group>"; };
@@ -1149,6 +1153,7 @@
 		C42975F488D485048B8E6970 /* EditorSceneTiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorSceneTiles.swift; sourceTree = "<group>"; };
 		C462F4BC81EF1C6E895EA2B7 /* HostedVideoLinkControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostedVideoLinkControls.swift; sourceTree = "<group>"; };
 		C4EDCCC30D2B90EF21D0B6D6 /* EditorExportStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorExportStatusView.swift; sourceTree = "<group>"; };
+		C564BF851842021965EE8D23 /* MulticamProgram.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MulticamProgram.swift; sourceTree = "<group>"; };
 		C613C04AC6CFE1D6DB000518 /* EditorClipSpine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorClipSpine.swift; sourceTree = "<group>"; };
 		C637647B255257095EAB0703 /* BlitzRecorderMCPServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlitzRecorderMCPServer.swift; sourceTree = "<group>"; };
 		C63D891C0D7BBE5CB6AED9DE /* TakeFileStore+ProjectEditing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TakeFileStore+ProjectEditing.swift"; sourceTree = "<group>"; };
@@ -1228,6 +1233,7 @@
 		E56F316D7142DBECC0BE4DDD /* RecorderViewModel+SceneLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecorderViewModel+SceneLibrary.swift"; sourceTree = "<group>"; };
 		E6635064CF7091C0BA4A72BA /* RecorderCaptureRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecorderCaptureRuntime.swift; sourceTree = "<group>"; };
 		E6D807EF231F4157A5240F20 /* ShortsWindowArranger+Accessibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ShortsWindowArranger+Accessibility.swift"; sourceTree = "<group>"; };
+		E8552DBF065DE9314784C29F /* EditorTimelineMulticam.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorTimelineMulticam.swift; sourceTree = "<group>"; };
 		E8668DEB813B9F10CB7D283D /* LocalCameraUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCameraUsage.swift; sourceTree = "<group>"; };
 		E878202D7851D30F836A72DB /* CommandMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandMenu.swift; sourceTree = "<group>"; };
 		E8A337C302AB6EA7D5DFF4D8 /* RecorderError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecorderError.swift; sourceTree = "<group>"; };
@@ -1505,6 +1511,7 @@
 				714C99A145E6DDBA4BCD213B /* MetalExportVideoCompositor.swift */,
 				DC7062505D58262F1B48515B /* MicrophoneMixdown.swift */,
 				EA18F73442F99764AD98D33F /* MicrophoneTrackCapture.swift */,
+				C564BF851842021965EE8D23 /* MulticamProgram.swift */,
 				933EDCD8C011AB6738AB63AB /* MulticamProjectImporter.swift */,
 				4E40728B4CBB8CC22609D9B0 /* MulticamShot.swift */,
 				DB3BEFF2347C8E64642C4CAA /* MusicDucking.swift */,
@@ -1774,6 +1781,7 @@
 				AF318B5382A1104CF3127AFA /* EditorAudioInspector.swift */,
 				E24DD0F58226E45403D02800 /* EditorAudioWaveform.swift */,
 				508581437852289F85312E19 /* EditorBackgroundMusic.swift */,
+				BD719E88373F40F00B2EEBAE /* EditorCamerasInspector.swift */,
 				0EEEEEA2E2E27A92EC39CC85 /* EditorCanvasEditing.swift */,
 				1BCA3AAD10EFC822EEDE0D58 /* EditorCanvasInteractionView.swift */,
 				2DF6827C0F71B16A1C608A58 /* EditorCanvasStage.swift */,
@@ -1827,6 +1835,7 @@
 				543EEA02D1AD9DF70DC4B748 /* EditorTimeline.swift */,
 				B0DC673073BFD41778A12F88 /* EditorTimelineChrome.swift */,
 				DF7AA6775CD9E4045F73B9AA /* EditorTimelineIndex.swift */,
+				E8552DBF065DE9314784C29F /* EditorTimelineMulticam.swift */,
 				1443E63F18017716DE759AE4 /* EditorTimelineProjection.swift */,
 				ED9C0442698A2647D838F8B4 /* EditorTimelineRendering.swift */,
 				442D877BC814F551B05D68B6 /* EditorTimelineSelectionCanvas.swift */,
@@ -2343,6 +2352,7 @@
 				6CCB4472C08BA84D7CFEBF98 /* EditorAudioLevels.swift in Sources */,
 				6AF2C514B4F5246F1B32C34D /* EditorAudioWaveform.swift in Sources */,
 				41A8B224E97A1F7C0E4ED2EF /* EditorBackgroundMusic.swift in Sources */,
+				9E245B4B83DE7F6702CAA06E /* EditorCamerasInspector.swift in Sources */,
 				14DC167137FB8B247A3275C2 /* EditorCanvasEditing.swift in Sources */,
 				B31CADAA7CF2135081AA1E36 /* EditorCanvasInteractionView.swift in Sources */,
 				733AA9D5FF826F4F1EEA248D /* EditorCanvasStage.swift in Sources */,
@@ -2399,6 +2409,7 @@
 				F87ED999B34A4A432CB78E79 /* EditorTimeline.swift in Sources */,
 				92A8F1E5DFA3D1D1C649BD18 /* EditorTimelineChrome.swift in Sources */,
 				F0BEDF8D3D675397DF106BED /* EditorTimelineIndex.swift in Sources */,
+				86B919D905F914C14A127435 /* EditorTimelineMulticam.swift in Sources */,
 				EE93226E1C1F1DC5E8874CD1 /* EditorTimelineProjection.swift in Sources */,
 				8D78EA0FAADF4CD3BB1D3E8D /* EditorTimelineRendering.swift in Sources */,
 				F541F6AE12E8A7E2E0C32874 /* EditorTimelineSelectionCanvas.swift in Sources */,
@@ -2496,6 +2507,7 @@
 				6376BF3A89A88C5531F48B30 /* MicrophoneMixdown.swift in Sources */,
 				F3F9F1AC97D6EEF317CB569F /* MicrophoneTrackCapture.swift in Sources */,
 				FD9C5A198DB74763176ED48D /* MicrophoneTracksSection.swift in Sources */,
+				0BEB6EA42D9D1C976C3C7653 /* MulticamProgram.swift in Sources */,
 				37A14F57EE3BF4E430E49BC3 /* MulticamProjectImporter.swift in Sources */,
 				BC4B3DE5D0D6C3DEDEAFA494 /* MulticamShot.swift in Sources */,
 				C5D30C9EF4620E2B5B4C501A /* MusicDucking.swift in Sources */,

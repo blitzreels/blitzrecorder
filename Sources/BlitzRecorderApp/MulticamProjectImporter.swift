@@ -248,8 +248,9 @@ struct MulticamProjectImporter {
             return OpeningScenes(settings: wide, events: [.init(time: 0, scene: opening)])
         }
         var sideBySide = opening
-        MulticamShot.sideBySide(left: speakers.left, right: speakers.right)
-            .apply(to: &sideBySide, .init(angles: request.records, canvas: request.settings.layout))
+        let shot = MulticamShot.sideBySide(left: speakers.left, right: speakers.right)
+        shot.apply(to: &sideBySide, .init(angles: request.records, canvas: request.settings.layout,
+                                          framing: .standard(for: shot)))
         let starts = [speakers.left, speakers.right].compactMap { request.records.record(role: $0)?.offsetSeconds }
         // Whole frames, so the cut lands on the first frame both speakers are on camera.
         let bothRolling = (max(0, starts.max() ?? 0) * 30).rounded(.up) / 30

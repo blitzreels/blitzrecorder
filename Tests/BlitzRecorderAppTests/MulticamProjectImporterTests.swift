@@ -84,7 +84,7 @@ final class MulticamProjectImporterTests: XCTestCase {
         XCTAssertEqual(shots.map { $0.title(angles: angles) }, ["wide-shot", "plan-emmanuel", "plan-thomas", "Side by side"])
 
         var scene = RecordingScene(settings: RecordingSettings())
-        shots[3].apply(to: &scene, .init(angles: angles, canvas: .horizontal))
+        shots[3].apply(to: &scene, .init(angles: angles, canvas: .horizontal, framing: .standard(for: shots[3])))
         XCTAssertEqual(scene.cameraFeeds, CameraFeeds(camera: "camera-2", secondCamera: "camera-3"))
         let left = scene.sceneLayout.cameraFrame, right = try XCTUnwrap(scene.sceneLayout.secondCameraFrame)
         XCTAssertLessThan(left.maxX, right.minX, "left and right, never stacked")
@@ -94,7 +94,7 @@ final class MulticamProjectImporterTests: XCTestCase {
         XCTAssertFalse(scene.enabledSources.contains(.screen))
         XCTAssertEqual(MulticamShot.current(scene: scene, angles: angles), shots[3])
 
-        shots[2].apply(to: &scene, .init(angles: angles, canvas: .horizontal))
+        shots[2].apply(to: &scene, .init(angles: angles, canvas: .horizontal, framing: .standard(for: shots[2])))
         XCTAssertNil(scene.sceneLayout.secondCameraFrame)
         XCTAssertEqual(scene.sceneLayout.cameraFrame, CGRect(x: 0, y: 0, width: 1, height: 1))
         XCTAssertEqual(scene.cameraFeeds.camera, "camera-3")
@@ -192,9 +192,9 @@ final class MulticamProjectImporterTests: XCTestCase {
         // Cut between cameras the way the number keys do: a new part at 10:00 on Thomas, side by side at 11:40,
         // then change the 10:00 part to Emmanuel.
         let shots = MulticamShot.shots(for: reopened.cameraAngles)
-        XCTAssertTrue(vm.cutToCameraShot(.init(shot: shots[2], time: 600)))
-        XCTAssertTrue(vm.cutToCameraShot(.init(shot: shots[3], time: 700)))
-        XCTAssertTrue(vm.cutToCameraShot(.init(shot: shots[1], time: 600)))
+        XCTAssertTrue(vm.cutToCameraShot(.init(shot: shots[2], framing: .standard(for: shots[2]), time: 600)))
+        XCTAssertTrue(vm.cutToCameraShot(.init(shot: shots[3], framing: .standard(for: shots[3]), time: 700)))
+        XCTAssertTrue(vm.cutToCameraShot(.init(shot: shots[1], framing: .standard(for: shots[1]), time: 600)))
         try await settleSaves()
         let cut = try TakeFileStore().loadRecordingProject(at: projectURL)
         let atTen = try XCTUnwrap(cut.sceneEvents.first { abs($0.time - 600) < 0.001 })

@@ -23,7 +23,6 @@ struct EditorLayoutInspector: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: EditorInspectorMetrics.sectionSpacing + 8) {
-            multicamSection
             sceneControlsSection
             if renders(.screen) {
                 sourceSection(.screen) { screenControls }
@@ -37,75 +36,6 @@ struct EditorLayoutInspector: View {
             cameraTilesSection
             backgroundSection
         }
-    }
-
-    private var multicamAngles: [CameraAngleRecord] {
-        vm.lastExportedProject?.cameraAngles ?? []
-    }
-
-    /// Which camera this part shows, in a project made from several cameras: a shot for the whole part, or the
-    /// camera in each tile. The number keys cut to the same shots at the playhead.
-    @ViewBuilder
-    private var multicamSection: some View {
-        let angles = multicamAngles
-        if angles.count >= 2, let scene = currentEventScene {
-            let shots = MulticamShot.shots(for: angles)
-            let current = MulticamShot.current(scene: scene, angles: angles)
-            VStack(alignment: .leading, spacing: 10) {
-                BlitzInspectorHeading(configuration: .init(
-                    title: "Cameras",
-                    detail: "Press 1–\(shots.count) to cut at the playhead"
-                ))
-                BlitzDropdown(configuration: .init(
-                    title: "Shot",
-                    selection: Binding(get: { current }, set: { shot in
-                        if let shot { applyMulticamEdit { shot.apply(to: &$0, .init(angles: angles, canvas: captureLayout ?? .horizontal)) } }
-                    }),
-                    options: shots.enumerated().map { index, shot in
-                        BlitzDropdownOption(value: Optional(shot), title: shot.title(angles: angles), detail: "\(index + 1)")
-                    } + (current == nil ? [BlitzDropdownOption(value: nil, title: "Custom layout", detail: nil)] : [])
-                ))
-                if scene.sceneLayout.secondCameraFrame != nil {
-                    tilePicker(.init(title: "Left", slot: .camera, role: scene.cameraFeeds.camera, angles: angles))
-                    tilePicker(.init(title: "Right", slot: .secondCamera, role: scene.cameraFeeds.secondCamera, angles: angles))
-                }
-            }
-        }
-    }
-
-    private struct TilePicker {
-        let title: String
-        let slot: SceneLayerKind
-        let role: String
-        let angles: [CameraAngleRecord]
-    }
-
-    private func tilePicker(_ picker: TilePicker) -> some View {
-        BlitzDropdown(configuration: .init(
-            title: picker.title,
-            selection: Binding(get: { picker.role }, set: { role in
-                let angles = picker.angles
-                let canvas = captureLayout ?? .horizontal
-                let slot = picker.slot
-                applyMulticamEdit { scene in
-                    let feeds = scene.cameraFeeds
-                    scene.cameraFeeds = slot == .secondCamera
-                        ? CameraFeeds(camera: feeds.camera, secondCamera: role)
-                        : CameraFeeds(camera: role, secondCamera: feeds.secondCamera)
-                    MulticamShot.frameSpeakers(in: &scene, .init(angles: angles, canvas: canvas))
-                }
-            }),
-            options: picker.angles.map { BlitzDropdownOption(value: $0.role, title: $0.title, detail: nil) }
-        ))
-    }
-
-    private func applyMulticamEdit(_ mutate: @escaping (inout RecordingScene) -> Void) {
-        let index = currentEventIndex
-        guard vm.applyProjectSceneEdit(eventIndex: index, mutate) else {
-            editErrorMessage = vm.detailMessage
-            return
-        }
-        selection = .segment(index)
     }
 
     var showsSecondCamera: Bool {
@@ -142,7 +72,7 @@ struct EditorLayoutInspector: View {
             let context = EditorSceneTiles.Context(scene: scene, layout: captureLayout ?? .horizontal,
                                                    sourceAspectRatios: playback.sourceAspectRatios(for: scene))
             VStack(alignment: .leading, spacing: 12) {
-                Text("Cameras")
+                Text("Tiles")
                     .font(BlitzType.section)
                     .foregroundStyle(BlitzUI.primaryText)
                     .frame(minHeight: 24)
@@ -343,7 +273,9 @@ struct EditorLayoutInspector: View {
                     if layout.secondCameraFrame != nil {
                         if let speakers = MulticamShot.speakers(in: angles) {
                             scene.cameraFeeds = CameraFeeds(camera: speakers.left, secondCamera: speakers.right)
-                            MulticamShot.frameSpeakers(in: &scene, .init(angles: angles, canvas: canvas))
+                            let shot = MulticamShot.sideBySide(left: speakers.left, right: speakers.right)
+                            MulticamShot.frameSpeakers(in: &scene, .init(
+                                angles: angles, canvas: canvas, framing: .standard(for: shot)))
                         } else {
                             scene.cameraFeeds = .main
                         }

@@ -144,8 +144,8 @@ struct BlitzUIKitMenus: View {
                 }
                 BlitzUIKitSpecimen(label: "BlitzToolTabBar · EditorInspectorTabBar (wide / wraps)") {
                     VStack {
-                        EditorInspectorTabBar(selection: $inspectorTab).frame(width: 520)
-                        EditorInspectorTabBar(selection: $inspectorTab).frame(width: 300)
+                        EditorInspectorTabBar(configuration: .init(selection: $inspectorTab, showsCameras: true)).frame(width: 520)
+                        EditorInspectorTabBar(configuration: .init(selection: $inspectorTab, showsCameras: false)).frame(width: 300)
                     }
                 }
                 BlitzUIKitSpecimen(label: "SourceFramingPicker") {

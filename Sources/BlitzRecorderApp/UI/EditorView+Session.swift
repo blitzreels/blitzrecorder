@@ -325,13 +325,48 @@ extension EditorView {
     /// Number keys switch cameras in a multicam project, like a live switcher: 1 to N each camera, then the speakers
     /// side by side. Playback keeps going, so a whole conversation can be cut while it plays.
     func cutToCameraShot(_ number: Int) -> Bool {
-        guard let project, project.cameraAngles.count >= 2 else { return false }
-        let shots = MulticamShot.shots(for: project.cameraAngles)
-        guard shots.indices.contains(number - 1) else { return false }
-        if !vm.cutToCameraShot(.init(shot: shots[number - 1], time: playback.currentTime)) {
+        guard let shot = multicam?.shot(key: number) else { return false }
+        cut(to: shot)
+        return true
+    }
+
+    /// Shows a shot from the playhead on, until the next cut.
+    func cut(to shot: MulticamShot) {
+        let time = playback.currentTime
+        let framing = multicam?.framing(cuttingTo: shot, at: time) ?? .standard(for: shot)
+        if !vm.cutToCameraShot(.init(shot: shot, framing: framing, time: time)) {
             editErrorMessage = vm.detailMessage
         }
-        return true
+    }
+
+    /// Frames the part at the playhead closer or wider, or spaces its tiles, keeping its cameras.
+    func reframe(_ framing: MulticamShot.Framing) {
+        guard let project, let shot = multicam?.liveShot(at: playback.currentTime) else { return }
+        let request = MulticamShot.ApplyRequest(angles: project.cameraAngles, canvas: captureLayout ?? .horizontal,
+                                                framing: framing)
+        let index = currentEventIndex
+        guard vm.applyProjectSceneEdit(eventIndex: index, { shot.apply(to: &$0, request) }) else {
+            editErrorMessage = vm.detailMessage
+            return
+        }
+        selection = .segment(index)
+    }
+
+    /// Picks the cameras in the two tiles of the side-by-side part at the playhead, each framed on its speaker.
+    func changeCameraTiles(_ tiles: MulticamProgram.Tiles) {
+        guard let project else { return }
+        let shot = MulticamShot.sideBySide(left: tiles.left, right: tiles.right)
+        let request = MulticamShot.ApplyRequest(
+            angles: project.cameraAngles, canvas: captureLayout ?? .horizontal,
+            framing: multicam?.liveFraming(at: playback.currentTime) ?? .standard(for: shot)
+        )
+        let index = currentEventIndex
+        let applied = vm.applyProjectSceneEdit(eventIndex: index) { shot.apply(to: &$0, request) }
+        guard applied else {
+            editErrorMessage = vm.detailMessage
+            return
+        }
+        selection = .segment(index)
     }
 
     func splitAtPlayhead() {

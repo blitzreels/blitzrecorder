@@ -1,6 +1,7 @@
 import Foundation
 
 enum EditorInspectorTab: String, CaseIterable {
+    case cameras = "Cameras"
     case layout = "Layout"
     case text = "Text"
     case captions = "Captions"
@@ -13,6 +14,7 @@ enum EditorInspectorTab: String, CaseIterable {
 
     var systemImage: String {
         switch self {
+        case .cameras: return BlitzSymbols.camera
         case .layout: return BlitzSymbols.layout
         case .text: return "textformat"
         case .captions: return "captions.bubble"

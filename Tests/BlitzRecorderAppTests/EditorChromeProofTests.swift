@@ -6,13 +6,13 @@ import XCTest
 final class EditorChromeProofTests: XCTestCase {
     @MainActor
     func testInspectorTabsKeepDistinctSymbolsAtNarrowWidths() throws {
-        let tabs: [EditorInspectorTab] = [.layout, .silence, .captions, .text, .zoom, .privacy, .audio]
+        let tabs: [EditorInspectorTab] = [.cameras, .layout, .silence, .captions, .text, .zoom, .privacy, .audio]
         XCTAssertEqual(Set(tabs.map(\.systemImage)).count, tabs.count, "Each editor tool needs its own symbol.")
         for tab in tabs {
             XCTAssertNotNil(NSImage(systemSymbolName: tab.systemImage, accessibilityDescription: nil), tab.rawValue)
         }
         let host = NSHostingView(rootView: VStack(spacing: 0) {
-            ForEach(tabs, id: \.self) { tab in EditorInspectorTabBar(selection: .constant(tab)) }
+            ForEach(tabs, id: \.self) { tab in EditorInspectorTabBar(configuration: .init(selection: .constant(tab), showsCameras: true)) }
         }
             .frame(width: 340).background(BlitzUI.panelBackground).preferredColorScheme(.dark))
         host.setFrameSize(host.fittingSize)

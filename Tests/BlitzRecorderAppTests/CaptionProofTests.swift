@@ -52,7 +52,7 @@ final class CaptionProofTests: XCTestCase {
                 Image(decorative: frame, scale: 1).resizable().aspectRatio(contentMode: .fit)
                     .frame(maxWidth: .infinity, maxHeight: .infinity).background(BlitzUI.canvasBackground)
                 VStack(spacing: 0) {
-                    EditorInspectorTabBar(selection: .constant(.captions))
+                    EditorInspectorTabBar(configuration: .init(selection: .constant(.captions), showsCameras: false))
                     EditorCaptionsInspector(configuration: .init(vm: vm, playback: EditorPlaybackController(), transcript: nil, selectedID: .constant(nil)))
                 }.frame(width: 312).background(BlitzUI.panelBackground)
             }.frame(width: 1180, height: 850).preferredColorScheme(.dark))

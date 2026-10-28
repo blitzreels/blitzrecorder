@@ -54,10 +54,23 @@ final class EditorCompositedPlayerView: NSView {
     private let backgroundLayer = CALayer()
     private let cursorLayer = CALayer()
 
-    private struct SourceLayers {
+    private final class SourceLayers {
         let clip = CALayer()
         let shadowHost = CALayer()
-        let playerLayer = AVPlayerLayer()
+        private(set) var playerLayer = AVPlayerLayer()
+
+        /// A player layer handed another player can stay black, as a multicam tile does when it switches cameras,
+        /// so a new player gets a new layer in the same place.
+        func show(_ player: AVPlayer, actions: [String: CAAction]) {
+            guard playerLayer.player !== player else { return }
+            let fresh = AVPlayerLayer(player: player)
+            fresh.actions = actions
+            fresh.videoGravity = playerLayer.videoGravity
+            fresh.frame = playerLayer.frame
+            playerLayer.player = nil
+            clip.replaceSublayer(playerLayer, with: fresh)
+            playerLayer = fresh
+        }
     }
 
     private struct RenderState: Equatable {
@@ -302,9 +315,7 @@ final class EditorCompositedPlayerView: NSView {
                     continue
                 }
                 let layers = sourceLayers[kind] ?? makeSourceLayers(for: kind, player: player)
-                if layers.playerLayer.player !== player {
-                    layers.playerLayer.player = player
-                }
+                layers.show(player, actions: disabledActions)
                 guard let zIndex = activeOrder.firstIndex(of: kind) else {
                     layers.shadowHost.isHidden = true
                     continue

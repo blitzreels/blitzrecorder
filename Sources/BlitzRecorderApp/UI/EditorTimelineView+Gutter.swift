@@ -64,6 +64,14 @@ extension EditorTimelineView {
                                 .accessibilityLabel("Generate word timings")
                                 .help(transcriptionStatus.isRunning ? transcriptionStatus.label
                                     : "Generate precise word timings for this older transcript.")
+                        } else if let asset = row.asset, let multicam, let angle = multicamAngle(for: asset) {
+                            EditorTimelineAngleControls(configuration: .init(
+                                angle: angle, playback: playback, isSoundMuted: isMulticamSoundMuted,
+                                isSwitchingSound: multicam.soundSwitch == angle.role,
+                                isInteractive: isInteractive && multicam.soundSwitch == nil,
+                                onCut: { multicam.onCut(.camera(role: angle.role)) },
+                                onSound: { toggleSound(of: angle) }
+                            ))
                         } else if let asset = row.asset, toggleableAssetIDs.contains(asset.id) {
                             if library.loadingIDs.contains(asset.id) || library.filmstripLoadingCounts[asset.id] != nil {
                                 ProgressView().controlSize(.mini)

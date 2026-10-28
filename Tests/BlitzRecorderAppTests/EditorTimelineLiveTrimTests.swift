@@ -149,7 +149,8 @@ private struct LiveTrimFixture: View {
             onSplit: {}, onDeleteSelection: {}, deleteAction: nil, onDeleteSegment: {}, canDeleteSegment: false,
             onJoinSegment: {}, onRestoreRange: {}, onTrimClip: model.commit, onMarkIn: {}, onMarkOut: {},
             zoomLevel: $model.zoom, showsShortcuts: $model.showsShortcuts, showsSourceTracks: $model.showsSourceTracks,
-            silence: model.silence, onOpenSilence: {}, onChangePlacedItem: { _ in }, onRemovePlacedItem: { _ in }
+            silence: model.silence, onOpenSilence: {}, onChangePlacedItem: { _ in }, onRemovePlacedItem: { _ in },
+            multicam: nil
         )
         .overlayPreferenceValue(EditorTimelineControlKey.self) { controls in
             GeometryReader { geometry in

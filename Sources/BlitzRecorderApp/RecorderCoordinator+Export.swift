@@ -190,6 +190,11 @@ extension RecorderCaptureRuntime {
         )
     }
 
+    func renameProjectCameraAngle(_ rename: TakeFileStore.CameraAngleRename) throws -> RecordingProject {
+        try ensureProjectCanBeEdited(rename.projectURL)
+        return try takeFileStore.renameProjectCameraAngle(rename, baseSettings: settings)
+    }
+
     func updateProjectProgramAudio(_ change: TakeFileStore.ProgramAudioChange) throws -> RecordingProject {
         try ensureProjectCanBeEdited(change.projectURL)
         return try takeFileStore.updateProjectProgramAudio(change, baseSettings: settings)

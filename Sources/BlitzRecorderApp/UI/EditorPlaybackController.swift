@@ -394,7 +394,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
             renderSize = playback.renderSize
             previewSceneOverride = nil
             previewSceneRevision &+= 1
-            applyEditorState(project.editorState)
+            applyEditorState(project.playbackEditorState)
 
             buildPlayers(playback: playback)
             guard try await waitForPlayersReady((players: allPlayers, generation: generation)) else { return }

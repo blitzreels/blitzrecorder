@@ -3,26 +3,35 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct EditorInspectorTabBar: View {
-    @Binding var selection: EditorInspectorTab
+    struct Configuration {
+        let selection: Binding<EditorInspectorTab>
+        /// A multicam project leads with its Cameras tab.
+        let showsCameras: Bool
+    }
 
-    private let tabs: [EditorInspectorTab] = [.layout, .silence, .captions, .text, .zoom, .privacy, .audio, .exports]
+    let configuration: Configuration
+
+    private var tabs: [EditorInspectorTab] {
+        (configuration.showsCameras ? [.cameras] : []) + [.layout, .silence, .captions, .text, .zoom, .privacy, .audio, .exports]
+    }
 
     var body: some View {
         BlitzToolTabBar(configuration: .init(
             title: "Editor tools",
             options: tabs,
-            selection: selection,
+            selection: configuration.selection.wrappedValue,
             label: { $0.rawValue },
             symbolName: { $0.systemImage },
             help: {
                 switch $0 {
+                case .cameras: "Pick which camera is on screen and whose sound plays"
                 case .layout: "Scene layout and canvas"
                 case .exports: "Save a file, share a link, and see earlier exports"
                 default: $0.rawValue
                 }
             },
             isOptionEnabled: { _ in true },
-            select: { selection = $0 }
+            select: { configuration.selection.wrappedValue = $0 }
         ))
     }
 }

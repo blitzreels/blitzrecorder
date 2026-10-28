@@ -45,6 +45,8 @@ struct EditorTimelineView: View {
     let onOpenSilence: () -> Void
     let onChangePlacedItem: (EditorPlacedItemEditing.Change) -> Void
     let onRemovePlacedItem: (EditorPlacedItem.ID) -> Void
+    /// The camera lanes' switches in a project made from several cameras; nil for a recorded take.
+    let multicam: EditorTimelineMulticam?
 
     @State var transcriptItems: [EditorTranscriptItem] = []
     @State var transcriptLayout = EditorTranscriptLayout(.init(items: [], projection: .init(.init(duration: 0, cuts: []))))
@@ -270,6 +272,31 @@ struct EditorTimelineView: View {
 
     func isTrackOff(_ asset: EditorAsset) -> Bool {
         hiddenAssetIDs.contains(asset.id) || mutedAssetIDs.contains(asset.id)
+    }
+
+    /// The camera angle a multicam lane shows; nil for every other lane.
+    func multicamAngle(for asset: EditorAsset) -> MulticamProgram.Angle? {
+        guard asset.isVideo else { return nil }
+        return multicam?.program.angle(role: asset.role)
+    }
+
+    /// A multicam project's sound track: the playing camera's sound, which its mute silences.
+    var multicamSoundAsset: EditorAsset? {
+        multicam == nil ? nil : sourceAssets.first { $0.kind == .microphone }
+    }
+
+    var isMulticamSoundMuted: Bool {
+        multicamSoundAsset.map(isTrackOff) ?? false
+    }
+
+    /// The playing camera's speaker mutes or unmutes the sound; another camera's speaker plays that camera's sound
+    /// instead, unmuted.
+    func toggleSound(of angle: MulticamProgram.Angle) {
+        guard let multicam else { return }
+        if let sound = multicamSoundAsset, angle.isSound || isTrackOff(sound) {
+            onToggleTrack(sound)
+        }
+        if !angle.isSound { multicam.onUseSound(angle.role) }
     }
 
     var segmentsTrackTop: CGFloat {
