@@ -103,6 +103,7 @@ struct ProjectLibraryView: View {
                     projectActionErrorBar
                     trashStatusBar
                     folderStatusBar
+                    ProjectLibraryLocationsBar(vm: vm)
                     HStack(spacing: 0) {
                         projectSidebar
                             .shadow(color: BlitzUI.elevationShadow, radius: 8, x: 2)

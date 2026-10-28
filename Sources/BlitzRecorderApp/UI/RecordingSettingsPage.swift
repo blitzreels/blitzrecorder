@@ -176,29 +176,10 @@ struct RecordingSettingsPage: View {
 
             VStack(alignment: .leading, spacing: 14) {
                 SettingsRowLabel(.init(
-                    title: "Recording sources",
-                    detail: "Choose where new source tracks are stored. Existing projects stay in your library."
+                    title: "Libraries",
+                    detail: "Every folder your recordings are read from, disk by disk. New recordings go to one of them."
                 ))
-                Text(vm.settings.sourceStorage.url.path)
-                    .font(BlitzType.body)
-                    .foregroundStyle(BlitzUI.secondaryText)
-                    .lineLimit(2)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
-                    .help(vm.settings.sourceStorage.url.path)
-                HStack(spacing: 8) {
-                    Button("Change Folder…") { vm.chooseSourceFolder() }
-                        .blitzButton(.secondary)
-                        .disabled(!canEdit)
-                        .accessibilityLabel("Change recording sources folder")
-                        .help("Choose a source library folder for new recordings. Existing files stay where they are.")
-                    Button("Show in Finder") {
-                        NSWorkspace.shared.open(vm.settings.sourceStorage.url)
-                    }
-                    .blitzButton(.secondary)
-                    .help("Open the source library. Other linked project folders also stay in Projects.")
-                    Spacer(minLength: 0)
-                }
+                ProjectLibraryLocationsSettings(vm: vm, canEdit: canEdit)
             }
             .settingsRow()
 

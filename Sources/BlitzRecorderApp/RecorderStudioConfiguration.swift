@@ -290,6 +290,23 @@ final class RecorderStudioConfiguration {
         persist(saveSceneSnapshot: false)
     }
 
+    func addProjectLibrary(_ url: URL) {
+        let root = url.standardizedFileURL.resolvingSymlinksInPath()
+        guard !settings.projectLibraries.contains(where: { $0.url.standardizedFileURL.resolvingSymlinksInPath() == root })
+        else { return }
+        settings.additionalProjectLibraries.append(
+            RecordingStorageLocation(url: url, bookmarkData: RecordingSettingsStore.bookmarkData(for: url))
+        )
+        persist(saveSceneSnapshot: false)
+    }
+
+    /// The folder new recordings go to always stays in the library.
+    func removeProjectLibrary(_ url: URL) {
+        let root = url.standardizedFileURL.resolvingSymlinksInPath()
+        settings.additionalProjectLibraries.removeAll { $0.url.standardizedFileURL.resolvingSymlinksInPath() == root }
+        persist(saveSceneSnapshot: false)
+    }
+
     func setDisplay(id: String?) {
         guard state == .idle else {
             onMessage?("Use the recording Screen control to switch sources mid-recording.")

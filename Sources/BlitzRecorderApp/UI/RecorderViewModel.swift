@@ -103,6 +103,10 @@ final class RecorderViewModel {
     /// This window's wait on the shared library refresh, so callers and tests can await it.
     @ObservationIgnored var projectRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var projectEditedObserver: NSObjectProtocol?
+    @ObservationIgnored var volumeObservers: [NSObjectProtocol] = []
+    /// Each library folder's disk, whether it is connected, and libraries found on connected disks.
+    var libraryLocations = ProjectLibraryLocations.empty
+    @ObservationIgnored var libraryLocationsTask: Task<Void, Never>?
     /// Which of this window's queued saves still count; it moves on when a save fails, dropping the ones
     /// made on top of it (see `ProjectSaveQueue`).
     @ObservationIgnored var editSaveGeneration = 0
@@ -307,6 +311,7 @@ final class RecorderViewModel {
             MainActor.assumeIsolated { self?.adoptEditSavedElsewhere(edit) }
         }
         refreshRecentProjects()
+        observeVolumes()
         syncScreenCaptureAreaSelection()
         elapsedClock.onElapsedSecondsChanged = { [weak self] elapsedSeconds in
             self?.session.elapsedSeconds = elapsedSeconds

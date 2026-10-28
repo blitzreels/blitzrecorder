@@ -38,6 +38,64 @@ extension RecorderViewModel {
 
     func refreshRecentProjects() {
         transcriptionController.syncProjects(coordinator.projectLibrary.reload(settings: settings))
+        refreshLibraryLocations()
+    }
+
+    /// Reads each library's disk and looks for libraries on connected disks, off the main thread.
+    func refreshLibraryLocations() {
+        libraryLocationsTask?.cancel()
+        let request = ProjectLibraryLocations.ScanRequest(
+            libraries: settings.projectLibraries, destination: settings.sourceStorage,
+            searchRoots: ProjectLibraryLocations.defaultSearchRoots
+        )
+        libraryLocationsTask = Task { [weak self] in
+            let locations = await Task.detached(priority: .utility) { ProjectLibraryLocations.scan(request) }.value
+            guard let self, !Task.isCancelled else { return }
+            self.libraryLocations = locations
+        }
+    }
+
+    /// Plugging a disk in brings its recordings back; unplugging one marks them offline.
+    func observeVolumes() {
+        let center = NSWorkspace.shared.notificationCenter
+        volumeObservers = [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification].map { name in
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshRecentProjects() }
+            }
+        }
+    }
+
+    /// Reads another library folder too, such as one on an external disk. New recordings still go to the same place.
+    func addProjectLibrary(_ url: URL) {
+        coordinator.addProjectLibrary(url)
+        syncSettings()
+        refreshRecentProjects()
+    }
+
+    /// Stops reading a library folder. Its files stay where they are.
+    func removeProjectLibrary(_ url: URL) {
+        coordinator.removeProjectLibrary(url)
+        syncSettings()
+        refreshRecentProjects()
+    }
+
+    func chooseProjectLibraryToAdd() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.title = "Add a library folder"
+        panel.prompt = "Add"
+        panel.message = "Pick a folder that holds BlitzRecorder recordings, such as one on an external disk."
+        let handler: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.addProjectLibrary(url)
+        }
+        if let window = NSApp.mainWindow ?? NSApp.keyWindow {
+            panel.beginSheetModal(for: window, completionHandler: handler)
+        } else {
+            panel.begin(completionHandler: handler)
+        }
     }
 
     /// After a save to one project: updates its row instead of reading every library again on the main thread.

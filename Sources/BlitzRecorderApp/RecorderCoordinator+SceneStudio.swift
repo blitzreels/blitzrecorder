@@ -109,6 +109,14 @@ extension RecorderCoordinator {
         studio.setSourceDirectory(url)
     }
 
+    func addProjectLibrary(_ url: URL) {
+        studio.addProjectLibrary(url)
+    }
+
+    func removeProjectLibrary(_ url: URL) {
+        studio.removeProjectLibrary(url)
+    }
+
     func setDisplay(id: String?) {
         studio.setDisplay(id: id)
     }
