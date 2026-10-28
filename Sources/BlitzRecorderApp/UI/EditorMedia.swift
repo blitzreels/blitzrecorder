@@ -80,12 +80,12 @@ struct EditorAsset: Identifiable, Equatable {
         }
     }
 
-    private init(url: URL, kind: Kind, role: String, exists: Bool) {
+    private init(url: URL, kind: Kind, role: String, exists: Bool, title: String? = nil) {
         self.id = url.path
         self.kind = kind
         self.role = role
         self.url = url
-        self.title = Self.title(for: kind, role: role)
+        self.title = title ?? Self.title(for: kind, role: role)
         self.exists = exists
         let pathExtension = url.pathExtension.lowercased()
         self.isVideo = ["mov", "mp4", "m4v"].contains(pathExtension)
@@ -118,11 +118,20 @@ struct EditorAsset: Identifiable, Equatable {
                     kind: Kind(rawValue: source.role)
                         ?? (NumberedSourceTracks.cameraAngles.number(role: source.role) != nil ? .camera : .other),
                     role: source.role,
-                    exists: source.exists
+                    exists: source.exists,
+                    title: angleTitle(project: project, role: source.role)
                 )
             )
         }
         return assets
+    }
+
+    /// A multicam project names its lanes after the angles: the camera it framed, and whose sound the mic lane holds.
+    private static func angleTitle(project: RecordingProject, role: String) -> String? {
+        if let angle = project.cameraAngles.record(role: role) { return angle.title }
+        guard role == "microphone", let programAudioRole = project.programAudioRole,
+              let angle = project.cameraAngles.record(role: programAudioRole) else { return nil }
+        return "Sound · \(angle.title)"
     }
 
     static func output(url: URL) -> EditorAsset {

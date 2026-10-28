@@ -183,7 +183,7 @@ extension EditorTimelineView {
         let frames = library.filmstrips[asset.id] ?? []
         let frameCount = EditorTimelineFilmstripCells.loadingCount(for: request.contentWidth)
         return EditorTimelineMediaCanvas(
-            frames: frames, waveform: nil, isVideo: true, tint: asset.tint,
+            frames: frames, waveform: nil, isVideo: true, videoSound: .hidden, tint: asset.tint,
             projection: projection, sourceDuration: library.durations[asset.id] ?? duration,
             sourceOffset: sourceOffset(for: asset),
             pixelsPerSecond: request.pxPerSecond, viewport: request.viewport
@@ -197,9 +197,15 @@ extension EditorTimelineView {
         }
     }
 
+    /// A multicam camera lane shows its sound: bright when it is the sound that plays, faint when silent.
+    private func videoSound(for asset: EditorAsset) -> EditorTimelineVideoSound {
+        guard asset.isVideo, let project, project.cameraAngles.record(role: asset.role) != nil else { return .hidden }
+        return project.programAudioRole == asset.role ? .playing : .muted
+    }
+
     private func sourceOffset(for asset: EditorAsset) -> Double {
         asset.kind == .output ? 0
-            : (project?.sourceOffset(forRole: asset.kind.rawValue) ?? 0) - (project?.timelineTrimOffsetSeconds ?? 0)
+            : (project?.sourceOffset(forRole: asset.role) ?? 0) - (project?.timelineTrimOffsetSeconds ?? 0)
     }
 
     private struct FilmstripLoad {
@@ -257,6 +263,7 @@ extension EditorTimelineView {
                 frames: frames,
                 waveform: library.timelineWaveforms[asset.id],
                 isVideo: asset.isVideo,
+                videoSound: videoSound(for: asset),
                 tint: asset.tint,
                 projection: projection,
                 sourceDuration: sourceDuration,

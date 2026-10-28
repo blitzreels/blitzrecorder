@@ -21,6 +21,8 @@ enum EditorKeyboardCommand: Equatable {
     case zoomOut
     case fit
     case showHelp
+    /// 1 to 9: cut to that camera shot at the playhead in a multicam project.
+    case cameraShot(Int)
 
     struct Request {
         let keyCode: UInt16
@@ -50,6 +52,7 @@ enum EditorKeyboardCommand: Equatable {
         default: break
         }
         guard !shifted else { return nil }
+        if let number = Int(key), (1...9).contains(number) { return .cameraShot(number) }
         switch request.keyCode {
         case 36, 76: return .deleteSelection
         case 115: return .goToStart
@@ -145,6 +148,7 @@ enum EditorKeyboardDispatch {
         case markOut
         case clearSelection
         case zoom(Double)
+        case cameraShot(Int)
     }
 
     static func action(
@@ -178,6 +182,7 @@ enum EditorKeyboardDispatch {
             case .markIn: return .markIn
             case .markOut: return .markOut
             case .clearSelection: return .clearSelection
+            case .cameraShot(let number): return .cameraShot(number)
             case .zoomIn, .zoomOut, .fit, .showHelp: return .ignore
             }
         }

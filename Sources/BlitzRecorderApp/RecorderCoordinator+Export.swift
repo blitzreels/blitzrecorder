@@ -190,6 +190,11 @@ extension RecorderCaptureRuntime {
         )
     }
 
+    func updateProjectProgramAudio(_ change: TakeFileStore.ProgramAudioChange) throws -> RecordingProject {
+        try ensureProjectCanBeEdited(change.projectURL)
+        return try takeFileStore.updateProjectProgramAudio(change, baseSettings: settings)
+    }
+
     func removeProjectSceneEvent(at projectURL: URL, eventIndex: Int) throws -> RecordingProject {
         try ensureProjectCanBeEdited(projectURL)
         return try takeFileStore.removeProjectSceneEvent(

@@ -122,9 +122,10 @@ extension Merger {
             audioInputs: audioInputs,
             videoAssets: videoAssets,
             cameraAngleAssets: cameraAngleAssets,
-            cameraAngleAspectRatios: Dictionary(uniqueKeysWithValues: compositedSources
+            // An angle can fill both camera slots; it is one file, so either entry gives the same shape.
+            cameraAngleAspectRatios: Dictionary(compositedSources
                 .filter { $0.feed != $0.kind.defaultFeed }
-                .map { ($0.feed, sourceAspectRatio(for: $0)) }),
+                .map { ($0.feed, sourceAspectRatio(for: $0)) }, uniquingKeysWith: { first, _ in first }),
             makeInstructions: { hiddenKinds, renderSegments in
                 videoCompositionInstructions(
                     sources: compositedSources.filter { !hiddenKinds.contains($0.kind) },
@@ -238,7 +239,9 @@ extension Merger {
                 sourceStart: take.timelineTrimOffset
             )
         ]
-        for embedded in embeddedVideoAudio where settings.enabledSources.contains(embedded.source) {
+        // A multicam project plays one angle's sound, already in `audioURL`; the other angles stay silent.
+        let embeddedSources = take.cameraAngles.isEmpty ? embeddedVideoAudio : embeddedVideoAudio.filter { $0.source != .camera }
+        for embedded in embeddedSources where settings.enabledSources.contains(embedded.source) {
             if FileManager.default.fileExists(atPath: embedded.url.path) {
                 sources.append(embedded)
             }

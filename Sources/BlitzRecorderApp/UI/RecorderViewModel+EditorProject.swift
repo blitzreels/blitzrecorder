@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 
 extension RecorderViewModel {
@@ -88,6 +89,81 @@ extension RecorderViewModel {
             return false
         }
         return applyTimelineEdits(.init(edits: edits, actionName: "Delete Segment"))
+    }
+
+    /// Cuts to a camera shot in a multicam project: a new part starts at the playhead showing it, or the part that
+    /// starts right there changes to it. The first part changes when the playhead is at the very start.
+    @discardableResult
+    func cutToCameraShot(_ request: MulticamCutRequest) -> Bool {
+        guard let project = lastExportedProject, project.cameraAngles.count >= 2 else { return false }
+        guard project.edits.activeOutputLayout == nil else {
+            detailMessage = "Camera cuts change the main layout. Switch back to it to cut between cameras."
+            return false
+        }
+        let canvas = CaptureLayout(rawValue: project.settings.layout) ?? .horizontal
+        let angles = project.cameraAngles
+        let time = max(0, request.time)
+        let times = project.sceneEvents.map(\.time)
+        return commitEditorWrite(.init(actionName: "Cut to Camera", successMessage: nil, refreshesLibrary: false) {
+            [coordinator] projectURL in
+            let index: Int
+            if time <= 0.05 {
+                index = 0
+            } else if let existing = times.firstIndex(where: { abs($0 - time) < 0.05 }) {
+                index = existing
+            } else {
+                let inserted = try coordinator.insertProjectSceneEvent(at: projectURL, time: time)
+                guard let new = inserted.sceneEvents.firstIndex(where: { abs($0.time - time) < 0.001 }) else {
+                    throw RecorderError.mediaWriteFailed("The camera cut could not be placed at the playhead.")
+                }
+                index = new
+            }
+            return try coordinator.updateProjectScene(at: projectURL, eventIndex: index) { scene in
+                request.shot.apply(to: &scene, .init(angles: angles, canvas: canvas))
+            }
+        })
+    }
+
+    /// Plays another camera's sound in a multicam project. Its sound is extracted the first time, placed like the
+    /// camera, and kept in the project folder for the next switch.
+    func useProgramAudio(role: String) {
+        guard let project = lastExportedProject, project.programAudioRole != role, editorSoundSwitch == nil,
+              let angle = project.cameraAngles.record(role: role),
+              let source = project.sources.first(where: { $0.role == role }) else { return }
+        let soundURL = MulticamProjectImporter.soundURL(directory: URL(fileURLWithPath: project.takeDirectoryPath), role: role)
+        editorSoundSwitch = role
+        Task {
+            defer { editorSoundSwitch = nil }
+            do {
+                if !FileManager.default.fileExists(atPath: soundURL.path) {
+                    try await Self.extractSound(.init(source: source, offset: angle.offsetSeconds, destination: soundURL))
+                }
+                _ = commitEditorWrite(.init(actionName: "Change Sound", successMessage: "Sound now plays from \(angle.title).",
+                                        refreshesLibrary: false) { [coordinator] projectURL in
+                    try coordinator.updateProjectProgramAudio(.init(projectURL: projectURL, role: role, soundURL: soundURL))
+                })
+            } catch {
+                detailMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private struct SoundExtraction: Sendable {
+        let source: RecordingProject.SourceFile
+        let offset: Double
+        let destination: URL
+    }
+
+    nonisolated private static func extractSound(_ request: SoundExtraction) async throws {
+        let url = URL(fileURLWithPath: request.source.path)
+        let access = url.startAccessingSecurityScopedResource()
+        defer { if access { url.stopAccessingSecurityScopedResource() } }
+        let temporary = request.destination.deletingLastPathComponent()
+            .appendingPathComponent(".\(request.destination.lastPathComponent)-\(UUID().uuidString).m4a")
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        try await VideoProjectImporter.extractAudio(.init(asset: AVURLAsset(url: url), destination: temporary, tracks: .first,
+                                                          skippedSeconds: max(0, -request.offset), onFraction: { _ in }))
+        try FileManager.default.moveItem(at: temporary, to: request.destination)
     }
 
     @discardableResult
@@ -282,4 +358,10 @@ extension RecorderViewModel {
         let secs = totalSeconds % 60
         return String(format: "%02d:%02d", minutes, secs)
     }
+}
+
+struct MulticamCutRequest {
+    let shot: MulticamShot
+    /// Seconds on the take timeline where the shot starts.
+    let time: Double
 }

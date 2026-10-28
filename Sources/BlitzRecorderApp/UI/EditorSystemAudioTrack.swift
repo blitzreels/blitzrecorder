@@ -50,7 +50,7 @@ struct EditorSystemAudioChunk: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 5).fill(BlitzUI.trackSystemAudio.opacity(0.18))
-            EditorTimelineMediaCanvas(frames: [], waveform: configuration.waveform, isVideo: false,
+            EditorTimelineMediaCanvas(frames: [], waveform: configuration.waveform, isVideo: false, videoSound: .hidden,
                 tint: BlitzUI.trackSystemAudio, projection: configuration.projection,
                 sourceDuration: configuration.sourceDuration, sourceOffset: configuration.sourceOffset,
                 pixelsPerSecond: configuration.pixelsPerSecond, viewport: .init(lowerBound: start, upperBound: end))

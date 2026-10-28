@@ -45,7 +45,8 @@ extension Merger {
                     asset: cameraAsset.asset,
                     track: cameraAsset.track,
                     duration: cameraAsset.duration,
-                    timelineOffset: processedTiming?.timelineOffset ?? cameraTimelineOffset(
+                    timelineOffset: take.cameraAngles.record(role: CameraFeeds.mainRole)?.timelineOffset
+                        ?? processedTiming?.timelineOffset ?? cameraTimelineOffset(
                         for: take.cameraURL,
                         preservesPositiveOffset: hasScreen,
                         screenDuration: screenAsset?.duration,
@@ -62,14 +63,15 @@ extension Merger {
         return sources
     }
 
-    /// The angle files the scenes show, once per camera layer that shows them. Each one is already on the take
-    /// timeline: its writer anchored it to the take's start, so none of Camera 1's offset corrections apply.
+    /// The angle files the scenes show, once per camera layer that shows them. A recorded angle is already on the
+    /// take timeline: its writer anchored it to the take's start, so none of Camera 1's offset corrections apply.
+    /// An angle imported from another device plays at the offset its sync found.
     private static func cameraAngleSources(_ request: VideoSourcesRequest) async throws -> [VideoSource] {
         let scenes = [RecordingScene(settings: request.settings)] + request.sceneEvents.map(\.scene)
         let allRoles = Set(request.take.cameraAngleFiles.map(\.role))
         let cameraFeeds = request.loadsAllCameraAngles ? allRoles : Set(scenes.map(\.cameraFeeds.camera))
         let secondCameraFeeds = request.loadsAllCameraAngles
-            ? allRoles.intersection([CameraFeeds.firstAngleRole])
+            ? (request.take.cameraAngles.isEmpty ? allRoles.intersection([CameraFeeds.firstAngleRole]) : allRoles)
             : Set(scenes.filter { $0.sceneLayout.secondCameraFrame != nil }.map(\.cameraFeeds.secondCamera))
         var sources: [VideoSource] = []
         for file in request.take.cameraAngleFiles {
@@ -83,7 +85,8 @@ extension Merger {
                     feed: file.role,
                     asset: asset.asset,
                     track: asset.track,
-                    duration: asset.duration
+                    duration: asset.duration,
+                    timelineOffset: request.take.cameraAngles.record(role: file.role)?.timelineOffset ?? .zero
                 ))
             }
         }

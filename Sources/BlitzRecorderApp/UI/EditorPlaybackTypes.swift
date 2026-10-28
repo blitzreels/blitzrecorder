@@ -134,6 +134,8 @@ struct EditorPlaybackMediaSignature: Equatable {
     let settings: RecordingProject.SettingsSnapshot
     let sources: [RecordingProject.SourceFile]
     let cuts: [TimelineCut]
+    let cameraAngles: [CameraAngleRecord]
+    let programAudioRole: String?
 
     init(project: RecordingProject) {
         version = project.version
@@ -146,6 +148,8 @@ struct EditorPlaybackMediaSignature: Equatable {
         settings = project.settings
         sources = project.sources
         cuts = project.edits.enabledCuts
+        cameraAngles = project.cameraAngles
+        programAudioRole = project.programAudioRole
     }
 }
 

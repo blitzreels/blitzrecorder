@@ -180,6 +180,8 @@ extension TakeFileStore {
             timelineEdits: edits.timelineEdits ?? existingProject?.timelineEdits ?? .empty,
             analysis: existingProject?.analysis ?? .empty
         )
+        project.cameraAngles = take.cameraAngles
+        project.programAudioRole = take.programAudioRole
         if let existingProject {
             project.editRevision = existingProject.editRevision + (project.hasSameEdits(as: existingProject) ? 0 : 1)
         }

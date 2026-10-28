@@ -60,7 +60,7 @@ final class LiveCompositorRenderer: @unchecked Sendable {
     }
 
     func render(_ request: LiveCompositorImageRenderRequest) -> Bool {
-        guard request.screenFrame != nil || request.cameraFrame != nil else {
+        guard request.screenFrame != nil || request.cameraFrame != nil || request.secondCameraFrame != nil else {
             return false
         }
 

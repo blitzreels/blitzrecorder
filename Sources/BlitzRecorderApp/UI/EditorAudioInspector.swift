@@ -20,6 +20,9 @@ struct EditorAudioInspector<Music: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: EditorInspectorMetrics.sectionSpacing) {
+            if let project = configuration.vm.lastExportedProject, project.cameraAngles.count >= 2 {
+                EditorInspectorSection(configuration: .init(title: "Cameras", content: { cameras(project) }))
+            }
             if !volumeSources.isEmpty {
                 EditorInspectorSection(configuration: .init(title: "Volume", content: {
                     ForEach(volumeSources, id: \.self) { source in
@@ -48,25 +51,50 @@ struct EditorAudioInspector<Music: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// Which camera's sound plays, and how each camera was synced. The other cameras' sound stays silent.
+    private func cameras(_ project: RecordingProject) -> some View {
+        let switching = configuration.vm.editorSoundSwitch
+        return VStack(alignment: .leading, spacing: 10) {
+            BlitzSegmentedPicker(configuration: .init(
+                title: "Sound from", options: project.cameraAngles.map(\.role),
+                selection: Binding(get: { switching ?? project.programAudioRole ?? CameraFeeds.mainRole },
+                                   set: configuration.vm.useProgramAudio),
+                label: { project.cameraAngles.record(role: $0)?.title ?? $0 }
+            ))
+            Text(switching == nil ? "The other cameras stay silent." : "Preparing that camera's sound…")
+                .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(project.cameraAngles, id: \.role) { angle in
+                    HStack(spacing: 8) {
+                        Text(angle.title).font(BlitzType.body).lineLimit(1)
+                        Spacer(minLength: 8)
+                        Text(angle.syncStatusText).font(BlitzType.caption)
+                            .foregroundStyle(angle.needsReview ? BlitzUI.warning : BlitzUI.secondaryText)
+                    }
+                }
+            }
+        }
+    }
+
     private var cleanup: some View {
         VStack(alignment: .leading, spacing: 12) {
             Toggle("Clean up microphone", isOn: Binding(get: { settings.isEnabled }, set: { value in
                 var settings = settings; settings.isEnabled = value; save(settings)
             }))
             .toggleStyle(.blitzSwitch)
-            Text("Removes steady noise like a fan or a hum. Your video isn't changed.")
+            Text("Removes background noise from your voice. Your video isn't changed.")
                 .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
             if settings.isEnabled {
                 VStack(alignment: .leading, spacing: 8) {
                     BlitzSegmentedPicker(configuration: .init(
-                        title: "Noise reduction", options: VoiceCleanupLevel.allCases,
-                        selection: Binding(get: { VoiceCleanupLevel(strength: settings.strength) }, set: { level in
-                            var settings = settings; settings.strength = level.strength; save(settings)
+                        title: "Noise reduction", options: VoiceCleanupLevel.available,
+                        selection: Binding(get: { VoiceCleanupLevel(settings: settings) }, set: { level in
+                            save(level.applied(to: settings))
                         }),
                         label: \.title
                     ))
-                    Text(VoiceCleanupLevel(strength: settings.strength).detail)
+                    Text(VoiceCleanupLevel(settings: settings).detail)
                         .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }

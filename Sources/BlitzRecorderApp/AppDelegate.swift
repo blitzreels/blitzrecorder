@@ -214,8 +214,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
         }
     }
 
+    /// Videos dropped on the Dock icon or opened with BlitzRecorder import like a drop on the project library, so
+    /// several cameras of one shoot become one synced project.
     func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls {
+        let videos = urls.filter {
+            $0.isFileURL && RecorderViewModel.importableVideoExtensions.contains($0.pathExtension.lowercased())
+        }
+        if !videos.isEmpty, let viewModel = windowController?.viewModel, viewModel.state == .idle {
+            presentMainWindow()
+            viewModel.studioMode = .projects
+            _ = viewModel.importVideos(videos)
+        }
+        for url in urls where !url.isFileURL {
             accessController.handleBlitzRecorderURL(url)
         }
     }

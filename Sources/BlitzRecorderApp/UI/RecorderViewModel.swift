@@ -30,6 +30,8 @@ final class RecorderViewModel {
     var state: RecordingState = .idle
     var settings: RecordingSettings
     var detailMessage: String = ""
+    /// The camera whose sound the editor is switching to in a multicam project, while its sound is prepared.
+    var editorSoundSwitch: String?
     var screenWindowFitMessage: String?
     var showsScreenSourcePicker = false
     var isLivePreviewEnabled = LivePreviewPreference().isEnabled

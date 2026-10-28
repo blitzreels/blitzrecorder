@@ -189,10 +189,19 @@ struct EditorTimelineFilmstripCells {
     }
 }
 
+/// Whether a video lane also shows its sound: the cameras of a multicam project do, bright for the one playing
+/// and faint for the silent ones.
+enum EditorTimelineVideoSound: Equatable {
+    case hidden
+    case playing
+    case muted
+}
+
 struct EditorTimelineMediaCanvas: View, Equatable {
     let frames: [CGImage]
     let waveform: EditorAudioWaveform?
     let isVideo: Bool
+    let videoSound: EditorTimelineVideoSound
     let tint: Color
     let projection: EditorTimelineProjection
     let sourceDuration: Double
@@ -203,7 +212,7 @@ struct EditorTimelineMediaCanvas: View, Equatable {
     @Environment(\.displayScale) private var displayScale
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.isVideo == rhs.isVideo && lhs.tint == rhs.tint
+        lhs.isVideo == rhs.isVideo && lhs.videoSound == rhs.videoSound && lhs.tint == rhs.tint
             && lhs.projection == rhs.projection && lhs.sourceDuration == rhs.sourceDuration
             && lhs.sourceOffset == rhs.sourceOffset && lhs.pixelsPerSecond == rhs.pixelsPerSecond
             && lhs.viewport == rhs.viewport
@@ -249,6 +258,13 @@ struct EditorTimelineMediaCanvas: View, Equatable {
                         ))
                 }
             }
+            let drawsBars = !isVideo || videoSound != .hidden
+            let barArea = isVideo ? size.height * 0.42 : size.height - 6
+            let barCenter = isVideo ? size.height - barArea / 2 - 2 : size.height / 2
+            if isVideo, videoSound != .hidden {
+                context.fill(Path(CGRect(x: 0, y: size.height - barArea - 4, width: size.width, height: barArea + 4)),
+                             with: .color(BlitzUI.panelBackground.opacity(0.6)))
+            }
             var bars = Path()
             for fragment in fragments {
                 let sourceStart = max(0, fragment.takeStart - sourceOffset)
@@ -257,7 +273,7 @@ struct EditorTimelineMediaCanvas: View, Equatable {
                 let start = fragment.start + sourceStart + sourceOffset - fragment.takeStart
                 let x = CGFloat(start) * pixelsPerSecond
                 let endX = x + CGFloat(sourceEnd - sourceStart) * pixelsPerSecond
-                if !isVideo {
+                if drawsBars {
                     let first = Int(floor(x * displayScale))
                     let end = Int(ceil(endX * displayScale))
                     for index in first..<end {
@@ -270,16 +286,21 @@ struct EditorTimelineMediaCanvas: View, Equatable {
                                 .init(
                                     start: startTime / sourceDuration, end: endTime / sourceDuration
                                 )) ?? 0)
-                        let height = max(1 / displayScale, amplitude * (size.height - 6))
+                        let height = max(1 / displayScale, amplitude * barArea)
                         bars.addRect(
                             CGRect(
-                                x: columnStart - viewport.lowerBound, y: (size.height - height) / 2,
+                                x: columnStart - viewport.lowerBound, y: barCenter - height / 2,
                                 width: columnEnd - columnStart, height: height
                             ))
                     }
                 }
             }
-            if !isVideo { context.fill(bars, with: .color(tint.opacity(0.9))) }
+            switch (isVideo, videoSound) {
+            case (false, _): context.fill(bars, with: .color(tint.opacity(0.9)))
+            case (true, .playing): context.fill(bars, with: .color(BlitzUI.onMediaText.opacity(0.92)))
+            case (true, .muted): context.fill(bars, with: .color(BlitzUI.onMediaStroke))
+            case (true, .hidden): break
+            }
         }
         .frame(width: viewport.width)
         .offset(x: viewport.lowerBound)

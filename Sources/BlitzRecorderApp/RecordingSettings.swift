@@ -158,6 +158,10 @@ struct RecordingTake {
     var sourceTimelineOffsets: [CaptureSource: CMTime] = [:]
     var sourceReferences: [RecordingProject.SourceFile] = []
     var cameraAngleFiles: [SourceTrackFile] = []
+    /// Where each angle of a multicam project sits on the timeline; empty for recorded takes.
+    var cameraAngles: [CameraAngleRecord] = []
+    /// The angle whose sound `audioURL` holds in a multicam project.
+    var programAudioRole: String?
     /// Each microphone's own file when a take records more than one; `audioURL` then holds their mix.
     var microphoneTrackFiles: [SourceTrackFile] = []
 

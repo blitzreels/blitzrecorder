@@ -12,6 +12,23 @@
   <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
   <key>CFBundleIconFile</key>
   <string>$(APP_ICON_FILE)</string>
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Video</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>com.apple.quicktime-movie</string>
+        <string>public.mpeg-4</string>
+        <string>com.apple.m4v-video</string>
+      </array>
+    </dict>
+  </array>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>

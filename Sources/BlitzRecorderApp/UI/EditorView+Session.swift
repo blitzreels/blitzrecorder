@@ -188,6 +188,8 @@ extension EditorView {
             selection = nil
         case .zoom(let zoom):
             timelineZoom = zoom
+        case .cameraShot(let number):
+            return cutToCameraShot(number)
         }
         return true
     }
@@ -318,6 +320,18 @@ extension EditorView {
     func trimClip(_ edits: TimelineEdits) {
         guard playback.isReady, let project, edits != project.edits else { return }
         _ = commitTimelineWrite(.init(edits: edits, actionName: "Trim Clip"))
+    }
+
+    /// Number keys switch cameras in a multicam project, like a live switcher: 1 to N each camera, then the speakers
+    /// side by side. Playback keeps going, so a whole conversation can be cut while it plays.
+    func cutToCameraShot(_ number: Int) -> Bool {
+        guard let project, project.cameraAngles.count >= 2 else { return false }
+        let shots = MulticamShot.shots(for: project.cameraAngles)
+        guard shots.indices.contains(number - 1) else { return false }
+        if !vm.cutToCameraShot(.init(shot: shots[number - 1], time: playback.currentTime)) {
+            editErrorMessage = vm.detailMessage
+        }
+        return true
     }
 
     func splitAtPlayhead() {

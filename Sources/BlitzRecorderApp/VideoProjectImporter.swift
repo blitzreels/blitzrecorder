@@ -34,35 +34,9 @@ struct VideoProjectImporter {
         defer { if sourceAccess { request.url.stopAccessingSecurityScopedResource() } }
         let filename = request.url.lastPathComponent
         await request.onProgress(.init(filename: filename, stage: "Checking video", fraction: nil))
-        guard ["mp4", "mov", "m4v"].contains(request.url.pathExtension.lowercased()) else {
-            throw RecorderError.mediaWriteFailed("Choose an MP4, MOV, or M4V video.")
-        }
-        let asset = AVURLAsset(url: request.url)
-        guard try await asset.load(.isPlayable),
-              let video = try await asset.loadTracks(withMediaType: .video).first else {
-            throw RecorderError.mediaWriteFailed("This file has no playable video track.")
-        }
-        let duration = try await asset.load(.duration).seconds
-        let size = try await video.load(.naturalSize)
-        let transform = try await video.load(.preferredTransform)
-        let bounds = CGRect(origin: .zero, size: size).applying(transform)
-        let width = abs(bounds.width)
-        let height = abs(bounds.height)
-        guard duration.isFinite, duration > 0, width.isFinite, height.isFinite, width > 0, height > 0 else {
-            throw RecorderError.mediaWriteFailed("This video has an invalid duration or frame size.")
-        }
-        let rate = Double(try await video.load(.nominalFrameRate))
-        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
-        var settings = RecordingSettings()
-        settings.outputDirectory = request.settings.outputDirectory
-        settings.outputDirectoryBookmarkData = request.settings.outputDirectoryBookmarkData
-        settings.projectLibrary = request.settings.projectLibrary
-        settings.additionalProjectLibraries = request.settings.additionalProjectLibraries
-        settings.outputVideoFormat = .mp4
-        settings.enabledSources = audioTracks.isEmpty ? [.camera] : [.camera, .microphone]
-        settings.layout = abs(width / height - 1) < 0.05 ? .square : width > height ? .horizontal : .vertical
-        settings.outputResolution = OutputResolution.allCases.last { Double($0.height) <= min(width, height) + 1 } ?? .p720
-        settings.framesPerSecond = rate.isFinite && rate > 0 ? max(1, Int(rate.rounded())) : 30
+        let probe = try await Self.probe(request.url)
+        let (width, height, duration, rate) = (probe.width, probe.height, probe.duration, probe.framesPerSecond)
+        var settings = Self.importSettings(.init(probe: probe, base: request.settings))
         settings.cameraContentMode = .fit
         settings.sceneLayout.cameraFrame = CGRect(x: 0, y: 0, width: 1, height: 1)
         settings.selectedScenePreset = .webcamFullscreen
@@ -84,9 +58,10 @@ struct VideoProjectImporter {
         var source = RecordingProject.SourceFile(role: "camera", path: sourceURL.path, exists: true, bookmarkData: bookmark)
         source.resolveExternalReference()
         let audioURL = directory.appendingPathComponent("audio.m4a")
-        if !audioTracks.isEmpty {
+        if probe.hasAudio {
             await request.onProgress(.init(filename: filename, stage: "Preparing audio", fraction: nil))
-            try await extractAudio(.init(asset: AVURLAsset(url: sourceURL), destination: audioURL, onFraction: { fraction in
+            try await Self.extractAudio(.init(asset: AVURLAsset(url: sourceURL), destination: audioURL, tracks: .all,
+                                              skippedSeconds: 0, onFraction: { fraction in
                 await request.onProgress(.init(filename: filename, stage: "Preparing audio", fraction: fraction))
             }))
         }
@@ -112,20 +87,93 @@ struct VideoProjectImporter {
         return project
     }
 
-    private struct AudioRequest {
+    /// What an imported file holds, checked before anything is written.
+    struct Probe {
+        let duration: Double
+        let width: Double
+        let height: Double
+        let framesPerSecond: Double
+        let hasAudio: Bool
+    }
+
+    static func probe(_ url: URL) async throws -> Probe {
+        guard ["mp4", "mov", "m4v"].contains(url.pathExtension.lowercased()) else {
+            throw RecorderError.mediaWriteFailed("Choose an MP4, MOV, or M4V video.")
+        }
+        let asset = AVURLAsset(url: url)
+        guard try await asset.load(.isPlayable),
+              let video = try await asset.loadTracks(withMediaType: .video).first else {
+            throw RecorderError.mediaWriteFailed("\(url.lastPathComponent) has no playable video track.")
+        }
+        let duration = try await asset.load(.duration).seconds
+        let size = try await video.load(.naturalSize)
+        let transform = try await video.load(.preferredTransform)
+        let bounds = CGRect(origin: .zero, size: size).applying(transform)
+        let width = abs(bounds.width)
+        let height = abs(bounds.height)
+        guard duration.isFinite, duration > 0, width.isFinite, height.isFinite, width > 0, height > 0 else {
+            throw RecorderError.mediaWriteFailed("\(url.lastPathComponent) has an invalid duration or frame size.")
+        }
+        let rate = Double(try await video.load(.nominalFrameRate))
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        return Probe(duration: duration, width: width, height: height,
+                     framesPerSecond: rate.isFinite ? rate : 0, hasAudio: !audioTracks.isEmpty)
+    }
+
+    struct SettingsRequest {
+        let probe: Probe
+        let base: RecordingSettings
+    }
+
+    /// Fresh settings for a project made from a file: only where projects are kept comes from the app's settings,
+    /// and the canvas, resolution and frame rate follow the file.
+    static func importSettings(_ request: SettingsRequest) -> RecordingSettings {
+        let probe = request.probe
+        var settings = RecordingSettings()
+        settings.outputDirectory = request.base.outputDirectory
+        settings.outputDirectoryBookmarkData = request.base.outputDirectoryBookmarkData
+        settings.projectLibrary = request.base.projectLibrary
+        settings.additionalProjectLibraries = request.base.additionalProjectLibraries
+        settings.outputVideoFormat = .mp4
+        settings.enabledSources = probe.hasAudio ? [.camera, .microphone] : [.camera]
+        settings.layout = abs(probe.width / probe.height - 1) < 0.05 ? .square : probe.width > probe.height ? .horizontal : .vertical
+        settings.outputResolution = OutputResolution.allCases.last {
+            Double($0.height) <= min(probe.width, probe.height) + 1
+        } ?? .p720
+        settings.framesPerSecond = probe.framesPerSecond > 0 ? max(1, Int(probe.framesPerSecond.rounded())) : 30
+        return settings
+    }
+
+    struct AudioRequest {
+        enum Tracks {
+            /// Every audio track, mixed: a file's tracks are usually one recording split across channels.
+            case all
+            /// The first track only: an iPhone's second track is spatial audio of the same sound.
+            case first
+        }
+
         let asset: AVURLAsset
         let destination: URL
+        let tracks: Tracks
+        /// Leading seconds left out, for a file that started before the project's timeline.
+        let skippedSeconds: Double
         let onFraction: @Sendable (Double) async -> Void
     }
 
-    private func extractAudio(_ request: AudioRequest) async throws {
+    static func extractAudio(_ request: AudioRequest) async throws {
         let composition = AVMutableComposition()
-        let tracks = try await request.asset.loadTracks(withMediaType: .audio)
+        let allTracks = try await request.asset.loadTracks(withMediaType: .audio)
+        let tracks = request.tracks == .first ? Array(allTracks.prefix(1)) : allTracks
+        let skipped = CMTime(seconds: max(0, request.skippedSeconds), preferredTimescale: 48_000)
         for track in tracks {
             guard let destination = composition.addMutableTrack(withMediaType: .audio,
                 preferredTrackID: kCMPersistentTrackID_Invalid) else { throw RecorderError.writerNotReady }
-            let range = try await track.load(.timeRange)
-            try destination.insertTimeRange(range, of: track, at: range.start)
+            var range = try await track.load(.timeRange)
+            if CMTimeCompare(skipped, .zero) > 0 {
+                let start = CMTimeAdd(range.start, skipped)
+                range = CMTimeRange(start: start, end: CMTimeMaximum(start, range.end))
+            }
+            try destination.insertTimeRange(range, of: track, at: CMTimeSubtract(range.start, skipped))
         }
         let compatible = await AVAssetExportSession.compatibility(ofExportPreset: AVAssetExportPresetPassthrough,
             with: composition, outputFileType: .m4a)

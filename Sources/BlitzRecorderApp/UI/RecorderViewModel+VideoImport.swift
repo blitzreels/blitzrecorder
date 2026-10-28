@@ -28,7 +28,9 @@ extension RecorderViewModel {
         }
     }
 
-    /// Imports videos one after another, from the open panel or a Finder drop. Returns false when none can be imported.
+    /// Imports videos from the open panel or a Finder drop. Several at once that share their sound are one shoot
+    /// from several cameras and become one synced project; the rest import one after another. Returns false when
+    /// none can be imported.
     func importVideos(_ urls: [URL]) -> Bool {
         let videos = urls.filter { $0.isFileURL && Self.importableVideoExtensions.contains($0.pathExtension.lowercased()) }
         guard libraryActions.videoImportTask == nil, canImportVideos else { return false }
@@ -39,13 +41,18 @@ extension RecorderViewModel {
         libraryActions.videoImportTask = Task {
             defer { libraryActions.videoImportTask = nil }
             var imported: [RecordingProjectHistory.Entry] = []
-            for url in videos {
+            var separate = videos
+            if videos.count >= 2, let shoot = await importShoot(videos) {
+                imported += shoot.entry.map { [$0] } ?? []
+                separate = shoot.unmatched
+            }
+            for url in separate {
                 guard !Task.isCancelled else { break }
                 if let entry = await importVideo(url) { imported.append(entry) }
             }
             guard !imported.isEmpty else { return }
             projectLibraryNavigation.selectedProjectIDs = Set(imported.map(\.id))
-            if videos.count == 1, studioMode == .projects, state == .idle, let entry = imported.first {
+            if imported.count == 1, studioMode == .projects, state == .idle, let entry = imported.first {
                 openProject(entry)
             }
             let entries = await coordinator.projectLibrary.refresh(.init(settings: settings, includesLatestWrites: true))
@@ -70,22 +77,60 @@ extension RecorderViewModel {
             } onCancel: {
                 task.cancel()
             }
-            let entry = RecordingProjectHistory.Entry(project)
-            recentProjects.removeAll { $0.id == entry.id }
-            recentProjects.insert(entry, at: 0)
-            projectLibraryNavigation.section = .recordings
-            projectLibraryNavigation.folderScope = nil
-            projectLibraryNavigation.searchText = ""
-            projectLibraryNavigation.selectedProjectIDs = [entry.id]
-            transcriptionController.syncProjects(recentProjects)
-            if project.sources.contains(where: { $0.role == "microphone" && $0.exists }) {
-                transcriptionController.retry(.project(URL(fileURLWithPath: project.projectPath)))
-            }
-            return entry
+            return registerImported(project)
         } catch is CancellationError {
         } catch {
             if !Task.isCancelled { libraryActions.videoImportError = error.localizedDescription }
         }
         return nil
+    }
+}
+
+extension RecorderViewModel {
+    private struct ShootImport {
+        let entry: RecordingProjectHistory.Entry?
+        let unmatched: [URL]
+    }
+
+    /// Imports several files as one multicam project. Nil when it failed; the files then import one by one.
+    private func importShoot(_ urls: [URL]) async -> ShootImport? {
+        libraryActions.videoImportError = nil
+        libraryActions.videoImportProgress = .init(filename: urls[0].lastPathComponent, stage: "Listening to sound", fraction: 0)
+        defer { libraryActions.videoImportProgress = nil }
+        let settings = settings
+        let task = Task.detached(priority: .userInitiated) { [self] in
+            try await MulticamProjectImporter().importShoot(.init(urls: urls, settings: settings, onProgress: { progress in
+                await MainActor.run { self.libraryActions.videoImportProgress = progress }
+            }))
+        }
+        do {
+            let result = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: {
+                task.cancel()
+            }
+            return ShootImport(entry: result.project.map(registerImported), unmatched: result.unmatched)
+        } catch is CancellationError {
+            return ShootImport(entry: nil, unmatched: [])
+        } catch {
+            NSLog("Multicam import failed, importing the files one by one: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Lists a freshly imported project first, selects it, and transcribes its sound.
+    fileprivate func registerImported(_ project: RecordingProject) -> RecordingProjectHistory.Entry {
+        let entry = RecordingProjectHistory.Entry(project)
+        recentProjects.removeAll { $0.id == entry.id }
+        recentProjects.insert(entry, at: 0)
+        projectLibraryNavigation.section = .recordings
+        projectLibraryNavigation.folderScope = nil
+        projectLibraryNavigation.searchText = ""
+        projectLibraryNavigation.selectedProjectIDs = [entry.id]
+        transcriptionController.syncProjects(recentProjects)
+        if project.sources.contains(where: { $0.role == "microphone" && $0.exists }) {
+            transcriptionController.retry(.project(URL(fileURLWithPath: project.projectPath)))
+        }
+        return entry
     }
 }

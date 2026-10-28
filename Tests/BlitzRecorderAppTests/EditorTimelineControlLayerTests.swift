@@ -245,7 +245,7 @@ private struct SilenceFixture: View {
             .overlay(alignment: .topLeading) {
                 EditorTimelineMediaCanvas(
                     frames: [], waveform: EditorAudioWaveform(.init(peaks: Array(repeating: 0.5, count: 100))),
-                    isVideo: false, tint: .white, projection: projection,
+                    isVideo: false, videoSound: .hidden, tint: .white, projection: projection,
                     sourceDuration: 10, sourceOffset: 0, pixelsPerSecond: 20, viewport: viewport)
                     .frame(width: 220, height: 44)
                     .offset(x: -viewport.lowerBound, y: 106)

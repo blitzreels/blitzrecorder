@@ -58,6 +58,7 @@ struct RecordingUploadSource {
 
 extension RecordingProject {
     func sourceOffset(forRole role: String) -> Double {
+        if let angle = cameraAngles.record(role: role) { return angle.offsetSeconds }
         let source: CaptureSource? = switch role {
         case "screen": .screen
         case "camera": .camera

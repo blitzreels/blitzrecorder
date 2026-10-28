@@ -76,7 +76,7 @@ enum MCPProjectFrameRenderer {
         }
         let asset = AVURLAsset(url: URL(fileURLWithPath: source.path))
         let duration = try await asset.load(.duration).seconds
-        let offset = (project.sourceTimelineOffsetSeconds[source.role] ?? 0) - project.timelineTrimOffsetSeconds
+        let offset = project.sourceOffset(forRole: source.role) - project.timelineTrimOffsetSeconds
         let sourceTime = frame.timeSeconds - offset
         guard duration.isFinite, sourceTime.isFinite, sourceTime >= 0, sourceTime < duration else {
             throw MCPProjectFrameError.outsideSource

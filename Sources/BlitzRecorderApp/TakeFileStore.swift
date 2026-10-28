@@ -284,6 +284,8 @@ struct TakeFileStore {
             timelineEdits: project.timelineEdits, analysis: project.analysis
         )
         updated.editRevision = project.editRevision
+        updated.cameraAngles = project.cameraAngles
+        updated.programAudioRole = project.programAudioRole
         return updated
     }
 

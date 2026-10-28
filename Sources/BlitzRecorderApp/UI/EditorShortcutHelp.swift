@@ -24,6 +24,7 @@ struct EditorShortcutHelp: View {
                 row(.init(title: "Restore removed footage in range", keys: "⇧ Delete"))
                 row(.init(title: "Shorten clip or restore cut footage", keys: "Drag right edge"))
                 row(.init(title: "Split clip at playhead (all tracks)", keys: "⌘ B / S"))
+                row(.init(title: "Cut to a camera at playhead (multicam)", keys: "1 – 9"))
                 row(.init(title: "Toggle selected track", keys: "M / H"))
                 row(.init(title: "Undo / redo", keys: "⌘ Z  /  ⇧ ⌘ Z"))
             }

@@ -34,6 +34,8 @@ extension TakeFileStore {
             }),
             sourceReferences: project.sources.filter { $0.bookmarkData != nil },
             cameraAngleFiles: NumberedSourceTracks.cameraAngles.files(sourceURLByRole: sourceURLByRole),
+            cameraAngles: project.cameraAngles,
+            programAudioRole: project.programAudioRole,
             microphoneTrackFiles: NumberedSourceTracks.microphones.files(sourceURLByRole: sourceURLByRole)
         )
     }
@@ -126,6 +128,43 @@ extension TakeFileStore {
         )
         return try rewriteProject(.init(project: project, projectURL: projectURL, baseSettings: baseSettings,
                                         sceneEvents: sceneEvents))
+    }
+
+    struct ProgramAudioChange {
+        let projectURL: URL
+        /// The angle whose sound becomes the program audio.
+        let role: String
+        /// That angle's sound, already extracted and placed like the angle.
+        let soundURL: URL
+    }
+
+    /// Plays another angle's sound as the program audio of a multicam project. The sound file is one the editor
+    /// extracted for that angle, so switching back and forth never extracts twice.
+    func updateProjectProgramAudio(_ change: ProgramAudioChange, baseSettings: RecordingSettings) throws -> RecordingProject {
+        let project = try loadRecordingProject(at: change.projectURL)
+        guard let angle = project.cameraAngles.record(role: change.role) else {
+            throw RecorderError.mediaWriteFailed("This camera is no longer part of the project.")
+        }
+        let outputFormat = project.outputVideoFormat(fallback: baseSettings.outputVideoFormat)
+        let settings = recordingSettings(from: project, baseSettings: baseSettings, outputFormat: outputFormat)
+        let current = recordingTake(from: project, settings: settings, outputFormat: outputFormat)
+        var offsets = current.sourceTimelineOffsets
+        offsets[.microphone] = CMTime(seconds: max(0, angle.offsetSeconds), preferredTimescale: 600)
+        let take = RecordingTake(
+            scratchDirectory: current.scratchDirectory, screenURL: current.screenURL, cameraURL: current.cameraURL,
+            audioURL: change.soundURL, systemAudioURL: current.systemAudioURL, transcriptURL: current.transcriptURL,
+            finalVideoURL: current.finalVideoURL, outputVideoFormat: current.outputVideoFormat,
+            titleSlug: current.titleSlug, timelineTrimOffset: current.timelineTrimOffset, sourceTimelineOffsets: offsets,
+            sourceReferences: current.sourceReferences, cameraAngleFiles: current.cameraAngleFiles,
+            cameraAngles: current.cameraAngles, programAudioRole: change.role,
+            microphoneTrackFiles: current.microphoneTrackFiles
+        )
+        try writeRecordingProject(
+            for: take, settings: settings, sceneEvents: sceneEvents(from: project),
+            finalVideoURL: project.finalVideoPath.map(URL.init(fileURLWithPath:)),
+            chapters: project.chapters, editorTimeline: project.editorTimeline
+        )
+        return try loadRecordingProject(at: change.projectURL)
     }
 
     func updateProjectScene(

@@ -3,23 +3,52 @@ import AVFoundation
 import CryptoKit
 import Foundation
 
+/// How the voice is cleaned: a filter that learns the room's steady noise, or Apple's voice isolation model, which
+/// keeps only the voice nearest the microphone.
+enum VoiceCleanupMethod: String, Codable, Sendable {
+    case noiseFilter
+    case voiceIsolation
+}
+
 struct VoiceCleanupSettings: Codable, Equatable, Sendable {
     var isEnabled = false
     var strength = VoiceCleanupLevel.medium.strength
     var normalizesSpeech = true
     var ducksMusic = false
+    var method = VoiceCleanupMethod.noiseFilter
     static let disabled = Self()
+
+    enum CodingKeys: String, CodingKey {
+        case isEnabled, strength, normalizesSpeech, ducksMusic, method
+    }
+
+    init() {}
+
+    /// Projects saved before voice isolation existed used the noise filter.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        isEnabled = try container.decode(Bool.self, forKey: .isEnabled)
+        strength = try container.decode(Double.self, forKey: .strength)
+        normalizesSpeech = try container.decode(Bool.self, forKey: .normalizesSpeech)
+        ducksMusic = try container.decode(Bool.self, forKey: .ducksMusic)
+        method = try container.decodeIfPresent(VoiceCleanupMethod.self, forKey: .method) ?? .noiseFilter
+    }
 }
 
-/// Three levels, so each one is processed once and switching between them is instant afterwards.
+/// Fixed levels, so each one is processed once and switching between them is instant afterwards.
 enum VoiceCleanupLevel: CaseIterable {
-    case light, medium, strong
+    case light, medium, strong, voiceOnly
+
+    /// The levels this Mac can run: Voice only needs Apple's voice isolation model.
+    static var available: [Self] {
+        VoiceIsolation.isAvailable ? allCases : allCases.filter { $0 != .voiceOnly }
+    }
 
     var strength: Double {
         switch self {
         case .light: 0.35
         case .medium: 0.65
-        case .strong: 0.9
+        case .strong, .voiceOnly: 0.9
         }
     }
 
@@ -28,6 +57,7 @@ enum VoiceCleanupLevel: CaseIterable {
         case .light: "Light"
         case .medium: "Medium"
         case .strong: "Strong"
+        case .voiceOnly: "Voice only"
         }
     }
 
@@ -36,12 +66,26 @@ enum VoiceCleanupLevel: CaseIterable {
         case .light: "Takes the edge off hum and hiss. Your voice stays fully natural."
         case .medium: "Removes most steady background noise. Right for most rooms."
         case .strong: "For loud fans or air conditioning. Speech can sound a little thin."
+        case .voiceOnly: "For crowds, music or traffic. Keeps only the voice nearest the mic and removes everything else."
         }
     }
 
-    /// Settings saved before levels existed snap to the closest one.
-    init(strength: Double) {
-        self = Self.allCases.min { abs($0.strength - strength) < abs($1.strength - strength) } ?? .medium
+    /// Settings saved before levels existed snap to the closest filter level.
+    init(settings: VoiceCleanupSettings) {
+        if settings.method == .voiceIsolation {
+            self = .voiceOnly
+            return
+        }
+        self = [Self.light, .medium, .strong].min {
+            abs($0.strength - settings.strength) < abs($1.strength - settings.strength)
+        } ?? .medium
+    }
+
+    func applied(to settings: VoiceCleanupSettings) -> VoiceCleanupSettings {
+        var applied = settings
+        applied.strength = strength
+        applied.method = self == .voiceOnly ? .voiceIsolation : .noiseFilter
+        return applied
     }
 }
 
@@ -60,7 +104,9 @@ actor VoiceCleanupProcessor {
         guard let fingerprint = MediaFileFingerprint(url: request.url) else {
             throw RecorderError.mediaWriteFailed("The microphone source is unavailable for voice cleanup.")
         }
+        let isolates = request.settings.method == .voiceIsolation
         let key = fingerprint.cacheKey + "-voice-v1-\(request.settings.strength)-\(request.settings.normalizesSpeech)"
+            + (isolates ? "-isolated-v1" : "")
         let name = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
         let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("dev.blitzreels.blitzrecorder/VoiceCleanup", isDirectory: true)
@@ -71,8 +117,23 @@ actor VoiceCleanupProcessor {
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: scratch) }
         let pcm = scratch.appendingPathComponent("processed.caf")
-        try Self.processPCM(.init(source: request.url, destination: pcm, settings: request.settings,
-                                  progress: { request.progress(0.9 * $0) }))
+        if isolates {
+            let isolated = scratch.appendingPathComponent("isolated.caf")
+            try VoiceIsolation.process(.init(source: request.url, destination: isolated,
+                                             progress: { request.progress(0.6 * $0) }))
+            if request.settings.normalizesSpeech {
+                // The filter at zero strength removes nothing and only evens out the isolated voice's volume.
+                var leveling = request.settings
+                leveling.strength = 0
+                try Self.processPCM(.init(source: isolated, destination: pcm, settings: leveling,
+                                          progress: { request.progress(0.6 + 0.3 * $0) }))
+            } else {
+                try FileManager.default.moveItem(at: isolated, to: pcm)
+            }
+        } else {
+            try Self.processPCM(.init(source: request.url, destination: pcm, settings: request.settings,
+                                      progress: { request.progress(0.9 * $0) }))
+        }
         try Task.checkCancellation()
         guard let exporter = AVAssetExportSession(asset: AVURLAsset(url: pcm), presetName: AVAssetExportPresetAppleM4A) else {
             throw RecorderError.mediaWriteFailed("Cannot encode cleaned microphone audio.")

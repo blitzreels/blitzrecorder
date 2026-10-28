@@ -90,6 +90,10 @@ struct RecordingProject: Codable, Equatable {
     let exports: [ExportRecord]
     var timelineEdits: TimelineEditsSnapshot
     let analysis: AnalysisSnapshot
+    /// Where each angle of a multicam project sits on the timeline; empty for recorded takes.
+    var cameraAngles: [CameraAngleRecord] = []
+    /// The angle whose sound plays as the program audio in a multicam project.
+    var programAudioRole: String?
     /// Counts saved changes to what the editor edits (scenes, settings, chapters, editor state and timeline edits).
     /// Exports and renames leave it alone because editor writes keep those fields from disk.
     var editRevision = 0
@@ -115,6 +119,8 @@ struct RecordingProject: Codable, Equatable {
         case timelineEdits
         case analysis
         case editRevision
+        case cameraAngles
+        case programAudioRole
         case cuts
         case scene
     }
@@ -189,6 +195,8 @@ struct RecordingProject: Codable, Equatable {
         self.timelineEdits = try container.decodeIfPresent(TimelineEditsSnapshot.self, forKey: .timelineEdits) ?? .empty
         self.analysis = try container.decodeIfPresent(AnalysisSnapshot.self, forKey: .analysis) ?? .empty
         self.editRevision = try container.decodeIfPresent(Int.self, forKey: .editRevision) ?? 0
+        self.cameraAngles = try container.decodeIfPresent([CameraAngleRecord].self, forKey: .cameraAngles) ?? []
+        self.programAudioRole = try container.decodeIfPresent(String.self, forKey: .programAudioRole)
         _ = try container.decodeIfPresent([TimelineCut].self, forKey: .cuts)
         _ = try container.decodeIfPresent(PortableSceneLayout.self, forKey: .scene)
     }
@@ -219,6 +227,10 @@ struct RecordingProject: Codable, Equatable {
             try container.encode(analysis, forKey: .analysis)
         }
         try container.encode(editRevision, forKey: .editRevision)
+        if !cameraAngles.isEmpty {
+            try container.encode(cameraAngles, forKey: .cameraAngles)
+        }
+        try container.encodeIfPresent(programAudioRole, forKey: .programAudioRole)
         try container.encode(timelineEdits.edits.cuts, forKey: .cuts)
         try container.encode(portableSceneLayout, forKey: .scene)
     }
@@ -226,6 +238,7 @@ struct RecordingProject: Codable, Equatable {
     func hasSameEdits(as other: RecordingProject) -> Bool {
         sceneEvents == other.sceneEvents && settings == other.settings && chapters == other.chapters
             && editorState == other.editorState && timelineEdits == other.timelineEdits
+            && cameraAngles == other.cameraAngles && programAudioRole == other.programAudioRole
     }
 
     /// This copy's edits on top of what `saved` says about everything else: a rename, a finished export or new
@@ -240,6 +253,8 @@ struct RecordingProject: Codable, Equatable {
             timelineEdits: timelineEdits, analysis: saved.analysis
         )
         merged.editRevision = editRevision
+        merged.cameraAngles = cameraAngles
+        merged.programAudioRole = programAudioRole
         return merged
     }
 
