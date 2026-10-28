@@ -98,7 +98,10 @@ enum AngleAudioSync {
         guard reader.canAdd(output) else { throw SyncError.unreadable(url) }
         reader.add(output)
         guard reader.startReading() else { throw SyncError.unreadable(url) }
-        var meter = LoudnessMeter(sampleRate: format?.mSampleRate ?? 48_000)
+        let sampleRate = format?.mSampleRate ?? 48_000
+        // A damaged header can report no rate at all; nothing could be measured from it.
+        guard sampleRate.isFinite, sampleRate >= onsetRate else { throw SyncError.unreadable(url) }
+        var meter = LoudnessMeter(sampleRate: sampleRate)
         while let buffer = output.copyNextSampleBuffer(), let block = CMSampleBufferGetDataBuffer(buffer) {
             try Task.checkCancellation()
             let length = CMBlockBufferGetDataLength(block)
@@ -141,6 +144,7 @@ enum AngleAudioSync {
             while index < samples.count {
                 let boundary = Int((Double(loudness.count + 1) * sampleRate / AngleAudioSync.onsetRate).rounded())
                 let take = min(samples.count - index, boundary - consumed)
+                guard take > 0 else { return }
                 var sum: Float = 0
                 samples.withUnsafeBufferPointer { pointer in
                     vDSP_svesq(pointer.baseAddress! + index, 1, &sum, vDSP_Length(take))
