@@ -13,6 +13,7 @@ final class CameraCutoutPreviewer: NSObject, AVCaptureVideoDataOutputSampleBuffe
     private let segmentationRequest = VNGeneratePersonSegmentationRequest()
     private let sequenceHandler = VNSequenceRequestHandler()
     private var frameHandler: FrameHandler?
+    private var configuredDevice: AVCaptureDevice?
     private var lastFrameTime = CFAbsoluteTimeGetCurrent()
 
     override init() {
@@ -28,7 +29,16 @@ final class CameraCutoutPreviewer: NSObject, AVCaptureVideoDataOutputSampleBuffe
                     self.frameHandler = frameHandler
                     try self.configureSession(settings: settings)
                     if !self.session.isRunning {
+                        let held = self.configuredDevice.map { device in
+                            LocalCameraSessionConfiguration.holdBestFormat(.init(
+                                device: device,
+                                fps: settings.framesPerSecond,
+                                logPrefix: "Camera cutout",
+                                sizeLimit: .cutoutPreview
+                            ))
+                        } ?? false
                         self.session.startRunning()
+                        if held { self.configuredDevice?.unlockForConfiguration() }
                     }
                     continuation.resume()
                 } catch {
@@ -82,23 +92,21 @@ final class CameraCutoutPreviewer: NSObject, AVCaptureVideoDataOutputSampleBuffe
         guard let device = selectedCamera(settings: settings) else {
             throw RecorderError.noCamera
         }
-        let cameraIsRunningSomewhere = LocalCameraUsage.isRunningSomewhere(device)
 
         session.beginConfiguration()
-        session.sessionPreset = session.canSetSessionPreset(.hd1280x720) ? .hd1280x720 : .high
         session.inputs.forEach { session.removeInput($0) }
         session.outputs.forEach { session.removeOutput($0) }
 
-        if !cameraIsRunningSomewhere {
-            try configure(device: device)
-        }
-
-        let input = try AVCaptureDeviceInput(device: device)
-        guard session.canAddInput(input) else {
+        guard try LocalCameraSessionConfiguration.attachCamera(.init(
+            session: session,
+            device: device,
+            fps: settings.framesPerSecond,
+            sizeLimit: .cutoutPreview
+        )) else {
             session.commitConfiguration()
             throw RecorderError.noCamera
         }
-        session.addInput(input)
+        configuredDevice = device
 
         let output = AVCaptureVideoDataOutput()
         output.alwaysDiscardsLateVideoFrames = true
@@ -117,29 +125,5 @@ final class CameraCutoutPreviewer: NSObject, AVCaptureVideoDataOutputSampleBuffe
 
     private func selectedCamera(settings: RecordingSettings) -> AVCaptureDevice? {
         LocalCameraSessionConfiguration.selectedCamera(settings: settings)
-    }
-
-    private func configure(device: AVCaptureDevice) throws {
-        try device.lockForConfiguration()
-        defer { device.unlockForConfiguration() }
-
-        let hdFormats = device.formats.filter { format in
-            let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
-            return dimensions.width <= 1920 && dimensions.height <= 1080
-        }
-        let candidates = hdFormats.isEmpty ? device.formats : hdFormats
-        if let format = candidates.sorted(by: { cameraFormatSortKey($0) < cameraFormatSortKey($1) }).first {
-            device.activeFormat = format
-        }
-    }
-
-    private func cameraFormatSortKey(_ format: AVCaptureDevice.Format) -> String {
-        let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
-        let width = max(1, Int(dimensions.width))
-        let height = max(1, Int(dimensions.height))
-        let aspect = Double(width) / Double(height)
-        let aspectPenalty = Int((abs(aspect - Double(SceneLayout.cameraAspectRatio)) * 10_000).rounded())
-        let areaRank = 10_000_000 - min(9_999_999, Int(dimensions.width) * Int(dimensions.height))
-        return String(format: "%06d-%08d", aspectPenalty, areaRank)
     }
 }

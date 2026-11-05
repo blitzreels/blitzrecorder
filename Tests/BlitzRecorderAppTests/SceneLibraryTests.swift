@@ -7,7 +7,7 @@ final class SceneLibraryDefaultLayoutTests: XCTestCase {
         let library = SceneLibrary.defaultLibrary()
         for canvas in [CaptureLayout.horizontal, .square] {
             let scenes = library.scenes(for: canvas)
-            XCTAssertEqual(scenes.map(\.name), ["Screen + Camera", "Camera Inset", "Screen", "Camera"])
+            XCTAssertEqual(scenes.map(\.name), ["Screen + Camera", "Screen", "Camera"])
             let first = try XCTUnwrap(scenes.first)
             XCTAssertEqual(first.snapshot.selectedScenePreset, .webcamLeft)
             XCTAssertEqual(library.selectedScene(layout: canvas)?.id, first.id)
@@ -17,7 +17,7 @@ final class SceneLibraryDefaultLayoutTests: XCTestCase {
         }
         XCTAssertEqual(
             library.scenes(for: .vertical).map(\.name),
-            ["Screen + Camera", "Camera Inset", "Screen", "Camera"]
+            ["Screen + Camera", "Screen", "Camera"]
         )
     }
 
@@ -46,9 +46,9 @@ final class SceneLibraryDefaultLayoutTests: XCTestCase {
 
     func testEachFixedLayoutShowsOnlyItsSources() {
         let scenes = SceneLibrary.defaultLibrary().scenes(for: .horizontal)
-        XCTAssertEqual(scenes[2].snapshot.hiddenVideoSources, [.camera])
-        XCTAssertEqual(scenes[3].snapshot.hiddenVideoSources, [.screen])
-        for scene in scenes.prefix(2) {
+        XCTAssertEqual(scenes[1].snapshot.hiddenVideoSources, [.camera])
+        XCTAssertEqual(scenes[2].snapshot.hiddenVideoSources, [.screen])
+        for scene in scenes.prefix(1) {
             XCTAssertTrue(scene.snapshot.hiddenVideoSources.isEmpty)
         }
     }
@@ -56,23 +56,23 @@ final class SceneLibraryDefaultLayoutTests: XCTestCase {
     func testCanonicalizeRepairsDriftedScenesAndKeepsLayoutTweaks() throws {
         var library = SceneLibrary.defaultLibrary()
         var scenes = library.scenes(for: .horizontal)
-        scenes[3].name = "Camera Only"
-        scenes[3].snapshot.selectedScenePreset = .webcamLeft
-        scenes[3].snapshot.hiddenVideoSources = []
+        scenes[2].name = "Camera Only"
+        scenes[2].snapshot.selectedScenePreset = .webcamLeft
+        scenes[2].snapshot.hiddenVideoSources = []
         scenes[1].snapshot.sceneLayout.cameraFrame.size.width = 0.45
         scenes[0].snapshot.hiddenVideoSources = [.camera]
-        let custom = RecordingSceneDefinition(name: "My demo", layout: .horizontal, snapshot: scenes[2].snapshot)
+        let custom = RecordingSceneDefinition(name: "My demo", layout: .horizontal, snapshot: scenes[1].snapshot)
         library.scenesByLayout[.horizontal] = scenes + [custom]
-        library.selectedSceneIDsByLayout[.horizontal] = scenes[3].id
+        library.selectedSceneIDsByLayout[.horizontal] = scenes[2].id
 
         XCTAssertTrue(library.canonicalize(cameraAngleCount: 0))
         let repaired = library.scenes(for: .horizontal)
-        XCTAssertEqual(repaired.map(\.name), ["Screen + Camera", "Camera Inset", "Screen", "Camera"])
-        XCTAssertEqual(repaired[0].id, scenes[3].id)
+        XCTAssertEqual(repaired.map(\.name), ["Screen + Camera", "Screen", "Camera"])
+        XCTAssertEqual(repaired[0].id, scenes[2].id)
         XCTAssertEqual(repaired[1].snapshot.sceneLayout.cameraFrame.width, 0.45, accuracy: 0.0001)
         XCTAssertTrue(repaired[0].snapshot.hiddenVideoSources.isEmpty)
-        XCTAssertEqual(repaired[3].snapshot.selectedScenePreset, .webcamFullscreen)
-        XCTAssertEqual(repaired[3].snapshot.hiddenVideoSources, [.screen])
+        XCTAssertEqual(repaired[2].snapshot.selectedScenePreset, .webcamFullscreen)
+        XCTAssertEqual(repaired[2].snapshot.hiddenVideoSources, [.screen])
         XCTAssertEqual(library.selectedScene(layout: .horizontal)?.id, repaired[0].id)
         XCTAssertFalse(library.canonicalize(cameraAngleCount: 0))
     }
@@ -88,7 +88,7 @@ final class SceneLibraryDefaultLayoutTests: XCTestCase {
         SceneLibraryStore.save(legacy, defaults: defaults)
 
         let loaded = SceneLibraryStore.load(defaults: defaults, currentSettings: RecordingSettings())
-        XCTAssertEqual(loaded.scenes(for: .vertical).map(\.name), ["Screen + Camera", "Camera Inset", "Screen", "Camera"])
+        XCTAssertEqual(loaded.scenes(for: .vertical).map(\.name), ["Screen + Camera", "Screen", "Camera"])
         XCTAssertEqual(SceneLibraryStore.load(defaults: defaults, currentSettings: RecordingSettings()), loaded)
     }
 }
@@ -321,7 +321,7 @@ final class SceneLibraryTests: XCTestCase {
         )
         let scenes = coordinator.sceneLibrary.scenes(for: .horizontal)
 
-        coordinator.selectScene(id: scenes[3].id)
+        coordinator.selectScene(id: scenes[2].id)
         XCTAssertEqual(coordinator.settings.selectedScenePreset, .webcamFullscreen)
         XCTAssertTrue(coordinator.settings.hiddenSources.contains(.screen))
         XCTAssertEqual(coordinator.settings.selectedCameraID, "current-camera")

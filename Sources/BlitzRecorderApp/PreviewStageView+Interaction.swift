@@ -27,6 +27,15 @@ extension PreviewStageView {
                 lastScreenShapeKey = nil
             }
             if hasCamera {
+                let popoutPlacement = renderGeometry(in: canvasFrame).activePlacements.first { $0.kind == .camera }
+                let popoutStyle = sceneLayout.cameraMask == .popout && !isCropEditing(.camera)
+                    ? popoutPlacement.map { CameraPopoutStyle(.init(placement: $0, headroom: sceneLayout.cameraPopoutHeadroom)) }
+                    : nil
+                if cameraPreview.popoutStyle != popoutStyle {
+                    lastCameraMaskKey = nil
+                    lastCameraShapeKey = nil
+                    cameraPreview.popoutStyle = popoutStyle
+                }
                 let frame = isCropEditing(.camera) ? cameraCropSourceFrame() : projectedFrame(for: .camera, in: canvasFrame)
                 if cameraPreview.frame != frame {
                     cameraPreview.frame = frame
@@ -54,10 +63,21 @@ extension PreviewStageView {
                 secondCameraPreview.layer?.masksToBounds = true
             }
 
+            updateCameraFramingGuide()
             updateOutlineOverlay()
             updateSelectionOverlay()
             screenLayerFrame = hasScreen ? screenPreview.frame : nil
         }
+    }
+
+    private func updateCameraFramingGuide() {
+        guard enabledSources.contains(.camera) else {
+            safeZoneOverlay.cameraGuideFrame = nil
+            return
+        }
+        safeZoneOverlay.cameraGuideFrame = projectedFrame(for: .camera, in: canvasFrame)
+            .intersection(canvasFrame)
+            .offsetBy(dx: -canvasFrame.minX, dy: -canvasFrame.minY)
     }
 
     struct LayerFrameUpdate {
@@ -93,6 +113,7 @@ extension PreviewStageView {
                     preview.frame = frame
                 }
             }
+            updateCameraFramingGuide()
             updateOutlineOverlay()
             updateSelectionOverlay()
         }

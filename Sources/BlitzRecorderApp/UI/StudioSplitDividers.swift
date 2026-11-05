@@ -149,7 +149,7 @@ struct SplitDividerOverlay: View {
                             guard let dragOrigin else { return }
                             vm.previewScreenSplitHeight(ScreenSplitDividerGeometry.height(.init(
                                 startHeight: dragOrigin.height,
-                                translation: value.translation.height,
+                                translation: vm.cameraOnTop ? -value.translation.height : value.translation.height,
                                 canvasHeight: dragOrigin.canvasHeight
                             )))
                         }
@@ -176,7 +176,8 @@ struct SplitDividerOverlay: View {
                     .help("Drag to share space between screen and camera")
                     .position(
                         x: canvas.midX,
-                        y: proxy.size.height - canvas.maxY + canvas.height * vm.screenSplitHeight
+                        y: proxy.size.height - canvas.maxY
+                            + canvas.height * (vm.cameraOnTop ? 1 - vm.screenSplitHeight : vm.screenSplitHeight)
                     )
             }
         }

@@ -196,11 +196,11 @@ enum RecordingProjectSceneCorrection: String, CaseIterable {
 
 extension SceneCameraMask {
     init(_ shape: PortableCameraShape) {
-        self = shape == .circle ? .circle : .rectangle
+        self = SceneCameraMask(rawValue: shape.rawValue) ?? .rectangle
     }
 
     var portableShape: PortableCameraShape {
-        self == .circle ? .circle : .rectangle
+        PortableCameraShape(rawValue: rawValue) ?? .rectangle
     }
 }
 

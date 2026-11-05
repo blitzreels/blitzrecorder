@@ -183,7 +183,7 @@ final class MainMenuBuilder {
         livePreview.state = LivePreviewPreference().isEnabled ? .on : .off
         livePreview.isEnabled = (coordinator?.state ?? .idle) == .idle
         submenu.addItem(livePreview)
-        submenu.addItem(menuItem("Toggle Rule of Thirds", action: #selector(MenuActionsTarget.toggleRuleOfThirds)))
+        submenu.addItem(menuItem("Toggle Framing Guide", action: #selector(MenuActionsTarget.toggleRuleOfThirds)))
         submenu.addItem(.separator())
         submenu.addItem(menuItem("Increase App Content Size", action: #selector(MenuActionsTarget.zoomIn), keyEquivalent: "+"))
         submenu.addItem(menuItem("Decrease App Content Size", action: #selector(MenuActionsTarget.zoomOut), keyEquivalent: "-"))

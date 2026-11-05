@@ -10,6 +10,7 @@ final class RecorderStudioConfiguration {
     var isEditingScreenCrop = false
 
     private let defaults: UserDefaults?
+    private var layoutBeforeBackgroundRemoval: LayoutBeforeBackgroundRemoval?
 
     var recordingState: () -> RecordingState = { .idle }
     var screenAspectRatio: () -> CGFloat = { SceneLayout.defaultScreenAspectRatio }
@@ -107,7 +108,8 @@ final class RecorderStudioConfiguration {
 
     func recomputeSelectedPresetLayoutForCurrentSource() {
         guard let preset = settings.selectedScenePreset,
-              preset.supports(settings.layout) else { return }
+              preset.supports(settings.layout),
+              !settings.sceneLayout.keepsItsArrangement(over: preset) else { return }
         settings.sceneLayout = SceneLayout.presetLayout(
             preset,
             for: settings.layout,
@@ -186,10 +188,39 @@ final class RecorderStudioConfiguration {
         persist()
     }
 
+    private struct LayoutBeforeBackgroundRemoval {
+        let cameraCropAmount: CGPoint
+        let cameraCropPosition: CGPoint
+        let selectedScenePreset: ScenePreset?
+        let screenCrop: CGRect?
+        let screenFrame: CGRect
+    }
+
     func setCameraBackgroundRemovalAfterRecording(_ enabled: Bool) {
         let wasEnabled = settings.removesCameraBackgroundAfterRecording
         settings.removesCameraBackgroundAfterRecording = enabled
+        if !enabled, wasEnabled, let layout = layoutBeforeBackgroundRemoval {
+            layoutBeforeBackgroundRemoval = nil
+            settings.cameraCropAmount = layout.cameraCropAmount
+            settings.cameraCropPosition = layout.cameraCropPosition
+            if settings.enabledSources.contains(.screen) {
+                settings.selectedScenePreset = layout.selectedScenePreset
+                settings.screenCrop = layout.screenCrop
+                settings.sceneLayout.screenFrame = layout.screenFrame
+                onScreenCaptureConfigurationChanged?()
+            }
+        }
+        if enabled, settings.sceneLayout.cameraMask == .popout {
+            settings.sceneLayout.cameraMask = .rectangle
+        }
         if enabled, !wasEnabled {
+            layoutBeforeBackgroundRemoval = .init(
+                cameraCropAmount: settings.cameraCropAmount,
+                cameraCropPosition: settings.cameraCropPosition,
+                selectedScenePreset: settings.selectedScenePreset,
+                screenCrop: settings.screenCrop,
+                screenFrame: settings.sceneLayout.screenFrame
+            )
             settings.cameraCropAmount = .zero
             settings.cameraCropPosition = .zero
             if settings.enabledSources.contains(.screen) {
@@ -211,6 +242,11 @@ final class RecorderStudioConfiguration {
     func setSourceFilesSaved(_: Bool) {
         settings.savesSourceFiles = true
         persist()
+    }
+
+    func setCameraGrade(_ grade: CameraColorGrade) {
+        settings.cameraGrade = grade
+        RecordingSettingsStore.saveCameraGrade(grade, defaults: defaults)
     }
 
     func setRuleOfThirdsOverlayVisible(_ visible: Bool) {

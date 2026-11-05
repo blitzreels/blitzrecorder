@@ -21,7 +21,7 @@ final class SceneLayoutProjectionTests: XCTestCase {
         settings.layout = .square
         let library = SceneLibrary.defaultLibrary(currentSettings: settings)
 
-        XCTAssertEqual(library.scenes(for: .square).count, 4)
+        XCTAssertEqual(library.scenes(for: .square).count, SceneLibrary.presets(for: .square).count)
         XCTAssertNotNil(library.selectedScene(layout: .square))
     }
 

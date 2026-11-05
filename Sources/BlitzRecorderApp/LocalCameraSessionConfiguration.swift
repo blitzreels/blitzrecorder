@@ -6,31 +6,41 @@ struct LocalCameraDeviceConfigurationRequest {
     let device: AVCaptureDevice
     let fps: Int
     let logPrefix: String
-    let cameraIsRunningSomewhere: Bool
+    let sizeLimit: LocalCameraFormatSizeLimit
 }
 
 struct LocalCameraAttachRequest {
     let session: AVCaptureSession
     let device: AVCaptureDevice
+    let fps: Int
+    let sizeLimit: LocalCameraFormatSizeLimit
+}
+
+struct LocalCameraBestFormatRequest {
+    let device: AVCaptureDevice
+    let fps: Int
+    let sizeLimit: LocalCameraFormatSizeLimit
+}
+
+enum LocalCameraFormatSizeLimit {
+    case recording
+    case cutoutPreview
+
+    var width: Int32 { self == .recording ? 3840 : 1920 }
+    var height: Int32 { self == .recording ? 2160 : 1080 }
 }
 
 enum LocalCameraSessionConfiguration {
-    /// Adds the camera to the session under the 1080p preset. Its best format is applied by `holdBestFormat` right
-    /// before the session starts. Returns false when the session refuses the input.
     @discardableResult
     static func attachCamera(_ request: LocalCameraAttachRequest) throws -> Bool {
         let input = try AVCaptureDeviceInput(device: request.device)
         guard request.session.canAddInput(input) else { return false }
         request.session.addInput(input)
-        configurePreset(on: request.session)
+        applyPreset(.init(device: request.device, fps: request.fps, sizeLimit: request.sizeLimit), to: request.session)
         return true
     }
 
-    /// Locks the camera on its best format and frame rate. On macOS a session re-applies its preset when it starts
-    /// unless the device is locked, so a format set earlier is lost (an Osmo recorded 1080×608 at 25 fps). Call
-    /// right before `startRunning()`, and unlock the device after it when this returns true.
     static func holdBestFormat(_ request: LocalCameraDeviceConfigurationRequest) -> Bool {
-        guard !request.cameraIsRunningSomewhere else { return false }
         do {
             try request.device.lockForConfiguration()
         } catch {
@@ -41,11 +51,42 @@ enum LocalCameraSessionConfiguration {
         return true
     }
 
-    static func configurePreset(on session: AVCaptureSession) {
-        if session.canSetSessionPreset(.hd1920x1080) {
-            session.sessionPreset = .hd1920x1080
-        } else {
-            session.sessionPreset = .high
+    @discardableResult
+    static func restoreBestFormat(_ request: LocalCameraDeviceConfigurationRequest) -> Bool {
+        let wanted = bestFormat(.init(device: request.device, fps: request.fps, sizeLimit: request.sizeLimit))
+        guard let wanted, wanted != request.device.activeFormat else { return false }
+        guard holdBestFormat(request) else { return false }
+        request.device.unlockForConfiguration()
+        return true
+    }
+
+    static func bestFormat(_ request: LocalCameraBestFormatRequest) -> AVCaptureDevice.Format? {
+        let withinLimit = request.device.formats.filter { format in
+            let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+            return dimensions.width <= request.sizeLimit.width && dimensions.height <= request.sizeLimit.height
+        }
+        let pool = withinLimit.isEmpty ? request.device.formats : withinLimit
+        let reachingRate = pool.filter { format in
+            format.videoSupportedFrameRateRanges.contains { $0.maxFrameRate + 0.5 >= Double(request.fps) }
+        }
+        let candidates = reachingRate.isEmpty ? pool : reachingRate
+        return candidates.min { cameraFormatSortKey($0) < cameraFormatSortKey($1) }
+    }
+
+    private static func applyPreset(_ request: LocalCameraBestFormatRequest, to session: AVCaptureSession) {
+        let preset = bestFormat(request).flatMap(sessionPreset(matching:)) ?? .high
+        session.sessionPreset = session.canSetSessionPreset(preset) ? preset : .high
+    }
+
+    private static func sessionPreset(matching format: AVCaptureDevice.Format) -> AVCaptureSession.Preset? {
+        let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+        switch (dimensions.width, dimensions.height) {
+        case (3840, 2160): return .hd4K3840x2160
+        case (1920, 1080): return .hd1920x1080
+        case (1280, 720): return .hd1280x720
+        case (960, 540): return .qHD960x540
+        case (640, 480): return .vga640x480
+        default: return nil
         }
     }
 
@@ -68,36 +109,33 @@ enum LocalCameraSessionConfiguration {
         return CaptureDeviceCatalog.connectedCameras().first
     }
 
-    static func configure(_ request: LocalCameraDeviceConfigurationRequest) {
-        guard holdBestFormat(request) else { return }
-        request.device.unlockForConfiguration()
-    }
-
     /// Needs the device lock.
     private static func applyBestFormat(_ request: LocalCameraDeviceConfigurationRequest) {
-        let compatibleFormats = request.device.formats.filter { format in
-            format.videoSupportedFrameRateRanges.contains {
-                $0.maxFrameRate >= Double(request.fps)
-            }
-        }
-        let fourKFormats = compatibleFormats.filter { format in
-            let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
-            return dimensions.width <= 3840 && dimensions.height <= 2160
-        }
-        let candidates = fourKFormats.isEmpty ? compatibleFormats : fourKFormats
-
-        if let format = candidates.sorted(by: { cameraFormatSortKey($0) < cameraFormatSortKey($1) }).first {
+        let bestRequest = LocalCameraBestFormatRequest(device: request.device, fps: request.fps, sizeLimit: request.sizeLimit)
+        if let format = bestFormat(bestRequest) {
             request.device.activeFormat = format
         }
+        guard shouldForceFrameDuration(for: request.device),
+              let duration = frameDuration(.init(format: request.device.activeFormat, fps: request.fps)) else { return }
+        request.device.activeVideoMinFrameDuration = duration
+        request.device.activeVideoMaxFrameDuration = duration
+    }
 
-        let frameDuration = CMTime(value: 1, timescale: CMTimeScale(request.fps))
-        if shouldForceFrameDuration(for: request.device),
-           request.device.activeFormat.videoSupportedFrameRateRanges.contains(where: {
-               $0.minFrameRate <= Double(request.fps) && $0.maxFrameRate >= Double(request.fps)
-           }) {
-            request.device.activeVideoMinFrameDuration = frameDuration
-            request.device.activeVideoMaxFrameDuration = frameDuration
+    private struct FrameDurationRequest {
+        let format: AVCaptureDevice.Format
+        let fps: Int
+    }
+
+    private static func frameDuration(_ request: FrameDurationRequest) -> CMTime? {
+        let wanted = Double(request.fps)
+        let ranges = request.format.videoSupportedFrameRateRanges
+        if let match = ranges.first(where: { $0.minFrameRate - 0.5 <= wanted && $0.maxFrameRate + 0.5 >= wanted }) {
+            return match.maxFrameRate - match.minFrameRate < 0.5
+                ? match.minFrameDuration
+                : CMTime(value: 1, timescale: CMTimeScale(request.fps))
         }
+        let slower = ranges.filter { $0.maxFrameRate < wanted }.max { $0.maxFrameRate < $1.maxFrameRate }
+        return (slower ?? ranges.min { $0.minFrameRate < $1.minFrameRate })?.minFrameDuration
     }
 
     static func cameraSortKey(_ device: AVCaptureDevice) -> String {

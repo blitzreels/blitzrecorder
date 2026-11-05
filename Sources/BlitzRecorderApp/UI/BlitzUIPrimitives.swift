@@ -129,19 +129,21 @@ struct BlitzSceneLayoutThumbnail: View {
                         CGRect(x: 0, y: 0, width: 1, height: 1)
                     )
                     if !frame.isNull, !frame.isEmpty {
+                        let popsOut = item.kind == .camera && sceneLayout.cameraMask == .popout
                         BlitzSceneThumbnailLayer(
                             kind: item.kind,
                             image: item.kind == .screen ? preview?.screen : preview?.camera
                         )
                         .padding(0.75)
                         .frame(
-                                width: frame.width * contentSize.width,
-                                height: frame.height * contentSize.height
-                            )
-                            .offset(
-                                x: inset + frame.minX * contentSize.width,
-                                y: inset + (1 - frame.maxY) * contentSize.height
-                            )
+                            width: frame.width * contentSize.width,
+                            height: frame.height * contentSize.height
+                        )
+                        .mask { ScenePopoutThumbnailMask(headroom: popsOut ? sceneLayout.cameraPopoutHeadroom : nil) }
+                        .offset(
+                            x: inset + frame.minX * contentSize.width,
+                            y: inset + (1 - frame.maxY) * contentSize.height
+                        )
                     }
                 }
             }
@@ -171,6 +173,32 @@ struct BlitzSceneLayoutThumbnail: View {
             width: width,
             height: height
         )
+    }
+}
+
+/// The camera panel plus the head above it: what a pop-out camera shows, without the room above the panel.
+private struct ScenePopoutThumbnailMask: View {
+    let headroom: CGFloat?
+
+    var body: some View {
+        if let headroom {
+            GeometryReader { proxy in
+                let size = proxy.size
+                let headroomHeight = size.height * headroom
+                let headWidth = min(size.width * 0.34, size.height * 0.42)
+                let headHeight = headWidth * 1.2
+                ZStack(alignment: .topLeading) {
+                    Rectangle()
+                        .frame(width: size.width, height: size.height - headroomHeight)
+                        .offset(y: headroomHeight)
+                    Ellipse()
+                        .frame(width: headWidth, height: headHeight)
+                        .offset(x: (size.width - headWidth) / 2, y: headroomHeight - headHeight * 0.6)
+                }
+            }
+        } else {
+            Rectangle()
+        }
     }
 }
 

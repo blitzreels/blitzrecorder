@@ -1,9 +1,15 @@
 import SwiftUI
 
+enum BlitzVisualPreviewShape {
+    case strip
+    case widescreen
+}
+
 struct BlitzVisualChoice<Preview: View>: View {
     struct Configuration {
         let title: String
         let help: String
+        let previewShape: BlitzVisualPreviewShape
         let isSelected: Bool
         let action: () -> Void
         let preview: () -> Preview
@@ -14,8 +20,7 @@ struct BlitzVisualChoice<Preview: View>: View {
     var body: some View {
         Button(action: configuration.action) {
             VStack(spacing: 8) {
-                configuration.preview()
-                    .frame(height: 52)
+                sizedPreview
                     .clipShape(.rect(cornerRadius: 5))
                     .accessibilityHidden(true)
                 Text(configuration.title)
@@ -29,6 +34,13 @@ struct BlitzVisualChoice<Preview: View>: View {
         .accessibilityLabel(configuration.title)
         .accessibilityAddTraits(configuration.isSelected ? .isSelected : [])
         .help(configuration.help)
+    }
+
+    @ViewBuilder private var sizedPreview: some View {
+        switch configuration.previewShape {
+        case .strip: configuration.preview().frame(height: 52)
+        case .widescreen: configuration.preview().aspectRatio(16.0 / 9.0, contentMode: .fit)
+        }
     }
 }
 

@@ -14,6 +14,7 @@ enum RecordingSettingsStore {
         static let microphoneGain = "recording.microphoneGain"
         static let systemAudioGain = "recording.systemAudioGain"
         static let removesCameraBackgroundAfterRecording = "recording.removesCameraBackgroundAfterRecording"
+        static let cameraGrade = "recording.cameraGrade"
         static let savesSourceFiles = "recording.savesSourceFiles"
         static let showsRuleOfThirdsOverlay = "recording.showsRuleOfThirdsOverlay"
         static let socialSafeZoneOverlay = "recording.socialSafeZoneOverlay"
@@ -110,6 +111,10 @@ enum RecordingSettingsStore {
             settings.systemAudioGain = CaptureValueClamps.gain(defaults.double(forKey: Key.systemAudioGain))
         }
 
+        if let data = defaults.data(forKey: Key.cameraGrade),
+           let saved = try? JSONDecoder().decode(CameraColorGrade.self, from: data) {
+            settings.cameraGrade = saved
+        }
         if defaults.object(forKey: Key.removesCameraBackgroundAfterRecording) != nil {
             settings.removesCameraBackgroundAfterRecording = defaults.bool(forKey: Key.removesCameraBackgroundAfterRecording)
         }
@@ -307,6 +312,10 @@ enum RecordingSettingsStore {
         }
         settings.usesPickedScreenContent = false
         return settings
+    }
+
+    static func saveCameraGrade(_ grade: CameraColorGrade, defaults: UserDefaults?) {
+        (defaults ?? defaultStore()).set(try? JSONEncoder().encode(grade), forKey: Key.cameraGrade)
     }
 
     static func save(_ settings: RecordingSettings, defaults: UserDefaults? = nil) {

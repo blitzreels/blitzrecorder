@@ -42,6 +42,11 @@ final class DirectMovieWriter: @unchecked Sendable {
             AVVideoCodecKey: AVVideoCodecType.hevc,
             AVVideoWidthKey: dimensions.width,
             AVVideoHeightKey: dimensions.height,
+            AVVideoColorPropertiesKey: [
+                AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+                AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2
+            ],
             AVVideoCompressionPropertiesKey: compression
         ]
 

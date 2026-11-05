@@ -428,6 +428,7 @@ final class TakeRecordingRuntime {
     static func shouldUseLiveCompositor(settings: RecordingSettings, isRemoteCameraSelected: Bool) -> Bool {
         !settings.savesSourceFiles
             && !settings.removesCameraBackgroundAfterRecording
+            && settings.cameraGrade.isNeutral
             && !isRemoteCameraSelected
     }
 

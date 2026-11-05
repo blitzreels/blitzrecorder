@@ -111,6 +111,9 @@ extension RecorderViewModel {
         if let notice = SourceReadinessNotice.resolve(.init(source: source, blockers: recordingReadiness.blockers)) {
             return notice
         }
+        if source == .camera, !isRemoteCameraSelected, let shortfall = cameraDeliveryShortfall {
+            return .init(title: shortfall.title, detail: shortfall.detail, action: nil, isWaiting: false, severity: .warning)
+        }
         guard source == .microphone else { return nil }
         return iPhoneCompanionMicrophoneNotice ?? missingPreferredMicrophone?.notice
     }
@@ -161,5 +164,29 @@ extension RecorderViewModel {
         case .microphoneSettings: openMicrophoneSettings()
         case .manageDevices: showSettings(.devices)
         }
+    }
+}
+
+extension RecorderViewModel {
+    struct CameraPictureRequest {
+        let pictureSize: CGSize?
+        let sourceSize: CGSize?
+    }
+
+    func noteCameraPictureSize(_ request: CameraPictureRequest) {
+        let size = request.pictureSize
+        cameraIncomingSize = request.sourceSize
+        cameraUsablePictureSize = size
+        guard let size, let device = LocalCameraSessionConfiguration.selectedCamera(settings: settings) else {
+            cameraDeliveryShortfall = nil
+            return
+        }
+        let shortfall = LocalCameraDelivery.shortfall(.init(
+            device: device,
+            pictureSize: size,
+            sourceSize: request.sourceSize ?? size,
+            fps: settings.framesPerSecond
+        ))
+        if shortfall != cameraDeliveryShortfall { cameraDeliveryShortfall = shortfall }
     }
 }

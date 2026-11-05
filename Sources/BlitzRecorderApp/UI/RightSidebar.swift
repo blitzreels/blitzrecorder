@@ -147,7 +147,9 @@ struct CameraCropControls: View {
 
 struct CameraInsetFrameControlsConfiguration {
     let alignment: Binding<CameraInsetAlignment>
+    let alignments: [CameraInsetAlignment]
     let shape: Binding<CameraInsetShape>
+    let shapes: [CameraInsetShape]
     let size: Binding<Double>
     let sizeRange: ClosedRange<Double>
 }
@@ -159,22 +161,31 @@ struct CameraInsetFrameControlPanel: View {
         VStack(alignment: .leading, spacing: 14) {
             CameraDiagramRow(
                 title: "Placement",
-                options: CameraInsetAlignment.allCases,
+                options: configuration.alignments,
                 selection: configuration.alignment,
                 label: { $0.displayName },
                 draw: positionDraw
             )
-            .help("Place the camera in the bottom left or bottom right corner")
+            .help("Choose the corner the camera sits in")
 
             VStack(alignment: .leading, spacing: 8) {
-                CameraDiagramRow(
-                    title: "Frame",
-                    options: CameraInsetShape.allCases,
-                    selection: configuration.shape,
-                    label: { $0.displayName },
-                    draw: shapeDraw
-                )
-                .help("Camera frame shape")
+                if !configuration.shapes.isEmpty {
+                    CameraDiagramRow(
+                        title: "Frame",
+                        options: configuration.shapes,
+                        selection: configuration.shape,
+                        label: { $0.displayName },
+                        draw: shapeDraw
+                    )
+                    .help("Camera frame shape")
+                }
+
+                if configuration.shape.wrappedValue == .popout {
+                    Text("Your head extends above the frame. Your room stays inside. Use Crop to line up your head.")
+                        .font(BlitzType.caption)
+                        .foregroundStyle(BlitzUI.supportingText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 BlitzInspectorSlider(configuration: .init(
                     title: "Size",
@@ -207,7 +218,11 @@ struct CameraInsetFrameControls: View {
     private var configuration: CameraInsetFrameControlsConfiguration {
         CameraInsetFrameControlsConfiguration(
             alignment: alignmentSelection,
+            alignments: vm.cameraPopsOut
+                ? [.bottomLeft, .bottomRight]
+                : CameraInsetAlignment.allCases,
             shape: shapeSelection,
+            shapes: vm.cameraPopsOut ? [] : [.landscape, .portrait, .circle],
             size: Binding(
                 get: { vm.cameraInsetSize },
                 set: { vm.setCameraInsetSize($0) }
@@ -225,7 +240,7 @@ struct CameraInsetFrameControls: View {
 
     private var shapeSelection: Binding<CameraInsetShape> {
         Binding(
-            get: { vm.cameraInsetShape },
+            get: { vm.cameraInsetShape == .popout ? .landscape : vm.cameraInsetShape },
             set: { vm.setCameraInsetShape($0) }
         )
     }
@@ -309,8 +324,9 @@ private func positionDraw(_ v: CameraInsetAlignment, _ c: inout GraphicsContext,
     CamDiagram.fill(c, f, 3, BlitzUI.quietFill)
     CamDiagram.stroke(c, f, 3, (sel ? BlitzUI.tertiaryText : BlitzUI.strongStroke))
     let cw = f.width * 0.62, ch = cw * 9 / 16, pad: CGFloat = 2
-    let x = (v == .bottomLeft) ? f.minX + pad : f.maxX - pad - cw
-    let chip = CGRect(x: x, y: f.maxY - pad - ch, width: cw, height: ch)
+    let x = v.isLeft ? f.minX + pad : f.maxX - pad - cw
+    let y = v.isTop ? f.minY + pad : f.maxY - pad - ch
+    let chip = CGRect(x: x, y: y, width: cw, height: ch)
     CamDiagram.fill(c, chip, 2, sel ? BlitzUI.accent : BlitzUI.tertiaryText)
 }
 
@@ -321,7 +337,7 @@ private func shapeDraw(_ v: CameraInsetShape, _ c: inout GraphicsContext, _ s: C
     let pad: CGFloat = 2
     let w: CGFloat, h: CGFloat, radius: CGFloat
     switch v {
-    case .landscape:
+    case .landscape, .popout:
         w = f.width * 0.78
         h = w * 9 / 16
         radius = 2
@@ -336,6 +352,10 @@ private func shapeDraw(_ v: CameraInsetShape, _ c: inout GraphicsContext, _ s: C
     }
     let chip = CGRect(x: f.midX - w / 2, y: f.maxY - pad - h, width: w, height: h)
     CamDiagram.fill(c, chip, radius, sel ? BlitzUI.accent : BlitzUI.tertiaryText)
+    if v == .popout {
+        let head = CGRect(x: chip.midX - 3, y: chip.minY - 4, width: 6, height: 7)
+        c.fill(Path(ellipseIn: head), with: .color(sel ? BlitzUI.accent : BlitzUI.tertiaryText))
+    }
 }
 
 struct SourceFramingPicker: View {

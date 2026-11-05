@@ -1,15 +1,42 @@
 import AppKit
 import AVFoundation
+import CoreImage
 import QuartzCore
 
 final class CameraPreviewView: NSView {
     private let unavailableOverlay = PreviewUnavailableOverlay(kind: .camera)
     private let imageLayer = CALayer()
+    private let popoutPreview = CameraPopoutPreview()
+    private var popoutIsRendering = false
+    private var popoutRevision = 0
+    private var latestPopoutInput: CIImage?
+    var onPopoutChanged: ((Bool) -> Void)? {
+        didSet { onPopoutChanged?(usesRenderedPicture) }
+    }
+    private var displayedPicture: CVPixelBuffer?
+    private var pendingStill: (@MainActor (CGImage?) -> Void)?
+    var grade = CameraColorGrade.neutral {
+        didSet {
+            guard grade != oldValue else { return }
+            popoutRevision &+= 1
+            noteRenderedPictureChange(wasRendered: popoutStyle != nil || !oldValue.isNeutral)
+            refreshRenderedPicture()
+        }
+    }
+    private var usesRenderedPicture: Bool { popoutStyle != nil || !grade.isNeutral }
+    var popoutStyle: CameraPopoutStyle? {
+        didSet {
+            guard popoutStyle != oldValue else { return }
+            popoutRevision &+= 1
+            noteRenderedPictureChange(wasRendered: oldValue != nil || !grade.isNeutral)
+            refreshRenderedPicture()
+        }
+    }
     private var previewLayer: AVCaptureVideoPreviewLayer?
     private var previewLayerHasFrame = false
     private var sampleBufferLayer: AVSampleBufferDisplayLayer?
     private var sourceAspectRatio: CGFloat = SceneLayout.cameraAspectRatio {
-        didSet { syncPreviewLayerFrame() }
+        didSet { if oldValue != sourceAspectRatio { syncPreviewLayerFrame() } }
     }
     var sourceCropAmount: CGPoint = .zero {
         didSet {
@@ -26,10 +53,13 @@ final class CameraPreviewView: NSView {
     var contentMode: VideoRenderContentMode = .aspectFill {
         didSet { syncPreviewLayerFrame() }
     }
+    var usesCapturePreviewLayer: Bool { previewLayer != nil }
     var hasPreviewContent: Bool {
         (previewLayer != nil && previewLayerHasFrame) || sampleBufferLayer != nil || imageLayer.contents != nil
     }
     var currentSourceAspectRatio: CGFloat { sourceAspectRatio }
+    private(set) var captureSourceSize: CGSize?
+    private(set) var capturePictureSize: CGSize?
     var messageFrameForTesting: CGRect { unavailableOverlay.convert(unavailableOverlay.messageFrameForTesting, to: self) }
     var messageBackgroundFrameForTesting: CGRect { unavailableOverlay.frame }
     var isUnavailableOverlayHiddenForTesting: Bool { unavailableOverlay.isHidden }
@@ -79,6 +109,9 @@ final class CameraPreviewView: NSView {
         sampleBufferLayer?.removeFromSuperlayer()
         sampleBufferLayer = nil
         previewLayer = layer
+        layer.isHidden = usesRenderedPicture
+        popoutRevision &+= 1
+        latestPopoutInput = nil
         previewLayerHasFrame = false
         imageLayer.contents = nil
         sourceAspectRatio = Self.sourceAspectRatio(for: layer) ?? SceneLayout.cameraAspectRatio
@@ -93,7 +126,18 @@ final class CameraPreviewView: NSView {
         guard previewLayer != nil,
               let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         previewLayerHasFrame = true
-        sourceAspectRatio = CGFloat(CVPixelBufferGetWidth(pixelBuffer)) / max(1, CGFloat(CVPixelBufferGetHeight(pixelBuffer)))
+        captureSourceSize = CGSize(width: CVPixelBufferGetWidth(pixelBuffer), height: CVPixelBufferGetHeight(pixelBuffer))
+        let plan = CameraFrameLetterboxDetector.normalizationPlan(.init(pixelBuffer: pixelBuffer))
+        let width = plan?.outputSize.width ?? CGFloat(CVPixelBufferGetWidth(pixelBuffer))
+        let height = plan?.outputSize.height ?? CGFloat(CVPixelBufferGetHeight(pixelBuffer))
+        capturePictureSize = CGSize(width: width, height: height)
+        sourceAspectRatio = width / max(1, height)
+        if usesRenderedPicture || pendingStill != nil {
+            let image = CIImage(cvPixelBuffer: pixelBuffer)
+            let picture = plan.map { image.cropped(to: $0.cropRect) } ?? image
+            deliverStill(picture)
+            if usesRenderedPicture { renderPicture(picture) }
+        }
         hideUnavailableOverlay()
     }
 
@@ -102,7 +146,12 @@ final class CameraPreviewView: NSView {
         previewLayer = nil
         sampleBufferLayer?.removeFromSuperlayer()
         sampleBufferLayer = nil
-        imageLayer.contents = image
+        deliverStill(CIImage(cgImage: image))
+        if usesRenderedPicture {
+            renderPicture(CIImage(cgImage: image))
+        } else {
+            imageLayer.contents = image
+        }
         sourceAspectRatio = overrideAspectRatio ?? CGFloat(image.width) / max(1, CGFloat(image.height))
         syncPreviewLayerFrame()
         hideUnavailableOverlay()
@@ -114,6 +163,17 @@ final class CameraPreviewView: NSView {
         height: Int,
         sourceAspectRatio overrideAspectRatio: CGFloat? = nil
     ) {
+        if pendingStill != nil, let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
+            deliverStill(CIImage(cvPixelBuffer: buffer))
+        }
+        if usesRenderedPicture, let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
+            sampleBufferLayer?.isHidden = true
+            sourceAspectRatio = overrideAspectRatio ?? CGFloat(width) / max(1, CGFloat(height))
+            renderPicture(CIImage(cvPixelBuffer: buffer))
+            syncPreviewLayerFrame()
+            hideUnavailableOverlay()
+            return
+        }
         previewLayer?.removeFromSuperlayer()
         previewLayer = nil
         imageLayer.contents = nil
@@ -122,6 +182,7 @@ final class CameraPreviewView: NSView {
             sampleBufferLayer = layer
             self.layer?.insertSublayer(layer, at: 0)
         }
+        sampleBufferLayer?.isHidden = false
         sourceAspectRatio = overrideAspectRatio ?? CGFloat(width) / max(1, CGFloat(height))
         syncPreviewLayerFrame()
         hideUnavailableOverlay()
@@ -134,12 +195,56 @@ final class CameraPreviewView: NSView {
     }
 
     func setMessage(_ message: String) {
+        popoutRevision &+= 1
+        latestPopoutInput = nil
         previewLayer?.removeFromSuperlayer()
         previewLayer = nil
         sampleBufferLayer?.removeFromSuperlayer()
         sampleBufferLayer = nil
         imageLayer.contents = nil
         unavailableOverlay.apply(message: message)
+    }
+
+    func requestStillFrame(_ handler: @escaping @MainActor (CGImage?) -> Void) {
+        pendingStill = handler
+    }
+
+    private func deliverStill(_ image: CIImage) {
+        guard let handler = pendingStill else { return }
+        pendingStill = nil
+        popoutPreview.still(.init(image: image, maxDimension: 320, completion: handler))
+    }
+
+    private func noteRenderedPictureChange(wasRendered: Bool) {
+        if wasRendered != usesRenderedPicture { onPopoutChanged?(usesRenderedPicture) }
+    }
+
+    private func refreshRenderedPicture() {
+        previewLayer?.isHidden = usesRenderedPicture
+        sampleBufferLayer?.isHidden = usesRenderedPicture
+        if !usesRenderedPicture {
+            imageLayer.contents = nil
+        } else if let latestPopoutInput {
+            renderPicture(latestPopoutInput)
+        }
+    }
+
+    private func renderPicture(_ image: CIImage) {
+        latestPopoutInput = image
+        guard !popoutIsRendering, usesRenderedPicture else { return }
+        popoutIsRendering = true
+        let revision = popoutRevision
+        let style = popoutStyle
+        popoutPreview.render(.init(
+            image: image, grade: grade, style: style, maxDimension: style == nil ? 1_920 : 960,
+            completion: { [weak self] picture in
+                guard let self else { return }
+                self.popoutIsRendering = false
+                guard self.popoutRevision == revision, self.usesRenderedPicture else { return }
+                self.displayedPicture = picture
+                self.imageLayer.contents = picture.flatMap { CVPixelBufferGetIOSurface($0)?.takeUnretainedValue() }
+            }
+        ))
     }
 
     /// Keeps the last frame on screen, dimmed, while idle previews pause in the background.

@@ -8,7 +8,14 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     private let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "recorder.camera")
     private var writer: VideoFileWriter?
-    private var frameNormalizer: CameraFrameNormalizer?
+    private var frameConformer: CameraFrameConformer?
+    private var recordingSourceSize: CGSize?
+    private var awaitedStartupSize: CGSize?
+    private var staleStartupFrames = 0
+    private var startupFrameTimeoutSeconds: UInt64 = 2
+    private var formatRestoresLeft = CameraRecorder.formatRestoresPerTake
+    private static let formatRestoresPerTake = 3
+    private static let staleStartupFrameLimit = 30
     private var pendingStartupSamples: [CMSampleBuffer] = []
     private var pendingRecording: PendingRecording?
     private var isConfigured = false
@@ -22,9 +29,15 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     private var blackFrameGenerator: CameraBlackFrameGenerator?
     private var blackFrameTimer: DispatchSourceTimer?
     private var lastForwardedPresentationTime: CMTime?
+    private var previewFormatRecovery: CameraPreviewFormatRecovery?
+    private var latestDelivery: CameraDeliverySnapshot?
+    private var lastDeliveryTime = -TimeInterval.infinity
     private var thumbnailHandler: ThumbnailHandler?
     private var lastThumbnailTime = -TimeInterval.infinity
+    private var thumbnailIsOnItsWay = false
+    private var thumbnailInterval: TimeInterval = 1
     var failureHandler: (@MainActor (Error) -> Void)?
+    var deliveryWarningHandler: (@MainActor (String) -> Void)?
     /// An extra angle records only its own camera; recording the default camera instead would duplicate Camera 1.
     private let fallsBackToDefaultCamera: Bool
 
@@ -76,6 +89,10 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         }
     }
 
+    func setPopoutPreviewEnabled(_ enabled: Bool) {
+        queue.async { self.thumbnailInterval = enabled ? 0 : 1 }
+    }
+
     func makePreviewLayer(settings: RecordingSettings) async throws -> AVCaptureVideoPreviewLayer {
         let session = try await withCheckedThrowingContinuation { continuation in
             queue.async {
@@ -90,6 +107,15 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         }
 
         let layer = AVCaptureVideoPreviewLayer(session: session)
+        await withCheckedContinuation { continuation in
+            queue.async {
+                if let request = self.formatRequest() {
+                    LocalCameraSessionConfiguration.restoreBestFormat(request)
+                }
+                self.previewFormatRecovery = CameraPreviewFormatRecovery(startedAt: ProcessInfo.processInfo.systemUptime)
+                continuation.resume()
+            }
+        }
         layer.videoGravity = .resizeAspect
         return layer
     }
@@ -99,9 +125,12 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             try configureSession(settings: settings)
             pendingRecording = PendingRecording(url: url, settings: settings, timelineStartTime: timelineStartTime)
             writer = nil
-            frameNormalizer = nil
+            frameConformer = nil
+            recordingSourceSize = nil
+            formatRestoresLeft = Self.formatRestoresPerTake
             pendingStartupSamples = []
             hasReportedActiveFailure = false
+            prepareStartupFormatOnQueue()
             stopBlackFramesOnQueue()
             blackFrameGenerator = nil
             lastForwardedPresentationTime = nil
@@ -127,7 +156,9 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
                 self.pendingRecording = nil
                 let writer = self.writer
                 self.writer = nil
-                self.frameNormalizer = nil
+                self.frameConformer = nil
+                self.recordingSourceSize = nil
+                self.awaitedStartupSize = nil
                 self.blackFrameGenerator = nil
                 self.lastForwardedPresentationTime = nil
                 self.pendingStartupSamples = []
@@ -155,6 +186,8 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
+        restorePreviewFormatIfNeeded(sampleBuffer)
+        noteDelivery(sampleBuffer)
         offerThumbnail(sampleBuffer)
         stopBlackFramesOnQueue()
         hasReportedActiveFailure = false
@@ -166,6 +199,14 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
                     throw RecorderError.writerNotReady
                 }
                 let dimensions = CMVideoFormatDescriptionGetDimensions(formatDescription)
+                let frameSize = CGSize(width: Int(dimensions.width), height: Int(dimensions.height))
+                if let awaitedStartupSize, frameSize != awaitedStartupSize,
+                   staleStartupFrames < Self.staleStartupFrameLimit {
+                    staleStartupFrames += 1
+                    pendingStartupSamples.removeLast()
+                    return
+                }
+                awaitedStartupSize = nil
                 let normalizationPlan = CMSampleBufferGetImageBuffer(sampleBuffer).flatMap {
                     CameraFrameLetterboxDetector.normalizationPlan(.init(pixelBuffer: $0))
                 }
@@ -186,7 +227,9 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
                     normalizationPlan: selectedPlan
                 ))
                 writer = setup.writer
-                frameNormalizer = setup.frameNormalizer
+                frameConformer = setup.frameConformer
+                recordingSourceSize = frameSize
+                reportDeliveryOnQueue(pictureSize: setup.pictureSize)
                 pendingStartupSamples = []
                 for startupSampleBuffer in setup.startupSampleBuffers {
                     appendRecordingSampleOnQueue(startupSampleBuffer)
@@ -201,18 +244,122 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             return
         }
 
+        noteRecordingSourceSizeOnQueue(sampleBuffer)
         appendRecordingSampleOnQueue(sampleBuffer)
         completeStartup(.success(()))
     }
 
+    private func prepareStartupFormatOnQueue() {
+        awaitedStartupSize = nil
+        staleStartupFrames = 0
+        startupFrameTimeoutSeconds = 2
+        guard session.isRunning, let request = formatRequest() else { return }
+        guard LocalCameraSessionConfiguration.restoreBestFormat(request) else { return }
+        let dimensions = CMVideoFormatDescriptionGetDimensions(request.device.activeFormat.formatDescription)
+        awaitedStartupSize = CGSize(width: Int(dimensions.width), height: Int(dimensions.height))
+        startupFrameTimeoutSeconds = 6
+    }
+
+    private func noteRecordingSourceSizeOnQueue(_ sampleBuffer: CMSampleBuffer) {
+        guard let recordingSourceSize,
+              let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        let size = CGSize(width: CVPixelBufferGetWidth(pixelBuffer), height: CVPixelBufferGetHeight(pixelBuffer))
+        guard size != recordingSourceSize else { return }
+        self.recordingSourceSize = size
+        guard let request = formatRequest() else { return }
+        guard formatRestoresLeft > 0 else {
+            reportDeliveryOnQueue(pictureSize: size)
+            return
+        }
+        formatRestoresLeft -= 1
+        queue.async { LocalCameraSessionConfiguration.restoreBestFormat(request) }
+    }
+
+    private func reportDeliveryOnQueue(pictureSize: CGSize) {
+        guard let device = configuredDevice,
+              let handler = deliveryWarningHandler,
+              let shortfall = LocalCameraDelivery.shortfall(.init(
+                device: device,
+                pictureSize: pictureSize,
+                sourceSize: latestDelivery?.sourceSize ?? pictureSize,
+                fps: configuredFPS ?? RecordingSettings().framesPerSecond
+              )) else { return }
+        let warning = shortfall.recordingWarning
+        NSLog("Camera delivery: \(warning)")
+        Task { @MainActor in handler(warning) }
+    }
+
+    private func formatRequest() -> LocalCameraDeviceConfigurationRequest? {
+        configuredDevice.map {
+            LocalCameraDeviceConfigurationRequest(
+                device: $0,
+                fps: configuredFPS ?? RecordingSettings().framesPerSecond,
+                logPrefix: "Camera",
+                sizeLimit: .recording
+            )
+        }
+    }
+
+    private func restorePreviewFormatIfNeeded(_ sample: CMSampleBuffer) {
+        let now = ProcessInfo.processInfo.systemUptime
+        if previewFormatRecovery?.isComplete(at: now) == true { previewFormatRecovery = nil }
+        guard previewFormatRecovery?.isReady(at: now) == true, let request = formatRequest(),
+              let expected = LocalCameraSessionConfiguration.bestFormat(.init(
+                device: request.device, fps: request.fps, sizeLimit: request.sizeLimit)),
+              let buffer = CMSampleBufferGetImageBuffer(sample) else { return }
+        let dimensions = CMVideoFormatDescriptionGetDimensions(expected.formatDescription)
+        let recovery = CameraPreviewFormatRecovery.Request(
+            now: now,
+            sourceSize: CGSize(width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer)),
+            expectedSize: CGSize(width: Int(dimensions.width), height: Int(dimensions.height))
+        )
+        guard previewFormatRecovery?.shouldRestore(recovery) == true else { return }
+        LocalCameraSessionConfiguration.restoreBestFormat(request)
+        lastDeliveryTime = -TimeInterval.infinity
+    }
+
+    private func noteDelivery(_ sample: CMSampleBuffer) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastDeliveryTime >= 1, let device = configuredDevice,
+              let buffer = CMSampleBufferGetImageBuffer(sample) else { return }
+        lastDeliveryTime = now
+        let source = CGSize(width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer))
+        let active = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
+        latestDelivery = CameraDeliverySnapshot(
+            cameraName: device.localizedName,
+            sourceSize: source,
+            pictureSize: CameraFrameLetterboxDetector.normalizationPlan(.init(pixelBuffer: buffer))?.outputSize ?? source,
+            activeFormatSize: CGSize(width: Int(active.width), height: Int(active.height)),
+            requestedFPS: configuredFPS ?? 30,
+            sampleTime: now
+        )
+    }
+
+    func deliverySnapshot() -> CameraDeliverySnapshot? { queue.sync { latestDelivery } }
+
+    #if DEBUG
+    func probeDelivery(settings: RecordingSettings) async throws -> CameraDeliverySnapshot? {
+        let wasRunning = queue.sync { session.isRunning }
+        let started = ProcessInfo.processInfo.systemUptime
+        _ = try await makePreviewLayer(settings: settings)
+        try await Task.sleep(for: .seconds(3))
+        let snapshot = deliverySnapshot()
+        if !wasRunning { await stopSession() }
+        return snapshot.flatMap { $0.sampleTime >= started ? $0 : nil }
+    }
+    #endif
+
     private func offerThumbnail(_ sampleBuffer: CMSampleBuffer) {
         let now = ProcessInfo.processInfo.systemUptime
         guard let thumbnailHandler,
-              now - lastThumbnailTime >= 1,
+              !thumbnailIsOnItsWay,
+              now - lastThumbnailTime >= thumbnailInterval,
               CMSampleBufferGetImageBuffer(sampleBuffer) != nil else { return }
         lastThumbnailTime = now
+        thumbnailIsOnItsWay = true
         Task { @MainActor in
             thumbnailHandler(sampleBuffer)
+            self.queue.async { self.thumbnailIsOnItsWay = false }
         }
     }
 
@@ -253,7 +400,9 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         session.outputs.forEach { session.removeOutput($0) }
         try LocalCameraSessionConfiguration.attachCamera(.init(
             session: session,
-            device: device
+            device: device,
+            fps: settings.framesPerSecond,
+            sizeLimit: .recording
         ))
 
         let output = AVCaptureVideoDataOutput()
@@ -276,14 +425,7 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
 
     private func startSessionIfNeededOnQueue() {
         guard !session.isRunning else { return }
-        let held = configuredDevice.map { device in
-            LocalCameraSessionConfiguration.holdBestFormat(.init(
-                device: device,
-                fps: configuredFPS ?? RecordingSettings().framesPerSecond,
-                logPrefix: "Camera",
-                cameraIsRunningSomewhere: LocalCameraUsage.isRunningSomewhere(device)
-            ))
-        } ?? false
+        let held = formatRequest().map(LocalCameraSessionConfiguration.holdBestFormat) ?? false
         session.startRunning()
         if held { configuredDevice?.unlockForConfiguration() }
     }
@@ -313,12 +455,12 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
 
     private func appendRecordingSampleOnQueue(_ sampleBuffer: CMSampleBuffer) {
         let outputSample: CMSampleBuffer
-        if let frameNormalizer {
-            guard let normalizedSampleBuffer = frameNormalizer.normalize(sampleBuffer) else {
-                NSLog("Camera frame normalization skipped an unreadable frame")
+        if let frameConformer {
+            guard let conformedSampleBuffer = frameConformer.conform(sampleBuffer) else {
+                NSLog("Camera frame conforming skipped an unreadable frame")
                 return
             }
-            outputSample = normalizedSampleBuffer
+            outputSample = conformedSampleBuffer
         } else {
             outputSample = sampleBuffer
         }
@@ -359,19 +501,18 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             ?? max(2, Int(dimensions.width))
         let height = request.normalizationPlan.map { Int($0.outputSize.height) }
             ?? max(2, Int(dimensions.height))
-        let frameNormalizer = request.normalizationPlan.map(CameraFrameNormalizer.init)
-        let startupSampleBuffers: [CMSampleBuffer]
-        if let frameNormalizer {
-            let normalizedSampleBuffers = request.sampleBuffers.compactMap(frameNormalizer.normalize)
-            guard normalizedSampleBuffers.count == request.sampleBuffers.count else {
-                throw RecorderError.writerNotReady
-            }
-            startupSampleBuffers = normalizedSampleBuffers
-            NSLog(
-                "Camera input normalized from \(dimensions.width)x\(dimensions.height) to \(width)x\(height)"
-            )
-        } else {
-            startupSampleBuffers = request.sampleBuffers
+        let outputSize = CGSize(width: width, height: height)
+        let frameConformer = CameraFrameConformer(.init(
+            outputSize: outputSize,
+            sourceSize: CGSize(width: Int(dimensions.width), height: Int(dimensions.height)),
+            plan: request.normalizationPlan
+        ))
+        let startupSampleBuffers = request.sampleBuffers.compactMap(frameConformer.conform)
+        guard startupSampleBuffers.count == request.sampleBuffers.count else {
+            throw RecorderError.writerNotReady
+        }
+        if request.normalizationPlan != nil {
+            NSLog("Camera input normalized from \(dimensions.width)x\(dimensions.height) to \(width)x\(height)")
         }
 
         NSLog("Camera writer starting at \(width)x\(height)")
@@ -389,7 +530,8 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         }
         return CameraWriterSetup(
             writer: writer,
-            frameNormalizer: frameNormalizer,
+            frameConformer: frameConformer,
+            pictureSize: outputSize,
             startupSampleBuffers: startupSampleBuffers
         )
     }
@@ -400,7 +542,7 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
                 self.startupContinuation = continuation
                 self.startupTimeoutTask?.cancel()
                 self.startupTimeoutTask = Task { [weak self] in
-                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    try? await Task.sleep(nanoseconds: (self?.startupFrameTimeoutSeconds ?? 2) * 1_000_000_000)
                     self?.queue.async {
                         self?.completeStartup(.failure(RecorderError.cameraDidNotStart))
                     }
@@ -451,6 +593,7 @@ private struct CameraWriterRequest {
 
 private struct CameraWriterSetup {
     let writer: VideoFileWriter
-    let frameNormalizer: CameraFrameNormalizer?
+    let frameConformer: CameraFrameConformer
+    let pictureSize: CGSize
     let startupSampleBuffers: [CMSampleBuffer]
 }

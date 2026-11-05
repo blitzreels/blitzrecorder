@@ -50,7 +50,11 @@ enum BlitzRecorderMCPConnectionTestStatus: Equatable {
 @Observable
 @MainActor
 final class BlitzRecorderMCPServer {
+    #if DEBUG
+    nonisolated static let port = ProcessInfo.processInfo.environment["BLITZRECORDER_MCP_PORT"].flatMap(Int.init) ?? 18_473
+    #else
     nonisolated static let port = 18_473
+    #endif
     nonisolated static let endpoint = "/mcp"
     nonisolated static let workspaceEndpoint = "/webmcp"
     nonisolated static let endpointURL = URL(string: "http://127.0.0.1:\(port)\(endpoint)")!

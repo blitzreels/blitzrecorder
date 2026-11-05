@@ -22,7 +22,7 @@ struct RecordingHUDView: View {
     }
 
     private var isWide: Bool { model.isExpanded || hasPrompt }
-    private static let width: CGFloat = 340
+    private static let width: CGFloat = 376
 
     var body: some View {
         VStack(spacing: 0) {
@@ -150,6 +150,8 @@ struct RecordingHUDView: View {
             }
         }
         .font(BlitzType.section.monospacedDigit())
+        .lineLimit(1)
+        .fixedSize()
         .accessibilityElement(children: .combine)
         .accessibilityLabel(vm.state == .paused ? "Paused at \(vm.formattedElapsed)" : "Recording \(vm.formattedElapsed)")
     }

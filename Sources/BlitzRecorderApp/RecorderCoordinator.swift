@@ -125,6 +125,16 @@ final class RecorderCoordinator {
     var onLocalCameraThumbnailSampleBuffer: CameraRecorder.ThumbnailHandler? {
         didSet { capture.cameraRecorder.setThumbnailHandler(onLocalCameraThumbnailSampleBuffer) }
     }
+
+    var cameraPreviewNeedsEveryFrame: Bool {
+        settings.sceneLayout.cameraMask == .popout || !settings.cameraGrade.isNeutral
+    }
+
+    func setCameraPopoutPreviewEnabled(_ enabled: Bool) {
+        capture.cameraRecorder.setPopoutPreviewEnabled(enabled && !settings.cameraFeeds.usesCameraAngle)
+        capture.cameraAngles.setPopoutPreviewDevice(enabled
+            ? settings.cameraAngleDeviceID(role: settings.cameraFeeds.camera) : nil)
+    }
     var onRemoteCameraPreviewFrame: ((CGImage) -> Void)?
     var onRemoteCameraPreviewSampleBuffer: ((CMSampleBuffer, Int, Int) -> Void)?
     var onRemoteCameraPreviewReset: ((String) -> Void)?
@@ -178,6 +188,12 @@ final class RecorderCoordinator {
         studio.persist(saveSceneSnapshot: saveSceneSnapshot)
     }
 
+    #if DEBUG
+    func probeLocalCameraDelivery() async throws -> CameraDeliverySnapshot? {
+        try await capture.cameraRecorder.probeDelivery(settings: settings)
+    }
+    #endif
+
     func cameraPreviewLayer() async throws -> AVCaptureVideoPreviewLayer {
         try await capture.cameraPreviewLayer()
     }
@@ -215,6 +231,7 @@ final class RecorderCoordinator {
     func requestPermissionsForEnabledSources() async { await capture.requestPermissionsForEnabledSources() }
     func availableCameras() -> [SourceOption] { capture.availableCameras() }
     func availableMicrophones() -> [SourceOption] { capture.availableMicrophones() }
+    let usbCameraControls = USBCameraControlsModel()
     var mainLocalCameraDeviceID: String? { capture.mainLocalCameraDeviceID }
     func addCameraAngle(deviceID: String) { capture.addCameraAngle(deviceID: deviceID) }
     func replaceCameraAngle(_ replacement: CameraAngleReplacement) { capture.replaceCameraAngle(replacement) }

@@ -265,14 +265,17 @@ final class TakeFinalizer {
         do {
             onMessage?("Exporting final video...")
             onRenderProgress?(0)
-            let url = try await Merger.exportFinalVideo(
+            let url = try await Merger.exportFinalVideo(FinalVideoExportRequest(
                 take: take,
                 settings: settings,
                 sceneEvents: sceneEvents,
+                backgroundMusic: nil,
+                destinationURL: nil,
                 progressHandler: { [weak self] progress in
                     self?.onRenderProgress?(progress)
-                }
-            )
+                },
+                timelineEdits: studioGradeEdits(take: take, settings: settings)
+            ))
             onRenderProgress?(1)
             return try savedOutcome(
                 url: url,
@@ -307,7 +310,8 @@ final class TakeFinalizer {
             for: take,
             settings: settings,
             sceneEvents: sceneEvents,
-            finalVideoURL: url
+            finalVideoURL: url,
+            timelineEdits: newProjectEdits(take: take, settings: settings)
         )
         return .saved(url, sourceDirectory: take.scratchDirectory)
     }
@@ -345,8 +349,29 @@ final class TakeFinalizer {
             for: take,
             settings: settings,
             sceneEvents: sceneEvents,
-            finalVideoURL: nil
+            finalVideoURL: nil,
+            timelineEdits: newProjectEdits(take: take, settings: settings)
         )
+    }
+
+    private func studioGradeEdits(take: RecordingTake, settings: RecordingSettings) -> TimelineEdits {
+        var edits = TimelineEdits.empty
+        guard !settings.cameraGrade.isNeutral else { return edits }
+        edits.cameraGrades[CameraFeeds.mainRole] = settings.cameraGrade
+        for angle in take.cameraAngles {
+            edits.cameraGrades[angle.role] = settings.cameraGrade
+        }
+        return edits
+    }
+
+    private func newProjectEdits(take: RecordingTake, settings: RecordingSettings) -> RecordingProject.TimelineEditsSnapshot? {
+        guard !settings.cameraGrade.isNeutral else { return nil }
+        var edits = FileManager.default.fileExists(atPath: take.projectURL.path)
+            ? (try? fileStore.loadRecordingProject(at: take.projectURL))?.edits ?? .empty
+            : .empty
+        guard edits.cameraGrades.isEmpty else { return nil }
+        edits.cameraGrades = studioGradeEdits(take: take, settings: settings).cameraGrades
+        return RecordingProject.TimelineEditsSnapshot(edits)
     }
 
     private func removeCameraBackgroundIfNeeded(from take: RecordingTake, settings: RecordingSettings) async -> RecordingTake {

@@ -182,6 +182,7 @@ struct EditorTextInspector: View {
                 BlitzVisualChoice(configuration: .init(
                     title: preset.displayName,
                     help: "\(preset.displayName). Preview its look and position on your video.",
+                    previewShape: .strip,
                     isSelected: request.selection == preset,
                     action: { request.choose(preset) },
                     preview: {

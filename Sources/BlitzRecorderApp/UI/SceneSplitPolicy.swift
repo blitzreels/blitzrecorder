@@ -27,6 +27,6 @@ enum SceneSplitPolicy {
               visibleSources.isSuperset(of: [.screen, .camera]) else { return false }
         return sceneLayout.screenSplitHeight != nil
             || inferredHeight(from: sceneLayout) != nil
-            || selectedPreset == .screenTop50
+            || (selectedPreset == .screenTop50 && !sceneLayout.cameraFloats(visibleSources: visibleSources))
     }
 }

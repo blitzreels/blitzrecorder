@@ -30,6 +30,7 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
     var recordingSceneTransition: LiveRecordingSceneTransition?
     var latestScreenBuffer: CVPixelBuffer?
     var latestCameraBuffer: CVPixelBuffer?
+    let cameraFrameConformer = CameraFrameConformer(.init(outputSize: nil, sourceSize: .zero, plan: nil))
     var hasProducedMicrophoneStartupSample = false
     var backgroundAnimationStartUptime: CFTimeInterval?
     var streamError: Error?

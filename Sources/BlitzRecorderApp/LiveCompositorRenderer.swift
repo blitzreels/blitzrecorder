@@ -31,6 +31,7 @@ final class LiveCompositorRenderer: @unchecked Sendable {
     private static let backgroundFramesPerLoop = 96
 
     private let ciContext: CIContext
+    private let cameraPopoutRenderer = CameraPopoutRenderer()
     private var cachedBackground: (style: CanvasBackgroundStyle, size: CGSize, frameIndex: Int, image: CIImage)?
 
     init(metalDevice: MTLDevice? = MTLCreateSystemDefaultDevice()) {
@@ -99,6 +100,10 @@ final class LiveCompositorRenderer: @unchecked Sendable {
                 .composited(over: image)
             case .camera:
                 guard let cameraFrame = request.cameraFrame else { continue }
+                let popsOut = request.scene.sceneLayout.cameraMask == .popout
+                let popoutStyle = CameraPopoutStyle(.init(
+                    placement: placement, headroom: request.scene.sceneLayout.cameraPopoutHeadroom
+                ))
                 let visibleCameraRect = geometry.visibleSourceRect(
                     for: .camera,
                     sourceAspectRatio: sourceAspectRatio(for: cameraFrame.image)
@@ -110,18 +115,20 @@ final class LiveCompositorRenderer: @unchecked Sendable {
                        sourceAspectRatio: sourceAspectRatio(for: cameraFrame.image)
                    ) {
                     image = shadow(
-                        for: visibleCameraRect,
+                        for: popsOut ? popoutStyle.panel(in: visibleCameraRect) : visibleCameraRect,
                         cornerRadius: placement.cornerRadius
                     )
                     .settingOpacity(opacity)
                     .composited(over: image)
                 }
                 image = fill(
-                    cameraFrame.image,
+                    popsOut ? cameraPopoutRenderer.image(.init(
+                        image: cameraFrame.image, style: popoutStyle
+                    )) : cameraFrame.image,
                     into: placement.targetRect,
                     sourceCrop: { placement.videoPlacement.sourceCropRectangle(sourceExtent: $0) },
                     contentMode: placement.videoPlacement.contentMode,
-                    cornerRadius: placement.cornerRadius
+                    cornerRadius: popsOut ? 0 : placement.cornerRadius
                 )
                 .settingOpacity(opacity)
                 .composited(over: image)
@@ -144,7 +151,7 @@ final class LiveCompositorRenderer: @unchecked Sendable {
             image,
             to: request.outputBuffer,
             bounds: canvasRect,
-            colorSpace: CGColorSpaceCreateDeviceRGB()
+            colorSpace: VideoColorSpace.rec709
         )
         return true
     }

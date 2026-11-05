@@ -397,10 +397,12 @@ struct EditorLayoutInspector: View {
                 get: { SceneLayout.cameraInsetAlignment(for: frame) },
                 set: { applyEditorCameraInsetChange(.alignment($0)) }
             ),
+            alignments: CameraInsetAlignment.allCases,
             shape: Binding(
                 get: { sceneLayout.cameraInsetShape(in: layout) },
                 set: { applyEditorCameraInsetChange(.shape($0)) }
             ),
+            shapes: CameraInsetShape.allCases,
             size: Binding(
                 get: { Double(sceneLayout.cameraInsetSize(in: layout)) },
                 set: { applyEditorCameraInsetChange(.size(CGFloat($0))) }

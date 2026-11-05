@@ -152,7 +152,8 @@ extension RemoteIPhoneCameraSession {
 
     func refreshSelectedScenePresetLayoutIfNeeded(settings: inout RecordingSettings) {
         guard let preset = settings.selectedScenePreset,
-              preset.supports(settings.layout) else {
+              preset.supports(settings.layout),
+              !settings.sceneLayout.keepsItsArrangement(over: preset) else {
             return
         }
         settings.sceneLayout = SceneLayout.presetLayout(

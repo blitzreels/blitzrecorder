@@ -25,9 +25,9 @@ struct SceneLibrary: Codable, Equatable {
     static func presets(for layout: CaptureLayout) -> [ScenePreset] {
         switch layout {
         case .vertical:
-            return [.screenTop50, .cameraInset, .screenFullscreen, .webcamFullscreen]
+            return [.screenTop50, .screenFullscreen, .webcamFullscreen]
         case .horizontal, .square:
-            return [.webcamLeft, .cameraInset, .screenFullscreen, .webcamFullscreen]
+            return [.webcamLeft, .screenFullscreen, .webcamFullscreen]
         }
     }
 

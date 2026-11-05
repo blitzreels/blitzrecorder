@@ -91,6 +91,7 @@ extension MainWindowController {
     }
 
     func startCameraPreview() {
+        coordinator.setCameraPopoutPreviewEnabled(coordinator.cameraPreviewNeedsEveryFrame)
         guard !LocalDevelopmentRuntime.disablesIdleCapture() else { return }
         guard IdleCameraPreviewPolicy.shouldStart(currentIdleCameraPreviewRequest()) else { return }
         if coordinator.settings.hiddenSources.contains(.camera) {
@@ -269,6 +270,7 @@ extension MainWindowController {
         Task {
             do {
                 let layer = try await coordinator.cameraAnglePreviewLayer(deviceID: deviceID)
+                coordinator.setCameraPopoutPreviewEnabled(coordinator.cameraPreviewNeedsEveryFrame)
                 guard cameraPreviewStartRevision == revision,
                       coordinator.settings.cameraFeeds.camera == feed else { return }
                 previewStage.cameraPreview.setPreviewLayer(layer)

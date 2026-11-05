@@ -1,0 +1,9 @@
+DAEDAL free packs — License: CC0 1.0 Universal (Public Domain Dedication)
+
+To the extent possible under law, the authors have waived all copyright and related
+rights to the files in this pack. You can use them in personal and commercial projects
+(client work, YouTube, ads, films), modify them, and redistribute them, without asking
+permission and without attribution. Credit is appreciated but never required.
+
+Full legal text: https://creativecommons.org/publicdomain/zero/1.0/legalcode
+All files were generated procedurally by DAEDAL; no third-party footage or presets were used.

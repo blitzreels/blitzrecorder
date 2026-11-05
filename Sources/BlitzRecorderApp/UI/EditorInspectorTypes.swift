@@ -3,6 +3,7 @@ import Foundation
 enum EditorInspectorTab: String, CaseIterable {
     case cameras = "Cameras"
     case layout = "Layout"
+    case color = "Color"
     case text = "Text"
     case captions = "Captions"
     case zoom = "Motion"
@@ -16,6 +17,7 @@ enum EditorInspectorTab: String, CaseIterable {
         switch self {
         case .cameras: return BlitzSymbols.camera
         case .layout: return BlitzSymbols.layout
+        case .color: return "camera.filters"
         case .text: return "textformat"
         case .captions: return "captions.bubble"
         case .zoom: return "cursorarrow.motionlines"

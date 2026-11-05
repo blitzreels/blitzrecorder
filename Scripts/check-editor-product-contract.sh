@@ -6,14 +6,14 @@ cd "$repo_root"
 
 failures=0
 
-if ! rg -F 'ScenePreset.allCases.filter { $0.supports(captureLayout ?? .horizontal) }' \
+if ! rg -F '$0.supports(captureLayout ?? .horizontal)' \
     Sources/BlitzRecorderApp/UI/EditorLayoutInspector.swift >/dev/null; then
     echo "Editor scene presets must use the shared layout compatibility rule."
     failures=$((failures + 1))
 fi
 
 if ! rg -F 'options: RecordingSettings.supportedFrameRates' \
-    Sources/BlitzRecorderApp/UI/EditorExportPopover.swift >/dev/null; then
+    Sources/BlitzRecorderApp/UI/EditorExportSettings.swift >/dev/null; then
     echo "Editor FPS choices must use RecordingSettings.supportedFrameRates."
     failures=$((failures + 1))
 fi

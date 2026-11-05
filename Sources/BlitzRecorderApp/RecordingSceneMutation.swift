@@ -74,13 +74,24 @@ enum RecordingSceneMutation {
         to settings: RecordingSettings,
         screenAspectRatio: CGFloat
     ) -> RecordingSettings {
+        applyingScreenSplit(.init(
+            screenHeight: height,
+            cameraOnTop: settings.sceneLayout.cameraOnTop,
+            popoutHeadroom: settings.sceneLayout.cameraMask == .popout ? settings.sceneLayout.cameraPopoutHeadroom : nil
+        ), to: settings)
+    }
+
+    static func applyingScreenSplit(
+        _ request: SceneLayout.ScreenSplitRequest,
+        to settings: RecordingSettings
+    ) -> RecordingSettings {
         var settings = settings
         settings.selectedScenePreset = .screenTop50
         settings.cameraContentMode = .fill
-        settings.sceneLayout = SceneLayout.screenSplitLayout(
-            screenHeight: height,
-            screenAspectRatio: screenAspectRatio
-        )
+        settings.sceneLayout = SceneLayout.screenSplitLayout(request)
+        if request.popoutHeadroom != nil {
+            settings.removesCameraBackgroundAfterRecording = false
+        }
         settings.screenCrop = nil
         settings.enabledSources.insert(.screen)
         settings.enabledSources.insert(.camera)
@@ -114,6 +125,9 @@ enum RecordingSceneMutation {
             sourceAspectRatio: cameraAspectRatio
         )
         settings.sceneLayout.cameraMask = shape.cameraMask
+        if shape == .popout {
+            settings.removesCameraBackgroundAfterRecording = false
+        }
         settings.sceneLayout.layerOrder = [.screen, .camera]
         settings.enabledSources.insert(.screen)
         settings.enabledSources.insert(.camera)

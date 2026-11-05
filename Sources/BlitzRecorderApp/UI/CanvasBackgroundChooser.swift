@@ -234,13 +234,13 @@ private struct CanvasBackgroundTileFrame<Content: View>: View {
             .padding(3)
             .overlay {
                 RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
-                    .strokeBorder(ringColor, lineWidth: 2)
+                    .strokeBorder(ringColor, lineWidth: configuration.isSelected ? 2.5 : 2)
             }
             .contentShape(.rect(cornerRadius: Self.radius, style: .continuous))
     }
 
     private var ringColor: Color {
-        if configuration.isSelected { return BlitzUI.primaryText }
+        if configuration.isSelected { return BlitzUI.accent }
         return configuration.isHovering ? BlitzUI.tertiaryText : .clear
     }
 }

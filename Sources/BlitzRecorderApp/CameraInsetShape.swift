@@ -3,13 +3,23 @@ import CoreGraphics
 enum CameraInsetAlignment: String, CaseIterable {
     case bottomLeft
     case bottomRight
+    case topLeft
+    case topRight
+
+    var isLeft: Bool { self == .bottomLeft || self == .topLeft }
+    var isTop: Bool { self == .topLeft || self == .topRight }
+    var atBottom: CameraInsetAlignment { isLeft ? .bottomLeft : .bottomRight }
 
     var displayName: String {
         switch self {
         case .bottomLeft:
-            return "Left"
+            return "Bottom left"
         case .bottomRight:
-            return "Right"
+            return "Bottom right"
+        case .topLeft:
+            return "Top left"
+        case .topRight:
+            return "Top right"
         }
     }
 
@@ -19,6 +29,10 @@ enum CameraInsetAlignment: String, CaseIterable {
             return "arrow.down.left"
         case .bottomRight:
             return "arrow.down.right"
+        case .topLeft:
+            return "arrow.up.left"
+        case .topRight:
+            return "arrow.up.right"
         }
     }
 }
@@ -27,6 +41,7 @@ enum CameraInsetShape: String, CaseIterable {
     case landscape
     case portrait
     case circle
+    case popout
 
     var displayName: String {
         switch self {
@@ -36,6 +51,8 @@ enum CameraInsetShape: String, CaseIterable {
             return "Tall"
         case .circle:
             return "Round"
+        case .popout:
+            return "Pop out"
         }
     }
 
@@ -47,12 +64,14 @@ enum CameraInsetShape: String, CaseIterable {
             return "rectangle.portrait"
         case .circle:
             return "circle"
+        case .popout:
+            return "person.crop.rectangle"
         }
     }
 
     var aspectRatio: CGFloat {
         switch self {
-        case .landscape:
+        case .landscape, .popout:
             return 16.0 / 9.0
         case .portrait:
             return 9.0 / 16.0
@@ -62,13 +81,17 @@ enum CameraInsetShape: String, CaseIterable {
     }
 
     var cameraMask: SceneCameraMask {
-        self == .circle ? .circle : .rectangle
+        switch self {
+        case .circle: .circle
+        case .popout: .popout
+        case .landscape, .portrait: .rectangle
+        }
     }
 
     func aspectRatio(forSource sourceAspectRatio: CGFloat) -> CGFloat {
         guard sourceAspectRatio > 0 else { return aspectRatio }
         switch self {
-        case .landscape:
+        case .landscape, .popout:
             return max(sourceAspectRatio, 1 / sourceAspectRatio)
         case .portrait:
             return min(sourceAspectRatio, 1 / sourceAspectRatio)
@@ -81,6 +104,7 @@ enum CameraInsetShape: String, CaseIterable {
 enum SceneCameraMask: String, Codable {
     case rectangle
     case circle
+    case popout
 
     init(from decoder: Decoder) throws {
         let value = try decoder.singleValueContainer().decode(String.self)

@@ -228,6 +228,7 @@ final class EditorCompositedPlayerView: NSView {
 
     func refresh() {
         guard let controller, controller.isReady, renderSize.width > 0, renderSize.height > 0 else { return }
+        controller.updateCameraPopoutPreview(isCropping: cropDraft?.kind == .camera)
         let time = controller.displayTime()
         defer { refreshPrivacyMasks(time: time) }
         guard let playbackScene = controller.scene(at: time) else { return }
@@ -456,7 +457,8 @@ final class EditorCompositedPlayerView: NSView {
         )
         layers.shadowHost.frame = clipFrame
         layers.clip.frame = CGRect(origin: .zero, size: clipFrame.size)
-        layers.clip.cornerRadius = radius
+        let popsOut = kind == .camera && scene.sceneLayout.cameraMask == .popout
+        layers.clip.cornerRadius = popsOut ? 0 : radius
         layers.playerLayer.frame = CGRect(
             x: (sourceFrame.minX - targetRect.minX) * scale,
             y: (sourceFrame.minY - targetRect.minY) * scale,
@@ -470,8 +472,14 @@ final class EditorCompositedPlayerView: NSView {
             layers.shadowHost.shadowRadius = 18 * scale
             layers.shadowHost.shadowOffset = CGSize(width: 0, height: 8 * scale)
             layers.shadowHost.shadowOpacity = 0.45
+            var shadowRect = CGRect(origin: .zero, size: clipFrame.size)
+            if popsOut {
+                let headroom = scene.sceneLayout.cameraPopoutHeadroom
+                shadowRect.origin.y = shadowRect.height * headroom
+                shadowRect.size.height *= 1 - headroom
+            }
             layers.shadowHost.shadowPath = CGPath(
-                roundedRect: CGRect(origin: .zero, size: clipFrame.size),
+                roundedRect: shadowRect,
                 cornerWidth: radius,
                 cornerHeight: radius,
                 transform: nil

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct BottomDock: View {
@@ -10,18 +11,18 @@ struct BottomDock: View {
                 if let recovery = vm.lastRecoveryOutput {
                     RecoveryAvailableView(vm: vm, recovery: recovery)
                         .floatingRecordingNotice()
-                } else if vm.canOpenEditor, vm.lastExportedURL == nil {
+                } else if vm.canOpenEditor {
                     SavedProjectActions(vm: vm)
                         .floatingRecordingNotice()
                 }
             }
 
             ViewThatFits(in: .horizontal) {
-                dockRow(.init(density: .regular, spacing: 12, isCompact: false))
+                dockRow(.init(density: .labeled, isCompact: false))
                     .fixedSize(horizontal: true, vertical: false)
-                dockRow(.init(density: .compact, spacing: 12, isCompact: false))
+                dockRow(.init(density: .pictures, isCompact: false))
                     .fixedSize(horizontal: true, vertical: false)
-                dockRow(.init(density: .compact, spacing: 10, isCompact: vm.state != .idle))
+                dockRow(.init(density: .pictures, isCompact: true))
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -34,6 +35,7 @@ struct BottomDock: View {
 private struct SavedProjectActions: View {
     @Bindable var vm: RecorderViewModel
     @State private var metadata = ProjectLibraryMetadata.empty
+    @State private var exportedFile: URL?
 
     var body: some View {
         HStack(spacing: 14) {
@@ -43,11 +45,20 @@ private struct SavedProjectActions: View {
                 .layoutPriority(1)
         }
         .frame(maxWidth: 640)
-        .contextMenu { BlitzContextMenuItems(entries: [.item(editItem)] + secondaryActions) }
+        .contextMenu {
+            BlitzContextMenuItems(entries: [.item(editItem)] + secondaryActions + [.divider, .item(clearItem)])
+        }
         .task(id: vm.currentEditorHistoryEntry?.id) {
             guard let entry = vm.currentEditorHistoryEntry else { return }
             metadata = await ProjectLibraryMetadataLoader.load(entry)
         }
+        .task(id: vm.lastExportedURL) {
+            exportedFile = vm.lastExportedURL.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
+        }
+    }
+
+    private var clearItem: BlitzMenuItem {
+        .init(title: "Hide", systemImage: "xmark", action: vm.clearPostRecordingStatus)
     }
 
     private var summary: some View {
@@ -89,11 +100,17 @@ private struct SavedProjectActions: View {
     }
 
     private var secondaryActions: [BlitzMenuEntry] {
-        [
+        let reveal: BlitzMenuItem = if let exportedFile {
+            .init(title: "Show in Finder", subtitle: "Show the exported video in Finder",
+                  systemImage: BlitzSymbols.folder) { NSWorkspace.shared.activateFileViewerSelecting([exportedFile]) }
+        } else {
+            .init(title: "Show in Library", subtitle: "Show this recording in the library",
+                  systemImage: BlitzSymbols.library, action: vm.showLastRecordingInLibrary)
+        }
+        return [
             .item(.init(title: "Export", subtitle: "Choose export settings and save a video file to your Mac",
                         systemImage: BlitzSymbols.export, isEnabled: !vm.isExporting, action: vm.openEditorForExport)),
-            .item(.init(title: "Show in Library", subtitle: "Show this recording in the library",
-                        systemImage: BlitzSymbols.library, action: vm.showLastRecordingInLibrary))
+            .item(reveal)
         ]
     }
 
@@ -107,6 +124,12 @@ private struct SavedProjectActions: View {
                 placement: .page,
                 action: vm.openEditor
             ))
+            Button(action: vm.clearPostRecordingStatus) {
+                Image(systemName: "xmark")
+            }
+            .blitzButton(.quiet)
+            .accessibilityLabel("Hide")
+            .help("Hide. The recording stays in your library.")
         }
         .fixedSize()
     }
@@ -115,15 +138,13 @@ private struct SavedProjectActions: View {
 private extension BottomDock {
     struct RowStyle {
         let density: RecorderSceneStrip.Density
-        let spacing: CGFloat
         let isCompact: Bool
     }
 
     func dockRow(_ style: RowStyle) -> some View {
-        HStack(spacing: style.spacing) {
+        HStack(spacing: 12) {
             RecorderSceneStrip(vm: vm, density: style.density)
-                .frame(minWidth: RecorderSceneStrip.Density.compact.tileWidth)
-            dockDivider
+                .frame(minWidth: BlitzControlMetrics.prominentDockHeight * 1.5)
             RecordingActionRow(vm: vm)
                 .environment(\.blitzDockIsCompact, style.isCompact)
                 .fixedSize(horizontal: true, vertical: false)
@@ -131,16 +152,11 @@ private extension BottomDock {
         }
         .dockGlass()
     }
-
-    var dockDivider: some View {
-        Rectangle().fill(BlitzUI.separator).frame(width: 1, height: 52)
-    }
 }
 
 private extension View {
     func dockGlass() -> some View {
         padding(8)
-            .padding(.trailing, 2)
             .blitzGlass(cornerRadius: BlitzUI.surfaceRadius + 4)
     }
 
@@ -155,7 +171,6 @@ private extension View {
 private struct RecordingActionRow: View {
     @Bindable var vm: RecorderViewModel
     @State private var showsScreenPicker = false
-    var forcesSavedChip = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -174,16 +189,6 @@ private struct RecordingActionRow: View {
                     }
                     .buttonStyle(.plain)
                     .help(vm.recordingBlockerDetail ?? blocker)
-                }
-
-                if let savedURL = savedExportURL {
-                    TransportDivider()
-                    SavedRecordingChip(
-                        vm: vm,
-                        url: savedURL,
-                        sourceTakeURL: vm.lastExportedSourceTakeURL,
-                        warning: vm.lastExportWarning
-                    )
                 }
             case .starting:
                 ProgressView()
@@ -217,7 +222,7 @@ private struct RecordingActionRow: View {
                 )
             }
         }
-        .frame(minHeight: 44)
+        .frame(minHeight: BlitzControlMetrics.prominentDockHeight)
     }
 
     private var transportStatus: some View {
@@ -247,12 +252,6 @@ private struct RecordingActionRow: View {
         }
     }
 
-    private var savedExportURL: URL? {
-        if forcesSavedChip { return vm.lastExportedURL }
-        guard vm.state == .idle,
-              vm.lastRecoveryOutput == nil else { return nil }
-        return vm.lastExportedURL
-    }
 }
 
 private struct TransportDivider: View {
@@ -331,24 +330,17 @@ private func bottomDockPreviewModel(warning: String? = nil) -> RecorderViewModel
         .preferredColorScheme(.dark)
 }
 
-#Preview("Dock — recording saved") {
-    RecordingActionRow(vm: bottomDockPreviewModel(), forcesSavedChip: true)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .frame(width: 1100)
-        .background(.bar)
-        .preferredColorScheme(.dark)
+#Preview("Dock — wide") {
+    BottomDock(vm: bottomDockPreviewModel())
+        .padding(16)
+        .frame(width: 900)
+        .background(BlitzUI.canvasBackground)
 }
 
-#Preview("Dock — saved with warning") {
-    RecordingActionRow(
-        vm: bottomDockPreviewModel(warning: "System audio was muted for part of this take."),
-        forcesSavedChip: true
-    )
-    .padding(.horizontal, 16)
-    .padding(.vertical, 12)
-    .frame(width: 900)
-    .background(.bar)
-    .preferredColorScheme(.dark)
+#Preview("Dock — narrow") {
+    BottomDock(vm: bottomDockPreviewModel())
+        .padding(16)
+        .frame(width: 380)
+        .background(BlitzUI.canvasBackground)
 }
 #endif

@@ -32,6 +32,9 @@ final class EditorPlaybackController: NowPlayingPlayback {
             if oldValue.captions != edits.captions || oldValue.cuts != edits.cuts {
                 captionTimeline = CaptionTimeline(.init(track: edits.captions, cuts: edits.cuts))
             }
+            if oldValue.cameraGrades != edits.cameraGrades {
+                cameraGradePreview.update(edits.cameraGrades)
+            }
         }
     }
     private(set) var captionTimeline = CaptionTimeline.empty
@@ -92,6 +95,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
         revision: Int,
         scene: RecordingScene
     )?
+    @ObservationIgnored private let cameraGradePreview = CameraGradePreview()
     @ObservationIgnored private var videoPlayers: [SceneLayerKind: AVPlayer] = [:]
     @ObservationIgnored private var cameraAnglePlayers: [String: AVPlayer] = [:]
     @ObservationIgnored private var audioPlayer: AVPlayer?
@@ -409,6 +413,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
             await seekAllPrecisely(to: startTime)
 
             guard isCurrentLoad(generation) else { return }
+            cameraGradePreview.redrawLoadedFrames()
             isReady = true
             if wasPlaying { isPlaying = playAll() }
         } catch {
@@ -462,7 +467,37 @@ final class EditorPlaybackController: NowPlayingPlayback {
             player.isMuted = true
             cameraAnglePlayers[feed] = player
         }
+        cameraGradePreview.attach(.init(players: gradablePlayers, grades: edits.cameraGrades))
+        updateCameraPopoutPreview(isCropping: false)
         buildAudioPlayer(playback: playback)
+    }
+
+    func updateCameraPopoutPreview(isCropping: Bool) {
+        cameraGradePreview.updatePopouts(.init(segments: previewRenderSegments,
+                                              renderSize: renderSize, isCropping: isCropping))
+    }
+
+    private var gradablePlayers: [CameraGradePreview.PlayerEntry] {
+        let main = videoPlayers.compactMap { kind, player -> CameraGradePreview.PlayerEntry? in
+            kind == .screen ? nil : .init(role: kind.defaultFeed, player: player)
+        }
+        return main + cameraAnglePlayers.map { .init(role: $0.key, player: $0.value) }
+    }
+
+    var gradableCameraRoles: [String] {
+        Array(Set(gradablePlayers.map(\.role))).sorted {
+            (CameraFeeds.angleNumber(role: $0) ?? .max) < (CameraFeeds.angleNumber(role: $1) ?? .max)
+        }
+    }
+
+    func setCameraGrading(_ grading: Bool) {
+        cameraGradePreview.setGrading(grading)
+    }
+
+    func previewCameraGrade(role: String, grade: CameraColorGrade) {
+        var grades = edits.cameraGrades
+        grades[role] = grade.isNeutral ? nil : grade
+        cameraGradePreview.update(grades)
     }
 
     private func buildAudioPlayer(playback: EditorPlaybackComposition) {

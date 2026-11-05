@@ -33,12 +33,19 @@ enum SourceSelection: CaseIterable, Equatable {
     }
 }
 
+enum SceneCameraArrangement: Hashable {
+    case split
+    case floating
+    case popOut
+}
+
 enum RecorderInspectorSelection: Hashable {
     case source(CaptureSource)
     /// Camera 2 in a two-camera scene; its input is still the camera source.
     case secondCamera
     case canvas
     case layout
+    case color
 
     static func initial(settings: RecordingSettings) -> RecorderInspectorSelection {
         let visibleSources = settings.visibleSources
@@ -57,7 +64,7 @@ enum RecorderInspectorSelection: Hashable {
         switch self {
         case .source(let source): source
         case .secondCamera: .camera
-        case .canvas, .layout: nil
+        case .canvas, .layout, .color: nil
         }
     }
 

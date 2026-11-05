@@ -32,6 +32,9 @@ final class RecorderViewModel {
     var detailMessage: String = ""
     /// The camera whose sound the editor is switching to in a multicam project, while its sound is prepared.
     var editorSoundSwitch: String?
+    var cameraIncomingSize: CGSize?
+    var cameraUsablePictureSize: CGSize?
+    var cameraDeliveryShortfall: LocalCameraDeliveryShortfall?
     var screenWindowFitMessage: String?
     var showsScreenSourcePicker = false
     var isLivePreviewEnabled = LivePreviewPreference().isEnabled
@@ -121,6 +124,7 @@ final class RecorderViewModel {
     @ObservationIgnored var onProjectOpened: (() -> Void)?
     @ObservationIgnored var onFillEditorWindow: (() -> Void)?
     @ObservationIgnored var onStudioModeChanged: ((StudioMode) -> Void)?
+    @ObservationIgnored var onCameraBackgroundRemovalChanged: (() -> Void)?
     @ObservationIgnored var onLivePreviewChanged: ((Bool) -> Void)?
     @ObservationIgnored var onEditorHistoryChanged: (() -> Void)?
     @ObservationIgnored var automaticTitleTasks: [String: Task<Void, Never>] = [:]

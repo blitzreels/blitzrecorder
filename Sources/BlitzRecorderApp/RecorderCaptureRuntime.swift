@@ -304,6 +304,12 @@ final class RecorderCaptureRuntime {
         systemAudioRecorder.failureHandler = { [weak self] error in
             self?.handleActiveCaptureFailure(ActiveCaptureFailure(source: .systemAudio, error: error))
         }
+        cameraRecorder.deliveryWarningHandler = { [weak self] warning in
+            self?.noteCameraDeliveryWarning(warning)
+        }
+        cameraAngles.deliveryWarningHandler = { [weak self] warning in
+            self?.noteCameraDeliveryWarning(warning)
+        }
         cameraRecorder.failureHandler = { [weak self] error in
             self?.handleActiveCaptureFailure(ActiveCaptureFailure(source: .camera, error: error))
         }

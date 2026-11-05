@@ -17,6 +17,9 @@ struct EditorCaptionsInspector: View {
         nonmutating set { configuration.selectedID.wrappedValue = newValue }
     }
     @State private var draft = ""
+    @State private var draftID: UUID?
+    @State private var draftProjectPath: String?
+    @FocusState private var isTextFocused: Bool
     @State private var pendingSave: Task<Void, Never>?
     @State private var showsReplaceConfirmation = false
 
@@ -26,54 +29,68 @@ struct EditorCaptionsInspector: View {
     private var status: TranscriptionJobStatus { controller.jobStatuses[project?.projectPath ?? ""] ?? .notGenerated }
 
     var body: some View {
-        EditorInspectorPane(configuration: .init(
-            title: "Captions",
-            detail: "Turn what you say into captions, made on this Mac.",
-            showsFooter: true,
-            content: {
-                VStack(alignment: .leading, spacing: EditorInspectorMetrics.sectionSpacing) {
-                    if track.cues.isEmpty {
-                        Text("Captions follow your voice word by word. You can restyle and correct them after.")
-                            .font(BlitzType.body).foregroundStyle(BlitzUI.secondaryText)
-                            .fixedSize(horizontal: false, vertical: true)
-                    } else {
-                        Toggle("Show captions", isOn: binding(\.isEnabled))
-                            .toggleStyle(.blitzSwitch)
-                            .help("Show or hide captions in preview and every export. Your caption text stays saved.")
-                        if track.isEnabled {
-                            EditorInspectorSection(configuration: .init(title: "Style", content: { appearance }))
+        ScrollViewReader { proxy in
+            EditorInspectorPane(configuration: .init(
+                title: "Captions",
+                detail: "Turn what you say into captions, made on this Mac.",
+                showsFooter: true,
+                content: {
+                    VStack(alignment: .leading, spacing: EditorInspectorMetrics.sectionSpacing) {
+                        if track.cues.isEmpty {
+                            Text("Captions follow your voice word by word. You can restyle and correct them after.")
+                                .font(BlitzType.body).foregroundStyle(BlitzUI.secondaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            if selectedID != nil {
+                                EditorInspectorSection(configuration: .init(title: "Edit caption", content: { textEditor }))
+                                    .id("caption-editor")
+                            } else {
+                                Text("Select a caption below or on the timeline to edit its words.")
+                                    .font(BlitzType.body).foregroundStyle(BlitzUI.secondaryText)
+                            }
+                            Toggle("Show captions", isOn: binding(\.isEnabled))
+                                .toggleStyle(.blitzSwitch)
+                                .help("Show or hide captions in preview and every export. Your caption text stays saved.")
+                            if track.isEnabled {
+                                EditorInspectorSection(configuration: .init(title: "Style", content: { appearance }))
+                            }
+                            EditorInspectorSection(configuration: .init(
+                                title: track.cues.count == 1 ? "1 caption" : "\(track.cues.count) captions",
+                                content: { captionList }))
                         }
-                        EditorInspectorSection(configuration: .init(
-                            title: track.cues.count == 1 ? "1 caption" : "\(track.cues.count) captions",
-                            content: { captionList }))
                     }
-                }
-            },
-            footer: { footer }
-        ))
-        .onAppear { loadSelectedText() }
-        .onChange(of: selectedID) {
-            flushText()
-            loadSelectedText()
-        }
-        .onChange(of: draft) { scheduleSave() }
-        .onDisappear { flushText() }
-        .onChange(of: configuration.transcript) { generateWhenReady() }
-        .onChange(of: status) { generateWhenReady() }
-        .onChange(of: project?.projectPath) {
-            pendingProject = nil
-            selectedID = nil
-            error = nil
-        }
-        .onChange(of: track.cues) {
-            if let selectedID, let cue = track.cues.first(where: { $0.id == selectedID }) {
-                if pendingSave == nil { draft = cue.text }
-            } else { selectedID = nil }
-        }
-        .confirmationDialog("Replace caption text from the transcript?", isPresented: $showsReplaceConfirmation) {
-            Button("Replace captions", role: .destructive, action: requestGeneration)
-        } message: {
-            Text("This replaces your caption corrections. Style stays the same. You can undo the replacement.")
+                },
+                footer: { footer }
+            ))
+            .onAppear { loadSelectedText() }
+            .onChange(of: selectedID) {
+                flushText()
+                loadSelectedText()
+                if selectedID != nil { proxy.scrollTo("caption-editor", anchor: .top) }
+            }
+            .onChange(of: draft) { scheduleSave() }
+            .onDisappear { flushText() }
+            .onChange(of: configuration.transcript) { generateWhenReady() }
+            .onChange(of: status) { generateWhenReady() }
+            .onChange(of: project?.projectPath) {
+                pendingProject = nil
+                selectedID = nil
+                error = nil
+                pendingSave?.cancel()
+                pendingSave = nil
+                draftID = nil
+                draftProjectPath = nil
+            }
+            .onChange(of: track.cues) {
+                if let selectedID, let cue = track.cues.first(where: { $0.id == selectedID }) {
+                    if pendingSave == nil { draft = cue.text }
+                } else { selectedID = nil }
+            }
+            .confirmationDialog("Replace caption text from the transcript?", isPresented: $showsReplaceConfirmation) {
+                Button("Replace captions", role: .destructive, action: requestGeneration)
+            } message: {
+                Text("This replaces your caption corrections. Style stays the same. You can undo the replacement.")
+            }
         }
     }
 
@@ -84,6 +101,7 @@ struct EditorCaptionsInspector: View {
                     BlitzVisualChoice(configuration: .init(
                         title: style.title,
                         help: style == .outline ? "White text with a black border" : "White text on a dark background",
+                        previewShape: .strip,
                         isSelected: track.style == style,
                         action: { binding(\.style).wrappedValue = style },
                         preview: { CaptionStylePreview(style: style) }
@@ -109,25 +127,40 @@ struct EditorCaptionsInspector: View {
         }
     }
 
+    private var textEditor: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TextField("Caption text", text: $draft, axis: .vertical)
+                .lineLimit(2...5)
+                .textFieldStyle(.plain)
+                .font(BlitzType.body)
+                .padding(12)
+                .blitzFieldChrome(isFocused: isTextFocused)
+                .focused($isTextFocused)
+                .accessibilityLabel("Edit caption text")
+                .onSubmit(flushText)
+            HStack {
+                Text("Saves as you type")
+                    .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
+                Spacer()
+                Button("Done") {
+                    flushText()
+                    selectedID = nil
+                    isTextFocused = false
+                }
+                .blitzButton(.secondary).controlSize(.small)
+            }
+        }
+    }
+
     private var captionList: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if selectedID != nil {
-                TextField("Caption text", text: $draft, axis: .vertical)
-                    .lineLimit(2...4)
-                    .textFieldStyle(.plain)
-                    .font(BlitzType.body)
-                    .padding(10)
-                    .background(BlitzUI.cardFill, in: .rect(cornerRadius: BlitzUI.controlRadius))
-                    .accessibilityLabel("Edit caption text")
-                Button("Done") { selectedID = nil }
-                    .blitzButton(.secondary).controlSize(.small)
-                    .help("Your fix is saved as you type")
-            }
             LazyVStack(alignment: .leading, spacing: 4) {
                 ForEach(track.cues) { cue in
                     Button {
+                        flushText()
                         selectedID = cue.id
-                        draft = cue.text
+                        loadSelectedText()
+                        isTextFocused = true
                         configuration.playback.pauseForEditing()
                         configuration.playback.seek(to: cue.start)
                     } label: {
@@ -139,7 +172,8 @@ struct EditorCaptionsInspector: View {
                         .padding(8).frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(BlitzSelectionButtonStyle(isSelected: selectedID == cue.id))
-                    .help("Click to fix this caption")
+                    .accessibilityLabel("Edit caption: \(cue.text)")
+                    .help("Edit this caption’s words")
                 }
             }
         }
@@ -198,7 +232,7 @@ struct EditorCaptionsInspector: View {
     }
 
     private func apply(_ change: Change) {
-        guard var edits = configuration.vm.lastExportedProject?.edits else { return }
+        guard var edits = configuration.vm.editorProject?.edits else { return }
         edits.captions = change.track
         configuration.playback.pauseForEditing()
         error = configuration.vm.applyTimelineEdits(.init(edits: edits, actionName: change.actionName))
@@ -238,11 +272,18 @@ struct EditorCaptionsInspector: View {
     }
 
     private func loadSelectedText() {
-        if let selectedID, let cue = track.cues.first(where: { $0.id == selectedID }) { draft = cue.text }
+        draftID = selectedID
+        draftProjectPath = project?.projectPath
+        if let selectedID, let cue = track.cues.first(where: { $0.id == selectedID }) {
+            draft = cue.text
+        } else {
+            draft = ""
+        }
     }
 
     private func scheduleSave() {
-        guard let selectedID, let cue = track.cues.first(where: { $0.id == selectedID }),
+        guard let draftID, draftProjectPath == project?.projectPath,
+              let cue = track.cues.first(where: { $0.id == draftID }),
               cue.text != draft.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
         pendingSave?.cancel()
         pendingSave = Task { @MainActor in
@@ -255,12 +296,8 @@ struct EditorCaptionsInspector: View {
     private func flushText() {
         pendingSave?.cancel()
         pendingSave = nil
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let selectedID, !text.isEmpty, let index = track.cues.firstIndex(where: { $0.id == selectedID }),
-              track.cues[index].text != text else { return }
-        var updated = track
-        updated.cues[index].text = text
-        updated.cues[index].words = []
+        guard let draftID, draftProjectPath == project?.projectPath,
+              let updated = CaptionTextEditing.applying(.init(track: track, id: draftID, text: draft)) else { return }
         apply(.init(track: updated, actionName: "Edit Caption Text"))
     }
 }

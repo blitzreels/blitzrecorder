@@ -173,7 +173,7 @@ struct BlitzUIKitMenus: View {
                     HStack(spacing: 8) {
                         ForEach(0..<3) { index in
                             BlitzVisualChoice(configuration: .init(
-                                title: ["Outline", "Background", "None"][index], help: "", isSelected: choice == index,
+                                title: ["Outline", "Background", "None"][index], help: "", previewShape: .strip, isSelected: choice == index,
                                 action: { choice = index },
                                 preview: { RoundedRectangle(cornerRadius: 4).fill(BlitzUI.strongFill).frame(height: 30) }
                             ))
@@ -292,7 +292,8 @@ struct BlitzUIKitEditor: View {
                     .frame(width: 260)
                 }
                 BlitzUIKitSpecimen(label: "CameraInsetFrameControlPanel") {
-                    CameraInsetFrameControlPanel(configuration: .init(alignment: $alignment, shape: $shape, size: $size,
+                    CameraInsetFrameControlPanel(configuration: .init(alignment: $alignment, alignments: CameraInsetAlignment.allCases,
+                                                                      shape: $shape, shapes: CameraInsetShape.allCases, size: $size,
                                                                       sizeRange: 0.15...0.5))
                         .frame(width: 260)
                 }

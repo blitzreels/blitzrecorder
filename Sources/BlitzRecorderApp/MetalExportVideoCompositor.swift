@@ -66,6 +66,7 @@ final class MetalExportInstruction: NSObject, AVVideoCompositionInstructionProto
 }
 
 final class MetalExportVideoCompositor: NSObject, AVVideoCompositing, @unchecked Sendable {
+    let supportsWideColorSourceFrames = true
     let sourcePixelBufferAttributes: [String: any Sendable]? = [
         kCVPixelBufferPixelFormatTypeKey as String: [
             kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
@@ -200,9 +201,12 @@ final class MetalExportVideoCompositor: NSObject, AVVideoCompositing, @unchecked
 
     private func sourceFrame(_ request: SourceFrameRequest) -> LiveCompositorImageFrame? {
         guard let descriptor = request.instruction.sourceDescriptor(for: request.kind) else { return nil }
+        let grade = request.kind == .screen ? nil : request.instruction.edits.cameraGrades[descriptor.feed]
         var image: CIImage
         if let pixelBuffer = request.compositionRequest.sourceFrame(byTrackID: descriptor.trackID) {
-            image = CIImage(cvPixelBuffer: pixelBuffer)
+            image = grade?.sourceLook.isLog == true
+                ? CIImage(cvPixelBuffer: pixelBuffer, options: [.colorSpace: NSNull()])
+                : CIImage(cvPixelBuffer: pixelBuffer)
         } else if let first = descriptor.leadingFrame.image(at: request.compositionRequest.compositionTime) {
             image = CIImage(cgImage: first)
         } else {
@@ -216,6 +220,9 @@ final class MetalExportVideoCompositor: NSObject, AVVideoCompositing, @unchecked
             image = image.transformed(
                 by: CGAffineTransform(translationX: -extent.minX, y: -extent.minY)
             )
+        }
+        if let grade {
+            image = grade.applied(to: image)
         }
         return LiveCompositorImageFrame(image: image)
     }

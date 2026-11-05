@@ -13,6 +13,35 @@ final class CaptionEditingRegressionTests: XCTestCase {
         return edits
     }
 
+    func testCorrectionTargetsDraftCueAndPreservesTimingAndStyleOnReopen() throws {
+        var track = source.captions
+        track.style = .background
+        track.cues.append(.init(id: UUID(), start: 5, end: 6, text: "Next caption", words: []))
+        let updated = try XCTUnwrap(CaptionTextEditing.applying(.init(
+            track: track, id: track.cues[0].id, text: "  Corrected words  "
+        )))
+        XCTAssertEqual(updated.cues[0].text, "Corrected words")
+        XCTAssertEqual(updated.cues[0].start, track.cues[0].start)
+        XCTAssertEqual(updated.cues[0].end, track.cues[0].end)
+        XCTAssertTrue(updated.cues[0].words.isEmpty)
+        XCTAssertEqual(updated.cues[1], track.cues[1])
+        XCTAssertEqual(updated.style, .background)
+        var edits = source
+        edits.captions = updated
+        let restored = try JSONDecoder().decode(RecordingProject.TimelineEditsSnapshot.self,
+            from: JSONEncoder().encode(RecordingProject.TimelineEditsSnapshot(edits))).edits
+        XCTAssertEqual(restored.captions, updated)
+        XCTAssertEqual(CaptionTimeline(.init(track: restored.captions, cuts: [])).cue(at: 0.5)?.text,
+                       "Corrected words")
+    }
+
+    func testBlankUnchangedAndDeletedCaptionDoNotOverwriteTrack() {
+        let track = source.captions
+        XCTAssertNil(CaptionTextEditing.applying(.init(track: track, id: track.cues[0].id, text: "   ")))
+        XCTAssertNil(CaptionTextEditing.applying(.init(track: track, id: track.cues[0].id, text: track.cues[0].text)))
+        XCTAssertNil(CaptionTextEditing.applying(.init(track: track, id: UUID(), text: "A stale draft")))
+    }
+
     func testTrimAndReopenKeepDeletedWordsOutOfCaptions() throws {
         let original = source
         let id = EditorPlacedItem.ID(kind: .caption, value: original.captions.cues[0].id)

@@ -279,6 +279,7 @@ extension RecordingProject {
         let activeOutputLayout: CaptureLayout?
         let privacyMasks: [PrivacyMask]
         let cameraFollowsZoom: Bool
+        let cameraGrades: [String: CameraColorGrade]
 
         static let empty = TimelineEditsSnapshot(cuts: [], textOverlays: [], zoom: .empty)
 
@@ -293,6 +294,7 @@ extension RecordingProject {
             self.silenceOverrides = []
             self.cursorStyle = .standard
             self.cameraFollowsZoom = false
+            self.cameraGrades = [:]
             self.privacyMasks = []
             self.outputVariants = []
             self.voiceCleanup = .disabled
@@ -310,6 +312,7 @@ extension RecordingProject {
             silenceOverrides = edits.silenceOverrides
             cursorStyle = edits.cursorStyle
             cameraFollowsZoom = edits.cameraFollowsZoom
+            cameraGrades = edits.cameraGrades
             privacyMasks = edits.privacyMasks
             outputVariants = edits.outputVariants
             voiceCleanup = edits.voiceCleanup
@@ -333,6 +336,7 @@ extension RecordingProject {
             activeOutputLayout = try container.decodeIfPresent(CaptureLayout.self, forKey: .activeOutputLayout)
             privacyMasks = try container.decodeIfPresent([PrivacyMask].self, forKey: .privacyMasks) ?? []
             cameraFollowsZoom = try container.decodeIfPresent(Bool.self, forKey: .cameraFollowsZoom) ?? false
+            cameraGrades = try container.decodeIfPresent([String: CameraColorGrade].self, forKey: .cameraGrades) ?? [:]
         }
 
         var edits: TimelineEdits {
@@ -350,13 +354,14 @@ extension RecordingProject {
                 videoSplits: videoSplits,
                 silenceRemovalApplied: silenceRemovalApplied,
                 silenceSettings: silenceSettings,
-                captions: captions
+                captions: captions,
+                cameraGrades: cameraGrades
             )
         }
 
         var isEmpty: Bool {
             captions == .empty && silenceSettings == nil && videoSplits.isEmpty && !silenceRemovalApplied && cuts.isEmpty && textOverlays.isEmpty && zoom.keyframes.isEmpty && silenceOverrides.isEmpty
-                && cursorStyle == .standard && !cameraFollowsZoom && privacyMasks.isEmpty && outputVariants.isEmpty && activeOutputLayout == nil && voiceCleanup == .disabled
+                && cursorStyle == .standard && !cameraFollowsZoom && cameraGrades.isEmpty && privacyMasks.isEmpty && outputVariants.isEmpty && activeOutputLayout == nil && voiceCleanup == .disabled
         }
     }
 

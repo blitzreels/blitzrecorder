@@ -28,7 +28,7 @@ struct BlitzSelectionButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(isSelected ? BlitzUI.primaryText : BlitzUI.secondaryText)
+            .foregroundStyle(isSelected ? BlitzUI.accent : BlitzUI.secondaryText)
             .background {
                 if isSelected {
                     BlitzSelectedBackground(cornerRadius: BlitzUI.controlRadius)
@@ -193,7 +193,7 @@ struct BlitzToolTabBar<Value: Hashable>: View {
                                 .foregroundStyle(isSelected ? BlitzUI.accent : BlitzUI.secondaryText)
                             Text(configuration.label(option))
                                 .font(BlitzType.footnote)
-                                .foregroundStyle(isSelected ? BlitzUI.primaryText : BlitzUI.secondaryText)
+                                .foregroundStyle(isSelected ? BlitzUI.accent : BlitzUI.secondaryText)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.8)
                         }

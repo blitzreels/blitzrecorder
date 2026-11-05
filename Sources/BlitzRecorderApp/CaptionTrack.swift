@@ -175,3 +175,21 @@ struct CaptionTimeline: Equatable, Sendable {
         return cues[lower - 1]
     }
 }
+
+enum CaptionTextEditing {
+    struct Request {
+        let track: CaptionTrack
+        let id: UUID
+        let text: String
+    }
+
+    static func applying(_ request: Request) -> CaptionTrack? {
+        let text = request.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, let index = request.track.cues.firstIndex(where: { $0.id == request.id }),
+              request.track.cues[index].text != text else { return nil }
+        var track = request.track
+        track.cues[index].text = text
+        track.cues[index].words = []
+        return track
+    }
+}

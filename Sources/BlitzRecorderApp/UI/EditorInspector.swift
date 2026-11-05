@@ -65,6 +65,14 @@ struct EditorInspector: View {
                     },
                     footer: { EmptyView() }
                 ))
+            case .color:
+                EditorInspectorPane(configuration: .init(
+                    title: "Color",
+                    detail: "Choose a look, compare before and after, then fine-tune.",
+                    showsFooter: false,
+                    content: { EditorColorInspector(vm: vm, playback: playback, project: project) },
+                    footer: { EmptyView() }
+                ))
             case .privacy:
                 EditorPrivacyInspector(configuration: .init(vm: vm, playback: playback, session: privacy))
             case .silence:

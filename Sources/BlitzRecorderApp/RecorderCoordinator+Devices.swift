@@ -74,6 +74,12 @@ extension RecorderCaptureRuntime {
         ))
     }
 
+    func noteCameraDeliveryWarning(_ warning: String) {
+        guard !activeCaptureWarnings.contains(warning) else { return }
+        activeCaptureWarnings.append(warning)
+        onMessage?(warning)
+    }
+
     func setLocalCameraRuntimeState(_ state: LocalCameraRuntimeState) {
         localCameraRuntimeState = state
     }

@@ -99,8 +99,8 @@ enum BlitzCommandCatalog {
                   keywords: ["cutout", "green screen", "background", "camera"], shortcut: nil,
                   run: { vm.setCameraBackgroundRemovalAfterRecording(!removes) }))
         add(.init(id: "rule-of-thirds", group: .studio,
-                  title: vm.settings.showsRuleOfThirdsOverlay ? "Hide Rule of Thirds" : "Show Rule of Thirds",
-                  detail: "Preview guide, never recorded", symbol: "squareshape.split.3x3",
+                  title: vm.settings.showsRuleOfThirdsOverlay ? "Hide Framing Guide" : "Show Framing Guide",
+                  detail: "3×3 grid. Eyes on the top line. Never recorded.", symbol: "squareshape.split.3x3",
                   keywords: ["guides", "grid", "thirds", "framing"], shortcut: nil,
                   run: { vm.setRuleOfThirds(!vm.settings.showsRuleOfThirdsOverlay) }))
         for (index, scene) in vm.currentScenes.enumerated() {

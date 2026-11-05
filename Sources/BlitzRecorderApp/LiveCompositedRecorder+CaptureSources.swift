@@ -133,7 +133,9 @@ extension LiveCompositedRecorder {
         session.beginConfiguration()
         guard try LocalCameraSessionConfiguration.attachCamera(.init(
             session: session,
-            device: device
+            device: device,
+            fps: settings.framesPerSecond,
+            sizeLimit: .recording
         )) else {
             throw RecorderError.noCamera
         }
@@ -156,7 +158,7 @@ extension LiveCompositedRecorder {
             device: device,
             fps: settings.framesPerSecond,
             logPrefix: "Live compositor",
-            cameraIsRunningSomewhere: LocalCameraUsage.isRunningSomewhere(device)
+            sizeLimit: .recording
         )
         cameraQueue.async {
             let held = LocalCameraSessionConfiguration.holdBestFormat(format)

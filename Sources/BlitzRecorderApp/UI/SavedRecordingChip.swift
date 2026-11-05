@@ -2,91 +2,6 @@ import AppKit
 import AVFoundation
 import SwiftUI
 
-struct SavedRecordingChip: View {
-    @Bindable var vm: RecorderViewModel
-    let url: URL
-    let sourceTakeURL: URL?
-    let warning: String?
-    @State private var metadata = RecordingFileMetadata.empty
-
-    var body: some View {
-        HStack(spacing: 8) {
-            RecordingThumbnailButton(
-                image: metadata.thumbnail,
-                durationLabel: metadata.durationLabel,
-                height: BlitzControlMetrics.dockHeight,
-                help: "Saved · \(savedDetail)\nClick to play"
-            ) {
-                NSWorkspace.shared.open(url)
-            }
-            .accessibilityLabel("Play saved recording")
-
-            if let warning {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(BlitzType.glyph(11))
-                    .foregroundStyle(BlitzUI.warning)
-                    .help(warning)
-            }
-
-            if sourceTakeURL != nil {
-                EditRecordingButton(configuration: .init(
-                    title: "Edit",
-                    isLoading: false,
-                    help: "Open this recording in the editor",
-                    placement: .dock,
-                    action: { vm.openEditor() }
-                ))
-                .fixedSize()
-            }
-
-            Button { NSWorkspace.shared.activateFileViewerSelecting([url]) } label: {
-                Image(systemName: BlitzSymbols.folder)
-            }
-            .blitzButton(.dock)
-            .fixedSize()
-            .accessibilityLabel("Show in Finder")
-            .help("Show in Finder. Right-click for more.")
-            Button(action: vm.clearPostRecordingStatus) {
-                Image(systemName: "xmark")
-            }
-            .blitzButton(.dock)
-            .fixedSize()
-            .accessibilityLabel("Clear")
-            .help("Clear")
-        }
-        .contextMenu { BlitzContextMenuItems(entries: menuEntries) }
-        .task(id: url) {
-            metadata = .empty
-            metadata = await RecordingFileMetadata.load(for: url)
-        }
-    }
-
-    private var menuEntries: [BlitzMenuEntry] {
-        var items = [
-            BlitzMenuItem(title: "Play", systemImage: "play") { NSWorkspace.shared.open(url) },
-            BlitzMenuItem(title: "Show in Finder", systemImage: BlitzSymbols.folder) {
-                NSWorkspace.shared.activateFileViewerSelecting([url])
-            },
-            BlitzMenuItem(title: "Rename…", systemImage: BlitzSymbols.rename) { vm.renameLastExportedFile() }
-        ]
-        if let sourceTakeURL {
-            items.append(BlitzMenuItem(title: "Show Source Files", systemImage: "square.stack.3d.up") {
-                NSWorkspace.shared.activateFileViewerSelecting([sourceTakeURL])
-            })
-        }
-        return items.map(BlitzMenuEntry.item) + [
-            .divider,
-            .item(BlitzMenuItem(title: "Clear", systemImage: "xmark") { vm.clearPostRecordingStatus() })
-        ]
-    }
-
-    private var savedDetail: String {
-        [url.lastPathComponent, metadata.durationLabel, metadata.sizeLabel]
-            .compactMap { $0 }
-            .joined(separator: " · ")
-    }
-}
-
 struct RecordingThumbnailButton: View {
     let image: NSImage?
     let durationLabel: String?
@@ -124,15 +39,6 @@ struct RecordingThumbnailButton: View {
                     .opacity(hovering ? 1 : 0)
             }
             .frame(width: width, height: height)
-            .overlay(alignment: .topLeading) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(BlitzType.glyph(11))
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(BlitzUI.onAccent, BlitzUI.accent)
-                    .padding(3)
-                    .opacity(hovering ? 0 : 1)
-                    .accessibilityLabel("Saved")
-            }
             .overlay(alignment: .bottomTrailing) {
                 if let durationLabel {
                     Text(durationLabel)

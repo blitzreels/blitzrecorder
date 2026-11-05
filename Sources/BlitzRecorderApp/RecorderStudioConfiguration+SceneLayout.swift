@@ -216,6 +216,20 @@ extension RecorderStudioConfiguration {
         autoFitSelectedScreenWindow?()
     }
 
+    func setScreenSplit(_ request: SceneLayout.ScreenSplitRequest) {
+        guard sceneChangeIsAllowed() else { return }
+        guard settings.layout == .vertical else { return }
+        let cameraWasVisible = settings.visibleSources.contains(.camera)
+        settings = RecordingSceneMutation.applyingScreenSplit(request, to: settings)
+        persist()
+        updateRecordingScene?(.sceneSwitch)
+        onScreenCaptureConfigurationChanged?()
+        if !cameraWasVisible {
+            onCameraConfigurationChanged?()
+        }
+        autoFitSelectedScreenWindow?()
+    }
+
     func setSideBySideLayout(_ request: SceneLayout.SideBySideRequest) {
         guard sceneChangeIsAllowed() else { return }
         guard settings.sceneLayout.cameraSide != nil else { return }

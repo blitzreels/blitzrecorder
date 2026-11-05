@@ -97,6 +97,88 @@ extension RecorderViewModel {
         syncSettingsAfterSceneChange()
     }
 
+    var cameraArrangement: SceneCameraArrangement {
+        if cameraPopsOut { return .popOut }
+        if cameraFloats { return .floating }
+        return .split
+    }
+    var cameraOnTop: Bool { settings.sceneLayout.cameraOnTop }
+    var cameraPopsOut: Bool { settings.sceneLayout.cameraMask == .popout }
+
+    func setCameraArrangement(_ arrangement: SceneCameraArrangement) {
+        switch arrangement {
+        case .split where settings.layout == .vertical:
+            setScreenSplit(.init(
+                screenHeight: CGFloat(screenSplitHeight),
+                cameraOnTop: cameraOnTop,
+                popoutHeadroom: nil
+            ))
+        case .split:
+            coordinator.applyScenePreset(.webcamLeft)
+            syncSettingsAfterSceneChange()
+        case .floating where cameraFloats:
+            setCameraInset(alignment: cameraInsetAlignment, shape: .landscape, size: CGFloat(cameraInsetSize))
+        case .floating:
+            setCameraInset(
+                alignment: cameraOnTop ? .topRight : .bottomRight,
+                shape: .landscape,
+                size: SceneLayout.defaultCameraInsetSize(for: settings.layout)
+            )
+        case .popOut:
+            setCameraPopsOut(true)
+        }
+    }
+
+    func setCameraOnTop(_ onTop: Bool) {
+        setScreenSplit(.init(screenHeight: CGFloat(screenSplitHeight), cameraOnTop: onTop, popoutHeadroom: nil))
+    }
+
+    var cameraPopoutHeadroom: Double { Double(settings.sceneLayout.cameraPopoutHeadroom) }
+    var showsCameraPopoutHeadroomControl: Bool { cameraPopsOut && settings.sceneLayout.screenSplitHeight != nil }
+
+    func setCameraPopoutHeadroom(_ headroom: Double) {
+        guard showsCameraPopoutHeadroomControl else { return }
+        let headroom = CameraPopoutStyle.clampedHeadroom(CGFloat(headroom))
+        let pictureHeight = settings.sceneLayout.cameraFrame.standardized.height
+        let screenHeight = SceneLayout.clampedScreenSplitHeight(1 - pictureHeight * (1 - headroom))
+        setScreenSplit(.init(
+            screenHeight: screenHeight,
+            cameraOnTop: false,
+            popoutHeadroom: (pictureHeight - (1 - screenHeight)) / pictureHeight
+        ))
+    }
+
+    func setCameraPopsOut(_ popsOut: Bool) {
+        if popsOut, settings.removesCameraBackgroundAfterRecording {
+            setCameraBackgroundRemovalAfterRecording(false)
+        }
+        if cameraFloats {
+            setCameraInset(
+                alignment: popsOut ? cameraInsetAlignment.atBottom : cameraInsetAlignment,
+                shape: popsOut ? .popout : .landscape,
+                size: CGFloat(cameraInsetSize)
+            )
+        } else if settings.layout == .vertical {
+            setScreenSplit(.init(
+                screenHeight: CGFloat(screenSplitHeight),
+                cameraOnTop: false,
+                popoutHeadroom: popsOut ? settings.sceneLayout.cameraPopoutHeadroom : nil
+            ))
+        } else if popsOut {
+            setCameraInset(
+                alignment: .bottomRight,
+                shape: .popout,
+                size: SceneLayout.defaultCameraInsetSize(for: settings.layout)
+            )
+        }
+    }
+
+    private func setScreenSplit(_ request: SceneLayout.ScreenSplitRequest) {
+        canvas.screenSplitPreviewHeight = nil
+        coordinator.setScreenSplit(request)
+        syncSettingsAfterSceneChange()
+    }
+
     func setCameraInset(
         alignment: CameraInsetAlignment,
         shape: CameraInsetShape,
@@ -299,7 +381,7 @@ extension RecorderViewModel {
             return
         case .secondCamera where isSourceConfigured(.camera) && settings.sceneLayout.secondCameraFrame != nil:
             return
-        case .canvas, .layout:
+        case .canvas, .layout, .color:
             return
         case .source, .secondCamera:
             break

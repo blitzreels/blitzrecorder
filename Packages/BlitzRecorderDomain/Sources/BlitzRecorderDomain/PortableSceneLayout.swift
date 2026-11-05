@@ -52,6 +52,7 @@ public struct PixelRect: Equatable, Sendable {
 public enum PortableCameraShape: String, Codable, Equatable, Sendable {
     case rectangle
     case circle
+    case popout
 }
 
 public struct PortableSceneLayout: Codable, Equatable, Sendable {

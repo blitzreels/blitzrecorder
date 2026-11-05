@@ -396,8 +396,12 @@ private struct CameraInputBlock: View {
                 ))
                 .transition(.opacity)
             }
+            USBCameraControlsButton(vm: vm)
             CameraAnglesSection(vm: vm)
             CameraAngleAddButton(vm: vm)
+        }
+        .task(id: vm.usbControllableCameraID) {
+            await vm.coordinator.usbCameraControls.load(cameraID: vm.usbControllableCameraID)
         }
     }
 }

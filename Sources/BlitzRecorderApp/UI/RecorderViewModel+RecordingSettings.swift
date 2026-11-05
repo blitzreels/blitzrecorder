@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 extension RecorderViewModel {
@@ -62,6 +63,7 @@ extension RecorderViewModel {
     func setCameraBackgroundRemovalAfterRecording(_ enabled: Bool) {
         coordinator.setCameraBackgroundRemovalAfterRecording(enabled)
         syncSettings()
+        onCameraBackgroundRemovalChanged?()
     }
 
     func setSourceFilesSaved(_ enabled: Bool) {
@@ -78,6 +80,19 @@ extension RecorderViewModel {
     func setCursorIncluded(_ included: Bool) {
         coordinator.setCursorIncluded(included)
         syncSettings()
+    }
+
+    func setCameraGrade(_ grade: CameraColorGrade) {
+        coordinator.setCameraGrade(grade)
+        syncSettings()
+    }
+
+    func previewCameraGrade(_ grade: CameraColorGrade) {
+        previewStage.cameraPreview.grade = grade
+    }
+
+    func requestCameraStill(_ handler: @escaping @MainActor (CGImage?) -> Void) {
+        previewStage.cameraPreview.requestStillFrame(handler)
     }
 
     func setRuleOfThirds(_ enabled: Bool) {

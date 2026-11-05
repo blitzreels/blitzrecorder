@@ -12,8 +12,10 @@ struct TransparentWebcamToggle: View {
             Text("Remove background")
         }
         .toggleStyle(.blitzSwitch)
-        .disabled(vm.state != .idle || !enabled)
-        .help("Remove the camera background after recording")
+        .disabled(vm.state != .idle || !enabled || vm.settings.sceneLayout.cameraMask == .popout)
+        .help(vm.settings.sceneLayout.cameraMask == .popout
+              ? "Pop out keeps your room inside the camera frame. Choose another frame to remove the whole background."
+              : "Remove the camera background after recording")
     }
 
 }

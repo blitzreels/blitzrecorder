@@ -16,6 +16,14 @@ struct CaptureCommandBar: View {
             }
             StudioOutputCapsule(vm: vm)
             HStack(spacing: 2) {
+                Toggle("Framing guide", isOn: Binding(
+                    get: { vm.settings.showsRuleOfThirdsOverlay },
+                    set: { vm.setRuleOfThirds($0) }
+                ))
+                .toggleStyle(.blitzSwitch)
+                .controlSize(.small)
+                .fixedSize()
+                .help("Eyes on the top line. Keep your face centered, or on a vertical line with space in front of you. Preview only; never recorded.")
                 PreviewOptionsButton(vm: vm)
                 RecorderVisibilityMenu(vm: vm)
                 StudioPanelToggle(panel: .inspector)
@@ -113,7 +121,7 @@ private struct PreviewOptionsButton: View {
         Button {
             isPresented.toggle()
         } label: {
-            StudioToolbarIcon(name: "squareshape.split.3x3", color: iconColor)
+            StudioToolbarIcon(name: "ellipsis", color: iconColor)
         }
         .buttonStyle(BlitzMenuTriggerStyle(isPresented: isPresented, variant: .borderless))
         .help(vm.isLivePreviewEnabled ? "Preview guides and live preview" : "Live preview is paused")
@@ -128,7 +136,7 @@ private struct PreviewOptionsButton: View {
     private var entries: [BlitzMenuEntry] {
         var entries: [BlitzMenuEntry] = [
             .section("Guides · never recorded"),
-            .item(.init(title: "Rule of thirds", subtitle: "Lines to help you frame the shot",
+            .item(.init(title: "Framing guide", subtitle: "Eyes on the top line of the 3×3 grid",
                         systemImage: "squareshape.split.3x3", isSelected: vm.settings.showsRuleOfThirdsOverlay,
                         action: { vm.setRuleOfThirds(!vm.settings.showsRuleOfThirdsOverlay) }))
         ]

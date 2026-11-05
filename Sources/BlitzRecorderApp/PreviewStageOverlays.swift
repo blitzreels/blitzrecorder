@@ -159,6 +159,10 @@ final class SafeZoneOverlayView: NSView {
         didSet { needsDisplay = true }
     }
 
+    var cameraGuideFrame: CGRect? {
+        didSet { if oldValue != cameraGuideFrame { needsDisplay = true } }
+    }
+
     var captureLayout: CaptureLayout = .vertical {
         didSet { needsDisplay = true }
     }
@@ -182,23 +186,42 @@ final class SafeZoneOverlayView: NSView {
         }
 
         guard showsRuleOfThirdsOverlay else { return }
-        drawRuleOfThirds()
+        if let cameraGuideFrame, !cameraGuideFrame.isEmpty {
+            drawRuleOfThirds(in: cameraGuideFrame)
+        } else {
+            drawRuleOfThirds(in: bounds)
+        }
     }
 
-    private func drawRuleOfThirds() {
-        NSColor.white.withAlphaComponent(0.6).setStroke()
+    private func drawRuleOfThirds(in frame: CGRect) {
         let grid = NSBezierPath()
-        grid.lineWidth = 1
         for fraction in [1.0 / 3.0, 2.0 / 3.0] {
-            let x = bounds.minX + bounds.width * fraction
-            grid.move(to: NSPoint(x: x, y: bounds.minY))
-            grid.line(to: NSPoint(x: x, y: bounds.maxY))
+            let x = frame.minX + frame.width * fraction
+            grid.move(to: NSPoint(x: x, y: frame.minY))
+            grid.line(to: NSPoint(x: x, y: frame.maxY))
 
-            let y = bounds.minY + bounds.height * fraction
-            grid.move(to: NSPoint(x: bounds.minX, y: y))
-            grid.line(to: NSPoint(x: bounds.maxX, y: y))
+            let y = frame.minY + frame.height * fraction
+            grid.move(to: NSPoint(x: frame.minX, y: y))
+            grid.line(to: NSPoint(x: frame.maxX, y: y))
         }
+        NSColor.black.withAlphaComponent(0.35).setStroke()
+        grid.lineWidth = 3
         grid.stroke()
+        NSColor.white.withAlphaComponent(0.8).setStroke()
+        grid.lineWidth = 1
+        grid.stroke()
+        guard frame.width >= 180, frame.height >= 100, cameraGuideFrame != nil else { return }
+        let eyeLine = frame.minY + frame.height * 2.0 / 3.0
+        let text = "Eyes on this line" as NSString
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
+            .foregroundColor: NSColor.white
+        ]
+        let size = text.size(withAttributes: attributes)
+        let label = CGRect(x: frame.minX + 8, y: eyeLine + 6, width: size.width + 14, height: size.height + 8)
+        NSColor.black.withAlphaComponent(0.65).setFill()
+        NSBezierPath(roundedRect: label, xRadius: 5, yRadius: 5).fill()
+        text.draw(at: CGPoint(x: label.minX + 7, y: label.minY + 4), withAttributes: attributes)
     }
 
     private func drawSafeZone(margins: VideoSafeZoneMargins, title: String) {

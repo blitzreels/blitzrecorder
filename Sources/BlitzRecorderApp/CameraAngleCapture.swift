@@ -6,10 +6,12 @@ import Foundation
 @MainActor
 final class CameraAngleRecorders {
     private var recorders: [String: CameraRecorder] = [:]
+    var deliveryWarningHandler: (@MainActor (String) -> Void)?
 
     func recorder(deviceID: String) -> CameraRecorder {
         if let recorder = recorders[deviceID] { return recorder }
         let recorder = CameraRecorder(fallsBackToDefaultCamera: false)
+        recorder.deliveryWarningHandler = deliveryWarningHandler
         recorders[deviceID] = recorder
         return recorder
     }
@@ -20,6 +22,12 @@ final class CameraAngleRecorders {
 
     func setThumbnailHandler(deviceID: String, handler: @escaping CameraRecorder.ThumbnailHandler) {
         recorder(deviceID: deviceID).setThumbnailHandler(handler)
+    }
+
+    func setPopoutPreviewDevice(_ deviceID: String?) {
+        for (id, recorder) in recorders {
+            recorder.setPopoutPreviewEnabled(id == deviceID)
+        }
     }
 
     func stopPreview(deviceID: String) async {

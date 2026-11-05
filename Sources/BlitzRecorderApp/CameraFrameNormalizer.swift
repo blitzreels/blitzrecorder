@@ -47,45 +47,44 @@ enum CameraFrameNormalizationStartupPolicy {
 }
 
 enum CameraFrameLetterboxDetector {
+    private static let landscapeAspectRatio = 16.0 / 9.0
+
     static func normalizationPlan(
         _ request: CameraFrameLetterboxDetectionRequest
     ) -> CameraFrameNormalizationPlan? {
         let pixelBuffer = request.pixelBuffer
         let width = CVPixelBufferGetWidth(pixelBuffer)
         let height = CVPixelBufferGetHeight(pixelBuffer)
-        let pixelFormat = CVPixelBufferGetPixelFormatType(pixelBuffer)
         guard height > Int(Double(width) * 1.1),
-              pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
-                || pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
-              CVPixelBufferGetPlaneCount(pixelBuffer) >= 2 else {
+              let layout = CameraFramePixelLayout(pixelFormat: CVPixelBufferGetPixelFormatType(pixelBuffer)) else {
             return nil
         }
 
         CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
-        guard let lumaBaseAddress = CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 0) else {
-            return nil
+        let baseAddress = layout.isPacked
+            ? CVPixelBufferGetBaseAddress(pixelBuffer)
+            : CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 0)
+        guard let baseAddress else { return nil }
+
+        let bytesPerRow = layout.isPacked
+            ? CVPixelBufferGetBytesPerRow(pixelBuffer)
+            : CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 0)
+        let bytes = baseAddress.assumingMemoryBound(to: UInt8.self)
+        let sampleStep = max(1, width / 128)
+        let blackThreshold = layout.blackThreshold
+
+        func samples(_ row: Int) -> [UInt8] {
+            let rowAddress = bytes.advanced(by: row * bytesPerRow)
+            return stride(from: 0, to: width, by: sampleStep).map {
+                rowAddress[$0 * layout.bytesPerSample + layout.brightnessOffset]
+            }
         }
 
-        let bytesPerRow = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 0)
-        let luma = lumaBaseAddress.assumingMemoryBound(to: UInt8.self)
-        let sampleStep = max(1, width / 128)
-        let blackThreshold: UInt8 = pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
-            ? 36
-            : 24
-
         func nonDarkFraction(_ row: Int) -> Double {
-            let rowAddress = luma.advanced(by: row * bytesPerRow)
-            var sampleCount = 0
-            var nonDarkCount = 0
-            for x in stride(from: 0, to: width, by: sampleStep) {
-                sampleCount += 1
-                if rowAddress[x] > blackThreshold {
-                    nonDarkCount += 1
-                }
-            }
-            guard sampleCount > 0 else { return 0 }
-            return Double(nonDarkCount) / Double(sampleCount)
+            let values = samples(row)
+            guard !values.isEmpty else { return 0 }
+            return Double(values.filter { $0 > blackThreshold }.count) / Double(values.count)
         }
 
         func beginsActiveImage(_ row: Int) -> Bool {
@@ -98,9 +97,31 @@ enum CameraFrameLetterboxDetector {
             return probes.count == 3 && probes.allSatisfy { nonDarkFraction($0) >= 0.15 }
         }
 
+        func isBlackBar(_ row: Int) -> Bool {
+            let values = samples(row)
+            guard let low = values.min(), let high = values.max() else { return false }
+            return high <= blackThreshold && high - low <= 6
+        }
+
+        func centeredLandscapeBand() -> Range<Int>? {
+            let bandHeight = evenRounded(Double(width) / landscapeAspectRatio)
+            let top = evenRounded(Double(height - bandHeight) / 2)
+            guard bandHeight > 0, top > 0, top + bandHeight < height else { return nil }
+            let step = max(1, height / 96)
+            let outside = Array(stride(from: 0, to: top - 2, by: step))
+                + Array(stride(from: top + bandHeight + 2, to: height, by: step))
+            let inside = stride(from: top, to: top + bandHeight, by: step)
+            guard outside.allSatisfy(isBlackBar), inside.contains(where: { !isBlackBar($0) }) else { return nil }
+            return top..<(top + bandHeight)
+        }
+
+        func plan(_ band: Range<Int>) -> CameraFrameNormalizationPlan {
+            CameraFrameNormalizationPlan(cropRect: CGRect(x: 0, y: band.lowerBound, width: width, height: band.count))
+        }
+
         guard let rawTop = (0..<height).first(where: beginsActiveImage),
               let rawBottom = (0..<height).reversed().first(where: endsActiveImage) else {
-            return nil
+            return centeredLandscapeBand().map(plan)
         }
 
         let top = rawTop + rawTop % 2
@@ -113,17 +134,46 @@ enum CameraFrameLetterboxDetector {
               top >= minimumPadding,
               bottomPadding >= minimumPadding,
               abs(top - bottomPadding) <= symmetryTolerance else {
-            return nil
+            return centeredLandscapeBand().map(plan)
         }
 
         let contentAspectRatio = Double(width) / Double(cropHeight)
         guard (1.25...2.4).contains(contentAspectRatio) else {
-            return nil
+            return centeredLandscapeBand().map(plan)
         }
 
-        return CameraFrameNormalizationPlan(
-            cropRect: CGRect(x: 0, y: top, width: width, height: cropHeight)
-        )
+        return plan(top..<bottomExclusive)
+    }
+
+    private static func evenRounded(_ value: Double) -> Int {
+        Int((value / 2).rounded()) * 2
+    }
+}
+
+struct CameraFramePixelLayout {
+    let isPacked: Bool
+    let bytesPerSample: Int
+    let brightnessOffset: Int
+    let blackThreshold: UInt8
+
+    init?(pixelFormat: OSType) {
+        switch pixelFormat {
+        case kCVPixelFormatType_420YpCbCr8BiPlanarFullRange:
+            self.init(isPacked: false, bytesPerSample: 1, brightnessOffset: 0, blackThreshold: 24)
+        case kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange:
+            self.init(isPacked: false, bytesPerSample: 1, brightnessOffset: 0, blackThreshold: 36)
+        case kCVPixelFormatType_32BGRA:
+            self.init(isPacked: true, bytesPerSample: 4, brightnessOffset: 1, blackThreshold: 24)
+        default:
+            return nil
+        }
+    }
+
+    private init(isPacked: Bool, bytesPerSample: Int, brightnessOffset: Int, blackThreshold: UInt8) {
+        self.isPacked = isPacked
+        self.bytesPerSample = bytesPerSample
+        self.brightnessOffset = brightnessOffset
+        self.blackThreshold = blackThreshold
     }
 }
 
@@ -173,11 +223,7 @@ final class CameraFrameNormalizer {
         _ sourcePixelBuffer: CVPixelBuffer
     ) -> CVPixelBuffer? {
         let pixelFormat = CVPixelBufferGetPixelFormatType(sourcePixelBuffer)
-        guard pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
-                || pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
-              CVPixelBufferGetPlaneCount(sourcePixelBuffer) >= 2 else {
-            return nil
-        }
+        guard let layout = CameraFramePixelLayout(pixelFormat: pixelFormat) else { return nil }
 
         let cropX = Int(plan.cropRect.minX)
         let cropY = Int(plan.cropRect.minY)
@@ -215,6 +261,25 @@ final class CameraFrameNormalizer {
         defer {
             CVPixelBufferUnlockBaseAddress(destinationPixelBuffer, [])
             CVPixelBufferUnlockBaseAddress(sourcePixelBuffer, .readOnly)
+        }
+
+        if layout.isPacked {
+            guard let sourceBaseAddress = CVPixelBufferGetBaseAddress(sourcePixelBuffer),
+                  let destinationBaseAddress = CVPixelBufferGetBaseAddress(destinationPixelBuffer) else {
+                return nil
+            }
+            let sourceBytesPerRow = CVPixelBufferGetBytesPerRow(sourcePixelBuffer)
+            let destinationBytesPerRow = CVPixelBufferGetBytesPerRow(destinationPixelBuffer)
+            for row in 0..<outputHeight {
+                memcpy(
+                    destinationBaseAddress.advanced(by: row * destinationBytesPerRow),
+                    sourceBaseAddress.advanced(
+                        by: (cropY + row) * sourceBytesPerRow + cropX * layout.bytesPerSample
+                    ),
+                    outputWidth * layout.bytesPerSample
+                )
+            }
+            return destinationPixelBuffer
         }
 
         for plane in 0..<2 {

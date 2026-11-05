@@ -158,6 +158,71 @@ final class MCPDebugCameraService {
         return try status()
     }
 
+    func importVideo(path: String) async throws -> String {
+        guard let coordinator else { throw Failure.unavailable }
+        let project = try await VideoProjectImporter().importVideo(.init(
+            url: URL(fileURLWithPath: path), settings: coordinator.settings, onProgress: { _ in }
+        ))
+        coordinator.projectLibrary.reload(settings: coordinator.settings)
+        return project.projectPath
+    }
+
+    func applyCameraGrade(projectPath: String, role: String, arguments: [String: Value]) throws -> String {
+        guard let coordinator else { throw Failure.unavailable }
+        let url = URL(fileURLWithPath: projectPath)
+        var edits = try TakeFileStore().loadRecordingProject(at: url).edits
+        func number(_ key: String) -> Double {
+            arguments[key].flatMap { $0.doubleValue ?? $0.intValue.map(Double.init) } ?? 0
+        }
+        var grade = CameraColorGrade()
+        grade.exposure = number("exposure")
+        grade.contrast = number("contrast")
+        grade.saturation = number("saturation")
+        grade.warmth = number("warmth")
+        grade.tint = number("tint")
+        grade.sourceLook = arguments["appleLog"]?.boolValue == true ? .appleLog : .standard
+        if let lutPath = arguments["lutPath"]?.stringValue {
+            grade.lut = try CubeLUTFile.load(url: URL(fileURLWithPath: lutPath))
+        }
+        edits.cameraGrades[role] = grade.isNeutral ? nil : grade
+        _ = try coordinator.updateProjectTimelineEdits(.init(
+            projectURL: url, edits: edits, baseSettings: coordinator.settings
+        ))
+        return "graded \(role)"
+    }
+
+    func cameraDelivery() async throws -> CameraDeliverySnapshot? {
+        guard let coordinator else { throw Failure.unavailable }
+        guard coordinator.state == .idle else { throw Failure.busy("recording") }
+        return try await coordinator.probeLocalCameraDelivery()
+    }
+
+    struct USBControlReport: Codable {
+        let kind: String
+        let minimum: Int
+        let maximum: Int
+        let step: Int
+        let defaultValue: Int
+        let value: Int
+    }
+
+    func usbControls(set kind: String?, value: Int?) async throws -> [USBControlReport] {
+        guard let coordinator else { throw Failure.unavailable }
+        let model = coordinator.usbCameraControls
+        await model.load(cameraID: coordinator.mainLocalCameraDeviceID)
+        if let kind, let value, let control = USBCameraControlKind(rawValue: kind) {
+            model.setValue(value, for: control)
+            try await Task.sleep(for: .milliseconds(400))
+            await model.refresh()
+        }
+        return model.controls.map {
+            USBControlReport(
+                kind: $0.kind.rawValue, minimum: $0.range.lowerBound, maximum: $0.range.upperBound,
+                step: $0.step, defaultValue: $0.defaultValue, value: $0.value
+            )
+        }
+    }
+
     /// Selects the first scene of the current layout whose name contains `name`, such as "Camera 2".
     func selectScene(nameContains name: String) throws -> [String] {
         guard let coordinator else { throw Failure.unavailable }
@@ -231,10 +296,10 @@ final class MCPDebugCameraService {
     static let testTakeTitle = "iPhone end-to-end check"
 
     /// Moves every take the end-to-end check recorded to the Trash, through the library's own delete.
-    func trashTestTakes() throws -> [String] {
+    func trashTestTakes(titles: [String]) throws -> [String] {
         guard let coordinator else { throw Failure.unavailable }
         let entries = coordinator.projectLibrary.reload(settings: coordinator.settings)
-            .filter { $0.title == Self.testTakeTitle }
+            .filter { $0.title == Self.testTakeTitle || titles.contains($0.title) }
         var trashed: [String] = []
         for entry in entries {
             try TakeFileStore().deleteProject(.init(project: entry, settings: coordinator.settings, disposition: .trash))
@@ -342,6 +407,57 @@ extension BlitzRecorderMCPServer {
             inputSchema: .object(["type": "object", "properties": .object([:]), "additionalProperties": false])
         ),
         Tool(
+            name: "debug_import_video",
+            title: "Import a video as a project (debug)",
+            description: "Create an editable project from a video file.",
+            inputSchema: .object([
+                "type": "object",
+                "properties": .object(["path": .object(["type": "string"])]),
+                "required": ["path"],
+                "additionalProperties": false,
+            ])
+        ),
+        Tool(
+            name: "debug_camera_grade",
+            title: "Set a camera's color grade (debug)",
+            description: "Replace one camera's grade in a project: exposure, contrast, saturation, warmth, tint, appleLog, lutPath.",
+            inputSchema: .object([
+                "type": "object",
+                "properties": .object([
+                    "projectPath": .object(["type": "string"]),
+                    "role": .object(["type": "string"]),
+                    "exposure": .object(["type": "number"]),
+                    "contrast": .object(["type": "number"]),
+                    "saturation": .object(["type": "number"]),
+                    "warmth": .object(["type": "number"]),
+                    "tint": .object(["type": "number"]),
+                    "appleLog": .object(["type": "boolean"]),
+                    "lutPath": .object(["type": "string"]),
+                ]),
+                "required": ["projectPath", "role"],
+                "additionalProperties": false,
+            ])
+        ),
+        Tool(
+            name: "debug_camera_delivery",
+            title: "Measure camera input (debug)",
+            description: "Samples the selected camera for three seconds without recording; reports actual frame dimensions.",
+            inputSchema: .object(["type": "object", "properties": .object([:]), "additionalProperties": false])
+        ),
+        Tool(
+            name: "debug_usb_controls",
+            title: "Read or set USB camera controls (debug)",
+            description: "List the selected camera's USB controls, optionally setting one first.",
+            inputSchema: .object([
+                "type": "object",
+                "properties": .object([
+                    "kind": .object(["type": "string"]),
+                    "value": .object(["type": "number"]),
+                ]),
+                "additionalProperties": false,
+            ])
+        ),
+        Tool(
             name: "debug_camera_select",
             title: "Use a Mac camera (debug)",
             description: "Choose a camera attached to this Mac, such as Continuity Camera, by part of its name.",
@@ -394,7 +510,7 @@ extension BlitzRecorderMCPServer {
             name: "debug_trash_test_takes",
             title: "Trash end-to-end test takes (debug)",
             description: "Move every take titled 'iPhone end-to-end check' to the Trash.",
-            inputSchema: .object(["type": "object", "properties": .object([:]), "additionalProperties": false])
+            inputSchema: .object(["type": "object", "properties": .object(["titles": .object(["type": "array", "items": .object(["type": "string"])])]), "additionalProperties": false])
         ),
         Tool(
             name: "debug_show_iphone_page",
@@ -427,6 +543,22 @@ extension BlitzRecorderMCPServer {
                 return try Self.debugResult(await service.status())
             case "debug_iphone_select":
                 return try Self.debugResult(await service.selectIPhone())
+            case "debug_import_video":
+                return try debugResult(await service.importVideo(path: parameters.arguments?["path"]?.stringValue ?? ""))
+            case "debug_camera_grade":
+                let arguments = parameters.arguments ?? [:]
+                return try debugResult(await service.applyCameraGrade(
+                    projectPath: arguments["projectPath"]?.stringValue ?? "",
+                    role: arguments["role"]?.stringValue ?? "camera",
+                    arguments: arguments
+                ))
+            case "debug_camera_delivery":
+                return try debugResult(await service.cameraDelivery())
+            case "debug_usb_controls":
+                return try debugResult(await service.usbControls(
+                    set: parameters.arguments?["kind"]?.stringValue,
+                    value: parameters.arguments?["value"].flatMap { $0.doubleValue ?? $0.intValue.map(Double.init) }.map { Int($0) }
+                ))
             case "debug_camera_select":
                 let name = parameters.arguments?["name"]?.stringValue ?? ""
                 return try Self.debugResult(await service.selectLocalCamera(nameContains: name))
@@ -444,7 +576,9 @@ extension BlitzRecorderMCPServer {
                 let name = parameters.arguments?["name"]?.stringValue ?? ""
                 return try Self.debugResult(await service.selectScene(nameContains: name))
             case "debug_trash_test_takes":
-                return try Self.debugResult(await service.trashTestTakes())
+                return try Self.debugResult(await service.trashTestTakes(
+                    titles: parameters.arguments?["titles"]?.arrayValue?.compactMap(\.stringValue) ?? []
+                ))
             case "debug_show_iphone_page":
                 return try Self.debugResult(await service.openDevicesPage())
             case "debug_record_take":

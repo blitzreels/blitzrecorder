@@ -76,6 +76,10 @@ extension RecorderCoordinator {
         studio.setSourceFilesSaved(enabled)
     }
 
+    func setCameraGrade(_ grade: CameraColorGrade) {
+        studio.setCameraGrade(grade)
+    }
+
     func setRuleOfThirdsOverlayVisible(_ visible: Bool) {
         studio.setRuleOfThirdsOverlayVisible(visible)
     }
@@ -203,6 +207,10 @@ extension RecorderCoordinator {
 
     func setScreenSplitHeight(_ height: CGFloat) {
         studio.setScreenSplitHeight(height)
+    }
+
+    func setScreenSplit(_ request: SceneLayout.ScreenSplitRequest) {
+        studio.setScreenSplit(request)
     }
 
     func setSideBySideLayout(_ request: SceneLayout.SideBySideRequest) {

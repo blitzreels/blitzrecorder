@@ -2,13 +2,14 @@ import SwiftUI
 
 struct RecorderSceneStrip: View {
     enum Density {
-        case regular
-        case compact
+        case labeled
+        case pictures
 
-        var showsTitle: Bool { self == .regular }
-        var tileWidth: CGFloat { self == .regular ? 96 : 88 }
-        var thumbnailSize: CGSize { self == .regular ? CGSize(width: 58, height: 34) : CGSize(width: 52, height: 30) }
+        var showsTitle: Bool { self == .labeled }
     }
+
+    static let wellPadding: CGFloat = 3
+    static let tileHeight: CGFloat = BlitzControlMetrics.prominentDockHeight - wellPadding * 2
 
     @Bindable var vm: RecorderViewModel
     let density: Density
@@ -16,50 +17,32 @@ struct RecorderSceneStrip: View {
     private var isLive: Bool { vm.state == .recording || vm.state == .paused }
 
     var body: some View {
-        HStack(spacing: 6) {
-            if density.showsTitle {
-                Text("Scenes")
-                    .font(BlitzType.footnote)
-                    .foregroundStyle(BlitzUI.tertiaryText)
-                    .fixedSize()
-                    .padding(.leading, 6)
-                    .accessibilityHidden(true)
-            }
+        ViewThatFits(in: .horizontal) {
+            sceneTiles
+                .fixedSize(horizontal: true, vertical: false)
 
-            ViewThatFits(in: .horizontal) {
-                sceneTiles
-                    .fixedSize(horizontal: true, vertical: false)
-
-                ScrollViewReader { proxy in
-                    ScrollView(.horizontal) {
-                        sceneTiles
-                    }
-                    .scrollIndicators(.never)
-                    .frame(height: Tile.height)
-                    .mask {
-                        HStack(spacing: 0) {
-                            LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
-                                .frame(width: 12)
-                            Rectangle()
-                            LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
-                                .frame(width: 24)
-                        }
-                    }
-                    .onAppear {
-                        if let sceneID = vm.selectedSceneID { proxy.scrollTo(sceneID, anchor: .center) }
-                    }
-                    .onChange(of: vm.selectedSceneID) { _, sceneID in
-                        if let sceneID { proxy.scrollTo(sceneID, anchor: .center) }
-                    }
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal) {
+                    sceneTiles
+                }
+                .scrollIndicators(.never)
+                .frame(height: Self.tileHeight)
+                .onAppear {
+                    if let sceneID = vm.selectedSceneID { proxy.scrollTo(sceneID, anchor: .center) }
+                }
+                .onChange(of: vm.selectedSceneID) { _, sceneID in
+                    if let sceneID { proxy.scrollTo(sceneID, anchor: .center) }
                 }
             }
         }
+        .padding(Self.wellPadding)
+        .background(BlitzUI.insetWell, in: .rect(cornerRadius: BlitzControlMetrics.dockRadius, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Scenes")
     }
 
     private var sceneTiles: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             ForEach(Array(vm.currentScenes.enumerated()), id: \.element.id) { index, scene in
                 tile(.init(scene: scene, index: index))
                     .id(scene.id)
@@ -68,48 +51,63 @@ struct RecorderSceneStrip: View {
     }
 
     private struct Tile {
-        static let height: CGFloat = 64
-
         let scene: RecordingSceneDefinition
         let index: Int
 
         var shortcutDigit: Character? {
             index < 9 ? Character("\(index + 1)") : nil
         }
+
+        func thumbnailSize(showsTitle: Bool) -> CGSize {
+            let height: CGFloat = showsTitle ? 26 : 34
+            return CGSize(width: min(height * scene.layout.aspectRatio, 56), height: height)
+        }
     }
 
     private func tile(_ tile: Tile) -> some View {
         let scene = tile.scene
         let isSelected = vm.selectedSceneID == scene.id
+        let showsLiveDot = isSelected && isLive
+        let thumbnailSize = tile.thumbnailSize(showsTitle: density.showsTitle)
         return Button {
             vm.selectScene(scene.id)
             vm.selectLayoutInspector()
         } label: {
-            VStack(spacing: 6) {
+            VStack(spacing: 3) {
                 BlitzSceneLayoutThumbnail(
                     layout: scene.layout,
                     sceneLayout: vm.sceneLayout(scene),
                     visibleSources: vm.sceneVisibleSources(scene)
                 )
-                .frame(width: density.thumbnailSize.width, height: density.thumbnailSize.height)
-                .opacity(isSelected ? 1 : 0.62)
-
-                HStack(spacing: 4) {
-                    if isSelected && isLive {
+                .frame(width: thumbnailSize.width, height: thumbnailSize.height)
+                .opacity(isSelected ? 1 : 0.8)
+                .overlay(alignment: .topTrailing) {
+                    if showsLiveDot && !density.showsTitle {
                         BlitzStatusDot(tone: .recording, diameter: 6)
+                            .offset(x: 3, y: -3)
                             .accessibilityHidden(true)
                     }
-                    Text(vm.sceneLabel(scene))
-                        .font(BlitzType.captionEmphasis)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                }
+
+                if density.showsTitle {
+                    HStack(spacing: 4) {
+                        if showsLiveDot {
+                            BlitzStatusDot(tone: .recording, diameter: 5)
+                                .accessibilityHidden(true)
+                        }
+                        Text(vm.sceneLabel(scene))
+                            .font(BlitzType.control(11))
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
                 }
             }
-            .frame(width: density.tileWidth, height: Tile.height)
+            .padding(.horizontal, 10)
+            .frame(minWidth: Self.tileHeight, minHeight: Self.tileHeight, maxHeight: Self.tileHeight)
         }
         .buttonStyle(BlitzSelectionButtonStyle(isSelected: isSelected))
         .disabled(!vm.canSwitchScene && !isSelected)
-        .accessibilityLabel("Scene \(tile.index + 1), \(vm.sceneLabel(scene))\(isSelected && isLive ? ", live" : "")")
+        .accessibilityLabel("Scene \(tile.index + 1), \(vm.sceneLabel(scene))\(showsLiveDot ? ", live" : "")")
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .keyboardShortcut(tile.shortcutDigit.map { KeyboardShortcut(KeyEquivalent($0), modifiers: .command) })
         .help(helpText(tile))

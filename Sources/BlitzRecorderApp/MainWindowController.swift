@@ -12,6 +12,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     var cameraDeviceObservers: [NSObjectProtocol] = []
     var isStartingCameraPreview = false
+    private var lastCameraStatusTime = -TimeInterval.infinity
     var cameraPreviewDeviceID: String?
     var secondCameraPreviewDeviceID: String?
     var cameraPreviewStartRevision = 0
@@ -103,6 +104,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             self?.syncIdleCaptureResources(for: mode)
             self?.saveStudioPage()
         }
+        viewModel.onCameraBackgroundRemovalChanged = { [weak self] in
+            self?.restartCameraPreview()
+        }
         viewModel.onLivePreviewChanged = { [weak self] _ in
             guard let self else { return }
             self.syncIdleCaptureResources(for: self.viewModel.studioMode)
@@ -135,6 +139,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         coordinator.onCameraConfigurationChanged = { [weak self] in
             self?.refreshCameraPicker()
         }
+        previewStage.cameraPreview.onPopoutChanged = { [weak self] enabled in
+            guard let self else { return }
+            self.coordinator.setCameraPopoutPreviewEnabled(enabled)
+            if enabled, self.coordinator.state == .idle,
+               !self.coordinator.isRemoteCameraSelected,
+               !self.coordinator.settings.cameraFeeds.usesCameraAngle,
+               self.previewStage.cameraPreview.hasPreviewContent,
+               !self.previewStage.cameraPreview.usesCapturePreviewLayer {
+                self.restartCameraPreview()
+            }
+        }
         coordinator.onLocalCameraPreviewSampleBuffer = { [weak self] sampleBuffer, width, height in
             guard let self,
                   self.previewFramesAreAllowed,
@@ -154,6 +169,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             guard self.coordinator.state != .idle
                 || !self.coordinator.settings.removesCameraBackgroundAfterRecording else { return }
             self.previewStage.cameraPreview.noteCaptureFrame(sampleBuffer)
+            let now = ProcessInfo.processInfo.systemUptime
+            guard self.isStartingCameraPreview || now - self.lastCameraStatusTime >= 1 else { return }
+            self.lastCameraStatusTime = now
+            self.viewModel.noteCameraPictureSize(.init(pictureSize: self.previewStage.cameraPreview.capturePictureSize,
+                                                       sourceSize: self.previewStage.cameraPreview.captureSourceSize))
             self.noteCameraPreviewFrame()
         }
         coordinator.onRemoteCameraPreviewFrame = { [weak self] image in
@@ -197,6 +217,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         previewStage.sceneLayout = coordinator.settings.sceneLayout
         previewStage.applySettingsAspectRatio(coordinator.currentScreenSourceAspectRatio())
         previewStage.showsRuleOfThirdsOverlay = coordinator.settings.showsRuleOfThirdsOverlay
+        previewStage.cameraPreview.grade = coordinator.settings.cameraGrade
         previewStage.socialSafeZoneOverlay = coordinator.settings.socialSafeZoneOverlay
         previewStage.canvasBackgroundStyle = coordinator.settings.canvasBackgroundStyle
         previewStage.canvasPadding = coordinator.settings.canvasPadding
@@ -397,13 +418,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private func showEditorAfterOpeningProject() {
         viewModel.dismissSettings()
-        guard let window else { return }
-        NSApp.activate(ignoringOtherApps: true)
-        showWindow(nil)
-        window.deminiaturize(nil)
-        window.makeKeyAndOrderFront(nil)
-        window.makeMain()
-        window.orderFrontRegardless()
+        NSApp.activate()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let window = self.window else { return }
+            self.showWindow(nil)
+            window.deminiaturize(nil)
+            window.makeKeyAndOrderFront(nil)
+            if window.canBecomeMain { window.makeMain() }
+            window.orderFrontRegardless()
+        }
     }
 
     private func fillEditorWindow() {

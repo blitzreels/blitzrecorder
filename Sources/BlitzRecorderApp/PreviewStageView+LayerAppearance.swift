@@ -32,7 +32,7 @@ extension PreviewStageView {
             viewFrame: view.frame
         )
         let visibleRect = canvasInViewCoords.intersection(view.bounds)
-        let radius = cropEditing ? 0 : PreviewStageDrawing.maskCornerRadius(.init(
+        let radius = cropEditing || (isCamera && cameraPreview.popoutStyle != nil) ? 0 : PreviewStageDrawing.maskCornerRadius(.init(
             isCamera: isCamera,
             rect: visibleRect,
             isFullscreen: isFullscreenCameraPreview,
@@ -99,6 +99,7 @@ extension PreviewStageView {
         if let layer = view.layer {
             PreviewStageDrawing.apply(shape, to: layer)
             if isCamera {
+                if cameraPreview.popoutStyle != nil { layer.cornerRadius = 0 }
                 layer.shadowOpacity = 0
                 layer.shadowPath = nil
                 applyCameraShadow(frame: view.frame, cornerRadius: shape.cornerRadius)
@@ -136,8 +137,9 @@ extension PreviewStageView {
         }
         cameraShadowLayer.frame = frame
         cameraShadowLayer.shadowOpacity = 0.38
+        let shadowBounds = CGRect(origin: .zero, size: frame.size)
         cameraShadowLayer.shadowPath = PreviewStageDrawing.maskPath(
-            for: CGRect(origin: .zero, size: frame.size),
+            for: cameraPreview.popoutStyle?.panel(in: shadowBounds) ?? shadowBounds,
             radius: cornerRadius
         )
     }

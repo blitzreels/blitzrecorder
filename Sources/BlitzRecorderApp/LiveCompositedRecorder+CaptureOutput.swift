@@ -68,11 +68,12 @@ extension LiveCompositedRecorder {
         from connection: AVCaptureConnection
     ) {
         if output is AVCaptureVideoDataOutput {
-            guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+            let frame = cameraFrameConformer.conform(sampleBuffer) ?? sampleBuffer
+            guard let pixelBuffer = CMSampleBufferGetImageBuffer(frame) else { return }
             lock.lock()
             latestCameraBuffer = pixelBuffer
             lock.unlock()
-            publishCameraPreviewFrame(sampleBuffer)
+            publishCameraPreviewFrame(frame)
         } else if output is AVCaptureAudioDataOutput {
             lock.lock()
             hasProducedMicrophoneStartupSample = true

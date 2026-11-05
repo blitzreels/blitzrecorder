@@ -122,6 +122,71 @@ struct SceneLayout: Equatable {
         return sceneLayout
     }
 
+    struct ScreenSplitRequest {
+        let screenHeight: CGFloat
+        let cameraOnTop: Bool
+        /// How much of the camera frame sits above its panel for the head; nil when the camera does not pop out.
+        let popoutHeadroom: CGFloat?
+    }
+
+    static func screenSplitLayout(_ request: ScreenSplitRequest) -> SceneLayout {
+        let height = clampedScreenSplitHeight(request.screenHeight)
+        var sceneLayout = SceneLayout()
+        let headroom = request.popoutHeadroom.map(CameraPopoutStyle.clampedHeadroom)
+        if request.cameraOnTop, headroom == nil {
+            sceneLayout.screenFrame = CGRect(x: 0, y: 0, width: 1, height: height)
+            sceneLayout.cameraFrame = CGRect(x: 0, y: height, width: 1, height: 1 - height)
+            return sceneLayout
+        }
+        let panelHeight = 1 - height
+        sceneLayout.screenFrame = CGRect(x: 0, y: panelHeight, width: 1, height: height)
+        sceneLayout.cameraFrame = CGRect(
+            x: 0,
+            y: 0,
+            width: 1,
+            height: headroom.map { panelHeight / (1 - $0) } ?? panelHeight
+        )
+        sceneLayout.cameraMask = headroom == nil ? .rectangle : .popout
+        return sceneLayout
+    }
+
+    var cameraOnTop: Bool {
+        cameraFrame.standardized.midY > screenFrame.standardized.midY
+    }
+
+    /// One Screen + Camera scene holds every arrangement, so refitting its preset must not undo the user's choice.
+    func keepsItsArrangement(over preset: ScenePreset) -> Bool {
+        if screenSplitHeight != nil { return true }
+        return preset != .cameraInset && Self.isCameraInsetFrame(cameraFrame)
+    }
+
+    func resizingScreenSplit(to height: CGFloat) -> SceneLayout {
+        Self.screenSplitLayout(.init(
+            screenHeight: height,
+            cameraOnTop: cameraOnTop,
+            popoutHeadroom: cameraMask == .popout ? cameraPopoutHeadroom : nil
+        ))
+    }
+
+    /// A stacked pop-out keeps its panel up to the screen's lower edge; the rest of the camera frame is head room.
+    /// A floating pop-out has no such edge and uses the default.
+    var cameraPopoutHeadroom: CGFloat {
+        let screen = screenFrame.standardized
+        let camera = cameraFrame.standardized
+        guard cameraMask == .popout,
+              camera.height > 0,
+              almostEqual(camera.minX, 0), almostEqual(camera.width, 1), almostEqual(camera.minY, 0),
+              screen.minY > camera.minY, screen.minY < camera.maxY else {
+            return CameraPopoutStyle.defaultHeadroom
+        }
+        return CameraPopoutStyle.clampedHeadroom((camera.maxY - screen.minY) / camera.height)
+    }
+
+    func withCameraPopoutHeadroom(_ headroom: CGFloat) -> SceneLayout {
+        guard let screenHeight = screenSplitHeight, cameraMask == .popout else { return self }
+        return Self.screenSplitLayout(.init(screenHeight: screenHeight, cameraOnTop: false, popoutHeadroom: headroom))
+    }
+
     static func cameraInsetLayout(
         for layout: CaptureLayout,
         alignment: CameraInsetAlignment = .bottomRight,
@@ -163,7 +228,7 @@ struct SceneLayout: Equatable {
         var width: CGFloat
         var height: CGFloat
         switch shape {
-        case .landscape, .circle:
+        case .landscape, .circle, .popout:
             width = dominantSize
             height = width * canvasAspectRatio / shapeAspectRatio
         case .portrait:
@@ -175,25 +240,24 @@ struct SceneLayout: Equatable {
         width *= fitScale
         height *= fitScale
 
-        let x: CGFloat
-        switch alignment {
-        case .bottomLeft:
-            x = cameraInsetMargin
-        case .bottomRight:
-            x = 1 - cameraInsetMargin - width
-        }
-
-        return CGRect(x: x, y: cameraInsetMargin, width: width, height: height)
+        let x = alignment.isLeft ? cameraInsetMargin : 1 - cameraInsetMargin - width
+        let y = alignment.isTop ? 1 - cameraInsetMargin - height : cameraInsetMargin
+        return CGRect(x: x, y: y, width: width, height: height)
     }
 
     static func cameraInsetAlignment(for frame: CGRect) -> CameraInsetAlignment {
-        frame.standardized.midX < 0.5 ? .bottomLeft : .bottomRight
+        let frame = frame.standardized
+        let isTop = abs(frame.maxY - (1 - cameraInsetMargin)) < 0.005
+            && abs(frame.minY - cameraInsetMargin) >= 0.005
+        if frame.midX < 0.5 { return isTop ? .topLeft : .bottomLeft }
+        return isTop ? .topRight : .bottomRight
     }
 
     static func isCameraInsetFrame(_ frame: CGRect) -> Bool {
         let frame = frame.standardized
         guard frame.width > 0.0001, frame.height > 0.0001 else { return false }
-        guard abs(frame.minY - cameraInsetMargin) < 0.005 else { return false }
+        guard abs(frame.minY - cameraInsetMargin) < 0.005
+                || abs(frame.maxY - (1 - cameraInsetMargin)) < 0.005 else { return false }
         let leftAnchored = abs(frame.minX - cameraInsetMargin) < 0.005
         let rightAnchored = abs(frame.maxX - (1 - cameraInsetMargin)) < 0.005
         return leftAnchored || rightAnchored
@@ -212,7 +276,11 @@ struct SceneLayout: Equatable {
     }
 
     func cameraInsetShape(in layout: CaptureLayout) -> CameraInsetShape {
-        cameraMask == .circle ? .circle : Self.cameraInsetShape(for: cameraFrame, in: layout)
+        switch cameraMask {
+        case .circle: .circle
+        case .popout: .popout
+        case .rectangle: Self.cameraInsetShape(for: cameraFrame, in: layout)
+        }
     }
 
     func cameraInsetSize(in layout: CaptureLayout) -> CGFloat {
@@ -233,7 +301,7 @@ struct SceneLayout: Equatable {
         let frame = request.frame.standardized
         let size: CGFloat
         switch request.shape {
-        case .landscape, .circle:
+        case .landscape, .circle, .popout:
             size = frame.width
         case .portrait:
             size = frame.height
@@ -301,15 +369,18 @@ struct SceneLayout: Equatable {
         let screen = screenFrame.standardized
         let camera = cameraFrame.standardized
         guard almostEqual(camera.minX, 0),
-              almostEqual(camera.minY, 0),
               almostEqual(camera.width, 1),
-              almostEqual(screen.maxY, 1),
-              almostEqual(screen.minY, camera.maxY),
               screen.height >= SceneLayout.minimumScreenSplitHeight,
               screen.height <= SceneLayout.maximumScreenSplitHeight else {
             return nil
         }
-        return screen.height
+        if almostEqual(screen.minY, 0), almostEqual(screen.maxY, camera.minY), almostEqual(camera.maxY, 1) {
+            return screen.height
+        }
+        guard almostEqual(camera.minY, 0), almostEqual(screen.maxY, 1) else { return nil }
+        let isPlain = almostEqual(screen.minY, camera.maxY)
+        let popsOut = cameraMask == .popout && screen.minY > camera.minY && screen.minY < camera.maxY
+        return isPlain || popsOut ? screen.height : nil
     }
 
     private func almostEqual(_ lhs: CGFloat, _ rhs: CGFloat) -> Bool {
@@ -365,7 +436,7 @@ extension SceneLayout {
         }
         switch (frames[.screen], frames[.camera]) {
         case (_?, _?):
-            return cameraFloats(visibleSources: visibleSources) ? "Camera Inset" : "Screen + Camera"
+            return "Screen + Camera"
         case (_?, nil):
             return "Screen"
         case (nil, _?):

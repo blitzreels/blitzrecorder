@@ -62,6 +62,9 @@ targets:
         buildPhase: resources
       - path: Resources/IntegrationCodex.png
         buildPhase: resources
+      - path: Resources/ColorLooks
+        type: folder
+        buildPhase: resources
       - path: Sources/BlitzRecorderApp/Resources/BlitzRecorderMCPBridge
         type: folder
         buildPhase: resources

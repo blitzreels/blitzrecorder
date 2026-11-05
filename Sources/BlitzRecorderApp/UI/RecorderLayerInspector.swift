@@ -5,6 +5,7 @@ enum RecorderInspectorTab: CaseIterable, Hashable {
     case screen
     case camera
     case secondCamera
+    case color
     case background
 
     var title: String {
@@ -13,6 +14,7 @@ enum RecorderInspectorTab: CaseIterable, Hashable {
         case .screen: return "Screen"
         case .camera: return "Camera"
         case .secondCamera: return "Camera 2"
+        case .color: return "Color"
         case .background: return "Background"
         }
     }
@@ -22,6 +24,7 @@ enum RecorderInspectorTab: CaseIterable, Hashable {
         case .layout: return "rectangle.split.2x1"
         case .screen: return BlitzSymbols.screen
         case .camera, .secondCamera: return BlitzSymbols.camera
+        case .color: return "camera.filters"
         case .background: return "square.stack.3d.down.forward"
         }
     }
@@ -30,6 +33,7 @@ enum RecorderInspectorTab: CaseIterable, Hashable {
         switch selection {
         case .canvas: self = .background
         case .layout: self = .layout
+        case .color: self = .color
         case .source(.screen): self = .screen
         case .source(.camera): self = .camera
         case .secondCamera: self = .secondCamera
@@ -40,6 +44,7 @@ enum RecorderInspectorTab: CaseIterable, Hashable {
 
 struct RecorderLayerInspector: View {
     @Bindable var vm: RecorderViewModel
+    @State private var scenePictures = ScenePictures()
 
     private var tab: RecorderInspectorTab {
         RecorderInspectorTab(selection: vm.inspectorSelection)
@@ -73,6 +78,7 @@ struct RecorderLayerInspector: View {
                 if isEnabled(item) {
                     LayerListRow(configuration: .init(
                         title: title(for: item),
+                        detail: detail(for: item),
                         symbol: item.symbolName,
                         isSelected: tab == item,
                         visibility: visibility(item),
@@ -84,12 +90,45 @@ struct RecorderLayerInspector: View {
         }
     }
 
+    /// What is picked on each layer, so the list reads as a summary of the scene.
+    private func detail(for item: RecorderInspectorTab) -> String? {
+        switch item {
+        case .layout:
+            switch vm.selectedScenePreset {
+            case .webcamLeft?, .cameraRight?, .screenTop50?, .cameraInset?:
+                guard vm.settings.visibleSources.isSuperset(of: [.screen, .camera]) else { return nil }
+                return arrangementTitle(.init(arrangement: vm.cameraArrangement,
+                                              isVertical: vm.settings.layout == .vertical))
+            case .screenFullscreen?: return "Screen only"
+            case .webcamFullscreen?: return "Camera only"
+            default: return nil
+            }
+        case .screen:
+            switch vm.settings.screenSourceBinding?.kind {
+            case .display?: return "Full"
+            case .application?: return "App"
+            case .window?: return "Window"
+            case nil: return nil
+            }
+        case .camera, .secondCamera:
+            let mode = vm.settings.cameraContentMode.displayName
+            return vm.settings.removesCameraBackgroundAfterRecording ? "\(mode) · No background" : mode
+        case .color:
+            let grade = vm.settings.cameraGrade
+            if grade.isNeutral { return "Original" }
+            guard let lut = grade.lut else { return "Adjusted" }
+            return lut.lookID.flatMap { CameraColorLook.look(id: $0)?.title } ?? lut.name
+        case .background:
+            return vm.settings.canvasBackgroundStyle.displayName
+        }
+    }
+
     private func visibility(_ item: RecorderInspectorTab) -> LayerListRow.Visibility? {
         let source: CaptureSource
         switch item {
         case .screen: source = .screen
         case .camera: source = .camera
-        case .layout, .secondCamera, .background: return nil
+        case .layout, .secondCamera, .color, .background: return nil
         }
         let isVisible = vm.isSourceVisible(source)
         return .init(
@@ -106,6 +145,7 @@ struct RecorderLayerInspector: View {
         case .screen: screenPane
         case .camera: cameraPane
         case .secondCamera: secondCameraPane
+        case .color: StudioCameraColorPane(vm: vm)
         case .background: backgroundPane
         }
     }
@@ -274,12 +314,8 @@ struct RecorderLayerInspector: View {
     @ViewBuilder
     private var layoutControls: some View {
         switch vm.selectedScenePreset {
-        case .webcamLeft?, .cameraRight?:
-            sideBySideControls
-        case .screenTop50?:
-            stackedControls
-        case .cameraInset?:
-            CameraInsetFrameControls(vm: vm)
+        case .webcamLeft?, .cameraRight?, .screenTop50?, .cameraInset?:
+            screenAndCameraControls
         case .screenFullscreen?:
             layoutCaption(vm.isSourceConfigured(.camera)
                 ? "Only your screen shows. Your camera still records on its own track."
@@ -302,6 +338,134 @@ struct RecorderLayerInspector: View {
             }
         default:
             layoutCaption("Pick a layout in the scenes bar under the preview.")
+        }
+    }
+
+    @ViewBuilder
+    private var screenAndCameraControls: some View {
+        if vm.settings.visibleSources.isSuperset(of: [.screen, .camera]) {
+            let isVertical = vm.settings.layout == .vertical
+            SceneLayoutChoiceRow(configuration: .init(
+                title: "Arrangement",
+                options: [SceneCameraArrangement.split, .floating, .popOut],
+                selection: vm.cameraArrangement,
+                label: { arrangementTitle(.init(arrangement: $0, isVertical: isVertical)) },
+                help: arrangementHelp,
+                sceneLayout: arrangementPreviewLayout,
+                layout: vm.settings.layout,
+                preview: scenePreview,
+                select: { vm.setCameraArrangement($0) }
+            ))
+            .modifier(ScenePicturesModifier(vm: vm, pictures: $scenePictures))
+            switch vm.cameraArrangement {
+            case .split where isVertical:
+                SceneLayoutChoiceRow(configuration: .init(
+                    title: "Order",
+                    options: [false, true],
+                    selection: vm.cameraOnTop,
+                    label: { $0 ? "Camera on top" : "Screen on top" },
+                    help: { $0 ? "The camera sits above the screen" : "The screen sits above the camera" },
+                    sceneLayout: {
+                        SceneLayout.screenSplitLayout(.init(
+                            screenHeight: CGFloat(vm.screenSplitHeight), cameraOnTop: $0, popoutHeadroom: nil
+                        ))
+                    },
+                    layout: vm.settings.layout,
+                    preview: scenePreview,
+                    select: { vm.setCameraOnTop($0) }
+                ))
+                stackedControls
+            case .split:
+                sideBySideControls
+            case .floating:
+                CameraInsetFrameControls(vm: vm)
+            case .popOut:
+                layoutCaption("Your head breaks out of the camera frame. Use Crop on the camera to line it up.")
+                if vm.cameraFloats {
+                    CameraInsetFrameControls(vm: vm)
+                } else {
+                    stackedControls
+                }
+                if vm.showsCameraPopoutHeadroomControl {
+                    BlitzInspectorSlider(configuration: .init(
+                        title: "Pop out height",
+                        value: Binding(get: { vm.cameraPopoutHeadroom }, set: { vm.setCameraPopoutHeadroom($0) }),
+                        range: popoutHeadroomRange,
+                        step: 0.01,
+                        valueLabel: "\(Int((vm.cameraPopoutHeadroom * 100).rounded()))%",
+                        onEditingChanged: { _ in },
+                        onReset: { vm.setCameraPopoutHeadroom(Double(CameraPopoutStyle.defaultHeadroom)) }
+                    ))
+                    .help("How much of you breaks out above the camera box. Your picture keeps its size; the screen comes down over the box.")
+                }
+            }
+        } else {
+            unavailableLayoutCaption
+        }
+    }
+
+    private struct ArrangementTitle {
+        let arrangement: SceneCameraArrangement
+        let isVertical: Bool
+    }
+
+    private func arrangementTitle(_ title: ArrangementTitle) -> String {
+        switch title.arrangement {
+        case .split: title.isVertical ? "Stacked" : "Side by side"
+        case .floating: "Floating"
+        case .popOut: "Pop out"
+        }
+    }
+
+    private var popoutHeadroomRange: ClosedRange<Double> {
+        Double(CameraPopoutStyle.headroomRange.lowerBound)...Double(CameraPopoutStyle.headroomRange.upperBound)
+    }
+
+    private func arrangementHelp(_ arrangement: SceneCameraArrangement) -> String {
+        switch arrangement {
+        case .split: "The screen and camera each get their own space"
+        case .floating: "The camera floats over the screen"
+        case .popOut: "Your head breaks out of the camera frame. Your room stays inside."
+        }
+    }
+
+    private var scenePreview: BlitzScenePreview {
+        BlitzScenePreview(
+            screen: scenePictures.screen,
+            camera: scenePictures.camera,
+            background: vm.settings.canvasBackgroundStyle
+        )
+    }
+
+    private func arrangementPreviewLayout(_ arrangement: SceneCameraArrangement) -> SceneLayout {
+        if arrangement == vm.cameraArrangement { return vm.settings.sceneLayout }
+        let layout = vm.settings.layout
+        let screenHeight = CGFloat(vm.screenSplitHeight)
+        let insetSize: CGFloat? = vm.cameraFloats ? CGFloat(vm.cameraInsetSize) : nil
+        switch arrangement {
+        case .split where layout == .vertical:
+            return SceneLayout.screenSplitLayout(.init(screenHeight: screenHeight, cameraOnTop: false, popoutHeadroom: nil))
+        case .split:
+            return SceneLayout.presetLayout(.webcamLeft, for: layout)
+        case .floating:
+            return SceneLayout.cameraInsetLayout(
+                for: layout,
+                alignment: vm.cameraFloats ? vm.cameraInsetAlignment : .bottomRight,
+                shape: .landscape,
+                size: insetSize
+            )
+        case .popOut where layout == .vertical && !vm.cameraFloats:
+            return SceneLayout.screenSplitLayout(.init(screenHeight: screenHeight, cameraOnTop: false,
+                                                                  popoutHeadroom: CameraPopoutStyle.defaultHeadroom))
+        case .popOut:
+            var sceneLayout = SceneLayout.cameraInsetLayout(
+                for: layout,
+                alignment: vm.cameraFloats ? vm.cameraInsetAlignment.atBottom : .bottomRight,
+                shape: .popout,
+                size: insetSize
+            )
+            sceneLayout.cameraMask = .popout
+            return sceneLayout
         }
     }
 
@@ -382,6 +546,7 @@ struct RecorderLayerInspector: View {
         case .screen: return vm.isSourceConfigured(.screen)
         case .camera: return vm.isSourceConfigured(.camera)
         case .secondCamera: return showsSecondCamera
+        case .color: return vm.isSourceConfigured(.camera)
         case .background: return true
         }
     }
@@ -392,6 +557,7 @@ struct RecorderLayerInspector: View {
         case .screen: return "Screen framing in this scene"
         case .camera: return "Camera framing and effects"
         case .secondCamera: return "Camera 2 framing, separate from Camera 1"
+        case .color: return "Looks and color for your camera"
         case .background: return "Background, padding and guides"
         }
     }
@@ -402,6 +568,7 @@ struct RecorderLayerInspector: View {
         case .screen: vm.selectSource(.screen)
         case .camera: vm.selectSource(.camera)
         case .secondCamera: vm.selectLayer(.secondCamera)
+        case .color: vm.inspectorSelection = .color
         case .background: vm.selectBackgroundLayer()
         }
     }
@@ -416,6 +583,8 @@ private struct LayerListRow: View {
 
     struct Configuration {
         let title: String
+        /// The current choice on this layer, when there is one to show.
+        let detail: String?
         let symbol: String
         let isSelected: Bool
         /// Background and Layout are always there, so they have no eye.
@@ -428,6 +597,11 @@ private struct LayerListRow: View {
     @State private var isHovering = false
 
     private var isHidden: Bool { configuration.visibility?.isVisible == false }
+
+    private var detailColor: Color {
+        if isHidden { return BlitzUI.tertiaryText }
+        return configuration.isSelected ? BlitzUI.accent : BlitzUI.secondaryText
+    }
 
     var body: some View {
         HStack(spacing: 4) {
@@ -443,13 +617,21 @@ private struct LayerListRow: View {
                         .foregroundStyle(isHidden ? BlitzUI.tertiaryText
                             : configuration.isSelected ? BlitzUI.primaryText : BlitzUI.supportingText)
                         .lineLimit(1)
-                    Spacer(minLength: 0)
+                        .layoutPriority(1)
+                    Spacer(minLength: 8)
+                    if let detail = configuration.detail {
+                        Text(detail)
+                            .font(BlitzType.caption)
+                            .foregroundStyle(detailColor)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
                 }
                 .frame(height: 30)
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(configuration.title)
+            .accessibilityLabel(configuration.detail.map { "\(configuration.title), \($0)" } ?? configuration.title)
             .accessibilityAddTraits(configuration.isSelected ? .isSelected : [])
             .help(configuration.help)
 

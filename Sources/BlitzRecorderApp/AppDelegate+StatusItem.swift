@@ -129,9 +129,7 @@ extension AppDelegate {
     private func formattedStatusElapsed() -> String {
         let activeSeconds = statusElapsedStartedAt.map { Date().timeIntervalSince($0) } ?? 0
         let totalSeconds = Int((statusElapsedAccumulated + activeSeconds).rounded(.down))
-        let minutes = totalSeconds / 60
-        let seconds = totalSeconds % 60
-        return String(format: "%02d:%02d", minutes, seconds)
+        return ClockDuration.elapsedLabel(totalSeconds)
     }
 
     private static func shortMenuTitle(_ title: String) -> String {

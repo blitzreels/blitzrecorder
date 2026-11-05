@@ -130,6 +130,11 @@ extension RecorderViewModel {
     }
 
     func syncSettings() {
+        if settings.selectedCameraID != coordinator.settings.selectedCameraID {
+            cameraIncomingSize = nil
+            cameraUsablePictureSize = nil
+            cameraDeliveryShortfall = nil
+        }
         settings = coordinator.settings
         let sceneID = coordinator.selectedSceneIDForCurrentLayout()
         if previewStage.sceneID != sceneID || previewStage.captureLayout != settings.layout {
@@ -159,6 +164,7 @@ extension RecorderViewModel {
         previewStage.secondCameraCropAmount = coordinator.settings.secondCameraCropAmount
         previewStage.secondCameraCropPosition = coordinator.settings.secondCameraCropPosition
         previewStage.showsRuleOfThirdsOverlay = coordinator.settings.showsRuleOfThirdsOverlay
+        previewCameraGrade(coordinator.settings.cameraGrade)
         previewStage.socialSafeZoneOverlay = coordinator.settings.socialSafeZoneOverlay
         previewStage.canvasBackgroundStyle = coordinator.settings.canvasBackgroundStyle
         previewStage.canvasBackgroundAnimated = coordinator.settings.canvasBackgroundAnimated
@@ -324,8 +330,7 @@ extension RecorderViewModel {
         guard canEditScene, showsScreenSplitControl else { return }
         let height = Double(SceneLayout.clampedScreenSplitHeight(CGFloat(height)))
         canvas.screenSplitPreviewHeight = height
-        let layout = SceneLayout.screenSplitLayout(screenHeight: CGFloat(height))
-        showSceneLayoutPreview(layout)
+        showSceneLayoutPreview(settings.sceneLayout.resizingScreenSplit(to: CGFloat(height)))
     }
 
     func commitScreenSplitPreview() {

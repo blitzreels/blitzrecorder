@@ -27,6 +27,7 @@ struct RecordingSettings {
     var microphoneGain: Double = 1.0
     var systemAudioGain: Double = 1.0
     var removesCameraBackgroundAfterRecording: Bool = false
+    var cameraGrade = CameraColorGrade.neutral
     var savesSourceFiles: Bool = true
     var showsRuleOfThirdsOverlay: Bool = false
     var socialSafeZoneOverlay: SocialVideoSafeZone = .none

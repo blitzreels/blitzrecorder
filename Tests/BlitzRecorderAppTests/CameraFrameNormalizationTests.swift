@@ -19,6 +19,47 @@ final class CameraFrameNormalizationTests: XCTestCase {
         XCTAssertEqual(plan?.outputSize, CGSize(width: 180, height: 100))
     }
 
+    func testPreviewRecoveryWaitsForNegotiationAndStopsRetrying() {
+        var recovery = CameraPreviewFormatRecovery(startedAt: 10)
+        let small = CGSize(width: 1080, height: 1920)
+        let expected = CGSize(width: 3840, height: 2160)
+        XCTAssertFalse(recovery.shouldRestore(.init(now: 10.1, sourceSize: small, expectedSize: expected)))
+        XCTAssertTrue(recovery.shouldRestore(.init(now: 10.5, sourceSize: small, expectedSize: expected)))
+        XCTAssertFalse(recovery.shouldRestore(.init(now: 10.6, sourceSize: small, expectedSize: expected)))
+        XCTAssertTrue(recovery.shouldRestore(.init(now: 11.5, sourceSize: small, expectedSize: expected)))
+        XCTAssertTrue(recovery.shouldRestore(.init(now: 12.5, sourceSize: small, expectedSize: expected)))
+        XCTAssertTrue(recovery.isComplete(at: 13.5))
+        XCTAssertFalse(recovery.shouldRestore(.init(now: 13.5, sourceSize: small, expectedSize: expected)))
+    }
+
+    func testPreviewRecoveryLeavesCorrectFramesAloneAndExpires() {
+        var recovery = CameraPreviewFormatRecovery(startedAt: 10)
+        let expected = CGSize(width: 3840, height: 2160)
+        XCTAssertFalse(recovery.shouldRestore(.init(now: 10.5, sourceSize: expected, expectedSize: expected)))
+        XCTAssertFalse(recovery.isComplete(at: 11.5))
+        XCTAssertTrue(recovery.isComplete(at: 17))
+        XCTAssertFalse(recovery.shouldRestore(.init(now: 17,
+            sourceSize: CGSize(width: 1080, height: 1920), expectedSize: expected)))
+    }
+
+    func testDeliveryWarningSeparatesPortraitTransportFromUsableLandscapePicture() {
+        let warning = LocalCameraDeliveryShortfall(
+            cameraName: "OsmoPocket4", pictureSize: CGSize(width: 1080, height: 608),
+            bestSize: CGSize(width: 3840, height: 2160), sourceSize: CGSize(width: 1080, height: 1920)
+        )
+        XCTAssertTrue(warning.detail.contains("Incoming frame: 1080×1920"))
+        XCTAssertTrue(warning.detail.contains("after removing black bars: 1080×608"))
+        XCTAssertFalse(warning.title.contains("Sending"))
+        XCTAssertFalse(warning.detail.contains("Another app"))
+    }
+
+    func testFullLandscapeFrameDoesNotLosePixelsDuringNormalization() throws {
+        let pixelBuffer = try makePixelBuffer(.init(
+            width: 3840, height: 2160, activeRect: CGRect(x: 0, y: 0, width: 3840, height: 2160)
+        ))
+        XCTAssertNil(CameraFrameLetterboxDetector.normalizationPlan(.init(pixelBuffer: pixelBuffer)))
+    }
+
     func testKeepsNormalPortraitCameraBufferUnchanged() throws {
         let pixelBuffer = try makePixelBuffer(.init(
             width: 180,
