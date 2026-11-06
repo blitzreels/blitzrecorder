@@ -5,12 +5,12 @@ struct RecordingHUDMeter: View {
     let isActive: Bool
 
     var body: some View {
-        let recent = Array(levels.levels.suffix(5))
+        let recent = Array(levels.meterFractions.suffix(5))
         HStack(alignment: .center, spacing: 2) {
             ForEach(Array(recent.enumerated()), id: \.offset) { _, level in
                 Capsule()
                     .fill(isActive ? BlitzUI.accent : BlitzUI.tertiaryText)
-                    .frame(width: 3, height: max(3, CGFloat(min(1, level)) * 16))
+                    .frame(width: 3, height: max(3, CGFloat(level) * 16))
             }
         }
         .frame(width: 23, height: 16)

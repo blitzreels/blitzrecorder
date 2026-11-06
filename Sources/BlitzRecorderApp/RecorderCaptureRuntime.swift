@@ -70,7 +70,13 @@ final class RecorderCaptureRuntime {
     private var idleScreenPreviewRevision = 0
     var committedRecordingSettings: RecordingSettings?
     var localCameraRuntimeState: LocalCameraRuntimeState = .unchecked
-    var activeMicrophoneDeviceID: String?
+    var activeMicrophoneDeviceID: String? {
+        didSet {
+            guard activeMicrophoneDeviceID != oldValue else { return }
+            onActiveMicrophoneChanged?(activeMicrophoneDeviceID)
+        }
+    }
+    var onActiveMicrophoneChanged: ((String?) -> Void)?
     var activeLocalCameraDeviceID: String?
     var activeCaptureWarnings: [String] = []
 

@@ -256,23 +256,21 @@ struct BlitzLevelMeter: View {
 
     var body: some View {
         Canvas { context, size in
-            let values = levels.levels
+            let values = levels.meterFractions
             context.fill(
                 Path(roundedRect: CGRect(x: 0, y: size.height / 2 - 1, width: size.width, height: 2), cornerRadius: 1),
                 with: .color(BlitzUI.separator)
             )
             guard !values.isEmpty else { return }
 
-            let recentMax = max(0.08, (values.suffix(16).max() ?? 0) * 0.86)
             let barCount = values.count
             let spacing: CGFloat = 1
             let barWidth = max(1.5, (size.width - spacing * CGFloat(barCount - 1)) / CGFloat(barCount))
             let centerY = size.height / 2
             let color = BlitzUI.levelColor(active: active)
 
-            for (i, raw) in values.enumerated() {
-                guard raw > 0.003 else { continue }
-                let normalized = max(0.08, min(1, raw / recentMax))
+            for (i, normalized) in values.enumerated() {
+                guard normalized > 0 else { continue }
                 let h = max(1.5, CGFloat(normalized) * size.height)
                 let x = CGFloat(i) * (barWidth + spacing)
                 let rect = CGRect(x: x, y: centerY - h / 2, width: barWidth, height: h)

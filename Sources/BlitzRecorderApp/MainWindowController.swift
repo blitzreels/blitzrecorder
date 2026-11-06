@@ -120,6 +120,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                   self.coordinator.state != .idle || self.viewModel.isLivePreviewEnabled else { return }
             self.viewModel.appendAudioLevel(level, source: source)
         }
+        coordinator.onActiveMicrophoneChanged = { [weak self] deviceID in
+            self?.viewModel.activeMicrophoneID = deviceID
+        }
         coordinator.onMicrophoneTrackLevel = { [weak self] deviceID, level in
             guard let self,
                   self.coordinator.state != .idle || self.viewModel.isLivePreviewEnabled else { return }

@@ -241,6 +241,10 @@ final class RecorderCoordinator {
     func addMicrophoneTrack(deviceID: String) { capture.addMicrophoneTrack(deviceID: deviceID) }
     func replaceMicrophoneTrack(_ replacement: MicrophoneTrackReplacement) { capture.replaceMicrophoneTrack(replacement) }
     func removeMicrophoneTrack(deviceID: String) { capture.removeMicrophoneTrack(deviceID: deviceID) }
+    var onActiveMicrophoneChanged: ((String?) -> Void)? {
+        get { capture.onActiveMicrophoneChanged }
+        set { capture.onActiveMicrophoneChanged = newValue }
+    }
     var onMicrophoneTrackLevel: ((String, Float) -> Void)? {
         get { capture.microphoneTracks.levelHandler }
         set { capture.microphoneTracks.levelHandler = newValue }

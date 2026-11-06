@@ -23,6 +23,8 @@ final class RecorderViewModel {
 
     let previewStage: PreviewStageView
     let micLevels = TrackLevels()
+    /// The microphone a take is recording with, which differs from the chosen one after it was unplugged.
+    var activeMicrophoneID: String?
     let microphoneTrackLevels = MicrophoneTrackLevelStore()
     let sysLevels = TrackLevels()
     var transcriptionController: LocalTranscriptionController { coordinator.transcription }
@@ -189,7 +191,7 @@ final class RecorderViewModel {
 
     var selectedMicrophoneDisplayName: String {
         RecorderStudioLabels.microphone(.init(
-            selectedMicrophoneID: settings.selectedMicrophoneID,
+            selectedMicrophoneID: activeMicrophoneID ?? settings.selectedMicrophoneID,
             options: availableMicrophones,
             fallbackName: coordinator.selectedMicrophoneName()
         ))

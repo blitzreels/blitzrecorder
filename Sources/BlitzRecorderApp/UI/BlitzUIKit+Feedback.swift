@@ -227,7 +227,7 @@ struct BlitzUIKitAnimations: View {
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(90))
-                levels.append(Float.random(in: 0.05...0.95))
+                levels.append(Float.random(in: 0.005...0.3))
             }
         }
         .task {
