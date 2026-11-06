@@ -174,7 +174,7 @@ struct TitleGenerator {
     static func transcriptChunks(
         _ transcript: String
     ) -> [String] {
-        let maximumChunkCharacters = 10_000
+        let maximumChunkCharacters = 6_000
         guard transcript.count > maximumChunkCharacters else { return [transcript] }
 
         var chunks: [String] = []

@@ -40,6 +40,26 @@ struct TranscriptionQuality: Codable, Equatable, Sendable {
 
     var needsReview: Bool { !issues.isEmpty }
 
+    struct RecognitionReview {
+        let issues: [Issue]
+        let words: [TranscriptWord]
+    }
+
+    static func confirmedRecognitionIssues(_ request: RecognitionReview) -> [Issue] {
+        request.issues.filter { issue in
+            let heard = request.words.filter { $0.startTime < issue.endTime + 0.3 && $0.endTime > issue.startTime - 0.3 }
+            switch issue.kind {
+            case .missingSpeech:
+                return issue.endTime - issue.startTime >= 1.5 && heard.isEmpty
+            case .unsupportedSpeech:
+                guard issue.endTime - issue.startTime >= 1.5, heard.count >= 3 else { return false }
+                return heard.reduce(Float(0)) { $0 + $1.confidence } / Float(heard.count) < 0.4
+            default:
+                return true
+            }
+        }
+    }
+
     struct SpeakerRequest {
         let transcript: RecordingTranscript
         let expectedCount: Int?
@@ -48,7 +68,9 @@ struct TranscriptionQuality: Codable, Equatable, Sendable {
 
     static func speakerIssues(_ request: SpeakerRequest) -> [Issue] {
         let transcript = request.transcript
-        var issues = transcript.segments.filter { $0.speakerID == RecordingTranscript.Speaker.unassignedID }.map {
+        var issues = transcript.segments.filter {
+            $0.speakerID == RecordingTranscript.Speaker.unassignedID && $0.text.split(separator: " ").count >= 3
+        }.map {
             Issue(kind: .uncertainSpeaker, startTime: $0.startTime, endTime: $0.endTime)
         }
         if let expected = request.expectedCount, transcript.speakerCount != expected,
@@ -82,9 +104,10 @@ struct TranscriptionQuality: Codable, Equatable, Sendable {
                 } else { continuous.append(range) }
             }
             for range in continuous {
-                let identities = Set((transcript.words ?? []).filter {
+                let voices = Dictionary(grouping: (transcript.words ?? []).filter {
                     $0.source == source && $0.startTime < range.endTime && $0.endTime >= range.startTime
-                }.compactMap(\.speakerID)).subtracting([RecordingTranscript.Speaker.unassignedID])
+                }.compactMap(\.speakerID), by: { $0 })
+                let identities = voices.filter { $0.key != RecordingTranscript.Speaker.unassignedID && $0.value.count >= 3 }
                 if identities.count > 1 {
                     issues.append(.init(kind: .unstableSpeaker, startTime: range.startTime, endTime: range.endTime))
                 }

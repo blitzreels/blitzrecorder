@@ -130,7 +130,7 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
         defer { Task { await workGate.release() } }
         try Task.checkCancellation()
         request.onUpdate(TranscriptionEngineUpdate(stage: .preparingAudio))
-        let prepared = try await audioPreparer.prepare(request.source)
+        let prepared = try await preparedCallAudio(request.source)
         defer { for track in prepared.tracks { try? FileManager.default.removeItem(at: track.audioURL) } }
         request.onUpdate(TranscriptionEngineUpdate(stage: .loadingModels))
         let managers = try await loadedManagers(.init(model: request.model, speakerCount: request.speakerCount))
@@ -180,6 +180,7 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
             preservesDetectedSpeakers: request.speakerCount == .two
         ))
         assembled.speechRanges = (assembled.speechRanges ?? []) + speech.flatMap(\.windows)
+        issues = TranscriptionQuality.confirmedRecognitionIssues(.init(issues: issues, words: assembled.words ?? []))
         issues.append(contentsOf: TranscriptionQuality.speakerIssues(.init(
             transcript: assembled, expectedCount: request.speakerCount == .two ? 2 : nil,
             speechBySource: Self.speechBySource(speech)
@@ -193,6 +194,17 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
         request.onUpdate(.init(stage: .saving))
         try artifactStore.save(.init(transcript: transcript, locations: prepared.artifactLocations))
         return transcript
+    }
+
+    private func preparedCallAudio(_ source: TranscriptionMediaSource) async throws -> PreparedTranscriptionAudio {
+        let prepared = try await audioPreparer.prepare(source)
+        do {
+            try CallAudioAnalysis.removingMicrophoneBleed(prepared.tracks)
+        } catch {
+            for track in prepared.tracks { try? FileManager.default.removeItem(at: track.audioURL) }
+            throw error
+        }
+        return prepared
     }
 
     private func makeSpeechDetector() throws -> VadManager {
@@ -222,7 +234,7 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
         try Task.checkCancellation()
         try requireInstalledModel()
         request.onUpdate(TranscriptionEngineUpdate(stage: .preparingAudio))
-        let preparedAudio = try await audioPreparer.prepare(request.source)
+        let preparedAudio = try await preparedCallAudio(request.source)
         defer {
             for track in preparedAudio.tracks {
                 try? FileManager.default.removeItem(at: track.audioURL)
@@ -285,7 +297,7 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
         try requireInstalledModel()
         try Task.checkCancellation()
         request.onUpdate(.init(stage: .preparingAudio))
-        let prepared = try await audioPreparer.prepare(request.source)
+        let prepared = try await preparedCallAudio(request.source)
         defer {
             for track in prepared.tracks { try? FileManager.default.removeItem(at: track.audioURL) }
         }
@@ -337,7 +349,9 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
                 if let constrained = constrainedDiarizers[count] { diarizer = constrained }
             }
             do {
-                let diarizationResult = try await diarizer.process(track.audioURL)
+                let diarizationResult = try await diarizer.process(
+                    audio: CallAudioAnalysis.readSamples(track.audioURL)
+                )
                 try Task.checkCancellation()
                 intervals.append(contentsOf: Self.intervals(diarizationResult.segments, prefix: prefix))
             } catch OfflineDiarizationError.noSpeechDetected {

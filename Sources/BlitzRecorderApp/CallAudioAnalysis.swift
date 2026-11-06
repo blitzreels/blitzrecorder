@@ -230,4 +230,30 @@ enum CallAudioAnalysis {
         guard let channel = buffer.floatChannelData?[0] else { throw RecorderError.speechUnavailable }
         return Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
     }
+
+    struct SampleWrite {
+        let samples: [Float]
+        let url: URL
+    }
+
+    static func writeSamples(_ request: SampleWrite) throws {
+        guard let format = AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1),
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(request.samples.count)),
+              let channel = buffer.floatChannelData?[0] else { throw RecorderError.speechUnavailable }
+        buffer.frameLength = AVAudioFrameCount(request.samples.count)
+        request.samples.withUnsafeBufferPointer { channel.update(from: $0.baseAddress!, count: $0.count) }
+        let file = try AVAudioFile(forWriting: request.url, settings: format.settings,
+                                   commonFormat: .pcmFormatFloat32, interleaved: false)
+        try file.write(from: buffer)
+    }
+
+    static func removingMicrophoneBleed(_ tracks: [PreparedTranscriptionTrack]) throws {
+        guard let microphone = tracks.first(where: { $0.source == .microphone }),
+              let system = tracks.first(where: { $0.source == .systemAudio }) else { return }
+        let result = MicrophoneBleed.removed(.init(
+            microphone: try readSamples(microphone.audioURL), system: try readSamples(system.audioURL)
+        ))
+        guard result.removedSeconds > 0 else { return }
+        try writeSamples(.init(samples: result.microphone, url: microphone.audioURL))
+    }
 }

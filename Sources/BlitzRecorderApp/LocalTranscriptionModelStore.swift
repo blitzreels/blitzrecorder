@@ -6,6 +6,7 @@ enum LocalTranscriptionError: LocalizedError {
     case incompleteModel(String)
     case transcriptUnavailable
     case transcriptBusy
+    case notEnoughSpace(needed: Int64, available: Int64)
 
     var errorDescription: String? {
         switch self {
@@ -17,6 +18,10 @@ enum LocalTranscriptionError: LocalizedError {
             return "The transcript is unavailable."
         case .transcriptBusy:
             return "This transcript is already being updated. Try again when it finishes."
+        case .notEnoughSpace(let needed, let available):
+            let style = ByteCountFormatStyle(style: .file)
+            return "Your Mac needs \(needed.formatted(style)) free to transcribe this recording and has "
+                + "\(available.formatted(style)). Free some space and it starts again."
         }
     }
 }

@@ -107,7 +107,7 @@ actor VoiceDiscoveryScanner {
             let attributes = try? FileManager.default.attributesOfItem(atPath: source.path)
             components.append(contentsOf: [source.role, source.path,
                 String(describing: attributes?[.size]), String(describing: attributes?[.modificationDate]),
-                String(project.sourceTimelineOffsetSeconds[source.role] ?? 0)])
+                String(project.sourceOffset(forRole: source.role))])
         }
         let hash = SHA256.hash(data: Data(components.joined(separator: "\n").utf8))
             .map { String(format: "%02x", $0) }.joined()

@@ -94,7 +94,7 @@ actor SpeakerSampleBuilder {
             let asset = AVURLAsset(url: URL(fileURLWithPath: source.path))
             guard let track = try? await asset.loadTracks(withMediaType: .audio).first,
                   let duration = try? await asset.load(.duration).seconds, duration.isFinite else { continue }
-            let offset = (request.project.sourceTimelineOffsetSeconds[source.role] ?? 0)
+            let offset = request.project.sourceOffset(forRole: source.role)
                 - request.project.timelineTrimOffsetSeconds
             let start = max(request.range.start, offset)
             let end = min(request.range.end, offset + duration)

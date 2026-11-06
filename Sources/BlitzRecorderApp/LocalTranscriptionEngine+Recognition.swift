@@ -71,7 +71,10 @@ extension LocalTranscriptionEngine {
         if request.model == .parakeet {
             guard let asr = request.asr else { throw LocalTranscriptionError.modelNotInstalled }
             var state = TdtDecoderState.make(decoderLayers: await asr.decoderLayerCount)
-            let result = try await asr.transcribe(samples, decoderState: &state,
+            let minimum = ASRConstants.minimumRequiredSamples(forSampleRate: 16_000)
+            let padded = samples.count < minimum
+                ? samples + [Float](repeating: 0, count: minimum - samples.count) : samples
+            let result = try await asr.transcribe(padded, decoderState: &state,
                                                  language: request.language.flatMap(Language.init(rawValue:)))
             raw = Self.words(result.tokenTimings ?? [])
         } else {

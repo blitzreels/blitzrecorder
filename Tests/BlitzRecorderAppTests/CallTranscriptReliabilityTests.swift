@@ -90,12 +90,16 @@ final class CallTranscriptReliabilityTests: XCTestCase {
         let transcript = RecordingTranscriptAssembler.assemble(.init(
             mediaPath: "/tmp/call.wav", generatedAt: Date(), duration: 10, confidence: 0.9,
             text: "", suggestedTitle: nil, words: [
-                .init(text: "Bonjour", startTime: 1, endTime: 1.8, confidence: 0.9, source: .microphone),
-                .init(text: "notre", startTime: 2, endTime: 2.5, confidence: 0.9, source: .microphone),
-                .init(text: "équipe", startTime: 3, endTime: 3.5, confidence: 0.9, source: .microphone)
+                .init(text: "Bonjour", startTime: 1, endTime: 1.3, confidence: 0.9, source: .microphone),
+                .init(text: "à", startTime: 1.3, endTime: 1.5, confidence: 0.9, source: .microphone),
+                .init(text: "tous", startTime: 1.5, endTime: 1.8, confidence: 0.9, source: .microphone),
+                .init(text: "notre", startTime: 2, endTime: 2.2, confidence: 0.9, source: .microphone),
+                .init(text: "belle", startTime: 2.2, endTime: 2.4, confidence: 0.9, source: .microphone),
+                .init(text: "équipe", startTime: 2.4, endTime: 2.6, confidence: 0.9, source: .microphone),
+                .init(text: "merci", startTime: 3, endTime: 3.5, confidence: 0.9, source: .microphone)
             ], diarizedIntervals: [
                 .init(speakerID: "mic-a", startTime: 1, endTime: 1.8, embedding: [1, 0]),
-                .init(speakerID: "mic-b", startTime: 2, endTime: 2.5, embedding: [0, 1]),
+                .init(speakerID: "mic-b", startTime: 2, endTime: 2.6, embedding: [0, 1]),
                 .init(speakerID: "mic-a", startTime: 3, endTime: 3.5, embedding: [1, 0])
             ], preservesDetectedSpeakers: true
         ))

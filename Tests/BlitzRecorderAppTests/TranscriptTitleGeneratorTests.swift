@@ -21,7 +21,7 @@ final class TranscriptTitleGeneratorTests: XCTestCase {
 
         let chunks = TitleGenerator.transcriptChunks(transcript)
 
-        XCTAssertEqual(chunks.count, 3)
+        XCTAssertEqual(chunks.count, 4)
         XCTAssertEqual(chunks.joined(), transcript)
     }
 

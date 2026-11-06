@@ -296,7 +296,23 @@ extension RecordingTranscriptAssembler {
                 }
             })
             if nativeIDs.count == 1 { return nativeIDs.first! }
-            return "undiarized"
+            return Self.surroundingVoice(.init(word: request.word, intervals: intervals.filter { nativeIDs.contains($0.speakerID) }))
+        }
+
+        private struct SurroundingRequest {
+            let word: TranscriptWord
+            let intervals: [DiarizedInterval]
+        }
+
+        private static func surroundingVoice(_ request: SurroundingRequest) -> String {
+            let before = request.intervals.filter { $0.endTime <= request.word.startTime }.max { $0.endTime < $1.endTime }
+            let after = request.intervals.filter { $0.startTime >= request.word.endTime }.min { $0.startTime < $1.startTime }
+            if let before, let after, before.speakerID == after.speakerID { return before.speakerID }
+            let nearest = [before.map { ($0.speakerID, request.word.startTime - $0.endTime) },
+                           after.map { ($0.speakerID, $0.startTime - request.word.endTime) }]
+                .compactMap { $0 }.min { $0.1 < $1.1 }
+            guard let nearest, nearest.1 <= 2 else { return "undiarized" }
+            return nearest.0
         }
 
     }

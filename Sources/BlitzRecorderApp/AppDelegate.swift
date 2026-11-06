@@ -80,7 +80,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
             self?.mainMenuBuilder?.rebuild()
         }
 
+        coordinator.transcription.onTranscriptSaved = { source in
+            guard case .project(let projectURL) = source else { return }
+            Task { await HostedVideoShareController.shared.refreshDetails(projectPath: projectURL.path) }
+        }
+        HostedVideoShareController.shared.onTranscriptMissing = { [weak self] projectPath in
+            self?.coordinator.transcription.prioritize(URL(fileURLWithPath: projectPath))
+        }
         coordinator.onStateChanged = { [weak self] state in
+            self?.coordinator.transcription.isCaptureActive = state != .idle
             self?.updateController.installationBlockedReason = state != .idle
                 ? "Finish recording before restarting."
                 : self?.coordinator.isExporting == true ? "Finish exporting before restarting." : nil

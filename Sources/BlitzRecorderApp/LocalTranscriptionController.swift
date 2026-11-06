@@ -23,6 +23,22 @@ final class LocalTranscriptionController {
     private struct EnqueueRequest {
         let source: TranscriptionMediaSource
         let force: Bool
+        let isUrgent: Bool
+    }
+
+    private struct QueuedJob {
+        let source: TranscriptionMediaSource
+        let isUrgent: Bool
+        let order: Date
+
+        func runsBefore(_ other: QueuedJob) -> Bool {
+            (isUrgent ? 1 : 0, order) > (other.isUrgent ? 1 : 0, other.order)
+        }
+    }
+
+    private struct AutomaticFailure: Codable {
+        var count: Int
+        var message: String
     }
 
     private struct UpdateRequest {
@@ -40,6 +56,10 @@ final class LocalTranscriptionController {
     private static let modelKey = "transcription.speech.model"
     private static let languageKey = "transcription.language"
     private static let speakerCountKey = "transcription.speaker-count"
+    private static let failuresKey = "transcription.automatic.failures"
+    private static let titleAttemptsKey = "transcription.title.attempts"
+    private static let automaticAttemptLimit = 2
+    private static let titleBackfillAge: TimeInterval = 7 * 86_400
 
     var modelStates: [TranscriptionSpeechModel: TranscriptionModelState]
     var modelState: TranscriptionModelState {
@@ -99,6 +119,21 @@ final class LocalTranscriptionController {
     @ObservationIgnored private var inspectionRequests: [String: EnqueueRequest] = [:]
     @ObservationIgnored private var sourceInspections: [String: SourceInspection] = [:]
     @ObservationIgnored private var projectSyncTask: Task<Void, Never>?
+    @ObservationIgnored private var queue: [String: QueuedJob] = [:]
+    @ObservationIgnored private var runningJob: QueuedJob?
+    @ObservationIgnored private var sourceDates: [String: Date] = [:]
+    @ObservationIgnored var onTranscriptSaved: ((TranscriptionMediaSource) -> Void)?
+
+    var isCaptureActive = false {
+        didSet {
+            guard isCaptureActive != oldValue else { return }
+            if isCaptureActive {
+                if let key = runningJob?.source.key { tasks[key]?.cancel() }
+            } else {
+                pump()
+            }
+        }
+    }
 
     private struct SourceInspection: Sendable {
         let transcriptURL: URL?
@@ -167,6 +202,7 @@ final class LocalTranscriptionController {
                 ? .ready(size: dependencies.modelStore.installedSize(model))
                 : .notDownloaded)
         })
+        Task.detached(priority: .utility) { TranscriptionScratch.removeLeftovers() }
     }
 
     func downloadModels() {
@@ -220,6 +256,7 @@ final class LocalTranscriptionController {
         projectSyncTask?.cancel()
         let sources = projects.map { TranscriptionMediaSource.project(URL(fileURLWithPath: $0.projectPath)) }
         for source in sources { knownSources[source.key] = source }
+        for project in projects { sourceDates[project.projectPath] = project.createdAt ?? project.updatedAt }
         let previousStatuses = jobStatuses
         let fileStore = fileStore
         let artifactStore = artifactStore
@@ -255,18 +292,25 @@ final class LocalTranscriptionController {
                 }
             }
             if statuses != self.jobStatuses { self.jobStatuses = statuses }
-            if self.isAutomaticEnabled { self.enqueueKnownSources() }
+            if self.isAutomaticEnabled {
+                self.enqueueKnownSources()
+                self.titleUntitledProjects(projects)
+            }
         }
         projectSyncTask = task
         return task
     }
 
     func enqueueProject(_ projectURL: URL) {
-        enqueue(EnqueueRequest(source: .project(projectURL), force: false))
+        enqueue(EnqueueRequest(source: .project(projectURL), force: false, isUrgent: true))
+    }
+
+    func prioritize(_ projectURL: URL) {
+        enqueue(EnqueueRequest(source: .project(projectURL), force: true, isUrgent: true))
     }
 
     func retry(_ source: TranscriptionMediaSource) {
-        enqueue(EnqueueRequest(source: source, force: true))
+        enqueue(EnqueueRequest(source: source, force: true, isUrgent: true))
     }
 
     func isFixingSpeakers(_ project: RecordingProjectHistory.Entry) -> Bool {
@@ -288,6 +332,7 @@ final class LocalTranscriptionController {
 
     func endSpeakerEdit(_ project: RecordingProjectHistory.Entry) {
         speakerFixDetails[project.projectPath] = nil
+        pump()
     }
 
     func fixSpeakers(_ project: RecordingProjectHistory.Entry) async throws -> RecordingTranscript {
@@ -295,7 +340,10 @@ final class LocalTranscriptionController {
         guard !isUpdatingTranscript(project) else { throw LocalTranscriptionError.transcriptBusy }
         guard canFixSpeakers(project) else { throw LocalTranscriptionError.modelNotInstalled }
         speakerFixDetails[key] = TranscriptionJobStatus.preparingAudio.label
-        defer { speakerFixDetails[key] = nil }
+        defer {
+            speakerFixDetails[key] = nil
+            pump()
+        }
         return try await engine.reassignSpeakers(LocalTranscriptionEngine.SpeakerFixRequest(
             source: .project(URL(fileURLWithPath: key)),
             speakerCount: speakerCount,
@@ -318,8 +366,10 @@ final class LocalTranscriptionController {
         guard tasks[source.key] == nil, speakerFixDetails[source.key] == nil,
               isAutomaticEnabled || request.force else { return }
         guard let inspection = sourceInspections[source.key] else {
+            let earlier = inspectionRequests[source.key]
             inspectionRequests[source.key] = .init(source: source,
-                force: request.force || inspectionRequests[source.key]?.force == true)
+                force: request.force || earlier?.force == true,
+                isUrgent: request.isUrgent || earlier?.isUrgent == true)
             guard inspectionTasks[source.key] == nil else { return }
             inspectionTasks[source.key] = Task { [weak self] in
                 guard let self else { return }
@@ -342,6 +392,11 @@ final class LocalTranscriptionController {
         if !request.force, isTranscriptReady(source.key) {
             return
         }
+        if !request.force, let failure = automaticFailures[source.key],
+           failure.count >= Self.automaticAttemptLimit {
+            jobStatuses[source.key] = .failed(failure.message)
+            return
+        }
         guard modelState.isReady else {
             jobStatuses[source.key] = .waitingForModel
             if request.force {
@@ -351,15 +406,35 @@ final class LocalTranscriptionController {
             return
         }
         pendingManualSources[source.key] = nil
+        let isUrgent = request.isUrgent || queue[source.key]?.isUrgent == true
+        queue[source.key] = QueuedJob(source: source, isUrgent: isUrgent,
+            order: request.isUrgent ? Date() : queue[source.key]?.order ?? sourceDates[source.key] ?? .distantPast)
         jobStatuses[source.key] = .queued
+        pump()
+    }
+
+    private func pump() {
+        guard runningJob == nil, !isCaptureActive, modelState.isReady else { return }
+        let next = queue.values
+            .filter { speakerFixDetails[$0.source.key] == nil }
+            .reduce(nil as QueuedJob?) { best, job in best.map { job.runsBefore($0) ? job : $0 } ?? job }
+        guard let next else { return }
+        queue[next.source.key] = nil
+        run(next)
+    }
+
+    private func run(_ job: QueuedJob) {
+        let source = job.source
+        let key = source.key
+        runningJob = job
         let jobID = UUID()
-        jobIDs[source.key] = jobID
-        jobStartedAt[source.key] = Date()
-        jobDetails[source.key] = nil
+        jobIDs[key] = jobID
+        jobStartedAt[key] = Date()
+        jobDetails[key] = nil
         let model = selectedModel
         let language = selectedLanguage
         let speakerCount = speakerCount
-        tasks[source.key] = Task { [weak self] in
+        tasks[key] = Task { [weak self] in
             guard let self else { return }
             do {
                 let transcript = try await engine.transcribe(
@@ -379,28 +454,92 @@ final class LocalTranscriptionController {
                         }
                     )
                 )
+                updateFailures { $0[key] = nil }
                 await markReady(source)
+                onTranscriptSaved?(source)
                 deliverCompletion(CompletedTranscription(source: source, transcript: transcript))
+            } catch let error where Task.isCancelled || error is CancellationError {
+                queue[key] = job
+                jobStatuses[key] = .queued
             } catch {
-                jobStatuses[source.key] = .failed(error.localizedDescription)
+                recordFailure(.init(key: key, error: error))
+                jobStatuses[key] = .failed(error.localizedDescription)
             }
-            tasks[source.key] = nil
-            jobIDs[source.key] = nil
-            jobStartedAt[source.key] = nil
-            jobDetails[source.key] = nil
+            tasks[key] = nil
+            jobIDs[key] = nil
+            jobStartedAt[key] = nil
+            jobDetails[key] = nil
+            runningJob = nil
+            pump()
+        }
+    }
+
+    private struct FailureRecord {
+        let key: String
+        let error: Error
+    }
+
+    private var automaticFailures: [String: AutomaticFailure] {
+        defaults.data(forKey: Self.failuresKey)
+            .flatMap { try? JSONDecoder().decode([String: AutomaticFailure].self, from: $0) } ?? [:]
+    }
+
+    private func updateFailures(_ change: (inout [String: AutomaticFailure]) -> Void) {
+        var failures = automaticFailures
+        change(&failures)
+        if failures.isEmpty {
+            defaults.removeObject(forKey: Self.failuresKey)
+        } else if let data = try? JSONEncoder().encode(failures) {
+            defaults.set(data, forKey: Self.failuresKey)
+        }
+    }
+
+    private func recordFailure(_ record: FailureRecord) {
+        if case LocalTranscriptionError.notEnoughSpace = record.error { return }
+        updateFailures { failures in
+            let count = (failures[record.key]?.count ?? 0) + 1
+            failures[record.key] = AutomaticFailure(count: count, message: record.error.localizedDescription)
+        }
+    }
+
+    func markTitleAttempted(_ key: String) {
+        var attempted = defaults.stringArray(forKey: Self.titleAttemptsKey) ?? []
+        guard !attempted.contains(key) else { return }
+        attempted.append(key)
+        defaults.set(Array(attempted.suffix(500)), forKey: Self.titleAttemptsKey)
+    }
+
+    private func titleUntitledProjects(_ projects: [RecordingProjectHistory.Entry]) {
+        let attempted = Set(defaults.stringArray(forKey: Self.titleAttemptsKey) ?? [])
+        let recent = Date().addingTimeInterval(-Self.titleBackfillAge)
+        for project in projects where (project.createdAt ?? project.updatedAt) > recent
+            && !attempted.contains(project.projectPath)
+            && (RecordingProjectDisplayTitle.isUntitled(project.title)
+                || ProjectFolderTitle.untitledPrefix(project.title) != nil) {
+            guard tasks[project.projectPath] == nil,
+                  let inspection = sourceInspections[project.projectPath], inspection.hasTranscript,
+                  let transcriptURL = inspection.transcriptURL else { continue }
+            let source = TranscriptionMediaSource.project(URL(fileURLWithPath: project.projectPath))
+            Task { [weak self] in
+                let transcript = await Task.detached(priority: .utility) {
+                    try? TranscriptArtifactStore().load(from: transcriptURL)
+                }.value
+                guard let self, let transcript else { return }
+                self.deliverCompletion(CompletedTranscription(source: source, transcript: transcript))
+            }
         }
     }
 
     private func enqueueKnownSources() {
         for source in knownSources.values {
-            enqueue(EnqueueRequest(source: source, force: false))
+            enqueue(EnqueueRequest(source: source, force: false, isUrgent: false))
         }
     }
 
     private func enqueuePendingManualSources() {
         let sources = Array(pendingManualSources.values)
         for source in sources {
-            enqueue(EnqueueRequest(source: source, force: true))
+            enqueue(EnqueueRequest(source: source, force: true, isUrgent: true))
         }
     }
 

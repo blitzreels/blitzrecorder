@@ -546,6 +546,7 @@
 		DB78A0ADF3B996C49E879CC6 /* RecordingTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = F86AF6C930DD1496088FBA04 /* RecordingTranscript.swift */; };
 		DCF6E7ECAFF8AA4B6B6DF408 /* TranscriptionWorkGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31E892F29C6973AF9057C379 /* TranscriptionWorkGate.swift */; };
 		DD417A07DB43DF8AE57DB52F /* RemoteCameraControlsCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = B060732C87238C96C1C779D2 /* RemoteCameraControlsCopy.swift */; };
+		DD9126B02A3286EA7AE4AE6D /* MicrophoneBleed.swift in Sources */ = {isa = PBXBuildFile; fileRef = E176D89C40BE2D0291D5EE0A /* MicrophoneBleed.swift */; };
 		DE4A3EF73E3AC722CD829734 /* EditorShortcutHelp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02C7C78B6BE000B3BECFC593 /* EditorShortcutHelp.swift */; };
 		DE644C8611829FFDFD635C18 /* MCPProjectResponses.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BD4A17A1E5DD1C1065C8882 /* MCPProjectResponses.swift */; };
 		DEE916079062399199A85E9E /* CursorPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A98B55F86349B18A461FA6E /* CursorPresentation.swift */; };
@@ -1246,6 +1247,7 @@
 		E097E4BC7F7B1E3DAC98F9AB /* Merger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Merger.swift; sourceTree = "<group>"; };
 		E0A5473E7FCF85B8AAF22F22 /* EditorTrackVolumeControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorTrackVolumeControl.swift; sourceTree = "<group>"; };
 		E0F09271C8CD7EBD6A632211 /* Icon-App-1024x1024@1x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icon-App-1024x1024@1x.png"; sourceTree = "<group>"; };
+		E176D89C40BE2D0291D5EE0A /* MicrophoneBleed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicrophoneBleed.swift; sourceTree = "<group>"; };
 		E17EBA4BED7245B2594A95B9 /* SpeakerSampleBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakerSampleBuilder.swift; sourceTree = "<group>"; };
 		E1B503CA85BD71715F74EC14 /* RemoteCameraAbsence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCameraAbsence.swift; sourceTree = "<group>"; };
 		E1D47BF373DB1CC4900E31C6 /* CameraAnglesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraAnglesSection.swift; sourceTree = "<group>"; };
@@ -1541,6 +1543,7 @@
 				D4BE8C4D80D3C7A25EE9B5EF /* Merger+Instructions.swift */,
 				4C14F42C971208D7518AFDEA /* Merger+VideoSources.swift */,
 				714C99A145E6DDBA4BCD213B /* MetalExportVideoCompositor.swift */,
+				E176D89C40BE2D0291D5EE0A /* MicrophoneBleed.swift */,
 				DC7062505D58262F1B48515B /* MicrophoneMixdown.swift */,
 				EA18F73442F99764AD98D33F /* MicrophoneTrackCapture.swift */,
 				C564BF851842021965EE8D23 /* MulticamProgram.swift */,
@@ -2554,6 +2557,7 @@
 				21B76E6AFCB906AFDB2ECBBC /* Merger+VideoSources.swift in Sources */,
 				8E0A21A77169107ED7450455 /* Merger.swift in Sources */,
 				D85B11EC82D51DEE18B69119 /* MetalExportVideoCompositor.swift in Sources */,
+				DD9126B02A3286EA7AE4AE6D /* MicrophoneBleed.swift in Sources */,
 				6376BF3A89A88C5531F48B30 /* MicrophoneMixdown.swift in Sources */,
 				F3F9F1AC97D6EEF317CB569F /* MicrophoneTrackCapture.swift in Sources */,
 				FD9C5A198DB74763176ED48D /* MicrophoneTracksSection.swift in Sources */,

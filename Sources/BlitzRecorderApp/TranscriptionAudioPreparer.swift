@@ -108,7 +108,7 @@ struct TranscriptionAudioPreparer {
             guard FileManager.default.fileExists(atPath: url.path) else {
                 return nil
             }
-            let sourceTimelineOffset = project.sourceTimelineOffsetSeconds[source.role] ?? 0
+            let sourceTimelineOffset = project.sourceOffset(forRole: source.role)
             let sourceStart = max(
                 0,
                 project.timelineTrimOffsetSeconds - sourceTimelineOffset
@@ -182,6 +182,7 @@ struct TranscriptionAudioPreparer {
         guard !tracks.isEmpty else {
             throw RecorderError.speechUnavailable
         }
+        try TranscriptionScratch.requireSpace(seconds: composition.duration.seconds)
         let audioMix = AVMutableAudioMix()
         audioMix.inputParameters = mixParameters
         let reader = try AVAssetReader(asset: composition)
@@ -239,8 +240,7 @@ struct TranscriptionAudioPreparer {
     }
 
     private func temporaryAudioURL() throws -> URL {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("BlitzRecorderTranscription", isDirectory: true)
+        let directory = TranscriptionScratch.directory
         try FileManager.default.createDirectory(
             at: directory,
             withIntermediateDirectories: true
@@ -248,5 +248,57 @@ struct TranscriptionAudioPreparer {
         return directory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("caf")
+    }
+}
+
+enum TranscriptionScratch {
+    private static let bytesPerSecond = 16_000 * MemoryLayout<Float>.size
+    private static let reserveBytes: Int64 = 1_000_000_000
+    private static let staleAge: TimeInterval = 6 * 3_600
+
+    static var root: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("BlitzRecorderTranscription", isDirectory: true)
+    }
+
+    static var directory: URL {
+        root.appendingPathComponent(String(ProcessInfo.processInfo.processIdentifier), isDirectory: true)
+    }
+
+    static func requireSpace(seconds: Double) throws {
+        guard seconds.isFinite, seconds > 0 else { return }
+        let needed = Int64(seconds * Double(bytesPerSecond)) + reserveBytes
+        let values = try? FileManager.default.temporaryDirectory
+            .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        guard let available = values?.volumeAvailableCapacityForImportantUsage else { return }
+        if available < needed {
+            throw LocalTranscriptionError.notEnoughSpace(needed: needed, available: available)
+        }
+    }
+
+    static func removeLeftovers() {
+        let fileManager = FileManager.default
+        let staleBefore = Date().addingTimeInterval(-staleAge)
+        let keys: [URLResourceKey] = [.contentModificationDateKey, .isDirectoryKey]
+        for url in (try? fileManager.contentsOfDirectory(at: root, includingPropertiesForKeys: keys)) ?? [] {
+            if let pid = pid_t(url.lastPathComponent) {
+                if pid != getpid(), !isRunning(pid) { try? fileManager.removeItem(at: url) }
+            } else if isStale(url, before: staleBefore) {
+                try? fileManager.removeItem(at: url)
+            }
+        }
+        let temporary = fileManager.temporaryDirectory
+        for url in (try? fileManager.contentsOfDirectory(at: temporary, includingPropertiesForKeys: keys)) ?? []
+        where url.lastPathComponent.hasPrefix("fluidaudio-streaming-") && isStale(url, before: staleBefore) {
+            try? fileManager.removeItem(at: url)
+        }
+    }
+
+    private static func isRunning(_ pid: pid_t) -> Bool {
+        kill(pid, 0) == 0 || errno == EPERM
+    }
+
+    private static func isStale(_ url: URL, before date: Date) -> Bool {
+        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        return (modified ?? .distantPast) < date
     }
 }

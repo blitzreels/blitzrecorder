@@ -13,6 +13,7 @@ extension RecorderViewModel {
         automaticTitleTasks[projectURL.path] = Task { [weak self] in
             guard let self else { return }
             defer { automaticTitleTasks[projectURL.path] = nil }
+            defer { if !Task.isCancelled { transcriptionController.markTitleAttempted(projectURL.path) } }
             do {
                 let fileStore = TakeFileStore()
                 let project = try fileStore.loadRecordingProject(at: projectURL)

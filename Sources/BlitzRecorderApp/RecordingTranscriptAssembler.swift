@@ -155,9 +155,9 @@ enum RecordingTranscriptAssembler {
             !$0.embedding.isEmpty && $0.embedding.allSatisfy(\.isFinite)
                 && $0.embedding.contains { $0 != 0 }
         }.map(\.speakerID))
-        let stabilizedWords = zip(assignedWords, candidateWords).map { original, stabilized in
+        let stabilizedWords = foldingStrayVoices(zip(assignedWords, candidateWords).map { original, stabilized in
             evidencedIDs.contains(original.rawSpeakerID) ? original : stabilized
-        }
+        })
         let normalizedSpeakerIDs = normalizedSpeakerIDs(for: stabilizedWords)
         let normalizedWords = stabilizedWords.map { assignedWord in
             TranscriptSegmentBuilder.SpeakerWord(
@@ -347,6 +347,80 @@ enum RecordingTranscriptAssembler {
                 rawSpeakerID: dominant.key
             )
         }
+    }
+
+    private static let strayVoiceTrackWords = 150
+    private static let strayVoiceShare = 0.02
+    private static let strayVoiceSeconds: TimeInterval = 20
+
+    private static func foldingStrayVoices(_ words: [AssignedWord]) -> [AssignedWord] {
+        var result = words
+        let tracks = Dictionary(grouping: words.indices) { words[$0].word.source ?? .mixed }
+        let isCall = tracks[.systemAudio]?.isEmpty == false && tracks[.microphone]?.isEmpty == false
+        for (source, indices) in tracks where indices.count >= strayVoiceTrackWords {
+            let voiced = indices.filter { words[$0].rawSpeakerID != "undiarized" }
+            let byVoice = Dictionary(grouping: voiced) { words[$0].rawSpeakerID }
+            guard byVoice.count > 1 else { continue }
+            let trackWords = voiced.map { words[$0] }
+            let stray = Set(byVoice.compactMap { voice, members -> String? in
+                let turns = turnDurations(for: voice, words: trackWords)
+                let isFragment = Double(members.count) <= Double(voiced.count) * strayVoiceShare
+                    && turns.reduce(0, +) <= strayVoiceSeconds && turns.max() ?? 0 <= 6
+                let isBackchannel = isCall && source == .microphone
+                    && Double(members.count) <= Double(voiced.count) * backchannelShare
+                    && medianTurnWords(.init(voice: voice, words: trackWords)) <= 6
+                return isFragment || isBackchannel ? voice : nil
+            })
+            guard !stray.isEmpty, stray.count < byVoice.count else { continue }
+            let anchors = voiced.filter { !stray.contains(words[$0].rawSpeakerID) }
+            for index in voiced where stray.contains(words[index].rawSpeakerID) {
+                let word = words[index].word
+                guard let nearest = anchors.min(by: {
+                    timeDistance(.init(word: word, other: words[$0].word))
+                        < timeDistance(.init(word: word, other: words[$1].word))
+                }) else { continue }
+                result[index] = AssignedWord(word: word, rawSpeakerID: words[nearest].rawSpeakerID)
+            }
+        }
+        return result
+    }
+
+    private static let backchannelShare = 0.2
+
+    private struct VoiceTurnsRequest {
+        let voice: String
+        let words: [AssignedWord]
+    }
+
+    private static func medianTurnWords(_ request: VoiceTurnsRequest) -> Int {
+        var counts: [Int] = []
+        var current = 0
+        var lastEnd: TimeInterval?
+        for word in request.words {
+            guard word.rawSpeakerID == request.voice else {
+                if current > 0 { counts.append(current) }
+                current = 0
+                lastEnd = nil
+                continue
+            }
+            if let end = lastEnd, word.word.startTime - end > 1.2, current > 0 {
+                counts.append(current)
+                current = 0
+            }
+            current += 1
+            lastEnd = word.word.endTime
+        }
+        if current > 0 { counts.append(current) }
+        return counts.sorted()[counts.count / 2]
+    }
+
+    private struct WordDistanceRequest {
+        let word: TranscriptWord
+        let other: TranscriptWord
+    }
+
+    private static func timeDistance(_ request: WordDistanceRequest) -> TimeInterval {
+        max(0, request.other.startTime - request.word.endTime, request.word.startTime - request.other.endTime)
     }
 
     private static func turnDurations(

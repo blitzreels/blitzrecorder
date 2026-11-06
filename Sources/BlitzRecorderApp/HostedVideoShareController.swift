@@ -79,6 +79,7 @@ final class HostedVideoShareController {
         let videos: [HostedLibraryVideo]
         let updatedAt: Date
     }
+    @ObservationIgnored var onTranscriptMissing: ((String) -> Void)?
     @ObservationIgnored private var selectedFingerprint: String?
     @ObservationIgnored private let client: HostingClient
     @ObservationIgnored private let credentials: HostingCredentialStore
@@ -319,9 +320,10 @@ final class HostedVideoShareController {
             defer { access.stop(); isRunning = false; task = nil }
             let metadata = await HostingExportMetadata.resolve(.init(fileURL: fileURL, projectPath: projectPath))
             if metadata.details.transcript.isEmpty {
+                if let projectPath { onTranscriptMissing?(projectPath) }
                 detailsNotice = projectPath == nil
                     ? "This link has no transcript or chapters because the video isn’t linked to a BlitzRecorder project."
-                    : "This link has no transcript yet. Transcribe the recording, then share again to include it."
+                    : "The transcript is still being made. This link gets it as soon as it’s ready."
             }
             do {
                 shareURL = try await client.upload(.init(fileURL: fileURL, token: token, metadata: metadata,
@@ -469,6 +471,23 @@ final class HostedVideoShareController {
         libraryMessage = nil
         libraryUpdatedAt = nil
         shareURL = nil
+    }
+
+    func refreshDetails(projectPath: String) async {
+        guard isConnected, let token = credentials.load() else { return }
+        if links(forProject: projectPath).isEmpty, projectShares.contains(where: { $0.projectPath == projectPath }) {
+            await refreshVideos()
+        }
+        struct Saved: Decodable { let saved: Bool }
+        for link in links(forProject: projectPath) {
+            guard let filePath = link.filePath, FileManager.default.fileExists(atPath: filePath) else { continue }
+            let metadata = await HostingExportMetadata.resolve(.init(fileURL: URL(fileURLWithPath: filePath),
+                                                                     projectPath: projectPath))
+            guard !metadata.details.transcript.isEmpty,
+                  let body = try? JSONEncoder().encode(metadata.details) else { continue }
+            let _: Saved? = try? await client.send(.init(route: "assets/\(link.video.id)/details", token: token,
+                                                         body: body))
+        }
     }
 
     func refreshVideos() async {
