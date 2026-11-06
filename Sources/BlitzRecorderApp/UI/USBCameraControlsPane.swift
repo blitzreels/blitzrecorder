@@ -135,12 +135,7 @@ struct USBCameraControlsPane: View {
             direction(.init(kind: .tilt, delta: 5, title: "Tilt up", symbol: "chevron.up"))
             HStack(spacing: 6) {
                 direction(.init(kind: .pan, delta: -5, title: "Pan left", symbol: "chevron.left"))
-                Button {
-                    for control in model.controls where control.kind.movesCamera {
-                        let turnsAround = control.kind == .pan && abs(control.value - control.defaultValue) < 5 * 3_600
-                        model.setValue(turnsAround ? 180 * 3_600 : control.defaultValue, for: control.kind)
-                    }
-                } label: {
+                Button(action: model.centerOrTurnAround) {
                     Image(systemName: "scope").frame(width: 28)
                 }
                 .blitzButton(.secondary).controlSize(.regular)
@@ -157,6 +152,12 @@ struct USBCameraControlsPane: View {
             .font(BlitzType.caption.monospacedDigit()).foregroundStyle(BlitzUI.secondaryText)
         }
         .frame(maxWidth: .infinity)
+        .task(id: model.loadedCameraID) {
+            while !Task.isCancelled {
+                await model.refreshGimbalPosition()
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
     }
 
     private struct Direction {
@@ -169,8 +170,8 @@ struct USBCameraControlsPane: View {
     private func direction(_ direction: Direction) -> some View {
         let control = model.controls.first { $0.kind == direction.kind }
         return Button {
-            guard let control else { return }
-            model.setValue(control.value + direction.delta * 3_600, for: control.kind)
+            guard control != nil else { return }
+            model.move(.init(kind: direction.kind, delta: direction.delta * 3_600))
         } label: {
             Image(systemName: direction.symbol).frame(width: 28)
         }

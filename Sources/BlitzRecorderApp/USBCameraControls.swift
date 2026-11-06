@@ -66,6 +66,46 @@ struct USBCameraControl: Identifiable, Equatable, Sendable {
     var value: Int
 
     var id: USBCameraControlKind { kind }
+
+    func clamped(_ value: Int) -> Int {
+        min(range.upperBound, max(range.lowerBound, value))
+    }
+}
+
+struct GimbalPosition: Equatable, Sendable {
+    let pan: Int
+    let tilt: Int
+}
+
+struct GimbalMove: Sendable {
+    let kind: USBCameraControlKind
+    let delta: Int
+}
+
+private enum GimbalChange: Sendable {
+    case to(Int)
+    case by(Int)
+
+    func applied(to value: Int) -> Int {
+        switch self {
+        case .to(let target): target
+        case .by(let delta): value + delta
+        }
+    }
+
+    func adding(_ delta: Int) -> GimbalChange {
+        switch self {
+        case .to(let target): .to(target + delta)
+        case .by(let existing): .by(existing + delta)
+        }
+    }
+}
+
+private struct GimbalRequest: Sendable {
+    let pan: USBCameraControl
+    let tilt: USBCameraControl
+    let centersOrTurnsAround: Bool
+    let changes: [USBCameraControlKind: GimbalChange]
 }
 
 private enum UVCRequest {
@@ -104,6 +144,8 @@ private struct UVCControlSpec {
         .init(unit: .processingUnit, bit: 3, selector: 0x07, length: 2, kinds: [.saturation]),
         .init(unit: .processingUnit, bit: 4, selector: 0x08, length: 2, kinds: [.sharpness])
     ]
+
+    static let panTilt = all.first { $0.kinds == [.pan, .tilt] }
 }
 
 private struct UVCLayout {
@@ -254,13 +296,39 @@ private final class UVCDeviceConnection {
         if kind == .autoExposure {
             let mask = read(.init(code: UVCRequest.getResolution, spec: spec, unit: unit))?.first ?? 0
             bytes[0] = values[kind] == 1 ? (mask & 8 != 0 ? 8 : 2) : 1
-        } else if spec.length == 8 {
-            encode(values[.pan] ?? 0, length: 4, into: &bytes, at: 0)
-            encode(values[.tilt] ?? 0, length: 4, into: &bytes, at: 4)
+        } else if kind.movesCamera {
+            return false
         } else {
             encode(values[kind] ?? 0, length: spec.length, into: &bytes, at: 0)
         }
         return send(.init(code: UVCRequest.setCurrent, spec: spec, unit: unit), bytes: &bytes)
+    }
+
+    func readGimbalPosition() -> GimbalPosition? {
+        guard let spec = UVCControlSpec.panTilt, layout.supports(spec),
+              let unit = layout.unitID(spec.unit),
+              let current = read(.init(code: UVCRequest.getCurrent, spec: spec, unit: unit)) else { return nil }
+        return GimbalPosition(pan: decode(current, offset: 0, length: 4), tilt: decode(current, offset: 4, length: 4))
+    }
+
+    func moveGimbal(_ request: GimbalRequest) -> GimbalPosition? {
+        guard let spec = UVCControlSpec.panTilt,
+              let unit = layout.unitID(spec.unit),
+              let current = readGimbalPosition() else { return nil }
+        var pan = current.pan
+        var tilt = current.tilt
+        if request.centersOrTurnsAround {
+            let isCentered = abs(pan - request.pan.defaultValue) < 5 * 3_600
+            pan = isCentered ? request.pan.defaultValue + 180 * 3_600 : request.pan.defaultValue
+            tilt = request.tilt.defaultValue
+        }
+        pan = request.pan.clamped(request.changes[.pan]?.applied(to: pan) ?? pan)
+        tilt = request.tilt.clamped(request.changes[.tilt]?.applied(to: tilt) ?? tilt)
+        var bytes = [UInt8](repeating: 0, count: spec.length)
+        encode(pan, length: 4, into: &bytes, at: 0)
+        encode(tilt, length: 4, into: &bytes, at: 4)
+        guard send(.init(code: UVCRequest.setCurrent, spec: spec, unit: unit), bytes: &bytes) else { return nil }
+        return GimbalPosition(pan: pan, tilt: tilt)
     }
 
     private func controls(for spec: UVCControlSpec) -> [USBCameraControl] {
@@ -422,6 +490,8 @@ final class USBCameraControlsModel {
     @ObservationIgnored private let queue = DispatchQueue(label: "recorder.usb-camera-controls")
     @ObservationIgnored nonisolated(unsafe) private var connection: UVCDeviceConnection?
     @ObservationIgnored private var pendingWrites: [USBCameraControlKind: [USBCameraControlKind: Int]] = [:]
+    @ObservationIgnored private var pendingGimbal: [USBCameraControlKind: GimbalChange] = [:]
+    @ObservationIgnored private var pendingCenter = false
     @ObservationIgnored private var writeTask: Task<Void, Never>?
 
     private static let actionCameraVendorIDs: Set<Int> = [0x2CA3]
@@ -455,10 +525,65 @@ final class USBCameraControlsModel {
             ? control.range.lowerBound
                 + Int((Double(value - control.range.lowerBound) / Double(control.step)).rounded()) * control.step
             : value
-        controls[index].value = min(control.range.upperBound, max(control.range.lowerBound, snapped))
+        controls[index].value = control.clamped(snapped)
         controlError = nil
-        pendingWrites[kind] = Dictionary(uniqueKeysWithValues: controls.map { ($0.kind, $0.value) })
+        if kind.movesCamera {
+            pendingGimbal[kind] = .to(controls[index].value)
+        } else {
+            pendingWrites[kind] = Dictionary(uniqueKeysWithValues: controls.map { ($0.kind, $0.value) })
+        }
         startWritingIfNeeded()
+    }
+
+    func move(_ move: GimbalMove) {
+        guard move.kind.movesCamera, let index = controls.firstIndex(where: { $0.kind == move.kind }) else { return }
+        controls[index].value = controls[index].clamped(controls[index].value + move.delta)
+        controlError = nil
+        pendingGimbal[move.kind] = pendingGimbal[move.kind]?.adding(move.delta) ?? .by(move.delta)
+        startWritingIfNeeded()
+    }
+
+    func centerOrTurnAround() {
+        guard controls.contains(where: \.kind.movesCamera) else { return }
+        controlError = nil
+        pendingCenter = true
+        pendingGimbal = [:]
+        startWritingIfNeeded()
+    }
+
+    func refreshGimbalPosition() async {
+        guard writeTask == nil, controls.contains(where: \.kind.movesCamera) else { return }
+        let cameraID = loadedCameraID
+        let position = await withCheckedContinuation { continuation in
+            queue.async { [self] in continuation.resume(returning: connection?.readGimbalPosition()) }
+        }
+        guard let position, writeTask == nil, loadedCameraID == cameraID else { return }
+        apply(position)
+    }
+
+    private func apply(_ position: GimbalPosition) {
+        for index in controls.indices {
+            switch controls[index].kind {
+            case .pan where controls[index].value != position.pan: controls[index].value = position.pan
+            case .tilt where controls[index].value != position.tilt: controls[index].value = position.tilt
+            default: break
+            }
+        }
+    }
+
+    private func takeGimbalRequest() -> GimbalRequest? {
+        guard pendingCenter || !pendingGimbal.isEmpty,
+              let pan = controls.first(where: { $0.kind == .pan }),
+              let tilt = controls.first(where: { $0.kind == .tilt }) else {
+            pendingCenter = false
+            pendingGimbal = [:]
+            return nil
+        }
+        defer {
+            pendingCenter = false
+            pendingGimbal = [:]
+        }
+        return GimbalRequest(pan: pan, tilt: tilt, centersOrTurnsAround: pendingCenter, changes: pendingGimbal)
     }
 
     func reset() {
@@ -471,7 +596,16 @@ final class USBCameraControlsModel {
         guard writeTask == nil else { return }
         isApplying = true
         writeTask = Task { [weak self] in
-            while let self, let next = self.pendingWrites.popFirst() {
+            while let self {
+                if let request = self.takeGimbalRequest() {
+                    if let position = await self.moveGimbal(request) {
+                        self.apply(position)
+                    } else {
+                        self.controlError = "The camera did not accept the gimbal move."
+                    }
+                    continue
+                }
+                guard let next = self.pendingWrites.popFirst() else { break }
                 let wasToggle = next.key.isToggle
                 let applied = await self.write(next.key, values: next.value)
                 if !applied { self.controlError = "The camera did not accept the \(next.key.title.lowercased()) setting." }
@@ -479,10 +613,22 @@ final class USBCameraControlsModel {
             }
             if let self {
                 try? await Task.sleep(for: .milliseconds(250))
-                if self.pendingWrites.isEmpty { await self.refresh() }
+                if self.hasPendingWork == false { await self.refresh() }
                 self.writeTask = nil
                 self.isApplying = false
-                if !self.pendingWrites.isEmpty { self.startWritingIfNeeded() }
+                if self.hasPendingWork { self.startWritingIfNeeded() }
+            }
+        }
+    }
+
+    private var hasPendingWork: Bool {
+        !pendingWrites.isEmpty || !pendingGimbal.isEmpty || pendingCenter
+    }
+
+    private func moveGimbal(_ request: GimbalRequest) async -> GimbalPosition? {
+        await withCheckedContinuation { continuation in
+            queue.async { [self] in
+                continuation.resume(returning: connection?.moveGimbal(request))
             }
         }
     }
