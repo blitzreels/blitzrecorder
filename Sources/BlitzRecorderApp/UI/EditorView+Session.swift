@@ -232,6 +232,7 @@ extension EditorView {
         }
         let projection = EditorTimelineProjection(.init(duration: timelineDuration, cuts: project.edits.cuts))
         playback.pauseForEditing()
+        guard !item.timing.contains(playback.currentTime) else { return }
         playback.seek(to: item.timing.previewTime(projection))
     }
 
@@ -242,7 +243,7 @@ extension EditorView {
         _ = commitTimelineWrite(.init(
             edits: updated,
             actionName: "Change Item Timing",
-            seek: change.timing.previewTime(projection),
+            seek: change.timing.contains(playback.currentTime) ? nil : change.timing.previewTime(projection),
             usesOutputText: change.id.kind == .text
         ))
     }
@@ -273,9 +274,11 @@ extension EditorView {
 
     func splitTimelineSelection() {
         guard case .placed(let id) = selection else { splitAtPlayhead(); return }
-        guard let edits = placedEdits(id.kind), let updated = EditorPlacedItemEditing.splitting(.init(
-            edits: edits, id: id, time: playback.currentTime
-        )) else { return }
+        guard let edits = placedEdits(id.kind) else { return }
+        guard let updated = EditorPlacedItemEditing.splitting(.init(edits: edits, id: id, time: playback.currentTime)) else {
+            if id.kind != .zoom, id.kind != .music { editErrorMessage = "Move the playhead inside the selected item to split it." }
+            return
+        }
         _ = commitTimelineWrite(.init(
             edits: updated,
             actionName: "Split Timeline Item",

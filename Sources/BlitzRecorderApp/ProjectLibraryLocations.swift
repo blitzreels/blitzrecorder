@@ -120,13 +120,13 @@ struct ProjectLibraryLocations: Equatable {
     }
 
     /// The disk a folder is on. A folder on a disk that is not mounted is named after its /Volumes component.
-    private static func diskName(of url: URL) -> String {
+    static func diskName(of url: URL) -> String {
         let components = url.pathComponents
         if components.count > 2, components[1] == "Volumes" { return components[2] }
         return (try? URL(fileURLWithPath: "/").resourceValues(forKeys: [.volumeNameKey]).volumeName) ?? "This Mac"
     }
 
-    private static func isExternal(_ url: URL) -> Bool {
+    static func isExternal(_ url: URL) -> Bool {
         let components = url.pathComponents
         return components.count > 2 && components[1] == "Volumes"
     }

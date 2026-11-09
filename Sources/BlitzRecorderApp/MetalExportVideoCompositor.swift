@@ -143,7 +143,8 @@ final class MetalExportVideoCompositor: NSObject, AVVideoCompositing, @unchecked
             instruction: instruction,
             compositionRequest: request
         ))
-        guard screenFrame != nil || cameraFrame != nil || secondCameraFrame != nil else {
+        let sceneShowsVideo = !instruction.scene.enabledSources.isDisjoint(with: [.screen, .camera])
+        guard screenFrame != nil || cameraFrame != nil || secondCameraFrame != nil || !sceneShowsVideo else {
             request.finish(with: MetalExportCompositorError.sourceFramesUnavailable(request.compositionTime.seconds))
             return
         }
@@ -274,7 +275,9 @@ private final class MetalExportRendererPool: @unchecked Sendable {
     }
 }
 
-private enum MetalExportCompositorError: LocalizedError {
+private enum MetalExportCompositorError: LocalizedError, CustomNSError {
+    static var errorDomain: String { "BlitzRecorder.Export" }
+
     case invalidInstruction
     case outputBufferUnavailable
     case sourceFramesUnavailable(Double)
@@ -287,7 +290,7 @@ private enum MetalExportCompositorError: LocalizedError {
         case .outputBufferUnavailable:
             "The Metal export buffer pool is unavailable."
         case .sourceFramesUnavailable(let time):
-            "The Metal exporter couldn't read a source frame at \(String(format: "%.3f", time)) seconds."
+            "The export stopped because no video frame could be read at \(String(format: "%.3f", time)) seconds."
         case .renderFailed:
             "The Metal exporter couldn't compose a video frame."
         }

@@ -143,23 +143,7 @@ final class AudioSampleFileWriter: @unchecked Sendable {
         }
         let sampleRate = streamDescription?.mSampleRate ?? 48_000
         let channelCount = max(1, min(2, Int(streamDescription?.mChannelsPerFrame ?? 2)))
-        if format.isLossless {
-            return [
-                AVFormatIDKey: kAudioFormatLinearPCM,
-                AVSampleRateKey: sampleRate,
-                AVNumberOfChannelsKey: channelCount,
-                AVLinearPCMBitDepthKey: 24,
-                AVLinearPCMIsFloatKey: false,
-                AVLinearPCMIsBigEndianKey: false,
-                AVLinearPCMIsNonInterleaved: false
-            ]
-        }
-        return [
-            AVFormatIDKey: kAudioFormatMPEG4AAC,
-            AVSampleRateKey: sampleRate,
-            AVNumberOfChannelsKey: channelCount,
-            AVEncoderBitRateKey: channelCount == 1 ? stereoBitrate / 2 : stereoBitrate
-        ]
+        return format.outputSettings(.init(sampleRate: sampleRate, channelCount: channelCount, stereoBitrate: stereoBitrate))
     }
 
     private func failWriting(_ error: Error) {

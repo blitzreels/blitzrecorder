@@ -3,11 +3,7 @@ import SwiftUI
 
 struct RecordingSettingsPage: View {
     @Bindable var vm: RecorderViewModel
-    @State private var storageDetail = ""
-    @State private var storageUnavailable = false
     @AppStorage(BlitzPreviewPreferences.animatePreviewsKey) private var animatePreviews = true
-
-    private static let folderUnavailableDetail = "Folder unavailable. Reconnect the drive or choose another folder."
 
     private var canEdit: Bool {
         vm.state == .idle
@@ -40,10 +36,6 @@ struct RecordingSettingsPage: View {
         }
         .background(BlitzUI.projectLibraryBackground)
         .foregroundStyle(BlitzUI.primaryText)
-        .task(id: vm.settings.outputDirectory) { refreshStorageDetail() }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            refreshStorageDetail()
-        }
     }
 
     private var livePreviewSection: some View {
@@ -121,63 +113,14 @@ struct RecordingSettingsPage: View {
 
     private var storageSection: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .center, spacing: 14) {
-                    Image(systemName: "folder.fill")
-                        .font(BlitzType.glyph(30))
-                        .foregroundStyle(BlitzUI.accent)
-                        .frame(width: 48, height: 48)
-                        .background(BlitzUI.accent.opacity(0.08), in: .rect(cornerRadius: BlitzUI.cardRadius))
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(vm.settings.outputDirectory.lastPathComponent)
-                            .font(BlitzType.headline)
-                        Text(vm.settings.outputDirectory.path)
-                            .font(BlitzType.body)
-                            .foregroundStyle(BlitzUI.secondaryText)
-                            .lineLimit(2)
-                            .truncationMode(.middle)
-                            .textSelection(.enabled)
-                            .help(vm.settings.outputDirectory.path)
-                    }
-                    Spacer(minLength: 0)
-                }
-
-                HStack(spacing: 8) {
-                    Button("Change Folder…") { vm.chooseOutputFolder() }
-                        .blitzButton(.secondary)
-                        .disabled(!canEdit)
-                        .accessibilityLabel("Change export folder")
-                        .help("Choose where finished videos are saved. Source files stay in the library.")
-                    Button("Show in Finder") {
-                        if !NSWorkspace.shared.open(vm.settings.outputDirectory) {
-                            storageDetail = Self.folderUnavailableDetail
-                            storageUnavailable = true
-                        }
-                    }
-                    .blitzButton(.secondary)
-                    .help("Open the export folder in Finder")
-                    Spacer(minLength: 0)
-                }
-
-                if !storageDetail.isEmpty {
-                    Label(storageDetail, systemImage: storageUnavailable ? "exclamationmark.triangle" : "internaldrive")
-                        .font(BlitzType.caption)
-                        .foregroundStyle(storageUnavailable ? BlitzUI.warning : BlitzUI.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Text("Finished videos are saved here. Changing this folder keeps your source files and project library in place.")
-                    .font(BlitzType.caption)
-                    .foregroundStyle(BlitzUI.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .settingsRow()
+            RecordingStorageDestinations(vm: vm, canEdit: canEdit)
 
             SettingsRowDivider()
 
             VStack(alignment: .leading, spacing: 14) {
                 SettingsRowLabel(.init(
-                    title: "Libraries",
-                    detail: "Every folder your recordings are read from, disk by disk. New recordings go to one of them."
+                    title: "Folders in your library",
+                    detail: "Recordings in these folders show up in your library. Removing one keeps its files."
                 ))
                 ProjectLibraryLocationsSettings(vm: vm, canEdit: canEdit)
             }
@@ -296,43 +239,6 @@ struct RecordingSettingsPage: View {
             detail: "Defaults suit most videos.",
             systemImage: "dial.medium"
         ))
-    }
-
-    private func refreshStorageDetail() {
-        let url = vm.settings.outputDirectory
-        let access = OutputDirectoryAccess(
-            url: url,
-            usesSecurityScopedBookmark: vm.settings.outputDirectoryBookmarkData != nil
-        )
-        defer { access.stop() }
-        guard access.hasSecurityScopedAccess else {
-            storageUnavailable = true
-            storageDetail = "Folder access needs renewal. Choose the folder again."
-            return
-        }
-        do {
-            let values = try url.resourceValues(forKeys: [
-                .volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey, .volumeNameKey
-            ])
-            let attributes = try? FileManager.default.attributesOfFileSystem(forPath: url.path)
-            let fileSystemCapacity = (attributes?[.systemFreeSize] as? NSNumber)?.int64Value
-            guard let available = TakeFileStore.availableCapacityForRecording(
-                importantUsageCapacity: values.volumeAvailableCapacityForImportantUsage,
-                fallbackCapacity: values.volumeAvailableCapacity.map(Int64.init),
-                fileSystemCapacity: fileSystemCapacity
-            ) else {
-                storageUnavailable = false
-                storageDetail = "Available space could not be checked."
-                return
-            }
-            let capacity = ByteCountFormatter.string(fromByteCount: available, countStyle: .file)
-            storageUnavailable = available < TakeFileStore.minimumAvailableCapacityBytes
-            storageDetail = "\(capacity) available on \(values.volumeName ?? "this disk")"
-            if storageUnavailable { storageDetail += " · Low disk space" }
-        } catch {
-            storageUnavailable = true
-            storageDetail = Self.folderUnavailableDetail
-        }
     }
 
     private var qualityPresentation: RecordingQualityPresentation {

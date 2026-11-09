@@ -176,7 +176,8 @@ extension EditorView {
                 canShareFile: sharing.canShare && !sharing.isRunning && !vm.isExporting,
                 shareFile: shareExportedFile,
                 reuseSettings: reuseExportSettings
-            )
+            ),
+            openBlitzReels: { inspectorTab = .blitzReels }
         )
     }
 

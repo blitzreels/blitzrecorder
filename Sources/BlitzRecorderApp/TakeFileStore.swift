@@ -165,7 +165,10 @@ struct TakeFileStore {
         let folders = (try? FileManager.default.contentsOfDirectory(
             at: scratchRoot(for: scan.settings), includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
         )) ?? []
-        return folders.filter { !listedFolders.contains($0.lastPathComponent) }.compactMap { folder in
+        return folders.filter {
+            !listedFolders.contains($0.lastPathComponent)
+                && !FileManager.default.fileExists(atPath: TakeRecoveryFiles.recoveredMarker(takeDirectory: $0).path)
+        }.compactMap { folder in
             let projectURL = folder.appendingPathComponent("project.blitzrecorder.json")
             guard let project = try? loadRecordingProject(at: projectURL), !listedIDs.contains(project.id) else { return nil }
             let savedFolder = URL(fileURLWithPath: project.takeDirectoryPath).standardizedFileURL.resolvingSymlinksInPath()
@@ -175,6 +178,24 @@ struct TakeFileStore {
                 takeDirectoryPath: isInPlace ? project.takeDirectoryPath : folder.path, finalVideoPath: project.finalVideoPath,
                 createdAt: project.createdAt, updatedAt: project.updatedAt, exports: project.exports
             )
+        }
+    }
+
+    struct RecoveredOriginalRequest {
+        let project: RecordingProject
+        let settings: RecordingSettings
+    }
+
+    /// Takes a crashed take off the project list once its recovered copy exists. Its files stay where they are.
+    func hideRecoveredOriginal(_ request: RecoveredOriginalRequest) {
+        Self.projectHistoryLock.lock()
+        defer { Self.projectHistoryLock.unlock() }
+        do {
+            var history = try indexForUpdate(settings: request.settings)
+            history.entries.removeAll { $0.id == request.project.id || $0.projectPath == request.project.projectPath }
+            try writeProjectHistory(.init(history: history, settings: request.settings))
+        } catch {
+            Self.logLibraryIndexFailure(error)
         }
     }
 

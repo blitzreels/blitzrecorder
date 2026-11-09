@@ -29,6 +29,7 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
     private var stream: (any SystemAudioStreaming)?
     private var prewarmedStream: (any SystemAudioStreaming)?
     private var writer: AudioSampleFileWriter?
+    private var recoverySegments: AudioRecoverySegmentWriter?
     private let levelPublisher = AudioLevelPublisher()
     var levelHandler: ((Float) -> Void)? {
         get { levelPublisher.levelHandler }
@@ -78,6 +79,7 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
             }
         }
         self.writer = writer
+        recoverySegments = AudioRecoverySegmentWriter(.init(audioURL: request.url, timelineStartTime: request.timelineStartTime))
 
         if let prewarmedStream {
             self.prewarmedStream = nil
@@ -104,6 +106,7 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
 
     func pause() {
         writer?.pause()
+        recoverySegments?.pause()
     }
 
     func update(filter pickedScreenFilter: SCContentFilter?) async throws {
@@ -114,12 +117,16 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
 
     func resume() {
         writer?.resume()
+        recoverySegments?.resume()
     }
 
     func stop() async throws -> MediaWriterCompletion {
         completeStartup(.failure(RecorderError.systemAudioDidNotStart))
         let writerToFinish = writer
         writer = nil
+        let segmentsToFinish = recoverySegments
+        recoverySegments = nil
+        await segmentsToFinish?.finish()
         if let stream {
             intentionallyStoppedStreamID = ObjectIdentifier(stream)
             try? await stream.stopCapture()
@@ -154,6 +161,7 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
         timelineAnchor.observeFirstSample(sampleBuffer)
         levelPublisher.publish(from: sampleBuffer)
         writer?.append(sampleBuffer)
+        recoverySegments?.append(sampleBuffer)
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {

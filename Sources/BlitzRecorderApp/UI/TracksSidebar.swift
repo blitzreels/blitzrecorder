@@ -9,18 +9,25 @@ struct SourcesSidebar: View {
     @Bindable var vm: RecorderViewModel
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                ScreenInputBlock(vm: vm)
-                CameraInputBlock(vm: vm)
-                MicrophoneInputBlock(vm: vm)
-                SystemAudioInputBlock(vm: vm)
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    ScreenInputBlock(vm: vm)
+                    CameraInputBlock(vm: vm)
+                    MicrophoneInputBlock(vm: vm)
+                    SystemAudioInputBlock(vm: vm)
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 16)
+                .padding(.bottom, 20)
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 16)
-            .padding(.bottom, 20)
+            .scrollIndicators(.automatic)
+            .blitzScrollFade(edges: .bottom)
+
+            AppSidebarRecordingControls(vm: vm)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 10)
         }
-        .scrollIndicators(.automatic)
         .frame(maxWidth: .infinity)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(BlitzMaterialBackground(kind: .sidebar))

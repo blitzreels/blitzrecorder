@@ -168,6 +168,7 @@ extension RecorderCaptureRuntime {
                     }
                 }
                 await takeRecording.stopAnyActiveRecording()
+                takeRecording.discardRecoveryJournal()
                 if cleanup.cleanupTakeFiles, let createdTake {
                     takeFileStore.cleanupIntermediateFiles(for: createdTake, settings: settings)
                 }
@@ -287,6 +288,7 @@ extension RecorderCaptureRuntime {
                             captureSummary: captureSummary,
                             sceneEvents: sceneEventsForFinalization
                         )
+                        takeRecording.discardRecoveryJournal()
                         recordingSession.finish(with: outcome.retainedTake)
                         takeRecording.resetSceneTimeline()
                         refreshAudioLevelMonitoring()

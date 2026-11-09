@@ -304,7 +304,7 @@ extension TakeFileStore {
         return true
     }
 
-    private func uniqueDirectory(_ url: URL) -> URL {
+    func uniqueDirectory(_ url: URL) -> URL {
         var candidate = url
         var index = 2
         while FileManager.default.fileExists(atPath: candidate.path) {

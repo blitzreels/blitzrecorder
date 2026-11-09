@@ -52,6 +52,10 @@ targets:
         buildPhase: resources
       - path: Resources/BlitzReelsWordmarkWhite.png
         buildPhase: resources
+      - path: Resources/BlitzReelsWordmarkDark.png
+        buildPhase: resources
+      - path: Resources/BlitzReelsMark.png
+        buildPhase: resources
       - path: Resources/CloudflareMediaWorker.mjs
         buildPhase: resources
       - path: Resources/BlitzCleanAppIcon.png

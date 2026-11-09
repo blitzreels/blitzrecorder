@@ -25,7 +25,7 @@ final class ResponsivePagesTests: XCTestCase {
         ]
         for width in [480.0, 760.0] {
             for (name, page, expected) in pages {
-                let lines = try await render(.init(name: "\(name)-\(Int(width))", view: page, width: width, height: 2200))
+                let lines = try await render(.init(name: "\(name)-\(Int(width))", view: page, width: width, height: 2500))
                 for phrase in expected {
                     XCTAssertTrue(lines.contains { $0.localizedCaseInsensitiveContains(phrase) },
                                   "\(name) at \(width) clips or splits \(phrase): \(lines)")

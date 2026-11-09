@@ -15,6 +15,13 @@ extension RecorderViewModel {
         chooseStorageFolder(.init(kind: .sources, completion: { _ in }))
     }
 
+    func setRecordingFolder(_ url: URL) {
+        guard state == .idle else { return }
+        coordinator.setSourceDirectory(url)
+        syncSettings()
+        refreshRecentProjects()
+    }
+
     private struct StorageFolderSelection {
         enum Kind { case exports, sources }
         let kind: Kind

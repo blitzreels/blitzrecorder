@@ -102,7 +102,11 @@ struct EditorInspector: View {
                 ))
             case .blitzReels:
                 if let project {
-                    BlitzReelsHandoffPanel(project: project, settings: vm.settings)
+                    BlitzReelsHandoffPanel(
+                        project: project, settings: vm.settings,
+                        offer: BlitzReelsPitch.offer(for: EditorTimelineProjection(.init(duration: playback.duration, cuts: project.edits.cuts))),
+                        openExport: { inspectorTab = .exports }
+                    )
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .background(BlitzUI.panelBackground)
                 }

@@ -24,7 +24,27 @@ struct SilenceCutProposal {
         nonDialogueRanges = remaining.map { .init(start: $0.start, end: $0.end) }
         let proposedProjection = EditorTimelineProjection(.init(duration: request.duration, cuts: request.baseCuts))
         let additions = EditorTranscriptTimeline.remainingSilence(.init(cuts: suggestions, projection: proposedProjection))
-        cuts = request.baseCuts + (request.suggestsPauses ? additions : [])
+        let proposed = request.baseCuts + (request.suggestsPauses ? additions : [])
+        cuts = request.suggestsPauses && request.baseCuts != request.saved.cuts
+            ? Self.stacked(.init(proposed: proposed, saved: request.saved.cuts))
+            : proposed
+    }
+
+    private struct StackRequest {
+        let proposed: [TimelineCut]
+        let saved: [TimelineCut]
+    }
+
+    private static func stacked(_ request: StackRequest) -> [TimelineCut] {
+        let isAutomaticPause = { (cut: TimelineCut) in
+            cut.kind == .silence && cut.source == .automatic && cut.isEnabled
+        }
+        let saved = request.saved.filter(isAutomaticPause)
+        guard !saved.isEmpty else { return request.proposed }
+        let merged = EditorTranscriptTimeline.merged(
+            (request.proposed.filter(isAutomaticPause) + saved).map { .init(start: $0.start, end: $0.end) }
+        ).map { TimelineCut(start: $0.start, end: $0.end, kind: .silence, source: .automatic) }
+        return (request.proposed.filter { !isAutomaticPause($0) } + merged).sorted { $0.start < $1.start }
     }
 }
 
@@ -36,7 +56,9 @@ struct SilenceTimelineMetrics: Equatable {
     }
 
     let pauseCount: Int
+    let newPauseCount: Int
     let removedDuration: Double
+    let newRemovedDuration: Double
     let outputDuration: Double
     let hasChanges: Bool
 
@@ -44,8 +66,13 @@ struct SilenceTimelineMetrics: Equatable {
         let duration = TimelineTimeMap.time(request.duration.isFinite ? max(0, request.duration) : 0)
         let proposed = TimelineTimeMap(takeDuration: duration, cuts: request.proposed)
         let saved = TimelineTimeMap(takeDuration: duration, cuts: request.saved)
-        pauseCount = request.proposed.filter { $0.kind == .silence && $0.isEnabled }.count
+        let pauses = request.proposed.filter { $0.kind == .silence && $0.isEnabled }
+        pauseCount = pauses.count
+        newPauseCount = EditorTranscriptTimeline.remainingSilence(.init(
+            cuts: pauses, projection: EditorTimelineProjection(.init(duration: request.duration, cuts: request.saved))
+        )).count
         removedDuration = proposed.removedDuration
+        newRemovedDuration = max(0, proposed.removedDuration - saved.removedDuration)
         outputDuration = proposed.outputDuration.seconds
         let proposedExclusions = TimelineTimeMap(
             takeDuration: duration,

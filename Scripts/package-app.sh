@@ -158,7 +158,9 @@ cp "$ROOT/Sources/BlitzRecorderApp/Resources/WebMCPWorkspace.html" "$APP/Content
 cp -R "$ROOT/Sources/BlitzRecorderApp/Resources/BlitzRecorderMCPBridge" "$APP/Contents/Resources/BlitzRecorderMCPBridge"
 cp -R "$ROOT/Resources/ColorLooks" "$APP/Contents/Resources/ColorLooks"
 cp "$ROOT/Resources/CompanionAppIcon.png" "$APP/Contents/Resources/CompanionAppIcon.png"
-cp "$ROOT/Resources/BlitzReelsWordmarkWhite.png" "$APP/Contents/Resources/BlitzReelsWordmarkWhite.png"
+for brand_image in BlitzReelsWordmarkWhite BlitzReelsWordmarkDark BlitzReelsMark; do
+  cp "$ROOT/Resources/$brand_image.png" "$APP/Contents/Resources/$brand_image.png"
+done
 for family_icon in BlitzCleanAppIcon BlitzReelsAppIcon; do
   cp "$ROOT/Resources/$family_icon.png" "$APP/Contents/Resources/$family_icon.png"
 done

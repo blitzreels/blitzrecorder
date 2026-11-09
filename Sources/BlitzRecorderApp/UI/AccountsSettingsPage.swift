@@ -137,7 +137,7 @@ struct AccountsSettingsPage: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 BlitzReelsBrand().frame(width: 104, height: 18)
-                Text("Captions and B-roll").font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
+                Text(BlitzReelsPitch.tagline).font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
             }
             VStack(spacing: 0) {
                 if let account = reels.connection.account {
@@ -194,7 +194,7 @@ struct AccountsSettingsPage: View {
                     BlitzAdaptiveRow() {
                         SettingsRowLabel(.init(
                             title: reels.connection.hasCredential ? "Reconnect BlitzReels" : "Connect BlitzReels",
-                            detail: "Send an exported MP4 to BlitzReels to add captions and B-roll."
+                            detail: "Send an exported video to BlitzReels. AI cuts it into clips you can schedule on social."
                         ))
                         Button(action: reels.connect) {
                             HStack(spacing: 6) {

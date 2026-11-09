@@ -68,7 +68,10 @@ final class TakeRecordingRuntime {
     private var mode: Mode = .idle
     private var cameraAngleRun = CameraAngleRun.none
     private var microphoneTrackRun = MicrophoneTrackRun.none
-    private(set) var sceneEvents: [RecordingSceneEvent] = []
+    private(set) var sceneEvents: [RecordingSceneEvent] = [] {
+        didSet { recoveryJournal?.recordScenes(sceneEvents) }
+    }
+    private var recoveryJournal: TakeRecoveryJournal?
     private var timelineSegmentStartedAt: Date?
     private var timelineAccumulatedSeconds: TimeInterval = 0
 
@@ -162,10 +165,16 @@ final class TakeRecordingRuntime {
             systemAudioRecorder: systemAudioRecorder
         )
         mode = .captureRun(captureRun)
+        do {
+            recoveryJournal = try TakeRecoveryJournal(take: take)
+        } catch {
+            NSLog("Recovery journal could not be created: %@", error.localizedDescription)
+        }
         let start = try await captureRun.start(
             prerollSeconds: prerollSeconds,
             prerollHandler: prerollHandler
         )
+        recoveryJournal?.recordTiming(timelineTrimOffsetSeconds: captureRun.timelineTrimOffset.seconds)
         cameraAngleRun = cameraAngles
         microphoneTrackRun = microphoneTracks
         async let anglesStarted: Void = cameraAngles.start(timelineStartTime: start.timelineStartTime)
@@ -180,6 +189,11 @@ final class TakeRecordingRuntime {
                 return self.currentSceneTime()
             }))
         return start
+    }
+
+    func discardRecoveryJournal() {
+        recoveryJournal?.discard()
+        recoveryJournal = nil
     }
 
     func pause() {

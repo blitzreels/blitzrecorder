@@ -154,7 +154,7 @@ struct RecordingTake {
     let transcriptURL: URL
     let finalVideoURL: URL
     let outputVideoFormat: OutputVideoFormat
-    let titleSlug: String?
+    var titleSlug: String?
     var timelineTrimOffset: CMTime = .zero
     var sourceTimelineOffsets: [CaptureSource: CMTime] = [:]
     var sourceReferences: [RecordingProject.SourceFile] = []

@@ -79,6 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
         windowController.onEditorHistoryChanged = { [weak self] in
             self?.mainMenuBuilder?.rebuild()
         }
+        windowController.recoverInterruptedRecordings()
 
         coordinator.transcription.onTranscriptSaved = { source in
             guard case .project(let projectURL) = source else { return }
@@ -86,6 +87,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
         }
         HostedVideoShareController.shared.onTranscriptMissing = { [weak self] projectPath in
             self?.coordinator.transcription.prioritize(URL(fileURLWithPath: projectPath))
+        }
+        HostedVideoShareController.shared.onShareReady = { link in
+            BlitzClipboard.copyInBackground(link.absoluteString)
+            NSWorkspace.shared.open(link)
         }
         coordinator.onStateChanged = { [weak self] state in
             self?.coordinator.transcription.isCaptureActive = state != .idle

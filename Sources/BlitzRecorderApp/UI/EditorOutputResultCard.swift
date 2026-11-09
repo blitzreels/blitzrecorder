@@ -63,6 +63,10 @@ struct EditorOutputResultCard: View {
                 actions
                     .padding(.top, 4)
                     .controlSize(.small)
+                if case .exported = configuration.result, let file {
+                    EditorExportBlitzReelsOffer { configuration.sendToBlitzReels(file) }
+                        .padding(.top, 8)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Button(action: configuration.dismiss) { Image(systemName: "xmark") }
@@ -112,8 +116,9 @@ struct EditorOutputResultCard: View {
                     NSWorkspace.shared.activateFileViewerSelecting(files)
                 }
                 .blitzButton(.secondary)
-                if let file = files.first {
-                    BlitzInlineActions(entries: exportedEntries(file))
+                if configuration.canShare, let file = files.first {
+                    Button("Share link", systemImage: BlitzSymbols.share) { configuration.share(file) }
+                        .blitzButton(.secondary)
                 }
             }
         case .shared(let link, _):
@@ -131,15 +136,6 @@ struct EditorOutputResultCard: View {
         case .exportFailed:
             EmptyView()
         }
-    }
-
-    private func exportedEntries(_ file: URL) -> [BlitzMenuEntry] {
-        var entries: [BlitzMenuEntry] = []
-        if configuration.canShare {
-            entries.append(.item(.init(title: "Share link", systemImage: BlitzSymbols.share) { configuration.share(file) }))
-        }
-        entries.append(.item(.init(title: "Send to BlitzReels", systemImage: "paperplane") { configuration.sendToBlitzReels(file) }))
-        return entries
     }
 
     private func copy(_ link: URL) {

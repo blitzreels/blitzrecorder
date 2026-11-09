@@ -18,6 +18,7 @@ struct EditorOutputsPane: View {
     let exportAction: EditorExportControls
     let share: HostedVideoSharePanel
     let history: History
+    let openBlitzReels: () -> Void
 
     var body: some View {
         EditorInspectorPane(configuration: .init(
@@ -46,7 +47,12 @@ struct EditorOutputsPane: View {
                     .padding(.top, 8)
                 }
             },
-            footer: { exportAction }
+            footer: {
+                VStack(spacing: 10) {
+                    EditorOutputsBlitzReelsRow(open: openBlitzReels)
+                    exportAction
+                }
+            }
         ))
     }
 }

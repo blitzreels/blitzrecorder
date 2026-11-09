@@ -319,7 +319,8 @@ final class RecorderStudioConfiguration {
         guard state == .idle else { return }
         let libraries = settings.projectLibraries
         let selectedRoot = url.standardizedFileURL.resolvingSymlinksInPath()
-        settings.projectLibrary = RecordingStorageLocation(url: url, bookmarkData: RecordingSettingsStore.bookmarkData(for: url))
+        let known = libraries.first { $0.bookmarkData != nil && $0.url.standardizedFileURL.resolvingSymlinksInPath() == selectedRoot }
+        settings.projectLibrary = known ?? RecordingStorageLocation(url: url, bookmarkData: RecordingSettingsStore.bookmarkData(for: url))
         settings.additionalProjectLibraries = libraries.filter {
             $0.url.standardizedFileURL.resolvingSymlinksInPath() != selectedRoot
         }

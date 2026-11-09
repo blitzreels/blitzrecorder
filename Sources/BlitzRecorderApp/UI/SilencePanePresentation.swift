@@ -75,6 +75,8 @@ struct SilencePanePresentation: Equatable {
     let editedDuration: Double
     let removedDuration: Double
     let pauseCount: Int
+    let newPauseCount: Int
+    let newRemovedDuration: Double
     let cutRanges: [ClosedRange<Double>]
     let hasAppliedCuts: Bool
     let isUpdating: Bool
@@ -187,6 +189,8 @@ struct SilencePanePresentation: Equatable {
             editedDuration: request.metrics.outputDuration,
             removedDuration: request.metrics.removedDuration,
             pauseCount: request.metrics.pauseCount,
+            newPauseCount: request.metrics.newPauseCount,
+            newRemovedDuration: request.metrics.newRemovedDuration,
             cutRanges: cutRanges,
             hasAppliedCuts: request.hasRemovedSilence,
             isUpdating: request.isUpdating,

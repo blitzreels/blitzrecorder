@@ -15,6 +15,10 @@ struct EditorPlacedItem: Identifiable, Equatable {
             let visibleDuration = max(0, projection.displayTime(end) - visibleStart)
             return projection.takeTime(visibleStart + min(0.3, visibleDuration / 2))
         }
+
+        func contains(_ time: Double) -> Bool {
+            time >= start && time < end
+        }
     }
     let id: ID
     let title: String
@@ -46,12 +50,7 @@ struct EditorPlacedTrack: Identifiable, Equatable {
     }
 
     static func resolve(_ edits: TimelineEdits) -> [Self] {
-        var rows = edits.privacyMasks.enumerated().map { index, mask in
-            let title = "Mask \(index + 1) · \(mask.source.rawValue)"
-            let item = EditorPlacedItem(id: .init(kind: .mask, value: mask.id), title: mask.style.rawValue,
-                symbol: "eye.slash", timing: .init(start: mask.start, end: mask.end), isEnabled: true)
-            return Self(id: mask.id.uuidString, title: title, symbol: item.symbol, items: [item])
-        }
+        var rows = privacyLanes(edits.privacyMasks)
         rows += edits.textOverlays.enumerated().map { index, text in
             let item = EditorPlacedItem(id: .init(kind: .text, value: text.id), title: text.text,
                 symbol: "textformat", timing: .init(start: text.start, end: text.end), isEnabled: true)
@@ -77,9 +76,48 @@ struct EditorPlacedTrack: Identifiable, Equatable {
         }
         return rows
     }
+
+    private static func privacyLanes(_ masks: [PrivacyMask]) -> [Self] {
+        var lanes: [[PrivacyMask]] = []
+        for mask in masks.sorted(by: { $0.start < $1.start }) {
+            if let lane = lanes.firstIndex(where: { ($0.last?.end ?? 0) <= mask.start }) {
+                lanes[lane].append(mask)
+            } else {
+                lanes.append([mask])
+            }
+        }
+        return lanes.enumerated().map { index, lane in
+            let items = lane.map { mask in
+                EditorPlacedItem(id: .init(kind: .mask, value: mask.id),
+                    title: "\(mask.style.rawValue) · \(mask.source.rawValue)", symbol: "eye.slash",
+                    timing: .init(start: mask.start, end: mask.end), isEnabled: true)
+            }
+            return Self(id: "privacy-\(index)", title: index == 0 ? "Privacy" : "Privacy \(index + 1)",
+                        symbol: "eye.slash", items: items)
+        }
+    }
 }
 
 enum EditorPlacedItemEditing {
+    static let newMaskSeconds = 30.0
+
+    struct NewMask {
+        let playhead: Double
+        let projection: EditorTimelineProjection
+    }
+
+    /// Starts at the playhead, or earlier near the end, so the full length fits.
+    static func newMaskTiming(_ request: NewMask) -> EditorPlacedItem.Timing {
+        let projection = request.projection
+        let length = min(newMaskSeconds, projection.duration)
+        let start = min(projection.displayTime(request.playhead), max(0, projection.duration - length))
+        let fragments = projection.visibleFragments(.init(start: start, end: start + length))
+        guard let first = fragments.first, let last = fragments.last else {
+            return .init(start: request.playhead, end: request.playhead)
+        }
+        return .init(start: first.takeStart, end: last.takeEnd)
+    }
+
     enum Gesture { case move, trimStart, trimEnd }
     struct Drag {
         let item: EditorPlacedItem

@@ -119,6 +119,32 @@ enum SourceAudioFormat: String, CaseIterable {
     case aac
     case wav
 
+    struct OutputSettingsRequest {
+        let sampleRate: Double
+        let channelCount: Int
+        let stereoBitrate: Int
+    }
+
+    func outputSettings(_ request: OutputSettingsRequest) -> [String: Any] {
+        if isLossless {
+            return [
+                AVFormatIDKey: kAudioFormatLinearPCM,
+                AVSampleRateKey: request.sampleRate,
+                AVNumberOfChannelsKey: request.channelCount,
+                AVLinearPCMBitDepthKey: 24,
+                AVLinearPCMIsFloatKey: false,
+                AVLinearPCMIsBigEndianKey: false,
+                AVLinearPCMIsNonInterleaved: false
+            ]
+        }
+        return [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: request.sampleRate,
+            AVNumberOfChannelsKey: request.channelCount,
+            AVEncoderBitRateKey: request.channelCount == 1 ? request.stereoBitrate / 2 : request.stereoBitrate
+        ]
+    }
+
     var fileExtension: String {
         switch self {
         case .aac:

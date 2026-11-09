@@ -80,6 +80,7 @@ final class HostedVideoShareController {
         let updatedAt: Date
     }
     @ObservationIgnored var onTranscriptMissing: ((String) -> Void)?
+    @ObservationIgnored var onShareReady: ((URL) -> Void)?
     @ObservationIgnored private var selectedFingerprint: String?
     @ObservationIgnored private let client: HostingClient
     @ObservationIgnored private let credentials: HostingCredentialStore
@@ -331,6 +332,7 @@ final class HostedVideoShareController {
                 if let shareURL, let projectPath {
                     rememberShare(.init(projectPath: projectPath, url: shareURL, sharedAt: Date(), filePath: fileURL.path))
                 }
+                if let shareURL { onShareReady?(shareURL) }
                 if isRefreshingVideos { refreshAfterUpload = true }
                 else { await refreshVideos() }
             } catch is CancellationError {

@@ -117,7 +117,8 @@ private func speechWindows(_ duration: Double) -> [SilenceWindow] {
 private extension SilencePanePresentation {
     func withPauseCount(_ count: Int, removed: Double) -> SilencePanePresentation {
         .init(phase: phase, originalDuration: originalDuration, editedDuration: originalDuration - removed,
-              removedDuration: removed, pauseCount: count, cutRanges: cutRanges, hasAppliedCuts: hasAppliedCuts,
+              removedDuration: removed, pauseCount: count, newPauseCount: count, newRemovedDuration: removed,
+              cutRanges: cutRanges, hasAppliedCuts: hasAppliedCuts,
               isUpdating: isUpdating, previewEnabled: previewEnabled, strength: strength, canApply: canApply,
               warning: warning, sourceName: sourceName)
     }

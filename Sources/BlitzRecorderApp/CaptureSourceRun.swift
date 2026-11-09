@@ -15,7 +15,7 @@ final class CaptureSourceRun {
     private let microphoneRecorder: MicrophoneCaptureRecording
     private var timelineStartTime: CMTime?
     private var hostTimelineStartTime: UInt64?
-    private var timelineTrimOffset = CMTime.zero
+    private(set) var timelineTrimOffset = CMTime.zero
     private var sourceTimelineOffsets: [CaptureSource: CMTime] = [:]
     private let sourceOrder: [CaptureSource] = [.screen, .microphone, .systemAudio, .camera]
     private let stopOrder: [CaptureSource] = [.microphone, .systemAudio, .camera, .screen]

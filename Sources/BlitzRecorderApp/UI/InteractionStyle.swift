@@ -170,6 +170,7 @@ struct BlitzToolTabBar<Value: Hashable>: View {
         let selection: Value
         let label: (Value) -> String
         let symbolName: (Value) -> String
+        let brandImage: (Value) -> Image?
         let help: (Value) -> String
         let isOptionEnabled: (Value) -> Bool
         let select: (Value) -> Void
@@ -188,9 +189,7 @@ struct BlitzToolTabBar<Value: Hashable>: View {
                     let isSelected = configuration.selection == option
                     Button { configuration.select(option) } label: {
                         VStack(spacing: 4) {
-                            BlitzSymbol(configuration: .init(name: configuration.symbolName(option), size: 18))
-                                .symbolVariant(isSelected ? .fill : .none)
-                                .foregroundStyle(isSelected ? BlitzUI.accent : BlitzUI.secondaryText)
+                            icon(option)
                             Text(configuration.label(option))
                                 .font(BlitzType.footnote)
                                 .foregroundStyle(isSelected ? BlitzUI.accent : BlitzUI.secondaryText)
@@ -218,6 +217,19 @@ struct BlitzToolTabBar<Value: Hashable>: View {
         .background(BlitzUI.insetWell)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(configuration.title)
+    }
+
+    @ViewBuilder private func icon(_ option: Value) -> some View {
+        let isSelected = configuration.selection == option
+        if let brand = configuration.brandImage(option) {
+            brand.resizable().aspectRatio(contentMode: .fit)
+                .frame(width: 20, height: 20)
+                .accessibilityHidden(true)
+        } else {
+            BlitzSymbol(configuration: .init(name: configuration.symbolName(option), size: 18))
+                .symbolVariant(isSelected ? .fill : .none)
+                .foregroundStyle(isSelected ? BlitzUI.accent : BlitzUI.secondaryText)
+        }
     }
 }
 

@@ -88,7 +88,11 @@ extension TakeFileStore {
     }
 
     func sceneEvents(from project: RecordingProject) -> [RecordingSceneEvent] {
-        project.sceneEvents.compactMap { event in
+        sceneEvents(from: project.sceneEvents)
+    }
+
+    func sceneEvents(from snapshots: [RecordingProject.SceneEventSnapshot]) -> [RecordingSceneEvent] {
+        snapshots.compactMap { event in
             guard let scene = RecordingScene(snapshot: event.scene) else { return nil }
             return RecordingSceneEvent(
                 time: event.time,

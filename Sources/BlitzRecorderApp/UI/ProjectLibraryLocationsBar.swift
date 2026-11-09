@@ -102,10 +102,6 @@ struct ProjectLibraryLocationsSettings: View {
                     .blitzButton(.secondary)
                     .disabled(!canEdit)
                     .help("Read recordings from another folder, such as one on an external disk")
-                Button("Record To Another Folder…") { vm.chooseSourceFolder() }
-                    .blitzButton(.quiet)
-                    .disabled(!canEdit)
-                    .help("Choose where new recordings are saved. Existing libraries stay in the list.")
                 Spacer(minLength: 0)
             }
             .padding(.top, 4)
@@ -122,10 +118,8 @@ struct ProjectLibraryLocationsSettings: View {
                 HStack(spacing: 6) {
                     Text(location.diskName).font(BlitzType.body)
                     if location.isRecordingDestination {
-                        Text("New recordings")
-                            .font(BlitzType.footnote).foregroundStyle(BlitzUI.supportingText)
-                            .padding(.horizontal, 6).padding(.vertical, 1)
-                            .background(BlitzUI.quietFill, in: .capsule)
+                        Text("New recordings go here")
+                            .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
                     }
                 }
                 Text(subtitle(location))

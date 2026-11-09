@@ -142,10 +142,18 @@ struct EditorPrivacyInspector: View {
             if session.isDrawing {
                 drawingPrompt
             } else if session.selected == nil {
-                Text(canHide ? "Choose how to hide it, then draw a box on the video."
+                Text(canHide ? "Choose how to hide it, then draw a box on the video. It lasts 30 seconds from the playhead."
                      : "Nothing to hide yet. Show the screen or camera first.")
                     .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
+            } else if let selected = session.selected {
+                Button { session.add(style: selected.style) } label: {
+                    Label("Add another area", systemImage: "plus").frame(maxWidth: .infinity)
+                }
+                .blitzButton(.secondary)
+                .controlSize(.small)
+                .disabled(!canHide)
+                .help("Draw a new box on the video. It lasts 30 seconds from the playhead.")
             }
         }
     }

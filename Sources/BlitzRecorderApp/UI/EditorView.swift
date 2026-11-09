@@ -42,6 +42,8 @@ struct EditorView: View {
     @State var silence = SilenceEditingSession()
     @State var privacy = PrivacyEditingSession()
     @State var inspectorTab: EditorInspectorTab = .silence
+    @State var hidesShortFormNudge = false
+    @AppStorage("blitzReels.shortFormNudgeDismissedProjects") var dismissedShortFormNudges = ""
     @State var exportDestination: EditorExportDestination = .file
     @State var preparesHostedExport = false
     @State var showsExportResult = false
@@ -227,7 +229,6 @@ struct EditorView: View {
             let sharing = HostedVideoShareController.shared
             guard wasRunning, !isRunning, let path = project?.projectPath, sharing.projectPath == path else { return }
             if let link = sharing.shareURL {
-                BlitzClipboard.copyInBackground(link.absoluteString)
                 shareOutcome = .shared(link: link, file: sharing.fileURL)
             } else if let message = sharing.transferMessage {
                 shareOutcome = .shareFailed(message)
@@ -265,6 +266,9 @@ struct EditorView: View {
         .onChange(of: inspectorTab) { _, tab in
             if tab != .privacy { privacy.cancelGesture() }
         }
+        .onChange(of: playback.isPlaying) { _, isPlaying in
+            if isPlaying { hidesShortFormNudge = true }
+        }
         .onChange(of: selection) { _, selection in
             if case .placed(let id) = selection {
                 selectPlacedItem(id)
@@ -289,14 +293,26 @@ struct EditorView: View {
 
 
     enum EditorNoticeKey: Hashable {
-        case none, uploading
+        case none, uploading, shortFormNudge
         case result(EditorOutputResult)
     }
 
     var noticeKey: EditorNoticeKey {
         let sharing = HostedVideoShareController.shared
         if sharing.isRunning, sharing.transferProgress != nil { return inspectorTab == .exports && exportDestination == .link ? .none : .uploading }
-        return outputResult.map(EditorNoticeKey.result) ?? .none
+        if let result = outputResult { return .result(result) }
+        return showsShortFormNudge ? .shortFormNudge : .none
+    }
+
+    private var showsShortFormNudge: Bool {
+        guard let project, !hidesShortFormNudge, inspectorTab != .blitzReels, vm.state == .idle,
+              !dismissedShortFormNudges.contains(project.id.uuidString) else { return false }
+        return BlitzReelsPitch.isShortForm(EditorTimelineProjection(.init(duration: playback.duration, cuts: project.edits.cuts)))
+    }
+
+    private func dismissShortFormNudge() {
+        guard let project else { return }
+        dismissedShortFormNudges += project.id.uuidString + ","
     }
 
     /// The newest export or link made in this editor. A share upload replaces its own export's result.
@@ -322,6 +338,15 @@ struct EditorView: View {
         switch noticeKey {
         case .none:
             EmptyView()
+        case .shortFormNudge:
+            EditorShortFormBlitzReelsNudge(configuration: .init(
+                open: {
+                    hidesShortFormNudge = true
+                    inspectorTab = .blitzReels
+                },
+                dismiss: dismissShortFormNudge
+            ))
+            .transition(.move(edge: .bottom).combined(with: .opacity))
         case .uploading:
             if let progress = HostedVideoShareController.shared.transferProgress {
                 HStack(spacing: 16) {

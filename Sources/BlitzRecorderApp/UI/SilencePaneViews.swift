@@ -223,16 +223,16 @@ struct SilenceFooterActions: View {
     }
 
     private var applyTitle: String {
-        guard presentation.hasResult, presentation.pauseCount > 0 else {
+        guard presentation.hasResult, presentation.newPauseCount > 0 else {
             return presentation.hasAppliedCuts ? "Apply new settings" : "Cut pauses"
         }
-        return presentation.pauseCount == 1 ? "Cut 1 pause" : "Cut \(presentation.pauseCount) pauses"
+        return presentation.newPauseCount == 1 ? "Cut 1 pause" : "Cut \(presentation.newPauseCount) pauses"
     }
 
     private var applyCaption: String {
         if presentation.isWorking { return "Ready when the scan finishes" }
-        guard presentation.removedDuration > 0 else { return "⌘Z to undo" }
-        return "Saves \(ClockDuration.label(presentation.removedDuration)) · ⌘Z to undo"
+        guard presentation.newRemovedDuration > 0 else { return "⌘Z to undo" }
+        return "Saves \(ClockDuration.label(presentation.newRemovedDuration)) · ⌘Z to undo"
     }
 
     private func caption(_ text: String) -> some View {

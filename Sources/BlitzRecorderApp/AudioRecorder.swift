@@ -28,6 +28,7 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     var syncWarningHandler: ((String) -> Void)?
     private let startupGate = AudioStartupGate(timeoutError: RecorderError.microphoneDidNotStart)
     private var timelineAnchor = RecordingTimelineAnchor()
+    private var recoverySegments: AudioRecoverySegmentWriter?
     /// An extra microphone keeps what it recorded when its device goes away mid-take, instead of deleting the file.
     private let keepsRecordingOnFailure: Bool
 
@@ -65,6 +66,7 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
                 pendingClockNormalization = nil
                 hasEmittedSyncWarning = false
                 timelineAnchor.reset(timelineStartTime: timelineStartTime)
+                recoverySegments = AudioRecoverySegmentWriter(.init(audioURL: url, timelineStartTime: timelineStartTime))
                 startupGate.reset()
 
                 session.beginConfiguration()
@@ -126,6 +128,7 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         queue.async {
             guard let output = self.fileOutput, self.pauseController.pause(output) else { return }
             self.clockRateEstimator.pause()
+            self.recoverySegments?.pause()
         }
     }
 
@@ -133,6 +136,7 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         queue.async {
             guard let output = self.fileOutput, self.pauseController.resume(output) else { return }
             self.clockRateEstimator.resume()
+            self.recoverySegments?.resume()
         }
     }
 
@@ -166,7 +170,14 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     }
 
     func stop() async throws -> MediaWriterCompletion {
-        let completion = try await stopFileOutput()
+        let completion: MediaWriterCompletion
+        do {
+            completion = try await stopFileOutput()
+        } catch {
+            await finishRecoverySegments()
+            throw error
+        }
+        await finishRecoverySegments()
         queue.sync {
             guard completion.wroteMedia,
                   let url = completion.url,
@@ -184,6 +195,14 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         await tearDownSession()
         levelPublisher.reset()
         return completion
+    }
+
+    private func finishRecoverySegments() async {
+        let segments = queue.sync {
+            defer { recoverySegments = nil }
+            return recoverySegments
+        }
+        await segments?.finish()
     }
 
     func finalizeSynchronization() async throws {
@@ -217,6 +236,9 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     ) {
         queue.async {
             self.levelPublisher.publish(from: sampleBuffer)
+            if self.fileOutput?.isRecording == true, !self.pauseController.isPaused {
+                self.recoverySegments?.append(sampleBuffer)
+            }
             if self.fileOutput?.isRecording == true,
                !self.pauseController.isPaused,
                let sampleDuration = Self.sampleDuration(of: sampleBuffer) {
@@ -325,25 +347,9 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         )?.pointee
         let sampleRate = streamDescription?.mSampleRate ?? 48_000
         let channelCount = max(1, min(2, Int(streamDescription?.mChannelsPerFrame ?? 2)))
-        if request.settings.effectiveSourceAudioFormat.isLossless {
-            return [
-                AVFormatIDKey: kAudioFormatLinearPCM,
-                AVSampleRateKey: sampleRate,
-                AVNumberOfChannelsKey: channelCount,
-                AVLinearPCMBitDepthKey: 24,
-                AVLinearPCMIsFloatKey: false,
-                AVLinearPCMIsBigEndianKey: false,
-                AVLinearPCMIsNonInterleaved: false
-            ]
-        }
-        return [
-            AVFormatIDKey: kAudioFormatMPEG4AAC,
-            AVSampleRateKey: sampleRate,
-            AVNumberOfChannelsKey: channelCount,
-            AVEncoderBitRateKey: channelCount == 1
-                ? request.settings.finalAudioBitrate / 2
-                : request.settings.finalAudioBitrate
-        ]
+        return request.settings.effectiveSourceAudioFormat.outputSettings(.init(
+            sampleRate: sampleRate, channelCount: channelCount, stereoBitrate: request.settings.finalAudioBitrate
+        ))
     }
 
     private static func hasRecordedAudio(at url: URL) -> Bool {

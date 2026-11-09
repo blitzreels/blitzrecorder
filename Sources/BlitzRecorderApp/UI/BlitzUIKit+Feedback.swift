@@ -130,7 +130,7 @@ enum BlitzUIKitSilence {
         let none = phase == .noPauses
         return .init(
             phase: phase, originalDuration: 317, editedDuration: none ? 317 : 281, removedDuration: none ? 0 : 36,
-            pauseCount: none ? 0 : 12,
+            pauseCount: none ? 0 : 12, newPauseCount: none ? 0 : 12, newRemovedDuration: none ? 0 : 36,
             cutRanges: [12...14, 80...83.5, 190...192], hasAppliedCuts: phase == .applied,
             isUpdating: false, previewEnabled: true, strength: .balanced, canApply: phase == .proposed,
             warning: nil, sourceName: "Microphone"

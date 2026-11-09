@@ -45,12 +45,16 @@ final class PrivacyEditingSession {
     }
 
     func add(style: PrivacyMask.Style) {
-        guard let playback, !playback.hideableKinds.isEmpty else { return }
+        guard let playback, let cuts = vm?.lastExportedProject?.edits.cuts, !playback.hideableKinds.isEmpty else { return }
         cancelGesture()
         playback.pauseForEditing()
-        if playback.currentTime >= playback.duration - 0.05 { playback.seek(to: 0) }
+        let timing = EditorPlacedItemEditing.newMaskTiming(.init(
+            playhead: playback.currentTime,
+            projection: .init(.init(duration: playback.duration, cuts: cuts))
+        ))
+        if !timing.contains(playback.currentTime) { playback.seek(to: timing.start) }
         let mask = PrivacyMask(id: UUID(), source: playback.hideableKinds.contains(.screen) ? .screen : .camera,
-            frame: .zero, start: 0, end: playback.duration, style: style)
+            frame: .zero, start: timing.start, end: timing.end, style: style)
         selectedID = mask.id
         draft = mask
         isDrawing = true

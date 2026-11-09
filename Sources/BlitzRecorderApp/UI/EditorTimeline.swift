@@ -96,13 +96,6 @@ struct EditorTimelineView: View {
         clipTrim.edits(committed: project?.edits ?? .empty)
     }
 
-    /// While a new silence strength waits to be applied, cut pauses come back so every proposed cut shows.
-    private var projectedEdits: TimelineEdits {
-        var edits = displayedEdits
-        if silence.isReviewingRecut { edits.cuts.removeAll { $0.kind == .silence } }
-        return edits
-    }
-
     var body: some View {
         timelineContent
             .onDisappear { cancelTimelineDrag() }
@@ -130,9 +123,9 @@ struct EditorTimelineView: View {
         }
         .background(BlitzUI.projectLibraryBackground)
         .onChange(of: projection) { updateTranscriptLayout() }
-        .onChange(of: EditorClipSpine.Request(edits: projectedEdits, duration: duration, silenceCuts: silence.cuts), initial: true) {
+        .onChange(of: EditorClipSpine.Request(edits: displayedEdits, duration: duration, silenceCuts: silence.cuts), initial: true) {
             clipLayout = EditorClipSpine.layout(.init(
-                edits: projectedEdits, duration: duration, silenceCuts: silence.cuts
+                edits: displayedEdits, duration: duration, silenceCuts: silence.cuts
             ))
         }
         .onChange(of: transcript, initial: true) { updateTranscriptItems() }
@@ -144,8 +137,8 @@ struct EditorTimelineView: View {
             zoomFitDuration = 0
             updateTranscriptItems()
         }
-        .onChange(of: EditorTimelineProjection.Request(duration: duration, cuts: projectedEdits.cuts), initial: true) {
-            projection = EditorTimelineProjection(.init(duration: duration, cuts: projectedEdits.cuts))
+        .onChange(of: EditorTimelineProjection.Request(duration: duration, cuts: displayedEdits.cuts), initial: true) {
+            projection = EditorTimelineProjection(.init(duration: duration, cuts: displayedEdits.cuts))
         }
         .onChange(of: clipLayout) { updateSilenceSegments() }
         .onChange(of: SilenceTimelineSegments.Request(duration: duration, cuts: silence.cuts), initial: true) {

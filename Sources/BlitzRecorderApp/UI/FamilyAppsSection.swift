@@ -21,7 +21,7 @@ struct FamilyApp: Identifiable {
         ),
         FamilyApp(
             name: "BlitzReels",
-            detail: "Turns long videos into short clips with captions and reframing.",
+            detail: "AI video editor that cuts your videos into clips and schedules them on social.",
             url: URL(string: "https://blitzreels.com")!,
             actionTitle: "Visit Website",
             iconResource: "BlitzReelsAppIcon"
@@ -45,11 +45,6 @@ final class FamilyAppLinks: NSObject {
 }
 
 struct FamilyAppsSection: View {
-    private var wordmark: NSImage? {
-        Bundle.main.url(forResource: "BlitzReelsWordmarkWhite", withExtension: "png")
-            .flatMap(NSImage.init(contentsOf:))
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 8) {
@@ -57,13 +52,7 @@ struct FamilyAppsSection: View {
                     .font(BlitzType.section)
                     .foregroundStyle(BlitzUI.primaryText)
                 Spacer()
-                if let wordmark {
-                    Image(nsImage: wordmark)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(height: 13)
-                        .accessibilityLabel("BlitzReels")
-                }
+                BlitzReelsBrand().frame(height: 13)
             }
             .padding(.bottom, 4)
 

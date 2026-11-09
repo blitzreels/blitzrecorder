@@ -114,7 +114,7 @@ enum EditorTranscriptTimeline {
         }
     }
 
-    private static func merged(_ ranges: [EditorTimeRange]) -> [EditorTimeRange] {
+    static func merged(_ ranges: [EditorTimeRange]) -> [EditorTimeRange] {
         var result: [EditorTimeRange] = []
         for range in ranges.filter({ $0.start.isFinite && $0.end.isFinite && $0.end > $0.start })
             .sorted(by: { $0.start < $1.start }) {

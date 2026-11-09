@@ -54,6 +54,96 @@ struct RecorderVisibilityMenu: View {
     }
 }
 
+struct AppSidebarRecordingControls: View {
+    @Bindable var vm: RecorderViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            AppSidebarRecorderVisibilityRow(vm: vm)
+            AppSidebarLivePreviewRow(vm: vm)
+        }
+    }
+}
+
+private struct AppSidebarControlRow: View {
+    struct Configuration {
+        let title: String
+        let symbol: String
+        let symbolColor: Color
+        let help: String
+        let isEnabled: Bool
+        let action: () -> Void
+    }
+
+    let configuration: Configuration
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: configuration.action) {
+            HStack(spacing: 10) {
+                Image(systemName: configuration.symbol)
+                    .font(BlitzType.symbol(14))
+                    .foregroundStyle(configuration.symbolColor)
+                    .frame(width: 20)
+                Text(configuration.title)
+                    .font(BlitzType.navigation)
+                    .foregroundStyle(BlitzUI.supportingText)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+            }
+            .padding(.horizontal, AppSidebarRow.inset)
+            .frame(minHeight: AppSidebarRow.height)
+            .contentShape(.rect)
+        }
+        .buttonStyle(BlitzPressButtonStyle())
+        .background {
+            RoundedRectangle(cornerRadius: BlitzUI.controlRadius, style: .continuous)
+                .fill(isHovering && configuration.isEnabled ? BlitzUI.quietFill : .clear)
+        }
+        .disabled(!configuration.isEnabled)
+        .opacity(configuration.isEnabled ? 1 : 0.45)
+        .onHover { isHovering = $0 }
+        .help(configuration.help)
+        .accessibilityLabel(configuration.title)
+    }
+}
+
+private struct AppSidebarRecorderVisibilityRow: View {
+    @Bindable var vm: RecorderViewModel
+
+    private var hidden: Bool { !vm.settings.includesRecorderUI }
+
+    var body: some View {
+        AppSidebarControlRow(configuration: .init(
+            title: hidden ? "Show app UI" : "Hide app UI",
+            symbol: RecorderVisibility.symbol(hidden: hidden),
+            symbolColor: hidden ? BlitzUI.secondaryText : BlitzUI.warning,
+            help: RecorderVisibility.help(hidden: hidden),
+            isEnabled: vm.state == .idle,
+            action: { vm.setRecorderUIIncluded(hidden) }
+        ))
+    }
+}
+
+private struct AppSidebarLivePreviewRow: View {
+    @Bindable var vm: RecorderViewModel
+
+    private var isLive: Bool { vm.isLivePreviewEnabled }
+
+    var body: some View {
+        AppSidebarControlRow(configuration: .init(
+            title: isLive ? "Pause live preview" : "Resume live preview",
+            symbol: isLive ? "livephoto" : "livephoto.slash",
+            symbolColor: isLive ? BlitzUI.secondaryText : BlitzUI.warning,
+            help: isLive
+                ? "Pause camera, mic and screen previews (⌥⌘L). Recording still works."
+                : "Camera, mic and screen previews are paused (⌥⌘L). Recording still works.",
+            isEnabled: vm.state == .idle,
+            action: { vm.setLivePreviewEnabled(!isLive) }
+        ))
+    }
+}
+
 /// Recording controls: says whether the controls themselves are being recorded.
 struct RecorderVisibilityIndicator: View {
     let hidden: Bool

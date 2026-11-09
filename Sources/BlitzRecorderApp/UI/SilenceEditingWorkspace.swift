@@ -43,7 +43,6 @@ final class SilenceEditingSession {
     @ObservationIgnored private var analysisTask: Task<Void, Never>?
     @ObservationIgnored private var previewTask: Task<Void, Never>?
     @ObservationIgnored private var calculationTask: Task<Void, Never>?
-    @ObservationIgnored private var playbackRestoresCutPauses = false
     @ObservationIgnored private var sourceURL: URL?
     @ObservationIgnored private var sourceOffset = 0.0
     @ObservationIgnored private var generation = 0
@@ -77,7 +76,7 @@ final class SilenceEditingSession {
         return saved != current
     }
 
-    var hasChanges: Bool { metrics.hasChanges || hasSettingsChanges }
+    var hasChanges: Bool { metrics.hasChanges || (hasSettingsChanges && !hasRemovedSilence) }
 
     var canApply: Bool {
         active && !waitingForTranscript && !loading && !calculating && !preparingPreview && error == nil && !windows.isEmpty && hasChanges
@@ -87,10 +86,6 @@ final class SilenceEditingSession {
     var hasRemovedSilence: Bool {
         request?.vm.lastExportedProject?.edits.enabledCuts.contains { $0.kind == .silence } ?? false
     }
-
-    /// Pauses are already cut and new settings are waiting to be applied. The timeline then shows the cut
-    /// pauses again so the new proposal is marked on every pause, as it was before the first cut.
-    var isReviewingRecut: Bool { active && hasRemovedSilence && hasSettingsChanges }
 
     func prepare(_ request: Request) {
         guard request.playback.duration > 0 else { return }
@@ -126,7 +121,6 @@ final class SilenceEditingSession {
         nonDialogueRanges = []
         error = nil
         skipSilence = false
-        playbackRestoresCutPauses = false
         updateMetrics()
         let audioSources = request.project.sources.filter {
             ["microphone", "systemAudio"].contains($0.role) && $0.exists
@@ -221,7 +215,6 @@ final class SilenceEditingSession {
         }
         preparingPreview = false
         skipSilence = false
-        playbackRestoresCutPauses = false
         baseCuts = edits.cuts
         updateMetrics()
         return true
@@ -246,7 +239,6 @@ final class SilenceEditingSession {
         previewTask?.cancel()
         preparingPreview = false
         skipSilence = false
-        playbackRestoresCutPauses = false
         request.playback.pauseForEditing()
         edits.cuts.removeAll { $0.kind == .silence }
         edits.silenceRemovalApplied = false
@@ -333,7 +325,7 @@ final class SilenceEditingSession {
             baseCuts = result
             calculating = false
             updateMetrics()
-            if skipSilence || playbackRestoresCutPauses != isReviewingRecut { updatePreview() }
+            if skipSilence { updatePreview() }
         }
     }
 
@@ -473,8 +465,7 @@ final class SilenceEditingSession {
         guard active, let request, !loading else { return }
         previewTask?.cancel()
         guard let project = request.vm.lastExportedProject, project.id == request.project.id else { return }
-        let previewCuts: [TimelineCut]? = skipSilence ? cuts.filter(\.isEnabled)
-            : isReviewingRecut ? project.edits.enabledCuts.filter { $0.kind != .silence } : nil
+        let previewCuts: [TimelineCut]? = skipSilence ? cuts.filter(\.isEnabled) : nil
         let proposed = previewCuts ?? project.edits.enabledCuts
         guard
             TimelineTimeMap(takeDuration: TimelineTimeMap.time(duration), cuts: proposed).outputDuration.seconds >= 0.1
@@ -482,7 +473,6 @@ final class SilenceEditingSession {
             error = "These settings remove the whole recording. Lower the threshold or keep a segment."
             return
         }
-        playbackRestoresCutPauses = !skipSilence && isReviewingRecut
         preparingPreview = true
         previewTask = Task {
             guard !Task.isCancelled else { return }

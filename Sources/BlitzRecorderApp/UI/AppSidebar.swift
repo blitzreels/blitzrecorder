@@ -47,7 +47,10 @@ struct AppSidebar: View {
                 if vm.state == .idle {
                     AppUpdateSidebarCard()
                         .padding(.bottom, 8)
+                    AppSidebarBlitzReelsCard()
+                        .padding(.bottom, 8)
                 }
+                AppSidebarRecordingControls(vm: vm)
                 AppSidebarSettingsRow(configuration: .init(
                     mcpServer: mcpServer,
                     isSelected: selection == .settings,

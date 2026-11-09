@@ -36,7 +36,7 @@ final class VideoFileWriter: @unchecked Sendable {
             throw CocoaError(.fileWriteFileExists, userInfo: [NSFilePathErrorKey: url.path])
         }
         writer = try AVAssetWriter(outputURL: url, fileType: outputFormat.avFileType)
-        writer.movieFragmentInterval = CMTime(seconds: 10, preferredTimescale: 600)
+        writer.movieFragmentInterval = CMTime(seconds: AudioRecoverySegmentWriter.segmentSeconds, preferredTimescale: 600)
         writer.initialMovieFragmentInterval = CMTime(seconds: 1, preferredTimescale: 600)
 
         let compression: [String: Any] = [
@@ -191,7 +191,7 @@ final class VideoFileWriter: @unchecked Sendable {
         return sampleBuffer.retimed(toPresentationTime: outputTime)
     }
 
-    private static func recordingBaseline(timelineStartTime: CMTime?, firstSampleTime: CMTime) -> CMTime {
+    static func recordingBaseline(timelineStartTime: CMTime?, firstSampleTime: CMTime) -> CMTime {
         guard let timelineStartTime,
               timelineStartTime.isValid,
               firstSampleTime.isValid else {

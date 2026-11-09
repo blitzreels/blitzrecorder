@@ -2,11 +2,15 @@ import AVFoundation
 import SwiftUI
 
 struct BlitzReelsBrand: View {
+    private static let onDark = BlitzReelsPitch.bundledImage("BlitzReelsWordmarkWhite")
+    private static let onLight = BlitzReelsPitch.bundledImage("BlitzReelsWordmarkDark")
+
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         Group {
-            if let url = Bundle.main.url(forResource: "BlitzReelsWordmarkWhite", withExtension: "png"),
-               let image = NSImage(contentsOf: url) {
-                Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
+            if let image = colorScheme == .dark ? Self.onDark : Self.onLight {
+                image.resizable().aspectRatio(contentMode: .fit)
             } else {
                 Text("BlitzReels").font(BlitzType.title)
             }
@@ -18,6 +22,8 @@ struct BlitzReelsBrand: View {
 struct BlitzReelsHandoffPanel: View {
     let project: RecordingProject
     let settings: RecordingSettings
+    let offer: BlitzReelsPitch.Offer
+    let openExport: () -> Void
     @Bindable var handoff = BlitzReelsHandoffController.shared
     @State private var selection: URL?
 
@@ -31,11 +37,15 @@ struct BlitzReelsHandoffPanel: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     BlitzReelsBrand().frame(width: 154, height: 24)
-                    Text("Add captions and B-roll")
+                    Text(offer.headline)
                         .font(BlitzType.title)
-                    Text("Send your exported MP4 and choose its captions in BlitzReels.")
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(BlitzReelsPitch.summary)
                         .font(BlitzType.body).foregroundStyle(BlitzUI.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
+                    if handoff.connection.account == nil {
+                        BlitzReelsOutcomeList(outcomes: offer.outcomes).padding(.top, 4)
+                    }
                     if let account = handoff.connection.account {
                         VStack(alignment: .leading, spacing: 8) {
                             Label(account.user.email, systemImage: "checkmark.circle.fill")
@@ -57,21 +67,7 @@ struct BlitzReelsHandoffPanel: View {
                                     .font(BlitzType.body).foregroundStyle(BlitzUI.secondaryText)
                             }
                         }
-                    }
-                    if files.isEmpty {
-                        Label("Export an MP4 first.", systemImage: "film")
-                            .font(BlitzType.callout).foregroundStyle(BlitzUI.secondaryText).padding(.vertical, 20)
-                    } else {
-                        ForEach(files, id: \.path) { url in
-                            RecordingUploadChoice(
-                                file: EditorAsset.output(url: url), isSelected: selection == url,
-                                onSelect: { select(url) }
-                            )
-                            .disabled(handoff.isWorking)
-                        }
-                        Text("Sends this exported file. Later timeline changes need a new export.")
-                            .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
-                            .fixedSize(horizontal: false, vertical: true)
+                        exportChoices
                     }
                     if handoff.isWorking {
                         if let progress = handoff.progress {
@@ -100,9 +96,15 @@ struct BlitzReelsHandoffPanel: View {
                 if handoff.isWorking {
                     Button("Cancel") { handoff.cancel() }.blitzButton(.secondary)
                 } else if handoff.connection.account == nil {
-                    Button(handoff.connection.hasCredential ? "Reconnect to BlitzReels" : "Connect to BlitzReels") {
+                    Button(handoff.connection.hasCredential ? "Reconnect to BlitzReels" : "Try BlitzReels free") {
                         handoff.connect()
                     }.blitzButton(.accent)
+                    if !handoff.connection.hasCredential {
+                        Text(BlitzReelsPitch.trialTerms)
+                            .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 } else {
                     if let url = currentResult {
                         Button("Continue in BlitzReels") { NSWorkspace.shared.open(url) }.blitzButton(.accent)
@@ -136,6 +138,27 @@ struct BlitzReelsHandoffPanel: View {
         }
         .onChange(of: files) { _, urls in
             if !urls.contains(where: { $0 == selection }) { selection = urls.first }
+        }
+    }
+
+    @ViewBuilder private var exportChoices: some View {
+        if files.isEmpty {
+            Label("Export an MP4 first.", systemImage: "film")
+                .font(BlitzType.callout).foregroundStyle(BlitzUI.secondaryText).padding(.top, 20)
+            Button("Go to Export", systemImage: BlitzSymbols.export, action: openExport)
+                .blitzButton(.secondary)
+                .padding(.bottom, 20)
+        } else {
+            ForEach(files, id: \.path) { url in
+                RecordingUploadChoice(
+                    file: EditorAsset.output(url: url), isSelected: selection == url,
+                    onSelect: { select(url) }
+                )
+                .disabled(handoff.isWorking)
+            }
+            Text("Sends this exported file. Later timeline changes need a new export.")
+                .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

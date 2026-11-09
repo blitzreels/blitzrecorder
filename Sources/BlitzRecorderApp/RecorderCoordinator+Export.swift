@@ -72,13 +72,14 @@ extension RecorderCaptureRuntime {
         }
     }
 
-    func performProjectExport(_ request: ProjectExportRequest) async throws -> SavedRecordingOutput {
-        var access = SecurityScopedResourceAccess(
-            urls: [request.destinationURL, request.backgroundMusic?.url].compactMap { $0 }
-        )
-        access.start()
-        defer { access.stop() }
+    struct PreparedProjectExport {
+        let context: ProjectExportRenderPlan.RenderContext
+        let outputProject: RecordingProject
+        let outputAccess: OutputDirectoryAccess
+        let destinationURL: URL
+    }
 
+    func prepareProjectExport(_ request: ProjectExportRequest) async throws -> PreparedProjectExport {
         let baseSettings = settings
         let project = try await Task.detached(priority: .utility) {
             try TakeFileStore().loadRecordingProject(at: request.projectURL)
@@ -95,7 +96,6 @@ extension RecorderCaptureRuntime {
             outputFormat: request.outputFormat
         )
         let outputAccess = try takeFileStore.prepareOutputDirectory(settings: exportSettings)
-        defer { outputAccess.stop() }
 
         let take = takeFileStore.recordingTake(
             from: project,
@@ -112,6 +112,22 @@ extension RecorderCaptureRuntime {
             outputProject: outputProject,
             outputSceneEvents: takeFileStore.sceneEvents(from: outputProject)
         )
+        return PreparedProjectExport(
+            context: context, outputProject: outputProject, outputAccess: outputAccess, destinationURL: request.destinationURL
+        )
+    }
+
+    func performProjectExport(_ request: ProjectExportRequest) async throws -> SavedRecordingOutput {
+        var access = SecurityScopedResourceAccess(
+            urls: [request.destinationURL, request.backgroundMusic?.url].compactMap { $0 }
+        )
+        access.start()
+        defer { access.stop() }
+
+        let prepared = try await prepareProjectExport(request)
+        defer { prepared.outputAccess.stop() }
+        let context = prepared.context
+        let outputProject = prepared.outputProject
 
         let url = try await Merger.exportFinalVideo(FinalVideoExportRequest(
             take: context.take,

@@ -12,7 +12,7 @@ struct EditorInspectorTabBar: View {
     let configuration: Configuration
 
     private var tabs: [EditorInspectorTab] {
-        (configuration.showsCameras ? [.cameras] : []) + [.layout, .color, .silence, .captions, .text, .zoom, .privacy, .audio, .exports]
+        (configuration.showsCameras ? [.cameras] : []) + [.layout, .color, .silence, .captions, .text, .zoom, .privacy, .audio, .exports, .blitzReels]
     }
 
     var body: some View {
@@ -22,12 +22,14 @@ struct EditorInspectorTabBar: View {
             selection: configuration.selection.wrappedValue,
             label: { $0.rawValue },
             symbolName: { $0.systemImage },
+            brandImage: { $0 == .blitzReels ? BlitzReelsPitch.mark : nil },
             help: {
                 switch $0 {
                 case .cameras: "Pick which camera is on screen and whose sound plays"
                 case .layout: "Scene layout and canvas"
                 case .color: "Grade each camera"
                 case .exports: "Save a file, share a link, and see earlier exports"
+                case .blitzReels: BlitzReelsPitch.tagline
                 default: $0.rawValue
                 }
             },
