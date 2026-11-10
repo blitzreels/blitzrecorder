@@ -40,6 +40,7 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
     var onScreenPreviewFrame: ScreenPreviewer.FrameHandler?
     private var captureFailureHandler: (@MainActor (ActiveCaptureFailure) -> Void)?
     private var hasReportedCaptureFailure = false
+    var hasLostScreenSource = false
     var captureSessionObservers: [NSObjectProtocol] = []
 
     var activeScreenCaptureStream: SCStream? {
@@ -64,6 +65,7 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
         lastScreenPreviewFrameTime = DispatchTime(uptimeNanoseconds: 0)
         hasProducedMicrophoneStartupSample = false
         hasReportedCaptureFailure = false
+        hasLostScreenSource = false
         writer = nil
 
         if settings.enabledSources.contains(.screen) || settings.enabledSources.contains(.systemAudio) {
@@ -156,6 +158,10 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
             self.pickedScreenFilter = pickedFilter
             return
         }
+        if lock.withLock({ hasLostScreenSource }) {
+            try await restartLostScreenStream(.init(settings: settings, pickedFilter: pickedFilter))
+            return
+        }
 
         let previousSettings = self.settings
         let previousFilter = self.pickedScreenFilter
@@ -186,6 +192,39 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
             }
             throw CaptureSourceRetargetFailure(rollbackFailed: false, underlyingError: error)
         }
+    }
+
+    /// A stream whose window closed cannot take a new filter; a new one feeds the same composited take.
+    private struct LostScreenRestart {
+        let settings: RecordingSettings
+        let pickedFilter: SCContentFilter?
+    }
+
+    private func restartLostScreenStream(_ restart: LostScreenRestart) async throws {
+        do {
+            let geometry = try await startScreenStream(settings: restart.settings, filter: restart.pickedFilter)
+            settings = restart.settings
+            lock.withLock { hasLostScreenSource = false }
+            updateRecordingSceneScreenGeometry(geometry)
+        } catch {
+            throw CaptureSourceRetargetFailure(rollbackFailed: true, underlyingError: error)
+        }
+    }
+
+    func reportScreenSourceLost() -> Bool {
+        lock.lock()
+        guard !hasReportedCaptureFailure, writer != nil else {
+            lock.unlock()
+            return false
+        }
+        hasLostScreenSource = true
+        lock.unlock()
+        let failureHandler = captureFailureHandler
+        let source: CaptureSource = settings?.enabledSources.contains(.screen) == true ? .screen : .systemAudio
+        Task { @MainActor in
+            failureHandler?(ActiveCaptureFailure(source: source, error: ScreenSourceLost()))
+        }
+        return true
     }
 
     private func updateRecordingSceneScreenGeometry(_ screenSourceGeometry: ScreenSourceGeometry) {

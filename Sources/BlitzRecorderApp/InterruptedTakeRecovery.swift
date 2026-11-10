@@ -252,7 +252,7 @@ struct InterruptedTakeRecovery {
         let format: SourceAudioFormat = job.stagingURL.pathExtension == SourceAudioFormat.wav.fileExtension ? .wav : .aac
         if let result = try AudioRecoveryStitcher.stitch(.init(
             directory: TakeRecoveryFiles.audioSegments(audioURL: job.captureURL), outputURL: temporaryURL,
-            format: format, stereoBitrate: job.settings.finalAudioBitrate
+            format: format, stereoBitrate: job.settings.finalAudioBitrate, timelineStart: nil
         )) {
             try? fileManager.removeItem(at: job.stagingURL)
             try fileManager.moveItem(at: temporaryURL, to: job.stagingURL)
@@ -268,7 +268,7 @@ struct InterruptedTakeRecovery {
                 timelineEnd: result.timelineEnd
             )
         }
-        guard let duration = await Self.playableDuration(.init(url: job.stagingURL, mediaType: .audio)) else {
+        guard let duration = await MediaFileDuration.playable(.init(url: job.stagingURL, mediaType: .audio)) else {
             try? fileManager.removeItem(at: job.stagingURL)
             return nil
         }
@@ -286,7 +286,7 @@ struct InterruptedTakeRecovery {
             (NumberedSourceTracks.cameraAngles.displayName(index: $0.offset), $0.element.url, nil)
         }
         for item in sources {
-            if let duration = await Self.playableDuration(.init(url: item.url, mediaType: .video)) {
+            if let duration = await MediaFileDuration.playable(.init(url: item.url, mediaType: .video)) {
                 media.hasVideo = true
                 media.ends.append(.init(name: item.name, end: duration))
                 continue
@@ -300,20 +300,6 @@ struct InterruptedTakeRecovery {
                 media.notes.append("\(item.name) could not be recovered.")
             }
         }
-    }
-
-    private struct PlayableRequest {
-        let url: URL
-        let mediaType: AVMediaType
-    }
-
-    private static func playableDuration(_ request: PlayableRequest) async -> Double? {
-        guard FileManager.default.fileExists(atPath: request.url.path) else { return nil }
-        let asset = AVURLAsset(url: request.url)
-        guard let tracks = try? await asset.loadTracks(withMediaType: request.mediaType), !tracks.isEmpty,
-              let (isPlayable, duration) = try? await asset.load(.isPlayable, .duration),
-              isPlayable, duration.isNumeric, duration.seconds > 0 else { return nil }
-        return duration.seconds
     }
 
     private static func lossNotes(_ ends: [SourceEnd]) -> [String] {

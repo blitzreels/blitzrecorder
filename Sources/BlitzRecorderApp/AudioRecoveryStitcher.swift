@@ -9,6 +9,8 @@ enum AudioRecoveryStitcher {
         let outputURL: URL
         let format: SourceAudioFormat
         let stereoBitrate: Int
+        /// Take-timeline second the output starts at; nil starts it at the first segment.
+        let timelineStart: Double?
     }
 
     struct Result: Equatable {
@@ -45,7 +47,7 @@ enum AudioRecoveryStitcher {
                 unreadable += 1
                 continue
             }
-            let target = try output ?? makeOutput(.init(request: request, first: buffer, timelineStart: segment.timelineSeconds))
+            let target = try output ?? makeOutput(.init(request: request, first: buffer, timelineStart: request.timelineStart ?? segment.timelineSeconds))
             output = target
             try append(.init(buffer: buffer, timelineSeconds: segment.timelineSeconds, output: target))
         }

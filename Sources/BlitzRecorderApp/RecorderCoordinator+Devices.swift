@@ -120,6 +120,10 @@ extension RecorderCaptureRuntime {
 
     func handleActiveCaptureFailure(_ failure: ActiveCaptureFailure) {
         guard state == .recording || state == .paused else { return }
+        if failure.error is ScreenSourceLost {
+            recoverLostScreenSource()
+            return
+        }
         let recordingSettings = committedRecordingSettings ?? settings
         let decision = CaptureFailureRecovery.decision(.init(
             source: failure.source,
@@ -161,23 +165,9 @@ extension RecorderCaptureRuntime {
             refreshAudioLevelMonitoring()
         }
         returnToPreferredMicrophone(device)
-        addConnectedCameraAsAngle(device)
         if actions.notifyCamera {
             onCameraConfigurationChanged?()
         }
-    }
-
-    /// A camera plugged in while idle becomes the next angle, so its scenes appear without another step.
-    /// Desk View is skipped: it is a crop of an iPhone camera, not another angle.
-    private func addConnectedCameraAsAngle(_ device: AVCaptureDevice) {
-        guard state == .idle,
-              device.hasMediaType(.video),
-              device.deviceType != .deskViewCamera,
-              device.uniqueID != mainLocalCameraDeviceID,
-              !settings.extraCameraAngleIDs.contains(device.uniqueID) else { return }
-        addCameraAngle(deviceID: device.uniqueID)
-        let name = NumberedSourceTracks.cameraAngles.displayName(index: settings.extraCameraAngleIDs.count - 1)
-        onMessage?("\(device.localizedName) is \(name). Its scenes are in the strip, with Two Cameras.")
     }
 
     func handleCaptureDeviceDisconnected(_ device: AVCaptureDevice) {

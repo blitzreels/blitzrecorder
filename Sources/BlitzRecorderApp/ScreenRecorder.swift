@@ -22,6 +22,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
     private var startupTimeoutTask: Task<Void, Never>?
     private var hasProducedStartupFrame = false
     private var hasReportedActiveFailure = false
+    private var hasLostSource = false
     var onPreviewFrame: ScreenPreviewer.FrameHandler?
     private var lastPreviewTime: UInt64 = 0
 
@@ -55,6 +56,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         failureLock.withLock {
             hasProducedStartupFrame = false
             hasReportedActiveFailure = false
+            hasLostSource = false
         }
 
         let filter: SCContentFilter
@@ -114,24 +116,40 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
     }
 
     func update(settings: RecordingSettings, filter pickedFilter: SCContentFilter?) async throws {
-        guard let stream else {
-            self.settings = settings
+        self.settings = settings
+        guard let stream else { return }
+        let target = try await streamTarget(.init(settings: settings, pickedFilter: pickedFilter))
+        if failureLock.withLock({ hasLostSource }) {
+            try await restartStream(target)
             return
         }
-        self.settings = settings
+        try await stream.updateContentFilter(target.filter)
+        try await stream.updateConfiguration(target.configuration)
+    }
 
+    private struct StreamTarget {
+        let filter: SCContentFilter
+        let configuration: SCStreamConfiguration
+    }
+
+    private struct StreamTargetRequest {
+        let settings: RecordingSettings
+        let pickedFilter: SCContentFilter?
+    }
+
+    private func streamTarget(_ request: StreamTargetRequest) async throws -> StreamTarget {
+        let settings = request.settings
+        let pickedFilter = request.pickedFilter
         if let pickedFilter {
             let pickedFilter = await ScreenCaptureGeometry.applyingRecorderVisibility(.init(
                 filter: pickedFilter, includesRecorderUI: settings.includesRecorderUI))
             currentPickedFilter = pickedFilter
             currentDisplay = nil
-            try await stream.updateContentFilter(pickedFilter)
-            try await stream.updateConfiguration(streamConfigurationForPickedContent(
+            return StreamTarget(filter: pickedFilter, configuration: streamConfigurationForPickedContent(
                 settings: settings,
                 filter: pickedFilter,
                 dimensions: currentDimensions
             ))
-            return
         }
 
         let source = try await ScreenSourceLookup.resolve {
@@ -140,13 +158,21 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
         }
         currentPickedFilter = nil
         currentDisplay = source.display
-        try await stream.updateContentFilter(source.filter)
-        try await stream.updateConfiguration(streamConfiguration(
+        return StreamTarget(filter: source.filter, configuration: streamConfiguration(
             settings: settings,
             screenSourceGeometry: source.geometry,
             sourceRect: source.sourceRect,
             dimensions: currentDimensions
         ))
+    }
+
+    /// A stream whose window closed cannot take a new filter, so a new stream writes on into the same file.
+    private func restartStream(_ target: StreamTarget) async throws {
+        let stream = SCStream(filter: target.filter, configuration: target.configuration, delegate: self)
+        try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
+        try await stream.startCapture()
+        self.stream = stream
+        failureLock.withLock { hasLostSource = false }
     }
 
     func pause() {
@@ -216,11 +242,25 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
         guard stream !== intentionallyStoppedStream else { return }
-        NSLog("Screen stream stopped: \(error.localizedDescription)")
+        if ScreenSourceLost.matches(error), markSourceLostIfRecording() {
+            CaptureLog.note("Screen source closed; recording continues: \(error.localizedDescription)")
+            let failureHandler = failureHandler
+            Task { @MainActor in failureHandler?(ScreenSourceLost()) }
+            return
+        }
+        CaptureLog.note("Screen stream stopped: \(error.localizedDescription)")
         streamError = error
         let recorderError = RecorderError.captureStreamStopped(error.localizedDescription)
         completeStartup(.failure(recorderError))
         reportActiveFailureIfNeeded(recorderError)
+    }
+
+    private func markSourceLostIfRecording() -> Bool {
+        failureLock.withLock {
+            guard hasProducedStartupFrame, !hasReportedActiveFailure else { return false }
+            hasLostSource = true
+            return true
+        }
     }
 
     private func waitForFirstScreenFrame() async throws {

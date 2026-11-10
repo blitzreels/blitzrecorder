@@ -128,6 +128,14 @@ enum RecordingStopCopy {
         "Screen switched to \(name). Recording continues."
     }
 
+    static func screenClosedCameraContinues(_ name: String) -> String {
+        "\(name) closed. Recording continues on your camera. Pick another app to bring the screen back."
+    }
+
+    static func screenClosedDisplayContinues(_ name: String) -> String {
+        "\(name) closed. Recording continues with the full display it was on."
+    }
+
     static let sourceSwitchStoppedTake = "Source switch failed. Recording stopped to protect the take."
     static let screenCaptureUpdateStoppedTake = "Screen capture update failed. Recording stopped to protect the take."
 

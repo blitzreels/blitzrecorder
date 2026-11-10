@@ -79,6 +79,7 @@ final class RecorderCaptureRuntime {
     var onActiveMicrophoneChanged: ((String?) -> Void)?
     var activeLocalCameraDeviceID: String?
     var activeCaptureWarnings: [String] = []
+    var isRecoveringLostScreenSource = false
 
     struct ScreenSourceActionContext: Equatable {
         let screenWindowFitRevision: Int

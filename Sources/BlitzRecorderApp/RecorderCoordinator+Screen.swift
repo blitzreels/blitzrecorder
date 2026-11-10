@@ -26,7 +26,12 @@ extension RecorderCaptureRuntime {
     func setScreenSource(_ binding: ScreenSourceBinding, autoFitWindowZoom: CGFloat? = nil) {
         guard state.allowsScreenContentPickerPresentation else { return }
         if state == .recording || state == .paused {
-            switchRecordingScreenSource(.init(binding: binding, autoFitWindowZoom: autoFitWindowZoom))
+            switchRecordingScreenSource(.init(
+                binding: binding,
+                autoFitWindowZoom: autoFitWindowZoom,
+                revealsScreen: true,
+                successMessage: RecordingStopCopy.screenSwitched(binding.displayName)
+            ))
             return
         }
         cancelPendingScreenWindowFits()
@@ -40,6 +45,45 @@ extension RecorderCaptureRuntime {
     struct RecordingScreenSourceRequest {
         let binding: ScreenSourceBinding
         let autoFitWindowZoom: CGFloat?
+        let revealsScreen: Bool
+        let successMessage: String
+    }
+
+    /// The recorded window closed mid-take. Camera, microphone and the files written so far keep going:
+    /// with a camera the take cuts to the Camera scene, and the screen and system audio move to the
+    /// display that window was on, so the take keeps its sound and a screen to come back to.
+    func recoverLostScreenSource() {
+        guard !isRecoveringLostScreenSource else { return }
+        isRecoveringLostScreenSource = true
+        let lostBinding = settings.screenSourceBinding
+        let lostName = lostBinding?.displayName ?? "The shared window"
+        let fallback = ScreenSourceBinding.display(
+            id: lostBinding?.kind == .display ? nil : (lostBinding?.displayID ?? settings.selectedDisplayID)
+        )
+        let cameraScene = cameraSceneForLostScreen()
+        if let cameraScene {
+            studio.selectScene(id: cameraScene.id)
+        }
+        switchRecordingScreenSource(.init(
+            binding: fallback,
+            autoFitWindowZoom: nil,
+            revealsScreen: cameraScene == nil,
+            successMessage: cameraScene == nil
+                ? RecordingStopCopy.screenClosedDisplayContinues(lostName)
+                : RecordingStopCopy.screenClosedCameraContinues(lostName)
+        ))
+        let recovery = screenReconfiguration.pickerTransactionTask
+        Task { @MainActor [weak self] in
+            await recovery?.value
+            self?.isRecoveringLostScreenSource = false
+        }
+    }
+
+    private func cameraSceneForLostScreen() -> RecordingSceneDefinition? {
+        guard (committedRecordingSettings ?? settings).enabledSources.contains(.camera) else { return nil }
+        return studio.scenesForCurrentLayout().first {
+            $0.snapshot.selectedScenePreset == .webcamFullscreen && $0.snapshot.cameraFeeds == .main
+        }
     }
 
     func switchRecordingScreenSource(_ request: RecordingScreenSourceRequest) {
@@ -64,8 +108,10 @@ extension RecorderCaptureRuntime {
             let previousAspectRatio = currentPickedScreenSourceAspectRatio
             cancelPendingScreenWindowFits()
             settings = screenSourceSelection.selectBinding(.init(binding: binding, settings: settings))
-            settings.enabledSources.insert(.screen)
-            settings.hiddenSources.remove(.screen)
+            if request.revealsScreen {
+                settings.enabledSources.insert(.screen)
+                settings.hiddenSources.remove(.screen)
+            }
             currentPickedScreenSourceAspectRatio = nil
             do {
                 let captureSettings = currentLocalCaptureSettings()
@@ -76,7 +122,7 @@ extension RecorderCaptureRuntime {
                 persistSettings()
                 updateRecordingSceneTimeline(transition: .cut)
                 onScreenCaptureConfigurationChanged?()
-                onMessage?(RecordingStopCopy.screenSwitched(binding.displayName))
+                onMessage?(request.successMessage)
                 if let zoom = request.autoFitWindowZoom, binding.kind != .display {
                     autoFitScreenSourceWindow(binding, zoom: zoom)
                 }

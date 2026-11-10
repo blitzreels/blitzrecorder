@@ -13,6 +13,15 @@ struct ActiveCaptureFailure {
     let error: Error
 }
 
+/// The window or display a ScreenCaptureKit stream showed went away (it was closed or unplugged).
+/// The stream ends but the take does not: the coordinator moves the screen to another source.
+struct ScreenSourceLost: Error {
+    static func matches(_ error: Error) -> Bool {
+        let error = error as NSError
+        return error.domain == SCStreamErrorDomain && error.code == SCStreamError.Code.noCaptureSource.rawValue
+    }
+}
+
 struct PendingRecordingSceneEvent {
     let time: TimeInterval
     let scene: RecordingScene

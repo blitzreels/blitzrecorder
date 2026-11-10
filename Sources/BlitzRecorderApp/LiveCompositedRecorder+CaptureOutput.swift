@@ -26,6 +26,10 @@ extension LiveCompositedRecorder {
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
         guard stream !== intentionallyStoppedScreenStream else { return }
+        if ScreenSourceLost.matches(error), reportScreenSourceLost() {
+            NSLog("Live compositor screen source closed; recording continues: \(error.localizedDescription)")
+            return
+        }
         NSLog("Live compositor screen stream stopped: \(error.localizedDescription)")
         streamError = error
         let recorderError = RecorderError.captureStreamStopped(error.localizedDescription)
