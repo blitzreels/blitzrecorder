@@ -51,7 +51,10 @@ struct EditorAudioInspector<Music: View>: View {
     private var cleanup: some View {
         VStack(alignment: .leading, spacing: 12) {
             Toggle("Clean up microphone", isOn: Binding(get: { settings.isEnabled }, set: { value in
-                var settings = settings; settings.isEnabled = value; save(settings)
+                var updated = settings
+                if value && updated == .disabled { updated.enhancesVoice = true }
+                updated.isEnabled = value
+                save(updated)
             }))
             .toggleStyle(.blitzSwitch)
             Text("Removes background noise from your voice. Your video isn't changed.")
@@ -70,6 +73,19 @@ struct EditorAudioInspector<Music: View>: View {
                         .font(BlitzType.caption).foregroundStyle(BlitzUI.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                Toggle(isOn: Binding(get: { settings.enhancesVoice }, set: { value in
+                    var settings = settings; settings.enhancesVoice = value; save(settings)
+                })) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Studio voice")
+                            .font(BlitzType.label)
+                        Text("A clearer, fuller voice with softer \"s\" sounds, as loud as a podcast every time.")
+                            .font(BlitzType.caption)
+                            .foregroundStyle(BlitzUI.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .toggleStyle(.blitzSwitch)
                 cleanupStatus
                 if configuration.playback.audioProgress == nil {
                     VStack(alignment: .leading, spacing: 6) {

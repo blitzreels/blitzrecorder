@@ -171,7 +171,7 @@ struct SilencePanePresentation: Equatable {
             phase = .noPauses
         }
         if request.metrics.outputDuration < 0.1, request.hasChanges, request.hasAudio, !request.loading {
-            warning = "These settings would cut the whole recording. Pick a gentler strength."
+            warning = "These settings would cut the whole recording. Lower the quiet level or pick a gentler strength."
         }
         let strength: SilenceStrength?
         if !request.suggestsPauses {

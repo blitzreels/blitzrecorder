@@ -15,6 +15,9 @@ struct SilenceRemovalSettings: Codable, Equatable, Sendable {
         minimumDuration: 0.5, paddingBefore: 0.3, paddingAfter: 0.3,
         linkedPadding: true, minimumAudio: defaultMinimumAudio(for: 1), customized: false)
 
+    static let thresholdRange: ClosedRange<Double> = -70 ... -5
+    static let minimumDurationRange: ClosedRange<Double> = 0.05...3
+
     static func defaultMinimumAudio(for intensity: Double) -> Double {
         switch intensity {
         case 1: 0.1
@@ -27,8 +30,10 @@ struct SilenceRemovalSettings: Codable, Equatable, Sendable {
     var sanitized: Self {
         var value = self
         value.intensity = intensity.isFinite ? min(3, max(0, intensity.rounded())) : 1
-        value.threshold = threshold.isFinite ? min(-15, max(-70, threshold)) : -42
-        value.minimumDuration = minimumDuration.isFinite ? min(3, max(0.1, minimumDuration)) : 0.5
+        value.threshold = threshold.isFinite
+            ? min(Self.thresholdRange.upperBound, max(Self.thresholdRange.lowerBound, threshold)) : -42
+        value.minimumDuration = minimumDuration.isFinite
+            ? min(Self.minimumDurationRange.upperBound, max(Self.minimumDurationRange.lowerBound, minimumDuration)) : 0.5
         value.paddingBefore = paddingBefore.isFinite ? min(1, max(0, paddingBefore)) : 0.3
         value.paddingAfter = paddingAfter.isFinite ? min(1, max(0, paddingAfter)) : 0.3
         value.minimumAudio = minimumAudio.isFinite ? min(0.5, max(0, minimumAudio)) : 0

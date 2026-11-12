@@ -136,7 +136,8 @@ enum SilenceDetection {
             let endsAtTake = range.1 >= config.takeDuration - tick
             let from = max(0, startsAtOrigin ? range.0 : range.0 + config.paddingAfter)
             let to = min(config.takeDuration, endsAtTake ? range.1 : range.1 - config.paddingBefore)
-            guard range.1 - range.0 >= max(0.1, config.minimumSilence), to - from > 0.02 else { return nil }
+            let shortest = max(SilenceRemovalSettings.minimumDurationRange.lowerBound, config.minimumSilence)
+            guard range.1 - range.0 >= shortest, to - from > 0.02 else { return nil }
             let wasRestored = config.previousCuts.contains { cut in
                 cut.source == .automatic && !cut.isEnabled && cut.start < to && cut.end > from
                     && !config.overrides.contains { $0.start <= cut.start && $0.end >= cut.end }

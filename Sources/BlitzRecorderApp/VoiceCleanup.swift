@@ -16,10 +16,11 @@ struct VoiceCleanupSettings: Codable, Equatable, Sendable {
     var normalizesSpeech = true
     var ducksMusic = false
     var method = VoiceCleanupMethod.noiseFilter
+    var enhancesVoice = false
     static let disabled = Self()
 
     enum CodingKeys: String, CodingKey {
-        case isEnabled, strength, normalizesSpeech, ducksMusic, method
+        case isEnabled, strength, normalizesSpeech, ducksMusic, method, enhancesVoice
     }
 
     init() {}
@@ -32,6 +33,7 @@ struct VoiceCleanupSettings: Codable, Equatable, Sendable {
         normalizesSpeech = try container.decode(Bool.self, forKey: .normalizesSpeech)
         ducksMusic = try container.decode(Bool.self, forKey: .ducksMusic)
         method = try container.decodeIfPresent(VoiceCleanupMethod.self, forKey: .method) ?? .noiseFilter
+        enhancesVoice = try container.decodeIfPresent(Bool.self, forKey: .enhancesVoice) ?? false
     }
 }
 
@@ -106,7 +108,7 @@ actor VoiceCleanupProcessor {
         }
         let isolates = request.settings.method == .voiceIsolation
         let key = fingerprint.cacheKey + "-voice-v1-\(request.settings.strength)-\(request.settings.normalizesSpeech)"
-            + (isolates ? "-isolated-v1" : "")
+            + (isolates ? "-isolated-v1" : "") + (request.settings.enhancesVoice ? "-studio-v1" : "")
         let name = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
         let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("dev.blitzreels.blitzrecorder/VoiceCleanup", isDirectory: true)
@@ -117,25 +119,33 @@ actor VoiceCleanupProcessor {
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: scratch) }
         let pcm = scratch.appendingPathComponent("processed.caf")
+        let share = request.settings.enhancesVoice ? 0.6 / 0.9 : 1
         if isolates {
             let isolated = scratch.appendingPathComponent("isolated.caf")
             try VoiceIsolation.process(.init(source: request.url, destination: isolated,
-                                             progress: { request.progress(0.6 * $0) }))
+                                             progress: { request.progress(share * 0.6 * $0) }))
             if request.settings.normalizesSpeech {
                 // The filter at zero strength removes nothing and only evens out the isolated voice's volume.
                 var leveling = request.settings
                 leveling.strength = 0
                 try Self.processPCM(.init(source: isolated, destination: pcm, settings: leveling,
-                                          progress: { request.progress(0.6 + 0.3 * $0) }))
+                                          progress: { request.progress(share * (0.6 + 0.3 * $0)) }))
             } else {
                 try FileManager.default.moveItem(at: isolated, to: pcm)
             }
         } else {
             try Self.processPCM(.init(source: request.url, destination: pcm, settings: request.settings,
-                                      progress: { request.progress(0.9 * $0) }))
+                                      progress: { request.progress(share * 0.9 * $0) }))
         }
         try Task.checkCancellation()
-        guard let exporter = AVAssetExportSession(asset: AVURLAsset(url: pcm), presetName: AVAssetExportPresetAppleM4A) else {
+        var finished = pcm
+        if request.settings.enhancesVoice {
+            finished = scratch.appendingPathComponent("studio.caf")
+            try VoiceEnhancer.process(.init(source: pcm, destination: finished,
+                                            progress: { request.progress(0.6 + 0.3 * $0) }))
+            try Task.checkCancellation()
+        }
+        guard let exporter = AVAssetExportSession(asset: AVURLAsset(url: finished), presetName: AVAssetExportPresetAppleM4A) else {
             throw RecorderError.mediaWriteFailed("Cannot encode cleaned microphone audio.")
         }
         let encoded = scratch.appendingPathComponent("processed.m4a")

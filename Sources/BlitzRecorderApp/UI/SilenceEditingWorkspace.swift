@@ -287,8 +287,17 @@ final class SilenceEditingSession {
         changeIntensity()
     }
 
-    func changeThresholdMode() {
-        if automaticThreshold { threshold = SilenceDetection.suggestedThreshold(windows) }
+    /// Moving the quiet level takes over from the automatic one, which starts the slider where it stood.
+    func setThreshold(_ value: Double) {
+        guard value != threshold || automaticThreshold else { return }
+        automaticThreshold = false
+        threshold = value
+        recalculate()
+    }
+
+    func useAutomaticThreshold() {
+        automaticThreshold = true
+        threshold = windows.isEmpty ? Self.defaultThreshold : SilenceDetection.suggestedThreshold(windows)
         recalculate()
     }
 
@@ -470,7 +479,7 @@ final class SilenceEditingSession {
         guard
             TimelineTimeMap(takeDuration: TimelineTimeMap.time(duration), cuts: proposed).outputDuration.seconds >= 0.1
         else {
-            error = "These settings remove the whole recording. Lower the threshold or keep a segment."
+            error = "These settings remove the whole recording. Lower the quiet level or keep a segment."
             return
         }
         preparingPreview = true
