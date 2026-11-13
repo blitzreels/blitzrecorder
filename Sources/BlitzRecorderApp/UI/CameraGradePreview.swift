@@ -151,7 +151,7 @@ final class CameraGradePreview {
         let item = request.item
         guard entry.installTask == nil else { return }
         let box = entry.box
-        let popoutRenderer = CameraPopoutRenderer()
+        let popoutRenderer = CameraPopoutRenderer(quality: .playback)
         let asset = item.asset
         entry.installTask = Task { [weak self, weak entry, weak item] in
             let composition = try? await AVVideoComposition.videoComposition(

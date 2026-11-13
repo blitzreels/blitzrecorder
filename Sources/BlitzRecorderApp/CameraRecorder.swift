@@ -515,12 +515,13 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             NSLog("Camera input normalized from \(dimensions.width)x\(dimensions.height) to \(width)x\(height)")
         }
 
-        NSLog("Camera writer starting at \(width)x\(height)")
+        let bitrate = request.recording.settings.cameraBitrate(pictureSize: outputSize)
+        NSLog("Camera writer starting at \(width)x\(height), \(bitrate) bps")
         let writer = try VideoFileWriter(
             url: request.recording.url,
             width: width,
             height: height,
-            bitrate: request.recording.settings.cameraBitrate,
+            bitrate: bitrate,
             fps: request.recording.settings.framesPerSecond,
             outputFormat: request.recording.settings.sourceVideoFormat,
             timelineStartTime: request.recording.timelineStartTime

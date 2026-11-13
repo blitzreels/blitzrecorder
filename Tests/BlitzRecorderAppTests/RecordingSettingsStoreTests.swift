@@ -34,6 +34,31 @@ final class RecordingSettingsStoreTests: XCTestCase {
         XCTAssertLessThan(settings.finalVideoBitrate, settings.screenBitrate + settings.cameraBitrate)
     }
 
+    func testFourKCameraKeepsSourceQualityWith1080pExport() {
+        let settings = RecordingSettings()
+
+        XCTAssertEqual(settings.outputResolution, .p1080)
+        XCTAssertEqual(settings.cameraBitrate(pictureSize: CGSize(width: 3840, height: 2160)), 24_883_200)
+        XCTAssertEqual(settings.finalVideoBitrate, 8_000_000)
+        XCTAssertEqual(settings.cameraBitrate(pictureSize: CGSize(width: 1920, height: 1080)), 6_220_800)
+    }
+
+    func testCameraSourceBitrateHandlesPortraitAndHighFrameRate() {
+        var settings = RecordingSettings()
+        settings.framesPerSecond = 60
+
+        XCTAssertEqual(settings.cameraBitrate(pictureSize: CGSize(width: 2160, height: 3840)), 34_836_480)
+        XCTAssertEqual(settings.cameraBitrate(pictureSize: CGSize(width: 7680, height: 4320)), 60_000_000)
+    }
+
+    func testCameraSourceBitrateKeepsCustomQualityBoostAndMinimum() {
+        var settings = RecordingSettings()
+        settings.customVideoBitrate = 20_000_000
+
+        XCTAssertEqual(settings.cameraBitrate(pictureSize: CGSize(width: 3840, height: 2160)), 62_208_000)
+        XCTAssertEqual(settings.cameraBitrate(pictureSize: CGSize(width: 640, height: 480)), 15_000_000)
+    }
+
     func testLoadKeepsCustomSceneFramesWhenPresetKeyIsStale() {
         let defaults = temporaryDefaults()
         defaults.set(CaptureLayout.vertical.rawValue, forKey: "recording.layout")

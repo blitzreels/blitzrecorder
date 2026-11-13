@@ -13,7 +13,7 @@ final class CameraPopoutPreview: @unchecked Sendable {
     }
 
     private let queue = DispatchQueue(label: "blitzrecorder.camera-popout", qos: .userInitiated)
-    private let renderer = CameraPopoutRenderer()
+    private let renderer = CameraPopoutRenderer(quality: .playback)
     private let context = CIContext(options: [.cacheIntermediates: false])
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)
     private var pool: CVPixelBufferPool?

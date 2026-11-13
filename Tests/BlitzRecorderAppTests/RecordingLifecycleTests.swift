@@ -873,13 +873,17 @@ final class RecordingLifecycleTests: XCTestCase {
 
         await controller.load(project: canvasProject, baseSettings: settings)
         view.refresh()
-        XCTAssertFalse(initialPlayer === playerLayer.player)
-        XCTAssertTrue(playerLayer.player === controller.videoPlayer(for: .screen, scene: RecordingScene(settings: RecordingSettings())))
+        let reloadedPlayerLayer = try XCTUnwrap(clip.sublayers?.first as? AVPlayerLayer)
+        XCTAssertFalse(reloadedPlayerLayer === playerLayer)
+        XCTAssertNil(playerLayer.player)
+        XCTAssertFalse(initialPlayer === reloadedPlayerLayer.player)
+        XCTAssertTrue(reloadedPlayerLayer.player === controller.videoPlayer(for: .screen, scene: RecordingScene(settings: RecordingSettings())))
 
         EditorCompositedPlayer.dismantleNSView(view, coordinator: ())
-        XCTAssertNil(playerLayer.player)
+        XCTAssertNil(reloadedPlayerLayer.player)
         view.refresh()
-        XCTAssertTrue(playerLayer.player === controller.videoPlayer(for: .screen, scene: RecordingScene(settings: RecordingSettings())))
+        let reattachedPlayerLayer = try XCTUnwrap(clip.sublayers?.first as? AVPlayerLayer)
+        XCTAssertTrue(reattachedPlayerLayer.player === controller.videoPlayer(for: .screen, scene: RecordingScene(settings: RecordingSettings())))
         view.teardown()
         controller.teardown()
     }

@@ -249,7 +249,7 @@ private final class MetalExportRendererPool: @unchecked Sendable {
     init() {
         let count = max(2, min(4, ProcessInfo.processInfo.activeProcessorCount / 3))
         semaphore = DispatchSemaphore(value: count)
-        renderers = (0..<count).map { _ in LiveCompositorRenderer() }
+        renderers = (0..<count).map { _ in LiveCompositorRenderer(popoutQuality: .export) }
     }
 
     func acquire() -> LiveCompositorRenderer {

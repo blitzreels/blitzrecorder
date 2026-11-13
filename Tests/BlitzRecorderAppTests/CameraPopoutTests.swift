@@ -117,7 +117,7 @@ final class CameraPopoutTests: XCTestCase {
         ])
         reader.add(output)
         XCTAssertTrue(reader.startReading())
-        let renderer = CameraPopoutRenderer()
+        let renderer = CameraPopoutRenderer(quality: .playback)
         let renderContext = CIContext(options: [.cacheIntermediates: false])
         var elapsed: [Double] = []
         var processed = 0

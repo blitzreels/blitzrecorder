@@ -31,11 +31,12 @@ final class LiveCompositorRenderer: @unchecked Sendable {
     private static let backgroundFramesPerLoop = 96
 
     private let ciContext: CIContext
-    private let cameraPopoutRenderer = CameraPopoutRenderer()
+    private let cameraPopoutRenderer: CameraPopoutRenderer
     private var cachedBackground: (style: CanvasBackgroundStyle, size: CGSize, frameIndex: Int, image: CIImage)?
 
-    init(metalDevice: MTLDevice? = MTLCreateSystemDefaultDevice()) {
-        if let metalDevice {
+    init(popoutQuality: CameraPopoutQuality) {
+        cameraPopoutRenderer = CameraPopoutRenderer(quality: popoutQuality)
+        if let metalDevice = MTLCreateSystemDefaultDevice() {
             ciContext = CIContext(mtlDevice: metalDevice, options: [.cacheIntermediates: false])
         } else {
             ciContext = CIContext(options: [.cacheIntermediates: false])

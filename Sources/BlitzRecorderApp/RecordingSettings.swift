@@ -111,6 +111,11 @@ struct RecordingSettings {
         return Int(Double(base) * intermediateVideoBoost)
     }
 
+    func cameraBitrate(pictureSize: CGSize) -> Int {
+        let pictureBitrate = SocialVideoEncoding.cameraIntermediateBitrate(.init(pictureSize: pictureSize, fps: framesPerSecond))
+        return max(cameraBitrate, Int(Double(pictureBitrate) * intermediateVideoBoost))
+    }
+
     var finalVideoBitrate: Int {
         if let exportEncoding {
             return exportEncoding.bitrate

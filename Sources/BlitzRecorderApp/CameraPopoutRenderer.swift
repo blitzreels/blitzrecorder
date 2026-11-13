@@ -1,5 +1,6 @@
 import CoreGraphics
 import CoreImage
+import CoreImage.CIFilterBuiltins
 import Vision
 
 struct CameraPopoutStyle: Equatable {
@@ -59,6 +60,25 @@ struct CameraPopoutStyle: Equatable {
     }
 }
 
+enum CameraPopoutQuality {
+    case playback
+    case export
+
+    var segmentation: VNGeneratePersonSegmentationRequest.QualityLevel {
+        switch self {
+        case .playback: .balanced
+        case .export: .accurate
+        }
+    }
+
+    var segmentationMaxDimension: CGFloat {
+        switch self {
+        case .playback: 720
+        case .export: 1920
+        }
+    }
+}
+
 final class CameraPopoutRenderer: @unchecked Sendable {
     struct Request {
         let image: CIImage
@@ -72,39 +92,39 @@ final class CameraPopoutRenderer: @unchecked Sendable {
     }
 
     private static let segmentationLock = NSLock()
+    private let quality: CameraPopoutQuality
+
+    init(quality: CameraPopoutQuality) {
+        self.quality = quality
+    }
 
     func image(_ request: Request) -> CIImage {
-        Self.segmentationLock.lock()
-        defer { Self.segmentationLock.unlock() }
-        let segmentation = VNGeneratePersonSegmentationRequest()
-        segmentation.qualityLevel = .balanced
-        segmentation.outputPixelFormat = kCVPixelFormatType_OneComponent8
         let source = request.image.extent
         guard source.width > 0, source.height > 0 else { return request.image }
-        let scale = min(1, 720 / max(source.width, source.height))
-        let input = request.image
-            .transformed(by: .init(translationX: -source.minX, y: -source.minY))
-            .transformed(by: .init(scaleX: scale, y: scale))
-        let handler = VNImageRequestHandler(ciImage: input, options: [:])
-        let mask: CIImage
-        do {
-            try handler.perform([segmentation])
-            if let buffer = segmentation.results?.first?.pixelBuffer {
-                let result = CIImage(cvPixelBuffer: buffer)
-                mask = result
-                    .transformed(by: .init(scaleX: source.width / result.extent.width,
-                                          y: source.height / result.extent.height))
-                    .transformed(by: .init(translationX: source.minX, y: source.minY))
-                    .clampedToExtent()
-                    .applyingGaussianBlur(sigma: max(0.5, source.width / 1600))
-                    .cropped(to: source)
-            } else {
-                mask = CIImage(color: .black).cropped(to: source)
-            }
-        } catch {
-            mask = CIImage(color: .black).cropped(to: source)
-        }
+        let mask = personMask(request.image) ?? CIImage(color: .black).cropped(to: source)
         return Self.composite(.init(image: request.image, personMask: mask, style: request.style))
+    }
+
+    private func personMask(_ image: CIImage) -> CIImage? {
+        Self.segmentationLock.lock()
+        defer { Self.segmentationLock.unlock() }
+        let source = image.extent
+        let guide = image.transformed(by: .init(translationX: -source.minX, y: -source.minY))
+        let scale = min(1, quality.segmentationMaxDimension / max(source.width, source.height))
+        let segmentation = VNGeneratePersonSegmentationRequest()
+        segmentation.qualityLevel = quality.segmentation
+        segmentation.outputPixelFormat = kCVPixelFormatType_OneComponent8
+        let handler = VNImageRequestHandler(ciImage: guide.transformed(by: .init(scaleX: scale, y: scale)), options: [:])
+        guard (try? handler.perform([segmentation])) != nil,
+              let buffer = segmentation.results?.first?.pixelBuffer else { return nil }
+        let upsample = CIFilter.edgePreserveUpsample()
+        upsample.inputImage = guide
+        upsample.smallImage = CIImage(cvPixelBuffer: buffer)
+        upsample.spatialSigma = 3
+        upsample.lumaSigma = 0.15
+        return upsample.outputImage?
+            .cropped(to: guide.extent)
+            .transformed(by: .init(translationX: source.minX, y: source.minY))
     }
 
     static func composite(_ request: CompositeRequest) -> CIImage {

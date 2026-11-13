@@ -16,7 +16,7 @@ final class LiveCompositedRecorder: NSObject, SCStreamOutput, SCStreamDelegate, 
     let cameraQueue = DispatchQueue(label: "blitzrecorder.live-compositor.camera")
     let microphoneQueue = DispatchQueue(label: "blitzrecorder.live-compositor.microphone")
     let lock = NSLock()
-    let renderer = LiveCompositorRenderer()
+    let renderer = LiveCompositorRenderer(popoutQuality: .playback)
 
     var writer: DirectMovieWriter?
     var settings: RecordingSettings?

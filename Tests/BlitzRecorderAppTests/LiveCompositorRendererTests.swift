@@ -33,7 +33,7 @@ final class LiveCompositorRendererTests: XCTestCase {
             color: (blue: 0, green: 0, red: 0, alpha: 0)
         )
 
-        let renderer = LiveCompositorRenderer()
+        let renderer = LiveCompositorRenderer(popoutQuality: .playback)
         XCTAssertTrue(renderer.render(
             screenBuffer: screenBuffer,
             cameraBuffer: nil,
@@ -86,7 +86,7 @@ final class LiveCompositorRendererTests: XCTestCase {
         let outputWithShadow = try makePixelBuffer(width: dimensions.width, height: dimensions.height, color: (blue: 0, green: 0, red: 0, alpha: 0))
         let outputWithoutShadow = try makePixelBuffer(width: dimensions.width, height: dimensions.height, color: (blue: 0, green: 0, red: 0, alpha: 0))
 
-        let renderer = LiveCompositorRenderer()
+        let renderer = LiveCompositorRenderer(popoutQuality: .playback)
         XCTAssertTrue(renderer.render(
             screenBuffer: screenBuffer,
             cameraBuffer: cameraBuffer,
@@ -139,7 +139,7 @@ final class LiveCompositorRendererTests: XCTestCase {
         let output = try makePixelBuffer(width: dimensions.width, height: dimensions.height, color: (blue: 0, green: 0, red: 0, alpha: 0))
         let outputWithoutShadow = try makePixelBuffer(width: dimensions.width, height: dimensions.height, color: (blue: 0, green: 0, red: 0, alpha: 0))
 
-        let renderer = LiveCompositorRenderer()
+        let renderer = LiveCompositorRenderer(popoutQuality: .playback)
         XCTAssertTrue(renderer.render(
             screenBuffer: screenBuffer,
             cameraBuffer: cameraBuffer,
@@ -184,7 +184,7 @@ final class LiveCompositorRendererTests: XCTestCase {
             height: 180,
             color: (blue: 0, green: 255, red: 0, alpha: 255)
         )
-        let renderer = LiveCompositorRenderer()
+        let renderer = LiveCompositorRenderer(popoutQuality: .playback)
 
         func render(mask: SceneCameraMask) throws -> (output: CVPixelBuffer, target: CGRect) {
             var layout = SceneLayout.cameraInsetLayout(for: .horizontal, shape: .circle, size: 0.3)

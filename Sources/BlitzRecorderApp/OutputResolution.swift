@@ -187,6 +187,11 @@ enum SourceAudioFormat: String, CaseIterable {
 }
 
 enum SocialVideoEncoding {
+    struct CameraBitrateRequest {
+        let pictureSize: CGSize
+        let fps: Int
+    }
+
     static func videoBitrate(resolution: OutputResolution, fps: Int) -> Int {
         let highFrameRate = fps > 30
         switch resolution {
@@ -204,6 +209,12 @@ enum SocialVideoEncoding {
     static func screenIntermediateBitrate(resolution: OutputResolution, layout: CaptureLayout, fps: Int) -> Int {
         let layoutMultiplier = layout == .vertical ? 0.9 : 1.0
         return Int(Double(videoBitrate(resolution: resolution, fps: fps)) * layoutMultiplier)
+    }
+
+    static func cameraIntermediateBitrate(_ request: CameraBitrateRequest) -> Int {
+        let bitsPerPixel = request.fps > 30 ? 0.07 : 0.1
+        let bitrate = Double(request.pictureSize.width * request.pictureSize.height) * Double(request.fps) * bitsPerPixel
+        return min(60_000_000, Int(bitrate))
     }
 
     static func cameraIntermediateBitrate(resolution: OutputResolution, fps: Int) -> Int {

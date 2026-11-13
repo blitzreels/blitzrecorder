@@ -237,7 +237,11 @@ final class LoudnessMeter {
     /// LUFS of the gated speech, nil when nothing rises above the -70 LUFS gate.
     var integrated: Double? {
         guard powers.count >= 4 else { return nil }
-        let blocks = (0...(powers.count - 4)).map { (powers[$0] + powers[$0 + 1] + powers[$0 + 2] + powers[$0 + 3]) / 4 }
+        let blocks: [Double] = (0...(powers.count - 4)).map { index in
+            let firstHalf = powers[index] + powers[index + 1]
+            let secondHalf = powers[index + 2] + powers[index + 3]
+            return (firstHalf + secondHalf) / 4
+        }
         let loudness = { (power: Double) in -0.691 + 10 * log10(max(power, 1e-20)) }
         let audible = blocks.filter { loudness($0) > -70 }
         guard !audible.isEmpty else { return nil }

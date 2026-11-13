@@ -40,7 +40,7 @@ if [[ -n "$APP_ARCHS" && "$APP_ARCHS" != "native" ]]; then
   for ARCH in $APP_ARCHS; do
     TRIPLE="${ARCH}-apple-macosx${MACOS_TRIPLE_VERSION}"
     echo "Building $PRODUCT_NAME for $ARCH..." >&2
-    swift build "${SWIFT_BUILD_ARGS[@]}" --triple "$TRIPLE"
+    swift build "${SWIFT_BUILD_ARGS[@]}" --triple "$TRIPLE" >&2
     ARCH_BINARY="$ROOT/.build/${ARCH}-apple-macosx/$CONFIG/$PRODUCT_NAME"
     if [[ ! -f "$ARCH_BINARY" ]]; then
       echo "error: expected $ARCH binary at $ARCH_BINARY" >&2
@@ -56,7 +56,7 @@ if [[ -n "$APP_ARCHS" && "$APP_ARCHS" != "native" ]]; then
   fi
 else
   echo "Building $PRODUCT_NAME for native host architecture..." >&2
-  swift build "${SWIFT_BUILD_ARGS[@]}"
+  swift build "${SWIFT_BUILD_ARGS[@]}" >&2
   BINARY="$ROOT/.build/$CONFIG/$PRODUCT_NAME"
   if [[ ! -f "$BINARY" ]]; then
     echo "error: expected native binary at $BINARY" >&2
