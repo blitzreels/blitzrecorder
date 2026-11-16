@@ -275,8 +275,28 @@ struct ScreenCaptureSourcePickerModel {
     let vm: RecorderViewModel
     let enabled: Bool
 
+    private var isOn: Bool { vm.isSourceConfigured(.screen) }
+
     private var captureSourceLabel: String {
-        vm.hasActiveScreenPickerSelection ? vm.selectedScreenSourceDisplayName : "Choose screen or window"
+        guard isOn else { return "No screen" }
+        return vm.hasActiveScreenPickerSelection ? vm.selectedScreenSourceDisplayName : "Choose screen or window"
+    }
+
+    private var actions: [BlitzSourcePickerItem] {
+        guard isOn, vm.state == .idle else { return [] }
+        let withMacSound = vm.isSourceConfigured(.systemAudio)
+        return [BlitzSourcePickerItem(
+            id: "screen:none",
+            title: "No screen",
+            subtitle: withMacSound ? "Record without your screen or Mac sound" : "Record without your screen",
+            systemImage: "rectangle.slash",
+            icon: nil,
+            thumbnail: nil,
+            isSelected: false
+        ) {
+            if withMacSound { vm.removeSource(.systemAudio) }
+            vm.removeSource(.screen)
+        }]
     }
 
     private var selectedScreenSourceIcon: NSImage? {
@@ -323,7 +343,7 @@ struct ScreenCaptureSourcePickerModel {
                 screenSourceSection((kind: .application, title: "Apps", group: .standard)),
                 screenSourceSection((kind: .window, title: "Windows", group: .standard))
             ],
-            actions: [],
+            actions: actions,
             layout: .thumbnails,
             enabled: enabled && vm.canAdjustScreenCapture,
             hiddenSections: [
@@ -374,6 +394,9 @@ struct ScreenCaptureSourcePickerModel {
     }
 
     private var selectedScreenSourceKindLabel: String {
+        if !isOn {
+            return "Camera-only recording"
+        }
         if !vm.hasActiveScreenPickerSelection {
             return "Nothing selected"
         }

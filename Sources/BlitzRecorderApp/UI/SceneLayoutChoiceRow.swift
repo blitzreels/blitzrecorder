@@ -95,25 +95,44 @@ private struct SceneLayoutChoiceCard: View {
     }
 }
 
-/// Stills of the live screen and camera for layout choices. Refreshes every few seconds while idle.
+/// Stills of the live screen and camera for layout choices. Refreshes every few seconds while the studio is in
+/// front and idle, from the running previews when they have frames; with live previews off it takes one still.
 struct ScenePicturesModifier: ViewModifier {
     @Bindable var vm: RecorderViewModel
     @Binding var pictures: ScenePictures
 
+    private struct Refresh: Equatable {
+        let binding: ScreenSourceBinding?
+        let isActive: Bool
+        let isLive: Bool
+    }
+
     func body(content: Content) -> some View {
-        content.task(id: vm.settings.screenSourceBinding) {
+        content.task(id: Refresh(
+            binding: vm.settings.screenSourceBinding,
+            isActive: vm.isStudioOnScreen && vm.state == .idle,
+            isLive: vm.isLivePreviewEnabled
+        )) {
+            guard vm.isStudioOnScreen, vm.state == .idle else { return }
             while !Task.isCancelled {
-                if vm.state == .idle {
-                    vm.requestCameraStill { if let image = $0 { pictures.camera = image } }
-                    if let binding = vm.settings.screenSourceBinding,
-                       let image = await vm.screenSourceThumbnail(binding)?
-                        .cgImage(forProposedRect: nil, context: nil, hints: nil) {
-                        pictures.screen = image
-                    }
-                }
+                vm.requestCameraStill { if let image = $0 { pictures.camera = image } }
+                await refreshScreenPicture()
+                guard vm.isLivePreviewEnabled else { return }
                 try? await Task.sleep(for: .seconds(5))
             }
         }
+    }
+
+    private func refreshScreenPicture() async {
+        let screenPreview = vm.previewStage.screenPreview
+        if screenPreview.showsLiveFrames {
+            screenPreview.requestStillFrame { if let image = $0 { pictures.screen = image } }
+            return
+        }
+        guard let binding = vm.settings.screenSourceBinding,
+              let image = await vm.screenSourceThumbnail(binding)?
+                .cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+        pictures.screen = image
     }
 }
 

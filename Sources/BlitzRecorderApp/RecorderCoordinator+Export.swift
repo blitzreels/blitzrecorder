@@ -148,12 +148,13 @@ extension RecorderCaptureRuntime {
             finalVideoURL: url
         )
         let resourceValues = try? url.resourceValues(forKeys: [.fileSizeKey])
-        let exportRecord = ProjectExportRenderPlan.exportRecord(
+        let exportRecord = ProjectExportRenderPlan.exportRecord(.init(
             url: url,
             request: request,
             renderSettings: context.renderSettings,
-            fileSizeBytes: resourceValues?.fileSize.map(Int64.init)
-        )
+            fileSizeBytes: resourceValues?.fileSize.map(Int64.init),
+            editRevision: outputProject.editRevision
+        ))
         try takeFileStore.recordCompletedExport(.init(
             projectURL: request.projectURL, record: exportRecord, settings: context.captureSettings
         ))

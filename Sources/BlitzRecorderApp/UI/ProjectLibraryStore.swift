@@ -5,7 +5,11 @@ import Foundation
 @MainActor
 @Observable
 final class ProjectLibraryStore {
-    var entries: [RecordingProjectHistory.Entry] = []
+    var entries: [RecordingProjectHistory.Entry] = [] {
+        didSet { revision &+= 1 }
+    }
+    /// Changes with every new list, so derived lists can tell they are stale without comparing whole lists.
+    @ObservationIgnored private(set) var revision = 0
     @ObservationIgnored private var refreshTask: Task<[RecordingProjectHistory.Entry], Never>?
 
     struct RefreshRequest {
@@ -39,6 +43,14 @@ final class ProjectLibraryStore {
         history.sortByRecordedDate()
         entries = history.entries
         return true
+    }
+
+    /// Shows one project's row at once, added or updated, ahead of the next full read.
+    func show(_ entry: RecordingProjectHistory.Entry) {
+        guard !replace(entry) else { return }
+        var history = RecordingProjectHistory(version: 1, entries: entries + [entry])
+        history.sortByRecordedDate()
+        entries = history.entries
     }
 
     /// Reloads now, for callers that need the list to include a write they just made.

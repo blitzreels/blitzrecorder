@@ -86,6 +86,12 @@ final class EditorCompositedPlayerView: NSView {
     }
 
     private var privacyLayers: [UUID: CALayer] = [:]
+    private struct PrivacyLayerLook: Equatable {
+        let frame: CGRect
+        let style: PrivacyMask.Style
+        let blurRadius: CGFloat
+    }
+    private var privacyLayerLooks: [UUID: PrivacyLayerLook] = [:]
     private var textLayers: [UUID: CALayer] = [:]
     private let captionLayer = CALayer()
     private var renderedCaptionRequest: CaptionRenderRequest?
@@ -100,7 +106,14 @@ final class EditorCompositedPlayerView: NSView {
     private var sourceLayers: [SceneLayerKind: SourceLayers] = [:]
     private var renderedState: RenderState?
     private var renderSize: CGSize = .zero
-    private var renderedBackgroundKey: (style: CanvasBackgroundStyle, width: Int, height: Int)?
+    private struct BackgroundKey: Equatable {
+        let style: CanvasBackgroundStyle
+        let width: Int
+        let height: Int
+    }
+    private var renderedBackgroundKey: BackgroundKey?
+    private var requestedBackgroundKey: BackgroundKey?
+    private static let backgroundRenderQueue = DispatchQueue(label: "blitzrecorder.editor-background", qos: .userInitiated)
     var previewSceneRevision = 0
     var cropDraft: EditorSourceCropDraft?
 
@@ -173,6 +186,12 @@ final class EditorCompositedPlayerView: NSView {
 
     override func layout() {
         super.layout()
+        refresh()
+    }
+
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        renderedState = nil
         refresh()
     }
 
@@ -271,10 +290,16 @@ final class EditorCompositedPlayerView: NSView {
                         textLayers[overlay.id] = textLayer
                         canvasLayer.addSublayer(textLayer)
                     }
-                    textLayer.frame = CGRect(origin: .zero, size: canvasFrame.size)
                     let request = TimelineOverlayImageRequest(overlay: overlay, size: renderSize)
+                    guard let sprite = TimelineOverlayRenderer.sprite(request) else {
+                        textLayer.contents = nil
+                        renderedTextRequests.removeValue(forKey: overlay.id)
+                        continue
+                    }
+                    textLayer.frame = sprite.frame.applying(.init(
+                        scaleX: canvasFrame.width / renderSize.width, y: canvasFrame.height / renderSize.height))
                     if renderedTextRequests[overlay.id] != request {
-                        textLayer.contents = TimelineOverlayRenderer.image(request)
+                        textLayer.contents = sprite.image
                         renderedTextRequests[overlay.id] = request
                     }
                     textLayer.opacity = textState.opacities[index]
@@ -349,6 +374,7 @@ final class EditorCompositedPlayerView: NSView {
         performWithoutUIAnimation {
             for id in Array(privacyLayers.keys) where !ids.contains(id) {
                 privacyLayers.removeValue(forKey: id)?.removeFromSuperlayer()
+                privacyLayerLooks.removeValue(forKey: id)
             }
             for mask in masks {
                 guard let source = sourceLayers[mask.source] else { continue }
@@ -362,15 +388,24 @@ final class EditorCompositedPlayerView: NSView {
                     privacyLayers[mask.id] = layer
                 }
                 let frame = source.playerLayer.frame
-                layer.frame = CGRect(x: frame.minX + mask.frame.minX * frame.width,
-                                     y: frame.minY + (1 - mask.frame.maxY) * frame.height,
-                                     width: mask.frame.width * frame.width, height: mask.frame.height * frame.height)
+                let look = PrivacyLayerLook(
+                    frame: CGRect(x: frame.minX + mask.frame.minX * frame.width,
+                                  y: frame.minY + (1 - mask.frame.maxY) * frame.height,
+                                  width: mask.frame.width * frame.width, height: mask.frame.height * frame.height),
+                    style: mask.style,
+                    blurRadius: max(12, frame.width * 0.025)
+                )
+                let previous = privacyLayerLooks[mask.id]
+                guard previous != look else { continue }
+                privacyLayerLooks[mask.id] = look
+                layer.frame = look.frame
+                guard previous?.style != look.style || previous?.blurRadius != look.blurRadius else { continue }
                 if mask.style == .cover {
                     layer.backgroundFilters = nil
                     layer.backgroundColor = NSColor.black.cgColor
                 } else {
                     let filter = CIFilter(name: "CIGaussianBlur")
-                    filter?.setValue(max(12, frame.width * 0.025), forKey: kCIInputRadiusKey)
+                    filter?.setValue(look.blurRadius, forKey: kCIInputRadiusKey)
                     layer.backgroundFilters = filter.map { [$0] }
                     layer.backgroundColor = NSColor.black.withAlphaComponent(0.01).cgColor
                 }
@@ -497,10 +532,33 @@ final class EditorCompositedPlayerView: NSView {
         let width = Int((canvasSize.width * scaleFactor).rounded(.up))
         let height = Int((canvasSize.height * scaleFactor).rounded(.up))
         guard width > 0, height > 0 else { return }
-        let key = (scene.canvasBackgroundStyle, width, height)
-        if renderedBackgroundKey == nil || renderedBackgroundKey! != key {
+        let key = BackgroundKey(style: scene.canvasBackgroundStyle, width: width, height: height)
+        guard renderedBackgroundKey != key else {
+            // Back at the size already drawn: a render for another size still running must not land.
+            requestedBackgroundKey = nil
+            return
+        }
+        guard requestedBackgroundKey != key else { return }
+        guard let rendered = renderedBackgroundKey, rendered.style == key.style else {
             backgroundLayer.contents = appearance.renderCGImage(pixelWidth: width, pixelHeight: height)
             renderedBackgroundKey = key
+            requestedBackgroundKey = nil
+            return
+        }
+        // Only the size changed: the current picture stretches until the new one is drawn off the main thread,
+        // and a live resize draws once, when it ends.
+        guard !inLiveResize else { return }
+        requestedBackgroundKey = key
+        Self.backgroundRenderQueue.async { [weak self] in
+            let image = appearance.renderCGImage(pixelWidth: width, pixelHeight: height)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, self.requestedBackgroundKey == key else { return }
+                    performWithoutUIAnimation { self.backgroundLayer.contents = image }
+                    self.renderedBackgroundKey = key
+                    self.requestedBackgroundKey = nil
+                }
+            }
         }
     }
 

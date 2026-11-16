@@ -20,6 +20,7 @@ final class ProjectLibraryHeaderTests: XCTestCase {
         ProjectLibraryMetadataStore.shared.store([(project, .init(thumbnail: nil, durationSeconds: 277,
             sourceSummary: "Screen + Camera + 2 audio tracks", sizeBytes: 590_000_000,
             videoQuality: nil, sourceRoles: ["screen", "camera", "microphone", "systemAudio"]))])
+        await vm.reloadRecentProjects()
         vm.recentProjects = [project]
         vm.projectLibraryNavigation.selectedProjectIDs = [project.id]
         vm.transcriptionController.jobStatuses[project.projectPath] = .loadingModels

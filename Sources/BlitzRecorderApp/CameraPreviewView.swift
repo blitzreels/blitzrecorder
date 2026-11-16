@@ -141,6 +141,25 @@ final class CameraPreviewView: NSView {
         hideUnavailableOverlay()
     }
 
+    /// A cutout frame, shown straight from its IOSurface.
+    func setPreviewPicture(_ picture: CVPixelBuffer) {
+        previewLayer?.removeFromSuperlayer()
+        previewLayer = nil
+        sampleBufferLayer?.removeFromSuperlayer()
+        sampleBufferLayer = nil
+        let image = CIImage(cvPixelBuffer: picture)
+        if pendingStill != nil { deliverStill(image) }
+        if usesRenderedPicture {
+            renderPicture(image)
+        } else {
+            displayedPicture = picture
+            imageLayer.contents = CVPixelBufferGetIOSurface(picture)?.takeUnretainedValue()
+        }
+        sourceAspectRatio = CGFloat(CVPixelBufferGetWidth(picture)) / max(1, CGFloat(CVPixelBufferGetHeight(picture)))
+        syncPreviewLayerFrame()
+        hideUnavailableOverlay()
+    }
+
     func setPreviewImage(_ image: CGImage, sourceAspectRatio overrideAspectRatio: CGFloat? = nil) {
         previewLayer?.removeFromSuperlayer()
         previewLayer = nil

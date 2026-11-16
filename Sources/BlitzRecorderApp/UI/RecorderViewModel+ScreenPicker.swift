@@ -10,11 +10,9 @@ extension RecorderViewModel {
 extension RecorderViewModel {
     func refreshScreenSuggestion() {
         guard state == .recording, settings.enabledSources.contains(.screen) else {
-            screenSource.suggestedScreenSource = nil
-            screenSource.dismissedScreenSuggestion = nil
-            screenSource.pendingFollowKey = nil
+            clearScreenSuggestion()
             screenSource.autoSwitchNoticeTask?.cancel()
-            screenSource.autoSwitchNotice = nil
+            if screenSource.autoSwitchNotice != nil { screenSource.autoSwitchNotice = nil }
             return
         }
         guard !coordinator.isSwitchingScreenSource else { return }
@@ -39,18 +37,21 @@ extension RecorderViewModel {
         updateScreenSuggestion(candidate)
     }
 
+    /// Writes only what changes: these properties are observed, and this runs four times a second while recording.
+    private func clearScreenSuggestion() {
+        if screenSource.suggestedScreenSource != nil { screenSource.suggestedScreenSource = nil }
+        if screenSource.dismissedScreenSuggestion != nil { screenSource.dismissedScreenSuggestion = nil }
+        screenSource.pendingFollowKey = nil
+    }
+
     func updateScreenSuggestion(_ candidate: ScreenSourceBinding?) {
         guard let candidate else {
-            screenSource.suggestedScreenSource = nil
-            screenSource.dismissedScreenSuggestion = nil
-            screenSource.pendingFollowKey = nil
+            clearScreenSuggestion()
             return
         }
         guard RecordingSourceSuggestion.shouldSuggest(.init(current: settings.screenSourceBinding,
             candidate: candidate, ownProcessID: ProcessInfo.processInfo.processIdentifier)) else {
-            screenSource.suggestedScreenSource = nil
-            screenSource.dismissedScreenSuggestion = nil
-            screenSource.pendingFollowKey = nil
+            clearScreenSuggestion()
             return
         }
         let key = candidate.id
@@ -61,7 +62,8 @@ extension RecorderViewModel {
             return
         }
         guard followsActiveWindow else {
-            screenSource.suggestedScreenSource = screenSource.dismissedScreenSuggestion == key ? nil : candidate
+            let suggestion = screenSource.dismissedScreenSuggestion == key ? nil : candidate
+            if screenSource.suggestedScreenSource != suggestion { screenSource.suggestedScreenSource = suggestion }
             return
         }
         screenSource.suggestedScreenSource = nil

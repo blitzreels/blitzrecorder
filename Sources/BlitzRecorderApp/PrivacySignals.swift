@@ -20,7 +20,7 @@ struct RecordingPrivacySignalTrack: Codable, Sendable {
 }
 
 enum SensitiveWindowScanner {
-    struct Window {
+    struct Window: Sendable {
         let kind: RecordingPrivacySignal.Kind
         let app: String
         let windowID: UInt32

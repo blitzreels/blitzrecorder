@@ -6,12 +6,24 @@ struct ProjectFolderDropRequest {
 }
 
 extension RecorderViewModel {
+    private var folderKey: ProjectLibraryMemos.FolderKey {
+        .init(entriesRevision: coordinator.projectLibrary.revision, pinsRevision: ProjectFolderStore.shared.revision)
+    }
+
     var folderIndex: ProjectFolderIndex {
-        ProjectFolderIndex(.init(projects: recentProjects, pins: ProjectFolderStore.shared.pins))
+        let projects = recentProjects
+        let pins = ProjectFolderStore.shared.pins
+        return libraryMemos.folderIndex.value(.init(key: folderKey) {
+            ProjectFolderIndex(.init(projects: projects, pins: pins))
+        })
     }
 
     var folderTree: [ProjectFolderTree.Node] {
-        ProjectFolderTree.roots(.init(projects: recentProjects, index: folderIndex, includesEmpty: true))
+        let projects = recentProjects
+        let index = folderIndex
+        return libraryMemos.folderTree.value(.init(key: folderKey) {
+            ProjectFolderTree.roots(.init(projects: projects, index: index, includesEmpty: true))
+        })
     }
 
     func folderDestination(_ node: ProjectFolderTree.Node) -> ProjectFolderMoves.Destination {

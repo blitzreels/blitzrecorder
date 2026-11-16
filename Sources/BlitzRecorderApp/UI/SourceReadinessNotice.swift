@@ -146,11 +146,7 @@ extension RecorderViewModel {
         guard !isRequestingPermissions else { return }
         if action == .chooseScreen {
             guard canAdjustScreenCapture else { return }
-            if isSourceConfigured(.screen) {
-                showsScreenSourcePicker = true
-            } else {
-                pickScreen()
-            }
+            pickScreen()
             return
         }
         guard state == .idle else { return }

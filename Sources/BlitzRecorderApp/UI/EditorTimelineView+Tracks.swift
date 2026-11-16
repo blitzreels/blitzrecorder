@@ -27,8 +27,22 @@ extension EditorTimelineView {
         .frame(width: request.contentWidth, height: placedRowHeight, alignment: .leading)
     }
 
-    func chaptersTrack(pxPerSecond: CGFloat, contentWidth: CGFloat) -> some View {
+    struct LaneRequest {
+        let pxPerSecond: CGFloat
+        let contentWidth: CGFloat
+        let viewport: EditorTimelineViewport
+
+        /// Clips outside the visible part of the timeline, plus a margin, are not built at all.
+        func shows(_ visible: (start: Double, end: Double)) -> Bool {
+            guard viewport.width > 0 else { return true }
+            return CGFloat(visible.end) * pxPerSecond >= viewport.lowerBound
+                && CGFloat(visible.start) * pxPerSecond <= viewport.upperBound
+        }
+    }
+
+    func chaptersTrack(_ lane: LaneRequest) -> some View {
         let chapters = timelineChapters
+        let pxPerSecond = lane.pxPerSecond
         return ZStack(alignment: .topLeading) {
             ForEach(chapters.indices, id: \.self) { index in
                 let chapter = chapters[index]
@@ -39,7 +53,7 @@ extension EditorTimelineView {
                 let gap: CGFloat = index + 1 < chapters.count ? 2 : 0
                 let visibleStart = projection.displayTime(start)
                 let visibleEnd = projection.displayTime(end)
-                if visibleEnd > visibleStart {
+                if visibleEnd > visibleStart, lane.shows((visibleStart, visibleEnd)) {
                     chapterClip(chapter, start: projection.takeTime(visibleStart))
                         .frame(width: max(1, CGFloat(visibleEnd - visibleStart) * pxPerSecond - gap), height: chaptersRowHeight)
                         .clipped()
@@ -47,7 +61,7 @@ extension EditorTimelineView {
                 }
             }
         }
-        .frame(width: contentWidth, height: chaptersRowHeight, alignment: .topLeading)
+        .frame(width: lane.contentWidth, height: chaptersRowHeight, alignment: .topLeading)
         .background(
             Rectangle()
                 .fill(BlitzUI.cardFill)
@@ -74,9 +88,10 @@ extension EditorTimelineView {
             .onTapGesture { seekAndSettle(to: start) }
     }
 
-    func segmentsTrack(pxPerSecond: CGFloat, contentWidth: CGFloat) -> some View {
+    func segmentsTrack(_ lane: LaneRequest) -> some View {
         let events = sceneEvents
         let activeIndex = activeSegmentIndex
+        let pxPerSecond = lane.pxPerSecond
 
         return ZStack(alignment: .topLeading) {
             ForEach(events.indices, id: \.self) { index in
@@ -87,7 +102,7 @@ extension EditorTimelineView {
                 let gap: CGFloat = index + 1 < events.count ? 2 : 0
                 let visibleStart = projection.displayTime(start)
                 let visibleEnd = projection.displayTime(end)
-                if visibleEnd > visibleStart {
+                if visibleEnd > visibleStart, lane.shows((visibleStart, visibleEnd)) {
                     segmentClip(.init(index: index, start: projection.takeTime(visibleStart), isActive: activeIndex == index))
                         .frame(width: max(1, CGFloat(visibleEnd - visibleStart) * pxPerSecond - gap), height: segmentsRowHeight)
                         .clipped()
@@ -95,7 +110,7 @@ extension EditorTimelineView {
                 }
             }
         }
-        .frame(width: contentWidth, height: segmentsRowHeight, alignment: .topLeading)
+        .frame(width: lane.contentWidth, height: segmentsRowHeight, alignment: .topLeading)
         .background(
             Rectangle()
                 .fill(BlitzUI.cardFill)

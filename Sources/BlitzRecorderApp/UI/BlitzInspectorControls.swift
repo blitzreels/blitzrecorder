@@ -117,7 +117,7 @@ struct BlitzInspectorSlider: View {
         let step: Double
         let valueLabel: String
         let onEditingChanged: (Bool) -> Void
-        let onReset: () -> Void
+        let onReset: (() -> Void)?
     }
 
     let configuration: Configuration
@@ -145,7 +145,9 @@ struct BlitzInspectorSlider: View {
             }
         }
         .contextMenu {
-            Button("Reset \(configuration.title.lowercased())", action: configuration.onReset)
+            if let onReset = configuration.onReset {
+                Button("Reset \(configuration.title.lowercased())", action: onReset)
+            }
         }
     }
 
@@ -175,7 +177,11 @@ struct BlitzInspectorSlider: View {
         .tint(BlitzUI.accent)
         .accessibilityLabel(configuration.title)
         .accessibilityValue(configuration.valueLabel)
-        .accessibilityAction(named: "Reset", configuration.onReset)
+        .accessibilityActions {
+            if let onReset = configuration.onReset {
+                Button("Reset", action: onReset)
+            }
+        }
     }
 
     private var steppedValue: Binding<Double> {

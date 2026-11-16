@@ -99,12 +99,18 @@ enum ProjectExportRenderPlan {
         )
     }
 
-    static func exportRecord(
-        url: URL,
-        request: ProjectExportRequest,
-        renderSettings: RecordingSettings,
-        fileSizeBytes: Int64?
-    ) -> RecordingProject.ExportRecord {
+    struct ExportRecordRequest {
+        let url: URL
+        let request: ProjectExportRequest
+        let renderSettings: RecordingSettings
+        let fileSizeBytes: Int64?
+        let editRevision: Int
+    }
+
+    static func exportRecord(_ recordRequest: ExportRecordRequest) -> RecordingProject.ExportRecord {
+        let url = recordRequest.url
+        let request = recordRequest.request
+        let renderSettings = recordRequest.renderSettings
         let dimensions = renderSettings.outputResolution.dimensions(for: renderSettings.layout)
         return RecordingProject.ExportRecord(
             id: UUID(),
@@ -114,12 +120,13 @@ enum ProjectExportRenderPlan {
             resolution: renderSettings.outputResolution.rawValue,
             framesPerSecond: renderSettings.framesPerSecond,
             quality: request.performanceProfile.videoQuality.rawValue,
-            fileSizeBytes: fileSizeBytes,
+            fileSizeBytes: recordRequest.fileSizeBytes,
             layout: renderSettings.layout.rawValue,
             width: dimensions.width,
             height: dimensions.height,
             videoBitrate: request.performanceProfile.videoBitrateOverride,
-            playbackRate: request.playbackRate
+            playbackRate: request.playbackRate,
+            editRevision: recordRequest.editRevision
         )
     }
 }

@@ -110,13 +110,24 @@ struct ProjectMediaInventorySummary: Equatable {
 }
 
 enum ProjectLibraryPreviewMedia {
-    static func editedVideoURL(
-        exports: [RecordingProject.ExportRecord],
-        finalVideoPath: String?,
-        fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
-    ) -> URL? {
-        let ordered = exports.sorted { $0.createdAt > $1.createdAt }.map(\.path)
-            + [finalVideoPath].compactMap { $0 }
+    struct Request {
+        let exports: [RecordingProject.ExportRecord]
+        let finalVideoPath: String?
+        let editRevision: Int
+        let layout: String
+        let fileExists: (String) -> Bool
+    }
+
+    /// The newest file that shows the project as it is now: an export of the current edits in the project's own
+    /// format, or the recorded video while the project has no edits. Nil means the preview plays the composition.
+    static func editedVideoURL(_ request: Request) -> URL? {
+        let currentExports = request.exports.filter {
+            $0.editRevision == request.editRevision && ($0.layout == nil || $0.layout == request.layout)
+        }
+        let finalVideo = request.editRevision == 0 ? request.finalVideoPath : nil
+        let fileExists = request.fileExists
+        let ordered = currentExports.sorted { $0.createdAt > $1.createdAt }.map(\.path)
+            + [finalVideo].compactMap { $0 }
         var seen = Set<String>()
         for path in ordered {
             let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
@@ -127,7 +138,13 @@ enum ProjectLibraryPreviewMedia {
     }
 
     static func editedVideoURL(for project: RecordingProject) -> URL? {
-        editedVideoURL(exports: project.exports, finalVideoPath: project.finalVideoPath)
+        editedVideoURL(.init(
+            exports: project.exports,
+            finalVideoPath: project.finalVideoPath,
+            editRevision: project.editRevision,
+            layout: project.settings.layout,
+            fileExists: { FileManager.default.fileExists(atPath: $0) }
+        ))
     }
 }
 
@@ -292,7 +309,10 @@ enum ProjectLibraryMetadataLoader {
 final class ProjectLibraryMetadataStore {
     static let shared = ProjectLibraryMetadataStore()
 
-    private(set) var metadata: [UUID: ProjectLibraryMetadata] = [:]
+    private(set) var metadata: [UUID: ProjectLibraryMetadata] = [:] {
+        didSet { revision &+= 1 }
+    }
+    @ObservationIgnored private(set) var revision = 0
     @ObservationIgnored private var loadedVersions: [UUID: Date] = [:]
     @ObservationIgnored private var thumbnailVersions: [UUID: Date] = [:]
 

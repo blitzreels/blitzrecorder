@@ -4,8 +4,7 @@ import Foundation
 
 extension RecorderViewModel {
     var canStartRecording: Bool {
-        _ = permissionRefreshToken
-        return coordinator.recordingReadiness().isReady
+        recordingReadiness.isReady
     }
 
     func openReadinessDetails() {
@@ -13,15 +12,14 @@ extension RecorderViewModel {
     }
 
     var dockRecordingBlockerSummary: String? {
-        _ = permissionRefreshToken
-        let readiness = coordinator.recordingReadiness()
+        let readiness = recordingReadiness
         guard !readiness.isReady,
               !readiness.blockers.contains(where: { sourceReadinessNotice($0.source) != nil }) else { return nil }
         return readiness.blockers.shortSummary
     }
 
     var recordingBlockerDetail: String? {
-        let readiness = coordinator.recordingReadiness()
+        let readiness = recordingReadiness
         return readiness.isReady ? nil : readiness.detail
     }
 
@@ -99,5 +97,31 @@ extension RecorderViewModel {
             return String(message.dropLast(message.hasSuffix("...") ? 3 : 1))
         }
         return message
+    }
+}
+
+/// Readiness asks macOS about screen, camera and microphone access, and views read it many times in one update.
+/// One answer serves the rest of the current main run loop turn, unless the permission token or settings change.
+@MainActor
+final class RecordingReadinessCache {
+    struct Request {
+        let token: Int
+        let make: () -> RecordingReadiness
+    }
+
+    private var cached: (token: Int, readiness: RecordingReadiness)?
+
+    func readiness(_ request: Request) -> RecordingReadiness {
+        if let cached, cached.token == request.token { return cached.readiness }
+        let readiness = request.make()
+        if cached == nil {
+            DispatchQueue.main.async { [weak self] in self?.cached = nil }
+        }
+        cached = (request.token, readiness)
+        return readiness
+    }
+
+    func clear() {
+        cached = nil
     }
 }

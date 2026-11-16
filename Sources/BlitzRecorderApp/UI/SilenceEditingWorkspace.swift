@@ -315,23 +315,26 @@ final class SilenceEditingSession {
         calculationTask?.cancel()
         error = nil
         calculating = true
-        refreshTranscriptCuts()
         let windows = windows
         let configuration = configuration()
+        let transcriptRequest = transcriptItemsRequest()
         let noCuts = !suggestsPauses
         calculationTask = Task {
             do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
             let task = Task.detached(priority: .userInitiated) {
-                noCuts
+                let items = transcriptRequest.map(EditorTranscriptTimeline.items) ?? []
+                let cuts = noCuts
                     ? SilenceDetection.applyingOverrides(.init(
                         cuts: configuration.previousCuts.filter { $0.source == .user },
                         overrides: configuration.overrides
                     ))
                     : SilenceDetection.cuts(.init(windows: windows, configuration: configuration))
+                return (items: items, cuts: cuts)
             }
             let result = await withTaskCancellationHandler(operation: { await task.value }, onCancel: { task.cancel() })
             guard !Task.isCancelled else { return }
-            baseCuts = result
+            applyTranscriptItems(result.items)
+            baseCuts = result.cuts
             calculating = false
             updateMetrics()
             if skipSilence { updatePreview() }
@@ -412,11 +415,20 @@ final class SilenceEditingSession {
     }
 
     private func refreshTranscriptCuts() {
-        detectedTranscriptItems = transcript.map {
-            EditorTranscriptTimeline.items(.init(transcript: $0, windows: windows, threshold: threshold, duration: duration,
-                    paddingBefore: paddingBefore, paddingAfter: paddingAfter, minimumSilence: minimumDuration))
-        } ?? []
-        transcriptCuts = detectedTranscriptItems.filter { $0.kind == .nonDialogue }
+        applyTranscriptItems(transcriptItemsRequest().map(EditorTranscriptTimeline.items) ?? [])
+    }
+
+    private func transcriptItemsRequest() -> EditorTranscriptTimeline.Request? {
+        transcript.map {
+            .init(transcript: $0, windows: windows, threshold: threshold, duration: duration,
+                  paddingBefore: paddingBefore, paddingAfter: paddingAfter, minimumSilence: minimumDuration)
+        }
+    }
+
+    /// Slider moves work this out off the main thread, after the debounce, in `recalculate`.
+    private func applyTranscriptItems(_ items: [EditorTranscriptItem]) {
+        detectedTranscriptItems = items
+        transcriptCuts = items.filter { $0.kind == .nonDialogue }
             .map { .init(start: $0.range.start, end: $0.range.end, kind: .silence, source: .automatic) }
     }
 

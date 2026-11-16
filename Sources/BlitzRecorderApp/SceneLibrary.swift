@@ -103,6 +103,7 @@ struct SceneLibrary: Codable, Equatable {
                 var snapshot = match.snapshot
                 snapshot.enabledVideoSources = fresh.snapshot.enabledVideoSources
                 snapshot.hiddenVideoSources = fresh.snapshot.hiddenVideoSources
+                    .union(match.snapshot.hiddenVideoSources)
                 snapshot.sceneLayout = Self.migratingLegacySideBySideWidth(snapshot.sceneLayout, layout: layout)
                 return RecordingSceneDefinition(
                     id: match.id,
@@ -170,12 +171,19 @@ struct SceneLibrary: Codable, Equatable {
             return
         }
         var snapshot = snapshot
+        let preset = scenes[index].snapshot.selectedScenePreset
         snapshot.enabledVideoSources = scenes[index].snapshot.enabledVideoSources
-        snapshot.hiddenVideoSources = scenes[index].snapshot.hiddenVideoSources
-        snapshot.selectedScenePreset = scenes[index].snapshot.selectedScenePreset
+        snapshot.hiddenVideoSources = preset.map(Self.presetHiddenVideoSources)
+            .map { $0.union(snapshot.hiddenVideoSources) }
+            ?? scenes[index].snapshot.hiddenVideoSources
+        snapshot.selectedScenePreset = preset
         snapshot.cameraFeeds = scenes[index].snapshot.cameraFeeds
         scenes[index].snapshot = snapshot
         scenesByLayout[layout] = scenes
+    }
+
+    static func presetHiddenVideoSources(_ preset: ScenePreset) -> Set<CaptureSource> {
+        Set<CaptureSource>([.screen, .camera]).subtracting(preset.requiredVideoSources)
     }
 
     private struct DefaultSceneRequest {
@@ -193,7 +201,7 @@ struct SceneLibrary: Codable, Equatable {
         settings.sceneLayout = SceneLayout.presetLayout(preset, for: request.layout)
         settings.enabledSources.formUnion([.screen, .camera])
         settings.hiddenSources.subtract([.screen, .camera])
-        settings.hiddenSources.formUnion(Set<CaptureSource>([.screen, .camera]).subtracting(preset.requiredVideoSources))
+        settings.hiddenSources.formUnion(presetHiddenVideoSources(preset))
 
         return RecordingSceneDefinition(
             name: name(for: request.spec, numbersCameras: request.numbersCameras),

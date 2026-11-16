@@ -21,6 +21,10 @@ struct HostedVideoSharePanel: View {
     let newExport: () -> Void
     let showLibrary: () -> Void
     @State private var stopping: HostedLibraryVideo?
+    /// Whether the paused upload's file is still there, checked off the main thread when the file or the app's
+    /// focus changes rather than on every redraw.
+    @State private var uploadFileExists = true
+    @State private var fileCheck = 0
 
     private var isAccountOnly: Bool {
         if case .account = context { return true }
@@ -41,6 +45,12 @@ struct HostedVideoSharePanel: View {
         return controller.projectPath == path ? controller.shareURL ?? previousShare : previousShare
     }
 
+    /// The controller holds one upload at a time; its progress, errors and resume belong to that project only.
+    private var isThisProjectsTransfer: Bool {
+        guard let path = project?.path else { return false }
+        return controller.projectPath == path
+    }
+
     private var isSaving: Bool {
         if case .exporting = preparation?.status { return true }
         return false
@@ -51,12 +61,27 @@ struct HostedVideoSharePanel: View {
         .foregroundStyle(BlitzUI.primaryText)
         .controlSize(.regular)
         .task { await controller.refresh() }
+        .task(id: UploadFileCheck(url: controller.fileURL, round: fileCheck)) {
+            guard let path = controller.fileURL?.path else {
+                uploadFileExists = false
+                return
+            }
+            let exists = await Task.detached(priority: .utility) { FileManager.default.fileExists(atPath: path) }.value
+            guard !Task.isCancelled else { return }
+            uploadFileExists = exists
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            fileCheck += 1
             Task { await controller.refresh() }
         }
         .stopSharingConfirmation(.init(stopping: $stopping, controller: controller,
                                        title: "Stop sharing this link?",
                                        hostedMessage: "The link stops working for everyone and the video is deleted from BlitzRecorder Hosting. Your recording stays on this Mac."))
+    }
+
+    private struct UploadFileCheck: Equatable {
+        let url: URL?
+        let round: Int
     }
 
     private func liveVideo(_ url: URL) -> HostedLibraryVideo? {
@@ -79,18 +104,22 @@ struct HostedVideoSharePanel: View {
     }
 
     private enum StateKey: Hashable {
-        case uploading, saving, loading, unavailable, signIn, choosePlan, account, ready, prepare, resume, idle
+        case uploading, uploadingElsewhere, saving, loading, unavailable, signIn, choosePlan, account, ready, prepare
+        case resume, idle
     }
 
     /// A paused or failed upload whose file is still on disk. A finished link that was stopped is not
     /// resumable: sharing again starts from the current edit.
     private var hasResumableUpload: Bool {
-        guard let fileURL = controller.fileURL, FileManager.default.fileExists(atPath: fileURL.path) else { return false }
+        guard isThisProjectsTransfer, controller.fileURL != nil, uploadFileExists else { return false }
         return controller.transferMessage != nil
     }
 
     private var stateKey: StateKey {
-        if !isAccountOnly, controller.isRunning, controller.transferProgress != nil { return .uploading }
+        if !isAccountOnly, controller.isRunning {
+            if isThisProjectsTransfer, controller.transferProgress != nil { return .uploading }
+            if !isThisProjectsTransfer { return .uploadingElsewhere }
+        }
         if !isAccountOnly, isSaving { return .saving }
         if !controller.hasCheckedAccount { return .loading }
         if controller.plan?.offersSharing != true { return .unavailable }
@@ -119,6 +148,10 @@ struct HostedVideoSharePanel: View {
                         }
                     }
                 }
+            case .uploadingElsewhere:
+                Text("Another recording is uploading. You can share this one when it finishes.")
+                    .font(BlitzType.callout).foregroundStyle(BlitzUI.supportingText)
+                    .fixedSize(horizontal: false, vertical: true)
             case .saving:
                 if let preparation, case .exporting(let progress) = preparation.status {
                     HostedVideoProgressView(presentation: .exporting(progress))
@@ -157,8 +190,8 @@ struct HostedVideoSharePanel: View {
             case .idle:
                 createLinkButton(newExport)
             }
-            if preparation == nil, let message = controller.transferMessage { errorText(message) }
-            if [.uploading, .ready].contains(stateKey), let notice = controller.detailsNotice {
+            if preparation == nil, isThisProjectsTransfer, let message = controller.transferMessage { errorText(message) }
+            if [.uploading, .ready].contains(stateKey), isThisProjectsTransfer, let notice = controller.detailsNotice {
                 Label(notice, systemImage: "text.badge.xmark")
                     .font(BlitzType.caption).foregroundStyle(BlitzUI.warning)
                     .fixedSize(horizontal: false, vertical: true)

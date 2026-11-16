@@ -62,6 +62,12 @@ final class RecordingCursorTracker {
     private var wasPressed = false
     private var segment = 0
     private var captureFrameProvider: (@MainActor () -> CGRect?)?
+    /// A recorded window's position, asked of WindowServer ten times a second instead of on every sample.
+    private var cachedWindowFrame: (checkedAt: CFTimeInterval, frame: CGRect?)?
+    private var isScanningWindows = false
+    private var generation = 0
+    private static let windowFrameRefreshInterval: CFTimeInterval = 0.1
+    private static let windowScanQueue = DispatchQueue(label: "blitzrecorder.privacy-window-scan", qos: .utility)
 
     struct StartRequest {
         let directory: URL
@@ -89,28 +95,52 @@ final class RecordingCursorTracker {
     func update(_ configuration: Configuration) {
         self.configuration = configuration
         segment += 1
+        cachedWindowFrame = nil
     }
-    func stop() {
+    /// Stops sampling at once and writes the cursor and privacy files off the main thread: a long take holds
+    /// hundreds of thousands of samples. Await the returned task before reading those files.
+    @discardableResult
+    func stop() -> Task<Void, Never> {
         timer?.invalidate()
         timer = nil
-        if let directory, !samples.isEmpty, FileManager.default.fileExists(atPath: directory.path) {
-            try? JSONEncoder().encode(RecordingCursorTrack(version: 2, samples: samples))
-                .write(to: directory.appendingPathComponent("cursor-track.json"), options: .atomic)
-        }
-        if let directory, !privacySignals.isEmpty, FileManager.default.fileExists(atPath: directory.path) {
-            try? JSONEncoder().encode(RecordingPrivacySignalTrack(version: 1, signals: privacySignals))
-                .write(to: directory.appendingPathComponent(RecordingPrivacySignalTrack.fileName), options: .atomic)
-        }
-        directory = nil
-        samples = []
-        privacySignals = []
+        generation += 1
+        let directory = directory
+        let samples = samples
+        let privacySignals = privacySignals
+        self.directory = nil
+        self.samples = []
+        self.privacySignals = []
         wasPressed = false
         captureFrameProvider = nil
+        cachedWindowFrame = nil
+        isScanningWindows = false
+        guard let directory, !samples.isEmpty || !privacySignals.isEmpty else { return Task {} }
+        return Task.detached(priority: .userInitiated) {
+            Self.write(.init(directory: directory, samples: samples, privacySignals: privacySignals))
+        }
+    }
+
+    private struct TrackFiles: Sendable {
+        let directory: URL
+        let samples: [RecordingCursorSample]
+        let privacySignals: [RecordingPrivacySignal]
+    }
+
+    nonisolated private static func write(_ files: TrackFiles) {
+        guard FileManager.default.fileExists(atPath: files.directory.path) else { return }
+        if !files.samples.isEmpty {
+            try? JSONEncoder().encode(RecordingCursorTrack(version: 2, samples: files.samples))
+                .write(to: files.directory.appendingPathComponent("cursor-track.json"), options: .atomic)
+        }
+        if !files.privacySignals.isEmpty {
+            try? JSONEncoder().encode(RecordingPrivacySignalTrack(version: 1, signals: files.privacySignals))
+                .write(to: files.directory.appendingPathComponent(RecordingPrivacySignalTrack.fileName), options: .atomic)
+        }
     }
     private func sample(_ time: Double) {
         let sourceFrame = captureFrameProvider?()
         guard let config = configuration, config.settings.enabledSources.contains(.screen),
-              let frame = sourceFrame ?? captureFrame(config), frame.width > 0, frame.height > 0,
+              let frame = sourceFrame ?? cachedCaptureFrame(config), frame.width > 0, frame.height > 0,
               let location = CGEvent(source: nil)?.location else { return }
         let pressed = CGEventSource.buttonState(.combinedSessionState, button: .left)
         defer { wasPressed = pressed }
@@ -133,8 +163,31 @@ final class RecordingCursorTracker {
         let crop: CGRect
     }
 
+    /// Lists the windows on screen off the main thread; a scan still running skips the next one.
     private func recordSensitiveWindows(_ request: SignalRequest) {
-        for window in SensitiveWindowScanner.visibleWindows() {
+        guard !isScanningWindows else { return }
+        isScanningWindows = true
+        let generation = generation
+        Self.windowScanQueue.async { [weak self] in
+            let windows = SensitiveWindowScanner.visibleWindows()
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, self.generation == generation else { return }
+                    self.isScanningWindows = false
+                    self.appendSensitiveWindows(.init(request: request, windows: windows))
+                }
+            }
+        }
+    }
+
+    private struct ScannedWindows {
+        let request: SignalRequest
+        let windows: [SensitiveWindowScanner.Window]
+    }
+
+    private func appendSensitiveWindows(_ scanned: ScannedWindows) {
+        let request = scanned.request
+        for window in scanned.windows {
             let normalized = CGRect(
                 x: ((window.bounds.minX - request.frame.minX) / request.frame.width - request.crop.minX) / request.crop.width,
                 y: ((window.bounds.minY - request.frame.minY) / request.frame.height - request.crop.minY) / request.crop.height,
@@ -145,6 +198,16 @@ final class RecordingCursorTracker {
             privacySignals.append(.init(time: request.time, kind: window.kind, app: window.app,
                                         windowID: window.windowID, frame: normalized))
         }
+    }
+
+    private func cachedCaptureFrame(_ config: Configuration) -> CGRect? {
+        let now = CACurrentMediaTime()
+        if let cached = cachedWindowFrame, now - cached.checkedAt < Self.windowFrameRefreshInterval {
+            return cached.frame
+        }
+        let frame = captureFrame(config)
+        cachedWindowFrame = (now, frame)
+        return frame
     }
 
     private func captureFrame(_ config: Configuration) -> CGRect? {

@@ -18,6 +18,22 @@ struct RecordingAccessCover: View {
         vm.permissionStatusRows.first { $0.source == nil }
     }
 
+    private var orderedRows: [PermissionStatusRow] {
+        let inApp = sourceRows.filter { !Self.needsRestart($0.source) }
+        let restart = sourceRows.filter { Self.needsRestart($0.source) }
+        return inApp + [accessibilityRow].compactMap { $0 } + restart
+    }
+
+    private static func needsRestart(_ source: CaptureSource?) -> Bool {
+        source == .screen || source == .systemAudio
+    }
+
+    private var restartIsLastStep: Bool {
+        vm.screenAccessAwaitingRestart
+            && !isReady
+            && activeRows.filter { !Self.needsRestart($0.source) }.allSatisfy(\.isGranted)
+    }
+
     private var activeRows: [PermissionStatusRow] {
         sourceRows.filter { $0.isActive }
     }
@@ -127,25 +143,12 @@ struct RecordingAccessCover: View {
 
     private var permissionCard: some View {
         VStack(spacing: 0) {
-            ForEach(Array(sourceRows.enumerated()), id: \.element.id) { index, row in
+            ForEach(Array(orderedRows.enumerated()), id: \.element.id) { index, row in
                 if index > 0 {
                     Divider()
                         .background(BlitzUI.controlFill)
                         .padding(.horizontal, 14)
                 }
-                AccessPermissionRow(
-                    row: row,
-                    action: coverAction(for: row),
-                    accent: accent,
-                    isRequesting: vm.isRequestingPermissions,
-                    onTap: { performAction(for: row) },
-                    onOpenSettings: vm.openScreenRecordingSettings
-                )
-            }
-            if let row = accessibilityRow {
-                Divider()
-                    .background(BlitzUI.controlFill)
-                    .padding(.horizontal, 14)
                 AccessPermissionRow(
                     row: row,
                     action: coverAction(for: row),
@@ -167,6 +170,9 @@ struct RecordingAccessCover: View {
             if isReady {
                 Label("You’re all set. Continue to the recorder.", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(accent)
+            } else if restartIsLastStep {
+                Text("Once Screen Recording is on in Settings, reopen BlitzRecorder to finish.")
+                    .foregroundStyle(BlitzUI.secondaryText)
             } else if requiredCount > 0 {
                 Text("\(readyCount) of \(requiredCount) permissions ready")
                     .foregroundStyle(BlitzUI.secondaryText)
@@ -181,18 +187,30 @@ struct RecordingAccessCover: View {
 
     private var footer: some View {
         VStack(spacing: 14) {
-            Button {
-                vm.startFromCover()
-            } label: {
-                Label("Continue to recorder", systemImage: "arrow.right")
-                    .font(BlitzType.headline)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 44)
+            if restartIsLastStep {
+                Button(action: vm.quitAndReopen) {
+                    Label("Quit & Reopen", systemImage: "arrow.clockwise")
+                        .font(BlitzType.headline)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                }
+                .blitzButton(.accent)
+                .tint(accent)
+                .disabled(vm.isRequestingPermissions)
+            } else {
+                Button {
+                    vm.startFromCover()
+                } label: {
+                    Label("Continue to recorder", systemImage: "arrow.right")
+                        .font(BlitzType.headline)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                }
+                .blitzButton(.accent)
+                .tint(accent)
+                .disabled(!isReady || vm.isRequestingPermissions)
+                .opacity(isReady ? 1 : 0.45)
             }
-            .blitzButton(.accent)
-            .tint(accent)
-            .disabled(!isReady || vm.isRequestingPermissions)
-            .opacity(isReady ? 1 : 0.45)
 
             HStack(spacing: 18) {
                 if hasAllowable {

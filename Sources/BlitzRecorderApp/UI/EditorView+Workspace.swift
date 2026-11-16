@@ -328,7 +328,46 @@ extension EditorView {
             onCropCancel: cancelEditorSourceCrop
         )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .top) {
+            if let failure = vm.editorSaveFailure, failure.projectPath == vm.lastExportedProject?.projectPath {
+                EditorSaveFailureBar(
+                    failure: failure,
+                    onRetry: vm.retryEditorSave,
+                    onDiscard: vm.discardUnsavedEditorChanges
+                )
+                .padding(.top, 10)
+                .transition(.opacity)
+            }
+        }
+        .animation(.smooth(duration: 0.15), value: vm.editorSaveFailure)
         .padding(14)
+    }
+}
+
+private struct EditorSaveFailureBar: View {
+    let failure: EditorSaveFailure
+    let onRetry: () -> Void
+    let onDiscard: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Label(failure.message, systemImage: "exclamationmark.triangle.fill")
+                .font(BlitzType.captionEmphasis)
+                .foregroundStyle(BlitzUI.warning)
+                .lineLimit(2)
+            Button("Discard changes", role: .destructive, action: onDiscard)
+                .blitzButton(.quiet)
+                .controlSize(.small)
+                .disabled(failure.isRetrying)
+            Button(failure.isRetrying ? "Saving…" : "Try again", action: onRetry)
+                .blitzButton(.secondary)
+                .controlSize(.small)
+                .disabled(failure.isRetrying)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .blitzGlass(cornerRadius: BlitzUI.cardRadius)
+        .frame(maxWidth: 560)
     }
 }
 

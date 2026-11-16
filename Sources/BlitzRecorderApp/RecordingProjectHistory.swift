@@ -62,6 +62,11 @@ extension RecordingProjectHistory.Entry {
                   createdAt: project.createdAt, updatedAt: project.updatedAt, exports: project.exports)
     }
 
+    func retitled(_ title: String) -> Self {
+        Self(id: id, title: title, projectPath: projectPath, takeDirectoryPath: takeDirectoryPath,
+             finalVideoPath: finalVideoPath, createdAt: createdAt, updatedAt: updatedAt, exports: exports)
+    }
+
     var recordedAt: Date {
         createdAt
             ?? RecordingProjectDisplayTitle.timestampDate(from: title)

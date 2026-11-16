@@ -6,6 +6,11 @@ final class ScreenPreviewView: NSView {
     private let imageLayer = CALayer()
     private var sampleBufferLayer: AVSampleBufferDisplayLayer?
     private let unavailableOverlay = PreviewUnavailableOverlay(kind: .screen)
+    private var pendingStill: (@MainActor (CGImage?) -> Void)?
+    private var isPaused = false
+
+    /// Frames are arriving, so a still can come from the next one instead of a new screen capture.
+    var showsLiveFrames: Bool { sampleBufferLayer != nil && !isPaused }
 
     var hasPreviewContent: Bool { sampleBufferLayer != nil || imageLayer.contents != nil }
     var messageFrameForTesting: CGRect { unavailableOverlay.convert(unavailableOverlay.messageFrameForTesting, to: self) }
@@ -44,6 +49,10 @@ final class ScreenPreviewView: NSView {
         CATransaction.commit()
     }
 
+    func requestStillFrame(_ handler: @escaping @MainActor (CGImage?) -> Void) {
+        pendingStill = handler
+    }
+
     func setImage(_ image: CGImage) {
         sampleBufferLayer?.removeFromSuperlayer()
         sampleBufferLayer = nil
@@ -60,7 +69,18 @@ final class ScreenPreviewView: NSView {
             syncLayerFrames()
         }
         sampleBufferLayer?.enqueuePreviewFrame(sampleBuffer)
+        isPaused = false
         hideUnavailableOverlay()
+        deliverStill(sampleBuffer)
+    }
+
+    private func deliverStill(_ sampleBuffer: CMSampleBuffer) {
+        guard let handler = pendingStill, let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        pendingStill = nil
+        StillImageRenderer.renderOffMain(.init(
+            still: .init(image: CIImage(cvPixelBuffer: pixels), maxSize: CGSize(width: 480, height: 300)),
+            completion: handler
+        ))
     }
 
     func setMessage(_ message: String) {
@@ -72,6 +92,7 @@ final class ScreenPreviewView: NSView {
 
     /// Keeps the last frame on screen, dimmed, while idle previews pause in the background.
     func showPaused() {
+        isPaused = true
         unavailableOverlay.apply(message: "Paused")
     }
 

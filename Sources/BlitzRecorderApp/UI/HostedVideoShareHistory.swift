@@ -16,6 +16,10 @@ struct HostedVideoShareHistory: View {
     @Bindable var controller: HostedVideoShareController
     let configuration: Configuration
     @State private var stopping: HostedLibraryVideo?
+    /// Saved videos found missing, checked off the main thread: an external drive that is asleep can take seconds
+    /// to answer, and this list redraws with every export progress step.
+    @State private var missingExportPaths: Set<String> = []
+    @State private var fileCheck = 0
 
     private static let rowHeight: CGFloat = 44
 
@@ -39,6 +43,22 @@ struct HostedVideoShareHistory: View {
         .stopSharingConfirmation(.init(stopping: $stopping, controller: controller,
                                        title: "Stop sharing this link?",
                                        hostedMessage: "The link stops working for everyone. Your recording stays on this Mac."))
+        .task(id: ExportFileCheck(paths: configuration.exports.map(\.path), round: fileCheck)) {
+            let paths = configuration.exports.map(\.path)
+            let missing = await Task.detached(priority: .utility) {
+                Set(paths.filter { !FileManager.default.fileExists(atPath: $0) })
+            }.value
+            guard !Task.isCancelled, missing != missingExportPaths else { return }
+            missingExportPaths = missing
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            fileCheck += 1
+        }
+    }
+
+    private struct ExportFileCheck: Equatable {
+        let paths: [String]
+        let round: Int
     }
 
     private func section<Rows: View>(title: String, note: String?, @ViewBuilder rows: () -> Rows) -> some View {
@@ -92,7 +112,7 @@ struct HostedVideoShareHistory: View {
 
     private func exportRow(_ record: RecordingProject.ExportRecord) -> some View {
         let url = URL(fileURLWithPath: record.path)
-        let exists = FileManager.default.fileExists(atPath: record.path)
+        let exists = !missingExportPaths.contains(record.path)
         let link = configuration.links.first { $0.matches(record) }
         let file = ExportFile(record: record, url: url, exists: exists, link: link)
         let detail = exists ? Self.exportDetail(record) : "Moved or deleted · \(Self.dateLabel(record.createdAt))"

@@ -174,8 +174,8 @@ final class MetalExportVideoCompositor: NSObject, AVVideoCompositing, @unchecked
         let size = request.renderContext.size
         var overlays = instruction.edits.textOverlays.compactMap { overlay -> CIImage? in
             guard overlay.opacity(at: takeTime) > 0,
-                  let image = TimelineOverlayRenderer.image(.init(overlay: overlay, size: size)) else { return nil }
-            return CIImage(cgImage: image).applyingFilter("CIColorMatrix", parameters: [
+                  let sprite = TimelineOverlayRenderer.sprite(.init(overlay: overlay, size: size)) else { return nil }
+            return sprite.compositedImage(canvasSize: size).applyingFilter("CIColorMatrix", parameters: [
                 "inputAVector": CIVector(x: 0, y: 0, z: 0, w: overlay.opacity(at: takeTime))
             ])
         }

@@ -314,7 +314,7 @@ struct CaptionStylePreview: View {
         }
     }
 
-    private var sprite: CaptionSprite? {
+    private var sprite: CanvasSprite? {
         var track = CaptionTrack.empty
         track.style = style
         return CaptionRenderer.sprite(.init(.init(

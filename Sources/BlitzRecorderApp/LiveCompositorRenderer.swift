@@ -34,6 +34,18 @@ final class LiveCompositorRenderer: @unchecked Sendable {
     private let cameraPopoutRenderer: CameraPopoutRenderer
     private var cachedBackground: (style: CanvasBackgroundStyle, size: CGSize, frameIndex: Int, image: CIImage)?
 
+    private struct ShadowKey: Equatable {
+        let target: CGRect
+        let cornerRadius: CGFloat
+    }
+
+    /// Shadows drawn once into a buffer and reused while their source stays put. A shadow is baked when the same
+    /// geometry comes twice in a row, so a camera being dragged keeps drawing it live instead of baking every frame.
+    private var bakedShadows: [(key: ShadowKey, image: CIImage)] = []
+    private var lastShadowKeys: [ShadowKey] = []
+    private var currentShadowKeys: [ShadowKey] = []
+    private let shadowPictures = IOSurfacePictureRenderer()
+
     init(popoutQuality: CameraPopoutQuality) {
         cameraPopoutRenderer = CameraPopoutRenderer(quality: popoutQuality)
         if let metalDevice = MTLCreateSystemDefaultDevice() {
@@ -89,10 +101,7 @@ final class LiveCompositorRenderer: @unchecked Sendable {
                        for: .screen,
                        sourceAspectRatio: sourceAspectRatio(for: screenFrame.image)
                    ) {
-                    image = shadow(
-                        for: placement.targetRect,
-                        cornerRadius: placement.cornerRadius
-                    )
+                    image = cachedShadow(.init(target: placement.targetRect, cornerRadius: placement.cornerRadius))
                     .settingOpacity(opacity)
                     .composited(over: image)
                 }
@@ -115,10 +124,10 @@ final class LiveCompositorRenderer: @unchecked Sendable {
                        for: .camera,
                        sourceAspectRatio: sourceAspectRatio(for: cameraFrame.image)
                    ) {
-                    image = shadow(
-                        for: popsOut ? popoutStyle.panel(in: visibleCameraRect) : visibleCameraRect,
+                    image = cachedShadow(.init(
+                        target: popsOut ? popoutStyle.panel(in: visibleCameraRect) : visibleCameraRect,
                         cornerRadius: placement.cornerRadius
-                    )
+                    ))
                     .settingOpacity(opacity)
                     .composited(over: image)
                 }
@@ -147,6 +156,8 @@ final class LiveCompositorRenderer: @unchecked Sendable {
             }
         }
 
+        lastShadowKeys = currentShadowKeys
+        currentShadowKeys = []
         for overlay in request.overlays { image = overlay.composited(over: image) }
         ciContext.render(
             image,
@@ -159,6 +170,9 @@ final class LiveCompositorRenderer: @unchecked Sendable {
 
     func reset() {
         cachedBackground = nil
+        bakedShadows = []
+        lastShadowKeys = []
+        currentShadowKeys = []
     }
 
     private func sourceAspectRatio(for image: CIImage) -> CGFloat {
@@ -291,6 +305,23 @@ final class LiveCompositorRenderer: @unchecked Sendable {
             .transformed(by: CGAffineTransform(translationX: x, y: y))
             .cropped(to: target)
             .rounded(to: target, radius: cornerRadius)
+    }
+
+    private func cachedShadow(_ key: ShadowKey) -> CIImage {
+        currentShadowKeys.append(key)
+        if let baked = bakedShadows.first(where: { $0.key == key }) { return baked.image }
+        let live = shadow(for: key.target, cornerRadius: key.cornerRadius)
+        guard lastShadowKeys.contains(key), let baked = bake(live) else { return live }
+        bakedShadows = Array((bakedShadows + [(key, baked)]).suffix(4))
+        return baked
+    }
+
+    /// Renders an image once into an IOSurface-backed buffer; compositing it afterwards reads that memory directly.
+    private func bake(_ image: CIImage) -> CIImage? {
+        let extent = image.extent.integral
+        guard let buffer = shadowPictures.render(.init(image: image, context: ciContext)) else { return nil }
+        return CIImage(cvPixelBuffer: buffer, options: [.colorSpace: CGColorSpace(name: CGColorSpace.sRGB) as Any])
+            .transformed(by: CGAffineTransform(translationX: extent.minX, y: extent.minY))
     }
 
     private func shadow(for target: CGRect, cornerRadius: CGFloat) -> CIImage {

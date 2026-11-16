@@ -30,7 +30,9 @@ final class RecorderViewModel {
     var transcriptionController: LocalTranscriptionController { coordinator.transcription }
 
     var state: RecordingState = .idle
-    var settings: RecordingSettings
+    var settings: RecordingSettings {
+        didSet { readinessCache.clear() }
+    }
     var detailMessage: String = ""
     /// The camera whose sound the editor is switching to in a multicam project, while its sound is prepared.
     var editorSoundSwitch: String?
@@ -59,6 +61,8 @@ final class RecorderViewModel {
     var selectedSettingsPane: SettingsPane = .recording
 
     var isEditorVisible: Bool { studioMode == .edit && !isShowingSettings }
+    /// The studio page is in front. Off it, the studio stays mounted but hidden, so its timers and polls pause.
+    var isStudioOnScreen: Bool { studioMode == .record && !isShowingSettings }
 
     var settingsReturnTitle: String {
         switch studioMode {
@@ -107,6 +111,8 @@ final class RecorderViewModel {
     var isExporting: Bool { exports.activeExportProjectURL != nil || exports.isExportingVariants }
     /// This window's wait on the shared library refresh, so callers and tests can await it.
     @ObservationIgnored var projectRefreshTask: Task<Void, Never>?
+    @ObservationIgnored let libraryMemos = ProjectLibraryMemos()
+    @ObservationIgnored let readinessCache = RecordingReadinessCache()
     @ObservationIgnored private var projectEditedObserver: NSObjectProtocol?
     @ObservationIgnored var volumeObservers: [NSObjectProtocol] = []
     /// Each library folder's disk, whether it is connected, and libraries found on connected disks.
@@ -115,6 +121,7 @@ final class RecorderViewModel {
     /// Which of this window's queued saves still count; it moves on when a save fails, dropping the ones
     /// made on top of it (see `ProjectSaveQueue`).
     @ObservationIgnored var editSaveGeneration = 0
+    var editorSaveFailure: EditorSaveFailure?
     let elapsedClock = RecordingElapsedClock()
 
     @ObservationIgnored var onPresentSettings: ((SettingsPane?) -> Void)?
@@ -316,7 +323,7 @@ final class RecorderViewModel {
             guard let edit = notification.object as? RecordingProjectEdited else { return }
             MainActor.assumeIsolated { self?.adoptEditSavedElsewhere(edit) }
         }
-        refreshRecentProjects()
+        loadRecentProjects()
         observeVolumes()
         syncScreenCaptureAreaSelection()
         elapsedClock.onElapsedSecondsChanged = { [weak self] elapsedSeconds in

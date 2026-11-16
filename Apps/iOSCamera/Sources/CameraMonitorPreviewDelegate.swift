@@ -24,11 +24,10 @@ final class CameraMonitorPreviewDelegate: NSObject, AVCaptureVideoDataOutputSamp
         }
     }
 
+    /// Delivery pauses while each frame is being sent, so the frame-rate limit keeps its clock across the pause:
+    /// resetting it here let every frame after a quick send through, at the camera's full rate.
     func setDeliverySuspended(_ suspended: Bool) {
         isDeliverySuspended = suspended
-        if suspended {
-            lastEncodedFrameDate = .distantPast
-        }
     }
 
     func setLoadProfile(_ profile: CameraMonitorPreviewLoadProfile) {

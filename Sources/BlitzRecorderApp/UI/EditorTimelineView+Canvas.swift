@@ -69,10 +69,12 @@ extension EditorTimelineView {
                                         .contextMenu { selectionCommands; Divider(); timelineContextMenu }
                                     transcriptTrack(.init(pixelsPerSecond: pxPerSecond, contentWidth: contentWidth, viewport: viewport))
                                     if showsChaptersTrack {
-                                        chaptersTrack(pxPerSecond: pxPerSecond, contentWidth: contentWidth)
+                                        chaptersTrack(.init(pxPerSecond: pxPerSecond, contentWidth: contentWidth,
+                                                            viewport: viewport))
                                     }
                                     if showsSegmentsTrack {
-                                        segmentsTrack(pxPerSecond: pxPerSecond, contentWidth: contentWidth)
+                                        segmentsTrack(.init(pxPerSecond: pxPerSecond, contentWidth: contentWidth,
+                                                            viewport: viewport))
                                     }
                                     ForEach(placedTracks) { track in
                                         placedTrack(.init(track: track, pixelsPerSecond: pxPerSecond,

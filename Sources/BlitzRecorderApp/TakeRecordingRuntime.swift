@@ -234,14 +234,16 @@ final class TakeRecordingRuntime {
     }
 
     func stop() async throws -> TakeRecordingStopOutcome {
-        cursorTracker.stop()
+        let cursorFiles = cursorTracker.stop()
         pauseSceneTimeline()
         switch mode {
         case .liveCompositor:
             let (completion, warning) = try await stopLiveCompositor()
+            await cursorFiles.value
             return .liveComposited(completion, warning: warning)
         case .captureRun:
             let summary = await stopCaptureRun()
+            await cursorFiles.value
             return .sourceFiles(summary)
         case .idle:
             resetSceneTimeline()

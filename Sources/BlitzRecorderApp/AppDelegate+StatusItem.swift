@@ -18,10 +18,12 @@ extension AppDelegate {
         statusItem?.menu = menu
     }
 
-    /// Only an open menu reads the recordings folder; rebuilds in between reuse the shared project list.
+    /// The menu opens at once with the shared project list, then rereads the library off the main thread.
     func menuNeedsUpdate(_ menu: NSMenu) {
-        coordinator.projectLibrary.reload(settings: coordinator.settings)
         populateStatusMenu(menu)
+        let library = coordinator.projectLibrary
+        let settings = coordinator.settings
+        Task { await library.refresh(.init(settings: settings, includesLatestWrites: false)) }
     }
 
     private func populateStatusMenu(_ menu: NSMenu) {

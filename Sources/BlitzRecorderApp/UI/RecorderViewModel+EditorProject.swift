@@ -228,30 +228,78 @@ extension RecorderViewModel {
     private func stageEditorChange(_ request: EditorChange) throws -> RecordingProject {
         let draft = TakeFileStore.ProjectDraft(projectURL: request.projectURL, project: request.base)
         let staged = try draft.stage(request.change)
-        ProjectSaveQueue.shared.enqueue(.init(
-            projectURL: request.projectURL, project: staged, baseRevision: request.base.editRevision, settings: settings,
-            owner: ObjectIdentifier(self), generation: editSaveGeneration
-        ) { [weak self] outcome in self?.finishEditorSave(outcome) })
+        enqueueEditorSave(.init(projectURL: request.projectURL, project: staged, baseRevision: request.base.editRevision))
         return staged
     }
 
-    /// A queued save either landed, or could not: then this window shows what is on disk, because the changes
-    /// after it were made on top of one that never saved.
+    private struct EditorSave {
+        let projectURL: URL
+        let project: RecordingProject
+        let baseRevision: Int
+    }
+
+    /// After a failed save the disk still holds the failed save's base revision, so the next save carries every
+    /// unsaved change on top of it. Saves queued after that one build on it as usual: the queue writes in order.
+    private func enqueueEditorSave(_ save: EditorSave) {
+        var baseRevision = save.baseRevision
+        if let failure = editorSaveFailure, failure.projectPath == save.project.projectPath, !failure.isRetrying {
+            baseRevision = failure.baseRevision
+            editorSaveFailure = failure.retrying
+        }
+        ProjectSaveQueue.shared.enqueue(.init(
+            projectURL: save.projectURL, project: save.project, baseRevision: baseRevision,
+            settings: settings, owner: ObjectIdentifier(self), generation: editSaveGeneration
+        ) { [weak self] outcome in self?.finishEditorSave(outcome) })
+    }
+
+    func retryEditorSave() {
+        guard let failure = editorSaveFailure, !failure.isRetrying, let project = lastExportedProject,
+              project.projectPath == failure.projectPath else { return }
+        enqueueEditorSave(.init(projectURL: URL(fileURLWithPath: project.projectPath), project: project,
+                                baseRevision: failure.baseRevision))
+    }
+
+    func discardUnsavedEditorChanges() {
+        guard let failure = editorSaveFailure else { return }
+        guard let saved = try? TakeFileStore().loadRecordingProject(at: URL(fileURLWithPath: failure.projectPath)) else {
+            editorSaveFailure = failure.failing("The project can't be read right now. Check that its drive is connected.")
+            return
+        }
+        editorSaveFailure = nil
+        guard lastExportedProject?.projectPath == saved.projectPath else { return }
+        lastExportedProject = saved
+        clearEditorHistory()
+        refreshRecentProjects()
+        detailMessage = "Discarded the changes that could not be saved."
+    }
+
+    /// A queued save either landed, or could not: then this window keeps the unsaved changes and offers to retry
+    /// or discard them (`editorSaveFailure`).
     private func finishEditorSave(_ outcome: ProjectSaveQueue.Outcome) {
         switch outcome {
-        case .saved, .skipped:
+        case let .saved(project):
+            if editorSaveFailure?.projectPath == project.projectPath { editorSaveFailure = nil }
+        case .skipped:
             return
         case let .conflict(conflict, generation):
             editSaveGeneration = generation
+            if editorSaveFailure?.projectPath == conflict.current.projectPath { editorSaveFailure = nil }
             guard lastExportedProject?.projectPath == conflict.current.projectPath else { return }
             loadConflictingProject(conflict)
-        case let .failed(error, saved, generation):
+        case let .failed(error, projectPath, baseRevision, generation):
             editSaveGeneration = generation
-            detailMessage = "Your last change could not be saved: \(error.localizedDescription)"
-            guard let saved, lastExportedProject?.projectPath == saved.projectPath else { return }
-            lastExportedProject = saved
-            clearEditorHistory()
-            refreshRecentProjects()
+            guard lastExportedProject?.projectPath == projectPath else {
+                // That project is no longer open, so its unsaved changes are gone; say so instead of pinning
+                // the failure to the project shown now.
+                detailMessage = "Changes to a recording you closed could not be saved: \(error.localizedDescription)"
+                return
+            }
+            editorSaveFailure = EditorSaveFailure(
+                projectPath: projectPath,
+                baseRevision: baseRevision,
+                message: "Your changes aren't saved: \(error.localizedDescription)",
+                isRetrying: false
+            )
         }
     }
 
@@ -268,6 +316,7 @@ extension RecorderViewModel {
             return
         }
         lastExportedProject = saved
+        if editorSaveFailure?.projectPath == saved.projectPath { editorSaveFailure = nil }
         clearEditorHistory()
         detailMessage = "Loaded changes saved in another window."
     }
@@ -381,4 +430,19 @@ struct MulticamCutRequest {
     let framing: MulticamShot.Framing
     /// Seconds on the take timeline where the shot starts.
     let time: Double
+}
+
+struct EditorSaveFailure: Equatable {
+    let projectPath: String
+    let baseRevision: Int
+    let message: String
+    let isRetrying: Bool
+
+    var retrying: EditorSaveFailure {
+        EditorSaveFailure(projectPath: projectPath, baseRevision: baseRevision, message: message, isRetrying: true)
+    }
+
+    func failing(_ message: String) -> EditorSaveFailure {
+        EditorSaveFailure(projectPath: projectPath, baseRevision: baseRevision, message: message, isRetrying: false)
+    }
 }

@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import os
 import Security
 
 struct HostingFailure: LocalizedError {
@@ -255,7 +256,7 @@ struct HostingClient {
                 throw changedDuringUpload
             }
             try Task.checkCancellation()
-            if let previewURL = await preview.value {
+            if let previewURL = await Self.finishedPreview(.init(task: preview, limit: Self.previewGrace)) {
                 try? await uploadPreview(.init(fileURL: previewURL, assetID: asset.id, token: request.token, media: media))
             }
             if let media, let cloudflareUploadID {
@@ -285,6 +286,35 @@ struct HostingClient {
             try await Task.sleep(for: .seconds(3))
         }
         throw HostingFailure(message: "The video is still processing. Check again to retrieve the same link.")
+    }
+
+    /// The server takes the link-preview clip only before the upload completes, so the link waits for the clip
+    /// at most this long after the video is up. Without it the page shows the poster; the clip keeps encoding
+    /// into its cache for the next share.
+    private static let previewGrace: Duration = .seconds(5)
+
+    private struct PreviewWait {
+        let task: Task<URL?, Never>
+        let limit: Duration
+    }
+
+    private static func finishedPreview(_ wait: PreviewWait) async -> URL? {
+        let answered = OSAllocatedUnfairLock(initialState: false)
+        return await withCheckedContinuation { continuation in
+            let answer: @Sendable (URL?) -> Void = { url in
+                let isFirst = answered.withLock { done in
+                    guard !done else { return false }
+                    done = true
+                    return true
+                }
+                if isFirst { continuation.resume(returning: url) }
+            }
+            Task { answer(await wait.task.value) }
+            Task {
+                try? await Task.sleep(for: wait.limit)
+                answer(nil)
+            }
+        }
     }
 
     private struct PreviewUpload {

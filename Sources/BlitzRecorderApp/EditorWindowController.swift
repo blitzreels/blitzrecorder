@@ -62,7 +62,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func present(_ request: EditorWindowRequest) {
-        viewModel.settings = configuration.coordinator.settings
+        adoptSharedSettings()
         if let project = request.project {
             viewModel.openProject(project)
         }
@@ -77,7 +77,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
+        adoptSharedSettings()
         configuration.historyChanged()
+    }
+
+    /// Settings such as the export folder change in the main window; this window reads them when it comes back.
+    private func adoptSharedSettings() {
+        viewModel.settings = configuration.coordinator.settings
     }
 
     func windowWillClose(_ notification: Notification) {

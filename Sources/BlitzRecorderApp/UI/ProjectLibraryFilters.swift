@@ -138,16 +138,23 @@ enum ProjectLibraryDayGroups {
         guard request.groupsByDay else {
             return request.projects.isEmpty ? [] : [.init(title: "", groupsByDay: false, projects: request.projects)]
         }
-        var groups: [Group] = []
+        var groups: [(title: String, projects: [RecordingProjectHistory.Entry])] = []
+        var lastDay: Date?
         for project in request.projects {
-            let title = title(.init(date: project.recordedAt, now: request.now, calendar: request.calendar))
+            let recordedAt = project.recordedAt
+            if let lastDay, request.calendar.isDate(recordedAt, inSameDayAs: lastDay) {
+                groups[groups.count - 1].projects.append(project)
+                continue
+            }
+            lastDay = recordedAt
+            let title = title(.init(date: recordedAt, now: request.now, calendar: request.calendar))
             if let last = groups.last, last.title == title {
-                groups[groups.count - 1] = .init(title: title, groupsByDay: true, projects: last.projects + [project])
+                groups[groups.count - 1].projects.append(project)
             } else {
-                groups.append(.init(title: title, groupsByDay: true, projects: [project]))
+                groups.append((title, [project]))
             }
         }
-        return groups
+        return groups.map { .init(title: $0.title, groupsByDay: true, projects: $0.projects) }
     }
 
     struct TitleRequest {

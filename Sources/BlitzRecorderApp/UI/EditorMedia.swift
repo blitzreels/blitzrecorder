@@ -204,6 +204,10 @@ struct EditorFilmstripLoadRequest: Sendable {
 final class EditorMediaLibrary {
     private(set) var posters: [String: CGImage] = [:]
     private(set) var filmstrips: [String: [CGImage]] = [:]
+    /// Frames decoded so far, by their cell on one fixed grid as fine as the densest filmstrip. Every zoom level
+    /// picks its frames from this grid, so zooming in decodes only the frames it does not have yet.
+    @ObservationIgnored private var filmstripGrid: [String: [Int: CGImage]] = [:]
+    nonisolated static let filmstripGridSize = 192
     private(set) var waveforms: [String: [Float]] = [:]
     private(set) var timelineWaveforms: [String: EditorAudioWaveform] = [:]
     private(set) var audioActivity: [String: EditorAudioActivity.State] = [:]
@@ -353,12 +357,34 @@ final class EditorMediaLibrary {
             }
         }
 
-        let frames = await Self.loadFilmstripFrames(request: request)
-        guard !Task.isCancelled,
-              frames.count > (filmstrips[request.assetID]?.count ?? 0) else {
-            return
-        }
+        let cells = Self.filmstripCells(frameCount: request.frameCount)
+        let cached = filmstripGrid[request.assetID] ?? [:]
+        let decoded = await Self.loadFilmstripFrames(.init(
+            url: request.url, cells: cells.filter { cached[$0] == nil }, frameCount: request.frameCount
+        ))
+        guard !Task.isCancelled else { return }
+        var grid = filmstripGrid[request.assetID] ?? [:]
+        grid.merge(decoded) { kept, _ in kept }
+        filmstripGrid[request.assetID] = grid
+        let frames = cells.compactMap { grid[$0] }
+        guard frames.count > (filmstrips[request.assetID]?.count ?? 0) else { return }
         filmstrips[request.assetID] = frames
+    }
+
+    /// The grid cell nearest the middle of each of `frameCount` equal parts of the video.
+    nonisolated static func filmstripCells(frameCount: Int) -> [Int] {
+        let grid = filmstripGridSize
+        guard frameCount > 0 else { return [] }
+        guard frameCount < grid else { return Array(0..<grid) }
+        return (0..<frameCount).map { index in
+            min(grid - 1, Int(((Double(index) + 0.5) * Double(grid) / Double(frameCount)).rounded(.down)))
+        }
+    }
+
+    private struct FilmstripFramesRequest: Sendable {
+        let url: URL
+        let cells: [Int]
+        let frameCount: Int
     }
 
     nonisolated private static func load(_ request: MediaLoadRequest) async -> EditorLoadedMedia? {
@@ -410,14 +436,12 @@ final class EditorMediaLibrary {
         )
     }
 
-    nonisolated private static func loadFilmstripFrames(
-        request: EditorFilmstripLoadRequest
-    ) async -> [CGImage] {
-        guard request.frameCount > 0 else { return [] }
+    nonisolated private static func loadFilmstripFrames(_ request: FilmstripFramesRequest) async -> [Int: CGImage] {
+        guard !request.cells.isEmpty, request.frameCount > 0 else { return [:] }
         let avAsset = AVURLAsset(url: request.url)
-        guard let duration = try? await avAsset.load(.duration) else { return [] }
+        guard let duration = try? await avAsset.load(.duration) else { return [:] }
         let seconds = duration.seconds
-        guard seconds.isFinite, seconds > 0 else { return [] }
+        guard seconds.isFinite, seconds > 0 else { return [:] }
 
         let generator = AVAssetImageGenerator(asset: avAsset)
         generator.appliesPreferredTrackTransform = true
@@ -427,23 +451,21 @@ final class EditorMediaLibrary {
         generator.requestedTimeToleranceBefore = CMTime(seconds: tolerance, preferredTimescale: 600)
         generator.requestedTimeToleranceAfter = CMTime(seconds: tolerance, preferredTimescale: 600)
 
-        let times = (0..<request.frameCount).map { index in
-            CMTime(
-                seconds: seconds * (Double(index) + 0.5) / Double(request.frameCount),
-                preferredTimescale: 600
-            )
+        let grid = Double(filmstripGridSize)
+        let times = request.cells.map { cell in
+            CMTime(seconds: seconds * (Double(cell) + 0.5) / grid, preferredTimescale: 600)
         }
+        let cellsByTime = Dictionary(zip(times.map(\.value), request.cells), uniquingKeysWith: { first, _ in first })
         return await withTaskCancellationHandler {
-            var generated: [(time: Double, image: CGImage)] = []
+            var generated: [Int: CGImage] = [:]
             for await result in generator.images(for: times) {
-                guard !Task.isCancelled else { return [] }
-                if case let .success(requestedTime, image, _) = result {
-                    generated.append((time: requestedTime.seconds, image: image))
+                guard !Task.isCancelled else { return [:] }
+                if case let .success(requestedTime, image, _) = result,
+                   let cell = cellsByTime[requestedTime.convertScale(600, method: .roundHalfAwayFromZero).value] {
+                    generated[cell] = image
                 }
             }
             return generated
-                .sorted { $0.time < $1.time }
-                .map(\.image)
         } onCancel: {
             generator.cancelAllCGImageGeneration()
         }

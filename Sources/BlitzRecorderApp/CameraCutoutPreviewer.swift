@@ -5,11 +5,12 @@ import Foundation
 import Vision
 
 final class CameraCutoutPreviewer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
-    typealias FrameHandler = @MainActor (CGImage) -> Void
+    typealias FrameHandler = @MainActor (CVPixelBuffer) -> Void
 
     private let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "blitzrecorder.camera-cutout-preview")
     private let context = CIContext(options: [.cacheIntermediates: false])
+    private let pictures = IOSurfacePictureRenderer()
     private let segmentationRequest = VNGeneratePersonSegmentationRequest()
     private let sequenceHandler = VNSequenceRequestHandler()
     private var frameHandler: FrameHandler?
@@ -78,9 +79,9 @@ final class CameraCutoutPreviewer: NSObject, AVCaptureVideoDataOutputSampleBuffe
             request: segmentationRequest,
             sequenceHandler: sequenceHandler
         )
-        guard let cgImage = context.createCGImage(image, from: image.extent) else { return }
+        guard let picture = pictures.render(.init(image: image, context: context)) else { return }
         Task { @MainActor in
-            frameHandler(cgImage)
+            frameHandler(picture)
         }
     }
 

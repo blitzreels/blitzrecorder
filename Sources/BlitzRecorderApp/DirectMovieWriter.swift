@@ -1,7 +1,10 @@
 import AVFoundation
 import CoreMedia
 import Foundation
+import os
 import VideoToolbox
+
+private let movieWriterLog = Logger(subsystem: "dev.blitzreels.blitzrecorder", category: "movie-writer")
 
 final class DirectMovieWriter: @unchecked Sendable {
     private let writer: AVAssetWriter
@@ -11,6 +14,17 @@ final class DirectMovieWriter: @unchecked Sendable {
     private let finalURL: URL
     private let temporaryURL: URL
     private let queue = DispatchQueue(label: "blitzrecorder.direct-movie-writer")
+    /// Frames are composed here, so a slow frame never holds up sound on the writer queue.
+    private let renderQueue = DispatchQueue(label: "blitzrecorder.direct-movie-render", qos: .userInitiated)
+    private let framesInFlight = OSAllocatedUnfairLock(initialState: 0)
+    private static let maximumFramesInFlight = 2
+
+    private var audioBacklogs: [CaptureSource: PendingAudioBacklog] = [:]
+
+    private struct RenderedFrame {
+        let pixelBuffer: CVPixelBuffer
+        let presentationTime: CMTime
+    }
     private let recordingStartHostTime: CMTime
 
     private var pauseClock = MediaWriterPauseClock()
@@ -84,65 +98,90 @@ final class DirectMovieWriter: @unchecked Sendable {
         writer.startSession(atSourceTime: .zero)
     }
 
+    /// Composes a frame off the writer queue. When two frames are already being composed, this one is skipped
+    /// instead of queued, so a slow scene drops frames rather than building up delay.
     func appendVideo(sourceTime: CMTime, render: @escaping (CVPixelBuffer) -> Bool) {
-        queue.async {
-            guard !self.finished, !self.pauseClock.isPaused, sourceTime.isNumeric else { return }
-            guard self.writer.status != .failed else {
-                self.failWriting(self.writer.error ?? RecorderError.writerNotReady)
-                return
-            }
-            let presentationTime = self.presentationTime(for: sourceTime)
-            guard presentationTime.isNumeric else { return }
-            if let lastWrittenVideoTime = self.lastWrittenVideoTime,
-               CMTimeCompare(presentationTime, lastWrittenVideoTime) <= 0 {
-                return
-            }
-            guard self.videoInput.isReadyForMoreMediaData,
-                  let pool = self.adaptor.pixelBufferPool else {
-                return
-            }
-
+        guard sourceTime.isNumeric, framesInFlight.withLock({ count in
+            guard count < Self.maximumFramesInFlight else { return false }
+            count += 1
+            return true
+        }) else { return }
+        renderQueue.async {
+            defer { self.framesInFlight.withLock { $0 -= 1 } }
+            guard let presentationTime = self.queue.sync(execute: { self.nextVideoPresentationTime(for: sourceTime) }),
+                  let pool = self.adaptor.pixelBufferPool else { return }
             var pixelBuffer: CVPixelBuffer?
             guard CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pixelBuffer) == kCVReturnSuccess,
                   let pixelBuffer,
-                  render(pixelBuffer) else {
-                return
-            }
-
-            if self.adaptor.append(pixelBuffer, withPresentationTime: presentationTime) {
-                self.wroteVideo = true
-                self.lastWrittenVideoTime = presentationTime
-            } else {
-                self.failWriting(
-                    self.writer.error ?? RecorderError.mediaWriteFailed("Direct movie writer rejected a video frame.")
-                )
-            }
+                  render(pixelBuffer) else { return }
+            self.queue.async { self.appendRenderedFrame(.init(pixelBuffer: pixelBuffer, presentationTime: presentationTime)) }
         }
     }
 
+    private func nextVideoPresentationTime(for sourceTime: CMTime) -> CMTime? {
+        guard !finished, !pauseClock.isPaused else { return nil }
+        guard writer.status != .failed else {
+            failWriting(writer.error ?? RecorderError.writerNotReady)
+            return nil
+        }
+        let presentationTime = presentationTime(for: sourceTime)
+        guard presentationTime.isNumeric, videoInput.isReadyForMoreMediaData else { return nil }
+        if let lastWrittenVideoTime, CMTimeCompare(presentationTime, lastWrittenVideoTime) <= 0 { return nil }
+        return presentationTime
+    }
+
+    private func appendRenderedFrame(_ frame: RenderedFrame) {
+        guard !finished, !pauseClock.isPaused, writer.status != .failed,
+              videoInput.isReadyForMoreMediaData else { return }
+        if let lastWrittenVideoTime, CMTimeCompare(frame.presentationTime, lastWrittenVideoTime) <= 0 { return }
+        if adaptor.append(frame.pixelBuffer, withPresentationTime: frame.presentationTime) {
+            wroteVideo = true
+            lastWrittenVideoTime = frame.presentationTime
+        } else {
+            failWriting(writer.error ?? RecorderError.mediaWriteFailed("Direct movie writer rejected a video frame."))
+        }
+    }
+
+    /// Sound is timed when it arrives, not when the writer gets to it, so a busy writer cannot shift it.
     func appendAudio(_ sampleBuffer: CMSampleBuffer, source: CaptureSource) {
+        let arrivedAt = currentHostTime()
         queue.async {
             guard !self.finished,
                   !self.pauseClock.isPaused,
                   self.wroteVideo,
+                  arrivedAt.isValid,
                   CMSampleBufferDataIsReady(sampleBuffer),
                   let input = self.audioInputs[source],
-                  input.isReadyForMoreMediaData else {
+                  let retimed = sampleBuffer.retimed(toPresentationTime: self.presentationTime(for: arrivedAt)) else {
                 return
             }
+            var backlog = self.audioBacklogs[source, default: PendingAudioBacklog()]
+            backlog.add(retimed)
+            let result = backlog.drain(into: input)
+            self.audioBacklogs[source] = backlog
+            if result.rejected { self.failAudioWrite() }
+        }
+    }
 
-            let sourceTime = self.currentHostTime()
-            guard sourceTime.isValid else { return }
-            let presentationTime = self.presentationTime(for: sourceTime)
-            guard let adjusted = sampleBuffer.retimed(toPresentationTime: presentationTime) else {
+    private func failAudioWrite() {
+        failWriting(writer.error ?? RecorderError.mediaWriteFailed("Direct movie writer rejected an audio sample."))
+    }
+
+    /// Runs after the video input is finished, so the writer no longer holds sound back to keep it in step with
+    /// video that will not come.
+    private func flushAudioBacklogs() {
+        var dropped = 0
+        for (source, input) in audioInputs {
+            guard var backlog = audioBacklogs[source] else { continue }
+            let result = backlog.flush(into: input)
+            dropped += backlog.droppedCount
+            audioBacklogs[source] = backlog
+            if result.rejected {
+                failAudioWrite()
                 return
-            }
-            if !input.append(adjusted) {
-                self.failWriting(
-                    self.writer.error ?? RecorderError.mediaWriteFailed("Direct movie writer rejected an audio sample.")
-                )
             }
         }
+        if dropped > 0 { movieWriterLog.error("Dropped \(dropped, privacy: .public) audio buffers") }
     }
 
     func pause() {
@@ -159,7 +198,7 @@ final class DirectMovieWriter: @unchecked Sendable {
 
     func finish() async throws -> MediaWriterCompletion {
         try await withCheckedThrowingContinuation { continuation in
-            queue.async {
+            renderQueue.async { self.queue.async {
                 guard self.finalization.begin(continuation) else { return }
                 self.finished = true
                 if self.writer.status == .failed, self.writeError == nil {
@@ -176,6 +215,11 @@ final class DirectMovieWriter: @unchecked Sendable {
                     return
                 }
                 self.videoInput.markAsFinished()
+                self.flushAudioBacklogs()
+                if let writeError = self.writeError {
+                    self.finalization.complete(.failure(writeError))
+                    return
+                }
                 self.audioInputs.values.forEach { $0.markAsFinished() }
                 self.writer.finishWriting {
                     self.queue.async {
@@ -196,7 +240,7 @@ final class DirectMovieWriter: @unchecked Sendable {
                         }
                     }
                 }
-            }
+            } }
         }
     }
 

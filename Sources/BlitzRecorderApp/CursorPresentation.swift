@@ -138,15 +138,26 @@ enum CursorPresentationRenderer {
         let frame: CGRect
     }
 
+    /// Tilt steps of 0.005 radians and click-animation steps of 1/120 s look the same as exact values, and let
+    /// a moving or clicking cursor reuse drawn images instead of drawing a new one every frame.
+    private static let rotationStep = 0.005
+    private static let clickAgeStep = 1.0 / 120
+
     static func sprite(_ request: Request) -> Sprite? {
         let age = request.sample.clickAge
-        let animatedAge = request.style.emphasizesClicks && age >= 0 && age < 0.4 ? age : -1
-        let key = "\(request.sample.rotation.bitPattern)|\(animatedAge.bitPattern)" as NSString
+        let animatedAge = request.style.emphasizesClicks && age >= 0 && age < 0.4
+            ? (age / clickAgeStep).rounded(.down) * clickAgeStep : -1
+        let rotation = (request.sample.rotation / rotationStep).rounded() * rotationStep
+        let key = "\(rotation.bitPattern)|\(animatedAge.bitPattern)" as NSString
         let image: CGImage
         if let cached = images.object(forKey: key) {
             image = cached
         } else {
-            guard let rendered = render(request) else { return nil }
+            let drawn = Request(
+                sample: .init(position: request.sample.position, clickAge: animatedAge, rotation: rotation),
+                style: request.style, sourceFrame: request.sourceFrame
+            )
+            guard let rendered = render(drawn) else { return nil }
             images.setObject(rendered, forKey: key, cost: rendered.bytesPerRow * rendered.height)
             image = rendered
         }

@@ -111,33 +111,39 @@ final class ProjectLibraryPlaybackPresentationTests: XCTestCase {
     func testEditedPreviewPrefersNewestExistingExport() {
         let older = exportRecord(path: "/tmp/old-export.mov", createdAt: 1)
         let newer = exportRecord(path: "/tmp/new-export.mov", createdAt: 2)
-        let url = ProjectLibraryPreviewMedia.editedVideoURL(
+        let url = ProjectLibraryPreviewMedia.editedVideoURL(.init(
             exports: [older, newer],
             finalVideoPath: "/tmp/final.mov",
+            editRevision: 0,
+            layout: "horizontal",
             fileExists: { $0 == "/tmp/new-export.mov" || $0 == "/tmp/final.mov" }
-        )
+        ))
 
         XCTAssertEqual(url?.path, "/tmp/new-export.mov")
     }
 
     func testEditedPreviewFallsBackToFinalVideoWhenExportsAreMissing() {
         let missing = exportRecord(path: "/tmp/missing-export.mov", createdAt: 2)
-        let url = ProjectLibraryPreviewMedia.editedVideoURL(
+        let url = ProjectLibraryPreviewMedia.editedVideoURL(.init(
             exports: [missing],
             finalVideoPath: "/tmp/final.mov",
+            editRevision: 0,
+            layout: "horizontal",
             fileExists: { $0 == "/tmp/final.mov" }
-        )
+        ))
 
         XCTAssertEqual(url?.path, "/tmp/final.mov")
     }
 
     func testEditedPreviewIsNilWhenNoEditedFileExists() {
         let missing = exportRecord(path: "/tmp/missing-export.mov", createdAt: 1)
-        let url = ProjectLibraryPreviewMedia.editedVideoURL(
+        let url = ProjectLibraryPreviewMedia.editedVideoURL(.init(
             exports: [missing],
             finalVideoPath: "/tmp/missing-final.mov",
+            editRevision: 0,
+            layout: "horizontal",
             fileExists: { _ in false }
-        )
+        ))
 
         XCTAssertNil(url)
     }
@@ -151,7 +157,8 @@ final class ProjectLibraryPlaybackPresentationTests: XCTestCase {
             resolution: "1080p",
             framesPerSecond: 24,
             quality: "high",
-            fileSizeBytes: 1_024
+            fileSizeBytes: 1_024,
+            editRevision: 0
         )
     }
     func testSharedLibraryNeverStartsLocalMediaWork() {

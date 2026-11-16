@@ -53,7 +53,7 @@ final class RecorderStudioConfiguration {
     }
 
     func saveCurrentSceneSnapshotIfNeeded() {
-        guard state == .idle else { return }
+        guard allowsSceneChanges else { return }
         sceneLibrary.updateSelectedScene(
             layout: settings.layout,
             snapshot: currentRecordingSceneSnapshot()

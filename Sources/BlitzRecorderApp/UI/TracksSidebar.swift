@@ -327,8 +327,7 @@ private struct ScreenInputBlock: View {
     }
 
     private func open() {
-        guard isOn else { return vm.toggleSource(.screen) }
-        vm.showsScreenSourcePicker = true
+        vm.pickScreen()
     }
 }
 

@@ -69,6 +69,9 @@ struct RecordingProject: Codable, Equatable {
         var videoBitrate: Int? = nil
         /// Missing on exports made before speed was recorded, which ran at 1×.
         var playbackRate: Double? = nil
+        /// The project's `editRevision` the export was rendered from. Missing on exports made before it was recorded,
+        /// whose edits are unknown.
+        var editRevision: Int? = nil
     }
 
     let version: Int

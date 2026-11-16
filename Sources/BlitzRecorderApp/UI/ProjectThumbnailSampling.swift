@@ -45,11 +45,6 @@ enum ProjectThumbnailSampling {
               let sample = output.copyNextSampleBuffer(),
               let pixels = CMSampleBufferGetImageBuffer(sample) else { return nil }
         let frame = CIImage(cvPixelBuffer: pixels).transformed(by: transform)
-        let extent = frame.extent
-        guard extent.width > 0, extent.height > 0 else { return nil }
-        let scale = min(1, 640 / extent.width, 360 / extent.height)
-        let scaled = frame.transformed(by: .init(translationX: -extent.minX, y: -extent.minY))
-            .transformed(by: .init(scaleX: scale, y: scale))
-        return CIContext().createCGImage(scaled, from: scaled.extent)
+        return StillImageRenderer.render(.init(image: frame, maxSize: CGSize(width: 640, height: 360)))
     }
 }

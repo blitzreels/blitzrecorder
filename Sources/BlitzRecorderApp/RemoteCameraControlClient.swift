@@ -7,8 +7,42 @@ import OSLog
 import Security
 import SystemConfiguration
 
+/// iPhone preview frames decoded but not yet shown. When the main thread falls more than half a second behind,
+/// frames are skipped up to the next keyframe, so the preview stays current and decodes cleanly.
+final class RemoteCameraPreviewBacklog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var waiting = 0
+    private var skipsUntilKeyFrame = false
+    private static let limit = 12
+
+    func admit(isKeyFrame: Bool) -> Bool {
+        lock.withLock {
+            if skipsUntilKeyFrame {
+                guard isKeyFrame else { return false }
+                skipsUntilKeyFrame = false
+            }
+            if waiting >= Self.limit, !isKeyFrame {
+                skipsUntilKeyFrame = true
+                return false
+            }
+            waiting += 1
+            return true
+        }
+    }
+
+    func handled() {
+        lock.withLock { waiting = max(0, waiting - 1) }
+    }
+}
+
 @MainActor
 final class RemoteCameraControlClient {
+    /// iPhone messages carry preview frames and file chunks as JSON; they are decoded here, in arrival order,
+    /// instead of on the main thread.
+    private nonisolated static let decodeQueue = DispatchQueue(
+        label: "blitzrecorder.remote-camera-decode", qos: .userInteractive
+    )
+    private let previewBacklog = RemoteCameraPreviewBacklog()
     private var connection: JSONFrameConnection?
     private(set) var connectedServiceID: String?
     private(set) var capabilities: RemoteCameraCapabilities?
@@ -47,10 +81,22 @@ final class RemoteCameraControlClient {
                 self.handleState(state, service: service)
             }
         }
+        let backlog = previewBacklog
         connection.onFrameReceived = { [weak self, weak connection] data in
-            Task { @MainActor in
-                guard let self, let connection, self.connection === connection else { return }
-                self.handleFrame(data)
+            Self.decodeQueue.async {
+                let decoded = Result { try JSONMessageCodec.decode(RemoteCameraEvent.self, from: data) }
+                var isPreviewFrame = false
+                if case .success(.monitorVideoFrame(let frame)) = decoded {
+                    guard backlog.admit(isKeyFrame: frame.isKeyFrame) else { return }
+                    isPreviewFrame = true
+                }
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        defer { if isPreviewFrame { backlog.handled() } }
+                        guard let self, let connection, self.connection === connection else { return }
+                        self.handleDecoded(decoded)
+                    }
+                }
             }
         }
         connection.onFailed = { [weak self, weak connection] message in
@@ -145,11 +191,11 @@ final class RemoteCameraControlClient {
         onChanged?()
     }
 
-    private func handleFrame(_ data: Data) {
-        do {
-            let event = try JSONMessageCodec.decode(RemoteCameraEvent.self, from: data)
+    private func handleDecoded(_ decoded: Result<RemoteCameraEvent, Error>) {
+        switch decoded {
+        case .success(let event):
             handle(event)
-        } catch {
+        case .failure(let error):
             report("Invalid Remote iPhone event: \(error.localizedDescription)")
         }
     }

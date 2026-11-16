@@ -45,6 +45,14 @@ final class PreviewStageView: NSView {
     let backgroundAnimationQueue = DispatchQueue(label: "blitzrecorder.preview-background", qos: .userInitiated)
     var backgroundAnimationStart: CFTimeInterval = 0
     var isRenderingAnimatedFrame = false
+    /// Off the studio page the stage stays mounted but hidden; its animated background pauses then.
+    var isStudioOnScreen = true {
+        didSet {
+            guard oldValue != isStudioOnScreen else { return }
+            updateBackgroundAnimation()
+        }
+    }
+    private var occlusionObserver: NSObjectProtocol?
     let safeZoneOverlay = SafeZoneOverlayView()
     let selectionOverlay = SceneSelectionOverlayView()
     let outlineOverlay = SourceOutlineView()
@@ -535,6 +543,18 @@ final class PreviewStageView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         applyChromeAppearance()
+        observeWindowOcclusion()
         updateBackgroundAnimation()
+    }
+
+    private func observeWindowOcclusion() {
+        if let occlusionObserver { NotificationCenter.default.removeObserver(occlusionObserver) }
+        occlusionObserver = window.map { window in
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.updateBackgroundAnimation() }
+            }
+        }
     }
 }

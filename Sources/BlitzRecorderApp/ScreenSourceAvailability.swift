@@ -61,27 +61,39 @@ extension RecorderViewModel {
 
     func refreshScreenSourceAvailability() {
         guard isSourceConfigured(.screen), let binding = settings.screenSourceBinding else {
-            screenSource.screenSourceAvailabilityTracker = ScreenSourceAvailabilityTracker()
-            screenSource.unavailableScreenSource = nil
+            resetScreenSourceAvailability()
             return
         }
         let isPresent: Bool
         switch binding.kind {
         case .window:
-            guard let windows = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] else { return }
+            guard let windows = Self.windowsMatching(binding) else { return }
             isPresent = ScreenSourceWindowPresence(binding: binding, windows: windows).isPresent
         case .application:
             isPresent = ScreenWindowFit.processID(forApplicationBinding: binding) != nil
         case .display:
             guard let displayID = binding.displayID.flatMap(UInt32.init) else {
-                screenSource.screenSourceAvailabilityTracker = ScreenSourceAvailabilityTracker()
-                screenSource.unavailableScreenSource = nil
+                resetScreenSourceAvailability()
                 return
             }
             isPresent = CGDisplayIsOnline(displayID) != 0
         }
-        screenSource.unavailableScreenSource = screenSource.screenSourceAvailabilityTracker.unavailableSource(.init(
+        let unavailable = screenSource.screenSourceAvailabilityTracker.unavailableSource(.init(
             binding: binding, isPresent: isPresent, now: Date()
         ))
+        if screenSource.unavailableScreenSource != unavailable { screenSource.unavailableScreenSource = unavailable }
+    }
+
+    private func resetScreenSourceAvailability() {
+        screenSource.screenSourceAvailabilityTracker = ScreenSourceAvailabilityTracker()
+        if screenSource.unavailableScreenSource != nil { screenSource.unavailableScreenSource = nil }
+    }
+
+    /// A known window number is looked up alone; only a window known by its title needs the full window list.
+    private static func windowsMatching(_ binding: ScreenSourceBinding) -> [[String: Any]]? {
+        if let windowID = binding.windowID {
+            return CGWindowListCopyWindowInfo(.optionIncludingWindow, CGWindowID(windowID)) as? [[String: Any]]
+        }
+        return CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]]
     }
 }

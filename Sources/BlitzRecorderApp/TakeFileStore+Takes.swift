@@ -15,7 +15,7 @@ extension TakeFileStore {
     func createTake(_ request: TakeCreationRequest) throws -> RecordingTake {
         let settings = request.settings
         let date = request.date
-        let formatter = Self.takeDateFormatter()
+        let formatter = Self.takeDateFormatter
 
         let scratchRoot = scratchRoot(for: settings)
         let directory = scratchRoot
@@ -251,7 +251,7 @@ extension TakeFileStore {
 
     private func projectCreatedAt(for take: RecordingTake, fallback: Date) -> Date {
         let prefix = String(take.scratchDirectory.lastPathComponent.prefix(19))
-        return Self.takeDateFormatter().date(from: prefix) ?? fallback
+        return Self.takeDateFormatter.date(from: prefix) ?? fallback
     }
 
     private func sourceRoleURLs(for take: RecordingTake) -> [(role: String, url: URL)] {
@@ -315,9 +315,10 @@ extension TakeFileStore {
         return candidate
     }
 
-    private static func takeDateFormatter() -> DateFormatter {
+    /// Made once: building a date formatter is slow, and using one from several threads is safe.
+    private static let takeDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd-HH-mm-ss"
         return formatter
-    }
+    }()
 }

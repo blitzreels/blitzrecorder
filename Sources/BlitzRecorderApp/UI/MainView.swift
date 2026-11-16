@@ -26,7 +26,7 @@ struct MainView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            if !isSidebarHidden && !isInStudio {
+            if !isSidebarHidden && !vm.isStudioOnScreen {
                 AppSidebar(vm: vm, mcpServer: mcpServer)
                     .shadow(color: BlitzUI.elevationShadow, radius: 8, x: 2)
                     .zIndex(1)
@@ -34,10 +34,10 @@ struct MainView: View {
             ZStack {
                 backgroundLayer
                 recorderContent()
-                    .opacity(vm.studioMode == .record && !vm.isShowingSettings ? 1 : 0)
-                    .disabled(vm.studioMode != .record || vm.isShowingSettings)
-                    .allowsHitTesting(vm.studioMode == .record && !vm.isShowingSettings)
-                    .accessibilityHidden(vm.studioMode != .record || vm.isShowingSettings)
+                    .opacity(vm.isStudioOnScreen ? 1 : 0)
+                    .disabled(!vm.isStudioOnScreen)
+                    .allowsHitTesting(vm.isStudioOnScreen)
+                    .accessibilityHidden(!vm.isStudioOnScreen)
 
                 if (retainsEditor || vm.studioMode == .edit) && vm.canOpenEditor && !vm.hasSeparateEditorWindow {
                     EditorView(vm: vm)
@@ -57,7 +57,7 @@ struct MainView: View {
         }
         .overlay(alignment: .topLeading) {
             Group {
-                if isInStudio {
+                if vm.isStudioOnScreen {
                     StudioExitButton(configuration: .init(destination: studioExitDestination) {
                         vm.showSidebarDestination(studioExitDestination)
                     })
@@ -79,6 +79,9 @@ struct MainView: View {
         .onChange(of: vm.studioMode, initial: true) { _, mode in
             if mode == .edit { retainsEditor = true }
         }
+        .onChange(of: vm.isStudioOnScreen, initial: true) { _, onScreen in
+            vm.previewStage.isStudioOnScreen = onScreen
+        }
         .onChange(of: vm.sidebarDestination) { previous, destination in
             guard destination == .record, previous != .settings else { return }
             studioExitDestination = previous == .editor ? .editor : .recordings
@@ -92,18 +95,21 @@ struct MainView: View {
             await vm.refreshSources()
             vm.syncSettings()
             vm.refreshTargetWindow()
-            vm.refreshRecentProjects()
+            vm.loadRecentProjects()
         }
-        .task(id: vm.state) {
+        .task(id: vm.isStudioOnScreen || vm.state != .idle) {
+            guard vm.isStudioOnScreen || vm.state != .idle else { return }
             while !Task.isCancelled {
                 vm.refreshScreenSourceAvailability()
                 try? await Task.sleep(for: .seconds(1))
             }
         }
         .task(id: vm.state) {
+            vm.refreshScreenSuggestion()
+            guard vm.state == .recording else { return }
             while !Task.isCancelled {
-                vm.refreshScreenSuggestion()
                 try? await Task.sleep(for: .milliseconds(250))
+                vm.refreshScreenSuggestion()
             }
         }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didActivateApplicationNotification)) { _ in
@@ -114,12 +120,8 @@ struct MainView: View {
         }
     }
 
-    private var isInStudio: Bool {
-        vm.studioMode == .record && !vm.isShowingSettings
-    }
-
     private var toolbarLeadingInset: CGFloat {
-        if isInStudio { return MainWindowChrome.trafficLightsWidth + MainWindowChrome.studioExitWidth }
+        if vm.isStudioOnScreen { return MainWindowChrome.trafficLightsWidth + MainWindowChrome.studioExitWidth }
         if isSidebarHidden { return MainWindowChrome.trafficLightsWidth + MainWindowChrome.sidebarToggleWidth }
         return 16
     }

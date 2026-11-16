@@ -1,5 +1,8 @@
 import AppKit
 
+/// Title writes run one at a time in the order they were asked for, so a move and its undo cannot swap.
+private let projectTitleWriteQueue = DispatchQueue(label: "blitzrecorder.project-title-writes", qos: .userInitiated)
+
 struct ProjectFolderMoveUndo {
     let message: String
     let previousTitles: [UUID: String]
@@ -14,7 +17,7 @@ struct ProjectFolderMoveRequest {
 
 extension RecorderViewModel {
     var projectFolderIndex: ProjectFolderIndex {
-        ProjectFolderIndex(.init(projects: recentProjects, pins: ProjectFolderStore.shared.pins))
+        folderIndex
     }
 
     func nextTakeTitle() -> String? {
@@ -68,26 +71,43 @@ extension RecorderViewModel {
         applyProjectTitles(undo.previousTitles)
     }
 
+    /// Shows the new titles at once and writes them off the main thread, one library index write per library.
+    /// Returns the titles they replace, for undo.
     @discardableResult
     func applyProjectTitles(_ titles: [UUID: String]) -> [UUID: String] {
         guard !titles.isEmpty, !projectTrash.isWorking else { return [:] }
-        let fileStore = TakeFileStore()
-        var previous: [UUID: String] = [:]
-        var failures: [String] = []
-        for (id, title) in titles {
-            guard let entry = recentProjects.first(where: { $0.id == id }) else { continue }
-            do {
-                let renamed = try fileStore.renameProject(.init(
-                    projectURL: URL(fileURLWithPath: entry.projectPath), title: title, settings: settings
-                ))
-                previous[id] = entry.title
-                if lastExportedProject?.id == renamed.id { lastExportedProject = renamed }
-            } catch {
-                failures.append("\(entry.displayTitle): \(error.localizedDescription)")
+        let changed = recentProjects.filter { titles[$0.id] != nil }
+        guard !changed.isEmpty else { return [:] }
+        let previous = Dictionary(changed.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
+        let names = Dictionary(changed.map { ($0.projectPath, $0.displayTitle) }, uniquingKeysWith: { first, _ in first })
+        let request = TakeFileStore.BatchRenameRequest(
+            changes: changed.compactMap { entry in
+                titles[entry.id].map { .init(projectURL: URL(fileURLWithPath: entry.projectPath), title: $0) }
+            },
+            settings: settings
+        )
+        recentProjects = recentProjects.map { entry in titles[entry.id].map(entry.retitled) ?? entry }
+        let written = AsyncStream<TakeFileStore.BatchRenameOutcome> { continuation in
+            projectTitleWriteQueue.async {
+                continuation.yield(TakeFileStore().renameProjects(request))
+                continuation.finish()
             }
         }
-        refreshRecentProjects()
-        if !failures.isEmpty { projectLibraryError = failures.joined(separator: "\n") }
+        Task {
+            var iterator = written.makeAsyncIterator()
+            guard let outcome = await iterator.next() else { return }
+            if let open = lastExportedProject,
+               let renamed = outcome.renamed.first(where: { $0.id == open.id }),
+               renamed.editRevision == open.editRevision {
+                lastExportedProject = renamed
+            }
+            await reloadRecentProjects()
+            let failures = outcome.failures.map {
+                "\(names[$0.projectURL.path] ?? $0.projectURL.deletingLastPathComponent().lastPathComponent): "
+                    + $0.error.localizedDescription
+            } + [outcome.indexError?.localizedDescription].compactMap { $0 }
+            if !failures.isEmpty { projectLibraryError = failures.joined(separator: "\n") }
+        }
         return previous
     }
 

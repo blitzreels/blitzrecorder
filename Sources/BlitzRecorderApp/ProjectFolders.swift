@@ -188,7 +188,10 @@ final class ProjectFolderStore {
     }
 
     private let defaults: UserDefaults
-    private(set) var pins: [ProjectFolderPin]
+    private(set) var pins: [ProjectFolderPin] {
+        didSet { revision &+= 1 }
+    }
+    @ObservationIgnored private(set) var revision = 0
 
     init(defaults: UserDefaults) {
         self.defaults = defaults

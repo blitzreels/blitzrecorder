@@ -277,9 +277,12 @@ enum MicrophoneAlignment {
         ])
         guard reader.canAdd(output) else { return nil }
         reader.add(output)
+        let lead = max(0, Int((input.timelineOffset.seconds * envelopeRate).rounded()))
+        // Only the first five minutes are compared, so the rest of a long take is never decoded.
+        let measuredSeconds = Double(maximumMeasuredMilliseconds - min(lead, maximumMeasuredMilliseconds)) / envelopeRate
+        reader.timeRange = CMTimeRange(start: .zero, duration: CMTime(seconds: measuredSeconds + 1, preferredTimescale: 1_000))
         guard reader.startReading() else { return nil }
         let floor: Float = log(1e-4)
-        let lead = max(0, Int((input.timelineOffset.seconds * envelopeRate).rounded()))
         var envelope = [Float](repeating: floor, count: lead)
         let window = Int(readRate / envelopeRate)
         var pending: [Float] = []
@@ -303,16 +306,42 @@ enum MicrophoneAlignment {
         return reader.status == .completed ? envelope : nil
     }
 
-    /// Milliseconds the other envelope runs behind the reference, or nil without a clear match.
+    /// Coarse search step, in milliseconds.
+    private static let coarseStep = 10
+
+    /// Milliseconds the other envelope runs behind the reference, or nil without a clear match. Every lag is first
+    /// scored on envelopes averaged over 10 ms, then the three best are refined at 1 ms with the exact score, a
+    /// hundredth of the work of scoring every millisecond lag at full length.
     private static func lagMilliseconds(reference: [Float], other: [Float]) -> Int? {
         let count = min(reference.count, other.count, maximumMeasuredMilliseconds)
         let maximumLag = maximumLagMilliseconds
         guard count > maximumLag * 4 else { return nil }
-        let a = centered(Array(reference.prefix(count)))
-        let b = centered(Array(other.prefix(count)))
+        let fine = Correlation(a: centered(Array(reference.prefix(count))), b: centered(Array(other.prefix(count))))
+        let coarse = Correlation(a: averaged(fine.a), b: averaged(fine.b))
+        let coarseLag = maximumLag / coarseStep
+        let candidates = (-coarseLag...coarseLag)
+            .map { (lag: $0, score: coarse.score(at: $0)) }
+            .sorted { $0.score > $1.score }
+            .prefix(3)
         var best: (lag: Int, score: Float) = (0, -1)
-        for lag in -maximumLag...maximumLag {
-            let length = count - abs(lag)
+        for candidate in candidates {
+            let center = candidate.lag * coarseStep
+            for lag in max(-maximumLag, center - coarseStep)...min(maximumLag, center + coarseStep) {
+                let score = fine.score(at: lag)
+                if score > best.score { best = (lag, score) }
+            }
+        }
+        return best.score >= minimumMatch ? best.lag : nil
+    }
+
+    private struct Correlation {
+        let a: [Float]
+        let b: [Float]
+
+        /// Normalized match of `b` running `lag` steps behind `a`, over the part where both have values.
+        func score(at lag: Int) -> Float {
+            let length = min(a.count, b.count) - abs(lag)
+            guard length > 0 else { return -1 }
             let aStart = lag < 0 ? -lag : 0
             let bStart = lag > 0 ? lag : 0
             var dot: Float = 0, aEnergy: Float = 0, bEnergy: Float = 0
@@ -324,10 +353,19 @@ enum MicrophoneAlignment {
                     vDSP_svesq(y, 1, &bEnergy, vDSP_Length(length))
                 }
             }
-            let score = dot / max(sqrt(aEnergy * bEnergy), 1e-9)
-            if score > best.score { best = (lag, score) }
+            return dot / max(sqrt(aEnergy * bEnergy), 1e-9)
         }
-        return best.score >= minimumMatch ? best.lag : nil
+    }
+
+    private static func averaged(_ values: [Float]) -> [Float] {
+        let blocks = values.count / coarseStep
+        return values.withUnsafeBufferPointer { pointer in
+            (0..<blocks).map { block in
+                var mean: Float = 0
+                vDSP_meanv(pointer.baseAddress! + block * coarseStep, 1, &mean, vDSP_Length(coarseStep))
+                return mean
+            }
+        }
     }
 
     private static func centered(_ values: [Float]) -> [Float] {

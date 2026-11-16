@@ -33,10 +33,18 @@ extension RecorderViewModel {
         dismissFirstRunOnboarding()
     }
 
+    private func requestScreenAccessUntilRestart() async -> PermissionRequestResult {
+        let result = await coordinator.permissionGate.requestScreenCaptureAccess()
+        if result.status == .needsSettings {
+            screenAccessAwaitingRestart = true
+        }
+        return result
+    }
+
     func requestScreenAccessFromCover() {
         startPermissionRequest { [weak self] in
             guard let self else { return }
-            let result = await coordinator.permissionGate.requestScreenCaptureAccess()
+            let result = await requestScreenAccessUntilRestart()
             guard !Task.isCancelled, result.status != .cancelled else { return }
             detailMessage = result.message
             refreshPermissionStatus()
@@ -75,19 +83,6 @@ extension RecorderViewModel {
     func allowAllFromCover() {
         startPermissionRequest { [weak self] in
             guard let self else { return }
-            let needsScreenGrant =
-                (settings.enabledSources.contains(.screen)
-                    && !settings.usesPickedScreenContent)
-                    || settings.enabledSources.contains(.systemAudio)
-            if needsScreenGrant, !isPersistentScreenCaptureAccessActive {
-                let result = await coordinator.permissionGate.requestScreenCaptureAccess()
-                guard !Task.isCancelled, result.status != .cancelled else { return }
-                if result.status == .needsSettings {
-                    detailMessage = result.message
-                    refreshPermissionStatus()
-                    return
-                }
-            }
             if settings.enabledSources.contains(.camera),
                !isRemoteCameraSelected {
                 _ = await coordinator.permissionGate.requestCameraAccess()
@@ -98,6 +93,17 @@ extension RecorderViewModel {
                 guard !Task.isCancelled else { return }
             }
             syncSettings()
+            refreshPermissionStatus()
+            let needsScreenGrant =
+                (settings.enabledSources.contains(.screen)
+                    && !settings.usesPickedScreenContent)
+                    || settings.enabledSources.contains(.systemAudio)
+            guard needsScreenGrant, !isPersistentScreenCaptureAccessActive else { return }
+            let result = await requestScreenAccessUntilRestart()
+            guard !Task.isCancelled, result.status != .cancelled else { return }
+            if result.status == .needsSettings {
+                detailMessage = result.message
+            }
             refreshPermissionStatus()
         }
     }
@@ -138,9 +144,17 @@ extension RecorderViewModel {
         "Choose app window"
     }
 
+    /// Content chosen through the macOS picker records without the Screen Recording grant, so changing it does
+    /// not ask for that grant first.
     func pickAndEnableScreenSource() {
-        guard coordinator.hasScreenCaptureAccess() else {
-            applyScreenRecordingPermission()
+        let usesPickedContent = isSourceConfigured(.screen) && settings.usesPickedScreenContent
+        guard coordinator.hasScreenCaptureAccess() || usesPickedContent else {
+            guard coordinator.permissionGate.hasRequestedScreenCaptureAccessThisSession else {
+                applyScreenRecordingPermission()
+                return
+            }
+            openScreenRecordingSettings()
+            detailMessage = "Turn on Screen Recording for BlitzRecorder in System Settings, then reopen the app."
             return
         }
         if !isSourceConfigured(.screen) {
@@ -241,8 +255,9 @@ extension RecorderViewModel {
 
 
     var recordingReadiness: RecordingReadiness {
-        _ = permissionRefreshToken
-        return coordinator.recordingReadiness()
+        readinessCache.readiness(.init(token: permissionRefreshToken) { [coordinator] in
+            coordinator.recordingReadiness()
+        })
     }
 
     var permissionStatusRows: [PermissionStatusRow] {

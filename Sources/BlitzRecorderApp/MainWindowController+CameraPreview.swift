@@ -204,14 +204,14 @@ extension MainWindowController {
             do {
                 if coordinator.settings.removesCameraBackgroundAfterRecording {
                     previewStage.cameraPreview.setMessage("Starting cutout")
-                    try await coordinator.startCameraCutoutPreview { [weak self] image in
+                    try await coordinator.startCameraCutoutPreview { [weak self] picture in
                         guard let self,
                               self.cameraPreviewStartRevision == startRevision,
                               self.idlePreviewIsAllowed,
                               self.coordinator.settings.visibleSources.contains(.camera) else {
                             return
                         }
-                        self.previewStage.cameraPreview.setPreviewImage(image)
+                        self.previewStage.cameraPreview.setPreviewPicture(picture)
                         self.noteCameraPreviewFrame()
                     }
                     guard cameraPreviewStartRevision == startRevision else { return }

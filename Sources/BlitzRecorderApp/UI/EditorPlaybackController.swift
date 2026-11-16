@@ -125,6 +125,10 @@ final class EditorPlaybackController: NowPlayingPlayback {
     @ObservationIgnored private var isScrubbing = false
     @ObservationIgnored private var resumesAfterScrub = false
     @ObservationIgnored private var seekGeneration = 0
+    /// One scrub seek per player at a time; drags that arrive meanwhile keep only their newest time, sought when
+    /// the running seek ends, so dragging never piles up seeks the decoders throw away.
+    @ObservationIgnored private var scrubSeeksInFlight: Set<ObjectIdentifier> = []
+    @ObservationIgnored private var pendingScrubTimes: [ObjectIdentifier: CMTime] = [:]
     @ObservationIgnored private var lastAudiblePlaybackVolume: Double = 1
     @ObservationIgnored private var readinessContinuation: AsyncStream<Void>.Continuation?
     @ObservationIgnored private var loadGeneration = 0 {
@@ -308,6 +312,8 @@ final class EditorPlaybackController: NowPlayingPlayback {
 
     func loadExported(url: URL, title: String) async {
         loadGeneration += 1
+        scrubSeeksInFlight.removeAll()
+        dropPendingScrubSeeks()
         let generation = loadGeneration
         pausePlayback()
         isReady = false
@@ -355,6 +361,8 @@ final class EditorPlaybackController: NowPlayingPlayback {
         let project = request.project
         let baseSettings = request.baseSettings
         loadGeneration += 1
+        scrubSeeksInFlight.removeAll()
+        dropPendingScrubSeeks()
         let generation = loadGeneration
 
         let isSameProject = loadedProjectPath == project.projectPath
@@ -617,6 +625,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
         guard isReady, masterPlayer != nil else { return }
         seekGeneration += 1
         isScrubbing = false
+        dropPendingScrubSeeks()
         resumesAfterScrub = false
         if isPlaying {
             pausePlayback()
@@ -634,6 +643,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
         currentTime = clampedTime(seconds)
         seekGeneration += 1
         isScrubbing = false
+        dropPendingScrubSeeks()
         resumesAfterScrub = false
         isPlaying = playAll()
     }
@@ -704,12 +714,38 @@ final class EditorPlaybackController: NowPlayingPlayback {
         let clamped = clampedTime(seconds)
         currentTime = clamped
         for player in allPlayers {
-            player.seek(
-                to: itemTime(clamped, for: player),
-                toleranceBefore: CMTime(seconds: 0.1, preferredTimescale: 600),
-                toleranceAfter: CMTime(seconds: 0.1, preferredTimescale: 600)
-            )
+            scrubSeek(.init(player: player, time: itemTime(clamped, for: player)))
         }
+    }
+
+    private struct ScrubSeek {
+        let player: AVPlayer
+        let time: CMTime
+    }
+
+    private func scrubSeek(_ request: ScrubSeek) {
+        let id = ObjectIdentifier(request.player)
+        guard !scrubSeeksInFlight.contains(id) else {
+            pendingScrubTimes[id] = request.time
+            return
+        }
+        scrubSeeksInFlight.insert(id)
+        request.player.seek(
+            to: request.time,
+            toleranceBefore: CMTime(seconds: 0.1, preferredTimescale: 600),
+            toleranceAfter: CMTime(seconds: 0.1, preferredTimescale: 600)
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.scrubSeeksInFlight.remove(id)
+                guard self.isScrubbing, let next = self.pendingScrubTimes.removeValue(forKey: id) else { return }
+                self.scrubSeek(.init(player: request.player, time: next))
+            }
+        }
+    }
+
+    private func dropPendingScrubSeeks() {
+        pendingScrubTimes.removeAll()
     }
 
     func endScrub() {
@@ -730,6 +766,7 @@ final class EditorPlaybackController: NowPlayingPlayback {
     private func settle(at seconds: Double) {
         let clamped = clampedTime(seconds)
         currentTime = clamped
+        dropPendingScrubSeeks()
         seekGeneration += 1
         let generation = seekGeneration
         let load = loadGeneration
@@ -884,6 +921,8 @@ final class EditorPlaybackController: NowPlayingPlayback {
         cursorTrack = .empty
         NowPlayingController.shared.deactivate(self)
         loadGeneration += 1
+        scrubSeeksInFlight.removeAll()
+        dropPendingScrubSeeks()
         teardownPlayers()
         isPlaying = false
         isReady = false

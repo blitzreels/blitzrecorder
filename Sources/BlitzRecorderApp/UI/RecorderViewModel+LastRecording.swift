@@ -68,6 +68,9 @@ extension RecorderViewModel {
             return
         }
         lastExportedProject = try? TakeFileStore().loadRecordingProject(at: projectURL)
+        if let project = lastExportedProject, !TakeFileStore.isTemporary(project.takeDirectoryPath) {
+            coordinator.projectLibrary.show(.init(project))
+        }
     }
 
     var lastExportedProjectURL: URL? {

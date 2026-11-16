@@ -36,8 +36,27 @@ extension RecorderViewModel {
         }
     }
 
+    /// Rereads the library off the main thread; the list updates when the read is done.
     func refreshRecentProjects() {
-        transcriptionController.syncProjects(coordinator.projectLibrary.reload(settings: settings))
+        Task { await reloadRecentProjects() }
+    }
+
+    /// Rereads the library off the main thread, including every write made before the call, and returns once the
+    /// list shows it.
+    func reloadRecentProjects() async {
+        await refreshLibrary(joinsRunningRead: false)
+    }
+
+    /// A window's first read of the library: it joins a read that is already running.
+    func loadRecentProjects() {
+        Task { await refreshLibrary(joinsRunningRead: true) }
+    }
+
+    private func refreshLibrary(joinsRunningRead: Bool) async {
+        let entries = await coordinator.projectLibrary.refresh(.init(
+            settings: settings, includesLatestWrites: !joinsRunningRead
+        ))
+        transcriptionController.syncProjects(entries)
         refreshLibraryLocations()
     }
 
@@ -332,7 +351,7 @@ extension RecorderViewModel {
             lastExportedProject = nil
             clearEditorHistory()
         }
-        refreshRecentProjects()
+        await reloadRecentProjects()
         if query == projectLibraryNavigation.searchText {
             projectLibraryNavigation.reconcileAfterRemoval(.init(
                 previousOrder: previousOrder, removedIDs: outcome.completedIDs,
@@ -363,7 +382,7 @@ extension RecorderViewModel {
         }
         projectLibraryError = nil
         let outcome = await projectTrash.restoreLastBatch()
-        refreshRecentProjects()
+        await reloadRecentProjects()
         if !outcome.completedIDs.isEmpty {
             projectLibraryNavigation.searchText = ""
             projectLibraryNavigation.selectedProjectIDs = outcome.completedIDs
@@ -372,7 +391,13 @@ extension RecorderViewModel {
     }
 
     var filteredLibraryProjects: [RecordingProjectHistory.Entry] {
-        RecordingProjectLibrary.matching(recentProjects, query: projectLibraryNavigation.searchText)
+        let projects = recentProjects
+        let query = projectLibraryNavigation.searchText
+        return libraryMemos.search.value(.init(
+            key: .init(entriesRevision: coordinator.projectLibrary.revision, query: query)
+        ) {
+            RecordingProjectLibrary.matching(projects, query: query)
+        })
     }
 
     private func reportProjectTrashFailures(_ failures: [String]) {
@@ -457,11 +482,6 @@ extension RecorderViewModel {
             mutedAudioSources: [],
             backgroundMusic: nil
         ))
-    }
-
-    var lastRevealIsExport: Bool {
-        guard let lastExportedURL else { return false }
-        return FileManager.default.fileExists(atPath: lastExportedURL.path)
     }
 
     var canOpenEditor: Bool {

@@ -253,6 +253,57 @@ struct TakeFileStore {
         return renamedProject
     }
 
+    struct TitleChange {
+        let projectURL: URL
+        let title: String
+    }
+
+    struct BatchRenameRequest {
+        let changes: [TitleChange]
+        let settings: RecordingSettings
+    }
+
+    struct BatchRenameOutcome {
+        struct Failure {
+            let projectURL: URL
+            let error: Error
+        }
+
+        var renamed: [RecordingProject] = []
+        var failures: [Failure] = []
+        /// The projects were renamed, but a library index could not be updated.
+        var indexError: Error?
+    }
+
+    /// Renames many projects, such as a folder move, with one library index write per library instead of one per
+    /// project. Run it off the main thread.
+    func renameProjects(_ request: BatchRenameRequest) -> BatchRenameOutcome {
+        var outcome = BatchRenameOutcome()
+        Self.projectWriteLock.lock()
+        defer { Self.projectWriteLock.unlock() }
+        for change in request.changes {
+            do {
+                let title = change.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !title.isEmpty else { throw RecorderError.mediaWriteFailed("Enter a recording title.") }
+                let project = try loadRecordingProject(at: change.projectURL)
+                let renamed = Self.updatingMetadata(.init(
+                    project: project, title: title, finalVideoPath: project.finalVideoPath, exports: project.exports
+                ))
+                try Self.projectEncoder().encode(renamed).write(to: change.projectURL, options: .atomic)
+                outcome.renamed.append(renamed)
+            } catch {
+                outcome.failures.append(.init(projectURL: change.projectURL, error: error))
+            }
+        }
+        do {
+            try upsertProjectHistory(.init(projects: outcome.renamed, settings: request.settings))
+        } catch {
+            outcome.indexError = error
+        }
+        outcome.renamed.forEach(Self.postProjectEdited)
+        return outcome
+    }
+
     struct CompletedExportRequest {
         let projectURL: URL
         let record: RecordingProject.ExportRecord
@@ -432,24 +483,42 @@ struct TakeFileStore {
     }
 
     func upsertProjectHistory(_ project: RecordingProject, settings: RecordingSettings) throws {
-        let settings = projectLibrarySettings(.init(takePath: project.takeDirectoryPath, settings: settings))
-        let indexRoot = settings.sourceStorage.url.standardizedFileURL.resolvingSymlinksInPath()
-        if Self.isTemporary(project.takeDirectoryPath), !Self.isTemporary(indexRoot.path) { return }
+        try upsertProjectHistory(.init(projects: [project], settings: settings))
+    }
+
+    struct ProjectHistoryUpsert {
+        let projects: [RecordingProject]
+        let settings: RecordingSettings
+    }
+
+    /// Updates the index of each library the projects belong to, reading and writing each index once.
+    func upsertProjectHistory(_ upsert: ProjectHistoryUpsert) throws {
+        var byLibrary: [String: (settings: RecordingSettings, projects: [RecordingProject])] = [:]
+        for project in upsert.projects {
+            let settings = projectLibrarySettings(.init(takePath: project.takeDirectoryPath, settings: upsert.settings))
+            let indexRoot = settings.sourceStorage.url.standardizedFileURL.resolvingSymlinksInPath()
+            if Self.isTemporary(project.takeDirectoryPath), !Self.isTemporary(indexRoot.path) { continue }
+            byLibrary[indexRoot.path, default: (settings, [])].projects.append(project)
+        }
+        guard !byLibrary.isEmpty else { return }
         Self.projectHistoryLock.lock()
         defer { Self.projectHistoryLock.unlock() }
-        let access = OutputDirectoryAccess(locations: [settings.sourceStorage])
-        defer { access.stop() }
-        guard access.hasSecurityScopedAccess else {
-            throw RecorderError.outputDirectoryUnavailable(Self.permissionRecoveryMessage(for: settings.sourceStorage.url))
+        for library in byLibrary.values {
+            let access = OutputDirectoryAccess(locations: [library.settings.sourceStorage])
+            defer { access.stop() }
+            guard access.hasSecurityScopedAccess else {
+                throw RecorderError.outputDirectoryUnavailable(
+                    Self.permissionRecoveryMessage(for: library.settings.sourceStorage.url)
+                )
+            }
+            var history = try indexForUpdate(settings: library.settings)
+            let ids = Set(library.projects.map(\.id))
+            let paths = Set(library.projects.map(\.projectPath))
+            history.entries.removeAll { ids.contains($0.id) || paths.contains($0.projectPath) }
+            history.entries.insert(contentsOf: library.projects.map(RecordingProjectHistory.Entry.init), at: 0)
+            history.sortByRecordedDate()
+            try writeProjectHistory(ProjectHistoryWriteRequest(history: history, settings: library.settings))
         }
-        var history = try indexForUpdate(settings: settings)
-        history.entries.removeAll { $0.id == project.id || $0.projectPath == project.projectPath }
-        history.entries.insert(RecordingProjectHistory.Entry(project), at: 0)
-        history.sortByRecordedDate()
-        try writeProjectHistory(ProjectHistoryWriteRequest(
-            history: history,
-            settings: settings
-        ))
     }
 
     /// The saved index as it is, for changing one entry. Every save lands here, so it skips listing the take

@@ -194,7 +194,7 @@ struct CameraInsetFrameControlPanel: View {
                     step: 0.005,
                     valueLabel: "\(Int((configuration.size.wrappedValue * 100).rounded()))%",
                     onEditingChanged: { _ in },
-                    onReset: {}
+                    onReset: nil
                 ))
                 .help("Camera frame size — the frame keeps the camera's real aspect ratio")
             }

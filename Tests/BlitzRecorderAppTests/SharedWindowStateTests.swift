@@ -31,11 +31,11 @@ final class SharedWindowStateTests: XCTestCase {
         return (main, editor)
     }
 
-    func testANewRecordingShowsUpInBothWindowsAfterOneRefresh() throws {
+    func testANewRecordingShowsUpInBothWindowsAfterOneRefresh() async throws {
         let windows = try makeWindows()
         let take = try TakeFileStore().createTake(settings: windows.main.settings)
 
-        windows.main.refreshRecentProjects()
+        await windows.main.reloadRecentProjects()
 
         XCTAssertEqual(windows.editor.recentProjects.map(\.projectPath), [take.projectURL.path])
     }
@@ -81,10 +81,10 @@ final class SharedWindowStateTests: XCTestCase {
         XCTAssertNil(vm.sourceReadinessNotice(.microphone))
     }
 
-    func testShowInLibraryOpensTheLibraryOnTheJustRecordedTake() throws {
+    func testShowInLibraryOpensTheLibraryOnTheJustRecordedTake() async throws {
         let vm = try makeWindows().main
         let take = try TakeFileStore().createTake(settings: vm.settings)
-        vm.refreshRecentProjects()
+        await vm.reloadRecentProjects()
         vm.lastExportedSourceTakeURL = take.scratchDirectory
         vm.projectLibraryNavigation.searchText = "something else"
         vm.projectLibraryNavigation.section = .shared

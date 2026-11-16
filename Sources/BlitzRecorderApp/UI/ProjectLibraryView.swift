@@ -78,6 +78,7 @@ struct ProjectLibraryView: View {
     @State var showsFilters = false
     @State var transcriptSearch = ProjectTranscriptSearch()
     @State var transcriptMatches: [UUID: [ProjectTranscriptMatch]] = [:]
+    @State private var filteredMemo = DerivedValueMemo<FilteredProjectsKey, [RecordingProjectHistory.Entry]>()
     @State var isSearchingTranscripts = false
     @State var transcriptByProjectID: [UUID: RecordingTranscript] = [:]
     @State var transcriptUnavailableIDs: Set<UUID> = []
@@ -312,21 +313,57 @@ struct ProjectLibraryView: View {
         vm.projectLibraryNavigation.reconcileSelection(availableProjectIDs: filteredProjects.map(\.id))
     }
 
+    struct FilteredProjectsKey: Equatable {
+        let entriesRevision: Int
+        let pinsRevision: Int
+        let metadataRevision: Int
+        let query: String
+        let scope: ProjectFolderScope?
+        let filters: ProjectLibraryFilters
+        let transcriptMatchIDs: Set<UUID>
+        let transcriptReadyIDs: Set<UUID>
+        let day: Date
+    }
+
+    /// Read many times per update; worked out again only when the list, a filter or the loaded details change.
     var filteredProjects: [RecordingProjectHistory.Entry] {
-        let titleMatches = Set(vm.filteredLibraryProjects.map(\.id))
-        let scope = vm.projectLibraryNavigation.folderScope
+        let projects = vm.recentProjects
+        let navigation = vm.projectLibraryNavigation
+        let filters = navigation.filters
+        let scope = navigation.folderScope
+        let metadata = metadataByProjectID
+        let matches = transcriptMatches
         let index = vm.folderIndex
-        return vm.projectLibraryNavigation.filters.apply(.init(
-            projects: vm.recentProjects.filter { entry in
-                (titleMatches.contains(entry.id) || transcriptMatches[entry.id] != nil)
-                    && scope.map { $0.contains(index.resolved(entry)) } != false
-            }, metadata: metadataByProjectID,
-            transcriptReadyIDs: Set(vm.recentProjects.compactMap { project in
-                if case .ready = vm.transcriptionController.status(for: project) { return project.id }
-                return nil
-            }),
-            now: Date(), calendar: .current
-        ))
+        let titleMatches = vm.filteredLibraryProjects
+        var transcriptReadyIDs = Set<UUID>()
+        if filters.transcript != .any {
+            for project in projects {
+                if case .ready = vm.transcriptionController.status(for: project) { transcriptReadyIDs.insert(project.id) }
+            }
+        }
+        let now = Date()
+        let key = FilteredProjectsKey(
+            entriesRevision: vm.coordinator.projectLibrary.revision,
+            pinsRevision: ProjectFolderStore.shared.revision,
+            metadataRevision: metadataStore.revision,
+            query: navigation.searchText,
+            scope: scope,
+            filters: filters,
+            transcriptMatchIDs: Set(matches.keys),
+            transcriptReadyIDs: transcriptReadyIDs,
+            day: Calendar.current.startOfDay(for: now)
+        )
+        return filteredMemo.value(.init(key: key) {
+            let titleMatchIDs = Set(titleMatches.map(\.id))
+            return filters.apply(.init(
+                projects: projects.filter { entry in
+                    (titleMatchIDs.contains(entry.id) || matches[entry.id] != nil)
+                        && scope.map { $0.contains(index.resolved(entry)) } != false
+                }, metadata: metadata,
+                transcriptReadyIDs: transcriptReadyIDs,
+                now: now, calendar: .current
+            ))
+        })
     }
 
     var selectedProject: RecordingProjectHistory.Entry? {

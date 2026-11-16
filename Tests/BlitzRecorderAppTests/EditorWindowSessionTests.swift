@@ -4,8 +4,8 @@ import XCTest
 
 @MainActor
 final class EditorWindowSessionTests: XCTestCase {
-    func testCaptureRuntimeAllowsSavedProjectEditsAndUndoButProtectsTheActiveTake() throws {
-        let fixture = try fixture()
+    func testCaptureRuntimeAllowsSavedProjectEditsAndUndoButProtectsTheActiveTake() async throws {
+        let fixture = try await fixture()
         let settings = fixture.recorder.settings
         let runtime = RecorderCaptureRuntime(
             studio: fixture.recorder.coordinator.studio,
@@ -57,8 +57,8 @@ final class EditorWindowSessionTests: XCTestCase {
         runtime.recordingSession.finish(with: activeTake)
     }
 
-    func testEditorProjectAndUndoSurviveRecordingStartAndFinalization() throws {
-        let fixture = try fixture()
+    func testEditorProjectAndUndoSurviveRecordingStartAndFinalization() async throws {
+        let fixture = try await fixture()
         let recorder = fixture.recorder
         let editor = RecorderViewModel(coordinator: recorder.coordinator, previewStage: PreviewStageView())
         editor.settings = recorder.settings
@@ -98,7 +98,7 @@ final class EditorWindowSessionTests: XCTestCase {
     }
 
     func testSecondEditorPicksUpSavedEditsInsteadOfOverwritingThem() async throws {
-        let fixture = try fixture()
+        let fixture = try await fixture()
         let first = RecorderViewModel(coordinator: fixture.recorder.coordinator, previewStage: PreviewStageView())
         let second = RecorderViewModel(coordinator: fixture.recorder.coordinator, previewStage: PreviewStageView())
         for editor in [first, second] {
@@ -128,8 +128,8 @@ final class EditorWindowSessionTests: XCTestCase {
         XCTAssertEqual(saved.editorState, hidden)
     }
 
-    func testRecordingRoutesProjectToEditorWindowWithoutChangingCaptureView() throws {
-        let fixture = try fixture()
+    func testRecordingRoutesProjectToEditorWindowWithoutChangingCaptureView() async throws {
+        let fixture = try await fixture()
         let recorder = fixture.recorder
         recorder.applyState(.starting)
         recorder.applyState(.recording)
@@ -143,8 +143,8 @@ final class EditorWindowSessionTests: XCTestCase {
         XCTAssertNil(recorder.lastExportedProject)
     }
 
-    func testMovingEditorHistoryLeavesOnlyOneUndoOwnerAndRoutesExport() throws {
-        let fixture = try fixture()
+    func testMovingEditorHistoryLeavesOnlyOneUndoOwnerAndRoutesExport() async throws {
+        let fixture = try await fixture()
         let recorder = fixture.recorder
         recorder.openProject(fixture.project)
         let state = RecordingProject.EditorStateSnapshot(
@@ -175,8 +175,8 @@ final class EditorWindowSessionTests: XCTestCase {
         XCTAssertEqual(request?.presentsExport, false)
     }
 
-    func testEditorInitializationAndRecorderNavigationDoNotReplaceCaptureCallbacks() throws {
-        let fixture = try fixture()
+    func testEditorInitializationAndRecorderNavigationDoNotReplaceCaptureCallbacks() async throws {
+        let fixture = try await fixture()
         var messages: [String] = []
         fixture.recorder.coordinator.onScreenWindowFitMessage = { messages.append($0) }
         let editor = RecorderViewModel(coordinator: fixture.recorder.coordinator, previewStage: PreviewStageView())
@@ -196,7 +196,7 @@ final class EditorWindowSessionTests: XCTestCase {
         let defaults: UserDefaults
     }
 
-    private func fixture() throws -> Fixture {
+    private func fixture() async throws -> Fixture {
         let name = "EditorWindowSessionTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(name)
@@ -212,7 +212,7 @@ final class EditorWindowSessionTests: XCTestCase {
         let coordinator = RecorderCoordinator(accessController: AccessController(defaults: defaults), defaults: defaults)
         let recorder = RecorderViewModel(coordinator: coordinator, previewStage: PreviewStageView())
         _ = try TakeFileStore().createTake(settings: settings)
-        recorder.refreshRecentProjects()
+        await recorder.reloadRecentProjects()
         return Fixture(recorder: recorder, project: try XCTUnwrap(recorder.recentProjects.first), defaults: defaults)
     }
 }

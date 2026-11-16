@@ -28,7 +28,8 @@ struct CaptionRenderRequest: Equatable {
     }
 }
 
-struct CaptionSprite {
+/// A picture drawn only as large as its content, placed on the canvas by `frame` (top-left origin, canvas pixels).
+struct CanvasSprite {
     let image: CGImage
     let frame: CGRect
 
@@ -41,7 +42,7 @@ struct CaptionSprite {
 enum CaptionRenderer {
     private static let cache = NSCache<NSString, CGImage>()
 
-    static func sprite(_ request: CaptionRenderRequest) -> CaptionSprite? {
+    static func sprite(_ request: CaptionRenderRequest) -> CanvasSprite? {
         let canvas = request.canvasSize
         guard canvas.width.isFinite, canvas.height.isFinite, canvas.width >= 16, canvas.height >= 16,
               canvas.width <= 16_384, canvas.height <= 16_384, !request.text.isEmpty else { return nil }

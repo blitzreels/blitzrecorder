@@ -23,7 +23,8 @@ final class ProjectSaveQueue: @unchecked Sendable {
         case saved(RecordingProject)
         /// The owner's later queued changes were dropped; it continues with `generation`.
         case conflict(ProjectEditConflict, generation: Int)
-        case failed(Error, saved: RecordingProject?, generation: Int)
+        /// `baseRevision` is the revision still on disk, which a retry of the owner's latest project builds on.
+        case failed(Error, projectPath: String, baseRevision: Int, generation: Int)
         /// Dropped because an earlier change of the same owner could not be saved.
         case skipped
     }
@@ -113,8 +114,8 @@ final class ProjectSaveQueue: @unchecked Sendable {
         } catch let conflict as ProjectEditConflict {
             return .conflict(conflict, generation: nextGeneration(ownerProject))
         } catch {
-            let saved = try? TakeFileStore().loadRecordingProject(at: save.projectURL)
-            return .failed(error, saved: saved, generation: nextGeneration(ownerProject))
+            return .failed(error, projectPath: save.project.projectPath, baseRevision: save.baseRevision,
+                           generation: nextGeneration(ownerProject))
         }
     }
 
