@@ -345,6 +345,7 @@ struct LiveCallNotesContent: View {
     }
 }
 
+#if DEBUG
 #Preview("Live notes · transcript") {
     LiveNotesView(session: .preview(), tab: .transcript)
         .frame(width: 360, height: 520)
@@ -359,3 +360,4 @@ struct LiveCallNotesContent: View {
     LiveNotesView(session: .preview(), tab: .ask)
         .frame(width: 360, height: 520)
 }
+#endif

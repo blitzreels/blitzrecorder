@@ -31,11 +31,22 @@ enum ScreenContextReader {
 
     static let maximumTextCharacters = 600
 
-    /// The frontmost app other than BlitzRecorder, with the title of its focused window when Accessibility allows it.
+    /// Apps whose windows hold passwords, keys or system secrets: never read, titled or saved with a take.
+    static let privateApps: Set<String> = [
+        "com.1password.1password", "com.agilebits.onepassword7", "com.bitwarden.desktop", "com.dashlane.dashlanephonefinal",
+        "com.lastpass.LastPass", "in.sinew.Enpass-Desktop", "org.keepassxc.keepassxc", "com.apple.Passwords",
+        "com.apple.keychainaccess", "com.apple.systempreferences", "com.apple.SecurityAgent",
+        "com.apple.LocalAuthentication.UIAgent",
+    ]
+
+    /// The frontmost app other than BlitzRecorder and the private apps, with the title of its focused window when
+    /// Accessibility allows it.
     @MainActor
     static func frontmost() -> Frontmost? {
         guard let app = NSWorkspace.shared.frontmostApplication,
-              app.bundleIdentifier != Bundle.main.bundleIdentifier else { return nil }
+              let bundleIdentifier = app.bundleIdentifier,
+              bundleIdentifier != Bundle.main.bundleIdentifier,
+              !privateApps.contains(bundleIdentifier) else { return nil }
         return Frontmost(app: app.localizedName ?? "App", processID: app.processIdentifier,
                          window: focusedWindowTitle(app.processIdentifier))
     }
