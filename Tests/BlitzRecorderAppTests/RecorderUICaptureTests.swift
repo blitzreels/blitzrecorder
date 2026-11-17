@@ -60,15 +60,22 @@ final class RecorderUICaptureTests: XCTestCase {
     }
 
     @MainActor
-    func testPreferenceCannotChangeDuringRecordingOrFinalization() {
+    func testPreferenceChangesWhileRecordingButNotWhileStartingOrSaving() {
         let name = "RecorderUICaptureTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!
         defer { defaults.removePersistentDomain(forName: name) }
         let studio = RecorderStudioConfiguration(defaults: defaults)
-        for state in [RecordingState.starting, .recording, .paused, .finishing] {
+        for state in [RecordingState.starting, .finishing] {
             studio.recordingState = { state }
             studio.setRecorderUIIncluded(true)
-            XCTAssertFalse(studio.settings.includesRecorderUI)
+            XCTAssertFalse(studio.settings.includesRecorderUI, "changed while \(state)")
+        }
+        for state in [RecordingState.recording, .paused] {
+            studio.recordingState = { state }
+            studio.setRecorderUIIncluded(true)
+            XCTAssertTrue(studio.settings.includesRecorderUI, "unchanged while \(state)")
+            studio.setRecorderUIIncluded(false)
+            XCTAssertFalse(studio.settings.includesRecorderUI, "unchanged while \(state)")
         }
     }
 }

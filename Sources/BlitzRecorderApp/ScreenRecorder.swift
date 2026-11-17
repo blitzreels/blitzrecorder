@@ -9,6 +9,10 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
     private let failureLock = NSLock()
     private var stream: SCStream?
     private var writer: VideoFileWriter?
+    private var clockSlip = CaptureClockSlipDetector()
+    private var trackName = "screen"
+    private var trackURL: URL?
+    private var trackTimelineStart: CMTime?
     private var settings: RecordingSettings?
     private var currentDisplay: SCDisplay?
     private var currentPickedFilter: SCContentFilter?
@@ -94,6 +98,12 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
             )
         }
         currentDimensions = dimensions
+        queue.sync {
+            clockSlip = CaptureClockSlipDetector()
+            trackName = url.lastPathComponent
+            trackURL = url
+            trackTimelineStart = timelineStartTime
+        }
 
         writer = try VideoFileWriter(
             url: url,
@@ -222,7 +232,18 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @uncheck
               [.complete, .started].contains(sampleBuffer.screenCaptureFrameStatus) else {
             return
         }
-        writer?.append(sampleBuffer)
+        let correction = clockSlip.correct(.init(
+            sampleBuffer: sampleBuffer, arrivalTime: CMClockGetTime(CMClockGetHostTimeClock())
+        ))
+        if let line = correction.logLine(track: trackName) { CaptureLog.note(line) }
+        if let slip = correction.slip, let trackURL {
+            let start = trackTimelineStart.flatMap { $0.isNumeric ? $0.seconds : nil }
+            TakeSyncJournal.record(.init(
+                trackURL: trackURL, kind: .clockSlip, at: start.map { max(0, slip.presentationSeconds - $0) },
+                seconds: slip.seconds, detail: nil
+            ))
+        }
+        writer?.append(correction.sampleBuffer)
         publishPreviewFrame(sampleBuffer)
         completeStartup(.success(()))
     }

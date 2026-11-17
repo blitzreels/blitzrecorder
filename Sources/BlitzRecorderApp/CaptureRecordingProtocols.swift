@@ -51,7 +51,7 @@ protocol SystemAudioCaptureRecording: AnyObject {
     var recordingTimelineOffset: CMTime { get }
     func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) async throws
     func start(_ request: SystemAudioCaptureStartRequest) async throws
-    func update(filter pickedScreenFilter: SCContentFilter?) async throws
+    func update(_ request: SystemAudioUpdateRequest) async throws
     func pause()
     func resume()
     func stop() async throws -> MediaWriterCompletion
@@ -86,7 +86,7 @@ extension SystemAudioCaptureRecording {
         )
     }
 
-    func update(filter pickedScreenFilter: SCContentFilter?) async throws {}
+    func update(_ request: SystemAudioUpdateRequest) async throws {}
 }
 
 extension ScreenRecorder: ScreenCaptureRecording {}

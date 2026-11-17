@@ -119,11 +119,24 @@ enum EditorPlacedItemEditing {
     }
 
     enum Gesture { case move, trimStart, trimEnd }
+    struct Snap {
+        let targets: EditorTimelineSnapTargets
+        let tolerance: Double
+
+        func nearest(_ time: Double) -> Double? {
+            targets.nearest(.init(time: time, tolerance: tolerance))
+        }
+    }
     struct Drag {
         let item: EditorPlacedItem
         let delta: Double
         let gesture: Gesture
         let projection: EditorTimelineProjection
+        let snap: Snap?
+    }
+    struct DragResult: Equatable {
+        let timing: EditorPlacedItem.Timing
+        let snappedTime: Double?
     }
     struct Change {
         let id: EditorPlacedItem.ID
@@ -175,30 +188,58 @@ enum EditorPlacedItemEditing {
     }
 
     static func timing(_ request: Drag) -> EditorPlacedItem.Timing {
+        dragged(request).timing
+    }
+
+    /// Moving keeps the length and sticks whichever edge is closer to a target; trimming sticks the dragged edge.
+    static func dragged(_ request: Drag) -> DragResult {
         let projection = request.projection
-        guard request.item.canChangeTiming, request.delta.isFinite, projection.duration > 0 else { return request.item.timing }
+        let unchanged = DragResult(timing: request.item.timing, snappedTime: nil)
+        guard request.item.canChangeTiming, request.delta.isFinite, projection.duration > 0 else { return unchanged }
         var start = projection.displayTime(request.item.timing.start)
         var end = projection.displayTime(request.item.timing.end)
         if request.item.isPoint {
-            let time = projection.takeTime(min(projection.duration, max(0, start + request.delta)))
-            return .init(start: time, end: time)
+            let free = min(projection.duration, max(0, start + request.delta))
+            let snapped = request.snap?.nearest(free)
+            let time = projection.takeTime(snapped ?? free)
+            return .init(timing: .init(start: time, end: time), snappedTime: snapped)
         }
         let minimum = min(0.05, projection.duration)
+        var snappedTime: Double?
         switch request.gesture {
         case .move:
             let length = max(minimum, end - start)
-            start = min(max(0, start + request.delta), max(0, projection.duration - length))
+            let latest = max(0, projection.duration - length)
+            start = min(max(0, start + request.delta), latest)
+            if let snap = request.snap {
+                let closest = [start, start + length]
+                    .compactMap { edge in snap.nearest(edge).map { (shift: $0 - edge, time: $0) } }
+                    .filter { start + $0.shift >= -1e-9 && start + $0.shift <= latest + 1e-9 }
+                    .min { abs($0.shift) < abs($1.shift) }
+                if let closest {
+                    start = min(max(0, start + closest.shift), latest)
+                    snappedTime = closest.time
+                }
+            }
             end = min(projection.duration, start + length)
         case .trimStart:
             end = max(minimum, end)
             start = min(end - minimum, max(0, start + request.delta))
+            if let target = request.snap?.nearest(start), target <= end - minimum {
+                start = target
+                snappedTime = target
+            }
         case .trimEnd:
             start = min(start, projection.duration - minimum)
             end = max(start + minimum, min(projection.duration, end + request.delta))
+            if let target = request.snap?.nearest(end), target >= start + minimum {
+                end = target
+                snappedTime = target
+            }
         }
         let fragments = projection.visibleFragments(.init(start: start, end: end))
-        guard let first = fragments.first, let last = fragments.last else { return request.item.timing }
-        return .init(start: first.takeStart, end: last.takeEnd)
+        guard let first = fragments.first, let last = fragments.last else { return unchanged }
+        return .init(timing: .init(start: first.takeStart, end: last.takeEnd), snappedTime: snappedTime)
     }
 
     static func changing(_ request: Mutation) -> TimelineEdits? {

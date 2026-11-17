@@ -434,6 +434,15 @@ extension EditorView {
         }
     }
 
+    func splitPartAtPlayhead() {
+        playback.pauseForEditing()
+        guard let index = vm.splitProjectScene(.init(time: playback.currentTime, duration: timelineDuration)) else {
+            editErrorMessage = vm.detailMessage
+            return
+        }
+        selection = .segment(index)
+    }
+
     func joinSelectedSegment() {
         guard case .segment(let index) = selection else {
             editErrorMessage = "Select a segment cut to remove."

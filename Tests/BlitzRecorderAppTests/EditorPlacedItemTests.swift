@@ -30,13 +30,13 @@ final class EditorPlacedItemTests: XCTestCase {
         let source = edits
         let item = try XCTUnwrap(EditorPlacedTrack.resolve(source).first?.items.first)
         let projection = EditorTimelineProjection(.init(duration: 10, cuts: source.cuts))
-        let moved = EditorPlacedItemEditing.timing(.init(item: item, delta: 1, gesture: .move, projection: projection))
+        let moved = EditorPlacedItemEditing.timing(.init(item: item, delta: 1, gesture: .move, projection: projection, snap: nil))
         XCTAssertEqual(moved.start, 2, accuracy: 0.002)
         XCTAssertEqual(moved.end, 8, accuracy: 0.002)
-        let trimmed = EditorPlacedItemEditing.timing(.init(item: item, delta: -2, gesture: .trimEnd, projection: projection))
+        let trimmed = EditorPlacedItemEditing.timing(.init(item: item, delta: -2, gesture: .trimEnd, projection: projection, snap: nil))
         XCTAssertEqual(trimmed.start, 1, accuracy: 0.002)
         XCTAssertEqual(trimmed.end, 3, accuracy: 0.002)
-        let clamped = EditorPlacedItemEditing.timing(.init(item: item, delta: -100, gesture: .move, projection: projection))
+        let clamped = EditorPlacedItemEditing.timing(.init(item: item, delta: -100, gesture: .move, projection: projection, snap: nil))
         XCTAssertEqual(clamped.start, 0, accuracy: 0.002)
         XCTAssertEqual(projection.displayTime(clamped.end) - projection.displayTime(clamped.start), 4, accuracy: 0.002)
     }
@@ -89,7 +89,7 @@ final class EditorPlacedItemTests: XCTestCase {
         let source = edits
         let item = try XCTUnwrap(EditorPlacedTrack.resolve(source).last?.items.first)
         let projection = EditorTimelineProjection(.init(duration: 10, cuts: source.cuts))
-        let timing = EditorPlacedItemEditing.timing(.init(item: item, delta: 6, gesture: .move, projection: projection))
+        let timing = EditorPlacedItemEditing.timing(.init(item: item, delta: 6, gesture: .move, projection: projection, snap: nil))
         let changed = try XCTUnwrap(EditorPlacedItemEditing.changing(.init(edits: source,
             change: .init(id: item.id, timing: timing, gesture: .move))))
         XCTAssertEqual(changed.zoom.keyframes.map(\.time), [3, 8])
@@ -104,7 +104,7 @@ final class EditorPlacedItemTests: XCTestCase {
         let item = try XCTUnwrap(track.items.first)
         XCTAssertFalse(item.canChangeTiming)
         let timing = EditorPlacedItemEditing.timing(.init(item: item, delta: 2, gesture: .trimStart,
-            projection: .init(.init(duration: 10, cuts: []))))
+            projection: .init(.init(duration: 10, cuts: [])), snap: nil))
         XCTAssertEqual(timing, item.timing)
     }
 

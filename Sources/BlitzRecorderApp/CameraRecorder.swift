@@ -29,6 +29,9 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     private var blackFrameGenerator: CameraBlackFrameGenerator?
     private var blackFrameTimer: DispatchSourceTimer?
     private var lastForwardedPresentationTime: CMTime?
+    private var clockSlip = CaptureClockSlipDetector()
+    private var lastCapturedPresentationTime: CMTime?
+    private static let loggedFrameHoleSeconds = 0.25
     private var previewFormatRecovery: CameraPreviewFormatRecovery?
     private var latestDelivery: CameraDeliverySnapshot?
     private var lastDeliveryTime = -TimeInterval.infinity
@@ -134,6 +137,8 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             stopBlackFramesOnQueue()
             blackFrameGenerator = nil
             lastForwardedPresentationTime = nil
+            clockSlip = CaptureClockSlipDetector()
+            lastCapturedPresentationTime = nil
             startSessionIfNeededOnQueue()
         }
 
@@ -183,9 +188,10 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
 
     func captureOutput(
         _ output: AVCaptureOutput,
-        didOutput sampleBuffer: CMSampleBuffer,
+        didOutput capturedBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
+        let sampleBuffer = keptAtCaptureTime(capturedBuffer)
         restorePreviewFormatIfNeeded(sampleBuffer)
         noteDelivery(sampleBuffer)
         offerThumbnail(sampleBuffer)
@@ -247,6 +253,49 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         noteRecordingSourceSizeOnQueue(sampleBuffer)
         appendRecordingSampleOnQueue(sampleBuffer)
         completeStartup(.success(()))
+    }
+
+    /// Moves frames back to their real capture time after a stall the camera's own timestamps hide, and logs
+    /// stalls and slips while a take records.
+    private func keptAtCaptureTime(_ sampleBuffer: CMSampleBuffer) -> CMSampleBuffer {
+        guard let recording = pendingRecording else { return sampleBuffer }
+        let name = recording.url.lastPathComponent
+        let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        if presentationTime.isNumeric, let previous = lastCapturedPresentationTime {
+            let hole = CMTimeSubtract(presentationTime, previous).seconds
+            if hole > Self.loggedFrameHoleSeconds {
+                CaptureLog.note(String(format: "%@: no frames for %.3f s before %.3f s", name, hole,
+                                       presentationTime.seconds))
+                TakeSyncJournal.record(.init(
+                    trackURL: recording.url, kind: .frameHole,
+                    at: Self.timelineSeconds(.init(captureSeconds: previous.seconds, recording: recording)),
+                    seconds: hole, detail: nil
+                ))
+            }
+        }
+        if presentationTime.isNumeric { lastCapturedPresentationTime = presentationTime }
+        let correction = clockSlip.correct(.init(
+            sampleBuffer: sampleBuffer, arrivalTime: CMClockGetTime(CMClockGetHostTimeClock())
+        ))
+        if let line = correction.logLine(track: name) { CaptureLog.note(line) }
+        if let slip = correction.slip {
+            TakeSyncJournal.record(.init(
+                trackURL: recording.url, kind: .clockSlip,
+                at: Self.timelineSeconds(.init(captureSeconds: slip.presentationSeconds, recording: recording)),
+                seconds: slip.seconds, detail: nil
+            ))
+        }
+        return correction.sampleBuffer
+    }
+
+    private struct TimelinePosition {
+        let captureSeconds: Double
+        let recording: PendingRecording
+    }
+
+    private static func timelineSeconds(_ position: TimelinePosition) -> Double? {
+        guard let start = position.recording.timelineStartTime, start.isNumeric else { return nil }
+        return max(0, position.captureSeconds - start.seconds)
     }
 
     private func prepareStartupFormatOnQueue() {

@@ -49,12 +49,24 @@ final class AudioRecoverySegmentWriter: @unchecked Sendable {
         let timelineStartTime: CMTime?
     }
 
+    /// How much of the source the backup missed through its own fault. Only a backup that missed nothing may
+    /// replace the take's audio file; holes in it are then the source's own.
+    struct Report: Equatable {
+        var lostChunks = 0
+        var lostSeconds = 0.0
+
+        var isComplete: Bool { lostChunks == 0 }
+    }
+
     private struct OpenSegment {
         let partURL: URL
         let finalURL: URL
         let file: AVAudioFile
         let format: AVAudioFormat
+        let timelineSeconds: Double
         var frames: AVAudioFrameCount
+
+        var expectedNextSeconds: Double { timelineSeconds + Double(frames) / format.sampleRate }
     }
 
     private struct Chunk {
@@ -67,11 +79,16 @@ final class AudioRecoverySegmentWriter: @unchecked Sendable {
     private let queue = DispatchQueue(label: "blitzrecorder.audio-recovery-segments", qos: .utility)
     private var origin: CMTime?
     private var pauseClock = MediaWriterPauseClock()
+    /// Seconds added to every timestamp so a resumed take continues where the paused one ended, as the file
+    /// output does; only a hole while recording shows up between segments.
+    private var resumeCorrection = 0.0
+    private var isResuming = false
     private var segment: OpenSegment?
     private var nextIndex = 1
     private var retryAt = 0.0
     private var finished = false
     private var hasLoggedFailure = false
+    private var report = Report()
 
     init(_ request: Request) {
         directory = TakeRecoveryFiles.audioSegments(audioURL: request.audioURL)
@@ -80,7 +97,14 @@ final class AudioRecoverySegmentWriter: @unchecked Sendable {
 
     func append(_ sampleBuffer: CMSampleBuffer) {
         let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-        guard time.isNumeric, let buffer = Self.pcmBuffer(from: sampleBuffer) else { return }
+        guard time.isNumeric, let buffer = Self.pcmBuffer(from: sampleBuffer) else {
+            let seconds = CMSampleBufferGetDuration(sampleBuffer).seconds
+            queue.async {
+                guard !self.finished, !self.pauseClock.isPaused else { return }
+                self.noteLost(seconds: seconds.isFinite ? seconds : 0)
+            }
+            return
+        }
         queue.async { self.write(Chunk(buffer: buffer, time: time)) }
     }
 
@@ -91,17 +115,26 @@ final class AudioRecoverySegmentWriter: @unchecked Sendable {
 
     func resume() {
         let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
-        queue.async { self.pauseClock.resume(at: hostTime) }
+        queue.async {
+            self.pauseClock.resume(at: hostTime)
+            self.isResuming = true
+        }
     }
 
-    func finish() async {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+    @discardableResult
+    func finish() async -> Report {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Report, Never>) in
             queue.async {
                 self.finished = true
                 self.publishSegment()
-                continuation.resume()
+                continuation.resume(returning: self.report)
             }
         }
+    }
+
+    private func noteLost(seconds: Double) {
+        report.lostChunks += 1
+        report.lostSeconds += seconds
     }
 
     private func write(_ chunk: Chunk) {
@@ -110,22 +143,37 @@ final class AudioRecoverySegmentWriter: @unchecked Sendable {
             timelineStartTime: timelineStartTime, firstSampleTime: chunk.time
         )
         self.origin = origin
-        let seconds = max(0, CMTimeSubtract(CMTimeSubtract(chunk.time, origin), pauseClock.offset).seconds)
+        var seconds = max(0, CMTimeSubtract(CMTimeSubtract(chunk.time, origin), pauseClock.offset).seconds)
+            + resumeCorrection
         guard seconds.isFinite else { return }
+        if isResuming {
+            isResuming = false
+            if let open = segment {
+                resumeCorrection += open.expectedNextSeconds - seconds
+                seconds = open.expectedNextSeconds
+            }
+        }
         if let open = segment,
            open.format != chunk.buffer.format
-            || Double(open.frames) / open.format.sampleRate >= Self.segmentSeconds {
+            || Double(open.frames) / open.format.sampleRate >= Self.segmentSeconds
+            || abs(seconds - open.expectedNextSeconds) > AudioSampleContinuity.toleratedJumpSeconds {
             publishSegment()
         }
+        LiveAudioTap.shared.publish(.init(buffer: chunk.buffer, seconds: seconds), to: directory)
         do {
             if segment == nil {
-                guard seconds >= retryAt else { return }
+                guard seconds >= retryAt else {
+                    noteLost(seconds: Double(chunk.buffer.frameLength) / chunk.buffer.format.sampleRate)
+                    return
+                }
                 segment = try openSegment(.init(timelineSeconds: seconds, format: chunk.buffer.format))
             }
             try segment?.file.write(from: chunk.buffer)
             segment?.frames += chunk.buffer.frameLength
         } catch {
+            let abandoned = segment.map { Double($0.frames) / $0.format.sampleRate } ?? 0
             abandonSegment()
+            noteLost(seconds: abandoned + Double(chunk.buffer.frameLength) / chunk.buffer.format.sampleRate)
             noteFailure(.init(error: error, timelineSeconds: seconds))
         }
     }
@@ -144,7 +192,8 @@ final class AudioRecoverySegmentWriter: @unchecked Sendable {
         let file = try AVAudioFile(forWriting: partURL, settings: request.format.settings,
                                    commonFormat: request.format.commonFormat, interleaved: request.format.isInterleaved)
         nextIndex += 1
-        return OpenSegment(partURL: partURL, finalURL: finalURL, file: file, format: request.format, frames: 0)
+        return OpenSegment(partURL: partURL, finalURL: finalURL, file: file, format: request.format,
+                           timelineSeconds: request.timelineSeconds, frames: 0)
     }
 
     private func publishSegment() {
@@ -161,6 +210,7 @@ final class AudioRecoverySegmentWriter: @unchecked Sendable {
             DurableFile.flush(directory)
         } catch {
             try? FileManager.default.removeItem(at: open.partURL)
+            noteLost(seconds: Double(open.frames) / open.format.sampleRate)
             noteFailure(.init(error: error, timelineSeconds: retryAt))
         }
     }

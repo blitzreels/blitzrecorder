@@ -34,6 +34,15 @@ extension BlitzRecorderMCPServer {
             case "projects_export_as_is":
                 let request = try Self.exportStartRequest(arguments)
                 return try await Self.result(projectService.startExport(request))
+            case "live_transcript":
+                let minutes = arguments?["lastMinutes"].flatMap { value -> Double? in
+                    if case .double(let number) = value { return number }
+                    if case .int(let number) = value { return Double(number) }
+                    return nil
+                }
+                return try await Self.result(MainActor.run { LiveTranscriptResponse(LiveCallSession.shared, minutes) })
+            case "live_notes":
+                return try await Self.result(MainActor.run { LiveNotesResponse(LiveCallSession.shared) })
             case "export_status":
                 let jobID = try Self.jobID(arguments)
                 return try await Self.result(projectService.exportStatus(jobID: jobID))
@@ -188,6 +197,33 @@ extension BlitzRecorderMCPServer {
                 "required": ["jobId"],
                 "additionalProperties": false,
             ]),
+            annotations: readOnlyAnnotations
+        ),
+        Tool(
+            name: "live_transcript",
+            title: "Read the call being recorded",
+            description: "Transcript of the take being recorded right now (or the last one), about 15 seconds behind. "
+                + "\"You\" is the microphone, \"Call\" is the other side. Times are minutes into the take.",
+            inputSchema: .object([
+                "type": "object",
+                "properties": .object([
+                    "lastMinutes": .object([
+                        "type": "number",
+                        "minimum": 0.5,
+                        "description": "Only return lines from the last few minutes.",
+                    ]),
+                ]),
+                "additionalProperties": false,
+            ]),
+            annotations: readOnlyAnnotations
+        ),
+        Tool(
+            name: "live_notes",
+            title: "Read running notes of the call",
+            description: "Running summary, decisions, to-dos and open questions of the take being recorded, "
+                + "the moments the user marked, what was on screen (app, window, visible text and links) and when, "
+                + "and once recording stops a recap with a follow-up email.",
+            inputSchema: .object(["type": "object", "properties": .object([:]), "additionalProperties": false]),
             annotations: readOnlyAnnotations
         ),
     ]
@@ -373,3 +409,40 @@ private enum MCPToolArgumentError: LocalizedError {
         }
     }
 }
+
+struct LiveTranscriptResponse: Codable {
+    let recording: Bool
+    let language: String?
+    let transcript: String
+    let lineCount: Int
+
+    @MainActor
+    init(_ session: LiveCallSession, _ lastMinutes: Double?) {
+        recording = session.status == .listening
+        language = session.language
+        transcript = session.transcriptText(lastMinutes: lastMinutes)
+        lineCount = session.lines.count
+    }
+}
+
+struct LiveNotesResponse: Codable {
+    let recording: Bool
+    let notes: LiveCallNotes
+    let recap: LiveCallRecap?
+    let markedMoments: [String]
+    let screen: [String]
+
+    @MainActor
+    init(_ session: LiveCallSession) {
+        recording = session.status == .listening
+        notes = session.notes
+        recap = session.recap
+        markedMoments = session.marks.map {
+            "[\(LiveCallSession.timestamp($0.time))] \($0.title ?? "Marked moment")" + ($0.summary.map { ": \($0)" } ?? "")
+        }
+        screen = session.screenMoments.map {
+            LiveCallSession.text($0) + ($0.links.isEmpty ? "" : " (\($0.links.joined(separator: ", ")))")
+        }
+    }
+}
+

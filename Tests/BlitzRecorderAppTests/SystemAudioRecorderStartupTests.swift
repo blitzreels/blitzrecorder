@@ -18,7 +18,7 @@ final class SystemAudioRecorderStartupTests: XCTestCase {
 
         let stream = FakeSystemAudioStream()
         let recorder = SystemAudioRecorder()
-        recorder.adoptMonitoringStream(stream)
+        recorder.adoptMonitoringStream(.init(stream: stream, scope: SystemAudioScope(settings: RecordingSettings())))
         let url = directory.appendingPathComponent("system-audio.m4a")
 
         let startTask = Task {
@@ -39,6 +39,60 @@ final class SystemAudioRecorderStartupTests: XCTestCase {
         let completion = try await recorder.stop()
         XCTAssertTrue(completion.wroteMedia)
         XCTAssertEqual(stream.stopCount, 1)
+    }
+
+    func testSwitchingBetweenDisplaysAndWindowsKeepsTheSystemAudioStream() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        var displaySettings = RecordingSettings()
+        displaySettings.screenSourceBinding = .display(id: "1")
+        var windowSettings = displaySettings
+        windowSettings.screenSourceBinding = ScreenSourceBinding(
+            kind: .window, displayID: nil, bundleIdentifier: "com.example.call",
+            applicationName: "Call", processID: nil, windowID: 42, windowTitle: "Call"
+        )
+        XCTAssertEqual(SystemAudioScope(settings: displaySettings), SystemAudioScope(settings: windowSettings))
+
+        let stream = FakeSystemAudioStream()
+        let recorder = SystemAudioRecorder()
+        recorder.adoptMonitoringStream(.init(stream: stream, scope: SystemAudioScope(settings: displaySettings)))
+        let startTask = Task {
+            try await recorder.start(SystemAudioCaptureStartRequest(
+                url: directory.appendingPathComponent("system-audio.m4a"),
+                settings: displaySettings,
+                pickedScreenFilter: nil,
+                timelineStartTime: nil
+            ))
+        }
+        await stream.waitUntilOutputAttached()
+        recorder.receiveAudioSample(try makeSilentAudioSampleBuffer())
+        try await startTask.value
+
+        try await recorder.update(.init(settings: windowSettings, pickedScreenFilter: nil))
+        try await recorder.update(.init(settings: displaySettings, pickedScreenFilter: nil))
+
+        XCTAssertEqual(stream.startCount, 0)
+        XCTAssertEqual(stream.stopCount, 0)
+        _ = try await recorder.stop()
+        XCTAssertEqual(stream.stopCount, 1)
+    }
+
+    func testAnAppSourceHearsOnlyThatApp() {
+        var settings = RecordingSettings()
+        settings.screenSourceBinding = Self.app("com.example.call")
+        XCTAssertEqual(SystemAudioScope(settings: settings).source, .application("application:com.example.call"))
+        settings.screenSourceBinding = Self.app("com.example.other")
+        XCTAssertNotEqual(SystemAudioScope(settings: settings).source, .application("application:com.example.call"))
+    }
+
+    private static func app(_ bundleIdentifier: String) -> ScreenSourceBinding {
+        ScreenSourceBinding(
+            kind: .application, displayID: nil, bundleIdentifier: bundleIdentifier,
+            applicationName: nil, processID: nil, windowID: nil, windowTitle: nil
+        )
     }
 
     private func makeSilentAudioSampleBuffer() throws -> CMSampleBuffer {

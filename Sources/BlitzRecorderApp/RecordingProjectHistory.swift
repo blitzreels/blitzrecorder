@@ -10,6 +10,8 @@ struct RecordingProjectHistory: Codable, Equatable {
         let createdAt: Date?
         let updatedAt: Date
         let exports: [RecordingProject.ExportRecord]?
+
+        var takeDirectory: URL { URL(fileURLWithPath: takeDirectoryPath, isDirectory: true) }
     }
 
     let version: Int

@@ -86,7 +86,7 @@ enum TranscriptionSpeechModel: String, CaseIterable, Sendable {
 
     var detail: String {
         switch self {
-        case .parakeet: "Fast, multilingual; supports a language lock"
+        case .parakeet: "Fast, multilingual; keeps the whole take in one language"
         case .whisperMedium: "Multilingual; supports a language lock"
         case .whisperLargeTurbo: "Large-v3 accuracy, faster than full Large"
         case .whisperLarge: "Highest accuracy on long calls"
@@ -95,7 +95,7 @@ enum TranscriptionSpeechModel: String, CaseIterable, Sendable {
 
     var plainDetail: String {
         switch self {
-        case .parakeet: "Fastest. Detects the language or uses your choice."
+        case .parakeet: "Fastest. Keeps the whole recording in its main language, or in the one you pick."
         case .whisperMedium: "Clearer. Lets you pick the language."
         case .whisperLargeTurbo: "Much more accurate. Large download, still practical."
         case .whisperLarge: "Most accurate. Largest download and the slowest pass."

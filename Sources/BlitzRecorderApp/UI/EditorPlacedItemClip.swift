@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct EditorPlacedItemClip: View {
@@ -11,10 +12,19 @@ struct EditorPlacedItemClip: View {
         let select: (EditorPlacedItem.ID) -> Void
         let change: (EditorPlacedItemEditing.Change) -> Void
         let remove: (EditorPlacedItem.ID) -> Void
+        let snapTargets: (EditorPlacedItem.ID) -> EditorTimelineSnapTargets
+        let showSnapGuide: (Double?) -> Void
+    }
+    private struct DragOrigin {
+        let item: EditorPlacedItem
+        let gesture: EditorPlacedItemEditing.Gesture
+        let projection: EditorTimelineProjection
+        let pixelsPerSecond: CGFloat
+        let targets: EditorTimelineSnapTargets
     }
     let configuration: Configuration
-    @State private var dragOrigin: EditorPlacedItemEditing.Drag?
-    @State private var dragScale: CGFloat = 1
+    @State private var dragOrigin: DragOrigin?
+    @State private var snappedTime: Double?
     @State private var draft: EditorPlacedItem.Timing?
     @State private var isHovering = false
     @State private var hoveredHandle: EditorPlacedItemEditing.Gesture?
@@ -84,13 +94,17 @@ struct EditorPlacedItemClip: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { configuration.select(item.id) }
         .help(!item.canChangeTiming ? "Loops throughout the export. Select to change music or volume."
-              : item.isPoint ? "Drag to move this zoom point. Delete removes it."
-              : "\(item.title)\nDrag to move. Select and drag either edge to change duration. Delete removes this item.")
+              : item.isPoint ? "Drag to move this zoom point. It sticks to cuts, sentences and the playhead. "
+                + "Hold ⌘ to place it freely. Delete removes it."
+              : "\(item.title)\nDrag to move. Select and drag either edge to change duration. "
+                + "Edges stick to cuts, scenes, sentences, other items and the playhead. "
+                + "Hold ⌘ to place freely. Delete removes this item.")
         .contextMenu {
             Button("Edit", systemImage: "slider.horizontal.3") { configuration.select(item.id) }
             Button("Remove", systemImage: BlitzSymbols.delete, role: .destructive) { configuration.remove(item.id) }
         }
         .disabled(!configuration.isInteractive)
+        .onDisappear { updateSnap(nil) }
     }
 
     private func handle(_ gesture: EditorPlacedItemEditing.Gesture) -> some View {
@@ -108,14 +122,20 @@ struct EditorPlacedItemClip: View {
         DragGesture(minimumDistance: 3, coordinateSpace: .global)
             .onChanged { value in
                 if dragOrigin == nil {
-                    dragOrigin = .init(item: item, delta: 0, gesture: gesture, projection: configuration.projection)
-                    dragScale = configuration.pixelsPerSecond
+                    dragOrigin = .init(item: item, gesture: gesture, projection: configuration.projection,
+                        pixelsPerSecond: max(0.001, configuration.pixelsPerSecond),
+                        targets: configuration.snapTargets(item.id))
                     configuration.select(item.id)
                 }
                 guard let origin = dragOrigin else { return }
-                draft = EditorPlacedItemEditing.timing(.init(item: origin.item,
-                    delta: Double(value.translation.width / max(0.001, dragScale)), gesture: origin.gesture,
-                    projection: origin.projection))
+                let snaps = !NSEvent.modifierFlags.contains(.command)
+                let result = EditorPlacedItemEditing.dragged(.init(item: origin.item,
+                    delta: Double(value.translation.width / origin.pixelsPerSecond), gesture: origin.gesture,
+                    projection: origin.projection,
+                    snap: snaps ? .init(targets: origin.targets,
+                        tolerance: Double(EditorTimelineSnapTargets.distance / origin.pixelsPerSecond)) : nil))
+                draft = result.timing
+                updateSnap(result.snappedTime)
             }
             .onEnded { _ in
                 if let draft, let dragOrigin, draft != item.timing {
@@ -123,6 +143,16 @@ struct EditorPlacedItemClip: View {
                 }
                 draft = nil
                 dragOrigin = nil
+                updateSnap(nil)
             }
+    }
+
+    private func updateSnap(_ time: Double?) {
+        guard time != snappedTime else { return }
+        snappedTime = time
+        configuration.showSnapGuide(time)
+        if time != nil {
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        }
     }
 }

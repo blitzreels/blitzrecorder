@@ -22,6 +22,8 @@ final class CaptureSourceRun {
     private let sourceAdapters: [CaptureSource: CaptureSourceRunAdapter]
     private var activeSources: Set<CaptureSource> = []
     private var isPaused = false
+    private var pausedSince: CMTime?
+    private var pausedTotal = CMTime.zero
 
     private struct CaptureSourceRunAdapter {
         let start: (RecordingSettings, SCContentFilter?, CaptureSourceRunStartResult) async throws -> Void
@@ -194,6 +196,18 @@ final class CaptureSourceRun {
         committedScreenCaptureFilter = pickedScreenFilter
     }
 
+    /// Updates only the screen capture, in place, such as when BlitzRecorder is shown or hidden mid-take. System
+    /// audio keeps its stream: starting a new one can stall the microphone for seconds.
+    func updateScreenOnly(settings: RecordingSettings, pickedScreenFilter: SCContentFilter?) async throws {
+        guard activeSources.contains(.screen), settings.enabledSources.contains(.screen),
+              let adapter = sourceAdapters[.screen] else { return }
+        try await adapter.update(settings, pickedScreenFilter)
+        self.settings = settings
+        self.pickedScreenFilter = pickedScreenFilter
+        committedScreenCaptureSettings = settings
+        committedScreenCaptureFilter = pickedScreenFilter
+    }
+
     func switchMicrophone(to deviceID: String) async throws {
         guard activeSources.contains(.microphone) else {
             throw RecorderError.microphoneUnavailable
@@ -203,6 +217,7 @@ final class CaptureSourceRun {
 
     func pause() {
         isPaused = true
+        if pausedSince == nil { pausedSince = CMClockGetTime(CMClockGetHostTimeClock()) }
         for source in sourceOrder where activeSources.contains(source) {
             sourceAdapters[source]?.pause()
         }
@@ -210,6 +225,10 @@ final class CaptureSourceRun {
 
     func resume() {
         isPaused = false
+        if let pausedSince {
+            pausedTotal = CMTimeAdd(pausedTotal, CMTimeSubtract(CMClockGetTime(CMClockGetHostTimeClock()), pausedSince))
+            self.pausedSince = nil
+        }
         for source in sourceOrder where activeSources.contains(source) {
             sourceAdapters[source]?.resume()
         }
@@ -218,7 +237,44 @@ final class CaptureSourceRun {
     func stop() async -> CaptureSourceRunSummary {
         let sourcesToStop = stopOrder.filter { activeSources.contains($0) }
         activeSources.removeAll()
-        return await stopSources(sourcesToStop, settings: settings)
+        let recorded = recordedTime(at: CMClockGetTime(CMClockGetHostTimeClock()))
+        let summary = await stopSources(sourcesToStop, settings: settings)
+        if let recorded { checkTrackLengths(.init(recorded: recorded, summary: summary)) }
+        return summary
+    }
+
+    private struct RecordedTime {
+        let seconds: Double
+        let pausedSeconds: Double
+    }
+
+    private func recordedTime(at stopTime: CMTime) -> RecordedTime? {
+        guard let timelineStartTime else { return nil }
+        let paused = pausedSince.map { CMTimeAdd(pausedTotal, CMTimeSubtract(stopTime, $0)) } ?? pausedTotal
+        let seconds = CMTimeSubtract(CMTimeSubtract(stopTime, timelineStartTime), paused).seconds
+        return seconds.isFinite && seconds > 1 ? RecordedTime(seconds: seconds, pausedSeconds: paused.seconds) : nil
+    }
+
+    private struct LengthCheck {
+        let recorded: RecordedTime
+        let summary: CaptureSourceRunSummary
+    }
+
+    private func checkTrackLengths(_ check: LengthCheck) {
+        let tracks = sourceOrder.compactMap { source -> TakeLengthCheck.Track? in
+            guard let completion = check.summary.completions[source], completion.wroteMedia,
+                  let url = completion.url else { return nil }
+            let offset = check.summary.sourceTimelineOffsets[source]?.seconds ?? 0
+            return TakeLengthCheck.Track(
+                url: url,
+                mediaType: source == .screen || source == .camera ? .video : .audio,
+                expectedSeconds: check.recorded.seconds - offset
+            )
+        }
+        let request = TakeLengthCheck.Request(
+            recordedSeconds: check.recorded.seconds, pausedSeconds: check.recorded.pausedSeconds, tracks: tracks
+        )
+        Task.detached(priority: .utility) { await TakeLengthCheck.run(request) }
     }
 
     private func stopSources(_ sourcesToStop: [CaptureSource], settings: RecordingSettings) async -> CaptureSourceRunSummary {
@@ -397,8 +453,8 @@ final class CaptureSourceRun {
                         timelineStartTime: timeline.timelineStartTime
                     ))
                 },
-                update: { _, pickedScreenFilter in
-                    try await systemAudioRecorder.update(filter: pickedScreenFilter)
+                update: { settings, pickedScreenFilter in
+                    try await systemAudioRecorder.update(.init(settings: settings, pickedScreenFilter: pickedScreenFilter))
                 },
                 pause: { systemAudioRecorder.pause() },
                 resume: { systemAudioRecorder.resume() },

@@ -294,8 +294,8 @@ final class EditorSelectionControlsTests: XCTestCase {
 
         XCTAssertFalse(vm.deleteProjectSegment(.init(index: 0, duration: 10)))
         XCTAssertFalse(vm.deleteProjectSegment(.init(index: -1, duration: 10)))
-        XCTAssertTrue(vm.splitProjectScene(at: 3, duration: 10))
-        XCTAssertTrue(vm.splitProjectScene(at: 6, duration: 10))
+        XCTAssertNotNil(vm.splitProjectScene(.init(time: 3, duration: 10)))
+        XCTAssertNotNil(vm.splitProjectScene(.init(time: 6, duration: 10)))
         let splitEvents = try XCTUnwrap(vm.lastExportedProject?.sceneEvents)
         XCTAssertTrue(vm.deleteProjectSegment(.init(index: 1, duration: 10)))
         let deleted = try store.loadRecordingProject(at: take.projectURL)
@@ -326,7 +326,7 @@ final class EditorSelectionControlsTests: XCTestCase {
         XCTAssertEqual(try store.loadRecordingProject(at: take.projectURL).edits, deleted.edits)
 
         let projection = EditorTimelineProjection(.init(duration: 10, cuts: deleted.edits.cuts))
-        XCTAssertTrue(vm.splitProjectScene(at: projection.takeTime(4), duration: 10))
+        XCTAssertNotNil(vm.splitProjectScene(.init(time: projection.takeTime(4), duration: 10)))
         XCTAssertTrue(vm.deleteProjectSegment(.init(index: 2, duration: 10)))
         let repeated = try store.loadRecordingProject(at: take.projectURL)
         let repeatedMap = TimelineTimeMap(takeDuration: TimelineTimeMap.time(10), cuts: repeated.edits.cuts)

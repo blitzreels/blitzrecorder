@@ -78,6 +78,8 @@ extension ProjectLibraryView {
         VStack(alignment: .leading, spacing: 24) {
             detailPreview(project, overviewLayout: layout)
             detailMetadata(project)
+            ProjectSyncReportSection(takeDirectory: project.takeDirectory)
+            ProjectCallNotesSection(takeDirectory: project.takeDirectory)
             projectMedia(project)
         }
         .frame(maxWidth: layout.contentWidth, alignment: .leading)

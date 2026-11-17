@@ -23,6 +23,37 @@ extension RecorderCaptureRuntime {
         ))
     }
 
+    /// Shows or hides BlitzRecorder in the take being recorded. A recorded BlitzRecorder window that is hidden moves
+    /// the take to its display, as it does before recording; otherwise only the screen filter changes, in place.
+    func applyRecorderVisibilityToTake() {
+        guard state == .recording || state == .paused else { return }
+        let binding = settings.screenSourceBinding
+        let capturesRecorder = binding?.processID == getpid()
+            || (binding?.bundleIdentifier != nil && binding?.bundleIdentifier == Bundle.main.bundleIdentifier)
+        if !settings.includesRecorderUI, capturesRecorder {
+            setScreenSource(.display(id: binding?.displayID ?? settings.selectedDisplayID))
+            return
+        }
+        let previousTransaction = screenReconfiguration.pickerTransactionTask
+        let previousConfiguration = screenReconfiguration.configurationTask
+        let shown = settings.includesRecorderUI
+        screenReconfiguration.configurationTask = Task { @MainActor [weak self] in
+            await previousTransaction?.value
+            await previousConfiguration?.value
+            guard let self, self.state == .recording || self.state == .paused else { return }
+            do {
+                let captureSettings = self.currentLocalCaptureSettings()
+                let filter = try await self.resolvedScreenFilter(for: captureSettings)
+                try await self.takeRecording.updateRecorderVisibility(settings: captureSettings, pickedScreenFilter: filter)
+                self.committedRecordingSettings = self.settings
+                CaptureLog.note("BlitzRecorder \(shown ? "shown in" : "hidden from") the recording")
+            } catch {
+                CaptureLog.note("Recorder visibility change failed: \(error.localizedDescription)")
+                self.onMessage?("BlitzRecorder could not be \(shown ? "shown in" : "hidden from") this recording.")
+            }
+        }
+    }
+
     func setScreenSource(_ binding: ScreenSourceBinding, autoFitWindowZoom: CGFloat? = nil) {
         guard state.allowsScreenContentPickerPresentation else { return }
         if state == .recording || state == .paused {

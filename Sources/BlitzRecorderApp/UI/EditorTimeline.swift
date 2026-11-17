@@ -32,6 +32,7 @@ struct EditorTimelineView: View {
     let onDeleteSegment: () -> Void
     let canDeleteSegment: Bool
     let onJoinSegment: () -> Void
+    let onSplitSegment: () -> Void
     let onRestoreRange: () -> Void
     let onTrimClip: (TimelineEdits) -> Void
     let onMarkIn: () -> Void
@@ -64,6 +65,7 @@ struct EditorTimelineView: View {
     @State var selectionFocusTime: Double?
     @State var clipTrim = EditorClipTrimSession()
     @State var zoomFitDuration: Double = 0
+    @State var snapGuideTime: Double?
 
     let gutterWidth: CGFloat = 210
     let rulerHeight: CGFloat = 30

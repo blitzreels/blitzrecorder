@@ -24,12 +24,31 @@ extension SCStream: SystemAudioStreaming {
     }
 }
 
+/// The level monitor's running stream, handed to the recorder so a take starts without a new stream.
+struct SystemAudioMonitoringStream {
+    let stream: any SystemAudioStreaming
+    let scope: SystemAudioScope
+}
+
+struct SystemAudioUpdateRequest {
+    let settings: RecordingSettings
+    let pickedScreenFilter: SCContentFilter?
+}
+
+private struct BackupCheckTarget {
+    let audioURL: URL
+    let format: SourceAudioFormat
+    let stereoBitrate: Int
+}
+
 final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     private let queue = DispatchQueue(label: "blitzrecorder.system-audio")
     private var stream: (any SystemAudioStreaming)?
-    private var prewarmedStream: (any SystemAudioStreaming)?
+    private var prewarmedStream: SystemAudioMonitoringStream?
+    private var scope: SystemAudioScope?
     private var writer: AudioSampleFileWriter?
     private var recoverySegments: AudioRecoverySegmentWriter?
+    private var backupCheck: BackupCheckTarget?
     private let levelPublisher = AudioLevelPublisher()
     var levelHandler: ((Float) -> Void)? {
         get { levelPublisher.levelHandler }
@@ -43,7 +62,6 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
     private var lastSampleEnd = CMTime.invalid
     private let startupGate = AudioStartupGate(timeoutError: RecorderError.systemAudioDidNotStart)
     private var hasReportedActiveFailure = false
-    private var includesRecorderUI = false
     private var timelineAnchor = RecordingTimelineAnchor()
     private static let timeTolerance = CMTime(value: 1, timescale: 1_000)
     var failureHandler: (@MainActor (Error) -> Void)?
@@ -68,7 +86,7 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
         timelineAnchor.reset(timelineStartTime: request.timelineStartTime)
         startupGate.reset()
         hasReportedActiveFailure = false
-        includesRecorderUI = request.settings.includesRecorderUI
+        let scope = SystemAudioScope(settings: request.settings)
         let writer = try AudioSampleFileWriter(
             url: request.url,
             timelineStartTime: request.timelineStartTime,
@@ -88,31 +106,42 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
         }
         self.writer = writer
         recoverySegments = AudioRecoverySegmentWriter(.init(audioURL: request.url, timelineStartTime: request.timelineStartTime))
+        backupCheck = .init(
+            audioURL: request.url,
+            format: request.settings.effectiveSourceAudioFormat,
+            stereoBitrate: request.settings.finalAudioBitrate
+        )
 
-        if let prewarmedStream {
-            self.prewarmedStream = nil
-            setCurrentStream(prewarmedStream)
-            CaptureLog.note("System audio recording \(request.url.lastPathComponent) from the monitoring stream")
-            try prewarmedStream.attachAudioOutput(.init(output: self, sampleHandlerQueue: queue))
-            stream = prewarmedStream
-            try await waitForFirstAudioSample()
-            return
+        if let prewarmed = prewarmedStream {
+            prewarmedStream = nil
+            if prewarmed.scope == scope {
+                setCurrentStream(prewarmed.stream)
+                CaptureLog.note("System audio recording \(request.url.lastPathComponent) from the monitoring stream")
+                try prewarmed.stream.attachAudioOutput(.init(output: self, sampleHandlerQueue: queue))
+                stream = prewarmed.stream
+                self.scope = scope
+                try await waitForFirstAudioSample()
+                return
+            }
+            try? await prewarmed.stream.stopCapture()
         }
 
-        try await startStream(filter: SystemAudioStreamConfiguration.contentFilter(request.pickedScreenFilter))
-        CaptureLog.note("System audio recording \(request.url.lastPathComponent)")
+        try await startStream(.init(scope: scope, pickedScreenFilter: request.pickedScreenFilter))
+        CaptureLog.note("System audio recording \(request.url.lastPathComponent) (\(scope.logDescription))")
         try await waitForFirstAudioSample()
     }
 
-    private func startStream(filter: SCContentFilter) async throws {
+    private func startStream(_ request: SystemAudioStreamConfiguration.FilterRequest) async throws {
+        let filter = try await SystemAudioStreamConfiguration.contentFilter(request)
         let configuration = SystemAudioStreamConfiguration.configuration(.init(
-            streamName: "BlitzRecorder System Audio", includesRecorderUI: includesRecorderUI
+            streamName: "BlitzRecorder System Audio", includesRecorderUI: request.scope.includesRecorderUI
         ))
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
         try stream.attachAudioOutput(.init(output: self, sampleHandlerQueue: queue))
         try await stream.startCapture()
         setCurrentStream(stream)
         self.stream = stream
+        scope = request.scope
     }
 
     private func setCurrentStream(_ stream: (any SystemAudioStreaming)?) {
@@ -123,8 +152,8 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
         currentStreamLock.withLock { currentStreamID == ObjectIdentifier(stream) }
     }
 
-    func adoptMonitoringStream(_ stream: any SystemAudioStreaming) {
-        prewarmedStream = stream
+    func adoptMonitoringStream(_ monitoring: SystemAudioMonitoringStream) {
+        prewarmedStream = monitoring
     }
 
     func pause() {
@@ -132,14 +161,32 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
         recoverySegments?.pause()
     }
 
-    /// Starts a stream for the new screen source, then stops the old one, so sound continues without a gap.
-    /// Retargeting the old stream is not enough: once its window closed it can accept a new filter and stay
-    /// silent, and the monitoring stream adopted at start reports its end only to the level monitor.
-    func update(filter pickedScreenFilter: SCContentFilter?) async throws {
+    /// Keeps the running stream when what it hears is unchanged, which is every switch between displays and
+    /// windows: a new stream can take a second or more to start, and the microphone has stalled while it did.
+    /// When the scope changes (an app source, or showing the recorder's own sound), starts a stream for it, then
+    /// stops the old one, so sound continues without a gap. Retargeting the old stream is not enough: once its
+    /// window closed it can accept a new filter and stay silent.
+    func update(_ request: SystemAudioUpdateRequest) async throws {
         guard let previous = stream else { return }
-        try await startStream(filter: SystemAudioStreamConfiguration.contentFilter(pickedScreenFilter))
-        CaptureLog.note("System audio moved to a new stream for the new screen source")
+        let newScope = SystemAudioScope(settings: request.settings)
+        if newScope == scope {
+            CaptureLog.note("System audio kept its stream for the new screen source (\(newScope.logDescription))")
+            return
+        }
+        let started = ProcessInfo.processInfo.systemUptime
+        try await startStream(.init(scope: newScope, pickedScreenFilter: request.pickedScreenFilter))
+        let startedNew = ProcessInfo.processInfo.systemUptime
         try? await previous.stopCapture()
+        if let target = backupCheck {
+            TakeSyncJournal.record(.init(
+                trackURL: target.audioURL, kind: .systemAudioRestarted, at: nil,
+                seconds: startedNew - started, detail: newScope.logDescription
+            ))
+        }
+        CaptureLog.note(String(
+            format: "System audio moved to a new stream (%@; new stream started in %.3f s, old one stopped in %.3f s)",
+            newScope.logDescription, startedNew - started, ProcessInfo.processInfo.systemUptime - startedNew
+        ))
     }
 
     func resume() {
@@ -153,17 +200,24 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
         writer = nil
         let segmentsToFinish = recoverySegments
         recoverySegments = nil
-        await segmentsToFinish?.finish()
+        let backup = await segmentsToFinish?.finish() ?? .init()
         setCurrentStream(nil)
         if let stream {
             try? await stream.stopCapture()
         }
         stream = nil
+        scope = nil
         if let prewarmedStream {
-            try? await prewarmedStream.stopCapture()
+            try? await prewarmedStream.stream.stopCapture()
         }
         prewarmedStream = nil
-        let completion = try await writerToFinish?.finish() ?? .empty()
+        let fileResult: Result<MediaWriterCompletion, Error>
+        do {
+            fileResult = .success(try await writerToFinish?.finish() ?? .empty())
+        } catch {
+            fileResult = .failure(error)
+        }
+        let completion = try await checkedAgainstBackup(.init(fileResult: fileResult, backup: backup))
         levelPublisher.reset()
         if let streamError {
             self.streamError = nil
@@ -174,6 +228,27 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @un
             throw error
         }
         return completion
+    }
+
+    private struct BackupCheckRequest {
+        let fileResult: Result<MediaWriterCompletion, Error>
+        let backup: AudioRecoverySegmentWriter.Report
+    }
+
+    /// The writer joins the samples on both sides of a stall like the microphone file output does, so the file is
+    /// built from the timestamped backup the same way.
+    private func checkedAgainstBackup(_ check: BackupCheckRequest) async throws -> MediaWriterCompletion {
+        guard let target = backupCheck else { return try check.fileResult.get() }
+        backupCheck = nil
+        if case .failure(let error) = check.fileResult {
+            CaptureLog.note("\(target.audioURL.lastPathComponent): writer failed: \(error.localizedDescription)")
+        }
+        let request = AudioBackupCheck.Request(
+            audioURL: target.audioURL, format: target.format, stereoBitrate: target.stereoBitrate,
+            timelineStart: queue.sync { timelineAnchor.offset.seconds }, backup: check.backup
+        )
+        let outcome = await AudioBackupCheck.verify(request)
+        return outcome.replacedFile ? .wrote(target.audioURL) : try check.fileResult.get()
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {

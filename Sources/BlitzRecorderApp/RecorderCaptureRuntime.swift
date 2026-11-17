@@ -92,6 +92,8 @@ final class RecorderCaptureRuntime {
         didSet { recordingSession.onStateChanged = onStateChanged }
     }
     var onMessage: ((String) -> Void)?
+    var onTakeStarted: ((RecordingSessionActiveTake) -> Void)?
+    var onTakeStopping: (() -> Void)?
     var onScreenWindowFitMessage: ((String) -> Void)?
     var onSavedRecording: ((SavedRecordingOutput) -> Void)?
     var onPostRecordingProject: ((PostRecordingProjectOutput) -> Void)?

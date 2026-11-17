@@ -89,6 +89,12 @@ final class RecordingHUDModel {
     }
 }
 
+/// The recording controls take keyboard focus only for typing, such as a question about the call, and never
+/// bring the app forward.
+private final class RecordingHUDPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+}
+
 @MainActor
 final class RecordingHUDController {
     private let viewModel: RecorderViewModel
@@ -134,14 +140,14 @@ final class RecordingHUDController {
     }
 
     private func makePanel() -> NSPanel {
-        let root = RecordingHUDView(vm: viewModel, model: model, actions: .init(
+        let root = RecordingHUDView(vm: viewModel, model: model, liveNotes: .shared, actions: .init(
             resize: { [weak self] size in self?.resize(size) },
             dragChanged: { [weak self] in self?.dragChanged() },
             dragEnded: { [weak self] in self?.dragEnded() }
         ))
         let host = NSHostingView(rootView: root)
         host.sizingOptions = []
-        let panel = NSPanel(
+        let panel = RecordingHUDPanel(
             contentRect: NSRect(origin: .zero, size: contentSize),
             styleMask: [.nonactivatingPanel, .borderless],
             backing: .buffered, defer: false

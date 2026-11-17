@@ -128,6 +128,11 @@ final class MainMenuBuilder {
         stop.isEnabled = state == .recording || state == .paused
         submenu.addItem(stop)
 
+        let syncTest = menuItem("Run Sync Test…", action: #selector(MenuActionsTarget.runSyncTest))
+        syncTest.isEnabled = state == .idle && canStart
+        syncTest.toolTip = "Records two minutes of flashes and beeps and checks that every track stays in sync"
+        submenu.addItem(syncTest)
+
         submenu.addItem(.separator())
 
         submenu.addItem(deviceSubmenu(
@@ -197,6 +202,9 @@ final class MainMenuBuilder {
         let submenu = NSMenu(title: "Window")
         submenu.addItem(menuItem("Open Editor Window", action: #selector(MenuActionsTarget.showEditorWindow)))
         submenu.addItem(menuItem("Show Recorder", action: #selector(MenuActionsTarget.showRecorderWindow)))
+        let liveNotes = menuItem("Live Notes", action: #selector(MenuActionsTarget.toggleLiveNotes), keyEquivalent: "n")
+        liveNotes.keyEquivalentModifierMask = [.command, .option]
+        submenu.addItem(liveNotes)
         submenu.addItem(.separator())
         submenu.addItem(menuItem("Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m", target: nil))
         submenu.addItem(menuItem("Zoom", action: #selector(NSWindow.performZoom(_:)), target: nil))
@@ -319,6 +327,7 @@ final class MainMenuBuilder {
     func pauseRecording()
     func resumeRecording()
     func stopRecording()
+    func runSyncTest()
     func showSettings()
     func checkForUpdates()
     func openReleaseNotes()
@@ -335,6 +344,7 @@ final class MainMenuBuilder {
     func toggleRuleOfThirds()
     func toggleLivePreview()
     func showCommandMenu()
+    func toggleLiveNotes()
     func zoomIn()
     func zoomOut()
     func resetZoom()

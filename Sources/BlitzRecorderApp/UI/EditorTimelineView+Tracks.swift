@@ -20,7 +20,8 @@ extension EditorTimelineView {
                 EditorPlacedItemClip(configuration: .init(
                     item: item, projection: projection, pixelsPerSecond: request.pixelsPerSecond,
                     height: placedRowHeight, isSelected: selection == .placed(item.id), isInteractive: isInteractive,
-                    select: { selection = .placed($0) }, change: onChangePlacedItem, remove: onRemovePlacedItem
+                    select: { selection = .placed($0) }, change: onChangePlacedItem, remove: onRemovePlacedItem,
+                    snapTargets: snapTargets(excluding:), showSnapGuide: { snapGuideTime = $0 }
                 ))
             }
         }
@@ -171,6 +172,9 @@ extension EditorTimelineView {
                 }
             }
             .disabled(!isInteractive)
+            Button("Split at playhead", systemImage: BlitzSymbols.edit, action: onSplitSegment)
+                .disabled(!isInteractive || !EditorSceneSplit.canSplit(.init(
+                    time: playback.currentTime, duration: duration, eventTimes: sceneEvents.map(\.time))))
             Button("Join with previous scene", systemImage: "rectangle.compress.vertical") {
                 selection = .segment(index)
                 onJoinSegment()

@@ -309,8 +309,8 @@ extension RecorderCaptureRuntime {
             return
         }
         do {
-            if let stream = try systemAudioLevelMonitor.detachStreamForRecording() {
-                systemAudioRecorder.adoptMonitoringStream(stream)
+            if let monitoring = try systemAudioLevelMonitor.detachStreamForRecording() {
+                systemAudioRecorder.adoptMonitoringStream(monitoring)
                 return
             }
         } catch {

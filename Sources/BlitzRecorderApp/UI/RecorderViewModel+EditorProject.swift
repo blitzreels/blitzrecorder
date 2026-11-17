@@ -56,22 +56,23 @@ extension RecorderViewModel {
         })
     }
 
-    @discardableResult
-    func splitProjectScene(at time: Double, duration: Double) -> Bool {
-        if lastExportedProject?.edits.activeOutputLayout != nil {
-            return splitOutputScene(.init(time: time, duration: duration))
+    /// Starts a new part at the playhead that shows what the part already showed, so the layout after it can
+    /// change on its own. Returns the new part's index.
+    func splitProjectScene(_ split: EditorSceneSplit) -> Int? {
+        guard let project = editorProject else { return nil }
+        let times = TakeFileStore().sceneEvents(from: project).map(\.time)
+        guard EditorSceneSplit.canSplit(.init(time: split.time, duration: split.duration, eventTimes: times)) else {
+            detailMessage = "Move the playhead inside a part, away from where it starts and ends, to split it."
+            return nil
         }
-        guard duration <= 0 || time < duration - 0.05 else {
-            detailMessage = "Move the playhead before the end before splitting."
-            return false
-        }
-        return commitEditorWrite(.init(
-            actionName: "Split Segment",
-            successMessage: "Split all tracks at \(formatProjectEditTime(time)).",
-            refreshesLibrary: true
-        ) { [coordinator] projectURL in
-            try coordinator.insertProjectSceneEvent(at: projectURL, time: time)
-        })
+        let index = times.filter { $0 < split.time }.count
+        let didSplit = lastExportedProject?.edits.activeOutputLayout != nil
+            ? splitOutputScene(.init(time: split.time, duration: split.duration))
+            : commitEditorWrite(.init(actionName: "Split Part", successMessage: nil, refreshesLibrary: false) {
+                [coordinator] projectURL in
+                try coordinator.insertProjectSceneEvent(at: projectURL, time: split.time)
+            })
+        return didSplit ? index : nil
     }
 
     @discardableResult
@@ -410,13 +411,6 @@ extension RecorderViewModel {
     private func notifyEditorHistoryChanged() {
         editorHistoryRevision &+= 1
         onEditorHistoryChanged?()
-    }
-
-    private func formatProjectEditTime(_ seconds: Double) -> String {
-        let totalSeconds = max(0, Int(seconds.rounded()))
-        let minutes = totalSeconds / 60
-        let secs = totalSeconds % 60
-        return String(format: "%02d:%02d", minutes, secs)
     }
 }
 

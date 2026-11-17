@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
    LastUpgradeVersion = "1430"
-   version = "1.7">
+   version = "1.3">
    <BuildAction
       parallelizeBuildables = "YES"
-      buildImplicitDependencies = "YES"
-      runPostActionsOnFailure = "NO">
+      buildImplicitDependencies = "YES">
       <BuildActionEntries>
          <BuildActionEntry
             buildForTesting = "YES"
@@ -16,7 +15,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "72F6D065F555FC9E31E6692B"
-               BuildableName = "BlitzRecorder.app"
+               BuildableName = "BlitzRecorder Dev.app"
                BlueprintName = "BlitzRecorder"
                ReferencedContainer = "container:BlitzRecorder.xcodeproj">
             </BuildableReference>
@@ -27,13 +26,12 @@
       buildConfiguration = "Debug"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
-      shouldUseLaunchSchemeArgsEnv = "YES"
-      onlyGenerateCoverageForSpecifiedTargets = "NO">
+      shouldUseLaunchSchemeArgsEnv = "YES">
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "72F6D065F555FC9E31E6692B"
-            BuildableName = "BlitzRecorder.app"
+            BuildableName = "BlitzRecorder Dev.app"
             BlueprintName = "BlitzRecorder"
             ReferencedContainer = "container:BlitzRecorder.xcodeproj">
          </BuildableReference>
@@ -56,13 +54,11 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "72F6D065F555FC9E31E6692B"
-            BuildableName = "BlitzRecorder.app"
+            BuildableName = "BlitzRecorder Dev.app"
             BlueprintName = "BlitzRecorder"
             ReferencedContainer = "container:BlitzRecorder.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
-      <CommandLineArguments>
-      </CommandLineArguments>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
@@ -75,7 +71,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "72F6D065F555FC9E31E6692B"
-            BuildableName = "BlitzRecorder.app"
+            BuildableName = "BlitzRecorder Dev.app"
             BlueprintName = "BlitzRecorder"
             ReferencedContainer = "container:BlitzRecorder.xcodeproj">
          </BuildableReference>

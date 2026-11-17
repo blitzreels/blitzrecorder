@@ -29,14 +29,30 @@ enum CallAudioAnalysis {
             return result
         }
 
+        /// How speech is grouped into the windows decoded one at a time.
+        struct WindowLimits {
+            /// Speech closer than this to the window before joins it.
+            let joinGapSeconds: Double
+            let maximumSeconds: Double
+
+            /// Long windows read best after the take.
+            static let afterTake = WindowLimits(joinGapSeconds: 1.5, maximumSeconds: 27)
+            /// While recording, short windows let a sentence show without waiting for the speaker to pause.
+            static let live = WindowLimits(joinGapSeconds: 0.6, maximumSeconds: 10)
+        }
+
         var decodingWindows: [RecordingTranscript.SpeechRange] {
+            decodingWindows(.afterTake)
+        }
+
+        func decodingWindows(_ limits: WindowLimits) -> [RecordingTranscript.SpeechRange] {
             var result: [RecordingTranscript.SpeechRange] = []
             let duration = Double(samples.count) / 16_000
             for range in windows {
                 let padded = RecordingTranscript.SpeechRange(startTime: max(0, range.startTime - 0.4),
                                                               endTime: min(duration, range.endTime + 0.4))
-                if let previous = result.last, padded.startTime - previous.endTime <= 1.5,
-                   padded.endTime - previous.startTime <= 27 {
+                if let previous = result.last, padded.startTime - previous.endTime <= limits.joinGapSeconds,
+                   padded.endTime - previous.startTime <= limits.maximumSeconds {
                     result[result.count - 1] = .init(startTime: previous.startTime, endTime: padded.endTime)
                 } else {
                     result.append(padded)
@@ -219,15 +235,12 @@ enum CallAudioAnalysis {
     }
 
     static func readSamples(_ url: URL) throws -> [Float] {
-        let file = try AVAudioFile(forReading: url)
+        let file = try AVAudioFile(forReading: url, commonFormat: .pcmFormatFloat32, interleaved: false)
         guard file.processingFormat.sampleRate == 16_000, file.processingFormat.channelCount == 1,
-              file.length > 0, file.length <= Int64(UInt32.max),
-              let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat,
-                                            frameCapacity: AVAudioFrameCount(file.length)) else {
+              let buffer = file.readAllFrames(),
+              let channel = buffer.floatChannelData?[0] else {
             throw RecorderError.speechUnavailable
         }
-        try file.read(into: buffer)
-        guard let channel = buffer.floatChannelData?[0] else { throw RecorderError.speechUnavailable }
         return Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
     }
 

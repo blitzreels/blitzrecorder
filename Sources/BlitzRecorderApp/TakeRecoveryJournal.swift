@@ -20,8 +20,47 @@ enum TakeRecoveryFiles {
 
     static func audioSegments(audioURL: URL) -> URL {
         directory(takeDirectory: audioURL.deletingLastPathComponent())
-            .appendingPathComponent("audio", isDirectory: true)
+            .appendingPathComponent(audioFolderName, isDirectory: true)
             .appendingPathComponent(audioURL.deletingPathExtension().lastPathComponent, isDirectory: true)
+    }
+
+    private static let audioFolderName = "audio"
+    private static let keptMarkerName = "kept.txt"
+
+    struct KeptAudio {
+        let directory: URL
+        let reason: String
+    }
+
+    /// Marks a source's backup as the only full copy of its audio, so cleaning up the take keeps it.
+    static func keepAudioSegments(_ kept: KeptAudio) {
+        let note = "Kept because the recorded file did not match this backup: \(kept.reason).\n"
+        try? Data(note.utf8).write(to: kept.directory.appendingPathComponent(keptMarkerName), options: .atomic)
+    }
+
+    static func isKept(audioSegments directory: URL) -> Bool {
+        FileManager.default.fileExists(atPath: directory.appendingPathComponent(keptMarkerName).path)
+    }
+
+    /// Deletes a saved take's recovery files, except audio backups marked as kept.
+    static func removeRecovery(takeRecoveryDirectory directory: URL) {
+        let fileManager = FileManager.default
+        let audio = directory.appendingPathComponent(audioFolderName, isDirectory: true)
+        let kept = ((try? fileManager.contentsOfDirectory(at: audio, includingPropertiesForKeys: nil)) ?? [])
+            .filter { isKept(audioSegments: $0) }
+        guard !kept.isEmpty else {
+            try? fileManager.removeItem(at: directory)
+            return
+        }
+        let keptPaths = Set(kept.map(\.standardizedFileURL.path))
+        for item in (try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+            where item.standardizedFileURL.path != audio.standardizedFileURL.path {
+            try? fileManager.removeItem(at: item)
+        }
+        for item in (try? fileManager.contentsOfDirectory(at: audio, includingPropertiesForKeys: nil)) ?? []
+            where !keptPaths.contains(item.standardizedFileURL.path) {
+            try? fileManager.removeItem(at: item)
+        }
     }
 }
 
@@ -98,7 +137,7 @@ final class TakeRecoveryJournal: @unchecked Sendable {
         queue.sync {
             if descriptor >= 0 { close(descriptor) }
             descriptor = -1
-            try? FileManager.default.removeItem(at: directory)
+            TakeRecoveryFiles.removeRecovery(takeRecoveryDirectory: directory)
         }
     }
 

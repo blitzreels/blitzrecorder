@@ -105,6 +105,25 @@ struct ScheduledTargetWindowFitContext: Equatable {
     let canvasPadding: CGFloat
 }
 
+struct EditorSceneSplit {
+    let time: Double
+    let duration: Double
+
+    struct Check {
+        let time: Double
+        let duration: Double
+        let eventTimes: [Double]
+    }
+
+    static let margin = 0.05
+
+    /// A part can start anywhere except at the very start or end, or where a part already starts.
+    static func canSplit(_ check: Check) -> Bool {
+        check.time > margin && (check.duration <= 0 || check.time < check.duration - margin)
+            && !check.eventTimes.contains { abs($0 - check.time) < margin }
+    }
+}
+
 struct EditorProjectSceneCorrectionRequest {
     let eventIndex: Int
     let correction: RecordingProjectSceneCorrection

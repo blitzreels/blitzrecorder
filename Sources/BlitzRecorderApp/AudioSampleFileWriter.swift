@@ -84,6 +84,7 @@ final class AudioSampleFileWriter: @unchecked Sendable {
         queue.async {
             guard !self.paused else { return }
             self.paused = true
+            CaptureLog.note("\(self.url.lastPathComponent): paused")
         }
     }
 
@@ -91,6 +92,7 @@ final class AudioSampleFileWriter: @unchecked Sendable {
         queue.async {
             guard self.paused else { return }
             self.paused = false
+            CaptureLog.note("\(self.url.lastPathComponent): resumed")
         }
     }
 

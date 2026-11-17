@@ -152,6 +152,7 @@ struct EditorView: View {
                 onDeleteSegment: deleteSelectedSegment,
                 canDeleteSegment: canDeleteSelectedSegment,
                 onJoinSegment: joinSelectedSegment,
+                onSplitSegment: splitPartAtPlayhead,
                 onRestoreRange: restoreSelectedRange,
                 onTrimClip: trimClip,
                 onMarkIn: markRangeIn,

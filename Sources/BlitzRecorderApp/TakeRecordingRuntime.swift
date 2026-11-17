@@ -346,6 +346,18 @@ final class TakeRecordingRuntime {
         }
     }
 
+    /// Shows or hides BlitzRecorder in the take by changing only the screen capture's filter.
+    func updateRecorderVisibility(settings: RecordingSettings, pickedScreenFilter: SCContentFilter?) async throws {
+        switch mode {
+        case .liveCompositor:
+            try await liveCompositedRecorder.updateScreenCapture(settings: settings, filter: pickedScreenFilter)
+        case .captureRun(let captureRun):
+            try await captureRun.updateScreenOnly(settings: settings, pickedScreenFilter: pickedScreenFilter)
+        case .idle:
+            break
+        }
+    }
+
     func switchMicrophone(to deviceID: String) async throws {
         switch mode {
         case .liveCompositor:
@@ -456,6 +468,9 @@ final class TakeRecordingRuntime {
             && settings.cameraGrade.isNeutral
             && !isRemoteCameraSelected
     }
+
+    /// Seconds recorded so far on the take timeline; it stops moving while paused.
+    var recordingTimelineSeconds: TimeInterval { currentSceneTime() }
 
     private func currentSceneTime() -> TimeInterval {
         guard let timelineSegmentStartedAt else {

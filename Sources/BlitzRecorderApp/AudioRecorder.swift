@@ -14,6 +14,7 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     private var finishContinuation: CheckedContinuation<MediaWriterCompletion, Error>?
     private var didRequestRecording = false
     private var clockRateEstimator = CaptureClockRateEstimator()
+    private var continuity = AudioSampleContinuity()
     private var pauseController = AudioRecordingPauseController()
     private var normalizationFormat: SourceAudioFormat = .aac
     private var normalizationBitrate = 192_000
@@ -90,6 +91,7 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
                 finishContinuation = nil
                 didRequestRecording = false
                 clockRateEstimator.reset()
+                continuity = AudioSampleContinuity()
                 pauseController = AudioRecordingPauseController()
                 normalizationFormat = settings.effectiveSourceAudioFormat
                 normalizationBitrate = settings.finalAudioBitrate
@@ -119,6 +121,7 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
                 )
                 CaptureLog.note(
                     "Microphone \(device.localizedName) [\(device.uniqueID)] recording \(url.path), "
+                        + "\(AudioDeviceDiagnostics.defaultOutputSummary()), "
                         + "device format \(device.activeFormat.formatDescription), "
                         + "file \(outputFileType.rawValue) \(output.audioSettings ?? [:])"
                 )
@@ -172,8 +175,9 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     func resume() {
         queue.async {
             guard let output = self.fileOutput, self.pauseController.resume(output) else { return }
-            CaptureLog.note("\(self.fileName): resumed")
+            CaptureLog.note("\(self.fileName): resumed at \(output.recordedDuration.seconds) s")
             self.clockRateEstimator.resume()
+            self.continuity.restart()
             self.recoverySegments?.resume()
         }
     }
@@ -215,8 +219,8 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         } catch {
             fileResult = .failure(error)
         }
-        await finishRecoverySegments()
-        let (completion, rebuilt) = try await checkedAgainstBackup(fileResult)
+        let backup = await finishRecoverySegments()
+        let (completion, rebuilt) = try await checkedAgainstBackup(.init(fileResult: fileResult, backup: backup))
         queue.sync {
             guard !rebuilt,
                   completion.wroteMedia,
@@ -237,33 +241,36 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         return completion
     }
 
-    /// A file the output called finished can still be a few seconds of a long take, so it is checked against the
-    /// backup segments, which are deleted once the take is saved. A rebuilt file is already placed by the session
+    private struct BackupCheckRequest {
+        let fileResult: Result<MediaWriterCompletion, Error>
+        let backup: AudioRecoverySegmentWriter.Report
+    }
+
+    /// The file is built from the timestamped backup segments, which are deleted once the take is saved, so a
+    /// stall leaves silence instead of moving the voice early. A built file is already placed by the session
     /// clock, so it skips clock correction.
-    private func checkedAgainstBackup(
-        _ fileResult: Result<MediaWriterCompletion, Error>
-    ) async throws -> (MediaWriterCompletion, Bool) {
+    private func checkedAgainstBackup(_ check: BackupCheckRequest) async throws -> (MediaWriterCompletion, Bool) {
         let request = queue.sync { outputURL.map {
             AudioBackupCheck.Request(
                 audioURL: $0, format: normalizationFormat, stereoBitrate: normalizationBitrate,
-                timelineStart: timelineAnchor.offset.seconds
+                timelineStart: timelineAnchor.offset.seconds, backup: check.backup
             )
         } }
-        if case .failure(let error) = fileResult {
+        if case .failure(let error) = check.fileResult {
             CaptureLog.note("\(request?.audioURL.lastPathComponent ?? "microphone"): file output failed: \(error)")
         }
-        guard let request, await AudioBackupCheck.verify(request) == .rebuilt else {
-            return (try fileResult.get(), false)
-        }
+        guard let request else { return (try check.fileResult.get(), false) }
+        let outcome = await AudioBackupCheck.verify(request)
+        guard outcome.replacedFile else { return (try check.fileResult.get(), false) }
         return (.wrote(request.audioURL), true)
     }
 
-    private func finishRecoverySegments() async {
+    private func finishRecoverySegments() async -> AudioRecoverySegmentWriter.Report {
         let segments = queue.sync {
             defer { recoverySegments = nil }
             return recoverySegments
         }
-        await segments?.finish()
+        return await segments?.finish() ?? .init()
     }
 
     func finalizeSynchronization() async throws {
@@ -303,6 +310,14 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
             if self.fileOutput?.isRecording == true,
                !self.pauseController.isPaused,
                let sampleDuration = Self.sampleDuration(of: sampleBuffer) {
+                if let jump = self.continuity.observe(.init(
+                    start: CMSampleBufferGetPresentationTimeStamp(sampleBuffer), duration: sampleDuration
+                )) {
+                    CaptureLog.note(String(
+                        format: "%@: microphone samples jumped %+.3f s at %.3f s of recorded audio",
+                        self.fileName, jump.seconds, jump.sourceSeconds
+                    ))
+                }
                 self.clockRateEstimator.observe(.init(
                     sampleDuration: sampleDuration,
                     masterTime: CMClockGetTime(CMClockGetHostTimeClock())

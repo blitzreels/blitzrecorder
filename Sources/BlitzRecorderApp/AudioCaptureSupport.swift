@@ -131,9 +131,49 @@ enum AudioCaptureSessionCleanup {
     }
 }
 
+/// What a system audio stream hears. A display or window source hears the whole Mac, so switching screens keeps
+/// the one stream running and its clock steady; only an app source hears just that app, and follows it.
+struct SystemAudioScope: Equatable, Sendable {
+    enum Source: Equatable, Sendable {
+        case everything
+        case application(String)
+    }
+
+    let source: Source
+    let includesRecorderUI: Bool
+
+    init(settings: RecordingSettings) {
+        if let binding = settings.screenSourceBinding, binding.kind == .application {
+            source = .application(binding.id)
+        } else {
+            source = .everything
+        }
+        includesRecorderUI = settings.includesRecorderUI
+    }
+
+    var logDescription: String {
+        let heard: String
+        switch source {
+        case .everything: heard = "every app"
+        case .application(let id): heard = "only \(id)"
+        }
+        return includesRecorderUI ? "\(heard), with BlitzRecorder" : heard
+    }
+}
+
 enum SystemAudioStreamConfiguration {
-    static func contentFilter(_ pickedFilter: SCContentFilter?) throws -> SCContentFilter {
-        guard let pickedFilter else {
+    struct FilterRequest {
+        let scope: SystemAudioScope
+        let pickedScreenFilter: SCContentFilter?
+    }
+
+    /// A whole-display filter for `.everything`, which hears every app whatever screen is recorded; the picked
+    /// filter for an app, or when the displays cannot be listed.
+    static func contentFilter(_ request: FilterRequest) async throws -> SCContentFilter {
+        if request.scope.source == .everything, let display = try? await SCShareableContent.current.displays.first {
+            return SCContentFilter(display: display, excludingWindows: [])
+        }
+        guard let pickedFilter = request.pickedScreenFilter else {
             throw RecorderError.screenCapturePermissionRequired
         }
         return pickedFilter

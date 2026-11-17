@@ -58,6 +58,8 @@ final class LocalTranscriptionController {
     private static let speakerCountKey = "transcription.speaker-count"
     private static let failuresKey = "transcription.automatic.failures"
     private static let titleAttemptsKey = "transcription.title.attempts"
+    private static let liveNotesKey = "transcription.live-notes.enabled"
+    private static let liveNotesScreenKey = "transcription.live-notes.reads-screen"
     private static let automaticAttemptLimit = 2
     private static let titleBackfillAge: TimeInterval = 7 * 86_400
 
@@ -76,6 +78,14 @@ final class LocalTranscriptionController {
     }
     var speakerCount: TranscriptionSpeakerCount {
         didSet { defaults.set(speakerCount.rawValue, forKey: Self.speakerCountKey) }
+    }
+    /// The call is transcribed and noted while it records, in the Live Notes panel.
+    var isLiveNotesEnabled: Bool {
+        didSet { defaults.set(isLiveNotesEnabled, forKey: Self.liveNotesKey) }
+    }
+    /// Live notes read the text in the frontmost window every few seconds.
+    var liveNotesReadsScreen: Bool {
+        didSet { defaults.set(liveNotesReadsScreen, forKey: Self.liveNotesScreenKey) }
     }
     var jobStatuses: [String: TranscriptionJobStatus] = [:]
     private(set) var jobDetails: [String: String] = [:]
@@ -197,6 +207,8 @@ final class LocalTranscriptionController {
         self.speakerCount = TranscriptionSpeakerCount(
             rawValue: dependencies.defaults.string(forKey: Self.speakerCountKey) ?? ""
         ) ?? .automatic
+        self.isLiveNotesEnabled = dependencies.defaults.object(forKey: Self.liveNotesKey) as? Bool ?? true
+        self.liveNotesReadsScreen = dependencies.defaults.object(forKey: Self.liveNotesScreenKey) as? Bool ?? true
         self.modelStates = Dictionary(uniqueKeysWithValues: TranscriptionSpeechModel.allCases.map { model in
             (model, dependencies.modelStore.isInstalled(model)
                 ? .ready(size: dependencies.modelStore.installedSize(model))

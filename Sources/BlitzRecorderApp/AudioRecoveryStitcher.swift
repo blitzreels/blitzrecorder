@@ -2,7 +2,9 @@ import AVFoundation
 import Foundation
 
 /// Joins the finished segments of one audio source into a single file, each segment placed by its time on the
-/// take timeline. Small clock differences are left alone so joins stay seamless; real gaps become silence.
+/// take timeline, so the file follows the session clock: real gaps become silence, and a source clock that runs a
+/// little fast or slow is absorbed by stretching each segment to end where the next one starts, instead of
+/// building up until a join has to insert or cut a few milliseconds.
 enum AudioRecoveryStitcher {
     struct Request {
         let directory: URL
@@ -21,6 +23,9 @@ enum AudioRecoveryStitcher {
     }
 
     private static let toleranceSeconds = 0.02
+    /// Largest stretch that is still clock drift: 0.5 %, fifty times what a microphone clock is off. Anything
+    /// larger between two segments is a real gap or overlap.
+    static let maximumStretch = 0.005
     private static let silenceChunkFrames: AVAudioFrameCount = 48_000
 
     private final class Output {
@@ -42,10 +47,14 @@ enum AudioRecoveryStitcher {
         var output: Output?
         var unreadable = 0
         defer { output?.file.close() }
-        for segment in AudioRecoverySegment.finished(in: request.directory) {
-            guard let buffer = readableBuffer(segment.url) else {
+        let segments = AudioRecoverySegment.finished(in: request.directory)
+        for (index, segment) in segments.enumerated() {
+            guard var buffer = readableBuffer(segment.url) else {
                 unreadable += 1
                 continue
+            }
+            if index + 1 < segments.count {
+                buffer = stretched(.init(buffer: buffer, seconds: segments[index + 1].timelineSeconds - segment.timelineSeconds))
             }
             let target = try output ?? makeOutput(.init(request: request, first: buffer, timelineStart: request.timelineStart ?? segment.timelineSeconds))
             output = target
@@ -61,13 +70,45 @@ enum AudioRecoveryStitcher {
         )
     }
 
+    struct StretchRequest {
+        let buffer: AVAudioPCMBuffer
+        /// Seconds until the next segment starts.
+        let seconds: Double
+    }
+
+    /// The segment resampled to last `seconds`, when that differs from its length by clock drift alone; otherwise
+    /// the segment as it is. Four-point Hermite interpolation keeps the top end of a voice, and the last frame
+    /// leads straight into the next segment.
+    static func stretched(_ request: StretchRequest) -> AVAudioPCMBuffer {
+        let buffer = request.buffer
+        let source = Int(buffer.frameLength)
+        let target = Int((request.seconds * buffer.format.sampleRate).rounded())
+        let difference = abs(target - source)
+        guard source > 3, difference > 0, Double(difference) <= Double(source) * maximumStretch,
+              let input = buffer.floatChannelData,
+              let output = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: AVAudioFrameCount(target)),
+              let samples = output.floatChannelData else { return buffer }
+        output.frameLength = AVAudioFrameCount(target)
+        let step = Double(source) / Double(target)
+        for channel in 0..<Int(buffer.format.channelCount) {
+            let x = input[channel]
+            let y = samples[channel]
+            for frame in 0..<target {
+                let position = Double(frame) * step
+                let i = Int(position)
+                let t = Float(position - Double(i))
+                let p0 = x[max(i - 1, 0)], p1 = x[i], p2 = x[min(i + 1, source - 1)], p3 = x[min(i + 2, source - 1)]
+                let c1 = 0.5 * (p2 - p0)
+                let c2 = p0 - 2.5 * p1 + 2 * p2 - 0.5 * p3
+                let c3 = 0.5 * (p3 - p0) + 1.5 * (p1 - p2)
+                y[frame] = ((c3 * t + c2) * t + c1) * t + p1
+            }
+        }
+        return output
+    }
+
     private static func readableBuffer(_ url: URL) -> AVAudioPCMBuffer? {
-        guard let file = try? AVAudioFile(forReading: url, commonFormat: .pcmFormatFloat32, interleaved: false),
-              file.length > 0,
-              let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)),
-              (try? file.read(into: buffer)) != nil,
-              buffer.frameLength > 0 else { return nil }
-        return buffer
+        (try? AVAudioFile(forReading: url, commonFormat: .pcmFormatFloat32, interleaved: false))?.readAllFrames()
     }
 
     private struct OutputRequest {

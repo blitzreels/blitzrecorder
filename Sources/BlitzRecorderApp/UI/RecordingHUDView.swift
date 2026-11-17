@@ -10,6 +10,8 @@ struct RecordingHUDActions {
 struct RecordingHUDView: View {
     @Bindable var vm: RecorderViewModel
     @Bindable var model: RecordingHUDModel
+    /// The take's live transcript and notes, shown under the controls when turned on.
+    let liveNotes: LiveCallSession
     let actions: RecordingHUDActions
     @State private var isDragHovering = false
     @State private var isIdle = false
@@ -21,12 +23,17 @@ struct RecordingHUDView: View {
             || (vm.screenSource.suggestedScreenSource != nil && vm.state == .recording)
     }
 
-    private var isWide: Bool { model.isExpanded || hasPrompt }
+    private var isWide: Bool { model.isExpanded || hasPrompt || showsLiveNotes }
     private static let width: CGFloat = 376
+    private static let liveNotesHeight: CGFloat = 320
+
+    private var hasLiveNotes: Bool { vm.transcriptionController.isLiveNotesEnabled }
+    private var showsLiveNotes: Bool { hasLiveNotes && liveNotes.isShownInRecordingControls }
 
     var body: some View {
         VStack(spacing: 0) {
             if model.anchor.isBottom {
+                if showsLiveNotes { liveNotesSection; divider }
                 if model.isExpanded { details; divider }
                 prompt
                 bar
@@ -34,6 +41,7 @@ struct RecordingHUDView: View {
                 bar
                 prompt
                 if model.isExpanded { divider; details }
+                if showsLiveNotes { divider; liveNotesSection }
             }
         }
         .frame(width: Self.width)
@@ -52,6 +60,7 @@ struct RecordingHUDView: View {
         .onAppear(perform: scheduleIdle)
         .environment(\.colorScheme, .dark)
         .animation(.spring(duration: 0.18, bounce: 0), value: model.isExpanded)
+        .animation(.easeOut(duration: 0.18), value: showsLiveNotes)
         .animation(.easeOut(duration: 0.18), value: hasPrompt)
         .animation(.easeOut(duration: 0.18), value: isIdle)
     }
@@ -105,7 +114,9 @@ struct RecordingHUDView: View {
                     RecordingHUDMeter(levels: vm.micLevels, isActive: vm.state == .recording)
                         .help(vm.selectedMicrophoneDisplayName)
                 }
-                RecorderVisibilityIndicator(hidden: !vm.settings.includesRecorderUI)
+                RecorderVisibilityToggle(hidden: !vm.settings.includesRecorderUI) {
+                    vm.setRecorderUIIncluded(!vm.settings.includesRecorderUI)
+                }
                 Spacer(minLength: 8)
             }
             .padding(.horizontal, 10)
@@ -156,8 +167,32 @@ struct RecordingHUDView: View {
         .accessibilityLabel(vm.state == .paused ? "Paused at \(vm.formattedElapsed)" : "Recording \(vm.formattedElapsed)")
     }
 
+    /// The call as text, its notes and questions, kept open until hidden with the notes button.
+    private var liveNotesSection: some View {
+        LiveNotesView(session: liveNotes, tab: .transcript)
+            .frame(height: Self.liveNotesHeight)
+            .padding(12)
+            .transition(.opacity)
+    }
+
     private var controls: some View {
         HStack(spacing: 2) {
+            if hasLiveNotes {
+                RecordingHUDIconButton(configuration: .init(
+                    symbol: "flag", fill: .clear,
+                    help: "Mark this moment (⌃⌥M from any app). It becomes a titled moment and a chapter.",
+                    isEnabled: liveNotes.status == .listening,
+                    action: liveNotes.mark
+                ))
+                RecordingHUDIconButton(configuration: .init(
+                    symbol: showsLiveNotes ? "text.bubble.fill" : "text.bubble",
+                    fill: showsLiveNotes ? BlitzUI.selectedFill : .clear,
+                    help: showsLiveNotes ? "Hide the live transcript and notes (⌥⌘N)"
+                        : "Show the live transcript and notes (⌥⌘N)",
+                    isEnabled: true,
+                    action: { liveNotes.isShownInRecordingControls.toggle() }
+                ))
+            }
             RecordingHUDIconButton(configuration: .init(
                 symbol: vm.state == .paused ? "play.fill" : "pause.fill",
                 fill: .clear,

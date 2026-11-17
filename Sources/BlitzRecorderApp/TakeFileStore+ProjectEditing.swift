@@ -315,6 +315,26 @@ extension TakeFileStore {
         ))
     }
 
+    struct ChapterAddition: Sendable {
+        let projectURL: URL
+        let chapters: [RecordingProject.ChapterSnapshot]
+        let baseSettings: RecordingSettings
+    }
+
+    /// Adds chapters, such as moments marked during a call, beside the project's own. Holds the write lock for the
+    /// whole read-modify-write, and skips a chapter already at the same time.
+    func addProjectChapters(_ addition: ChapterAddition) throws -> RecordingProject {
+        Self.projectWriteLock.lock()
+        defer { Self.projectWriteLock.unlock() }
+        let project = try loadRecordingProject(at: addition.projectURL)
+        let added = addition.chapters.filter { new in !project.chapters.contains { abs($0.time - new.time) < 0.5 } }
+        guard !added.isEmpty else { return project }
+        return try rewriteProject(.init(
+            project: project, projectURL: addition.projectURL, baseSettings: addition.baseSettings,
+            chapters: (project.chapters + added).sorted { $0.time < $1.time }
+        ))
+    }
+
     struct ProjectEditGuard {
         let projectURL: URL
         let expectedEditRevision: Int
@@ -342,6 +362,7 @@ extension TakeFileStore {
         var sceneEvents: [RecordingSceneEvent]?
         var editorState: RecordingProject.EditorStateSnapshot?
         var timelineEdits: RecordingProject.TimelineEditsSnapshot?
+        var chapters: [RecordingProject.ChapterSnapshot]?
     }
 
     /// Fields left `nil` keep what the saved project already has.
@@ -358,7 +379,7 @@ extension TakeFileStore {
             settings: settings,
             sceneEvents: rewrite.sceneEvents ?? sceneEvents(from: project),
             finalVideoURL: project.finalVideoPath.map(URL.init(fileURLWithPath:)),
-            chapters: project.chapters,
+            chapters: rewrite.chapters ?? project.chapters,
             editorTimeline: project.editorTimeline,
             editorState: rewrite.editorState,
             timelineEdits: rewrite.timelineEdits

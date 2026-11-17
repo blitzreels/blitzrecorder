@@ -150,8 +150,7 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
         let promptTokens = vocabulary.isEmpty ? nil : managers.whisper?.tokenizer.map {
             Array($0.encode(text: vocabulary).suffix(160))
         }
-        var words: [TranscriptWord] = []
-        var issues: [TranscriptionQuality.Issue] = []
+        var recognitions: [WindowRecognition] = []
         for (index, track) in tracks.enumerated() {
             let decoding = CallAudioAnalysis.DecodingRequest(track: track, intervals: intervals)
             let voices = Set(CallAudioAnalysis.nativeIntervals(decoding).map(\.speakerID)).count
@@ -163,10 +162,23 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
                     promptTokens: promptTokens, asr: managers.asr, whisper: managers.whisper,
                     attempt: .initial, allowsContextExpansion: voices <= 1
                 ))
-                words.append(contentsOf: recognized.words)
-                issues.append(contentsOf: recognized.issues)
+                recognitions.append(.init(trackIndex: index, window: window, recognized: recognized))
             }
         }
+        var takeLanguages = Set(languageCodes.values)
+        if request.model == .parakeet, let asr = managers.asr,
+           let language = request.language.whisperCode ?? TranscriptionLanguageRepair.dominantLanguage(
+               recognitions.map { $0.recognized.words.map(\.text).joined(separator: " ") }
+           ) {
+            takeLanguages = [language]
+            let repair = try await repairingLanguage(.init(
+                recognitions: recognitions, tracks: tracks, language: language, asr: asr
+            ))
+            recognitions = repair.recognitions
+            CaptureLog.note("Transcription: take language \(language), \(repair.repaired) windows decoded again in it")
+        }
+        var words = recognitions.flatMap(\.recognized.words)
+        var issues = recognitions.flatMap(\.recognized.issues)
         words.sort { $0.startTime < $1.startTime }
         let sources = words.map { $0.source ?? .mixed }
         let recovered = try CallSpeechRecovery.recover(.init(
@@ -186,7 +198,7 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
             speechBySource: Self.speechBySource(speech)
         )))
         assembled.quality = .init(pipelineVersion: 2, model: request.model.rawValue,
-                                  languages: Array(Set(languageCodes.values)).sorted(), issues: issues)
+                                  languages: takeLanguages.sorted(), issues: issues)
         let previous = try? artifactStore.load(from: prepared.artifactLocations.jsonURL)
         let named = previous.map { SpeakerIdentity.preservingNames(.init(transcript: assembled, previous: $0)) }
             ?? assembled
@@ -208,11 +220,21 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
     }
 
     private func makeSpeechDetector() throws -> VadManager {
-        try modelStore.validateSpeechDetector()
+        try Self.loadSpeechDetector(modelStore)
+    }
+
+    nonisolated static func loadSpeechDetector(_ store: LocalTranscriptionModelStore) throws -> VadManager {
+        try store.validateSpeechDetector()
         let configuration = MLModelConfiguration()
         configuration.computeUnits = .cpuAndNeuralEngine
-        let model = try MLModel(contentsOf: modelStore.speechDetectorURL, configuration: configuration)
+        let model = try MLModel(contentsOf: store.speechDetectorURL, configuration: configuration)
         return VadManager(config: VadConfig(defaultThreshold: 0.6), vadModel: model)
+    }
+
+    nonisolated static func loadRecognizer(_ store: LocalTranscriptionModelStore) async throws -> AsrManager {
+        try store.validateParakeetModels()
+        let asrModels = try await AsrModels.load(from: store.asrDirectory, version: .v3)
+        return AsrManager(config: recognitionConfiguration, models: asrModels)
     }
 
     private func loadedSpeechDetector() throws -> VadManager {
@@ -384,9 +406,7 @@ actor LocalTranscriptionEngine: LocalTranscriptionEngineServing {
     }
 
     private func loadParakeet() async throws {
-        try modelStore.validateParakeetModels()
-        let asrModels = try await AsrModels.load(from: modelStore.asrDirectory, version: .v3)
-        asrManager = AsrManager(config: Self.recognitionConfiguration, models: asrModels)
+        asrManager = try await Self.loadRecognizer(modelStore)
     }
 
     private func loadWhisper(_ request: WhisperLoadRequest) async throws {

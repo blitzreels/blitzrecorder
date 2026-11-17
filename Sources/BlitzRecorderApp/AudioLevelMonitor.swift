@@ -67,6 +67,7 @@ final class SystemAudioLevelMonitor: NSObject, SCStreamOutput, SCStreamDelegate 
 
     private let queue = DispatchQueue(label: "blitzrecorder.system-audio-monitor")
     private var stream: SCStream?
+    private var scope: SystemAudioScope?
     private let levelPublisher = AudioLevelPublisher()
     var levelHandler: ((Float) -> Void)? {
         get { levelPublisher.levelHandler }
@@ -76,7 +77,10 @@ final class SystemAudioLevelMonitor: NSObject, SCStreamOutput, SCStreamDelegate 
     func start(_ request: StartRequest) async throws {
         try await stop()
 
-        let filter = try SystemAudioStreamConfiguration.contentFilter(request.pickedScreenFilter)
+        let scope = SystemAudioScope(settings: request.settings)
+        let filter = try await SystemAudioStreamConfiguration.contentFilter(.init(
+            scope: scope, pickedScreenFilter: request.pickedScreenFilter
+        ))
         let configuration = SystemAudioStreamConfiguration.configuration(.init(
             streamName: "BlitzRecorder System Audio Monitor", includesRecorderUI: request.settings.includesRecorderUI
         ))
@@ -84,6 +88,7 @@ final class SystemAudioLevelMonitor: NSObject, SCStreamOutput, SCStreamDelegate 
         try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
         try await stream.startCapture()
         self.stream = stream
+        self.scope = scope
     }
 
     func stop() async throws {
@@ -91,15 +96,17 @@ final class SystemAudioLevelMonitor: NSObject, SCStreamOutput, SCStreamDelegate 
             try? await stream.stopCapture()
         }
         stream = nil
+        scope = nil
         levelPublisher.reset()
     }
 
-    func detachStreamForRecording() throws -> SCStream? {
-        guard let stream else { return nil }
+    func detachStreamForRecording() throws -> SystemAudioMonitoringStream? {
+        guard let stream, let scope else { return nil }
         try stream.removeStreamOutput(self, type: .audio)
         self.stream = nil
+        self.scope = nil
         levelPublisher.reset()
-        return stream
+        return .init(stream: stream, scope: scope)
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {

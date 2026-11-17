@@ -127,6 +127,14 @@ extension EditorTimelineView {
                                             .allowsHitTesting(false)
                                     }
                                 }
+                                if let snapGuideTime {
+                                    Rectangle()
+                                        .fill(BlitzUI.accent)
+                                        .frame(width: 1, height: contentHeight)
+                                        .offset(x: CGFloat(snapGuideTime) * pxPerSecond - 0.5)
+                                        .allowsHitTesting(false)
+                                        .accessibilityHidden(true)
+                                }
                             }
                         }
                         .frame(width: contentWidth, alignment: .topLeading)

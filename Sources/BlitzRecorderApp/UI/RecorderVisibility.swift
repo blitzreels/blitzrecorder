@@ -29,10 +29,8 @@ struct RecorderVisibilityMenu: View {
                               color: hidden ? BlitzUI.secondaryText : BlitzUI.warning)
         }
         .buttonStyle(BlitzMenuTriggerStyle(isPresented: isPresented, variant: .borderless))
-        .disabled(vm.state != .idle)
         .help(RecorderVisibility.help(hidden: hidden))
         .accessibilityLabel(hidden ? "BlitzRecorder hidden from recordings" : "BlitzRecorder shown in recordings")
-        .onChange(of: vm.state) { if vm.state != .idle { isPresented = false } }
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             BlitzMenuList(entries: entries, width: 300, maxHeight: BlitzMenuList.adaptiveMaxHeight) {
                 isPresented = false
@@ -145,19 +143,32 @@ private struct AppSidebarLivePreviewRow: View {
 }
 
 /// Recording controls: says whether the controls themselves are being recorded.
-struct RecorderVisibilityIndicator: View {
+/// Recording controls: whether BlitzRecorder shows in the take, switched with a click while recording.
+struct RecorderVisibilityToggle: View {
     let hidden: Bool
+    let toggle: () -> Void
+    @State private var isHovering = false
 
     var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: RecorderVisibility.symbol(hidden: hidden))
-                .font(BlitzType.glyph(11))
-            Text(RecorderVisibility.title(hidden: hidden))
-                .font(BlitzType.captionEmphasis)
+        Button(action: toggle) {
+            HStack(spacing: 4) {
+                Image(systemName: RecorderVisibility.symbol(hidden: hidden))
+                    .font(BlitzType.glyph(11))
+                Text(RecorderVisibility.title(hidden: hidden))
+                    .font(BlitzType.captionEmphasis)
+            }
+            .foregroundStyle(hidden ? BlitzUI.secondaryText : BlitzUI.warning)
+            .padding(.horizontal, 6)
+            .frame(height: 24)
+            .background(isHovering ? BlitzUI.hoverFill : .clear, in: .rect(cornerRadius: BlitzUI.controlRadius))
+            .contentShape(.rect)
         }
-        .foregroundStyle(hidden ? BlitzUI.secondaryText : BlitzUI.warning)
+        .buttonStyle(BlitzPressButtonStyle())
         .fixedSize()
-        .help(RecorderVisibility.help(hidden: hidden))
+        .onHover { isHovering = $0 }
+        .help(hidden ? "BlitzRecorder is hidden from this recording. Click to show it, for a tutorial."
+              : "BlitzRecorder appears in this recording. Click to hide it.")
         .accessibilityLabel(hidden ? "BlitzRecorder hidden from this recording" : "BlitzRecorder shown in this recording")
+        .accessibilityHint(hidden ? "Shows BlitzRecorder in the recording" : "Hides BlitzRecorder from the recording")
     }
 }

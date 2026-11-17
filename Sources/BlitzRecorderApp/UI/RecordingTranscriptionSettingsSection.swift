@@ -20,6 +20,37 @@ struct RecordingTranscriptionSettingsSection: View {
 
             SettingsRowDivider()
 
+            Toggle(isOn: Binding(
+                get: { vm.transcriptionController.isLiveNotesEnabled },
+                set: { vm.transcriptionController.isLiveNotesEnabled = $0 }
+            )) {
+                SettingsRowLabel(.init(
+                    title: "Live notes while recording",
+                    detail: "See the call as text a few seconds behind, copy it, ask about it and get running notes, "
+                        + "under the recording controls. Show or hide them with the notes button (⌥⌘N)."
+                ))
+            }
+            .toggleStyle(.blitzSwitch)
+            .settingsRow()
+
+            SettingsRowDivider()
+
+            Toggle(isOn: Binding(
+                get: { vm.transcriptionController.liveNotesReadsScreen },
+                set: { vm.transcriptionController.liveNotesReadsScreen = $0 }
+            )) {
+                SettingsRowLabel(.init(
+                    title: "Read the screen for notes",
+                    detail: "Every 10 seconds, read the text in the front window so notes know what you were looking at. "
+                        + "The text stays on this Mac with the take."
+                ))
+            }
+            .toggleStyle(.blitzSwitch)
+            .disabled(!vm.transcriptionController.isLiveNotesEnabled)
+            .settingsRow()
+
+            SettingsRowDivider()
+
             VStack(alignment: .leading, spacing: 10) {
                 Text("Speech model").font(BlitzType.label).foregroundStyle(BlitzUI.primaryText)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 8)], spacing: 8) {
@@ -36,7 +67,7 @@ struct RecordingTranscriptionSettingsSection: View {
             BlitzAdaptiveRow() {
                 SettingsRowLabel(.init(
                     title: "Language",
-                    detail: "Choose the spoken language, or let the app detect it."
+                    detail: "Automatic finds the language most of the recording is in and keeps short replies in it."
                 ))
                 BlitzSegmentedPicker(configuration: .init(
                         title: "Language",

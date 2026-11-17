@@ -230,6 +230,7 @@ extension RecorderCaptureRuntime {
 
     func stop() {
         guard let stopContext = recordingSession.beginFinishing() else { return }
+        onTakeStopping?()
         let activeCaptureWarning = RecordingWarning.combined(activeCaptureWarnings.map(Optional.some))
         activeCaptureWarnings = []
         clearActiveCaptureDevices()
@@ -344,6 +345,9 @@ extension RecorderCaptureRuntime {
         usesLiveCompositor: Bool
     ) {
         recordingSession.markRecordingStarted()
+        if let take = recordingSession.lastTake {
+            onTakeStarted?(RecordingSessionActiveTake(take: take, settings: recordingSettings))
+        }
         noteActiveCaptureDevices(settings: recordingSettings)
         committedRecordingSettings = settings
         onMessage?(RecordingStartCopy.recording(

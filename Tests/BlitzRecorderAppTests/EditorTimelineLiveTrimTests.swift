@@ -147,7 +147,7 @@ private struct LiveTrimFixture: View {
             onChangeTrackVolume: { _ in false },
             onChangeAudioRegion: { _ in false },
             onSplit: {}, onDeleteSelection: {}, deleteAction: nil, onDeleteSegment: {}, canDeleteSegment: false,
-            onJoinSegment: {}, onRestoreRange: {}, onTrimClip: model.commit, onMarkIn: {}, onMarkOut: {},
+            onJoinSegment: {}, onSplitSegment: {}, onRestoreRange: {}, onTrimClip: model.commit, onMarkIn: {}, onMarkOut: {},
             zoomLevel: $model.zoom, showsShortcuts: $model.showsShortcuts, showsSourceTracks: $model.showsSourceTracks,
             silence: model.silence, onOpenSilence: {}, onChangePlacedItem: { _ in }, onRemovePlacedItem: { _ in },
             multicam: nil

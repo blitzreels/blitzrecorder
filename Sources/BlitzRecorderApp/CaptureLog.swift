@@ -6,7 +6,11 @@ enum CaptureLog {
     private static let queue = DispatchQueue(label: "blitzrecorder.capture-log", qos: .utility)
     private static let maximumBytes: UInt64 = 5 << 20
 
+    /// Tests write to a log of their own, so their made-up takes never mix into the log of a real take.
     static let url: URL = {
+        guard NSClassFromString("XCTestCase") == nil else {
+            return FileManager.default.temporaryDirectory.appendingPathComponent("BlitzRecorderTests/capture.log")
+        }
         let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
         return library.appendingPathComponent("Logs/BlitzRecorder/capture.log")

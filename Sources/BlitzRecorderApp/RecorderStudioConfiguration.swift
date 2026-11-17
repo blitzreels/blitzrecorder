@@ -261,9 +261,15 @@ final class RecorderStudioConfiguration {
         onSocialSafeZoneOverlayChanged?(overlay)
     }
 
+    /// Changes while idle, recording or paused; not while a take starts or saves, when its capture is set up or
+    /// closed. While recording, only the setting changes here; the capture runtime applies it to the take.
     func setRecorderUIIncluded(_ included: Bool) {
-        guard state == .idle else { return }
+        guard state == .idle || state == .recording || state == .paused else { return }
         settings.includesRecorderUI = included
+        guard state == .idle else {
+            persist()
+            return
+        }
         let binding = settings.screenSourceBinding
         let capturesRecorder = binding?.processID == getpid()
             || (binding?.bundleIdentifier != nil && binding?.bundleIdentifier == Bundle.main.bundleIdentifier)

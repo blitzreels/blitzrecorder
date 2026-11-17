@@ -126,7 +126,13 @@ final class VideoFileWriter: @unchecked Sendable {
     func resume() {
         let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
         queue.async {
+            let before = self.pauseClock.offset
             self.pauseClock.resume(at: hostTime)
+            CaptureLog.note(String(
+                format: "%@: resumed after %.3f s paused (%.3f s paused in all), last frame at %.3f s",
+                self.url.lastPathComponent, CMTimeSubtract(self.pauseClock.offset, before).seconds,
+                self.pauseClock.offset.seconds, self.lastWrittenPresentationTime?.seconds ?? 0
+            ))
         }
     }
 

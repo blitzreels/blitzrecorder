@@ -89,9 +89,17 @@ extension AppDelegate {
         coordinator.stop()
     }
 
+    @objc func runSyncTest() {
+        SyncTestRunner.shared.run(coordinator)
+    }
+
     @objc func toggleLivePreview() {
         guard let viewModel = windowController?.viewModel else { return }
         viewModel.setLivePreviewEnabled(!viewModel.isLivePreviewEnabled)
+    }
+
+    @objc func toggleLiveNotes() {
+        LiveCallSession.shared.isShownInRecordingControls.toggle()
     }
 
     @objc func showCommandMenu() {

@@ -175,6 +175,7 @@ final class RecorderCoordinator {
             self?.onRemoteCameraPairingCodeRequested?(deviceName)
         }
         capture.bindCaptureEngine()
+        bindLiveNotes()
         // A paired iPhone may come back as the camera, so look for it without waiting to be asked.
         if RemoteCameraProviderID.isRemote(settings.selectedCameraID) || !settings.trustedRemoteCameraServiceIDs.isEmpty {
             startRemoteCameraDiscoveryIfNeeded()
@@ -261,6 +262,7 @@ final class RecorderCoordinator {
     func pause() { capture.pause() }
     func resume() { capture.resume() }
     func stop() { capture.stop() }
+    var recordingTimelineSeconds: TimeInterval { capture.takeRecording.recordingTimelineSeconds }
     func refreshAudioLevelMonitoring() { capture.refreshAudioLevelMonitoring() }
     func mergeLastTake() { capture.mergeLastTake() }
     func exportProject(_ request: ProjectExportRequest) { capture.exportProject(request) }
@@ -317,6 +319,7 @@ final class RecorderCoordinator {
         capture.setScreenSource(binding, autoFitWindowZoom: autoFitWindowZoom)
     }
     func targetWindowInfo() throws -> TargetWindowInfo { try capture.targetWindowInfo() }
+    func applyRecorderVisibilityToTake() { capture.applyRecorderVisibilityToTake() }
     func fitFrontWindowForShorts() { capture.fitFrontWindowForShorts() }
     func fitScreenItemToFrontWindow() { capture.fitScreenItemToFrontWindow() }
     func fitFrontWindowForShorts(zoom: CGFloat) { capture.fitFrontWindowForShorts(zoom: zoom) }
@@ -415,6 +418,64 @@ final class RecorderCoordinator {
         studio.refreshAudio = { [weak self] in self?.capture.refreshAudioLevelMonitoring() }
         studio.autoFitSelectedScreenWindow = { [weak self] in
             self?.capture.autoFitSelectedScreenWindowToSceneSlot()
+        }
+    }
+}
+
+extension RecorderCoordinator {
+    /// The call is transcribed and noted while it records, from the backup audio of the microphone and the call.
+    /// When it stops, the moments marked during the call become chapters of the project.
+    func bindLiveNotes() {
+        capture.onTakeStarted = { [weak self] active in
+            guard let self, self.transcription.isLiveNotesEnabled else { return }
+            let sources = active.settings.enabledSources
+            LiveCallSession.shared.start(.init(
+                takeDirectory: active.take.scratchDirectory,
+                microphoneURL: sources.contains(.microphone) ? active.take.audioURL : nil,
+                systemAudioURL: sources.contains(.systemAudio) ? active.take.systemAudioURL : nil,
+                language: self.transcription.selectedLanguage,
+                readsScreen: self.transcription.liveNotesReadsScreen,
+                unavailableReason: TakeRecordingRuntime.shouldUseLiveCompositor(
+                    settings: active.settings, isRemoteCameraSelected: self.capture.isRemoteCameraSelected
+                ) ? "Live notes need separate audio tracks. Turn on Keep source tracks in Settings → Recording." : nil,
+                timelineSeconds: { [weak self] in self?.capture.takeRecording.recordingTimelineSeconds ?? 0 }
+            ))
+            self.capture.onTakeStopping = {
+                Task {
+                    let marks = await LiveCallSession.shared.finish()
+                    await Self.addChapters(.init(marks: marks, take: active))
+                }
+            }
+        }
+    }
+
+    struct MarkedChapters: Sendable {
+        let marks: [LiveMark]
+        let take: RecordingSessionActiveTake
+    }
+
+    static let projectWaitSeconds = 600.0
+
+    /// Adds marked moments as chapters once the stopped take's project is saved, which can take a while.
+    nonisolated static func addChapters(_ request: MarkedChapters) async {
+        guard !request.marks.isEmpty else { return }
+        let projectURL = request.take.take.projectURL
+        let started = Date()
+        while !FileManager.default.fileExists(atPath: projectURL.path) {
+            guard Date().timeIntervalSince(started) < projectWaitSeconds else { return }
+            try? await Task.sleep(for: .seconds(2))
+        }
+        let addition = TakeFileStore.ChapterAddition(
+            projectURL: projectURL,
+            chapters: request.marks.map {
+                RecordingProject.ChapterSnapshot(time: $0.time, title: $0.title ?? "Marked moment", summary: $0.summary)
+            },
+            baseSettings: request.take.settings
+        )
+        do {
+            _ = try await Task.detached(priority: .utility) { try TakeFileStore().addProjectChapters(addition) }.value
+        } catch {
+            CaptureLog.note("Marked moments could not be added as chapters: \(error.localizedDescription)")
         }
     }
 }

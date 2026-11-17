@@ -146,6 +146,14 @@ struct EditorLayoutInspector: View {
                         title: "Composition",
                         detail: sceneEvents.count > 1 ? "Part \(currentEventIndex + 1) of \(sceneEvents.count)" : "Whole video"
                     ))
+                BlitzInlineActions(entries: [.item(.init(
+                    title: "Split at playhead",
+                    subtitle: "Start a new part here, so the layout can change from this point on. "
+                        + "Right-click a layout to split and use it in one step.",
+                    systemImage: BlitzSymbols.edit,
+                    isEnabled: canSplitAtPlayhead,
+                    action: { _ = splitAtPlayhead() }
+                ))])
                 LazyVGrid(columns: scenePresetColumns, spacing: 8) {
                     ForEach(
                         (ScenePreset.allCases + (playback.hasSecondCamera ? ScenePreset.twoCameraPresets : [])).filter {
@@ -164,11 +172,21 @@ struct EditorLayoutInspector: View {
                             availableSources: recordedVideoSources,
                             preview: scenePresetPreview
                         ) {
-                            applyScenePreset(preset)
+                            applyScenePreset(.init(preset: preset, eventIndex: currentEventIndex))
                         }
                         .help(
-                            "\(preset.compactTitle). Drag the screen or camera on the video to move them."
+                            "\(preset.compactTitle) for this whole part. Right-click to use it from the playhead on. "
+                                + "Drag the screen or camera on the video to move them."
                         )
+                        .contextMenu {
+                            Button("Use from the playhead on", systemImage: BlitzSymbols.edit) {
+                                applyScenePresetFromPlayhead(preset)
+                            }
+                            .disabled(!canSplitAtPlayhead)
+                            Button("Use for this whole part") {
+                                applyScenePreset(.init(preset: preset, eventIndex: currentEventIndex))
+                            }
+                        }
                     }
                 }
             }
@@ -245,8 +263,45 @@ struct EditorLayoutInspector: View {
         )
     }
 
-    private func applyScenePreset(_ preset: ScenePreset) {
-        let index = currentEventIndex
+    private var timelineDuration: Double {
+        EditorSessionMetrics.timelineDuration(playbackDuration: playback.duration,
+                                              lastEventTime: sceneEvents.last?.time ?? 0)
+    }
+
+    private var canSplitAtPlayhead: Bool {
+        EditorSceneSplit.canSplit(.init(
+            time: playback.currentTime,
+            duration: timelineDuration,
+            eventTimes: sceneEvents.map(\.time)
+        ))
+    }
+
+    private func splitAtPlayhead() -> Int? {
+        playback.pauseForEditing()
+        guard let index = vm.splitProjectScene(.init(
+            time: playback.currentTime,
+            duration: timelineDuration
+        )) else {
+            editErrorMessage = vm.detailMessage
+            return nil
+        }
+        selection = .segment(index)
+        return index
+    }
+
+    private func applyScenePresetFromPlayhead(_ preset: ScenePreset) {
+        guard let index = splitAtPlayhead() else { return }
+        applyScenePreset(.init(preset: preset, eventIndex: index))
+    }
+
+    private struct PresetApplication {
+        let preset: ScenePreset
+        let eventIndex: Int
+    }
+
+    private func applyScenePreset(_ application: PresetApplication) {
+        let preset = application.preset
+        let index = application.eventIndex
         if let correction = EditorScenePresetSourceCorrection.correction(for: preset) {
             playback.pauseForEditing()
             guard vm.applyProjectSceneCorrection(.init(eventIndex: index, correction: correction)) else {

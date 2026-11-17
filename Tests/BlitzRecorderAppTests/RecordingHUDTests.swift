@@ -66,7 +66,8 @@ final class RecordingHUDTests: XCTestCase {
             model.isHovering = expanded
             vm.screenSource.suggestedScreenSource = suggestion
             vm.screenSource.unavailableScreenSource = name == "missing" ? vm.settings.screenSourceBinding : nil
-            let view = RecordingHUDView(vm: vm, model: model, actions: .init(resize: { _ in }, dragChanged: {}, dragEnded: {}))
+            let view = RecordingHUDView(vm: vm, model: model, liveNotes: .preview(),
+                                        actions: .init(resize: { _ in }, dragChanged: {}, dragEnded: {}))
                 .padding(24)
                 .background(Color(red: 0.86, green: 0.88, blue: 0.92))
             let host = NSHostingView(rootView: view)

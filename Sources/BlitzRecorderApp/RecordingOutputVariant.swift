@@ -174,7 +174,7 @@ extension RecorderViewModel {
               let scene = RecordingScene(snapshot: previous.scene) else { return false }
         scenes.append(.init(.init(time: request.time, scene: scene)))
         edits.outputVariants[index].scenes = scenes.sorted { $0.time < $1.time }
-        return applyTimelineEdits(.init(edits: edits, actionName: "Split Segment"))
+        return applyTimelineEdits(.init(edits: edits, actionName: "Split Part"))
     }
 
     func joinOutputScene(_ eventIndex: Int) -> Bool {

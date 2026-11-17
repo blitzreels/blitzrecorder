@@ -4420,7 +4420,7 @@ private final class SpySystemAudioCaptureRecorder: SystemAudioCaptureRecording {
     }
 
     func start(url: URL, settings: RecordingSettings, timelineStartTime: CMTime?) async throws {}
-    func update(filter pickedScreenFilter: SCContentFilter?) async throws {
+    func update(_ request: SystemAudioUpdateRequest) async throws {
         updateCount += 1
         if updateCount == failOnUpdateCount {
             throw RecorderError.screenSourceUnavailable("System audio test source")
