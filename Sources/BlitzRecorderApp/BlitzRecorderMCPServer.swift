@@ -59,7 +59,6 @@ final class BlitzRecorderMCPServer {
     nonisolated static let workspaceEndpoint = "/webmcp"
     nonisolated static let endpointURL = URL(string: "http://127.0.0.1:\(port)\(endpoint)")!
     nonisolated static let codexSetupCommand = "codex mcp add blitzrecorder --url \(endpointURL.absoluteString)"
-    nonisolated static let claudeCodeSetupCommand = "claude mcp add --scope user --transport http blitzrecorder \(endpointURL.absoluteString)"
 
     nonisolated static func isEndpoint(_ value: String) -> Bool {
         guard let url = URL(string: value), url.scheme == "http", url.port == port,

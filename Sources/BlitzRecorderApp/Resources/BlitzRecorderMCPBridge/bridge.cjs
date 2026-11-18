@@ -2,7 +2,9 @@ const readline = require('node:readline');
 const { execFile } = require('node:child_process');
 
 const endpoint = 'http://127.0.0.1:18473/mcp';
-const bundleIds = ['dev.blitzreels.blitzrecorder', 'dev.blitzreels.blitzrecorder.debug'];
+const knownBundleIds = ['dev.blitzreels.blitzrecorder', 'dev.blitzreels.blitzrecorder.debug'];
+const preferredBundleId = knownBundleIds.find(id => id === process.argv[2]);
+const bundleIds = preferredBundleId ? [preferredBundleId] : knownBundleIds;
 const launchTimeoutMs = 20000;
 
 const isConnectionRefused = error => error.cause?.code === 'ECONNREFUSED';

@@ -23,7 +23,9 @@ enum MCPClientProvider: String, CaseIterable, Identifiable {
         switch self {
         case .claudeDesktop:
             "Install the local extension in Claude and approve its tools. It uses Claude's bundled Node runtime."
-        case .claudeCode, .codex, .cursor, .vscode, .windsurf, .gemini:
+        case .claudeCode:
+            "Connect for your user account across projects. Claude Code opens BlitzRecorder in the background when it needs it. Start a new session and approve its tools."
+        case .codex, .cursor, .vscode, .windsurf, .gemini:
             "Connect for your user account across projects. Keep BlitzRecorder open, then start a new agent session and approve its tools."
         case .other:
             "Add a Streamable HTTP server with the URL below. If your client only supports stdio, use the local bridge."
@@ -46,9 +48,12 @@ enum MCPClientProvider: String, CaseIterable, Identifiable {
 
     var serverKey: String { self == .vscode ? "servers" : "mcpServers" }
 
-    var serverConfiguration: [String: String] {
+    var serverConfiguration: [String: Any] {
         let endpoint = BlitzRecorderMCPServer.endpointURL.absoluteString
         switch self {
+        case .claudeCode:
+            guard let bridge = MCPStdioBridge.current else { return ["type": "http", "url": endpoint] }
+            return ["type": "stdio", "command": bridge.command, "args": bridge.arguments]
         case .gemini: return ["httpUrl": endpoint]
         case .windsurf: return ["serverUrl": endpoint]
         case .cursor: return ["url": endpoint]
@@ -65,7 +70,8 @@ enum MCPClientProvider: String, CaseIterable, Identifiable {
     var setupCommand: String? {
         let endpoint = BlitzRecorderMCPServer.endpointURL.absoluteString
         switch self {
-        case .claudeCode: return BlitzRecorderMCPServer.claudeCodeSetupCommand
+        case .claudeCode:
+            return (["claude"] + MCPClientSetup.claudeCodeAddArguments).map(MCPStdioBridge.shellQuoted).joined(separator: " ")
         case .codex: return BlitzRecorderMCPServer.codexSetupCommand
         case .gemini: return "gemini mcp add --scope user --transport http blitzrecorder \(endpoint)"
         case .vscode: return "code --add-mcp '{\"name\":\"blitzrecorder\",\"type\":\"http\",\"url\":\"\(endpoint)\"}'"
@@ -84,15 +90,42 @@ enum MCPClientProvider: String, CaseIterable, Identifiable {
     }
 
     func matchesServer(_ values: [String: Any]) -> Bool {
+        let configuration = serverConfiguration
+        if let arguments = configuration["args"] as? [String] {
+            return values["args"] as? [String] == arguments
+        }
         let endpoint = BlitzRecorderMCPServer.endpointURL.absoluteString
-        return serverConfiguration.allSatisfy { key, value in
-            guard let existing = values[key] as? String else { return false }
+        return configuration.allSatisfy { key, value in
+            guard let value = value as? String, let existing = values[key] as? String else { return false }
             return value == endpoint ? BlitzRecorderMCPServer.isEndpoint(existing) : existing == value
         }
     }
 
     var canInstallConfiguration: Bool {
         ![.claudeDesktop, .other, .cloud].contains(self)
+    }
+}
+
+struct MCPStdioBridge {
+    let command: String
+    let arguments: [String]
+
+    var commandLine: [String] { [command] + arguments }
+
+    static var current: MCPStdioBridge? {
+        guard let directory = MCPDesktopExtension.resourceDirectory else { return nil }
+        let fileManager = FileManager.default
+        let node = MCPClientSetup.searchPaths(home: fileManager.homeDirectoryForCurrentUser).lazy
+            .map { URL(fileURLWithPath: $0).appendingPathComponent("node").path }
+            .first { fileManager.isExecutableFile(atPath: $0) } ?? "node"
+        let bundleIdentifier = Bundle.main.bundleIdentifier.flatMap { $0.hasPrefix("dev.blitzreels.blitzrecorder") ? $0 : nil }
+        let script = directory.appendingPathComponent("bridge.cjs").path
+        return MCPStdioBridge(command: node, arguments: [script] + (bundleIdentifier.map { [$0] } ?? []))
+    }
+
+    static func shellQuoted(_ value: String) -> String {
+        guard value.contains(where: { !($0.isLetter || $0.isNumber || "-_./=@:".contains($0)) }) else { return value }
+        return "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
 
@@ -163,7 +196,9 @@ enum MCPClientSetup {
             let arguments: [String]
             let endpoint = BlitzRecorderMCPServer.endpointURL.absoluteString
             switch request.provider {
-            case .claudeCode, .gemini:
+            case .claudeCode:
+                arguments = claudeCodeAddArguments
+            case .gemini:
                 arguments = ["mcp", "add", "--scope", "user", "--transport", "http", "blitzrecorder", endpoint]
             case .codex:
                 arguments = ["mcp", "add", "blitzrecorder", "--url", endpoint]
@@ -262,16 +297,27 @@ enum MCPClientSetup {
         let output: String
     }
 
+    static var claudeCodeAddArguments: [String] {
+        guard let bridge = MCPStdioBridge.current else {
+            return ["mcp", "add", "--scope", "user", "--transport", "http", "blitzrecorder", BlitzRecorderMCPServer.endpointURL.absoluteString]
+        }
+        return ["mcp", "add", "--scope", "user", "blitzrecorder", "--"] + bridge.commandLine
+    }
+
+    static func searchPaths(home: URL) -> [String] {
+        let nodeRoot = home.appendingPathComponent(".nvm/versions/node")
+        let nodeBins = ((try? FileManager.default.contentsOfDirectory(at: nodeRoot, includingPropertiesForKeys: nil)) ?? [])
+            .sorted { $0.lastPathComponent.compare($1.lastPathComponent, options: .numeric) == .orderedDescending }
+            .map { $0.appendingPathComponent("bin").path }
+        return [home.appendingPathComponent(".local/bin").path, "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
+            + nodeBins + (ProcessInfo.processInfo.environment["PATH"] ?? "").components(separatedBy: ":")
+            + ["/Applications/Visual Studio Code.app/Contents/Resources/app/bin"]
+    }
+
     static func run(_ command: Command) async throws -> CommandResult {
         try await Task.detached(priority: .userInitiated) {
             let fileManager = FileManager.default
-            let nodeRoot = command.home.appendingPathComponent(".nvm/versions/node")
-            let nodeBins = ((try? fileManager.contentsOfDirectory(at: nodeRoot, includingPropertiesForKeys: nil)) ?? [])
-                .sorted { $0.lastPathComponent.compare($1.lastPathComponent, options: .numeric) == .orderedDescending }
-                .map { $0.appendingPathComponent("bin").path }
-            let paths = [command.home.appendingPathComponent(".local/bin").path, "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
-                + nodeBins + (ProcessInfo.processInfo.environment["PATH"] ?? "").components(separatedBy: ":")
-                + ["/Applications/Visual Studio Code.app/Contents/Resources/app/bin"]
+            let paths = searchPaths(home: command.home)
             guard let executable = paths.map({ URL(fileURLWithPath: $0).appendingPathComponent(command.executable) })
                 .first(where: { fileManager.isExecutableFile(atPath: $0.path) }) else {
                 throw SetupError.message("Install \(command.executable) first, or use the setup instructions below.")

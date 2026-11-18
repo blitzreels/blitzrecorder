@@ -21,7 +21,7 @@ final class MCPClientSetupTests: XCTestCase {
             XCTAssertEqual(document["preference"] as? Bool, true)
             let servers = try XCTUnwrap(document["mcpServers"] as? [String: Any])
             XCTAssertEqual((servers["existing"] as? [String: Any])?["command"] as? String, "keep-me")
-            XCTAssertEqual(servers["blitzrecorder"] as? [String: String], provider.serverConfiguration)
+            XCTAssertTrue(provider.matchesServer(try XCTUnwrap(servers["blitzrecorder"] as? [String: Any])))
             try MCPClientSetup.mergeConfiguration(.init(request: request, mode: .add))
             XCTAssertEqual(try Data(contentsOf: file), first)
             let backups = try FileManager.default.contentsOfDirectory(at: file.deletingLastPathComponent(), includingPropertiesForKeys: nil)
@@ -66,6 +66,8 @@ final class MCPClientSetupTests: XCTestCase {
 
     func testCommandsUseUserScopeAndCloudClientsAreNotOfferedLocalInstallation() {
         XCTAssertTrue(MCPClientProvider.claudeCode.setupCommand?.contains("--scope user") == true)
+        XCTAssertEqual(MCPClientProvider.claudeCode.serverConfiguration["type"] as? String, "stdio")
+        XCTAssertTrue((MCPClientProvider.claudeCode.serverConfiguration["args"] as? [String])?.first?.hasSuffix("bridge.cjs") == true)
         XCTAssertTrue(MCPClientProvider.gemini.setupCommand?.contains("--scope user") == true)
         XCTAssertFalse(MCPClientProvider.cloud.canInstallConfiguration)
         XCTAssertNil(MCPClientProvider.cloud.relativeConfigurationPath)
