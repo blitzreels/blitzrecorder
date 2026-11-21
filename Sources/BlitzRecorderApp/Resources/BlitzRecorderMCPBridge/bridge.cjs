@@ -1,48 +1,56 @@
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const readline = require('node:readline');
-const { execFile } = require('node:child_process');
 
 const endpoint = 'http://127.0.0.1:18473/mcp';
-const knownBundleIds = ['dev.blitzreels.blitzrecorder', 'dev.blitzreels.blitzrecorder.debug'];
-const preferredBundleId = knownBundleIds.find(id => id === process.argv[2]);
-const bundleIds = preferredBundleId ? [preferredBundleId] : knownBundleIds;
-const launchTimeoutMs = 20000;
+const defaultProtocolVersion = '2025-11-25';
+const appClosedMessage = "BlitzRecorder isn't open. Open BlitzRecorder (Settings > Integrations > Allow local agents), then retry.";
 
 const isConnectionRefused = error => error.cause?.code === 'ECONNREFUSED';
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-function openInBackground(bundleId) {
-  return new Promise(resolve => {
-    execFile('/usr/bin/open', ['-g', '-b', bundleId, '--args', '--agent-background'], error => resolve(!error));
-  });
-}
-
-async function launchApp() {
-  for (const bundleId of bundleIds) {
-    if (await openInBackground(bundleId)) return true;
-  }
-  return false;
-}
-
-function createForwarder({ url, fetchRequest, launchApp }) {
-  let protocolVersion = '2025-11-25';
-  let sessionId;
-
-  async function fetchLaunchingApp(options) {
+function createFileCache(file) {
+  function read() {
     try {
-      return await fetchRequest(url, options());
-    } catch (error) {
-      if (!isConnectionRefused(error) || !(await launchApp())) throw error;
-      const deadline = Date.now() + launchTimeoutMs;
-      for (;;) {
-        await delay(500);
-        try {
-          return await fetchRequest(url, options());
-        } catch (retryError) {
-          if (!isConnectionRefused(retryError) || Date.now() > deadline) throw retryError;
-        }
-      }
+      return JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch {
+      return {};
     }
   }
+  function write(entry) {
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      const temporary = `${file}.${process.pid}.tmp`;
+      fs.writeFileSync(temporary, JSON.stringify({ ...read(), ...entry }));
+      fs.renameSync(temporary, file);
+    } catch {}
+  }
+  return { read, write };
+}
+
+function answerWhileAppClosed({ message, cache, error }) {
+  if (!Object.hasOwn(message, 'id')) return null;
+  const saved = cache.read();
+  const reply = result => ({ jsonrpc: '2.0', id: message.id, result });
+  switch (message.method) {
+    case 'initialize':
+      return reply(saved.initialize ?? {
+        protocolVersion: message.params?.protocolVersion ?? defaultProtocolVersion,
+        capabilities: { tools: { listChanged: false } },
+        serverInfo: { name: 'blitzrecorder', version: '0.0.0' },
+      });
+    case 'tools/list':
+      return reply({ tools: saved.tools ?? [] });
+    case 'ping':
+      return reply({});
+    default:
+      throw error;
+  }
+}
+
+function createForwarder({ url, fetchRequest, cache }) {
+  let protocolVersion = defaultProtocolVersion;
+  let sessionId;
 
   return async function forward(message) {
     const headers = {
@@ -51,19 +59,33 @@ function createForwarder({ url, fetchRequest, launchApp }) {
       'MCP-Protocol-Version': protocolVersion,
     };
     if (sessionId) headers['Mcp-Session-Id'] = sessionId;
-    const response = await fetchLaunchingApp(() => ({
-      method: 'POST',
-      headers,
-      body: JSON.stringify(message),
-      signal: AbortSignal.timeout(60000),
-      redirect: 'error',
-    }));
+    let response;
+    try {
+      response = await fetchRequest(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(message),
+        signal: AbortSignal.timeout(60000),
+        redirect: 'error',
+      });
+    } catch (error) {
+      if (!isConnectionRefused(error)) throw error;
+      const reply = answerWhileAppClosed({ message, cache, error });
+      if (message.method === 'initialize' && reply?.result.protocolVersion) {
+        protocolVersion = reply.result.protocolVersion;
+      }
+      return reply;
+    }
     if (!response.ok) throw new Error(`BlitzRecorder returned HTTP ${response.status}. Check Settings > Integrations.`);
     sessionId = response.headers.get('mcp-session-id') || sessionId;
     if (response.status === 202 || response.status === 204) return null;
     const result = await response.json();
-    if (message.method === 'initialize' && result.result?.protocolVersion) {
-      protocolVersion = result.result.protocolVersion;
+    if (message.method === 'initialize' && result.result) {
+      if (result.result.protocolVersion) protocolVersion = result.result.protocolVersion;
+      cache.write({ initialize: result.result });
+    }
+    if (message.method === 'tools/list' && !message.params?.cursor && Array.isArray(result.result?.tools)) {
+      cache.write({ tools: result.result.tools });
     }
     return result;
   };
@@ -83,9 +105,7 @@ function startBridge({ input, output, diagnostics, forward }) {
         const result = await forward(message);
         if (result && Object.hasOwn(message, 'id')) output.write(JSON.stringify(result) + '\n');
       } catch (error) {
-        const detail = isConnectionRefused(error)
-          ? 'Could not reach BlitzRecorder. Open BlitzRecorder and turn on Settings > Integrations > Allow local agents, then retry.'
-          : error.message;
+        const detail = isConnectionRefused(error) ? appClosedMessage : error.message;
         if (message && Object.hasOwn(message, 'id')) {
           output.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, error: { code: -32000, message: detail } }) + '\n');
         } else {
@@ -100,11 +120,13 @@ function startBridge({ input, output, diagnostics, forward }) {
 module.exports = { createForwarder, startBridge };
 
 if (require.main === module) {
+  const cacheName = /^[\w.-]+$/.test(process.argv[2] ?? '') ? process.argv[2] : 'default';
+  const cacheFile = path.join(os.homedir(), 'Library', 'Caches', 'BlitzRecorderMCPBridge', `${cacheName}.json`);
   startBridge({
     input: process.stdin,
     output: process.stdout,
     diagnostics: process.stderr,
-    forward: createForwarder({ url: endpoint, fetchRequest: fetch, launchApp }),
+    forward: createForwarder({ url: endpoint, fetchRequest: fetch, cache: createFileCache(cacheFile) }),
   }).catch(error => {
     process.stderr.write(`BlitzRecorder: ${error.message}\n`);
     process.exitCode = 1;

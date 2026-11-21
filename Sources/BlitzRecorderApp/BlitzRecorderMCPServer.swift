@@ -67,8 +67,6 @@ final class BlitzRecorderMCPServer {
         return url.path() == endpoint || url.path() == "\(endpoint)/"
     }
 
-    nonisolated static let backgroundLaunchArgument = "--agent-background"
-
     private static let enabledDefaultsKey = "agents.mcpServer.enabled.v1"
 
     private let projectService: MCPProjectService

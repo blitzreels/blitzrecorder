@@ -27,13 +27,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
         launchIfNeeded()
     }
 
-    private var launchedForAgents: Bool {
-        CommandLine.arguments.contains(BlitzRecorderMCPServer.backgroundLaunchArgument)
-    }
-
     func launchIfNeeded() {
         guard windowController == nil else {
-            if !launchedForAgents { presentMainWindow() }
+            presentMainWindow()
             return
         }
 
@@ -53,7 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
                 NSApp.dockTile.display()
             }
         ))
-        if !launchedForAgents, !LocalDevelopmentRuntime.disablesIdleCapture(), LivePreviewPreference().isEnabled {
+        if !LocalDevelopmentRuntime.disablesIdleCapture(), LivePreviewPreference().isEnabled {
             coordinator.prewarmLocalCameraPreviewIfAuthorized()
         }
 
@@ -175,11 +171,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, MenuAc
         }
         if !LocalDevelopmentRuntime.isNoninteractiveVerification() {
             updateController.start()
-            if !launchedForAgents {
-                presentMainWindow()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                    self?.presentMainWindow()
-                }
+            presentMainWindow()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                self?.presentMainWindow()
             }
         }
         writeScreenshotIfRequested()
